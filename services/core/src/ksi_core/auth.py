@@ -201,6 +201,9 @@ class Permission(StrEnum):
     # operations authority.  It is intentionally distinct from product/HIL
     # approval even though ADMIN currently receives both permissions.
     CAPABILITY_ACTIVATE = "CAPABILITY_ACTIVATE"
+    # Durable work roster metadata is deliberately separate from OIDC/AuthRegistry
+    # identity provisioning and grants no permission to the roster subject.
+    ORGANIZATION_MEMBERS_MANAGE = "ORGANIZATION_MEMBERS_MANAGE"
     WORK_ORDERS_WRITE = "WORK_ORDERS_WRITE"
     REOBSERVATION_APPROVE = "REOBSERVATION_APPROVE"
     COPILOT_QUERY = "COPILOT_QUERY"
@@ -401,6 +404,7 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EQUIPMENT_SUPPORT_APPROVE,
             Permission.CAPABILITY_PRODUCT_APPROVE,
             Permission.CAPABILITY_ACTIVATE,
+            Permission.ORGANIZATION_MEMBERS_MANAGE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,

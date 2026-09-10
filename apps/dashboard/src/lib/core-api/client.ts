@@ -86,6 +86,7 @@ export interface CoreFetchOptions {
   method?: "GET" | "POST" | "PUT";
   query?: Record<string, string | number | undefined>;
   body?: unknown;
+  headers?: Record<string, string>;
 }
 
 function buildUrl(path: string, query?: CoreFetchOptions["query"]): string {
@@ -109,6 +110,7 @@ async function rawCoreRequest(
     headers: {
       Authorization: `Bearer ${token}`,
       ...(options.body !== undefined ? { "Content-Type": "application/json" } : {}),
+      ...options.headers,
     },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
     // 이 대시보드는 Next 데이터 캐시에 기대지 않는다 — 매 요청 Core API 최신 상태를 그대로

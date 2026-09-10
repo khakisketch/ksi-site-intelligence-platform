@@ -3,6 +3,7 @@ import "server-only";
 import { coreFetch } from "./client";
 import type {
   ObservationWorkOrderView,
+  ObservationWorkOrderOperationsView,
   ReobservationDraftView,
   TemporalCoherencePolicy,
 } from "./types";
@@ -12,6 +13,7 @@ export interface CreateObservationWorkOrderInput {
   workAreaIds: string[];
   scheduleId?: string | null;
   temporalPolicy?: TemporalCoherencePolicy | null;
+  executionMode?: "MANAGED_ACQUISITION" | "EXTERNAL_RECONSTRUCTION";
 }
 
 /**
@@ -21,10 +23,15 @@ export interface CreateObservationWorkOrderInput {
 export async function createObservationWorkOrder(
   siteId: string,
   input: CreateObservationWorkOrderInput,
+  idempotencyKey?: string,
 ): Promise<ObservationWorkOrderView> {
   return coreFetch<ObservationWorkOrderView>(
     `/v1/sites/${encodeURIComponent(siteId)}/observation-work-orders`,
-    { method: "POST", body: input },
+    {
+      method: "POST",
+      body: input,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
+    },
   );
 }
 
@@ -58,6 +65,80 @@ export async function getObservationWorkOrder(
   return coreFetch<ObservationWorkOrderView>(
     `/v1/observation-work-orders/${encodeURIComponent(workOrderId)}`,
   );
+}
+
+const operationsPath = (workOrderId: string) =>
+  `/v1/observation-work-orders/${encodeURIComponent(workOrderId)}/operations`;
+
+export async function getObservationWorkOrderOperations(
+  workOrderId: string,
+): Promise<ObservationWorkOrderOperationsView> {
+  return coreFetch<ObservationWorkOrderOperationsView>(operationsPath(workOrderId));
+}
+
+export async function listObservationWorkOrderOperations(filters: {
+  siteId?: string;
+  workflowStatus?: "UNSPECIFIED" | "OPEN" | "CLOSED";
+} = {}): Promise<ObservationWorkOrderOperationsView[]> {
+  const response = await coreFetch<{ operations: ObservationWorkOrderOperationsView[] }>(
+    "/v1/observation-work-order-operations",
+    { query: filters },
+  );
+  return response.operations;
+}
+
+export async function assignObservationWorkOrderToMe(
+  workOrderId: string,
+  expectedOperationsRevision: number,
+  action: "ASSIGN_TO_ME" | "CLEAR" | "ASSIGN_TO_MEMBER",
+  idempotencyKey: string,
+  assigneePrincipalId?: string,
+): Promise<ObservationWorkOrderOperationsView> {
+  return coreFetch<ObservationWorkOrderOperationsView>(`${operationsPath(workOrderId)}/assignment`, {
+    method: "POST",
+    body: action === "ASSIGN_TO_MEMBER"
+      ? { expectedOperationsRevision, action, assigneePrincipalId }
+      : { expectedOperationsRevision, action },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function setObservationWorkOrderDueDate(
+  workOrderId: string,
+  expectedOperationsRevision: number,
+  dueAt: string | null,
+  idempotencyKey: string,
+): Promise<ObservationWorkOrderOperationsView> {
+  return coreFetch<ObservationWorkOrderOperationsView>(`${operationsPath(workOrderId)}/due-date`, {
+    method: "PUT",
+    body: { expectedOperationsRevision, dueAt },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function closeObservationWorkOrder(
+  workOrderId: string,
+  expectedOperationsRevision: number,
+  note: string | null,
+  idempotencyKey: string,
+): Promise<ObservationWorkOrderOperationsView> {
+  return coreFetch<ObservationWorkOrderOperationsView>(`${operationsPath(workOrderId)}/close`, {
+    method: "POST",
+    body: { expectedOperationsRevision, note },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function reopenObservationWorkOrder(
+  workOrderId: string,
+  expectedOperationsRevision: number,
+  idempotencyKey: string,
+): Promise<ObservationWorkOrderOperationsView> {
+  return coreFetch<ObservationWorkOrderOperationsView>(`${operationsPath(workOrderId)}/reopen`, {
+    method: "POST",
+    body: { expectedOperationsRevision },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
 }
 
 export async function approveObservationWorkOrder(

@@ -36,8 +36,9 @@ export async function POST(
     await getSessionToken();
     const { siteId } = await params;
     const input = (await request.json()) as CreateObservationWorkOrderInput;
+    const idempotencyKey = request.headers.get("idempotency-key") ?? undefined;
     return NextResponse.json(
-      await createObservationWorkOrder(decodeURIComponent(siteId), input),
+      await createObservationWorkOrder(decodeURIComponent(siteId), input, idempotencyKey),
       { status: 201 },
     );
   } catch (error) {

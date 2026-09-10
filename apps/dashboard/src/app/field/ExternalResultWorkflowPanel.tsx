@@ -1,0 +1,781 @@
+"use client";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { formatKoreanDateTime } from "@/lib/datetime";
+import type {
+  ExternalReobservationProposalView,
+  ExternalRelativeVolumeReportView,
+  ExternalRelativeVolumeRequestView,
+  ExternalResultReview,
+} from "@/lib/core-api/external-result-workflow";
+import {
+  isExternalRelativeVolumeReportReference,
+  isExternalRelativeVolumeRequestReference,
+} from "@/lib/external-relative-volume-references";
+
+export type ExternalRelativeVolumeDecision = {
+  decisionId: string;
+  decisionDigest: string;
+  verdict: "ELIGIBLE" | "RESTRICTED" | "BLOCKED";
+  reasons: string[];
+  remediations: string[];
+};
+
+type Phase = "idle" | "loading" | "ready" | "error";
+type BusyOperation = "issue" | "review" | "proposal" | "approval";
+type FrozenIssue = { decisionId: string; decisionDigest: string; idempotencyKey: string };
+type FrozenProposal = { reportRef: string; workAreaId: string; reason: string | null; idempotencyKey: string };
+type FrozenApproval = { proposalRef: string; reportRef: string; expectedVersion: number; idempotencyKey: string };
+
+const AUTO_REQUEST_REFRESH_DELAY_MS = 5_000;
+const AUTO_REQUEST_REFRESH_BUDGET = 6;
+const KNOWN_REQUEST_STATUSES = ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"] as const;
+const UNKNOWN_REQUEST_STATUS = "UNKNOWN_EXTERNAL_RELATIVE_VOLUME_REQUEST_STATUS";
+
+/** A server-validated Site summary binds an exact deep link to one retained report. */
+export type TrustedExternalResultLink = {
+  reportRef: string;
+  reportDigest: string;
+  view: ExternalRelativeVolumeReportView;
+  /** An optional, server-resolved Site WorkArea label; the report still binds by id. */
+  workAreaName?: string | null;
+};
+
+function makeKey(): string {
+  return `console-${crypto.randomUUID()}`;
+}
+
+async function responseJson<T>(response: Response): Promise<T> {
+  if (response.ok) return response.json() as Promise<T>;
+  const body = await response.json().catch(() => null) as { code?: unknown; message?: unknown } | null;
+  const code = typeof body?.code === "string" ? body.code : undefined;
+  const message = typeof body?.message === "string" ? body.message : undefined;
+  throw new Error(code ?? message ?? `HTTP_${response.status}`);
+}
+
+function isAbort(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function subjectLabel(subject: { workOrderId: string; submissionId: string; revision: number }): string {
+  return `${subject.workOrderId} · ${subject.submissionId} · rev ${subject.revision}`;
+}
+
+function isKnownRequestStatus(status: unknown): status is ExternalRelativeVolumeRequestView["status"] {
+  return typeof status === "string" && (KNOWN_REQUEST_STATUSES as readonly string[]).includes(status);
+}
+
+function isKnownRequestView(value: unknown): value is ExternalRelativeVolumeRequestView {
+  return value !== null && typeof value === "object" && isKnownRequestStatus((value as { status?: unknown }).status);
+}
+
+function statusLabel(status: unknown): string {
+  return {
+    QUEUED: "대기",
+    RUNNING: "처리 중",
+    SUCCEEDED: "보고 완료",
+    FAILED: "실패",
+  }[status as ExternalRelativeVolumeRequestView["status"]] ?? "상태 확인 필요";
+}
+
+function formatNumber(value: number, maximumFractionDigits = 2): string {
+  return value.toLocaleString("ko-KR", { maximumFractionDigits });
+}
+
+function formatSignedNumber(value: number, maximumFractionDigits = 2): string {
+  const rendered = formatNumber(value, maximumFractionDigits);
+  return value > 0 ? `+${rendered}` : rendered;
+}
+
+function observationRange(from: string, to: string): string {
+  const start = formatKoreanDateTime(from, { dateStyle: "medium", timeStyle: "short" });
+  const end = formatKoreanDateTime(to, { dateStyle: "medium", timeStyle: "short" });
+  return start === end ? start : `${start} ~ ${end}`;
+}
+
+function retainedProposal(
+  view: ExternalRelativeVolumeReportView,
+  preferred: ExternalReobservationProposalView | null = null,
+): ExternalReobservationProposalView | null {
+  return view.proposals.find((item) =>
+    item.proposal.proposalRef === preferred?.proposal.proposalRef
+    && item.proposal.version === preferred.proposal.version,
+  ) ?? view.proposals[0] ?? null;
+}
+
+function recordedDeadlineElapsed(deadlineAt: string): boolean {
+  const timestamp = Date.parse(deadlineAt);
+  return Number.isFinite(timestamp) && timestamp <= Date.now();
+}
+
+function isUnfinishedRequest(status: unknown): boolean {
+  return status === "QUEUED" || status === "RUNNING";
+}
+
+function issueFailureMessage(error: unknown): string {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "AUTHORITY_UNAVAILABLE") {
+    return "비교에 필요한 기준이나 증거를 지금 사용할 수 없습니다. 현재 선택을 다시 확인한 뒤 재시도하세요.";
+  }
+  if (code === "DEADLINE_EXPIRED") {
+    return "이 요청의 마감 시간이 지났습니다. 현재 선택을 다시 확인해 새 요청을 만드세요.";
+  }
+  if (code === "RETRY_EXHAUSTED") {
+    return "이 요청의 재시도 한도에 도달했습니다. 요청 상태를 새로고침하고 원인을 확인하세요.";
+  }
+  if (code === "QUEUE_FULL" || code === "STORE_UNAVAILABLE") {
+    return "요청 처리를 지금 시작할 수 없습니다. 같은 선택으로 다시 시도합니다.";
+  }
+  if (code === UNKNOWN_REQUEST_STATUS) {
+    return "요청 상태 형식을 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
+  }
+  return "외부 상대 물량 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
+}
+
+function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
+  const { request, report, executionPolicy } = view;
+  return (
+    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
+      <summary className="cursor-pointer font-semibold">전문가용 기록 및 검증 정보</summary>
+      <div className="mt-2 flex flex-col gap-1 break-all">
+        <p>기준 대상: {subjectLabel(request.baseline.subject)}</p>
+        <p>현재 대상: {subjectLabel(request.current.subject)}</p>
+        <p>구역 ID {request.zoneSnapshot.workAreaId} · rev {request.zoneSnapshot.revision} · 정의 {request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>정책: 검증 {request.validationPolicyDigest} · 실행 {executionPolicy.policyDigest ?? request.executionPolicyDigest}</p>
+        <p>증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
+        <p>보고서: {report.reportDigest ?? "기록 없음"} · 요청 {request.requestDigest ?? "기록 없음"}</p>
+        <p>독립 검사점 증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
+      </div>
+    </details>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="border-l border-line px-3 first:border-l-0 first:pl-0">
+      <dt className="text-[12px] font-semibold text-ink-muted">{label}</dt>
+      <dd className="num mt-1 text-[20px] font-bold tracking-tight text-ink-1">{value}</dd>
+    </div>
+  );
+}
+
+function ReportDetail({
+  view,
+  workAreaName,
+}: {
+  view: ExternalRelativeVolumeReportView;
+  workAreaName: string | null;
+}) {
+  const metrics = view.report.payload.metrics;
+  const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction;
+
+  return (
+    <section id="external-result" tabIndex={-1} className="mt-3 scroll-mt-5 rounded-lg border border-line bg-surface text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="px-4 py-3">
+          <h3 className="text-[16px] font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
+          <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? view.request.zoneSnapshot.workAreaId}</p>
+        </div>
+        <span className="px-4 text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
+      </div>
+      <div className="border-t border-line bg-sunk px-4 py-3 leading-5 text-ink-2">
+        <p>기준 촬영 {observationRange(view.request.baseline.capturedFrom, view.request.baseline.capturedTo)}</p>
+        <p>현재 촬영 {observationRange(view.request.current.capturedFrom, view.request.current.capturedTo)}</p>
+        <p className="mt-1 text-[12px] text-ink-muted">측정 영역 {formatNumber(metrics.measuredAreaM2, 1)} m² / 작업구역 {formatNumber(metrics.zoneAreaM2, 1)} m² · 공통 유효 영역 {formatNumber(metrics.commonValidFraction * 100, 1)}%</p>
+      </div>
+      {coveragePassed ? (
+        <>
+          <dl className="grid grid-cols-3 divide-x divide-line px-4 py-4">
+            <Metric label="절토" value={`${formatNumber(metrics.cutM3)} m³`} />
+            <Metric label="성토" value={`${formatNumber(metrics.fillM3)} m³`} />
+            <Metric label="순변화" value={`${formatSignedNumber(metrics.netM3)} m³`} />
+          </dl>
+          <div className="border-t border-line bg-sunk px-4 py-3 leading-5 text-ink-2">
+            <p className="text-[12px] text-ink-muted">절토는 깎아낸 양, 성토는 채워 넣은 양입니다.</p>
+            <p className="mt-1">
+            {metrics.uncertaintyM3 === null
+              ? `불확실성은 아직 산정되지 않았습니다. ${metrics.uncertaintyNote}`
+              : `불확실성 ±${formatNumber(metrics.uncertaintyM3)} m³ · ${metrics.uncertaintyNote}`}
+            </p>
+          </div>
+        </>
+      ) : (
+        <p role="alert" className="border-t border-line px-4 py-3 text-high-ink">적용 범위가 측정 기준을 충족하지 않아 수량 카드를 표시하지 않습니다.</p>
+      )}
+      <div className="px-4 pb-4"><CoreBindings view={view} /></div>
+    </section>
+  );
+}
+
+function reviewRmseLabel(value: number | null): string {
+  return value === null ? "기록 없음" : `${value}m`;
+}
+
+function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
+  const { authority, decision, report, request } = review;
+  return (
+    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
+      <summary className="cursor-pointer font-semibold">전문가용 검토 기록</summary>
+      <div className="mt-2 flex flex-col gap-1 break-all">
+        <p>검토 다이제스트: {review.reviewDigest ?? "기록 없음"}</p>
+        <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
+        <p>검토 보고서: {review.reportRef} · 요청 {request.requestId}</p>
+        <p>검토 보고 다이제스트: {report.reportDigest ?? "기록 없음"} · 요청 다이제스트 {request.requestDigest ?? "기록 없음"}</p>
+        <p>검토 결정: {decision.decisionId} · {decision.decisionDigest ?? "기록 없음"}</p>
+        <p>기준 독립 검사점 RMSE: {reviewRmseLabel(authority.baselineRmseM)}</p>
+        <p>현재 독립 검사점 RMSE: {reviewRmseLabel(authority.currentRmseM)}</p>
+        <p>기준 대상: {subjectLabel(authority.baseline.subject)} · 검사 {authority.baseline.inspectionReportDigest}</p>
+        <p>현재 대상: {subjectLabel(authority.current.subject)} · 검사 {authority.current.inspectionReportDigest}</p>
+        <p>구역 ID: {authority.zoneSnapshot.workAreaId} · rev {authority.zoneSnapshot.revision} · 정의 {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>검증 정책: {authority.validationPolicyDigest} · 실행 정책: {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
+        <p>호환 매핑: {authority.compatibilityMappingDigest} · 권한 기록: {authority.authorityDigest ?? "기록 없음"}</p>
+        <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
+        {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
+      </div>
+    </details>
+  );
+}
+
+export function ExternalResultWorkflowPanel({
+  workOrderId,
+  siteId,
+  decision,
+  permissions,
+  initialReport,
+  newIntentAllowed = true,
+}: {
+  workOrderId: string;
+  siteId: string;
+  decision: ExternalRelativeVolumeDecision | null;
+  permissions: readonly string[];
+  initialReport?: TrustedExternalResultLink;
+  newIntentAllowed?: boolean;
+}) {
+  const router = useRouter();
+  const scope = useRef(0);
+  const activeMutation = useRef<AbortController | null>(null);
+  const listAbort = useRef<AbortController | null>(null);
+  const requestAbort = useRef<AbortController | null>(null);
+  const reportAbort = useRef<AbortController | null>(null);
+  const worklistVerified = useRef(false);
+  const worklistAutoRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const worklistAutoRefreshBudget = useRef(0);
+  const worklistAutoRefreshInFlight = useRef(false);
+  const [worklistPhase, setWorklistPhase] = useState<Phase>("loading");
+  const [worklistRefreshing, setWorklistRefreshing] = useState(false);
+  const [worklistAutoRefreshStopped, setWorklistAutoRefreshStopped] = useState(false);
+  const [worklistError, setWorklistError] = useState<string | null>(null);
+  const [documentVisible, setDocumentVisible] = useState(true);
+  const [worklist, setWorklist] = useState<ExternalRelativeVolumeRequestView[]>([]);
+  const [selectedRequestRef, setSelectedRequestRef] = useState<string | null>(null);
+  const [selectionGeneration, setSelectionGeneration] = useState(0);
+  const [selectedRequest, setSelectedRequest] = useState<ExternalRelativeVolumeRequestView | null>(null);
+  const [selectedRequestRefreshing, setSelectedRequestRefreshing] = useState(false);
+  const [selectedRequestError, setSelectedRequestError] = useState<string | null>(null);
+  const [report, setReport] = useState<ExternalRelativeVolumeReportView | null>(initialReport?.view ?? null);
+  const [reportPhase, setReportPhase] = useState<Phase>(initialReport ? "ready" : "idle");
+  const [busy, setBusy] = useState<BusyOperation | null>(null);
+  const [issueAttempt, setIssueAttempt] = useState<FrozenIssue | null>(null);
+  const [proposalAttempt, setProposalAttempt] = useState<FrozenProposal | null>(null);
+  const [approvalAttempt, setApprovalAttempt] = useState<FrozenApproval | null>(null);
+  const [proposal, setProposal] = useState<ExternalReobservationProposalView | null>(
+    initialReport ? retainedProposal(initialReport.view) : null,
+  );
+  const [reportWorkAreaName, setReportWorkAreaName] = useState<string | null>(initialReport?.workAreaName ?? null);
+  const [reason, setReason] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [worklistNotice, setWorklistNotice] = useState<string | null>(null);
+  const [worklistRefreshNotice, setWorklistRefreshNotice] = useState<string | null>(null);
+
+  const hasIssuePermission = permissions.includes("SITES_WRITE");
+  const hasReviewPermission = permissions.includes("WORK_ORDERS_WRITE");
+  const hasApprovalPermission = permissions.includes("REOBSERVATION_APPROVE");
+  // Issuing, proposing, and approving have retained idempotency attempts. A
+  // closed task may reconcile that exact durable request, but cannot begin a
+  // replacement intent.
+  const canIssue = hasIssuePermission && (newIntentAllowed || issueAttempt !== null);
+  const canReview = hasReviewPermission && newIntentAllowed;
+  const canProposal = hasReviewPermission && (newIntentAllowed || proposalAttempt !== null);
+  const canApprove = hasApprovalPermission && (newIntentAllowed || approvalAttempt !== null);
+  const decisionIdentity = decision ? `${decision.decisionId}|${decision.decisionDigest}` : "";
+
+  useEffect(() => {
+    let active = true;
+    worklistVerified.current = false;
+    worklistAutoRefreshBudget.current = 0;
+    worklistAutoRefreshInFlight.current = false;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      setWorklist([]);
+      setWorklistRefreshing(false);
+      setWorklistAutoRefreshStopped(false);
+      setWorklistError(null);
+      setWorklistRefreshNotice(null);
+    });
+    return () => { active = false; };
+  }, [workOrderId]);
+
+  const loadWorklist = useCallback(async ({
+    preserveVerified = false,
+    automatic = false,
+  }: {
+    preserveVerified?: boolean;
+    automatic?: boolean;
+  } = {}) => {
+    listAbort.current?.abort();
+    const controller = new AbortController();
+    listAbort.current = controller;
+    const retainLastVerified = preserveVerified && worklistVerified.current;
+    setWorklistRefreshNotice(null);
+    if (retainLastVerified) setWorklistRefreshing(true);
+    else {
+      setWorklistPhase("loading");
+      setWorklistError(null);
+    }
+    try {
+      const response = await fetch(
+        `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/relative-volume-requests`,
+        { cache: "no-store", signal: controller.signal },
+      );
+      const value = await responseJson<{ items: unknown }>(response);
+      if (!Array.isArray(value.items) || !value.items.every(isKnownRequestView)) throw new Error(UNKNOWN_REQUEST_STATUS);
+      if (listAbort.current !== controller) return;
+      setWorklist(value.items);
+      worklistVerified.current = true;
+      setWorklistPhase("ready");
+      setWorklistError(null);
+    } catch (error) {
+      if (isAbort(error) || listAbort.current !== controller) return;
+      if (retainLastVerified) {
+        if (automatic) {
+          setWorklistAutoRefreshStopped(true);
+          setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+            ? "요청 상태 형식을 확인하지 못해 자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요."
+            : "자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요.");
+        } else {
+          setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+            ? "요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요."
+            : "요청 목록을 새로고치지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 다시 시도하세요.");
+        }
+      } else {
+        setWorklistPhase("error");
+        setWorklistError(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+          ? "요청 상태 형식을 확인하지 못했습니다. 목록을 다시 확인하세요."
+          : "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.");
+      }
+    } finally {
+      if (listAbort.current === controller) {
+        listAbort.current = null;
+        if (retainLastVerified) setWorklistRefreshing(false);
+      }
+    }
+  }, [workOrderId]);
+
+  const loadReport = useCallback(async (reportRef: string, preferredProposal: ExternalReobservationProposalView | null = null) => {
+    if (!isExternalRelativeVolumeReportReference(reportRef)) {
+      setReport(null);
+      setReportPhase("error");
+      return;
+    }
+    reportAbort.current?.abort();
+    const controller = new AbortController();
+    reportAbort.current = controller;
+    setReportPhase("loading");
+    try {
+      const response = await fetch(`/api/external-relative-volume-reports/${encodeURIComponent(reportRef)}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const value = await responseJson<ExternalRelativeVolumeReportView>(response);
+      if (reportAbort.current !== controller) return;
+      setReport(value);
+      setProposal((current) => retainedProposal(value, preferredProposal ?? current));
+      setReportWorkAreaName(null);
+      setReportPhase("ready");
+    } catch (error) {
+      if (isAbort(error) || reportAbort.current !== controller) return;
+      setReport(null);
+      setReportPhase("error");
+    } finally {
+      if (reportAbort.current === controller) reportAbort.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void loadWorklist();
+    });
+    return () => {
+      active = false;
+      listAbort.current?.abort();
+    };
+  }, [loadWorklist]);
+
+  useEffect(() => {
+    const updateVisibility = () => setDocumentVisible(document.visibilityState !== "hidden");
+    updateVisibility();
+    document.addEventListener("visibilitychange", updateVisibility);
+    return () => document.removeEventListener("visibilitychange", updateVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (worklistAutoRefreshTimer.current !== null) {
+      clearTimeout(worklistAutoRefreshTimer.current);
+      worklistAutoRefreshTimer.current = null;
+    }
+    if (
+      !documentVisible || worklistAutoRefreshStopped || !worklistVerified.current
+      || !worklist.some((item) => isUnfinishedRequest(item.status))
+      || worklistAutoRefreshBudget.current >= AUTO_REQUEST_REFRESH_BUDGET
+    ) return;
+    worklistAutoRefreshTimer.current = setTimeout(() => {
+      worklistAutoRefreshTimer.current = null;
+      if (document.visibilityState === "hidden" || worklistAutoRefreshInFlight.current) return;
+      worklistAutoRefreshInFlight.current = true;
+      worklistAutoRefreshBudget.current += 1;
+      void loadWorklist({ preserveVerified: true, automatic: true }).finally(() => {
+        worklistAutoRefreshInFlight.current = false;
+      });
+    }, AUTO_REQUEST_REFRESH_DELAY_MS);
+    return () => {
+      if (worklistAutoRefreshTimer.current !== null) {
+        clearTimeout(worklistAutoRefreshTimer.current);
+        worklistAutoRefreshTimer.current = null;
+      }
+    };
+  }, [documentVisible, loadWorklist, worklist, worklistAutoRefreshStopped]);
+
+  useEffect(() => {
+    if (!selectedRequestRef || !isExternalRelativeVolumeRequestReference(selectedRequestRef)) return;
+    requestAbort.current?.abort();
+    const controller = new AbortController();
+    requestAbort.current = controller;
+    void Promise.resolve().then(async () => {
+      try {
+        const response = await fetch(
+          `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/relative-volume-requests/${encodeURIComponent(selectedRequestRef)}`,
+          { cache: "no-store", signal: controller.signal },
+        );
+        const value = await responseJson<unknown>(response);
+        if (!isKnownRequestView(value)) throw new Error(UNKNOWN_REQUEST_STATUS);
+        if (requestAbort.current !== controller) return;
+        setSelectedRequest(value);
+        setSelectedRequestRefreshing(false);
+        setSelectedRequestError(null);
+        setProposal(null);
+        setApprovalAttempt(null);
+        setProposalAttempt(null);
+        setReason("");
+        if (value.reportRef) void loadReport(value.reportRef);
+        else {
+          setReport(null);
+          setReportPhase("idle");
+          setReportWorkAreaName(null);
+        }
+      } catch (error) {
+        if (isAbort(error) || requestAbort.current !== controller) return;
+        setSelectedRequestRefreshing(false);
+        setSelectedRequestError(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+          ? "요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 요청과 목록을 유지합니다. 다시 시도하세요."
+          : "요청 상태를 확인하지 못했습니다. 마지막으로 확인한 요청과 목록을 유지합니다. 다시 시도하세요.");
+      } finally {
+        if (requestAbort.current === controller) requestAbort.current = null;
+      }
+    });
+    return () => controller.abort();
+  }, [loadReport, selectedRequestRef, selectionGeneration, workOrderId]);
+
+  useEffect(() => {
+    scope.current += 1;
+    const decisionScope = scope.current;
+    const controller = activeMutation.current;
+    activeMutation.current = null;
+    controller?.abort();
+    void Promise.resolve().then(() => {
+      if (scope.current !== decisionScope) return;
+      setBusy(null);
+      setIssueAttempt(null);
+      setMessage(null);
+    });
+  }, [decisionIdentity]);
+
+  useEffect(() => () => {
+    activeMutation.current?.abort();
+    requestAbort.current?.abort();
+    reportAbort.current?.abort();
+    listAbort.current?.abort();
+    if (worklistAutoRefreshTimer.current !== null) clearTimeout(worklistAutoRefreshTimer.current);
+  }, []);
+
+  const beginMutation = (operation: BusyOperation) => {
+    activeMutation.current?.abort();
+    const controller = new AbortController();
+    activeMutation.current = controller;
+    setBusy(operation);
+    return { controller, requestScope: scope.current };
+  };
+
+  const ownsMutation = (controller: AbortController, requestScope: number) =>
+    activeMutation.current === controller && scope.current === requestScope;
+
+  const finishMutation = (controller: AbortController, requestScope: number) => {
+    if (activeMutation.current === controller) {
+      activeMutation.current = null;
+      if (scope.current === requestScope) setBusy(null);
+    }
+  };
+
+  const selectRequest = (requestRef: string) => {
+    scope.current += 1;
+    const controller = activeMutation.current;
+    activeMutation.current = null;
+    controller?.abort();
+    requestAbort.current?.abort();
+    requestAbort.current = null;
+    reportAbort.current?.abort();
+    reportAbort.current = null;
+    setBusy(null);
+    setSelectedRequestRefreshing(true);
+    setSelectedRequestError(null);
+    setMessage(null);
+    setWorklistNotice(null);
+    setWorklistRefreshNotice(null);
+    if (selectedRequestRef === requestRef) setSelectionGeneration((current) => current + 1);
+    setSelectedRequestRef(requestRef);
+  };
+
+  const issue = async () => {
+    if (!decision || decision.verdict !== "ELIGIBLE" || !canIssue || busy) return;
+    let attempt = issueAttempt;
+    const matchesDecision = attempt?.decisionId === decision.decisionId
+      && attempt.decisionDigest === decision.decisionDigest;
+    if (!newIntentAllowed && !matchesDecision) {
+      setMessage("업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.");
+      return;
+    }
+    if (!matchesDecision) {
+      attempt = { decisionId: decision.decisionId, decisionDigest: decision.decisionDigest, idempotencyKey: makeKey() };
+      setIssueAttempt(attempt);
+    }
+    if (!attempt) return;
+    const { controller, requestScope } = beginMutation("issue");
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/relative-volume-requests`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
+          body: JSON.stringify({ decisionRef: attempt.decisionId }),
+          signal: controller.signal,
+        },
+      );
+      const value = await responseJson<{ verdict: string; request: unknown; detail: string | null }>(response);
+      if (!ownsMutation(controller, requestScope)) return;
+      if (!isKnownRequestView(value.request)) throw new Error(value.request === null ? (value.detail ?? value.verdict) : UNKNOWN_REQUEST_STATUS);
+      selectRequest(value.request.requestRef);
+      setMessage("외부 상대 물량 비교를 요청했습니다.");
+      void loadWorklist();
+    } catch (error) {
+      if (!isAbort(error) && ownsMutation(controller, requestScope)) setMessage(issueFailureMessage(error));
+    } finally {
+      finishMutation(controller, requestScope);
+    }
+  };
+
+  const review = async () => {
+    if (!report || !canReview || busy) return;
+    const { controller, requestScope } = beginMutation("review");
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/external-relative-volume-reports/${encodeURIComponent(report.report.reportId)}/reviews`, {
+        method: "POST",
+        signal: controller.signal,
+      });
+      await responseJson<{ review: unknown }>(response);
+      if (!ownsMutation(controller, requestScope)) return;
+      setMessage("결과 검토를 기록했습니다.");
+      await loadReport(report.report.reportId);
+    } catch (error) {
+      if (!isAbort(error) && ownsMutation(controller, requestScope)) setMessage("결과 검토를 기록하지 못했습니다. 보고서를 다시 확인하세요.");
+    } finally {
+      finishMutation(controller, requestScope);
+    }
+  };
+
+  const createProposal = async () => {
+    if (!report || !report.review || !canProposal || busy) return;
+    const workAreaId = report.request.zoneSnapshot.workAreaId;
+    const normalizedReason = reason.trim() || null;
+    let attempt = proposalAttempt;
+    const matchesProposal = attempt?.reportRef === report.report.reportId
+      && attempt.workAreaId === workAreaId && attempt.reason === normalizedReason;
+    if (!newIntentAllowed && !matchesProposal) {
+      setMessage("업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다.");
+      return;
+    }
+    if (!matchesProposal) {
+      attempt = { reportRef: report.report.reportId, workAreaId, reason: normalizedReason, idempotencyKey: makeKey() };
+      setProposalAttempt(attempt);
+    }
+    if (!attempt) return;
+    const { controller, requestScope } = beginMutation("proposal");
+    setMessage(null);
+    try {
+      const response = await fetch("/api/external-reobservation-proposals", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
+        body: JSON.stringify({ reportRef: attempt.reportRef, targetWorkAreaIds: [attempt.workAreaId], reason: attempt.reason }),
+        signal: controller.signal,
+      });
+      const value = await responseJson<ExternalReobservationProposalView>(response);
+      if (!ownsMutation(controller, requestScope)) return;
+      setProposal(value);
+      setMessage("재관측 제안을 기록했습니다.");
+      await loadReport(report.report.reportId, value);
+    } catch (error) {
+      if (!isAbort(error) && ownsMutation(controller, requestScope)) setMessage("재관측 제안 상태를 확인하지 못했습니다. 같은 보고서와 작업구역으로 재시도합니다.");
+    } finally {
+      finishMutation(controller, requestScope);
+    }
+  };
+
+  const refreshActualWorklist = async (
+    successorWorkOrderId: string,
+    controller: AbortController,
+    requestScope: number,
+  ) => {
+    try {
+      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/observation-work-orders`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const value = await responseJson<{ workOrders: Array<{ workOrderId: string }> }>(response);
+      if (!ownsMutation(controller, requestScope)) return;
+      setWorklistNotice(
+        value.workOrders.some((item) => item.workOrderId === successorWorkOrderId)
+          ? "작업 목록에서 후속 작업을 새로 고쳤습니다."
+          : "작업 목록을 새로 고쳤지만 후속 작업 반영을 아직 확인하지 못했습니다.",
+      );
+    } catch (error) {
+      if (!isAbort(error) && ownsMutation(controller, requestScope)) {
+        setWorklistNotice("작업 목록을 새로 고치지 못했습니다. 후속 작업 페이지에서 다시 확인하세요.");
+      }
+    }
+  };
+
+  const approve = async () => {
+    const currentProposal = proposal;
+    if (!currentProposal || !canApprove || busy) return;
+    let attempt = approvalAttempt;
+    const matchesApproval = attempt?.proposalRef === currentProposal.proposal.proposalRef
+      && attempt.reportRef === currentProposal.proposal.reportRef
+      && attempt.expectedVersion === currentProposal.proposal.version;
+    if (!newIntentAllowed && !matchesApproval) {
+      setMessage("업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다.");
+      return;
+    }
+    if (!matchesApproval) {
+      attempt = {
+        proposalRef: currentProposal.proposal.proposalRef,
+        reportRef: currentProposal.proposal.reportRef,
+        expectedVersion: currentProposal.proposal.version,
+        idempotencyKey: makeKey(),
+      };
+      setApprovalAttempt(attempt);
+    }
+    if (!attempt) return;
+    const { controller, requestScope } = beginMutation("approval");
+    setMessage(null);
+    try {
+      const response = await fetch("/api/external-reobservation-proposals/approve", {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
+        body: JSON.stringify({ proposalRef: attempt.proposalRef, expectedVersion: attempt.expectedVersion }),
+        signal: controller.signal,
+      });
+      const value = await responseJson<ExternalReobservationProposalView>(response);
+      if (!ownsMutation(controller, requestScope)) return;
+      const receipt = value.approvalReceipt;
+      if (!receipt) throw new Error("MISSING_SUCCESSOR_RECEIPT");
+      if (
+        value.proposal.proposalRef !== attempt.proposalRef
+        || value.proposal.reportRef !== attempt.reportRef
+        || value.proposal.version !== attempt.expectedVersion
+      ) throw new Error("MISMATCHED_APPROVAL_PROPOSAL");
+      setProposal(value);
+      await refreshActualWorklist(receipt.successorWorkOrderId, controller, requestScope);
+      if (!ownsMutation(controller, requestScope)) return;
+      router.refresh();
+      router.push(`/field/work-orders/${encodeURIComponent(receipt.successorWorkOrderId)}`);
+    } catch (error) {
+      if (!isAbort(error) && ownsMutation(controller, requestScope)) setMessage("후속 작업 승인 상태를 확인하지 못했습니다. 같은 제안과 버전으로 재시도합니다.");
+    } finally {
+      finishMutation(controller, requestScope);
+    }
+  };
+
+  const currentProposal = proposal;
+  const approvalReceipt = currentProposal?.approvalReceipt ?? null;
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
+      <div>
+        <h2 className="text-[16px] font-bold">외부 상대 물량과 재관측 검토</h2>
+        <p className="text-ink-2">등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.</p>
+      </div>
+      {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 비교·검토·재관측 요청은 시작할 수 없지만, 기존 요청과 결과는 계속 확인할 수 있습니다.</p>}
+
+      {!decision ? (
+        <p>{newIntentAllowed ? "현재 선택에서 상대 물량 비교를 요청하세요." : "업무 종료된 작업입니다. 기존 비교 결과와 요청 기록만 확인할 수 있습니다."}</p>
+      ) : decision.verdict !== "ELIGIBLE" ? (
+        <div role="alert" className="rounded border border-high/30 bg-high-bg p-2 text-high-ink">
+          <p>현재 선택으로는 상대 물량 비교를 요청할 수 없습니다.</p>
+          {decision.reasons.length > 0 && <p>사유: {decision.reasons.join(", ")}</p>}
+          {decision.remediations.map((item) => <p key={item}>조치: {item}</p>)}
+        </div>
+      ) : canIssue ? (
+        <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="외부 상대 물량 비교 요청은 노트북 이상의 화면에서 진행합니다.">
+          <button className="btn w-fit" disabled={busy !== null} onClick={() => void issue()}>
+            {busy === "issue" ? "비교 요청 중" : "상대 물량 비교 요청"}
+          </button>
+        </ResponsiveActionBoundary>
+      ) : (
+        <p className="text-ink-2">{newIntentAllowed ? "상대 물량 요청에는 SITES_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다."}</p>
+      )}
+
+      <div className="rounded-lg border border-line p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="font-semibold">비교 요청 목록</h3>
+          <button className="btn" disabled={worklistPhase === "loading" || worklistRefreshing} onClick={() => { worklistAutoRefreshBudget.current = 0; setWorklistAutoRefreshStopped(false); void loadWorklist({ preserveVerified: true }); }}>목록 새로고침</button>
+        </div>
+        {worklistPhase === "loading" && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 읽는 중입니다.</p>}
+        {worklistRefreshing && <p role="status" className="mt-2 text-ink-2">마지막으로 확인한 요청 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
+        {worklistPhase === "error" && <p role="alert" className="mt-2 text-high-ink">{worklistError ?? "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
+        {worklistPhase === "ready" && (worklist.length === 0 ? <p className="mt-2 text-ink-2">기록된 상대 물량 비교 요청이 없습니다.</p> : <ul className="mt-2 flex flex-col gap-2">{worklist.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>비교 요청 상태</button></li>)}</ul>)}
+      </div>
+
+      {selectedRequest && <p className="text-ink-2">선택한 요청: {statusLabel(selectedRequest.status)}{isUnfinishedRequest(selectedRequest.status) ? ` · 마감 ${selectedRequest.deadlineAt}${recordedDeadlineElapsed(selectedRequest.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
+      {selectedRequestRefreshing && <p role="status" className="text-ink-2">마지막으로 확인한 요청을 유지한 채 상태를 확인하고 있습니다.</p>}
+      {selectedRequestError && <p role="alert" className="text-high-ink">{selectedRequestError}</p>}
+      {selectedRequest?.status === "FAILED" && <p role="alert" className="text-high-ink">이 상대 물량 비교를 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.</p>}
+      {reportPhase === "loading" && <p role="status">비교 결과를 읽는 중입니다.</p>}
+      {reportPhase === "error" && <div role="alert" className="flex flex-wrap gap-2"><p>비교 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.</p>{selectedRequest?.reportRef && <button className="btn" onClick={() => void loadReport(selectedRequest.reportRef!)}>보고서 다시 시도</button>}</div>}
+      {report && <>
+        <ReportDetail view={report} workAreaName={reportWorkAreaName} />
+        {report.review ? <><p>결과 검토 기록이 있습니다. · {report.review.reviewedAt}</p><ReviewAuditDetail review={report.review} /></> : canReview ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="비교 결과 검토 기록은 노트북 이상의 화면에서 진행합니다."><button className="btn w-fit" disabled={busy !== null} onClick={() => void review()}>{busy === "review" ? "결과 검토 기록 중" : "결과 검토 기록"}</button></ResponsiveActionBoundary> : <p className="text-ink-2">{newIntentAllowed ? "보고서 검토에는 WORK_ORDERS_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 결과 검토를 기록할 수 없습니다."}</p>}
+        {report.review && (canProposal ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="재관측 제안은 노트북 이상의 화면에서 기록합니다."><div className="flex flex-col gap-2"><label className="flex flex-col gap-1">재관측 제안 사유<input className="input" aria-label="재관측 제안 사유" value={reason} disabled={busy !== null || !newIntentAllowed} onChange={(event) => { setReason(event.target.value); setProposalAttempt(null); }} /></label><p className="text-ink-2">대상: 이 비교에 사용한 작업구역</p>{!currentProposal && <button className="btn w-fit" disabled={busy !== null} onClick={() => void createProposal()}>{busy === "proposal" ? "제안 기록 중" : "이 작업구역으로 재관측 제안"}</button>}</div></ResponsiveActionBoundary> : <p className="text-ink-2">{newIntentAllowed ? "재관측 제안에는 WORK_ORDERS_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다."}</p>)}
+      </>}
+
+      {currentProposal && <div className="rounded border border-line p-3"><p>재관측 제안이 기록되었습니다.</p><p className="mt-1 text-ink-2">대상: 이 비교에 사용한 작업구역</p>{approvalReceipt ? <div className="mt-2 flex flex-wrap items-center gap-2"><p>후속 작업이 생성되었습니다.</p><Link href={`/field/work-orders/${encodeURIComponent(approvalReceipt.successorWorkOrderId)}`} className="btn">후속 작업 보기</Link></div> : canApprove ? <ResponsiveActionBoundary action="REOBSERVATION_APPROVE" reason="후속 작업 승인은 노트북 이상의 화면에서 별도로 기록합니다."><button className="btn mt-2 w-fit" disabled={busy !== null} onClick={() => void approve()}>{busy === "approval" ? "승인 기록 중" : "재관측 후속 작업 승인"}</button></ResponsiveActionBoundary> : <p className="mt-2 text-ink-2">{newIntentAllowed ? "후속 작업 승인에는 REOBSERVATION_APPROVE 권한이 필요합니다." : "업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다."}</p>}<details className="mt-2 text-[12px] text-ink-2"><summary className="cursor-pointer font-semibold">전문가 정보</summary><p className="mt-1 break-all">제안 {currentProposal.proposal.proposalRef} · v{currentProposal.proposal.version} · 대상 {currentProposal.proposal.targetWorkAreas?.map((item) => item.workAreaId).join(", ") || "기록 없음"}{approvalReceipt ? ` · 후속 작업 ${approvalReceipt.successorWorkOrderId}` : ""}</p></details></div>}
+      {message && <p role="status">{message}</p>}
+      {worklistNotice && <p role="status">{worklistNotice}</p>}
+      {worklistRefreshNotice && <p role="status">{worklistRefreshNotice}</p>}
+    </section>
+  );
+}

@@ -1,6 +1,7 @@
 import { isSettled, isUnattended, sortForTriage } from "@/lib/core-api/triage";
 import type {
   EventSummaryResponse,
+  ObservationWorkOrderOperationsView,
   ObservationWorkOrderStatus,
   ObservationWorkOrderView,
   SiteView,
@@ -38,13 +39,37 @@ function newestFirst(a: ObservationWorkOrderView, b: ObservationWorkOrderView): 
   return b.updatedAt.localeCompare(a.updatedAt);
 }
 
+export interface HomeWorkOrderOperationOptions {
+  /**
+   * External work is operationally active only after the separate operations
+   * projection confirms OPEN. A missing/legacy projection is not guessed.
+   */
+  operationsByWorkOrderId?: ReadonlyMap<string, Pick<ObservationWorkOrderOperationsView, "workflowStatus">>;
+}
+
+function isVisibleOperationalWorkOrder(
+  workOrder: ObservationWorkOrderView,
+  options: HomeWorkOrderOperationOptions,
+): boolean {
+  const operations = options.operationsByWorkOrderId?.get(workOrder.workOrderId);
+  // Closure wins even for retained legacy external successors whose durable
+  // WorkOrder predates executionMode.
+  if (operations?.workflowStatus === "CLOSED") return false;
+  return workOrder.executionMode !== "EXTERNAL_RECONSTRUCTION"
+    || operations?.workflowStatus === "OPEN";
+}
+
 /** 사람이 검토·승인·복구해야 하는 작업만, 실제 workflow 우선순위 순으로 고른다. */
 export function selectHomeDecisionWorkOrders(
   workOrders: readonly ObservationWorkOrderView[],
   limit: number,
+  options: HomeWorkOrderOperationOptions = {},
 ): ObservationWorkOrderView[] {
   return workOrders
-    .filter((workOrder) => DECISION_PRIORITY[workOrder.status] !== null)
+    .filter((workOrder) => (
+      isVisibleOperationalWorkOrder(workOrder, options)
+      && DECISION_PRIORITY[workOrder.status] !== null
+    ))
     .toSorted((a, b) => {
       const priorityDifference =
         (DECISION_PRIORITY[a.status] ?? Number.MAX_SAFE_INTEGER) -
@@ -58,8 +83,12 @@ export function selectHomeDecisionWorkOrders(
 export function selectHomeActiveWorkOrders(
   workOrders: readonly ObservationWorkOrderView[],
   limit: number,
+  options: HomeWorkOrderOperationOptions = {},
 ): ObservationWorkOrderView[] {
-  return workOrders.filter((workOrder) => ACTIVE_STATUSES.has(workOrder.status)).toSorted(newestFirst).slice(0, limit);
+  return workOrders
+    .filter((workOrder) => isVisibleOperationalWorkOrder(workOrder, options) && ACTIVE_STATUSES.has(workOrder.status))
+    .toSorted(newestFirst)
+    .slice(0, limit);
 }
 
 export type HomeAttentionSource =
@@ -136,6 +165,7 @@ export function selectHomeAttentionSources(
     events: readonly EventSummaryResponse[];
     workOrders: readonly ObservationWorkOrderView[];
     sites: readonly SiteView[];
+    operationsByWorkOrderId?: HomeWorkOrderOperationOptions["operationsByWorkOrderId"];
   },
   limit = 3,
 ): HomeAttentionSource[] {
@@ -147,7 +177,9 @@ export function selectHomeAttentionSources(
       observedAt: event.occurredAt,
       event,
     })),
-    ...selectHomeDecisionWorkOrders(input.workOrders, input.workOrders.length).map((workOrder) => ({
+    ...selectHomeDecisionWorkOrders(input.workOrders, input.workOrders.length, {
+      operationsByWorkOrderId: input.operationsByWorkOrderId,
+    }).map((workOrder) => ({
       kind: "WORK_ORDER" as const,
       key: `work-order:${workOrder.workOrderId}`,
       siteId: workOrder.siteId,

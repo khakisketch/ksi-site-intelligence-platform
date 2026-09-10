@@ -77,9 +77,32 @@ from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import DigestBoundEvidenceStorage, ObjectStorageObservationPort
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
 from ksi_core.external_evidence import ExternalEvidenceStore
+from ksi_core.external_evidence_validations import (
+    CoreEvidenceValidationInputCapabilities,
+    ExternalEvidenceValidationStore,
+)
 from ksi_core.external_reconstruction import ExternalReconstructionStore
+from ksi_core.external_relative_volume_authorities import ExternalRelativeVolumeAuthorityPort
+from ksi_core.external_relative_volume_launch_material import VolumeWorkerLaunchMaterialResolver
+from ksi_core.external_relative_volumes import ExternalRelativeVolumeStore
+from ksi_core.external_reobservation_proposals import (
+    CoreExternalReobservationProposalAuthorityPort,
+    ExternalReobservationProposalService,
+    ExternalReobservationProposalStore,
+    verify_external_reobservation_graph,
+)
+from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
+from ksi_core.external_result_reviews import ExternalResultReviewStore
+from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
+from ksi_core.external_use_decisions import ExternalUseDecisionStore
+from ksi_core.external_use_evaluator import (
+    CoreExternalUseDecisionHistoryVerifier,
+    ExternalUseEvaluator,
+)
 from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.metrics import HttpMetricsMiddleware, render_prometheus_text
@@ -87,6 +110,7 @@ from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
 from ksi_core.observability import CorrelationIdMiddleware
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -95,6 +119,7 @@ from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_core.work_inbox import WorkInboxStore
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -147,6 +172,7 @@ def assemble_app(
     capability_freshness_policies: Mapping[str, RuntimeRouteFreshnessPolicyV1] | None = None,
     runtime_route_configurations: tuple[TrustedRuntimeRouteConfigurationV1, ...] = (),
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
+    external_result_workflow: ExternalResultWorkflowAssemblyConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """모든 store 를 조립하고 ``create_app`` 을 호출한다 — dev/production 공용.
@@ -156,6 +182,19 @@ def assemble_app(
     호출자는 조립 실패 시 ``opened`` 에 누적된 원장을 전부 닫을 책임을 진다
     (``build_dev_app``/``production.build_production_app`` 양쪽이 이 관습을 따른다).
     """
+    external_authority_currentness = ExternalAuthorityCurrentnessCoordinator()
+    evidence_context_authority = None
+    if external_result_workflow is not None:
+        build_context_authority = external_result_workflow.build_evidence_context_authority
+        if build_context_authority is not None:
+            evidence_context_authority = build_context_authority(external_authority_currentness)
+            if (
+                evidence_context_authority is None
+                or evidence_context_authority.coordinator is not external_authority_currentness
+            ):
+                raise ValueError(
+                    "external result workflow context authority must share the Core coordinator"
+                )
     # 세그먼트 회전(S4) — 활성 파일이 이 크기를 넘으면 봉인 세그먼트로 넘긴다.
     # 회전 임계는 **조립 지점의 결정**이다(DurableJournal 기본값은 회전 없음) —
     # 한 파일이 무한히 커지면 재기동 재생이 선형으로 느려지고 백업 단위도 사라진다.
@@ -210,7 +249,7 @@ def assemble_app(
     # 라우트가 장착되지 않는다(evidence 라우트와 같은 관습, create_app 참조).
     source_media_journal = journal("source-media.jsonl")
     source_media_store = SourceMediaStore(source_media_journal, mission_store=mission_store)
-    site_store = SiteStore(site_journal)
+    site_store = SiteStore(site_journal, coordinator=external_authority_currentness)
     # 처리 작업(ADR-KSI-012) — 봉인된 번들에서 입력을, 현장에서 반출 허용 여부를
     # 읽는다(INV-050). source_media 와 달리 오브젝트 스토리지를 요구하지 않는다.
     processing_job_journal = journal("processing-jobs.jsonl")
@@ -265,30 +304,22 @@ def assemble_app(
     work_area_store = WorkAreaStore(
         work_area_journal,
         site_exists=lambda site_id: site_store.get(site_id) is not None,
-    )
-    observation_work_order_journal = journal("observation-work-orders.jsonl")
-    observation_work_order_store = ObservationWorkOrderStore(
-        observation_work_order_journal,
-        site_exists=lambda site_id, organization_id: (
-            site_store.get_scoped(site_id, organization_id) is not None
-        ),
-        work_areas_exist=lambda site_id, work_area_ids: all(
-            (area := work_area_store.get(work_area_id)) is not None
-            and area.site_id == site_id
-            and area.status is WorkAreaStatus.ACTIVE
-            for work_area_id in work_area_ids
-        ),
+        coordinator=external_authority_currentness,
     )
     # ADR-KSI-036 byte ingress is a separate external declaration journal.  It
     # is absent from storage-less dev assembly rather than exposing a route
     # that can never issue a constrained PUT grant or verify an observation.
     external_reconstruction_store = (
-        ExternalReconstructionStore(journal("external-reconstruction.jsonl"))
+        ExternalReconstructionStore(
+            journal("external-reconstruction.jsonl"), coordinator=external_authority_currentness
+        )
         if evidence_storage is not None
         else None
     )
     external_evidence_store = (
-        ExternalEvidenceStore(journal("external-evidence.jsonl"))
+        ExternalEvidenceStore(
+            journal("external-evidence.jsonl"), coordinator=external_authority_currentness
+        )
         if external_reconstruction_store is not None
         else None
     )
@@ -296,8 +327,34 @@ def assemble_app(
     # inspection remains visibly pending until an independently authorized
     # policy exists. These stores add no worker API in this task.
     external_validation_policy_registry = (
-        ExternalValidationPolicyRegistry(journal("external-validation-policy.jsonl"))
+        ExternalValidationPolicyRegistry(
+            journal("external-validation-policy.jsonl"),
+            authority_port=(
+                external_result_workflow.policy_authority_port
+                if external_result_workflow is not None
+                else None
+            ),
+            coordinator=external_authority_currentness,
+        )
         if external_reconstruction_store is not None
+        else None
+    )
+    external_evidence_validation_store = (
+        ExternalEvidenceValidationStore(
+            journal("external-evidence-validations.jsonl"),
+            evidence=external_evidence_store,
+            policy_registry=external_validation_policy_registry,
+            input_capabilities=CoreEvidenceValidationInputCapabilities(
+                reconstruction=external_reconstruction_store,
+                storage=evidence_storage,
+            ),
+            context_authority=evidence_context_authority,
+            coordinator=external_authority_currentness,
+        )
+        if external_evidence_store is not None
+        and external_reconstruction_store is not None
+        and external_validation_policy_registry is not None
+        and evidence_storage is not None
         else None
     )
     external_display_artifact_store: ExternalDisplayArtifactStore | None = None
@@ -310,6 +367,7 @@ def assemble_app(
             journal("external-sanitized-display-artifacts.jsonl"),
             policy_registry=external_validation_policy_registry,
             storage=cast(DigestBoundEvidenceStorage, evidence_storage),
+            coordinator=external_authority_currentness,
         )
     external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None
     if (
@@ -323,6 +381,7 @@ def assemble_app(
             external_reconstruction=external_reconstruction_store,
             storage=evidence_storage,
             display_store=external_display_artifact_store,
+            coordinator=external_authority_currentness,
         )
     if external_reconstruction_store is not None and external_artifact_inspection_store is not None:
         from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
@@ -344,6 +403,177 @@ def assemble_app(
 
         external_reconstruction_store.bind_seal_listener(_issue_external_inspection_after_seal)
         external_artifact_inspection_store.reconcile_sealed(datetime.now(UTC))
+    if external_evidence_store is not None and external_evidence_validation_store is not None:
+
+        def _issue_evidence_validation_after_seal(item: Any, now: datetime) -> None:
+            external_evidence_validation_store.issue_after_seal(item.evidence_ref, now=now)
+
+        external_evidence_store.bind_seal_listener(_issue_evidence_validation_after_seal)
+        for item in external_evidence_store.sealed_items_snapshot():
+            external_evidence_validation_store.issue_after_seal(
+                item.evidence_ref, now=datetime.now(UTC)
+            )
+    external_volume_mapping: ExternalRelativeVolumeAuthorityPort | None = None
+    if external_result_workflow is not None:
+        if (
+            external_reconstruction_store is None
+            or external_artifact_inspection_store is None
+            or external_validation_policy_registry is None
+            or external_evidence_validation_store is None
+        ):
+            raise ValueError(
+                "external result workflow requires the complete external storage graph"
+            )
+        external_volume_mapping = external_result_workflow.build_mapping(
+            coordinator=external_authority_currentness,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            policy_registry=external_validation_policy_registry,
+            evidence_validations=external_evidence_validation_store,
+            work_areas=work_area_store,
+            open_authority_journal=lambda path: journal(str(path)),
+        )
+        if (
+            external_volume_mapping is None
+            or external_volume_mapping.currentness_coordinator is not external_authority_currentness
+        ):
+            raise ValueError("external result workflow mapping must share the Core coordinator")
+    external_use_decision_store = (
+        ExternalUseDecisionStore(
+            journal("external-use-decisions.jsonl"),
+            coordinator=external_authority_currentness,
+            history_verifier=CoreExternalUseDecisionHistoryVerifier(
+                reconstruction=external_reconstruction_store,
+                inspections=external_artifact_inspection_store,
+                policy_registry=external_validation_policy_registry,
+                evidence_validations=external_evidence_validation_store,
+                relative_volume_authority=external_volume_mapping,
+            ),
+        )
+        if external_reconstruction_store is not None
+        and external_evidence_validation_store is not None
+        and external_artifact_inspection_store is not None
+        and external_validation_policy_registry is not None
+        else None
+    )
+    external_use_evaluator = (
+        ExternalUseEvaluator(
+            decisions=external_use_decision_store,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            policy_registry=external_validation_policy_registry,
+            evidence_validations=external_evidence_validation_store,
+            coordinator=external_authority_currentness,
+            relative_volume_authority=external_volume_mapping,
+        )
+        if external_use_decision_store is not None
+        and external_reconstruction_store is not None
+        and external_evidence_validation_store is not None
+        and external_artifact_inspection_store is not None
+        and external_validation_policy_registry is not None
+        else None
+    )
+    external_relative_volume_store: ExternalRelativeVolumeStore | None = None
+    external_result_workflow_service: ExternalReobservationProposalService | None = None
+    external_result_read_projector: ExternalResultReadProjector | None = None
+    external_proposal_authority: CoreExternalReobservationProposalAuthorityPort | None = None
+    if external_result_workflow is not None:
+        assert external_use_decision_store is not None
+        assert external_volume_mapping is not None
+        assert external_reconstruction_store is not None
+        assert external_artifact_inspection_store is not None
+        assert external_validation_policy_registry is not None
+        assert external_evidence_validation_store is not None
+        runtime = external_result_workflow.build_runtime(
+            coordinator=external_authority_currentness,
+            decisions=external_use_decision_store,
+            mapping=external_volume_mapping,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            policy_registry=external_validation_policy_registry,
+            evidence_validations=external_evidence_validation_store,
+        )
+        if (
+            runtime is None
+            or runtime.execution.currentness_coordinator is not external_authority_currentness
+        ):
+            raise ValueError("external result workflow execution must share the Core coordinator")
+        if runtime.historical_use is None:
+            raise ValueError("external result workflow requires independent use history")
+        external_relative_volume_store = ExternalRelativeVolumeStore(
+            journal("external-relative-volumes.jsonl"),
+            authority_port=runtime.execution,
+            currentness_coordinator=external_authority_currentness,
+            queue_policy=external_result_workflow.queue_policy,
+            launch_material_resolver=VolumeWorkerLaunchMaterialResolver(
+                policy_registry=external_validation_policy_registry,
+                evidence_validations=external_evidence_validation_store,
+                currentness_coordinator=external_authority_currentness,
+            ),
+        )
+        reviews = ExternalResultReviewStore(
+            journal("external-result-reviews.jsonl"),
+            source_port=CoreExternalResultReviewSourceAdapter(
+                volume_store=external_relative_volume_store,
+                decisions=external_use_decision_store,
+                historical_use_authority=runtime.historical_use,
+                coordinator=external_authority_currentness,
+            ),
+            coordinator=external_authority_currentness,
+        )
+        proposals = ExternalReobservationProposalStore(
+            journal("external-reobservation-proposals.jsonl"),
+            coordinator=external_authority_currentness,
+        )
+        external_proposal_authority = CoreExternalReobservationProposalAuthorityPort(
+            reviews=reviews,
+            proposals=proposals,
+            sites=site_store,
+            work_areas=work_area_store,
+            coordinator=external_authority_currentness,
+        )
+    organization_work_roster_store = OrganizationWorkRosterStore(
+        journal("organization-work-roster.jsonl"), coordinator=external_authority_currentness
+    )
+    observation_work_order_journal = journal("observation-work-orders.jsonl")
+    observation_work_order_store = ObservationWorkOrderStore(
+        observation_work_order_journal,
+        external_reobservation_authority_port=external_proposal_authority,
+        operations_coordinator=external_authority_currentness,
+        assignment_member_is_active=organization_work_roster_store.is_assignable_member,
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+        work_areas_exist=lambda site_id, work_area_ids: all(
+            (area := work_area_store.get(work_area_id)) is not None
+            and area.site_id == site_id
+            and area.status is WorkAreaStatus.ACTIVE
+            for work_area_id in work_area_ids
+        ),
+    )
+    if external_proposal_authority is not None:
+        external_result_workflow_service = ExternalReobservationProposalService(
+            reviews=reviews,
+            proposals=proposals,
+            sites=site_store,
+            work_areas=work_area_store,
+            work_orders=observation_work_order_store,
+            authority_port=external_proposal_authority,
+            coordinator=external_authority_currentness,
+        )
+        verify_external_reobservation_graph(service=external_result_workflow_service)
+        assert external_relative_volume_store is not None
+        external_result_read_projector = ExternalResultReadProjector(
+            volumes=external_relative_volume_store,
+            workflow=external_result_workflow_service,
+        )
+    work_inbox_store = WorkInboxStore(
+        journal("work-inbox.jsonl"),
+        work_orders=observation_work_order_store,
+        roster=organization_work_roster_store,
+        report_resolver=external_relative_volume_store,
+        coordinator=external_authority_currentness,
+    )
     acquisition_connectivity_store = AcquisitionConnectivityStore(
         journal("acquisition-connectivity.jsonl"),
         site_exists=lambda site_id, organization_id: (
@@ -351,7 +581,10 @@ def assemble_app(
         ),
     )
     acquisition_coordination_store = (
-        AcquisitionCoordinationStore(journal("acquisition-runs.jsonl"))
+        AcquisitionCoordinationStore(
+            journal("acquisition-runs.jsonl"),
+            work_order_execution_guard=observation_work_order_store.assert_execution_allowed,
+        )
         if acquisition_coordination_enabled
         else None
     )
@@ -419,6 +652,7 @@ def assemble_app(
         work_order_store=observation_work_order_store,
         processing_job_store=processing_job_store,
         event_store=event_store,
+        external_results=external_result_read_projector,
     )
     # This is a read-only navigation projection.  It reuses the exact
     # AnalysisReadiness callback wired into comparison/design request stores;
@@ -651,8 +885,22 @@ def assemble_app(
         oidc_verifier=oidc_verifier,
         site_store=site_store,
         observation_work_order_store=observation_work_order_store,
+        organization_work_roster_store=organization_work_roster_store,
+        work_inbox_store=work_inbox_store,
         external_reconstruction_store=external_reconstruction_store,
         external_evidence_store=external_evidence_store,
+        external_evidence_validation_store=external_evidence_validation_store,
+        external_use_evaluator=external_use_evaluator,
+        external_relative_volume_store=external_relative_volume_store,
+        external_result_workflow_service=external_result_workflow_service,
+        external_result_read_projector=external_result_read_projector,
+        external_volume_input_capability_issuer=(
+            external_result_workflow.input_capability_issuer
+            if external_result_workflow is not None
+            else None
+        ),
+        external_display_artifact_store=external_display_artifact_store,
+        external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -733,6 +981,14 @@ def assemble_app(
     app.state.external_artifact_inspection_store = external_artifact_inspection_store
     app.state.external_display_artifact_store = external_display_artifact_store
     app.state.external_evidence_store = external_evidence_store
+    app.state.external_evidence_validation_store = external_evidence_validation_store
+    # Core-only inspection/admin access to the exact assembled mapping participant.
+    # This does not create a route, admit a mapping, or alter default-closed
+    # behavior; the configured authority remains absent when no workflow exists.
+    app.state.external_relative_volume_mapping_authority = external_volume_mapping
+    app.state.external_use_decision_store = external_use_decision_store
+    app.state.external_use_evaluator = external_use_evaluator
+    app.state.external_authority_currentness = external_authority_currentness
 
     # 미들웨어는 마지막 등록이 가장 바깥이다(Starlette 관례) — CorrelationId 를
     # 가장 바깥에 두어 그 안의 HttpMetrics·라우팅·인증 전부의 로그가 같은

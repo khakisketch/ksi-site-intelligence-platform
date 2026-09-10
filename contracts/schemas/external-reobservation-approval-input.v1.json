@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-reobservation-approval-input.v1.json",
+  "title": "ExternalReobservationApprovalInputV1",
+  "description": "Immutable input binding for a human external reobservation approval; it does not declare accepted authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "organizationId", "siteId", "sourceWorkOrderId", "proposalId", "proposalVersion", "proposalDigest", "reportDigest", "decisionDigest", "zoneDigest", "evidenceDigests", "approvalInputDigest"],
+  "properties": {
+    "contractVersion": {"const": "external-reobservation-approval-input.v1"},
+    "organizationId": {"$ref": "#/$defs/text"},
+    "siteId": {"$ref": "#/$defs/text"},
+    "sourceWorkOrderId": {"$ref": "#/$defs/text"},
+    "proposalId": {"$ref": "#/$defs/text"},
+    "proposalVersion": {"type": "integer", "minimum": 1},
+    "proposalDigest": {"$ref": "#/$defs/digest"},
+    "reportDigest": {"$ref": "#/$defs/digest"},
+    "decisionDigest": {"$ref": "#/$defs/digest"},
+    "zoneDigest": {"$ref": "#/$defs/digest"},
+    "evidenceDigests": {"$ref": "#/$defs/digests"},
+    "approvalInputDigest": {"$ref": "#/$defs/digest"}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "maxLength": 255},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "digests": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "#/$defs/digest"}}
+  }
+}

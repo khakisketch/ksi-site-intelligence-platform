@@ -932,6 +932,7 @@ name = "ksi-processing-controller"
 version = "0.0.1"
 source = { editable = "services/processing-controller" }
 dependencies = [
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "ksi-change-detection" },
     { name = "ksi-domain" },
@@ -947,6 +948,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=42" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "ksi-change-detection", editable = "packages/change-detection" },
     { name = "ksi-domain", editable = "packages/domain" },

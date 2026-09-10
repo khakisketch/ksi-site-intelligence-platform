@@ -10,12 +10,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import select
 import socket
 import struct
 import time
 from collections.abc import Callable
 from enum import StrEnum
-from typing import Annotated, Any, BinaryIO, Literal
+from io import BytesIO
+from typing import Annotated, Any, Literal, Protocol, runtime_checkable
 from uuid import UUID
 
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -325,6 +327,19 @@ class ProtocolDeadline:
             raise ValueError("monotonic clock must be finite")
         self._expires_at = start + duration_millis / 1_000
 
+    @classmethod
+    def at_expires_at(
+        cls, expires_at: float, monotonic: Callable[[], float] = time.monotonic
+    ) -> ProtocolDeadline:
+        """Construct a view of an existing absolute deadline without resetting it."""
+        if not isinstance(expires_at, (int, float)) or not math.isfinite(expires_at):
+            raise ValueError("deadline expiry must be finite")
+        instance = cls.__new__(cls)
+        instance._monotonic = monotonic
+        instance._expires_at = float(expires_at)
+        instance.remaining()
+        return instance
+
     def remaining(self) -> float:
         now = self._monotonic()
         if not math.isfinite(now):
@@ -346,6 +361,280 @@ class ProtocolDeadline:
         if not math.isfinite(now):
             raise ProtocolDeadlineExceeded("monotonic clock became non-finite")
         self._expires_at = min(self._expires_at, now + duration_millis / 1_000)
+
+    def cap_expires_at(self, expires_at: float) -> None:
+        """Only shorten the existing absolute budget, including already elapsed work."""
+        if type(expires_at) not in (int, float) or not math.isfinite(expires_at):
+            raise ValueError("absolute deadline cap must be finite")
+        self._expires_at = min(self._expires_at, float(expires_at))
+        self.remaining()
+
+
+@runtime_checkable
+class DeadlineBoundedByteReaderPort(Protocol):
+    """A byte reader that owns a cancellable read operation for every protocol chunk."""
+
+    def read_chunk(
+        self,
+        maximum_bytes: int,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> bytes: ...
+
+    def close(self) -> None:
+        """Release only resources owned by this reader without waiting for foreign work."""
+
+
+@runtime_checkable
+class DeadlineBoundedByteSinkPort(Protocol):
+    """A byte sink that owns a cancellable write operation for every protocol chunk."""
+
+    def write_chunk(
+        self,
+        chunk: bytes,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> None: ...
+
+
+class DeadlineBoundedBytesReader:
+    """Concrete finite-memory reader retained for synthetic callers only."""
+
+    def __init__(self, source: BytesIO) -> None:
+        if type(source) is not BytesIO:
+            raise TypeError("only the built-in BytesIO implementation is a finite-memory reader")
+        self._source: BytesIO | None = source
+
+    def read_chunk(
+        self,
+        maximum_bytes: int,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> bytes:
+        _validate_bounded_chunk_operation(
+            maximum_bytes, deadline, wait_is_current, heartbeat_interval_millis
+        )
+        source = self._source
+        if source is None:
+            raise ProtocolViolation("deadline-bounded source is closed")
+        chunk = source.read(maximum_bytes)
+        _finish_bounded_chunk_operation(deadline, wait_is_current)
+        return chunk
+
+    def close(self) -> None:
+        source, self._source = self._source, None
+        if source is not None:
+            source.close()
+
+    @property
+    def is_closed(self) -> bool:
+        return self._source is None
+
+
+class DeadlineBoundedMemorySink:
+    """Concrete finite-memory sink for tests and in-process bounded results."""
+
+    def __init__(self) -> None:
+        self.chunks: list[bytes] = []
+
+    def write_chunk(
+        self,
+        chunk: bytes,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> None:
+        if not isinstance(chunk, bytes):
+            raise ProtocolViolation("deadline-bounded sink received non-bytes")
+        _validate_bounded_chunk_operation(
+            len(chunk), deadline, wait_is_current, heartbeat_interval_millis
+        )
+        self.chunks.append(chunk)
+        _finish_bounded_chunk_operation(deadline, wait_is_current)
+
+
+class DeadlineBoundedDiscardingSink:
+    """Concrete no-op sink for framing paths that intentionally discard verified bytes."""
+
+    def write_chunk(
+        self,
+        chunk: bytes,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> None:
+        if not isinstance(chunk, bytes):
+            raise ProtocolViolation("deadline-bounded sink received non-bytes")
+        _validate_bounded_chunk_operation(
+            len(chunk), deadline, wait_is_current, heartbeat_interval_millis
+        )
+        _finish_bounded_chunk_operation(deadline, wait_is_current)
+
+
+class DeadlineBoundedSocketReader:
+    """A resource-owning nonblocking socket reader with one caller-supplied deadline."""
+
+    def __init__(self, connection: socket.socket) -> None:
+        self._connection: socket.socket | None = connection
+        connection.setblocking(False)
+
+    def read_chunk(
+        self,
+        maximum_bytes: int,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> bytes:
+        if type(maximum_bytes) is not int or maximum_bytes <= 0:
+            raise ProtocolViolation("deadline-bounded source maximum must be positive")
+        connection = self._require_connection()
+        while True:
+            _wait_for_socket(
+                connection,
+                readable=True,
+                deadline=deadline,
+                wait_is_current=wait_is_current,
+                heartbeat_interval_millis=heartbeat_interval_millis,
+                authority_message="authority lost while waiting for deadline-bounded source bytes",
+            )
+            try:
+                chunk = connection.recv(maximum_bytes)
+            except BlockingIOError:
+                continue
+            _finish_bounded_chunk_operation(deadline, wait_is_current)
+            return chunk
+
+    def close(self) -> None:
+        connection, self._connection = self._connection, None
+        if connection is not None:
+            connection.close()
+
+    def _require_connection(self) -> socket.socket:
+        if self._connection is None:
+            raise ProtocolViolation("deadline-bounded source is closed")
+        return self._connection
+
+
+class DeadlineBoundedSocketSink:
+    """A resource-owning nonblocking socket sink with one caller-supplied deadline."""
+
+    def __init__(self, connection: socket.socket) -> None:
+        self._connection: socket.socket | None = connection
+        connection.setblocking(False)
+
+    def write_chunk(
+        self,
+        chunk: bytes,
+        *,
+        deadline: ProtocolDeadline,
+        wait_is_current: Callable[[], bool] | None,
+        heartbeat_interval_millis: int | None,
+    ) -> None:
+        if not isinstance(chunk, bytes) or not chunk:
+            raise ProtocolViolation("deadline-bounded sink requires non-empty bytes")
+        connection = self._require_connection()
+        remaining = memoryview(chunk)
+        while remaining:
+            _wait_for_socket(
+                connection,
+                readable=False,
+                deadline=deadline,
+                wait_is_current=wait_is_current,
+                heartbeat_interval_millis=heartbeat_interval_millis,
+                authority_message="authority lost while waiting for deadline-bounded sink bytes",
+            )
+            try:
+                written = connection.send(remaining)
+            except BlockingIOError:
+                continue
+            if written <= 0:
+                raise ProtocolViolation("deadline-bounded sink write made no progress")
+            _finish_bounded_chunk_operation(deadline, wait_is_current)
+            remaining = remaining[written:]
+
+    def close(self) -> None:
+        connection, self._connection = self._connection, None
+        if connection is not None:
+            connection.close()
+
+    def _require_connection(self) -> socket.socket:
+        if self._connection is None:
+            raise ProtocolViolation("deadline-bounded sink is closed")
+        return self._connection
+
+
+def _validate_bounded_chunk_operation(
+    maximum_bytes: int,
+    deadline: ProtocolDeadline,
+    wait_is_current: Callable[[], bool] | None,
+    heartbeat_interval_millis: int | None,
+) -> None:
+    if type(maximum_bytes) is not int or maximum_bytes < 0:
+        raise ProtocolViolation("deadline-bounded chunk maximum is invalid")
+    _validate_wait_guard(wait_is_current, heartbeat_interval_millis)
+    _require_current_upload_authority(wait_is_current)
+    deadline.remaining()
+
+
+def _finish_bounded_chunk_operation(
+    deadline: ProtocolDeadline,
+    wait_is_current: Callable[[], bool] | None,
+) -> None:
+    _require_current_upload_authority(wait_is_current)
+    deadline.remaining()
+
+
+def _wait_for_socket(
+    connection: socket.socket,
+    *,
+    readable: bool,
+    deadline: ProtocolDeadline,
+    wait_is_current: Callable[[], bool] | None,
+    heartbeat_interval_millis: int | None,
+    authority_message: str,
+) -> None:
+    _validate_wait_guard(wait_is_current, heartbeat_interval_millis)
+    while True:
+        if wait_is_current is not None and not wait_is_current():
+            raise ProtocolViolation(authority_message)
+        timeout = deadline.remaining()
+        if heartbeat_interval_millis is not None:
+            timeout = min(timeout, heartbeat_interval_millis / 1_000)
+        ready_read, ready_write, _ = select.select(
+            [connection] if readable else [],
+            [] if readable else [connection],
+            [],
+            timeout,
+        )
+        deadline.remaining()
+        if wait_is_current is not None and not wait_is_current():
+            raise ProtocolViolation(authority_message)
+        if ready_read or ready_write:
+            return
+
+
+def _require_deadline_bounded_reader(
+    source: DeadlineBoundedByteReaderPort | BytesIO,
+) -> DeadlineBoundedByteReaderPort:
+    if type(source) is BytesIO:
+        return DeadlineBoundedBytesReader(source)
+    if not isinstance(source, DeadlineBoundedByteReaderPort):
+        raise ProtocolViolation("source must provide deadline-bounded reads")
+    return source
+
+
+def _require_deadline_bounded_sink(sink: DeadlineBoundedByteSinkPort) -> None:
+    if not isinstance(sink, DeadlineBoundedByteSinkPort):
+        raise ProtocolViolation("sink must provide deadline-bounded writes")
 
 
 def _sha256_digest(payload: bytes) -> str:
@@ -608,7 +897,7 @@ def read_bound_bytes(
     connection: socket.socket,
     binding: SealedByteBindingV1,
     limits: ProtocolLimitsV1,
-    write_chunk: Callable[[bytes], None],
+    sink: DeadlineBoundedByteSinkPort,
     *,
     maximum_bytes: int | None = None,
     deadline: ProtocolDeadline | None = None,
@@ -618,6 +907,7 @@ def read_bound_bytes(
 ) -> BoundByteReceiptV1:
     """Stream one exact raw payload, then require peer EOF without resetting the deadline."""
     active_deadline = _deadline(limits, deadline, monotonic)
+    _require_deadline_bounded_sink(sink)
     cap = limits.max_input_bytes if maximum_bytes is None else maximum_bytes
     if type(cap) is not int or cap <= 0 or binding.observed_size_bytes > cap:
         raise ProtocolViolation("input bytes exceed configured admission cap")
@@ -648,8 +938,12 @@ def read_bound_bytes(
         if not chunk:
             raise ProtocolViolation("unexpected EOF in bound raw input")
         digest.update(chunk)
-        write_chunk(chunk)
-        active_deadline.remaining()
+        sink.write_chunk(
+            chunk,
+            deadline=active_deadline,
+            wait_is_current=wait_is_current,
+            heartbeat_interval_millis=heartbeat_interval_millis,
+        )
         remaining -= len(chunk)
     while True:
         try:
@@ -717,7 +1011,7 @@ def read_completed_output(
     connection: socket.socket,
     result: InspectorLaunchResultV1,
     limits: ProtocolLimitsV1,
-    write_chunk: Callable[[bytes], None],
+    sink: DeadlineBoundedByteSinkPort,
     *,
     deadline: ProtocolDeadline | None = None,
     monotonic: Callable[[], float] = time.monotonic,
@@ -751,7 +1045,7 @@ def read_completed_output(
             observed_size_bytes=result.output_size_bytes,
         ),
         limits,
-        write_chunk,
+        sink,
         maximum_bytes=limits.max_output_bytes,
         deadline=active_deadline,
         monotonic=monotonic,
@@ -763,7 +1057,7 @@ def read_completed_output(
 def write_launch_request(
     connection: socket.socket,
     request: InspectorLaunchRequestV1,
-    source: BinaryIO,
+    source: DeadlineBoundedByteReaderPort | BytesIO,
     limits: ProtocolLimitsV1,
     *,
     deadline: ProtocolDeadline | None = None,
@@ -774,6 +1068,7 @@ def write_launch_request(
     """Write header plus one hash-bound byte stream, then half-close the sender direction."""
     active_deadline = _deadline(limits, deadline, monotonic)
     _validate_wait_guard(wait_is_current, heartbeat_interval_millis)
+    bounded_source = _require_deadline_bounded_reader(source)
     if request.sealed_byte_binding.observed_size_bytes > limits.max_input_bytes:
         raise ProtocolViolation("request input exceeds configured client framing cap")
     _write_frame(
@@ -789,7 +1084,12 @@ def write_launch_request(
     while remaining:
         _require_current_upload_authority(wait_is_current)
         active_deadline.remaining()
-        chunk = source.read(min(remaining, limits.max_chunk_bytes))
+        chunk = bounded_source.read_chunk(
+            min(remaining, limits.max_chunk_bytes),
+            deadline=active_deadline,
+            wait_is_current=wait_is_current,
+            heartbeat_interval_millis=heartbeat_interval_millis,
+        )
         _require_current_upload_authority(wait_is_current)
         active_deadline.remaining()
         if not isinstance(chunk, bytes) or not chunk:
@@ -807,7 +1107,12 @@ def write_launch_request(
         remaining -= len(chunk)
     _require_current_upload_authority(wait_is_current)
     active_deadline.remaining()
-    if source.read(1):
+    if bounded_source.read_chunk(
+        1,
+        deadline=active_deadline,
+        wait_is_current=wait_is_current,
+        heartbeat_interval_millis=heartbeat_interval_millis,
+    ):
         raise ProtocolViolation("source has trailing bytes beyond sealed byte binding")
     _require_current_upload_authority(wait_is_current)
     active_deadline.remaining()
@@ -832,6 +1137,13 @@ def write_launch_result(
 
 __all__ = [
     "BoundByteReceiptV1",
+    "DeadlineBoundedByteReaderPort",
+    "DeadlineBoundedByteSinkPort",
+    "DeadlineBoundedBytesReader",
+    "DeadlineBoundedDiscardingSink",
+    "DeadlineBoundedMemorySink",
+    "DeadlineBoundedSocketReader",
+    "DeadlineBoundedSocketSink",
     "InspectorLaunchRequestV1",
     "InspectorLaunchResultV1",
     "InspectorFailureReason",

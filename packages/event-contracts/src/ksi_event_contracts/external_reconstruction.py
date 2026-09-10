@@ -133,8 +133,11 @@ class ExternalReconstructionSubmissionV1Input(_FrozenExternalModel):
         if start is not None and end is not None:
             _require_aware(start, "captureStartedAt")
             _require_aware(end, "captureEndedAt")
+            # V1 records accepted an instantaneous declared capture interval.
+            # Keep recovery and digest validation compatible with those sealed
+            # records; the new external-ingress boundary enforces positive time.
             if start > end:
-                raise ValueError("captureStartedAt must not be after captureEndedAt")
+                raise ValueError("captureStartedAt must be earlier than captureEndedAt")
         return self
 
 

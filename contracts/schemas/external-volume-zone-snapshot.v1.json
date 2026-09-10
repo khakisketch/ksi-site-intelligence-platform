@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-volume-zone-snapshot.v1.json",
+  "title": "External Volume Zone Snapshot v1",
+  "$comment": "This structural schema enforces bounded wire shape. ExternalVolumeZoneSnapshotV1 additionally enforces CRS-aware coordinate semantics and first/last position ring closure.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "organizationId",
+    "siteId",
+    "workAreaId",
+    "revision",
+    "polygon",
+    "crs",
+    "observedCrsDigest",
+    "analysisVerticalReferenceDigest",
+    "definitionDigest"
+  ],
+  "properties": {
+    "contractVersion": { "const": "external-volume-zone-snapshot.v1" },
+    "organizationId": { "$ref": "#/$defs/text" },
+    "siteId": { "$ref": "#/$defs/text" },
+    "workAreaId": { "$ref": "#/$defs/text" },
+    "revision": { "const": 1 },
+    "polygon": { "$ref": "#/$defs/polygon" },
+    "crs": { "$ref": "#/$defs/text" },
+    "observedCrsDigest": { "$ref": "#/$defs/digest" },
+    "analysisVerticalReferenceDigest": { "$ref": "#/$defs/digest" },
+    "definitionDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "position": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "type": "number", "minimum": -1e300, "maximum": 1e300 }
+    },
+    "ring": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/position" }
+    },
+    "polygon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "coordinates"],
+      "properties": {
+        "type": { "const": "Polygon" },
+        "coordinates": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/ring" }
+        }
+      }
+    }
+  }
+}

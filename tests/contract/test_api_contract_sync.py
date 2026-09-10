@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import hashlib
 import re
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
 from ksi_core.app_assembly import assemble_app
@@ -57,23 +61,53 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.events import EventStore
 from ksi_core.evidence import EvidenceStorageError
+from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
 from ksi_core.external_evidence import ExternalEvidenceStore
+from ksi_core.external_evidence_validations import (
+    CoreEvidenceValidationInputCapabilities,
+    ExternalEvidenceValidationStore,
+)
 from ksi_core.external_reconstruction import ExternalReconstructionStore
+from ksi_core.external_relative_volume_authorities import (
+    DefaultClosedExternalRelativeVolumeAuthorityPort,
+)
+from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
+from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeQueuePolicy,
+    ExternalRelativeVolumeStore,
+)
+from ksi_core.external_reobservation_proposals import (
+    CoreExternalReobservationProposalAuthorityPort,
+    ExternalReobservationProposalService,
+    ExternalReobservationProposalStore,
+)
+from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
+from ksi_core.external_result_reviews import ExternalResultReviewStore
+from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_core.external_use_decisions import ExternalUseDecisionStore
+from ksi_core.external_use_evaluator import ExternalUseEvaluator
+from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.report_exports import ReportExportStore
 from ksi_core.site_workspace import (
     SiteBriefingService,
     SiteBriefingStore,
     SiteWorkspaceProjector,
+    build_workspace_copilot_handlers,
 )
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
+from ksi_core.work_inbox import WorkInboxStore
+from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -166,9 +200,12 @@ class _ContractSyncCopilotBackend:
         return ToolResult(data={}, citations=())
 
 
-def _max_assembly(tmp_path: Path) -> Any:
+def _max_assembly(
+    tmp_path: Path, *, volume_coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+) -> Any:
     """최대 조립(모든 조건부 라우터 장착) 앱 — 문서는 구현 가능한 전체 표면을
     기술하므로, 부분 조립과 비교하면 조건부 라우터가 가짜 미구현이 된다."""
+    external_authority_currentness = ExternalAuthorityCurrentnessCoordinator()
     mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
     signing_key = Ed25519PrivateKey.generate()
     risk_policy_pack = RiskPolicyPackV1.model_validate(
@@ -201,7 +238,9 @@ def _max_assembly(tmp_path: Path) -> Any:
         private_key=signing_key,
         key_id="contract-sync-test-key",
     )
-    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
+    site_store = SiteStore(
+        DurableJournal(tmp_path / "sites.jsonl"), coordinator=external_authority_currentness
+    )
     source_media_store = SourceMediaStore(
         DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
     )
@@ -226,13 +265,80 @@ def _max_assembly(tmp_path: Path) -> Any:
     )
     work_area_store = WorkAreaStore(
         DurableJournal(tmp_path / "work-areas.jsonl"),
+        coordinator=external_authority_currentness,
         site_exists=lambda site_id: site_store.get(site_id) is not None,
+    )
+    external_use_decision_store = ExternalUseDecisionStore(
+        DurableJournal(tmp_path / "external-use-decisions.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_relative_volume_store = ExternalRelativeVolumeStore(
+        DurableJournal(tmp_path / "external-relative-volumes.jsonl"),
+        authority_port=DefaultClosedExternalRelativeVolumeAuthorityPort(
+            currentness_coordinator=volume_coordinator or external_authority_currentness
+        ),
+        currentness_coordinator=volume_coordinator or external_authority_currentness,
+        queue_policy=ExternalRelativeVolumeQueuePolicy(
+            lease_ttl=timedelta(seconds=5),
+            deadline_after_issue=timedelta(seconds=30),
+            max_attempts=1,
+            max_active_requests_per_organization=2,
+        ),
+    )
+
+    reviews = ExternalResultReviewStore(
+        DurableJournal(tmp_path / "external-result-reviews.jsonl"),
+        source_port=CoreExternalResultReviewSourceAdapter(
+            volume_store=external_relative_volume_store,
+            decisions=external_use_decision_store,
+            historical_use_authority=ClosedExternalRelativeVolumeUseHistory(),
+            coordinator=external_authority_currentness,
+        ),
+        coordinator=external_authority_currentness,
+    )
+    proposals = ExternalReobservationProposalStore(
+        DurableJournal(tmp_path / "external-reobservation-proposals.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    proposal_authority = CoreExternalReobservationProposalAuthorityPort(
+        reviews=reviews,
+        proposals=proposals,
+        sites=site_store,
+        work_areas=work_area_store,
+        coordinator=external_authority_currentness,
+    )
+    organization_work_roster_store = OrganizationWorkRosterStore(
+        DurableJournal(tmp_path / "organization-work-roster.jsonl"),
+        coordinator=external_authority_currentness,
     )
     observation_work_order_store = ObservationWorkOrderStore(
         DurableJournal(tmp_path / "observation-work-orders.jsonl"),
+        external_reobservation_authority_port=proposal_authority,
+        operations_coordinator=external_authority_currentness,
+        assignment_member_is_active=organization_work_roster_store.is_assignable_member,
         site_exists=lambda site_id, organization_id: (
             site_store.get_scoped(site_id, organization_id) is not None
         ),
+    )
+    external_result_workflow_service = ExternalReobservationProposalService(
+        reviews=reviews,
+        proposals=proposals,
+        sites=site_store,
+        work_areas=work_area_store,
+        work_orders=observation_work_order_store,
+        authority_port=proposal_authority,
+        coordinator=external_authority_currentness,
+    )
+    external_result_read_projector = ExternalResultReadProjector(
+        volumes=external_relative_volume_store,
+        workflow=external_result_workflow_service,
+    )
+    work_inbox_store = WorkInboxStore(
+        DurableJournal(tmp_path / "work-inbox.jsonl"),
+        work_orders=observation_work_order_store,
+        roster=organization_work_roster_store,
+        report_resolver=external_relative_volume_store,
+        coordinator=external_authority_currentness,
     )
     acquisition_connectivity_store = AcquisitionConnectivityStore(
         DurableJournal(tmp_path / "acquisition-connectivity.jsonl"),
@@ -263,6 +369,7 @@ def _max_assembly(tmp_path: Path) -> Any:
         work_order_store=observation_work_order_store,
         processing_job_store=processing_job_store,
         event_store=event_store,
+        external_results=external_result_read_projector,
     )
     civil_readiness_projector = CivilReadinessProjector(
         site_store=site_store,
@@ -322,6 +429,54 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         supported_freshness_policies={},
     )
+    external_reconstruction_store = ExternalReconstructionStore(
+        DurableJournal(tmp_path / "external-reconstruction.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_validation_policy_registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "external-validation-policy.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_display_artifact_store = ExternalDisplayArtifactStore(
+        DurableJournal(tmp_path / "external-display-artifacts.jsonl"),
+        policy_registry=external_validation_policy_registry,
+        storage=storage,
+        coordinator=external_authority_currentness,
+    )
+    external_artifact_inspection_store = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "external-artifact-inspections.jsonl"),
+        policy_registry=external_validation_policy_registry,
+        external_reconstruction=external_reconstruction_store,
+        storage=storage,
+        display_store=external_display_artifact_store,
+        coordinator=external_authority_currentness,
+    )
+    external_evidence_store = ExternalEvidenceStore(
+        DurableJournal(tmp_path / "external-evidence.jsonl"),
+        coordinator=external_authority_currentness,
+    )
+    external_evidence_validation_store = ExternalEvidenceValidationStore(
+        DurableJournal(tmp_path / "external-evidence-validations.jsonl"),
+        evidence=external_evidence_store,
+        policy_registry=external_validation_policy_registry,
+        input_capabilities=CoreEvidenceValidationInputCapabilities(
+            reconstruction=external_reconstruction_store,
+            storage=storage,
+        ),
+        coordinator=external_authority_currentness,
+    )
+    external_use_evaluator = ExternalUseEvaluator(
+        decisions=external_use_decision_store,
+        reconstruction=external_reconstruction_store,
+        inspections=external_artifact_inspection_store,
+        policy_registry=external_validation_policy_registry,
+        evidence_validations=external_evidence_validation_store,
+        coordinator=external_authority_currentness,
+    )
+
+    def closed_volume_capabilities(*_args: Any, **_kwargs: Any) -> Any:
+        raise AssertionError("closed contract fixture must never issue a byte capability")
+
     return create_app(
         evidence_storage=storage,
         flight_artifact_store=flight_artifact_store,
@@ -369,12 +524,18 @@ def _max_assembly(tmp_path: Path) -> Any:
         ),
         work_area_store=work_area_store,
         observation_work_order_store=observation_work_order_store,
-        external_reconstruction_store=ExternalReconstructionStore(
-            DurableJournal(tmp_path / "external-reconstruction.jsonl")
-        ),
-        external_evidence_store=ExternalEvidenceStore(
-            DurableJournal(tmp_path / "external-evidence.jsonl")
-        ),
+        organization_work_roster_store=organization_work_roster_store,
+        work_inbox_store=work_inbox_store,
+        external_reconstruction_store=external_reconstruction_store,
+        external_evidence_store=external_evidence_store,
+        external_evidence_validation_store=external_evidence_validation_store,
+        external_use_evaluator=external_use_evaluator,
+        external_relative_volume_store=external_relative_volume_store,
+        external_result_workflow_service=external_result_workflow_service,
+        external_result_read_projector=external_result_read_projector,
+        external_volume_input_capability_issuer=closed_volume_capabilities,
+        external_display_artifact_store=external_display_artifact_store,
+        external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -393,6 +554,129 @@ def _max_assembly(tmp_path: Path) -> Any:
         mission_signing_key=signing_key,
         mission_signing_key_id="contract-sync-test-key",
     )
+
+
+_MAX_ASSEMBLY_NOW = datetime(2026, 9, 9, 0, 0, tzinfo=UTC)
+
+
+def _max_assembly_arguments(tmp_path: Path) -> dict[str, Any]:
+    """Capture the complete maximal assembly as ``create_app`` inputs.
+
+    The public API fixture has one canonical durable graph. Capturing its inputs
+    lets the tests below exercise ``create_app``'s composition guard with each
+    deliberate mismatch, without reimplementing that graph in a second fixture.
+    """
+    with patch(f"{__name__}.create_app", side_effect=lambda **kwargs: kwargs):
+        arguments = _max_assembly(tmp_path)
+    assert isinstance(arguments, dict)
+    return arguments
+
+
+def _seed_max_assembly_site_and_work_order(arguments: dict[str, Any]) -> str:
+    site_store = arguments["site_store"]
+    work_orders = arguments["observation_work_order_store"]
+    assert site_store.register(
+        "shared-projector-site",
+        "Shared projector site",
+        SiteFrame(
+            crs="EPSG:5186",
+            vertical_datum="LOCAL",
+            unit="meter",
+            transform_version="v1",
+        ),
+        organization_id="legacy",
+        actor="contract-sync",
+        now=_MAX_ASSEMBLY_NOW,
+    ).record is not None
+    return work_orders.create_work_order(
+        organization_id="legacy",
+        site_id="shared-projector-site",
+        name="Shared projector work order",
+        work_area_ids=["shared-projector-work-area"],
+        schedule_id=None,
+        actor="contract-sync",
+        now=_MAX_ASSEMBLY_NOW,
+    ).work_order_id
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    ("missing-results", "different-results", "different-sites", "different-work-orders"),
+)
+def test_create_app_rejects_disconnected_external_result_workspace_participants(
+    tmp_path: Path, mismatch: str
+) -> None:
+    """The workspace must read the exact graph mounted on context routes."""
+    arguments = _max_assembly_arguments(tmp_path)
+    site_store = arguments["site_store"]
+    work_orders = arguments["observation_work_order_store"]
+    external_results = arguments["external_result_read_projector"]
+
+    if mismatch == "missing-results":
+        external_results = None
+    elif mismatch == "different-results":
+        external_results = ExternalResultReadProjector(
+            volumes=arguments["external_relative_volume_store"],
+            workflow=arguments["external_result_workflow_service"],
+        )
+    elif mismatch == "different-sites":
+        site_store = SiteStore(DurableJournal(tmp_path / "different-sites.jsonl"))
+    else:
+        work_orders = ObservationWorkOrderStore(
+            DurableJournal(tmp_path / "different-work-orders.jsonl"),
+            site_exists=lambda _site_id, _organization_id: True,
+        )
+
+    arguments["site_workspace_projector"] = SiteWorkspaceProjector(
+        site_store=site_store,
+        work_order_store=work_orders,
+        processing_job_store=arguments["processing_job_store"],
+        event_store=arguments["event_store"],
+        external_results=external_results,
+    )
+
+    with pytest.raises(
+        ValueError, match="site workspace must use the mounted external result projection"
+    ):
+        create_app(**arguments)
+
+
+def test_max_assembly_shares_external_result_projection_with_context_workspace_and_copilot(
+    tmp_path: Path,
+) -> None:
+    """One projection gives every mounted read surface the same NO_RESULT view."""
+    arguments = _max_assembly_arguments(tmp_path)
+    projector = arguments["external_result_read_projector"]
+    workspace = arguments["site_workspace_projector"]
+    assert workspace.uses_exact_participants(
+        site_store=arguments["site_store"],
+        work_order_store=arguments["observation_work_order_store"],
+        external_results=projector,
+    )
+    work_order_id = _seed_max_assembly_site_and_work_order(arguments)
+
+    app = create_app(**arguments)
+    assert app.state.external_result_read_projector is projector
+    assert app.state.site_workspace_projector is workspace
+
+    headers = {"Authorization": "Bearer contract-sync-test-token"}
+    with TestClient(app) as client:
+        context = client.get(
+            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-context",
+            headers=headers,
+        )
+        workspace_response = client.get(
+            "/v1/sites/shared-projector-site/workspace", headers=headers
+        )
+    assert context.status_code == workspace_response.status_code == 200
+    assert context.json()["externalResult"]["state"] == "NO_RESULT"
+    assert context.json()["externalResult"] == workspace_response.json()["externalResult"]
+
+    latest_progress = build_workspace_copilot_handlers(
+        app.state.site_workspace_projector,
+        arguments["observation_work_order_store"],
+    )["latest_progress"]("legacy", "shared-projector-site", None, {})
+    assert latest_progress.data["externalResult"] == workspace_response.json()["externalResult"]
 
 
 def _implemented_operations(tmp_path: Path) -> dict[str, set[str]]:
@@ -678,6 +962,154 @@ def test_documented_response_schemas_match_implementation_fields(tmp_path: Path)
         "openapi-core.yaml 의 응답 스키마가 실구현과 갈라졌다 — 구현을 바꿨으면 "
         f"계약도 같이 바꿔라: {mismatches}"
     )
+
+
+_EXTERNAL_INSPECTION_RESPONSE_ROOTS = frozenset(
+    {
+        "ExternalInspectionPendingListView",
+        "ExternalInspectionLeaseView",
+        "ExternalInspectionInputView",
+        "ExternalInspectionReportView",
+        "ExternalDisplayArtifactGrantView",
+        "ExternalDisplayArtifactSealView",
+        "ExternalArtifactInspectionPublicView",
+        "ExternalSanitizedDisplayDownloadView",
+    }
+)
+
+
+def _schema_component_closure(spec: dict[str, Any], roots: frozenset[str]) -> set[str]:
+    """Return named-schema references reachable from the Core response roots."""
+    schemas = (spec.get("components") or {}).get("schemas") or {}
+    pending = list(roots)
+    discovered: set[str] = set()
+    while pending:
+        name = pending.pop()
+        if name in discovered:
+            continue
+        assert name in schemas, f"response schema {name} is undefined"
+        discovered.add(name)
+        nodes = [schemas[name]]
+        while nodes:
+            node = nodes.pop()
+            if isinstance(node, dict):
+                ref = node.get("$ref")
+                if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+                    pending.append(ref.rsplit("/", 1)[-1])
+                nodes.extend(node.values())
+            elif isinstance(node, list):
+                nodes.extend(node)
+    return discovered
+
+
+def _without_presentation_metadata(value: Any) -> Any:
+    """Titles and descriptions do not change validation semantics."""
+    if isinstance(value, dict):
+        return {
+            key: _without_presentation_metadata(item)
+            for key, item in value.items()
+            if key not in {"title", "description"}
+        }
+    if isinstance(value, list):
+        return [_without_presentation_metadata(item) for item in value]
+    return value
+
+
+def test_external_inspection_response_schemas_match_implementation_recursively(
+    tmp_path: Path,
+) -> None:
+    """Nested inspection DTO constraints must be as precise as FastAPI's models."""
+    doc = _doc()
+    impl = _implemented_spec(tmp_path)
+    documented = _schema_component_closure(doc, _EXTERNAL_INSPECTION_RESPONSE_ROOTS)
+    implemented = _schema_component_closure(impl, _EXTERNAL_INSPECTION_RESPONSE_ROOTS)
+    assert documented == implemented
+    doc_schemas = doc["components"]["schemas"]
+    impl_schemas = impl["components"]["schemas"]
+    mismatches = [
+        name
+        for name in sorted(documented)
+        if _without_presentation_metadata(doc_schemas[name])
+        != _without_presentation_metadata(impl_schemas[name])
+    ]
+    assert not mismatches, f"nested response schemas drifted: {mismatches}"
+
+
+@pytest.mark.parametrize(
+    ("schema_name", "payload"),
+    (
+        (
+            "ExternalInspectionLeaseView",
+            {
+                "verdict": "NOT_A_CORE_VERDICT",
+                "request": None,
+                "leaseExpiresAt": None,
+                "phase": None,
+                "fence": None,
+            },
+        ),
+        (
+            "ExternalInspectionInputView",
+            {
+                "verdict": "LEASED",
+                "request": {},
+                "policy": None,
+                "artifacts": [],
+                "phase": None,
+                "nextAction": None,
+                "acceptedReport": None,
+            },
+        ),
+        (
+            "ExternalArtifactInputView",
+            {
+                "entryId": "ortho",
+                "kind": "NOT_A_PROCESSING_ARTIFACT",
+                "observedSha256": "sha256:" + "a" * 64,
+                "observedSizeBytes": 1,
+                "contentType": "image/tiff",
+                "downloadUrl": None,
+                "requiredHeaders": {},
+            },
+        ),
+        (
+            "ExternalDisplayArtifactGrantView",
+            {
+                "verdict": "DECLARATION_RECORDED",
+                "phase": "RUNNING",
+                "declaration": {"declaredDerivativeSizeBytes": 0},
+                "uploadUrl": None,
+                "requiredHeaders": {},
+            },
+        ),
+        (
+            "ExternalDisplayArtifactSealView",
+            {"verdict": "SEALED", "phase": "SEALED", "receipt": {}},
+        ),
+        (
+            "PublicInspectionDetailView",
+            {
+                "state": "INSPECTION_REPORTED",
+                "request": {"requestId": ""},
+                "phase": None,
+                "outcome": None,
+                "report": None,
+            },
+        ),
+    ),
+)
+def test_external_inspection_response_schemas_reject_malformed_nested_values(
+    schema_name: str, payload: dict[str, Any]
+) -> None:
+    """Generic nested objects/enums would silently admit impossible worker/public DTOs."""
+    doc = _doc()
+    validator = Draft202012Validator(
+        {
+            "$ref": f"#/components/schemas/{schema_name}",
+            "components": doc["components"],
+        }
+    )
+    assert list(validator.iter_errors(payload)), schema_name
 
 
 def test_external_reconstruction_contract_uses_opaque_submission_refs() -> None:

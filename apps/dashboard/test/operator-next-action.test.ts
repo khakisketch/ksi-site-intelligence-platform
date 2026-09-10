@@ -62,6 +62,7 @@ function workOrder(
     name: workOrderId,
     workAreaIds: [],
     scheduleId: null,
+    executionMode: null,
     cycleNumber: 1,
     status,
     statusReason: null,

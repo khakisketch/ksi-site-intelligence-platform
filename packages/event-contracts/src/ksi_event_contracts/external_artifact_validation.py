@@ -276,6 +276,13 @@ class ObservedVerticalReferenceV1(_FrozenExternalModel):
     identifier: _LongBoundedText
     basis: _LongBoundedText
 
+    def canonical_payload(self) -> dict[str, Any]:
+        """Exact parser-observed content identity, without asserting datum truth."""
+        return self.model_dump(by_alias=True, mode="json")
+
+    def canonical_digest(self) -> str:
+        return _digest(self.canonical_payload())
+
 
 class RasterMeasurementsV1(_FrozenExternalModel):
     """Worker-observed raster facts, never a compatibility or accuracy assertion."""
@@ -561,6 +568,7 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
     current_sanitized_display_receipt_digest: Digest | None = None
     evidence_record_digests: tuple[Digest, ...] = Field(max_length=64)
     zone: SealedZoneReferenceV1 | None = None
+    compatibility_mapping_digest: Digest | None = None
     verdict: DecisionVerdict
     reasons: tuple[_Reason, ...] = Field(min_length=1, max_length=32)
     remediations: tuple[_Remediation, ...] = Field(min_length=1, max_length=32)
@@ -618,6 +626,21 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
             and self.zone is None
         ):
             raise ValueError("non-BLOCKED RELATIVE_VOLUME requires an exact zone")
+        if (
+            self.use == "RELATIVE_VOLUME"
+            and self.verdict is not DecisionVerdict.BLOCKED
+            and self.compatibility_mapping_digest is None
+        ):
+            raise ValueError(
+                "non-BLOCKED RELATIVE_VOLUME requires compatibilityMappingDigest"
+            )
+        if (
+            self.compatibility_mapping_digest is not None
+            and (self.use != "RELATIVE_VOLUME" or self.verdict is DecisionVerdict.BLOCKED)
+        ):
+            raise ValueError(
+                "compatibilityMappingDigest is allowed only for non-BLOCKED RELATIVE_VOLUME"
+            )
         if self.use == "VISUAL_COMPARISON" and self.zone is not None:
             raise ValueError("VISUAL_COMPARISON must not carry a zone")
         if self.decision_digest is not None and self.decision_digest != self.canonical_digest():
@@ -625,7 +648,12 @@ class ExternalPairUseDecisionV1(_FrozenExternalModel):
         return self
 
     def canonical_payload(self) -> dict[str, Any]:
-        return self.model_dump(by_alias=True, mode="json", exclude={"decision_digest"})
+        payload = self.model_dump(by_alias=True, mode="json", exclude={"decision_digest"})
+        # Legacy visual decisions were sealed before this optional field existed.
+        # Omitting a null optional field preserves their canonical digests/replay.
+        if self.compatibility_mapping_digest is None:
+            payload.pop("compatibilityMappingDigest", None)
+        return payload
 
     def canonical_digest(self) -> str:
         return _digest(self.canonical_payload())

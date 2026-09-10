@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -201,6 +202,35 @@ def test_no_policy_is_visible_pending_not_a_job(tmp_path: Path) -> None:
     assert selection.reason == "NO_ACTIVE_POLICY"
 
 
+def test_local_current_use_permission_keeps_authority_interval_without_external_resolution(
+    tmp_path: Path,
+) -> None:
+    first, second = _subject(marker="a"), _subject(marker="d")
+    policy, authority = _bound_policy(
+        subjects=(first, second),
+        uses=("RELATIVE_VOLUME",),
+        active_until=NOW + timedelta(seconds=1),
+    )
+    port = FakePolicyAuthorityPort(authority)
+    registry = _registry(tmp_path, port)
+    assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    resolutions_before = tuple(port.resolutions)
+
+    assert registry.locally_current_use_permitted(
+        policy.policy_digest or "",
+        use="RELATIVE_VOLUME",
+        subjects=(first, second),
+        at=NOW,
+    )
+    assert not registry.locally_current_use_permitted(
+        policy.policy_digest or "",
+        use="RELATIVE_VOLUME",
+        subjects=(first, second),
+        at=NOW + timedelta(seconds=2),
+    )
+    assert tuple(port.resolutions) == resolutions_before
+
+
 def test_admit_requires_resolved_authority_not_a_matching_hash(tmp_path: Path) -> None:
     """Treating an authority digest as proof without its trusted port would fail this test."""
     policy, _ = _bound_policy()
@@ -232,9 +262,11 @@ def test_authority_body_digest_rejects_changed_policy_before_first_admission(
 ) -> None:
     """An authority approval for one parser/rule/envelope body must not admit another body."""
     policy, authority = _bound_policy()
-    changed_envelope = _envelope().model_copy(
-        update={"max_input_bytes": 2_048, "resource_envelope_digest": None}, deep=True
-    ).sealed()
+    changed_envelope = (
+        _envelope()
+        .model_copy(update={"max_input_bytes": 2_048, "resource_envelope_digest": None}, deep=True)
+        .sealed()
+    )
     changed_policies = (
         policy.model_copy(
             update={"parser_build_digest": _digest("9"), "policy_digest": None}, deep=True
@@ -519,6 +551,27 @@ def test_two_subject_allowlist_selects_each_single_and_its_ordered_pair(tmp_path
     assert pair.status is PolicySelectionStatus.ACTIVE
 
 
+def test_evidence_selects_each_subject_in_a_two_subject_authority_allowlist(tmp_path: Path) -> None:
+    """EVIDENCE has single-subject authority semantics even when approval lists two subjects."""
+    first_subject = _subject()
+    second_subject = _subject(marker="0")
+    unlisted_subject = _subject(marker="9")
+    policy, authority = _bound_policy(
+        subjects=(first_subject, second_subject),
+        uses=("EVIDENCE",),
+    )
+    registry = _registry(tmp_path, FakePolicyAuthorityPort(authority))
+    registry.admit(policy, actor="authority", now=NOW)
+
+    first = registry.select_for_use("EVIDENCE", (first_subject,))
+    second = registry.select_for_use("EVIDENCE", (second_subject,))
+    unlisted = registry.select_for_use("EVIDENCE", (unlisted_subject,))
+
+    assert first.status is PolicySelectionStatus.ACTIVE
+    assert second.status is PolicySelectionStatus.ACTIVE
+    assert unlisted.status is PolicySelectionStatus.POLICY_UNAVAILABLE
+
+
 def test_display_and_height_require_exactly_one_subject(tmp_path: Path) -> None:
     """DISPLAY and HEIGHT may never select a policy for a missing or paired subject scope."""
     first_subject = _subject()
@@ -585,8 +638,7 @@ def test_supersession_blocks_only_the_prior_lifecycle_entry(tmp_path: Path) -> N
     )
 
     assert (
-        restarted.resolve(original.policy_digest or "").status
-        is PolicySelectionStatus.SUPERSEDED
+        restarted.resolve(original.policy_digest or "").status is PolicySelectionStatus.SUPERSEDED
     )
     assert restarted.resolve(successor_receipt.policy_digest).status is PolicySelectionStatus.ACTIVE
 
@@ -605,3 +657,101 @@ def test_admission_rejects_expired_or_unauthorized_authority_without_event(tmp_p
 
     assert receipt.status is PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED
     assert journal.replay() == []
+
+
+def test_selection_releases_registry_lock_while_authority_resolution_waits(tmp_path: Path) -> None:
+    """A retained policy read must not wait on an external authority callback."""
+    policy, authority = _bound_policy(uses=("EVIDENCE",))
+    port = FakePolicyAuthorityPort(authority)
+    registry = _registry(tmp_path, port)
+    assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    entered = threading.Event()
+    release = threading.Event()
+    retained_read_done = threading.Event()
+    selected: list[PolicySelectionStatus] = []
+    original_resolve = port.resolve
+
+    def blocking_resolve(
+        authority_record_digest: str, now: datetime
+    ) -> PolicyAuthorityRecord | None:
+        entered.set()
+        release.wait(timeout=3)
+        return original_resolve(authority_record_digest, now)
+
+    port.resolve = blocking_resolve  # type: ignore[method-assign]
+    selector = threading.Thread(
+        target=lambda: selected.append(registry.select_for_use("EVIDENCE", (_subject(),)).status),
+        daemon=True,
+    )
+    retained_reader = threading.Thread(
+        target=lambda: (registry.resolve(policy.policy_digest or ""), retained_read_done.set()),
+        daemon=True,
+    )
+    try:
+        selector.start()
+        assert entered.wait(timeout=1)
+        retained_reader.start()
+        assert retained_read_done.wait(timeout=0.2)
+    finally:
+        release.set()
+        selector.join(timeout=2)
+        retained_reader.join(timeout=2)
+
+    assert not selector.is_alive()
+    assert not retained_reader.is_alive()
+    assert selected == [PolicySelectionStatus.ACTIVE]
+
+
+def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority_resolution(
+    tmp_path: Path,
+) -> None:
+    """A policy revoked while its external resolution waits cannot become selectable."""
+    policy, authority = _bound_policy(uses=("EVIDENCE",))
+    port = FakePolicyAuthorityPort(authority)
+    registry = _registry(tmp_path, port)
+    assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    entered = threading.Event()
+    release = threading.Event()
+    revoked = threading.Event()
+    selected: list[PolicySelectionStatus] = []
+    resolution_count = 0
+    resolution_lock = threading.Lock()
+    original_resolve = port.resolve
+
+    def block_only_selection(
+        authority_record_digest: str, now: datetime
+    ) -> PolicyAuthorityRecord | None:
+        nonlocal resolution_count
+        with resolution_lock:
+            resolution_count += 1
+            call = resolution_count
+        if call == 1:
+            entered.set()
+            release.wait(timeout=3)
+        return original_resolve(authority_record_digest, now)
+
+    port.resolve = block_only_selection  # type: ignore[method-assign]
+    selector = threading.Thread(
+        target=lambda: selected.append(registry.select_for_use("EVIDENCE", (_subject(),)).status),
+        daemon=True,
+    )
+
+    def revoke() -> None:
+        receipt = registry.revoke(policy.policy_id, policy.version, actor="authority", now=NOW)
+        assert receipt.status is PolicyReceiptStatus.REVOKED
+        revoked.set()
+
+    revoker = threading.Thread(target=revoke, daemon=True)
+    try:
+        selector.start()
+        assert entered.wait(timeout=1)
+        revoker.start()
+        assert revoked.wait(timeout=0.2)
+    finally:
+        release.set()
+        selector.join(timeout=2)
+        revoker.join(timeout=2)
+
+    assert not selector.is_alive()
+    assert not revoker.is_alive()
+    assert selected == [PolicySelectionStatus.POLICY_UNAVAILABLE]

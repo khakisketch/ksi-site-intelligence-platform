@@ -1,0 +1,319 @@
+{
+  "$defs": {
+    "ExternalIndependenceAttestationV1": {
+      "additionalProperties": false,
+      "description": "Full separately authorized confirmation; never populated from independenceBasis.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-independence-attestation.v1",
+          "default": "external-independence-attestation.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "attestationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Attestationid",
+          "type": "string"
+        },
+        "evidenceManifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencemanifestdigest",
+          "type": "string"
+        },
+        "subjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Subjectdigest",
+          "type": "string"
+        },
+        "targetDsmObservedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Targetdsmobservedsha256",
+          "type": "string"
+        },
+        "confirmedByActorId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Confirmedbyactorid",
+          "type": "string"
+        },
+        "confirmedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Confirmedat",
+          "type": "string"
+        },
+        "reconstructionExclusionBasis": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Reconstructionexclusionbasis",
+          "type": "string"
+        },
+        "syntheticTestOnly": {
+          "title": "Synthetictestonly",
+          "type": "boolean"
+        },
+        "attestationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attestationdigest"
+        }
+      },
+      "required": [
+        "attestationId",
+        "evidenceManifestDigest",
+        "subjectDigest",
+        "targetDsmObservedSha256",
+        "confirmedByActorId",
+        "confirmedAt",
+        "reconstructionExclusionBasis",
+        "syntheticTestOnly"
+      ],
+      "title": "ExternalIndependenceAttestationV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "No numeric defaults or implicit independence; all rules are authority data.",
+  "properties": {
+    "contractVersion": {
+      "const": "external-evidence-measurement-context.v1",
+      "default": "external-evidence-measurement-context.v1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "contextId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Contextid",
+      "type": "string"
+    },
+    "subject": {
+      "$ref": "#/$defs/SealedExternalSubjectV1"
+    },
+    "evidenceManifestDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidencemanifestdigest",
+      "type": "string"
+    },
+    "evidenceObservedSha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Evidenceobservedsha256",
+      "type": "string"
+    },
+    "evidenceObservedSizeBytes": {
+      "exclusiveMinimum": 0,
+      "title": "Evidenceobservedsizebytes",
+      "type": "integer"
+    },
+    "targetDsmArtifactId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Targetdsmartifactid",
+      "type": "string"
+    },
+    "targetDsmObservedSha256": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Targetdsmobservedsha256",
+      "type": "string"
+    },
+    "policyDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Policydigest",
+      "type": "string"
+    },
+    "measurementExecutionManifestDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Measurementexecutionmanifestdigest",
+      "type": "string"
+    },
+    "ruleId": {
+      "const": "CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",
+      "title": "Ruleid",
+      "type": "string"
+    },
+    "csvHorizontalCrs": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "title": "Csvhorizontalcrs",
+      "type": "string"
+    },
+    "csvVerticalReferenceDigest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "title": "Csvverticalreferencedigest",
+      "type": "string"
+    },
+    "minimumCheckpointCount": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Minimumcheckpointcount",
+      "type": "integer"
+    },
+    "maximumCheckpointCount": {
+      "maximum": 1000000,
+      "minimum": 1,
+      "title": "Maximumcheckpointcount",
+      "type": "integer"
+    },
+    "maximumRmseM": {
+      "maximum": 1e+300,
+      "minimum": 0,
+      "title": "Maximumrmsem",
+      "type": "number"
+    },
+    "maximumAbsMeanErrorM": {
+      "maximum": 1e+300,
+      "minimum": 0,
+      "title": "Maximumabsmeanerrorm",
+      "type": "number"
+    },
+    "maximumAbsErrorM": {
+      "maximum": 1e+300,
+      "minimum": 0,
+      "title": "Maximumabserrorm",
+      "type": "number"
+    },
+    "independentAttestation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ExternalIndependenceAttestationV1"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "authorizedActorIds": {
+      "items": {
+        "maxLength": 255,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Authorizedactorids",
+      "type": "array"
+    },
+    "activeFrom": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+      "title": "Activefrom",
+      "type": "string"
+    },
+    "activeUntil": {
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+      "title": "Activeuntil",
+      "type": "string"
+    },
+    "syntheticTestOnly": {
+      "title": "Synthetictestonly",
+      "type": "boolean"
+    },
+    "contextDigest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contextdigest"
+    }
+  },
+  "required": [
+    "contextId",
+    "subject",
+    "evidenceManifestDigest",
+    "evidenceObservedSha256",
+    "evidenceObservedSizeBytes",
+    "targetDsmArtifactId",
+    "targetDsmObservedSha256",
+    "policyDigest",
+    "measurementExecutionManifestDigest",
+    "ruleId",
+    "csvHorizontalCrs",
+    "csvVerticalReferenceDigest",
+    "minimumCheckpointCount",
+    "maximumCheckpointCount",
+    "maximumRmseM",
+    "maximumAbsMeanErrorM",
+    "maximumAbsErrorM",
+    "independentAttestation",
+    "authorizedActorIds",
+    "activeFrom",
+    "activeUntil",
+    "syntheticTestOnly"
+  ],
+  "title": "ExternalEvidenceMeasurementContextV1",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-evidence-measurement-context.v1.json"
+}

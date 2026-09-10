@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -203,6 +204,44 @@ def test_registers_and_lists_active_areas(tmp_path: Path) -> None:
     assert result.work_area is not None
     assert result.work_area.work_area_id == "wa-site-1-0001"
     assert [a.work_area_id for a in store.list_for_site("site-1")] == ["wa-site-1-0001"]
+
+
+def test_parent_site_lookup_precedes_the_work_area_mutation_lock(tmp_path: Path) -> None:
+    """Holding WorkArea while asking Site would invert the adopted lock order."""
+    holder: dict[str, WorkAreaStore] = {}
+
+    def site_exists(site_id: str) -> bool:
+        del site_id
+        acquired = threading.Event()
+
+        def acquire_work_area_lock() -> None:
+            with holder["store"]._lock:  # noqa: SLF001 -- asserts real lock ordering
+                acquired.set()
+
+        thread = threading.Thread(target=acquire_work_area_lock)
+        thread.start()
+        assert acquired.wait(timeout=0.1)
+        thread.join(timeout=1)
+        assert not thread.is_alive()
+        return True
+
+    store = WorkAreaStore(
+        DurableJournal(tmp_path / "work-areas.jsonl"),
+        site_exists=site_exists,
+    )
+    holder["store"] = store
+    assert (
+        store.register(
+            "site-1",
+            name="A공구 절토부",
+            polygon=_polygon(),
+            crs="EPSG:4326",
+            supersedes=None,
+            now=_NOW,
+            actor="admin",
+        ).verdict
+        is WorkAreaVerdict.REGISTERED
+    )
 
 
 def test_work_areas_inherit_parent_site_organization_scope(tmp_path: Path) -> None:

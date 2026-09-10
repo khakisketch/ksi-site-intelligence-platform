@@ -6,6 +6,7 @@ import hashlib
 import importlib
 import importlib.util
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,6 +48,7 @@ class _Acl:
     def __init__(self, *, grant_result: bool = True, verify_result: bool = True) -> None:
         self.grants: list[tuple[int, tuple[int, int], _Reader]] = []
         self.verified: list[tuple[int, tuple[int, int], _Reader]] = []
+        self.revoked: list[tuple[int, tuple[int, int], _Reader]] = []
         self.grant_result = grant_result
         self.verify_result = verify_result
 
@@ -73,6 +75,38 @@ class _Acl:
         del deadline_monotonic
         self.verified.append((source_fd, traversal_fds, reader))
         return self.verify_result
+
+    def revoke_exact(
+        self,
+        *,
+        source_fd: int,
+        traversal_fds: tuple[int, int],
+        reader: _Reader,
+        deadline_monotonic: float,
+    ) -> bool:
+        del deadline_monotonic
+        self.revoked.append((source_fd, traversal_fds, reader))
+        return True
+
+    def grant_leaf_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        return self.grant_exact(
+            source_fd=kwargs["source_fd"],
+            traversal_fds=(kwargs["attempt_fd"], kwargs["attempt_fd"]),
+            reader=kwargs["reader"],
+            deadline_monotonic=kwargs["deadline_monotonic"],
+        )
+
+    def revoke_leaf_exact(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def verifies_private_directory(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def retire_private_directory(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
+
+    def retire_recovered_leaf_acl(self, **kwargs):  # type: ignore[no-untyped-def]
+        return True
 
 
 class _ModeChangingAcl(_Acl):
@@ -113,23 +147,31 @@ def test_seal_rechecks_exact_bytes_and_prepares_only_a_fixed_read_only_bind(tmp_
     """A mutable byte stream must become one private, retained, exact-read capability."""
     staging, acl = _staging(tmp_path)
     payload = b"sealed input bytes"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
 
-    bind = sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+    bind = sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
 
     assert bind.target_path == "/input/artifact.tif"
     assert bind.read_only is True
-    assert bind.source.read_at(offset=0, maximum_bytes=len(payload)) == payload
     assert (
-        bind.source.consume_fd(lambda descriptor: os.pread(descriptor, len(payload), 0))
+        bind.source.read_at(
+            offset=0, maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0
+        )
+        == payload
+    )
+    assert (
+        bind.source.consume_fd(
+            lambda descriptor: os.pread(descriptor, len(payload), 0),
+            deadline_monotonic=time.monotonic() + 1.0,
+        )
         == payload
     )
     assert bind.observed_sha256 == "sha256:" + hashlib.sha256(payload).hexdigest()
@@ -142,7 +184,7 @@ def test_seal_rechecks_exact_bytes_and_prepares_only_a_fixed_read_only_bind(tmp_
 
     sealed.abort()
     with pytest.raises(Exception, match="no longer live"):
-        bind.source.read_at(offset=0, maximum_bytes=1)
+        bind.source.read_at(offset=0, maximum_bytes=1, deadline_monotonic=time.monotonic() + 1.0)
 
 
 @pytest.mark.parametrize(("acl_mode", "should_bind"), [(0o640, True), (0o644, False)])
@@ -156,22 +198,27 @@ def test_acl_mask_mode_is_allowed_only_when_the_exact_fd_acl_proof_remains_priva
         private_root=tmp_path / "private", reader_mapping=_Mapping(_Reader()), acl=acl
     )
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
 
     if should_bind:
-        bind = sealed.prepare_read_only_bind(deadline_monotonic=100.0)
-        assert bind.source.read_at(offset=0, maximum_bytes=len(payload)) == payload
+        bind = sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
+        assert (
+            bind.source.read_at(
+                offset=0, maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0
+            )
+            == payload
+        )
     else:
         with pytest.raises(Exception, match="group or world"):
-            sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+            sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
     sealed.abort()
 
 
@@ -179,7 +226,7 @@ def test_seal_rejects_a_hardlink_before_any_runtime_bind(tmp_path: Path) -> None
     """A second name could replace the observed bytes after inspection, so sealing fails."""
     staging, _ = _staging(tmp_path)
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     source_path = next((tmp_path / "private").glob("*/artifact"))
     os.link(source_path, tmp_path / "linked-artifact")
@@ -190,7 +237,7 @@ def test_seal_rejects_a_hardlink_before_any_runtime_bind(tmp_path: Path) -> None
             expected_size_bytes=len(payload),
             reader=_Reader(),
             supplementary_groups=(),
-            deadline_monotonic=100.0,
+            deadline_monotonic=time.monotonic() + 1.0,
         )
     assert not list((tmp_path / "private").glob("*/artifact"))
 
@@ -216,7 +263,7 @@ def test_staging_rejects_symlink_or_nonregular_private_root(
     )
 
     with pytest.raises(Exception, match="private|unavailable"):
-        staging.begin(maximum_bytes=10, deadline_monotonic=100.0)
+        staging.begin(maximum_bytes=10, deadline_monotonic=time.monotonic() + 1.0)
 
 
 def test_staging_rejects_a_private_root_owned_by_another_identity(
@@ -236,21 +283,21 @@ def test_staging_rejects_a_private_root_owned_by_another_identity(
     )
 
     with pytest.raises(Exception, match="private"):
-        staging.begin(maximum_bytes=10, deadline_monotonic=100.0)
+        staging.begin(maximum_bytes=10, deadline_monotonic=time.monotonic() + 1.0)
 
 
 def test_bind_uses_the_sealed_descriptor_after_path_replacement(tmp_path: Path) -> None:
     """A renamed private directory plus an evil replacement cannot alter the capability."""
     staging, _ = _staging(tmp_path)
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
     source_path = next((tmp_path / "private").glob("*/artifact"))
     original_parent = source_path.parent
@@ -259,9 +306,14 @@ def test_bind_uses_the_sealed_descriptor_after_path_replacement(tmp_path: Path) 
     original_parent.mkdir(mode=0o700)
     (original_parent / "artifact").write_bytes(b"evil!")
 
-    bind = sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+    bind = sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
 
-    assert bind.source.read_at(offset=0, maximum_bytes=len(payload)) == payload
+    assert (
+        bind.source.read_at(
+            offset=0, maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0
+        )
+        == payload
+    )
     sealed.abort()
 
 
@@ -271,22 +323,27 @@ def test_bind_source_remains_the_retained_inode_after_its_private_path_moves(
     """The runtime bind source must not be an absolute pathname that can be substituted later."""
     staging, _ = _staging(tmp_path)
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
     source_path = next((tmp_path / "private").glob("*/artifact"))
     moved_parent = source_path.parent.with_name(source_path.parent.name + "-moved")
     source_path.parent.rename(moved_parent)
 
-    bind = sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+    bind = sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
 
-    assert bind.source.read_at(offset=0, maximum_bytes=len(payload)) == payload
+    assert (
+        bind.source.read_at(
+            offset=0, maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0
+        )
+        == payload
+    )
     sealed.abort()
 
 
@@ -294,16 +351,16 @@ def test_abort_is_idempotent_and_never_closes_a_reused_descriptor(tmp_path: Path
     """Repeated cleanup cannot close a file descriptor subsequently reused by the process."""
     staging, _ = _staging(tmp_path)
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
-    bind = sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+    bind = sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
     sealed.abort()
     replacement = os.open(tmp_path / "replacement", os.O_WRONLY | os.O_CREAT, 0o600)
     try:
@@ -314,13 +371,13 @@ def test_abort_is_idempotent_and_never_closes_a_reused_descriptor(tmp_path: Path
     finally:
         os.close(replacement)
     with pytest.raises(Exception, match="no longer live"):
-        bind.source.read_at(offset=0, maximum_bytes=1)
+        bind.source.read_at(offset=0, maximum_bytes=1, deadline_monotonic=time.monotonic() + 1.0)
 
 
 def test_seal_failure_retires_all_owned_descriptors_before_a_later_abort(tmp_path: Path) -> None:
     """A failed sealing path cannot leave stale FD numbers for a later cleanup call to close."""
     staging, _ = _staging(tmp_path)
-    mutable = staging.begin(maximum_bytes=5, deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=5, deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(b"bound")
 
     with pytest.raises(Exception, match="digest"):
@@ -329,7 +386,7 @@ def test_seal_failure_retires_all_owned_descriptors_before_a_later_abort(tmp_pat
             expected_size_bytes=5,
             reader=_Reader(),
             supplementary_groups=(),
-            deadline_monotonic=100.0,
+            deadline_monotonic=time.monotonic() + 1.0,
         )
 
     replacement = os.open(tmp_path / "replacement-after-failure", os.O_WRONLY | os.O_CREAT, 0o600)
@@ -350,17 +407,17 @@ def test_bind_rechecks_the_signed_supplementary_group_mapping(tmp_path: Path) ->
         acl=_Acl(),
     )
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(77,),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
 
-    sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+    sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
 
     assert mapping.calls[-1] == (10001, 10001, (77,))
     sealed.abort()
@@ -380,7 +437,7 @@ def test_seal_rejects_short_or_hash_mismatched_stream_before_backend_binding(
 ) -> None:
     """The sealed binding validates both count and digest before a capability exists."""
     staging, _ = _staging(tmp_path)
-    mutable = staging.begin(maximum_bytes=5, deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=5, deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(b"bound")
 
     with pytest.raises(Exception, match="count|digest|sealed"):
@@ -389,7 +446,7 @@ def test_seal_rejects_short_or_hash_mismatched_stream_before_backend_binding(
             expected_size_bytes=expected_size,
             reader=_Reader(),
             supplementary_groups=(),
-            deadline_monotonic=100.0,
+            deadline_monotonic=time.monotonic() + 1.0,
         )
 
 
@@ -415,18 +472,18 @@ def test_bind_requires_current_exact_mapping_and_acl(
         acl=acl,
     )
     payload = b"bound"
-    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=100.0)
+    mutable = staging.begin(maximum_bytes=len(payload), deadline_monotonic=time.monotonic() + 1.0)
     mutable.write(payload)
     sealed = mutable.seal_for_reader(
         expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
         expected_size_bytes=len(payload),
         reader=_Reader(),
         supplementary_groups=(),
-        deadline_monotonic=100.0,
+        deadline_monotonic=time.monotonic() + 1.0,
     )
     mapping.reader = mapping_reader
 
     with pytest.raises(Exception, match="mapping|ACL|stale|unavailable"):
-        sealed.prepare_read_only_bind(deadline_monotonic=100.0)
+        sealed.prepare_read_only_bind(deadline_monotonic=time.monotonic() + 1.0)
 
     sealed.abort()

@@ -172,3 +172,28 @@ historical cycle binding, concurrent/idempotent revisions, superseded unsealed r
 storage failure/retry, observed-byte mismatches, forged or out-of-order journal events,
 restart/replay equivalence, partial assembly refusal and production route wiring. These tests
 remain software evidence; no semantic raster validity or analysis eligibility comes from sealing.
+
+## Quantitative V1 authority follow-on
+
+The approved follow-on is [external quantitative authority V1](2026-09-09-external-quantitative-authority-v1.md).
+It is not an implicit extension of registration or sealing. Its first-release rule admits only one
+exact ordered external DSM pair under `external-geotiff-profile.v1`, exact observed CRS/vertical
+references, ordered capture times, independently validated checkpoint evidence, an exact WorkArea,
+and explicit digest-bound validation/execution policies.
+
+The validation policy pre-authorizes the independent compatibility-rule digest. A durable full
+mapping-record digest then binds the rule to that exact policy; decisions and historical execution
+never use the rule digest alone. Catalog authority records bind a strict self-reference-free
+admission body, and configuration remains path-only and default-closed. Disabling workflow
+injection stops new issuance while retaining all historical authority/evidence records.
+
+The local Core production-flow proof uses the common assembly and its exact configured mapping
+participant, exercises activation-boundary and review-boundary restarts, and verifies unchanged
+authority/successor journals on read-only/idempotent paths. Its worker observations and retained
+external authority records are test fixtures; it is not evidence of deployed authority
+provisioning, real raster/checkpoint measurement execution, customer export compatibility, or
+operator acceptance.
+
+This local implementation still needs independent review and does not satisfy customer-export
+compatibility, authority-record provisioning, host hardening, backup/restore, owner operation,
+deployment, HIL, or field acceptance.

@@ -26,11 +26,10 @@ from ksi_event_contracts.external_artifact_validation import (
 from pydantic import ValidationError
 
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 
 _DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
-_UTC_WIRE_TIMESTAMP_RE = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$"
-)
+_UTC_WIRE_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|\+00:00)$")
 _EVENT_VERSION = 1
 _ADMITTED_KIND = "external-validation-policy-admitted"
 _REVOKED_KIND = "external-validation-policy-revoked"
@@ -38,7 +37,7 @@ _SUPERSEDED_KIND = "external-validation-policy-superseded"
 _POLICY_BODY_DOMAIN = "ksi.external-validation-policy-authority-body.v1"
 _AUTHORITY_RECORD_DOMAIN = "ksi.external-validation-policy-authority-record.v1"
 _PERMITTED_USES = frozenset(
-    {"INSPECTION", "DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME"}
+    {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME"}
 )
 
 
@@ -133,8 +132,7 @@ class PolicyAuthorityRecord:
             _require_use(use)
         _require_nonempty_unique(self.authorized_actor_ids, "authority record actor ids")
         if self.digest is not None and (
-            _DIGEST_RE.fullmatch(self.digest) is None
-            or self.digest != self.canonical_digest()
+            _DIGEST_RE.fullmatch(self.digest) is None or self.digest != self.canonical_digest()
         ):
             raise ValueError("authority record digest does not match canonical authority content")
 
@@ -195,7 +193,7 @@ class PolicyAuthorityRecord:
         permitted_subjects = tuple(
             subject.canonical_digest() for subject in self.permitted_subjects
         )
-        if use in {"INSPECTION", "DISPLAY", "HEIGHT"}:
+        if use in {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT"}:
             subject_scope_matches = (
                 len(requested_subjects) == 1 and requested_subjects[0] in permitted_subjects
             )
@@ -315,10 +313,12 @@ class ExternalValidationPolicyRegistry:
         *,
         authority_port: PolicyAuthorityPort | None = None,
         clock: Callable[[], datetime] | None = None,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
         self._journal = journal
         self._authority_port = authority_port or _NoPolicyAuthorityPort()
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._lock = threading.RLock()
         self._entries_by_identity: dict[tuple[str, int], _PolicyEntry] = {}
         self._entries_by_digest: dict[str, _PolicyEntry] = {}
@@ -327,6 +327,10 @@ class ExternalValidationPolicyRegistry:
         except BaseException:
             journal.close()
             raise
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
 
     def select_for_inspection(self, subject: SealedExternalSubjectV1) -> PolicySelection:
         """Select exactly one currently authorized inspection policy, or show pending."""
@@ -368,6 +372,38 @@ class ExternalValidationPolicyRegistry:
                 reason=None,
             )
 
+    def locally_current_use_permitted(
+        self,
+        policy_digest: str,
+        *,
+        use: str,
+        subjects: Sequence[SealedExternalSubjectV1],
+        at: datetime,
+    ) -> bool:
+        """Check retained current policy authority without resolving an external port.
+
+        A caller holding the shared Core currentness coordinator uses this as
+        its final pre-append check.  It deliberately reads the authority
+        snapshot retained with the policy lifecycle entry rather than calling
+        ``PolicyAuthorityPort`` while a coordinator guard is held.
+        """
+        _require_use(use)
+        _require_utc(at, "local current-use time")
+        if _selection_arity_reason(use, subjects) is not None:
+            return False
+        with self._lock:
+            entry = self._entries_by_digest.get(policy_digest)
+            if entry is None or entry.status is not PolicyStatus.ACTIVE:
+                return False
+            policy, authority = entry.policy, entry.authority
+            authority_digest = policy.authority_record_digest
+            return (
+                _policy_digest(policy) == policy_digest
+                and authority_digest is not None
+                and authority.digest == authority_digest
+                and authority.permits_selection(policy, use=use, subjects=subjects, now=at)
+            )
+
     def historical_use_permitted(
         self,
         policy_digest: str,
@@ -400,17 +436,15 @@ class ExternalValidationPolicyRegistry:
                 and authority.permits_selection(policy, use=use, subjects=subjects, now=at)
             )
 
-    def admit(
-        self, policy: ExternalValidationPolicyV1, actor: str, now: datetime
-    ) -> PolicyReceipt:
+    def admit(self, policy: ExternalValidationPolicyV1, actor: str, now: datetime) -> PolicyReceipt:
         """Append a new authority-validated immutable policy snapshot before publishing it."""
         _require_actor(actor)
         _require_utc(now, "admission time")
         sealed = _seal_policy(policy)
-        with self._lock:
-            authority = self._resolve_administration_authority(sealed, actor=actor, now=now)
-            if authority is None:
-                return _receipt(sealed, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
+        authority = self._resolve_administration_authority(sealed, actor=actor, now=now)
+        if authority is None:
+            return _receipt(sealed, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
+        with self._coordinator.mutation(), self._lock:
             key = (sealed.policy_id, sealed.version)
             existing = self._entries_by_identity.get(key)
             if existing is not None:
@@ -430,10 +464,14 @@ class ExternalValidationPolicyRegistry:
         _require_utc(now, "revocation time")
         with self._lock:
             entry = self._active_entry(policy_id, version)
+        if entry is None:
+            return _unresolved_receipt(policy_id, version)
+        if self._resolve_administration_authority(entry.policy, actor=actor, now=now) is None:
+            return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
+        with self._coordinator.mutation(), self._lock:
+            entry = self._active_entry(policy_id, version)
             if entry is None:
                 return _unresolved_receipt(policy_id, version)
-            if self._resolve_administration_authority(entry.policy, actor=actor, now=now) is None:
-                return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
             self._journal.append(self._revoked_event(entry.policy, actor=actor, now=now))
             entry.status = PolicyStatus.REVOKED
             return _receipt(entry.policy, PolicyReceiptStatus.REVOKED)
@@ -455,54 +493,80 @@ class ExternalValidationPolicyRegistry:
         with self._lock:
             entry = self._active_entry(policy_id, version)
             successor = self._active_entry(successor_policy_id, successor_version)
+        if entry is None or successor is None or entry is successor:
+            return _unresolved_receipt(policy_id, version)
+        if self._resolve_administration_authority(entry.policy, actor=actor, now=now) is None:
+            return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
+        with self._coordinator.mutation(), self._lock:
+            entry = self._active_entry(policy_id, version)
+            successor = self._active_entry(successor_policy_id, successor_version)
             if entry is None or successor is None or entry is successor:
                 return _unresolved_receipt(policy_id, version)
-            if self._resolve_administration_authority(entry.policy, actor=actor, now=now) is None:
-                return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
             self._journal.append(
                 self._superseded_event(entry.policy, successor.policy, actor=actor, now=now)
             )
             entry.status = PolicyStatus.SUPERSEDED
             return _receipt(entry.policy, PolicyReceiptStatus.SUPERSEDED)
 
-    def _select(
-        self, use: str, subjects: Sequence[SealedExternalSubjectV1]
-    ) -> PolicySelection:
+    def _select(self, use: str, subjects: Sequence[SealedExternalSubjectV1]) -> PolicySelection:
         now = self._clock()
         _require_utc(now, "selection time")
         with self._lock:
-            matches: list[_PolicyEntry] = []
-            for entry in self._entries_by_identity.values():
-                if entry.status is not PolicyStatus.ACTIVE:
-                    continue
-                authority_digest = entry.policy.authority_record_digest
-                if authority_digest is None:
-                    continue
-                authority = self._authority_port.resolve(authority_digest, now)
-                if authority is None:
-                    continue
-                if authority.digest != authority_digest or authority != entry.authority:
-                    continue
-                if authority.permits_selection(entry.policy, use=use, subjects=subjects, now=now):
-                    matches.append(entry)
-            if not matches:
+            candidates = self._active_selection_snapshot()
+        matches: list[ExternalValidationPolicyV1] = []
+        for policy, expected_authority in candidates:
+            authority_digest = policy.authority_record_digest
+            assert authority_digest is not None
+            authority = self._authority_port.resolve(authority_digest, now)
+            if authority is None:
+                continue
+            if authority.digest != authority_digest or authority != expected_authority:
+                continue
+            if authority.permits_selection(policy, use=use, subjects=subjects, now=now):
+                matches.append(policy)
+        with self._lock:
+            if candidates != self._active_selection_snapshot():
                 return PolicySelection(
                     status=PolicySelectionStatus.POLICY_UNAVAILABLE,
                     policy=None,
-                    reason="NO_ACTIVE_POLICY",
+                    reason="POLICY_CHANGED_DURING_SELECTION",
                 )
-            if len(matches) != 1:
-                return PolicySelection(
-                    status=PolicySelectionStatus.POLICY_AMBIGUOUS,
-                    policy=None,
-                    reason="AMBIGUOUS_POLICY_SELECTION",
-                )
-            entry = matches[0]
+        if not matches:
             return PolicySelection(
-                status=PolicySelectionStatus.ACTIVE,
-                policy=entry.policy.model_copy(deep=True),
-                reason=None,
+                status=PolicySelectionStatus.POLICY_UNAVAILABLE,
+                policy=None,
+                reason="NO_ACTIVE_POLICY",
             )
+        if len(matches) != 1:
+            return PolicySelection(
+                status=PolicySelectionStatus.POLICY_AMBIGUOUS,
+                policy=None,
+                reason="AMBIGUOUS_POLICY_SELECTION",
+            )
+        return PolicySelection(
+            status=PolicySelectionStatus.ACTIVE,
+            policy=matches[0].model_copy(deep=True),
+            reason=None,
+        )
+
+    def _active_selection_snapshot(
+        self,
+    ) -> tuple[tuple[ExternalValidationPolicyV1, PolicyAuthorityRecord], ...]:
+        """Copy active candidate authority while the registry lock is held.
+
+        ``_select`` resolves the trusted authority port only after taking this
+        immutable local snapshot.  It then compares the snapshot again before
+        publishing a selection, so an admission/revocation/supersession during
+        external resolution fails closed instead of selecting a stale policy.
+        """
+        return tuple(
+            (entry.policy.model_copy(deep=True), entry.authority)
+            for entry in self._entries_by_identity.values()
+            if (
+                entry.status is PolicyStatus.ACTIVE
+                and entry.policy.authority_record_digest is not None
+            )
+        )
 
     def _resolve_administration_authority(
         self, policy: ExternalValidationPolicyV1, *, actor: str, now: datetime
@@ -787,11 +851,9 @@ def _require_use(use: str) -> None:
         raise ValueError("policy use must be an allowed closed-catalogue value")
 
 
-def _selection_arity_reason(
-    use: str, subjects: Sequence[SealedExternalSubjectV1]
-) -> str | None:
+def _selection_arity_reason(use: str, subjects: Sequence[SealedExternalSubjectV1]) -> str | None:
     """Reject malformed use scope before a policy can become selectable."""
-    if use in {"INSPECTION", "DISPLAY", "HEIGHT"}:
+    if use in {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT"}:
         return None if len(subjects) == 1 else "SINGLE_SUBJECT_REQUIRED"
     if len(subjects) != 2:
         return "DISTINCT_ORDERED_PAIR_REQUIRED"
@@ -855,9 +917,7 @@ def _unresolved_receipt(policy_id: str, version: int) -> PolicyReceipt:
     )
 
 
-def _exact_mapping(
-    raw: object, expected_keys: set[str], *, context: str
-) -> Mapping[str, Any]:
+def _exact_mapping(raw: object, expected_keys: set[str], *, context: str) -> Mapping[str, Any]:
     if not isinstance(raw, Mapping):
         raise ValueError(f"{context} must be an object")
     keys = set(raw)

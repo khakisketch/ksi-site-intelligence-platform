@@ -1,0 +1,1127 @@
+{
+  "$defs": {
+    "DecisionVerdict": {
+      "enum": [
+        "ELIGIBLE",
+        "RESTRICTED",
+        "BLOCKED"
+      ],
+      "title": "DecisionVerdict",
+      "type": "string"
+    },
+    "ExternalPairUseDecisionV1": {
+      "additionalProperties": false,
+      "description": "Core's immutable pair decision; Core resolves referenced receipt provenance separately.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-pair-use-decision.v1",
+          "default": "external-pair-use-decision.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "decisionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "baselineSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "baselineSubjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselinesubjectdigest",
+          "type": "string"
+        },
+        "currentSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "currentSubjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentsubjectdigest",
+          "type": "string"
+        },
+        "use": {
+          "enum": [
+            "VISUAL_COMPARISON",
+            "RELATIVE_VOLUME"
+          ],
+          "title": "Use",
+          "type": "string"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "baselineInspectionReportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baselineinspectionreportdigest"
+        },
+        "currentInspectionReportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currentinspectionreportdigest"
+        },
+        "baselineSanitizedDisplayReceiptDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baselinesanitizeddisplayreceiptdigest"
+        },
+        "currentSanitizedDisplayReceiptDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currentsanitizeddisplayreceiptdigest"
+        },
+        "evidenceRecordDigests": {
+          "items": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Evidencerecorddigests",
+          "type": "array"
+        },
+        "zone": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SealedZoneReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "compatibilityMappingDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Compatibilitymappingdigest"
+        },
+        "verdict": {
+          "$ref": "#/$defs/DecisionVerdict"
+        },
+        "reasons": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Reasons",
+          "type": "array"
+        },
+        "remediations": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Remediations",
+          "type": "array"
+        },
+        "decidedAt": {
+          "format": "date-time",
+          "title": "Decidedat",
+          "type": "string"
+        },
+        "decisionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decisionId",
+        "baselineSubject",
+        "baselineSubjectDigest",
+        "currentSubject",
+        "currentSubjectDigest",
+        "use",
+        "evidenceRecordDigests",
+        "verdict",
+        "reasons",
+        "remediations",
+        "decidedAt",
+        "decisionDigest"
+      ],
+      "title": "ExternalPairUseDecisionV1",
+      "type": "object"
+    },
+    "ExternalRelativeVolumeExecutionPolicyV1": {
+      "additionalProperties": false,
+      "description": "Versioned execution limits; authority is always supplied, never defaulted.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-execution-policy.v1",
+          "default": "external-relative-volume-execution-policy.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "policyId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Policyid",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "algorithmBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Algorithmbuilddigest",
+          "type": "string"
+        },
+        "configDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configdigest",
+          "type": "string"
+        },
+        "thresholdM": {
+          "maximum": 1e+300,
+          "minimum": 0.0,
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "minimumCommonValidFraction": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Minimumcommonvalidfraction",
+          "type": "number"
+        },
+        "uncertaintyMethod": {
+          "const": "INDEPENDENT_EPOCH_RSS_AREA_BOUND_V1",
+          "title": "Uncertaintymethod",
+          "type": "string"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "authorityRecordDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Authorityrecorddigest",
+          "type": "string"
+        },
+        "syntheticTestOnly": {
+          "title": "Synthetictestonly",
+          "type": "boolean"
+        },
+        "policyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policyId",
+        "version",
+        "algorithmBuildDigest",
+        "configDigest",
+        "thresholdM",
+        "minimumCommonValidFraction",
+        "uncertaintyMethod",
+        "resourceEnvelopeDigest",
+        "authorityRecordDigest",
+        "syntheticTestOnly",
+        "policyDigest"
+      ],
+      "title": "ExternalRelativeVolumeExecutionPolicyV1",
+      "type": "object"
+    },
+    "ExternalRelativeVolumeMeasurementPayloadV1": {
+      "additionalProperties": false,
+      "description": "Deterministic observed measurement content, excluding worker and fence facts.",
+      "properties": {
+        "factClass": {
+          "const": "OBSERVED",
+          "default": "OBSERVED",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "requestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestdigest",
+          "type": "string"
+        },
+        "decisionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisiondigest",
+          "type": "string"
+        },
+        "baselineDsmDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselinedsmdigest",
+          "type": "string"
+        },
+        "currentDsmDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentdsmdigest",
+          "type": "string"
+        },
+        "zoneSnapshotDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Zonesnapshotdigest",
+          "type": "string"
+        },
+        "executionPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Executionpolicydigest",
+          "type": "string"
+        },
+        "algorithmBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Algorithmbuilddigest",
+          "type": "string"
+        },
+        "configDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configdigest",
+          "type": "string"
+        },
+        "metrics": {
+          "$ref": "#/$defs/ExternalVolumeMetricsV1"
+        }
+      },
+      "required": [
+        "requestDigest",
+        "decisionDigest",
+        "baselineDsmDigest",
+        "currentDsmDigest",
+        "zoneSnapshotDigest",
+        "executionPolicyDigest",
+        "algorithmBuildDigest",
+        "configDigest",
+        "metrics"
+      ],
+      "title": "ExternalRelativeVolumeMeasurementPayloadV1",
+      "type": "object"
+    },
+    "ExternalRelativeVolumeReportV1": {
+      "additionalProperties": false,
+      "description": "Fenced worker report whose payload is independently canonicalized.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-report.v1",
+          "default": "external-relative-volume-report.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "reportId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Reportid",
+          "type": "string"
+        },
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "requestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestdigest",
+          "type": "string"
+        },
+        "payload": {
+          "$ref": "#/$defs/ExternalRelativeVolumeMeasurementPayloadV1"
+        },
+        "measurementPayloadDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 1,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        },
+        "reportedAt": {
+          "format": "date-time",
+          "title": "Reportedat",
+          "type": "string"
+        },
+        "reportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reportId",
+        "requestId",
+        "requestDigest",
+        "payload",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "leaseGeneration",
+        "computedAt",
+        "reportedAt",
+        "measurementPayloadDigest",
+        "reportDigest"
+      ],
+      "title": "ExternalRelativeVolumeReportV1",
+      "type": "object"
+    },
+    "ExternalRelativeVolumeRequestV1": {
+      "additionalProperties": false,
+      "description": "Core-issued intent; this model only binds claims and does not declare ELIGIBLE.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-request.v1",
+          "default": "external-relative-volume-request.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "currentWorkOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Currentworkorderid",
+          "type": "string"
+        },
+        "decisionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisiondigest",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/ExternalVolumeInputBindingV1"
+        },
+        "current": {
+          "$ref": "#/$defs/ExternalVolumeInputBindingV1"
+        },
+        "evidenceRecordDigests": {
+          "items": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Evidencerecorddigests",
+          "type": "array"
+        },
+        "validationPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Validationpolicydigest",
+          "type": "string"
+        },
+        "executionPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Executionpolicydigest",
+          "type": "string"
+        },
+        "zoneSnapshot": {
+          "$ref": "#/$defs/ExternalVolumeZoneSnapshotV1"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Idempotencykey",
+          "type": "string"
+        },
+        "requestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "currentWorkOrderId",
+        "decisionId",
+        "decisionDigest",
+        "baseline",
+        "current",
+        "evidenceRecordDigests",
+        "validationPolicyDigest",
+        "executionPolicyDigest",
+        "zoneSnapshot",
+        "issuedAt",
+        "idempotencyKey",
+        "requestDigest"
+      ],
+      "title": "ExternalRelativeVolumeRequestV1",
+      "type": "object"
+    },
+    "ExternalResultReviewAuthorityV1": {
+      "additionalProperties": false,
+      "description": "Exact server-resolved authority retained with one reviewed report.\n\nThe type is deliberately independent of the Core 4B implementation class.\nA later adapter must construct it from actual Core history; callers never\nsubmit this model through a public route.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-result-review-authority.v1",
+          "default": "external-result-review-authority.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "currentWorkOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Currentworkorderid",
+          "type": "string"
+        },
+        "decisionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Decisionid",
+          "type": "string"
+        },
+        "decisionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Decisiondigest",
+          "type": "string"
+        },
+        "compatibilityMappingDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Compatibilitymappingdigest",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/ExternalVolumeInputBindingV1"
+        },
+        "current": {
+          "$ref": "#/$defs/ExternalVolumeInputBindingV1"
+        },
+        "evidenceRecordDigests": {
+          "items": {
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Evidencerecorddigests",
+          "type": "array"
+        },
+        "validationPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Validationpolicydigest",
+          "type": "string"
+        },
+        "zoneSnapshot": {
+          "$ref": "#/$defs/ExternalVolumeZoneSnapshotV1"
+        },
+        "executionPolicy": {
+          "$ref": "#/$defs/ExternalRelativeVolumeExecutionPolicyV1"
+        },
+        "authorizedActorIds": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Authorizedactorids",
+          "type": "array"
+        },
+        "validFrom": {
+          "format": "date-time",
+          "title": "Validfrom",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "title": "Validuntil",
+          "type": "string"
+        },
+        "historicalAuthorityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Historicalauthoritydigest",
+          "type": "string"
+        },
+        "baselineRmseM": {
+          "anyOf": [
+            {
+              "maximum": 1e+300,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baselinermsem"
+        },
+        "currentRmseM": {
+          "anyOf": [
+            {
+              "maximum": 1e+300,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currentrmsem"
+        },
+        "maximumZoneCellCount": {
+          "maximum": 100000000,
+          "minimum": 1,
+          "title": "Maximumzonecellcount",
+          "type": "integer"
+        },
+        "maximumZoneAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1e+300,
+          "title": "Maximumzoneaream2",
+          "type": "number"
+        },
+        "syntheticTestOnly": {
+          "title": "Synthetictestonly",
+          "type": "boolean"
+        },
+        "authorityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "currentWorkOrderId",
+        "decisionId",
+        "decisionDigest",
+        "compatibilityMappingDigest",
+        "baseline",
+        "current",
+        "evidenceRecordDigests",
+        "validationPolicyDigest",
+        "zoneSnapshot",
+        "executionPolicy",
+        "authorizedActorIds",
+        "validFrom",
+        "validUntil",
+        "historicalAuthorityDigest",
+        "maximumZoneCellCount",
+        "maximumZoneAreaM2",
+        "syntheticTestOnly",
+        "authorityDigest"
+      ],
+      "title": "ExternalResultReviewAuthorityV1",
+      "type": "object"
+    },
+    "ExternalVolumeInputBindingV1": {
+      "additionalProperties": false,
+      "description": "Observed DSM bytes and capture interval supplied later by Core evidence resolution.",
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "inspectionReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "dsmArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Dsmartifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedverticalreferencedigest",
+          "type": "string"
+        },
+        "capturedFrom": {
+          "format": "date-time",
+          "title": "Capturedfrom",
+          "type": "string"
+        },
+        "capturedTo": {
+          "format": "date-time",
+          "title": "Capturedto",
+          "type": "string"
+        }
+      },
+      "required": [
+        "subject",
+        "inspectionReportDigest",
+        "dsmArtifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "observedCrsDigest",
+        "observedVerticalReferenceDigest",
+        "capturedFrom",
+        "capturedTo"
+      ],
+      "title": "ExternalVolumeInputBindingV1",
+      "type": "object"
+    },
+    "ExternalVolumeMetricsV1": {
+      "additionalProperties": false,
+      "description": "Auditable, finite full-zone coverage and volume arithmetic.",
+      "properties": {
+        "zoneCellCount": {
+          "exclusiveMinimum": 0,
+          "title": "Zonecellcount",
+          "type": "integer"
+        },
+        "commonValidCellCount": {
+          "exclusiveMinimum": 0,
+          "title": "Commonvalidcellcount",
+          "type": "integer"
+        },
+        "zoneAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1e+300,
+          "title": "Zoneaream2",
+          "type": "number"
+        },
+        "measuredAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1e+300,
+          "title": "Measuredaream2",
+          "type": "number"
+        },
+        "commonValidFraction": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Commonvalidfraction",
+          "type": "number"
+        },
+        "cutM3": {
+          "maximum": 1e+300,
+          "minimum": 0.0,
+          "title": "Cutm3",
+          "type": "number"
+        },
+        "fillM3": {
+          "maximum": 1e+300,
+          "minimum": 0.0,
+          "title": "Fillm3",
+          "type": "number"
+        },
+        "netM3": {
+          "maximum": 1e+300,
+          "minimum": -1e+300,
+          "title": "Netm3",
+          "type": "number"
+        },
+        "thresholdM": {
+          "maximum": 1e+300,
+          "minimum": 0.0,
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "uncertaintyM3": {
+          "anyOf": [
+            {
+              "maximum": 1e+300,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Uncertaintym3"
+        },
+        "uncertaintyNote": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Uncertaintynote",
+          "type": "string"
+        }
+      },
+      "required": [
+        "zoneCellCount",
+        "commonValidCellCount",
+        "zoneAreaM2",
+        "measuredAreaM2",
+        "commonValidFraction",
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM",
+        "uncertaintyNote"
+      ],
+      "title": "ExternalVolumeMetricsV1",
+      "type": "object"
+    },
+    "ExternalVolumeZoneSnapshotV1": {
+      "additionalProperties": false,
+      "description": "Immutable copy of one WorkArea geometry without mutable WorkArea status fields.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-volume-zone-snapshot.v1",
+          "default": "external-volume-zone-snapshot.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "revision": {
+          "const": 1,
+          "default": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "polygon": {
+          "additionalProperties": true,
+          "title": "Polygon",
+          "type": "object"
+        },
+        "crs": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Crs",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "analysisVerticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Analysisverticalreferencedigest",
+          "type": "string"
+        },
+        "definitionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "polygon",
+        "crs",
+        "observedCrsDigest",
+        "analysisVerticalReferenceDigest",
+        "definitionDigest"
+      ],
+      "title": "ExternalVolumeZoneSnapshotV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    },
+    "SealedZoneReferenceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "zoneId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Zoneid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "definitionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Definitiondigest",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedverticalreferencedigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "zoneId",
+        "revision",
+        "definitionDigest",
+        "observedCrsDigest",
+        "observedVerticalReferenceDigest"
+      ],
+      "title": "SealedZoneReferenceV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "A durable exact review of a server-resolved external relative-volume report.",
+  "properties": {
+    "contractVersion": {
+      "const": "external-result-review-receipt.v1",
+      "default": "external-result-review-receipt.v1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "reviewRef": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Reviewref",
+      "type": "string"
+    },
+    "organizationId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Organizationid",
+      "type": "string"
+    },
+    "siteId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Siteid",
+      "type": "string"
+    },
+    "sourceWorkOrderId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Sourceworkorderid",
+      "type": "string"
+    },
+    "reportRef": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Reportref",
+      "type": "string"
+    },
+    "request": {
+      "$ref": "#/$defs/ExternalRelativeVolumeRequestV1"
+    },
+    "report": {
+      "$ref": "#/$defs/ExternalRelativeVolumeReportV1"
+    },
+    "authority": {
+      "$ref": "#/$defs/ExternalResultReviewAuthorityV1"
+    },
+    "decision": {
+      "$ref": "#/$defs/ExternalPairUseDecisionV1"
+    },
+    "factualLimitations": {
+      "items": {
+        "maxLength": 255,
+        "minLength": 1,
+        "type": "string"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "title": "Factuallimitations",
+      "type": "array"
+    },
+    "reviewedAt": {
+      "format": "date-time",
+      "title": "Reviewedat",
+      "type": "string"
+    },
+    "reviewDigest": {
+      "anyOf": [
+        {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reviewdigest"
+    }
+  },
+  "required": [
+    "reviewRef",
+    "organizationId",
+    "siteId",
+    "sourceWorkOrderId",
+    "reportRef",
+    "request",
+    "report",
+    "authority",
+    "decision",
+    "factualLimitations",
+    "reviewedAt"
+  ],
+  "title": "ExternalResultReviewReceiptV1",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-result-review-receipt.v1.json"
+}

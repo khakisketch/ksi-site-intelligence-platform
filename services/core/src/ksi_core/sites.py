@@ -94,6 +94,7 @@ from ksi_core.auth import (
     require_permission,
 )
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
@@ -251,8 +252,14 @@ class SiteStore:
     묶는다(edge_sync.py ``EdgeSyncStore`` 관습 대칭).
     """
 
-    def __init__(self, journal: DurableJournal) -> None:
+    def __init__(
+        self,
+        journal: DurableJournal,
+        *,
+        coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+    ) -> None:
         self._journal = journal
+        self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._sites: dict[str, SiteRecord] = {}
         self._issuance_revisions: dict[str, int] = {}
         self._lock = threading.Lock()
@@ -271,6 +278,10 @@ class SiteStore:
         """Mission precheck/commit이 Site journal 장애를 fail-closed로 읽는 표면."""
 
         return self._journal.sealed_reason
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
 
     def _replay(self, journal: DurableJournal) -> None:
         for raw in journal.replay():
@@ -339,9 +350,7 @@ class SiteStore:
             DataResidency.model_validate(residency_payload)  # fail-closed 재검증
         ai_egress_allowed = raw.get("aiEgressAllowed", False)
         if not isinstance(ai_egress_allowed, bool):
-            raise ValueError(
-                f"재생: aiEgressAllowed 가 boolean 이 아니다: siteId={site_id}"
-            )
+            raise ValueError(f"재생: aiEgressAllowed 가 boolean 이 아니다: siteId={site_id}")
         organization_id = raw.get("organizationId", "legacy")
         if not isinstance(organization_id, str) or not is_path_safe_identifier(organization_id):
             raise ValueError(
@@ -446,18 +455,14 @@ class SiteStore:
             raise ValueError(f"미지 siteId 노후 기준 선언 레코드: {site_id}")
         max_age_days = raw["maxAgeDays"]
         if max_age_days is not None and (
-            not isinstance(max_age_days, int)
-            or isinstance(max_age_days, bool)
-            or max_age_days < 1
+            not isinstance(max_age_days, int) or isinstance(max_age_days, bool) or max_age_days < 1
         ):
             raise ValueError(
                 f"재생: maxAgeDays 는 null 이거나 1 이상 정수여야 한다: "
                 f"siteId={site_id} value={max_age_days!r}"
             )
         ts = _parse_ts(raw["ts"])
-        self._sites[site_id] = replace(
-            current, model_max_age_days=max_age_days, updated_at=ts
-        )
+        self._sites[site_id] = replace(current, model_max_age_days=max_age_days, updated_at=ts)
 
     # ── 공개 API ────────────────────────────────────────────────────
     def register(
@@ -483,7 +488,7 @@ class SiteStore:
         """
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             if self._journal.sealed_reason is not None:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
             if not site_id.strip():
@@ -565,9 +570,51 @@ class SiteStore:
             return None
         return record
 
-    def issuance_snapshot(
-        self, site_id: str, *, organization_id: str
-    ) -> SiteIssuanceState | None:
+    def historical_scoped_identity(
+        self,
+        site_id: str,
+        *,
+        organization_id: str,
+        at: datetime,
+    ) -> SiteRecord | None:
+        """Replay the actual Site journal through ``at`` for retained identity.
+
+        External proposal history deliberately needs only the exact scoped Site
+        identity; it must not invent an ``ACTIVE`` Site predicate.  Replaying a
+        time-bounded projection avoids treating a presently visible Site as
+        proof that it existed when the proposal was made.
+        """
+
+        if at.tzinfo is None or at.utcoffset() != UTC.utcoffset(at):
+            raise ValueError("at must be UTC-aware")
+        snapshot = object.__new__(type(self))
+        snapshot._sites = {}
+        snapshot._issuance_revisions = {}
+        for raw in self._journal.replay():
+            if type(raw) is not dict:
+                raise SiteStoreRecoveryError("historical Site journal event is not an object")
+            try:
+                if _parse_ts(raw["ts"]) > at:
+                    continue
+                kind = raw["kind"]
+                if kind == "site-registered":
+                    snapshot._apply_registered(raw)
+                elif kind == "site-transitioned":
+                    snapshot._apply_transitioned(raw)
+                elif kind == "site-aoi-set":
+                    snapshot._apply_aoi_set(raw)
+                elif kind == "site-model-age-policy-set":
+                    snapshot._apply_model_age_policy_set(raw)
+                else:
+                    raise ValueError(f"알 수 없는 kind: {kind!r}")
+            except (KeyError, TypeError, ValueError) as exc:
+                raise SiteStoreRecoveryError(
+                    f"historical Site replay failed for retained identity: {exc}"
+                ) from exc
+        record = snapshot._sites.get(site_id)
+        return record if record is not None and record.organization_id == organization_id else None
+
+    def issuance_snapshot(self, site_id: str, *, organization_id: str) -> SiteIssuanceState | None:
         """현재 발급 인가 상태와 ABA-safe revision을 한 Site lock에서 읽는다."""
 
         with self._lock:
@@ -620,7 +667,7 @@ class SiteStore:
         """
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             if self._journal.sealed_reason is not None:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
             if not evidence.strip():
@@ -680,7 +727,7 @@ class SiteStore:
         """
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             if self._journal.sealed_reason is not None:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
 
@@ -754,7 +801,7 @@ class SiteStore:
                     "정책이 아니라 사고다"
                 ),
             )
-        with self._lock:
+        with self._coordinator.mutation(), self._lock:
             if self._journal.sealed_reason is not None:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
 
@@ -775,9 +822,7 @@ class SiteStore:
             except JournalSealedError:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
             self._apply_model_age_policy_set(raw)
-            return SiteResult(
-                SiteVerdict.MODEL_AGE_POLICY_SET, record=self._sites[site_id]
-            )
+            return SiteResult(SiteVerdict.MODEL_AGE_POLICY_SET, record=self._sites[site_id])
 
     def get(self, site_id: str) -> SiteRecord | None:
         with self._lock:
@@ -1012,22 +1057,16 @@ def build_sites_router(
                 state=status.state.value,
                 epoch_job_id=status.epoch_job_id,
                 registered_at=(
-                    status.registered_at.isoformat()
-                    if status.registered_at is not None
-                    else None
+                    status.registered_at.isoformat() if status.registered_at is not None else None
                 ),
                 age_days=status.age_days,
                 max_age_days=status.max_age_days,
                 source_artifact_count=status.source_artifact_count,
                 succeeded_epoch_count=status.succeeded_epoch_count,
                 site_status=record.status.value,
-                site_status_matches_model=site_status_matches_model(
-                    status.state, record.status
-                ),
+                site_status_matches_model=site_status_matches_model(status.state, record.status),
                 captured_from=(
-                    status.captured_from.isoformat()
-                    if status.captured_from is not None
-                    else None
+                    status.captured_from.isoformat() if status.captured_from is not None else None
                 ),
                 captured_to=(
                     status.captured_to.isoformat() if status.captured_to is not None else None

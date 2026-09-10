@@ -15,6 +15,9 @@ describe("정적 경로", () => {
     ["/events", "확인 항목"],
     ["/missions", "비행 임무 이력"],
     ["/field", "작업"],
+    ["/field/new", "새 관측"],
+    ["/field/inbox", "받은 업무"],
+    ["/field/team", "팀 관리"],
     ["/more", "더보기"],
   ])("%s → %s", (pathname, expected) => {
     expect(resolvePageTitle(pathname)).toBe(expected);
@@ -27,6 +30,9 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/events/dev-1::evt-1")).toBe("확인 항목 상세");
     expect(resolvePageTitle("/missions/mission-1")).toBe("비행 임무 상세");
     expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("현장 작업");
+    expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("새 관측");
+    expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 관측 이력");
+    expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 관측 결과");
     expect(resolvePageTitle("/field/M-1")).toBe("임무 복구");
   });
 

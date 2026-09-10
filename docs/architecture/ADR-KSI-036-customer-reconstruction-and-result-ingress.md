@@ -88,23 +88,43 @@ The local Core API evidence is recorded separately in the
 [verification audit](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md); it does not
 decide this ADR's remaining product, compatibility, deployment, or acceptance work.
 
-### D5 — Remaining detailed specifications
+### D5 — Quantitative V1 detailed specification and remaining specifications
 
-The following are intentionally not decided here and require a future detailed specification with
+The Human-approved [external quantitative authority V1 specification](../superpowers/specs/2026-09-09-external-quantitative-authority-v1.md)
+now defines one deliberately narrow external relative-volume rule. It uses durable pre-decision
+compatibility admission and a post-decision execution snapshot. The policy pre-authorizes an
+independent rule digest; a complete mapping record digest then binds that rule to the exact
+validation-policy digest, and decisions/history use only the complete record. This preserves the
+external/managed boundary and avoids a cryptographic self-reference between policy admission and
+mapping identity.
+
+The stable rule descriptor is available before inspection and contains only the fixed
+profile/parser, same observed CRS/vertical-reference, independently measured checkpoint per epoch,
+ordered non-overlapping capture, and exact WorkArea predicates. Subjects, observed results,
+inspection/evidence/policy digests and WorkArea revisions remain exclusively in the later complete
+mapping record. Common assembly may retain the exact configured mapping participant for Core
+composition, but it adds no admission route or customer authority surface.
+
+Production assembly remains default-closed until an owner-protected configuration path and injected
+catalog authority record are supplied. The catalog record authorizes a strict admission-body digest;
+configuration cannot create or approve it. This is a local Core authority seam, not signed authority
+provisioning, a vendor/export compatibility guarantee, deployment evidence, or release acceptance.
+
+The following remain intentionally undecided and require a future detailed specification with
 contracts, validation, compatibility policy, security review, tests, and acceptance evidence:
 
 - accepted file formats and actual producer export compatibility;
 - semantic validation and provenance/trust verification evidence beyond byte identity;
 - engine/version/profile compatibility and quantitative-comparison policy.
 
-Until then, no runtime path may treat an external result as eligible by default or backfill absent
-facts. This ADR does not change schemas, ProcessingJob state transitions, sealed-bundle semantics,
-Analysis Readiness, or any invariant enforcement.
+No runtime path may treat an external result as eligible by default or backfill absent facts. This
+ADR does not change managed ProcessingJob state transitions, sealed-bundle semantics, Analysis
+Readiness, or any invariant enforcement.
 
 ## Consequences and rollback
 
-Future implementation is additive and must preserve the managed and external identities, with
-typed restrictions for unknown evidence. It requires a separate approved detailed specification;
-no vendor integration, license decision, server deployment, or data-transfer assumption is approved
-by this ADR. Rollback withdraws this future direction and any future feature flags without rewriting
-registered evidence, managed profiles, sealed bundles, or historical results.
+The authority implementation is additive and preserves managed and external identities, with typed
+restrictions for unknown evidence. Disabling its explicit injection stops new issuance without
+rewriting registered evidence, managed profiles, sealed bundles, decisions, authority events, or
+historical results. No vendor integration, license decision, server deployment, customer authority
+provisioning, or data-transfer assumption is approved by this ADR.

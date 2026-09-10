@@ -581,11 +581,13 @@ def _classify_layout(
     structure: TiffStructureV1,
 ) -> str:
     """Apply the v1 COG rules explicitly; a valid non-COG remains measured."""
-    if not bool(dataset.profile.get("tiled")):
-        return "GEOTIFF_STRIPED_V1"
-    if not _has_cog_layout(path, dataset, structure):
-        return "GEOTIFF_TILED_V1"
-    return "COG_PROFILE_V1"
+    # GDAL exposes a legal one-tile COG as `tiled=False` through Rasterio even
+    # though the TIFF records the fixed COG layout.  Apply the raw COG proof
+    # before the presentation hint so the same closed grammar accepts a valid
+    # small COG and still classifies every non-COG as tiled or striped.
+    if _has_cog_layout(path, dataset, structure):
+        return "COG_PROFILE_V1"
+    return "GEOTIFF_TILED_V1" if bool(dataset.profile.get("tiled")) else "GEOTIFF_STRIPED_V1"
 
 
 def _has_cog_layout(
@@ -601,6 +603,8 @@ def _has_cog_layout(
     directories = tuple(structure.directories)
     byte_order = "<" if structure.byte_order == "II" else ">"
     try:
+        if not all(_has_cog_raw_tile_layout(directory, byte_order) for directory in directories):
+            return False
         roles = [_directory_role(directory, byte_order) for directory in directories]
         image_directories = [
             directory
@@ -630,6 +634,32 @@ def _has_cog_layout(
         )
     except (KeyError, IndexError, TiffStructureError, ValueError):
         return False
+
+
+def _has_cog_raw_tile_layout(directory: TiffDirectoryV1, byte_order: str) -> bool:
+    """COG proof is raw-tile-only; driver metadata must not promote strip tables."""
+
+    entries = directory.entries
+    if 273 in entries or 279 in entries:
+        return False
+    if any(tag not in entries for tag in (322, 323, 324, 325)):
+        return False
+    try:
+        width = entries[322].integers(byte_order)
+        height = entries[323].integers(byte_order)
+        offsets = entries[324].integers(byte_order)
+        byte_counts = entries[325].integers(byte_order)
+    except (TiffStructureError, ValueError):
+        return False
+    return (
+        len(width) == 1
+        and len(height) == 1
+        and width[0] == height[0]
+        and 0 < width[0] <= 1024
+        and width[0] % 16 == 0
+        and bool(offsets)
+        and len(offsets) == len(byte_counts)
+    )
 
 
 def _directory_role(directory: TiffDirectoryV1, byte_order: str) -> str:

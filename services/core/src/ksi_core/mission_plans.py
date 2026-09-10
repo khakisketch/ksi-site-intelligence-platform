@@ -114,7 +114,10 @@ from ksi_core.mission_records import (
     raise_for_mission_record_verdict,
     reject_lone_surrogates,
 )
-from ksi_core.observation_work_orders import ObservationWorkOrderStore
+from ksi_core.observation_work_orders import (
+    ExternalReobservationExecutionDenied,
+    ObservationWorkOrderStore,
+)
 
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -703,6 +706,10 @@ def build_mission_plans_router(
                 status_code=422,
                 detail="WORK_ORDER_SITE_MISMATCH — WorkOrder와 Mission의 Site가 다르다",
             )
+        try:
+            observation_work_order_store.assert_execution_allowed(order)
+        except ExternalReobservationExecutionDenied as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         if require_approved and order.status is not ObservationWorkOrderStatus.APPROVED:
             raise HTTPException(
                 status_code=409,

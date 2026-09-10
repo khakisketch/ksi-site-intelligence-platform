@@ -61,12 +61,23 @@ if TYPE_CHECKING:
     from ksi_core.equipment_support import EquipmentSupportStore
     from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
+    from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
+    from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
     from ksi_core.external_evidence import ExternalEvidenceStore
+    from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
     from ksi_core.external_reconstruction import ExternalReconstructionStore
+    from ksi_core.external_relative_volumes import (
+        ExternalRelativeVolumeInputCapabilityIssuer,
+        ExternalRelativeVolumeStore,
+    )
+    from ksi_core.external_reobservation_proposals import ExternalReobservationProposalService
+    from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+    from ksi_core.external_use_evaluator import ExternalUseEvaluator
     from ksi_core.flight_artifacts import FlightArtifactStore
     from ksi_core.mission_execution import MissionExecutionStore
     from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
+    from ksi_core.organization_work_roster import OrganizationWorkRosterStore
     from ksi_core.processing_jobs import ProcessingJobStore
     from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
@@ -76,6 +87,7 @@ if TYPE_CHECKING:
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
     from ksi_core.work_areas import WorkAreaStore
+    from ksi_core.work_inbox import WorkInboxStore
 
 
 # 결합 규칙 표 — (store 인자명, 필수 동반 인자 그룹들, 거부 사유 문장).
@@ -183,6 +195,16 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "observation_work_order_store 는 site_store 와 함께 주어져야 한다(INV-060)",
     ),
     (
+        "organization_work_roster_store",
+        (),
+        "",
+    ),
+    (
+        "work_inbox_store",
+        (("organization_work_roster_store", "observation_work_order_store"),),
+        "work_inbox_store requires the durable roster and WorkOrder journals",
+    ),
+    (
         "external_reconstruction_store",
         (("site_store", "observation_work_order_store", "evidence_storage"),),
         "external_reconstruction_store 는 site_store·observation_work_order_store·"
@@ -194,6 +216,94 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         (("external_reconstruction_store", "observation_work_order_store", "evidence_storage"),),
         "external_evidence_store 는 external_reconstruction_store·"
         "observation_work_order_store·evidence_storage 를 모두 요구한다",
+    ),
+    (
+        "external_evidence_validation_store",
+        (
+            (
+                "external_evidence_store",
+                "external_reconstruction_store",
+                "observation_work_order_store",
+                "evidence_storage",
+            ),
+        ),
+        "external_evidence_validation_store 는 sealed evidence·reconstruction·"
+        "work-order scope·worker byte storage를 함께 요구한다",
+    ),
+    (
+        "external_use_evaluator",
+        (
+            (
+                "external_reconstruction_store",
+                "external_evidence_validation_store",
+                "external_artifact_inspection_store",
+                "observation_work_order_store",
+            ),
+        ),
+        "external_use_evaluator 는 sealed reconstruction·validated evidence·"
+        "inspection·work-order scope를 함께 요구한다",
+    ),
+    (
+        "external_relative_volume_store",
+        (
+            (
+                "external_use_evaluator",
+                "observation_work_order_store",
+                "external_volume_input_capability_issuer",
+            ),
+        ),
+        "external_relative_volume_store requires scoped external use authority "
+        "and byte capabilities",
+    ),
+    (
+        "external_result_workflow_service",
+        (
+            (
+                "external_relative_volume_store",
+                "observation_work_order_store",
+                "site_store",
+                "work_area_store",
+            ),
+        ),
+        "external result workflow requires its durable volume, work-order, site and area graph",
+    ),
+    (
+        "external_result_read_projector",
+        (("external_result_workflow_service", "external_relative_volume_store"),),
+        "external result read projection requires the exact durable workflow graph",
+    ),
+    (
+        "external_volume_input_capability_issuer",
+        (("external_relative_volume_store",),),
+        "external relative volume byte capabilities require the durable request store",
+    ),
+    (
+        "external_display_artifact_store",
+        (
+            (
+                "external_reconstruction_store",
+                "observation_work_order_store",
+                "external_artifact_inspection_store",
+                "evidence_storage",
+            ),
+        ),
+        "external_display_artifact_store 는 external_reconstruction_store·"
+        "observation_work_order_store·external_artifact_inspection_store·"
+        "evidence_storage와 함께만 조립된다",
+    ),
+    (
+        "external_artifact_inspection_store",
+        (
+            (
+                "external_reconstruction_store",
+                "observation_work_order_store",
+                "external_display_artifact_store",
+                "evidence_storage",
+            ),
+        ),
+        "external_artifact_inspection_store 는 external_reconstruction_store·"
+        "observation_work_order_store·external_display_artifact_store·"
+        "evidence_storage와 함께만 조립된다",
     ),
     (
         "acquisition_connectivity_store",
@@ -436,8 +546,19 @@ def create_app(
     region_extraction_report_store: RegionExtractionStore | None = None,
     work_area_store: WorkAreaStore | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
+    organization_work_roster_store: OrganizationWorkRosterStore | None = None,
+    work_inbox_store: WorkInboxStore | None = None,
     external_reconstruction_store: ExternalReconstructionStore | None = None,
     external_evidence_store: ExternalEvidenceStore | None = None,
+    external_evidence_validation_store: ExternalEvidenceValidationStore | None = None,
+    external_use_evaluator: ExternalUseEvaluator | None = None,
+    external_relative_volume_store: ExternalRelativeVolumeStore | None = None,
+    external_result_workflow_service: ExternalReobservationProposalService | None = None,
+    external_result_read_projector: ExternalResultReadProjector | None = None,
+    external_volume_input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer
+    | None = None,
+    external_display_artifact_store: ExternalDisplayArtifactStore | None = None,
+    external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
     capture_quality_report_store: CaptureQualityReportStore | None = None,
@@ -676,8 +797,18 @@ def create_app(
         "report_export_store": report_export_store,
         "work_area_store": work_area_store,
         "observation_work_order_store": observation_work_order_store,
+        "organization_work_roster_store": organization_work_roster_store,
+        "work_inbox_store": work_inbox_store,
         "external_reconstruction_store": external_reconstruction_store,
         "external_evidence_store": external_evidence_store,
+        "external_evidence_validation_store": external_evidence_validation_store,
+        "external_use_evaluator": external_use_evaluator,
+        "external_relative_volume_store": external_relative_volume_store,
+        "external_result_workflow_service": external_result_workflow_service,
+        "external_result_read_projector": external_result_read_projector,
+        "external_volume_input_capability_issuer": external_volume_input_capability_issuer,
+        "external_display_artifact_store": external_display_artifact_store,
+        "external_artifact_inspection_store": external_artifact_inspection_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
         "acquisition_coordination_store": acquisition_coordination_store,
         "capture_quality_report_store": capture_quality_report_store,
@@ -770,6 +901,63 @@ def create_app(
             ),
         )
 
+    if organization_work_roster_store is not None:
+        from ksi_core.organization_work_roster import build_organization_work_roster_router
+
+        app.include_router(build_organization_work_roster_router(organization_work_roster_store))
+        app.state.organization_work_roster_store = organization_work_roster_store
+
+    if work_inbox_store is not None:
+        from ksi_core.work_inbox import build_work_inbox_router
+
+        assert observation_work_order_store is not None  # checked by assembly requirements
+        assert organization_work_roster_store is not None  # checked by assembly requirements
+        if not work_inbox_store.uses_exact_dependencies(
+            work_orders=observation_work_order_store,
+            roster=organization_work_roster_store,
+            report_resolver=external_relative_volume_store,
+        ):
+            raise ValueError(
+                "work inbox must use the mounted durable roster, WorkOrder and report graph"
+            )
+
+        app.include_router(build_work_inbox_router(work_inbox_store))
+        app.state.work_inbox_store = work_inbox_store
+
+    external_result_projection = external_result_read_projector
+    if external_result_workflow_service is not None:
+        from ksi_core.external_reobservation_proposals import verify_external_reobservation_graph
+        from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+
+        service = external_result_workflow_service
+        if (
+            service.work_orders is not observation_work_order_store
+            or service.sites is not site_store
+            or service.work_areas is not work_area_store
+        ):
+            raise ValueError("external result workflow must use the mounted durable stores")
+        assert external_relative_volume_store is not None
+        verify_external_reobservation_graph(service=service)
+        if external_result_projection is None:
+            external_result_projection = ExternalResultReadProjector(
+                volumes=external_relative_volume_store,
+                workflow=service,
+            )
+        elif not external_result_projection.uses_exact_graph(
+            volumes=external_relative_volume_store, workflow=service
+        ):
+            raise ValueError("external result read projection must use the mounted durable graph")
+
+    if external_result_workflow_service is not None and site_workspace_projector is not None:
+        assert site_store is not None  # noqa: S101 -- external workflow assembly requirement
+        assert observation_work_order_store is not None  # noqa: S101 -- workflow requirement
+        if not site_workspace_projector.uses_exact_participants(
+            site_store=site_store,
+            work_order_store=observation_work_order_store,
+            external_results=external_result_projection,
+        ):
+            raise ValueError("site workspace must use the mounted external result projection")
+
     if external_reconstruction_store is not None:
         from ksi_core.external_reconstruction import mount_external_reconstruction
 
@@ -780,6 +968,7 @@ def create_app(
             external_reconstruction_store,
             work_orders=observation_work_order_store,
             storage=evidence_storage,
+            external_results=external_result_projection,
         )
 
     if external_evidence_store is not None:
@@ -794,6 +983,73 @@ def create_app(
             reconstruction=external_reconstruction_store,
             work_orders=observation_work_order_store,
             storage=evidence_storage,
+            terminal_records=external_evidence_validation_store,
+        )
+
+    if external_evidence_validation_store is not None:
+        from ksi_core.external_evidence_validations import mount_external_evidence_validations
+
+        mount_external_evidence_validations(app, external_evidence_validation_store)
+
+    if external_relative_volume_store is not None:
+        from ksi_core.external_relative_volumes import build_external_relative_volume_router
+
+        assert external_reconstruction_store is not None
+        if (
+            external_relative_volume_store.coordinator
+            is not external_reconstruction_store.coordinator
+        ):
+            raise ValueError("external volume and reconstruction must share one coordinator")
+
+        assert external_volume_input_capability_issuer is not None
+        app.include_router(
+            build_external_relative_volume_router(
+                external_relative_volume_store,
+                input_capability_issuer=external_volume_input_capability_issuer,
+                work_orders=observation_work_order_store,
+            )
+        )
+        app.state.external_relative_volume_store = external_relative_volume_store
+
+    if external_result_workflow_service is not None:
+        from ksi_core.external_reobservation_proposals import (
+            build_external_reobservation_proposal_router,
+        )
+        from ksi_core.external_result_workflow_api import build_external_result_workflow_router
+
+        service = external_result_workflow_service
+        assert external_relative_volume_store is not None
+        app.include_router(
+            build_external_result_workflow_router(external_relative_volume_store, service)
+        )
+        app.include_router(build_external_reobservation_proposal_router(service))
+        app.state.external_result_workflow_service = service
+        app.state.external_result_read_projector = external_result_projection
+
+    if external_use_evaluator is not None:
+        from ksi_core.external_use_evaluator import mount_external_use_evaluator
+
+        assert external_reconstruction_store is not None  # noqa: S101 -- assembly table
+        assert observation_work_order_store is not None  # noqa: S101 -- assembly table
+        mount_external_use_evaluator(
+            app,
+            external_use_evaluator,
+            reconstruction=external_reconstruction_store,
+            work_orders=observation_work_order_store,
+        )
+
+    if external_artifact_inspection_store is not None:
+        from ksi_core.external_artifact_inspections import mount_external_artifact_inspections
+
+        assert external_display_artifact_store is not None  # noqa: S101 -- assembly table
+        assert external_reconstruction_store is not None  # noqa: S101 -- assembly table
+        assert observation_work_order_store is not None  # noqa: S101 -- assembly table
+        mount_external_artifact_inspections(
+            app,
+            external_artifact_inspection_store,
+            reconstruction=external_reconstruction_store,
+            work_orders=observation_work_order_store,
+            display_store=external_display_artifact_store,
         )
 
     if acquisition_connectivity_store is not None:

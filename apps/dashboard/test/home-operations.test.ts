@@ -10,6 +10,7 @@ import {
 } from "@/lib/home-operations";
 import type {
   EventSummaryResponse,
+  ObservationWorkOrderOperationsView,
   ObservationWorkOrderStatus,
   ObservationWorkOrderView,
   SiteView,
@@ -29,6 +30,7 @@ function workOrder(
     name: workOrderId,
     workAreaIds: [],
     scheduleId: null,
+    executionMode: null,
     cycleNumber: 1,
     status,
     statusReason: null,
@@ -205,5 +207,39 @@ describe("Home 현장 인텔리전스 projection", () => {
 
     expect(updates.map((update) => update.siteId)).toEqual(["site-b"]);
     expect(updates[0].kind).toBe("CURRENT_LEDGER_CLEAR");
+  });
+});
+
+describe("Home 외부 작업 운영 상태", () => {
+  it("업무 종료 또는 아직 확인할 수 없는 외부 작업을 진행·확인 대기에서 제외한다", () => {
+    const external = (id: string, status: ObservationWorkOrderStatus) => ({
+      ...workOrder(status, id, "2026-08-22T12:00:00Z"),
+      executionMode: "EXTERNAL_RECONSTRUCTION" as const,
+    });
+    const operationsByWorkOrderId = new Map<string, Pick<ObservationWorkOrderOperationsView, "workflowStatus">>([
+      ["open", { workflowStatus: "OPEN" }],
+      ["closed", { workflowStatus: "CLOSED" }],
+      ["unspecified", { workflowStatus: "UNSPECIFIED" }],
+    ]);
+
+    expect(selectHomeDecisionWorkOrders([
+      external("open", "AWAITING_APPROVAL"),
+      external("closed", "AWAITING_APPROVAL"),
+      external("unspecified", "AWAITING_APPROVAL"),
+    ], 10, { operationsByWorkOrderId }).map((item) => item.workOrderId)).toEqual(["open"]);
+    expect(selectHomeActiveWorkOrders([
+      external("open", "PROCESSING"),
+      external("closed", "PROCESSING"),
+      external("unspecified", "PROCESSING"),
+    ], 10, { operationsByWorkOrderId }).map((item) => item.workOrderId)).toEqual(["open"]);
+  });
+
+  it("nullable legacy external successor도 운영 기록이 종료되면 Home에서 제외한다", () => {
+    const legacy = workOrder("PROCESSING", "legacy-closed", "2026-08-22T12:00:00Z");
+    const operationsByWorkOrderId = new Map<string, Pick<ObservationWorkOrderOperationsView, "workflowStatus">>([
+      [legacy.workOrderId, { workflowStatus: "CLOSED" }],
+    ]);
+
+    expect(selectHomeActiveWorkOrders([legacy], 10, { operationsByWorkOrderId })).toEqual([]);
   });
 });

@@ -18,6 +18,9 @@ const STATIC_TITLES: Record<string, string> = {
   "/settings": "장비 연결·지원 상태",
   "/more": "더보기",
   "/field": "작업",
+  "/field/new": "새 관측",
+  "/field/inbox": "받은 업무",
+  "/field/team": "팀 관리",
 };
 
 export function resolvePageTitle(pathname: string | null): string {
@@ -34,6 +37,9 @@ export function resolvePageTitle(pathname: string | null): string {
   // /sites/{id}/surveys/new · /sites/{id}/design · /sites/{id}/work-areas 가
   // /sites/{id} 보다 먼저 걸려야 한다.
   if (/^\/sites\/[^/]+\/surveys\/new\/?$/.test(pathname)) return "조사 계획";
+  if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "새 관측";
+  if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 관측 결과";
+  if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 관측 이력";
   if (/^\/sites\/[^/]+\/design\/?$/.test(pathname)) return "설계 기준면";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/progress\/?$/.test(pathname)) return "계획 대비 진척";

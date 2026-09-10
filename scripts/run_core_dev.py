@@ -34,6 +34,7 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
 from ksi_core.observability import configure_structured_logging
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
@@ -173,6 +174,7 @@ def build_dev_app(
     s3_bucket: str | None = None,
     human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
     oidc_verifier: OidcJwtVerifier | None = None,
+    external_result_workflow: ExternalResultWorkflowAssemblyConfig | None = None,
 ) -> DevAssembly:
     """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다.
 
@@ -198,6 +200,7 @@ def build_dev_app(
             s3_bucket=s3_bucket,
             human_auth_mode=human_auth_mode,
             oidc_verifier=oidc_verifier,
+            external_result_workflow=external_result_workflow,
         )
     except BaseException:
         for journal in opened:
@@ -215,6 +218,7 @@ def _build_dev_app_locked(
     s3_bucket: str | None,
     human_auth_mode: HumanAuthMode,
     oidc_verifier: OidcJwtVerifier | None,
+    external_result_workflow: ExternalResultWorkflowAssemblyConfig | None,
 ) -> DevAssembly:
     """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
@@ -243,6 +247,7 @@ def _build_dev_app_locked(
         evidence_storage=evidence_storage,
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
+        external_result_workflow=external_result_workflow,
     )
 
     # 열린 순서 그대로 닫는다 — 목록을 손으로 유지하면 새 원장을 추가하면서

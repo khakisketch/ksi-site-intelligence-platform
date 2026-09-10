@@ -30,9 +30,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
 from ksi_core.app import create_app
+from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import (
     AuthRegistry,
     Principal,
@@ -206,6 +208,25 @@ def _work_order_client(tmp_path: Path) -> Iterator[TestClient]:
 
 
 @contextmanager
+def _external_use_client(tmp_path: Path) -> Iterator[TestClient]:
+    """Fully assembled external-use surface for direct hostile-body coverage."""
+    journals = _JournalSet(tmp_path)
+    app = assemble_app(
+        tmp_path,
+        journal=journals.open,
+        opened=journals._opened,  # noqa: SLF001 -- assembly owns only these test journals
+        edge_sync_snapshot_every=None,
+        auth_registry=_auth_registry(),
+        evidence_storage=_ValidationEvidenceStorage(),
+        mission_signing_key=Ed25519PrivateKey.generate(),
+        mission_signing_key_id="hostile-external-use-key",
+    )
+    with _managed_client(app, journals) as client:
+        client.headers.update({"Authorization": f"Bearer {_ADMIN_TOKEN}"})
+        yield client
+
+
+@contextmanager
 def _acquisition_client(tmp_path: Path) -> Iterator[TestClient]:
     journals = _JournalSet(tmp_path)
     site_store = SiteStore(journals.open("acquisition-sites.jsonl"))
@@ -364,6 +385,35 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
             path,
             content=raw.encode("utf-8", "surrogatepass"),
             headers={"Content-Type": "application/json"},
+        )
+    assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
+    assert response.headers["content-type"].startswith("application/json")
+    json.loads(response.text)
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        (
+            "/v1/observation-work-orders/order-1/external-reconstruction-submissions/"
+            "ers-v1-" + "a" * 64 + "/revisions/1/use-decisions/single"
+        ),
+        (
+            "/v1/observation-work-orders/order-1/external-reconstruction-submissions/"
+            "ers-v1-" + "a" * 64 + "/revisions/1/use-decisions/pair"
+        ),
+    ],
+)
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_external_use_hostile_bodies_are_machine_readable_422(
+    path: str, label: str, raw: str, tmp_path: Path
+) -> None:
+    """Both selection bodies reject hostile JSON before any scope lookup occurs."""
+    with _external_use_client(tmp_path) as client:
+        response = client.post(
+            path,
+            content=raw.encode("utf-8", "surrogatepass"),
+            headers={"Content-Type": "application/json", "Idempotency-Key": "hostile-1"},
         )
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")

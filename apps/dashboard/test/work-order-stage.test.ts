@@ -25,4 +25,16 @@ describe("presentWorkOrder", () => {
     expect(presentWorkOrder("REVIEW_READY").action).toBe("OPEN_RESULTS");
     expect(presentWorkOrder("COMPLETED").action).toBe("OPEN_RESULTS");
   });
+
+  it("presents an approved external upload task without implying a flight", () => {
+    expect(presentWorkOrder("APPROVED", "EXTERNAL_RECONSTRUCTION")).toMatchObject({
+      label: "산출물 등록 준비",
+      detail: expect.stringContaining("비행이나 장비 실행을 시작하지 않습니다"),
+    });
+  });
+
+  it("preserves legacy and managed approved labels", () => {
+    expect(presentWorkOrder("APPROVED", null).label).toBe("비행 계획 준비");
+    expect(presentWorkOrder("APPROVED", "MANAGED_ACQUISITION").label).toBe("비행 계획 준비");
+  });
 });

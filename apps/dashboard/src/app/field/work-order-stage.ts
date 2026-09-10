@@ -1,4 +1,4 @@
-import type { ObservationWorkOrderStatus } from "@/lib/core-api/types";
+import type { ObservationWorkOrderExecutionMode, ObservationWorkOrderStatus } from "@/lib/core-api/types";
 import type { Tone } from "@/lib/core-api/labels";
 
 export type WorkOrderPrimaryAction =
@@ -17,7 +17,20 @@ export interface WorkOrderPresentation {
   actionLabel: string | null;
 }
 
-export function presentWorkOrder(status: ObservationWorkOrderStatus): WorkOrderPresentation {
+export function presentWorkOrder(
+  status: ObservationWorkOrderStatus,
+  executionMode: ObservationWorkOrderExecutionMode | null = null,
+): WorkOrderPresentation {
+  if (status === "APPROVED" && executionMode === "EXTERNAL_RECONSTRUCTION") {
+    return {
+      step: 2,
+      label: "산출물 등록 준비",
+      detail: "촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행을 시작하지 않습니다.",
+      tone: "progress",
+      action: "REFRESH",
+      actionLabel: "등록 상태 확인",
+    };
+  }
   switch (status) {
     case "DRAFT":
     case "AWAITING_APPROVAL":
