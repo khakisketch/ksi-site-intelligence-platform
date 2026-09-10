@@ -21,12 +21,18 @@ file is re-hashed before any account, map, D-Bus, or Docker action.
 
 Before any activation, an owner must supply all of the following outside Git:
 
-1. A current-operator-owned private release-evidence record from an exact clean
-   source checkout. It must bind the two fixed local RC tags to their locally
-   inspected image IDs, include a nonempty list of immutable external
-   runtime references and image IDs, and the path plus SHA256 of the actual
-   SBOM and scanner artifacts. The lifecycle gate re-hashes the artifacts and
-   re-inspects every named local image; a claimed digest alone is insufficient.
+1. A current-operator-owned private canonical `release-evidence.v1` record
+   from an exact clean source checkout, plus its separate owner-only
+   `external-runtime-host-binding.v1` record. The binding must contain the
+   canonical-record hash, Core/Dashboard observed image IDs, separate
+   product-owned inspector/measurement immutable references and observed image
+   IDs/repository digests, and the path, type, byte count, and SHA256 of their
+   actual SBOM and scanner artifacts. Canonical `externalRuntimeImages` remain
+   dependency pins and are verified separately; they do not declare product
+   runtime roles. The lifecycle gate re-hashes and validates the runtime JSON,
+   requires each recorded and locally observed repository-digest list to
+   include the release reference's canonical repository digest, and re-inspects
+   every named local image; a claimed digest alone is insufficient.
 2. A private, real worker configuration, Core token, inspector configuration,
    measurement configuration, manifest, revocations, public keys, host proof,
    resource limits, and authority-currentness inputs. The repository examples

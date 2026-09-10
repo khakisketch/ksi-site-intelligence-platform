@@ -28,7 +28,9 @@ readonly required_templates=(
   dbus.socket.private.conf
   docker.service.private.conf
   ksi-external-runtime-directories.service
+  ksi-external-runtime-socket-acl.service
   ksi-external-validation-worker.service
+  bin/ksi-external-runtime-socket-acl
   user/ksi-external-inspector.socket
   user/ksi-external-inspector.service
   user/ksi-external-measurement.socket
@@ -216,6 +218,7 @@ validate_template_manifest() {
   declare -A declared_hashes=()
   root_owned_private_directory "$template_root" || { echo "template root must be root-owned and not group/other writable" >&2; return 1; }
   root_owned_private_directory "$template_root/user" || { echo "template user directory must be root-owned and not group/other writable" >&2; return 1; }
+  root_owned_private_directory "$template_root/bin" || { echo "template bin directory must be root-owned and not group/other writable" >&2; return 1; }
   root_owned_private_file "$template_manifest" || { echo "template manifest must be root-owned private regular file" >&2; return 1; }
   actual_manifest_sha256="sha256:$(sha256sum -- "$template_manifest" | awk '{print $1}')"
   [[ "$actual_manifest_sha256" == "$template_manifest_sha256" ]] || { echo "template manifest SHA256 differs from approved value" >&2; return 1; }
@@ -381,7 +384,11 @@ for unit in ksi-external-inspector.socket ksi-external-inspector.service ksi-ext
 done
 install -d -m 0755 /etc/systemd/system
 install -m 0644 "$template_root/ksi-external-runtime-directories.service" /etc/systemd/system/ksi-external-runtime-directories.service
+install -m 0644 "$template_root/ksi-external-runtime-socket-acl.service" /etc/systemd/system/ksi-external-runtime-socket-acl.service
 install -m 0644 "$template_root/ksi-external-validation-worker.service" /etc/systemd/system/ksi-external-validation-worker.service
+install -d -m 0755 -o root -g root /usr/local/lib/ksi-external-runtime/bin
+install -m 0755 -o root -g root "$template_root/bin/ksi-external-runtime-socket-acl" /usr/local/lib/ksi-external-runtime/bin/ksi-external-runtime-socket-acl
+/usr/bin/systemctl daemon-reload
 
 /usr/bin/loginctl enable-linger ksi-inspector
 /usr/bin/systemctl start "user@${inspector_uid}.service"

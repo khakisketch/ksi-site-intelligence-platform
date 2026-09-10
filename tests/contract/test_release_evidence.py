@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -17,6 +18,7 @@ from jsonschema import Draft202012Validator, FormatChecker
 _ROOT = Path(__file__).resolve().parents[2]
 _TOOL = _ROOT / "tools" / "build_release_evidence.py"
 _SCHEMA = _ROOT / "contracts" / "schemas" / "release-evidence.v1.json"
+_STAGE = _ROOT / "deploy" / "bin" / "external-runtime-stage.sh"
 _REFERENCE = "ksi-core:2026.08.30.1@sha256:" + "a" * 64
 _CONTEXT_SHA = subprocess.run(
     ["git", "rev-parse", "HEAD"],
@@ -163,6 +165,150 @@ def test_release_evidence_schema_is_valid_and_positive_manifest_is_canonical(
     assert stat.S_IMODE(os.lstat(result.sidecar_path).st_mode) == 0o600
     assert str(tmp_path) not in manifest_bytes.decode("utf-8")
     assert "not-recorded" not in manifest_bytes.decode("utf-8")
+
+
+def test_stage_consumes_the_canonical_generator_output_without_legacy_manifest_fields(
+    tmp_path: Path,
+) -> None:
+    """The candidate gate consumes the producer's public v1 shape unchanged.
+
+    Breaking change caught: rewriting the gate to read the old host-local
+    ``sourceCommit``/``images`` shape rejects the output made by the canonical
+    release-evidence generator before a Docker observation is even reached.
+    Docker inspection is isolated below this contract test; its live binding is
+    exercised separately by the staging deployment test.
+    """
+    tool = _tool()
+    core_sbom, core_scanner = _inputs(tmp_path)
+    dashboard_sbom = _json(
+        tmp_path / "release-inputs" / "ksi-dashboard.cdx.json",
+        {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": []},
+    )
+    dashboard_scanner = _json(
+        tmp_path / "release-inputs" / "ksi-dashboard.scan.json",
+        {"scanner": {"name": "example"}, "results": [{"status": "clear"}]},
+    )
+    dashboard_reference = "ksi-dashboard:2026.09.10.1@sha256:" + "d" * 64
+    evidence = tool.build_release_evidence(
+        repo_root=_ROOT,
+        output_dir=tmp_path / "release-evidence",
+        image_artifacts=[
+            tool.ImageEvidenceInput(_REFERENCE, core_sbom, core_scanner),
+            tool.ImageEvidenceInput(dashboard_reference, dashboard_sbom, dashboard_scanner),
+        ],
+        context=tool.ReleaseBuildContext(_CONTEXT_SHA, _CONTEXT_TIME),
+    )
+    manifest = json.loads(evidence.manifest_path.read_text(encoding="utf-8"))
+    runtime_sbom = _json(
+        tmp_path / "release-inputs" / "runtime.cdx.json",
+        {"bomFormat": "CycloneDX", "specVersion": "1.5", "components": [{"name": "runtime"}]},
+    )
+    runtime_scanner = _json(
+        tmp_path / "release-inputs" / "runtime.scan.json",
+        {"scanner": {"name": "example", "schemaVersion": "1.0"}, "results": []},
+    )
+
+    def observed(path: Path, artifact_type: str) -> dict[str, str | int]:
+        return {
+            "path": str(path),
+            "sha256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
+            "bytes": len(path.read_bytes()),
+            "type": artifact_type,
+        }
+
+    def canonical_repo_digest(reference: str) -> str:
+        if reference == _NODEODM_DIGEST_ONLY:
+            return reference
+        name_and_tag, digest = reference.rsplit("@", maxsplit=1)
+        return name_and_tag.rsplit(":", maxsplit=1)[0] + "@" + digest
+
+    external_bindings = [
+        {
+            "releaseReference": reference,
+            "dockerImageId": "sha256:" + f"{index + 1:x}" * 64,
+            "repoDigests": [canonical_repo_digest(reference)],
+        }
+        for index, reference in enumerate(manifest["externalRuntimeImages"])
+    ]
+    assert len(external_bindings) >= 2
+    binding = {
+        "schemaVersion": "external-runtime-host-binding.v1",
+        "releaseEvidence": {"sha256": "sha256:" + evidence.manifest_sha256},
+        "source": {"gitCommitSha": _CONTEXT_SHA},
+        "productImages": [
+            {
+                "component": component,
+                "releaseReference": product["reference"],
+                "dockerImageId": "sha256:" + image_digit * 64,
+                "repoDigests": [canonical_repo_digest(product["reference"])],
+                "sbom": observed(sbom, "cyclonedx-json"),
+                "scanner": observed(scanner, "scanner-json"),
+            }
+            for component, product, sbom, scanner, image_digit in (
+                ("core", manifest["productImages"][0], core_sbom, core_scanner, "a"),
+                ("dashboard", manifest["productImages"][1], dashboard_sbom, dashboard_scanner, "b"),
+            )
+        ],
+        "runtimeProducts": [
+            {
+                "role": "inspector",
+                "releaseReference": "ksi-inspector:2026.09.10.1@sha256:" + "e" * 64,
+                "dockerImageId": "sha256:" + "c" * 64,
+                "repoDigests": ["ksi-inspector@sha256:" + "e" * 64],
+                "sbom": observed(runtime_sbom, "cyclonedx-json"),
+                "scanner": observed(runtime_scanner, "scanner-json"),
+            },
+            {
+                "role": "measurement",
+                "releaseReference": "ksi-measurement:2026.09.10.1@sha256:" + "f" * 64,
+                "dockerImageId": "sha256:" + "d" * 64,
+                "repoDigests": ["ksi-measurement@sha256:" + "f" * 64],
+                "sbom": observed(runtime_sbom, "cyclonedx-json"),
+                "scanner": observed(runtime_scanner, "scanner-json"),
+            },
+        ],
+        "externalRuntimeImages": external_bindings,
+    }
+    binding_path = tmp_path / "host-binding.json"
+    binding_path.write_text(json.dumps(binding, separators=(",", ":")), encoding="utf-8")
+    binding_path.chmod(0o600)
+
+    shell = r'''source "$1"
+repo_dir="$2"
+KSI_EXTERNAL_RC_RELEASE_EVIDENCE="$3"
+KSI_EXTERNAL_RC_HOST_BINDING="$4"
+expected_commit="$5"
+git() {
+  if [[ "$1" == "-C" && "$3" == "status" ]]; then return 0; fi
+  if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "HEAD" ]]; then
+    printf '%s\n' "$expected_commit"
+    return 0
+  fi
+  command git "$@"
+}
+verify_product_image_binding() { return 0; }
+verify_image_binding() { return 0; }
+verify_observed_repo_digests() { return 0; }
+require_release_evidence
+'''
+    result = subprocess.run(
+        [
+            "bash",
+            "-c",
+            shell,
+            "bash",
+            str(_STAGE),
+            str(_ROOT),
+            str(evidence.manifest_path),
+            str(binding_path),
+            _CONTEXT_SHA,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_schema_refuses_the_legacy_misnamed_git_commit_hash_field(tmp_path: Path) -> None:
