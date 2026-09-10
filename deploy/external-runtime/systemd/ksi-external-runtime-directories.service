@@ -1,0 +1,14 @@
+[Unit]
+Description=KSI external runtime private socket directory
+Before=ksi-external-inspector.socket ksi-external-measurement.socket
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/install -d -m 0710 -o ksi-inspector -g ksi-inspector /run/ksi-external-runtime/launcher
+ExecStart=/usr/bin/setfacl --remove-all /run/ksi-external-runtime/launcher
+ExecStart=/usr/bin/setfacl --remove-default /run/ksi-external-runtime/launcher
+ExecStart=/usr/bin/setfacl --modify u:ksi-validator:--x,m::--x /run/ksi-external-runtime/launcher
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

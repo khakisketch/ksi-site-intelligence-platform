@@ -1,0 +1,12 @@
+[Unit]
+Description=KSI external measurement Unix socket (private candidate)
+Before=ksi-external-measurement.service
+
+[Socket]
+ListenStream=/run/ksi-external-runtime/launcher/measurement.sock
+SocketMode=0600
+Service=ksi-external-measurement.service
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target
