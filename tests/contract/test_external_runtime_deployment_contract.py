@@ -15,6 +15,7 @@ import os
 import socket
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -416,7 +417,7 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
             "type": artifact_type,
         }
 
-    host_binding = {
+    host_binding: dict[str, Any] = {
         "schemaVersion": "external-runtime-host-binding.v1",
         "releaseEvidence": {"sha256": evidence_digest},
         "source": {"gitCommitSha": source_commit},
