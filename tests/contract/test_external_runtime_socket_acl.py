@@ -259,13 +259,19 @@ activate_socket_acls; verify_acl_shapes''',
 
 def test_acl_reader_normalizes_getfacl_effective_annotations(tmp_path: Path) -> None:
     """A narrower mask must not make an exact production ACL comparison fail."""
+    validator = pwd.getpwnam("nobody")
+    masked = next(
+        account
+        for account in pwd.getpwall()
+        if account.pw_uid not in {os.getuid(), validator.pw_uid}
+    )
     parent = tmp_path / "production-parent"
     parent.mkdir(mode=0o700)
     subprocess.check_call(
         [
             "setfacl",
             "--set",
-            "u::rwx,u:ksi-inspector:r-x,u:ksi-validator:--x,g::---,m::--x,o::---",
+            f"u::rwx,u:{masked.pw_name}:r-x,u:{validator.pw_name}:--x,g::---,m::--x,o::---",
             str(parent),
         ]
     )
@@ -288,8 +294,8 @@ def test_acl_reader_normalizes_getfacl_effective_annotations(tmp_path: Path) -> 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == (
         "user::rwx\n"
-        "user:ksi-inspector:r-x\n"
-        "user:ksi-validator:--x\n"
+        f"user:{masked.pw_name}:r-x\n"
+        f"user:{validator.pw_name}:--x\n"
         "group::---\n"
         "mask::--x\n"
         "other::---"
@@ -315,6 +321,26 @@ if activate_socket_acls; then exit 90; fi
             listener.close()
 
     assert result.returncode == 0, result.stderr
+    assert _access_acl(inspection) == _expected_pristine_socket_acl()
+    assert _access_acl(measurement) == _expected_pristine_socket_acl()
+
+
+def test_acl_activation_rolls_back_when_signalled_during_parent_freeze(tmp_path: Path) -> None:
+    """A signal in the first mutation window must restore the exact initial ACLs."""
+    parent, inspection, measurement, listeners, env = _candidate(tmp_path)
+    try:
+        result = _run_acl(
+            env,
+            r'''after_parent_frozen() { kill -TERM $$; }
+activate_socket_acls
+''',
+        )
+    finally:
+        for listener in listeners:
+            listener.close()
+
+    assert result.returncode != 0
+    assert _access_acl(parent) == _expected_parent_acl()
     assert _access_acl(inspection) == _expected_pristine_socket_acl()
     assert _access_acl(measurement) == _expected_pristine_socket_acl()
 

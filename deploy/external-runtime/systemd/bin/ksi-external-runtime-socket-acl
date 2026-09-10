@@ -133,8 +133,10 @@ rollback_transaction() {
   transaction_active=0
   return "$failed"
 }
-on_signal() { local status=$?; (( transaction_active )) && rollback_transaction || true; exit "$status"; }
-trap on_signal HUP INT TERM
+on_signal() { local status="$1"; (( transaction_active )) && rollback_transaction || true; exit "$status"; }
+trap 'on_signal 129' HUP
+trap 'on_signal 130' INT
+trap 'on_signal 143' TERM
 abort_transaction() { local why="$1"; rollback_transaction || echo "ACL rollback encountered substituted state; rerun only after host investigation" >&2; echo "$why" >&2; return 1; }
 
 verify_acl_shapes() {
@@ -148,8 +150,12 @@ activate_socket_acls() {
   require_absolute_path "$parent_dir" && require_absolute_path "$runtime_root" && require_absolute_path "$inspection_socket" && require_absolute_path "$measurement_socket" && require_accounts || return 1
   observed="$(socket_state "$inspection_socket")" || { echo "inspection socket is not a reviewed safe state; stop" >&2; return 1; }; inspection_state="${observed%%:*}"; inspection_before="${observed#*:}"
   observed="$(socket_state "$measurement_socket")" || { echo "measurement socket is not a reviewed safe state; stop" >&2; return 1; }; measurement_state="${observed%%:*}"; measurement_before="${observed#*:}"
-  freeze_parent || { echo "cannot freeze the launcher parent; stop" >&2; return 1; }
   transaction_active=1
+  if ! freeze_parent; then
+    if [[ -n "$parent_before" ]]; then rollback_transaction || true; else transaction_active=0; fi
+    echo "cannot freeze the launcher parent; stop" >&2
+    return 1
+  fi
   require_socket_snapshot "$inspection_socket" "$inspection_state" "$inspection_before" || abort_transaction "inspection socket changed after parent freeze"
   require_socket_snapshot "$measurement_socket" "$measurement_state" "$measurement_before" || abort_transaction "measurement socket changed after parent freeze"
   if [[ "$inspection_state" == PRISTINE ]] && ! apply_active_acl "$inspection_socket"; then abort_transaction "inspection ACL mutation failed"; return 1; fi
