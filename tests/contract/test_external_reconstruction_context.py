@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_reconstruction import ExternalReconstructionStore
+from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
 from test_external_reconstruction_api import (
     _OTHER_TOKEN,
     _TOKEN,
@@ -100,7 +100,9 @@ def test_initial_external_ingress_requires_an_explicit_ordered_capture_interval(
         submission_id="capture-interval-1",
     )
     payload["submissionDigest"] = ExternalReconstructionSubmissionV1.digest_for_wire(payload)
-    path = f"/v1/observation-work-orders/{external.work_order_id}/external-reconstruction-submissions"
+    path = (
+        f"/v1/observation-work-orders/{external.work_order_id}/external-reconstruction-submissions"
+    )
 
     missing = client.post(path, headers={"Authorization": f"Bearer {_TOKEN}"}, json=payload)
     assert missing.status_code == 422

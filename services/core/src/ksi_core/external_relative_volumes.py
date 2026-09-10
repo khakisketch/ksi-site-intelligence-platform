@@ -1519,9 +1519,7 @@ class ExternalRelativeVolumeStore:
                 and record.authority.organization_id == organization_id
             )
 
-    def report_refs_for_site(
-        self, site_id: str, *, organization_id: str
-    ) -> tuple[str, ...]:
+    def report_refs_for_site(self, site_id: str, *, organization_id: str) -> tuple[str, ...]:
         """Return retained report references in deterministic newest-first order.
 
         This deliberately exposes no request ledger. Callers must still resolve
@@ -2406,7 +2404,9 @@ def build_external_relative_volume_router(
             # The closure guard scopes the WorkOrder before attempting issue.
             # Keep absent and foreign identifiers indistinguishable from the
             # other scoped external-workflow reads.
-            raise HTTPException(status_code=404, detail="relative-volume request was not found") from exc
+            raise HTTPException(
+                status_code=404, detail="relative-volume request was not found"
+            ) from exc
         except RuntimeError as exc:
             if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
                 raise HTTPException(status_code=409, detail=str(exc)) from exc

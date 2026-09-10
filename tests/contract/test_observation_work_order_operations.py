@@ -12,15 +12,22 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app import create_app
-from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role, mount_auth
+from ksi_core.auth import (
+    AuthRegistry,
+    Principal,
+    PrincipalKind,
+    PrincipalTokenRecord,
+    Role,
+    mount_auth,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_relative_volumes import build_external_relative_volume_router
 from ksi_core.observation_work_orders import (
     ObservationWorkOrderStore,
     ObservationWorkOrderStoreRecoveryError,
 )
-from ksi_core.sites import SiteStore
 from ksi_core.site_workspace import SiteWorkspaceProjector
+from ksi_core.sites import SiteStore
 from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
 from ksi_mission_contracts.models import SiteFrame
 from test_external_reconstruction_api import _TOKEN as _RECONSTRUCTION_TOKEN
@@ -162,7 +169,11 @@ def test_relative_volume_issue_hides_absent_and_foreign_work_orders(
     )
 
     assert (absent.status_code, foreign.status_code) == (404, 404)
-    assert absent.json()["detail"] == foreign.json()["detail"] == "relative-volume request was not found"
+    assert (
+        absent.json()["detail"]
+        == foreign.json()["detail"]
+        == "relative-volume request was not found"
+    )
 
 
 def test_external_operations_are_idempotent_and_do_not_mutate_sealed_work_order(
@@ -262,13 +273,17 @@ def test_external_operations_are_idempotent_and_do_not_mutate_sealed_work_order(
 
     store._journal.close()  # noqa: SLF001 -- restart projection contract
     restored = ObservationWorkOrderStore(
-        DurableJournal(journal_path), site_exists=lambda site_id, organization_id: (
+        DurableJournal(journal_path),
+        site_exists=lambda site_id, organization_id: (
             site_id == "site-a" and organization_id == "org-a"
-        )
+        ),
     )
-    assert restored.get_operations(work_order_id, organization_id="org-a").model_dump(  # type: ignore[union-attr]
-        by_alias=True, mode="json"
-    ) == reopened.json()
+    assert (
+        restored.get_operations(work_order_id, organization_id="org-a").model_dump(  # type: ignore[union-attr]
+            by_alias=True, mode="json"
+        )
+        == reopened.json()
+    )
     restored._journal.close()  # noqa: SLF001 -- test owns replay journal
 
 
@@ -308,33 +323,51 @@ def test_operations_bulk_scope_preserves_legacy_unknown_and_rejects_invalid_huma
         "updatedBy": None,
     }
 
-    assert client.get(
-        f"/v1/observation-work-orders/{work_order_id}/operations",
-        headers=_headers(_OPERATOR_B),
-    ).status_code == 404
-    assert client.get(
-        "/v1/observation-work-order-operations?siteId=site-b",
-        headers=_headers(_OPERATOR_A),
-    ).status_code == 404
-    assert client.post(
-        f"/v1/observation-work-orders/{work_order_id}/operations/assignment",
-        headers=_headers(_VIEWER_A, key="viewer"),
-        json={"expectedOperationsRevision": 1, "action": "ASSIGN_TO_ME"},
-    ).status_code == 403
-    assert client.post(
-        f"/v1/observation-work-orders/{work_order_id}/operations/assignment",
-        headers=_headers(_OPERATOR_A, key="bad-action"),
-        json={
-            "expectedOperationsRevision": 1,
-            "action": "ASSIGN_TO_ME",
-            "assigneePrincipalId": "other",
-        },
-    ).status_code == 422
-    assert client.post(
-        f"/v1/observation-work-orders/{managed.json()['workOrderId']}/operations/close",
-        headers=_headers(_OPERATOR_A, key="managed"),
-        json={"expectedOperationsRevision": 0, "note": "관리형 작업은 이 표면에서 종료하지 않는다"},
-    ).status_code == 409
+    assert (
+        client.get(
+            f"/v1/observation-work-orders/{work_order_id}/operations",
+            headers=_headers(_OPERATOR_B),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.get(
+            "/v1/observation-work-order-operations?siteId=site-b",
+            headers=_headers(_OPERATOR_A),
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/v1/observation-work-orders/{work_order_id}/operations/assignment",
+            headers=_headers(_VIEWER_A, key="viewer"),
+            json={"expectedOperationsRevision": 1, "action": "ASSIGN_TO_ME"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/v1/observation-work-orders/{work_order_id}/operations/assignment",
+            headers=_headers(_OPERATOR_A, key="bad-action"),
+            json={
+                "expectedOperationsRevision": 1,
+                "action": "ASSIGN_TO_ME",
+                "assigneePrincipalId": "other",
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/v1/observation-work-orders/{managed.json()['workOrderId']}/operations/close",
+            headers=_headers(_OPERATOR_A, key="managed"),
+            json={
+                "expectedOperationsRevision": 0,
+                "note": "관리형 작업은 이 표면에서 종료하지 않는다",
+            },
+        ).status_code
+        == 409
+    )
 
 
 def test_operations_reject_stale_revision_and_close_field_pair_violations(tmp_path: Path) -> None:
@@ -363,11 +396,14 @@ def test_operations_reject_stale_revision_and_close_field_pair_violations(tmp_pa
     assert close.json()["closedAt"] is not None
     assert close.json()["closedBy"] == "operator-a"
     assert close.json()["closeNote"] == "완료"
-    assert client.post(
-        f"/v1/observation-work-orders/{work_order_id}/operations/reopen",
-        headers=_headers(_OPERATOR_A, key="reopen-extra"),
-        json={"expectedOperationsRevision": 2, "note": "금지"},
-    ).status_code == 422
+    assert (
+        client.post(
+            f"/v1/observation-work-orders/{work_order_id}/operations/reopen",
+            headers=_headers(_OPERATOR_A, key="reopen-extra"),
+            json={"expectedOperationsRevision": 2, "note": "금지"},
+        ).status_code
+        == 422
+    )
 
 
 @pytest.mark.parametrize("corruption", ["revision-gap", "foreign-scope", "reused-key-hash"])
@@ -432,13 +468,14 @@ def test_operations_allow_retained_external_successor_binding_and_close_guard(
 
     assert closed.operations_revision == 1
     assert closed.workflow_status.value == "CLOSED"
-    assert store.get(successor.work_order_id, organization_id="org-1").model_dump_json(  # type: ignore[union-attr]
-        by_alias=True
-    ) == before
-    with pytest.raises(RuntimeError, match="EXTERNAL_WORKFLOW_CLOSED"):
-        store.assert_new_external_intent_allowed(
-            successor.work_order_id, organization_id="org-1"
+    assert (
+        store.get(successor.work_order_id, organization_id="org-1").model_dump_json(  # type: ignore[union-attr]
+            by_alias=True
         )
+        == before
+    )
+    with pytest.raises(RuntimeError, match="EXTERNAL_WORKFLOW_CLOSED"):
+        store.assert_new_external_intent_allowed(successor.work_order_id, organization_id="org-1")
 
 
 def test_closed_external_work_order_blocks_new_registration_but_keeps_exact_retry(
@@ -458,8 +495,7 @@ def test_closed_external_work_order_blocks_new_registration_but_keeps_exact_retr
         now=datetime(2026, 9, 10, tzinfo=UTC),
     )
     path = (
-        f"/v1/observation-work-orders/{external.work_order_id}"
-        "/external-reconstruction-submissions"
+        f"/v1/observation-work-orders/{external.work_order_id}/external-reconstruction-submissions"
     )
     payload = _reconstruction_submission(
         work_order_id=external.work_order_id,
@@ -479,7 +515,9 @@ def test_closed_external_work_order_blocks_new_registration_but_keeps_exact_retr
         idempotency_key="close-before-registration",
         now=datetime(2026, 9, 10, 1, tzinfo=UTC),
     )
-    blocked = client.post(path, headers={"Authorization": f"Bearer {_RECONSTRUCTION_TOKEN}"}, json=payload)
+    blocked = client.post(
+        path, headers={"Authorization": f"Bearer {_RECONSTRUCTION_TOKEN}"}, json=payload
+    )
     assert blocked.status_code == 409
     assert blocked.json()["detail"] == "EXTERNAL_WORKFLOW_CLOSED"
 
@@ -510,6 +548,7 @@ def test_closed_external_work_order_blocks_new_registration_but_keeps_exact_retr
     )
     assert retry.status_code == 201
     assert retry.json() == created.json()
+
 
 def test_closed_external_work_order_leaves_site_active_projection_and_next_action(
     tmp_path: Path,

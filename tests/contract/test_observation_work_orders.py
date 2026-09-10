@@ -120,9 +120,7 @@ def test_api_is_organization_scoped_and_approval_is_optimistic(tmp_path: Path) -
         == 404
     )
     assert (
-        client.get(
-            "/v1/sites/site-a/observation-schedules", headers=_headers(_TOKEN_B)
-        ).status_code
+        client.get("/v1/sites/site-a/observation-schedules", headers=_headers(_TOKEN_B)).status_code
         == 404
     )
     assert (
@@ -195,9 +193,7 @@ def test_global_work_queue_scopes_before_filtering(tmp_path: Path) -> None:
         "/v1/observation-work-orders?status=AWAITING_APPROVAL",
         headers=_headers(_TOKEN_A),
     )
-    assert [item["name"] for item in awaiting_approval.json()["workOrders"]] == [
-        "승인 대기 작업"
-    ]
+    assert [item["name"] for item in awaiting_approval.json()["workOrders"]] == ["승인 대기 작업"]
 
     in_progress = client.get(
         "/v1/observation-work-orders?actionGroup=IN_PROGRESS",
@@ -424,7 +420,9 @@ def test_expired_reobservation_draft_cannot_change_safe_state(tmp_path: Path) ->
     journal.close()
 
 
-def test_initial_external_work_order_is_approved_once_and_replays_lost_response(tmp_path: Path) -> None:
+def test_initial_external_work_order_is_approved_once_and_replays_lost_response(
+    tmp_path: Path,
+) -> None:
     client, store = _api(tmp_path)
     headers = {**_headers(_TOKEN_A), "Idempotency-Key": "external-create-1"}
     payload = {
@@ -434,9 +432,7 @@ def test_initial_external_work_order_is_approved_once_and_replays_lost_response(
         "executionMode": "EXTERNAL_RECONSTRUCTION",
     }
 
-    created = client.post(
-        "/v1/sites/site-a/observation-work-orders", headers=headers, json=payload
-    )
+    created = client.post("/v1/sites/site-a/observation-work-orders", headers=headers, json=payload)
     assert created.status_code == 201, created.text
     body = created.json()
     assert body["executionMode"] == "EXTERNAL_RECONSTRUCTION"
@@ -444,9 +440,7 @@ def test_initial_external_work_order_is_approved_once_and_replays_lost_response(
     assert body["createdBy"] == body["approvedBy"] == "operator-a"
     assert body["createdAt"] == body["approvedAt"]
 
-    retried = client.post(
-        "/v1/sites/site-a/observation-work-orders", headers=headers, json=payload
-    )
+    retried = client.post("/v1/sites/site-a/observation-work-orders", headers=headers, json=payload)
     assert retried.status_code == 201, retried.text
     assert retried.json() == body
     assert len(store.list_for_site("site-a", organization_id="org-a")) == 1
@@ -531,9 +525,7 @@ def test_initial_external_work_order_replay_keeps_execution_guard_and_legacy_is_
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "external-work-order.jsonl"
-    store = ObservationWorkOrderStore(
-        DurableJournal(path), site_exists=lambda _site, _org: True
-    )
+    store = ObservationWorkOrderStore(DurableJournal(path), site_exists=lambda _site, _org: True)
     external = store.create_work_order(
         organization_id="org-a",
         site_id="site-a",

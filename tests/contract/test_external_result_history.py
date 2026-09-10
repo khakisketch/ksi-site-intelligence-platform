@@ -45,22 +45,28 @@ def test_scoped_history_and_exact_detail_retain_unavailable_source_rows(tmp_path
             assert item["result"] is not None
             assert item["result"]["reportRef"] == report.report_id
             assert item["result"]["reportDigest"] == report.report_digest
-            assert item["result"]["currentWorkOrderId"] == graph.source.authority.current_work_order_id
-            assert item["result"]["measurementStatus"] == "SUCCEEDED"
-            exact = client.get(
-                f"/v1/sites/site-a/observations/{report.report_id}", headers=headers
+            assert (
+                item["result"]["currentWorkOrderId"] == graph.source.authority.current_work_order_id
             )
+            assert item["result"]["measurementStatus"] == "SUCCEEDED"
+            exact = client.get(f"/v1/sites/site-a/observations/{report.report_id}", headers=headers)
             assert exact.status_code == 200, exact.text
             assert exact.json()["state"] == "AVAILABLE"
             assert exact.json()["result"]["reportRef"] == report.report_id
 
-            assert client.get(
-                f"/v1/sites/site-other/observations/{report.report_id}", headers=headers
-            ).status_code == 404
-            assert client.get(
-                "/v1/sites/site-a/external-relative-volume-reports?after=unknown-report&limit=1",
-                headers=headers,
-            ).status_code == 404
+            assert (
+                client.get(
+                    f"/v1/sites/site-other/observations/{report.report_id}", headers=headers
+                ).status_code
+                == 404
+            )
+            assert (
+                client.get(
+                    "/v1/sites/site-a/external-relative-volume-reports?after=unknown-report&limit=1",
+                    headers=headers,
+                ).status_code
+                == 404
+            )
 
             graph.volumes._authority_port.historical_authority = replace(  # noqa: SLF001
                 graph.history.authority, decision_id="historical-source-withdrawn"
