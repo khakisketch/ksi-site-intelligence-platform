@@ -44,7 +44,7 @@ require_accounts() {
   validator_uid="$(/usr/bin/id -u "$validator_account")" || return 1
   [[ "$launcher_uid" =~ ^[0-9]+$ && "$launcher_gid" =~ ^[0-9]+$ && "$validator_uid" =~ ^[0-9]+$ && "$launcher_uid" != "$validator_uid" ]]
 }
-access_acl() { /usr/bin/getfacl --absolute-names --omit-header --access -- "$1"; }
+access_acl() { /usr/bin/getfacl --absolute-names --omit-header --no-effective --access -- "$1"; }
 default_acl_is_empty() { local v; v="$(/usr/bin/getfacl --absolute-names --omit-header --default -- "$1")" || return 1; [[ -z "$v" ]]; }
 expected_parent_acl() { if [[ "$library_only" == 1 ]]; then printf 'user::rwx\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$validator_account"; else printf 'user::rwx\nuser:%s:rwx\nuser:%s:--x\ngroup::---\nmask::rwx\nother::---' "$launcher_account" "$validator_account"; fi; }
 expected_frozen_parent_acl() { if [[ "$library_only" == 1 ]]; then printf 'user::r-x\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$validator_account"; else printf 'user::rwx\nuser:%s:r-x\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$launcher_account" "$validator_account"; fi; }
@@ -110,6 +110,9 @@ freeze_parent() {
   fi
 }
 restore_parent() {
+  if [[ -n "$parent_before" && "$(parent_identity "$(normal_parent_mode)")" == "$parent_before" ]] && require_parent_acl "$(expected_parent_acl)"; then
+    return 0
+  fi
   [[ -n "$parent_before" && "$(parent_identity "$(frozen_parent_mode)")" == "$parent_before" ]] || return 1
   if [[ "$library_only" == 1 ]]; then set_parent_acl "u::rwx,u:${validator_account}:--x,g::---,m::--x,o::---" || return 1; else set_parent_acl "u::rwx,u:${launcher_account}:rwx,u:${validator_account}:--x,g::---,m::rwx,o::---" || return 1; fi
   [[ "$(parent_identity "$(normal_parent_mode)")" == "$parent_before" ]] && require_parent_acl "$(expected_parent_acl)"
@@ -154,9 +157,9 @@ activate_socket_acls() {
   require_socket_snapshot "$measurement_socket" "$measurement_state" "$measurement_before" || { abort_transaction "measurement socket changed during ACL activation"; return 1; }
   if [[ "$measurement_state" == PRISTINE ]] && ! apply_active_acl "$measurement_socket"; then abort_transaction "measurement ACL mutation failed"; return 1; fi
   [[ "$(parent_identity "$(frozen_parent_mode)")" == "$parent_before" ]] || { abort_transaction "launcher parent changed during ACL activation"; return 1; }
-  restore_parent || { echo "cannot restore exact launcher parent ACL; stop" >&2; return 1; }
+  restore_parent || { abort_transaction "cannot restore exact launcher parent ACL; stop"; return 1; }
+  verify_acl_shapes || { abort_transaction "final socket ACL verification failed; stop"; return 1; }
   transaction_active=0
-  verify_acl_shapes
 }
 
 run_as() { local account="$1"; shift; /usr/sbin/runuser -u "$account" -- "$@"; }

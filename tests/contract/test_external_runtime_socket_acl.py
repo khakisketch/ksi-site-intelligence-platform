@@ -255,3 +255,88 @@ activate_socket_acls; verify_acl_shapes''',
     assert _access_acl(measurement) == _expected_active_socket_acl()
     parent.chmod(0o700)
     subprocess.check_call(["setfacl", "--remove-all", str(parent)])
+
+
+def test_acl_reader_normalizes_getfacl_effective_annotations(tmp_path: Path) -> None:
+    """A narrower mask must not make an exact production ACL comparison fail."""
+    parent = tmp_path / "production-parent"
+    parent.mkdir(mode=0o700)
+    subprocess.check_call(
+        [
+            "setfacl",
+            "--set",
+            "u::rwx,u:ksi-inspector:r-x,u:ksi-validator:--x,g::---,m::--x,o::---",
+            str(parent),
+        ]
+    )
+
+    result = _run_acl(
+        {
+            **os.environ,
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_LIBRARY_ONLY": "1",
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_PARENT": str(parent),
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_RUNTIME_ROOT": str(tmp_path),
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_INSPECTION_SOCKET": str(parent / "inspection.sock"),
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_MEASUREMENT_SOCKET": str(parent / "measurement.sock"),
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_OWNER": pwd.getpwuid(os.getuid()).pw_name,
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_VALIDATOR": "nobody",
+            "KSI_EXTERNAL_RUNTIME_SOCKET_ACL_TRUSTED_OWNER_UID": str(os.getuid()),
+        },
+        f'access_acl "{parent}"',
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == (
+        "user::rwx\n"
+        "user:ksi-inspector:r-x\n"
+        "user:ksi-validator:--x\n"
+        "group::---\n"
+        "mask::--x\n"
+        "other::---"
+    )
+
+
+def test_acl_activation_revokes_socket_grants_when_parent_restore_fails(tmp_path: Path) -> None:
+    """A failed parent restoration must not leave validator socket access granted."""
+    parent, inspection, measurement, listeners, env = _candidate(tmp_path)
+    try:
+        result = _run_acl(
+            env,
+            r'''restore_parent() { return 73; }
+if activate_socket_acls; then exit 90; fi
+[[ "$(access_acl "$inspection_socket")" == "$(expected_pristine_socket_acl)" ]]
+[[ "$(access_acl "$measurement_socket")" == "$(expected_pristine_socket_acl)" ]]
+''',
+        )
+    finally:
+        parent.chmod(0o700)
+        subprocess.check_call(["setfacl", "--remove-all", str(parent)])
+        for listener in listeners:
+            listener.close()
+
+    assert result.returncode == 0, result.stderr
+    assert _access_acl(inspection) == _expected_pristine_socket_acl()
+    assert _access_acl(measurement) == _expected_pristine_socket_acl()
+
+
+def test_acl_activation_rolls_back_when_final_verification_fails(tmp_path: Path) -> None:
+    """The transaction must remain active until the final policy proof succeeds."""
+    parent, inspection, measurement, listeners, env = _candidate(tmp_path)
+    try:
+        result = _run_acl(
+            env,
+            r'''verify_acl_shapes() { return 74; }
+if activate_socket_acls; then exit 90; fi
+[[ "$(access_acl "$parent_dir")" == "$(expected_parent_acl)" ]]
+[[ "$(access_acl "$inspection_socket")" == "$(expected_pristine_socket_acl)" ]]
+[[ "$(access_acl "$measurement_socket")" == "$(expected_pristine_socket_acl)" ]]
+''',
+        )
+    finally:
+        for listener in listeners:
+            listener.close()
+
+    assert result.returncode == 0, result.stderr
+    assert _access_acl(parent) == _expected_parent_acl()
+    assert _access_acl(inspection) == _expected_pristine_socket_acl()
+    assert _access_acl(measurement) == _expected_pristine_socket_acl()
