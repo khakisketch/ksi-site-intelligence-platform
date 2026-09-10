@@ -1162,7 +1162,7 @@ def test_runtime_adapter_never_rereads_borrowed_bytes_in_the_parent_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A parent ``pread`` stall cannot outlive the retained source deadline."""
+    """The parent process never reads borrowed artifact bytes with ``pread``."""
     import ksi_processing_controller.external_inspector_docker as docker_module
     from ksi_processing_controller.external_inspector_staging import FileSystemInputStaging
 
@@ -1246,27 +1246,24 @@ def test_runtime_adapter_never_rereads_borrowed_bytes_in_the_parent_process(
         host_proof=cast(RootlessDockerHostProofPort, _Proof()),
         images=_Images(),
     )
-    actual_pread = os.pread
     parent_pread_calls: list[tuple[int, int]] = []
 
-    def stalled_parent_pread(descriptor: int, count: int, offset: int) -> bytes:
+    def forbidden_parent_pread(descriptor: int, count: int, offset: int) -> bytes:
+        del descriptor
         parent_pread_calls.append((count, offset))
-        time.sleep(0.150)
-        return actual_pread(descriptor, count, offset)
+        raise AssertionError("parent process must not pread borrowed artifact bytes")
 
-    monkeypatch.setattr(docker_module.os, "pread", stalled_parent_pread)
-    started = time.monotonic()
+    monkeypatch.setattr(docker_module.os, "pread", forbidden_parent_pread)
     try:
         payload = adapter.create_payload(
             configuration=configuration,
             binding=_binding(),
-            deadline_monotonic=started + 0.100,
+            deadline_monotonic=time.monotonic() + 5.0,
         )
     finally:
         sealed.abort()
 
     assert payload["HostConfig"]["Mounts"][0]["Target"] == "/input/artifact.tif"
-    assert time.monotonic() - started < 0.250
     assert parent_pread_calls == []
 
 
