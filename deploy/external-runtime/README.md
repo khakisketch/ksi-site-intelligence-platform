@@ -73,11 +73,42 @@ fails before account or map changes.
 
 The socket templates deliberately start as `0600` launcher-owned sockets. A
 systemd socket directive cannot express the required named-user POSIX ACL
-without granting group access. Before enabling either socket, a separately
-reviewed root-owned ACL activation procedure must prove the exact private
-parent and named `ksi-validator` ACL required by
-`services/processing-controller/README.md`. Until then the units remain a
-fail-closed deployment asset, not an activated worker lane.
+without granting group access. Bootstrap installs but never starts the
+root-owned `ksi-external-runtime-socket-acl.service`; it also installs its
+reviewed helper at the exact path
+`/usr/local/lib/ksi-external-runtime/bin/ksi-external-runtime-socket-acl`.
+
+After a root operator has separately started both reviewed user socket units,
+the operator may manually start that ACL service. It refuses a missing,
+symlinked, non-socket, wrong-owner, wrong-mode, linked, or replaced inode, and
+it refuses any parent or socket ACL that differs from its unopened baseline.
+For the brief mutation, it removes the launcher owner's write permission from
+the parent, which is itself required to be beneath a root-owned,
+launcher-nonwritable runtime root. It revalidates both socket inodes while the
+parent is frozen, applies a transactional ACL change, restores any partial
+write on failure, and restores the exact parent ACL. Re-running safely
+normalizes pristine, active, or mixed socket states.
+
+Only then does it add the named `ksi-validator:rw-` entries to both sockets;
+it re-proves the exact root-owned `0770` parent (named `ksi-inspector:rwx`,
+named `ksi-validator:--x`, group/other none, no default ACL) and `0660` sockets
+(`ksi-inspector:rw-`, `ksi-validator:rw-`, group/other none, no default ACL).
+The manual proof command is:
+
+```bash
+/usr/local/lib/ksi-external-runtime/bin/ksi-external-runtime-socket-acl \
+  verify --json --untrusted-user nobody
+```
+
+It performs real AF_UNIX `connect(2)` probes as `ksi-validator` to both
+application sockets and verifies connection denial for the specified distinct
+untrusted account, rootless Docker, D-Bus, and rootful Docker. It does not
+send a worker request and the current protocol does not emit a server-recorded
+`SO_PEERCRED` receipt. Accordingly, its JSON record is deliberately
+`BLOCKED_SERVER_PEER_CREDENTIAL` with that field `NOT_VERIFIED`, and exits
+nonzero. It is not an activation pass, does not start an application, and does
+not authorize a release. The worker lane remains blocked until the application
+protocol records and returns the server-observed peer credential.
 
 ## Candidate lifecycle
 

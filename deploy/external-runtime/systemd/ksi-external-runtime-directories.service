@@ -4,10 +4,10 @@ Before=ksi-external-inspector.socket ksi-external-measurement.socket
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/install -d -m 0710 -o ksi-inspector -g ksi-inspector /run/ksi-external-runtime/launcher
+ExecStart=/usr/bin/install -d -m 0770 -o root -g root /run/ksi-external-runtime/launcher
 ExecStart=/usr/bin/setfacl --remove-all /run/ksi-external-runtime/launcher
 ExecStart=/usr/bin/setfacl --remove-default /run/ksi-external-runtime/launcher
-ExecStart=/usr/bin/setfacl --modify u:ksi-validator:--x,m::--x /run/ksi-external-runtime/launcher
+ExecStart=/usr/bin/setfacl --modify g::---,u:ksi-inspector:rwx,u:ksi-validator:--x,m::rwx /run/ksi-external-runtime/launcher
 RemainAfterExit=yes
 
 [Install]

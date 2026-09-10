@@ -30,7 +30,10 @@ _REQUIRED_ASSETS = (
     _DEPLOY / "compose.external-reconstruction.yaml",
     _DEPLOY / ".env.external-reconstruction.example",
     _RUNTIME / "README.md",
+    _RUNTIME / "systemd" / "ksi-external-runtime-directories.service",
+    _RUNTIME / "systemd" / "ksi-external-runtime-socket-acl.service",
     _RUNTIME / "systemd" / "ksi-external-validation-worker.service",
+    _RUNTIME / "systemd" / "bin" / "ksi-external-runtime-socket-acl",
     _RUNTIME / "systemd" / "user" / "ksi-external-inspector.socket",
     _RUNTIME / "systemd" / "user" / "ksi-external-inspector.service",
     _RUNTIME / "systemd" / "user" / "ksi-external-measurement.socket",
@@ -126,6 +129,28 @@ def test_host_assets_keep_validator_and_launcher_privileges_separate() -> None:
     assert "SocketMode=0600" in dbus_dropin
     assert "UMask=0077" in docker_dropin
     assert "chmod 0600 %t/docker.sock" in docker_dropin
+
+
+def test_socket_acl_activation_is_a_root_owned_manual_systemd_boundary() -> None:
+    """The named ACL is installed only after the two private sockets exist."""
+    activation = _text(_RUNTIME / "systemd" / "ksi-external-runtime-socket-acl.service")
+    helper = _text(_RUNTIME / "systemd" / "bin" / "ksi-external-runtime-socket-acl")
+
+    assert "Requires=ksi-external-runtime-directories.service" in activation
+    assert "WantedBy=" not in activation
+    assert "ProtectSystem=strict" in activation
+    assert "PrivateNetwork=yes" in activation
+    assert "PrivateDevices=yes" in activation
+    assert "RestrictAddressFamilies=AF_UNIX" in activation
+    assert "CapabilityBoundingSet=CAP_DAC_OVERRIDE CAP_FOWNER CAP_SETGID CAP_SETUID" in activation
+    assert (
+        "ExecStart=/usr/local/lib/ksi-external-runtime/bin/"
+        "ksi-external-runtime-socket-acl activate"
+    ) in activation
+    assert "measurement socket changed during ACL activation" in helper
+    assert "--untrusted-user" in helper
+    assert "s.connect(sys.argv[1])" in helper
+    assert "BLOCKED_SERVER_PEER_CREDENTIAL" in helper
 
 
 def test_bootstrap_refuses_drift_and_preflight_remains_read_only() -> None:
@@ -697,6 +722,9 @@ def test_bootstrap_binds_templates_and_markers_to_private_exact_inputs() -> None
     assert "-S \"$socket_path\" && ! -L \"$socket_path\"" in bootstrap
     assert "stat --format='%d:%i:%u:%g:%a:%h:%F'" in bootstrap
     assert "interval_overlaps_other_allocation" in bootstrap
+    assert "ksi-external-runtime-socket-acl.service" in bootstrap
+    assert "bin/ksi-external-runtime-socket-acl" in bootstrap
+    assert "/usr/local/lib/ksi-external-runtime/bin" in bootstrap
     assert "/var/lib/ksi-external-runtime-preflight" in preflight
     assert "/var/lib/ksi-external-runtime-preflight" in bootstrap
 
@@ -715,7 +743,9 @@ def test_systemd_template_manifest_binds_each_installed_asset() -> None:
         "dbus.socket.private.conf",
         "docker.service.private.conf",
         "ksi-external-runtime-directories.service",
+        "ksi-external-runtime-socket-acl.service",
         "ksi-external-validation-worker.service",
+        "bin/ksi-external-runtime-socket-acl",
         "user/ksi-external-inspector.socket",
         "user/ksi-external-inspector.service",
         "user/ksi-external-measurement.socket",
@@ -848,11 +878,14 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
     env = _bootstrap_library_env(tmp_path)
     template_root = tmp_path / "templates"
     (template_root / "user").mkdir(parents=True)
+    (template_root / "bin").mkdir()
     required = (
         "dbus.socket.private.conf",
         "docker.service.private.conf",
         "ksi-external-runtime-directories.service",
+        "ksi-external-runtime-socket-acl.service",
         "ksi-external-validation-worker.service",
+        "bin/ksi-external-runtime-socket-acl",
         "user/ksi-external-inspector.socket",
         "user/ksi-external-inspector.service",
         "user/ksi-external-measurement.socket",
@@ -868,6 +901,7 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
         lines.append(f"{hashlib.sha256(file.read_bytes()).hexdigest()}  {relative}")
     template_root.chmod(0o700)
     (template_root / "user").chmod(0o700)
+    (template_root / "bin").chmod(0o700)
     manifest = tmp_path / "manifest.sha256"
     manifest.write_text("\n".join(lines) + "\n", encoding="utf-8")
     manifest.chmod(0o600)

@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+# Root-owned, fail-closed activation for the two external-runtime UDS ACLs.
+set -euo pipefail
+export LC_ALL=C
+umask 077
+
+library_only="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_LIBRARY_ONLY:-0}"
+is_sourced=0
+[[ "${BASH_SOURCE[0]}" != "$0" ]] && is_sourced=1
+if [[ "$library_only" == 1 && "$is_sourced" == 1 ]]; then
+  parent_dir="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_PARENT:?set test socket parent}"
+  runtime_root="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_RUNTIME_ROOT:?set test runtime root}"
+  inspection_socket="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_INSPECTION_SOCKET:?set test inspection socket}"
+  measurement_socket="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_MEASUREMENT_SOCKET:?set test measurement socket}"
+  launcher_account="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_OWNER:?set test launcher account}"
+  validator_account="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_VALIDATOR:?set test validator account}"
+  trusted_owner_uid="${KSI_EXTERNAL_RUNTIME_SOCKET_ACL_TRUSTED_OWNER_UID:?set test trusted owner uid}"
+else
+  parent_dir=/run/ksi-external-runtime/launcher
+  runtime_root=/run/ksi-external-runtime
+  inspection_socket=/run/ksi-external-runtime/launcher/inspection.sock
+  measurement_socket=/run/ksi-external-runtime/launcher/measurement.sock
+  launcher_account=ksi-inspector
+  validator_account=ksi-validator
+  trusted_owner_uid=0
+fi
+readonly parent_dir runtime_root inspection_socket measurement_socket launcher_account validator_account trusted_owner_uid
+
+launcher_uid=
+launcher_gid=
+validator_uid=
+transaction_active=0
+parent_before=
+inspection_before=
+measurement_before=
+inspection_state=
+measurement_state=
+
+usage() { echo "usage: $0 activate | verify [--json] [--untrusted-user account]" >&2; exit 2; }
+require_absolute_path() { [[ "$1" == /* && "$1" != *".."* ]] || { echo "socket ACL path must be absolute and normalized" >&2; return 1; }; }
+require_accounts() {
+  launcher_uid="$(/usr/bin/id -u "$launcher_account")" || return 1
+  launcher_gid="$(/usr/bin/id -g "$launcher_account")" || return 1
+  validator_uid="$(/usr/bin/id -u "$validator_account")" || return 1
+  [[ "$launcher_uid" =~ ^[0-9]+$ && "$launcher_gid" =~ ^[0-9]+$ && "$validator_uid" =~ ^[0-9]+$ && "$launcher_uid" != "$validator_uid" ]]
+}
+access_acl() { /usr/bin/getfacl --absolute-names --omit-header --access -- "$1"; }
+default_acl_is_empty() { local v; v="$(/usr/bin/getfacl --absolute-names --omit-header --default -- "$1")" || return 1; [[ -z "$v" ]]; }
+expected_parent_acl() { if [[ "$library_only" == 1 ]]; then printf 'user::rwx\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$validator_account"; else printf 'user::rwx\nuser:%s:rwx\nuser:%s:--x\ngroup::---\nmask::rwx\nother::---' "$launcher_account" "$validator_account"; fi; }
+expected_frozen_parent_acl() { if [[ "$library_only" == 1 ]]; then printf 'user::r-x\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$validator_account"; else printf 'user::rwx\nuser:%s:r-x\nuser:%s:--x\ngroup::---\nmask::--x\nother::---' "$launcher_account" "$validator_account"; fi; }
+normal_parent_mode() { [[ "$library_only" == 1 ]] && printf 710 || printf 770; }
+frozen_parent_mode() { [[ "$library_only" == 1 ]] && printf 510 || printf 710; }
+expected_pristine_socket_acl() { printf 'user::rw-\ngroup::---\nother::---'; }
+expected_active_socket_acl() { printf 'user::rw-\nuser:%s:rw-\ngroup::---\nmask::rw-\nother::---' "$validator_account"; }
+
+parent_identity() {
+  local expected_mode="$1" i d n u g m l t
+  [[ -d "$parent_dir" && ! -L "$parent_dir" ]] || return 1
+  i="$(/usr/bin/stat --format='%d:%i:%u:%g:%a:%h:%F' -- "$parent_dir")" || return 1
+  IFS=: read -r d n u g m l t <<<"$i"
+  local owner_uid="$trusted_owner_uid" owner_gid="$trusted_owner_uid"; [[ "$library_only" == 1 ]] && { owner_uid="$launcher_uid"; owner_gid="$launcher_gid"; }
+  [[ "$d" =~ ^[0-9]+$ && "$n" =~ ^[0-9]+$ && "$u" == "$owner_uid" && "$g" == "$owner_gid" && "$m" == "$expected_mode" && "$l" =~ ^[0-9]+$ && "$t" == directory ]] || return 1
+  printf '%s' "$d:$n:$u:$g:$l:$t"
+}
+stable_socket_identity() {
+  local p="$1" i d n u g m l t
+  [[ -S "$p" && ! -L "$p" ]] || return 1
+  i="$(/usr/bin/stat --format='%d:%i:%u:%g:%a:%h:%F' -- "$p")" || return 1
+  IFS=: read -r d n u g m l t <<<"$i"
+  [[ "$d" =~ ^[0-9]+$ && "$n" =~ ^[0-9]+$ && "$u" == "$launcher_uid" && "$g" == "$launcher_gid" && "$l" == 1 && "$t" == socket ]] || return 1
+  printf '%s' "$d:$n:$u:$g:$l:$t"
+}
+require_runtime_root() {
+  local mode uid
+  [[ -d "$runtime_root" && ! -L "$runtime_root" ]] || return 1
+  uid="$(/usr/bin/stat --format=%u -- "$runtime_root")" || return 1
+  mode="$(/usr/bin/stat --format=%a -- "$runtime_root")" || return 1
+  [[ "$uid" == "$trusted_owner_uid" && "$mode" =~ ^[0-7]{3,4}$ && $((8#$mode & 8#022)) -eq 0 ]] || return 1
+  [[ "$library_only" == 1 ]] || /usr/sbin/runuser -u "$launcher_account" -- /usr/bin/test ! -w "$runtime_root"
+}
+require_parent_acl() { [[ "$(access_acl "$parent_dir")" == "$1" ]] && default_acl_is_empty "$parent_dir"; }
+socket_state() {
+  local p="$1" identity mode acl
+  identity="$(stable_socket_identity "$p")" || return 1
+  mode="$(/usr/bin/stat --format=%a -- "$p")" || return 1
+  acl="$(access_acl "$p")" || return 1
+  default_acl_is_empty "$p" || return 1
+  if [[ "$mode" == 600 && "$acl" == "$(expected_pristine_socket_acl)" ]]; then printf 'PRISTINE:%s' "$identity"; elif [[ "$mode" == 660 && "$acl" == "$(expected_active_socket_acl)" ]]; then printf 'ACTIVE:%s' "$identity"; else return 1; fi
+}
+require_socket_snapshot() {
+  local p="$1" state="$2" identity="$3" actual
+  actual="$(stable_socket_identity "$p")" || return 1
+  [[ "$actual" == "$identity" ]] || return 1
+  case "$state" in PRISTINE) [[ "$(socket_state "$p")" == "PRISTINE:$identity" ]] ;; ACTIVE) [[ "$(socket_state "$p")" == "ACTIVE:$identity" ]] ;; *) return 1 ;; esac
+}
+set_parent_acl() { /usr/bin/setfacl --set "$1" -- "$parent_dir"; }
+after_parent_frozen() { :; }
+before_promote_second() { :; }
+freeze_parent() {
+  parent_before="$(parent_identity "$(normal_parent_mode)")" || return 1
+  require_runtime_root && require_parent_acl "$(expected_parent_acl)" || return 1
+  if [[ "$library_only" == 1 ]]; then set_parent_acl "u::r-x,u:${validator_account}:--x,g::---,m::--x,o::---" || return 1; else set_parent_acl "u::rwx,u:${launcher_account}:r-x,u:${validator_account}:--x,g::---,m::--x,o::---" || return 1; fi
+  if ! [[ "$(parent_identity "$(frozen_parent_mode)")" == "$parent_before" ]] || ! require_parent_acl "$(expected_frozen_parent_acl)"; then
+    restore_parent || true
+    return 1
+  fi
+  if ! after_parent_frozen; then
+    restore_parent || true
+    return 1
+  fi
+}
+restore_parent() {
+  [[ -n "$parent_before" && "$(parent_identity "$(frozen_parent_mode)")" == "$parent_before" ]] || return 1
+  if [[ "$library_only" == 1 ]]; then set_parent_acl "u::rwx,u:${validator_account}:--x,g::---,m::--x,o::---" || return 1; else set_parent_acl "u::rwx,u:${launcher_account}:rwx,u:${validator_account}:--x,g::---,m::rwx,o::---" || return 1; fi
+  [[ "$(parent_identity "$(normal_parent_mode)")" == "$parent_before" ]] && require_parent_acl "$(expected_parent_acl)"
+}
+apply_active_acl() { /usr/bin/setfacl --set "u::rw-,u:${validator_account}:rw-,g::---,m::rw-,o::---" -- "$1"; }
+restore_socket() {
+  local p="$1" state="$2" identity="$3" desired
+  [[ "$(stable_socket_identity "$p")" == "$identity" ]] || return 1
+  case "$state" in PRISTINE) desired='u::rw-,g::---,o::---' ;; ACTIVE) desired="u::rw-,u:${validator_account}:rw-,g::---,m::rw-,o::---" ;; *) return 1 ;; esac
+  /usr/bin/setfacl --set "$desired" -- "$p" || return 1
+  require_socket_snapshot "$p" "$state" "$identity"
+}
+rollback_transaction() {
+  local failed=0
+  [[ -z "$inspection_before" ]] || restore_socket "$inspection_socket" "$inspection_state" "$inspection_before" || failed=1
+  [[ -z "$measurement_before" ]] || restore_socket "$measurement_socket" "$measurement_state" "$measurement_before" || failed=1
+  restore_parent || failed=1
+  transaction_active=0
+  return "$failed"
+}
+on_signal() { local status=$?; (( transaction_active )) && rollback_transaction || true; exit "$status"; }
+trap on_signal HUP INT TERM
+abort_transaction() { local why="$1"; rollback_transaction || echo "ACL rollback encountered substituted state; rerun only after host investigation" >&2; echo "$why" >&2; return 1; }
+
+verify_acl_shapes() {
+  require_absolute_path "$parent_dir" && require_absolute_path "$runtime_root" && require_absolute_path "$inspection_socket" && require_absolute_path "$measurement_socket" && require_accounts || return 1
+  require_runtime_root && parent_identity "$(normal_parent_mode)" >/dev/null && require_parent_acl "$(expected_parent_acl)" || return 1
+  socket_state "$inspection_socket" | /usr/bin/grep -q '^ACTIVE:' || return 1
+  socket_state "$measurement_socket" | /usr/bin/grep -q '^ACTIVE:'
+}
+activate_socket_acls() {
+  local observed
+  require_absolute_path "$parent_dir" && require_absolute_path "$runtime_root" && require_absolute_path "$inspection_socket" && require_absolute_path "$measurement_socket" && require_accounts || return 1
+  observed="$(socket_state "$inspection_socket")" || { echo "inspection socket is not a reviewed safe state; stop" >&2; return 1; }; inspection_state="${observed%%:*}"; inspection_before="${observed#*:}"
+  observed="$(socket_state "$measurement_socket")" || { echo "measurement socket is not a reviewed safe state; stop" >&2; return 1; }; measurement_state="${observed%%:*}"; measurement_before="${observed#*:}"
+  freeze_parent || { echo "cannot freeze the launcher parent; stop" >&2; return 1; }
+  transaction_active=1
+  require_socket_snapshot "$inspection_socket" "$inspection_state" "$inspection_before" || abort_transaction "inspection socket changed after parent freeze"
+  require_socket_snapshot "$measurement_socket" "$measurement_state" "$measurement_before" || abort_transaction "measurement socket changed after parent freeze"
+  if [[ "$inspection_state" == PRISTINE ]] && ! apply_active_acl "$inspection_socket"; then abort_transaction "inspection ACL mutation failed"; return 1; fi
+  if declare -F before_promote_second >/dev/null; then before_promote_second; fi
+  require_socket_snapshot "$measurement_socket" "$measurement_state" "$measurement_before" || { abort_transaction "measurement socket changed during ACL activation"; return 1; }
+  if [[ "$measurement_state" == PRISTINE ]] && ! apply_active_acl "$measurement_socket"; then abort_transaction "measurement ACL mutation failed"; return 1; fi
+  [[ "$(parent_identity "$(frozen_parent_mode)")" == "$parent_before" ]] || { abort_transaction "launcher parent changed during ACL activation"; return 1; }
+  restore_parent || { echo "cannot restore exact launcher parent ACL; stop" >&2; return 1; }
+  transaction_active=0
+  verify_acl_shapes
+}
+
+run_as() { local account="$1"; shift; /usr/sbin/runuser -u "$account" -- "$@"; }
+connect_as() { local account="$1" path="$2"; run_as "$account" /usr/bin/python3 -c 'import socket,sys;s=socket.socket(socket.AF_UNIX);s.settimeout(1);s.connect(sys.argv[1]);s.close()' "$path"; }
+require_connect_allowed() { connect_as "$1" "$2" || { echo "$1 cannot connect to $2; stop" >&2; return 1; }; }
+require_connect_denied() { if connect_as "$1" "$2"; then echo "$1 unexpectedly connected to $2; stop" >&2; return 1; fi; }
+verify_runtime_access() {
+  local untrusted="$1" untrusted_uid runtime docker bus p
+  untrusted_uid="$(/usr/bin/id -u "$untrusted")" || return 1; [[ "$untrusted_uid" != "$launcher_uid" && "$untrusted_uid" != "$validator_uid" ]] || return 1
+  runtime="/run/user/${launcher_uid}"; docker="${runtime}/docker.sock"; bus="${runtime}/bus"
+  /usr/sbin/runuser -u "$validator_account" -- /usr/bin/test -x "$parent_dir" || return 1
+  if /usr/sbin/runuser -u "$validator_account" -- /usr/bin/test -w "$parent_dir"; then return 1; fi
+  if /usr/sbin/runuser -u "$untrusted" -- /usr/bin/test -x "$parent_dir"; then return 1; fi
+  require_connect_allowed "$validator_account" "$inspection_socket" && require_connect_allowed "$validator_account" "$measurement_socket" || return 1
+  require_connect_denied "$untrusted" "$inspection_socket" && require_connect_denied "$untrusted" "$measurement_socket" || return 1
+  for p in "$docker" "$bus" /var/run/docker.sock /run/docker.sock; do
+    if [[ -e "$p" || -L "$p" ]]; then require_connect_denied "$validator_account" "$p" || return 1; fi
+  done
+}
+emit_proof_json() {
+  local untrusted="$1" now; now="$(/usr/bin/date --utc +%Y-%m-%dT%H:%M:%SZ)"
+  /usr/bin/jq -cn --arg observedAtUtc "$now" --arg validator "$validator_account" --arg untrusted "$untrusted" --arg inspection "$inspection_socket" --arg measurement "$measurement_socket" '{schema:"external-runtime-socket-acl-proof.v1",status:"BLOCKED_SERVER_PEER_CREDENTIAL",observedAtUtc:$observedAtUtc,clientConnect:{validator:[$inspection,$measurement],deniedOtherAccount:$untrusted},serverObservedPeerCredential:"NOT_VERIFIED",nextGate:"application protocol receipt recording SO_PEERCRED"}'
+}
+main() {
+  [[ "$EUID" -eq 0 ]] || { echo "socket ACL activation and proof require root" >&2; exit 1; }; [[ $# -ge 1 ]] || usage
+  local command="$1" json=0 untrusted=nobody; shift
+  case "$command" in
+    activate) [[ $# -eq 0 ]] || usage; activate_socket_acls ;;
+    verify)
+      while [[ $# -gt 0 ]]; do case "$1" in --json) json=1 ;; --untrusted-user) [[ $# -ge 2 ]] || usage; untrusted="$2"; shift ;; *) usage ;; esac; shift; done
+      verify_acl_shapes && verify_runtime_access "$untrusted" || exit 1
+      [[ "$json" == 1 ]] && emit_proof_json "$untrusted" || echo "BLOCKED_SERVER_PEER_CREDENTIAL" >&2
+      exit 1 ;;
+    *) usage ;;
+  esac
+}
+if [[ "$is_sourced" == 1 ]]; then [[ "$library_only" == 1 ]] || { echo "socket ACL helper may be sourced only in test-library mode" >&2; return 2; }
+elif [[ "$library_only" == 1 ]]; then echo "test-library mode is unavailable during direct execution" >&2; exit 2
+else main "$@"; fi
