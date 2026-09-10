@@ -1,0 +1,37 @@
+[Unit]
+Description=KSI contained external inspection daemon (private candidate)
+Requires=ksi-external-inspector.socket
+After=ksi-external-inspector.socket
+
+[Service]
+Type=exec
+UMask=0077
+Environment=HOME=/var/lib/ksi-external-runtime/launcher
+Environment=XDG_RUNTIME_DIR=%t
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=%t/bus
+# Do not clear LISTEN_PID/LISTEN_FDS: the daemon validates systemd activation.
+ExecStart=/usr/bin/env /usr/local/lib/ksi-external-runtime/bin/ksi-external-inspector-daemon --config /etc/ksi-external-runtime/external-inspector-daemon-config.json
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX
+BindReadOnlyPaths=%t/docker.sock %t/bus
+ReadWritePaths=/var/lib/ksi-external-runtime/launcher /run/ksi-external-runtime/launcher
+ReadOnlyPaths=/etc/ksi-external-runtime
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+Slice=ksi-inspector.slice

@@ -1,0 +1,212 @@
+# Private external-reconstruction release candidate.  This is an additive
+# Compose project with no dependency on another deployment's names, volumes or
+# lifecycle. Quantitative workflow authority remains absent unless a separately
+# approved Core assembly supplies it.
+name: ${KSI_EXTERNAL_RC_PROJECT_NAME:-ksi-external-rc}
+
+x-core-image: &core-image
+  image: ksi-external-rc-core:local
+  build:
+    context: ..
+    dockerfile: Dockerfile
+
+x-app-hardening: &app-hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+
+services:
+  init-state:
+    <<: *core-image
+    user: root
+    command: ["/app/.venv/bin/python", "/app/deploy/external-runtime/prepare_candidate_state.py"]
+    volumes:
+      - external-rc-data:/state/data
+      - external-rc-identity:/state/identity
+      - external-rc-secrets:/state/secrets
+      - external-rc-signing:/state/signing
+    restart: "no"
+
+  identity:
+    <<: [*core-image, *app-hardening]
+    command:
+      - /app/.venv/bin/python
+      - /app/tools/run_local_oidc_issuer.py
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --issuer-origin
+      - https://${KSI_EXTERNAL_RC_HOST:?set KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_IDENTITY_PORT}
+      - --dashboard-origin
+      - https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_APP_PORT:?set KSI_EXTERNAL_RC_APP_PORT}
+      - --client-id
+      - ksi-operations-console
+      - --client-secret-file
+      - /run/ksi-secrets/oidc-client.secret
+      - --state-dir
+      - /var/lib/ksi/local-identity
+      - --core-audience
+      - ksi-core
+      - --allow-tailnet-origin
+    volumes:
+      - external-rc-identity:/var/lib/ksi/local-identity
+      - external-rc-secrets:/run/ksi-secrets:ro
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KSI_EXTERNAL_RC_IDENTITY_PORT:?set KSI_EXTERNAL_RC_IDENTITY_PORT}:8080"
+    networks: [external-rc-private]
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${KSI_EXTERNAL_RC_MINIO_ROOT_USER:?set KSI_EXTERNAL_RC_MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD:?set KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD}
+    volumes:
+      - external-rc-objects:/data
+    ports:
+      - "127.0.0.1:${KSI_EXTERNAL_RC_OBJECTS_PORT:?set KSI_EXTERNAL_RC_OBJECTS_PORT}:9000"
+      - "127.0.0.1:${KSI_EXTERNAL_RC_MINIO_CONSOLE_PORT:?set KSI_EXTERNAL_RC_MINIO_CONSOLE_PORT}:9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [external-rc-private]
+
+  bucket-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        mc alias set external-rc http://minio:9000 "$${KSI_EXTERNAL_RC_MINIO_ROOT_USER}" "$${KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD}" &&
+        mc mb --ignore-existing external-rc/ksi-external-rc-evidence
+    environment:
+      KSI_EXTERNAL_RC_MINIO_ROOT_USER: ${KSI_EXTERNAL_RC_MINIO_ROOT_USER}
+      KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD: ${KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    networks: [external-rc-private]
+
+  core:
+    <<: [*core-image, *app-hardening]
+    environment:
+      KSI_CORE_DATA_DIR: /var/lib/ksi/data
+      KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
+      KSI_CORE_S3_ENDPOINT: http://minio:9000
+      KSI_CORE_S3_PUBLIC_ENDPOINT: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_OBJECTS_PORT}
+      KSI_CORE_S3_BUCKET: ksi-external-rc-evidence
+      KSI_CORE_PRINCIPAL_TOKENS_JSON: ${KSI_EXTERNAL_RC_PRINCIPAL_TOKENS_JSON:?set KSI_EXTERNAL_RC_PRINCIPAL_TOKENS_JSON}
+      KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE: /var/lib/ksi/device-attestation-keys.json
+      KSI_CORE_ACQUISITION_ISSUE_GATE_ENABLED: "false"
+      KSI_CORE_HUMAN_AUTH_MODE: OIDC
+      KSI_CORE_OIDC_ISSUER: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_IDENTITY_PORT}
+      KSI_CORE_OIDC_AUDIENCE: ksi-core
+      KSI_CORE_OIDC_JWKS_URL: http://identity:8080/jwks.json
+      KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
+      KSI_CORE_OIDC_JWKS_TTL_SECONDS: "60"
+    volumes:
+      - external-rc-data:/var/lib/ksi/data
+      - external-rc-signing:/var/lib/ksi/signing-keys:ro
+      - external-rc-secrets:/run/ksi-secrets:ro
+      - ./device-attestation-keys.example.json:/var/lib/ksi/device-attestation-keys.json:ro
+    ports:
+      - "127.0.0.1:${KSI_EXTERNAL_RC_API_PORT:?set KSI_EXTERNAL_RC_API_PORT}:8000"
+    depends_on:
+      init-state:
+        condition: service_completed_successfully
+      bucket-init:
+        condition: service_completed_successfully
+      identity:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [external-rc-private]
+
+  dashboard:
+    <<: *app-hardening
+    image: ksi-external-rc-dashboard:local
+    build:
+      context: ../apps/dashboard
+      dockerfile: Dockerfile
+    environment:
+      CORE_API_BASE_URL: http://core:8000
+      KSI_DASHBOARD_DEPLOYMENT_PROFILE: EXTERNAL_VM
+      KSI_DASHBOARD_HUMAN_AUTH_MODE: OIDC
+      KSI_DASHBOARD_PUBLIC_APP_ORIGIN: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_APP_PORT}
+      KSI_DASHBOARD_PUBLIC_API_ORIGIN: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_API_PORT}
+      KSI_DASHBOARD_OIDC_ISSUER: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_IDENTITY_PORT}
+      KSI_DASHBOARD_OIDC_CLIENT_ID: ksi-operations-console
+      KSI_DASHBOARD_SESSION_SECRET_FILE: /run/ksi-secrets/dashboard-session.secret
+      KSI_DASHBOARD_OIDC_CLIENT_SECRET_FILE: /run/ksi-secrets/oidc-client.secret
+      AUTH_URL: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_APP_PORT}
+      AUTH_TRUST_HOST: "true"
+    volumes:
+      - external-rc-secrets:/run/ksi-secrets:ro
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+      - /app/.next/cache:rw,noexec,nosuid,nodev,size=268435456,uid=10001,gid=10001,mode=0700
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [external-rc-private]
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    ports:
+      - "127.0.0.1:${KSI_EXTERNAL_RC_APP_PORT:?set KSI_EXTERNAL_RC_APP_PORT}:8080"
+    volumes:
+      - ./external-runtime/Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+    networks: [external-rc-private]
+
+networks:
+  external-rc-private:
+    driver: bridge
+
+volumes:
+  external-rc-data:
+    name: ksi-external-rc-data
+  external-rc-identity:
+    name: ksi-external-rc-identity
+  external-rc-objects:
+    name: ksi-external-rc-objects
+  external-rc-secrets:
+    name: ksi-external-rc-secrets
+  external-rc-signing:
+    name: ksi-external-rc-signing

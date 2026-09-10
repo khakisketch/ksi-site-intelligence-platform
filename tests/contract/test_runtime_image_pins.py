@@ -48,6 +48,14 @@ def test_current_production_owned_runtime_images_are_pinned() -> None:
     assert _tool().check_runtime_image_pins(_ROOT) == []
 
 
+def test_private_rc_local_build_images_are_explicit_exceptions() -> None:
+    tool = _tool()
+    for reference in ("ksi-external-rc-core:local", "ksi-external-rc-dashboard:local"):
+        assert tool._validate_reference(
+            reference, path=Path("deploy/compose.external-reconstruction.yaml"), line=1
+        ) == []
+
+
 def test_rejects_tag_only_compose_image_reference(tmp_path: Path) -> None:
     root = _supply_chain_copy(tmp_path)
     compose = root / "deploy/compose.yaml"

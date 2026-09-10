@@ -1,0 +1,7 @@
+[Unit]
+Description=KSI isolated external inspection accounting
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes

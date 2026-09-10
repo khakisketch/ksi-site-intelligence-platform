@@ -1,0 +1,12 @@
+[Unit]
+Description=KSI external inspection Unix socket (private candidate)
+Before=ksi-external-inspector.service
+
+[Socket]
+ListenStream=/run/ksi-external-runtime/launcher/inspection.sock
+SocketMode=0600
+Service=ksi-external-inspector.service
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

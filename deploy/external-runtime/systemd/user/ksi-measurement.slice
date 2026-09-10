@@ -1,0 +1,7 @@
+[Unit]
+Description=KSI isolated external measurement accounting
+
+[Slice]
+CPUAccounting=yes
+MemoryAccounting=yes
+TasksAccounting=yes

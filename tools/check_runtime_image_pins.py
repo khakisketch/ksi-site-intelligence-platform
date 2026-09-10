@@ -27,7 +27,16 @@ _REQUIRED_BASELINE_FILES = (
     Path("deploy/bin/backup-vm.sh"),
     Path("deploy/bin/restore-check-vm.sh"),
 )
-_LOCAL_BUILD_IMAGES = frozenset({"ksi-phase2-core:local", "ksi-phase2-dashboard:local"})
+_LOCAL_BUILD_IMAGES = frozenset(
+    {
+        "ksi-phase2-core:local",
+        "ksi-phase2-dashboard:local",
+        # Private RC images are built from a clean reviewed checkout, then bound
+        # to exact Docker image IDs, the source commit, SBOM, and scanner output.
+        "ksi-external-rc-core:local",
+        "ksi-external-rc-dashboard:local",
+    }
+)
 _DIGEST_ONLY_EXCEPTIONS = frozenset(
     {
         # NodeODM's approved multi-arch manifest has no matching immutable upstream

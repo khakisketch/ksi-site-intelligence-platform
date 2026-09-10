@@ -1,0 +1,43 @@
+[Unit]
+Description=KSI external reconstruction validation worker (private candidate)
+Documentation=file:///usr/share/doc/ksi-external-runtime/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ksi-validator
+Group=ksi-validator
+UMask=0077
+Environment=HOME=/var/lib/ksi-external-runtime/worker
+ExecStart=/usr/bin/env --ignore-environment /usr/local/lib/ksi-external-runtime/bin/ksi-external-validation-worker --config /etc/ksi-external-runtime/external-validation-worker-config.json --core-token-file /etc/ksi-external-runtime/validator-core.token
+NoNewPrivileges=yes
+# The validator reaches only the reviewed Core/object endpoints in its private
+# configuration.  A private network namespace would make that contract
+# unusable; Docker, user D-Bus, and user runtime trees stay hidden instead.
+PrivateNetwork=no
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+InaccessiblePaths=/var/run/docker.sock /run/docker.sock /run/user
+ReadWritePaths=/var/lib/ksi-external-runtime/worker
+ReadOnlyPaths=/etc/ksi-external-runtime /run/ksi-external-runtime/launcher/inspection.sock /run/ksi-external-runtime/launcher/measurement.sock
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target

@@ -19,6 +19,21 @@ ingress를 더한다. DJI Gateway는 RC 기본형 HIL에서 실제 adapter가 �
 runner/Dockerfile/service를 추가한다. HIL 전 빈 Gateway 컨테이너나 가짜 장비 상태는
 어느 조합에도 넣지 않는다.
 
+## External reconstruction private candidate
+
+`compose.external-reconstruction.yaml` is an additive `ksi-external-rc`
+candidate. It has dedicated volumes and loopback ports and contains Core,
+Dashboard, Local OIDC, MinIO and Caddy only; it has no NodeODM, ordinary worker,
+DJI service, host Docker socket, or quantitative-authority fallback. Its
+versioned systemd, host preflight/bootstrap and lifecycle refusal paths are in
+[`external-runtime/README.md`](external-runtime/README.md). It must not be used
+to mutate the existing `ksi-phase2-staging` deployment.
+
+The candidate is intentionally activation-blocked until real release evidence,
+socket ACL proof and independent external quantitative authorities are supplied.
+That boundary is recorded in
+[`docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`](../docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md).
+
 최초 실행 전:
 
 ```bash

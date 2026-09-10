@@ -1,0 +1,68 @@
+{
+  "version": "external-validation-worker-config.v1",
+  "core": {
+    "baseUrl": "https://REPLACE-WITH-PRIVATE-CORE-ORIGIN",
+    "maximumResponseBytes": 0,
+    "requestTimeoutMillis": 0
+  },
+  "worker": { "instanceId": "REPLACE-WITH-UUID4" },
+  "runner": {
+    "turnBudgetMillis": 0,
+    "claimRetryMillis": 0,
+    "idleBackoffMillis": 0,
+    "failureBackoffMillis": 0
+  },
+  "objectTransport": {
+    "endpoints": [],
+    "maxHeaderBytes": 0,
+    "maxObjectBytes": 0,
+    "maxChunkBytes": 0
+  },
+  "inspection": {
+    "uds": {
+      "socketPath": "/run/ksi-external-runtime/launcher/inspection.sock",
+      "ownerUid": 0,
+      "ownerGid": 0,
+      "socketMode": 384,
+      "peerUid": 0
+    },
+    "privateOutputRoot": "/var/lib/ksi-external-runtime/launcher/inspection-output",
+    "protocolLimits": {
+      "maxHeaderBytes": 0,
+      "maxChunkBytes": 0,
+      "maxInputBytes": 0,
+      "maxOutputBytes": 0,
+      "maxWireDurationMillis": 0
+    },
+    "workerLimits": { "heartbeatIntervalMillis": 0, "maxAuthorityWaitMillis": 0 },
+    "pinnedProfile": {
+      "parserBuildDigest": "REPLACE-WITH-SHA256",
+      "grammarDigest": "REPLACE-WITH-EXACT-GRAMMAR-DIGEST"
+    }
+  },
+  "measurement": {
+    "uds": {
+      "socketPath": "/run/ksi-external-runtime/launcher/measurement.sock",
+      "ownerUid": 0,
+      "ownerGid": 0,
+      "socketMode": 384,
+      "peerUid": 0
+    },
+    "protocolLimits": {
+      "maxHeaderBytes": 0,
+      "maxChunkBytes": 0,
+      "maxInputBytes": 0,
+      "maxOutputBytes": 0,
+      "maxWireDurationMillis": 0
+    },
+    "heartbeatIntervalMillis": 0,
+    "manifest": {
+      "path": "/etc/ksi-external-runtime/measurement-manifest.json",
+      "expectedSha256": "REPLACE-WITH-SHA256",
+      "expectedBodyDigest": "REPLACE-WITH-SHA256",
+      "revocationPath": "/etc/ksi-external-runtime/measurement-revocations.json",
+      "expectedRevocationSha256": "REPLACE-WITH-SHA256",
+      "trustedPublicKeys": {}
+    }
+  }
+}
