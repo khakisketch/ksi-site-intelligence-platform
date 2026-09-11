@@ -8,6 +8,7 @@ it may use these concrete I/O implementations.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import math
@@ -18,10 +19,10 @@ import stat
 import struct
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import quote
 
 from ksi_processing_controller.external_inspector_attempts import (
@@ -51,6 +52,19 @@ _DOCKER_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SAFE_UNIT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,254}\.slice$")
 _SAFE_SCOPE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.@:-]{0,254}\.scope$")
+_OCI_IMAGE_MANIFEST_MEDIA_TYPE = "application/vnd.oci.image.manifest.v1+json"
+_OCI_IMAGE_CONFIG_MEDIA_TYPE = "application/vnd.oci.image.config.v1+json"
+_OCI_LAYER_MEDIA_TYPES = frozenset(
+    {
+        "application/vnd.oci.image.layer.v1.tar",
+        "application/vnd.oci.image.layer.v1.tar+gzip",
+        "application/vnd.oci.image.layer.v1.tar+zstd",
+        "application/vnd.docker.image.rootfs.diff.tar.gzip",
+    }
+)
+_MAXIMUM_OCI_MANIFEST_BYTES = 64 * 1024
+_MAXIMUM_OCI_MANIFEST_BASE64_BYTES = 4 * ((_MAXIMUM_OCI_MANIFEST_BYTES + 2) // 3)
+_MAXIMUM_OCI_LAYER_COUNT = 128
 
 
 class DockerRuntimeUnavailable(RuntimeError):
@@ -364,7 +378,7 @@ class DockerEngineClientV1:
             callable(getattr(session, name, None)) for name in ("send_stdin", "read_frame", "close")
         ):
             raise DockerRuntimeUnavailable("Docker attach transport is invalid")
-        return session
+        return cast(DockerMultiplexSessionPort, session)
 
     def start_exact(self, runtime_id: str, *, deadline_monotonic: float) -> None:
         self._expect_no_body(
@@ -457,10 +471,41 @@ class LocalOciImageProofV1:
             )
 
 
+@dataclass(frozen=True, slots=True)
+class LocalOciImageProofV2:
+    """Offline proof for Engine/containerd installations whose `.Id` is the manifest."""
+
+    manifest_digest: str
+    config_digest: str
+    oci_manifest_bytes: bytes
+
+    def __post_init__(self) -> None:
+        if (
+            not isinstance(self.manifest_digest, str)
+            or _DIGEST.fullmatch(self.manifest_digest) is None
+            or not isinstance(self.config_digest, str)
+            or _DIGEST.fullmatch(self.config_digest) is None
+            or not isinstance(self.oci_manifest_bytes, bytes)
+            or not 0 < len(self.oci_manifest_bytes) <= _MAXIMUM_OCI_MANIFEST_BYTES
+        ):
+            raise DockerRuntimeUnavailable("offline OCI image proof has an invalid digest")
+        if "sha256:" + hashlib.sha256(self.oci_manifest_bytes).hexdigest() != self.manifest_digest:
+            raise DockerRuntimeUnavailable("OCI manifest bytes do not match the proven digest")
+        _validate_oci_image_manifest_v2(self.oci_manifest_bytes, self.config_digest)
+
+    @property
+    def docker_image_id(self) -> str:
+        """Docker 29 rootless/containerd reports the OCI manifest digest as `.Id`."""
+        return self.manifest_digest
+
+
+type LocalOciImageProof = LocalOciImageProofV1 | LocalOciImageProofV2
+
+
 class LocalOciImageResolverPort(Protocol):
     def resolve_exact(
         self, *, manifest_digest: str, config_digest: str
-    ) -> LocalOciImageProofV1: ...
+    ) -> LocalOciImageProof: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -483,7 +528,7 @@ class FileLocalOciPairResolver:
     def __init__(self, config: FileOciPairResolverConfigV1) -> None:
         self._config = config
 
-    def resolve_exact(self, *, manifest_digest: str, config_digest: str) -> LocalOciImageProofV1:
+    def resolve_exact(self, *, manifest_digest: str, config_digest: str) -> LocalOciImageProof:
         try:
             contents = self._config.artifact.read()
         except (OSError, ValueError) as exc:
@@ -491,9 +536,31 @@ class FileLocalOciPairResolver:
         if "sha256:" + hashlib.sha256(contents).hexdigest() != self._config.expected_sha256:
             raise DockerRuntimeUnavailable("offline OCI pair proof digest changed")
         try:
+            proofs: Sequence[LocalOciImageProof]
             raw = json.loads(contents)
-            if raw.get("version") != "external-inspector-oci-pairs.v1":
+            if not isinstance(raw, dict):
                 raise ValueError
+            version = raw.get("version")
+            if version == "external-inspector-oci-pairs.v1":
+                proofs = self._parse_v1(raw)
+            elif version == "external-inspector-oci-pairs.v2":
+                proofs = self._parse_v2(contents)
+            else:
+                raise ValueError
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise DockerRuntimeUnavailable("offline OCI pair proof is malformed") from exc
+        matches = [
+            proof
+            for proof in proofs
+            if proof.manifest_digest == manifest_digest and proof.config_digest == config_digest
+        ]
+        if len(matches) != 1:
+            raise DockerRuntimeUnavailable("offline OCI pair proof lacks exact signed image")
+        return matches[0]
+
+    @staticmethod
+    def _parse_v1(raw: dict[str, Any]) -> list[LocalOciImageProofV1]:
+        try:
             pairs = raw["pairs"]
             if not isinstance(pairs, list):
                 raise ValueError
@@ -511,16 +578,113 @@ class FileLocalOciPairResolver:
                 key=lambda item: (item["ociManifestDigest"], item["ociConfigDigest"]),
             ):
                 raise ValueError
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
-            raise DockerRuntimeUnavailable("offline OCI pair proof is malformed") from exc
-        matches = [
-            proof
-            for proof in proofs
-            if proof.manifest_digest == manifest_digest and proof.config_digest == config_digest
-        ]
-        if len(matches) != 1:
-            raise DockerRuntimeUnavailable("offline OCI pair proof lacks exact signed image")
-        return matches[0]
+            return proofs
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("invalid V1 OCI pair proof") from exc
+
+    @staticmethod
+    def _parse_v2(contents: bytes) -> list[LocalOciImageProofV2]:
+        raw = _strict_json_object(contents)
+        if set(raw) != {"version", "pairs"} or raw["version"] != "external-inspector-oci-pairs.v2":
+            raise ValueError("invalid V2 OCI pair proof")
+        pairs = raw["pairs"]
+        if not isinstance(pairs, list):
+            raise ValueError("invalid V2 OCI pairs")
+        proofs: list[LocalOciImageProofV2] = []
+        for item in pairs:
+            if not isinstance(item, dict) or set(item) != {
+                "ociManifestDigest",
+                "ociConfigDigest",
+                "ociManifestBytesBase64",
+            }:
+                raise ValueError("invalid V2 OCI pair")
+            manifest_digest = item["ociManifestDigest"]
+            config_digest = item["ociConfigDigest"]
+            encoded_manifest = item["ociManifestBytesBase64"]
+            if not all(
+                isinstance(value, str)
+                for value in (manifest_digest, config_digest, encoded_manifest)
+            ) or len(encoded_manifest) > _MAXIMUM_OCI_MANIFEST_BASE64_BYTES:
+                raise ValueError("invalid V2 OCI pair value")
+            try:
+                manifest_bytes = base64.b64decode(encoded_manifest.encode("ascii"), validate=True)
+            except (UnicodeEncodeError, ValueError) as exc:
+                raise ValueError("invalid V2 OCI manifest encoding") from exc
+            proofs.append(
+                LocalOciImageProofV2(
+                    manifest_digest=manifest_digest,
+                    config_digest=config_digest,
+                    oci_manifest_bytes=manifest_bytes,
+                )
+            )
+        if not proofs or pairs != sorted(
+            pairs, key=lambda item: (item["ociManifestDigest"], item["ociConfigDigest"])
+        ):
+            raise ValueError("V2 OCI pairs must be ordered and non-empty")
+        return proofs
+
+
+def _strict_json_object(contents: bytes) -> dict[str, Any]:
+    """Parse untrusted local V2 proof JSON without duplicate or non-finite values."""
+
+    def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("duplicate JSON key")
+            result[key] = value
+        return result
+
+    def reject_nonfinite(value: str) -> Any:
+        raise ValueError(f"non-finite JSON number: {value}")
+
+    try:
+        decoded = contents.decode("utf-8")
+        parsed = json.loads(
+            decoded,
+            object_pairs_hook=reject_duplicate_keys,
+            parse_constant=reject_nonfinite,
+        )
+    except (UnicodeDecodeError, RecursionError, TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise ValueError("invalid strict JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("strict JSON root must be an object")
+    return parsed
+
+
+def _validate_oci_image_manifest_v2(manifest_bytes: bytes, config_digest: str) -> None:
+    manifest = _strict_json_object(manifest_bytes)
+    if set(manifest) != {"schemaVersion", "mediaType", "config", "layers"}:
+        raise DockerRuntimeUnavailable("OCI manifest fields are invalid")
+    if type(manifest["schemaVersion"]) is not int or manifest["schemaVersion"] != 2:
+        raise DockerRuntimeUnavailable("OCI manifest schema version is invalid")
+    if manifest["mediaType"] != _OCI_IMAGE_MANIFEST_MEDIA_TYPE:
+        raise DockerRuntimeUnavailable("OCI manifest media type is invalid")
+    config = manifest["config"]
+    if not isinstance(config, dict) or set(config) != {"mediaType", "digest", "size"}:
+        raise DockerRuntimeUnavailable("OCI config descriptor is invalid")
+    if (
+        config["mediaType"] != _OCI_IMAGE_CONFIG_MEDIA_TYPE
+        or config["digest"] != config_digest
+        or type(config["size"]) is not int
+        or config["size"] <= 0
+    ):
+        raise DockerRuntimeUnavailable("OCI config descriptor does not match the signed config")
+    layers = manifest["layers"]
+    if not isinstance(layers, list) or not 1 <= len(layers) <= _MAXIMUM_OCI_LAYER_COUNT:
+        raise DockerRuntimeUnavailable("OCI layer descriptors are invalid")
+    for layer in layers:
+        if not isinstance(layer, dict) or set(layer) != {"mediaType", "digest", "size"}:
+            raise DockerRuntimeUnavailable("OCI layer descriptor is invalid")
+        if (
+            not isinstance(layer["mediaType"], str)
+            or layer["mediaType"] not in _OCI_LAYER_MEDIA_TYPES
+            or not isinstance(layer["digest"], str)
+            or _DIGEST.fullmatch(layer["digest"]) is None
+            or type(layer["size"]) is not int
+            or layer["size"] <= 0
+        ):
+            raise DockerRuntimeUnavailable("OCI layer descriptor is invalid")
 
 
 class RootlessDockerHostFactsPort(Protocol):
@@ -1372,7 +1536,7 @@ class RootlessDockerRuntimeAdapter:
         fd: int,
         source: InspectorBorrowedSourcePort,
         facts: RootlessDockerHostFactsPort,
-        image: LocalOciImageProofV1,
+        image: LocalOciImageProof,
         configuration: FixedContainerConfigurationV1,
         binding: ExactRuntimeBindingPort,
         deadline_monotonic: float,
@@ -1408,7 +1572,7 @@ class RootlessDockerRuntimeAdapter:
         fd: int,
         source: InspectorBorrowedSourcePort,
         facts: RootlessDockerHostFactsPort,
-        image: LocalOciImageProofV1,
+        image: LocalOciImageProof,
         configuration: FixedContainerConfigurationV1,
         binding: ExactRuntimeBindingPort,
         deadline_monotonic: float,
@@ -1440,7 +1604,7 @@ class RootlessDockerRuntimeAdapter:
         binding: ExactRuntimeBindingPort,
         *,
         deadline_monotonic: float,
-    ) -> tuple[RootlessDockerHostFactsPort, LocalOciImageProofV1]:
+    ) -> tuple[RootlessDockerHostFactsPort, LocalOciImageProof]:
         facts = self._host_proof.prove(configuration=configuration)
         if (
             facts.launcher_pid != os.getpid()
@@ -1923,6 +2087,7 @@ __all__ = [
     "FileLocalOciPairResolver",
     "FileOciPairResolverConfigV1",
     "LocalOciImageProofV1",
+    "LocalOciImageProofV2",
     "RootlessDockerRuntimeAdapter",
     "RootlessDockerSocketConfigV1",
     "ProcCgroupReader",
