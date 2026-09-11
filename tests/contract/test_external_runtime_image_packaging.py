@@ -52,9 +52,9 @@ def test_independent_external_runtime_images_have_closed_fixed_entrypoints() -> 
 
         assert f"FROM {_PINNED_PYTHON}" in dockerfile
         assert f"COPY --from={_PINNED_UV}" in dockerfile
-        assert "https://snapshot.debian.org/archive/debian/20260824T000000Z" in dockerfile
+        assert "https://snapshot.debian.org/archive/debian/20260911T000000Z" in dockerfile
         assert (
-            "https://snapshot.debian.org/archive/debian-security/20260824T000000Z"
+            "https://snapshot.debian.org/archive/debian-security/20260911T000000Z"
             in dockerfile
         )
         assert "libexpat1=2.8.3-1~deb13u1" in dockerfile
