@@ -1,0 +1,13 @@
+**
+!pyproject.toml
+!uv.lock
+!packages/
+!packages/*/
+!packages/*/pyproject.toml
+!packages/*/src/
+!packages/*/src/**
+!services/
+!services/*/
+!services/*/pyproject.toml
+!services/*/src/
+!services/*/src/**

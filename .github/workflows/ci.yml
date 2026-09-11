@@ -89,6 +89,63 @@ jobs:
       - name: reference 핀 검증 (gitlink)
         run: bash scripts/verify_reference_pins.sh
 
+  # These are independently promoted images.  Building and executing both
+  # entrypoints catches lock/import/native-library and accidental CMD drift.
+  # It does not create a registry digest, SBOM, scan approval, or deployment.
+  external-runtime-images:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - role: inspector
+            dockerfile: Dockerfile.external-inspector
+            image_user: ksi-inspector-image
+            command: /app/.venv/bin/ksi-external-inspector-entrypoint
+          - role: measurement
+            dockerfile: Dockerfile.external-measurement
+            image_user: ksi-measurement-image
+            command: /app/.venv/bin/ksi-external-measurement-entrypoint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build locked external runtime image
+        timeout-minutes: 15
+        run: |
+          mkdir -p download deploy/signing-keys deploy/secrets data/geoid/raw .secrets
+          printf 'must-not-enter-image\n' > download/private-boundary-sentinel
+          printf 'must-not-enter-image\n' > deploy/signing-keys/private-boundary-sentinel
+          printf 'must-not-enter-image\n' > deploy/secrets/private-boundary-sentinel
+          printf 'must-not-enter-image\n' > data/geoid/raw/private-boundary-sentinel
+          printf 'must-not-enter-image\n' > .secrets/private-boundary-sentinel
+          docker build \
+            --file "${{ matrix.dockerfile }}" \
+            --tag "ksi-external-${{ matrix.role }}-ci:${GITHUB_SHA}" .
+
+      - name: Verify image identity and closed EOF behavior
+        timeout-minutes: 5
+        run: |
+          image="ksi-external-${{ matrix.role }}-ci:${GITHUB_SHA}"
+          test "$(docker image inspect --format '{{.Config.User}}' "$image")" = \
+            "${{ matrix.image_user }}"
+          test "$(docker image inspect --format '{{index .Config.Cmd 0}}' "$image")" = \
+            "${{ matrix.command }}"
+          timeout --foreground 30s docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges "$image" \
+            /app/.venv/bin/python -c \
+            "import pathlib, ksi_processing_controller.external_${{ matrix.role }}_container_entrypoint; assert not any(pathlib.Path('/app').rglob('private-boundary-sentinel'))"
+          package="$(timeout --foreground 30s docker run --rm --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges "$image" \
+            dpkg-query -W '-f=${Package} ${Version}\n' libexpat1)"
+          test "$package" = "libexpat1 2.8.3-1~deb13u1"
+          set +e
+          timeout --foreground 30s docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges --tmpfs /work:rw,nodev,nosuid,noexec,size=16m \
+            "$image" </dev/null
+          status=$?
+          set -e
+          test "$status" -eq 2
+
   # [mixercseg] extra 이식성 게이트 (risk defect-detection-uv-lock-mmcv-portability).
   #
   # mmcv 1.7.2 는 legacy sdist 라 설치 전에 setup.py 로 메타데이터를 빌드하는데,

@@ -15,6 +15,10 @@ _TOOL = _ROOT / "tools" / "check_runtime_image_pins.py"
 _SUPPLY_CHAIN_FILES = (
     Path("Dockerfile"),
     Path("Dockerfile.worker"),
+    Path("Dockerfile.external-inspector"),
+    Path("Dockerfile.external-inspector.dockerignore"),
+    Path("Dockerfile.external-measurement"),
+    Path("Dockerfile.external-measurement.dockerignore"),
     Path("apps/dashboard/Dockerfile"),
     Path("edge/docker/manifold3-build.Dockerfile"),
     Path("deploy/compose.yaml"),
@@ -46,6 +50,28 @@ def _supply_chain_copy(tmp_path: Path) -> Path:
 
 def test_current_production_owned_runtime_images_are_pinned() -> None:
     assert _tool().check_runtime_image_pins(_ROOT) == []
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        Path("Dockerfile.external-inspector.dockerignore"),
+        Path("Dockerfile.external-measurement.dockerignore"),
+    ],
+)
+def test_external_runtime_allowlist_cannot_be_missing_or_relaxed(
+    tmp_path: Path, relative: Path
+) -> None:
+    root = _supply_chain_copy(tmp_path)
+    allowlist = root / relative
+    allowlist.write_text(allowlist.read_text(encoding="utf-8") + "!download/**\n", encoding="utf-8")
+
+    violations = _tool().check_runtime_image_pins(root)
+
+    assert any(
+        violation.path == relative and "allowlist differs" in violation.message
+        for violation in violations
+    )
 
 
 def test_private_rc_local_build_images_are_explicit_exceptions() -> None:

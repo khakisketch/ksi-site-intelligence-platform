@@ -44,6 +44,13 @@ byte 길이, SHA-256만 기록한다. 각 SBOM/scanner는 해당 product image �
 먼저 image를 로컬에서 build하고, 해당 image의 CycloneDX SBOM 및 scanner JSON을 이미
 만든 상태여야 한다. 이 명령은 Docker나 network를 실행하지 않는다.
 
+Inspector와 measurement는 각각 `Dockerfile.external-inspector`와
+`Dockerfile.external-measurement`에서 독립적으로 build·scan한다. registry가 반환한 exact
+repo digest가 생기기 전의 로컬 tag나 Docker image ID를 `@sha256:` release reference로
+꾸며 넣어서는 안 된다. 두 runtime artifact는 product image release evidence와 별도로
+host binding의 `runtimeProducts`에 들어가며, staging gate가 SBOM/scanner bytes와 실제
+로컬 image identity를 다시 대조한다.
+
 ```bash
 git status --short
 # 반드시 출력이 없어야 한다.

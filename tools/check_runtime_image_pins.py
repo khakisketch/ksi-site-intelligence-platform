@@ -20,12 +20,35 @@ from pathlib import Path
 _REQUIRED_BASELINE_FILES = (
     Path("Dockerfile"),
     Path("Dockerfile.worker"),
+    Path("Dockerfile.external-inspector"),
+    Path("Dockerfile.external-inspector.dockerignore"),
+    Path("Dockerfile.external-measurement"),
+    Path("Dockerfile.external-measurement.dockerignore"),
     Path("apps/dashboard/Dockerfile"),
     Path("deploy/compose.yaml"),
     Path("deploy/compose.vm.yaml"),
     Path("deploy/compose.synthetic-staging.yaml"),
     Path("deploy/bin/backup-vm.sh"),
     Path("deploy/bin/restore-check-vm.sh"),
+)
+_EXTERNAL_RUNTIME_CONTEXT_FILES = (
+    Path("Dockerfile.external-inspector.dockerignore"),
+    Path("Dockerfile.external-measurement.dockerignore"),
+)
+_EXTERNAL_RUNTIME_CONTEXT_RULES = (
+    "**",
+    "!pyproject.toml",
+    "!uv.lock",
+    "!packages/",
+    "!packages/*/",
+    "!packages/*/pyproject.toml",
+    "!packages/*/src/",
+    "!packages/*/src/**",
+    "!services/",
+    "!services/*/",
+    "!services/*/pyproject.toml",
+    "!services/*/src/",
+    "!services/*/src/**",
 )
 _LOCAL_BUILD_IMAGES = frozenset(
     {
@@ -353,12 +376,30 @@ def _validate_required_baseline(root: Path, violations: list[Violation]) -> None
             )
 
 
+def _validate_external_runtime_context_allowlists(
+    root: Path, violations: list[Violation]
+) -> None:
+    for relative in _EXTERNAL_RUNTIME_CONTEXT_FILES:
+        lines = _read_lines(root, relative, violations)
+        if lines is None:
+            continue
+        if tuple(lines) != _EXTERNAL_RUNTIME_CONTEXT_RULES:
+            violations.append(
+                Violation(
+                    relative,
+                    1,
+                    "external runtime build-context allowlist differs from the closed baseline",
+                )
+            )
+
+
 def _scan_runtime_files(
     root: Path, references: list[RuntimeImageReference] | None = None
 ) -> list[Violation]:
     """Discover product-owned runtime files and inspect every matching source."""
     violations: list[Violation] = []
     _validate_required_baseline(root, violations)
+    _validate_external_runtime_context_allowlists(root, violations)
 
     for relative in _regular_discovered_files(root, "Dockerfile*", violations):
         _scan_dockerfile(root, relative, violations, references)

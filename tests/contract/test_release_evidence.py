@@ -118,6 +118,8 @@ def _commit_runtime_snapshot_repository(tmp_path: Path) -> tuple[Path, str]:
     (repository / "Dockerfile").write_text(f"FROM {_PINNED_PYTHON}\n", encoding="utf-8")
     for relative in (
         "Dockerfile.worker",
+        "Dockerfile.external-inspector",
+        "Dockerfile.external-measurement",
         "apps/dashboard/Dockerfile",
         "deploy/compose.yaml",
         "deploy/compose.vm.yaml",
@@ -128,6 +130,12 @@ def _commit_runtime_snapshot_repository(tmp_path: Path) -> tuple[Path, str]:
         path = repository / relative
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n", encoding="utf-8")
+    for relative in (
+        "Dockerfile.external-inspector.dockerignore",
+        "Dockerfile.external-measurement.dockerignore",
+    ):
+        path = repository / relative
+        path.write_bytes((_ROOT / relative).read_bytes())
     subprocess.run(["git", "add", "."], cwd=repository, check=True)
     subprocess.run(["git", "commit", "-qm", "runtime snapshot"], cwd=repository, check=True)
     source_commit = subprocess.run(
@@ -442,6 +450,33 @@ def test_runtime_refs_are_scanned_from_the_exact_source_commit_not_live_worktree
     references = tool._runtime_image_references(repository, source_commit)
 
     assert references == [_PINNED_PYTHON]
+
+
+@pytest.mark.parametrize("mutation", ["missing", "relaxed"])
+def test_release_snapshot_rejects_missing_or_relaxed_runtime_context_allowlist(
+    tmp_path: Path, mutation: str
+) -> None:
+    tool = _tool()
+    repository, _source_commit = _commit_runtime_snapshot_repository(tmp_path)
+    allowlist = repository / "Dockerfile.external-inspector.dockerignore"
+    if mutation == "missing":
+        allowlist.unlink()
+    else:
+        allowlist.write_text(
+            allowlist.read_text(encoding="utf-8") + "!download/**\n", encoding="utf-8"
+        )
+    subprocess.run(["git", "add", "-A"], cwd=repository, check=True)
+    subprocess.run(["git", "commit", "-qm", f"{mutation} allowlist"], cwd=repository, check=True)
+    source_commit = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    ).stdout.strip()
+
+    with pytest.raises(tool.ReleaseEvidenceError, match="exact source tree"):
+        tool._runtime_image_references(repository, source_commit)
 
 
 def test_dirty_git_source_is_refused_by_the_derived_source_boundary(tmp_path: Path) -> None:
