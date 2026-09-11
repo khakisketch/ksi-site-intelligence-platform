@@ -41,6 +41,16 @@ digest-only 예외다. 그 NodeODM/ODM 버전은 처리 프로필과 live `/info
 태그와 digest를 바꿀 때는 image manifest가 multi-architecture인지, SBOM·취약점 결과와
 실제 기동 검증이 새 digest에 대응하는지를 release review에서 대조한다.
 
+제품 소유 정량 runtime은 `Dockerfile.external-inspector`와
+`Dockerfile.external-measurement`에서 별도 이미지로 build한다. 두 이미지는 같은 잠긴
+workspace를 사용하지만 서로 다른 non-root 기본 identity와 고정 entrypoint를 가진다.
+각 Dockerfile 전용 `.dockerignore`는 필요한 workspace source만 allowlist해 Git-ignored 고객
+자료·키·배포 비밀이 root build context에 들어오지 못하게 한다. CI의 build/import/EOF 및
+private-path sentinel 검증은 source packaging 증거일 뿐 registry digest나 보안 승인이 아니다.
+GeoTIFF runtime에 필요한 `libexpat1=2.8.3-1~deb13u1`은 base image가 기록한
+`20260824T000000Z` Debian snapshot URL에서 exact version으로 설치해 dpkg package/license
+metadata가 최종 이미지와 SBOM에 남도록 한다. live `deb.debian.org` 해석은 사용하지 않는다.
+
 ## SBOM 및 취약점 release gate
 
 Lockfile은 재현 가능한 입력 원장이다. 실제 release 후보마다 다음 산출물을 별도 보관한다.
@@ -56,7 +66,19 @@ uv export --locked --all-packages --all-extras > python-requirements.lock.txt
 docker build -t ksi-dashboard:<release-id> apps/dashboard
 syft ksi-dashboard:<release-id> -o cyclonedx-json=dashboard-image.cdx.json
 syft caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d -o cyclonedx-json=caddy-image.cdx.json
+
+docker build -f Dockerfile.external-inspector -t ksi-external-inspector:<release-id> .
+docker build -f Dockerfile.external-measurement -t ksi-external-measurement:<release-id> .
+syft ksi-external-inspector:<release-id> -o cyclonedx-json=inspector-image.cdx.json
+syft ksi-external-measurement:<release-id> -o cyclonedx-json=measurement-image.cdx.json
+trivy image --format json --output inspector-image.scan.json ksi-external-inspector:<release-id>
+trivy image --format json --output measurement-image.scan.json ksi-external-measurement:<release-id>
 ```
+
+`<release-id>`는 승인된 immutable release version으로 치환하고, registry push 뒤 관측한
+각 repo digest와 로컬 Docker image ID를 SBOM·scanner 원본과 함께 host binding의
+`runtimeProducts`에 결속한다. 도구가 없거나 결과가 해당 digest에서 생성됐음을 입증하지
+못하면 release evidence를 만들지 않고 후보 활성화를 차단한다.
 
 생성한 SBOM에는 최소한 이미지 digest, 생성 시각, lockfile commit, scanner 버전을 기록한다.
 SBOM과 audit 결과는 원본 사진·위치정보·공간모델을 올리기 전 보안 검토 증거로 남긴다.

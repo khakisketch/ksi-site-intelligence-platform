@@ -324,7 +324,10 @@ def test_no_dev_token_literal_in_any_production_closure_source(
 # scripts/ 를 빼지 않아 dev 고정 토큰 5개를 든 run_core_dev.py 가 운영 이미지에
 # 그대로 실리고 있었다.
 
-_DOCKERFILES = ("Dockerfile", "Dockerfile.worker")
+_DOCKERFILES = (
+    "Dockerfile",
+    "Dockerfile.worker",
+)
 
 
 def _dockerignore_entries() -> set[str]:
