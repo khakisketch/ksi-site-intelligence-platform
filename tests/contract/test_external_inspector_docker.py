@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import socket
 import struct
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Any, cast
@@ -33,6 +34,7 @@ from ksi_processing_controller.external_inspector_docker import (
     FileLocalOciPairResolver,
     FileOciPairResolverConfigV1,
     LocalOciImageProofV1,
+    LocalOciImageProofV2,
     RootlessDockerHostProofPort,
     RootlessDockerRuntimeAdapter,
     RootlessDockerSocketConfigV1,
@@ -526,6 +528,298 @@ def test_offline_oci_pair_proof_requires_exact_signed_pair_and_file_digest(
     proof.write_bytes(contents + b"\n")
     with pytest.raises(DockerRuntimeUnavailable, match="unavailable"):
         resolver.resolve_exact(manifest_digest=_digest("a"), config_digest=_digest("b"))
+
+
+def _v2_pair(*, config_digest: str = _digest("b")) -> dict[str, str]:
+    manifest_bytes = json.dumps(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": config_digest,
+                "size": 1,
+            },
+            "layers": [
+                {
+                    "mediaType": "application/vnd.oci.image.layer.v1.tar+gzip",
+                    "digest": _digest("c"),
+                    "size": 1,
+                }
+            ],
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "ociManifestDigest": "sha256:" + sha256(manifest_bytes).hexdigest(),
+        "ociConfigDigest": config_digest,
+        "ociManifestBytesBase64": base64.b64encode(manifest_bytes).decode("ascii"),
+    }
+
+
+def _v2_resolver(tmp_path: Path, payload: object) -> FileLocalOciPairResolver:
+    proof = tmp_path / "oci-pairs-v2.json"
+    contents = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    proof.write_bytes(contents)
+    proof.chmod(0o600)
+    return FileLocalOciPairResolver(
+        FileOciPairResolverConfigV1(
+            proof_path=proof,
+            expected_sha256="sha256:" + sha256(contents).hexdigest(),
+        )
+    )
+
+
+def test_v2_oci_pair_proof_uses_manifest_as_exact_docker_29_image_id(tmp_path: Path) -> None:
+    """Docker 29/containerd's manifest-form `.Id` remains bound to its signed config."""
+    pair = _v2_pair()
+    resolved = _v2_resolver(
+        tmp_path, {"version": "external-inspector-oci-pairs.v2", "pairs": [pair]}
+    ).resolve_exact(
+        manifest_digest=pair["ociManifestDigest"], config_digest=pair["ociConfigDigest"]
+    )
+
+    assert isinstance(resolved, LocalOciImageProofV2)
+    assert resolved.manifest_digest == pair["ociManifestDigest"]
+    assert resolved.config_digest == pair["ociConfigDigest"]
+    assert resolved.docker_image_id == pair["ociManifestDigest"]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda pair: {**pair, "extra": "reject"},
+        lambda pair: {**pair, "ociManifestBytesBase64": "%%%%"},
+        lambda pair: {**pair, "ociManifestDigest": _digest("d")},
+        lambda pair: {**pair, "ociConfigDigest": _digest("d")},
+    ],
+    ids=("extra-v2-field", "malformed-base64", "raw-digest-substitution", "config-substitution"),
+)
+def test_v2_oci_pair_proof_rejects_unbound_or_ambiguous_pair(
+    tmp_path: Path, mutate: object
+) -> None:
+    pair = _v2_pair()
+    mutated = cast("Any", mutate)(pair)
+    resolver = _v2_resolver(
+        tmp_path, {"version": "external-inspector-oci-pairs.v2", "pairs": [mutated]}
+    )
+    with pytest.raises(DockerRuntimeUnavailable):
+        resolver.resolve_exact(
+            manifest_digest=mutated["ociManifestDigest"], config_digest=mutated["ociConfigDigest"]
+        )
+
+
+def test_v2_oci_pair_proof_rejects_duplicate_json_and_wrong_signed_pair(tmp_path: Path) -> None:
+    pair = _v2_pair()
+    duplicate_contents = (
+        b'{"version":"external-inspector-oci-pairs.v2",'
+        b'"version":"external-inspector-oci-pairs.v2","pairs":[]}'
+    )
+    duplicate = tmp_path / "oci-pairs-v2-duplicate.json"
+    duplicate.write_bytes(duplicate_contents)
+    duplicate.chmod(0o600)
+    duplicate_resolver = FileLocalOciPairResolver(
+        FileOciPairResolverConfigV1(
+            proof_path=duplicate,
+            expected_sha256="sha256:" + sha256(duplicate_contents).hexdigest(),
+        )
+    )
+    with pytest.raises(DockerRuntimeUnavailable, match="malformed"):
+        duplicate_resolver.resolve_exact(
+            manifest_digest=pair["ociManifestDigest"], config_digest=pair["ociConfigDigest"]
+        )
+
+    resolver = _v2_resolver(
+        tmp_path, {"version": "external-inspector-oci-pairs.v2", "pairs": [pair]}
+    )
+    with pytest.raises(DockerRuntimeUnavailable, match="lacks exact"):
+        resolver.resolve_exact(
+            manifest_digest=pair["ociManifestDigest"], config_digest=_digest("d")
+        )
+
+
+def test_v2_oci_pair_proof_rejects_nonfinite_json_and_oversized_raw_manifest(
+    tmp_path: Path,
+) -> None:
+    nonfinite_contents = b'{"version":"external-inspector-oci-pairs.v2","pairs":NaN}'
+    nonfinite = tmp_path / "oci-pairs-v2-nonfinite.json"
+    nonfinite.write_bytes(nonfinite_contents)
+    nonfinite.chmod(0o600)
+    nonfinite_resolver = FileLocalOciPairResolver(
+        FileOciPairResolverConfigV1(
+            proof_path=nonfinite,
+            expected_sha256="sha256:" + sha256(nonfinite_contents).hexdigest(),
+        )
+    )
+    with pytest.raises(DockerRuntimeUnavailable, match="malformed"):
+        nonfinite_resolver.resolve_exact(manifest_digest=_digest("a"), config_digest=_digest("b"))
+
+    raw = b"x" * (64 * 1024 + 1)
+    oversized_pair = {
+        "ociManifestDigest": "sha256:" + sha256(raw).hexdigest(),
+        "ociConfigDigest": _digest("b"),
+        "ociManifestBytesBase64": base64.b64encode(raw).decode("ascii"),
+    }
+    oversized_resolver = _v2_resolver(
+        tmp_path, {"version": "external-inspector-oci-pairs.v2", "pairs": [oversized_pair]}
+    )
+    with pytest.raises(DockerRuntimeUnavailable):
+        oversized_resolver.resolve_exact(
+            manifest_digest=oversized_pair["ociManifestDigest"],
+            config_digest=oversized_pair["ociConfigDigest"],
+        )
+
+
+def test_direct_v2_proof_constructor_rejects_an_unhashable_layer_media_type() -> None:
+    """Malformed decoded JSON never leaks a TypeError through the local proof boundary."""
+    raw = json.dumps(
+        {
+            "schemaVersion": 2,
+            "mediaType": "application/vnd.oci.image.manifest.v1+json",
+            "config": {
+                "mediaType": "application/vnd.oci.image.config.v1+json",
+                "digest": _digest("b"),
+                "size": 1,
+            },
+            "layers": [{"mediaType": [], "digest": _digest("c"), "size": 1}],
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    with pytest.raises(DockerRuntimeUnavailable, match="layer descriptor"):
+        LocalOciImageProofV2(
+            manifest_digest="sha256:" + sha256(raw).hexdigest(),
+            config_digest=_digest("b"),
+            oci_manifest_bytes=raw,
+        )
+
+
+def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payload() -> None:
+    """The unchanged daemon adapter consumes V2 via its common proof properties only."""
+    pair = _v2_pair()
+    image = LocalOciImageProofV2(
+        manifest_digest=pair["ociManifestDigest"],
+        config_digest=pair["ociConfigDigest"],
+        oci_manifest_bytes=base64.b64decode(pair["ociManifestBytesBase64"]),
+    )
+    payload_bytes = b"abc"
+
+    class _Source:
+        def verify_readback(self, *, deadline_monotonic: float) -> FileIoSealReceiptV1:
+            del deadline_monotonic
+            return FileIoSealReceiptV1(
+                device=1,
+                inode=2,
+                mode=0o100600,
+                owner_uid=0,
+                owner_gid=0,
+                link_count=1,
+                size_bytes=len(payload_bytes),
+                sha256="sha256:" + sha256(payload_bytes).hexdigest(),
+            )
+
+        def read_at(self, *, offset: int, maximum_bytes: int, deadline_monotonic: float) -> bytes:
+            del offset, maximum_bytes, deadline_monotonic
+            return b""
+
+        def consume_fd(self, consumer: Any, *, deadline_monotonic: float) -> object:
+            del deadline_monotonic
+            return consumer(9)
+
+    class _Facts:
+        launcher_pid = os.getpid()
+
+        def verify_slice(self, *, binding: AttemptBindingV1) -> bool:
+            return binding.systemd_slice_name == "ksi-inspector-a0123456789abcdef.slice"
+
+        def verify_proc_fd(
+            self, *, fd: int, candidate: str, configuration: FixedContainerConfigurationV1
+        ) -> bool:
+            del configuration
+            return fd == 9 and candidate == f"/proc/{os.getpid()}/fd/9"
+
+    class _Proof:
+        def prove(self, *, configuration: FixedContainerConfigurationV1) -> _Facts:
+            del configuration
+            return _Facts()
+
+    class _Images:
+        def resolve_exact(
+            self, *, manifest_digest: str, config_digest: str
+        ) -> LocalOciImageProofV2:
+            assert (manifest_digest, config_digest) == (image.manifest_digest, image.config_digest)
+            return image
+
+    class _Client:
+        def __init__(self) -> None:
+            self.inspected_ids: list[str] = []
+            self.created_payload: dict[str, object] | None = None
+
+        def inspect_local_image(
+            self, image_id: str, *, deadline_monotonic: float
+        ) -> dict[str, object]:
+            del deadline_monotonic
+            self.inspected_ids.append(image_id)
+            return {
+                "Id": image_id,
+                "RepoDigests": ["local@" + image.manifest_digest],
+                "Config": {},
+            }
+
+        def create_exact(
+            self, *, name: str, payload: dict[str, object], deadline_monotonic: float
+        ) -> str:
+            del name, deadline_monotonic
+            self.created_payload = payload
+            return "runtime-a"
+
+    configuration = replace(
+        _configuration(_Source(), payload_bytes),
+        image_manifest_digest=image.manifest_digest,
+        image_config_digest=image.config_digest,
+    )
+    client = _Client()
+    adapter = RootlessDockerRuntimeAdapter(
+        client=cast(DockerEngineClientV1, client),
+        host_proof=cast(RootlessDockerHostProofPort, _Proof()),
+        images=_Images(),
+    )
+
+    assert adapter.create_exact(
+        configuration=configuration, binding=_binding(), deadline_monotonic=10.0
+    ) == "runtime-a"
+
+    assert client.inspected_ids == [image.manifest_digest]
+    assert client.created_payload is not None
+    assert client.created_payload["Image"] == image.manifest_digest
+
+    class _NoRepoDigestClient(_Client):
+        def inspect_local_image(
+            self, image_id: str, *, deadline_monotonic: float
+        ) -> dict[str, object]:
+            del deadline_monotonic
+            self.inspected_ids.append(image_id)
+            return {"Id": image_id, "RepoDigests": [], "Config": {}}
+
+    with pytest.raises(DockerRuntimeUnavailable, match="local Docker image differs"):
+        RootlessDockerRuntimeAdapter(
+            client=cast(DockerEngineClientV1, _NoRepoDigestClient()),
+            host_proof=cast(RootlessDockerHostProofPort, _Proof()),
+            images=_Images(),
+        ).create_exact(configuration=configuration, binding=_binding(), deadline_monotonic=10.0)
+
+    class _LookupFailureClient(_Client):
+        def inspect_local_image(
+            self, image_id: str, *, deadline_monotonic: float
+        ) -> dict[str, object]:
+            del image_id, deadline_monotonic
+            raise DockerRuntimeUnavailable("exact local image lookup failed")
+
+    with pytest.raises(DockerRuntimeUnavailable, match="lookup failed"):
+        RootlessDockerRuntimeAdapter(
+            client=cast(DockerEngineClientV1, _LookupFailureClient()),
+            host_proof=cast(RootlessDockerHostProofPort, _Proof()),
+            images=_Images(),
+        ).create_exact(configuration=configuration, binding=_binding(), deadline_monotonic=10.0)
 
 
 def test_cgroup_reader_reads_only_usage_usec_from_a_preopened_v2_directory(tmp_path: Path) -> None:
