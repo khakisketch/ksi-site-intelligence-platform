@@ -11,10 +11,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorage
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthorityPort,
+)
+from ksi_core.external_relative_volume_s3_capabilities import (
+    ExternalRelativeVolumeS3InputCapabilityIssuer,
 )
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
@@ -168,6 +173,72 @@ def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_pat
                 ).status_code
                 == 404
             )
+    finally:
+        for item in opened:
+            item.close()
+
+
+def test_byte_issuer_factory_receives_final_stores(tmp_path: Path) -> None:
+    """A shadow reconstruction store would not see the app's sealed DSM records."""
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
+    retained: list[ExternalRelativeVolumeS3InputCapabilityIssuer] = []
+
+    def build_issuer(
+        *, reconstruction: ExternalReconstructionStore, storage: EvidenceStorage
+    ) -> ExternalRelativeVolumeS3InputCapabilityIssuer:
+        issuer = ExternalRelativeVolumeS3InputCapabilityIssuer(
+            reconstruction=reconstruction, storage=storage
+        )
+        retained.append(issuer)
+        return issuer
+
+    config = replace(
+        _config(trace), input_capability_issuer=None, build_input_capability_issuer=build_issuer
+    )
+    try:
+        app = _assemble(tmp_path, opened, trace, config=config)
+        assert len(retained) == 1
+        assert retained[0]._reconstruction is app.state.external_reconstruction_store
+        assert retained[0]._storage is app.state.evidence_storage
+        assert app.state.external_relative_volume_store is not None
+    finally:
+        for item in opened:
+            item.close()
+
+
+@pytest.mark.parametrize("mode", ["missing", "both", "not_callable"])
+def test_byte_issuer_configuration_requires_one_explicit_source(mode: str) -> None:
+    config = _config([])
+    with pytest.raises(ValueError, match="issuer"):
+        if mode == "missing":
+            replace(config, input_capability_issuer=None)
+        elif mode == "both":
+            replace(
+                config,
+                build_input_capability_issuer=lambda **_kwargs: config.input_capability_issuer,
+            )
+        else:
+            replace(config, input_capability_issuer=None, build_input_capability_issuer=42)
+
+
+@pytest.mark.parametrize("failure", ["none", "raises"])
+def test_byte_issuer_factory_failure_prevents_workflow_replay(tmp_path: Path, failure: str) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
+
+    def failed_factory(**_kwargs: object) -> None:
+        if failure == "raises":
+            raise ValueError("issuer unavailable")
+        return None
+
+    config = replace(
+        _config(trace), input_capability_issuer=None, build_input_capability_issuer=failed_factory
+    )
+    try:
+        with pytest.raises(ValueError, match="issuer"):
+            _assemble(tmp_path, opened, trace, config=config)
+        assert "external-relative-volumes.jsonl" not in trace
     finally:
         for item in opened:
             item.close()

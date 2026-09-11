@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Protocol
 
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorage
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_evidence_validations import (
@@ -72,24 +73,42 @@ class ExternalRelativeVolumeRuntimeFactory(Protocol):
     ) -> ExternalRelativeVolumeRuntimeAuthorities: ...
 
 
+class ExternalRelativeVolumeInputCapabilityFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        reconstruction: ExternalReconstructionStore,
+        storage: EvidenceStorage,
+    ) -> ExternalRelativeVolumeInputCapabilityIssuer: ...
+
+
 @dataclass(frozen=True, slots=True)
 class ExternalResultWorkflowAssemblyConfig:
     build_mapping: ExternalRelativeVolumeMappingFactory
     build_runtime: ExternalRelativeVolumeRuntimeFactory
     queue_policy: ExternalRelativeVolumeQueuePolicy
-    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer
+    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None = None
     policy_authority_port: PolicyAuthorityPort | None = None
     build_evidence_context_authority: (
         Callable[[ExternalAuthorityCurrentnessCoordinator], EvidenceMeasurementContextAuthorityPort]
         | None
     ) = None
+    build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None
 
     def __post_init__(self) -> None:
         if not all(
             callable(value)
-            for value in (self.build_mapping, self.build_runtime, self.input_capability_issuer)
+            for value in (self.build_mapping, self.build_runtime)
         ):
             raise ValueError("external result workflow requires explicit factories and byte issuer")
+        if (self.input_capability_issuer is None) == (self.build_input_capability_issuer is None):
+            raise ValueError("external result workflow requires exactly one byte issuer source")
+        if not callable(
+            self.input_capability_issuer
+            if self.input_capability_issuer is not None
+            else self.build_input_capability_issuer
+        ):
+            raise ValueError("external result workflow byte issuer source must be callable")
         if not isinstance(self.queue_policy, ExternalRelativeVolumeQueuePolicy):
             raise ValueError("external result workflow requires an explicit queue policy")
         if self.policy_authority_port is not None and not callable(

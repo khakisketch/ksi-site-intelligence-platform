@@ -414,16 +414,28 @@ def assemble_app(
                 item.evidence_ref, now=datetime.now(UTC)
             )
     external_volume_mapping: ExternalRelativeVolumeAuthorityPort | None = None
+    external_volume_input_capability_issuer = None
     if external_result_workflow is not None:
         if (
             external_reconstruction_store is None
             or external_artifact_inspection_store is None
             or external_validation_policy_registry is None
             or external_evidence_validation_store is None
+            or evidence_storage is None
         ):
             raise ValueError(
                 "external result workflow requires the complete external storage graph"
             )
+        external_volume_input_capability_issuer = external_result_workflow.input_capability_issuer
+        if external_result_workflow.build_input_capability_issuer is not None:
+            external_volume_input_capability_issuer = (
+                external_result_workflow.build_input_capability_issuer(
+                    reconstruction=external_reconstruction_store,
+                    storage=evidence_storage,
+                )
+            )
+        if not callable(external_volume_input_capability_issuer):
+            raise ValueError("external result workflow byte issuer factory returned no issuer")
         external_volume_mapping = external_result_workflow.build_mapping(
             coordinator=external_authority_currentness,
             reconstruction=external_reconstruction_store,
@@ -894,11 +906,7 @@ def assemble_app(
         external_relative_volume_store=external_relative_volume_store,
         external_result_workflow_service=external_result_workflow_service,
         external_result_read_projector=external_result_read_projector,
-        external_volume_input_capability_issuer=(
-            external_result_workflow.input_capability_issuer
-            if external_result_workflow is not None
-            else None
-        ),
+        external_volume_input_capability_issuer=external_volume_input_capability_issuer,
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,

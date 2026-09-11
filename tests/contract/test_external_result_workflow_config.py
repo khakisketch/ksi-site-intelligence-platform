@@ -217,6 +217,42 @@ def test_loader_builds_workflow_only_from_an_exact_approved_catalog(tmp_path: Pa
     assert callable(workflow.build_runtime)
 
 
+def test_loader_accepts_deferred_real_storage_issuer(tmp_path: Path) -> None:
+    from ksi_core.external_relative_volume_s3_capabilities import (
+        ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.external_result_workflow_config import load_external_result_workflow_config
+
+    config_path, participants = _approved_files(tmp_path)
+    workflow = load_external_result_workflow_config(
+        config_path,
+        participants=participants,
+        build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    assert workflow.input_capability_issuer is None
+    assert workflow.build_input_capability_issuer is ExternalRelativeVolumeS3InputCapabilityIssuer
+
+
+def test_loader_rejects_competing_issuer_sources_before_opening_files(tmp_path: Path) -> None:
+    from ksi_core.external_relative_volume_s3_capabilities import (
+        ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.external_result_workflow_config import (
+        ExternalQuantitativeWorkflowConfigUnavailable,
+        load_external_result_workflow_config,
+    )
+
+    _, participants = _approved_files(tmp_path)
+    with pytest.raises(ExternalQuantitativeWorkflowConfigUnavailable) as error:
+        load_external_result_workflow_config(
+            tmp_path / "absent.json",
+            participants=participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+            build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+        )
+    assert error.value.code.value == "CONFIG_VALUE"
+
+
 @pytest.mark.parametrize("mode", (0o666, 0o640))
 def test_loader_rejects_existing_nonprivate_authority_journal(tmp_path: Path, mode: int) -> None:
     """A private config cannot bless a mutable configured authority journal."""

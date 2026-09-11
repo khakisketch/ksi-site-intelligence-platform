@@ -42,6 +42,7 @@ from ksi_core.external_relative_volumes import (
     ExternalRelativeVolumeQueuePolicy,
 )
 from ksi_core.external_result_workflow_assembly import (
+    ExternalRelativeVolumeInputCapabilityFactory,
     ExternalRelativeVolumeRuntimeAuthorities,
     ExternalResultWorkflowAssemblyConfig,
 )
@@ -146,7 +147,8 @@ def load_external_result_workflow_config(
     path: Path,
     *,
     participants: ExternalQuantitativeWorkflowParticipants,
-    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer,
+    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None = None,
+    build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None,
 ) -> ExternalResultWorkflowAssemblyConfig:
     """Load one exact catalog and produce closures for the common assembly.
 
@@ -161,7 +163,11 @@ def load_external_result_workflow_config(
         raise ExternalQuantitativeWorkflowConfigUnavailable(
             ExternalQuantitativeWorkflowConfigBlockedCode.CONFIG_VALUE
         )
-    if not callable(input_capability_issuer):
+    if (input_capability_issuer is None) == (build_input_capability_issuer is None) or not callable(
+        input_capability_issuer
+        if input_capability_issuer is not None
+        else build_input_capability_issuer
+    ):
         raise ExternalQuantitativeWorkflowConfigUnavailable(
             ExternalQuantitativeWorkflowConfigBlockedCode.CONFIG_VALUE
         )
@@ -207,13 +213,16 @@ def load_external_result_workflow_config(
         authority_journal_path=authority_journal_path,
         participants=participants,
     )
-    return _workflow_config(catalog, participants, input_capability_issuer)
+    return _workflow_config(
+        catalog, participants, input_capability_issuer, build_input_capability_issuer
+    )
 
 
 def _workflow_config(
     catalog: _Catalog,
     participants: ExternalQuantitativeWorkflowParticipants,
-    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer,
+    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None,
+    build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None,
 ) -> ExternalResultWorkflowAssemblyConfig:
     instance: ExternalQuantitativeAuthorityCatalog | None = None
 
@@ -321,6 +330,7 @@ def _workflow_config(
         build_runtime=build_runtime,
         queue_policy=participants.queue_policy,
         input_capability_issuer=input_capability_issuer,
+        build_input_capability_issuer=build_input_capability_issuer,
         policy_authority_port=participants.policy_authority_port,
         build_evidence_context_authority=participants.build_evidence_context_authority,
     )
