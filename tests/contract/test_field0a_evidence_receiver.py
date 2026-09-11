@@ -14,9 +14,10 @@ import urllib.request
 import zipfile
 from collections.abc import Iterator
 from contextlib import contextmanager
-from http.client import HTTPResponse
+from http.client import HTTPConnection, HTTPResponse
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -262,20 +263,30 @@ def test_receiver_rejects_duplicate_slot_without_overwrite(tmp_path: Path) -> No
         assert (session / "pilot-import-A.raw").read_bytes() == first
 
 
-def test_receiver_rejects_missing_or_chunked_content_length(tmp_path: Path) -> None:
-    with _receiver_url(tmp_path) as (base_url, _):
-        body, content_type = _multipart("pilot-import-a", b"\x89PNG\r\n\x1a\nx")
-        request = urllib.request.Request(
-            _upload_url(base_url),
-            data=body,
-            method="POST",
-            headers={"Content-Type": content_type},
-        )
-        # urllib adds Content-Length for data, so force an unsupported transfer encoding too.
-        request.add_header("Transfer-Encoding", "chunked")
-        with pytest.raises(urllib.error.HTTPError) as caught:
-            _open(request)
-        assert caught.value.code == 411
+@pytest.mark.parametrize("framing", ["missing", "chunked", "chunked-with-length"])
+def test_receiver_rejects_missing_or_chunked_content_length(
+    tmp_path: Path, framing: str
+) -> None:
+    with _receiver_url(tmp_path) as (base_url, session):
+        target = urlsplit(_upload_url(base_url))
+        assert target.hostname == "127.0.0.1" and target.port is not None
+        connection = HTTPConnection(target.hostname, target.port, timeout=2)
+        try:
+            connection.putrequest("POST", f"{target.path}?{target.query}")
+            connection.putheader("Content-Type", "multipart/form-data; boundary=test")
+            if framing != "missing":
+                connection.putheader("Transfer-Encoding", "chunked")
+            if framing == "chunked-with-length":
+                connection.putheader("Content-Length", "100")
+            # The receiver must reject these headers before waiting for any body.
+            # Sending a chunk terminator after its early close races with that rejection.
+            connection.endheaders()
+            with connection.getresponse() as response:
+                assert response.status == 411
+                response.read()
+        finally:
+            connection.close()
+        assert list(session.iterdir()) == []
 
 
 def test_receiver_rejects_declared_oversize_before_reading(tmp_path: Path) -> None:
