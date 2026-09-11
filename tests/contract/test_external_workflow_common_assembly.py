@@ -24,6 +24,7 @@ from ksi_core.external_relative_volume_s3_capabilities import (
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
 from ksi_core.external_result_workflow_assembly import (
+    ExternalRelativeVolumeInputCapabilityFactory,
     ExternalRelativeVolumeRuntimeAuthorities,
     ExternalResultWorkflowAssemblyConfig,
 )
@@ -214,12 +215,20 @@ def test_byte_issuer_configuration_requires_one_explicit_source(mode: str) -> No
         if mode == "missing":
             replace(config, input_capability_issuer=None)
         elif mode == "both":
+            issuer = config.input_capability_issuer
+            assert issuer is not None
             replace(
                 config,
-                build_input_capability_issuer=lambda **_kwargs: config.input_capability_issuer,
+                build_input_capability_issuer=lambda **_kwargs: issuer,
             )
         else:
-            replace(config, input_capability_issuer=None, build_input_capability_issuer=42)
+            # Deliberately malformed runtime input exercises the constructor guard.
+            replace(
+                config, input_capability_issuer=None,
+                build_input_capability_issuer=cast(
+                    ExternalRelativeVolumeInputCapabilityFactory, 42
+                ),
+            )
 
 
 @pytest.mark.parametrize("failure", ["none", "raises"])
@@ -233,7 +242,11 @@ def test_byte_issuer_factory_failure_prevents_workflow_replay(tmp_path: Path, fa
         return None
 
     config = replace(
-        _config(trace), input_capability_issuer=None, build_input_capability_issuer=failed_factory
+        _config(trace), input_capability_issuer=None,
+        # The invalid return value is intentional: assembly must reject it before replay.
+        build_input_capability_issuer=cast(
+            ExternalRelativeVolumeInputCapabilityFactory, failed_factory
+        ),
     )
     try:
         with pytest.raises(ValueError, match="issuer"):

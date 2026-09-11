@@ -4,17 +4,23 @@ import importlib.util
 import os
 from pathlib import Path
 from types import ModuleType
+from typing import cast
 
 import pytest
 
 
-def _module() -> ModuleType:
+class _CandidateStateModule(ModuleType):
+    RUNTIME_UID: int
+    RUNTIME_GID: int
+
+
+def _module() -> _CandidateStateModule:
     source = (
         Path(__file__).resolve().parents[2] / "deploy/external-runtime/prepare_candidate_state.py"
     )
     spec = importlib.util.spec_from_file_location("candidate_state", source)
     assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
+    module = cast(_CandidateStateModule, importlib.util.module_from_spec(spec))
     spec.loader.exec_module(module)
     # The fixture uses this process's UID; main() retains fixed service UID 10001.
     module.RUNTIME_UID = os.geteuid()
