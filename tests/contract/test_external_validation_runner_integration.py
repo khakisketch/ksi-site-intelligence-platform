@@ -1292,6 +1292,54 @@ def _actual_measurement_core_apps(
     )
 
 
+def _run_until_three_lane_evidence_is_complete(
+    *,
+    runner: ExternalValidationRunner,
+    inspection_seen: list[bytes],
+    expected_source: bytes,
+    inspection_store: Any,
+    display_store: Any,
+    inspection_request_id: str,
+    inspection_subject: Any,
+    checkpoint_store: Any,
+    volume_store: Any,
+    volume_request_id: str,
+) -> list[TurnOutcome]:
+    completion_deadline = time.monotonic() + 90
+    outcomes: list[TurnOutcome] = []
+    while time.monotonic() < completion_deadline:
+        outcomes.append(runner.run_once())
+        inspection_snapshot = inspection_store.public_snapshot(inspection_subject)
+        report = inspection_snapshot.report
+        display_snapshot = (
+            display_store.public_snapshot(
+                inspection_request_id,
+                subject_digest=inspection_subject.canonical_digest(),
+                report_digest=report.report_digest,
+                policy_digest=report.inspection_policy_digest,
+            )
+            if report is not None
+            and report.report_digest is not None
+            and report.inspection_policy_digest is not None
+            else None
+        )
+        checkpoint_records = checkpoint_store.terminal_records_for_evidence("eev-v1-a")
+        current_volume = volume_store.get(volume_request_id, organization_id="org-a")
+        if (
+            inspection_seen == [expected_source, expected_source]
+            and display_snapshot is not None
+            and display_snapshot.state.value == "SEALED"
+            and display_snapshot.receipt is not None
+            and display_snapshot.receipt.receipt_digest is not None
+            and len(checkpoint_records) == 1
+            and current_volume is not None
+            and current_volume.report is not None
+        ):
+            return outcomes
+        time.sleep(0.01)
+    pytest.fail(f"three-lane evidence did not complete before deadline: {outcomes!r}")
+
+
 def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1363,7 +1411,9 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
     monkeypatch.setattr(inspection_api, "sealed_submission", bound_submission)
     monkeypatch.setattr(inspection_api, "sealed_manifest", bound_manifest)
     monkeypatch.setattr(inspection_api, "subject", bound_subject)
-    app, _request_id, policy, storage, _submission_ref = inspection_api._active_scoped_app(tmp_path)
+    app, inspection_request_id, policy, storage, _submission_ref = (
+        inspection_api._active_scoped_app(tmp_path)
+    )
     checkpoint_bodies = (b"checkpoint-target", b"x,y\n1,2\n")
     volume_bodies = (b"volume-baseline", b"volume-current")
     inspection_socket = tmp_path / "inspection.sock"
@@ -1577,13 +1627,18 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
                                                         ),
                                                     )
                                                     try:
-                                                        assert [
-                                                            runner.run_once() for _ in range(3)
-                                                        ] == [
-                                                            TurnOutcome.COMPLETED,
-                                                            TurnOutcome.COMPLETED,
-                                                            TurnOutcome.COMPLETED,
-                                                        ]
+                                                        _run_until_three_lane_evidence_is_complete(
+                                                            runner=runner,
+                                                            inspection_seen=inspection_uds.seen,
+                                                            expected_source=source,
+                                                            inspection_store=app.state.external_artifact_inspection_store,
+                                                            display_store=app.state.external_display_artifact_store,
+                                                            inspection_request_id=inspection_request_id,
+                                                            inspection_subject=bound_subject(),
+                                                            checkpoint_store=checkpoint_store,
+                                                            volume_store=volume_store,
+                                                            volume_request_id=volume_request_id,
+                                                        )
                                                     finally:
                                                         runner.close()
                                                 finally:

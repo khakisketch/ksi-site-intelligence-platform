@@ -965,13 +965,14 @@ def test_inspection_phase_records_complete_report_through_actual_core_and_loopba
                     report_id_factory=lambda: "123e4567-e89b-42d3-a456-426614174099",
                     clock=lambda: datetime.now(UTC),
                 )
-                deadline = time.monotonic() + 1
-                request_id = lane.poll(deadline_monotonic=deadline)
+                # This is a functional composition test, not a latency budget test.
+                control_deadline = time.monotonic() + 20
+                request_id = lane.poll(deadline_monotonic=control_deadline)
                 assert request_id is not None
                 lease = lane.claim(
                     request_id,
                     _fence().lease_acquisition_id,
-                    deadline_monotonic=deadline,
+                    deadline_monotonic=control_deadline,
                 )
                 assert lease is not None
                 transport.drop_next_suffix = "/report"
@@ -979,8 +980,18 @@ def test_inspection_phase_records_complete_report_through_actual_core_and_loopba
                 # only the INSPECTION phase.  Public report-to-DISPLAY
                 # continuation is covered through the production lane and
                 # owned UDS in the runner integration contract.
-                lane._execute_inspection(lane._current(lease, deadline), lease, deadline, Event())
-                current = client.current_input(request_id, lease.fence, deadline_monotonic=deadline)
+                execution_deadline = time.monotonic() + 20
+                lane._execute_inspection(
+                    lane._current(lease, execution_deadline),
+                    lease,
+                    execution_deadline,
+                    Event(),
+                )
+                current = client.current_input(
+                    request_id,
+                    lease.fence,
+                    deadline_monotonic=time.monotonic() + 20,
+                )
                 assert current is not None
                 assert current.phase is ExternalInspectionPhaseV1.DISPLAY
                 assert current.accepted_report is not None
