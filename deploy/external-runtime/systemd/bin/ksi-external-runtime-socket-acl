@@ -169,9 +169,38 @@ activate_socket_acls() {
 }
 
 run_as() { local account="$1"; shift; /usr/sbin/runuser -u "$account" -- "$@"; }
-connect_as() { local account="$1" path="$2"; run_as "$account" /usr/bin/python3 -c 'import socket,sys;s=socket.socket(socket.AF_UNIX);s.settimeout(1);s.connect(sys.argv[1]);s.close()' "$path"; }
+connect_as() {
+  local account="$1" path="$2"
+  run_as "$account" /usr/bin/python3 -c '
+import errno,socket,sys
+try:
+    with socket.socket(socket.AF_UNIX) as s:
+        s.settimeout(1)
+        s.connect(sys.argv[1])
+except OSError as error:
+    if error.errno in (errno.EACCES, errno.EPERM):
+        print(errno.errorcode[error.errno])
+        sys.exit(13)
+    print("UNAVAILABLE", file=sys.stderr)
+    sys.exit(1)
+' "$path"
+}
 require_connect_allowed() { connect_as "$1" "$2" || { echo "$1 cannot connect to $2; stop" >&2; return 1; }; }
-require_connect_denied() { if connect_as "$1" "$2"; then echo "$1 unexpectedly connected to $2; stop" >&2; return 1; fi; }
+require_connect_denied() {
+  local observation status
+  if observation="$(connect_as "$1" "$2")"; then
+    echo "$1 unexpectedly connected to $2; stop" >&2
+    return 1
+  else
+    status=$?
+  fi
+  # A stopped listener, timeout, missing interpreter or runuser failure is not
+  # evidence of kernel authorization denial. Require both errno and exit code.
+  [[ "$status" == 13 && ( "$observation" == EACCES || "$observation" == EPERM ) ]] || {
+    echo "$1 access denial for $2 is unverified; stop" >&2
+    return 1
+  }
+}
 verify_runtime_access() {
   local untrusted="$1" untrusted_uid runtime docker bus p
   untrusted_uid="$(/usr/bin/id -u "$untrusted")" || return 1; [[ "$untrusted_uid" != "$launcher_uid" && "$untrusted_uid" != "$validator_uid" ]] || return 1
