@@ -26,7 +26,7 @@ requires-python = ">=3.12,<3.13"
 # "직접 import 하는 패키지는 직접 선언한다" 규칙). laspy 는 이미
 # ksi-change-detection 을 통해 전이 의존으로 들어와 있었다.
 dependencies = [
-    "cryptography>=42",
+    "cryptography>=50,<51",
     "ksi-change-detection",
     "ksi-domain",
     "ksi-event-contracts",
