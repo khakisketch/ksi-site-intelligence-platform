@@ -5,10 +5,15 @@ from __future__ import annotations
 import os
 import pwd
 import socket
+import struct
 import subprocess
+import threading
+import time
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
+from ksi_processing_controller.external_listener_peer_probe import respond_to_listener_peer_probe
 
 _ROOT = Path(__file__).resolve().parents[2]
 _HELPER = (
@@ -166,6 +171,176 @@ def test_access_proof_uses_an_actual_unix_connect_probe(tmp_path: Path) -> None:
         listener.close()
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(("lane", "socket_index"), [("INSPECTION", 0), ("MEASUREMENT", 1)])
+def test_acl_helper_requires_a_fresh_server_peer_credential_receipt(
+    tmp_path: Path, lane: str, socket_index: int
+) -> None:
+    """A successful connect alone is insufficient: both kernel observations must round-trip."""
+    parent, inspection, measurement, listeners, env = _candidate(tmp_path)
+    probe_socket = (inspection, measurement)[socket_index]
+    listeners[socket_index].listen(1)
+    listeners[socket_index].settimeout(2)
+    errors: list[BaseException] = []
+
+    def serve() -> None:
+        try:
+            connection, _address = listeners[socket_index].accept()
+            with connection:
+                assert respond_to_listener_peer_probe(
+                    connection,
+                    lane=lane,
+                    socket_path=probe_socket,
+                    expected_worker_uid=os.geteuid(),
+                    expected_server_uid=os.geteuid(),
+                    expected_server_gid=os.getegid(),
+                    deadline_monotonic=time.monotonic() + 1,
+                )
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=serve)
+    thread.start()
+    try:
+        result = _run_acl(
+            env,
+            f'''run_as() {{ shift; "$@"; }}
+launcher_uid={os.geteuid()}
+launcher_gid={os.getegid()}
+require_peer_receipt {lane} "{probe_socket}"''',
+        )
+    finally:
+        for listener in listeners:
+            listener.close()
+        thread.join(timeout=3)
+        assert not thread.is_alive(), "peer fixture thread did not terminate"
+        parent.chmod(0o700)
+        subprocess.check_call(["setfacl", "--remove-all", str(parent)])
+
+    assert result.returncode == 0, result.stderr
+    assert errors == []
+
+
+def test_acl_access_proof_fails_when_one_of_two_receipts_is_missing_despite_permission_denials(
+) -> None:
+    """Both exact socket receipts are required; connect permission alone is insufficient."""
+    if os.geteuid() != 0:
+        pytest.skip("verify_runtime_access requires root to exercise distinct account denials")
+    untrusted = next(
+        account
+        for account in pwd.getpwall()
+        if account.pw_uid not in {os.getuid(), pwd.getpwnam("nobody").pw_uid}
+    )
+    # Never loosen pytest's private root ancestor. Only this owned fixture is traversable.
+    with TemporaryDirectory(prefix="ksi-peer-denial-test-", dir="/tmp") as owned:
+        fixture = Path(owned)
+        fixture.chmod(0o755)
+        _assert_missing_peer_receipt(fixture, untrusted.pw_name)
+
+
+def _assert_missing_peer_receipt(tmp_path: Path, untrusted_account: str) -> None:
+    parent, inspection, measurement, listeners, env = _candidate(tmp_path)
+    listeners[0].listen(1)
+    listeners[0].settimeout(2)
+    listeners[1].listen(1)
+    errors: list[BaseException] = []
+
+    def inspection_server() -> None:
+        try:
+            connection, _address = listeners[0].accept()
+            with connection:
+                assert respond_to_listener_peer_probe(
+                    connection,
+                    lane="INSPECTION",
+                    socket_path=inspection,
+                    expected_worker_uid=pwd.getpwnam("nobody").pw_uid,
+                    expected_server_uid=os.geteuid(),
+                    expected_server_gid=os.getegid(),
+                    deadline_monotonic=time.monotonic() + 2,
+                )
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=inspection_server)
+    thread.start()
+    try:
+        result = _run_acl(
+            env,
+            f'''activate_socket_acls
+launcher_uid={os.geteuid()}
+launcher_gid={os.getegid()}
+eval "$(declare -f require_connect_denied | sed '1s/require_connect_denied/record_connect_denied/')"
+denial_checks=0
+require_connect_denied() {{ record_connect_denied "$@"; denial_checks=$((denial_checks + 1)); }}
+if verify_runtime_access {untrusted_account}; then exit 91; fi
+[[ "$denial_checks" -ge 2 ]]''',
+        )
+    finally:
+        for listener in listeners:
+            listener.close()
+        thread.join(timeout=3)
+        parent.chmod(0o700)
+        subprocess.check_call(["setfacl", "--remove-all", str(parent)])
+
+    assert not thread.is_alive(), "peer fixture thread did not terminate"
+    assert result.returncode == 0, result.stderr
+    assert errors == []
+
+
+def test_acl_helper_peer_probe_uses_one_absolute_deadline_when_server_dribbles_response(
+    tmp_path: Path,
+) -> None:
+    """A slow peer cannot reset the helper's one-second response budget per byte."""
+    parent, path, _measurement, listeners, env = _candidate(tmp_path)
+    listener = listeners[0]
+    listener.listen(1)
+    listener.settimeout(2)
+    errors: list[BaseException] = []
+
+    def server() -> None:
+        try:
+            connection, address = listener.accept()
+            with connection:
+                assert isinstance(address, bytes)
+                challenge = address[-24:]
+                payload = (
+                    b"KSI-PEER-RECEIPT-v1\x00"
+                    + challenge
+                    + struct.pack("3i", os.getpid(), os.geteuid(), os.getegid())
+                )
+                for byte in payload[:6]:
+                    connection.sendall(bytes([byte]))
+                    time.sleep(0.24)
+                time.sleep(0.65)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=server)
+    thread.start()
+    started = time.monotonic()
+    try:
+        result = _run_acl(
+            {**env, "PROBE_SOCKET": str(path)},
+            f'''run_as() {{ shift; "$@"; }}
+launcher_uid={os.geteuid()}
+launcher_gid={os.getegid()}
+if require_peer_receipt INSPECTION "$PROBE_SOCKET"; then exit 92; fi''',
+        )
+    finally:
+        elapsed = time.monotonic() - started
+        for candidate in listeners:
+            candidate.close()
+        thread.join(timeout=3)
+        assert not thread.is_alive(), "peer fixture thread did not terminate"
+        parent.chmod(0o700)
+        subprocess.check_call(["setfacl", "--remove-all", str(parent)])
+
+    assert result.returncode == 0, result.stderr
+    assert elapsed < 1.75
+    assert errors == []
 
 
 @pytest.mark.parametrize("state", ["missing", "refused", "allowed", "denied", "timeout"])

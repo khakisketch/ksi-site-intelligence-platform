@@ -65,6 +65,9 @@ from ksi_processing_controller.external_inspector_systemd import (
     SystemdTransientSliceConfigV1,
     UserSystemdBusConfigV1,
 )
+from ksi_processing_controller.external_listener_peer_probe import (
+    respond_to_listener_peer_probe,
+)
 from ksi_processing_controller.external_measurement_attempts import (
     MeasurementAttemptJournalV2,
     MeasurementAttemptRecoveryV2,
@@ -550,6 +553,18 @@ class ExternalMeasurementSystemdDaemon:
                 deadline_monotonic=time.monotonic() + self._proof_timeout_millis / 1000,
                 pending=self._preaccepted,
             )
+            access = self._activated_listener.access_receipt
+            if respond_to_listener_peer_probe(
+                connection,
+                lane="MEASUREMENT",
+                socket_path=access.socket_path,
+                expected_worker_uid=access.required_worker_uid,
+                expected_server_uid=access.expected_owner_uid,
+                expected_server_gid=access.expected_owner_gid,
+                deadline_monotonic=time.monotonic() + self._proof_timeout_millis / 1000,
+            ):
+                connection.close()
+                return
         except BaseException:
             with suppress(OSError):
                 connection.close()

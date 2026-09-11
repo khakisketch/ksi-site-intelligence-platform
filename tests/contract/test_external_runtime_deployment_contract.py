@@ -151,7 +151,10 @@ def test_socket_acl_activation_is_a_root_owned_manual_systemd_boundary() -> None
     assert "measurement socket changed during ACL activation" in helper
     assert "--untrusted-user" in helper
     assert "s.connect(sys.argv[1])" in helper
-    assert "BLOCKED_SERVER_PEER_CREDENTIAL" in helper
+    assert "OBSERVED_SERVER_PEER_CREDENTIAL" in helper
+    assert "require_peer_receipt INSPECTION" in helper
+    assert "require_peer_receipt MEASUREMENT" in helper
+    assert "SO_PEERCRED" in helper
 
 
 def test_bootstrap_refuses_drift_and_preflight_remains_read_only() -> None:

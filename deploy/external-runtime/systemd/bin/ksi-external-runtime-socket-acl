@@ -35,6 +35,8 @@ inspection_before=
 measurement_before=
 inspection_state=
 measurement_state=
+inspection_peer_receipt=
+measurement_peer_receipt=
 
 usage() { echo "usage: $0 activate | verify [--json] [--untrusted-user account]" >&2; exit 2; }
 require_absolute_path() { [[ "$1" == /* && "$1" != *".."* ]] || { echo "socket ACL path must be absolute and normalized" >&2; return 1; }; }
@@ -186,6 +188,71 @@ except OSError as error:
 ' "$path"
 }
 require_connect_allowed() { connect_as "$1" "$2" || { echo "$1 cannot connect to $2; stop" >&2; return 1; }; }
+peer_probe_as() {
+  local account="$1" lane="$2" path="$3" expected_uid="$4" expected_gid="$5"
+  run_as "$account" /usr/bin/python3 - "$lane" "$path" "$expected_uid" "$expected_gid" <<'PY'
+import hashlib, json, os, socket, struct, sys, time
+
+lane, path, expected_uid_text, expected_gid_text = sys.argv[1:]
+codes = {"INSPECTION": b"I", "MEASUREMENT": b"M"}
+try:
+    code = codes[lane]
+    expected_uid = int(expected_uid_text)
+    expected_gid = int(expected_gid_text)
+    if expected_uid < 0 or expected_gid < 0:
+        raise ValueError
+    deadline = time.monotonic() + 1
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError
+        return seconds
+    challenge = os.urandom(24)
+    binding = hashlib.sha256(os.fsencode(path)).digest()[:16]
+    address = b"\x00ksi-peer-receipt-v1/" + code + binding + challenge
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
+        connection.settimeout(remaining())
+        connection.bind(address)
+        connection.connect(path)
+        server_pid, server_uid, server_gid = struct.unpack(
+            "3i", connection.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12)
+        )
+        if server_pid <= 0 or server_uid != expected_uid or server_gid != expected_gid:
+            raise ValueError
+        expected = len(b"KSI-PEER-RECEIPT-v1\x00") + len(challenge) + 12
+        response = bytearray()
+        while len(response) < expected:
+            connection.settimeout(remaining())
+            chunk = connection.recv(expected - len(response))
+            if not chunk:
+                raise ValueError
+            response.extend(chunk)
+        prefix = b"KSI-PEER-RECEIPT-v1\x00"
+        if response[:len(prefix)] != prefix or response[len(prefix):len(prefix) + len(challenge)] != challenge:
+            raise ValueError
+        worker_pid, worker_uid, worker_gid = struct.unpack_from("3i", response, len(prefix) + len(challenge))
+        if (worker_pid, worker_uid, worker_gid) != (os.getpid(), os.geteuid(), os.getegid()):
+            raise ValueError
+except (OSError, ValueError, struct.error):
+    sys.exit(1)
+print(json.dumps({"lane": lane, "socket": path, "server": {"pid": server_pid, "uid": server_uid, "gid": server_gid}, "serverObservedWorker": {"pid": worker_pid, "uid": worker_uid, "gid": worker_gid}}, separators=(",", ":")))
+PY
+}
+require_peer_receipt() {
+  local lane="$1" path="$2" receipt
+  receipt="$(peer_probe_as "$validator_account" "$lane" "$path" "$launcher_uid" "$launcher_gid")" || {
+    echo "fresh server peer credential receipt for $lane is unavailable; stop" >&2
+    return 1
+  }
+  /usr/bin/jq -e --arg lane "$lane" --arg path "$path" --argjson uid "$launcher_uid" --argjson gid "$launcher_gid" '
+    .lane == $lane and .socket == $path and
+    (.server.pid | type == "number" and . > 0) and .server.uid == $uid and .server.gid == $gid and
+    (.serverObservedWorker.pid | type == "number" and . > 0) and
+    (.serverObservedWorker.uid | type == "number" and . >= 0) and
+    (.serverObservedWorker.gid | type == "number" and . >= 0)
+  ' >/dev/null <<<"$receipt" || { echo "server peer credential receipt is malformed; stop" >&2; return 1; }
+  case "$lane" in INSPECTION) inspection_peer_receipt="$receipt" ;; MEASUREMENT) measurement_peer_receipt="$receipt" ;; *) return 1 ;; esac
+}
 require_connect_denied() {
   local observation status
   if observation="$(connect_as "$1" "$2")"; then
@@ -208,15 +275,15 @@ verify_runtime_access() {
   /usr/sbin/runuser -u "$validator_account" -- /usr/bin/test -x "$parent_dir" || return 1
   if /usr/sbin/runuser -u "$validator_account" -- /usr/bin/test -w "$parent_dir"; then return 1; fi
   if /usr/sbin/runuser -u "$untrusted" -- /usr/bin/test -x "$parent_dir"; then return 1; fi
-  require_connect_allowed "$validator_account" "$inspection_socket" && require_connect_allowed "$validator_account" "$measurement_socket" || return 1
   require_connect_denied "$untrusted" "$inspection_socket" && require_connect_denied "$untrusted" "$measurement_socket" || return 1
   for p in "$docker" "$bus" /var/run/docker.sock /run/docker.sock; do
     if [[ -e "$p" || -L "$p" ]]; then require_connect_denied "$validator_account" "$p" || return 1; fi
   done
+  require_peer_receipt INSPECTION "$inspection_socket" && require_peer_receipt MEASUREMENT "$measurement_socket"
 }
 emit_proof_json() {
   local untrusted="$1" now; now="$(/usr/bin/date --utc +%Y-%m-%dT%H:%M:%SZ)"
-  /usr/bin/jq -cn --arg observedAtUtc "$now" --arg validator "$validator_account" --arg untrusted "$untrusted" --arg inspection "$inspection_socket" --arg measurement "$measurement_socket" '{schema:"external-runtime-socket-acl-proof.v1",status:"BLOCKED_SERVER_PEER_CREDENTIAL",observedAtUtc:$observedAtUtc,clientConnect:{validator:[$inspection,$measurement],deniedOtherAccount:$untrusted},serverObservedPeerCredential:"NOT_VERIFIED",nextGate:"application protocol receipt recording SO_PEERCRED"}'
+  /usr/bin/jq -cn --arg observedAtUtc "$now" --arg validator "$validator_account" --arg untrusted "$untrusted" --arg inspection "$inspection_socket" --arg measurement "$measurement_socket" --argjson inspectionReceipt "$inspection_peer_receipt" --argjson measurementReceipt "$measurement_peer_receipt" '{schema:"external-runtime-socket-acl-proof.v2",status:"OBSERVED_SERVER_PEER_CREDENTIAL",observedAtUtc:$observedAtUtc,validator:$validator,clientConnect:{validator:[$inspection,$measurement],deniedOtherAccount:$untrusted},serverPeerReceipts:[$inspectionReceipt,$measurementReceipt]}'
 }
 main() {
   [[ "$EUID" -eq 0 ]] || { echo "socket ACL activation and proof require root" >&2; exit 1; }; [[ $# -ge 1 ]] || usage
@@ -226,8 +293,7 @@ main() {
     verify)
       while [[ $# -gt 0 ]]; do case "$1" in --json) json=1 ;; --untrusted-user) [[ $# -ge 2 ]] || usage; untrusted="$2"; shift ;; *) usage ;; esac; shift; done
       verify_acl_shapes && verify_runtime_access "$untrusted" || exit 1
-      [[ "$json" == 1 ]] && emit_proof_json "$untrusted" || echo "BLOCKED_SERVER_PEER_CREDENTIAL" >&2
-      exit 1 ;;
+      [[ "$json" == 1 ]] && emit_proof_json "$untrusted" || echo "OBSERVED_SERVER_PEER_CREDENTIAL" >&2 ;;
     *) usage ;;
   esac
 }

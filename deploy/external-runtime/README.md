@@ -101,14 +101,13 @@ The manual proof command is:
 ```
 
 It performs real AF_UNIX `connect(2)` probes as `ksi-validator` to both
-application sockets and verifies connection denial for the specified distinct
-untrusted account, rootless Docker, D-Bus, and rootful Docker. It does not
-send a worker request and the current protocol does not emit a server-recorded
-`SO_PEERCRED` receipt. Accordingly, its JSON record is deliberately
-`BLOCKED_SERVER_PEER_CREDENTIAL` with that field `NOT_VERIFIED`, and exits
-nonzero. It is not an activation pass, does not start an application, and does
-not authorize a release. The worker lane remains blocked until the application
-protocol records and returns the server-observed peer credential.
+application sockets, obtains one fresh server-recorded `SO_PEERCRED` receipt
+from each without sending a worker request, and verifies every required
+untrusted socket access denial is `EACCES` or `EPERM`. Only when both receipts
+and all denial checks succeed does its JSON record have status
+`OBSERVED_SERVER_PEER_CREDENTIAL` and exit zero. This is not host acceptance,
+release acceptance, or HIL acceptance; it does not start an application or
+authorize a release.
 
 ## Candidate lifecycle
 
