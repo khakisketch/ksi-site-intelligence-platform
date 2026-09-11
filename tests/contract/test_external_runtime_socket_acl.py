@@ -8,6 +8,8 @@ import socket
 import subprocess
 from pathlib import Path
 
+import pytest
+
 _ROOT = Path(__file__).resolve().parents[2]
 _HELPER = (
     _ROOT
@@ -164,6 +166,54 @@ def test_access_proof_uses_an_actual_unix_connect_probe(tmp_path: Path) -> None:
         listener.close()
 
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize("state", ["missing", "refused", "allowed", "denied", "timeout"])
+def test_denial_proof_requires_an_actual_permission_error(tmp_path: Path, state: str) -> None:
+    """A dead/missing listener or successful connection cannot prove isolation."""
+    if state == "denied" and os.geteuid() == 0:
+        pytest.skip("root bypasses the fixture's DAC permissions")
+    _parent, inspection, _measurement, listeners, env = _candidate(tmp_path)
+    pending = None
+    try:
+        path = inspection
+        if state == "missing":
+            path = inspection.with_name("absent.sock")
+        elif state in ("allowed", "denied"):
+            listeners[0].listen()
+            if state == "denied":
+                inspection.chmod(0)
+        elif state == "timeout":
+            listeners[0].listen(0)
+            pending = socket.socket(socket.AF_UNIX)
+            pending.settimeout(1)
+            pending.connect(str(inspection))
+        env["PROBE_SOCKET"] = str(path)
+        result = _run_acl(
+            env,
+            'run_as() { shift; "$@"; }; require_connect_denied ignored "$PROBE_SOCKET"',
+        )
+    finally:
+        if pending is not None:
+            pending.close()
+        for listener in listeners:
+            listener.close()
+    assert (result.returncode == 0) is (state == "denied"), result.stderr
+
+
+@pytest.mark.parametrize("failure", [1, 13, 124, 127])
+def test_probe_execution_failure_is_not_permission_denial(tmp_path: Path, failure: int) -> None:
+    """Missing Python/runuser, timeout or bare exit code cannot prove kernel denial."""
+    _parent, _inspection, _measurement, listeners, env = _candidate(tmp_path)
+    try:
+        result = _run_acl(
+            env,
+            f'run_as() {{ return {failure}; }}; require_connect_denied ignored ignored',
+        )
+    finally:
+        for listener in listeners:
+            listener.close()
+    assert result.returncode != 0
 
 
 def test_acl_activation_rolls_back_after_the_second_socket_mutation_fails(tmp_path: Path) -> None:
