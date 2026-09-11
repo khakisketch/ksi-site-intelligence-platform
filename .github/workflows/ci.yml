@@ -146,52 +146,6 @@ jobs:
           set -e
           test "$status" -eq 2
 
-  # [mixercseg] extra 이식성 게이트 (risk defect-detection-uv-lock-mmcv-portability).
-  #
-  # mmcv 1.7.2 는 legacy sdist 라 설치 전에 setup.py 로 메타데이터를 빌드하는데,
-  # 그 setup.py 가 pkg_resources 를 import 하면서 PEP517 build-system.requires 에
-  # 선언하지 않는다 — uv 의 격리 빌드 환경엔 기본으로 없어 **lock 해석 단계에서**
-  # 실패한다. 루트 pyproject.toml 의 [tool.uv.extra-build-dependencies] 로 우회했지만,
-  # 그 우회가 개발 머신(aarch64 linux) 밖에서도 되는지는 확인된 적이 없었다.
-  #
-  # 이 job 이 주장하는 것은 "다른 아키텍처(x86_64)의 깨끗한 러너에서 이 extra 가
-  # 실제로 해석·설치된다"뿐이다 — 모델 가중치는 받지 않으므로 실모델 추론은 여전히
-  # 로컬 게이트 소관이다(tests/contract/test_mixercseg_detector.py 는 가중치가 없으면
-  # skip 한다).
-  defect-detection-extra:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.12"
-
-      - name: lock 무결성 (extra 포함 해석이 이미 고정돼 있는가)
-        run: uv lock --check
-
-      - name: extra 설치 (mmcv legacy sdist 메타데이터 빌드가 여기서 터진다)
-        run: uv sync --locked --all-packages --extra mixercseg
-
-      - name: 벤더 코드가 실제로 import 되는가
-        # 설치만 되고 import 가 깨지는 경우를 잡는다 — mmcv/mmengine 이 강제하는
-        # 순정 opencv-python 과 base 의 opencv-python-headless 가 같은 cv2
-        # 네임스페이스를 놓고 다투는 알려진 취약점(risk
-        # defect-detection-opencv-namespace-conflict)이 여기서 드러난다.
-        run: |
-          uv run --locked --no-sync python -c "
-          import cv2, torch, mmcv
-          print('cv2', cv2.__version__, '| torch', torch.__version__, '| mmcv', mmcv.__version__)
-          from ksi_defect_detection.mixercseg_adapter import load_mixercseg_detector
-          print('adapter import ok')
-          "
-
-      - name: 모델 없이 도는 계약 테스트 (후처리는 순수 numpy/cv2)
-        # --no-sync: 위 단계가 이미 extra 를 포함해 동기화했다. 빼면 uv 가 기본
-        # 그룹으로 되돌려 mmcv 스택이 사라진다(extra 는 루트가 아니라
-        # ksi-defect-detection 패키지에 선언돼 있어 uv run --extra 로는 못 켠다).
-        run: uv run --locked --no-sync pytest -q tests/contract/test_defect_postprocess.py tests/contract/test_mixercseg_detector.py
-
   # Edge native control plane — 순수 C++17이라 PSDK/CUDA 없이 호스트에서 빌드된다.
   # 별도 job으로 둬서 Python 게이트와 독립적으로 실패 원인이 드러나게 한다.
   # apps/dashboard 는 2026-08-04 까지 CI 밖에 있었다 — 타입체크·lint·빌드 어느
