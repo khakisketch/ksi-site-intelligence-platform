@@ -323,7 +323,10 @@ def _workflow_config(
         ):
             raise ValueError("quantitative workflow runtime requires its exact mapping catalog")
         instance.bind_decision_store(decisions)
-        return ExternalRelativeVolumeRuntimeAuthorities(execution=instance, historical_use=instance)
+        return ExternalRelativeVolumeRuntimeAuthorities(
+            execution=instance, historical_use=instance,
+            activate_execution=instance.activate_execution,
+        )
 
     return ExternalResultWorkflowAssemblyConfig(
         build_mapping=build_mapping,

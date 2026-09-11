@@ -486,6 +486,7 @@ def assemble_app(
         else None
     )
     external_relative_volume_store: ExternalRelativeVolumeStore | None = None
+    external_volume_execution_activator = None
     external_result_workflow_service: ExternalReobservationProposalService | None = None
     external_result_read_projector: ExternalResultReadProjector | None = None
     external_proposal_authority: CoreExternalReobservationProposalAuthorityPort | None = None
@@ -512,6 +513,7 @@ def assemble_app(
             raise ValueError("external result workflow execution must share the Core coordinator")
         if runtime.historical_use is None:
             raise ValueError("external result workflow requires independent use history")
+        external_volume_execution_activator = runtime.activate_execution
         external_relative_volume_store = ExternalRelativeVolumeStore(
             journal("external-relative-volumes.jsonl"),
             authority_port=runtime.execution,
@@ -907,6 +909,7 @@ def assemble_app(
         external_result_workflow_service=external_result_workflow_service,
         external_result_read_projector=external_result_read_projector,
         external_volume_input_capability_issuer=external_volume_input_capability_issuer,
+        external_volume_execution_activator=external_volume_execution_activator,
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,

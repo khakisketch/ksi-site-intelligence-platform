@@ -58,7 +58,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
@@ -565,6 +565,32 @@ def _optional_runtime_route_configurations(
     return tuple(configurations)
 
 
+def _external_authority_paths_env() -> tuple[Path, Path] | None:
+    names = (
+        "KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG",
+        "KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG",
+    )
+    values = tuple(os.environ.get(name) for name in names)
+    if all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        raise RuntimeError("external workflow and authority provider must be configured together")
+    paths: list[Path] = []
+    for name, value in zip(names, values, strict=True):
+        assert value is not None
+        path = Path(value)
+        if (
+            not value
+            or value != value.strip()
+            or not path.is_absolute()
+            or ".." in path.parts
+            or "\x00" in value
+        ):
+            raise RuntimeError(f"{name} requires an absolute protected configuration path")
+        paths.append(path)
+    return paths[0], paths[1]
+
+
 def build_production_app() -> FastAPI:
     """환경변수만으로 프로덕션 Core 앱을 조립한다 — 실패는 전부 fail-closed.
 
@@ -577,6 +603,7 @@ def build_production_app() -> FastAPI:
     configure_structured_logging(
         level=os.environ.get("KSI_CORE_LOG_LEVEL", "INFO"), json_format=True
     )
+    external_authority_paths = _external_authority_paths_env()
 
     # ── 1단계: 검증(가벼운 것부터) — 무거운 부수효과(S3 client·journal open) 이전에
     # 전부 끝낸다. 잘못된 배포는 어느 환경변수가 문제인지 즉시 알아야 한다.
@@ -621,6 +648,25 @@ def build_production_app() -> FastAPI:
         device_attestation_keys_file
     )
 
+    external_authority_provider = None
+    external_result_workflow = None
+    if external_authority_paths is not None:
+        from ksi_core.external_authority_provider import load_external_authority_provider
+        from ksi_core.external_relative_volume_s3_capabilities import (
+            ExternalRelativeVolumeS3InputCapabilityIssuer,
+        )
+        from ksi_core.external_result_workflow_config import load_external_result_workflow_config
+
+        workflow_path, provider_path = external_authority_paths
+        external_authority_provider = load_external_authority_provider(
+            provider_path, clock=lambda: datetime.now(UTC)
+        )
+        external_result_workflow = load_external_result_workflow_config(
+            workflow_path,
+            participants=external_authority_provider.participants,
+            build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+        )
+
     # ── 2단계: 무거운 조립 — 여기부터는 검증을 통과한 입력만 다룬다.
 
     # 서명키는 **로드만** 한다(부트스트랩 없음) — 모듈 docstring 참조.
@@ -647,7 +693,11 @@ def build_production_app() -> FastAPI:
         return journal
 
     try:
-        return assemble_app(
+        if external_authority_provider is not None:
+            external_authority_provider.bind_receipt_journal(
+                _journal("external-authority-provider-receipts.jsonl")
+            )
+        app = assemble_app(
             data_dir,
             journal=_journal,
             opened=opened,
@@ -671,8 +721,16 @@ def build_production_app() -> FastAPI:
             capability_freshness_policies=capability_freshness_policies,
             runtime_route_configurations=runtime_route_configurations,
             copilot_runtime_config=copilot_runtime_config,
+            external_result_workflow=external_result_workflow,
             expose_docs=expose_docs,
         )
+        if external_authority_provider is not None:
+            from ksi_core.external_authority_operations import mount_external_authority_operations
+
+            external_authority_provider.attach_app(app)
+            mount_external_authority_operations(app, external_authority_provider)
+            app.state.external_authority_provider = external_authority_provider
+        return app
     except BaseException:
         # dev 조립(build_dev_app)과 같은 이유 — 안 닫으면 재시도가 flock 에 막혀
         # 진짜 실패 원인이 "다른 프로세스가 journal 을 소유 중"으로 덮인다.

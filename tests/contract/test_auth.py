@@ -431,6 +431,7 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.EQUIPMENT_SUPPORT_APPROVE,
             Permission.CAPABILITY_PRODUCT_APPROVE,
             Permission.CAPABILITY_ACTIVATE,
+            Permission.EXTERNAL_AUTHORITY_MANAGE,
             Permission.ORGANIZATION_MEMBERS_MANAGE,
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,

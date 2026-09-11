@@ -67,6 +67,7 @@ if TYPE_CHECKING:
     from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
     from ksi_core.external_reconstruction import ExternalReconstructionStore
     from ksi_core.external_relative_volumes import (
+        ExternalRelativeVolumeExecutionActivator,
         ExternalRelativeVolumeInputCapabilityIssuer,
         ExternalRelativeVolumeStore,
     )
@@ -557,6 +558,7 @@ def create_app(
     external_result_read_projector: ExternalResultReadProjector | None = None,
     external_volume_input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer
     | None = None,
+    external_volume_execution_activator: ExternalRelativeVolumeExecutionActivator | None = None,
     external_display_artifact_store: ExternalDisplayArtifactStore | None = None,
     external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
@@ -1006,6 +1008,7 @@ def create_app(
             build_external_relative_volume_router(
                 external_relative_volume_store,
                 input_capability_issuer=external_volume_input_capability_issuer,
+                execution_activator=external_volume_execution_activator,
                 work_orders=observation_work_order_store,
             )
         )

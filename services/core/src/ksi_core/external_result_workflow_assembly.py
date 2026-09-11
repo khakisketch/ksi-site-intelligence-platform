@@ -23,6 +23,7 @@ from ksi_core.external_relative_volume_use_history import (
     ExternalRelativeVolumeHistoricalUseAuthorityPort,
 )
 from ksi_core.external_relative_volumes import (
+    ExternalRelativeVolumeExecutionActivator,
     ExternalRelativeVolumeExecutionAuthorityPort,
     ExternalRelativeVolumeInputCapabilityIssuer,
     ExternalRelativeVolumeQueuePolicy,
@@ -53,10 +54,13 @@ class ExternalRelativeVolumeMappingFactory(Protocol):
 class ExternalRelativeVolumeRuntimeAuthorities:
     execution: ExternalRelativeVolumeExecutionAuthorityPort
     historical_use: ExternalRelativeVolumeHistoricalUseAuthorityPort
+    activate_execution: ExternalRelativeVolumeExecutionActivator | None = None
 
     def __post_init__(self) -> None:
         if self.execution is None or self.historical_use is None:
             raise ValueError("external result workflow requires explicit execution and use history")
+        if self.activate_execution is not None and not callable(self.activate_execution):
+            raise ValueError("external result workflow execution activator must be callable")
 
 
 class ExternalRelativeVolumeRuntimeFactory(Protocol):
