@@ -125,11 +125,33 @@ class _CatalogAuthority:
 
 
 class _UnavailablePolicyAuthority:
+    def __init__(self) -> None:
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> Self:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
+
     def resolve(
         self, authority_record_digest: str, now: datetime
     ) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        del authority_record_digest, at
+        return None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        del authority, now
+        return False
 
 
 class _UnavailableEvidenceContextAuthority:
@@ -155,6 +177,7 @@ def _participants(
     record: ExternalQuantitativeCatalogAuthorityRecord,
 ) -> ExternalQuantitativeWorkflowParticipants:
     catalog_authority = _CatalogAuthority(record)
+    policy_authority = _UnavailablePolicyAuthority()
     return ExternalQuantitativeWorkflowParticipants(
         catalog_authority_port=catalog_authority,
         catalog_administration_actor_id="catalog-admin",
@@ -166,7 +189,8 @@ def _participants(
         ),
         clock=lambda: datetime(2026, 9, 9, tzinfo=UTC),
         build_catalog_authority_currentness=catalog_authority.bind,
-        policy_authority_port=_UnavailablePolicyAuthority(),
+        policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=_UnavailableEvidenceContextAuthority,
     )
 
@@ -215,6 +239,42 @@ def test_loader_builds_workflow_only_from_an_exact_approved_catalog(tmp_path: Pa
 
     assert callable(workflow.build_mapping)
     assert callable(workflow.build_runtime)
+
+
+def test_loader_accepts_deferred_real_storage_issuer(tmp_path: Path) -> None:
+    from ksi_core.external_relative_volume_s3_capabilities import (
+        ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.external_result_workflow_config import load_external_result_workflow_config
+
+    config_path, participants = _approved_files(tmp_path)
+    workflow = load_external_result_workflow_config(
+        config_path,
+        participants=participants,
+        build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    assert workflow.input_capability_issuer is None
+    assert workflow.build_input_capability_issuer is ExternalRelativeVolumeS3InputCapabilityIssuer
+
+
+def test_loader_rejects_competing_issuer_sources_before_opening_files(tmp_path: Path) -> None:
+    from ksi_core.external_relative_volume_s3_capabilities import (
+        ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.external_result_workflow_config import (
+        ExternalQuantitativeWorkflowConfigUnavailable,
+        load_external_result_workflow_config,
+    )
+
+    _, participants = _approved_files(tmp_path)
+    with pytest.raises(ExternalQuantitativeWorkflowConfigUnavailable) as error:
+        load_external_result_workflow_config(
+            tmp_path / "absent.json",
+            participants=participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+            build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+        )
+    assert error.value.code.value == "CONFIG_VALUE"
 
 
 @pytest.mark.parametrize("mode", (0o666, 0o640))

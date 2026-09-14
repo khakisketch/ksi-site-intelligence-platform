@@ -635,6 +635,13 @@ def _canonical_authority_snapshot(
     return ExternalRelativeVolumeExecutionAuthority.from_snapshot(snapshot), snapshot
 
 
+class ExternalRelativeVolumeExecutionActivator(Protocol):
+    def __call__(
+        self, *, principal: Principal, current_work_order_id: str,
+        decision_ref: str, now: datetime,
+    ) -> ExternalRelativeVolumeExecutionAuthority | None: ...
+
+
 class ExternalRelativeVolumeExecutionAuthorityPort(Protocol):
     """Trusted Core seam.  Implementations must have no caller-derived truth."""
 
@@ -1328,6 +1335,55 @@ class ExternalRelativeVolumeStore:
                 decision_ref=decision_ref,
             )
         return prior is not None and prior.verdict is ExternalRelativeVolumeVerdict.ALREADY_ISSUED
+
+    def classify_issue_activation(
+        self,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+        decision_ref: str,
+        idempotency_key: str,
+        now: datetime,
+    ) -> tuple[ExternalRelativeVolumeResult | None, bool]:
+        """Read-only classification under the caller's authenticated WorkOrder guard.
+
+        Existing idempotency results, including conflicts, must precede activation.
+        A live execution authority needs no activation even for a new key; issue()
+        still computes the exact natural fingerprint, checks currentness and writes
+        any durable alias. Never hold the projection lock across authority lookup.
+        This result is not commit authority and does not replace issue()'s checks.
+        """
+        issued_at = self._now(now)
+        key_hash = self._idempotency_hash(idempotency_key)
+        with self._lock:
+            prior = self._prior_idempotency_result_locked(
+                organization_id=principal.organization_id,
+                current_work_order_id=current_work_order_id,
+                key_hash=key_hash,
+                decision_ref=decision_ref,
+            )
+            if prior is not None:
+                return prior, False
+        authority = self._authority_port.resolve_for_issue(
+            principal=principal,
+            current_work_order_id=current_work_order_id,
+            decision_ref=decision_ref,
+            now=issued_at,
+        )
+        with self._lock:
+            prior = self._prior_idempotency_result_locked(
+                organization_id=principal.organization_id,
+                current_work_order_id=current_work_order_id,
+                key_hash=key_hash,
+                decision_ref=decision_ref,
+            )
+            if prior is not None:
+                return prior, False
+            if self._journal.sealed_reason is not None:
+                return ExternalRelativeVolumeResult(
+                    ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
+                ), False
+        return None, authority is None
 
     def issue(
         self,
@@ -2323,6 +2379,7 @@ def build_external_relative_volume_router(
     store: ExternalRelativeVolumeStore,
     *,
     input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer,
+    execution_activator: ExternalRelativeVolumeExecutionActivator | None = None,
     work_orders: Any | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> APIRouter:
@@ -2391,12 +2448,38 @@ def build_external_relative_volume_router(
                     idempotency_key=idempotency_key or "",
                 ),
             ):
-                result = store.issue(
+                issued_at = now()
+                prior_result = None
+                needs_activation = False
+                if execution_activator is not None:
+                    prior_result, needs_activation = store.classify_issue_activation(
+                        principal=principal,
+                        current_work_order_id=work_order_id,
+                        decision_ref=request.decision_ref,
+                        idempotency_key=idempotency_key or "",
+                        now=issued_at,
+                    )
+                if execution_activator is not None and needs_activation:
+                    activated = execution_activator(
+                        principal=principal,
+                        current_work_order_id=work_order_id,
+                        decision_ref=request.decision_ref,
+                        now=issued_at,
+                    )
+                    if activated is None:
+                        response.status_code = _HTTP_STATUS[
+                            ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
+                        ]
+                        return ExternalRelativeVolumeMutationResponse(
+                            verdict=ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE,
+                            request=None,
+                        )
+                result = prior_result if prior_result is not None else store.issue(
                     principal=principal,
                     current_work_order_id=work_order_id,
                     decision_ref=request.decision_ref,
                     idempotency_key=idempotency_key or "",
-                    now=now(),
+                    now=issued_at,
                 )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc

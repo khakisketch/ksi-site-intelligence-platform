@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import (
     DisplayArtifactResult,
     DisplayArtifactVerdict,
@@ -42,10 +43,32 @@ from support.external_artifact_inspection_fixtures import (
 class _Authority(PolicyAuthorityPort):
     def __init__(self, record: PolicyAuthorityRecord) -> None:
         self._record = record
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> _Authority:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         del now
         return self._record if authority_record_digest == self._record.digest else None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        return (
+            self._record
+            if authority_record_digest == self._record.digest and self._record.is_active_at(at)
+            else None
+        )
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return authority == self._record and self._record.is_active_at(now)
 
 
 def _registry(
@@ -66,10 +89,14 @@ def _registry(
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    policy_authority = _Authority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_Authority(authority),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
         clock=lambda: NOW,
+        coordinator=coordinator,
     )
     registry.admit(policy, actor="authority", now=NOW)
     return registry, policy

@@ -339,7 +339,7 @@ class ExternalUseEvaluator:
             # Re-resolve immutable local source and local lifecycle status
             # under the commit guard.  No storage/presign or authority-port I/O
             # is performed here.
-            current = self._single_still_current(subject, use, snapshot)
+            current = self._single_still_current(subject, use, snapshot, now=now)
             candidate = self._single_candidate(subject, use, current, evaluation_identity, now)
             return cast(
                 ExternalUseDecisionV1,
@@ -415,7 +415,9 @@ class ExternalUseEvaluator:
             else False
         )
         with self._coordinator.guarded_read():
-            current_snapshot = self._pair_still_current(baseline, current, use, snapshot)
+            current_snapshot = self._pair_still_current(
+                baseline, current, use, snapshot, now=now
+            )
             if (
                 use == "RELATIVE_VOLUME"
                 and (
@@ -481,13 +483,14 @@ class ExternalUseEvaluator:
         snapshot = self._pair_snapshot(
             candidate.baseline_subject, candidate.current_subject, candidate.use
         )
+        now = datetime.now(UTC)
         volume = (
             self._relative_volume_authority.resolve_for_use(
                 baseline=candidate.baseline_subject,
                 current=candidate.current_subject,
                 zone_id=candidate.zone.zone_id,
                 policy=snapshot.policy,
-                now=datetime.now(UTC),
+                now=now,
             )
             if candidate.use == "RELATIVE_VOLUME"
             and candidate.zone is not None
@@ -501,7 +504,11 @@ class ExternalUseEvaluator:
         )
         with self._coordinator.guarded_read():
             current_snapshot = self._pair_still_current(
-                candidate.baseline_subject, candidate.current_subject, candidate.use, snapshot
+                candidate.baseline_subject,
+                candidate.current_subject,
+                candidate.use,
+                snapshot,
+                now=now,
             )
             if (
                 current_snapshot.policy is None
@@ -517,7 +524,7 @@ class ExternalUseEvaluator:
                     or volume.compatibility_mapping_digest
                     != candidate.compatibility_mapping_digest
                     or not self._relative_volume_authority.is_current_for_use(
-                        volume, now=datetime.now(UTC)
+                        volume, now=now
                     )
                 ):
                     return None
@@ -572,14 +579,26 @@ class ExternalUseEvaluator:
         )
 
     def _single_still_current(
-        self, subject: SealedExternalSubjectV1, use: str, snapshot: _SingleSnapshot
+        self,
+        subject: SealedExternalSubjectV1,
+        use: str,
+        snapshot: _SingleSnapshot,
+        *,
+        now: datetime,
     ) -> _SingleSnapshot:
         # ``resolve`` is local retained lifecycle state, deliberately not a
         # second authority-port call while the coordinator is held.
         policy = snapshot.policy
         if policy is not None:
             resolved = self._policy_registry.resolve(policy.policy_digest or "")
-            if resolved.status is not PolicySelectionStatus.ACTIVE or resolved.policy != policy:
+            if (
+                resolved.status is not PolicySelectionStatus.ACTIVE
+                or resolved.policy != policy
+                or policy.policy_digest is None
+                or not self._policy_registry.locally_current_use_permitted(
+                    policy.policy_digest, use=use, subjects=(subject,), at=now
+                )
+            ):
                 policy = None
         revision = self._reconstruction.resolve_sealed_subject(subject)
         inspection = self._inspections.public_snapshot(subject)
@@ -592,11 +611,20 @@ class ExternalUseEvaluator:
         current: SealedExternalSubjectV1,
         use: str,
         snapshot: _PairSnapshot,
+        *,
+        now: datetime,
     ) -> _PairSnapshot:
         policy = snapshot.policy
         if policy is not None:
             resolved = self._policy_registry.resolve(policy.policy_digest or "")
-            if resolved.status is not PolicySelectionStatus.ACTIVE or resolved.policy != policy:
+            if (
+                resolved.status is not PolicySelectionStatus.ACTIVE
+                or resolved.policy != policy
+                or policy.policy_digest is None
+                or not self._policy_registry.locally_current_use_permitted(
+                    policy.policy_digest, use=use, subjects=(baseline, current), at=now
+                )
+            ):
                 policy = None
         baseline_inspection = self._inspections.public_snapshot(baseline)
         _baseline_state, baseline_display = self._inspections.public_display_state(baseline)

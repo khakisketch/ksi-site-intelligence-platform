@@ -5,7 +5,7 @@
 name: ${KSI_EXTERNAL_RC_PROJECT_NAME:-ksi-external-rc}
 
 x-core-image: &core-image
-  image: ksi-external-rc-core:local
+  image: ${KSI_EXTERNAL_RC_CORE_IMAGE_ID:?verified Core image ID is required}
   build:
     context: ..
     dockerfile: Dockerfile
@@ -18,6 +18,43 @@ x-app-hardening: &app-hardening
     - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
 
 services:
+  candidate-credential-validation:
+    <<: [*core-image, *app-hardening]
+    profiles: [candidate-preflight]
+    user: "10001:10001"
+    network_mode: none
+    command:
+      ["/app/.venv/bin/python", "/app/deploy/external-runtime/prepare_candidate_state.py", "--validate-only"]
+    volumes:
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets:/state/secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/signing:/state/signing:ro
+    restart: "no"
+
+  candidate-authority-preflight:
+    <<: [*core-image, *app-hardening]
+    profiles: [candidate-preflight]
+    user: "10001:10001"
+    network_mode: none
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        umask 077
+        : > "$$1"
+        : > "$$1.lock"
+        exec /app/.venv/bin/python -m ksi_core.external_authority_preflight
+      - sh
+      - /var/lib/ksi/data/external-quantitative-authority.jsonl
+    environment:
+      KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG: /run/ksi-operator/workflow.json
+      KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG: /run/ksi-operator/provider.json
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+      - /var/lib/ksi/data:rw,noexec,nosuid,nodev,size=67108864,uid=10001,gid=10001,mode=0700
+    volumes:
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}:/run/ksi-operator:ro
+    restart: "no"
+
   init-state:
     <<: *core-image
     user: root
@@ -25,8 +62,8 @@ services:
     volumes:
       - external-rc-data:/state/data
       - external-rc-identity:/state/identity
-      - external-rc-secrets:/state/secrets
-      - external-rc-signing:/state/signing
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets:/state/secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/signing:/state/signing:ro
     restart: "no"
 
   identity:
@@ -53,7 +90,7 @@ services:
       - --allow-tailnet-origin
     volumes:
       - external-rc-identity:/var/lib/ksi/local-identity
-      - external-rc-secrets:/run/ksi-secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets:/run/ksi-secrets:ro
     depends_on:
       init-state:
         condition: service_completed_successfully
@@ -104,6 +141,7 @@ services:
 
   core:
     <<: [*core-image, *app-hardening]
+    user: "10001:10001"
     environment:
       KSI_CORE_DATA_DIR: /var/lib/ksi/data
       KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
@@ -119,10 +157,13 @@ services:
       KSI_CORE_OIDC_JWKS_URL: http://identity:8080/jwks.json
       KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
       KSI_CORE_OIDC_JWKS_TTL_SECONDS: "60"
+      KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG: /run/ksi-operator/workflow.json
+      KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG: /run/ksi-operator/provider.json
     volumes:
       - external-rc-data:/var/lib/ksi/data
-      - external-rc-signing:/var/lib/ksi/signing-keys:ro
-      - external-rc-secrets:/run/ksi-secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/signing:/var/lib/ksi/signing-keys:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets:/run/ksi-secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}:/run/ksi-operator:ro
       - ./device-attestation-keys.example.json:/var/lib/ksi/device-attestation-keys.json:ro
     ports:
       - "127.0.0.1:${KSI_EXTERNAL_RC_API_PORT:?set KSI_EXTERNAL_RC_API_PORT}:8000"
@@ -144,7 +185,8 @@ services:
 
   dashboard:
     <<: *app-hardening
-    image: ksi-external-rc-dashboard:local
+    user: "10001:10001"
+    image: ${KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID:?verified Dashboard image ID is required}
     build:
       context: ../apps/dashboard
       dockerfile: Dockerfile
@@ -161,7 +203,7 @@ services:
       AUTH_URL: https://${KSI_EXTERNAL_RC_HOST}:${KSI_EXTERNAL_RC_APP_PORT}
       AUTH_TRUST_HOST: "true"
     volumes:
-      - external-rc-secrets:/run/ksi-secrets:ro
+      - ${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets:/run/ksi-secrets:ro
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
       - /app/.next/cache:rw,noexec,nosuid,nodev,size=268435456,uid=10001,gid=10001,mode=0700
@@ -206,7 +248,3 @@ volumes:
     name: ksi-external-rc-identity
   external-rc-objects:
     name: ksi-external-rc-objects
-  external-rc-secrets:
-    name: ksi-external-rc-secrets
-  external-rc-signing:
-    name: ksi-external-rc-signing

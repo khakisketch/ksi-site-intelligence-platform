@@ -188,8 +188,12 @@ def _authority(
 class _AuthorityPort:
     """Explicit test fixture authority; production assembly supplies the Core adapter."""
 
-    def __init__(self, authority: ExternalRelativeVolumeExecutionAuthority) -> None:
+    def __init__(
+        self, authority: ExternalRelativeVolumeExecutionAuthority,
+        *, availability: Callable[[], bool] | None = None,
+    ) -> None:
         self.authority = authority
+        self.availability = availability
         self.historical_authority = authority
         self.currentness_coordinator = ExternalAuthorityCurrentnessCoordinator()
 
@@ -201,6 +205,8 @@ class _AuthorityPort:
         decision_ref: str,
         now: datetime,
     ) -> ExternalRelativeVolumeExecutionAuthority | None:
+        if self.availability is not None and not self.availability():
+            return None
         if (
             principal.principal_id not in self.authority.authorized_actor_ids
             or current_work_order_id != self.authority.current_work_order_id
@@ -257,8 +263,9 @@ def _store(
     authority: ExternalRelativeVolumeExecutionAuthority,
     *,
     launch_material_resolver: VolumeWorkerLaunchMaterialResolver | None = None,
+    authority_availability: Callable[[], bool] | None = None,
 ) -> ExternalRelativeVolumeStore:
-    port = _AuthorityPort(authority)
+    port = _AuthorityPort(authority, availability=authority_availability)
     return ExternalRelativeVolumeStore(
         DurableJournal(tmp_path / "external-relative-volumes.jsonl"),
         authority_port=port,
@@ -285,6 +292,8 @@ def _client(
     authority: ExternalRelativeVolumeExecutionAuthority,
     *,
     launch_material_resolver: VolumeWorkerLaunchMaterialResolver | None = None,
+    execution_activator: Any = None,
+    authority_availability: Callable[[], bool] | None = None,
 ) -> tuple[TestClient, str]:
     work_orders = ObservationWorkOrderStore(
         DurableJournal(tmp_path / "relative-volume-work-orders.jsonl"),
@@ -317,6 +326,7 @@ def _client(
             current=current_binding,
         ),
         launch_material_resolver=launch_material_resolver,
+        authority_availability=authority_availability,
     )
     app = FastAPI()
     mount_auth(
@@ -359,6 +369,7 @@ def _client(
     app.include_router(
         build_external_relative_volume_router(
             store,
+            execution_activator=execution_activator,
             input_capability_issuer=capabilities,
             work_orders=work_orders,
             clock=lambda: _NOW,

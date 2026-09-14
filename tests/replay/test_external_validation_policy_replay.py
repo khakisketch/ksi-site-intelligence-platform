@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRecoveryError,
     ExternalValidationPolicyRegistry,
@@ -123,6 +124,7 @@ class FakePolicyAuthorityPort(PolicyAuthorityPort):
 
     def __init__(self, *records: PolicyAuthorityRecord) -> None:
         self._records: dict[str, PolicyAuthorityRecord] = {}
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
         for record in records:
             assert record.digest is not None
             self._records[record.digest] = record
@@ -130,11 +132,40 @@ class FakePolicyAuthorityPort(PolicyAuthorityPort):
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         return self._records.get(authority_record_digest)
 
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        record = self._records.get(authority_record_digest)
+        return record if record is not None and record.is_active_at(at) else None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> FakePolicyAuthorityPort:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return (
+            authority.digest is not None
+            and self._records.get(authority.digest) == authority
+            and authority.is_active_at(now)
+        )
+
 
 def _registry(
-    journal: DurableJournal, authority: PolicyAuthorityPort
+    journal: DurableJournal, authority: FakePolicyAuthorityPort
 ) -> ExternalValidationPolicyRegistry:
-    return ExternalValidationPolicyRegistry(journal, authority_port=authority, clock=lambda: NOW)
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    return ExternalValidationPolicyRegistry(
+        journal,
+        authority_port=authority,
+        authority_currentness_port=authority.bind(coordinator),
+        clock=lambda: NOW,
+        coordinator=coordinator,
+    )
 
 
 def _event_digest(event: dict[str, object]) -> str:

@@ -42,12 +42,14 @@ from ksi_core.external_relative_volumes import (
     ExternalRelativeVolumeQueuePolicy,
 )
 from ksi_core.external_result_workflow_assembly import (
+    ExternalRelativeVolumeInputCapabilityFactory,
     ExternalRelativeVolumeRuntimeAuthorities,
     ExternalResultWorkflowAssemblyConfig,
 )
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
+    PolicyAuthorityCurrentnessPort,
     PolicyAuthorityPort,
 )
 from ksi_core.work_areas import WorkAreaStore
@@ -92,6 +94,9 @@ class ExternalQuantitativeWorkflowParticipants:
         | None
     ) = None
     policy_authority_port: PolicyAuthorityPort | None = None
+    build_policy_authority_currentness: (
+        Callable[[ExternalAuthorityCurrentnessCoordinator], PolicyAuthorityCurrentnessPort] | None
+    ) = None
     build_evidence_context_authority: (
         Callable[[ExternalAuthorityCurrentnessCoordinator], EvidenceMeasurementContextAuthorityPort]
         | None
@@ -117,6 +122,14 @@ class ExternalQuantitativeWorkflowParticipants:
             getattr(self.policy_authority_port, "resolve", None)
         ):
             raise ValueError("quantitative workflow requires a policy authority port")
+        if self.policy_authority_port is not None and not callable(
+            getattr(self.policy_authority_port, "resolve_historical", None)
+        ):
+            raise ValueError("quantitative workflow requires policy historical resolution")
+        if self.build_policy_authority_currentness is not None and not callable(
+            self.build_policy_authority_currentness
+        ):
+            raise ValueError("quantitative workflow requires a policy currentness factory")
         if self.build_evidence_context_authority is not None and not callable(
             self.build_evidence_context_authority
         ):
@@ -146,7 +159,8 @@ def load_external_result_workflow_config(
     path: Path,
     *,
     participants: ExternalQuantitativeWorkflowParticipants,
-    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer,
+    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None = None,
+    build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None,
 ) -> ExternalResultWorkflowAssemblyConfig:
     """Load one exact catalog and produce closures for the common assembly.
 
@@ -161,13 +175,20 @@ def load_external_result_workflow_config(
         raise ExternalQuantitativeWorkflowConfigUnavailable(
             ExternalQuantitativeWorkflowConfigBlockedCode.CONFIG_VALUE
         )
-    if not callable(input_capability_issuer):
+    if (input_capability_issuer is None) == (build_input_capability_issuer is None) or not callable(
+        input_capability_issuer
+        if input_capability_issuer is not None
+        else build_input_capability_issuer
+    ):
         raise ExternalQuantitativeWorkflowConfigUnavailable(
             ExternalQuantitativeWorkflowConfigBlockedCode.CONFIG_VALUE
         )
     if (
         participants.policy_authority_port is None
         or not callable(getattr(participants.policy_authority_port, "resolve", None))
+        or not callable(getattr(participants.policy_authority_port, "resolve_historical", None))
+        or participants.build_policy_authority_currentness is None
+        or not callable(participants.build_policy_authority_currentness)
         or participants.build_evidence_context_authority is None
         or not callable(participants.build_evidence_context_authority)
         or participants.build_catalog_authority_currentness is None
@@ -207,13 +228,16 @@ def load_external_result_workflow_config(
         authority_journal_path=authority_journal_path,
         participants=participants,
     )
-    return _workflow_config(catalog, participants, input_capability_issuer)
+    return _workflow_config(
+        catalog, participants, input_capability_issuer, build_input_capability_issuer
+    )
 
 
 def _workflow_config(
     catalog: _Catalog,
     participants: ExternalQuantitativeWorkflowParticipants,
-    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer,
+    input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None,
+    build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None,
 ) -> ExternalResultWorkflowAssemblyConfig:
     instance: ExternalQuantitativeAuthorityCatalog | None = None
 
@@ -314,14 +338,19 @@ def _workflow_config(
         ):
             raise ValueError("quantitative workflow runtime requires its exact mapping catalog")
         instance.bind_decision_store(decisions)
-        return ExternalRelativeVolumeRuntimeAuthorities(execution=instance, historical_use=instance)
+        return ExternalRelativeVolumeRuntimeAuthorities(
+            execution=instance, historical_use=instance,
+            activate_execution=instance.activate_execution,
+        )
 
     return ExternalResultWorkflowAssemblyConfig(
         build_mapping=build_mapping,
         build_runtime=build_runtime,
         queue_policy=participants.queue_policy,
         input_capability_issuer=input_capability_issuer,
+        build_input_capability_issuer=build_input_capability_issuer,
         policy_authority_port=participants.policy_authority_port,
+        build_policy_authority_currentness=participants.build_policy_authority_currentness,
         build_evidence_context_authority=participants.build_evidence_context_authority,
     )
 

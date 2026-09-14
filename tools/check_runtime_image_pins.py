@@ -9,6 +9,7 @@ backup/restore helpers that form the current KSI runtime supply chain.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shlex
 import stat
@@ -60,6 +61,14 @@ _LOCAL_BUILD_IMAGES = frozenset(
         "ksi-external-rc-dashboard:local",
     }
 )
+_VERIFIED_CANDIDATE_IMAGE_ID_SUBSTITUTIONS = {
+    Path("deploy/compose.external-reconstruction.yaml"): frozenset(
+        {
+            "${KSI_EXTERNAL_RC_CORE_IMAGE_ID:?verified Core image ID is required}",
+            "${KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID:?verified Dashboard image ID is required}",
+        }
+    )
+}
 _DIGEST_ONLY_EXCEPTIONS = frozenset(
     {
         # NodeODM's approved multi-arch manifest has no matching immutable upstream
@@ -81,6 +90,7 @@ _OPTIONS_WITH_VALUE = frozenset(
         "--add-host",
         "--annotation",
         "--blkio-weight",
+        "--cap-drop",
         "--cgroup-parent",
         "--cidfile",
         "--cpus",
@@ -140,6 +150,8 @@ def _validate_reference(reference: str, *, path: Path, line: int) -> list[Violat
     """Return syntax and policy violations for one external image reference."""
     if reference in _LOCAL_BUILD_IMAGES:
         return []
+    if reference in _VERIFIED_CANDIDATE_IMAGE_ID_SUBSTITUTIONS.get(path, frozenset()):
+        return []
     if "$" in reference or "${" in reference:
         return [
             Violation(
@@ -168,6 +180,12 @@ def _validate_reference(reference: str, *, path: Path, line: int) -> list[Violat
     return []
 
 
+def _is_internal_candidate_image_binding(reference: str, path: Path) -> bool:
+    return reference in _LOCAL_BUILD_IMAGES or reference in (
+        _VERIFIED_CANDIDATE_IMAGE_ID_SUBSTITUTIONS.get(path, frozenset())
+    )
+
+
 def _read_lines(root: Path, relative: Path, violations: list[Violation]) -> list[str] | None:
     path = root / relative
     if not path.is_file():
@@ -184,7 +202,7 @@ def _record_reference(
     violations: list[Violation],
     references: list[RuntimeImageReference] | None,
 ) -> None:
-    if reference in _LOCAL_BUILD_IMAGES:
+    if _is_internal_candidate_image_binding(reference, path):
         return
     violations.extend(_validate_reference(reference, path=path, line=line))
     if references is not None:
@@ -440,7 +458,7 @@ def runtime_image_references(root: Path) -> tuple[RuntimeImageReference, ...]:
     return tuple(sorted(set(references)))
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--root",
@@ -448,7 +466,33 @@ def main() -> int:
         default=Path(__file__).resolve().parents[1],
         help="repository root to inspect (default: this script's repository)",
     )
-    arguments = parser.parse_args()
+    parser.add_argument(
+        "--references-json",
+        action="store_true",
+        help="emit validated external runtime image references with their source paths",
+    )
+    arguments = parser.parse_args(argv)
+    if arguments.references_json:
+        try:
+            references = runtime_image_references(arguments.root.resolve())
+        except ValueError as error:
+            print(str(error), file=sys.stderr)
+            return 1
+        print(
+            json.dumps(
+                [
+                    {
+                        "line": reference.line,
+                        "path": reference.path.as_posix(),
+                        "reference": reference.reference,
+                    }
+                    for reference in references
+                ],
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return 0
     violations = check_runtime_image_pins(arguments.root.resolve())
     if violations:
         for violation in violations:

@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import json
 import stat
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -70,9 +71,9 @@ class SigningKeySet:
     registry: KeyRegistry
 
 
-def _load_public(path: Path) -> Ed25519PublicKey:
+def _load_public(path: Path, raw: bytes | None = None) -> Ed25519PublicKey:
     try:
-        loaded = serialization.load_pem_public_key(path.read_bytes())
+        loaded = serialization.load_pem_public_key(path.read_bytes() if raw is None else raw)
     except (OSError, ValueError) as exc:
         raise SigningKeyError(f"{path}: 공개키를 읽을 수 없다 — {type(exc).__name__}") from exc
     if not isinstance(loaded, Ed25519PublicKey):
@@ -80,9 +81,10 @@ def _load_public(path: Path) -> Ed25519PublicKey:
     return loaded
 
 
-def _load_private(path: Path) -> Ed25519PrivateKey:
+def _load_private(path: Path, raw: bytes | None = None) -> Ed25519PrivateKey:
     try:
-        mode = path.stat().st_mode
+        # A supplied immutable snapshot was already checked by its filesystem owner.
+        mode = path.stat().st_mode if raw is None else 0o600
     except OSError as exc:
         raise SigningKeyError(
             f"{path}: 개인키 파일에 접근할 수 없다 — {type(exc).__name__}"
@@ -94,7 +96,9 @@ def _load_private(path: Path) -> Ed25519PrivateKey:
             f"{path}: 개인키 권한이 너무 열려 있다(mode {mode & 0o777:o}) — 0600 이어야 한다"
         )
     try:
-        loaded = serialization.load_pem_private_key(path.read_bytes(), password=None)
+        loaded = serialization.load_pem_private_key(
+            path.read_bytes() if raw is None else raw, password=None
+        )
     except (OSError, ValueError, TypeError) as exc:
         raise SigningKeyError(f"{path}: 개인키를 읽을 수 없다 — {type(exc).__name__}") from exc
     if not isinstance(loaded, Ed25519PrivateKey):
@@ -102,17 +106,33 @@ def _load_private(path: Path) -> Ed25519PrivateKey:
     return loaded
 
 
-def load_signing_keys(keys_dir: Path) -> SigningKeySet:
+def load_signing_keys(
+    keys_dir: Path, *, verified_files: Mapping[str, bytes] | None = None
+) -> SigningKeySet:
     """매니페스트를 읽어 키 세트를 만든다 — 신뢰할 수 없으면 기동을 거부한다.
 
     거부 사유는 전부 "조용히 넘어가면 서명 신뢰가 무너지는" 것들이다:
     활성 키가 REVOKED / 활성 키가 매니페스트에 없음 / 개인키 권한 노출 /
     공개키와 개인키 불일치(다른 키로 서명하고 다른 키로 검증하게 된다).
+
+    ``verified_files`` consumes only already permission-checked immutable bytes.
+    The caller owns filesystem/identity validation; no path is reopened in this
+    mode. Ordinary production loading retains its existing permission checks.
     """
+    if verified_files is not None:
+        verified_files = dict(verified_files)
+        if any(
+            not isinstance(name, str) or not isinstance(raw, bytes)
+            for name, raw in verified_files.items()
+        ):
+            raise SigningKeyError("verified signing snapshot requires string names and bytes")
     manifest_path = keys_dir / "keys.json"
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8")
+            if verified_files is None else verified_files["keys.json"].decode("utf-8")
+        )
+    except (OSError, ValueError, KeyError) as exc:
         raise SigningKeyError(
             f"{manifest_path}: 키 매니페스트를 읽을 수 없다 — {type(exc).__name__}"
         ) from exc
@@ -153,7 +173,13 @@ def load_signing_keys(keys_dir: Path) -> SigningKeySet:
             if not_after.tzinfo is None:
                 raise SigningKeyError(f"{manifest_path}: notAfter 는 tz-aware 여야 한다")
 
-        public_key = _load_public(keys_dir / f"{key_id}.public.pem")
+        public_name = f"{key_id}.public.pem"
+        if verified_files is not None and public_name not in verified_files:
+            raise SigningKeyError("verified signing snapshot omits a public key")
+        public_key = _load_public(
+            keys_dir / public_name,
+            None if verified_files is None else verified_files[public_name],
+        )
         # KeyRegistry.register 가 중복 keyId·중복 키재료를 이미 거부한다(감사 #9·B-1).
         registry.register(key_id, public_key, status=status, not_after=not_after)
         if key_id == active_id:
@@ -166,7 +192,13 @@ def load_signing_keys(keys_dir: Path) -> SigningKeySet:
     if active_public is None:
         raise SigningKeyError(f"{manifest_path}: active 키 {active_id!r} 가 keys 에 없다")
 
-    private_key = _load_private(keys_dir / f"{active_id}.private.pem")
+    private_name = f"{active_id}.private.pem"
+    if verified_files is not None and private_name not in verified_files:
+        raise SigningKeyError("verified signing snapshot omits the active private key")
+    private_key = _load_private(
+        keys_dir / private_name,
+        None if verified_files is None else verified_files[private_name],
+    )
     derived = private_key.public_key().public_bytes(
         serialization.Encoding.Raw, serialization.PublicFormat.Raw
     )

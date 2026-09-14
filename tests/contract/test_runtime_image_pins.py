@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -80,6 +81,62 @@ def test_private_rc_local_build_images_are_explicit_exceptions() -> None:
         assert tool._validate_reference(
             reference, path=Path("deploy/compose.external-reconstruction.yaml"), line=1
         ) == []
+
+
+def test_verified_candidate_image_id_substitution_is_limited_to_the_two_compose_images() -> None:
+    tool = _tool()
+    candidate_compose = Path("deploy/compose.external-reconstruction.yaml")
+
+    assert tool._validate_reference(
+        "${KSI_EXTERNAL_RC_CORE_IMAGE_ID:?verified Core image ID is required}",
+        path=candidate_compose,
+        line=1,
+    ) == []
+    assert tool._validate_reference(
+        "${KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID:?verified Dashboard image ID is required}",
+        path=candidate_compose,
+        line=2,
+    ) == []
+
+    wrong_variable = tool._validate_reference(
+        "${KSI_EXTERNAL_RC_MINIO_IMAGE_ID:?verified MinIO image ID is required}",
+        path=candidate_compose,
+        line=3,
+    )
+    wrong_path = tool._validate_reference(
+        "${KSI_EXTERNAL_RC_CORE_IMAGE_ID:?verified Core image ID is required}",
+        path=Path("deploy/compose.yaml"),
+        line=1,
+    )
+
+    assert len(wrong_variable) == 1
+    assert "not substitution" in wrong_variable[0].message
+    assert len(wrong_path) == 1
+    assert "not substitution" in wrong_path[0].message
+
+
+def test_reference_json_exposes_the_exact_source_paths_for_candidate_binding(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    tool = _tool()
+
+    assert tool.main(["--root", str(_ROOT), "--references-json"]) == 0
+
+    entries = json.loads(capsys.readouterr().out)
+    assert all(set(entry) == {"line", "path", "reference"} for entry in entries)
+    candidate_references = {
+        entry["reference"]
+        for entry in entries
+        if entry["path"] == "deploy/compose.external-reconstruction.yaml"
+    }
+    assert candidate_references == {
+        "caddy:2.10.2-alpine@sha256:"
+        "4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d",
+        "minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:"
+        "a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+        "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:"
+        "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+    }
 
 
 def test_rejects_tag_only_compose_image_reference(tmp_path: Path) -> None:

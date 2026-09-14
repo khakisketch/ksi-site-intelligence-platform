@@ -1,7 +1,7 @@
 """Real shared app assembly uses explicit authority factories in replay order."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NoReturn, cast
 
@@ -11,14 +11,20 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorage
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthorityPort,
 )
+from ksi_core.external_relative_volume_s3_capabilities import (
+    ExternalRelativeVolumeS3InputCapabilityIssuer,
+)
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
 from ksi_core.external_result_workflow_assembly import (
+    ExternalRelativeVolumeInputCapabilityFactory,
     ExternalRelativeVolumeRuntimeAuthorities,
     ExternalResultWorkflowAssemblyConfig,
 )
@@ -29,9 +35,34 @@ from test_api_contract_sync import _auth_registry, _NullEvidenceStorage
 
 
 class _UnavailablePolicyAuthority:
+    def __init__(self) -> None:
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(
+        self, coordinator: ExternalAuthorityCurrentnessCoordinator
+    ) -> "_UnavailablePolicyAuthority":
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        if self._coordinator is None:
+            raise RuntimeError("policy authority fixture was not bound")
+        return self._coordinator
+
     def resolve(self, authority_record_digest: str, now: object) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        del authority_record_digest, at
+        return None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        del authority, now
+        return False
 
 
 class _UnavailableEvidenceContextAuthority:
@@ -173,6 +204,84 @@ def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_pat
             item.close()
 
 
+def test_byte_issuer_factory_receives_final_stores(tmp_path: Path) -> None:
+    """A shadow reconstruction store would not see the app's sealed DSM records."""
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
+    retained: list[ExternalRelativeVolumeS3InputCapabilityIssuer] = []
+
+    def build_issuer(
+        *, reconstruction: ExternalReconstructionStore, storage: EvidenceStorage
+    ) -> ExternalRelativeVolumeS3InputCapabilityIssuer:
+        issuer = ExternalRelativeVolumeS3InputCapabilityIssuer(
+            reconstruction=reconstruction, storage=storage
+        )
+        retained.append(issuer)
+        return issuer
+
+    config = replace(
+        _config(trace), input_capability_issuer=None, build_input_capability_issuer=build_issuer
+    )
+    try:
+        app = _assemble(tmp_path, opened, trace, config=config)
+        assert len(retained) == 1
+        assert retained[0]._reconstruction is app.state.external_reconstruction_store
+        assert retained[0]._storage is app.state.evidence_storage
+        assert app.state.external_relative_volume_store is not None
+    finally:
+        for item in opened:
+            item.close()
+
+
+@pytest.mark.parametrize("mode", ["missing", "both", "not_callable"])
+def test_byte_issuer_configuration_requires_one_explicit_source(mode: str) -> None:
+    config = _config([])
+    with pytest.raises(ValueError, match="issuer"):
+        if mode == "missing":
+            replace(config, input_capability_issuer=None)
+        elif mode == "both":
+            issuer = config.input_capability_issuer
+            assert issuer is not None
+            replace(
+                config,
+                build_input_capability_issuer=lambda **_kwargs: issuer,
+            )
+        else:
+            # Deliberately malformed runtime input exercises the constructor guard.
+            replace(
+                config, input_capability_issuer=None,
+                build_input_capability_issuer=cast(
+                    ExternalRelativeVolumeInputCapabilityFactory, 42
+                ),
+            )
+
+
+@pytest.mark.parametrize("failure", ["none", "raises"])
+def test_byte_issuer_factory_failure_prevents_workflow_replay(tmp_path: Path, failure: str) -> None:
+    opened: list[DurableJournal] = []
+    trace: list[str] = []
+
+    def failed_factory(**_kwargs: object) -> None:
+        if failure == "raises":
+            raise ValueError("issuer unavailable")
+        return None
+
+    config = replace(
+        _config(trace), input_capability_issuer=None,
+        # The invalid return value is intentional: assembly must reject it before replay.
+        build_input_capability_issuer=cast(
+            ExternalRelativeVolumeInputCapabilityFactory, failed_factory
+        ),
+    )
+    try:
+        with pytest.raises(ValueError, match="issuer"):
+            _assemble(tmp_path, opened, trace, config=config)
+        assert "external-relative-volumes.jsonl" not in trace
+    finally:
+        for item in opened:
+            item.close()
+
+
 @pytest.mark.parametrize("stage", ["mapping", "runtime"])
 def test_common_assembly_rejects_wrong_coordinator_before_volume_replay(
     tmp_path: Path, stage: str
@@ -236,9 +345,11 @@ def test_context_authority_factory_must_bind_the_exact_assembly_coordinator(tmp_
     """A context authority for another graph must be rejected before any journal opens."""
     opened: list[DurableJournal] = []
     trace: list[str] = []
+    policy_authority = _UnavailablePolicyAuthority()
     config = replace(
         _config(trace),
-        policy_authority_port=_UnavailablePolicyAuthority(),
+        policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=lambda _coordinator: _UnavailableEvidenceContextAuthority(
             ExternalAuthorityCurrentnessCoordinator()
         ),
@@ -269,6 +380,7 @@ def test_common_assembly_forwards_exact_upstream_authority_ports(tmp_path: Path)
     config = replace(
         _config(trace),
         policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=build_context_authority,
     )
     try:

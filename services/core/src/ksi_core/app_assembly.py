@@ -184,7 +184,18 @@ def assemble_app(
     """
     external_authority_currentness = ExternalAuthorityCurrentnessCoordinator()
     evidence_context_authority = None
+    policy_authority_currentness = None
     if external_result_workflow is not None:
+        build_policy_currentness = external_result_workflow.build_policy_authority_currentness
+        if build_policy_currentness is not None:
+            policy_authority_currentness = build_policy_currentness(external_authority_currentness)
+            if (
+                policy_authority_currentness is None
+                or policy_authority_currentness.coordinator is not external_authority_currentness
+            ):
+                raise ValueError(
+                    "external result workflow policy currentness must share the Core coordinator"
+                )
         build_context_authority = external_result_workflow.build_evidence_context_authority
         if build_context_authority is not None:
             evidence_context_authority = build_context_authority(external_authority_currentness)
@@ -334,6 +345,7 @@ def assemble_app(
                 if external_result_workflow is not None
                 else None
             ),
+            authority_currentness_port=policy_authority_currentness,
             coordinator=external_authority_currentness,
         )
         if external_reconstruction_store is not None
@@ -414,16 +426,28 @@ def assemble_app(
                 item.evidence_ref, now=datetime.now(UTC)
             )
     external_volume_mapping: ExternalRelativeVolumeAuthorityPort | None = None
+    external_volume_input_capability_issuer = None
     if external_result_workflow is not None:
         if (
             external_reconstruction_store is None
             or external_artifact_inspection_store is None
             or external_validation_policy_registry is None
             or external_evidence_validation_store is None
+            or evidence_storage is None
         ):
             raise ValueError(
                 "external result workflow requires the complete external storage graph"
             )
+        external_volume_input_capability_issuer = external_result_workflow.input_capability_issuer
+        if external_result_workflow.build_input_capability_issuer is not None:
+            external_volume_input_capability_issuer = (
+                external_result_workflow.build_input_capability_issuer(
+                    reconstruction=external_reconstruction_store,
+                    storage=evidence_storage,
+                )
+            )
+        if not callable(external_volume_input_capability_issuer):
+            raise ValueError("external result workflow byte issuer factory returned no issuer")
         external_volume_mapping = external_result_workflow.build_mapping(
             coordinator=external_authority_currentness,
             reconstruction=external_reconstruction_store,
@@ -474,6 +498,7 @@ def assemble_app(
         else None
     )
     external_relative_volume_store: ExternalRelativeVolumeStore | None = None
+    external_volume_execution_activator = None
     external_result_workflow_service: ExternalReobservationProposalService | None = None
     external_result_read_projector: ExternalResultReadProjector | None = None
     external_proposal_authority: CoreExternalReobservationProposalAuthorityPort | None = None
@@ -500,6 +525,7 @@ def assemble_app(
             raise ValueError("external result workflow execution must share the Core coordinator")
         if runtime.historical_use is None:
             raise ValueError("external result workflow requires independent use history")
+        external_volume_execution_activator = runtime.activate_execution
         external_relative_volume_store = ExternalRelativeVolumeStore(
             journal("external-relative-volumes.jsonl"),
             authority_port=runtime.execution,
@@ -894,11 +920,8 @@ def assemble_app(
         external_relative_volume_store=external_relative_volume_store,
         external_result_workflow_service=external_result_workflow_service,
         external_result_read_projector=external_result_read_projector,
-        external_volume_input_capability_issuer=(
-            external_result_workflow.input_capability_issuer
-            if external_result_workflow is not None
-            else None
-        ),
+        external_volume_input_capability_issuer=external_volume_input_capability_issuer,
+        external_volume_execution_activator=external_volume_execution_activator,
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,

@@ -7,6 +7,7 @@ or uses a permissive authority provider.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import os
@@ -17,6 +18,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app_assembly import assemble_app
@@ -44,6 +46,7 @@ from ksi_core.external_result_workflow_config import (
 from ksi_core.external_validation_policy import PolicyAuthorityRecord, authorized_policy_body_digest
 from ksi_core.leasing import LeaseFence
 from ksi_core.observation_work_orders import ExternalReobservationExecutionDenied
+from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactInspectionOutcomeV1,
     ArtifactOutcome,
@@ -203,14 +206,39 @@ class _RetainedPolicyAuthority:
 
     def __init__(self) -> None:
         self._records: dict[str, PolicyAuthorityRecord] = {}
+        self._coordinator: Any = None
+
+    def bind(self, coordinator: Any) -> _RetainedPolicyAuthority:
+        if self._coordinator is not None:
+            raise AssertionError("policy provider must bind one assembled coordinator")
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> Any:
+        return self._coordinator
 
     def add(self, record: PolicyAuthorityRecord) -> None:
         assert record.digest is not None
         self._records[record.digest] = record
 
+    def retained_records(self) -> tuple[PolicyAuthorityRecord, ...]:
+        return tuple(self._records.values())
+
     def resolve(self, authority_record_digest: str, now: datetime) -> Any:
         record = self._records.get(authority_record_digest)
         return record if record is not None and record.is_active_at(now) else None
+
+    def resolve_historical(self, authority_record_digest: str, at: datetime) -> Any:
+        record = self._records.get(authority_record_digest)
+        return record if record is not None and record.is_active_at(at) else None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return (
+            authority.digest is not None
+            and self._records.get(authority.digest) == authority
+            and authority.is_active_at(now)
+        )
 
 
 class _RetainedEvidenceContextAuthority:
@@ -338,14 +366,10 @@ def _observed_vertical_reference() -> ObservedVerticalReferenceV1:
     return ObservedVerticalReferenceV1(identifier="KNGeoid2018", basis="site datum")
 
 
-def _workflow(
-    path: Path,
-    *,
-    now: datetime,
-    policy_authority: _RetainedPolicyAuthority,
-    context_authority: _RetainedEvidenceContextAuthority,
-) -> Any:
-    """Load a protected real workflow config backed by retained authority records."""
+def _workflow_material(
+    path: Path, *, now: datetime
+) -> tuple[ExternalQuantitativeCatalogAuthorityRecord, ResourceEnvelopeV1, Path]:
+    """Write owner-private catalog/config bytes without selecting an authority port."""
     envelope = _envelope()
     body: dict[str, Any] = {
         "organizationId": "org-a",
@@ -403,6 +427,166 @@ def _workflow(
             "catalogPath": str(catalog_path),
         },
     )
+    return authority, envelope, config_path
+
+
+def _signed_provider_config(
+    path: Path,
+    *,
+    now: datetime,
+    catalog_authority: ExternalQuantitativeCatalogAuthorityRecord,
+) -> tuple[Path, Ed25519PrivateKey]:
+    """Create test-owned signing material; it is never release authority."""
+    assert catalog_authority.digest is not None
+    signer = Ed25519PrivateKey.generate()
+    public_key = path / "authority-bundle.pem"
+    public_key.write_bytes(
+        signer.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    os.chmod(public_key, 0o600)
+    _write_private(
+        path / "authority-keys.json",
+        {
+            "version": "external-authority-key-registry.v1",
+            "keys": [
+                {
+                    "keyId": "test-authority-key-1",
+                    "role": "AUTHORITY_BUNDLE",
+                    "algorithm": "Ed25519",
+                    "status": "ACTIVE",
+                    "publicKeyFile": public_key.name,
+                    "notBefore": (now - timedelta(days=1)).isoformat().replace("+00:00", "Z"),
+                    "notAfter": (now + timedelta(days=1)).isoformat().replace("+00:00", "Z"),
+                }
+            ],
+        },
+    )
+    snapshot_path = path / "authority-snapshot.json"
+    _write_signed_provider_snapshot(
+        snapshot_path,
+        signer,
+        {
+            "version": "external-authority-provider-snapshot.v1",
+            "organizationId": "org-a",
+            "sequence": 1,
+            "previousSnapshotDigest": None,
+            "issuedAt": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+            "validUntil": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+            "keyId": "test-authority-key-1",
+            "catalogAuthorities": {
+                "records": [catalog_authority.event_payload()],
+                "currentDigests": [catalog_authority.digest],
+            },
+            "policyAuthorities": {"records": [], "currentDigests": []},
+            "evidenceContexts": {"records": [], "currentDigests": []},
+            "quantitativeAdministration": {"actions": []},
+        },
+    )
+    config_path = path / "external-authority-provider.json"
+    _write_private(
+        config_path,
+        {
+            "version": "external-authority-provider-config.v1",
+            "organizationId": "org-a",
+            "keyRegistryPath": str(path / "authority-keys.json"),
+            "snapshotPath": str(snapshot_path),
+            "catalogAdministrationActorId": "catalog-admin",
+            "leaseTtlSeconds": 10,
+            "deadlineAfterIssueSeconds": 60,
+            "maxAttempts": 2,
+            "maxActiveRequestsPerOrganization": 2,
+        },
+    )
+    return config_path, signer
+
+
+def _write_signed_provider_snapshot(
+    path: Path, signer: Ed25519PrivateKey, snapshot: dict[str, object]
+) -> str:
+    signed = canonical_json_bytes(
+        {
+            "domain": "ksi.external-authority-provider-snapshot.v1",
+            "snapshot": snapshot,
+        }
+    )
+    _write_private(
+        path,
+        {
+            **snapshot,
+            "signature": base64.b64encode(signer.sign(signed)).decode("ascii"),
+        },
+    )
+    return _digest(signed)
+
+
+def _replace_signed_provider_snapshot(
+    path: Path, signer: Ed25519PrivateKey, changes: dict[str, object]
+) -> str:
+    current = json.loads(path.read_text(encoding="utf-8"))
+    snapshot = {key: value for key, value in current.items() if key != "signature"} | changes
+    return _write_signed_provider_snapshot(path, signer, snapshot)
+
+
+def _signed_policy_admission(
+    *,
+    subjects: tuple[SealedExternalSubjectV1, SealedExternalSubjectV1],
+    envelope: ResourceEnvelopeV1,
+    now: datetime,
+) -> tuple[ExternalValidationPolicyV1, PolicyAuthorityRecord, dict[str, object]]:
+    template = ExternalValidationPolicyV1(
+        policy_id="external-geotiff-v1",
+        version=1,
+        status=PolicyStatus.ACTIVE,
+        parser_build_digest=_digest("inspector-build-1"),
+        grammar_digest=_digest("grammar-1"),
+        resource_envelope=envelope,
+        resource_envelope_digest=envelope.resource_envelope_digest,
+        authority_record_digest=_digest("unbound-policy-authority"),
+        inspection_rule_ids=("EXTERNAL_GEOTIFF_MEASURED_V1",),
+        evidence_rule_ids=("CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",),
+        compatibility_mapping_digests=(CompatibilityRuleDescriptorV1().canonical_digest(),),
+        synthetic_test_only=False,
+    ).sealed()
+    authority = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=template.version,
+        authorized_policy_body_digest=authorized_policy_body_digest(template),
+        permitted_subjects=subjects,
+        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
+        authorized_actor_ids=("policy-admin",),
+        active_from=now - timedelta(hours=1),
+        active_until=now + timedelta(hours=1),
+        synthetic_test_only=False,
+    ).sealed()
+    assert authority.digest is not None
+    policy = template.model_copy(
+        update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
+    ).sealed()
+    return (
+        policy,
+        authority,
+        {
+            "actionId": "signed-provider-admit-policy",
+            "kind": "ADMIT_POLICY",
+            "effectiveAt": now.isoformat().replace("+00:00", "Z"),
+            "actorId": "policy-admin",
+            "policy": policy.model_dump(by_alias=True, mode="json"),
+        },
+    )
+
+
+def _workflow(
+    path: Path,
+    *,
+    now: datetime,
+    policy_authority: _RetainedPolicyAuthority,
+    context_authority: _RetainedEvidenceContextAuthority,
+) -> Any:
+    """Load a protected real workflow config backed by retained authority records."""
+    authority, envelope, config_path = _workflow_material(path, now=now)
     catalog_authority = _RetainedCatalogAuthority(authority)
     participants = ExternalQuantitativeWorkflowParticipants(
         catalog_authority_port=catalog_authority,
@@ -416,6 +600,7 @@ def _workflow(
         clock=lambda: now,
         build_catalog_authority_currentness=catalog_authority.bind,
         policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=context_authority.bind,
     )
     return (
@@ -428,6 +613,13 @@ def _workflow(
         envelope,
         catalog_authority,
     )
+
+
+def _restarted_policy_authority(source: _RetainedPolicyAuthority) -> _RetainedPolicyAuthority:
+    restarted = _RetainedPolicyAuthority()
+    for record in source.retained_records():
+        restarted.add(record)
+    return restarted
 
 
 def _assemble(
@@ -452,6 +644,67 @@ def _assemble(
         external_result_workflow=workflow,
     )
     return app, opened
+
+
+def _close_journals(journals: list[DurableJournal]) -> None:
+    for journal in reversed(journals):
+        journal.close()
+
+
+def _register_signed_provider_site_and_area(app: Any, *, now: datetime) -> Any:
+    assert (
+        app.state.site_store.register(
+            "site-a",
+            "External source site",
+            SiteFrame(
+                crs="EPSG:5186",
+                vertical_datum="KNGeoid2018",
+                unit="meter",
+                transform_version="1.0.0",
+            ),
+            organization_id="org-a",
+            actor="operator-a",
+            now=now - timedelta(minutes=30),
+        ).record
+        is not None
+    )
+    registered = app.state.work_area_store.register(
+        "site-a",
+        name="Signed provider quantitative area",
+        polygon=_POLYGON,
+        crs="EPSG:5186",
+        supersedes=None,
+        actor="operator-a",
+        now=now - timedelta(minutes=29),
+    )
+    assert registered.work_area is not None
+    return registered.work_area
+
+
+def _volume_payload(request: Any, execution: Any, *, now: datetime) -> Any:
+    return ExternalRelativeVolumeMeasurementPayloadV1(
+        request_digest=request.request_digest,
+        decision_digest=request.decision_digest,
+        baseline_dsm_digest=request.baseline.observed_sha256,
+        current_dsm_digest=request.current.observed_sha256,
+        zone_snapshot_digest=request.zone_snapshot.canonical_digest(),
+        execution_policy_digest=request.execution_policy_digest,
+        algorithm_build_digest=execution.execution_policy.algorithm_build_digest,
+        config_digest=execution.execution_policy.config_digest,
+        metrics=ExternalVolumeMetricsV1(
+            zone_cell_count=10,
+            common_valid_cell_count=10,
+            zone_area_m2=10.0,
+            measured_area_m2=10.0,
+            common_valid_fraction=1.0,
+            cut_m3=1.0,
+            fill_m3=5.0,
+            net_m3=4.0,
+            threshold_m=execution.execution_policy.threshold_m,
+            uncertainty_m3=None,
+            uncertainty_note="No trusted epoch RMSE is supplied by the external evidence chain.",
+        ),
+    )
 
 
 def _submission(order: Any, label: str, *, start: datetime, end: datetime) -> Any:
@@ -687,17 +940,14 @@ def _inspect(app: Any, *, revision: Any, subject: Any, policy: Any, now: datetim
     return reported.report
 
 
-def _validate_evidence(
+def _seal_evidence(
     app: Any,
     *,
     revision: Any,
     subject: Any,
-    policy: Any,
-    context_authority: _RetainedEvidenceContextAuthority,
     now: datetime,
     storage: _LocalObjectStorage,
-    label: str = "validated",
-    checkpoint_count: int = 3,
+    label: str,
 ) -> Any:
     evidence_store = app.state.external_evidence_store
     dsm = next(
@@ -737,7 +987,17 @@ def _validate_evidence(
         now=now,
     )
     assert sealed.item is not None and sealed.item.manifest is not None
-    item = sealed.item
+    return sealed.item
+
+
+def _evidence_context(
+    item: Any,
+    *,
+    subject: Any,
+    policy: Any,
+    now: datetime,
+    label: str,
+) -> ExternalEvidenceMeasurementContextV1:
     manifest = item.manifest
     assert manifest.evidence_manifest_digest is not None and policy.policy_digest is not None
     attestation = ExternalIndependenceAttestationV1(
@@ -752,7 +1012,7 @@ def _validate_evidence(
         ),
         synthetic_test_only=False,
     ).sealed()
-    context = ExternalEvidenceMeasurementContextV1(
+    return ExternalEvidenceMeasurementContextV1(
         context_id="context-" + subject.work_order_id + "-" + label,
         subject=subject,
         evidence_manifest_digest=manifest.evidence_manifest_digest,
@@ -776,10 +1036,21 @@ def _validate_evidence(
         active_until=now + timedelta(hours=1),
         synthetic_test_only=False,
     ).sealed()
-    context_authority.add(context)
+
+
+def _record_evidence_validation(
+    app: Any,
+    *,
+    item: Any,
+    now: datetime,
+    checkpoint_count: int,
+) -> Any:
     validations = app.state.external_evidence_validation_store
     issued = validations.issue_after_seal(item.evidence_ref, now=now)
-    assert issued.request is not None and issued.verdict is EvidenceValidationVerdict.ISSUED
+    assert issued.request is not None and issued.verdict in {
+        EvidenceValidationVerdict.ISSUED,
+        EvidenceValidationVerdict.IDEMPOTENT,
+    }
     leased = validations.claim(
         issued.request.validation_id,
         LeaseFence(str(uuid4()), str(uuid4()), 0),
@@ -814,6 +1085,32 @@ def _validate_evidence(
     assert measured.record is not None and measured.verdict is expected
     assert measured.record.evidence_record_digest is not None
     return measured.record
+
+
+def _validate_evidence(
+    app: Any,
+    *,
+    revision: Any,
+    subject: Any,
+    policy: Any,
+    context_authority: _RetainedEvidenceContextAuthority,
+    now: datetime,
+    storage: _LocalObjectStorage,
+    label: str = "validated",
+    checkpoint_count: int = 3,
+) -> Any:
+    item = _seal_evidence(
+        app,
+        revision=revision,
+        subject=subject,
+        now=now,
+        storage=storage,
+        label=label,
+    )
+    context_authority.add(
+        _evidence_context(item, subject=subject, policy=policy, now=now, label=label)
+    )
+    return _record_evidence_validation(app, item=item, now=now, checkpoint_count=checkpoint_count)
 
 
 def _mapping(
@@ -1180,10 +1477,11 @@ def test_external_quantitative_real_participants_complete_authorized_cycle_acros
         activation_restart_context = _RetainedEvidenceContextAuthority(now)
         for context in context_authority.retained_contexts():
             activation_restart_context.add(context)
+        activation_restart_policy_authority = _restarted_policy_authority(policy_authority)
         activation_restart_workflow, _, _, activation_catalog_authority = _workflow(
             tmp_path,
             now=now,
-            policy_authority=policy_authority,
+            policy_authority=activation_restart_policy_authority,
             context_authority=activation_restart_context,
         )
         app, opened = _assemble(tmp_path, activation_restart_workflow, storage)
@@ -1321,10 +1619,11 @@ def test_external_quantitative_real_participants_complete_authorized_cycle_acros
     restarted_context = _RetainedEvidenceContextAuthority(active_now)
     for context in context_authority.retained_contexts():
         restarted_context.add(context)
+    restarted_policy_authority = _restarted_policy_authority(policy_authority)
     restarted_workflow, _, _, _ = _workflow(
         tmp_path,
         now=now,
-        policy_authority=policy_authority,
+        policy_authority=restarted_policy_authority,
         context_authority=restarted_context,
     )
     restarted, reopened = _assemble(tmp_path, restarted_workflow, storage)
@@ -1423,3 +1722,341 @@ def test_external_quantitative_real_participants_complete_authorized_cycle_acros
     finally:
         for journal in reversed(reopened):
             journal.close()
+
+
+def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
+    tmp_path: Path,
+) -> None:
+    """Only signed post-seal authority records can drive the real Core lifecycle."""
+    from ksi_core.external_authority_provider import load_external_authority_provider
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    clock_now = [now]
+    storage = _LocalObjectStorage()
+    catalog_record, envelope, workflow_config_path = _workflow_material(tmp_path, now=now)
+    provider_config_path, signer = _signed_provider_config(
+        tmp_path, now=now, catalog_authority=catalog_record
+    )
+    provider = load_external_authority_provider(provider_config_path, clock=lambda: clock_now[0])
+    workflow = load_external_result_workflow_config(
+        workflow_config_path,
+        participants=provider.participants,
+        input_capability_issuer=lambda *_args, **_kwargs: None,
+    )
+    app, opened = _assemble(tmp_path, workflow, storage)
+    receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+    try:
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        area = _register_signed_provider_site_and_area(app, now=now)
+        orders = app.state.observation_work_order_store
+        baseline_order = orders.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name="Signed provider baseline survey",
+            work_area_ids=[area.work_area_id],
+            schedule_id=None,
+            actor="operator-a",
+            now=now - timedelta(minutes=28),
+        )
+        current_order = orders.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name="Signed provider current survey",
+            work_area_ids=[area.work_area_id],
+            schedule_id=None,
+            actor="operator-a",
+            now=now - timedelta(minutes=27),
+        )
+        baseline_revision, baseline_subject = _sealed_revision(
+            app,
+            baseline_order,
+            "signed-provider-baseline",
+            start=now - timedelta(minutes=20),
+            end=now - timedelta(minutes=15),
+            storage=storage,
+        )
+        current_revision, current_subject = _sealed_revision(
+            app,
+            current_order,
+            "signed-provider-current",
+            start=now - timedelta(minutes=10),
+            end=now - timedelta(minutes=5),
+            storage=storage,
+        )
+        policy, policy_authority, policy_action = _signed_policy_admission(
+            subjects=(baseline_subject, current_subject), envelope=envelope, now=now
+        )
+        first_digest = provider.status()["snapshotDigest"]
+        assert isinstance(first_digest, str) and policy_authority.digest is not None
+        policy_digest = _replace_signed_provider_snapshot(
+            tmp_path / "authority-snapshot.json",
+            signer,
+            {
+                "sequence": 2,
+                "previousSnapshotDigest": first_digest,
+                "issuedAt": now.isoformat().replace("+00:00", "Z"),
+                "policyAuthorities": {
+                    "records": [policy_authority.event_payload()],
+                    "currentDigests": [policy_authority.digest],
+                },
+                "quantitativeAdministration": {"actions": [policy_action]},
+            },
+        )
+        assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == policy_digest
+        baseline_report = _inspect(
+            app, revision=baseline_revision, subject=baseline_subject, policy=policy, now=now
+        )
+        current_report = _inspect(
+            app, revision=current_revision, subject=current_subject, policy=policy, now=now
+        )
+        baseline_item = _seal_evidence(
+            app,
+            revision=baseline_revision,
+            subject=baseline_subject,
+            now=now,
+            storage=storage,
+            label="signed-provider-baseline",
+        )
+        current_item = _seal_evidence(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            now=now,
+            storage=storage,
+            label="signed-provider-current",
+        )
+        contexts = (
+            _evidence_context(
+                baseline_item,
+                subject=baseline_subject,
+                policy=policy,
+                now=now,
+                label="signed-provider-baseline",
+            ),
+            _evidence_context(
+                current_item,
+                subject=current_subject,
+                policy=policy,
+                now=now,
+                label="signed-provider-current",
+            ),
+        )
+        assert all(context.context_digest is not None for context in contexts)
+        contexts_digest = _replace_signed_provider_snapshot(
+            tmp_path / "authority-snapshot.json",
+            signer,
+            {
+                "sequence": 3,
+                "previousSnapshotDigest": policy_digest,
+                "issuedAt": now.isoformat().replace("+00:00", "Z"),
+                "evidenceContexts": {
+                    "records": [
+                        context.model_dump(by_alias=True, mode="json") for context in contexts
+                    ],
+                    "currentDigests": [context.context_digest for context in contexts],
+                },
+                "quantitativeAdministration": {"actions": [policy_action]},
+            },
+        )
+        assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == contexts_digest
+        baseline_evidence = _record_evidence_validation(
+            app, item=baseline_item, now=now, checkpoint_count=3
+        )
+        current_evidence = _record_evidence_validation(
+            app, item=current_item, now=now, checkpoint_count=3
+        )
+        assert catalog_record.digest is not None
+        mapping = _mapping(
+            subjects=(baseline_subject, current_subject),
+            revisions=(baseline_revision, current_revision),
+            reports=(baseline_report, current_report),
+            evidence_records=(baseline_evidence, current_evidence),
+            policy=policy,
+            area=area,
+            now=now,
+            catalog_digest=catalog_record.digest,
+        )
+        assert mapping.mapping_digest is not None
+        mapping_action = {
+            "actionId": "signed-provider-admit-mapping",
+            "kind": "ADMIT_MAPPING",
+            "effectiveAt": now.isoformat().replace("+00:00", "Z"),
+            "actorId": "catalog-admin",
+            "mapping": {
+                "mappingRecordDigest": mapping.mapping_digest,
+                **mapping.canonical_payload(),
+            },
+        }
+        mapping_digest = _replace_signed_provider_snapshot(
+            tmp_path / "authority-snapshot.json",
+            signer,
+            {
+                "sequence": 4,
+                "previousSnapshotDigest": contexts_digest,
+                "issuedAt": now.isoformat().replace("+00:00", "Z"),
+                "quantitativeAdministration": {"actions": [policy_action, mapping_action]},
+            },
+        )
+        assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == mapping_digest
+        decision = app.state.external_use_evaluator.request_pair(
+            baseline_subject,
+            current_subject,
+            use="RELATIVE_VOLUME",
+            zone_id=area.work_area_id,
+            idempotency_key="signed-provider-decision",
+            principal=_principal(),
+            now=now,
+        )
+        assert decision.verdict.value == "ELIGIBLE" and decision.decision_digest is not None
+        active_now = now + timedelta(seconds=1)
+        catalog = app.state.external_relative_volume_mapping_authority
+        assert isinstance(catalog, ExternalQuantitativeAuthorityCatalog)
+        execution = catalog.activate_execution(
+            decision_ref=decision.decision_id,
+            principal=_principal(),
+            current_work_order_id=current_order.work_order_id,
+            now=active_now,
+        )
+        assert execution is not None
+        _close_journals(opened)
+        opened = []
+        receipts.close()
+
+        clock_now[0] = active_now
+        provider = load_external_authority_provider(
+            provider_config_path, clock=lambda: clock_now[0]
+        )
+        workflow = load_external_result_workflow_config(
+            workflow_config_path,
+            participants=provider.participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+        )
+        app, opened = _assemble(tmp_path, workflow, storage)
+        receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        issued = app.state.external_relative_volume_store.issue(
+            principal=_principal(),
+            current_work_order_id=current_order.work_order_id,
+            decision_ref=decision.decision_id,
+            idempotency_key="signed-provider-volume",
+            now=active_now,
+        )
+        assert issued.verdict is ExternalRelativeVolumeVerdict.ISSUED and issued.record is not None
+        leased = app.state.external_relative_volume_store.claim(
+            issued.record.request.request_id,
+            organization_id="org-a",
+            principal_id="volume-worker",
+            fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+            now=active_now,
+        )
+        assert leased.fence is not None and leased.record is not None
+        request = leased.record.request
+        report = app.state.external_relative_volume_store.record_observed_report(
+            request.request_id,
+            organization_id="org-a",
+            principal_id="volume-worker",
+            fence=leased.fence,
+            observed=ExternalRelativeVolumeObservedReportInput(
+                payload=_volume_payload(request, execution, now=active_now), computed_at=active_now
+            ),
+            now=active_now,
+        )
+        assert report.record is not None and report.record.report is not None
+        report_ref = report.record.report.report_id
+        _close_journals(opened)
+        opened = []
+        receipts.close()
+
+        provider = load_external_authority_provider(
+            provider_config_path, clock=lambda: clock_now[0]
+        )
+        workflow = load_external_result_workflow_config(
+            workflow_config_path,
+            participants=provider.participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+        )
+        app, opened = _assemble(tmp_path, workflow, storage)
+        receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        service = app.state.external_result_workflow_service
+        review = service.reviews.review(
+            organization_id="org-a",
+            report_ref=report_ref,
+            principal=_principal(),
+            evaluated_at=active_now,
+        )
+        proposal = service.create(
+            organization_id="org-a",
+            report_ref=report_ref,
+            target_work_area_ids=(area.work_area_id,),
+            reason="Signed external result requires a planning-only successor.",
+            principal=_principal(),
+            actor="operator-a",
+            now=active_now,
+            idempotency_key="signed-provider-proposal",
+        )
+        approval = service.approve(
+            organization_id="org-a",
+            proposal_ref=proposal.proposal_ref,
+            expected_version=proposal.version,
+            principal=_principal(),
+            actor="operator-a",
+            now=active_now,
+            idempotency_key="signed-provider-approval",
+        )
+        assert approval.planning_binding.report_digest == review.report.report_digest
+        with pytest.raises(
+            ExternalReobservationExecutionDenied,
+            match="EXTERNAL_RECONSTRUCTION_ONLY",
+        ):
+            app.state.observation_work_order_store.assert_execution_allowed(
+                approval.successor_work_order
+            )
+        resolved = app.state.external_relative_volume_mapping_authority.resolve_for_use(
+            baseline=baseline_subject,
+            current=current_subject,
+            zone_id=area.work_area_id,
+            policy=policy,
+            now=active_now,
+        )
+        assert resolved is not None
+        revoke_at = active_now + timedelta(seconds=1)
+        revoke_action = {
+            "actionId": "signed-provider-revoke-policy",
+            "kind": "REVOKE_POLICY",
+            "effectiveAt": revoke_at.isoformat().replace("+00:00", "Z"),
+            "actorId": "policy-admin",
+            "policyId": policy.policy_id,
+            "policyVersion": policy.version,
+        }
+        revoked_digest = _replace_signed_provider_snapshot(
+            tmp_path / "authority-snapshot.json",
+            signer,
+            {
+                "sequence": 5,
+                "previousSnapshotDigest": mapping_digest,
+                "issuedAt": revoke_at.isoformat().replace("+00:00", "Z"),
+                "quantitativeAdministration": {"actions": [revoke_action]},
+            },
+        )
+        clock_now[0] = revoke_at
+        assert provider.reload_and_reconcile(now=revoke_at)["snapshotDigest"] == revoked_digest
+        assert not app.state.external_relative_volume_mapping_authority.is_current_for_use(
+            resolved, now=revoke_at
+        )
+        assert (
+            app.state.external_relative_volume_store.issue(
+                principal=_principal(),
+                current_work_order_id=current_order.work_order_id,
+                decision_ref=decision.decision_id,
+                idempotency_key="signed-provider-revoked-fresh-issue",
+                now=revoke_at,
+            ).verdict
+            is ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
+        )
+    finally:
+        receipts.close()
+        _close_journals(opened)
