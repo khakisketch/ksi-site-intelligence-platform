@@ -49,6 +49,7 @@ from ksi_core.external_result_workflow_assembly import (
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
+    PolicyAuthorityCurrentnessPort,
     PolicyAuthorityPort,
 )
 from ksi_core.work_areas import WorkAreaStore
@@ -93,6 +94,9 @@ class ExternalQuantitativeWorkflowParticipants:
         | None
     ) = None
     policy_authority_port: PolicyAuthorityPort | None = None
+    build_policy_authority_currentness: (
+        Callable[[ExternalAuthorityCurrentnessCoordinator], PolicyAuthorityCurrentnessPort] | None
+    ) = None
     build_evidence_context_authority: (
         Callable[[ExternalAuthorityCurrentnessCoordinator], EvidenceMeasurementContextAuthorityPort]
         | None
@@ -118,6 +122,14 @@ class ExternalQuantitativeWorkflowParticipants:
             getattr(self.policy_authority_port, "resolve", None)
         ):
             raise ValueError("quantitative workflow requires a policy authority port")
+        if self.policy_authority_port is not None and not callable(
+            getattr(self.policy_authority_port, "resolve_historical", None)
+        ):
+            raise ValueError("quantitative workflow requires policy historical resolution")
+        if self.build_policy_authority_currentness is not None and not callable(
+            self.build_policy_authority_currentness
+        ):
+            raise ValueError("quantitative workflow requires a policy currentness factory")
         if self.build_evidence_context_authority is not None and not callable(
             self.build_evidence_context_authority
         ):
@@ -174,6 +186,9 @@ def load_external_result_workflow_config(
     if (
         participants.policy_authority_port is None
         or not callable(getattr(participants.policy_authority_port, "resolve", None))
+        or not callable(getattr(participants.policy_authority_port, "resolve_historical", None))
+        or participants.build_policy_authority_currentness is None
+        or not callable(participants.build_policy_authority_currentness)
         or participants.build_evidence_context_authority is None
         or not callable(participants.build_evidence_context_authority)
         or participants.build_catalog_authority_currentness is None
@@ -335,6 +350,7 @@ def _workflow_config(
         input_capability_issuer=input_capability_issuer,
         build_input_capability_issuer=build_input_capability_issuer,
         policy_authority_port=participants.policy_authority_port,
+        build_policy_authority_currentness=participants.build_policy_authority_currentness,
         build_evidence_context_authority=participants.build_evidence_context_authority,
     )
 

@@ -10,13 +10,14 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from jsonschema import Draft202012Validator, FormatChecker
 
 _ROOT = Path(__file__).resolve().parents[2]
 _TOOL = _ROOT / "tools" / "build_release_evidence.py"
+_RUNTIME_IMAGE_PINS = _ROOT / "tools" / "check_runtime_image_pins.py"
 _SCHEMA = _ROOT / "contracts" / "schemas" / "release-evidence.v1.json"
 _STAGE = _ROOT / "deploy" / "bin" / "external-runtime-stage.sh"
 _REFERENCE = "ksi-core:2026.08.30.1@sha256:" + "a" * 64
@@ -54,6 +55,23 @@ def _json(path: Path, value: object) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
+
+
+def _candidate_compose_external_references() -> list[str]:
+    result = subprocess.run(
+        [sys.executable, str(_RUNTIME_IMAGE_PINS), "--root", str(_ROOT), "--references-json"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    return sorted(
+        {
+            entry["reference"]
+            for entry in json.loads(result.stdout)
+            if entry["path"] == "deploy/compose.external-reconstruction.yaml"
+        }
+    )
 
 
 def _inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -230,15 +248,17 @@ def test_stage_consumes_the_canonical_generator_output_without_legacy_manifest_f
         name_and_tag, digest = reference.rsplit("@", maxsplit=1)
         return name_and_tag.rsplit(":", maxsplit=1)[0] + "@" + digest
 
+    candidate_external_references = _candidate_compose_external_references()
+    assert len(candidate_external_references) == 3
+    assert set(candidate_external_references).issubset(manifest["externalRuntimeImages"])
     external_bindings = [
         {
             "releaseReference": reference,
             "dockerImageId": "sha256:" + f"{index + 1:x}" * 64,
             "repoDigests": [canonical_repo_digest(reference)],
         }
-        for index, reference in enumerate(manifest["externalRuntimeImages"])
+        for index, reference in enumerate(candidate_external_references)
     ]
-    assert len(external_bindings) >= 2
     binding = {
         "schemaVersion": "external-runtime-host-binding.v1",
         "releaseEvidence": {"sha256": "sha256:" + evidence.manifest_sha256},
@@ -530,7 +550,7 @@ def test_input_path_swap_to_symlink_is_refused_on_the_final_descriptor_open(
             swapped = True
             sbom.unlink()
             sbom.symlink_to(replacement)
-        return original_open(path, flags, *args, **kwargs)
+        return cast(int, original_open(path, flags, *args, **kwargs))
 
     monkeypatch.setattr(tool.os, "open", swap_then_open)
     with pytest.raises(tool.ReleaseEvidenceError, match="symlink"):

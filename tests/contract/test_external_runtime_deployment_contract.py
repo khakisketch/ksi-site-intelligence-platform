@@ -12,12 +12,17 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import socket
 import subprocess
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from jsonschema import Draft202012Validator
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -26,6 +31,10 @@ _RUNTIME = _DEPLOY / "external-runtime"
 _BIN = _DEPLOY / "bin"
 _BOOTSTRAP = _BIN / "external-runtime-host-bootstrap.sh"
 _STAGE = _BIN / "external-runtime-stage.sh"
+_RUNTIME_IMAGE_PINS = _ROOT / "tools" / "check_runtime_image_pins.py"
+_RUNTIME_UID = 10001
+_RUNTIME_GID = 10001
+_FIXTURE_TOOL_TIMEOUT_SECONDS = 15
 
 _REQUIRED_ASSETS = (
     _DEPLOY / "compose.external-reconstruction.yaml",
@@ -52,6 +61,224 @@ _REQUIRED_ASSETS = (
 
 def _text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _runtime_image_reference_sets() -> tuple[list[str], list[str]]:
+    result = subprocess.run(
+        [sys.executable, str(_RUNTIME_IMAGE_PINS), "--root", str(_ROOT), "--references-json"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    entries = json.loads(result.stdout)
+    canonical = sorted({entry["reference"] for entry in entries})
+    candidate = sorted(
+        {
+            entry["reference"]
+            for entry in entries
+            if entry["path"] == "deploy/compose.external-reconstruction.yaml"
+        }
+    )
+    assert len(candidate) == 3
+    assert set(candidate).issubset(canonical)
+    return canonical, candidate
+
+
+def _candidate_credential_validation_service() -> dict[str, Any]:
+    compose = yaml.safe_load(_text(_DEPLOY / "compose.external-reconstruction.yaml"))
+    service = compose["services"]["candidate-credential-validation"]
+    assert isinstance(service, dict)
+    return service
+
+
+def _required_fixture_tool(name: str) -> str:
+    path = shutil.which(name)
+    if path is None:
+        pytest.skip(f"NOT_VERIFIED: required isolated-fixture tool is unavailable: {name}")
+    return path
+
+
+def _run_fixture_tool(
+    command: list[str], *, description: str, timeout: int = _FIXTURE_TOOL_TIMEOUT_SECONDS
+) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+        )
+    except FileNotFoundError as exc:
+        pytest.skip(f"NOT_VERIFIED: required isolated-fixture tool is unavailable: {exc.filename}")
+    except subprocess.TimeoutExpired:
+        pytest.fail(f"NOT_VERIFIED: {description} exceeded {timeout} seconds")
+
+
+def _root_owned_snapshot(path: Path) -> dict[str, tuple[int, int, int, int, str]]:
+    """Capture only test-owned fixture metadata and content through sudo."""
+    snapshot = r'''
+import hashlib
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+observed = {}
+for item in sorted(root.rglob("*")):
+    node = item.stat()
+    key = str(item.relative_to(root))
+    digest = hashlib.sha256(item.read_bytes()).hexdigest() if stat.S_ISREG(node.st_mode) else ""
+    observed[key] = [node.st_uid, node.st_gid, stat.S_IMODE(node.st_mode), node.st_ino, digest]
+print(json.dumps(observed, sort_keys=True))
+'''
+    sudo = _required_fixture_tool("sudo")
+    result = _run_fixture_tool(
+        [sudo, "-n", sys.executable, "-c", snapshot, str(path)],
+        description="test-owned credential snapshot",
+    )
+    if result.returncode != 0:
+        pytest.skip(f"NOT_VERIFIED: cannot snapshot test-owned UID fixture: {result.stderr}")
+    return {
+        name: tuple(value)
+        for name, value in json.loads(result.stdout).items()
+    }
+
+
+def _run_validator_as_configured_user(
+    fixture: Path, service: dict[str, Any]
+) -> subprocess.CompletedProcess[str]:
+    """Run the real validator with the Compose identity in a no-network sandbox."""
+    user = service["user"]
+    assert isinstance(user, str) and user.count(":") == 1
+    uid, gid = user.split(":", maxsplit=1)
+    sudo = _required_fixture_tool("sudo")
+    bwrap = _required_fixture_tool("bwrap")
+    setpriv = _required_fixture_tool("setpriv")
+    shell = _required_fixture_tool("sh")
+    python = Path(sys.executable).resolve()
+    python_root = python.parent.parent
+    package_paths = ":".join(
+        f"/app/{path.relative_to(_ROOT)}" for path in sorted((_ROOT / "packages").glob("*/src"))
+    )
+    python_root_directories = [
+        argument
+        for parent in reversed(python_root.parents)
+        if str(parent) != "/"
+        for argument in ("--dir", str(parent))
+    ]
+    command = [
+        sudo,
+        "-n",
+        "env",
+        f"PYTHONPATH=/app/services/core/src:{package_paths}:/app/.venv/lib/python3.12/site-packages",
+        "PYTHONDONTWRITEBYTECODE=1",
+        bwrap,
+        "--tmpfs",
+        "/",
+        *python_root_directories,
+        "--ro-bind",
+        str(python_root),
+        str(python_root),
+        "--dir",
+        "/state",
+        "--ro-bind",
+        str(fixture),
+        "/state",
+        "--ro-bind",
+        str(_ROOT),
+        "/app",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--symlink",
+        "usr/lib",
+        "/lib",
+        "--symlink",
+        "usr/lib",
+        "/lib64",
+        "--ro-bind",
+        "/etc",
+        "/etc",
+        "--ro-bind",
+        "/dev",
+        "/dev",
+        "--proc",
+        "/proc",
+        "--unshare-net",
+        "--",
+        setpriv,
+        f"--reuid={uid}",
+        f"--regid={gid}",
+        "--clear-groups",
+        "--bounding-set=-all",
+        "--nnp",
+        shell,
+        "-c",
+        "id -u; id -g; awk '/^(CapBnd|NoNewPrivs):/ { print }' /proc/self/status; exec \"$@\"",
+        "sh",
+        str(python),
+        "/app/deploy/external-runtime/prepare_candidate_state.py",
+        "--validate-only",
+    ]
+    result = _run_fixture_tool(command, description="no-network credential validator")
+    if result.returncode != 0 and "a password is required" in result.stderr:
+        pytest.skip("NOT_VERIFIED: passwordless sudo is unavailable")
+    return result
+
+
+@contextmanager
+def _candidate_credential_fixture(tmp_path: Path, *, defect: str | None = None) -> Iterator[Path]:
+    from test_production_assembly import _write_signing_keys
+
+    fixture = tmp_path / "test-owned-credentials"
+    secrets = fixture / "secrets"
+    signing = fixture / "signing"
+    secrets.mkdir(parents=True)
+    (secrets / "dashboard-session.secret").write_text("s" * 64, encoding="utf-8")
+    if defect != "missing":
+        (secrets / "oidc-client.secret").write_text(
+            "short" if defect == "malformed" else "o" * 64,
+            encoding="utf-8",
+        )
+    _write_signing_keys(signing)
+    for item in (fixture, secrets, signing):
+        item.chmod(0o700)
+    for item in fixture.rglob("*"):
+        if item.is_file():
+            item.chmod(0o600)
+    sudo = _required_fixture_tool("sudo")
+    original_identity = f"{os.geteuid()}:{os.getegid()}"
+    sudo_ready = _run_fixture_tool(
+        [sudo, "-n", "true"], description="test-owned credential fixture sudo availability"
+    )
+    if sudo_ready.returncode != 0:
+        pytest.skip("NOT_VERIFIED: passwordless sudo is unavailable for test-owned fixture")
+    ownership_attempted = False
+    try:
+        ownership_attempted = True
+        ownership = _run_fixture_tool(
+            [sudo, "-n", "chown", "-R", f"{_RUNTIME_UID}:{_RUNTIME_GID}", str(fixture)],
+            description="test-owned credential fixture ownership setup",
+        )
+        if ownership.returncode != 0:
+            pytest.skip(
+                "NOT_VERIFIED: cannot provision test-owned UID fixture: " f"{ownership.stderr}"
+            )
+        yield fixture
+    finally:
+        if ownership_attempted:
+            restoration = _run_fixture_tool(
+                [sudo, "-n", "chown", "-R", original_identity, str(fixture)],
+                description="test-owned credential fixture ownership restoration",
+            )
+            assert restoration.returncode == 0, (
+                "NOT_VERIFIED: cannot restore test-owned fixture ownership: "
+                f"{restoration.stderr}"
+            )
 
 
 def test_external_runtime_candidate_assets_are_versioned_and_complete() -> None:
@@ -81,16 +308,634 @@ def test_candidate_never_uses_ambient_docker_or_phase2_project_identity() -> Non
     assert "KSI_EXTERNAL_RC_HOST_BINDING" in stage
     assert "validate_canonical_release_evidence" in stage
     assert "validate_host_binding" in stage
+    assert "KSI_EXTERNAL_RC_OPERATOR_DIR" in stage
+    assert "--untrusted-user nobody" in stage
+    assert "OBSERVED_SERVER_PEER_CREDENTIAL" in stage
+    assert "--profile candidate-preflight run --rm --no-deps --no-build --pull never" in stage
+    assert "KSI_EXTERNAL_RC_CORE_IMAGE_ID" in stage
+    assert "verify_started_compose_images" in stage
+    assert "docker container inspect" in stage
+    assert "compose up -d --no-build --pull never --wait" in stage
+    assert "/ready/external-authority" in stage
+    assert "PROVIDER_CONFIGURED" in stage
 
     assert "network_mode: host" not in compose
-    assert "image: ksi-external-rc-core:local" in compose
-    assert "image: ksi-external-rc-dashboard:local" in compose
+    assert "image: ${KSI_EXTERNAL_RC_CORE_IMAGE_ID:?verified Core image ID is required}" in compose
+    assert (
+        "image: ${KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID:?verified Dashboard image ID is required}"
+        in compose
+    )
+    assert "image: ksi-external-rc-core:local" not in compose
+    assert "image: ksi-external-rc-dashboard:local" not in compose
+    assert "KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG: /run/ksi-operator/workflow.json" in compose
+    assert "KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG: /run/ksi-operator/provider.json" in compose
+    assert "${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/secrets" in compose
+    assert "${KSI_EXTERNAL_RC_OPERATOR_DIR:?set KSI_EXTERNAL_RC_OPERATOR_DIR}/signing" in compose
+    assert "external-rc-secrets:" not in compose
+    assert "external-rc-signing:" not in compose
+    assert compose.count('user: "10001:10001"') >= 2
     assert "verify_product_image_binding" in stage
+    assert "candidate-credential-validation:" in compose
+    assert "candidate-authority-preflight:" in compose
+    assert "profiles: [candidate-preflight]" in compose
+    assert "network_mode: none" in compose
+    assert "read_only: true" in compose
+    assert "cap_drop: [ALL]" in compose
+    assert "no-new-privileges:true" in compose
+    assert "user: root" in compose
+    assert 'user: "10001:10001"' in compose
+    assert "prepare_candidate_state.py" in compose
+    assert '"--validate-only"]' in compose
+    assert "/state/secrets:ro" in compose
+    assert "/state/signing:ro" in compose
+    assert (
+        "/var/lib/ksi/data:rw,noexec,nosuid,nodev,size=67108864,uid=10001,"
+        "gid=10001,mode=0700"
+    ) in compose
+    assert "KSI_EXTERNAL_RC_MINIO_IMAGE_ID" not in compose
+    assert "KSI_EXTERNAL_RC_MC_IMAGE_ID" not in compose
+    assert "KSI_EXTERNAL_RC_CADDY_IMAGE_ID" not in compose
+    for image_variable in (
+        "KSI_EXTERNAL_RC_MINIO_IMAGE_ID",
+        "KSI_EXTERNAL_RC_MC_IMAGE_ID",
+        "KSI_EXTERNAL_RC_CADDY_IMAGE_ID",
+    ):
+        assert image_variable in stage
     identity_port = (
         '"127.0.0.1:'
         '${KSI_EXTERNAL_RC_IDENTITY_PORT:?set KSI_EXTERNAL_RC_IDENTITY_PORT}:8080"'
     )
     assert identity_port in compose
+
+
+def test_candidate_credential_validation_executes_as_hardened_runtime_user_without_mutation(
+    tmp_path: Path,
+) -> None:
+    """Changing the preflight user back to root must fail this real validator probe."""
+    service = _candidate_credential_validation_service()
+    with _candidate_credential_fixture(tmp_path) as fixture:
+        before = _root_owned_snapshot(fixture)
+
+        result = _run_validator_as_configured_user(fixture, service)
+
+        assert _root_owned_snapshot(fixture) == before
+        assert service["read_only"] is True
+        assert service["network_mode"] == "none"
+        assert service["cap_drop"] == ["ALL"]
+        assert service["security_opt"] == ["no-new-privileges:true"]
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.splitlines() == [
+            str(_RUNTIME_UID),
+            str(_RUNTIME_GID),
+            "CapBnd:\t0000000000000000",
+            "NoNewPrivs:\t1",
+            "external reconstruction candidate supplied credentials verified (read-only)",
+        ]
+    assert fixture.stat().st_uid == os.geteuid()
+    assert fixture.stat().st_gid == os.getegid()
+
+
+@pytest.mark.parametrize("defect", ["missing", "malformed"])
+def test_candidate_credential_validation_rejects_bad_input_without_mutation(
+    tmp_path: Path, defect: str
+) -> None:
+    """Missing or malformed test-owned credentials fail without privilege or file repair."""
+    service = _candidate_credential_validation_service()
+    with _candidate_credential_fixture(tmp_path, defect=defect) as fixture:
+        before = _root_owned_snapshot(fixture)
+
+        result = _run_validator_as_configured_user(fixture, service)
+
+        assert _root_owned_snapshot(fixture) == before
+        assert result.stdout.splitlines() == [
+            str(_RUNTIME_UID),
+            str(_RUNTIME_GID),
+            "CapBnd:\t0000000000000000",
+            "NoNewPrivs:\t1",
+        ]
+        assert result.returncode != 0
+        assert "credential" in result.stderr
+    assert fixture.stat().st_uid == os.geteuid()
+    assert fixture.stat().st_gid == os.getegid()
+
+
+def test_start_with_missing_operator_input_never_reaches_compose(tmp_path: Path) -> None:
+    """An incomplete candidate file must stop before it can start a service."""
+    env_file = tmp_path / "candidate.env"
+    env_file.write_text(
+        "\n".join(
+            (
+                "KSI_EXTERNAL_RC_PROJECT_NAME=ksi-external-rc",
+                "KSI_EXTERNAL_RC_STATE_DIR=/var/lib/ksi-external-runtime/candidate",
+                "KSI_EXTERNAL_RC_RELEASE_EVIDENCE=/etc/ksi-external-runtime/release.json",
+                "KSI_EXTERNAL_RC_HOST_BINDING=/etc/ksi-external-runtime/host.json",
+                "KSI_EXTERNAL_RC_HOST=candidate.ts.net",
+                "KSI_EXTERNAL_RC_APP_PORT=10100",
+                "KSI_EXTERNAL_RC_IDENTITY_PORT=10101",
+                "KSI_EXTERNAL_RC_API_PORT=10102",
+                "KSI_EXTERNAL_RC_OBJECTS_PORT=10103",
+                "KSI_EXTERNAL_RC_MINIO_CONSOLE_PORT=10104",
+                "KSI_EXTERNAL_RC_MINIO_ROOT_USER=operator",
+                "KSI_EXTERNAL_RC_MINIO_ROOT_PASSWORD=not-a-secret-fixture",
+                "KSI_EXTERNAL_RC_PRINCIPAL_TOKENS_JSON=[]",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+    docker_log = tmp_path / "docker-called"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(f"#!/bin/sh\nprintf called > {docker_log}\n", encoding="utf-8")
+    fake_docker.chmod(0o700)
+
+    result = subprocess.run(
+        [str(_STAGE), "start", "--env-file", str(env_file)],
+        env={**os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}"},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "candidate env omits KSI_EXTERNAL_RC_OPERATOR_DIR" in result.stderr
+    assert not docker_log.exists()
+
+
+def test_start_orders_real_guards_before_its_single_compose_up(tmp_path: Path) -> None:
+    """A candidate start validates its real inputs before the only ordinary start."""
+    calls = tmp_path / "compose-calls"
+    shell = r'''source "$1"
+calls_path="$2"
+record() { printf '%s\n' "$1" >> "$calls_path"; }
+require_release_evidence() { record release-evidence; }
+validate_operator_directory() { record operator-directory; }
+verify_socket_acl_proof() { record socket-acl; }
+preflight_authority_in_exact_core_image() { record authority-preflight; }
+verify_started_compose_images() { record started-images; }
+verify_live_provider() { record live-provider; }
+compose() {
+  case "$*" in
+    *candidate-credential-validation) record credential-validate-only ;;
+    config) record compose-config ;;
+    'up -d --no-build --pull never --wait') record compose-up ;;
+    *) exit 97 ;;
+  esac
+}
+start
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(calls)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "release-evidence",
+        "operator-directory",
+        "credential-validate-only",
+        "socket-acl",
+        "authority-preflight",
+        "compose-config",
+        "compose-up",
+        "started-images",
+        "live-provider",
+    ]
+
+
+def test_credential_failure_prevents_all_ordinary_service_starts(tmp_path: Path) -> None:
+    """A failed exact-image credential check reaches no Compose config or service start."""
+    calls = tmp_path / "compose-calls"
+    shell = r'''source "$1"
+calls_path="$2"
+record() { printf '%s\n' "$1" >> "$calls_path"; }
+require_release_evidence() { record release-evidence; }
+validate_operator_directory() { record operator-directory; }
+verify_socket_acl_proof() { record socket-acl; }
+preflight_authority_in_exact_core_image() { record authority-preflight; }
+compose() {
+  case "$*" in
+    *candidate-credential-validation) record credential-validate-only; return 1 ;;
+    *) record "unexpected:$*"; return 97 ;;
+  esac
+}
+if start; then exit 96; fi
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(calls)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == [
+        "release-evidence",
+        "operator-directory",
+        "credential-validate-only",
+    ]
+    assert "BLOCKED_EXTERNAL_CREDENTIALS" in result.stderr
+
+
+def test_status_and_stop_bypass_release_evidence_but_target_only_candidate_label(
+    tmp_path: Path,
+) -> None:
+    """A broken proof cannot block a label-scoped emergency candidate stop."""
+    calls = tmp_path / "docker-calls"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_docker = fake_bin / "docker"
+    fake_docker.write_text(
+        """#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$DOCKER_CALLS"
+case "$*" in
+  *'container ls -a'*'--format {{.ID}}') printf '%s\\n' 0123456789ab ;;
+  *'container inspect --format {{index .Config.Labels "com.docker.compose.project"}} 0123456789ab')
+    printf '%s\\n' ksi-external-rc ;;
+esac
+""",
+        encoding="utf-8",
+    )
+    fake_docker.chmod(0o700)
+    environment = {
+        **os.environ,
+        "DOCKER_CALLS": str(calls),
+        "PATH": f"{fake_bin}:{os.environ['PATH']}",
+    }
+
+    status = subprocess.run(
+        [str(_STAGE), "status"],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    stop = subprocess.run(
+        [str(_STAGE), "stop"],
+        env=environment,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert status.returncode == 0, status.stderr
+    assert stop.returncode == 0, stop.stderr
+    observed = calls.read_text(encoding="utf-8").splitlines()
+    candidate_lists = [call for call in observed if call.startswith("container ls -a")]
+    assert len(candidate_lists) == 2
+    expected_label = "label=com.docker.compose.project=ksi-external-rc"
+    assert all(expected_label in call for call in candidate_lists)
+    expected_inspection = (
+        'container inspect --format {{index .Config.Labels "com.docker.compose.project"}} '
+        "0123456789ab"
+    )
+    assert observed.count(
+        expected_inspection
+    ) == 1
+    assert observed.count("container stop -- 0123456789ab") == 1
+    assert not any("ksi-phase2-staging" in call for call in observed)
+
+
+def test_verify_reports_not_attached_only_before_live_provider_attachment(tmp_path: Path) -> None:
+    """A live provider status is not reported as the detached preflight state."""
+    shell = r'''source "$1"
+live="$2"
+activation_preflight() { :; }
+compose() {
+  case "$1" in
+    config) return 0 ;;
+    ps) [[ "$live" == true ]] && printf '%s\n' core ;;
+    exec) printf '%s\n' '{"status":"PROVIDER_CONFIGURED"}' ;;
+    *) return 97 ;;
+  esac
+}
+verify_started_compose_images() { :; }
+verify
+'''
+
+    detached = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), "false"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    live = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), "true"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert detached.returncode == 0, detached.stderr
+    assert "not attached" in detached.stdout
+    assert live.returncode == 0, live.stderr
+    assert "PROVIDER_CONFIGURED" in live.stdout
+    assert "not attached" not in live.stdout
+    assert "quantitativeEligible" not in live.stdout
+
+
+@pytest.mark.parametrize("failure", ["images", "provider"])
+def test_verify_live_failures_remain_fail_closed_when_called_conditionally(
+    failure: str,
+) -> None:
+    """A live-image or provider failure cannot print readiness through disabled errexit."""
+    shell = r'''source "$1"
+failure="$2"
+activation_preflight() { :; }
+compose() {
+  case "$1" in
+    config) return 0 ;;
+    ps) printf '%s\n' core ;;
+    *) return 97 ;;
+  esac
+}
+verify_started_compose_images() {
+  printf 'IMAGE_CHECK_REACHED\n'
+  [[ "$failure" == images ]] && return 41
+  return 0
+}
+verify_live_provider() {
+  printf 'PROVIDER_CHECK_REACHED\n'
+  [[ "$failure" == provider ]] && return 42
+  return 0
+}
+if verify; then
+  printf 'FALSE_SUCCESS\n'
+  exit 96
+else
+  printf 'FAILED:%s\n' "$?"
+fi
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), failure],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "FALSE_SUCCESS" not in result.stdout
+    assert "PROVIDER_CONFIGURED" not in result.stdout
+    assert "FAILED:1" in result.stdout
+    expected = ["IMAGE_CHECK_REACHED"]
+    if failure == "provider":
+        expected.append("PROVIDER_CHECK_REACHED")
+    assert result.stdout.splitlines() == [*expected, "FAILED:1"]
+
+
+def test_stop_returns_failure_without_stopping_a_second_candidate_container(tmp_path: Path) -> None:
+    """A failed first candidate stop cannot continue and turn into a false success."""
+    calls = tmp_path / "docker-calls"
+    shell = r'''source "$1"
+calls_path="$2"
+docker() {
+  case "$1 $2" in
+    'container ls') printf '%s\n%s\n' aaaaaaaaaaaa bbbbbbbbbbbb ;;
+    'container inspect') printf '%s\n' ksi-external-rc ;;
+    'container stop')
+      printf 'stop:%s\n' "$4" >> "$calls_path"
+      [[ "$4" == aaaaaaaaaaaa ]] && return 43
+      return 0
+      ;;
+    *) return 97 ;;
+  esac
+}
+if stop; then
+  printf 'FALSE_SUCCESS\n'
+  exit 96
+else
+  printf 'FAILED:%s\n' "$?"
+fi
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(calls)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "FALSE_SUCCESS" not in result.stdout
+    assert "FAILED:43" in result.stdout
+    assert calls.read_text(encoding="utf-8").splitlines() == ["stop:aaaaaaaaaaaa"]
+
+
+@pytest.mark.parametrize("mode", ["malformed", "stale", "wrong-label"])
+def test_stop_refuses_unverified_candidate_ids_without_any_stop(
+    tmp_path: Path, mode: str
+) -> None:
+    """Malformed, stale, or differently labeled Docker observations never stop a container."""
+    calls = tmp_path / "docker-calls"
+    shell = r'''source "$1"
+mode="$2"
+calls_path="$3"
+docker() {
+  case "$1 $2" in
+    'container ls')
+      if [[ "$mode" == malformed ]]; then
+        printf '%s\n' not-a-container-id
+      else
+        printf '%s\n' aaaaaaaaaaaa
+      fi
+      ;;
+    'container inspect')
+      [[ "$mode" == stale ]] && return 44
+      if [[ "$mode" == wrong-label ]]; then
+        printf '%s\n' ksi-phase2-staging
+      else
+        printf '%s\n' ksi-external-rc
+      fi
+      ;;
+    'container stop') printf 'stop:%s\n' "$4" >> "$calls_path" ;;
+    *) return 97 ;;
+  esac
+}
+if stop; then
+  printf 'FALSE_SUCCESS\n'
+  exit 96
+fi
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), mode, str(calls)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "FALSE_SUCCESS" not in result.stdout
+    assert not calls.exists()
+
+
+@pytest.mark.parametrize(
+    ("metadata", "accepted"),
+    [
+        ("0:0:711:directory", True),
+        ("0:0:755:directory", True),
+        ("0:0:750:directory", True),
+        ("0:0:777:directory", False),
+        ("0:0:770:directory", False),
+        ("10001:10001:700:directory", False),
+    ],
+)
+def test_operator_shared_parent_is_protected_without_changing_account_traversal(
+    tmp_path: Path, metadata: str, accepted: bool
+) -> None:
+    parent = tmp_path / "runtime-root"
+    parent.mkdir()
+    shell = r'''source "$1"
+fixture_metadata="$3"
+stat() { printf '%s\n' "$fixture_metadata"; }
+protected_operator_parent "$2"
+'''
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(parent), metadata],
+        text=True, capture_output=True, check=False,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("metadata", "reaches_probe"),
+    [
+        ("0:0:755:regular file", True),
+        ("0:0:750:regular file", True),
+        ("0:0:775:regular file", False),
+        ("0:0:777:regular file", False),
+        ("0:0:644:regular file", False),
+        ("10001:10001:755:regular file", False),
+    ],
+)
+def test_public_root_helper_permissions_reach_only_the_real_peer_proof_gate(
+    tmp_path: Path, metadata: str, reaches_probe: bool
+) -> None:
+    helper = tmp_path / "helper"
+    helper.write_text("unused test fixture", encoding="utf-8")
+    fixture_stage = tmp_path / "stage.sh"
+    source = _text(_STAGE)
+    original = (
+        'readonly socket_acl_helper="/usr/local/lib/ksi-external-runtime/bin/'
+        'ksi-external-runtime-socket-acl"'
+    )
+    assert source.count(original) == 1
+    fixture_stage.write_text(
+        source.replace(original, f'readonly socket_acl_helper="{helper}"'), encoding="utf-8"
+    )
+    calls = tmp_path / "probe-called"
+    shell = r'''source "$1"
+fixture_metadata="$2"
+calls="$3"
+stat() { printf '%s\n' "$fixture_metadata"; }
+# No forged successful ACL receipt: reaching the probe still fails closed here.
+sudo() { printf 'PROBE_CALLED\n' > "$calls"; return 42; }
+verify_socket_acl_proof
+'''
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(fixture_stage), metadata, str(calls)],
+        text=True, capture_output=True, check=False,
+    )
+    assert result.returncode != 0
+    assert calls.exists() is reaches_probe, result.stderr
+
+
+@pytest.mark.parametrize(("mode", "accepted"), [("700", True), ("755", False), ("711", False)])
+def test_shared_parent_traversal_does_not_relax_private_operator_child(
+    tmp_path: Path, mode: str, accepted: bool
+) -> None:
+    child = tmp_path / "operator"
+    child.mkdir()
+    shell = r'''source "$1"
+fixture_mode="$3"
+stat() { printf '10001:10001:%s:directory\n' "$fixture_mode"; }
+private_owner_mode "$2" directory
+'''
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(child), mode],
+        text=True, capture_output=True, check=False,
+    )
+    assert (result.returncode == 0) is accepted, result.stderr
+
+
+def test_live_provider_check_requires_the_running_core_status_only(tmp_path: Path) -> None:
+    """A healthy process alone cannot replace the provider-readiness response."""
+    calls = tmp_path / "compose-calls"
+    shell = r'''source "$1"
+calls_path="$2"
+compose() {
+  printf '%s\n' "$1" >> "$calls_path"
+  [[ "$1" == exec ]] && printf '%s\n' '{"status":"PROVIDER_CONFIGURED"}'
+}
+verify_live_provider
+'''
+
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), str(calls)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text(encoding="utf-8").splitlines() == ["exec"]
+
+
+def test_started_compose_containers_must_keep_the_verified_image_ids() -> None:
+    """A post-evidence retag cannot become readiness success through Compose."""
+    shell = r'''source "$1"
+KSI_EXTERNAL_RC_CORE_IMAGE_ID="sha256:$(printf '1%.0s' {1..64})"
+KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID="sha256:$(printf '2%.0s' {1..64})"
+KSI_EXTERNAL_RC_MINIO_IMAGE_ID="sha256:$(printf '3%.0s' {1..64})"
+KSI_EXTERNAL_RC_MC_IMAGE_ID="sha256:$(printf '4%.0s' {1..64})"
+KSI_EXTERNAL_RC_CADDY_IMAGE_ID="sha256:$(printf '5%.0s' {1..64})"
+swapped_service="${2:-}"
+compose() {
+  [[ "$1" == ps ]] || return 97
+  service="${@: -1}"
+  printf '%s-container\n' "$service"
+}
+docker() {
+  [[ "$1" == container && "$2" == inspect && "$3" == --format \
+    && "$4" == '{{.Image}}' ]] || return 98
+  service="${5%-container}"
+  case "$service" in
+    init-state|identity|core) image="$KSI_EXTERNAL_RC_CORE_IMAGE_ID" ;;
+    dashboard) image="$KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID" ;;
+    minio) image="$KSI_EXTERNAL_RC_MINIO_IMAGE_ID" ;;
+    bucket-init) image="$KSI_EXTERNAL_RC_MC_IMAGE_ID" ;;
+    caddy) image="$KSI_EXTERNAL_RC_CADDY_IMAGE_ID" ;;
+    *) return 99 ;;
+  esac
+  if [[ "$service" == "$swapped_service" ]]; then image="sha256:$(printf 'f%.0s' {1..64})"; fi
+  printf '%s\n' "$image"
+}
+verify_started_compose_images
+'''
+
+    valid = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE)],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert valid.returncode == 0, valid.stderr
+
+    swapped = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), "dashboard"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert swapped.returncode != 0
+    assert "dashboard container image differs from the verified image ID" in swapped.stderr
 
 
 def test_host_assets_keep_validator_and_launcher_privileges_separate() -> None:
@@ -335,6 +1180,76 @@ verify_product_image_binding core "$2" "$3" "$4"
     assert substituted_local.returncode != 0
 
 
+def test_canonical_inventory_and_candidate_host_binding_use_distinct_exact_source_sets(
+    tmp_path: Path,
+) -> None:
+    """The full supply-chain inventory is distinct from the three Compose dependencies."""
+    source_commit = "a" * 40
+    canonical_images, candidate_images = _runtime_image_reference_sets()
+    assert len(canonical_images) > len(candidate_images) == 3
+    artifact = {
+        "name": "proof.json",
+        "type": "cyclonedx-json",
+        "bytes": 1,
+        "sha256": "sha256:" + "b" * 64,
+    }
+    scanner = {**artifact, "name": "scanner.json", "type": "scanner-json"}
+
+    def validate(images: list[str]) -> subprocess.CompletedProcess[str]:
+        evidence = {
+            "schemaVersion": "1.0",
+            "generatedAtUtc": "2026-09-11T12:34:56Z",
+            "source": {"gitCommitSha": source_commit},
+            "productImages": [
+                {
+                    "reference": "registry.example/ksi-core:2026.09.11@sha256:" + "c" * 64,
+                    "sbom": artifact,
+                    "scanner": scanner,
+                },
+                {
+                    "reference": "registry.example/ksi-dashboard:2026.09.11@sha256:"
+                    + "d" * 64,
+                    "sbom": artifact,
+                    "scanner": scanner,
+                },
+            ],
+            "externalRuntimeImages": images,
+        }
+        path = tmp_path / "release-evidence.json"
+        path.write_text(json.dumps(evidence), encoding="utf-8")
+        return subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; validate_canonical_release_evidence "$2" "$3" "$4"',
+                "bash",
+                str(_STAGE),
+                str(path),
+                source_commit,
+                json.dumps(canonical_images),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+    assert validate(canonical_images).returncode == 0
+    assert validate(canonical_images[:-1]).returncode != 0
+    assert validate(
+        [*canonical_images, "registry.example/extra:1.0@sha256:" + "e" * 64]
+    ).returncode != 0
+    substituted = [
+        "caddy:2.10.1-alpine@sha256:"
+        "4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+        if image == candidate_images[0]
+        else image
+        for image in canonical_images
+    ]
+    assert validate(
+        substituted
+    ).returncode != 0
+
+
 def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact_host_binding(
     tmp_path: Path,
 ) -> None:
@@ -354,6 +1269,7 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
     dashboard_image_id = "sha256:" + "2" * 64
     inspector_image_id = "sha256:" + "3" * 64
     measurement_image_id = "sha256:" + "4" * 64
+    canonical_images, candidate_images = _runtime_image_reference_sets()
 
     artifacts: dict[str, dict[str, object]] = {}
     for name, contents in {
@@ -399,11 +1315,7 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
                 "scanner": release_artifact("dashboard.scanner", "scanner-json"),
             },
         ],
-        # These are third-party runtime dependencies, not KSI runtime roles.
-        "externalRuntimeImages": [
-            "registry.example/caddy:2.8.4@sha256:" + "f" * 64,
-            "registry.example/minio:RELEASE.2026@sha256:" + "9" * 64,
-        ],
+        "externalRuntimeImages": canonical_images,
     }
     evidence_path = tmp_path / "release-evidence.json"
     evidence_bytes = json.dumps(release_evidence, separators=(",", ":")).encode("utf-8")
@@ -462,20 +1374,41 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
         ],
         "externalRuntimeImages": [
             {
-                "releaseReference": "registry.example/caddy:2.8.4@sha256:" + "f" * 64,
+                "releaseReference": "caddy:2.10.2-alpine@sha256:"
+                "4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d",
                 "dockerImageId": "sha256:" + "5" * 64,
-                "repoDigests": ["registry.example/caddy@sha256:" + "f" * 64],
+                "repoDigests": [
+                    "caddy@sha256:"
+                    "4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+                ],
             },
             {
-                "releaseReference": "registry.example/minio:RELEASE.2026@sha256:" + "9" * 64,
+                "releaseReference": "minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:"
+                "a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
                 "dockerImageId": "sha256:" + "6" * 64,
-                "repoDigests": ["registry.example/minio@sha256:" + "9" * 64],
+                "repoDigests": [
+                    "minio/mc@sha256:"
+                    "a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+                ],
+            },
+            {
+                "releaseReference": "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:"
+                "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+                "dockerImageId": "sha256:" + "7" * 64,
+                "repoDigests": [
+                    "minio/minio@sha256:"
+                    "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+                ],
             },
         ],
     }
     binding_path = tmp_path / "host-binding.json"
     binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
     binding_path.chmod(0o600)
+    expected_external_bindings = list(host_binding["externalRuntimeImages"])
+    assert sorted(
+        binding["releaseReference"] for binding in expected_external_bindings
+    ) == candidate_images
 
     shell = r'''source "$1"
 repo_dir="$2"
@@ -514,13 +1447,17 @@ docker() {
       image_id="$measurement_id"
       repo_digest="registry.example/ksi-measurement@sha256:"$(printf 'e%.0s' {1..64})
       ;;
-    registry.example/caddy:2.8.4@sha256:*)
+    caddy:2.10.2-alpine@sha256:*)
       image_id="sha256:"$(printf '5%.0s' {1..64})
-      repo_digest="registry.example/caddy@sha256:"$(printf 'f%.0s' {1..64})
+      repo_digest="caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
       ;;
-    registry.example/minio:RELEASE.2026@sha256:*)
+    minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:*)
       image_id="sha256:"$(printf '6%.0s' {1..64})
-      repo_digest="registry.example/minio@sha256:"$(printf '9%.0s' {1..64})
+      repo_digest="minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+      ;;
+    minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:*)
+      image_id="sha256:"$(printf '7%.0s' {1..64})
+      repo_digest="minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
       ;;
     *) return 98 ;;
   esac
@@ -530,7 +1467,17 @@ docker() {
     printf '%s\n' "$repo_digest"
   fi
 }
+KSI_EXTERNAL_RC_CORE_IMAGE_ID="sha256:$(printf 'f%.0s' {1..64})"
+KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID="sha256:$(printf 'f%.0s' {1..64})"
+KSI_EXTERNAL_RC_MINIO_IMAGE_ID="sha256:$(printf 'f%.0s' {1..64})"
+KSI_EXTERNAL_RC_MC_IMAGE_ID="sha256:$(printf 'f%.0s' {1..64})"
+KSI_EXTERNAL_RC_CADDY_IMAGE_ID="sha256:$(printf 'f%.0s' {1..64})"
 require_release_evidence
+[[ "$KSI_EXTERNAL_RC_CORE_IMAGE_ID" == "$core_id" ]]
+[[ "$KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID" == "$dashboard_id" ]]
+[[ "$KSI_EXTERNAL_RC_CADDY_IMAGE_ID" == "sha256:$(printf '5%.0s' {1..64})" ]]
+[[ "$KSI_EXTERNAL_RC_MC_IMAGE_ID" == "sha256:$(printf '6%.0s' {1..64})" ]]
+[[ "$KSI_EXTERNAL_RC_MINIO_IMAGE_ID" == "sha256:$(printf '7%.0s' {1..64})" ]]
 '''
     result = subprocess.run(
         [
@@ -554,6 +1501,48 @@ require_release_evidence
     )
 
     assert result.returncode == 0, result.stderr
+
+    host_binding["externalRuntimeImages"] = expected_external_bindings[:-1]
+    binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
+    missing_candidate_binding = subprocess.run(
+        result.args, text=True, capture_output=True, check=False
+    )
+    assert missing_candidate_binding.returncode != 0
+    assert "host image binding is incomplete" in missing_candidate_binding.stderr
+
+    extra_reference = next(
+        reference for reference in canonical_images if reference not in candidate_images
+    )
+    extra_name_and_tag, extra_digest = extra_reference.rsplit("@", maxsplit=1)
+    host_binding["externalRuntimeImages"] = [
+        *expected_external_bindings,
+        {
+            "releaseReference": extra_reference,
+            "dockerImageId": "sha256:" + "8" * 64,
+            "repoDigests": [extra_name_and_tag.rsplit(":", maxsplit=1)[0] + "@" + extra_digest],
+        },
+    ]
+    binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
+    extra_candidate_binding = subprocess.run(
+        result.args, text=True, capture_output=True, check=False
+    )
+    assert extra_candidate_binding.returncode != 0
+    assert "host image binding is incomplete" in extra_candidate_binding.stderr
+
+    substituted_binding = [dict(binding) for binding in expected_external_bindings]
+    substituted_binding[0]["releaseReference"] = (
+        "caddy:2.10.1-alpine@sha256:"
+        "4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
+    )
+    host_binding["externalRuntimeImages"] = substituted_binding
+    binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
+    substituted_candidate_binding = subprocess.run(
+        result.args, text=True, capture_output=True, check=False
+    )
+    assert substituted_candidate_binding.returncode != 0
+    assert "host image binding is incomplete" in substituted_candidate_binding.stderr
+
+    host_binding["externalRuntimeImages"] = expected_external_bindings
 
     host_binding["releaseEvidence"] = {"sha256": "sha256:" + "f" * 64}
     binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
@@ -933,13 +1922,7 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
 def test_production_config_mount_cannot_create_quantitative_authority(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A path alone must not activate the external quantitative workflow.
-
-    Production receives no retained catalog, policy, evidence-currentness, or
-    input-capability participant from this candidate.  Keeping its assembly
-    absent is the safe state until those independently owned authorities have
-    an approved production source.
-    """
+    """Partial authority configuration rejects startup before opening journals."""
     from ksi_core.production import build_production_app
     from test_production_assembly import _apply_env, _valid_env
 
@@ -949,8 +1932,8 @@ def test_production_config_mount_cannot_create_quantitative_authority(
         str(tmp_path / "mounted-but-untrusted-workflow.json"),
     )
 
-    app = build_production_app()
-
-    assert app.state.external_relative_volume_mapping_authority is None
-    assert "external_relative_volume_store" not in vars(app.state)
-    assert "external_result_workflow_service" not in vars(app.state)
+    monkeypatch.delenv("KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG", raising=False)
+    assert not list(tmp_path.rglob("*.jsonl"))
+    with pytest.raises(RuntimeError, match="must be configured together"):
+        build_production_app()
+    assert not list(tmp_path.rglob("*.jsonl"))

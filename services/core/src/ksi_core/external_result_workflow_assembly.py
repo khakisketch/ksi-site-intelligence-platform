@@ -31,6 +31,7 @@ from ksi_core.external_relative_volumes import (
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
+    PolicyAuthorityCurrentnessPort,
     PolicyAuthorityPort,
 )
 from ksi_core.work_areas import WorkAreaStore
@@ -93,6 +94,9 @@ class ExternalResultWorkflowAssemblyConfig:
     queue_policy: ExternalRelativeVolumeQueuePolicy
     input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None = None
     policy_authority_port: PolicyAuthorityPort | None = None
+    build_policy_authority_currentness: (
+        Callable[[ExternalAuthorityCurrentnessCoordinator], PolicyAuthorityCurrentnessPort] | None
+    ) = None
     build_evidence_context_authority: (
         Callable[[ExternalAuthorityCurrentnessCoordinator], EvidenceMeasurementContextAuthorityPort]
         | None
@@ -119,6 +123,22 @@ class ExternalResultWorkflowAssemblyConfig:
             getattr(self.policy_authority_port, "resolve", None)
         ):
             raise ValueError("external result workflow policy authority port is invalid")
+        if self.policy_authority_port is not None and not callable(
+            getattr(self.policy_authority_port, "resolve_historical", None)
+        ):
+            raise ValueError("external result workflow policy authority history is invalid")
+        if (
+            self.policy_authority_port is None
+            and self.build_policy_authority_currentness is not None
+        ):
+            raise ValueError(
+                "external result workflow policy currentness requires an authority port"
+            )
+        if self.policy_authority_port is not None and (
+            self.build_policy_authority_currentness is None
+            or not callable(self.build_policy_authority_currentness)
+        ):
+            raise ValueError("external result workflow requires policy currentness")
         if self.build_evidence_context_authority is not None and not callable(
             self.build_evidence_context_authority
         ):

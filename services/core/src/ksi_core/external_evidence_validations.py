@@ -1087,6 +1087,12 @@ class ExternalEvidenceValidationStore:
             if (
                 policy is None
                 or policy.policy_digest != policy_digest
+                or not self._policy_registry.locally_current_use_permitted(
+                    policy_digest,
+                    use="EVIDENCE",
+                    subjects=(subject,),
+                    at=now,
+                )
                 or not self._context_authority.is_current(matching.context)
                 or not self._context_binds(matching.context, matching.item, policy, now)
             ):
@@ -1215,9 +1221,17 @@ class ExternalEvidenceValidationStore:
     def _locally_current(self, record: _Record, now: datetime) -> bool:
         """Final no-I/O currentness check while the coordinator is held."""
         policy = self._policy_for(record)
+        manifest = record.item.manifest
         return bool(
-            policy is not None
+            manifest is not None
+            and policy is not None
             and policy.policy_digest == record.request.policy_digest
+            and self._policy_registry.locally_current_use_permitted(
+                record.request.policy_digest,
+                use="EVIDENCE",
+                subjects=(manifest.subject,),
+                at=now,
+            )
             and self._context_authority.is_current(record.context)
             and self._context_binds(record.context, record.item, policy, now)
         )

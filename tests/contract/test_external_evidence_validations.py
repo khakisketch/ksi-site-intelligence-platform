@@ -125,9 +125,31 @@ class _PolicyAuthority(PolicyAuthorityPort):
     def __init__(self, record: PolicyAuthorityRecord) -> None:
         assert record.digest is not None
         self._record = record
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> _PolicyAuthority:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         return self._record if authority_record_digest == self._record.digest else None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        return (
+            self._record
+            if authority_record_digest == self._record.digest and self._record.is_active_at(at)
+            else None
+        )
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return authority == self._record and authority.is_active_at(now)
 
 
 class _ContextAuthority(EvidenceMeasurementContextAuthorityPort):
@@ -247,6 +269,7 @@ def _policy_registry(
     max_retry_attempts: int = 1,
     max_deadline_seconds: float = 10.0,
 ) -> tuple[ExternalValidationPolicyRegistry, ExternalValidationPolicyV1]:
+    coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
     envelope = ResourceEnvelopeV1(
         max_input_bytes=1_024,
         max_streamed_bytes=1_024,
@@ -297,9 +320,11 @@ def _policy_registry(
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    policy_authority = _PolicyAuthority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_PolicyAuthority(authority),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
         clock=lambda: NOW,
         coordinator=coordinator,
     )

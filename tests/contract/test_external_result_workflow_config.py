@@ -125,11 +125,33 @@ class _CatalogAuthority:
 
 
 class _UnavailablePolicyAuthority:
+    def __init__(self) -> None:
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> Self:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
+
     def resolve(
         self, authority_record_digest: str, now: datetime
     ) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        del authority_record_digest, at
+        return None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        del authority, now
+        return False
 
 
 class _UnavailableEvidenceContextAuthority:
@@ -155,6 +177,7 @@ def _participants(
     record: ExternalQuantitativeCatalogAuthorityRecord,
 ) -> ExternalQuantitativeWorkflowParticipants:
     catalog_authority = _CatalogAuthority(record)
+    policy_authority = _UnavailablePolicyAuthority()
     return ExternalQuantitativeWorkflowParticipants(
         catalog_authority_port=catalog_authority,
         catalog_administration_actor_id="catalog-admin",
@@ -166,7 +189,8 @@ def _participants(
         ),
         clock=lambda: datetime(2026, 9, 9, tzinfo=UTC),
         build_catalog_authority_currentness=catalog_authority.bind,
-        policy_authority_port=_UnavailablePolicyAuthority(),
+        policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=_UnavailableEvidenceContextAuthority,
     )
 

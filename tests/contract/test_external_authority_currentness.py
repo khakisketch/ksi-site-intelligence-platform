@@ -33,10 +33,30 @@ class _PolicyAuthority(PolicyAuthorityPort):
     def __init__(self, record: PolicyAuthorityRecord) -> None:
         assert record.digest is not None
         self._record = record
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> _PolicyAuthority:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: object) -> PolicyAuthorityRecord | None:
         del now
         return self._record if authority_record_digest == self._record.digest else None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: object
+    ) -> PolicyAuthorityRecord | None:
+        del at
+        return self._record if authority_record_digest == self._record.digest else None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: object) -> bool:
+        del now
+        return authority == self._record
 
 
 class _SealedIngress:
@@ -96,9 +116,11 @@ def test_actual_inspection_issue_waits_for_the_shared_guard(tmp_path: Path) -> N
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    authority_port = _PolicyAuthority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_PolicyAuthority(authority),
+        authority_port=authority_port,
+        authority_currentness_port=authority_port.bind(coordinator),
         clock=lambda: NOW,
         coordinator=coordinator,
     )
@@ -147,9 +169,11 @@ def test_actual_display_queue_append_waits_for_the_shared_guard(tmp_path: Path) 
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    authority_port = _PolicyAuthority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_PolicyAuthority(authority),
+        authority_port=authority_port,
+        authority_currentness_port=authority_port.bind(coordinator),
         clock=lambda: NOW,
         coordinator=coordinator,
     )
@@ -207,11 +231,14 @@ def test_display_store_rejects_a_mismatched_policy_coordinator(tmp_path: Path) -
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    authority_port = _PolicyAuthority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_PolicyAuthority(authority),
+        authority_port=authority_port,
+        authority_currentness_port=authority_port.bind(coordinator),
         clock=lambda: NOW,
-        coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        coordinator=coordinator,
     )
     registry.admit(policy, actor="authority", now=NOW)
 

@@ -184,7 +184,18 @@ def assemble_app(
     """
     external_authority_currentness = ExternalAuthorityCurrentnessCoordinator()
     evidence_context_authority = None
+    policy_authority_currentness = None
     if external_result_workflow is not None:
+        build_policy_currentness = external_result_workflow.build_policy_authority_currentness
+        if build_policy_currentness is not None:
+            policy_authority_currentness = build_policy_currentness(external_authority_currentness)
+            if (
+                policy_authority_currentness is None
+                or policy_authority_currentness.coordinator is not external_authority_currentness
+            ):
+                raise ValueError(
+                    "external result workflow policy currentness must share the Core coordinator"
+                )
         build_context_authority = external_result_workflow.build_evidence_context_authority
         if build_context_authority is not None:
             evidence_context_authority = build_context_authority(external_authority_currentness)
@@ -334,6 +345,7 @@ def assemble_app(
                 if external_result_workflow is not None
                 else None
             ),
+            authority_currentness_port=policy_authority_currentness,
             coordinator=external_authority_currentness,
         )
         if external_reconstruction_store is not None

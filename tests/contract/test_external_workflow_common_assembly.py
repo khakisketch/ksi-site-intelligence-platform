@@ -1,7 +1,7 @@
 """Real shared app assembly uses explicit authority factories in replay order."""
 
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import NoReturn, cast
 
@@ -35,9 +35,34 @@ from test_api_contract_sync import _auth_registry, _NullEvidenceStorage
 
 
 class _UnavailablePolicyAuthority:
+    def __init__(self) -> None:
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(
+        self, coordinator: ExternalAuthorityCurrentnessCoordinator
+    ) -> "_UnavailablePolicyAuthority":
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        if self._coordinator is None:
+            raise RuntimeError("policy authority fixture was not bound")
+        return self._coordinator
+
     def resolve(self, authority_record_digest: str, now: object) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        del authority_record_digest, at
+        return None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        del authority, now
+        return False
 
 
 class _UnavailableEvidenceContextAuthority:
@@ -320,9 +345,11 @@ def test_context_authority_factory_must_bind_the_exact_assembly_coordinator(tmp_
     """A context authority for another graph must be rejected before any journal opens."""
     opened: list[DurableJournal] = []
     trace: list[str] = []
+    policy_authority = _UnavailablePolicyAuthority()
     config = replace(
         _config(trace),
-        policy_authority_port=_UnavailablePolicyAuthority(),
+        policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=lambda _coordinator: _UnavailableEvidenceContextAuthority(
             ExternalAuthorityCurrentnessCoordinator()
         ),
@@ -353,6 +380,7 @@ def test_common_assembly_forwards_exact_upstream_authority_ports(tmp_path: Path)
     config = replace(
         _config(trace),
         policy_authority_port=policy_authority,
+        build_policy_authority_currentness=policy_authority.bind,
         build_evidence_context_authority=build_context_authority,
     )
     try:

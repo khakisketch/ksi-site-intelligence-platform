@@ -111,20 +111,55 @@ authorize a release.
 
 ## Candidate lifecycle
 
-Make an owner-protected `0600` file outside the repository from
+The lifecycle gate consumes the reviewed v2 peer-protocol JSON proof:
+a fresh root-owned helper
+must return `OBSERVED_SERVER_PEER_CREDENTIAL` for both lanes and denial for
+`nobody`; a saved receipt is not accepted.
+
+Make an owner-protected `0600` environment file outside the repository from
 [`../.env.external-reconstruction.example`](../.env.external-reconstruction.example).
-Then use only that file:
+It must name the existing `KSI_EXTERNAL_RC_OPERATOR_DIR` at exactly one
+dedicated candidate root (`/etc/ksi-external-runtime/operator` or
+`/var/lib/ksi-external-runtime/operator`). The directory must already contain
+`workflow.json`, `provider.json`, `secrets/`, and `signing/`; it cannot be a
+repository, candidate state, customer-data, or shared project directory.
+Its `authorityJournalPath` is fixed to
+`/var/lib/ksi/data/external-quantitative-authority.jsonl`; an operator path or
+`/tmp` path is refused.
+
+All supplied private credential and signing files must be regular,
+non-symlinked files owned by runtime UID `10001`, owner-readable, and
+inaccessible to group and other. A public signing manifest/key may be owned by
+root or UID `10001`, but must be non-writable by other identities and readable
+by runtime UID `10001`. The root init-state validation and Core/Dashboard both
+run against that runtime identity. The candidate never changes ownership,
+generates a credential, signing key, catalog, or authority record.
+
+Use the candidate environment file only for `prepare`, `verify`, and `start`:
 
 ```bash
 deploy/bin/external-runtime-stage.sh prepare --env-file /absolute/candidate.env
-deploy/bin/external-runtime-stage.sh status --env-file /absolute/candidate.env
 deploy/bin/external-runtime-stage.sh verify --env-file /absolute/candidate.env
+deploy/bin/external-runtime-stage.sh start --env-file /absolute/candidate.env
+```
+
+For fixed-project diagnostics and fail-safe shutdown, use no environment file:
+
+```bash
+deploy/bin/external-runtime-stage.sh status
+deploy/bin/external-runtime-stage.sh stop
 ```
 
 `prepare` only creates the explicitly selected candidate directory and copies a
-private template. `status` reads the `ksi-external-rc` project. `stop` uses
-`docker compose stop`, preserving candidate volumes and never targeting the
-existing Phase 2 stack.
+private template.
+
+`status` and fail-safe `stop` run without an environment file. `status` only
+lists containers carrying the exact
+`com.docker.compose.project=ksi-external-rc` label. `stop` re-lists that same
+label scope, rechecks each immutable container ID's label, and stops only those
+IDs. These diagnostics and fail-safe shutdown actions do not require a clean
+checkout, current release evidence, image IDs, or any Compose interpolation;
+they never target `ksi-phase2-staging`.
 
 `verify` and `start` require an exact clean source checkout, a canonical
 current-operator-owned private `release-evidence.v1` record, and a separate
@@ -135,19 +170,68 @@ references, and product SBOM/scanner metadata. The host binding records the
 exact canonical-record hash, source commit, observed Docker image IDs and
 repository digests, and absolute artifact paths, hashes, byte counts, and
 types. It must contain Core and Dashboard observations, separate product-owned
-inspector and measurement runtime observations, and the exact separately
-verified canonical `externalRuntimeImages` dependency pins. Runtime SBOMs must
+inspector and measurement runtime observations. The canonical
+`externalRuntimeImages` field remains the complete exact source supply-chain
+inventory; no canonical reference may be omitted, added, or substituted. The
+host-binding `externalRuntimeImages` field instead contains exactly the three
+external references used by this candidate Compose file: Caddy, MinIO, and
+MinIO Client. That three-reference host set must be an exact subset of the
+canonical inventory—this does not require the other build-only inventory images
+to be installed on the candidate host. Runtime SBOMs must
 be valid CycloneDX JSON; runtime scanner reports must be JSON objects with an
 explicit scanner name and schema version. Each observed repository-digest list
 must include the immutable release reference's canonical repository digest.
-`ksi-external-rc-*:local` remains a Docker lookup handle only; it is never a
-provenance field. The lifecycle parser accepts only the reviewed `KEY=VALUE`
-environment keys and never sources the file as shell code. Even with that
-evidence `verify` and `start` return
-`BLOCKED_QUANTITATIVE_AUTHORITY` until a real,
-independently controlled catalog, policy, evidence-currentness, and input
-capability authority can be assembled in Core. The Compose profile contains no
-placeholder authority and no ordinary processing worker or NodeODM service.
+The observed immutable Core and Dashboard Docker image IDs—not
+`ksi-external-rc-*:local` lookup tags—are exported only after this validation
+and become those Compose image references. The three external Compose services
+retain their literal digest pins, while their created containers are still
+matched to the host-binding image IDs. The lifecycle parser accepts only the
+reviewed `KEY=VALUE` environment keys and never sources the file as shell code.
+
+Before `verify` or `start`, the lifecycle rechecks the exact image observations,
+operator bundle shape, and fresh socket proof. The shared root-owned parent
+may retain its bootstrap `0711` traversal mode; it must not be group/other
+writable. The operator child and its credentials remain private. Likewise,
+the root-owned public ACL helper may retain its installed `0755` mode, but
+must be owner-executable and not group/other writable. These checks never
+repair permissions or replace the required live peer proof.
+It first runs the exact verified
+Core image through an opt-in Compose service as UID/GID `10001:10001` in a disposable,
+networkless, read-only container with only
+`secrets/` and `signing/` mounted at the fixed `/state` paths read-only. Its
+`--validate-only` command verifies the real UID `10001` ownership, permissions,
+symlink resistance, UTF-8 secrets, and signing bytes without modifying state.
+It then runs the same image through a separate opt-in Compose service as UID
+`10001` with the complete operator bundle read-only and an UID `10001`-owned
+tmpfs at `/var/lib/ksi/data`. The command
+creates only an empty journal and lock in that disposable tmpfs so the workflow
+loader can verify its fixed durable layout; it neither creates persistent
+journal state nor invents authority. The ordinary Core preflight loads the two
+fixed configuration paths, verifies the signed provider/catalog/workflow
+configuration, and must return `CONFIG_VALIDATED`. This means configuration
+only: the provider has not bound its receipt journal or attached to Core, and
+no result is quantitatively eligible.
+
+`start` runs release-evidence validation, the exact-image credential
+`--validate-only` command, socket-ACL proof, and authority preflight once,
+then renders Compose config and performs its single
+`docker compose up -d --no-build --pull never --wait`. It does not rebuild,
+pull, stop, remove, or delete a candidate. Before readiness can succeed it
+inspects every created candidate container (init-state, identity, Core,
+Dashboard, MinIO, bucket-init, and Caddy) and requires the Docker image ID to
+equal its verified host-binding ID. It then queries the running Core's
+loopback-only `/ready/external-authority` endpoint through the Compose service.
+That endpoint must return only
+`{"status":"PROVIDER_CONFIGURED"}`; a 503 or
+`EXTERNAL_AUTHORITY_UNAVAILABLE` blocks the command while preserving the
+running candidate for operator inspection. `verify` reports the detached
+`CONFIG_VALIDATED` preflight state only when Core is not running; when it is
+running, it reports `PROVIDER_CONFIGURED` as runtime attachment/currentness
+without reporting any eligibility decision. Neither output is a customer export
+compatibility, HIL, or field-acceptance claim.
+
+The Compose profile contains no placeholder authority and no ordinary
+processing worker or NodeODM service.
 
 ## Scope boundary
 

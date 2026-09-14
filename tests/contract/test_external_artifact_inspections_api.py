@@ -26,6 +26,7 @@ from ksi_core.external_artifact_inspections import (
     ExternalArtifactInspectionStore,
     mount_external_artifact_inspections,
 )
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
 from ksi_core.external_reconstruction import (
     ExternalReconstructionRevision,
@@ -228,10 +229,32 @@ class _Authority(PolicyAuthorityPort):
     def __init__(self, record: PolicyAuthorityRecord) -> None:
         assert record.digest is not None
         self.record = record
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> _Authority:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         del now
         return self.record if authority_record_digest == self.record.digest else None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        return (
+            self.record
+            if authority_record_digest == self.record.digest and self.record.is_active_at(at)
+            else None
+        )
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return authority == self.record and self.record.is_active_at(now)
 
 
 def _active_scoped_app(
@@ -254,10 +277,14 @@ def _active_scoped_app(
     policy = template.model_copy(
         update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
     ).sealed()
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    policy_authority = _Authority(authority)
     registry = ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "policies.jsonl"),
-        authority_port=_Authority(authority),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
         clock=lambda: now,
+        coordinator=coordinator,
     )
     registry.admit(policy, actor="authority", now=now)
     storage = SyntheticStorage()
@@ -266,6 +293,7 @@ def _active_scoped_app(
         policy_registry=registry,
         storage=storage,
         clock=lambda: now,
+        coordinator=coordinator,
     )
     inspections = ExternalArtifactInspectionStore(
         DurableJournal(tmp_path / "inspections.jsonl"),
@@ -274,6 +302,7 @@ def _active_scoped_app(
         storage=storage,
         display_store=display,
         clock=lambda: now,
+        coordinator=coordinator,
     )
     issued = inspections.issue_after_seal(subject(), now=now)
     assert issued.request is not None

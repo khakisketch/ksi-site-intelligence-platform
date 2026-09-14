@@ -167,6 +167,56 @@ class ExternalQuantitativeCatalogAuthorityRecord:
         _utc(now, name="catalog authority lookup time")
         return self.active_from <= now < self.active_until
 
+    def event_payload(self) -> dict[str, object]:
+        """Exact sealed authority snapshot safe to retain in provider receipts."""
+        if not self.is_sealed() or self.digest is None:
+            raise ValueError("catalog authority record must be sealed before persistence")
+        return {"digest": self.digest, **self.canonical_payload()}
+
+    @classmethod
+    def from_event_payload(cls, raw: object) -> ExternalQuantitativeCatalogAuthorityRecord:
+        payload = _strict_mapping(
+            raw,
+            frozenset(
+                {
+                    "digest",
+                    "organizationId",
+                    "catalogBodyDigest",
+                    "authorizedAdministrationActorIds",
+                    "activeFrom",
+                    "activeUntil",
+                    "syntheticTestOnly",
+                }
+            ),
+            name="catalog authority record",
+        )
+        actors = payload["authorizedAdministrationActorIds"]
+        if not isinstance(actors, list) or not all(type(actor) is str for actor in actors):
+            raise ValueError("catalog authority administration actors must be a string list")
+        if (
+            not all(
+                type(payload[field]) is str
+                for field in (
+                    "digest",
+                    "organizationId",
+                    "catalogBodyDigest",
+                    "activeFrom",
+                    "activeUntil",
+                )
+            )
+            or type(payload["syntheticTestOnly"]) is not bool
+        ):
+            raise ValueError("catalog authority record fields are malformed")
+        return cls(
+            organization_id=cast(str, payload["organizationId"]),
+            catalog_body_digest=cast(str, payload["catalogBodyDigest"]),
+            authorized_administration_actor_ids=tuple(cast(list[str], actors)),
+            active_from=_parse_time(payload["activeFrom"], name="catalog authority activeFrom"),
+            active_until=_parse_time(payload["activeUntil"], name="catalog authority activeUntil"),
+            synthetic_test_only=payload["syntheticTestOnly"],
+            digest=cast(str, payload["digest"]),
+        )
+
     def permits_catalog(
         self,
         *,

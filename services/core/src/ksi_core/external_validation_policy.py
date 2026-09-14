@@ -283,12 +283,32 @@ class PolicyAuthorityPort(Protocol):
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         """Return a currently readable authority record, or ``None`` fail-closed."""
 
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        """Resolve one exact retained authority record at its historical event time."""
+
+
+class PolicyAuthorityCurrentnessPort(Protocol):
+    """Coordinator-bound local policy authority projection for final live checks."""
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator: ...
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool: ...
+
 
 class _NoPolicyAuthorityPort:
     """Production-safe default until an authorized authority path is assembled."""
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
+        return None
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        del authority_record_digest, at
         return None
 
 
@@ -312,13 +332,31 @@ class ExternalValidationPolicyRegistry:
         journal: DurableJournal,
         *,
         authority_port: PolicyAuthorityPort | None = None,
+        authority_currentness_port: PolicyAuthorityCurrentnessPort | None = None,
         clock: Callable[[], datetime] | None = None,
         coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
     ) -> None:
         self._journal = journal
-        self._authority_port = authority_port or _NoPolicyAuthorityPort()
         self._clock = clock or (lambda: datetime.now(UTC))
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
+        if authority_port is None:
+            if authority_currentness_port is not None:
+                raise ValueError("policy currentness requires an explicit authority port")
+            self._authority_port: PolicyAuthorityPort = _NoPolicyAuthorityPort()
+            self._authority_currentness_port: PolicyAuthorityCurrentnessPort | None = None
+        else:
+            if (
+                not callable(getattr(authority_port, "resolve", None))
+                or not callable(getattr(authority_port, "resolve_historical", None))
+                or authority_currentness_port is None
+                or not callable(getattr(authority_currentness_port, "is_current", None))
+                or authority_currentness_port.coordinator is not self._coordinator
+            ):
+                raise ValueError(
+                    "policy authority requires an explicit coordinator-bound currentness port"
+                )
+            self._authority_port = authority_port
+            self._authority_currentness_port = authority_currentness_port
         self._lock = threading.RLock()
         self._entries_by_identity: dict[tuple[str, int], _PolicyEntry] = {}
         self._entries_by_digest: dict[str, _PolicyEntry] = {}
@@ -331,6 +369,10 @@ class ExternalValidationPolicyRegistry:
     @property
     def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
         return self._coordinator
+
+    @property
+    def authority_currentness_port(self) -> PolicyAuthorityCurrentnessPort | None:
+        return self._authority_currentness_port
 
     def select_for_inspection(self, subject: SealedExternalSubjectV1) -> PolicySelection:
         """Select exactly one currently authorized inspection policy, or show pending."""
@@ -401,6 +443,7 @@ class ExternalValidationPolicyRegistry:
                 _policy_digest(policy) == policy_digest
                 and authority_digest is not None
                 and authority.digest == authority_digest
+                and self._authority_is_locally_current(authority, at)
                 and authority.permits_selection(policy, use=use, subjects=subjects, now=at)
             )
 
@@ -453,6 +496,8 @@ class ExternalValidationPolicyRegistry:
                 raise ExternalValidationPolicyConflictError(
                     f"external validation policy conflict: {sealed.policy_id}@{sealed.version}"
                 )
+            if not self._authority_authorizes_mutation(sealed, authority, actor=actor, now=now):
+                return _receipt(sealed, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
             self._journal.append(self._admitted_event(sealed, authority, actor=actor, now=now))
             self._publish(sealed, authority)
             return _receipt(sealed, PolicyReceiptStatus.ADMITTED)
@@ -472,6 +517,10 @@ class ExternalValidationPolicyRegistry:
             entry = self._active_entry(policy_id, version)
             if entry is None:
                 return _unresolved_receipt(policy_id, version)
+            if not self._authority_authorizes_mutation(
+                entry.policy, entry.authority, actor=actor, now=now
+            ):
+                return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
             self._journal.append(self._revoked_event(entry.policy, actor=actor, now=now))
             entry.status = PolicyStatus.REVOKED
             return _receipt(entry.policy, PolicyReceiptStatus.REVOKED)
@@ -502,6 +551,10 @@ class ExternalValidationPolicyRegistry:
             successor = self._active_entry(successor_policy_id, successor_version)
             if entry is None or successor is None or entry is successor:
                 return _unresolved_receipt(policy_id, version)
+            if not self._authority_authorizes_mutation(
+                entry.policy, entry.authority, actor=actor, now=now
+            ):
+                return _receipt(entry.policy, PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED)
             self._journal.append(
                 self._superseded_event(entry.policy, successor.policy, actor=actor, now=now)
             )
@@ -580,6 +633,32 @@ class ExternalValidationPolicyRegistry:
         if not authority.authorizes_admission(policy, actor=actor, now=now):
             return None
         return authority
+
+    def _authority_is_locally_current(
+        self, authority: PolicyAuthorityRecord, now: datetime
+    ) -> bool:
+        currentness = self._authority_currentness_port
+        return bool(
+            currentness is not None
+            and currentness.coordinator is self._coordinator
+            and currentness.is_current(authority, now)
+        )
+
+    def _authority_authorizes_mutation(
+        self,
+        policy: ExternalValidationPolicyV1,
+        authority: PolicyAuthorityRecord,
+        *,
+        actor: str,
+        now: datetime,
+    ) -> bool:
+        authority_digest = policy.authority_record_digest
+        return bool(
+            authority_digest is not None
+            and authority.digest == authority_digest
+            and self._authority_is_locally_current(authority, now)
+            and authority.authorizes_admission(policy, actor=actor, now=now)
+        )
 
     def _active_entry(self, policy_id: str, version: int) -> _PolicyEntry | None:
         entry = self._entries_by_identity.get((policy_id, version))
@@ -702,7 +781,7 @@ class ExternalValidationPolicyRegistry:
         authority_digest = policy.authority_record_digest
         if authority_digest is None:
             raise ValueError("admission event policy authority digest is absent")
-        trusted = self._authority_port.resolve(authority_digest, occurred_at)
+        trusted = self._authority_port.resolve_historical(authority_digest, occurred_at)
         if (
             digest != _policy_digest(policy)
             or policy_id != policy.policy_id
@@ -796,7 +875,7 @@ class ExternalValidationPolicyRegistry:
         authority_digest = entry.policy.authority_record_digest
         if authority_digest is None:
             return False
-        trusted = self._authority_port.resolve(authority_digest, now)
+        trusted = self._authority_port.resolve_historical(authority_digest, now)
         return (
             trusted is not None
             and trusted == entry.authority
@@ -992,6 +1071,7 @@ __all__ = [
     "ExternalValidationPolicyConflictError",
     "ExternalValidationPolicyRecoveryError",
     "ExternalValidationPolicyRegistry",
+    "PolicyAuthorityCurrentnessPort",
     "PolicyAuthorityPort",
     "PolicyAuthorityRecord",
     "PolicyReceipt",

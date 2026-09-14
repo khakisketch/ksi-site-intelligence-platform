@@ -793,7 +793,7 @@ class ExternalArtifactInspectionStore:
             if record is None or not self._in_organization(record, organization_id):
                 return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
             display_unfinished = self._display_is_unfinished(request_id)
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, now):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
             if (
                 record.report is not None
@@ -900,7 +900,7 @@ class ExternalArtifactInspectionStore:
             record = self._records.get(request_id)
             if record is None or not self._in_organization(record, organization_id):
                 return ExternalInspectionInputResponse(InspectionVerdict.NOT_FOUND)
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, now):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
@@ -965,7 +965,7 @@ class ExternalArtifactInspectionStore:
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.LEASE_FENCE_REJECTED, request=record.request
                 )
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, commit_now):
                 return ExternalInspectionInputResponse(
                     InspectionVerdict.POLICY_UNAVAILABLE, request=record.request
                 )
@@ -1027,7 +1027,7 @@ class ExternalArtifactInspectionStore:
             record = self._records.get(request_id)
             if record is None or not self._in_organization(record, organization_id):
                 return InspectionLeaseResult(InspectionVerdict.NOT_FOUND)
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, now):
                 return InspectionLeaseResult(InspectionVerdict.POLICY_UNAVAILABLE, record.request)
             if record.report is not None and not self._display_policy_is_locally_current(
                 record, now
@@ -1085,7 +1085,7 @@ class ExternalArtifactInspectionStore:
             if record is None or not self._in_organization(record, organization_id):
                 return InspectionReportResult(InspectionVerdict.NOT_FOUND)
             if record.report is not None:
-                if not self._policy_is_locally_current(record):
+                if not self._policy_is_locally_current(record, now):
                     return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
                 if not self._display_policy_is_locally_current(record, now):
                     return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
@@ -1098,7 +1098,7 @@ class ExternalArtifactInspectionStore:
                     record.report,
                     self._phase_for_record(record),
                 )
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, now):
                 return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
             if not self.has_current_fence(request_id, fence, now):
                 return InspectionReportResult(InspectionVerdict.LEASE_FENCE_REJECTED)
@@ -1154,7 +1154,7 @@ class ExternalArtifactInspectionStore:
                 return InspectionReportResult(InspectionVerdict.NOT_FOUND)
             if record.report is not None or record.state != "RUNNING":
                 return InspectionReportResult(InspectionVerdict.REPORT_BINDING_REJECTED)
-            if not self._policy_is_locally_current(record):
+            if not self._policy_is_locally_current(record, now):
                 return InspectionReportResult(InspectionVerdict.POLICY_UNAVAILABLE)
             if not self.has_current_fence(request_id, fence, now):
                 return InspectionReportResult(InspectionVerdict.LEASE_FENCE_REJECTED)
@@ -1423,13 +1423,19 @@ class ExternalArtifactInspectionStore:
             and selected.policy.policy_digest == record.request.inspection_policy_digest
         )
 
-    def _policy_is_locally_current(self, record: _InspectionRecord) -> bool:
+    def _policy_is_locally_current(self, record: _InspectionRecord, now: datetime) -> bool:
         """Check retained lifecycle state without another authority-port read."""
         resolved = self._policy_registry.resolve(record.request.inspection_policy_digest)
         return (
             resolved.status is PolicySelectionStatus.ACTIVE
             and resolved.policy is not None
             and resolved.policy.policy_digest == record.request.inspection_policy_digest
+            and self._policy_registry.locally_current_use_permitted(
+                record.request.inspection_policy_digest,
+                use="INSPECTION",
+                subjects=(record.request.subject,),
+                at=now,
+            )
         )
 
     def _display_policy_is_current(self, record: _InspectionRecord) -> bool:
@@ -1444,8 +1450,8 @@ class ExternalArtifactInspectionStore:
         self, record: _InspectionRecord, now: datetime
     ) -> bool:
         return self._policy_is_locally_current(
-            record
-        ) and self._policy_registry.historical_use_permitted(
+            record, now
+        ) and self._policy_registry.locally_current_use_permitted(
             record.request.inspection_policy_digest,
             use="DISPLAY",
             subjects=(record.request.subject,),

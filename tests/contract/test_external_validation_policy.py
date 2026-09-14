@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -12,6 +13,7 @@ from typing import cast
 
 import pytest
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyConflictError,
     ExternalValidationPolicyRegistry,
@@ -169,28 +171,107 @@ class FakePolicyAuthorityPort(PolicyAuthorityPort):
             assert record.digest is not None
             self._records[record.digest] = record
         self.resolutions: list[tuple[str, datetime]] = []
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(
+        self, coordinator: ExternalAuthorityCurrentnessCoordinator
+    ) -> FakePolicyAuthorityPort:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         self.resolutions.append((authority_record_digest, now))
         return self._records.get(authority_record_digest)
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        record = self._records.get(authority_record_digest)
+        return record if record is not None and record.is_active_at(at) else None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return (
+            authority.digest is not None
+            and self._records.get(authority.digest) == authority
+            and authority.is_active_at(now)
+        )
 
     def replace_resolved(self, digest: str, record: PolicyAuthorityRecord) -> None:
         self._records[digest] = record
 
 
 def _registry(
-    tmp_path: Path, authority: PolicyAuthorityPort | None = None
+    tmp_path: Path, authority: FakePolicyAuthorityPort | None = None
 ) -> ExternalValidationPolicyRegistry:
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
     return ExternalValidationPolicyRegistry(
         DurableJournal(tmp_path / "external-validation-policy.jsonl"),
         authority_port=authority,
+        authority_currentness_port=authority.bind(coordinator) if authority is not None else None,
         clock=lambda: NOW,
+        coordinator=coordinator,
+    )
+
+
+def _registry_for_journal(
+    journal: DurableJournal,
+    authority: FakePolicyAuthorityPort,
+    *,
+    clock: Callable[[], datetime] = lambda: NOW,
+) -> ExternalValidationPolicyRegistry:
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    return ExternalValidationPolicyRegistry(
+        journal,
+        authority_port=authority,
+        authority_currentness_port=authority.bind(coordinator),
+        clock=clock,
+        coordinator=coordinator,
     )
 
 
 def _event_digest(event: dict[str, object]) -> str:
     body = {key: value for key, value in event.items() if key != "eventDigest"}
     return "sha256:" + hashlib.sha256(canonical_json_bytes(body)).hexdigest()
+
+
+def test_admission_rechecks_currentness_after_a_stale_preflight_before_append(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A policy record withdrawn after external resolution cannot reach the journal."""
+    policy, authority = _bound_policy()
+    assert authority.digest is not None
+    port = FakePolicyAuthorityPort(authority)
+    registry = _registry(tmp_path, port)
+    entered = threading.Event()
+    release = threading.Event()
+    original_resolve = port.resolve
+
+    def blocked_resolve(digest: str, now: datetime) -> PolicyAuthorityRecord | None:
+        resolved = original_resolve(digest, now)
+        entered.set()
+        assert release.wait(timeout=1)
+        return resolved
+
+    monkeypatch.setattr(port, "resolve", blocked_resolve)
+    receipts = []
+    admission = threading.Thread(
+        target=lambda: receipts.append(registry.admit(policy, actor="authority", now=NOW))
+    )
+    admission.start()
+    assert entered.wait(timeout=1)
+    with registry.coordinator.mutation():
+        port._records.pop(authority.digest)  # noqa: SLF001 - controlled external withdrawal.
+    release.set()
+    admission.join(timeout=1)
+
+    assert not admission.is_alive()
+    assert receipts[0].status is PolicyReceiptStatus.POLICY_AUTHORITY_UNRESOLVED
+    assert list(registry._journal.replay()) == []  # noqa: SLF001 - no stale append.
 
 
 def test_no_policy_is_visible_pending_not_a_job(tmp_path: Path) -> None:
@@ -284,11 +365,7 @@ def test_authority_body_digest_rejects_changed_policy_before_first_admission(
         ).sealed(),
     )
     journal = DurableJournal(tmp_path / "changed-body.jsonl")
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=FakePolicyAuthorityPort(authority),
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, FakePolicyAuthorityPort(authority))
 
     for changed in changed_policies:
         receipt = registry.admit(changed, actor="authority", now=NOW)
@@ -333,9 +410,9 @@ def test_selection_rechecks_authority_expiry_after_admission(tmp_path: Path) -> 
     """Caching admission-time authority beyond its active interval breaks selection."""
     policy, authority = _bound_policy(active_until=NOW + timedelta(seconds=1))
     clock = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _registry_for_journal(
         DurableJournal(tmp_path / "expiry.jsonl"),
-        authority_port=FakePolicyAuthorityPort(authority),
+        FakePolicyAuthorityPort(authority),
         clock=lambda: clock[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -399,11 +476,7 @@ def test_concurrent_duplicate_admission_writes_one_durable_event(tmp_path: Path)
     """Publishing before the registry lock/append would allow duplicate lifecycle events."""
     policy, authority = _bound_policy()
     journal = DurableJournal(tmp_path / "concurrent.jsonl")
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=FakePolicyAuthorityPort(authority),
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, FakePolicyAuthorityPort(authority))
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         receipts = list(
@@ -424,11 +497,7 @@ def test_append_failure_does_not_publish_policy_before_durability(tmp_path: Path
     """Publishing before a failed journal append would expose an unaudited active policy."""
     policy, authority = _bound_policy()
     journal = DurableJournal(tmp_path / "sealed.jsonl")
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=FakePolicyAuthorityPort(authority),
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, FakePolicyAuthorityPort(authority))
     journal.close()
 
     with pytest.raises(JournalSealedError):
@@ -466,11 +535,7 @@ def test_mutation_rejects_bool_policy_version_without_a_journal_event(tmp_path: 
     """Letting True alias policy version 1 would allow an unintended lifecycle transition."""
     policy, authority = _bound_policy()
     journal = DurableJournal(tmp_path / "bool-policy-version.jsonl")
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=FakePolicyAuthorityPort(authority),
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, FakePolicyAuthorityPort(authority))
     registry.admit(policy, actor="authority", now=NOW)
 
     for malformed_version in (True, 1.0):
@@ -602,11 +667,7 @@ def test_supersession_blocks_only_the_prior_lifecycle_entry(tmp_path: Path) -> N
     authority_port = FakePolicyAuthorityPort(original_authority, successor_authority)
     path = tmp_path / "superseded.jsonl"
     journal = DurableJournal(path)
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=authority_port,
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, authority_port)
     registry.admit(original, actor="authority", now=NOW)
     successor_receipt = registry.admit(successor, actor="authority", now=NOW)
 
@@ -631,11 +692,7 @@ def test_supersession_blocks_only_the_prior_lifecycle_entry(tmp_path: Path) -> N
     )
     journal.close()
 
-    restarted = ExternalValidationPolicyRegistry(
-        DurableJournal(path),
-        authority_port=authority_port,
-        clock=lambda: NOW,
-    )
+    restarted = _registry_for_journal(DurableJournal(path), authority_port)
 
     assert (
         restarted.resolve(original.policy_digest or "").status is PolicySelectionStatus.SUPERSEDED
@@ -647,11 +704,7 @@ def test_admission_rejects_expired_or_unauthorized_authority_without_event(tmp_p
     """Accepting expired or unauthorized policy administration would fail this fail-closed test."""
     policy, expired = _bound_policy(active_until=NOW - timedelta(seconds=1))
     journal = DurableJournal(tmp_path / "expired.jsonl")
-    registry = ExternalValidationPolicyRegistry(
-        journal,
-        authority_port=FakePolicyAuthorityPort(expired),
-        clock=lambda: NOW,
-    )
+    registry = _registry_for_journal(journal, FakePolicyAuthorityPort(expired))
 
     receipt = registry.admit(policy, actor="not-authorized", now=NOW)
 

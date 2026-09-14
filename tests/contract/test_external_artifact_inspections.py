@@ -17,6 +17,7 @@ from ksi_core.external_artifact_inspections import (
     InspectionPhase,
     SealedExternalReconstructionSnapshotPort,
 )
+from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import (
     DisplayArtifactVerdict,
     DisplayPhase,
@@ -94,10 +95,33 @@ class _Authority(PolicyAuthorityPort):
     def __init__(self, *records: PolicyAuthorityRecord) -> None:
         assert all(record.digest is not None for record in records)
         self._records = {record.digest: record for record in records}
+        self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
+
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> _Authority:
+        self._coordinator = coordinator
+        return self
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        assert self._coordinator is not None
+        return self._coordinator
 
     def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         del now
         return self._records.get(authority_record_digest)
+
+    def resolve_historical(
+        self, authority_record_digest: str, at: datetime
+    ) -> PolicyAuthorityRecord | None:
+        record = self._records.get(authority_record_digest)
+        return record if record is not None and record.is_active_at(at) else None
+
+    def is_current(self, authority: PolicyAuthorityRecord, now: datetime) -> bool:
+        return (
+            authority.digest is not None
+            and self._records.get(authority.digest) == authority
+            and authority.is_active_at(now)
+        )
 
 
 class _FailOnceDisplayStore(ExternalDisplayArtifactStore):
@@ -179,6 +203,19 @@ def _sealed_digest(value: str | None) -> str:
     return value
 
 
+def _policy_registry(
+    journal: DurableJournal, authority: _Authority, *, clock: Callable[[], datetime]
+) -> ExternalValidationPolicyRegistry:
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    return ExternalValidationPolicyRegistry(
+        journal,
+        authority_port=authority,
+        authority_currentness_port=authority.bind(coordinator),
+        clock=clock,
+        coordinator=coordinator,
+    )
+
+
 def _stores(
     tmp_path: Path,
     *,
@@ -190,8 +227,8 @@ def _stores(
     policy, authority = _bound_policy(
         permitted_subject=permitted_subject, max_deadline_seconds=max_deadline_seconds
     )
-    registry = ExternalValidationPolicyRegistry(
-        DurableJournal(tmp_path / "policy.jsonl"), authority_port=authority, clock=lambda: NOW
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"), authority, clock=lambda: NOW
     )
     if active:
         registry.admit(policy, actor="authority", now=NOW)
@@ -587,9 +624,9 @@ def test_heartbeat_cannot_extend_a_lease_past_the_absolute_deadline(tmp_path: Pa
     """A live-claim retry cannot hide a deadline behind repeated heartbeats."""
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -641,9 +678,9 @@ def test_historical_display_obligation_survives_revocation_without_a_display_sto
     """A report-time display obligation is not a current execution permission."""
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -717,20 +754,10 @@ def test_historical_obligation_ignores_later_display_competition_but_execution_d
     primary, primary_authority = bind("policy-primary", ("INSPECTION", "DISPLAY"))
     competing, competing_authority = bind("policy-competing", ("DISPLAY",))
 
-    class _Authorities(PolicyAuthorityPort):
-        def resolve(
-            self, authority_record_digest: str, now: datetime
-        ) -> PolicyAuthorityRecord | None:
-            del now
-            return {
-                primary_authority.digest: primary_authority,
-                competing_authority.digest: competing_authority,
-            }.get(authority_record_digest)
-
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_Authorities(),
+        _Authority(primary_authority, competing_authority),
         clock=lambda: current_time[0],
     )
     registry.admit(primary, actor="authority", now=NOW)
@@ -793,9 +820,9 @@ def test_revoked_policy_repairs_missing_display_journal_but_blocks_execution(
     """Historical queue repair is distinct from current display-worker authority."""
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -854,9 +881,9 @@ def test_report_first_display_resumes_under_a_successor_fence(tmp_path: Path) ->
 
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -1003,9 +1030,9 @@ def test_display_input_rechecks_source_capability_after_presigning(tmp_path: Pat
         def clock(current_time: list[datetime] = current_time) -> datetime:
             return current_time[0]
 
-        registry = ExternalValidationPolicyRegistry(
+        registry = _policy_registry(
             DurableJournal(case_path / "policy.jsonl"),
-            authority_port=_Authority(*authority._records.values(), successor_authority),  # noqa: SLF001
+            _Authority(*authority._records.values(), successor_authority),  # noqa: SLF001
             clock=clock,
         )
         registry.admit(policy, actor="authority", now=NOW)
@@ -1147,9 +1174,9 @@ def test_display_input_rejects_before_mint_and_storage_failure_hides_source(
 
     current_time = [NOW]
     policy, authority = _bound_policy()
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -1251,9 +1278,9 @@ def test_display_input_rejects_superseded_policy_before_presigning(tmp_path: Pat
         update={"authority_record_digest": successor_authority.digest, "policy_digest": None},
         deep=True,
     ).sealed()
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=_Authority(*authority._records.values(), successor_authority),  # noqa: SLF001
+        _Authority(*authority._records.values(), successor_authority),  # noqa: SLF001
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -1318,8 +1345,8 @@ def test_display_input_rejects_superseded_policy_before_presigning(tmp_path: Pat
 def test_reported_display_remains_discoverable_when_enqueue_crashes(tmp_path: Path) -> None:
     """A failed second-journal enqueue cannot relabel an immutable report COMPLETE."""
     policy, authority = _bound_policy()
-    registry = ExternalValidationPolicyRegistry(
-        DurableJournal(tmp_path / "policy.jsonl"), authority_port=authority, clock=lambda: NOW
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"), authority, clock=lambda: NOW
     )
     registry.admit(policy, actor="authority", now=NOW)
     display = _FailOnceDisplayStore(
@@ -1386,8 +1413,8 @@ def test_reported_display_remains_discoverable_when_enqueue_crashes(tmp_path: Pa
 def test_display_failure_uses_the_aggregate_fenced_retry_budget(tmp_path: Path) -> None:
     """Display retry facts are closed, durable, and idempotent for one live lease."""
     policy, authority = _bound_policy()
-    registry = ExternalValidationPolicyRegistry(
-        DurableJournal(tmp_path / "policy.jsonl"), authority_port=authority, clock=lambda: NOW
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"), authority, clock=lambda: NOW
     )
     registry.admit(policy, actor="authority", now=NOW)
     display = ExternalDisplayArtifactStore(
@@ -1460,9 +1487,9 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
     """The nested commit guard rejects expiry or revocation that occurs during HEAD."""
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)
@@ -1630,9 +1657,9 @@ def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Pat
     """A receipt retry remains read-idempotent but never outlives its exact lease fence."""
     policy, authority = _bound_policy()
     current_time = [NOW]
-    registry = ExternalValidationPolicyRegistry(
+    registry = _policy_registry(
         DurableJournal(tmp_path / "policy.jsonl"),
-        authority_port=authority,
+        authority,
         clock=lambda: current_time[0],
     )
     registry.admit(policy, actor="authority", now=NOW)

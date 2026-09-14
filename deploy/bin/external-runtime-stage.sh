@@ -7,8 +7,11 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_dir="$(cd -- "$script_dir/../.." && pwd)"
 compose_file="$repo_dir/deploy/compose.external-reconstruction.yaml"
 
+readonly runtime_image_pin_checker="$repo_dir/tools/check_runtime_image_pins.py"
+readonly candidate_compose_path="deploy/compose.external-reconstruction.yaml"
+
 usage() {
-  echo "usage: $0 prepare|status|verify|start|stop --env-file /absolute/candidate.env" >&2
+  echo "usage: $0 status|stop | prepare|verify|start --env-file /absolute/candidate.env" >&2
   exit 2
 }
 
@@ -17,6 +20,7 @@ readonly required_keys=(
   KSI_EXTERNAL_RC_STATE_DIR
   KSI_EXTERNAL_RC_RELEASE_EVIDENCE
   KSI_EXTERNAL_RC_HOST_BINDING
+  KSI_EXTERNAL_RC_OPERATOR_DIR
   KSI_EXTERNAL_RC_HOST
   KSI_EXTERNAL_RC_APP_PORT
   KSI_EXTERNAL_RC_IDENTITY_PORT
@@ -91,6 +95,221 @@ canonical_repository_digest() {
 
 compose() {
   docker compose --project-name "$KSI_EXTERNAL_RC_PROJECT_NAME" --env-file "$env_file" -f "$compose_file" "$@"
+}
+
+runtime_image_reference_sets() {
+  local entries
+  command -v python3 >/dev/null || {
+    echo "python3 is required to derive runtime image references" >&2; return 1;
+  }
+  entries="$(python3 "$runtime_image_pin_checker" --root "$repo_dir" --references-json)" || return 1
+  jq -ce --arg candidate_compose_path "$candidate_compose_path" '
+    select(type == "array"
+    and all(.[];
+      type == "object"
+      and (keys | sort == ["line", "path", "reference"])
+      and (.line | type == "number" and floor == . and . >= 1)
+      and (.path | type == "string" and length > 0)
+      and (.reference | type == "string" and length > 0)))
+    | {
+        canonical: ([.[].reference] | unique | sort),
+        candidate: ([.[] | select(.path == $candidate_compose_path) | .reference] | unique | sort)
+      }
+    | . as $sets
+    | select(($sets.candidate | length) == 3)
+    | select([
+        $sets.candidate[] as $reference
+        | select(($sets.canonical | index($reference)) == null)
+      ] | length == 0)
+  ' <<<"$entries"
+}
+
+readonly socket_acl_helper="/usr/local/lib/ksi-external-runtime/bin/ksi-external-runtime-socket-acl"
+
+private_owner_mode() {
+  local path="$1" expected_type="$2" metadata uid gid mode node_type
+  [[ -e "$path" && ! -L "$path" ]] || return 1
+  metadata="$(stat --format='%u:%g:%a:%F' -- "$path")" || return 1
+  IFS=: read -r uid gid mode node_type <<<"$metadata"
+  [[ "$node_type" == "$expected_type" ]] || return 1
+  [[ "$uid" == 0 || "$uid" == 10001 ]] || return 1
+  [[ "$gid" == 0 || "$gid" == 10001 ]] || return 1
+  [[ "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$mode & 0022) == 0 && (8#$mode & 0007) == 0 ))
+}
+
+protected_operator_parent() {
+  # This root-owned ancestor is shared by isolated host accounts. Public
+  # traversal is not access to the private operator child or its secrets.
+  local path="$1" metadata uid gid mode node_type
+  [[ -d "$path" && ! -L "$path" ]] || return 1
+  metadata="$(stat --format='%u:%g:%a:%F' -- "$path")" || return 1
+  IFS=: read -r uid gid mode node_type <<<"$metadata"
+  [[ "$uid" == 0 && "$gid" == 0 && "$node_type" == directory && "$mode" =~ ^[0-7]{3,4}$ ]] || return 1
+  (( (8#$mode & 0022) == 0 && (8#$mode & 0100) != 0 ))
+}
+
+validate_operator_directory() {
+  local requested="${KSI_EXTERNAL_RC_OPERATOR_DIR:-}" canonical parent
+  [[ "$requested" == /* && "$requested" != *".."* ]] || {
+    echo "BLOCKED_OPERATOR_INPUT: operator directory must be an explicit absolute path" >&2; return 1;
+  }
+  canonical="$(readlink -f -- "$requested")" || {
+    echo "BLOCKED_OPERATOR_INPUT: operator directory cannot be resolved" >&2; return 1;
+  }
+  [[ "$canonical" == "$requested" ]] || {
+    echo "BLOCKED_OPERATOR_INPUT: operator directory must not traverse a symlink" >&2; return 1;
+  }
+  case "$canonical" in
+    /etc/ksi-external-runtime/operator|/var/lib/ksi-external-runtime/operator) ;;
+    *) echo "BLOCKED_OPERATOR_INPUT: operator directory is outside the dedicated candidate roots" >&2; return 1 ;;
+  esac
+  parent="${canonical%/operator}"
+  protected_operator_parent "$parent" && private_owner_mode "$canonical" directory || {
+    echo "BLOCKED_OPERATOR_INPUT: operator parent ownership or mode is unsafe" >&2; return 1;
+  }
+  local required path
+  for required in workflow.json provider.json; do
+    path="$canonical/$required"
+    private_owner_mode "$path" "regular file" || {
+      echo "BLOCKED_OPERATOR_INPUT: operator $required is missing or unsafe" >&2; return 1;
+    }
+  done
+  for required in secrets signing; do
+    path="$canonical/$required"
+    private_owner_mode "$path" directory || {
+      echo "BLOCKED_OPERATOR_INPUT: operator $required directory is missing or unsafe" >&2; return 1;
+    }
+  done
+  operator_dir="$canonical"
+}
+
+verify_socket_acl_proof() {
+  local metadata uid gid mode node_type proof
+  [[ -f "$socket_acl_helper" && ! -L "$socket_acl_helper" ]] || {
+    echo "BLOCKED_SOCKET_ACL: installed socket ACL helper is unavailable" >&2; return 1;
+  }
+  metadata="$(stat --format='%u:%g:%a:%F' -- "$socket_acl_helper")" || return 1
+  IFS=: read -r uid gid mode node_type <<<"$metadata"
+  [[ "$uid" == 0 && "$node_type" == "regular file" && "$mode" =~ ^[0-7]{3,4}$ ]] &&
+    (( (8#$mode & 0022) == 0 && (8#$mode & 0100) != 0 )) || {
+      echo "BLOCKED_SOCKET_ACL: installed socket ACL helper ownership or mode is unsafe" >&2; return 1;
+    }
+  proof="$(sudo -n -- "$socket_acl_helper" verify --json --untrusted-user nobody)" || {
+    echo "BLOCKED_SOCKET_ACL: fresh socket ACL proof is unavailable" >&2; return 1;
+  }
+  jq -e '
+    type == "object"
+    and (keys | sort == ["clientConnect", "observedAtUtc", "schema", "serverPeerReceipts", "status", "validator"])
+    and .schema == "external-runtime-socket-acl-proof.v2"
+    and .status == "OBSERVED_SERVER_PEER_CREDENTIAL"
+    and (.observedAtUtc | type == "string" and length > 0)
+    and .validator == "ksi-validator"
+    and (.clientConnect | type == "object" and (keys | sort == ["deniedOtherAccount", "validator"])
+      and .deniedOtherAccount == "nobody"
+      and .validator == ["/run/ksi-external-runtime/launcher/inspection.sock", "/run/ksi-external-runtime/launcher/measurement.sock"])
+    and (.serverPeerReceipts | type == "array" and length == 2
+      and ([.[].lane] | sort) == ["INSPECTION", "MEASUREMENT"]
+      and all(.[];
+        type == "object" and (keys | sort == ["lane", "server", "serverObservedWorker", "socket"])
+        and (.socket | type == "string" and length > 0)
+        and (.server | type == "object" and (keys | sort == ["gid", "pid", "uid"])
+          and (.pid | type == "number" and . > 0)
+          and (.uid | type == "number" and . >= 0)
+          and (.gid | type == "number" and . >= 0))
+        and (.serverObservedWorker | type == "object" and (keys | sort == ["gid", "pid", "uid"])
+          and (.pid | type == "number" and . > 0)
+          and (.uid | type == "number" and . >= 0)
+          and (.gid | type == "number" and . >= 0))
+      ))
+  ' >/dev/null <<<"$proof" || {
+    echo "BLOCKED_SOCKET_ACL: fresh proof lacks exact server peer credentials" >&2; return 1;
+  }
+}
+
+validate_supplied_credentials_in_exact_core_image() {
+  compose --profile candidate-preflight run --rm --no-deps --no-build --pull never \
+    candidate-credential-validation >/dev/null || {
+      echo "BLOCKED_EXTERNAL_CREDENTIALS: exact Core image rejected supplied credential material" >&2; return 1;
+    }
+}
+
+preflight_authority_in_exact_core_image() {
+  local proof
+  proof="$(compose --profile candidate-preflight run --rm --no-deps --no-build --pull never \
+    candidate-authority-preflight)" || {
+      echo "BLOCKED_EXTERNAL_AUTHORITY_CONFIG: exact Core image preflight failed" >&2; return 1;
+    }
+  jq -e '
+    type == "object"
+    and (keys | sort == ["activationStatus", "organizationId", "quantitativeEligible", "status"])
+    and .status == "CONFIG_VALIDATED"
+    and .activationStatus == "NOT_ATTACHED"
+    and (.organizationId | type == "string" and length > 0)
+    and .quantitativeEligible == false
+  ' >/dev/null <<<"$proof" || {
+    echo "BLOCKED_EXTERNAL_AUTHORITY_CONFIG: Core preflight claimed an invalid status" >&2; return 1;
+  }
+}
+
+activation_preflight() {
+  require_release_evidence || return 1
+  validate_operator_directory || return 1
+  validate_supplied_credentials_in_exact_core_image || return 1
+  verify_socket_acl_proof || return 1
+  preflight_authority_in_exact_core_image || return 1
+}
+
+verify_live_provider() {
+  local response
+  response="$(compose exec -T core /app/.venv/bin/python -c '
+import urllib.request
+
+with urllib.request.urlopen("http://127.0.0.1:8000/ready/external-authority", timeout=3) as reply:
+    print(reply.read().decode("utf-8"))
+')" || {
+    echo "BLOCKED_EXTERNAL_AUTHORITY_RUNTIME: running Core is not provider-ready" >&2; return 1;
+  }
+  jq -e '
+    type == "object"
+    and (keys | sort == ["status"])
+    and .status == "PROVIDER_CONFIGURED"
+  ' >/dev/null <<<"$response" || {
+    echo "BLOCKED_EXTERNAL_AUTHORITY_RUNTIME: running Core returned an unavailable provider" >&2; return 1;
+  }
+}
+
+core_is_running() {
+  compose ps --status running --services | grep -Fx core >/dev/null
+}
+
+verify_started_compose_images() {
+  local service image_variable expected_image_id actual_image_id
+  local -a container_ids
+  while read -r service image_variable; do
+    expected_image_id="${!image_variable:-}"
+    [[ "$expected_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+      echo "BLOCKED_RELEASE_EVIDENCE: $service has no verified image ID" >&2; return 1;
+    }
+    mapfile -t container_ids < <(compose ps --all --quiet "$service")
+    [[ "${#container_ids[@]}" -eq 1 && -n "${container_ids[0]}" ]] || {
+      echo "BLOCKED_RUNTIME_IMAGE: $service does not have exactly one created container" >&2; return 1;
+    }
+    actual_image_id="$(docker container inspect --format '{{.Image}}' "${container_ids[0]}")" || {
+      echo "BLOCKED_RUNTIME_IMAGE: $service container image cannot be inspected" >&2; return 1;
+    }
+    [[ "$actual_image_id" == "$expected_image_id" ]] || {
+      echo "BLOCKED_RUNTIME_IMAGE: $service container image differs from the verified image ID" >&2; return 1;
+    }
+  done <<'EOF'
+init-state KSI_EXTERNAL_RC_CORE_IMAGE_ID
+identity KSI_EXTERNAL_RC_CORE_IMAGE_ID
+core KSI_EXTERNAL_RC_CORE_IMAGE_ID
+dashboard KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID
+minio KSI_EXTERNAL_RC_MINIO_IMAGE_ID
+bucket-init KSI_EXTERNAL_RC_MC_IMAGE_ID
+caddy KSI_EXTERNAL_RC_CADDY_IMAGE_ID
+EOF
 }
 
 sha256_file() {
@@ -185,8 +404,8 @@ verify_artifact_binding() {
 }
 
 validate_canonical_release_evidence() {
-  local evidence="$1" source_commit="$2"
-  jq -e --arg commit "$source_commit" '
+  local evidence="$1" source_commit="$2" expected_external_references="$3"
+  jq -e --arg commit "$source_commit" --argjson expected_external_references "$expected_external_references" '
     def digest: type == "string" and test("^sha256:[0-9a-f]{64}$");
     def artifact($kind):
       type == "object"
@@ -214,15 +433,16 @@ validate_canonical_release_evidence() {
         and (.sbom | artifact("cyclonedx-json"))
         and (.scanner | artifact("scanner-json"))] | all)
     and ([.productImages[].reference] as $refs | ($refs | unique | length) == ($refs | length))
-    and (.externalRuntimeImages | type == "array" and length >= 2)
+    and (.externalRuntimeImages | type == "array")
     and ([.externalRuntimeImages[] | external_reference] | all)
     and ([.externalRuntimeImages[]] as $refs | ($refs | unique | length) == ($refs | length))
+    and ([.externalRuntimeImages[]] | sort == $expected_external_references)
   ' "$evidence" >/dev/null
 }
 
 validate_host_binding() {
-  local binding="$1" source_commit="$2" evidence_digest="$3"
-  jq -e --arg commit "$source_commit" --arg evidence_digest "$evidence_digest" '
+  local binding="$1" source_commit="$2" evidence_digest="$3" expected_external_references="$4"
+  jq -e --arg commit "$source_commit" --arg evidence_digest "$evidence_digest" --argjson expected_external_references "$expected_external_references" '
     def digest: type == "string" and test("^sha256:[0-9a-f]{64}$");
     def artifact($kind):
       type == "object"
@@ -275,15 +495,17 @@ validate_host_binding() {
     and (.runtimeProducts | type == "array" and length == 2 and ([.[] | runtime] | all))
     and ([.runtimeProducts[].role] | sort == ["inspector", "measurement"])
     and ([.runtimeProducts[].releaseReference] as $refs | ($refs | unique | length) == ($refs | length))
-    and (.externalRuntimeImages | type == "array" and length >= 2 and ([.[] | external] | all))
+    and (.externalRuntimeImages | type == "array" and ([.[] | external] | all))
     and ([.externalRuntimeImages[].releaseReference] as $refs | ($refs | unique | length) == ($refs | length))
+    and ([.externalRuntimeImages[].releaseReference] | sort == $expected_external_references)
   ' "$binding" >/dev/null
 }
 
 require_release_evidence() {
   local evidence="$KSI_EXTERNAL_RC_RELEASE_EVIDENCE"
   local binding="$KSI_EXTERNAL_RC_HOST_BINDING"
-  local source_commit evidence_digest component role reference image_id repo_digests canonical_digest
+  local source_commit evidence_digest runtime_reference_sets canonical_runtime_references
+  local candidate_runtime_references component role reference image_id repo_digests canonical_digest
   local sbom_path sbom_sha256 sbom_bytes sbom_type scanner_path scanner_sha256 scanner_bytes scanner_type
 
   [[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]] || {
@@ -307,18 +529,38 @@ require_release_evidence() {
   evidence_digest="$(sha256_file "$evidence")" || {
     echo "BLOCKED_RELEASE_EVIDENCE: release evidence cannot be hashed" >&2; return 1;
   }
-  validate_canonical_release_evidence "$evidence" "$source_commit" || {
+  runtime_reference_sets="$(runtime_image_reference_sets)" || {
+    echo "BLOCKED_RELEASE_EVIDENCE: exact source runtime image inventory is unavailable" >&2; return 1;
+  }
+  canonical_runtime_references="$(jq -ce '.canonical' <<<"$runtime_reference_sets")" || {
+    echo "BLOCKED_RELEASE_EVIDENCE: exact source runtime inventory is malformed" >&2; return 1;
+  }
+  candidate_runtime_references="$(jq -ce '.candidate' <<<"$runtime_reference_sets")" || {
+    echo "BLOCKED_RELEASE_EVIDENCE: exact source candidate runtime inventory is malformed" >&2; return 1;
+  }
+  validate_canonical_release_evidence "$evidence" "$source_commit" "$canonical_runtime_references" || {
     echo "BLOCKED_RELEASE_EVIDENCE: canonical release-evidence v1 is incomplete or substituted" >&2; return 1;
   }
-  validate_host_binding "$binding" "$source_commit" "$evidence_digest" || {
+  validate_host_binding "$binding" "$source_commit" "$evidence_digest" "$candidate_runtime_references" || {
     echo "BLOCKED_RELEASE_EVIDENCE: host image binding is incomplete or does not bind this evidence" >&2; return 1;
   }
 
   [[ "$(jq -c '[.productImages[].reference] | sort' "$evidence")" == "$(jq -c '[.productImages[].releaseReference] | sort' "$binding")" ]] || {
     echo "BLOCKED_RELEASE_EVIDENCE: product image references differ between evidence and host binding" >&2; return 1;
   }
-  [[ "$(jq -c '[.externalRuntimeImages[]] | sort' "$evidence")" == "$(jq -c '[.externalRuntimeImages[].releaseReference] | sort' "$binding")" ]] || {
-    echo "BLOCKED_RELEASE_EVIDENCE: external runtime references differ between evidence and host binding" >&2; return 1;
+  jq -e --argjson candidate "$candidate_runtime_references" '
+    [.externalRuntimeImages[]] as $inventory
+    | [$candidate[] as $reference | select(($inventory | index($reference)) == null)]
+    | length == 0
+  ' "$evidence" >/dev/null || {
+    echo "BLOCKED_RELEASE_EVIDENCE: candidate runtime dependencies are absent from canonical inventory" >&2; return 1;
+  }
+  jq -e --argjson candidate "$candidate_runtime_references" '
+    [.externalRuntimeImages[].releaseReference] as $binding
+    | [$candidate[] as $reference | select(($binding | index($reference)) == null)]
+    | length == 0
+  ' "$binding" >/dev/null || {
+    echo "BLOCKED_RELEASE_EVIDENCE: host candidate runtime binding omits a Compose dependency" >&2; return 1;
   }
 
   for component in core dashboard; do
@@ -331,6 +573,10 @@ require_release_evidence() {
     verify_product_image_binding "$component" "$reference" "$image_id" "$repo_digests" || {
       echo "BLOCKED_RELEASE_EVIDENCE: $component local image observation differs from host binding" >&2; return 1;
     }
+    case "$component" in
+      core) export KSI_EXTERNAL_RC_CORE_IMAGE_ID="$image_id" ;;
+      dashboard) export KSI_EXTERNAL_RC_DASHBOARD_IMAGE_ID="$image_id" ;;
+    esac
     sbom_path="$(jq -r --arg component "$component" '.productImages[] | select(.component == $component) | .sbom.path' "$binding")"
     sbom_sha256="$(jq -r --arg component "$component" '.productImages[] | select(.component == $component) | .sbom.sha256' "$binding")"
     sbom_bytes="$(jq -r --arg component "$component" '.productImages[] | select(.component == $component) | .sbom.bytes' "$binding")"
@@ -386,6 +632,20 @@ require_release_evidence() {
     pinned_external_runtime_reference "$reference" && verify_image_binding "$reference" "$image_id" && verify_observed_repo_digests "$reference" "$repo_digests" "$canonical_digest" || {
       echo "BLOCKED_RELEASE_EVIDENCE: external runtime image differs from host binding" >&2; return 1;
     }
+    case "$reference" in
+      caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d)
+        export KSI_EXTERNAL_RC_CADDY_IMAGE_ID="$image_id"
+        ;;
+      minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727)
+        export KSI_EXTERNAL_RC_MC_IMAGE_ID="$image_id"
+        ;;
+      minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e)
+        export KSI_EXTERNAL_RC_MINIO_IMAGE_ID="$image_id"
+        ;;
+      *)
+        echo "BLOCKED_RELEASE_EVIDENCE: unexpected external runtime image" >&2; return 1;
+        ;;
+    esac
   done < <(jq -r '.externalRuntimeImages[] | [.releaseReference, .dockerImageId, (.repoDigests | @json)] | @tsv' "$binding")
 }
 
@@ -397,30 +657,68 @@ prepare() {
 }
 
 status() {
-  compose ps
+  docker container ls -a \
+    --filter 'label=com.docker.compose.project=ksi-external-rc' \
+    --format 'table {{.ID}}\t{{.Names}}\t{{.Status}}'
 }
 
 verify() {
-  require_release_evidence
-  compose config >/dev/null
-  echo "BLOCKED_QUANTITATIVE_AUTHORITY: no real catalog, policy, evidence-currentness, and input-capability authority is wired by this candidate"
-  return 1
+  activation_preflight || return 1
+  compose config >/dev/null || return 1
+  if core_is_running; then
+    verify_started_compose_images || return 1
+    verify_live_provider || return 1
+    echo "PROVIDER_CONFIGURED: runtime attachment/currentness observed; no eligibility decision is reported"
+    return 0
+  fi
+  echo "CONFIG_VALIDATED: provider configuration is not attached; no eligibility decision is reported"
 }
 
 start() {
-  require_release_evidence
-  compose config >/dev/null
-  echo "BLOCKED_QUANTITATIVE_AUTHORITY: starting would misrepresent an absent external quantitative authority" >&2
-  return 1
+  # Prove mutable release, credential, ACL, and authority inputs immediately
+  # before the sole ordinary service start.
+  activation_preflight || return 1
+  compose config >/dev/null || return 1
+  compose up -d --no-build --pull never --wait || return 1
+  verify_started_compose_images || return 1
+  verify_live_provider || return 1
 }
 
 stop() {
-  compose stop
+  local container_ids container_id observed_project
+  container_ids="$(docker container ls -a \
+    --filter 'label=com.docker.compose.project=ksi-external-rc' \
+    --format '{{.ID}}')" || {
+    echo "BLOCKED_CANDIDATE_STOP: candidate containers cannot be listed" >&2; return 1;
+  }
+  [[ -n "$container_ids" ]] || return 0
+
+  while IFS= read -r container_id; do
+    [[ "$container_id" =~ ^[0-9a-f]{12,64}$ ]] || {
+      echo "BLOCKED_CANDIDATE_STOP: Docker returned an invalid candidate container ID" >&2; return 1;
+    }
+    observed_project="$(docker container inspect \
+      --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id")" || {
+      echo "BLOCKED_CANDIDATE_STOP: candidate container cannot be rechecked" >&2; return 1;
+    }
+    [[ "$observed_project" == ksi-external-rc ]] || {
+      echo "BLOCKED_CANDIDATE_STOP: refusing a container outside ksi-external-rc" >&2; return 1;
+    }
+    docker container stop -- "$container_id" || {
+      local stop_status=$?
+      echo "BLOCKED_CANDIDATE_STOP: candidate container stop failed" >&2; return "$stop_status";
+    }
+  done <<<"$container_ids"
 }
 
 main() {
-  [[ $# -eq 3 && "$2" == "--env-file" ]] || usage
+  [[ $# -ge 1 ]] || usage
   action="$1"
+  case "$action" in
+    status) [[ $# -eq 1 ]] || usage; status; return ;;
+    stop) [[ $# -eq 1 ]] || usage; stop; return ;;
+  esac
+  [[ $# -eq 3 && "$2" == "--env-file" ]] || usage
   env_file="$3"
   [[ "$env_file" == /* && "$env_file" != *".."* && -f "$env_file" && ! -L "$env_file" ]] || {
     echo "candidate env must be an absolute regular file" >&2; return 2;
@@ -441,10 +739,8 @@ main() {
   [[ "$KSI_EXTERNAL_RC_HOST" == *.ts.net ]] || { echo "candidate host must be Tailnet MagicDNS" >&2; return 1; }
   case "$action" in
     prepare) prepare ;;
-    status) status ;;
     verify) verify ;;
     start) start ;;
-    stop) stop ;;
     *) usage ;;
   esac
 }
