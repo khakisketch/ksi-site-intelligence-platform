@@ -35,8 +35,6 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from ksi_core.acquisition.models import CapabilityStatus
 from ksi_core.acquisition.store import AcquisitionConnectivityStore
-from ksi_core.api_base import CamelModel, iso_utc
-from ksi_core.auth import Principal, PrincipalKind
 from ksi_core.capability.authority_store import (
     ActivationAuthorityCause,
     ActivationLifecycleStatus,
@@ -46,8 +44,10 @@ from ksi_core.capability.authority_store import (
     OperationalCapabilityActivationProjection,
     operational_capability_activation_record_digest,
 )
-from ksi_core.durable_journal import DurableJournal, JournalSealedError
-from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.foundation.api_base import CamelModel, iso_utc
+from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.foundation.identifiers import is_path_safe_identifier
+from ksi_core.identity.auth import Principal, PrincipalKind
 
 RUNTIME_ROUTE_OBSERVATION_JOURNAL_NAME = "capability-runtime-observations.jsonl"
 RUNTIME_ROUTE_OBSERVATION_LEGACY_SCHEMA_VERSION: Final[Literal["1.0"]] = "1.0"

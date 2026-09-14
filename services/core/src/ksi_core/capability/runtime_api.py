@@ -20,8 +20,6 @@ from ksi_domain.enums import MissionExecutionStatus
 from ksi_mission_contracts.models import parse_mission_contract
 from pydantic import Field, field_validator
 
-from ksi_core.api_base import JOURNAL_SEALED_DETAIL, CamelModel
-from ksi_core.auth import Permission, Principal, require_permission
 from ksi_core.capability.runtime_projection import (
     MissionPolicyDecision,
     ObservationIngestDisposition,
@@ -32,13 +30,15 @@ from ksi_core.capability.runtime_projection import (
     RuntimeRouteInvocationRequest,
     RuntimeRouteObservationV1,
 )
-from ksi_core.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
+from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL, CamelModel
+from ksi_core.foundation.identifiers import PATH_SAFE_IDENTIFIER_PATTERN, is_path_safe_identifier
+from ksi_core.identity.auth import Permission, Principal, require_permission
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.mission_records import MissionStore
+    from ksi_core.domains.missions.mission_execution import MissionExecutionStore
+    from ksi_core.domains.missions.mission_records import MissionStore
 
 
 _REQUIRE_RUNTIME_OBSERVE = require_permission(Permission.CAPABILITY_RUNTIME_OBSERVE)

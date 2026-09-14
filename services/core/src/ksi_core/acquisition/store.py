@@ -18,9 +18,9 @@ from ksi_core.acquisition.models import (
     OperatingMode,
     ReadinessStatus,
 )
-from ksi_core.api_base import iso_utc
-from ksi_core.durable_journal import DurableJournal
-from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.foundation.api_base import iso_utc
+from ksi_core.foundation.durable_journal import DurableJournal
+from ksi_core.foundation.identifiers import is_path_safe_identifier
 
 if TYPE_CHECKING:
     from collections.abc import Callable

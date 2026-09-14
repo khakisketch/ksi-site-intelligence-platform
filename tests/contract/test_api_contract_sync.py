@@ -23,6 +23,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
@@ -90,6 +91,7 @@ from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_use_evaluator import ExternalUseEvaluator
 from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 from ksi_core.flight_artifacts import FlightArtifactStore
+from ksi_core.identity import auth as canonical_auth
 from ksi_core.mission_execution import MissionExecutionStore
 from ksi_core.mission_records import MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -1524,12 +1526,31 @@ def _has_auth_dependency(route: Any) -> bool:
         dependency = pending.pop()
         call = getattr(dependency, "call", None)
         module = getattr(call, "__module__", "")
-        if module == "ksi_core.auth" or getattr(call, "__qualname__", "").startswith(
+        if module == canonical_auth.__name__ or getattr(call, "__qualname__", "").startswith(
             ("require_permission", "require_principal", "_require_device_sequence_access")
         ):
             return True
         pending.extend(dependency.dependencies)
     return False
+
+
+def test_auth_dependency_guard_recognizes_canonical_auth_but_not_an_ordinary_dependency() -> None:
+    app = FastAPI()
+
+    def ordinary_dependency() -> None:
+        return None
+
+    def endpoint() -> dict[str, bool]:
+        return {"ok": True}
+
+    app.add_api_route(
+        "/protected", endpoint, dependencies=[Depends(canonical_auth.require_principal())]
+    )
+    app.add_api_route("/ordinary", endpoint, dependencies=[Depends(ordinary_dependency)])
+    routes = {route.path: route for route in _walk_routes(app)}
+    assert _has_auth_dependency(routes["/protected"])
+    assert not _has_auth_dependency(routes["/ordinary"])
+    assert not _has_auth_dependency(routes["/openapi.json"])
 
 
 def test_no_unauthenticated_route_outside_allowlist(tmp_path: Path) -> None:

@@ -3794,8 +3794,15 @@ def test_every_known_artifact_reader_uses_the_central_authority_resolver(
     authority_call: str,
 ) -> None:
     """Inventory guard for download/report/comparison/checkpoint/workspace readers."""
+    from importlib import import_module
+
     source_root = Path(__file__).parents[2] / "services/core/src/ksi_core"
-    source = (source_root / relative_path).read_text(encoding="utf-8")
+    module = import_module(f"ksi_core.{Path(relative_path).stem}")
+    assert module.__file__ is not None
+    canonical_path = Path(module.__file__).resolve()
+    assert canonical_path != (source_root / relative_path).resolve()
+    assert canonical_path.is_relative_to((source_root / "domains").resolve())
+    source = canonical_path.read_text(encoding="utf-8")
     assert authority_call in source
     assert "build_processing_artifact_object_key" not in source
 

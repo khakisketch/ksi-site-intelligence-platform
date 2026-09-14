@@ -8,8 +8,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field, field_validator, model_validator
 
-from ksi_core.api_base import CamelModel
-from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.foundation.api_base import CamelModel
+from ksi_core.foundation.identifiers import is_path_safe_identifier
 
 
 class OperatingMode(StrEnum):

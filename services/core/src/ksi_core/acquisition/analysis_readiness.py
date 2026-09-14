@@ -21,10 +21,10 @@ from ksi_core.acquisition.models import (
 )
 
 if TYPE_CHECKING:
-    from ksi_core.capture_quality_reports import CaptureQualityReportStore
-    from ksi_core.coverage_reports import CoverageReportStore
-    from ksi_core.processing_jobs import ProcessingJobStore
-    from ksi_core.source_media import SourceMediaStore
+    from ksi_core.acquisition.capture_quality_reports import CaptureQualityReportStore
+    from ksi_core.domains.artifacts.source_media import SourceMediaStore
+    from ksi_core.domains.missions.coverage_reports import CoverageReportStore
+    from ksi_core.domains.processing.processing_jobs import ProcessingJobStore
 
 
 def observation_epoch_id(work_order: ObservationWorkOrder) -> str:
@@ -119,7 +119,7 @@ class AnalysisReadinessProjector:
                 now=now,
             )
         quality_ref = f"capture-quality:{quality.report.report_id}"
-        from ksi_core.capture_quality_reports import is_capture_quality_acceptable
+        from ksi_core.acquisition.capture_quality_reports import is_capture_quality_acceptable
 
         if not is_capture_quality_acceptable(quality.report):
             return self._view(

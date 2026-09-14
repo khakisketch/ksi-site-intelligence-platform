@@ -41,15 +41,15 @@ from ksi_core.acquisition.models import (
     GatewayOperationReceiptRequest,
     GatewayOperationReceiptV1,
 )
-from ksi_core.api_base import iso_utc
-from ksi_core.durable_journal import DurableJournal
-from ksi_core.observation_work_orders import ExternalReconstructionExecutionDenied
+from ksi_core.domains.sites.observation_work_orders import ExternalReconstructionExecutionDenied
+from ksi_core.foundation.api_base import iso_utc
+from ksi_core.foundation.durable_journal import DurableJournal
 
 if TYPE_CHECKING:
     from ksi_core.acquisition.store import AcquisitionConnectivityStore
-    from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.processing_jobs import ProcessingJobStore
-    from ksi_core.source_media import SourceMediaStore
+    from ksi_core.domains.artifacts.source_media import SourceMediaStore
+    from ksi_core.domains.missions.mission_execution import MissionExecutionStore
+    from ksi_core.domains.processing.processing_jobs import ProcessingJobStore
 
 
 class AcquisitionCoordinationRecoveryError(RuntimeError):
