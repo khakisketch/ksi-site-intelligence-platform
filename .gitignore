@@ -76,6 +76,10 @@ design/**/index.html
 /*.png
 /.playwright-mcp/
 
+# 디자인 프리뷰 세션 캡처(콘솔 로그·페이지 PNG/YML) — 로컬 전용 일회성 산출물이라
+# 커밋하지 않는다(docs/ 아래 남길 컷만 옮긴다).
+design-previews/
+
 # manifoldctl 머신별 설정 — IP는 DHCP로 바뀔 수 있어 저장소에 커밋하지 않는다
 # (manifold.env.example 참조. 비밀은 없지만 머신별 값이라 무시 대상이 맞다 — 2026-08-04
 # 병렬 감사에서 여기 없어 mf_git_is_dirty가 항상 true가 되던 결함 발견·정정, 감사 #3).
