@@ -13,6 +13,7 @@ import {
 } from "@/lib/core-api/observation-work-orders";
 import {
   getExternalReconstructionContext,
+  listExternalReconstructionSubmissions,
   resolveExternalWorkOrderExecutionContext,
 } from "@/lib/core-api/external-reconstruction";
 import { getExternalRelativeVolumeReport } from "@/lib/core-api/external-result-workflow";
@@ -33,6 +34,7 @@ import { OperationsWorkHeader } from "../../OperationsWorkHeader";
 import { WorkOrderActionPanel } from "../../WorkOrderActionPanel";
 import { WorkOrderOperationsPanel } from "../../WorkOrderOperationsPanel";
 import { resolveFieldSession } from "../../resolve-session";
+import { deriveExternalWorkOrderStage } from "../../external-work-order-stage";
 import { presentWorkOrder } from "../../work-order-stage";
 
 export const metadata = { title: "현장 작업 · KSI" };
@@ -116,25 +118,32 @@ export default async function FieldWorkOrderPage({
   const acquisitionReadiness = acquisitionProgress?.readiness ?? readinessFallback;
   const pendingDraft = latestPendingDraft(drafts);
   const presentation = presentWorkOrder(workOrder.status);
-  const cardPresentation = workflowClosed
-    ? {
-        label: "업무 종료",
-        detail: "이 작업은 종료되었습니다. 새 산출물 등록과 비교·검토 요청은 시작할 수 없으며, 이미 등록한 파일과 결과는 계속 확인할 수 있습니다.",
-        tone: "neutral" as const,
-      }
-    : planningOnly
-    ? {
-        label: "승인된 재관측 산출물 등록",
-        detail: "승인된 재관측에 필요한 산출물을 등록하세요. 이 작업에서는 비행이나 장비를 실행하지 않습니다.",
-        tone: "progress" as const,
-      }
-    : externalIngress
-      ? {
-          label: "외부 산출물 등록 준비",
-          detail: "촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.",
-          tone: "progress" as const,
-        }
-      : externalExecutionContext === "UNVERIFIED"
+  // The external next action is derived from retained loop facts (registered
+  // and sealed submissions, this order's latest result, review, approval); it
+  // never infers processing, flight or device state.
+  const [externalSubmissions, externalWorkspace] = externalWorkflow
+    ? await Promise.all([
+        listExternalReconstructionSubmissions(workOrder.workOrderId).catch(() => []),
+        resultWorkspace ?? getSiteWorkspace(workOrder.siteId).catch(() => null),
+      ])
+    : [[], null];
+  const ownExternalResult =
+    externalWorkspace?.externalResult.state === "AVAILABLE" &&
+    externalWorkspace.externalResult.result?.currentWorkOrderId === workOrder.workOrderId
+      ? externalWorkspace.externalResult.result
+      : null;
+  const externalStage = externalWorkflow
+    ? deriveExternalWorkOrderStage({
+        planningOnly,
+        workflowClosed,
+        sealedSubmissionCount: externalSubmissions.filter((item) => item.state === "SEALED").length,
+        registeredSubmissionCount: externalSubmissions.filter((item) => item.state === "REGISTERED").length,
+        latestResult: ownExternalResult,
+      })
+    : null;
+  const cardPresentation = externalStage
+    ? { label: externalStage.label, detail: externalStage.detail, tone: externalStage.tone }
+    : externalExecutionContext === "UNVERIFIED"
       ? {
           label: "작업 실행 정보 확인 필요",
           detail: "작업 실행 정보를 확인하지 못했습니다. 비행이나 장비 실행 준비 상태를 표시하지 않습니다.",
