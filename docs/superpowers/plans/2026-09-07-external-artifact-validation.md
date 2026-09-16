@@ -862,3 +862,33 @@ Human approved only the previously requested ephemeral diagnostic. Two runs used
 Observed: effective capabilities zero; no-new-privileges set; seccomp mode 2; only loopback; reserved test-address connection failed with ENETUNREACH; root write failed with EROFS; requested CPU/memory/PID limits visible. Existing worker raster libraries roundtripped a synthetic 16×16 GeoTIFF and COG. These observations do not establish sandbox escape resistance, hostile-raster handling, resource-exhaustion behavior, producer compatibility or supply-chain acceptance. Numeric limits were diagnostic fixtures, not approved operational policy. The worker image PATH lookup did not find bwrap; Task 4 remains unimplemented and its original sandbox mechanism unverified here.
 
 Exact commands, source and raw outputs: `.superpowers/sdd/2026-09-07-external-artifact-validation/sandbox-diagnostic-{commands.txt,base.py,worker.py,results.json}`. Next decision is a separately reviewed Task 4 backend amendment or a validated environment for the existing bwrap design; diagnostic approval does not authorize a Docker-daemon production trust boundary.
+
+## Execution state — 2026-09-17 (local fixture rehearsal)
+
+Local-only real-fixture rehearsal (`.dev-data/a2-fix/EVIDENCE.md`, 126 lines)
+drove 4A.1–4A.4 on locally generated real GeoTIFFs; the RELATIVE_VOLUME pair
+gate blocked and 4A.5–4A.7 positives were not executable. Durable audit:
+`docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md`.
+
+Verified items: sealed submissions (WO-03/sub-03, WO-04/sub-04, recovery
+sub-05, sub-07 for disjoint captures); inspection REPORTED with TRUE 2×MEASURED
+per submission (4 outcomes, production-decoder values over sha-verified
+downloads); evidence sealed and both records VALIDATED with true sampled
+aggregates (attestation None, no independence claim); compatibility mapping
+admitted seq 10 with exact content-field verification (seq 11 duplicate, seq 12
+revoke experiment leaving exactly one).
+
+Blocking gate: RELATIVE_VOLUME pair returns 201 `BLOCKED /
+VOLUME_AUTHORITY_UNAVAILABLE` (`…2c3ad67c`, re-request `…01eb74ce` same)
+although every externally verifiable leg passes (mapping content-exact, policy
+v6 ACTIVE, both v6 evidence records resolvable via replayed
+`record_for_current_use`, validity windows cover) while live `resolve_for_use`
+returns None — the failing sub-check inside `resolve_for_use` /
+`_current_participants` / `locally_current` is not identifiable from outside
+Core.
+
+Next tasks in order: 1. root-cause VOLUME_AUTHORITY_UNAVAILABLE via Core-side
+instrumentation or focused reproduction; 2. latent boot-hazard investigation
+(`ExternalEvidenceValidationStore` replay re-validating old-policy issued
+events after policy rotation + restart) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md); 3. after unblock: volume issue ->
+review -> proposal positives.

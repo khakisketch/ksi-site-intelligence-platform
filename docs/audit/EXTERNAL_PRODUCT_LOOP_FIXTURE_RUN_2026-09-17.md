@@ -1,0 +1,196 @@
+# External product loop — local real-fixture rehearsal (2026-09-17)
+
+## Scope and authority
+
+This audit faithfully transcribes the local real-fixture rehearsal evidence whose
+source of truth is `.dev-data/a2-fix/EVIDENCE.md` (126 lines, read 2026-09-17),
+except for the rehearsal observations listed in
+`### Rehearsal observations (not in EVIDENCE.md)` below.
+Recipe: `.dev-data/a2-fix/RECIPE.md` (note: file is truncated at §4, line 300 —
+call-sequence tail + blocker list incl. B5 are missing in-file; lane
+placement/sequence were re-derived from A2 evidence + Core sources and recorded
+in the evidence file). Prior state: `.dev-data/a2/EVIDENCE.md` (synthetic bytes
+honestly REJECTED; 4A.5–4A.7 positive paths not executable — E6 fixture
+boundary). Generator: `.dev-data/a2-fix/gen_fixtures.py` (RECIPE §3.1 verbatim,
+output dir adapted to `fixtures/`).
+
+Rank: below the frozen authorities (`PRODUCT_CONSTITUTION`,
+`FINAL_DECISION_LEDGER`, `MASTER_PRD`, `DOMAIN_INVARIANTS`), below ADR-KSI-036
+and `docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`, and below
+the release plan
+`docs/superpowers/plans/2026-09-06-external-reconstruction-release.md` and the
+quantitative specification
+`docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`
+(implementation history); this evidence decides nothing.
+
+**Scope statement — this is a LOCAL-ONLY rehearsal against the decomposed
+stack with locally generated real GeoTIFF fixtures.** It is NOT
+staging/deployment evidence, NOT vendor export-compatibility evidence, NOT
+HIL/field acceptance, and NOT a happy-path pass: the RELATIVE_VOLUME pair gate
+returned typed BLOCKED and the 4A.5–4A.7 positives were not executable. Every
+reachable lane outcome was asserted without inventing facts to force the happy
+path.
+
+Run root: protected `~/.local/state/ksi-a2-console/` (prior A2 journals
+retained: WO-01/sub-01, WO-02/sub-02, old policies). A2 launch scripts reused
+unchanged. Machine-local raw artifacts (data, worker-work, logs, identity,
+operator, screenshots, run-state, drivers) remain under `.dev-data/a2-fix/`;
+this audit is the durable record, not the raw bytes.
+
+## Honesty labels (from EVIDENCE §0, authoritative for this pass)
+
+- DSM/ortho rasters are locally generated constant planes (baseline 10.0 m,
+  current 10.5 m, ortho flat 17 DN), valid GeoTIFF structure + real CRS
+  metadata. They are NOT field data; no accuracy claim is made about them.
+- Checkpoint elevations = baseline plane (10.0) + hand-set offsets
+  (+0.05/+0.02/−0.02), filed with `independenceBasis` text marking them
+  synthetic and `independent_attestation=None` (no independence claim).
+- Lane outcomes filed are TRUE computations over the sealed bytes (same
+  production decoder functions the container runs, executed locally — recorded
+  per stage), verifiable by re-running the pre-flight.
+- No accuracy, independence, or field-survey claim is implied anywhere.
+
+## Fixtures + pre-flight (EVIDENCE §0)
+
+Locally generated real GeoTIFFs: 16×16 float32 DSM planes (baseline 10.0 m,
+current 10.5 m), 16×16 uint8 RGB ortho (flat 17 DN), EPSG:5186 horizontal +
+EPSG:5709 vertical (DSMs; ortho EPSG:5186, no vertical). Pre-flight MEASURED by
+the production decoder before any lane was driven.
+
+| File | Bytes | Pre-flight |
+|------|-------|------------|
+| `fixtures/baseline-dsm.tif` | 408 | MEASURED (EPSG:5186 + vertical EPSG:5709 NAP height) |
+| `fixtures/current-dsm.tif` | 408 | MEASURED (EPSG:5186 + vertical EPSG:5709 NAP height) |
+| `fixtures/ortho.tif` | 425 | MEASURED (EPSG:5186, no vertical) |
+| `fixtures/checkpoints.csv` | 127 | 3 points parse (`p1/p2/p3`) |
+| `fixtures/inspector-preflight.json` | — | full TRUE measurement dumps for report construction |
+
+Pre-flight used the processing-controller venv (`rasterio 1.5.1 / numpy 2.5.1 /
+pyproj 3.7.2`) with `inspect_synthetic_sealed_geotiff` + `parse_checkpoint_csv`
+(RECIPE §3.2, run from `tests/contract` for the `_envelope` helper import).
+
+## Stack (EVIDENCE §1)
+
+| # | Component | Status | Evidence |
+|---|-----------|--------|----------|
+| 1 | Issuer 9120 | UP | `GET /healthz` → 200 (reused A2 identity dir) |
+| 2 | MinIO 9002/9003 | UP | container `a2-minio` restarted; bucket `ksi-a2-console-evidence` retained (NOT fresh — holds A2 objects under distinct keys) |
+| 3 | Core 8020 | UP | `GET /ready` → 200 `{"ready":true}`; `/ready/external-authority` → 200 `PROVIDER_CONFIGURED`. Boot repairs: snapshot re-issued seq 4 (validity + receipts chain; stale ADMIT_POLICY actions dropped — boot validates action payloads against live time), catalog + catalog authority refreshed (fresh ±windows, identical body) via seq 4/5 (`reissue_snapshot.py`, `refresh_catalog.py`; catalog digest `sha256:0aaabd…`) |
+| 4 | Worker | UP | polling Core lanes HTTP 200 |
+| 5 | Dashboard 3320 | UP | `GET /login` → 200 |
+
+## Achieved (EVIDENCE §2)
+
+- Sealed submissions: WO-03 `obs-work-00000003` + `a2f-sub-03`
+  (`ers-v1-90b3…`, 201/200/PUTs 200/seal 200); WO-04 `obs-work-00000004` +
+  `a2f-sub-04` (`ers-v1-3354…`, same); recovery `a2f-sub-05`
+  (`ers-v1-1222…`, manifest `46dfba…`) after sub-04's inspection request was
+  terminally exhausted (see incident note); plus sub-07 (08:50–09:50Z, disjoint
+  from sub-03 07:34–08:34Z) for the mapping pair.
+- Inspection MEASURED ×4 with true computed values: sub-03 REPORTED (TRUE
+  2×MEASURED, BFF `INSPECTION_REPORTED/COMPLETE`); sub-05 REPORTED (TRUE
+  2×MEASURED). Reports filed with production-decoder values over sha-verified
+  downloads.
+- Evidence VALIDATED with attestation None (no independence claim):
+  `eev-v1-02e3…` (sub-03) + `eev-v1-dd6f…` (sub-05; content-idempotent re-declare
+  under sub-05 path) sealed; contexts (attestation None) seq 7 reload 200
+  `68335a…`; issuance needed a SECOND reload (historical-retention ordering —
+  EVIDENCE B7); measurements filed with TRUE sampled aggregates (n=3,
+  mean −0.0167, mae 0.03, rmse 0.0332, max 0.05) → both VALIDATED
+  (`record-9660853f…` sub-03, `record-ccb233fb…` sub-05).
+- Policy: v3 (pair sub-03/sub-04) seq 5 reload 200; v4 (pair sub-03/sub-05)
+  seq 6 reload 200 `9a0f61…`; v6 admitted for the (sub-03, sub-07) pair.
+- Mapping admitted: seq 10 content-field verified (exact expected content:
+  subjects sub-03/sub-07, zone `wa-…-0002`/EPSG:5186, v6 policy `40d04cb7`, v6
+  MEASURED reports `69cbef30`/`593adb97`, v6 VALIDATED evidence
+  `a255ad4f`/`a610a199`, catalog `0aaabd64`); seq 11 duplicate (same content
+  `f7871d74` vs seq 10 `fa5efa79`); seq 12 revoke experiment (duplicate revoked,
+  leaving exactly one). Re-admission (seq 11) + revoke (seq 12) + pair retry did
+  not change the pair outcome.
+
+## Blocked gate (EVIDENCE §2–§3 B8)
+
+RELATIVE_VOLUME pair decisions return 201 `BLOCKED /
+VOLUME_AUTHORITY_UNAVAILABLE` (`…2c3ad67c`, re-request `…01eb74ce` same;
+VISUAL_COMPARISON likewise 201 `BLOCKED / POLICY_UNAVAILABLE` `…c3262186`)
+although every externally verifiable leg passes: mapping content-exact, policy
+v6 ACTIVE (replayed registry selects v6 ACTIVE for the pair), evidence
+resolvable (replayed `record_for_current_use` resolves both v6 evidence
+records), validity windows cover (v6 authority/context/catalog/zone/snapshot
+windows all cover pair time). The live `resolve_for_use` returns None, so the
+failing sub-check inside `resolve_for_use` / `_current_participants` /
+`locally_current` is NOT identifiable from outside Core — needs Core-side debug
+logging (Build approval).
+
+Consequence: 4A.5 volume NOT EXECUTABLE (issue requires an issuable
+RELATIVE_VOLUME decision; 422 `AUTHORITY_UNAVAILABLE` on BLOCKED; history 200
+empty); 4A.6 review positive NOT EXECUTABLE (no reportRef; refs are
+Core-generated; negative already proven in A2 with viewer 403); 4A.7 proposal
+NOT EXECUTABLE (no reportRef). No inputs were fabricated at any point; nothing
+further can be driven without ELIGIBLE.
+
+## Latent hazard (rehearsal observation, not triggered)
+
+`ExternalEvidenceValidationStore` replay re-validates old-policy issued events
+after policy rotation + restart — potential boot failure on accumulated
+rotations (not triggered in this pass) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md). Requires a focused investigation
+separate from the pair-gate root cause.
+
+## Operational lessons (EVIDENCE §§1/3/4)
+
+- Never abandon a leased lane item: the 60 s expiry is terminal by design
+  (see incident note).
+- Snapshot receipts chaining: a reload candidate must extend the Core-retained
+  receipt history (`sequence == prior+1`, `previousSnapshotDigest == prior
+  digest`); never hand-sequence snapshots — chain from the receipts journal
+  (`reissue_snapshot.py`, `refresh_catalog.py` pattern).
+- Frozen clock across restarts: boot validates action payloads against live
+  time — stale ADMIT_POLICY actions / expired authority/catalog windows fail
+  boot (EVIDENCE B1–B4); re-issue snapshots and refresh catalog/authority with
+  fresh windows (identical body) before reload.
+- OIDC operator token TTL ~5 min: mint a fresh `local-admin` OIDC access token
+  before each OPERATOR-gated call; sessions/operator token expire (re-login +
+  re-mint).
+- Protected-root requirement: production factory external-authority loader
+  rejects group-writable ancestors; protected run root
+  `~/.local/state/ksi-a2-console/` (0700/0600) is required while worktree
+  ancestors at 0775 are permanently rejected — copy material and rewrite
+  embedded absolute-path pairs instead of chmodding shared dirs.
+- Historical-retention ordering: evidence issuance needs a second same-snapshot
+  reload on first-seen contexts (EVIDENCE B7).
+- Recipe gap: `.dev-data/a2-fix/RECIPE.md` truncated at §4 line 300; lane
+  placement/sequence re-derived from A2 evidence + Core sources.
+
+### Rehearsal observations (not in EVIDENCE.md)
+
+- BFF `INSPECTION_REPORTED/COMPLETE` states (no BFF-state counterpart in EVIDENCE).
+- OIDC operator token TTL ~5 min (EVIDENCE notes expiry/re-mint only, no duration).
+- Protected-root 0700/0600 requirement and worktree-ancestor 0775 rejection (EVIDENCE notes protected run root only, no mode bits).
+
+## Honest incident note
+
+One abandoned inspection lease (sub-04, via an operator subject-match parse
+issue) exhausted `DEADLINE_EXCEEDED` and was terminal by design; it was
+recovered with a fresh submission carrying the same bytes (sub-05, then sub-07
+for disjoint captures). No measurements were fabricated at any point.
+
+## Evidence location + final state
+
+Raw artifacts are machine-local under `.dev-data/a2-fix/` (fixtures,
+run-state.json, drivers `gen_fixtures.py`, `stage1_setup.mjs`,
+`stage2_sub05.mjs`, `stage3_evidence.mjs`, `stage4_evidence05.mjs`,
+`stage5_zone.mjs`, `stage6_sub07.mjs`, `stage7_pairs.mjs`,
+`admit_policy_v3/v4.py`, `admit_policy_v5_seq8.py`, `admit_v6_seq9.py`,
+`admit_mapping_seq8.py`, `admit_contexts_seq7.py`, `drive_inspections_real.py`,
+`drive_evidence_real.py`, `reissue_snapshot.py`, `refresh_catalog.py`,
+`revoke_mapping.py`, logs `logs-{core,worker,issuer,dashboard}.log`,
+screenshots `shots-*.png`). This audit is the durable record.
+
+FINAL per EVIDENCE §4: stack STOPPED (all ports verified down). Authority
+generation seq 12 (`5756cbcb…`); snapshot `validUntil` ≈ +2 h from seq-12 time
+— re-issue via `reissue_snapshot.py` pattern before any new reload;
+catalog/policy/context windows ≈ +3 h. Sessions + OIDC operator token expired
+(re-login + re-mint). Relaunch order per `.dev-data/a2/EVIDENCE.md` §6
+(issuer → MinIO `docker start a2-minio` → Core `start_core.py` → worker
+`start_worker.py` → Dashboard dev 3320). Never copy
+`.dev-data/a2/operator/*.json` over protected copies.
