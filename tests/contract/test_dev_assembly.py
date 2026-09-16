@@ -78,6 +78,7 @@ from ksi_core.processing_jobs import ProcessingJobStore
 from ksi_core.region_extraction_reports import RegionExtractionStore
 from ksi_core.region_extraction_requests import RegionExtractionRequestStore
 from ksi_core.report_exports import ReportExportStore
+from ksi_core.site_workspace import SiteBriefingStore
 from ksi_core.sites import SiteStore
 from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -401,6 +402,9 @@ def _max_assembly_kwargs(tmp_path: Path) -> dict[str, Any]:
         "edge_dispatch_store": edge_dispatch_store,
         "event_store": EventStore(DurableJournal(tmp_path / "events.jsonl")),
         "site_store": site_store,
+        "site_briefing_store": SiteBriefingStore(
+            DurableJournal(tmp_path / "site-briefings.jsonl"), site_store=site_store
+        ),
         "mission_store": mission_store,
         "mission_sequence_store": MissionIssuanceSequenceStore(
             DurableJournal(tmp_path / "mission-sequences.jsonl")

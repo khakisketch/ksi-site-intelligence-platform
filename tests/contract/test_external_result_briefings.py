@@ -34,13 +34,15 @@ def _projector(
 def test_report_review_and_approval_each_record_one_cited_briefing(tmp_path: Path) -> None:
     source = seed_original(tmp_path)
     graph = build_graph(tmp_path, source)
-    briefings, _ = _projector(tmp_path, graph)
+    briefings, projector = _projector(tmp_path, graph)
     report = record_measurement(graph)
+    assert projector.flush()
 
     first = briefings.latest("site-a", organization_id="org-a")
     assert first is not None and first.status is SiteBriefingStatus.READY
     assert first.source_watermark == f"external-report:{report.report_digest}:REPORTED"
     assert "순변화 4.0 m³" in first.what_changed
+    assert "-0.0" not in first.what_changed
     assert "첫 결과" in first.why_it_matters
     assert first.decision_prompt == "결과와 근거를 검토하세요."
     assert {citation.source_path for citation in first.citations} == {
@@ -52,6 +54,7 @@ def test_report_review_and_approval_each_record_one_cited_briefing(tmp_path: Pat
     graph.service.reviews.review(
         organization_id="org-a", report_ref=report.report_id, principal=principal, evaluated_at=_NOW
     )
+    assert projector.flush()
     reviewed = briefings.latest("site-a", organization_id="org-a")
     assert reviewed is not None and reviewed.source_watermark.endswith(":REVIEWED")
     assert reviewed.decision_prompt == "재관측이 필요하면 제안을 만들고 승인하세요."
@@ -75,6 +78,7 @@ def test_report_review_and_approval_each_record_one_cited_briefing(tmp_path: Pat
         now=_NOW,
         idempotency_key="approve-1",
     )
+    assert projector.flush()
     done = briefings.latest("site-a", organization_id="org-a")
     assert done is not None and done.source_watermark.endswith(":APPROVED")
     assert approved.approval_receipt.successor_work_order_id in done.decision_prompt
@@ -93,6 +97,7 @@ def test_same_watermark_is_not_recorded_twice(tmp_path: Path) -> None:
     record = graph.volumes.get(report.request_id, organization_id="org-a")
     assert record is not None
     projector.on_report(record)  # duplicate delivery
+    assert projector.flush()
     journal = (tmp_path / "site-briefings.jsonl").read_text().strip().splitlines()
     assert len(journal) == 1
     assert briefings.latest("site-a", organization_id="org-a") is not None

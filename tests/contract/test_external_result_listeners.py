@@ -21,7 +21,9 @@ def test_report_review_and_approval_listeners_fire_once_and_isolate_failures(
         raise RuntimeError("projection failed")
 
     graph.volumes.bind_report_listener(failing)
-    graph.volumes.bind_report_listener(lambda record: reports.append(record.report.report_id))
+    graph.volumes.bind_report_listener(
+        lambda record: reports.append(record.report.report_id if record.report else "")
+    )
     graph.volumes.bind_report_listener(failing)  # duplicate binding is ignored
     graph.service.reviews.bind_review_listener(lambda receipt: reviews.append(receipt.review_ref))
     graph.service.bind_approval_listener(

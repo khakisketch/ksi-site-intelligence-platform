@@ -10,6 +10,8 @@ watermark (ADR-KSI-026 D6/D8).
 from __future__ import annotations
 
 import logging
+import queue
+import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -22,11 +24,20 @@ _HISTORY_WINDOW = 50
 
 
 def _m3(value: float) -> str:
-    return f"{value:,.1f} m³"
+    rounded = round(value, 1)
+    if rounded == 0.0:
+        rounded = 0.0  # never render a negative zero
+    return f"{rounded:,.1f} m³"
 
 
 class ExternalResultBriefingProjector:
-    """Writes one READY briefing per (report, stage) into the site briefing store."""
+    """Writes one READY briefing per (report, stage) into the site briefing store.
+
+    Listeners only enqueue; a single daemon worker performs the projection so it
+    never runs inside a caller's store lock or coordinator guard (the review
+    router holds the WorkOrder external-intent guard while recording a review).
+    Tests call :meth:`flush` to wait for the queue to drain.
+    """
 
     def __init__(
         self,
@@ -40,6 +51,9 @@ class ExternalResultBriefingProjector:
         self._projector = projector
         self._work_areas = work_areas
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._queue: queue.Queue[tuple[str, Any]] = queue.Queue()
+        self._worker: threading.Thread | None = None
+        self._start_lock = threading.Lock()
 
     def bind(self, *, volumes: Any, reviews: Any, service: Any) -> None:
         volumes.bind_report_listener(self.on_report)
@@ -47,16 +61,62 @@ class ExternalResultBriefingProjector:
         service.bind_approval_listener(self.on_approval)
 
     def on_report(self, record: Any) -> None:
+        self._enqueue("REPORTED", record)
+
+    def on_review(self, receipt: Any) -> None:
+        self._enqueue("REVIEWED", receipt)
+
+    def on_approval(self, receipt: Any) -> None:
+        self._enqueue("APPROVED", receipt)
+
+    def flush(self, timeout: float = 10.0) -> bool:
+        """Wait until every queued projection has run; returns False on timeout."""
+        deadline = threading.Event()
+        self._queue.put(("FLUSH", deadline))
+        self._ensure_worker()
+        return deadline.wait(timeout)
+
+    def _enqueue(self, stage: str, payload: Any) -> None:
+        self._queue.put((stage, payload))
+        self._ensure_worker()
+
+    def _ensure_worker(self) -> None:
+        with self._start_lock:
+            if self._worker is not None and self._worker.is_alive():
+                return
+            self._worker = threading.Thread(
+                target=self._run, name="external-result-briefing", daemon=True
+            )
+            self._worker.start()
+
+    def _run(self) -> None:
+        while True:
+            stage, payload = self._queue.get()
+            try:
+                if stage == "FLUSH":
+                    payload.set()
+                elif stage == "REPORTED":
+                    self._project_report(payload)
+                elif stage == "REVIEWED":
+                    self._project_review(payload)
+                elif stage == "APPROVED":
+                    self._project_approval(payload)
+            except Exception:
+                _LOGGER.exception("external result briefing worker failed", extra={"stage": stage})
+            finally:
+                self._queue.task_done()
+
+    def _project_report(self, record: Any) -> None:
         subject = record.request.current.subject
         report = record.report
         if report is None:
             return
         self._record(subject.organization_id, subject.site_id, report.report_id, stage="REPORTED")
 
-    def on_review(self, receipt: Any) -> None:
+    def _project_review(self, receipt: Any) -> None:
         self._record(receipt.organization_id, receipt.site_id, receipt.report_ref, stage="REVIEWED")
 
-    def on_approval(self, receipt: Any) -> None:
+    def _project_approval(self, receipt: Any) -> None:
         proposal = self._projector.workflow.proposals.get_scoped(
             receipt.proposal_id, organization_id=receipt.organization_id
         )
