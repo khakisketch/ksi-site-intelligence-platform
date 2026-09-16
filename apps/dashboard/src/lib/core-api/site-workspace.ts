@@ -16,6 +16,11 @@ export async function getLatestSiteBriefing(siteId: string): Promise<SiteBriefin
   );
 }
 
+/** Latest briefing per site of the principal organization, newest first (Home portfolio). */
+export async function listLatestSiteBriefings(limit = 50): Promise<{ items: SiteBriefing[] }> {
+  return coreFetch<{ items: SiteBriefing[] }>(`/v1/site-briefings/latest?limit=${limit}`);
+}
+
 export async function refreshSiteBriefing(siteId: string): Promise<SiteBriefing> {
   return coreFetch<SiteBriefing>(
     `/v1/sites/${encodeURIComponent(siteId)}/briefings/refresh`,

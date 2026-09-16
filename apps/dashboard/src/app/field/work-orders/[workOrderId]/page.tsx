@@ -18,7 +18,7 @@ import {
 } from "@/lib/core-api/external-reconstruction";
 import { getExternalRelativeVolumeReport } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
-import { getSiteWorkspace } from "@/lib/core-api/site-workspace";
+import { getLatestSiteBriefing, getSiteWorkspace } from "@/lib/core-api/site-workspace";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import type { ReobservationDraftView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -132,6 +132,21 @@ export default async function FieldWorkOrderPage({
     externalWorkspace.externalResult.result?.currentWorkOrderId === workOrder.workOrderId
       ? externalWorkspace.externalResult.result
       : null;
+  // A deterministic briefing that cites this order's latest report is shown
+  // next to the next action; other sites' or older briefings are not.
+  const latestBriefing =
+    externalWorkflow && ownExternalResult
+      ? await getLatestSiteBriefing(workOrder.siteId).catch(() => null)
+      : null;
+  const externalBriefing =
+    latestBriefing &&
+    latestBriefing.citations.some(
+      (citation) =>
+        citation.objectType === "external-relative-volume-report" &&
+        citation.objectId === ownExternalResult?.reportRef,
+    )
+      ? latestBriefing
+      : null;
   const externalStage = externalWorkflow
     ? deriveExternalWorkOrderStage({
         planningOnly,
@@ -181,6 +196,23 @@ export default async function FieldWorkOrderPage({
           </div>
 
           <p className="text-[14px] leading-6 break-keep text-ink-2">{cardPresentation.detail}</p>
+          {externalBriefing && (
+            <div className="grid gap-px rounded-lg border border-line bg-line lg:grid-cols-3" data-testid="external-briefing">
+              <div className="bg-surface px-3 py-3">
+                <p className="text-[11.5px] font-bold text-ink-muted">무엇이 달라졌나</p>
+                <p className="mt-1 text-[13px] leading-5 break-keep">{externalBriefing.whatChanged}</p>
+              </div>
+              <div className="bg-surface px-3 py-3">
+                <p className="text-[11.5px] font-bold text-ink-muted">왜 중요한가</p>
+                <p className="mt-1 text-[13px] leading-5 break-keep">{externalBriefing.whyItMatters}</p>
+                <p className="mt-1 text-[12px] text-ink-2 break-keep">{externalBriefing.uncertainty}</p>
+              </div>
+              <div className="bg-surface px-3 py-3">
+                <p className="text-[11.5px] font-bold text-ink-muted">지금 검토할 결정</p>
+                <p className="mt-1 text-[13px] font-semibold leading-5 break-keep">{externalBriefing.decisionPrompt}</p>
+              </div>
+            </div>
+          )}
           {reportLinkNotice && (
             <p role="alert" className="rounded-lg border border-high/30 bg-high-bg px-3 py-2 text-[13px] text-high-ink">
               {reportLinkNotice}

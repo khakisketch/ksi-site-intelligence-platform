@@ -1,5 +1,6 @@
 import { isSettled, isUnattended, sortForTriage } from "@/lib/core-api/triage";
 import type {
+  SiteBriefing,
   EventSummaryResponse,
   ObservationWorkOrderOperationsView,
   ObservationWorkOrderStatus,
@@ -237,7 +238,19 @@ export type HomeRecentUpdateSource =
       siteId: string;
       observedAt: string;
       site: SiteView;
+    }
+  | {
+      kind: "EXTERNAL_RESULT_BRIEFED";
+      key: string;
+      siteId: string;
+      observedAt: string;
+      briefing: SiteBriefing;
     };
+
+/** Deterministic briefings recorded from external relative-volume results (AX-2). */
+export function isExternalResultBriefing(briefing: SiteBriefing): boolean {
+  return briefing.status === "READY" && briefing.sourceWatermark.startsWith("external-report:");
+}
 
 /**
  * Home 하단은 장비 연결·동기화·처리 시작 같은 기술 로그가 아니라 사용자가 이해할
@@ -249,12 +262,22 @@ export function selectHomeRecentUpdates(
     events: readonly EventSummaryResponse[];
     workOrders: readonly ObservationWorkOrderView[];
     sites: readonly SiteView[];
+    briefings?: readonly SiteBriefing[];
     excludedSiteIds?: ReadonlySet<string>;
   },
   limit = 2,
 ): HomeRecentUpdateSource[] {
   const excluded = input.excludedSiteIds ?? new Set<string>();
   const candidates: HomeRecentUpdateSource[] = [
+    ...(input.briefings ?? [])
+      .filter(isExternalResultBriefing)
+      .map((briefing) => ({
+        kind: "EXTERNAL_RESULT_BRIEFED" as const,
+        key: `briefing:${briefing.briefingId}`,
+        siteId: briefing.siteId,
+        observedAt: briefing.generatedAt,
+        briefing,
+      })),
     ...input.workOrders
       .filter((workOrder) => workOrder.status === "REVIEW_READY" || workOrder.status === "COMPLETED")
       .map((workOrder) => ({

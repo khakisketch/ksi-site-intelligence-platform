@@ -16,7 +16,13 @@ export function copilotCitationHref(citation: CopilotCitationView): string | nul
   if (!id || id === "." || id === ".." || !SAFE_ID.test(id)) return null;
   const encodedId = encodeURIComponent(id);
 
-  if (resource === "sites") return `/sites/${encodedId}`;
+  if (resource === "sites") {
+    // /v1/sites/{siteId}/observations/{reportRef} -> exact site observation page
+    if (parts.length === 6 && parts[4] === "observations" && parts[5] && SAFE_ID.test(parts[5])) {
+      return `/sites/${encodedId}/observations/${encodeURIComponent(parts[5])}`;
+    }
+    return `/sites/${encodedId}`;
+  }
   if (resource === "missions") return `/missions/${encodedId}`;
   if (resource === "events") return `/events/${encodedId}`;
   if (resource === "observation-work-orders") {

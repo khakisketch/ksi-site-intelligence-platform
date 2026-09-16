@@ -40,3 +40,21 @@ describe("copilotCitationHref", () => {
     expect(copilotCitationHref(citation(sourcePath))).toBeNull();
   });
 });
+
+it("maps a site observation citation to the exact observation page", () => {
+  expect(
+    copilotCitationHref({
+      citationId: "site-observation:r-1",
+      objectType: "site-observation",
+      objectId: "r-1",
+      label: "현장 관측 결과 보기",
+      sourcePath: "/v1/sites/site-a/observations/external-relative-volume-report-abc",
+      capturedFrom: null,
+      capturedTo: null,
+      modelVersion: null,
+      geometryRef: null,
+      uncertaintySummary: null,
+    }),
+  ).toBe("/sites/site-a/observations/external-relative-volume-report-abc");
+});
+

@@ -22,7 +22,10 @@ vi.mock("@/lib/core-api/observation-work-orders", () => ({
   listReobservationDrafts: mocked.drafts,
 }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
-vi.mock("@/lib/core-api/site-workspace", () => ({ getSiteWorkspace: mocked.workspace }));
+vi.mock("@/lib/core-api/site-workspace", () => ({
+  getSiteWorkspace: mocked.workspace,
+  getLatestSiteBriefing: () => Promise.reject(new Error("no briefing in this test")),
+}));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({ getExternalRelativeVolumeReport: mocked.report }));
 vi.mock("@/lib/core-api/acquisition-coordination", () => ({ getAcquisitionProgress: mocked.progress }));
 vi.mock("@/lib/core-api/acquisition-connectivity", () => ({ getAcquisitionReadiness: mocked.readiness }));

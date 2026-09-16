@@ -107,11 +107,11 @@ function SiteBriefingCard({
       >
         <EmptyState
           compact
-          title={site.aiEgressAllowed ? "아직 저장된 브리핑이 없습니다" : "AI 브리핑은 아직 사용하지 않습니다"}
+          title="아직 저장된 브리핑이 없습니다"
           description={
             site.aiEgressAllowed
-              ? "검증된 현장 결과가 준비되면 근거와 함께 변화·중요도·결정 질문을 만듭니다."
-              : "이 현장은 AI 데이터 활용에 동의하지 않았습니다. 기존 현장 결과와 작업은 그대로 사용할 수 있습니다."
+              ? "외부 산출물의 상대 물량 결과가 기록되면 자동으로 만들어지고, 검증된 현장 결과가 준비되면 KSI AI가 근거와 함께 변화·중요도·결정 질문을 만듭니다."
+              : "외부 산출물의 상대 물량 결과가 기록되면 근거와 함께 자동으로 만들어집니다. 이 현장은 외부 AI 데이터 활용에 동의하지 않았으므로 AI 질문은 열지 않습니다."
           }
         />
       </SectionCard>
@@ -122,7 +122,7 @@ function SiteBriefingCard({
     <SectionCard
       title="KSI 현장 브리핑"
       meta={formatKoreanDateTime(briefing.generatedAt, { dateStyle: "medium", timeStyle: "short" })}
-      action={{ label: "KSI AI에서 질문", href: aiHref }}
+      action={site.aiEgressAllowed ? { label: "KSI AI에서 질문", href: aiHref } : undefined}
     >
       <div className="grid gap-px bg-line lg:grid-cols-3">
         <div className="bg-surface px-4 py-4">

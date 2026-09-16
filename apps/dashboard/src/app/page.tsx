@@ -31,6 +31,7 @@ import {
   type HomeRecentUpdateSource,
 } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
+import { listLatestSiteBriefings } from "@/lib/core-api/site-workspace";
 
 import { HomeAttentionCarousel, type HomeAttentionCardView } from "./HomeAttentionCarousel";
 import { HomeRecentUpdates, type HomeRecentUpdateView } from "./HomeRecentUpdates";
@@ -214,6 +215,27 @@ function recentUpdateView(
     };
   }
 
+  if (source.kind === "EXTERNAL_RESULT_BRIEFED") {
+    const briefing = source.briefing;
+    const report = briefing.citations.find(
+      (citation) => citation.objectType === "external-relative-volume-report",
+    );
+    const firstSentence = briefing.whatChanged.split(/(?<=\.)\s/)[0] ?? briefing.whatChanged;
+    return {
+      key: source.key,
+      siteName,
+      label: "새 결과",
+      title: firstSentence.length > 60 ? `${firstSentence.slice(0, 59)}…` : firstSentence,
+      detail: briefing.decisionPrompt,
+      observedAt: observedAt(source.observedAt),
+      href: report
+        ? `/sites/${encodeURIComponent(source.siteId)}/observations/${encodeURIComponent(report.objectId)}`
+        : `/sites/${encodeURIComponent(source.siteId)}`,
+      image: null,
+      imageFallbackLabel: "관측 이미지 없음",
+    };
+  }
+
   if (source.kind === "CURRENT_LEDGER_CLEAR") {
     return {
       key: source.key,
@@ -267,12 +289,13 @@ function recentSiteView(
 }
 
 export default async function HomePage() {
-  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult, operationsResult] = await Promise.all([
+  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult, operationsResult, briefingsResult] = await Promise.all([
     settle(listSitesCached()),
     settle(listAllEventsCached()),
     settle(whoAmI()),
     settle(listObservationWorkOrdersForOrganization()),
     settle(listObservationWorkOrderOperations()),
+    settle(listLatestSiteBriefings()),
   ]);
 
   const sites = sitesResult.ok ? sitesResult.value : [];
@@ -314,6 +337,7 @@ export default async function HomePage() {
     events,
     workOrders,
     sites,
+    briefings: briefingsResult.ok ? briefingsResult.value.items : [],
     excludedSiteIds: new Set([...attentionSiteIds, ...primarySiteIds]),
   });
 

@@ -243,3 +243,71 @@ describe("Home 외부 작업 운영 상태", () => {
     expect(selectHomeActiveWorkOrders([legacy], 10, { operationsByWorkOrderId })).toEqual([]);
   });
 });
+
+describe("selectHomeRecentUpdates with external result briefings", () => {
+  it("surfaces an external result briefing as a new result", () => {
+    const updates = selectHomeRecentUpdates({
+      events: [],
+      workOrders: [],
+      sites: [site("site-a")],
+      briefings: [
+        {
+          schemaVersion: "1.0",
+          briefingId: "b-1",
+          organizationId: "org-local-pilot",
+          siteId: "site-a",
+          status: "READY",
+          whatChanged: "A 구역 순변화 128.0 m³",
+          whyItMatters: "첫 결과",
+          decisionPrompt: "결과와 근거를 검토하세요.",
+          citations: [
+            {
+              citationId: "report:r-1",
+              objectType: "external-relative-volume-report",
+              objectId: "r-1",
+              label: "보고서",
+              sourcePath: "/v1/external-relative-volume-reports/r-1",
+              capturedFrom: null,
+              capturedTo: null,
+              modelVersion: null,
+              geometryRef: null,
+              uncertaintySummary: null,
+            },
+          ],
+          uncertainty: "±12 m³",
+          sourceWatermark: "external-report:sha256:a:REPORTED",
+          missingData: [],
+          generatedAt: "2026-09-17T00:00:00Z",
+        },
+      ],
+    });
+    expect(updates[0]).toMatchObject({ kind: "EXTERNAL_RESULT_BRIEFED", siteId: "site-a" });
+  });
+
+  it("ignores blocked or copilot briefings", () => {
+    const updates = selectHomeRecentUpdates({
+      events: [],
+      workOrders: [],
+      sites: [site("site-a")],
+      briefings: [
+        {
+          schemaVersion: "1.0",
+          briefingId: "b-2",
+          organizationId: "org-local-pilot",
+          siteId: "site-a",
+          status: "BLOCKED",
+          whatChanged: "-",
+          whyItMatters: "-",
+          decisionPrompt: "-",
+          citations: [],
+          uncertainty: "-",
+          sourceWatermark: "sha256:workspace",
+          missingData: ["PROVIDER_UNAVAILABLE"],
+          generatedAt: "2026-09-17T00:00:00Z",
+        },
+      ],
+    });
+    expect(updates[0].kind).toBe("CURRENT_LEDGER_CLEAR");
+  });
+});
+
