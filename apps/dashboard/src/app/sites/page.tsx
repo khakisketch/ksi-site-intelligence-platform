@@ -4,7 +4,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
-import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
 import { SiteThumbnail, type SiteThumbnailImage } from "@/components/site/SiteThumbnail";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -408,28 +407,14 @@ export default async function SitesPage({
                           확인 {unattended ?? "—"}건
                         </span>
                       </div>
-                      <div className="flex gap-2">
-                        <Link
-                          href={`/sites/${encodeURIComponent(site.siteId)}`}
-                          className="btn tap-target flex-1 justify-center"
-                        >
-                          현장 열기
-                        </Link>
-                        {primaryAction && (
-                          <div className="hidden flex-1 lg:block">
-                            <ResponsiveActionBoundary
-                              action={primaryAction.responsiveAction}
-                              reason="현장 범위 설정과 조사 계획은 노트북의 전체 Operations Console에서 수행합니다."
-                            >
-                              <TableAction
-                                href={primaryAction.href}
-                                label={primaryAction.label}
-                                primary
-                              />
-                            </ResponsiveActionBoundary>
-                          </div>
-                        )}
-                      </div>
+                      {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
+                          이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
+                      <Link
+                        href={`/sites/${encodeURIComponent(site.siteId)}`}
+                        className="btn tap-target justify-center"
+                      >
+                        현장 열기
+                      </Link>
                     </div>
                   </li>
                 );
@@ -523,19 +508,11 @@ export default async function SitesPage({
                   {primaryAction?.label ?? next.label}
                 </span>
 
-                <span className="flex justify-end gap-1.5">
-                  {primaryAction && (
-                    <ResponsiveActionBoundary
-                      action={primaryAction.responsiveAction}
-                      reason="현장 범위 설정과 조사 계획은 노트북의 전체 Operations Console에서 수행합니다."
-                    >
-                      <TableAction
-                        href={primaryAction.href}
-                        label={primaryAction.label}
-                        primary
-                      />
-                    </ResponsiveActionBoundary>
-                  )}
+                {/* 현장별 다음 행동 CTA는 SiteHeader.tsx가 현장 상세에서 이미 1차
+                    액션으로 보여준다(primaryAction/preparationAction) — 표 행에
+                    같은 버튼을 또 두면 좁은 열에서 줄바꿈된다(F08). 이 열은
+                    열람 동작 하나만 남긴다. */}
+                <span className="flex justify-end">
                   <TableAction
                     href={`/sites/${encodeURIComponent(site.siteId)}`}
                     label="현장 열기"

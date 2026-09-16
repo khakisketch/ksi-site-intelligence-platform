@@ -313,7 +313,10 @@ copy beyond the work-order mobile case.
   projection-unavailable detail collapsed from two stacked negative sentences
   to one line naming what's missing plus one next step; footnote weight
   bumped for legibility; `test/civil-readiness.test.ts` updated.
-- [ ] B4 [F08] sites table density — owner: —
+- [x] B4 [F08] sites table density — owner: Claude — the row/card action
+  column no longer duplicates the site's contextual CTA next to "현장 열기";
+  `SiteHeader.tsx` already shows that CTA on the site detail page, so the row
+  now carries one action; `test/sites-table-row-action.test.ts`.
 - [ ] B5 [F10] reports picker facts — owner: — (sequence after AX-6 report draft)
 - [ ] B6 [F11] external stub consolidation — owner: —
 - [ ] B7 [F15] home hero/pagination — owner: —
