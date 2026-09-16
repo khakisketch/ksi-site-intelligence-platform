@@ -506,6 +506,16 @@ class SiteBriefingStore:
             briefing_id = self._latest.get((organization_id, site_id))
             return self._briefings.get(briefing_id) if briefing_id is not None else None
 
+    def latest_for_organization(self, organization_id: str) -> list[SiteBriefing]:
+        """Latest briefing per site of one organization, newest first (INV-060)."""
+        with self._lock:
+            items = [
+                self._briefings[briefing_id]
+                for (org, _site_id), briefing_id in self._latest.items()
+                if org == organization_id
+            ]
+        return sorted(items, key=lambda item: item.generated_at, reverse=True)
+
     def record(
         self,
         *,

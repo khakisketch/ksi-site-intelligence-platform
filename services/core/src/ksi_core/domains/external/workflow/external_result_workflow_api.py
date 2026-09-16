@@ -99,6 +99,11 @@ class ExternalResultReadProjector:
     ) -> bool:
         return self._volumes is volumes and self._workflow is workflow
 
+    @property
+    def workflow(self) -> ExternalReobservationProposalService:
+        """The exact durable workflow graph this projection reads (read-only access)."""
+        return self._workflow
+
     def for_work_order(
         self, work_order_id: str, *, organization_id: str
     ) -> ExternalResultProjectionView:
