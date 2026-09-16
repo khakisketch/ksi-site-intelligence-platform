@@ -41,10 +41,10 @@ from ksi_domain.capability_contract import (
 )
 from pydantic import Field, ValidationError, field_validator, model_validator
 
-from ksi_core.api_base import CamelModel, iso_utc
-from ksi_core.auth import Permission, Principal, PrincipalKind, Role, principal_permissions
-from ksi_core.durable_journal import DurableJournal, JournalSealedError
-from ksi_core.identifiers import is_path_safe_identifier
+from ksi_core.foundation.api_base import CamelModel, iso_utc
+from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
+from ksi_core.foundation.identifiers import is_path_safe_identifier
+from ksi_core.identity.auth import Permission, Principal, PrincipalKind, Role, principal_permissions
 
 CAPABILITY_AUTHORITY_JOURNAL_NAME = "capability-authority.jsonl"
 CAPABILITY_AUTHORITY_EVENT_SCHEMA_VERSION = "1.0"

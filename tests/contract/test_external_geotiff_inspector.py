@@ -100,12 +100,17 @@ def test_profile_bytes_and_digest_bind_the_exact_closed_v1_body() -> None:
 def test_host_worker_core_and_launcher_cannot_import_the_synthetic_decoder() -> None:
     """Only the future container entrypoint may make the decoder production-reachable."""
     root = Path(__file__).parents[2]
+    canonical_core_path = (
+        root / "services/core/src/ksi_core/domains/external/ingress/"
+        "external_artifact_inspections.py"
+    )
+    assert canonical_core_path.is_file()
     host_paths = (
         root / "services/processing-controller/src/ksi_processing_controller/"
         "external_artifact_inspection_worker.py",
         root / "services/processing-controller/src/ksi_processing_controller/"
         "external_inspector_launcher.py",
-        root / "services/core/src/ksi_core/external_artifact_inspections.py",
+        canonical_core_path,
     )
     for host_path in host_paths:
         source = host_path.read_text(encoding="utf-8")

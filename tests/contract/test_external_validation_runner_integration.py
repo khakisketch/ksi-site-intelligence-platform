@@ -1048,6 +1048,7 @@ def _actual_measurement_core_apps(
     volume_bodies: tuple[bytes, bytes],
     objects: _FiniteObjectGetServer,
     monkeypatch: pytest.MonkeyPatch,
+    resource_envelope: object | None = None,
 ) -> tuple[
     FastAPI,
     ExternalEvidenceValidationStore,
@@ -1098,20 +1099,129 @@ def _actual_measurement_core_apps(
         deep=True,
     ).sealed()
     item = replace(item, declaration=declaration, manifest=evidence_manifest)
-    registry, policy = evidence_contract._policy_registry(tmp_path / "checkpoint-policy")
-    checkpoint_manifest = _manifest_for_resource_envelope(policy.resource_envelope_digest or "")
-    checkpoint_manifest_digest = checkpoint_manifest.canonical_body_digest()
-    context = (
-        evidence_contract._context(item, policy)
-        .model_copy(
-            update={
-                "measurement_execution_manifest_digest": checkpoint_manifest_digest,
-                "context_digest": None,
-            },
-            deep=True,
+    assert item.manifest is not None
+    manifest = item.manifest
+    if resource_envelope is None:
+        registry, policy = evidence_contract._policy_registry(tmp_path / "checkpoint-policy")
+        checkpoint_manifest = _manifest_for_resource_envelope(policy.resource_envelope_digest or "")
+        checkpoint_manifest_digest = checkpoint_manifest.canonical_body_digest()
+        context = (
+            evidence_contract._context(item, policy)
+            .model_copy(
+                update={
+                    "measurement_execution_manifest_digest": checkpoint_manifest_digest,
+                    "context_digest": None,
+                },
+                deep=True,
+            )
+            .sealed()
         )
-        .sealed()
-    )
+    else:
+        from ksi_core.external_validation_policy import (
+            ExternalValidationPolicyRegistry,
+            PolicyAuthorityRecord,
+            authorized_policy_body_digest,
+        )
+        from ksi_event_contracts.external_artifact_validation import (
+            ExternalValidationPolicyV1,
+            PolicyStatus,
+            ResourceEnvelopeV1,
+        )
+        from ksi_event_contracts.external_evidence_context import (
+            ExternalEvidenceMeasurementContextV1,
+        )
+        from ksi_processing_controller.external_geotiff_inspector import (
+            inspect_synthetic_sealed_geotiff,
+        )
+        from ksi_processing_controller.external_geotiff_profile import (
+            external_geotiff_profile_digest_v1,
+        )
+
+        if not isinstance(resource_envelope, ResourceEnvelopeV1):
+            raise TypeError("real-byte fixture requires a sealed resource envelope")
+        resource_envelope = resource_envelope.sealed()
+        policy_template = ExternalValidationPolicyV1(
+            policy_id="runner-real-byte-policy",
+            version=1,
+            status=PolicyStatus.ACTIVE,
+            parser_build_digest="sha256:" + "1" * 64,
+            grammar_digest=external_geotiff_profile_digest_v1(),
+            resource_envelope=resource_envelope,
+            resource_envelope_digest=resource_envelope.resource_envelope_digest,
+            authority_record_digest="sha256:" + "2" * 64,
+            inspection_rule_ids=(),
+            evidence_rule_ids=("CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",),
+            compatibility_mapping_digests=(),
+            synthetic_test_only=True,
+        ).sealed()
+        authority_record = PolicyAuthorityRecord(
+            policy_id=policy_template.policy_id,
+            policy_version=policy_template.version,
+            authorized_policy_body_digest=authorized_policy_body_digest(policy_template),
+            permitted_subjects=(manifest.subject,),
+            permitted_uses=("EVIDENCE", "RELATIVE_VOLUME"),
+            authorized_actor_ids=("authority",),
+            active_from=now - timedelta(minutes=1),
+            active_until=now + timedelta(minutes=5),
+            synthetic_test_only=True,
+        ).sealed()
+        assert authority_record.digest is not None
+        policy = policy_template.model_copy(
+            update={"authority_record_digest": authority_record.digest, "policy_digest": None},
+            deep=True,
+        ).sealed()
+        coordinator = evidence_contract.ExternalAuthorityCurrentnessCoordinator()
+        policy_authority = evidence_contract._PolicyAuthority(authority_record)
+        registry = ExternalValidationPolicyRegistry(
+            DurableJournal(tmp_path / "checkpoint-policy" / "policy.jsonl"),
+            authority_port=policy_authority,
+            authority_currentness_port=policy_authority.bind(coordinator),
+            clock=lambda: now,
+            coordinator=coordinator,
+        )
+        assert registry.admit(policy, actor="authority", now=now).status.value == "ADMITTED"
+        checkpoint_manifest = _manifest_for_resource_envelope(policy.resource_envelope_digest or "")
+        target_path = tmp_path / "real-byte-checkpoint-target.tif"
+        target_path.write_bytes(checkpoint_bodies[0])
+        outcome = inspect_synthetic_sealed_geotiff(
+            target_path,
+            artifact_id=manifest.target_dsm_artifact_id,
+            observed_sha256=_digest(checkpoint_bodies[0]),
+            artifact_kind=ProcessingArtifactKind.DSM,
+            envelope=resource_envelope,
+        )
+        assert outcome.measurements is not None
+        vertical = outcome.measurements.observed_vertical_reference
+        assert vertical is not None
+        from ksi_domain.canonical_json import canonical_json_bytes
+
+        vertical_digest = "sha256:" + hashlib.sha256(
+            canonical_json_bytes(vertical.model_dump(by_alias=True, mode="json"))
+        ).hexdigest()
+        context = ExternalEvidenceMeasurementContextV1(
+            context_id="runner-real-byte-context",
+            subject=manifest.subject,
+            evidence_manifest_digest=manifest.evidence_manifest_digest or "",
+            evidence_observed_sha256=_digest(checkpoint_bodies[1]),
+            evidence_observed_size_bytes=len(checkpoint_bodies[1]),
+            target_dsm_artifact_id=manifest.target_dsm_artifact_id,
+            target_dsm_observed_sha256=_digest(checkpoint_bodies[0]),
+            policy_digest=policy.policy_digest or "",
+            measurement_execution_manifest_digest=checkpoint_manifest.canonical_body_digest(),
+            rule_id="CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",
+            csv_horizontal_crs="EPSG:5186",
+            csv_vertical_reference_digest=vertical_digest,
+            minimum_checkpoint_count=3,
+            maximum_checkpoint_count=3,
+            maximum_rmse_m=100.0,
+            maximum_abs_mean_error_m=100.0,
+            maximum_abs_error_m=100.0,
+            independent_attestation=None,
+            authorized_actor_ids=("authority",),
+            active_from=now - timedelta(minutes=1),
+            active_until=now + timedelta(minutes=5),
+            synthetic_test_only=True,
+        ).sealed()
 
     class LoopbackCheckpointCapabilities:
         def issue_input(
@@ -1172,29 +1282,129 @@ def _actual_measurement_core_apps(
     mount_external_evidence_validations(checkpoint_app, checkpoint_store)
 
     authority, volume_policy, _unused_material = _launch_ready_authority()
-    baseline = authority.baseline.model_copy(
-        update={
-            "observed_sha256": _digest(volume_bodies[0]),
-            "observed_size_bytes": len(volume_bodies[0]),
-        }
-    )
-    current = authority.current.model_copy(
-        update={
-            "observed_sha256": _digest(volume_bodies[1]),
-            "observed_size_bytes": len(volume_bodies[1]),
-        }
-    )
-    authority = replace(authority, baseline=baseline, current=current)
-    volume_material = _volume_evidence_material(authority, volume_policy)
-    assert volume_policy.resource_envelope_digest is not None
-    volume_manifest = _manifest_for_resource_envelope(volume_policy.resource_envelope_digest)
-    execution_policy = authority.execution_policy.model_copy(
-        update={
-            "algorithm_build_digest": volume_manifest.canonical_body_digest(),
-            "policy_digest": None,
-        },
-        deep=True,
-    ).sealed()
+    if resource_envelope is None:
+        baseline = authority.baseline.model_copy(
+            update={
+                "observed_sha256": _digest(volume_bodies[0]),
+                "observed_size_bytes": len(volume_bodies[0]),
+            }
+        )
+        current = authority.current.model_copy(
+            update={
+                "observed_sha256": _digest(volume_bodies[1]),
+                "observed_size_bytes": len(volume_bodies[1]),
+            }
+        )
+        authority = replace(authority, baseline=baseline, current=current)
+        volume_material = _volume_evidence_material(authority, volume_policy)
+        assert volume_policy.resource_envelope_digest is not None
+        volume_manifest = _manifest_for_resource_envelope(volume_policy.resource_envelope_digest)
+        execution_policy = authority.execution_policy.model_copy(
+            update={
+                "algorithm_build_digest": volume_manifest.canonical_body_digest(),
+                "policy_digest": None,
+            },
+            deep=True,
+        ).sealed()
+    else:
+        from ksi_event_contracts.external_relative_volume import ExternalVolumeZoneSnapshotV1
+        from ksi_processing_controller.external_geotiff_inspector import (
+            inspect_synthetic_sealed_geotiff,
+        )
+        from ksi_processing_controller.external_measurement_protocol import (
+            compiled_volume_config_digest_v2,
+        )
+
+        baseline_path = tmp_path / "real-byte-baseline.tif"
+        current_path = tmp_path / "real-byte-current.tif"
+        baseline_path.write_bytes(volume_bodies[0])
+        current_path.write_bytes(volume_bodies[1])
+        baseline_outcome = inspect_synthetic_sealed_geotiff(
+            baseline_path,
+            artifact_id=authority.baseline.dsm_artifact_id,
+            observed_sha256=_digest(volume_bodies[0]),
+            artifact_kind=ProcessingArtifactKind.DSM,
+            envelope=resource_envelope,
+        )
+        current_outcome = inspect_synthetic_sealed_geotiff(
+            current_path,
+            artifact_id=authority.current.dsm_artifact_id,
+            observed_sha256=_digest(volume_bodies[1]),
+            artifact_kind=ProcessingArtifactKind.DSM,
+            envelope=resource_envelope,
+        )
+        assert (
+            baseline_outcome.measurements is not None
+            and current_outcome.measurements is not None
+            and baseline_outcome.measurements.observed_crs_digest
+            == current_outcome.measurements.observed_crs_digest
+        )
+        observed_crs_digest = baseline_outcome.measurements.observed_crs_digest
+        vertical = baseline_outcome.measurements.observed_vertical_reference
+        assert vertical is not None
+        from ksi_domain.canonical_json import canonical_json_bytes
+
+        vertical_digest = "sha256:" + hashlib.sha256(
+            canonical_json_bytes(vertical.model_dump(by_alias=True, mode="json"))
+        ).hexdigest()
+        baseline = authority.baseline.model_copy(
+            update={
+                "observed_sha256": _digest(volume_bodies[0]),
+                "observed_size_bytes": len(volume_bodies[0]),
+                "observed_crs_digest": observed_crs_digest,
+                "observed_vertical_reference_digest": vertical_digest,
+            }
+        )
+        current = authority.current.model_copy(
+            update={
+                "observed_sha256": _digest(volume_bodies[1]),
+                "observed_size_bytes": len(volume_bodies[1]),
+                "observed_crs_digest": observed_crs_digest,
+                "observed_vertical_reference_digest": vertical_digest,
+            }
+        )
+        zone = ExternalVolumeZoneSnapshotV1(
+            organization_id=authority.organization_id,
+            site_id=authority.site_id,
+            work_area_id="runner-real-byte-zone",
+            polygon={
+                "type": "Polygon",
+                "coordinates": [
+                    [
+                        [200_000.0, 500_000.0],
+                        [200_002.0, 500_000.0],
+                        [200_002.0, 499_998.0],
+                        [200_000.0, 499_998.0],
+                        [200_000.0, 500_000.0],
+                    ]
+                ],
+            },
+            crs="EPSG:5186",
+            observed_crs_digest=observed_crs_digest,
+            analysis_vertical_reference_digest=vertical_digest,
+        ).sealed()
+        volume_policy = policy
+        volume_manifest = _manifest_for_resource_envelope(
+            volume_policy.resource_envelope_digest or ""
+        )
+        execution_policy = authority.execution_policy.model_copy(
+            update={
+                "algorithm_build_digest": volume_manifest.canonical_body_digest(),
+                "config_digest": compiled_volume_config_digest_v2(),
+                "resource_envelope_digest": volume_policy.resource_envelope_digest,
+                "policy_digest": None,
+            },
+            deep=True,
+        ).sealed()
+        authority = replace(
+            authority,
+            baseline=baseline,
+            current=current,
+            zone_snapshot=zone,
+            validation_policy_digest=volume_policy.policy_digest or "",
+            execution_policy=execution_policy,
+        )
+        volume_material = _volume_evidence_material(authority, volume_policy)
     authority = replace(
         authority,
         evidence_record_digests=tuple(volume_material),

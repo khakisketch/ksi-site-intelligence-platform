@@ -2,6 +2,31 @@
 
 KSI Core: identity, site, Mission Contract, event workflow, map/model registry and audit.
 
+## Core R1 module routing (partial)
+
+`KSI-CORE-R1-20260914` has relocated the reusable foundation and identity
+implementations without changing their public behavior. Canonical modules are
+`ksi_core.foundation.{api_base,durable_journal,identifiers,leasing,metrics,observability,
+retention,currentness}` and `ksi_core.identity.{auth,oidc,signing_keys,device_attestation}`.
+The prior root paths remain explicit aliases to the same module objects, so legacy imports
+share journal globals and identity types with canonical imports.
+
+`docs/audit/CORE_R1_MODULE_MIGRATION.json` is the exhaustive old/active/planned map and
+`tools/check_core_module_boundaries.py` validates it. Foundation imports stay protected;
+the only recorded transitional domain dependencies are retention's runtime evidence verdict/
+storage error and its type-only evidence/event annotations. They are narrow existing contracts,
+not permission for a general foundation-to-domain dependency.
+
+T2 managed domains now live under `ksi_core.domains` (sites, missions, edge transport,
+artifacts, processing, analytics, design, observations and workspace); capture quality lives
+under the retained acquisition package. T3 external modules live under
+`ksi_core.domains.external.{ingress,quantity,workflow,authority}`. Legacy root imports
+remain exact module aliases. Provider helpers do not own lifecycle locks or publication.
+Acquisition/capability packages remain in place. `ksi_core.composition` now owns app creation,
+ordered validation and route groups, domain graph assembly, runtime surfaces and production
+configuration. Root app, common assembly and production entrypoints remain exact aliases;
+API, JSONL and authority semantics are unchanged, including lazy workspace loading.
+
 Core는 장비별 SDK 코드를 소유하지 않는다. 장비 배치·연결 정책은
 `ksi_core/acquisition/`의 profile/readiness store와 `coordination` 원장·API로
 분리하고, 실제 연결 선택과

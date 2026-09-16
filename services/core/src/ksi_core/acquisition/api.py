@@ -13,9 +13,9 @@ from ksi_core.acquisition.models import (
     ConnectivitySnapshotV1,
 )
 from ksi_core.acquisition.store import AcquisitionConnectivityStore
-from ksi_core.api_base import JOURNAL_SEALED_DETAIL
-from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
-from ksi_core.durable_journal import JournalSealedError
+from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL
+from ksi_core.foundation.durable_journal import JournalSealedError
+from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

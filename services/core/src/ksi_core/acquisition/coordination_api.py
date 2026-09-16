@@ -19,14 +19,14 @@ from ksi_core.acquisition.models import (
     GatewayOperationReceiptV1,
 )
 from ksi_core.acquisition.store import AcquisitionConnectivityStore
-from ksi_core.api_base import JOURNAL_SEALED_DETAIL
-from ksi_core.auth import Permission, Principal, PrincipalKind, require_permission
-from ksi_core.durable_journal import JournalSealedError
-from ksi_core.mission_records import MissionStore
-from ksi_core.observation_work_orders import (
+from ksi_core.domains.missions.mission_records import MissionStore
+from ksi_core.domains.sites.observation_work_orders import (
     ExternalReobservationExecutionDenied,
     ObservationWorkOrderStore,
 )
+from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL
+from ksi_core.foundation.durable_journal import JournalSealedError
+from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

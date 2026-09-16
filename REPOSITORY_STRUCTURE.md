@@ -149,6 +149,23 @@ A new `services/` child must have its own independently managed listener, daemon
 health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import
 cost or algorithm complexity alone is not a service boundary.
 
+### Core R1 partial source routing
+
+`services/core/src/ksi_core` is being relocated in reviewed slices; this is a Python package
+ownership change, not a new service or runtime boundary. T1 canonically locates shared mechanics at
+`ksi_core.foundation` and identity at `ksi_core.identity`, while their legacy root module paths are
+explicit aliases to the same modules. The exhaustive active/planned map is
+[`docs/audit/CORE_R1_MODULE_MIGRATION.json`](docs/audit/CORE_R1_MODULE_MIGRATION.json), checked by
+[`tools/check_core_module_boundaries.py`](tools/check_core_module_boundaries.py).
+
+Managed domains now live under `ksi_core.domains`, and external modules under
+`ksi_core.domains.external.{ingress,quantity,workflow,authority}`, with exact legacy aliases.
+Capture quality belongs to the retained acquisition package. `ksi_core.composition` owns
+ordered checks, routes, graph assembly, runtime surfaces and production configuration.
+`app.py`, `app_assembly.py`, and `production.py` remain exact root public module aliases.
+This routing adds neither a generic dependency container nor permission to consolidate adjacent
+services, packages, acquisition, capability, Dashboard, worker, Edge, or DJI boundaries.
+
 ## Edge modules
 
 | Path | Owner/purpose | Runtime | Current status boundary | Decision |
