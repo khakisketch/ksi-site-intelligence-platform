@@ -1049,12 +1049,13 @@ def build_external_reobservation_proposal_router(
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (ExternalReobservationProposalUnavailableError, JournalSealedError) as exc:
+            # Both subclass RuntimeError; they must be matched before the generic branch.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         except RuntimeError as exc:
             if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
-        except (ExternalReobservationProposalUnavailableError, JournalSealedError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return ExternalReobservationProposalView(proposal=proposal)
 
     @router.post("/approve", response_model=ExternalReobservationProposalView)
