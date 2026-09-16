@@ -203,12 +203,10 @@ export default async function MissionDetailPage({
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-col gap-4 lg:grid lg:grid-cols-2 lg:items-start lg:gap-5">
-        {/* 좌: 요약 + 계약 정보 */}
+        {/* 좌: 요약 + 계약 정보 — 이 임무가 무엇인지(제목)가 항상 먼저 보이고,
+            식별자·해시는 필요할 때만 펼치는 전문가 정보로 물러난다(A4). */}
         <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
           <div>
-            <p className="num text-[11px] font-bold break-token tracking-wide text-ink-muted uppercase">
-              {mission.missionId}
-            </p>
             <h2 className="text-[17px] font-bold tracking-tight break-keep">
               {MISSION_TYPE_LABEL[mission.missionType]}
             </h2>
@@ -231,16 +229,6 @@ export default async function MissionDetailPage({
                 </Link>
               }
             />
-            <FieldRow
-              label="KMZ SHA-256"
-              value={
-                mission.kmzSha256 ? (
-                  <span className="num text-xs break-token">{mission.kmzSha256}</span>
-                ) : (
-                  "—"
-                )
-              }
-            />
           </dl>
           <div className="pt-1">
             <ResponsiveActionBoundary
@@ -253,6 +241,27 @@ export default async function MissionDetailPage({
               />
             </ResponsiveActionBoundary>
           </div>
+          <details className="group border-t border-line pt-2">
+            <summary className="cursor-pointer text-[12px] font-semibold text-ink-muted select-none">
+              전문가 정보
+            </summary>
+            <dl className="mt-2 divide-y divide-line border-t border-line">
+              <FieldRow
+                label="임무 ID"
+                value={<span className="num text-xs break-token">{mission.missionId}</span>}
+              />
+              <FieldRow
+                label="KMZ SHA-256"
+                value={
+                  mission.kmzSha256 ? (
+                    <span className="num text-xs break-token">{mission.kmzSha256}</span>
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+            </dl>
+          </details>
         </section>
 
         {/* 우: 사실 패널 */}

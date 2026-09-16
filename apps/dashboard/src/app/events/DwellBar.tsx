@@ -99,10 +99,22 @@ export function DwellBar({ event }: { event: EventSummaryResponse }) {
       </span>
       {showBar && state && (
         <>
-          <span className="h-[3px] min-w-[60px] flex-1 basis-24 overflow-hidden rounded-full bg-sunk">
+          <span
+            data-testid="dwell-bar"
+            data-sla={sla ?? "ok"}
+            className={`h-[3px] min-w-[60px] flex-1 basis-24 overflow-hidden rounded-full ${
+              sla === "breached" ? "bg-crit-bg" : "bg-sunk"
+            }`}
+          >
             <span
               aria-hidden="true"
-              className={`block h-full rounded-full ${event.severity ? FILL_CLASS[event.severity] : "bg-idle"}`}
+              className={`block h-full rounded-full ${
+                sla === "breached"
+                  ? "bg-crit bg-[repeating-linear-gradient(45deg,transparent_0,transparent_3px,color-mix(in_srgb,var(--crit-bg)_55%,transparent)_3px,color-mix(in_srgb,var(--crit-bg)_55%,transparent)_6px)]"
+                  : event.severity
+                    ? FILL_CLASS[event.severity]
+                    : "bg-idle"
+              }`}
               style={{ width: `${state.pct}%` }}
             />
           </span>
@@ -111,7 +123,7 @@ export function DwellBar({ event }: { event: EventSummaryResponse }) {
           </span>
           {sla && sla !== "ok" && (
             <span
-              className={`text-[10.5px] whitespace-nowrap ${sla === "breached" ? "text-crit-ink" : "text-high-ink"}`}
+              className={`text-[10.5px] whitespace-nowrap ${sla === "breached" ? "text-crit-ink font-semibold" : "text-high-ink"}`}
             >
               {SLA_SUFFIX[sla]}
             </span>

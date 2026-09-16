@@ -36,10 +36,17 @@ export function KmzDownloadButton({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   if (!hasKmz) {
+    // Deliberately not a `<button>` and not the `btn` class — a disabled control
+    // that still looks pressable reads as broken ("dead control"), not as an
+    // honest absence. The label itself states the absence instead of implying
+    // a possible action.
     return (
       <div className="flex flex-col items-start gap-1">
-        <span className="btn cursor-not-allowed text-ink-muted" aria-disabled="true">
-          KMZ 다운로드
+        <span
+          className="rounded-md border border-line bg-sunk px-3 py-1.5 text-[13px] font-medium text-ink-muted"
+          aria-disabled="true"
+        >
+          KMZ 다운로드 불가
         </span>
         <span className="text-[12px] break-keep text-ink-muted">
           이 임무는 계약만 발급되어 내려받을 KMZ 파일이 없습니다.
