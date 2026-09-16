@@ -470,7 +470,13 @@ export default async function SiteDetailPage({
               )}
             </section>
             <SiteBriefingCard site={site} outcome={briefingOutcome} />
-            {externalResultSummary}
+            {/* 전체 요약은 데이터 탭 하나에만 둔다(F11) — 여기서는 그리로 링크한다. */}
+            <Link
+              href={`${sitePath}?tab=data`}
+              className="tap-target inline-flex items-center text-[12.5px] font-semibold text-accent-text hover:underline"
+            >
+              외부 관측 결과 보기 →
+            </Link>
             {externalObservationHistoryLink}
           </div>
         )}
@@ -798,7 +804,13 @@ export default async function SiteDetailPage({
 
         {tab === "reports" && (
           <div className="flex flex-col gap-4">
-            {externalResultSummary}
+            {/* 전체 요약은 데이터 탭 하나에만 둔다(F11) — 여기서는 그리로 링크한다. */}
+            <Link
+              href={`${sitePath}?tab=data`}
+              className="tap-target inline-flex items-center text-[12.5px] font-semibold text-accent-text hover:underline"
+            >
+              외부 관측 결과 보기 →
+            </Link>
             {externalObservationHistoryLink}
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]">
             <SectionCard

@@ -318,7 +318,12 @@ copy beyond the work-order mobile case.
   `SiteHeader.tsx` already shows that CTA on the site detail page, so the row
   now carries one action; `test/sites-table-row-action.test.ts`.
 - [ ] B5 [F10] reports picker facts — owner: — (sequence after AX-6 report draft)
-- [ ] B6 [F11] external stub consolidation — owner: —
+- [x] B6 [F11] external stub consolidation — owner: Claude —
+  `ExternalSiteResultSummary` was rendered verbatim in the briefing, data and
+  reports tabs of `[siteId]/page.tsx` (three of the site's own tabs, not the
+  separate print `/report` route, which legitimately needs it standalone);
+  now lives only in the data tab, the other two link to it;
+  `test/site-external-summary-single-tab.test.ts`.
 - [ ] B7 [F15] home hero/pagination — owner: —
 - [ ] B8 [F12] events desktop pane — owner: — (sequence after AX-4 triage)
 - [ ] B9 [F19] fold/wrap check (verify-first) — owner: —
