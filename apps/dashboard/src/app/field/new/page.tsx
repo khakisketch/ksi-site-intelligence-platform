@@ -2,9 +2,10 @@ import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
+import { StateBadge } from "@/components/ui/StatusBadge";
 import { listSitesCached } from "@/lib/core-api/cached";
 import { CoreApiError } from "@/lib/core-api/client";
-import { humanizeApiError } from "@/lib/core-api/labels";
+import { SITE_STATUS_LABEL, humanizeApiError } from "@/lib/core-api/labels";
 
 import { OperationsSessionFailure } from "../OperationsSessionFailure";
 import { resolveFieldSession } from "../resolve-session";
@@ -45,8 +46,11 @@ export default async function FieldNewObservationPage() {
         <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface px-4">
           {sites.map((site) => <li key={site.siteId}>
             <Link href={`/sites/${encodeURIComponent(site.siteId)}/observations/new`} className="tap-target -mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-3 hover:bg-sunk">
-              <span className="min-w-0"><span className="block text-[14px] font-semibold">{site.name}</span><span className="mt-0.5 block text-[12px] text-ink-2">이 현장에서 외부 산출물 등록 또는 비행 계획을 시작합니다.</span></span>
-              <span className="text-[12px] font-semibold text-accent-text">선택</span>
+              <span className="min-w-0 flex flex-col gap-1">
+                <span className="block text-[14px] font-semibold">{site.name}</span>
+                <StateBadge label={SITE_STATUS_LABEL[site.status].label} tone={SITE_STATUS_LABEL[site.status].tone} />
+              </span>
+              <span className="text-[13px] font-bold whitespace-nowrap text-accent-text">선택 ›</span>
             </Link>
           </li>)}
         </ul>

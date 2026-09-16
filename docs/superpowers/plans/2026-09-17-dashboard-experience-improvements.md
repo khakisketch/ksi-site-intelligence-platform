@@ -330,5 +330,14 @@ copy beyond the work-order mobile case.
   `test/observation-path-selection.test.tsx`.
 - [ ] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
 - [ ] C4 [F16] sites/new form — owner: —
-- [ ] C5 [F17] field/new copy — owner: —
-- [ ] C6 [F18] field top strip — owner: —
+- [x] C5 [F17] field/new copy — owner: Claude — each site row now shows its
+  own `SITE_STATUS_LABEL` status badge instead of the identical boilerplate
+  sentence; "선택" affordance bumped to 13px/bold with a chevron;
+  `test/field-new-site-rows.test.tsx`.
+- [x] C6 [F18] field top strip — owner: Claude — "새 관측 시작" is now the one
+  `btn-primary`; "받은 업무"/"팀 관리" demoted to text links;
+  `test/field-top-strip-hierarchy.test.ts`. The "adjacent amber badges scan as
+  one" half of F18 is not resolved here — could not locate two amber-toned
+  badges rendered adjacently in the current source (WorkQueueOperationsNotices'
+  overdue/due-soon pills are mutually exclusive); needs the live re-capture to
+  confirm or close.

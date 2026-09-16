@@ -135,7 +135,14 @@ export default async function FieldWorkListPage() {
         <p className="text-[12.5px] break-keep text-ink-2">
           현장별로 지금 검토할 일과 조사 진행을 이어갑니다.
         </p>
-        <div className="flex flex-wrap gap-2"><Link href="/field/inbox" className="btn">받은 업무</Link><Link href="/field/team" className="btn hidden lg:inline-flex">팀 관리</Link><Link href="/field/new" className="btn hidden lg:inline-flex">새 관측 시작</Link></div>
+        {/* 세 액션이 같은 .btn 모양이면 우선순위가 없다(F18) — 이 화면에서 새 작업을
+            시작하는 유일한 동작인 "새 관측 시작"만 1차 버튼이고, 나머지 둘은 낮은
+            무게의 텍스트 링크로 물러난다. */}
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href="/field/inbox" className="text-[13px] font-semibold text-ink-2 hover:text-ink-1 hover:underline">받은 업무</Link>
+          <Link href="/field/team" className="hidden text-[13px] font-semibold text-ink-2 hover:text-ink-1 hover:underline lg:inline">팀 관리</Link>
+          <Link href="/field/new" className="btn btn-primary hidden lg:inline-flex">새 관측 시작</Link>
+        </div>
       </div>
 
       {result.workOrders && result.workOrders.length > 0 && (
