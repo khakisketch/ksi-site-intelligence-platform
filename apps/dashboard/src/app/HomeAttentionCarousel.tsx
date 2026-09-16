@@ -143,11 +143,11 @@ export function HomeAttentionCarousel({
                   <circle cx="337" cy="221" r="8" fill="var(--accent)" />
                 </svg>
 
-                <div className="absolute inset-0 grid place-items-center p-8 text-center">
-                  <div className="max-w-64 rounded-lg border border-line-strong bg-surface/95 px-4 py-3 shadow-sm backdrop-blur-sm">
-                    <span className="text-[11px] font-bold text-ink-1">{item.imageFallback.label}</span>
-                    <p className="mt-1 text-[12px] leading-5 break-keep text-ink-2">{item.imageFallback.detail}</p>
-                  </div>
+                {/* 코너 배지 — 불가 안내가 근거 영역 전체를 덮는 큰 흰 박스가 되지
+                    않는다(B7). 아래 배경 SVG가 계속 보인다. */}
+                <div className="absolute top-3 left-3 max-w-[calc(100%-24px)] rounded-lg border border-line-strong bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-sm">
+                  <span className="text-[11px] font-bold text-ink-1">{item.imageFallback.label}</span>
+                  <p className="mt-0.5 text-[11.5px] leading-5 break-keep text-ink-2">{item.imageFallback.detail}</p>
                 </div>
 
                 <div className="absolute right-0 bottom-0 left-0 flex items-end justify-between gap-3 bg-linear-to-t from-black/65 to-transparent px-4 pt-12 pb-3 text-white">
@@ -190,8 +190,10 @@ export function HomeAttentionCarousel({
               </button>
             ))}
           </div>
+          {/* 점 페이지네이션과 같은 정보(현재 위치)를 다시 숫자로 말하지 않는다(B7)
+              — 여기는 현재 카드의 현장명만 보조로 보여준다. */}
           <p className="min-w-0 truncate text-right text-[11.5px] font-semibold text-ink-2">
-            {items[activeIndex]?.siteName} <span className="num ml-2 text-ink-2">{activeIndex + 1} / {items.length}</span>
+            {items[activeIndex]?.siteName}
           </p>
         </div>
       )}

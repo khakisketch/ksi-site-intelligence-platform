@@ -324,7 +324,11 @@ copy beyond the work-order mobile case.
   separate print `/report` route, which legitimately needs it standalone);
   now lives only in the data tab, the other two link to it;
   `test/site-external-summary-single-tab.test.ts`.
-- [ ] B7 [F15] home hero/pagination — owner: —
+- [x] B7 [F15] home hero/pagination — owner: Claude — the unavailable-image
+  notice moved from a full-bleed centred card to a small corner badge, so the
+  schematic background stays visible; the redundant "N / M" text counter next
+  to the already-interactive dot pagination is gone;
+  `test/home-attention-carousel.test.tsx`.
 - [ ] B8 [F12] events desktop pane — owner: — (sequence after AX-4 triage)
 - [ ] B9 [F19] fold/wrap check (verify-first) — owner: —
 - [x] B10 [F20] badge separation — owner: Claude — event row's status badge
