@@ -1,0 +1,32 @@
+{
+  "contractVersion": "external-use-blockers.v1",
+  "reasons": {
+    "HEIGHT_PRODUCT_DEFINITION_UNRESOLVED": {"title": "높이 산출 기준이 아직 정의되지 않았습니다", "explanation": "높이 값을 어떤 기준면에서 어떻게 읽을지 제품 정의가 확정되지 않아 판정을 열지 않습니다.", "owner": "ADMIN", "target": "HEIGHT"},
+    "SUBJECT_NOT_SEALED": {"title": "산출물 파일이 아직 봉인되지 않았습니다", "explanation": "등록만 된 파일은 바이트가 확정되지 않아 어떤 용도 판정도 시작할 수 없습니다.", "owner": "CUSTOMER", "target": "SUBJECT"},
+    "POLICY_UNAVAILABLE": {"title": "이 산출물에 적용할 검사 기준이 없습니다", "explanation": "요청한 용도와 산출물 조합을 허용하는 활성 검사 기준(정책)이 등록되어 있지 않습니다.", "owner": "ADMIN", "target": "POLICY"},
+    "INSPECTION_REPORT_BINDING_INVALID": {"title": "파일 검사 결과가 현재 기준과 맞지 않습니다", "explanation": "봉인된 파일에 대한 검사 보고가 없거나 현재 검사 기준과 다른 기준으로 작성되었습니다.", "owner": "OPERATOR", "target": "INSPECTION"},
+    "ORTHO_MEASUREMENT_UNAVAILABLE": {"title": "정사영상 측정값이 없습니다", "explanation": "정사영상 파일이 MEASURED로 검사되지 않아 표시 용도를 열 수 없습니다.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "DISPLAY_RECEIPT_BINDING_INVALID": {"title": "표시용 정제본이 아직 준비되지 않았습니다", "explanation": "검사를 통과한 파일의 표시용 정제본 영수증이 없거나 현재 보고와 맞지 않습니다.", "owner": "OPERATOR", "target": "DISPLAY"},
+    "VOLUME_AUTHORITY_UNAVAILABLE": {"title": "체적 비교 매핑이 없습니다", "explanation": "두 시점을 같은 구역·기준으로 비교해도 된다는 호환성 매핑이 등록되어 있지 않거나 만료되었습니다.", "owner": "ADMIN", "target": "MAPPING"},
+    "COMPATIBILITY_MAPPING_MISSING": {"title": "호환성 매핑이 등록되지 않았습니다", "explanation": "이 시점 쌍에 대한 호환성 매핑 기록이 없습니다.", "owner": "ADMIN", "target": "MAPPING"},
+    "VOLUME_ZONE_BINDING_INVALID": {"title": "체적 구역 선택이 올바르지 않습니다", "explanation": "선택한 구역이 활성 구역이 아니거나 매핑에 묶인 구역 정의와 다릅니다.", "owner": "OPERATOR", "target": "ZONE"},
+    "EVIDENCE_RECORD_BINDING_INVALID": {"title": "검증된 체크포인트 증거가 없습니다", "explanation": "두 시점 각각에 대해 Core가 검증한 체크포인트 증거 기록이 현재 기준으로 존재해야 합니다.", "owner": "CUSTOMER", "target": "EVIDENCE"},
+    "EVIDENCE_INDEPENDENCE_UNATTESTED": {"title": "체크포인트 증거에 독립성 확인이 없습니다", "explanation": "증거는 검증됐지만, 재구성과 독립적으로 측정했다는 별도 확인이 증거 컨텍스트에 없습니다. 상대 체적 판정은 시점마다 이 확인을 요구합니다.", "owner": "ADMIN", "target": "EVIDENCE"},
+    "PAIR_SUBJECTS_NOT_DISTINCT": {"title": "같은 산출물끼리는 비교할 수 없습니다", "explanation": "기준 시점과 현재 시점으로 같은 산출물 개정을 선택했습니다.", "owner": "OPERATOR", "target": "SUBJECT"}
+  },
+  "remediations": {
+    "DEFINE_HEIGHT_PRODUCT": {"step": "높이 산출 기준이 제품에 정의될 때까지 이 용도는 사용할 수 없습니다.", "owner": "ADMIN", "target": "HEIGHT"},
+    "SEAL_EXTERNAL_RECONSTRUCTION": {"step": "등록한 산출물의 업로드를 마치고 봉인하세요.", "owner": "CUSTOMER", "target": "SUBJECT"},
+    "AUTHORIZE_POLICY": {"step": "관리자에게 이 산출물 쌍과 용도를 허용하는 검사 기준 등록을 요청하세요.", "owner": "ADMIN", "target": "POLICY"},
+    "COMPLETE_CURRENT_INSPECTION": {"step": "현재 검사 기준으로 파일 검사가 끝날 때까지 기다리거나 상태를 새로고침하세요.", "owner": "OPERATOR", "target": "INSPECTION"},
+    "MEASURE_DECLARED_ORTHO": {"step": "지원 형식의 정사영상을 다시 등록해 검사를 통과시키세요.", "owner": "CUSTOMER", "target": "INSPECTION"},
+    "SEAL_SANITIZED_DISPLAY": {"step": "표시용 정제본 준비가 끝날 때까지 기다리거나 상태를 새로고침하세요.", "owner": "OPERATOR", "target": "DISPLAY"},
+    "AUTHORIZE_VOLUME_ZONE_AND_MAPPING": {"step": "관리자에게 이 시점 쌍과 구역에 대한 호환성 매핑 등록을 요청하세요.", "owner": "ADMIN", "target": "MAPPING"},
+    "AUTHORIZE_COMPATIBILITY_MAPPING": {"step": "관리자에게 호환성 매핑 등록을 요청하세요.", "owner": "ADMIN", "target": "MAPPING"},
+    "SELECT_ACTIVE_VOLUME_ZONE": {"step": "현장의 활성 구역 중 하나를 선택해 다시 요청하세요.", "owner": "OPERATOR", "target": "ZONE"},
+    "VALIDATE_INDEPENDENT_EVIDENCE": {"step": "두 시점 모두에 체크포인트 CSV 증거를 등록·봉인하고 검증이 끝날 때까지 기다리세요.", "owner": "CUSTOMER", "target": "EVIDENCE"},
+    "ATTEST_INDEPENDENT_EVIDENCE": {"step": "관리자에게 독립 측량 확인이 담긴 증거 컨텍스트 등록을 요청한 뒤 증거 검증과 매핑을 다시 진행하세요.", "owner": "ADMIN", "target": "EVIDENCE"},
+    "SELECT_DISTINCT_EPOCHS": {"step": "서로 다른 촬영 시점의 산출물을 기준과 현재로 선택하세요.", "owner": "OPERATOR", "target": "SUBJECT"},
+    "RESOLVE_EXTERNAL_USE_BLOCKER": {"step": "전문가 정보의 사유 코드를 확인하고 운영자에게 문의하세요.", "owner": "OPERATOR", "target": "GENERAL"}
+  }
+}
