@@ -818,6 +818,9 @@ class ExternalQuantitativeAuthorityParticipants:
         if evidence is None:
             return False
         evidence_record, context = evidence
+        # The relative-volume V1 rule requires an independently attested
+        # checkpoint record per epoch; admission applies the same rule as the
+        # later pair decision so an unattested mapping fails closed here.
         return bool(
             getattr(evidence_record, "measurement_payload", None) is not None
             and getattr(evidence_record, "target_dsm_observed_sha256", None)
@@ -825,6 +828,7 @@ class ExternalQuantitativeAuthorityParticipants:
             and getattr(context, "target_dsm_artifact_id", None) == binding.dsm_artifact_id
             and getattr(context, "target_dsm_observed_sha256", None) == binding.observed_sha256
             and getattr(context, "synthetic_test_only", None) is False
+            and getattr(context, "independent_attestation", None) is not None
         )
 
 

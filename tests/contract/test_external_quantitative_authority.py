@@ -572,6 +572,7 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
         target_dsm_artifact_id: str
         target_dsm_observed_sha256: str
         synthetic_test_only: bool
+        independent_attestation: object | None
 
     class _Reconstruction:
         coordinator = ExternalAuthorityCurrentnessCoordinator()
@@ -714,7 +715,7 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
         )
         evidence_records[(evidence_digest, binding.subject, mapping.validation_policy_digest)] = (
             _EvidenceRecord(object(), binding.observed_sha256),
-            _EvidenceContext(binding.dsm_artifact_id, binding.observed_sha256, False),
+            _EvidenceContext(binding.dsm_artifact_id, binding.observed_sha256, False, object()),
         )
     area = _Area(
         mapping.site_id,
@@ -785,3 +786,24 @@ def test_concrete_participant_witnesses_pre_authorize_rule_not_full_mapping_reco
         participants=participants,
     )
     assert rejected.admit_mapping(mapping, actor="authority-a", now=_NOW) is None
+
+
+def test_mapping_evidence_binding_requires_an_independent_attestation() -> None:
+    """Admission applies the same independence rule as the pair decision (spec V1)."""
+    binding = _mapping().baseline
+    record = SimpleNamespace(
+        measurement_payload=object(), target_dsm_observed_sha256=binding.observed_sha256
+    )
+
+    def context(attestation: object | None) -> SimpleNamespace:
+        return SimpleNamespace(
+            target_dsm_artifact_id=binding.dsm_artifact_id,
+            target_dsm_observed_sha256=binding.observed_sha256,
+            synthetic_test_only=False,
+            independent_attestation=attestation,
+        )
+
+    matches = ExternalQuantitativeAuthorityParticipants._evidence_matches_binding
+    assert matches(binding, (record, context(object())))
+    assert not matches(binding, (record, context(None)))
+    assert not matches(binding, None)

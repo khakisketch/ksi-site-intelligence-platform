@@ -194,3 +194,65 @@ catalog/policy/context windows ≈ +3 h. Sessions + OIDC operator token expired
 (issuer → MinIO `docker start a2-minio` → Core `start_core.py` → worker
 `start_worker.py` → Dashboard dev 3320). Never copy
 `.dev-data/a2/operator/*.json` over protected copies.
+
+## Root cause resolved — Core-side reproduction (2026-09-17 follow-up)
+
+Method: the protected run root was copied to an isolated replay root with its
+embedded absolute paths rewritten; the production Core factory was assembled
+in-process from the retained journals with the clock frozen at the retry time
+(`2026-09-16T10:13:24Z`, inside the seq-12 snapshot, catalog, policy v6 and
+mapping `f7871d74…` windows). `ExternalUseEvaluator.request_pair` for the
+recorded intent (sub-03 → sub-07, zone `wa-…-0002`, `RELATIVE_VOLUME`)
+reproduced `BLOCKED / VOLUME_AUTHORITY_UNAVAILABLE` against the isolated copy;
+the retained journals and the protected root were not modified.
+
+Finding: `resolve_for_use` was NOT the failing leg. Every mapping participant
+check passed and the catalog returned a valid `ExternalRelativeVolumeAuthority`.
+The pair request then discarded that authority because
+`_pair_evidence_remains_current` was false: the evaluator's
+`_validated_evidence_for` accepts a VALIDATED checkpoint record only when its
+measurement context carries an `independent_attestation`, and this rehearsal
+filed both contexts with `independent_attestation=None` (the honest choice for
+locally generated fixtures, EVIDENCE §0). The blocked verdict was therefore
+correct under the relative-volume V1 rule ("independently measured,
+Core-validated checkpoint evidence per epoch",
+`docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`), but
+two product defects hid it:
+
+1. `request_pair` nulled the resolved volume authority whenever evidence was
+   not current, so `_pair_reason` reported `VOLUME_AUTHORITY_UNAVAILABLE` /
+   `AUTHORIZE_VOLUME_ZONE_AND_MAPPING` instead of the evidence blocker
+   (EXT-VAL-04 explicit remediation was violated).
+2. Mapping admission (`ExternalQuantitativeAuthorityParticipants._evidence_matches_binding`)
+   accepted unattested evidence, so seq 10/11 admission succeeded while the
+   same evidence could never satisfy a pair decision.
+
+Correction (same day, Core only, no contract schema change; reasons and
+remediations are free strings in `external-pair-use-decision.v1.json`):
+
+- `ExternalUseEvaluator` retains the exact evidence blocker resolved through
+  the evidence port before the guard and names it ahead of the mapping:
+  `EVIDENCE_RECORD_BINDING_INVALID` (no currently validated record binds the
+  measured DSM) or the new `EVIDENCE_INDEPENDENCE_UNATTESTED` (a validated
+  record exists but its context has no independence attestation), remediation
+  `ATTEST_INDEPENDENT_EVIDENCE`. The volume authority is now discarded only
+  when it is absent or no longer current.
+- Mapping admission requires `independent_attestation` on both evidence
+  contexts, so an unattested mapping fails closed at admission.
+- Contract tests: `tests/contract/test_external_use_evaluator.py`
+  (unattested → `EVIDENCE_INDEPENDENCE_UNATTESTED`; no evidence →
+  `EVIDENCE_RECORD_BINDING_INVALID`; attested → `ELIGIBLE` with both evidence
+  digests, zone and mapping) and
+  `tests/contract/test_external_quantitative_authority.py` (binding requires
+  attestation; existing witness fixture carries one).
+
+Re-running the frozen-clock replay against the same retained journals after
+the correction records `BLOCKED / EVIDENCE_INDEPENDENCE_UNATTESTED /
+ATTEST_INDEPENDENT_EVIDENCE`, which is the truthful outcome for this
+rehearsal's evidence.
+
+Consequence for 4A.5–4A.7: the positive path requires evidence contexts that
+carry an independence attestation. Any local rehearsal attestation over
+generated fixtures must be labelled as a local software rehearsal with no
+field-survey claim in its `attestation_id` / `reconstruction_exclusion_basis`
+text, and the resulting volume report is software-path evidence only.

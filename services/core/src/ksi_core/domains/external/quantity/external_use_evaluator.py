@@ -411,10 +411,13 @@ class ExternalUseEvaluator:
             if use == "RELATIVE_VOLUME" and snapshot.policy is not None
             else None
         )
-        evidence_current = (
-            self._pair_evidence_remains_current(baseline, current, snapshot)
+        # Evidence authority is resolved through its port before the guard; the
+        # exact blocker is retained so the decision names the missing evidence
+        # rather than a mapping that is in fact resolvable.
+        evidence_reason = (
+            self._pair_evidence_block_reason(baseline, current, snapshot)
             if use == "RELATIVE_VOLUME" and snapshot.policy is not None
-            else False
+            else None
         )
         with self._coordinator.guarded_read():
             current_snapshot = self._pair_still_current(
@@ -424,7 +427,6 @@ class ExternalUseEvaluator:
                 use == "RELATIVE_VOLUME"
                 and (
                     volume is None
-                    or not evidence_current
                     or not self._relative_volume_authority.is_current_for_use(volume, now=now)
                 )
             ):
@@ -438,6 +440,7 @@ class ExternalUseEvaluator:
                 volume,
                 evaluation_identity,
                 now,
+                evidence_reason=evidence_reason,
             )
             return cast(
                 ExternalPairUseDecisionV1,
@@ -698,8 +701,12 @@ class ExternalUseEvaluator:
         volume: ExternalRelativeVolumeAuthority | None,
         evaluation_identity: str,
         now: datetime,
+        *,
+        evidence_reason: str | None = None,
     ) -> ExternalPairUseDecisionV1:
-        reason, evidence_digests = self._pair_reason(baseline, current, use, snapshot, volume)
+        reason, evidence_digests = self._pair_reason(
+            baseline, current, use, snapshot, volume, evidence_reason=evidence_reason
+        )
         eligible = reason is None
         policy = snapshot.policy
         baseline_report = snapshot.baseline.inspection.report
@@ -786,6 +793,8 @@ class ExternalUseEvaluator:
         use: str,
         snapshot: _PairSnapshot,
         volume: ExternalRelativeVolumeAuthority | None,
+        *,
+        evidence_reason: str | None = None,
     ) -> tuple[str | None, tuple[str, ...]]:
         if baseline.canonical_digest() == current.canonical_digest():
             return "PAIR_SUBJECTS_NOT_DISTINCT", ()
@@ -803,6 +812,10 @@ class ExternalUseEvaluator:
                 ):
                     return "DISPLAY_RECEIPT_BINDING_INVALID", ()
             return None, ()
+        # Independently attested evidence is a prerequisite of any admitted
+        # mapping, so an evidence blocker is named before the mapping itself.
+        if evidence_reason is not None:
+            return evidence_reason, ()
         if volume is None:
             return "VOLUME_AUTHORITY_UNAVAILABLE", ()
         if volume.zone.zone_id == "" or volume.zone.revision != 1:
@@ -811,12 +824,12 @@ class ExternalUseEvaluator:
         for subject, item in ((baseline, snapshot.baseline), (current, snapshot.current)):
             report = item.inspection.report
             assert report is not None
-            # One currently validated record for the precise measured DSM is
-            # required per ordered epoch.  This port does not accept display
-            # receipts or arbitrary digest lists as substitutes.
-            matching = self._validated_evidence_for(subject, snapshot.policy, report)
+            # One currently validated, independently attested record for the
+            # precise measured DSM is required per ordered epoch.  This port does
+            # not accept display receipts or arbitrary digest lists as substitutes.
+            matching, blocker = self._evidence_binding(subject, snapshot.policy, report)
             if matching is None:
-                return "EVIDENCE_RECORD_BINDING_INVALID", ()
+                return blocker, ()
             evidence.append(matching)
         return None, tuple(evidence)
 
@@ -828,6 +841,27 @@ class ExternalUseEvaluator:
         *,
         locally_current: bool = True,
     ) -> str | None:
+        return self._evidence_binding(
+            subject, policy, report, locally_current=locally_current
+        )[0]
+
+    def _evidence_binding(
+        self,
+        subject: SealedExternalSubjectV1,
+        policy: ExternalValidationPolicyV1,
+        report: ExternalArtifactInspectionReportV1,
+        *,
+        locally_current: bool = True,
+    ) -> tuple[str | None, str]:
+        """Return the usable evidence digest, or ``None`` with the exact typed blocker.
+
+        ``EVIDENCE_RECORD_BINDING_INVALID`` means no currently validated record
+        binds the measured DSM.  ``EVIDENCE_INDEPENDENCE_UNATTESTED`` means such a
+        record exists but its measurement context carries no separately
+        authorized independence attestation, which the relative-volume V1 rule
+        requires per epoch.
+        """
+        blocker = "EVIDENCE_RECORD_BINDING_INVALID"
         # The evidence store intentionally exposes only exact digest lookup.
         # Querying its private projection would turn a broad list into authority.
         for digest in self._evidence_validations.validated_record_digests_for(
@@ -844,15 +878,15 @@ class ExternalUseEvaluator:
             if resolved is None:
                 continue
             record, context = resolved
-            if (
-                context.independent_attestation is not None
-                and self._report_measures_dsm(
-                    report, context.target_dsm_artifact_id, context.target_dsm_observed_sha256
-                )
-                and record.evidence_record_digest == digest
+            if record.evidence_record_digest != digest or not self._report_measures_dsm(
+                report, context.target_dsm_artifact_id, context.target_dsm_observed_sha256
             ):
-                return digest
-        return None
+                continue
+            if context.independent_attestation is None:
+                blocker = "EVIDENCE_INDEPENDENCE_UNATTESTED"
+                continue
+            return digest, blocker
+        return None, blocker
 
     def _evidence_digests_remain_current(
         self, candidate: ExternalPairUseDecisionV1, policy: ExternalValidationPolicyV1
@@ -879,16 +913,28 @@ class ExternalUseEvaluator:
         snapshot: _PairSnapshot,
     ) -> bool:
         """Resolve evidence authority before the final local-currentness guard."""
+        return self._pair_evidence_block_reason(baseline, current, snapshot) is None
+
+    def _pair_evidence_block_reason(
+        self,
+        baseline: SealedExternalSubjectV1,
+        current: SealedExternalSubjectV1,
+        snapshot: _PairSnapshot,
+    ) -> str | None:
+        """Resolve evidence through its authority port and name the first epoch blocker."""
         policy = snapshot.policy
         if policy is None:
-            return False
+            return "POLICY_UNAVAILABLE"
         for subject, item in ((baseline, snapshot.baseline), (current, snapshot.current)):
             report = item.inspection.report
-            if report is None or self._validated_evidence_for(
+            if report is None:
+                return "INSPECTION_REPORT_BINDING_INVALID"
+            matching, blocker = self._evidence_binding(
                 subject, policy, report, locally_current=False
-            ) is None:
-                return False
-        return True
+            )
+            if matching is None:
+                return blocker
+        return None
 
     def _candidate_evidence_remains_locally_current(
         self,
@@ -1032,6 +1078,7 @@ class ExternalUseEvaluator:
             "COMPATIBILITY_MAPPING_MISSING": "AUTHORIZE_COMPATIBILITY_MAPPING",
             "VOLUME_ZONE_BINDING_INVALID": "SELECT_ACTIVE_VOLUME_ZONE",
             "EVIDENCE_RECORD_BINDING_INVALID": "VALIDATE_INDEPENDENT_EVIDENCE",
+            "EVIDENCE_INDEPENDENCE_UNATTESTED": "ATTEST_INDEPENDENT_EVIDENCE",
             "PAIR_SUBJECTS_NOT_DISTINCT": "SELECT_DISTINCT_EPOCHS",
         }.get(reason, "RESOLVE_EXTERNAL_USE_BLOCKER")
 

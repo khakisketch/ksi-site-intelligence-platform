@@ -144,4 +144,5 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - terrain-aware-planning-field-acceptance: M4D·Pilot 실제 계획 운용과 관측 품질 수용
 - pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성
 ## Backlog
+- [2026-09-17] `tests/contract/test_external_runtime_deployment_contract.py::test_private_bus_rejects_hard_link_and_detects_substitution` fails on this workstation (deploy bash helper `private_socket_identity` returns 1 after the hard link is removed); files untouched by recent merges, environment-dependent, not blocking the external slice — reproduce on a clean host before changing the helper
 - [2026-09-17] ExternalEvidenceValidationStore replay re-validates old-policy issued events after policy rotation + restart (latent boot hazard) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md) - source(investigation) - not blocking — docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md and docs/superpowers/plans/2026-09-07-external-artifact-validation.md (Execution state section)

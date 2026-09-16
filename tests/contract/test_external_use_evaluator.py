@@ -13,6 +13,7 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
+from ksi_core.external_relative_volume_authorities import ExternalRelativeVolumeAuthority
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_use_evaluator import ExternalUseEvaluator, _PairSnapshot
 from ksi_core.external_validation_policy import (
@@ -22,11 +23,15 @@ from ksi_core.external_validation_policy import (
     authorized_policy_body_digest,
 )
 from ksi_event_contracts.external_artifact_validation import (
+    ArtifactInspectionOutcomeV1,
+    ArtifactOutcome,
     DecisionVerdict,
     ExternalArtifactInspectionReportV1,
     ExternalPairUseDecisionV1,
     ExternalValidationPolicyV1,
+    SealedArtifactBindingV1,
     SealedExternalSubjectV1,
+    SealedZoneReferenceV1,
 )
 from ksi_event_contracts.external_display_artifact import SanitizedDisplayReceiptV1
 from support.external_artifact_inspection_fixtures import (
@@ -629,3 +634,268 @@ def test_execution_recheck_uses_retained_local_evidence_projection() -> None:
     assert evaluator._candidate_evidence_remains_locally_current(
         candidate, policy, cast(_PairSnapshot, snapshot)
     )
+
+
+class _VolumeAuthority:
+    """Fixture port: a resolvable, current relative-volume authority for the pair."""
+
+    def __init__(
+        self,
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+        authority: ExternalRelativeVolumeAuthority,
+    ) -> None:
+        self.currentness_coordinator = coordinator
+        self.authority = authority
+        self.resolve_calls = 0
+
+    def resolve_for_use(self, **kwargs: object) -> ExternalRelativeVolumeAuthority:
+        del kwargs
+        self.resolve_calls += 1
+        return self.authority
+
+    def is_current_for_use(
+        self, authority: ExternalRelativeVolumeAuthority, *, now: datetime
+    ) -> bool:
+        del now
+        return authority == self.authority
+
+    def resolve_historical_for_decision(
+        self, decision: ExternalPairUseDecisionV1
+    ) -> ExternalRelativeVolumeAuthority | None:
+        del decision
+        return None
+
+
+class _EvidenceProjection:
+    """Fixture evidence store exposing exact-digest lookups only."""
+
+    def __init__(
+        self,
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+        records: dict[tuple[SealedExternalSubjectV1, str], tuple[tuple[str, object, object], ...]],
+    ) -> None:
+        self.coordinator = coordinator
+        self._records = records
+
+    def validated_record_digests_for(
+        self, *, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[str, ...]:
+        return tuple(item[0] for item in self._records.get((subject, policy_digest), ()))
+
+    def _lookup(
+        self, digest: str, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[object, object] | None:
+        for item in self._records.get((subject, policy_digest), ()):
+            if item[0] == digest:
+                return (item[1], item[2])
+        return None
+
+    def record_for_current_use(
+        self, digest: str, *, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[object, object] | None:
+        return self._lookup(digest, subject, policy_digest)
+
+    def record_for_locally_current_use(
+        self, digest: str, *, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[object, object] | None:
+        return self._lookup(digest, subject, policy_digest)
+
+
+def _report_with_measured_dsm(
+    original: ExternalArtifactInspectionReportV1,
+) -> ExternalArtifactInspectionReportV1:
+    ortho = original.measurement_payload.outcomes[0]
+    dsm_binding = SealedArtifactBindingV1(artifact_id="dsm", observed_sha256=digest("d"))
+    payload = original.measurement_payload.model_copy(
+        update={
+            "artifact_bindings": (*original.measurement_payload.artifact_bindings, dsm_binding),
+            "outcomes": (
+                *original.measurement_payload.outcomes,
+                ArtifactInspectionOutcomeV1(
+                    artifact_id="dsm",
+                    observed_sha256=dsm_binding.observed_sha256,
+                    outcome=ArtifactOutcome.MEASURED,
+                    measurements=ortho.measurements,
+                ),
+            ),
+        },
+        deep=True,
+    )
+    return original.model_copy(
+        update={
+            "measurement_payload": payload,
+            "measurement_payload_digest": None,
+            "report_digest": None,
+        },
+        deep=True,
+    ).sealed()
+
+
+def _volume_pair_evaluator(
+    tmp_path: Path, *, attested: bool | None
+) -> tuple[
+    ExternalUseEvaluator, SealedExternalSubjectV1, SealedExternalSubjectV1, _VolumeAuthority
+]:
+    """``attested`` None files no validated evidence; False files unattested evidence."""
+    baseline = subject()
+    current = baseline.model_copy(
+        update={
+            "submission_id": "submission-2",
+            "submission_digest": digest("a"),
+            "manifest_digest": digest("b"),
+        },
+        deep=True,
+    )
+    template = policy_template()
+    authority = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=template.version,
+        authorized_policy_body_digest=authorized_policy_body_digest(template),
+        permitted_subjects=(baseline, current),
+        permitted_uses=("VISUAL_COMPARISON", "RELATIVE_VOLUME"),
+        authorized_actor_ids=("authority",),
+        active_from=NOW - timedelta(minutes=1),
+        active_until=datetime.now(UTC) + timedelta(days=14),
+        synthetic_test_only=True,
+    ).sealed()
+    policy = template.model_copy(
+        update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
+    ).sealed()
+    assert policy.policy_digest is not None
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    policy_authority = _PolicyAuthority(authority)
+    registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "policy.jsonl"),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
+        clock=lambda: NOW,
+        coordinator=coordinator,
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    reports = {
+        baseline: _report_with_measured_dsm(
+            _report_for_subject(baseline, policy, request_id="pair-baseline")
+        ),
+        current: _report_with_measured_dsm(
+            _report_for_subject(current, policy, request_id="pair-current")
+        ),
+    }
+    records: dict[tuple[SealedExternalSubjectV1, str], tuple[tuple[str, object, object], ...]] = {}
+    if attested is not None:
+        for marker, value in (("e", baseline), ("f", current)):
+            records[(value, policy.policy_digest)] = (
+                (
+                    digest(marker),
+                    SimpleNamespace(evidence_record_digest=digest(marker)),
+                    SimpleNamespace(
+                        independent_attestation=object() if attested else None,
+                        target_dsm_artifact_id="dsm",
+                        target_dsm_observed_sha256=digest("d"),
+                    ),
+                ),
+            )
+    volume = _VolumeAuthority(
+        coordinator,
+        ExternalRelativeVolumeAuthority(
+            zone=SealedZoneReferenceV1(
+                zone_id="zone-1",
+                revision=1,
+                definition_digest=digest("1"),
+                observed_crs_digest=digest("2"),
+                observed_vertical_reference_digest=digest("3"),
+            ),
+            compatibility_mapping_digest=digest("4"),
+            historical_authority_digest=digest("4"),
+            synthetic_test_only=False,
+        ),
+    )
+    evaluator = ExternalUseEvaluator(
+        decisions=ExternalUseDecisionStore(
+            DurableJournal(tmp_path / "decisions.jsonl"),
+            coordinator=coordinator,
+            history_verifier=_SyntheticHistoryVerifier(),
+        ),
+        reconstruction=_PairReconstruction(  # type: ignore[arg-type]
+            baseline, current, coordinator=coordinator
+        ),
+        inspections=_PairInspections(
+            reports,
+            {
+                baseline: _receipt(reports[baseline], policy),
+                current: _receipt(reports[current], policy),
+            },
+            coordinator,
+        ),
+        policy_registry=registry,
+        evidence_validations=cast(
+            ExternalEvidenceValidationStore, _EvidenceProjection(coordinator, records)
+        ),
+        coordinator=coordinator,
+        relative_volume_authority=volume,
+    )
+    return evaluator, baseline, current, volume
+
+
+def test_relative_volume_pair_names_unattested_evidence_not_missing_volume_authority(
+    tmp_path: Path,
+) -> None:
+    """A resolvable mapping with unattested evidence must not claim the mapping is missing."""
+    evaluator, baseline, current, volume = _volume_pair_evaluator(tmp_path, attested=False)
+
+    decision = evaluator.request_pair(
+        baseline,
+        current,
+        use="RELATIVE_VOLUME",
+        zone_id="zone-1",
+        idempotency_key="volume-unattested",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert volume.resolve_calls == 1
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == ("EVIDENCE_INDEPENDENCE_UNATTESTED",)
+    assert decision.remediations == ("ATTEST_INDEPENDENT_EVIDENCE",)
+    assert decision.zone is None
+    assert decision.compatibility_mapping_digest is None
+    assert decision.evidence_record_digests == ()
+
+
+def test_relative_volume_pair_without_validated_evidence_reports_binding_invalid(
+    tmp_path: Path,
+) -> None:
+    evaluator, baseline, current, _volume = _volume_pair_evaluator(tmp_path, attested=None)
+
+    decision = evaluator.request_pair(
+        baseline,
+        current,
+        use="RELATIVE_VOLUME",
+        zone_id="zone-1",
+        idempotency_key="volume-no-evidence",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == ("EVIDENCE_RECORD_BINDING_INVALID",)
+    assert decision.remediations == ("VALIDATE_INDEPENDENT_EVIDENCE",)
+
+
+def test_relative_volume_pair_is_eligible_with_attested_current_evidence(tmp_path: Path) -> None:
+    evaluator, baseline, current, volume = _volume_pair_evaluator(tmp_path, attested=True)
+
+    decision = evaluator.request_pair(
+        baseline,
+        current,
+        use="RELATIVE_VOLUME",
+        zone_id="zone-1",
+        idempotency_key="volume-attested",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("USE_ELIGIBLE",)
+    assert decision.evidence_record_digests == (digest("e"), digest("f"))
+    assert decision.zone == volume.authority.zone
+    assert decision.compatibility_mapping_digest == digest("4")

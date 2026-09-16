@@ -892,3 +892,23 @@ instrumentation or focused reproduction; 2. latent boot-hazard investigation
 (`ExternalEvidenceValidationStore` replay re-validating old-policy issued
 events after policy rotation + restart) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md); 3. after unblock: volume issue ->
 review -> proposal positives.
+
+## Execution state — 2026-09-17 (pair-gate root cause and correction)
+
+Task 1 of the previous state is done. An in-process, frozen-clock assembly of
+the production Core factory over an isolated copy of the rehearsal journals
+reproduced `BLOCKED / VOLUME_AUTHORITY_UNAVAILABLE`; the mapping resolved, but
+`ExternalUseEvaluator` discarded it because the VALIDATED checkpoint contexts
+carried no `independent_attestation` (required per epoch by the quantitative
+V1 rule). Two defects were corrected on `main` (Core only, no schema change):
+the pair decision now names `EVIDENCE_INDEPENDENCE_UNATTESTED` /
+`ATTEST_INDEPENDENT_EVIDENCE` (or `EVIDENCE_RECORD_BINDING_INVALID`) ahead of
+the mapping, and mapping admission requires attested evidence. Evidence:
+`docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md` (root-cause
+section); focused contract tests plus full Ruff and mypy pass locally.
+
+Remaining in order: 1. positive-path rehearsal with explicitly labelled local
+attestation contexts (new evidence validations, new mapping) to drive
+4A.4 ELIGIBLE → 4A.5 volume → 4A.6 review → 4A.7 proposal/approval;
+2. latent boot-hazard investigation (unchanged); 3. slice acceptance review
+against EXT-VAL-01..08 with the browser checklist.
