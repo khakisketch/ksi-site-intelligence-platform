@@ -61,7 +61,7 @@
 **Interfaces:**
 - Produces: `PAIR_REASON_REMEDIATIONS: dict[str, str]` (module constant in the evaluator), `load_external_use_blocker_catalog() -> ExternalUseBlockerCatalog` with `.reasons: dict[str, BlockerReason]` and `.remediations: dict[str, BlockerRemediation]`, `CATALOG_PATH: Path`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 """Blocker catalog: every emitted reason/remediation is explained once, and the dashboard copy is identical."""
@@ -108,12 +108,12 @@ def test_dashboard_copy_is_byte_identical_to_the_contract() -> None:
     assert json.loads(_DASHBOARD_COPY.read_text())["contractVersion"] == "external-use-blockers.v1"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_use_blockers.py`
 Expected: FAIL with `ImportError` (no `external_use_blockers` module, no `PAIR_REASON_REMEDIATIONS`).
 
-- [ ] **Step 3: Write the catalog**
+- [x] **Step 3: Write the catalog**
 
 `contracts/catalogs/external-use-blockers.v1.json` with these codes (all reasons from `_remediation` plus the eligible sentinel is not a blocker):
 
@@ -152,7 +152,7 @@ Expected: FAIL with `ImportError` (no `external_use_blockers` module, no `PAIR_R
 }
 ```
 
-- [ ] **Step 4: Expose the remediation map and add the loader**
+- [x] **Step 4: Expose the remediation map and add the loader**
 
 In the evaluator, replace the dict literal inside `_remediation` with a module constant defined near the top of the module (after `_MAX_...` constants or before the class):
 
@@ -231,12 +231,12 @@ __all__ = ["CATALOG_PATH", "ExternalUseBlockerCatalog", "load_external_use_block
 
 Check `parents[6]` resolves to the repo root from `services/core/src/ksi_core/domains/external/quantity/` (quantity=0 … repo=6) with `python -c`.
 
-- [ ] **Step 5: Run the test (sync test still fails until Task 2)**
+- [x] **Step 5: Run the test (sync test still fails until Task 2)**
 
 Run: `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_use_blockers.py`
 Expected: first two PASS, `test_dashboard_copy_is_byte_identical_to_the_contract` FAIL (file missing).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add contracts/catalogs/external-use-blockers.v1.json services/core/src/ksi_core/domains/external/quantity/external_use_blockers.py services/core/src/ksi_core/domains/external/quantity/external_use_evaluator.py tests/contract/test_external_use_blockers.py
@@ -256,7 +256,7 @@ git commit -m "feat(contracts): explain external-use blocker codes in a versione
 **Interfaces:**
 - Produces: `explainExternalUseDecision(reasons: readonly string[], remediations: readonly string[]): ExternalUseBlockerGuide` where `ExternalUseBlockerGuide = { known: boolean; title: string; explanation: string; step: string; owner: "OPERATOR"|"ADMIN"|"CUSTOMER"; ownerLabel: string; target: BlockerTarget; codes: string[] }`, `BLOCKER_TARGET_ANCHOR: Record<BlockerTarget, string>`.
 
-- [ ] **Step 1: Write the failing vitest**
+- [x] **Step 1: Write the failing vitest**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -290,12 +290,12 @@ describe("explainExternalUseDecision", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run (from `apps/dashboard/`): `npm test -- test/external-use-blockers.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Write the sync tool, run it, write the helper**
+- [x] **Step 3: Write the sync tool, run it, write the helper**
 
 `tools/sync_external_use_blockers.py`:
 
@@ -403,11 +403,11 @@ export function explainExternalUseDecision(
 }
 ```
 
-- [ ] **Step 4: Run both test suites**
+- [x] **Step 4: Run both test suites**
 
 Run: `npm test -- test/external-use-blockers.test.ts` (PASS) and `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_use_blockers.py` (all PASS).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tools/sync_external_use_blockers.py apps/dashboard/src/lib/external-use-blockers.generated.json apps/dashboard/src/lib/external-use-blockers.ts apps/dashboard/test/external-use-blockers.test.ts
@@ -428,7 +428,7 @@ git commit -m "feat(dashboard): explain external-use blockers from the synced ca
 - Consumes: `explainExternalUseDecision`, `BLOCKER_TARGET_ANCHOR` from Task 2.
 - Produces: `<ExternalUseBlockerCard reasons remediations intro? />`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```tsx
 // @vitest-environment jsdom
@@ -458,11 +458,11 @@ it("keeps raw codes visible for unknown reasons", () => {
 
 Check that `@testing-library/jest-dom` matchers are configured (look at `apps/dashboard/test/setup.ts` or existing tests using `toHaveTextContent`); if not, use `.textContent` assertions instead.
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `npm test -- test/external-use-blocker-card.test.tsx` → FAIL (component missing).
 
-- [ ] **Step 3: Write the component and wire it**
+- [x] **Step 3: Write the component and wire it**
 
 ```tsx
 import { BLOCKER_TARGET_ANCHOR, explainExternalUseDecision } from "@/lib/external-use-blockers";
@@ -526,11 +526,11 @@ In `ExternalEvidencePanel.tsx` `DecisionReceipt`, render the card when `decision
 
 Add `id="external-evidence"`, `id="external-volume"`, `id="external-submissions"`, `id="external-inspection"`, `id="external-display"` to the corresponding `<section>` roots in the panels if they do not already have ids (grep `id=` first).
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `npm test -- test/external-use-blocker-card.test.tsx test/external-result-workflow-panel.test.tsx test/external-evidence-panel-correction.test.tsx` → PASS. If an existing test asserted the old `사유:` text for BLOCKED, update its expectation to the new title.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/dashboard/src/components/external-results/ExternalUseBlockerCard.tsx apps/dashboard/src/app/field/ExternalResultWorkflowPanel.tsx apps/dashboard/src/app/field/ExternalEvidencePanel.tsx apps/dashboard/test/external-use-blocker-card.test.tsx
@@ -551,7 +551,7 @@ git commit -m "feat(dashboard): show why a decision is blocked and what to do ne
   `ExternalStageInput = { planningOnly: boolean; workflowClosed: boolean; sealedSubmissionCount: number; registeredSubmissionCount: number; latestResult: ExternalResultSummaryView | null }` and
   `ExternalStagePresentation = { stage: "CLOSED"|"REGISTER"|"SEAL"|"DECIDE"|"REVIEW"|"PROPOSE"|"DONE"; label: string; detail: string; tone: Tone; anchor: string }`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -607,9 +607,9 @@ describe("deriveExternalWorkOrderStage", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails** — `npm test -- test/external-work-order-stage.test.ts` → FAIL.
+- [x] **Step 2: Run to verify it fails** — `npm test -- test/external-work-order-stage.test.ts` → FAIL.
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 ```ts
 import type { ExternalResultSummaryView } from "@/lib/core-api/types";
@@ -695,9 +695,9 @@ const cardPresentation = externalStage
 
 Remove the now-redundant `workflowClosed` / `planningOnly` / `externalIngress` branches of `cardPresentation`. Keep the informational paragraphs below the card unchanged.
 
-- [ ] **Step 4: Run tests and typecheck** — `npm test -- test/external-work-order-stage.test.ts test/work-order-stage.test.ts` and `npx tsc --noEmit` → PASS.
+- [x] **Step 4: Run tests and typecheck** — `npm test -- test/external-work-order-stage.test.ts test/work-order-stage.test.ts` and `npx tsc --noEmit` → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/dashboard/src/app/field/external-work-order-stage.ts apps/dashboard/src/app/field/work-orders/[workOrderId]/page.tsx apps/dashboard/test/external-work-order-stage.test.ts
@@ -717,7 +717,7 @@ git commit -m "feat(dashboard): derive the external work-order next action from 
 **Interfaces:**
 - Produces: `ExternalRelativeVolumeStore.bind_report_listener(listener: Callable[[ExternalRelativeVolumeRecord], None])`, `ExternalResultReviewStore.bind_review_listener(listener: Callable[[ExternalResultReviewReceiptV1], None])`, `ExternalReobservationProposalService.bind_approval_listener(listener: Callable[[ExternalReobservationApprovalReceiptV1], None])`. Listeners run after the journal append, outside store locks and coordinator guards; exceptions are logged, never raised; retries/idempotent replays do not notify.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 """Post-commit listeners fire once per new report/review/approval and never break the mutation."""
@@ -772,9 +772,9 @@ def test_report_review_and_approval_listeners_fire_once_and_isolate_failures(tmp
 
 Before writing, read `tests/contract/test_external_result_review_proposals.py` for the exact `create_proposal` call (arguments `organization_id`, `report_ref`, `target_work_area_ids`, `principal`, `now`, `idempotency_key`, `reason`) and the `_principal()` helper name, and use them verbatim.
 
-- [ ] **Step 2: Run to verify it fails** — `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_result_listeners.py` → FAIL (`bind_report_listener` missing).
+- [x] **Step 2: Run to verify it fails** — `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_result_listeners.py` → FAIL (`bind_report_listener` missing).
 
-- [ ] **Step 3: Implement the three listener hooks**
+- [x] **Step 3: Implement the three listener hooks**
 
 Volume store `__init__` (before `self._replay()`): `self._report_listeners: list[Callable[[ExternalRelativeVolumeRecord], None]] = []`.
 
@@ -822,11 +822,11 @@ Proposal service (frozen dataclass): add `approval_listeners: list[Callable[[Ext
 
 In `approve`, the fresh path (`with self.authority_port.preflight_approval(...)`) assigns `receipt = self.work_orders.approve_external_reobservation(...)`; after the `with` block notify each listener with try/except + `_LOGGER.exception`, then return `receipt`. The idempotent `existing is not None` path returns without notifying.
 
-- [ ] **Step 4: Run the new test and the existing store tests**
+- [x] **Step 4: Run the new test and the existing store tests**
 
 Run: `uv run --locked pytest -q -p no:cacheprovider tests/contract/test_external_result_listeners.py tests/contract/test_external_relative_volumes.py tests/contract/test_external_result_review_proposals.py tests/contract/test_external_result_workflow_api.py` → PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/quantity/external_relative_volumes.py services/core/src/ksi_core/domains/external/workflow/external_result_reviews.py services/core/src/ksi_core/domains/external/workflow/external_reobservation_proposals.py tests/contract/test_external_result_listeners.py
@@ -846,7 +846,7 @@ git commit -m "feat(core): post-commit listeners for external reports, reviews a
 - Consumes: `SiteBriefingStore.record(...)` / `.latest(site_id, organization_id=)`, `ExternalResultReadProjector.report_for_site(...)` / `.history_for_site(...)`, `WorkAreaStore.get(id)`, listener types from Task 5.
 - Produces: `ExternalResultBriefingProjector(briefings, projector, work_areas, clock=None)` with `on_report(record)`, `on_review(receipt)`, `on_approval(receipt)`, `bind(volumes, reviews, service)`; `SiteBriefingStore.latest_for_organization(organization_id) -> list[SiteBriefing]` newest first.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 """External result briefings are deterministic, cited, idempotent and never block the mutation."""
@@ -919,9 +919,9 @@ def test_same_watermark_is_not_recorded_twice(tmp_path: Path) -> None:
     graph.close()
 ```
 
-- [ ] **Step 2: Run to verify it fails** — FAIL (module missing).
+- [x] **Step 2: Run to verify it fails** — FAIL (module missing).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `SiteBriefingStore.latest_for_organization`:
 
@@ -1049,9 +1049,9 @@ Prefer adding a public `workflow` property on `ExternalResultReadProjector` inst
 
 Confirm `ExternalResultSummaryView` field names by reading `external_result_projection_models.py` (`baseline_captured_from`, `current_captured_from`, `reported_at`, `metrics.cut_m3`, …).
 
-- [ ] **Step 4: Run tests** — new test + `tests/contract/test_copilot_conversations.py` (briefing store) → PASS. Run `uv run --locked ruff check` and `mypy` on the new module.
+- [x] **Step 4: Run tests** — new test + `tests/contract/test_copilot_conversations.py` (briefing store) → PASS. Run `uv run --locked ruff check` and `mypy` on the new module.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/workflow/external_result_briefings.py services/core/src/ksi_core/domains/workspace/site_workspace.py services/core/src/ksi_core/domains/external/workflow/external_result_workflow_api.py tests/contract/test_external_result_briefings.py
@@ -1073,15 +1073,15 @@ git commit -m "feat(core): record deterministic site briefings for external resu
 - `build_site_workspace_router(projector, briefing_service, *, briefing_store)`; `mount_site_workspace(app, *, projector, briefing_service, briefing_store)`; `WorkspaceGraph.site_briefing_store`; `create_app(..., site_briefing_store=None)`.
 - Routes: `GET /v1/sites/{site_id}/briefings/latest` (store), `POST /v1/sites/{site_id}/briefings/refresh` (service only), `GET /v1/site-briefings/latest?limit=` → `{"items": [SiteBriefing...]}` (store, `SITES_READ`).
 
-- [ ] **Step 1: Write the failing test** (build a minimal FastAPI app with `mount_auth`, a `SiteStore` with two organizations' sites, a `SiteBriefingStore` with one briefing per site, `mount_site_workspace(app, projector=..., briefing_service=None, briefing_store=store)`; assert `GET /v1/site-briefings/latest` returns only the caller's organization, newest first, honours `limit`, `POST .../refresh` is 404 when no service, and `GET /v1/sites/{id}/briefings/latest` works without a copilot). Reuse the `SiteWorkspaceProjector` construction from `tests/contract/test_api_contract_sync.py` lines ~240-330.
+- [x] **Step 1: Write the failing test** (build a minimal FastAPI app with `mount_auth`, a `SiteStore` with two organizations' sites, a `SiteBriefingStore` with one briefing per site, `mount_site_workspace(app, projector=..., briefing_service=None, briefing_store=store)`; assert `GET /v1/site-briefings/latest` returns only the caller's organization, newest first, honours `limit`, `POST .../refresh` is 404 when no service, and `GET /v1/sites/{id}/briefings/latest` works without a copilot). Reuse the `SiteWorkspaceProjector` construction from `tests/contract/test_api_contract_sync.py` lines ~240-330.
 
-- [ ] **Step 2: Run to verify it fails.**
+- [x] **Step 2: Run to verify it fails.**
 
-- [ ] **Step 3: Implement**: router takes `briefing_store` and mounts the two GET routes when it is not None, the POST only with the service; add response model `SiteBriefingListView(CamelModel): items: list[SiteBriefing]`. In `workspace_graph.py` create `site_briefing_store = SiteBriefingStore(journal("site-briefings.jsonl"), site_store=site_store)` outside the copilot block (the copilot block reuses it), add it to `WorkspaceGraph`; in `assembly.py` build `ExternalResultBriefingProjector` when `external_result_read_projector`, `external_relative_volume_store`, `external_result_workflow_service` and `work_area_store` exist, and `bind` it; thread `site_briefing_store` through `app_factory.create_app` → `routes/operations.py` → `mount_site_workspace`. In `assembly_validation.py` keep the `site_briefing_service` rule and add `("site_briefing_store", (("site_store",),), "site_briefing_store는 site_store와 함께 주어져야 한다")`. Document `/v1/site-briefings/latest` in `openapi-core.yaml` next to the existing briefing paths with `security: [{ bearerAuth: [] }]`, `limit` query (default 20, max 200) and schema `SiteBriefingListView`.
+- [x] **Step 3: Implement**: router takes `briefing_store` and mounts the two GET routes when it is not None, the POST only with the service; add response model `SiteBriefingListView(CamelModel): items: list[SiteBriefing]`. In `workspace_graph.py` create `site_briefing_store = SiteBriefingStore(journal("site-briefings.jsonl"), site_store=site_store)` outside the copilot block (the copilot block reuses it), add it to `WorkspaceGraph`; in `assembly.py` build `ExternalResultBriefingProjector` when `external_result_read_projector`, `external_relative_volume_store`, `external_result_workflow_service` and `work_area_store` exist, and `bind` it; thread `site_briefing_store` through `app_factory.create_app` → `routes/operations.py` → `mount_site_workspace`. In `assembly_validation.py` keep the `site_briefing_service` rule and add `("site_briefing_store", (("site_store",),), "site_briefing_store는 site_store와 함께 주어져야 한다")`. Document `/v1/site-briefings/latest` in `openapi-core.yaml` next to the existing briefing paths with `security: [{ bearerAuth: [] }]`, `limit` query (default 20, max 200) and schema `SiteBriefingListView`.
 
-- [ ] **Step 4: Run** the new test, `tests/contract/test_api_contract_sync.py`, `tests/contract/test_copilot_conversations.py`, `tests/contract/test_core_composition_module_migration.py`, `tests/contract/test_core_app_assembly.py` (whatever exists for assembly) → PASS.
+- [x] **Step 4: Run** the new test, `tests/contract/test_api_contract_sync.py`, `tests/contract/test_copilot_conversations.py`, `tests/contract/test_core_composition_module_migration.py`, `tests/contract/test_core_app_assembly.py` (whatever exists for assembly) → PASS.
 
-- [ ] **Step 5: Commit** `feat(core): serve site briefings without the copilot and list latest per site`.
+- [x] **Step 5: Commit** `feat(core): serve site briefings without the copilot and list latest per site`.
 
 ---
 
@@ -1094,7 +1094,7 @@ git commit -m "feat(core): record deterministic site briefings for external resu
 - Modify: `apps/dashboard/src/app/field/work-orders/[workOrderId]/page.tsx` (compact briefing card when the latest site briefing cites a report of this order: citation `objectType === "external-relative-volume-report"` and `objectId === latestResult.reportRef`)
 - Test: `apps/dashboard/test/home-operations.test.ts` (new case), `apps/dashboard/test/site-briefing-card.test.tsx` if the card is extracted.
 
-- [ ] **Step 1: Write the failing test** — in `home-operations.test.ts` add:
+- [x] **Step 1: Write the failing test** — in `home-operations.test.ts` add:
 
 ```ts
 it("surfaces an external result briefing as a new result", () => {
@@ -1106,22 +1106,22 @@ it("surfaces an external result briefing as a new result", () => {
 });
 ```
 
-- [ ] **Step 2: Run to verify it fails.**
+- [x] **Step 2: Run to verify it fails.**
 
-- [ ] **Step 3: Implement**: add `briefings?: readonly SiteBriefing[]` to the selector input and a candidate `{ kind: "EXTERNAL_RESULT_BRIEFED", key: \`briefing:${b.briefingId}\`, siteId, observedAt: b.generatedAt, briefing: b }` for READY briefings whose watermark starts with `external-report:`; in `page.tsx` load `settle(listLatestSiteBriefings())`, pass `briefings`, and map the new kind to a `HomeRecentUpdateView` with label "새 결과", title = `briefing.whatChanged` (first sentence, max 60 chars), detail = `briefing.decisionPrompt`, href = `/sites/${siteId}/observations/${reportRef}` where `reportRef` is the `external-relative-volume-report` citation's `objectId` (fallback `/sites/${siteId}`), `image: null`, `imageFallbackLabel: "관측 이미지 없음"`. Client: `listLatestSiteBriefings(limit = 50): Promise<{ items: SiteBriefing[] }>` calling `/v1/site-briefings/latest?limit=`.
+- [x] **Step 3: Implement**: add `briefings?: readonly SiteBriefing[]` to the selector input and a candidate `{ kind: "EXTERNAL_RESULT_BRIEFED", key: \`briefing:${b.briefingId}\`, siteId, observedAt: b.generatedAt, briefing: b }` for READY briefings whose watermark starts with `external-report:`; in `page.tsx` load `settle(listLatestSiteBriefings())`, pass `briefings`, and map the new kind to a `HomeRecentUpdateView` with label "새 결과", title = `briefing.whatChanged` (first sentence, max 60 chars), detail = `briefing.decisionPrompt`, href = `/sites/${siteId}/observations/${reportRef}` where `reportRef` is the `external-relative-volume-report` citation's `objectId` (fallback `/sites/${siteId}`), `image: null`, `imageFallbackLabel: "관측 이미지 없음"`. Client: `listLatestSiteBriefings(limit = 50): Promise<{ items: SiteBriefing[] }>` calling `/v1/site-briefings/latest?limit=`.
 
-- [ ] **Step 4: Run** `npm test`, `npx tsc --noEmit`, `npx eslint .` → PASS.
+- [x] **Step 4: Run** `npm test`, `npx tsc --noEmit`, `npx eslint .` → PASS.
 
-- [ ] **Step 5: Commit** `feat(dashboard): surface external result briefings on Home, site and work order`.
+- [x] **Step 5: Commit** `feat(dashboard): surface external result briefings on Home, site and work order`.
 
 ---
 
 ### Task 9: Rehearsal browser pass and evidence
 
-- [ ] Relaunch the local stack (issuer, MinIO, Core from `main`, dashboard) per `.dev-data/a2/EVIDENCE.md` §6 and `docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md` run2 section; re-issue snapshot/catalog windows; drive one pair decision that is BLOCKED (e.g. VISUAL_COMPARISON) and one ELIGIBLE → volume → review → approval.
-- [ ] Capture screenshots: blocker card, work-order next action at each stage, site briefing card, Home recent update.
-- [ ] Append a "run3 — AX-1/AX-2 browser pass" section to the audit with what was observed, then update `docs/superpowers/plans/2026-09-07-external-artifact-validation.md` execution state and the product-state Backlog (remove the next-action item).
-- [ ] Run the full local gates (`ruff`, `mypy packages services tests tools`, `pytest -q`, dashboard `tsc`/`eslint`/`vitest`/`next build`) and commit `docs(audit): record AX-1/AX-2 browser pass`.
+- [x] Relaunch the local stack (issuer, MinIO, Core from `main`, dashboard) per `.dev-data/a2/EVIDENCE.md` §6 and `docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md` run2 section; re-issue snapshot/catalog windows; drive one pair decision that is BLOCKED (e.g. VISUAL_COMPARISON) and one ELIGIBLE → volume → review → approval.
+- [x] Capture screenshots: blocker card, work-order next action at each stage, site briefing card, Home recent update.
+- [x] Append a "run3 — AX-1/AX-2 browser pass" section to the audit with what was observed, then update `docs/superpowers/plans/2026-09-07-external-artifact-validation.md` execution state and the product-state Backlog (remove the next-action item).
+- [x] Run the full local gates (`ruff`, `mypy packages services tests tools`, `pytest -q`, dashboard `tsc`/`eslint`/`vitest`/`next build`) and commit `docs(audit): record AX-1/AX-2 browser pass`.
 
 ---
 
