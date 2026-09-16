@@ -27,13 +27,13 @@ export const BLOCKER_OWNER_LABEL: Record<BlockerOwner, string> = {
 /** Anchor ids rendered by the external panels; unknown targets fall back to GENERAL. */
 export const BLOCKER_TARGET_ANCHOR: Record<BlockerTarget, string> = {
   SUBJECT: "external-submissions",
-  INSPECTION: "external-inspection",
-  DISPLAY: "external-display",
-  POLICY: "external-inspection",
+  INSPECTION: "external-submissions",
+  DISPLAY: "external-submissions",
+  POLICY: "external-submissions",
   EVIDENCE: "external-evidence",
   MAPPING: "external-volume",
   ZONE: "external-volume",
-  HEIGHT: "external-inspection",
+  HEIGHT: "external-submissions",
   GENERAL: "external-submissions",
 };
 

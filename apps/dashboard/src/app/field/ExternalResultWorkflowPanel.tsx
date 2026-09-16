@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -724,7 +725,7 @@ export function ExternalResultWorkflowPanel({
   const approvalReceipt = currentProposal?.approvalReceipt ?? null;
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
+    <section id="external-volume" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
       <div>
         <h2 className="text-[16px] font-bold">외부 상대 물량과 재관측 검토</h2>
         <p className="text-ink-2">등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.</p>
@@ -734,11 +735,11 @@ export function ExternalResultWorkflowPanel({
       {!decision ? (
         <p>{newIntentAllowed ? "현재 선택에서 상대 물량 비교를 요청하세요." : "업무 종료된 작업입니다. 기존 비교 결과와 요청 기록만 확인할 수 있습니다."}</p>
       ) : decision.verdict !== "ELIGIBLE" ? (
-        <div role="alert" className="rounded border border-high/30 bg-high-bg p-2 text-high-ink">
-          <p>현재 선택으로는 상대 물량 비교를 요청할 수 없습니다.</p>
-          {decision.reasons.length > 0 && <p>사유: {decision.reasons.join(", ")}</p>}
-          {decision.remediations.map((item) => <p key={item}>조치: {item}</p>)}
-        </div>
+        <ExternalUseBlockerCard
+          reasons={decision.reasons}
+          remediations={decision.remediations}
+          intro="현재 선택으로는 상대 물량 비교를 요청할 수 없습니다."
+        />
       ) : canIssue ? (
         <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="외부 상대 물량 비교 요청은 노트북 이상의 화면에서 진행합니다.">
           <button className="btn w-fit" disabled={busy !== null} onClick={() => void issue()}>

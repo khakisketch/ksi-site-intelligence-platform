@@ -1,5 +1,6 @@
 "use client";
 
+import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -187,8 +188,14 @@ function DecisionReceipt({ decision, historical = false }: { decision: Decision;
       <p>
         {historical ? "과거 불변 Core 결정" : "현재 Core 결정"}: {decision.use} · {decision.verdict} · {decision.decidedAt}
       </p>
-      <p>사유: {decision.reasons.join(", ") || "없음"}</p>
-      <p>조치: {decision.remediations.join(", ") || "없음"}</p>
+      {decision.verdict === "BLOCKED" ? (
+        <ExternalUseBlockerCard reasons={decision.reasons} remediations={decision.remediations} />
+      ) : (
+        <>
+          <p>사유: {decision.reasons.join(", ") || "없음"}</p>
+          <p>조치: {decision.remediations.join(", ") || "없음"}</p>
+        </>
+      )}
       {historical && <DecisionBindings decision={decision} />}
       {historical && <p>과거 기록은 현재 사용 권한이나 실행 권한이 아닙니다.</p>}
     </div>
@@ -589,7 +596,7 @@ export function ExternalEvidencePanel({
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
+    <section id="external-evidence" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
       <h2 className="text-[16px] font-bold">독립 검사점 증거와 사용 결정</h2>
       {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만, 기록과 이미 시작한 봉인 상태는 계속 확인할 수 있습니다.</p>}
       <ul>

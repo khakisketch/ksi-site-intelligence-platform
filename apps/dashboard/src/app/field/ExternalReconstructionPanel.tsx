@@ -445,7 +445,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     });
   };
 
-  return <><section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
+  return <><section id="external-submissions" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
     <div><h2 className="text-[16px] font-bold">재구성 산출물 등록</h2><p className="text-ink-2">파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.</p></div>
     {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 산출물 등록은 시작할 수 없지만, 이미 등록한 파일의 업로드·봉인 상태와 결과는 계속 확인할 수 있습니다.</p>}
     {canWrite && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="외부 산출물 등록은 노트북 이상의 화면에서만 진행합니다.">
