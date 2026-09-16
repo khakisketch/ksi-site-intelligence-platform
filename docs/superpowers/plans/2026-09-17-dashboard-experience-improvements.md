@@ -303,19 +303,32 @@ copy beyond the work-order mobile case.
   work order (`.dev-data/visual-audit-20260917/` is unrelated; see
   `.dev-data/a2-fix/run3/shot-wo-after-review.png` and `shot-wo-after-approve.png`).
   `deriveExternalWorkOrderStage` (AX-1) already covers this. No further change.
-- [ ] B1 [F09] date/count SSOT — owner: —
-- [ ] B2 [F05] event evidence hierarchy — owner: —
-- [ ] B3 [F07] civil readiness empty state — owner: —
+- [ ] B1 [F09] date/count SSOT — owner: — (deferred: 15 files use raw
+  `toLocaleDate/String` outside `lib/datetime.ts`; needs a per-file audit, not
+  a mechanical sweep — see note below)
+- [x] B2 [F05] event evidence hierarchy — owner: Claude — row now leads with a
+  human evidence kind (사진/동영상/파일 증거) + status badge + time; artifact
+  id and raw MIME moved to a muted subline; `test/event-evidence-panel-hierarchy.test.tsx`.
+- [x] B3 [F07] civil readiness empty state — owner: Claude — the
+  projection-unavailable detail collapsed from two stacked negative sentences
+  to one line naming what's missing plus one next step; footnote weight
+  bumped for legibility; `test/civil-readiness.test.ts` updated.
 - [ ] B4 [F08] sites table density — owner: —
-- [ ] B5 [F10] reports picker facts — owner: —
+- [ ] B5 [F10] reports picker facts — owner: — (sequence after AX-6 report draft)
 - [ ] B6 [F11] external stub consolidation — owner: —
 - [ ] B7 [F15] home hero/pagination — owner: —
-- [ ] B8 [F12] events desktop pane — owner: —
+- [ ] B8 [F12] events desktop pane — owner: — (sequence after AX-4 triage)
 - [ ] B9 [F19] fold/wrap check (verify-first) — owner: —
-- [ ] B10 [F20] badge separation — owner: —
+- [x] B10 [F20] badge separation — owner: Claude — event row's status badge
+  (observation→…→confirmed/dismissed lifecycle) was `StatusBadge` (attribute
+  shape) same as severity; now `StateBadge` (progress shape), matching
+  triage; `test/event-row-badge-shape.test.ts`.
 - [ ] C1 [F06] mobile nav occlusion (verify-first) — owner: —
-- [ ] C2 [F13] observations/new selection — owner: —
-- [ ] C3 [F14] design upload localization — owner: —
+- [x] C2 [F13] observations/new selection — owner: Claude — the selected path
+  card now shows an explicit "✓ 선택됨" label and a thicker border, not colour
+  alone; the scoped "외부 산출물 작업" heading already existed once selected;
+  `test/observation-path-selection.test.tsx`.
+- [ ] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
 - [ ] C4 [F16] sites/new form — owner: —
 - [ ] C5 [F17] field/new copy — owner: —
 - [ ] C6 [F18] field top strip — owner: —

@@ -36,12 +36,17 @@ function readiness(overrides: Partial<CivilReadinessView> = {}): CivilReadinessV
 }
 
 describe("presentCivilReadiness", () => {
-  it("fails closed when the site projection cannot be read", () => {
+  it("fails closed when the site projection cannot be read, with one line and one next step", () => {
     const presentation = presentCivilReadiness(null);
 
     expect(presentation.label).toBe("토목 준비 상태 확인 불가");
     expect(presentation.tone).toBe("warning");
-    expect(presentation.detail).toContain("추정하지 않습니다");
+    // States what is missing plus one next step — not a stack of independent
+    // negative sentences on top of the already-negative badge/label (F07).
+    expect(presentation.detail).toBe(
+      "처리·설계 원장을 지금 읽을 수 없습니다. 새로고침해서 다시 확인하세요.",
+    );
+    expect(presentation.detail.split(".").filter((sentence) => sentence.trim()).length).toBeLessThanOrEqual(2);
   });
 
   it("shows one missing first epoch as setup work, not a comparison result", () => {

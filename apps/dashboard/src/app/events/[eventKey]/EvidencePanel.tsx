@@ -30,6 +30,13 @@ function isImage(contentType: string): boolean {
   return contentType.startsWith("image/");
 }
 
+/** Human evidence kind for the row heading — the raw MIME type is expert detail. */
+function evidenceKindLabel(contentType: string): string {
+  if (contentType.startsWith("image/")) return "사진 증거";
+  if (contentType.startsWith("video/")) return "동영상 증거";
+  return "파일 증거";
+}
+
 async function readMessage(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { message?: string; code?: string };
@@ -156,12 +163,13 @@ export function EvidencePanel({
             return (
               <li
                 key={artifact.artifactId}
+                data-testid="evidence-row"
                 className="flex flex-col gap-1.5 rounded-lg border border-line bg-surface p-3"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="num break-token text-[12.5px] font-semibold">
-                      {artifact.artifactId}
+                    <span data-evidence-heading className="text-[13px] font-semibold break-keep">
+                      {evidenceKindLabel(artifact.contentType)}
                     </span>
                     <StateBadge label={deviceBound.label} tone={deviceBound.tone} />
                   </span>
@@ -169,8 +177,8 @@ export function EvidencePanel({
                     {formatKoreanDateTime(artifact.registeredAt, { dateStyle: "medium", timeStyle: "short" })}
                   </span>
                 </div>
-                <p className="text-[11.5px] break-keep text-ink-muted">
-                  {artifact.contentType} · 등록 {artifact.registeredBy}
+                <p data-evidence-subline className="num break-token text-[11.5px] break-keep text-ink-muted">
+                  {artifact.artifactId} · {artifact.contentType} · 등록 {artifact.registeredBy}
                 </p>
 
                 {artifact.tombstonedAt ? (

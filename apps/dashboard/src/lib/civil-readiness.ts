@@ -20,9 +20,12 @@ export function presentCivilReadiness(
   readiness: CivilReadinessView | null,
 ): CivilReadinessPresentation {
   if (readiness === null) {
+    // One line naming what is missing plus the single next step — not a stack
+    // of independent negative sentences over what already reads as an empty
+    // state (the badge above already says 확인 불가; this must not repeat it).
     return {
       label: "토목 준비 상태 확인 불가",
-      detail: "처리·설계 원장을 확인하지 못했습니다. 비교 가능으로 추정하지 않습니다.",
+      detail: "처리·설계 원장을 지금 읽을 수 없습니다. 새로고침해서 다시 확인하세요.",
       tone: "warning",
       pairLabel: "두 시점 판정 확인 불가",
       designSurfaceLabel: "설계 기준면 확인 불가",

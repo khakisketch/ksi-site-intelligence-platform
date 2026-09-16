@@ -131,10 +131,13 @@ export function ExternalObservationCreateForm({
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <button
-          className={`rounded-xl border p-4 text-left ${intent === "external" ? "border-ink-1 bg-sunk" : "border-line bg-surface"}`}
+          className={`relative rounded-xl border p-4 text-left ${intent === "external" ? "border-2 border-ink-1 bg-sunk" : "border-line bg-surface"}`}
           aria-pressed={intent === "external"}
           onClick={() => setIntent("external")}
         >
+          {intent === "external" && (
+            <span className="absolute top-3 right-3 text-[11px] font-bold text-ink-1">✓ 선택됨</span>
+          )}
           <span className="block text-[15px] font-bold">외부 산출물 등록</span>
           <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">이미 만든 정사영상과 DSM을 등록해 비교 결과를 확인합니다.</span>
         </button>

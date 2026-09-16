@@ -50,7 +50,7 @@ export function CivilReadinessCard({
           </div>
         </dl>
       </div>
-      <div className="border-t border-line bg-sunk px-4 py-2.5 text-[11.5px] leading-5 break-keep text-ink-2">
+      <div className="border-t border-line bg-sunk px-4 py-2.5 text-[11.5px] leading-5 font-medium break-keep text-ink-2">
         이 상태는 현장 수용·측량 정확도·정산 수량·비행 또는 장비 상태를 뜻하지 않습니다.
       </div>
       {nextAction?.href && (

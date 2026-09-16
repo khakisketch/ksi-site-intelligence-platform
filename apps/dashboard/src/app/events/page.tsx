@@ -187,13 +187,13 @@ function EventRow({
         </div>
         <div className="col-start-2 mt-2 flex flex-wrap items-center gap-1.5 sm:col-start-3 sm:mt-0 sm:justify-end">
           <StatusBadge label={severity.label} tone={severity.tone} />
-          <StatusBadge
+          {/* status(observation→…→confirmed/dismissed)와 triage는 둘 다 워크플로 진행
+              상태 — StatusBadge(속성) 가 아니라 StateBadge(진행)로 축을 가른다. severity
+              까지 StatusBadge였을 때 셋이 같은 모양이라 색만으로 구분해야 했다(F20). */}
+          <StateBadge
             label={EVENT_STATUS_LABEL[event.status].label}
             tone={EVENT_STATUS_LABEL[event.status].tone}
           />
-          {/* 트리아지는 워크플로 진행 상태 — StatusBadge(속성) 가 아니라 StateBadge(진행)로
-              축을 가른다. 셋 다 StatusBadge 였을 때 "후보·후보·미배정"이 같은 알약으로
-              보여 구분이 안 됐다. */}
           <StateBadge
             label={TRIAGE_STATUS_LABEL[event.triage].label}
             tone={TRIAGE_STATUS_LABEL[event.triage].tone}
