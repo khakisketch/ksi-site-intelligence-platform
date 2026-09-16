@@ -304,3 +304,45 @@ edit made by `next dev` reverted.
 
 Boundary: LOCAL software rehearsal only. Not staging, vendor export
 compatibility, HIL, field acceptance, or survey accuracy.
+
+## run3 — AX-1/AX-2 browser pass (2026-09-17)
+
+Scope: local stack (issuer, MinIO, Core from `main` at the AX commits,
+Dashboard dev on 3320), same sealed fixtures and v7 policy/contexts, mapping
+re-admitted as v7b after a catalog refresh (`f37e0288…`, seq 17) and the
+superseded v7 mapping revoked (seq 18). Drivers and screenshots:
+`.dev-data/a2-fix/run3/`. Same honesty labels as run2.
+
+| Surface | Observed |
+|---|---|
+| Pair decision (BFF) | VISUAL_COMPARISON 201 BLOCKED / POLICY_UNAVAILABLE; RELATIVE_VOLUME 201 ELIGIBLE |
+| Volume (BFF + script lane) | ISSUED → lane lease/input/report 201 REPORTED (fill 128 m³, net 128 m³, uncertainty 12.0 m³) |
+| Briefing REPORTED | recorded automatically by the worker projector (`site-briefing-00000002`, watermark `…:REPORTED`), citing the report and the site observation |
+| Review (BFF) | 201 `err-v1-5f92da89…`; briefing `…:REVIEWED` recorded ("재관측이 필요하면 제안을 만들고 승인하세요.") |
+| Proposal + approval (BFF) | 201 / 200; successor `obs-work-external-879cd041381900b06a7c3684`; briefing `…:APPROVED` names the successor |
+| Work-order page | next action follows the loop: "결과와 근거 검토" → "재관측 필요 여부 결정" → "후속 관측 계획됨" (screenshots `shot-wo-*.png`); the briefing card cites this order's report |
+| Site workspace | "KSI 현장 브리핑" card shows the deterministic briefing with 2 citations and no AI opt-in (`shot-site.png`); "현장 관측 결과 보기" resolves to the observation page |
+| Home | the only site sits in the attention area ("초기 설정"), so by ADR-KSI-025 D4 it is not repeated in "최근 업데이트"; the briefing therefore does not appear on Home for a single-site organization (backlog: external results as an attention source) |
+| Blocker card | verified by vitest only; the browser drivers call the BFF directly, so the in-panel BLOCKED card was not screenshotted |
+
+Defects found and fixed during run3:
+
+1. **Core deadlock on review.** The review router records a review while
+   holding the WorkOrder external-intent guard; the first briefing listener ran
+   inline inside that guard and blocked, after which every WorkOrder/workspace
+   route hung and Core needed `SIGKILL`. Projection now runs on a dedicated
+   worker thread (`fix(core): project external result briefings on a worker
+   thread`).
+2. **Proposal 500 instead of 409.** `ExternalReobservationProposalUnavailableError`
+   subclasses `RuntimeError` and was caught by the generic branch first; the
+   specific branch now comes first with a router regression test.
+
+Operational lesson: refreshing the catalog authority invalidates every active
+mapping (its `executionPolicyRef` is the authority digest); re-issue only the
+snapshot unless the catalog window itself expired, and revoke the superseded
+mapping before admitting its replacement, otherwise two active mappings make
+`resolve_for_use` ambiguous and the pair reports
+`VOLUME_AUTHORITY_UNAVAILABLE`.
+
+Final state: stack stopped; protected root retains run3 journals including
+`site-briefings.jsonl` (4 entries).

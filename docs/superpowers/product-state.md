@@ -144,6 +144,8 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - terrain-aware-planning-field-acceptance: M4D·Pilot 실제 계획 운용과 관측 품질 수용
 - pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성
 ## Backlog
-- [2026-09-17] Source work-order page keeps showing the registration next action after its result was reviewed and a successor approved (run2 screenshot) - source(rehearsal) - not blocking EXT-VAL-03
+- [2026-09-17] Two active compatibility mappings for the same pair/zone/policy make the pair decision report VOLUME_AUTHORITY_UNAVAILABLE (ambiguity); admission should refuse a duplicate active mapping or the decision should name the ambiguity - source(run3) - not blocking
+- [2026-09-17] Home never shows an external result briefing when its site is already in the attention area (ADR-025 no-repeat rule); consider external results awaiting review as an attention source - source(run3) - not blocking
+- [2026-09-17] External result summary component renders "-0 m³" for zero cut - source(run3 screenshot) - cosmetic
 - [2026-09-17] `tests/contract/test_external_runtime_deployment_contract.py::test_private_bus_rejects_hard_link_and_detects_substitution` fails on this workstation (deploy bash helper `private_socket_identity` returns 1 after the hard link is removed); files untouched by recent merges, environment-dependent, not blocking the external slice — reproduce on a clean host before changing the helper
 - [2026-09-17] ExternalEvidenceValidationStore replay re-validates old-policy issued events after policy rotation + restart (latent boot hazard) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md) - source(investigation) - not blocking — docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md and docs/superpowers/plans/2026-09-07-external-artifact-validation.md (Execution state section)

@@ -928,3 +928,16 @@ contained measurement runtime instead of the script lane (EXT-VAL-06);
 2. latent boot-hazard investigation (unchanged); 3. slice acceptance review
 against EXT-VAL-01..08 with the browser checklist, including the next-action
 UX gap after approval.
+
+## Execution state — 2026-09-17 (AX-1/AX-2 shipped locally)
+
+Plan `docs/superpowers/plans/2026-09-17-ax-blocker-guide-and-result-briefing.md`
+is implemented on `main`: blocker catalog contract + Korean guide card,
+external work-order next action derived from loop facts, deterministic site
+briefings on report/review/approval (worker projector), briefing routes
+without the copilot, Home/site/work-order surfaces. run3 browser pass recorded
+in the audit; two Core defects found there are fixed (review-path deadlock,
+proposal 500). Remaining: next AX slices (AX-3 upload auto-recognition,
+AX-4 triage, AX-5 proactive proposal, AX-6 report draft, AX-7 numeric Q&A),
+EXT-VAL-06 long-running worker run, boot-hazard investigation, slice
+acceptance review.
