@@ -254,6 +254,20 @@ export function SiteRegistrationOnlyWizard() {
       ? "영숫자로 시작하고 이후 영숫자·-·_·. 만 쓸 수 있습니다(공백·/ 금지)."
       : undefined;
 
+  // 값이 비어 다음 버튼이 막혔을 때 그 이유를 말한다(F16) — 필드별 실시간 에러는
+  // 여전히 값이 있고 형식이 틀렸을 때만 보인다(위 siteIdError 주석과 같은 원칙).
+  const step0DisabledReason = stepValid[0]
+    ? undefined
+    : !trimmedSiteId
+      ? "현장 ID를 입력하세요."
+      : siteIdError
+        ? siteIdError
+        : !form.name.trim()
+          ? "현장 이름을 입력하세요."
+          : jurisdictionRequired && !form.jurisdiction.trim()
+            ? "데이터 반출 여부에 따른 관할을 선택하세요."
+            : undefined;
+
   return (
     <WizardShell
       title="현장 등록"
@@ -263,6 +277,7 @@ export function SiteRegistrationOnlyWizard() {
       onNext={handleNext}
       nextLabel={nextLabel}
       nextDisabled={!stepValid[currentStep]}
+      nextDisabledReason={currentStep === 0 ? step0DisabledReason : undefined}
       nextPending={currentStep === 2 && submitPhase === "pending"}
       error={currentStep === 2 && submitError ? <ErrorState message={submitError} /> : undefined}
       exitHref="/sites"
@@ -273,6 +288,15 @@ export function SiteRegistrationOnlyWizard() {
             현장 정보와 조사할 공사 구역을 먼저 등록합니다. 첫 조사는 등록 후 현장
             브리핑에서 별도로 계획합니다.
           </p>
+          <Field label="현장 이름" required>
+            <input
+              type="text"
+              value={form.name}
+              onChange={(event) => update({ name: event.target.value })}
+              placeholder="예: OO산업단지 3공구 신축공사 현장"
+              className={inputClassName}
+            />
+          </Field>
           <Field
             label="현장 ID"
             helpText="자동으로 만들며, 필요하면 바꿀 수 있습니다. 영문·숫자로 시작하고 하이픈(-), 밑줄(_), 점(.)만 쓸 수 있습니다. 공백과 슬래시(/)는 쓸 수 없습니다."
@@ -285,15 +309,6 @@ export function SiteRegistrationOnlyWizard() {
               onChange={(event) => update({ siteId: event.target.value })}
               placeholder="SITE-2026-001"
               aria-invalid={Boolean(siteIdError)}
-              className={inputClassName}
-            />
-          </Field>
-          <Field label="현장 이름" required>
-            <input
-              type="text"
-              value={form.name}
-              onChange={(event) => update({ name: event.target.value })}
-              placeholder="예: OO산업단지 3공구 신축공사 현장"
               className={inputClassName}
             />
           </Field>

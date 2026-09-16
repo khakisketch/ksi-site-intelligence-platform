@@ -341,7 +341,15 @@ copy beyond the work-order mobile case.
   alone; the scoped "외부 산출물 작업" heading already existed once selected;
   `test/observation-path-selection.test.tsx`.
 - [ ] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
-- [ ] C4 [F16] sites/new form — owner: —
+- [x] C4 [F16] sites/new form — owner: Claude — fixed
+  `SiteRegistrationOnlyWizard.tsx`, the component the `/sites/new` route
+  actually renders (`SiteRegistrationWizard.tsx` is unreachable dead code kept
+  only as an aircraft/camera-value test fixture — untouched). 현장 이름 now
+  leads before the machine 현장 ID; `WizardShell` gained an optional
+  `nextDisabledReason` prop, and step 0 names the first unmet requirement
+  when 다음 is disabled. `test/site-registration-only-wizard-step0.test.ts`,
+  `test/wizard-shell-next-disabled-reason.test.tsx`. Step-rail legibility not
+  addressed — needs the live re-capture to assess.
 - [x] C5 [F17] field/new copy — owner: Claude — each site row now shows its
   own `SITE_STATUS_LABEL` status badge instead of the identical boilerplate
   sentence; "선택" affordance bumped to 13px/bold with a chevron;

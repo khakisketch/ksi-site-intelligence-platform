@@ -29,6 +29,9 @@ export function WizardShell({
   nextLabel = "다음",
   nextDisabled = false,
   nextPending = false,
+  /** 다음 버튼이 비활성일 때 무엇을 채워야 하는지 말한다(F16) — 값이 있고
+   * `nextDisabled`일 때만 보인다. */
+  nextDisabledReason,
   error,
   /** 이 위저드가 어디에서 시작됐는지(예: 재관측 제안) — 레일 위에 붙는다. */
   origin,
@@ -49,6 +52,7 @@ export function WizardShell({
   nextLabel?: string;
   nextDisabled?: boolean;
   nextPending?: boolean;
+  nextDisabledReason?: string;
   error?: React.ReactNode;
   origin?: React.ReactNode;
   aside?: React.ReactNode;
@@ -200,6 +204,11 @@ export function WizardShell({
             {nextPending ? "처리 중…" : nextLabel}
           </button>
         </div>
+        {nextDisabled && nextDisabledReason && (
+          <p className="border-t border-line bg-page px-4 pb-3 text-[12px] break-keep text-ink-2 sm:px-5">
+            {nextDisabledReason}
+          </p>
+        )}
       </div>
 
       {/* ── 요약 ───────────────────────────────────────────────────────── */}
