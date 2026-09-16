@@ -1,13 +1,23 @@
-# Engine Comparison Protocol (Same-Input, 3-Engine)
+# Engine Comparison Protocol (Static Research Only)
 
-> Status: ACTIVE protocol only. This file changes no frozen product authority
+> Status: ACTIVE protocol only, subordinate to
+> [ADR-KSI-036](../architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md).
+> This file changes no frozen product authority
 > (`docs/product/PRODUCT_CONSTITUTION.md`,
 > `docs/product/FINAL_DECISION_LEDGER_v1.0.md`,
 > `docs/product/MASTER_PRD_v3.0.md`,
 > `docs/product/DOMAIN_INVARIANTS.md`), no registry, no contract, no runtime.
 > Rank: below the frozen authorities above and below accepted ADRs and
-> acceptance criteria (`docs/00_READ_FIRST.md` items 5-6). Where this file
-> conflicts with any of them, the frozen document or ADR wins. It also changes
+> acceptance criteria (`docs/00_READ_FIRST.md` items 5-6), including
+> ADR-KSI-036 and
+> `docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`, and
+> additionally subordinate to the named release plan
+> `docs/superpowers/plans/2026-09-06-external-reconstruction-release.md`
+> and the quantitative specification
+> `docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`
+> (implementation history per `docs/DOCUMENT_STATUS.md`, not items 5-6).
+> Where this file conflicts with any of them, the frozen document, ADR, or
+> acceptance/specification wins. It also changes
 > no scope owned by `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md`; that file
 > remains the MVP/engine-track clarification and this protocol only consumes it.
 > No new profile is issued, no Terra/Pix4D job is issuable, and no license fact
@@ -15,6 +25,11 @@
 >
 > Requirement IDs: REQ-WRK-101, REQ-INT-101/102/103/104 (civil processing,
 > comparison, profiled execution).
+> REQ-WRK-101 provenance: civil workload requirement reused from
+> `docs/acceptance/CIVIL_PROCESSING_V1_ACCEPTANCE.md` (profiled-execution
+> workload scope); ADR-KSI-036 itself lists REQ-INT-101/102/103/104,
+> REQ-SEC-101, REQ-OPS-102, which apply to this protocol via the
+> subordination above.
 > Owner module: product protocol in `docs/product/` (non-runtime); measurement
 > stays with `services/processing-controller/`, durable adjudication stays with
 > `services/core/`.
@@ -22,122 +37,151 @@
 > (`ODMRunner` ADOPT, `MetashapeRunner` REFERENCE_ONLY); no runtime import from
 > `references/`.
 > HIL / real-device assumptions: none executed by this protocol; any engine
-> run needing device, field, or HIL evidence is a separate gate.
-> License/data implications: ODM consumed as unmodified AGPL-3.0 container
-> over REST (see acceptance deployment gate); Terra/Pix4D license facts are
+> run needing device, field, or HIL evidence is a separate gate and is not
+> performed here.
+> License/data implications: ODM referenced as unmodified AGPL-3.0 container
+> facts from existing acceptance only (see §4); Terra/Pix4D license facts are
 > unresolved and recorded as `AWAITING-LICENSE` — no trial or commercial use
-> is authorized by this file.
+> is authorized by this file, and no installation or trial execution is
+> performed under this protocol.
 > Rollback: delete or supersede this single file; no runtime, contract, or
 > registry state changes, so no migration or data rollback is needed.
 
-## 1. Purpose and boundary
+## 1. Purpose and boundary (static research; no installation, no trials)
 
-This protocol defines how ODM, Terra, and Pix4D are compared on the **same
-sealed input** without claiming any Terra or Pix4D result. It produces
-comparability evidence only; it does not issue a profile, authorize a vendor
-run, approve survey/settlement accuracy, or change device capability state.
+This protocol compares ODM, Terra, and Pix4D by **static research of
+published documentation only**. No software is installed, no license is
+activated, no trial is executed, and no sealed input is run through any
+engine under this protocol. It produces comparability research notes only;
+it does not issue a profile, authorize a vendor run, approve
+survey/settlement accuracy, or change device capability state.
+
+What this protocol does:
+
+- Collects publicly documented engine facts into a versioned evidence
+  table (§3), one row per engine/locus, with source, version, and date per
+  fact.
+- Maps those facts to the ADR-KSI-036 D5 undecided items (§5) so a future
+  detailed specification can decide formats, semantic validation, and
+  compatibility policy with contracts, validation, tests, and acceptance
+  evidence.
+- Retains the trial/commercial distinction as a research label (§6) without
+  executing any trial.
+
+What this protocol never does:
+
+- No same-input execution, no worker measurement, no Core adjudication, no
+  comparison verdict, and no cross-engine numeric delta is produced here.
+  Per INV-053, engine/version mixing without a benchmarked compatibility
+  mapping plus ADR is not comparison evidence; this protocol creates no
+  such mapping.
+- Until a registry entry plus ADR exists for a candidate, its research row
+  stays `AWAITING-LICENSE` / `NOT_ISSUABLE` and no job for it can be issued
+  (`UnknownProcessingProfileError` → `UNKNOWN_PROCESSING_PROFILE`).
 
 Enforcing invariants (names; SSOT is `docs/product/DOMAIN_INVARIANTS.md`):
 
 - **INV-024** — absolute accuracy only via sealed independent-checkpoint CSV
-  re-sampled server-side; never a user-typed RMSE.
+  re-sampled server-side; never a user-typed RMSE. Research records vendor
+  accuracy statements as vendor claims with source, never as KSI findings.
 - **INV-050** — vendor-cloud execution only with site egress consent,
-  refused at creation (`EGRESS_NOT_ALLOWED`).
-- **INV-051** — Point Cloud is source SSOT; derived products never back
-  success or measurement authority.
-- **INV-053** — quantitative comparison only on same
-  `processingProfileDigest` plus matching Analysis Readiness, CRS, vertical
-  reference, source lineage, and (for design) same design-surface
-  revision/normalization digest; anything else is a typed blocker, and
-  engine/version mixing without a benchmarked compatibility mapping is not
-  comparison evidence.
+  refused at creation (`EGRESS_NOT_ALLOWED`). Research notes execution
+  locus as documented capability, not as an authorized KSI route.
+- **INV-051** — Point Cloud is source SSOT within managed reconstruction;
+  derived products never back success or measurement authority; external
+  imports cannot forge source authority.
+- **INV-053** — quantitative comparison only on the admitted compatibility
+  rule (managed same-`processingProfileDigest` path, or the narrow external
+  V1 rule in the quantitative specification); anything else is a typed
+  blocker. This protocol grants no eligibility.
 - **INV-054** — product-owned external runtime images are exact
-  version + OCI digest pinned.
+  version + OCI digest pinned. Research pins document versions, not images
+  for candidates.
 - **INV-055** — every ProcessingJob passes Core-owned versioned
-  resource-policy admission with a journaled snapshot.
-- **INV-060** — all compared bytes, jobs, and surfaces stay
-  organization-isolated.
+  resource-policy admission with a journaled snapshot. Research cost inputs
+  (§2 axis 7) are admission-input facts, not approvals.
+- **INV-060** — all researched bytes, jobs, and surfaces stay
+  organization-isolated where applicable; published-document research uses
+  no customer data.
 
-## 2. Same-input 3-engine method
+## 2. Seven research axes (documentation facts only)
 
-Engines: **ODM** (MVP production track), **Terra** (candidate, two execution
-loci: local / online), **Pix4D** (candidate). "3-engine" means three vendors;
-Terra is scored in two loci rows, so the evidence table has four rows.
+Every engine/locus row is researched on exactly these seven axes. Each cell
+holds a documented fact plus its source, or `NOT_DOCUMENTED` /
+`AWAITING-LICENSE` / `NOT_EVALUATED` — never an estimate or a measured
+result.
 
-Same-input rules (all engines, every run):
+1. **License model, including offline activation and trial limits.**
+   Documented license tiers, activation model (offline-capable or
+   account/cloud-bound where documented), trial limits (time, feature,
+   export, watermark, commercial-use exclusion), and attribution or
+   distribution constraints, each with source.
+2. **Export formats: LAS/LAZ, GeoTIFF DSM/DTM/ortho, mesh, 3D Tiles.**
+   Which product formats the vendor documents as exportable, including
+   point-cloud (LAS/LAZ), elevation (GeoTIFF DSM/DTM), orthophoto, mesh,
+   and tiled 3D (3D Tiles) where documented, plus any documented
+   format-specific limits.
+3. **CRS and vertical metadata handling.** How the vendor documents CRS
+   selection, vertical reference handling, geoid support, and whether
+   CRS/vertical metadata is embedded in exports or recorded alongside
+   them, each with source.
+4. **Reproducibility and parameter export.** Whether processing parameters,
+   presets, or project settings can be exported, versioned, and re-applied
+   as documented (parameter files, CLI flags, project archives), and what
+   identifiers (software version, build, profile digest equivalent) the
+   vendor documents for re-identifying a run.
+5. **Local-vs-cloud execution and data residency.** Documented execution
+   loci (local workstation, private server, vendor cloud), what leaves the
+   operator's equipment in each locus per documentation, and any documented
+   residency or egress controls. This axis records documented capability
+   only; it authorizes no KSI-operated vendor-cloud route.
+6. **Automation and CLI.** Documented command-line, scripting, or API
+   automation surface (commands, batch modes, exit codes where
+   documented), and any documented headless/offline automation limits.
+7. **Cost inputs.** Documented pricing inputs relevant to future admission
+   modelling (license tier inputs, seat/node limits, processing caps,
+   credit or subscription inputs where documented). Research records inputs
+   only; admission pass remains an operations boundary owned by INV-055 and
+   is not processing success, cost finality, accuracy, or a
+   data-distribution approval.
 
-1. Identical sealed `SourceMediaBundle` digest(s) for the epoch(s) under
-   comparison; identical CRS, vertical reference, design-surface revision and
-   normalization digest where design conformance is scored.
-2. Identical sealed independent-checkpoint CSV digest where accuracy is
-   scored (optional input; when absent, accuracy is `NOT_EVALUATED`, never
-   zero or estimated).
-3. One run per engine per input; each engine runs under its own issued
-   profile ID/digest. Cross-engine numeric deltas are **technical overlap
-   signals only** unless a benchmarked cross-engine compatibility mapping
-   plus ADR exists — per INV-053, same-`processingProfileDigest` is the only
-   v1 automatic compatibility, so ODM-vs-Terra and ODM-vs-Pix4D deltas never
-   satisfy the comparison preflight by themselves.
-4. Workers measure (bytes, digests, dimensions, DSM sampling); Core
-   adjudicates (seal, job issue/success, comparison verdicts, checkpoint
-   `VALIDATED`). Worker verdicts never overwrite the ledger.
-5. No engine run rewrites another engine's history: profiles are immutable;
-   a new engine, version, preprocessing, or masking choice requires a new
-   profile plus validation (ledger rule carried by
-   `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md`).
+## 3. Evidence table template (source + version + date per fact)
 
-Until a registry entry plus ADR exists for a candidate, its rows stay
-`AWAITING-LICENSE` / `NOT_ISSUABLE` and no job for it can be issued
-(`UnknownProcessingProfileError` → `UNKNOWN_PROCESSING_PROFILE`).
+Copy this template once per engine/locus row. Fill one row per fact; leave
+unverifiable cells as `NOT_DOCUMENTED` or `AWAITING-LICENSE` with the
+reason. Do not merge trial and commercial facts into one cell.
 
-## 3. Seven comparison axes
+| Axis (§2) | Fact (≤ 2 sentences) | Source (title + publisher) | Doc version | Access date (UTC) | Research status |
+|---|---|---|---|---|---|
+| 1 license model | | | | | `CONFIRMED` / `NOT_DOCUMENTED` / `AWAITING-LICENSE` |
+| 1 offline activation | | | | | as above |
+| 1 trial limits | | | | | as above; trial/commercial kept separate per §6 |
+| 2 LAS/LAZ export | | | | | as above |
+| 2 GeoTIFF DSM/DTM export | | | | | as above |
+| 2 ortho export | | | | | as above |
+| 2 mesh export | | | | | as above |
+| 2 3D Tiles export | | | | | as above |
+| 3 CRS handling | | | | | as above |
+| 3 vertical handling | | | | | as above |
+| 4 parameter export | | | | | as above |
+| 5 execution loci | | | | | as above |
+| 5 data residency | | | | | as above |
+| 6 automation/CLI | | | | | as above |
+| 7 cost inputs | | | | | as above |
 
-Every engine/locus row is scored on exactly these seven axes. A missing input
-yields a typed blocker or `NOT_EVALUATED`, never an estimate.
+Rules:
 
-1. **Accuracy (server-computed only).** Independent-checkpoint CSV is sealed
-   per DSM; the Processing Controller reads the sealed CSV bytes and the DSM
-   bytes, re-checks both digests and CRS, and computes per-point
-   mean/MAE/RMSE/max server-side. Out-of-range or nodata points are typed
-   rejections, not partial statistics. Only Core-`VALIDATED` results may
-   inform an operational uncertainty note (INV-024 ②③④ wiring); client-typed
-   RMSE is refused at three layers and never accepted.
-2. **Artifacts (CRS-vertical-format).** Required set per profile
-   (v1 ODM: point cloud = source authority, DSM/DTM = derived serving
-   layers, plus orthophoto/mesh/report as emitted); each artifact records
-   CRS, vertical reference, format, digest, and source/derived lineage
-   anchored to the sealed bundle digest. CRS or vertical mismatch blocks
-   comparison (`CRS_MISMATCH`, `VERTICAL_REFERENCE_MISMATCH`).
-3. **Reproducibility (digest).** Profile ID + profile digest, OCI image +
-   digest, preprocessing/model lineage, source bundle digest(s), artifact
-   digests, and journal snapshot must fully re-identify the run. Re-runs
-   with identical digests must reproduce identical comparison verdicts;
-   anything floating (`latest`, undigested image) is rejected per INV-054.
-4. **Operability.** Standard runbook outcome on the same input: issue →
-   lease → run → heartbeat → `SUCCEEDED` with required artifacts, plus
-   failure-mode honesty (typed errors, no mock/static always-go, no silent
-   fallback). Human touchpoints, poll/retry behavior, and log/digest
-   auditability are recorded; production profile gate (INV-040) applies.
-5. **Execution-egress.** Execution locus (KSI server/GPU, local/offline,
-   vendor cloud) versus the site's `dataResidency.egressAllowed`: a
-   vendor-cloud candidate on a site without explicit egress consent is
-   refused at creation (`EGRESS_NOT_ALLOWED`, INV-050). The locus of every
-   run is recorded; post-hoc egress approval never retro-authorizes a run.
-6. **License (trial-commercial split).** Every candidate run records its
-   license basis (license ID, tier, trial-vs-commercial flag, attribution and
-   distribution constraints). Trial runs and commercial runs are recorded
-   separately (see §5). Unverified license facts stay `AWAITING-LICENSE`.
-7. **Cost (admission inputs).** Resource-policy admission inputs bound at
-   issuance: sealed-byte counts, megapixels, active-job counts, policy
-   version/snapshot/digest (INV-055). Admission pass is an operations
-   boundary only — it is not processing success, cost finality, accuracy, or
-   a data-distribution approval. Measured runtime/egress/compute observables
-   may be recorded alongside, but client-supplied caps or overrides are
-   refused.
+- Every non-empty fact cites its exact source document, that document's
+  version, and the UTC access date. Undated or unversioned vendor pages are
+  cited with `version: UNDATED_PAGE` plus access date, never silently
+  treated as versioned manuals.
+- `AWAITING-LICENSE` means the underlying license fact is unresolved, so no
+  use (trial or commercial) is authorized by this file.
+- Empty cells are forbidden from becoming zeros, metrics, or verdicts.
 
-## 4. ODM baseline (the only completed row)
+## 4. ODM reference facts (published-record row, not a new run)
 
-- Pinned image:
+- Pinned image fact (from existing acceptance, no new execution):
   `opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2`
   (NodeODM 2.2.4 / ODM 3.5.6; `dsm=true`, `dtm=true`, `pc-quality=medium`,
   dynamic-object masking OFF).
@@ -158,37 +202,79 @@ yields a typed blocker or `NOT_EVALUATED`, never an estimate.
   `productQuantitativeComparisonExecutable: false`; Madeira mean absolute DSM
   delta `1.99291 m` is a finite technical overlap signal only, not accuracy,
   change, cut/fill, or progress evidence).
+- Under ADR-KSI-036, KSI-managed NodeODM is test/demonstration scope, not
+  the first-release route; the facts above remain historical reference and
+  are not relabeled as customer-operated results.
 
-## 5. Candidate rows (no results claimed)
+## 5. Candidate research rows and mapping to ADR-KSI-036 D5 undecided items
 
-| Row | Engine / locus | Profile | Status | Results |
+| Row | Engine / locus | Profile | Research status | Results |
 |---|---|---|---|---|
-| T-local | Terra local (offline/local candidate) | No issuable profile ID; registry entry + ADR required | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — no run, no metric, no artifact |
-| T-online | Terra online (vendor-cloud candidate) | No issuable profile ID; registry entry + ADR + consent-record owner/schema/journal binding required; `EGRESS_NOT_ALLOWED` gate applies | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — no run, no metric, no artifact |
-| P | Pix4D (candidate) | No issuable profile ID; registry entry + ADR required | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — no run, no metric, no artifact |
+| T-local | Terra local (offline/local research label) | No issuable profile ID; registry entry + ADR required | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — documentation facts only, no run, no metric, no artifact |
+| T-cloud | Terra cloud (vendor-cloud research label) | No issuable profile ID; registry entry + ADR + consent-record owner/schema/journal binding required; `EGRESS_NOT_ALLOWED` gate applies | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — documentation facts only, no run, no metric, no artifact |
+| P | Pix4D (research label) | No issuable profile ID; registry entry + ADR required | **AWAITING-LICENSE** (`NOT_ISSUABLE`) | None — documentation facts only, no run, no metric, no artifact |
 
-Trial/commercial split: Terra trial runs and commercial runs are recorded
-separately when license facts allow runs at all. **Trial evidence never backs
-a commercial accuracy or quantity claim, and trial results are never
-promotable to commercial evidence.** DJI Terra remains separately licensed
-Windows/NVIDIA software used only through a provider adapter; evaluation does
-not change the `services/core/` ← `services/processing-controller/` ←
-`packages/` ownership boundary.
+Explicit mapping to the ADR-KSI-036 D5 undecided items (these remain
+undecided; research informs but does not close them):
 
-## 6. Recording rule and escalation
+- **Accepted file formats and actual producer export compatibility** ← §2
+  axis 2 (export formats) plus axis 3 (CRS/vertical metadata). Requires a
+  future detailed specification with contracts, validation, compatibility
+  policy, security review, tests, and acceptance evidence.
+- **Semantic validation and provenance/trust verification evidence beyond
+  byte identity** ← §2 axes 3–4 (CRS/vertical handling,
+  reproducibility/parameter export). Requires the same future
+  specification track.
+- **Engine/version/profile compatibility and quantitative-comparison
+  policy** ← §2 axes 4–5 (reproducibility, execution loci) constrained by
+  INV-053. The only closed quantitative rule is the narrow external
+  relative-volume V1 rule in
+  `docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`;
+  this protocol adds no cross-engine mapping.
 
-- Each engine/locus row records all seven axes with digests or a typed
-  blocker/`NOT_EVALUATED`; empty cells are forbidden from becoming zeros.
-- Foreign-CRS or preservation-derivative fixtures are labelled as technical
-  benchmarks only and never as Korean civil quantity or field acceptance.
-- Every result is labelled operational relative quantity until the separate
-  field-acceptance gate (Korean LandXML, two same-site epochs, independent
-  reference, recorded CRS/vertical/lineage/limits) is met elsewhere.
+## 6. Trial/commercial distinction (retained without trial execution)
+
+Terra trial facts and commercial facts are recorded in separate table rows
+when license documentation allows research at all. **Trial evidence never
+backs a commercial accuracy or quantity claim, and trial results are never
+promotable to commercial evidence.** No trial is installed or executed
+under this protocol; the distinction is a documentation label only. DJI
+Terra remains separately licensed Windows/NVIDIA software usable only
+through a provider adapter; research does not change the
+`services/core/` ← `services/processing-controller/` ← `packages/`
+ownership boundary.
+
+## 7. Recording rule and escalation
+
+- Each engine/locus row records all seven axes with a sourced fact or a
+  typed `NOT_DOCUMENTED` / `AWAITING-LICENSE` / `NOT_EVALUATED`; empty cells
+  are forbidden from becoming zeros.
+- Foreign-CRS or preservation-derivative fixtures cited from existing
+  records are labelled as technical benchmarks only and never as Korean
+  civil quantity or field acceptance.
+- Every quantitative statement about existing records is labelled
+  operational relative quantity until the separate field-acceptance gate
+  (Korean LandXML, two same-site epochs, independent reference, recorded
+  CRS/vertical/lineage/limits) is met elsewhere.
 - Escalate to Build when: Terra or Pix4D license facts (trial vs. commercial
-  terms, enterprise terms, distribution/AGPL-equivalent constraints) become
-  blocking; when this protocol would need a frozen-doc edit, a Phase Registry
-  / `.ksi/` edit, a contract edit, or a new profile/registry/adapter change;
-  or when a candidate run needs egress consent, device, field, or HIL scope.
+  terms, enterprise terms, offline activation, distribution constraints)
+  become blocking; when this protocol would need a frozen-doc edit, a Phase
+  Registry / `.ksi/` edit, a contract edit, or a new profile/registry/adapter
+  change; or when any candidate consideration needs egress consent, device,
+  field, or HIL scope.
+
+## 8. Residual open questions (not decided here)
+
+- Accepted file formats and actual producer export compatibility
+  (ADR-KSI-036 D5 undecided).
+- Semantic validation and provenance/trust verification evidence beyond
+  byte identity (ADR-KSI-036 D5 undecided).
+- Engine/version/profile compatibility and quantitative-comparison policy
+  beyond the narrow external relative-volume V1 rule (ADR-KSI-036 D5
+  undecided).
+- Vendor license facts (trial vs. commercial terms, offline activation,
+  enterprise/distribution terms) stay `AWAITING-LICENSE` until versioned
+  vendor evidence is recorded in the §3 table.
 
 ## References (all paths exist at write time)
 
@@ -197,6 +283,10 @@ not change the `services/core/` ← `services/processing-controller/` ←
 - `docs/product/MASTER_PRD_v3.0.md`
 - `docs/product/DOMAIN_INVARIANTS.md`
 - `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md`
+- `docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md`
+- `docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`
+- `docs/superpowers/plans/2026-09-06-external-reconstruction-release.md`
+- `docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`
 - `REPOSITORY_STRUCTURE.md`
 - `docs/DOCUMENT_STATUS.md`
 - `docs/goals/PHASE_REGISTRY.yaml`

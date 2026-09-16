@@ -4,7 +4,7 @@
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
-updated: "2026-09-06"
+updated: "2026-09-16"
 
 terrain_aware_planning:
   authority: >-
@@ -372,6 +372,40 @@ confirmed_next_improvements:
       rollback: >-
         Stop new policy-bound issuance and retain read-only records; roll runtime only to an earlier
         verified digest and never weaken civil comparison/evidence gates.
+    - id: external-customer-ingress
+      status: SOFTWARE_PREPARED
+      activation: ACTIVATION_BLOCKED
+      authority: >-
+        docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md and
+        docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md
+      scope: >-
+        Customer-workstation/Pilot-default first-release product loop: external reconstruction
+        register -> inspect -> decision -> volume -> review -> successor WorkOrder. Core owns
+        submission identity, durable evidence and claim decisions; Console presents evidence and
+        requests intent. Originals stay with the customer; no forged managed job, source
+        authority, or profile identity.
+      blocked_items: >-
+        UDS ACL activation (BLOCKED_ACL_ACTIVATION); release evidence incl. source/image/SBOM/
+        scanner/revocation/manifest binding (BLOCKED_RELEASE_EVIDENCE); quantitative authority
+        source injection into production assembly (BLOCKED_AUTHORITY_SOURCE); synthetic product
+        loop register -> inspect -> decision -> volume -> review -> successor WorkOrder NOT_RUN
+        (staging-acceptance row in EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md, still unsatisfied);
+        host identities NOT_APPLIED; customer/HIL/field acceptance NOT_VERIFIED.
+      excludes: >-
+        KSI-server reconstruction as the first-release route, vendor-cloud operation by KSI,
+        license decisions, signed authority provisioning, deployment, remote CI, HIL, and field
+        acceptance.
+      rollback: >-
+        Disable production authority injection and new enqueue/issue operations; retain all
+        immutable submissions, inspections, decisions, authority events, reports, reviews and
+        WorkOrders without rewriting managed records or broadening compatibility.
+      local_loop_evidence_2026_09_16: >-
+        Local-only synthetic loop PASS 8/8 (register -> upload/seal -> inspection ->
+        evidence -> use decision -> relative volume -> review -> successor WorkOrder);
+        audit at docs/audit/EXTERNAL_PRODUCT_LOOP_LOCAL_RUN_2026-09-16.md. This PASS is
+        local software evidence only and does NOT satisfy the staging-acceptance
+        'Synthetic product loop' row above (still NOT_RUN) — NOT staging/deployment,
+        NOT customer export compatibility, NOT HIL/field acceptance.
 
 # 제품 구조(2축 폐루프)의 정본은 PRODUCT_CONSTITUTION §두 축과 폐루프이고,
 # 그 근거는 ADR-KSI-016 D2 다. **이 파일이 소유하는 것은 "지금 어느 축이
