@@ -15,6 +15,7 @@ authority port and the *same* currentness coordinator it owns.
 from __future__ import annotations
 
 import hashlib
+import logging
 import math
 import re
 import threading
@@ -63,6 +64,7 @@ from ksi_core.foundation.leasing import (
 )
 from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
+_LOGGER = logging.getLogger(__name__)
 _VERSION = 1
 _NOT_FOUND_DETAIL = "해당 외부 상대 물량 요청을 찾을 수 없다"
 _FAILURE_REASON = re.compile(r"[A-Z][A-Z0-9_]{0,127}\Z")
@@ -880,11 +882,31 @@ class ExternalRelativeVolumeStore:
         self._report_refs: dict[tuple[str, str], str] = {}
         self._lease_generation: dict[str, int] = {}
         self._lease_acquisition_ids: dict[str, set[str]] = {}
+        self._report_listeners: list[Callable[[ExternalRelativeVolumeRecord], None]] = []
         self._replay()
 
     @property
     def launch_material_resolver(self) -> VolumeWorkerLaunchMaterialResolver | None:
         return self._launch_material_resolver
+
+    def bind_report_listener(
+        self, listener: Callable[[ExternalRelativeVolumeRecord], None]
+    ) -> None:
+        """Bind a post-commit projection; the report verdict never depends on it."""
+        with self._lock:
+            if listener not in self._report_listeners:
+                self._report_listeners.append(listener)
+
+    def _notify_report_listeners(self, record: ExternalRelativeVolumeRecord) -> None:
+        """Run outside store locks and coordinator guards; failures are logged only."""
+        for listener in tuple(self._report_listeners):
+            try:
+                listener(record)
+            except Exception:
+                _LOGGER.exception(
+                    "relative volume report listener failed",
+                    extra={"request_ref": record.request.request_id},
+                )
 
     @property
     def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
@@ -2031,6 +2053,7 @@ class ExternalRelativeVolumeStore:
         record = self.get(request_ref, organization_id=organization_id)
         if record is None:
             return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+        reported: ExternalRelativeVolumeRecord | None = None
         # Result authority is rechecked under the shared coordinator before the
         # journal lock.  The port is never called while the store lock is held.
         worker = Principal(
@@ -2120,9 +2143,10 @@ class ExternalRelativeVolumeStore:
                     return ExternalRelativeVolumeResult(
                         ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, fresh
                     )
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.REPORTED, self._records[request_ref]
-                )
+                reported = self._records[request_ref]
+        assert reported is not None
+        self._notify_report_listeners(reported)
+        return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.REPORTED, reported)
 
     def record_incomplete_failure(
         self,

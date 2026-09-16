@@ -10,11 +10,12 @@ approval status or a successor WorkOrder event.
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -51,6 +52,7 @@ from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedErr
 from ksi_core.foundation.identifiers import is_path_safe_identifier
 from ksi_core.identity.auth import Permission, Principal, require_permission
 
+_LOGGER = logging.getLogger(__name__)
 _VERSION = 1
 _EVENT_KIND = "external-reobservation-proposed"
 
@@ -750,6 +752,28 @@ class ExternalReobservationProposalService:
     work_orders: ObservationWorkOrderStore
     authority_port: CoreExternalReobservationProposalAuthorityPort
     coordinator: ExternalAuthorityCurrentnessCoordinator
+    approval_listeners: list[Callable[[ExternalReobservationApprovalReceiptV1], None]] = field(
+        default_factory=list, compare=False, repr=False
+    )
+
+    def bind_approval_listener(
+        self, listener: Callable[[ExternalReobservationApprovalReceiptV1], None]
+    ) -> None:
+        """Bind a post-commit projection; approval never depends on it."""
+        if listener not in self.approval_listeners:
+            self.approval_listeners.append(listener)
+
+    def _notify_approval_listeners(
+        self, receipt: ExternalReobservationApprovalReceiptV1
+    ) -> None:
+        for listener in tuple(self.approval_listeners):
+            try:
+                listener(receipt)
+            except Exception:
+                _LOGGER.exception(
+                    "external reobservation approval listener failed",
+                    extra={"successor_work_order_id": receipt.successor_work_order_id},
+                )
 
     def __post_init__(self) -> None:
         if not (
@@ -891,13 +915,15 @@ class ExternalReobservationProposalService:
                 raise ExternalReobservationProposalUnavailableError(
                     "EXTERNAL_REOBSERVATION_CURRENT_AUTHORITY_UNAVAILABLE"
                 )
-            return self.work_orders.approve_external_reobservation(
+            approved = self.work_orders.approve_external_reobservation(
                 approval_input,
                 organization_id=organization_id,
                 actor=actor,
                 now=now,
                 idempotency_key=idempotency_key,
             )
+        self._notify_approval_listeners(approved.approval_receipt)
+        return approved
 
     def approval_receipt(
         self,

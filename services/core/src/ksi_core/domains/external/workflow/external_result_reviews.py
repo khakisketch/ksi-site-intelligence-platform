@@ -9,7 +9,9 @@ the review event only anchors the exact source snapshot it must re-resolve.
 from __future__ import annotations
 
 import hashlib
+import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -31,6 +33,7 @@ from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordina
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.identity.auth import Principal
 
+_LOGGER = logging.getLogger(__name__)
 _VERSION = 1
 _FACTUAL_LIMITATIONS = (
     "RELATIVE_VOLUME_IS_OPERATIONAL_ONLY",
@@ -148,6 +151,7 @@ class ExternalResultReviewStore:
         self._coordinator = coordinator
         self._reviews_by_ref: dict[str, ExternalResultReviewReceiptV1] = {}
         self._reviews_by_report_ref: dict[tuple[str, str], ExternalResultReviewReceiptV1] = {}
+        self._review_listeners: list[Callable[[ExternalResultReviewReceiptV1], None]] = []
         self._lock = threading.RLock()
         try:
             for raw in journal.replay():
@@ -155,6 +159,24 @@ class ExternalResultReviewStore:
         except BaseException:
             journal.close()
             raise
+
+    def bind_review_listener(
+        self, listener: Callable[[ExternalResultReviewReceiptV1], None]
+    ) -> None:
+        """Bind a post-commit projection; the review receipt never depends on it."""
+        with self._lock:
+            if listener not in self._review_listeners:
+                self._review_listeners.append(listener)
+
+    def _notify_review_listeners(self, receipt: ExternalResultReviewReceiptV1) -> None:
+        for listener in tuple(self._review_listeners):
+            try:
+                listener(receipt)
+            except Exception:
+                _LOGGER.exception(
+                    "external result review listener failed",
+                    extra={"review_ref": receipt.review_ref},
+                )
 
     @property
     def source_port(self) -> ExternalResultReviewSourcePort:
@@ -289,7 +311,9 @@ class ExternalResultReviewStore:
             raw["eventDigest"] = _event_digest(raw)
             self._journal.append(raw)
             self._apply(raw)
-            return receipt.model_copy(deep=True)
+            recorded = receipt.model_copy(deep=True)
+        self._notify_review_listeners(recorded)
+        return recorded
 
     def get_scoped(
         self, review_ref: str, *, organization_id: str
