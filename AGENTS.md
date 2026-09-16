@@ -34,7 +34,7 @@ These files route work; they do not override product authority or contracts. Rou
 | Measurement worker | `services/processing-controller/` | Independently operated worker; measures artifacts while Core adjudicates durable state |
 | Reusable domain and algorithm code | `packages/` | Import-only code, including change/BIM/defect processing libraries, through explicit package/contract boundaries |
 | Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
-| Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `.ksi/` | Current status; update `.ksi/` only through its helper |
+| Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `docs/superpowers/product-state.md` | Current status; update product-state only at slice close (`.ksi/` retired archive) |
 
 ### Terrain-aware planning route (design-only)
 

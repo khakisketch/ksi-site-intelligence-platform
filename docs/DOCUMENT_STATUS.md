@@ -15,12 +15,13 @@ it does not change product decisions or current capability state.
 | Customer-owned reconstruction | ACTIVE (direction; implementation in progress) | [ADR-KSI-036](architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md), [release plan](superpowers/plans/2026-09-06-external-reconstruction-release.md), and local [Slice 2 API evidence](audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md). The bounded API returns an opaque `submissionRef` for revision routes; raw customer IDs remain durable identity, not route segments. Originals stay with customer. Semantic validation, external-comparison compatibility, Console, customer export compatibility, retention/resource deployment, remote CI/deployment, vendor acceptance, and field acceptance remain separate release work. |
 | Runtime/API contracts | ACTIVE | [`../contracts/`](../contracts/) |
 | Current phase state | ACTIVE | [`goals/PHASE_REGISTRY.yaml`](goals/PHASE_REGISTRY.yaml) |
-| Durable goal/risk state | ACTIVE | `../.ksi/goals.json` through `ksi-goals.py` |
+| Current product state | ACTIVE | [`superpowers/product-state.md`](superpowers/product-state.md) — current Goal/Milestone/slice/Backlog SSOT (updated only at slice close) |
+| Durable goal/risk state | RETIRED (archived) | [`archive/ksi-legacy-2026/`](archive/ksi-legacy-2026/) (archived: `goals.json`, `ledger.jsonl`, `state.json`, `.gitignore`, `goals.lock`; external helper `ksi-goals.py` retired, not archived); replaced by `superpowers/product-state.md` + plans ledger |
 | Repository structure | ACTIVE | [`../REPOSITORY_STRUCTURE.md`](../REPOSITORY_STRUCTURE.md) |
 | Service/package placement decision | ACTIVE | [`architecture/ADR-KSI-034-service-package-runtime-boundary.md`](architecture/ADR-KSI-034-service-package-runtime-boundary.md) and [`audit/REPOSITORY_MIGRATION_MANIFEST_R3.json`](audit/REPOSITORY_MIGRATION_MANIFEST_R3.json) |
 | HIL route index | ACTIVE | [`hil/README.md`](hil/README.md) |
 | External-loop product clarification | ACTIVE (subordinate to ADR-KSI-036; changes no frozen authority) | [`product/MVP_SCOPE_AND_ENGINE_TRACKS.md`](product/MVP_SCOPE_AND_ENGINE_TRACKS.md), [`product/ENGINE_COMPARISON_PROTOCOL.md`](product/ENGINE_COMPARISON_PROTOCOL.md) |
-| External-loop ops verification | ACTIVE (verification only; no code/contract change) | [`ops/DEV_EXTERNAL_RUNBOOK.md`](ops/DEV_EXTERNAL_RUNBOOK.md), [`ops/BROWSER_E2E_CHECKLIST.md`](ops/BROWSER_E2E_CHECKLIST.md) |
+| External-loop ops verification | ACTIVE (verification only; no code/contract change) | [`ops/DEV_EXTERNAL_RUNBOOK.md`](ops/DEV_EXTERNAL_RUNBOOK.md), [`ops/BROWSER_E2E_CHECKLIST.md`](ops/BROWSER_E2E_CHECKLIST.md), [`audit/EXTERNAL_PRODUCT_LOOP_BROWSER_PASS_2026-09-17.md`](audit/EXTERNAL_PRODUCT_LOOP_BROWSER_PASS_2026-09-17.md), [`audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md`](audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md) |
 
 ## Superseded or historical families
 
@@ -29,8 +30,8 @@ it does not change product decisions or current capability state.
 | `architecture/02_SERVICE_BLUEPRINT_AND_UX.md` | SUPERSEDED | ADR-KSI-024/025/026 and `architecture/05_OPERATIONS_CONSOLE_PHASE_1_STANDARD.md`; historical UX seed only |
 | `architecture/ARCHITECTURE_DECISIONS_BASELINE_v2.0.md` | SUPERSEDED | `architecture/ARCHITECTURE_DECISIONS_v3.0.md` plus accepted ADR-KSI files |
 | `acceptance/REQUIREMENTS_TRACEABILITY_BASELINE_v2.0.csv` | SUPERSEDED | `acceptance/REQUIREMENTS_TRACEABILITY_v3.0.csv` |
-| `goals/HANDOFF_2026-08-09.md` | HISTORICAL | `.ai/handoff.md`, Phase Registry and goal ledger for current state |
-| `goals/REMAINING_WORK_PLAN.md` dated tables | HISTORICAL SNAPSHOT | Its own header delegates current status to Phase Registry/goal ledger |
+| `goals/HANDOFF_2026-08-09.md` | HISTORICAL | `.ai/handoff.md`, `superpowers/product-state.md` + plans ledger, and Phase Registry for current state |
+| `goals/REMAINING_WORK_PLAN.md` dated tables | HISTORICAL SNAPSHOT | Its own header delegates current status to `superpowers/product-state.md` + plans ledger and Phase Registry |
 | `.ai/audits/*`, `docs/audit/*` | EVIDENCE | Audit-time findings only; no product or current-state authority |
 | `.ai/mvp-*`, `.ai/*` previous sections | HISTORICAL | Current top section plus authoritative product/state documents |
 | `docs/superpowers/plans/*`, `docs/superpowers/specs/*` | IMPLEMENTATION HISTORY | Requirements/ADR/current goal plan control new work |

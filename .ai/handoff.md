@@ -1,3 +1,8 @@
+> This file is the historical increment log; durable current-state authority is docs/superpowers/product-state.md
+> and the plans ledger under docs/superpowers/plans/. `.opencode/working-state.md` is a machine-local resume aid
+> that may not exist on a clean checkout.
+> Entries below are preserved unchanged and are not current-state authority.
+
 # Current Handoff
 
 ## 2026-09-05 — Audited R3 final triplet locally present; validation and delivery gates remain
