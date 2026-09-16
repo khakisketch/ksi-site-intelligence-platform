@@ -92,7 +92,11 @@ if TYPE_CHECKING:
     from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
     from ksi_core.report_exports import ReportExportStore
-    from ksi_core.site_workspace import SiteBriefingService, SiteWorkspaceProjector
+    from ksi_core.site_workspace import (
+        SiteBriefingService,
+        SiteBriefingStore,
+        SiteWorkspaceProjector,
+    )
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
@@ -157,6 +161,7 @@ def create_app(
     copilot_conversation_service: CopilotConversationService | None = None,
     site_workspace_projector: SiteWorkspaceProjector | None = None,
     site_briefing_service: SiteBriefingService | None = None,
+    site_briefing_store: SiteBriefingStore | None = None,
     civil_readiness_projector: CivilReadinessProjector | None = None,
     equipment_state_store: EquipmentStateStore | None = None,
     equipment_support_store: EquipmentSupportStore | None = None,
@@ -381,6 +386,7 @@ def create_app(
         "copilot_conversation_service": copilot_conversation_service,
         "site_workspace_projector": site_workspace_projector,
         "site_briefing_service": site_briefing_service,
+        "site_briefing_store": site_briefing_store,
         "civil_readiness_projector": civil_readiness_projector,
         "design_conformance_report_store": design_conformance_report_store,
         "region_extraction_request_store": region_extraction_request_store,
@@ -457,6 +463,7 @@ def create_app(
         copilot_conversation_service=copilot_conversation_service,
         site_workspace_projector=site_workspace_projector,
         site_briefing_service=site_briefing_service,
+        site_briefing_store=site_briefing_store,
         civil_readiness_projector=civil_readiness_projector,
         site_store=site_store,
         edge_sync_store=edge_sync_store,

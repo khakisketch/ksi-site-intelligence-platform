@@ -275,6 +275,12 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "site_briefing_service는 grounded Copilot과 SiteWorkspace projection이 필요하다",
     ),
     (
+        "site_briefing_store",
+        (("site_store",),),
+        "site_briefing_store는 site_store와 함께 주어져야 한다"
+        " — 브리핑은 조직-scoped Site에만 귀속된다",
+    ),
+    (
         "design_surface_store",
         (("site_store",),),
         "design_surface_store 는 site_store 와 함께 주어져야 한다"

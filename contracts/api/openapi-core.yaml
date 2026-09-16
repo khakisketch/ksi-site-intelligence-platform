@@ -886,6 +886,20 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied }
         '404': { description: Site or briefing not found in the principal organization }
+  /v1/site-briefings/latest:
+    get:
+      summary: List the latest durable Site briefing per site of the principal organization
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 200, default: 20 } }
+      responses:
+        '200':
+          description: Latest briefing per site, newest first (INV-060 organization scope)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteBriefingListView' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
   /v1/sites/{site_id}/briefings/refresh:
     post:
       summary: Generate and durably record a grounded Site briefing
@@ -9816,6 +9830,13 @@ components:
         sourceWatermark: { type: string }
         missingData: { type: array, items: { type: string } }
         generatedAt: { type: string, format: date-time }
+    SiteBriefingListView:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SiteBriefing' }
     IngestResponse:
       type: object
       required: [verdict]

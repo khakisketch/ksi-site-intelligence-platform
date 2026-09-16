@@ -255,6 +255,25 @@ def assemble_app(
     copilot_service = workspace.copilot_service
     copilot_conversation_service = workspace.copilot_conversation_service
     site_briefing_service = workspace.site_briefing_service
+    site_briefing_store = workspace.site_briefing_store
+    if (
+        external_result_read_projector is not None
+        and external_result_workflow_service is not None
+        and external_relative_volume_store is not None
+    ):
+        from ksi_core.domains.external.workflow.external_result_briefings import (
+            ExternalResultBriefingProjector,
+        )
+
+        ExternalResultBriefingProjector(
+            briefings=site_briefing_store,
+            projector=external_result_read_projector,
+            work_areas=work_area_store,
+        ).bind(
+            volumes=external_relative_volume_store,
+            reviews=external_result_workflow_service.reviews,
+            service=external_result_workflow_service,
+        )
 
     analysis = build_analysis_graph(
         journal=journal,
@@ -319,6 +338,7 @@ def assemble_app(
         copilot_conversation_service=copilot_conversation_service,
         site_workspace_projector=site_workspace_projector,
         site_briefing_service=site_briefing_service,
+        site_briefing_store=site_briefing_store,
         civil_readiness_projector=civil_readiness_projector,
         mission_store=mission_store,
         event_store=event_store,

@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from ksi_domain.enums import EventStatus, TriageStatus
 from ksi_event_contracts.copilot import (
     CopilotAnswerStatus,
@@ -680,11 +680,22 @@ def _error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=422, detail=str(exc))
 
 
+class SiteBriefingListView(CamelModel):
+    """Latest briefing per site of the principal organization, newest first."""
+
+    items: list[SiteBriefing]
+
+
 def build_site_workspace_router(
     projector: SiteWorkspaceProjector,
     briefing_service: SiteBriefingService | None,
+    *,
+    briefing_store: SiteBriefingStore | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/v1/sites", tags=["site-workspace"])
+    store = briefing_store or (briefing_service.store if briefing_service is not None else None)
+    if briefing_service is not None and briefing_service.store is not store:
+        raise ValueError("site briefing service and store must be the same durable store")
 
     @router.get("/{site_id}/workspace", response_model=SiteWorkspaceView)
     def get_workspace(
@@ -696,7 +707,8 @@ def build_site_workspace_router(
         except Exception as exc:
             raise _error(exc) from exc
 
-    if briefing_service is not None:
+    if store is not None:
+        retained = store
 
         @router.get("/{site_id}/briefings/latest", response_model=SiteBriefing)
         def get_latest_briefing(
@@ -704,14 +716,14 @@ def build_site_workspace_router(
             principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
         ) -> SiteBriefing:
             try:
-                briefing = briefing_service.store.latest(
-                    site_id, organization_id=principal.organization_id
-                )
+                briefing = retained.latest(site_id, organization_id=principal.organization_id)
             except Exception as exc:
                 raise _error(exc) from exc
             if briefing is None:
                 raise HTTPException(status_code=404, detail="생성된 현장 브리핑이 없다")
             return briefing
+
+    if briefing_service is not None:
 
         @router.post("/{site_id}/briefings/refresh", response_model=SiteBriefing)
         def refresh_briefing(
@@ -726,17 +738,41 @@ def build_site_workspace_router(
     return router
 
 
+def build_site_briefing_portfolio_router(store: SiteBriefingStore) -> APIRouter:
+    """Organization-wide latest briefing per site for the Home portfolio."""
+    router = APIRouter(prefix="/v1/site-briefings", tags=["site-workspace"])
+
+    @router.get("/latest", response_model=SiteBriefingListView)
+    def list_latest_briefings(
+        limit: int = Query(default=20, ge=1, le=200),  # noqa: B008
+        principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
+    ) -> SiteBriefingListView:
+        return SiteBriefingListView(
+            items=store.latest_for_organization(principal.organization_id)[:limit]
+        )
+
+    return router
+
+
 def mount_site_workspace(
     app: FastAPI,
     *,
     projector: SiteWorkspaceProjector,
     briefing_service: SiteBriefingService | None,
+    briefing_store: SiteBriefingStore | None = None,
 ) -> None:
+    store = briefing_store or (briefing_service.store if briefing_service is not None else None)
     app.state.site_workspace_projector = projector
-    app.include_router(build_site_workspace_router(projector, briefing_service))
+    app.state.site_briefing_store = store
+    app.include_router(
+        build_site_workspace_router(projector, briefing_service, briefing_store=store)
+    )
+    if store is not None:
+        app.include_router(build_site_briefing_portfolio_router(store))
 
 
 __all__ = [
+    "SiteBriefingListView",
     "SiteBriefingService",
     "SiteBriefingStore",
     "SiteWorkspaceProjector",

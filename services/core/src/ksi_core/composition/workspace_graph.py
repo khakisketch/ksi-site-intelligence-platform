@@ -34,6 +34,7 @@ class WorkspaceGraph:
     copilot_service: Any
     copilot_conversation_service: Any
     site_briefing_service: Any
+    site_briefing_store: Any
 
 
 def build_workspace_graph(
@@ -154,6 +155,11 @@ def build_workspace_graph(
         if processing_job_store is not None
         else None
     )
+    from ksi_core.site_workspace import SiteBriefingStore
+
+    # Briefings are durable records independent of the copilot: deterministic
+    # projections (external results) write them even when external AI is OFF.
+    site_briefing_store = SiteBriefingStore(journal("site-briefings.jsonl"), site_store=site_store)
     copilot_service = None
     copilot_conversation_service = None
     site_briefing_service = None
@@ -164,7 +170,7 @@ def build_workspace_graph(
             CopilotConversationStore,
         )
         from ksi_core.copilot_openai import OpenAiCompatibleModelAdapter
-        from ksi_core.site_workspace import SiteBriefingService, SiteBriefingStore
+        from ksi_core.site_workspace import SiteBriefingService
 
         def _capture_policy_for_work_order(organization_id: str, work_order_id: str) -> str | None:
             order = observation_work_order_store.get(work_order_id, organization_id=organization_id)
@@ -224,7 +230,7 @@ def build_workspace_graph(
             planner_version=copilot_runtime_config.planner_version,
         )
         site_briefing_service = SiteBriefingService(
-            store=SiteBriefingStore(journal("site-briefings.jsonl"), site_store=site_store),
+            store=site_briefing_store,
             copilot=copilot_service,
             workspace=site_workspace_projector,
         )
@@ -258,4 +264,5 @@ def build_workspace_graph(
         copilot_service=copilot_service,
         copilot_conversation_service=copilot_conversation_service,
         site_briefing_service=site_briefing_service,
+        site_briefing_store=site_briefing_store,
     )

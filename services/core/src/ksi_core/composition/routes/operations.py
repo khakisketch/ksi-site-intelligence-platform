@@ -23,6 +23,7 @@ def mount_operations_routes(
     copilot_conversation_service: Any,
     site_workspace_projector: Any,
     site_briefing_service: Any,
+    site_briefing_store: Any,
     civil_readiness_projector: Any,
     site_store: Any,
     edge_sync_store: Any,
@@ -97,6 +98,7 @@ def mount_operations_routes(
             app,
             projector=site_workspace_projector,
             briefing_service=site_briefing_service,
+            briefing_store=site_briefing_store,
         )
 
     if civil_readiness_projector is not None:
