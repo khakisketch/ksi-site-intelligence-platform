@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -681,6 +682,13 @@ def _register_signed_provider_site_and_area(app: Any, *, now: datetime) -> Any:
     return registered.work_area
 
 
+# Both fixture epochs are Core-VALIDATED with rmse_m=0.1, so the worker must
+# report the independent-epoch RSS area bound exactly as the production
+# measurement container does (measured area 10 m2).
+_KNOWN_UNCERTAINTY_NOTE = "Independent validated checkpoint RMSE was used for both epochs."
+_EPOCH_RSS_UNCERTAINTY_M3 = 10.0 * math.hypot(0.1, 0.1)
+
+
 def _volume_payload(request: Any, execution: Any, *, now: datetime) -> Any:
     return ExternalRelativeVolumeMeasurementPayloadV1(
         request_digest=request.request_digest,
@@ -701,8 +709,8 @@ def _volume_payload(request: Any, execution: Any, *, now: datetime) -> Any:
             fill_m3=5.0,
             net_m3=4.0,
             threshold_m=execution.execution_policy.threshold_m,
-            uncertainty_m3=None,
-            uncertainty_note="No trusted epoch RMSE is supplied by the external evidence chain.",
+            uncertainty_m3=_EPOCH_RSS_UNCERTAINTY_M3,
+            uncertainty_note=_KNOWN_UNCERTAINTY_NOTE,
         ),
     )
 
@@ -1536,10 +1544,8 @@ def test_external_quantitative_real_participants_complete_authorized_cycle_acros
                 fill_m3=5.0,
                 net_m3=4.0,
                 threshold_m=execution.execution_policy.threshold_m,
-                uncertainty_m3=None,
-                uncertainty_note=(
-                    "No trusted epoch RMSE is supplied by the external evidence chain."
-                ),
+                uncertainty_m3=_EPOCH_RSS_UNCERTAINTY_M3,
+                uncertainty_note=_KNOWN_UNCERTAINTY_NOTE,
             ),
         )
         reported = app.state.external_relative_volume_store.record_observed_report(

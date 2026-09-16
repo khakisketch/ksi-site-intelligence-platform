@@ -256,3 +256,51 @@ carry an independence attestation. Any local rehearsal attestation over
 generated fixtures must be labelled as a local software rehearsal with no
 field-survey claim in its `attestation_id` / `reconstruction_exclusion_basis`
 text, and the resulting volume report is software-path evidence only.
+
+## Positive-path rehearsal run2 — 4A.4 to 4A.7 (2026-09-17)
+
+Same protected run root, same sealed fixtures (sub-03 baseline, sub-07
+current), Core restarted from `main` with both corrections, the Dashboard dev
+server on 3320 with local OIDC, and a script-driven worker lane (no
+long-running worker). Drivers: `.dev-data/a2-fix/run2/`.
+
+Honesty label: the two v7 evidence contexts carry an explicit
+**local-software-rehearsal** independence attestation
+(`attestationId LOCAL-SOFTWARE-REHEARSAL-2026-09-17-*-NO-FIELD-SURVEY`,
+exclusion basis states hand-set checkpoints over a generated constant-plane
+DSM, no field survey, no accuracy or independence claim). This proves the
+attested software path only. It is not survey evidence.
+
+| Stage | Result |
+|---|---|
+| Authority | snapshot seq 13 re-issue plus catalog refresh `71f9bba1…`; seq 14 policy v7 `37704e5b…` plus attested contexts; reload 200 |
+| 4A.2 inspection (v7) | sub-03 and sub-07 REPORTED, 2×MEASURED each, production decoder over sha-verified bytes (reports `a2c6d517…`, `779e39b8…`) |
+| 4A.3 evidence (v7) | both VALIDATED with true aggregates n=3, mean −0.0167, MAE 0.03, RMSE 0.0332, max 0.05 (records `215c9e3e…`, `7d31bb9c…`) |
+| Mapping | seq 15 ADMIT_MAPPING `68683970…` activated |
+| 4A.4 pair (BFF) | RELATIVE_VOLUME 201 **ELIGIBLE / USE_ELIGIBLE**; VISUAL_COMPARISON 201 BLOCKED / POLICY_UNAVAILABLE (v7 does not permit that use, correct) |
+| 4A.5 volume (BFF plus lane) | issue 201 ISSUED; lane lease 201, input INPUT_READY, both DSMs sha-verified; production `align_masked_dsm_difference` plus `measure_external_volume_zone`: zone 256 cells, all valid, area 256 m², cut 0, **fill 128 m³, net 128 m³** (256 m² × 0.5 m), uncertainty 12.0075 m³ (256 × hypot(0.0332, 0.0332)); report 201 REPORTED, request SUCCEEDED, report `…19d270b9…` |
+| 4A.5 read-backs (BFF) | site history 200 AVAILABLE; report 200; site observation view 200 |
+| 4A.6 review (BFF) | 201 `err-v1-1804dbd3…`; read-back 200; idempotent re-record returns the same review |
+| 4A.7 proposal (BFF) | propose 201 `erop-v1-853ccbab…`; approve 200; successor `obs-work-external-7d7090fac0db8c72b83ae856` is `EXTERNAL_REOBSERVATION_PLANNING` with acquisitionRunAllowed=false and missionIssuanceAllowed=false (Core read) |
+| Negative | unauthenticated review POST 401 |
+
+Third defect found and fixed during run2: production mapping execution
+activation hard-coded `baseline_rmse_m=None` / `current_rmse_m=None`, while
+Core sends the two VALIDATED evidence records to the worker and the
+production measurement container then must report the independent-epoch RSS
+uncertainty. Core therefore rejected every real worker report with
+`INVALID_REPORT / uncertainty must be unknown without two trusted RMSE
+values` (first run2 request expired on this). The execution authority now
+binds both epochs' Core-validated RMSE from the resolved participant snapshot
+(never client input). The production-flow contract tests now file the
+worker-consistent uncertainty and failed before the fix.
+
+Observed UX gap (backlog): the source work-order page still shows
+"외부 산출물 등록 준비" (prepare registration) as the next action after its
+result was reviewed and a successor was approved.
+
+Final state: stack stopped (8020/3320/9120/9002 down); `apps/dashboard/tsconfig.json`
+edit made by `next dev` reverted.
+
+Boundary: LOCAL software rehearsal only. Not staging, vendor export
+compatibility, HIL, field acceptance, or survey accuracy.

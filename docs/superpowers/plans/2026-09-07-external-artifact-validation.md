@@ -912,3 +912,19 @@ attestation contexts (new evidence validations, new mapping) to drive
 4A.4 ELIGIBLE → 4A.5 volume → 4A.6 review → 4A.7 proposal/approval;
 2. latent boot-hazard investigation (unchanged); 3. slice acceptance review
 against EXT-VAL-01..08 with the browser checklist.
+
+## Execution state — 2026-09-17 (positive path run2)
+
+Remaining item 1 is done locally. With explicitly labelled local-rehearsal
+attested contexts, the Dashboard BFF drove RELATIVE_VOLUME ELIGIBLE, volume
+issue, script-driven lane with production algorithms (fill 128 m³), review,
+proposal and approval, ending in a planning-only successor work order.
+The run exposed and fixed a third defect: execution activation now binds the
+Core-validated epoch RMSE so real worker uncertainty is accepted. Evidence:
+the run2 section of `docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md`.
+
+Remaining in order: 1. run the same loop with the long-running worker and
+contained measurement runtime instead of the script lane (EXT-VAL-06);
+2. latent boot-hazard investigation (unchanged); 3. slice acceptance review
+against EXT-VAL-01..08 with the browser checklist, including the next-action
+UX gap after approval.

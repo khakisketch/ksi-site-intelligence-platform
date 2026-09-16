@@ -9,6 +9,7 @@ external evidence to a managed ProcessingJob or a managed processing profile.
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 import threading
 from collections.abc import Callable, Iterator, Mapping
@@ -839,6 +840,34 @@ class _QuantitativeParticipantSnapshot:
     evidence_records: tuple[tuple[object, object], tuple[object, object]]
 
 
+def _snapshot_epoch_rmses(
+    snapshot: _QuantitativeParticipantSnapshot | bool,
+) -> tuple[float | None, float | None]:
+    """Return both epochs' Core-validated checkpoint RMSE, or neither.
+
+    The worker receives these exact VALIDATED evidence records and must report
+    the independent-epoch RSS uncertainty bound from them, so the execution
+    authority binds the same measured values.  Client-entered RMSE is never
+    used; a missing or non-finite value leaves the uncertainty unknown.
+    """
+    if not isinstance(snapshot, _QuantitativeParticipantSnapshot):
+        return None, None
+    values: list[float] = []
+    for evidence_record, _context in snapshot.evidence_records:
+        verdict = getattr(evidence_record, "core_verdict", None)
+        payload = getattr(evidence_record, "measurement_payload", None)
+        rmse = getattr(payload, "rmse_m", None)
+        if (
+            getattr(verdict, "value", verdict) != "VALIDATED"
+            or type(rmse) is not float
+            or not math.isfinite(rmse)
+            or rmse < 0.0
+        ):
+            return None, None
+        values.append(rmse)
+    return values[0], values[1]
+
+
 class _DecisionResolver(Protocol):
     def __call__(
         self,
@@ -1338,6 +1367,7 @@ class ExternalQuantitativeAuthorityCatalog:
                 or policy.synthetic_test_only
             ):
                 return None
+            baseline_rmse_m, current_rmse_m = _snapshot_epoch_rmses(snapshot)
             provisional = ExternalRelativeVolumeExecutionAuthority(
                 organization_id=record.organization_id,
                 site_id=record.site_id,
@@ -1355,8 +1385,8 @@ class ExternalQuantitativeAuthorityCatalog:
                 valid_from=template.valid_from,
                 valid_until=template.valid_until,
                 historical_authority_digest=_digest({"provisional": "external-quantitative"}),
-                baseline_rmse_m=None,
-                current_rmse_m=None,
+                baseline_rmse_m=baseline_rmse_m,
+                current_rmse_m=current_rmse_m,
                 maximum_zone_cell_count=template.maximum_zone_cell_count,
                 maximum_zone_area_m2=template.maximum_zone_area_m2,
                 synthetic_test_only=False,
