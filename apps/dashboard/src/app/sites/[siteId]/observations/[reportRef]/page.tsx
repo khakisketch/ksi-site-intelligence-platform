@@ -151,9 +151,11 @@ export default async function SiteObservationDetailPage({
     />}
     {projection !== null && <ExternalReportFollowupTrace
       reportRef={reportRef}
-      // baselineWorkOrderId 는 SINGLE_VOLUME 결과에서 null 이다 — 이 페이지는 relative-volume
-      // 조회 함수로 얻은 projection 만 다루므로 항상 채워져 있다(타입만 nullable 로 넓어짐).
-      baselineWorkOrderId={projection.baselineWorkOrderId!}
+      // Core's report_for_site merges both external volume families with no kind filter,
+      // so projection can already be a SINGLE_VOLUME result with baselineWorkOrderId
+      // null — ExternalReportFollowupTrace omits the baseline link in that case rather
+      // than linking to a fabricated work order.
+      baselineWorkOrderId={projection.baselineWorkOrderId}
       currentWorkOrderId={projection.currentWorkOrderId}
       successors={successors}
     />}

@@ -85,6 +85,27 @@ describe("ExternalSiteResultSummary", () => {
     );
   });
 
+  it("renders the baseline date range for a relative-volume result (unchanged behavior)", () => {
+    const { container } = render(<ExternalSiteResultSummary externalResult={available()} workAreaName="동측 절성토 구역" />);
+    const copy = container.querySelector("h3 + p")?.textContent ?? "";
+    expect(copy).toContain("와");
+    expect(copy).not.toContain("1970");
+  });
+
+  it("omits the baseline range instead of inventing a 1970 date for a single-volume result with no baseline epoch", () => {
+    const single = available({
+      kind: "EXTERNAL_SINGLE_VOLUME",
+      baselineWorkOrderId: null,
+      baselineCapturedFrom: null,
+      baselineCapturedTo: null,
+    });
+    const { container } = render(<ExternalSiteResultSummary externalResult={single} workAreaName="동측 절성토 구역" />);
+    const copy = container.querySelector("h3 + p")?.textContent ?? "";
+    expect(copy).not.toContain("1970");
+    expect(copy).not.toContain("와");
+    expect(copy).toContain("를 비교했습니다.");
+  });
+
   it("keeps a retained non-success result distinct and never presents aggregate values as a result", () => {
     render(
       <ExternalSiteResultSummary

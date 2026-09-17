@@ -23,7 +23,8 @@ export function ExternalReportFollowupTrace({
   successors,
 }: {
   reportRef: string;
-  baselineWorkOrderId: string;
+  /** Null for a SINGLE_VOLUME result — there is no baseline epoch, so no baseline link is shown. */
+  baselineWorkOrderId: string | null;
   currentWorkOrderId: string;
   /** Null means the report detail could not be re-verified, so no successor fact is shown. */
   successors: readonly ReportSuccessorTrace[] | null;
@@ -34,7 +35,7 @@ export function ExternalReportFollowupTrace({
     <p className="mt-1 text-[13px] leading-5 text-ink-2">이 결과에 기록된 검토, 재관측 제안과 승인 이력은 결과에 결속된 작업 화면에서 확인합니다.</p>
     <div className="mt-3 flex flex-wrap gap-2">
       <Link className="btn" href={reviewHref}>결과 검토와 후속 작업</Link>
-      {baselineWorkOrderId !== currentWorkOrderId && <Link className="btn" href={`/field/work-orders/${encodeURIComponent(baselineWorkOrderId)}`}>기준 작업 보기</Link>}
+      {baselineWorkOrderId !== null && baselineWorkOrderId !== currentWorkOrderId && <Link className="btn" href={`/field/work-orders/${encodeURIComponent(baselineWorkOrderId)}`}>기준 작업 보기</Link>}
     </div>
     {successors !== null && successors.length > 0 && <div className="mt-3 border-t border-line pt-3">
       <h3 className="text-[13px] font-semibold">승인된 후속 작업</h3>

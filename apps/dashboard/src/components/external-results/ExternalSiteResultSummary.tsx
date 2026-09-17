@@ -19,6 +19,23 @@ function observationRange(from: string, to: string): string {
   return start === end ? start : `${start} ~ ${end}`;
 }
 
+/**
+ * Core's `for_site()` merges both external volume families with no kind filter, so
+ * `result` here can already be a SINGLE_VOLUME row (baselineCapturedFrom/To null — there
+ * is no baseline epoch to compare against). This renders only the current-epoch range in
+ * that case rather than inventing a baseline date; the full SINGLE_VOLUME-aware layout is
+ * Task 5's job.
+ */
+function comparisonCopy(result: ExternalResultSummaryView, workAreaName: string | null | undefined): string {
+  const areaLabel = workAreaName ?? result.workAreaId;
+  const currentRange = observationRange(result.currentCapturedFrom, result.currentCapturedTo);
+  if (result.baselineCapturedFrom === null || result.baselineCapturedTo === null) {
+    return `작업구역 ${areaLabel} · ${currentRange}를 비교했습니다.`;
+  }
+  const baselineRange = observationRange(result.baselineCapturedFrom, result.baselineCapturedTo);
+  return `작업구역 ${areaLabel} · ${baselineRange}와 ${currentRange}를 비교했습니다.`;
+}
+
 function resultLink(result: ExternalResultSummaryView): string {
   return `/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}?reportRef=${encodeURIComponent(result.reportRef)}#external-result`;
 }
@@ -97,9 +114,7 @@ export function ExternalSiteResultSummary({
         <div className="min-w-0">
           <h3 className="text-[15px] font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
           <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
-            {/* baselineCapturedFrom/To 는 SINGLE_VOLUME 결과에서 null 이다 — 이 요약 카드는 아직
-                RELATIVE_VOLUME 표시만 다룬다(타입만 nullable 로 넓어짐, SV-3 Task 5 가 계열별 표시를 맡는다). */}
-            작업구역 {workAreaName ?? result.workAreaId} · {observationRange(result.baselineCapturedFrom!, result.baselineCapturedTo!)}와 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}를 비교했습니다.
+            {comparisonCopy(result, workAreaName)}
           </p>
         </div>
         <StateBadge label={measurement.label} tone={measurement.tone} />

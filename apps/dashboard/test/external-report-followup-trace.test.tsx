@@ -30,4 +30,16 @@ describe("external report followup trace", () => {
     />);
     expect(screen.queryByText("승인된 후속 작업")).toBeNull();
   });
+
+  it("omits the baseline work-order link instead of linking to a fabricated work order for a single-volume result (no baseline epoch)", () => {
+    render(<ExternalReportFollowupTrace
+      reportRef={`external-single-volume-report-${"a".repeat(32)}`}
+      baselineWorkOrderId={null}
+      currentWorkOrderId="current-order"
+      successors={null}
+    />);
+    expect(screen.getByRole("link", { name: "결과 검토와 후속 작업" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "기준 작업 보기" })).toBeNull();
+    expect(document.body.innerHTML).not.toContain("work-orders/null");
+  });
 });

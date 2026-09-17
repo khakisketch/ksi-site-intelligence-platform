@@ -79,6 +79,41 @@ describe("외부 관측 이력 상세", () => {
     expect(screen.getByText("성토")).toBeTruthy();
   });
 
+  it("renders the baseline date range for a relative-volume result (unchanged behavior)", () => {
+    const { container } = render(<ExternalObservationHistory
+      siteId="site-1"
+      items={[{ reportRef, state: "AVAILABLE", result: summary }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+    // MetricRow renders inside <article>; NetTrend's compatible-comparison summary
+    // renders inside a separate <section> and must not be picked up here.
+    const baselineLine = container.querySelector("article p.mt-1")?.textContent ?? "";
+    expect(baselineLine).toContain("기준");
+    expect(baselineLine).not.toContain("1970");
+  });
+
+  it("omits the baseline range instead of inventing a 1970 date for a single-volume result reached through the merged report detail route", () => {
+    const singleVolumeRef = `external-single-volume-report-${"b".repeat(32)}`;
+    const single: ExternalResultSummaryView = {
+      ...summary,
+      kind: "EXTERNAL_SINGLE_VOLUME",
+      reportRef: singleVolumeRef,
+      baselineWorkOrderId: null,
+      baselineCapturedFrom: null,
+      baselineCapturedTo: null,
+    };
+    const { container } = render(<ExternalObservationHistory
+      detailMode
+      siteId="site-1"
+      items={[{ reportRef: singleVolumeRef, state: "AVAILABLE", result: single }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+    const baselineLine = container.querySelector("article p.mt-1")?.textContent ?? "";
+    expect(baselineLine).not.toContain("1970");
+    expect(baselineLine).not.toContain("기준");
+    expect(baselineLine).toContain("현재");
+  });
+
   it("offers the exact authenticated report URL when clipboard copying fails", async () => {
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
