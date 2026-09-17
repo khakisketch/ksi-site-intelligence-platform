@@ -15,15 +15,19 @@ import os
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from fastapi.testclient import TestClient
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app_assembly import assemble_app
-from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, Role
+from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
+    SingleVolumeCompatibilityRuleDescriptorV1,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.external_evidence import EvidenceVerdict, ExternalEvidenceDeclarationIntent
@@ -34,6 +38,7 @@ from ksi_core.external_quantitative_authority import (
     ExternalQuantitativeCatalogAuthorityRecord,
     ExternalQuantitativeCompatibilityRecord,
 )
+from ksi_core.external_reconstruction import build_external_reconstruction_submission_ref
 from ksi_core.external_relative_volumes import (
     ExternalRelativeVolumeObservedReportInput,
     ExternalRelativeVolumeQueuePolicy,
@@ -548,7 +553,10 @@ def _signed_policy_admission(
         authority_record_digest=_digest("unbound-policy-authority"),
         inspection_rule_ids=("EXTERNAL_GEOTIFF_MEASURED_V1",),
         evidence_rule_ids=("CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",),
-        compatibility_mapping_digests=(CompatibilityRuleDescriptorV1().canonical_digest(),),
+        compatibility_mapping_digests=(
+            CompatibilityRuleDescriptorV1().canonical_digest(),
+            SingleVolumeCompatibilityRuleDescriptorV1().canonical_digest(),
+        ),
         synthetic_test_only=False,
     ).sealed()
     authority = PolicyAuthorityRecord(
@@ -556,7 +564,7 @@ def _signed_policy_admission(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=subjects,
-        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
+        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME", "SINGLE_VOLUME"),
         authorized_actor_ids=("policy-admin",),
         active_from=now - timedelta(hours=1),
         active_until=now + timedelta(hours=1),
@@ -624,7 +632,11 @@ def _restarted_policy_authority(source: _RetainedPolicyAuthority) -> _RetainedPo
 
 
 def _assemble(
-    path: Path, workflow: Any, storage: _LocalObjectStorage
+    path: Path,
+    workflow: Any,
+    storage: _LocalObjectStorage,
+    *,
+    auth_registry: AuthRegistry | None = None,
 ) -> tuple[Any, list[DurableJournal]]:
     opened: list[DurableJournal] = []
 
@@ -638,13 +650,63 @@ def _assemble(
         journal=journal,
         opened=opened,
         edge_sync_snapshot_every=None,
-        auth_registry=AuthRegistry([]),
+        auth_registry=auth_registry or AuthRegistry([]),
         evidence_storage=storage,
         mission_signing_key=Ed25519PrivateKey.generate(),
         mission_signing_key_id="test-key",
         external_result_workflow=workflow,
     )
     return app, opened
+
+
+_OPERATOR_TOKEN = "single-volume-operator"  # noqa: S105 - deterministic test token
+
+
+def _operator_registry() -> AuthRegistry:
+    return AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(_OPERATOR_TOKEN.encode()).hexdigest(),
+                principal=_principal(),
+            )
+        ]
+    )
+
+
+def _request_single_volume_over_http(
+    app: Any, *, work_order_id: str, submission_id: str, zone_id: str
+) -> dict[str, Any]:
+    submission_ref = build_external_reconstruction_submission_ref(
+        organization_id="org-a", work_order_id=work_order_id, submission_id=submission_id
+    )
+    path = (
+        f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
+        f"{submission_ref}/revisions/1/use-decisions"
+    )
+    headers = {"Authorization": f"Bearer {_OPERATOR_TOKEN}"}
+    client = TestClient(app)
+    response = client.post(
+        path + "/single-volume",
+        json={"zoneId": zone_id},
+        headers={**headers, "Idempotency-Key": "signed-provider-single-volume"},
+    )
+    assert response.status_code == 201, response.text
+    decision = response.json()["decision"]
+    retry = client.post(
+        path + "/single-volume",
+        json={"zoneId": zone_id},
+        headers={**headers, "Idempotency-Key": "signed-provider-single-volume"},
+    )
+    assert retry.status_code == 201 and retry.json()["decision"] == decision
+    conflict = client.post(
+        path + "/single-volume",
+        json={"zoneId": "another-zone"},
+        headers={**headers, "Idempotency-Key": "signed-provider-single-volume"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    read = client.get(f"{path}/{decision['decisionId']}", headers=headers)
+    assert read.status_code == 200 and read.json()["decision"] == decision
+    return cast(dict[str, Any], decision)
 
 
 def _close_journals(journals: list[DurableJournal]) -> None:
@@ -1187,7 +1249,9 @@ def _single_mapping(
     now: datetime,
     catalog_digest: str,
 ) -> Any:
-    from ksi_core.external_single_volume_authority import ExternalSingleVolumeCompatibilityRecord
+    from ksi_core.domains.external.quantity.external_single_volume_authority import (
+        ExternalSingleVolumeCompatibilityRecord,
+    )
 
     dsm = next(
         entry for entry in revision.manifest.entries if entry.kind is ProcessingArtifactKind.DSM
@@ -1801,7 +1865,7 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         participants=provider.participants,
         input_capability_issuer=lambda *_args, **_kwargs: None,
     )
-    app, opened = _assemble(tmp_path, workflow, storage)
+    app, opened = _assemble(tmp_path, workflow, storage, auth_registry=_operator_registry())
     receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
     try:
         provider.bind_receipt_journal(receipts)
@@ -1946,6 +2010,26 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
                 **mapping.canonical_payload(),
             },
         }
+        single = _single_mapping(
+            subject=current_subject,
+            revision=current_revision,
+            report=current_report,
+            evidence_record=current_evidence,
+            policy=policy,
+            area=area,
+            now=now,
+            catalog_digest=catalog_record.digest,
+        )
+        single_action = {
+            "actionId": "signed-provider-admit-single-mapping",
+            "kind": "ADMIT_SINGLE_MAPPING",
+            "effectiveAt": now.isoformat().replace("+00:00", "Z"),
+            "actorId": "catalog-admin",
+            "mapping": {
+                "mappingRecordDigest": single.mapping_digest,
+                **single.canonical_payload(),
+            },
+        }
         mapping_digest = _replace_signed_provider_snapshot(
             tmp_path / "authority-snapshot.json",
             signer,
@@ -1953,7 +2037,9 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
                 "sequence": 4,
                 "previousSnapshotDigest": contexts_digest,
                 "issuedAt": now.isoformat().replace("+00:00", "Z"),
-                "quantitativeAdministration": {"actions": [policy_action, mapping_action]},
+                "quantitativeAdministration": {
+                    "actions": [policy_action, mapping_action, single_action]
+                },
             },
         )
         assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == mapping_digest
@@ -1967,6 +2053,17 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             now=now,
         )
         assert decision.verdict.value == "ELIGIBLE" and decision.decision_digest is not None
+        single_decision = _request_single_volume_over_http(
+            app,
+            work_order_id=current_order.work_order_id,
+            submission_id=current_subject.submission_id,
+            zone_id=area.work_area_id,
+        )
+        assert single_decision["contractVersion"] == "external-single-volume-decision.v1"
+        assert single_decision["verdict"] == "ELIGIBLE", single_decision
+        assert single_decision["zone"]["zoneId"] == area.work_area_id
+        assert single_decision["compatibilityMappingDigest"] == single.mapping_digest
+        assert single_decision["evidenceRecordDigests"] == [current_evidence.evidence_record_digest]
         active_now = now + timedelta(seconds=1)
         catalog = app.state.external_relative_volume_mapping_authority
         assert isinstance(catalog, ExternalQuantitativeAuthorityCatalog)
@@ -1994,6 +2091,11 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
         provider.bind_receipt_journal(receipts)
         provider.attach_app(app)
+        replayed_single = app.state.external_use_decision_store.get_scoped(
+            single_decision["decisionId"], principal=_principal(), site_id="site-a"
+        )
+        assert replayed_single is not None
+        assert replayed_single.decision_digest == single_decision["decisionDigest"]
         issued = app.state.external_relative_volume_store.issue(
             principal=_principal(),
             current_work_order_id=current_order.work_order_id,

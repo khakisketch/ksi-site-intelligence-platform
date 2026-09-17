@@ -20,7 +20,7 @@
 - Evidence rigor equals relative volume: one Core-validated evidence record whose sealed context has `independent_attestation` (spec §2).
 - Every command runs from the repo root with `uv run --locked …`; commits use `git -c user.name=khakiskech -c user.email=khakiskech@gmail.com commit` and end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 - Gates before the final commit: `uv run --locked ruff check .`, `uv run --locked ruff format --check .`, `uv run --locked mypy`, `uv run --locked pytest tests/contract tests/replay packages/change-detection/tests -q`.
-- New `ksi_core` modules get a legacy alias shim under `services/core/src/ksi_core/<name>.py` exactly like `services/core/src/ksi_core/external_relative_volumes.py`.
+- New `ksi_core` modules get **no** legacy alias shim (they have no legacy path); import them from `ksi_core.domains.external.quantity.*` and register each in `docs/audit/CORE_R1_MODULE_MIGRATION.json` as `T3_NEW_MODULE` (`tests/contract/test_core_module_migration.py` enforces this). *(Corrected during execution; the original plan asked for alias shims.)*
 
 ---
 
@@ -61,7 +61,7 @@
 - Consumes: `SealedExternalSubjectV1`, `SealedZoneReferenceV1`, `DecisionVerdict`, `FactClass` from `ksi_event_contracts.external_artifact_validation`; `ExternalVolumeZoneSnapshotV1`, `ExternalVolumeInputBindingV1`, `ExternalVolumeMetricsV1`, `_FrozenExternalRelativeVolumeModel`, `_digest`, `_require_utc_datetime_wire_value`, `_require_utc`, `_BoundedText`, `_MAX_FINITE_FLOAT`, `_FLOAT_REL_TOLERANCE`, `_FLOAT_ABS_TOLERANCE` from `ksi_event_contracts.external_relative_volume`.
 - Produces: `ExternalSingleVolumeDecisionV1`, `ExternalSingleVolumeExecutionPolicyV1`, `ExternalSingleVolumeRequestV1`, `ExternalSingleVolumeMetricsV1`, `ExternalSingleVolumeMeasurementPayloadV1`, `ExternalSingleVolumeReportV1`, `external_single_volume_decision_wire_dict`, `external_single_volume_execution_policy_wire_dict`, `external_single_volume_request_wire_dict`, `external_single_volume_report_wire_dict`. Every model has `canonical_payload()`, `canonical_digest()`, `sealed()`.
 
-- [ ] **Step 1: Write the failing contract test**
+- [x] **Step 1: Write the failing contract test**
 
 ```python
 # tests/contract/test_external_single_volume_contracts.py
@@ -330,12 +330,12 @@ def test_metrics_bind_boundary_fraction_to_counts() -> None:
         ExternalSingleVolumeMetricsV1.model_validate({**body, "boundary_sample_count": 21})
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run --locked pytest tests/contract/test_external_single_volume_contracts.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'ksi_event_contracts.external_single_volume'`
 
-- [ ] **Step 3: Write the contract module**
+- [x] **Step 3: Write the contract module**
 
 ```python
 # packages/event-contracts/src/ksi_event_contracts/external_single_volume.py
@@ -742,7 +742,7 @@ __all__ = [
 
 If `Digest` in `external_relative_volume.py` is an `Annotated` alias (check `grep -n "^Digest\|Digest =" packages/event-contracts/src/ksi_event_contracts/external_relative_volume.py external_artifact_validation.py`), import that alias instead of the plain `str` above so the sha256 pattern is enforced by pydantic too.
 
-- [ ] **Step 4: Write the four JSON schemas**
+- [x] **Step 4: Write the four JSON schemas**
 
 `contracts/schemas/external-single-volume-decision.v1.json` — copy `external-pair-use-decision.v1.json` and change: `$id`, `title: "ExternalSingleVolumeDecisionV1"`, `required` = `["contractVersion","decisionId","subject","subjectDigest","use","policyDigest","inspectionReportDigest","evidenceRecordDigests","zone","compatibilityMappingDigest","verdict","reasons","remediations","decidedAt","decisionDigest"]`, properties: `contractVersion const "external-single-volume-decision.v1"`, `subject`, `subjectDigest`, `use: {"const": "SINGLE_VOLUME"}`, `policyDigest`/`inspectionReportDigest`/`compatibilityMappingDigest` = `oneOf digest|null`, `evidenceRecordDigests: {"type":"array","maxItems":1,"items":{"$ref":"#/$defs/digest"}}`, `zone: oneOf zone|null`; `allOf` rule: when `verdict` ∈ `[ELIGIBLE, RESTRICTED]` then `compatibilityMappingDigest` is a digest and `zone` is `#/$defs/zone` and `evidenceRecordDigests.minItems = 1`, else all three null/empty (`maxItems: 0`). Keep the `$defs` (`text`, `digest`, `codes`, `utcDateTime`, `zone`, `subject`) verbatim from the pair schema.
 
@@ -754,12 +754,12 @@ If `Digest` in `external_relative_volume.py` is an `Annotated` alias (check `gre
 
 Validate each with `uv run --locked python -c "import json,sys; from jsonschema import Draft202012Validator as V; [V.check_schema(json.load(open(p))) for p in sys.argv[1:]]" contracts/schemas/external-single-volume-*.json`.
 
-- [ ] **Step 5: Run the test to verify it passes**
+- [x] **Step 5: Run the test to verify it passes**
 
 Run: `uv run --locked pytest tests/contract/test_external_single_volume_contracts.py -q`
 Expected: PASS (11 tests). If the UUID validator rejects the fixture ids, replace them with `str(uuid.uuid4())` computed once at module import.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/event-contracts/src/ksi_event_contracts/external_single_volume.py contracts/schemas/external-single-volume-*.json tests/contract/test_external_single_volume_contracts.py
@@ -786,7 +786,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `measure_single_volume_zone(dsm_m, valid, *, transform, crs, cell_area_m2, polygon_geojson, zone_id, from_crs, threshold_m, minimum_common_valid_fraction, minimum_boundary_valid_fraction, maximum_zone_grid_cells, uncertainty_note, dsm_rmse_m) -> ExternalSingleVolumeZoneMeasurement | ExternalVolumeMeasurementError`
   - New enum members `INSUFFICIENT_BOUNDARY_COVERAGE`, `BOUNDARY_SAMPLES_INSUFFICIENT`.
 
-- [ ] **Step 1: Write the failing algorithm tests**
+- [x] **Step 1: Write the failing algorithm tests**
 
 ```python
 # packages/change-detection/tests/test_external_single_volume.py
@@ -941,12 +941,12 @@ def test_measurement_is_deterministic() -> None:
     assert first.metrics.model_dump() == second.metrics.model_dump()
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run --locked pytest packages/change-detection/tests/test_external_single_volume.py -q`
 Expected: FAIL with `ModuleNotFoundError: No module named 'ksi_change_detection.external_single_volume'`
 
-- [ ] **Step 3: Add the two error reasons**
+- [x] **Step 3: Add the two error reasons**
 
 In `packages/change-detection/src/ksi_change_detection/external_volume.py`, extend the enum:
 
@@ -962,7 +962,7 @@ class ExternalVolumeMeasurementErrorReason(StrEnum):
     BOUNDARY_SAMPLES_INSUFFICIENT = "BOUNDARY_SAMPLES_INSUFFICIENT"
 ```
 
-- [ ] **Step 4: Write the algorithm module**
+- [x] **Step 4: Write the algorithm module**
 
 ```python
 # packages/change-detection/src/ksi_change_detection/external_single_volume.py
@@ -1217,12 +1217,12 @@ __all__ = [
 
 Two facts the implementer must verify while writing: (a) `transform * (cols, rows)` with numpy arrays — if `Affine.__mul__` rejects arrays, use `rasterio.transform.xy(transform, rows, cols, offset="center")` which accepts sequences; (b) `measure_external_volume_zone` requires `uncertainty_m3` only when both RMSEs are non-None; with `dsm_rmse_m=None` the metric stays `None`, which the contract allows.
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest packages/change-detection/tests/test_external_single_volume.py packages/change-detection/tests/test_external_volume.py -q`
 Expected: PASS. If `test_zone_outside_raster…` returns `EMPTY_ZONE`/`INVALID_ZONE` instead of `INSUFFICIENT_BOUNDARY_COVERAGE` because the window is fully outside, accept whichever typed error the shared helper raises first by asserting `measured.reason in {INSUFFICIENT_BOUNDARY_COVERAGE, EMPTY_ZONE}` — the point is fail-closed, not the exact code.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add packages/change-detection/src/ksi_change_detection/external_single_volume.py packages/change-detection/src/ksi_change_detection/external_volume.py packages/change-detection/tests/test_external_single_volume.py
@@ -1242,7 +1242,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Interfaces:**
 - Produces: `select_for_use("SINGLE_VOLUME", (subject,))`, `locally_current_use_permitted(..., use="SINGLE_VOLUME", subjects=(subject,))`, `historical_use_permitted(...)` all treat SINGLE_VOLUME as a single-subject use; `PolicyAuthorityRecord(permitted_uses=("SINGLE_VOLUME",))` is accepted.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/contract/test_external_validation_policy.py` (reuse its `_subject`, `_bound_policy`, `FakePolicyAuthorityPort`, `_registry`, `NOW`, `PolicyReceiptStatus`, `PolicySelectionStatus`):
 
@@ -1263,12 +1263,12 @@ def test_single_volume_is_a_single_subject_use(tmp_path: Path) -> None:
     assert paired.reason == "SUBJECT_ARITY_INVALID"
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run --locked pytest tests/contract/test_external_validation_policy.py -k single_volume -q`
 Expected: FAIL with `ValueError: policy use must be an allowed closed-catalogue value`
 
-- [ ] **Step 3: Extend the catalogue and arity sets**
+- [x] **Step 3: Extend the catalogue and arity sets**
 
 ```python
 _PERMITTED_USES = frozenset(
@@ -1287,12 +1287,12 @@ _SINGLE_SUBJECT_USES = frozenset({"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT",
 
 Replace the two literal sets `{"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT"}` in `permits_selection` and `_selection_arity_reason` with `_SINGLE_SUBJECT_USES`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_validation_policy.py -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/ingress/external_validation_policy.py tests/contract/test_external_validation_policy.py
@@ -1313,7 +1313,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: `ExternalSingleVolumeDecisionV1` (Task 1).
 - Produces: `DecisionCandidate = ExternalUseDecisionV1 | ExternalPairUseDecisionV1 | ExternalSingleVolumeDecisionV1`; `ExternalDecisionIntent(requested_use="SINGLE_VOLUME", subject=..., requested_zone_id=..., zone=...)`; operation string `"SINGLE_VOLUME"`; `resolve_current_single_volume_for_issue(decision_id, *, principal, current_work_order_id) -> ExternalSingleVolumeDecisionV1 | None`; `resolve_historical_single_volume(*, organization_id, site_id, decision_id, decision_digest) -> ExternalSingleVolumeDecisionV1 | None`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/contract/test_external_use_decisions.py`:
 
@@ -1385,12 +1385,12 @@ def test_single_volume_candidate_survives_journal_replay(tmp_path: Path) -> None
 
 Check the exact names `ExternalUseDecisionConflictError` and `get_scoped` signature at the top of the test file / store; adjust imports.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run --locked pytest tests/contract/test_external_use_decisions.py -k single_volume -q`
 Expected: FAIL with `ValueError: single decision intent is invalid` (or `decision candidate contract version is unknown`)
 
-- [ ] **Step 3: Implement the third candidate**
+- [x] **Step 3: Implement the third candidate**
 
 In `external_use_decisions.py`:
 
@@ -1505,12 +1505,12 @@ New joins after `resolve_historical_pair`, mirroring the pair versions exactly w
 
 Also check `_apply_requested` / `_apply_recorded` for any `isinstance(..., ExternalUseDecisionV1)`-else-pair assumptions and route the new type through `_scope_and_operation` (grep `ExternalPairUseDecisionV1` in the file; every `else` that assumes pair must become an explicit `isinstance` chain).
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_use_decisions.py tests/replay/test_external_use_decisions_replay.py -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/quantity/external_use_decisions.py tests/contract/test_external_use_decisions.py
@@ -1538,7 +1538,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
   - `ExternalSingleVolumeAuthorityPort` Protocol: `currentness_coordinator`; `resolve_for_use(*, subject, zone_id, policy, now) -> ExternalSingleVolumeAuthority | None`; `is_current_for_use(authority, *, now) -> bool`; `resolve_historical_for_decision(decision: ExternalSingleVolumeDecisionV1) -> ExternalSingleVolumeAuthority | None`.
   - `DefaultClosedExternalSingleVolumeAuthorityPort(currentness_coordinator=...)` returning None/False.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # tests/contract/test_external_single_volume_authority.py
@@ -1633,12 +1633,12 @@ def test_rule_digest_differs_from_the_pair_rule() -> None:
     assert SingleVolumeCompatibilityRuleDescriptorV1().canonical_digest() != CompatibilityRuleDescriptorV1().canonical_digest()
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run --locked pytest tests/contract/test_external_single_volume_authority.py -q`
 Expected: FAIL with `ModuleNotFoundError`
 
-- [ ] **Step 3: Write the record module**
+- [x] **Step 3: Write the record module**
 
 ```python
 # services/core/src/ksi_core/domains/external/quantity/external_single_volume_authority.py
@@ -1847,7 +1847,7 @@ __all__ = ["ExternalSingleVolumeCompatibilityRecord", "SingleVolumeCompatibility
 
 If importing `_PROFILE`/helpers from `external_quantitative_authority` creates an import cycle in Task 6 (the catalog imports this module), move the shared helpers (`_digest`, `_utc`, `_wire_time`, `_parse_time`, `_required_digest`, `_strict_mapping`, `_PROFILE`) into a new `external_quantitative_common.py` and import them from both files.
 
-- [ ] **Step 4: Write the authority value module**
+- [x] **Step 4: Write the authority value module**
 
 ```python
 # services/core/src/ksi_core/domains/external/quantity/external_single_volume_authorities.py
@@ -1933,12 +1933,12 @@ _sys.modules[__name__] = _canonical
 
 (second shim identical with `external_single_volume_authorities`).
 
-- [ ] **Step 5: Run the tests to verify they pass**
+- [x] **Step 5: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_single_volume_authority.py -q`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/quantity/external_single_volume_authority.py services/core/src/ksi_core/domains/external/quantity/external_single_volume_authorities.py services/core/src/ksi_core/external_single_volume_authority.py services/core/src/ksi_core/external_single_volume_authorities.py tests/contract/test_external_single_volume_authority.py
@@ -1961,7 +1961,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Produces on `ExternalQuantitativeAuthorityParticipants`: `single_current_snapshot(record, now) -> _SingleParticipantSnapshot | None`, `single_locally_current(record, snapshot, now) -> bool`, `validates_single(record, now) -> bool`.
 - Journal kinds `_SINGLE_MAPPING_ACTIVATED = "external-quantitative-single-mapping-activated"`, `_SINGLE_MAPPING_REVOKED = "external-quantitative-single-mapping-revoked"`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/contract/test_external_quantitative_authority.py`:
 
@@ -2052,12 +2052,12 @@ def test_restart_rejects_mutated_single_mapping_activation(tmp_path: Path) -> No
 
 (`_event_digest` already exists in that replay test file; reuse it.)
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run --locked pytest tests/contract/test_external_quantitative_authority.py tests/replay/test_external_quantitative_authority_replay.py -k single -q`
 Expected: FAIL with `AttributeError: 'ExternalQuantitativeAuthorityCatalog' object has no attribute 'admit_single_mapping'`
 
-- [ ] **Step 3: Implement the catalog changes**
+- [x] **Step 3: Implement the catalog changes**
 
 1. Constants next to the existing ones:
 
@@ -2217,12 +2217,12 @@ class _SingleMappingPortAdapter:
 
 10. `_apply`: add two `elif` branches before `else` mirroring the pair mapping branches with `ExternalSingleVolumeCompatibilityRecord.from_event_payload`, `_single_mappings`, `_SingleMappingState`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_quantitative_authority.py tests/replay/test_external_quantitative_authority_replay.py tests/contract/test_external_quantitative_production_flow.py -q`
 Expected: PASS (the production-flow test guards the refactor of `_record_facts_match`).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/quantity/external_quantitative_authority.py tests/contract/test_external_quantitative_authority.py tests/replay/test_external_quantitative_authority_replay.py
@@ -2245,7 +2245,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: Task 1 decision model, Task 4 store joins, Task 5 port/value types.
 - Produces: `ExternalUseEvaluator(..., single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None)`; `request_single_volume(subject, *, zone_id, idempotency_key, principal, now) -> ExternalSingleVolumeDecisionV1`; `existing_single_volume_retry(subject, *, zone_id, principal, idempotency_key) -> ExternalSingleVolumeDecisionV1 | None`; `CoreExternalUseDecisionHistoryVerifier(..., single_volume_authority=...)` verifying the new candidate; `ExternalSingleVolumeDecisionRequest(zone_id: str)`; route `POST {base}/single-volume` (201, same 404/409/422 mapping as pair); `PAIR_REASON_REMEDIATIONS["SINGLE_VOLUME_MAPPING_UNAVAILABLE"] = "AUTHORIZE_SINGLE_VOLUME_MAPPING"`.
 
-- [ ] **Step 1: Write the failing evaluator tests**
+- [x] **Step 1: Write the failing evaluator tests**
 
 Append to `tests/contract/test_external_use_evaluator.py` (reusing `_report_with_measured_dsm`, `_report_for_subject`, `_receipt`, `_PolicyAuthority`, `_Reconstruction`, `_Inspections`, `_EvidenceProjection`, `_SyntheticHistoryVerifier`, `subject`, `policy_template`, `digest`, `NOW`, `_principal`):
 
@@ -2370,12 +2370,12 @@ def test_single_volume_requires_a_zone_selection(tmp_path: Path) -> None:
 
 Check `_Inspections.__init__` positional/keyword signature at `tests/contract/test_external_use_evaluator.py:92` and match it.
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run --locked pytest tests/contract/test_external_use_evaluator.py -k single_volume -q`
 Expected: FAIL with `TypeError: ExternalUseEvaluator.__init__() got an unexpected keyword argument 'single_volume_authority'`
 
-- [ ] **Step 3: Implement the evaluator**
+- [x] **Step 3: Implement the evaluator**
 
 1. Imports: `ExternalSingleVolumeDecisionV1`, `ExternalSingleVolumeAuthority`, `ExternalSingleVolumeAuthorityPort`, `DefaultClosedExternalSingleVolumeAuthorityPort`.
 
@@ -2594,12 +2594,12 @@ then `cp contracts/catalogs/external-use-blockers.v1.json apps/dashboard/src/lib
 
 9. OpenAPI — add after the `pair` path, copying the `single` entry with path suffix `/use-decisions/single-volume`, summary `Resolve and persist a scoped SINGLE_VOLUME external use decision`, description noting one sealed DSM epoch, one attested checkpoint evidence record, an ACTIVE WorkArea and an admitted single mapping; request body `properties: { zoneId: { type: string, minLength: 1, maxLength: 255 } }, required: [zoneId]`; same responses.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_use_evaluator.py tests/contract/test_external_use_blockers.py tests/contract/test_openapi_core_contract.py -q` (use the actual openapi test file name from `ls tests/contract | grep -i openapi`; skip if none).
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/quantity/external_use_evaluator.py contracts/catalogs/external-use-blockers.v1.json apps/dashboard/src/lib/external-use-blockers.generated.json contracts/api/openapi-core.yaml tests/contract/test_external_use_evaluator.py
@@ -2622,7 +2622,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 - Consumes: Task 5 record, Task 6 catalog methods, Task 7 evaluator/verifier keyword.
 - Produces: signed administration actions `ADMIT_SINGLE_MAPPING` (payload key `mapping`, validated via `ExternalSingleVolumeCompatibilityRecord.from_event_payload`) and `REVOKE_SINGLE_MAPPING` (payload key `mappingDigest`), rank 1; the evaluator and verifier receive `single_volume_authority=external_volume_mapping.single_mapping_port` when the mapping catalog exists.
 
-- [ ] **Step 1: Write the failing provider test**
+- [x] **Step 1: Write the failing provider test**
 
 In `tests/contract/test_external_authority_provider_contract.py`, next to the existing `ADMIT_MAPPING` case (around line 1749), add a test that builds a single mapping through the production-flow helpers. The relative case constructs `mapping = production_flow._mapping(...)`; add a sibling helper in `tests/contract/test_external_quantitative_production_flow.py`:
 
@@ -2665,12 +2665,12 @@ Then in the provider contract test, duplicate the block that admits `mapping_act
 
 and assert the catalog journal kinds are `["external-quantitative-single-mapping-activated", "external-quantitative-single-mapping-revoked"]`. The policy admitted in that test must include `"SINGLE_VOLUME"` in its permitted uses and `SingleVolumeCompatibilityRuleDescriptorV1().canonical_digest()` in `compatibility_mapping_digests` — extend the helper `_admit_policy`/`_signed_policy_admission` with keyword parameters `extra_uses: tuple[str, ...] = ()` and `extra_mapping_digests: tuple[str, ...] = ()` that default to the current behaviour.
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [x] **Step 2: Run the test to verify it fails**
 
 Run: `uv run --locked pytest tests/contract/test_external_authority_provider_contract.py -k single_mapping -q`
 Expected: FAIL with `ValueError: quantitative administration action is unsupported`
 
-- [ ] **Step 3: Implement the provider actions and wiring**
+- [x] **Step 3: Implement the provider actions and wiring**
 
 `provider_loading.py` — in `ranks` add `"ADMIT_SINGLE_MAPPING": 1, "REVOKE_SINGLE_MAPPING": 1`; in the required-key chain add `elif kind == "ADMIT_SINGLE_MAPPING": required.add("mapping")` and treat `REVOKE_SINGLE_MAPPING` like `REVOKE_MAPPING` (`required.add("mappingDigest")`, digest regex check); validation branch `elif kind == "ADMIT_SINGLE_MAPPING": ExternalSingleVolumeCompatibilityRecord.from_event_payload(action["mapping"])`.
 
@@ -2702,12 +2702,12 @@ Expected: FAIL with `ValueError: quantitative administration action is unsupport
 
 and pass `single_volume_authority=external_single_volume_mapping` to both `CoreExternalUseDecisionHistoryVerifier(...)` and `ExternalUseEvaluator(...)`.
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run --locked pytest tests/contract/test_external_authority_provider_contract.py tests/contract/test_external_quantitative_production_flow.py tests/replay/test_external_authority_provider_replay.py -q`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add services/core/src/ksi_core/domains/external/authority/provider_loading.py services/core/src/ksi_core/domains/external/authority/external_authority_provider.py services/core/src/ksi_core/composition/external_graph.py tests/contract/test_external_authority_provider_contract.py tests/contract/test_external_quantitative_production_flow.py
@@ -2727,7 +2727,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 **Interfaces:**
 - Consumes everything above through the assembled app (`_assemble`, `_register_signed_provider_site_and_area`, `_submission`, `_sealed_revision`, `_admit_policy`, `_inspect`, `_seal_evidence`, `_validate_evidence`, `_signed_provider_config`).
 
-- [ ] **Step 1: Write the integrated test**
+- [x] **Step 1: Write the integrated test**
 
 Add `test_single_volume_decision_is_eligible_on_the_real_graph` to `tests/contract/test_external_quantitative_production_flow.py`, modelled on the first ~120 lines of `test_signed_provider_drives_complete_external_relative_volume_lifecycle` (line 1733): seed the site and area, one submission/sealed revision with a DSM, admit a policy whose permitted uses include `"SINGLE_VOLUME"` and whose `compatibility_mapping_digests` include `SingleVolumeCompatibilityRuleDescriptorV1().canonical_digest()`, inspect, seal + validate attested evidence, write a signed provider snapshot with one `ADMIT_SINGLE_MAPPING` action built by `_single_mapping(...)`, then:
 
@@ -2748,12 +2748,12 @@ Add `test_single_volume_decision_is_eligible_on_the_real_graph` to `tests/contra
 
 Reuse the exact client/header helpers the neighbouring test uses (read them; do not invent names).
 
-- [ ] **Step 2: Run the test to verify it passes (or fix what it exposes)**
+- [x] **Step 2: Run the test to verify it passes (or fix what it exposes)**
 
 Run: `uv run --locked pytest tests/contract/test_external_quantitative_production_flow.py -k single_volume -q`
 Expected: PASS. Any failure here is a real integration gap in Tasks 3–8; fix the owning task's code, not the test.
 
-- [ ] **Step 3: Run the full gates**
+- [x] **Step 3: Run the full gates**
 
 ```bash
 uv run --locked ruff check . && uv run --locked ruff format --check .
@@ -2763,7 +2763,7 @@ uv run --locked pytest tests/contract tests/replay packages/change-detection/tes
 
 Expected: all green. Fix lint/type findings in place.
 
-- [ ] **Step 4: Update checkpoint and commit**
+- [x] **Step 4: Update checkpoint and commit**
 
 Rewrite `.opencode/working-state.md` (≤80 lines): HEAD, "SV-1 done: contracts/algorithm/policy use/decision/catalog/evaluator/provider/wiring; next SV-2 (store + routes + worker)". Tick every box in this plan.
 

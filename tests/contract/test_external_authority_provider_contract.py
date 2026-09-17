@@ -16,6 +16,9 @@ import pytest
 import test_external_quantitative_production_flow as production_flow
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
+    SingleVolumeCompatibilityRuleDescriptorV1,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_quantitative_authority import (
@@ -23,7 +26,6 @@ from ksi_core.external_quantitative_authority import (
     ExternalQuantitativeAuthorityCatalog,
     ExternalQuantitativeCatalogAuthorityRecord,
 )
-from ksi_core.external_single_volume_authority import SingleVolumeCompatibilityRuleDescriptorV1
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicyAuthorityRecord,

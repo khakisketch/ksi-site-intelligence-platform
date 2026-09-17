@@ -9,12 +9,14 @@ from typing import Any, cast
 
 import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
+from ksi_core.domains.external.quantity.external_single_volume_authorities import (
+    ExternalSingleVolumeAuthority,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
 from ksi_core.external_relative_volume_authorities import ExternalRelativeVolumeAuthority
-from ksi_core.external_single_volume_authorities import ExternalSingleVolumeAuthority
 from ksi_core.external_use_decisions import (
     ExternalUseDecisionConflictError,
     ExternalUseDecisionStore,

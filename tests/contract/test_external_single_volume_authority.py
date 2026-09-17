@@ -4,7 +4,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from ksi_core.external_single_volume_authority import (
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
     ExternalSingleVolumeCompatibilityRecord,
     SingleVolumeCompatibilityRuleDescriptorV1,
 )
