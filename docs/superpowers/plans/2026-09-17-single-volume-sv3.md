@@ -87,7 +87,7 @@
   - `ExternalResultMetricsView` optional `base_roughness_m: float | None = None`, `boundary_cell_count: int | None = None`, `boundary_sample_count: int | None = None`, `boundary_valid_fraction: float | None = None`.
   - `ExternalResultReadProjector(..., single_volumes: ExternalSingleVolumeStore | None = None)`; `uses_exact_graph(..., single_volumes=None)`; `history_for_site(..., kinds: frozenset[str] | None = None)`; `for_site` merged; `single_volumes` read-only property.
 
-- [ ] **Step 1: Write the failing tests** in `tests/contract/test_external_result_single_volume_projection.py`. Build the relative graph with `external_product_loop_fixture.build_graph` (as `tests/contract/test_external_result_workflow_api.py` does) and a single store with the helpers of `tests/contract/test_external_single_volumes.py` (`_store`, `_issue_and_claim`, `_payload`, `_principal`) sharing the graph's coordinator. Move the helpers you need into a new `tests/contract/external_single_volume_fixture.py` module (import it from both test files; do not copy). Tests:
+- [x] **Step 1: Write the failing tests** in `tests/contract/test_external_result_single_volume_projection.py`. Build the relative graph with `external_product_loop_fixture.build_graph` (as `tests/contract/test_external_result_workflow_api.py` does) and a single store with the helpers of `tests/contract/test_external_single_volumes.py` (`_store`, `_issue_and_claim`, `_payload`, `_principal`) sharing the graph's coordinator. Move the helpers you need into a new `tests/contract/external_single_volume_fixture.py` module (import it from both test files; do not copy). Tests:
   1. `test_single_report_projects_as_single_kind` — report one single measurement; `projector.report_for_site(site, ref, organization_id=org)` is `AVAILABLE`, `result.kind == "EXTERNAL_SINGLE_VOLUME"`, `baseline_work_order_id is None`, `baseline_captured_from is None`, `current_captured_from == request.target.captured_from`, `metrics.base_roughness_m == payload.metrics.base_roughness_m`, `review_ref is None`, `proposal_count == 0`.
   2. `test_relative_history_is_unchanged_by_single_reports` — with one relative and one single report, `history_for_site(..., kinds=frozenset({"EXTERNAL_RELATIVE_VOLUME"}))` equals the output of a projector built without `single_volumes` (compare `model_dump(mode="json")`).
   3. `test_merged_history_orders_both_families_newest_first_and_pages` — two relative + one single with interleaved capture times; merged `history_for_site(limit=2)` order equals sorting all `(sort_time, reported_at, ref)` descending; `next_cursor` continues to the third; a cursor of a foreign org raises `LookupError`.
@@ -96,12 +96,12 @@
   6. `test_citation_for_single_result` — `citation_for(...)` returns `object_type == "EXTERNAL_SINGLE_VOLUME_REPORT"`, `source_path == "/v1/external-single-volume-reports/" + quote(ref, safe="")`, `captured_from == iso_utc(target.captured_from)`, `captured_to == iso_utc(target.captured_to)`, label ends with `외부 단일 시점 체적 결과`.
   7. `test_projector_rejects_single_store_on_another_coordinator` — `ValueError`.
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 Run: `uv run --locked pytest tests/contract/test_external_result_single_volume_projection.py -q`
 Expected: FAIL (`TypeError: ... unexpected keyword argument 'single_volumes'`).
 
-- [ ] **Step 3: Implement the ledger index**
+- [x] **Step 3: Implement the ledger index**
 
 ```python
 # external_relative_volumes.py, inside ExternalVolumeLedger
@@ -136,7 +136,7 @@ Expected: FAIL (`TypeError: ... unexpected keyword argument 'single_volumes'`).
         )
 ```
 
-- [ ] **Step 4: Implement the models** — in `external_result_projection_models.py`:
+- [x] **Step 4: Implement the models** — in `external_result_projection_models.py`:
 
 ```python
 ExternalResultKind = Literal["EXTERNAL_RELATIVE_VOLUME", "EXTERNAL_SINGLE_VOLUME"]
@@ -159,7 +159,7 @@ class ExternalResultSummaryView(CamelModel):
 
 Add `ExternalResultKind` to `__all__`. The relative metrics dump has no single keys, so the new fields stay `None`; check that `CamelModel` serializes `None` fields (existing responses then gain four `null` keys — acceptable additive change; `test_api_contract_sync.py` is updated in Task 2).
 
-- [ ] **Step 5: Implement the projector**
+- [x] **Step 5: Implement the projector**
   - Constructor: accept `single_volumes`; if given, require `single_volumes.coordinator is workflow.coordinator`, else `ValueError("external result projection requires the exact durable volume graph")`.
   - `_SINGLE_PREFIX = "external-single-volume-report-"`; `_for_report_ref` → `self._for_single_report_ref(...)` when `self._single_volumes is not None and report_ref.startswith(_SINGLE_PREFIX)`; an unknown single ref with no single store returns `HISTORICAL_SOURCE_UNAVAILABLE` only when it is actually retained — keep the current relative path for all other refs.
   - `_for_single_report_ref`: resolve; apply the same integrity checks as the relative path (`request_digest`, `report_digest`, zone definition digest, policy digest, org, `request.current_work_order_id == authority.current_work_order_id`, report↔request id/digest); build the summary with `kind="EXTERNAL_SINGLE_VOLUME"`, `baseline_*=None`, `current_captured_*=request.target.captured_*`, `metrics=ExternalResultMetricsView.model_validate(report.payload.metrics.model_dump(by_alias=True, mode="json"))`, policy view from `authority.execution_policy`, `review_ref=review_digest=reviewed_at=None`, `proposal_count=approved_proposal_count=0`.
@@ -167,12 +167,12 @@ Add `ExternalResultKind` to `__all__`. The relative metrics dump has no single k
   - `for_work_order`: add single candidates (`record.report is not None`) with key `(record.request.target.captured_to, report.reported_at, report.report_id)` and pick the max across both families.
   - `citation_for`: branch on `result.kind`; single uses the constants in Global Constraints and `captured_from=iso_utc(result.current_captured_from)`. The relative branch is unchanged (it dereferences `baseline_captured_from`, which is non-null for relative).
 
-- [ ] **Step 6: Run tests** — the new file plus the unchanged neighbors:
+- [x] **Step 6: Run tests** — the new file plus the unchanged neighbors:
 
 Run: `uv run --locked pytest tests/contract/test_external_result_single_volume_projection.py tests/contract/test_external_result_workflow_api.py tests/contract/test_external_relative_volumes.py tests/contract/test_external_single_volumes.py tests/contract/test_external_result_briefings.py -q`
 Expected: all PASS. Then `uv run --locked mypy services/core tests/contract/test_external_result_single_volume_projection.py tests/contract/external_single_volume_fixture.py`.
 
-- [ ] **Step 7: Commit** `feat(core): project single-volume results with merged site history (SV-3)`
+- [x] **Step 7: Commit** `feat(core): project single-volume results with merged site history (SV-3)`
 
 ---
 
@@ -194,14 +194,14 @@ Expected: all PASS. Then `uv run --locked mypy services/core tests/contract/test
   - `/v1/sites/{site_id}/observations/{report_ref}` resolves both families (it already goes through `report_for_site`).
   - `app.state.external_result_read_projector.single_volumes is app.state.external_single_volume_store` when single volume is configured.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
   1. HTTP test on a TestClient app built like `test_external_result_workflow_api.py` plus the single store: merged history route lists both families; relative route lists only relative; single report route returns 200 with the sealed request/report for the owner org and 404 for another org (`Authorization: Bearer other-org-fixture` pattern) and for a relative ref.
   2. In `test_external_quantitative_production_flow.py::test_signed_provider_drives_complete_external_relative_volume_lifecycle` after the single report is accepted (~line 2280): `GET /v1/sites/{site}/external-volume-reports` contains the single ref with `result.kind == "EXTERNAL_SINGLE_VOLUME"`; `GET /v1/external-single-volume-reports/{ref}` is 200; after the restart block, the same two reads still succeed with identical `reportDigest`.
   3. Route coverage test lists the two new GET paths; `test_api_contract_sync.py` passes after the OpenAPI edit.
-- [ ] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_result_single_volume_projection.py tests/contract/test_external_quantitative_production_flow.py tests/contract/test_api_contract_sync.py -q` → FAIL.
-- [ ] **Step 3: Implement.** Router: require `single_volumes.coordinator is service.coordinator` when given; build the projector with it. `complete_external_graph`: pass `single_volumes=pre_work_order.single_volume.store if pre_work_order.single_volume is not None else None`. `routes/external.py`: the fallback projector and `uses_exact_graph` receive `external_single_volume.store` when present, and the router call passes it. `assembly.py`: no behavior change beyond forwarding. OpenAPI: add both paths (tags `external-result-workflow`), add `ExternalSingleVolumeReportView` schema, make the three baseline summary fields nullable, add the four optional metric fields and the `kind` enum.
-- [ ] **Step 4: Run** the Step 2 command plus `tests/contract -k "route or assembly or workspace"` → PASS.
-- [ ] **Step 5: Commit** `feat(core): single-volume report and merged history routes (SV-3)`
+- [x] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_result_single_volume_projection.py tests/contract/test_external_quantitative_production_flow.py tests/contract/test_api_contract_sync.py -q` → FAIL.
+- [x] **Step 3: Implement.** Router: require `single_volumes.coordinator is service.coordinator` when given; build the projector with it. `complete_external_graph`: pass `single_volumes=pre_work_order.single_volume.store if pre_work_order.single_volume is not None else None`. `routes/external.py`: the fallback projector and `uses_exact_graph` receive `external_single_volume.store` when present, and the router call passes it. `assembly.py`: no behavior change beyond forwarding. OpenAPI: add both paths (tags `external-result-workflow`), add `ExternalSingleVolumeReportView` schema, make the three baseline summary fields nullable, add the four optional metric fields and the `kind` enum.
+- [x] **Step 4: Run** the Step 2 command plus `tests/contract -k "route or assembly or workspace"` → PASS.
+- [x] **Step 5: Commit** `feat(core): single-volume report and merged history routes (SV-3)`
 
 ---
 
@@ -216,20 +216,20 @@ Expected: all PASS. Then `uv run --locked mypy services/core tests/contract/test
 - Consumes: Task 1 `result.kind`, single metric fields; `ExternalSingleVolumeStore.bind_report_listener` (inherited from `ExternalVolumeLedger`, line 1142).
 - Produces: `ExternalResultBriefingProjector.bind(*, volumes, reviews, service, single_volumes=None)`.
 
-- [ ] **Step 1: Failing tests** (reuse the existing briefing test harness):
+- [x] **Step 1: Failing tests** (reuse the existing briefing test harness):
   1. `test_single_volume_report_briefing_sentence` — after a single report and `flush()`, latest briefing `what_changed == "{zone} 적치물 체적 1,234.5 m³ (±12.3 m³, 기저면 거칠기 0.08 m)."` for metrics `fill_m3=1234.5`, `uncertainty_m3=12.3`, `base_roughness_m=0.08`; `why_it_matters == "단일 시점 측정입니다. 같은 구역의 다음 측정과 비교할 수 있습니다."`; `decision_prompt == "결과와 근거를 검토하세요."`; first citation `object_type == "external-single-volume-report"`, `source_path == f"/v1/external-single-volume-reports/{ref}"`, `captured_from == target.captured_from.isoformat()`; watermark `external-report:{digest}:REPORTED`.
   2. `test_single_volume_unknown_uncertainty_sentence` — `uncertainty_m3=None` → `"(불확도 미산정, 기저면 거칠기 0.08 m)"`.
   3. `test_single_results_do_not_feed_relative_delta` — relative report after a single report in the same WorkArea still says "이 구역의 첫 결과입니다…".
   4. Existing relative briefing tests pass unchanged.
-- [ ] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_result_briefings.py -q` → new tests FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_result_briefings.py -q` → new tests FAIL.
+- [x] **Step 3: Implement.**
   - `bind`: when `single_volumes` is given, `single_volumes.bind_report_listener(self.on_report)`.
   - `_project_report`: `binding = getattr(record.request, "current", None) or record.request.target`; use `binding.subject`.
   - `_record`: if `result.kind == "EXTERNAL_SINGLE_VOLUME"`, build `what_changed` with the Global Constraints sentence, `why_it_matters` as in test 1, citation `object_type="external-single-volume-report"`, label `f"{zone} 단일 시점 체적 보고서"`, `source_path=f"/v1/external-single-volume-reports/{report_ref}"`, `captured_from=result.current_captured_from.isoformat()`; the `site-observation` citation is shared. The `REVIEWED`/`APPROVED` stages cannot occur for single results in SV-3a.
   - `_previous_net`: add `and item.result.kind == "EXTERNAL_RELATIVE_VOLUME"` (and only run it for relative results).
   - `assembly.py`: pass `single_volumes=` the wired single store (or `None`).
-- [ ] **Step 4: Run** the Step 2 command and `tests/contract/test_external_quantitative_production_flow.py -q` → PASS.
-- [ ] **Step 5: Commit** `feat(core): deterministic single-volume site briefing (SV-3)`
+- [x] **Step 4: Run** the Step 2 command and `tests/contract/test_external_quantitative_production_flow.py -q` → PASS.
+- [x] **Step 5: Commit** `feat(core): deterministic single-volume site briefing (SV-3)`
 
 ---
 
@@ -256,11 +256,11 @@ Expected: all PASS. Then `uv run --locked mypy services/core tests/contract/test
   - `getExternalSingleVolumeReport(reportRef): Promise<ExternalSingleVolumeReportView>`.
   - `listSiteExternalVolumeHistory(siteId, { after, limit })`; type aliases `ExternalVolumeHistoryItem = ExternalRelativeVolumeHistoryItem`.
 
-- [ ] **Step 1: Failing vitest** — for each route: cross-site POST → 403 `CROSS_SITE_REQUEST`; malformed ids/refs → 404 or 400 (`INVALID_EXTERNAL_SINGLE_VOLUME_INTENT` for a body other than exactly `{ decisionRef }` / `{ zoneId }`); a missing idempotency key → 400; a Core `CoreApiError(409, ...)` is passed through; the happy path forwards the exact Core path and body (mock `coreFetch`). The single report ref pattern is `/^external-single-volume-report-[0-9a-f]{32}$/` (`ExternalVolumeLedger` builds `_KIND_PREFIX + "-report-" + sha256(...)[:32]`, ~line 2228). `StateBadge` is exported from `src/components/ui/StatusBadge.tsx`.
-- [ ] **Step 2: Run** `cd apps/dashboard && npx vitest run test/external-single-volume-routes.test.ts` → FAIL.
-- [ ] **Step 3: Implement** the client functions and routes.
-- [ ] **Step 4: Run** the Step 2 command, then `npx tsc --noEmit` (fix every consumer that now sees nullable baseline fields — `ExternalObservationHistory.tsx`, `[reportRef]/page.tsx`, `ExternalResultWorkflowPanel.tsx`; for relative rows keep behavior, guard only the type).
-- [ ] **Step 5: Commit** `feat(dashboard): single-volume Core client and BFF routes (SV-3)`
+- [x] **Step 1: Failing vitest** — for each route: cross-site POST → 403 `CROSS_SITE_REQUEST`; malformed ids/refs → 404 or 400 (`INVALID_EXTERNAL_SINGLE_VOLUME_INTENT` for a body other than exactly `{ decisionRef }` / `{ zoneId }`); a missing idempotency key → 400; a Core `CoreApiError(409, ...)` is passed through; the happy path forwards the exact Core path and body (mock `coreFetch`). The single report ref pattern is `/^external-single-volume-report-[0-9a-f]{32}$/` (`ExternalVolumeLedger` builds `_KIND_PREFIX + "-report-" + sha256(...)[:32]`, ~line 2228). `StateBadge` is exported from `src/components/ui/StatusBadge.tsx`.
+- [x] **Step 2: Run** `cd apps/dashboard && npx vitest run test/external-single-volume-routes.test.ts` → FAIL.
+- [x] **Step 3: Implement** the client functions and routes.
+- [x] **Step 4: Run** the Step 2 command, then `npx tsc --noEmit` (fix every consumer that now sees nullable baseline fields — `ExternalObservationHistory.tsx`, `[reportRef]/page.tsx`, `ExternalResultWorkflowPanel.tsx`; for relative rows keep behavior, guard only the type).
+- [x] **Step 5: Commit** `feat(dashboard): single-volume Core client and BFF routes (SV-3)`
 
 ---
 
@@ -277,33 +277,66 @@ Expected: all PASS. Then `uv run --locked mypy services/core tests/contract/test
 - Consumes: Task 4 routes and types.
 - Produces: `ExternalEvidencePanel` prop `onSingleVolumeDecisionChange?: (decision: Decision | null) => void` (mirrors `onRelativeVolumeDecisionChange`); `ExternalResultWorkflowPanel` prop `singleVolumeDecision?: Decision | null`.
 
-- [ ] **Step 1: Failing vitest**
+- [x] **Step 1: Failing vitest**
   1. Evidence panel: a "단일 시점 체적" decision button appears; without a WorkArea it shows "단일 시점 체적 작업구역을 선택하세요."; without DSM "DSM이 없어 이 결정을 요청할 수 없습니다."; it never shows a baseline selector for this use; it POSTs to `.../use-decisions/single-volume` with body `{ zoneId }` and an idempotency key reused on retry; a BLOCKED decision renders the generated blocker copy.
   2. Workflow panel: with an ELIGIBLE single decision the "단일 시점 체적 측정 요청" button POSTs `/api/observation-work-orders/{id}/single-volume-requests` `{ decisionRef }`; the request list polls `.../single-volume-requests/{ref}`; a SUCCEEDED request fetches `/api/external-single-volume-reports/{ref}` and shows 체적 (`fillM3`), `±uncertaintyM3` or "불확도 미산정", 기저면 거칠기, 경계 유효 비율; no review button — text "단일 시점 결과 검토는 준비 중입니다." instead.
   3. History: the page loads `listSiteExternalVolumeHistory`; each row shows a `StateBadge` "상대 물량" or "단일 시점 체적"; a single row shows 체적/±/거칠기 and no baseline range, no "이 범위로 새 관측"; `NetTrend` and `compatibilityKey` use relative rows only; the unavailable-row copy is unchanged.
   4. Detail page renders a single projection with the same single row.
-- [ ] **Step 2: Run** `npx vitest run test/external-evidence-panel-correction.test.tsx test/external-result-workflow-panel.test.tsx test/external-observation-history-kinds.test.tsx` → FAIL.
-- [ ] **Step 3: Implement.** Reuse the existing `decisionIntent`, try-key and abort patterns; add `"SINGLE_VOLUME"` to the use union; `pair` stays `VISUAL_COMPARISON | RELATIVE_VOLUME`; the single-volume branch posts `{ zoneId: zone }` to `${root}/single-volume`. Reuse `StateBadge` from `@/components/ui/StatusBadge`. Keep every Korean relative-volume string unchanged.
-- [ ] **Step 4: Full dashboard gates**
+- [x] **Step 2: Run** `npx vitest run test/external-evidence-panel-correction.test.tsx test/external-result-workflow-panel.test.tsx test/external-observation-history-kinds.test.tsx` → FAIL.
+- [x] **Step 3: Implement.** Reuse the existing `decisionIntent`, try-key and abort patterns; add `"SINGLE_VOLUME"` to the use union; `pair` stays `VISUAL_COMPARISON | RELATIVE_VOLUME`; the single-volume branch posts `{ zoneId: zone }` to `${root}/single-volume`. Reuse `StateBadge` from `@/components/ui/StatusBadge`. Keep every Korean relative-volume string unchanged.
+- [x] **Step 4: Full dashboard gates**
 
 Run (in `apps/dashboard`): `npx tsc --noEmit && npm run lint && npm test && npm run build`
 Expected: all exit 0 (read each exit code).
 
-- [ ] **Step 5: Commit** `feat(dashboard): single-volume decision, measurement and history views (SV-3)`
+- [x] **Step 5: Commit** `feat(dashboard): single-volume decision, measurement and history views (SV-3)`
 
 ---
 
 ### Task 6: Gates, evidence and close-out
 
-- [ ] `uv run --locked ruff check .` → clean.
-- [ ] `uv run --locked mypy packages services tests tools` → Success.
-- [ ] Full pytest in bounded chunks as in SV-2 (tests/contract external families, non-external, packages+services, other dirs); record passed/skipped/failed per chunk and the aggregate; 0 failed.
-- [ ] Dashboard gates from Task 5 Step 4 re-run on the final commit.
-- [ ] Live check (standing approval for local dev infra): start the local stack, open a work order with a sealed DSM + validated checkpoint evidence if the local data has one, and confirm the decision slot, issue button and history badge render. If no local single-volume-capable data exists, record that explicitly — the end-to-end rehearsal belongs to SV-4.
-- [ ] Append an "Execution outcome" section to this ledger with commits and evidence; update `.opencode/working-state.md` (Next = SV-3b plan). `docs/superpowers/product-state.md` is not touched (SV-4 closes the slice).
+- [x] `uv run --locked ruff check .` → clean.
+- [x] `uv run --locked mypy packages services tests tools` → Success.
+- [x] Full pytest in bounded chunks as in SV-2 (tests/contract external families, non-external, packages+services, other dirs); record passed/skipped/failed per chunk and the aggregate; 0 failed.
+- [x] Dashboard gates from Task 5 Step 4 re-run on the final commit.
+- [x] (not run — see outcome) Live check (standing approval for local dev infra): start the local stack, open a work order with a sealed DSM + validated checkpoint evidence if the local data has one, and confirm the decision slot, issue button and history badge render. If no local single-volume-capable data exists, record that explicitly — the end-to-end rehearsal belongs to SV-4.
+- [x] Append an "Execution outcome" section to this ledger with commits and evidence; update `.opencode/working-state.md` (Next = SV-3b plan). `docs/superpowers/product-state.md` is not touched (SV-4 closes the slice).
 - [ ] Push only with owner approval after gates pass.
 
 ## Self-review notes
 
 - Spec §8 coverage: projection kind/nullable baseline/metrics ✔ (T1); prefix dispatch ✔ (T1); merged history ✔ (T1/T2, amended route); citation ✔ (T1); review/proposal → SV-3b (amendment 1); briefing sentence ✔ (T3); dashboard decision slot ✔, BFF routes ✔ (reviews/shares → SV-3b), panel issue ✔, history badge ✔, blocker copy ✔ (T4/T5); no new page ✔.
 - Names used across tasks: `single_volumes` (Python kwarg), `report_index_for_site`, `ExternalResultKind`, `listSiteExternalVolumeHistory`, `requestExternalSingleVolumeDecision`, `issueExternalSingleVolume`, `getExternalSingleVolumeReport`.
+
+---
+
+## Execution outcome (2026-09-17)
+
+Branch `feat/single-volume-sv3a` (base `main` 5eab3a1), executed task by task with a fresh implementer and an independent reviewer per task, plus a final whole-branch review.
+
+Commits:
+- `63cc7bd` plan
+- Task 1: `d53efa4` projection + merged history; `623175d` shared provenance check (review fix)
+- Task 2: `6d5ed38` single report route, merged history route, graph wiring, OpenAPI
+- Task 3: `c5cc220` deterministic single-volume briefing
+- Task 4: `f99432a` dashboard client + 5 BFF routes; `9b62143` null-safe baseline rendering (review fix)
+- Task 5: `fae1676` decision/issue/result/history UI; `08dc733` refusal copy + resumable polling (review fix)
+- Final review fixes: `47ee3b6` relative-only briefing delta window; `f9b4adf` missing single-volume router shown as "not configured"
+
+Evidence (controller runs, real exit codes):
+- @08dc733, bounded chunks: `ruff check .` 0; `mypy packages services tests tools` Success (813 files); tests/contract 10 chunks 5981 passed / 112 skipped / 0 failed; packages+services 193 passed; tests/e2e+hil+replay+support+tools+smoke 407 passed / 4 skipped. Aggregate 6581 passed, 116 skipped, 0 failed.
+- @f9b4adf (after the final fixes): `ruff check .` 0; mypy Success (813); briefings + single projection + production flow + API contract sync 55 passed; dashboard `tsc --noEmit` 0, `npm run lint` 0, vitest 116 files / 858 tests passed, `next build` 0.
+
+Decisions taken during execution (beyond the spec amendment above):
+- Task 1 also added the four optional metric fields to `apps/dashboard/src/lib/core-api/types.ts` (OpenAPI↔dashboard type-sync test).
+- Dashboard consumers that receive merged results render no baseline range/link when the baseline is null.
+- A 404 from `GET /api/observation-work-orders/{id}/single-volume-requests` is shown as "이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다." (Core mounts that router only when a single execution template is configured).
+
+Boundaries (not verified here):
+- No live dashboard/Core run: no local deployment has a single execution template plus sealed DSM and attested checkpoint evidence. The end-to-end rehearsal belongs to SV-4.
+- No real S3/MinIO, container worker or HIL run.
+
+Follow-ups (from the final review triage, none blocking):
+- SV-3b: single-volume review/proposal/share; add a regression test that review/proposal mutations 404 for a single ref; apply `_provenance_intact` to the exact report routes of both families; validate the work-order `?reportRef=` deep link against the exact report instead of site-latest; neutral type names for decisions/requests.
+- SV-4 copy review: new single-volume Korean strings, including the single briefing prompt "결과와 근거를 검토하세요." while review is unavailable.
+- Hygiene: shared hook for issue/list/poll logic; single-zone controls gated by DSM presence; "relative" wording in merged-ref LookupError messages; test helper imports; restarted TestClient closing.
