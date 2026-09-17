@@ -1,11 +1,14 @@
-"""Additive, read-only DTOs for externally produced relative-volume results."""
+"""Additive, read-only DTOs for externally produced volume results (relative and single)."""
 
 from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
 from ksi_core.foundation.api_base import CamelModel
+
+ExternalResultKind = Literal["EXTERNAL_RELATIVE_VOLUME", "EXTERNAL_SINGLE_VOLUME"]
 
 
 class ExternalResultProjectionState(StrEnum):
@@ -27,6 +30,11 @@ class ExternalResultMetricsView(CamelModel):
     threshold_m: float
     uncertainty_m3: float | None
     uncertainty_note: str
+    # Single-epoch boundary-base facts; always ``None`` for relative results.
+    base_roughness_m: float | None = None
+    boundary_cell_count: int | None = None
+    boundary_sample_count: int | None = None
+    boundary_valid_fraction: float | None = None
 
 
 class ExternalResultExecutionPolicyView(CamelModel):
@@ -39,14 +47,15 @@ class ExternalResultExecutionPolicyView(CamelModel):
 
 
 class ExternalResultSummaryView(CamelModel):
-    kind: str = "EXTERNAL_RELATIVE_VOLUME"
+    kind: ExternalResultKind = "EXTERNAL_RELATIVE_VOLUME"
     report_ref: str
     report_digest: str
     request_ref: str
     request_digest: str
     source_work_order_id: str
     current_work_order_id: str
-    baseline_work_order_id: str
+    # Baseline facts exist only for relative results; single results carry ``None``.
+    baseline_work_order_id: str | None
     decision_id: str
     decision_digest: str
     work_area_id: str
@@ -54,8 +63,8 @@ class ExternalResultSummaryView(CamelModel):
     crs: str
     observed_crs_digest: str
     vertical_reference_digest: str
-    baseline_captured_from: datetime
-    baseline_captured_to: datetime
+    baseline_captured_from: datetime | None
+    baseline_captured_to: datetime | None
     current_captured_from: datetime
     current_captured_to: datetime
     reported_at: datetime
@@ -77,6 +86,7 @@ class ExternalResultProjectionView(CamelModel):
 
 __all__ = [
     "ExternalResultExecutionPolicyView",
+    "ExternalResultKind",
     "ExternalResultMetricsView",
     "ExternalResultProjectionState",
     "ExternalResultProjectionView",

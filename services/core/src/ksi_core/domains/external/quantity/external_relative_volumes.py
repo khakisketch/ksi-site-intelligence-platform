@@ -1764,12 +1764,13 @@ class ExternalVolumeLedger[
                 and record.authority.organization_id == organization_id
             )
 
-    def report_refs_for_site(self, site_id: str, *, organization_id: str) -> tuple[str, ...]:
-        """Return retained report references in deterministic newest-first order.
+    def report_index_for_site(
+        self, site_id: str, *, organization_id: str
+    ) -> tuple[tuple[datetime, datetime, str], ...]:
+        """Newest-first ``(sort_time, reported_at, report_id)`` keys, no request ledger.
 
-        This deliberately exposes no request ledger. Callers must still resolve
-        every reference through the independent historical authority before they
-        display any report content.
+        The keys let a reader merge several volume families into one
+        deterministic order without seeing any request record.
         """
 
         with self._lock:
@@ -1781,17 +1782,31 @@ class ExternalVolumeLedger[
                 and record.report is not None
             ]
         return tuple(
-            record.report.report_id
-            for record in sorted(
-                records,
-                key=lambda record: (
-                    self._report_sort_time(record),
-                    record.report.reported_at if record.report is not None else record.issued_at,
-                    record.report.report_id if record.report is not None else "",
+            sorted(
+                (
+                    (
+                        self._report_sort_time(record),
+                        record.report.reported_at,
+                        record.report.report_id,
+                    )
+                    for record in records
+                    if record.report is not None
                 ),
                 reverse=True,
             )
-            if record.report is not None
+        )
+
+    def report_refs_for_site(self, site_id: str, *, organization_id: str) -> tuple[str, ...]:
+        """Return retained report references in deterministic newest-first order.
+
+        This deliberately exposes no request ledger. Callers must still resolve
+        every reference through the independent historical authority before they
+        display any report content.
+        """
+
+        return tuple(
+            entry[2]
+            for entry in self.report_index_for_site(site_id, organization_id=organization_id)
         )
 
     def list_pending(

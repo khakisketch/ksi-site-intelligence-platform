@@ -13354,6 +13354,26 @@ components:
           - type: 'null'
           title: Uncertaintym3
         uncertaintyNote: { type: string, title: Uncertaintynote }
+        baseRoughnessM:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Baseroughnessm
+        boundaryCellCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Boundarycellcount
+        boundarySampleCount:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: Boundarysamplecount
+        boundaryValidFraction:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Boundaryvalidfraction
       additionalProperties: false
       type: object
       required:
@@ -13416,14 +13436,22 @@ components:
       title: ExternalResultHistoryView
     ExternalResultSummaryView:
       properties:
-        kind: { type: string, title: Kind, default: EXTERNAL_RELATIVE_VOLUME }
+        kind:
+          type: string
+          enum: [EXTERNAL_RELATIVE_VOLUME, EXTERNAL_SINGLE_VOLUME]
+          title: Kind
+          default: EXTERNAL_RELATIVE_VOLUME
         reportRef: { type: string, title: Reportref }
         reportDigest: { type: string, title: Reportdigest }
         requestRef: { type: string, title: Requestref }
         requestDigest: { type: string, title: Requestdigest }
         sourceWorkOrderId: { type: string, title: Sourceworkorderid }
         currentWorkOrderId: { type: string, title: Currentworkorderid }
-        baselineWorkOrderId: { type: string, title: Baselineworkorderid }
+        baselineWorkOrderId:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Baselineworkorderid
         decisionId: { type: string, title: Decisionid }
         decisionDigest: { type: string, title: Decisiondigest }
         workAreaId: { type: string, title: Workareaid }
@@ -13431,8 +13459,18 @@ components:
         crs: { type: string, title: Crs }
         observedCrsDigest: { type: string, title: Observedcrsdigest }
         verticalReferenceDigest: { type: string, title: Verticalreferencedigest }
-        baselineCapturedFrom: { type: string, format: date-time, title: Baselinecapturedfrom }
-        baselineCapturedTo: { type: string, format: date-time, title: Baselinecapturedto }
+        baselineCapturedFrom:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Baselinecapturedfrom
+        baselineCapturedTo:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Baselinecapturedto
         currentCapturedFrom: { type: string, format: date-time, title: Currentcapturedfrom }
         currentCapturedTo: { type: string, format: date-time, title: Currentcapturedto }
         reportedAt: { type: string, format: date-time, title: Reportedat }

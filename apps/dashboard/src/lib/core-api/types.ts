@@ -821,6 +821,11 @@ export interface ExternalResultMetricsView {
   thresholdM: number;
   uncertaintyM3: number | null;
   uncertaintyNote: string;
+  /** Single-epoch boundary-base facts; null/absent for relative results. */
+  baseRoughnessM?: number | null;
+  boundaryCellCount?: number | null;
+  boundarySampleCount?: number | null;
+  boundaryValidFraction?: number | null;
 }
 
 export interface ExternalResultExecutionPolicyView {

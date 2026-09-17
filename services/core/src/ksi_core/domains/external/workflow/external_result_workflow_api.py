@@ -15,12 +15,14 @@ from ksi_event_contracts.external_relative_volume import (
 from ksi_event_contracts.external_result_review import ExternalResultReviewReceiptV1
 
 from ksi_core.domains.external.quantity.external_relative_volumes import ExternalRelativeVolumeStore
+from ksi_core.domains.external.quantity.external_single_volumes import ExternalSingleVolumeStore
 from ksi_core.domains.external.workflow.external_reobservation_proposals import (
     ExternalReobservationProposalService,
     ExternalReobservationProposalView,
 )
 from ksi_core.domains.external.workflow.external_result_projection_models import (
     ExternalResultExecutionPolicyView,
+    ExternalResultKind,
     ExternalResultMetricsView,
     ExternalResultProjectionState,
     ExternalResultProjectionView,
@@ -65,6 +67,11 @@ class ExternalResultHistoryView(CamelModel):
     next_cursor: str | None = None
 
 
+_SINGLE_REPORT_PREFIX = "external-single-volume-report-"
+_RELATIVE_KIND: ExternalResultKind = "EXTERNAL_RELATIVE_VOLUME"
+_SINGLE_KIND: ExternalResultKind = "EXTERNAL_SINGLE_VOLUME"
+
+
 class ExternalResultReadProjector:
     """Read-only external report projection with exact retained provenance.
 
@@ -78,6 +85,7 @@ class ExternalResultReadProjector:
         *,
         volumes: ExternalRelativeVolumeStore,
         workflow: ExternalReobservationProposalService,
+        single_volumes: ExternalSingleVolumeStore | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         source_port = workflow.reviews.source_port
@@ -85,9 +93,14 @@ class ExternalResultReadProjector:
             volumes.coordinator is not workflow.coordinator
             or not isinstance(source_port, CoreExternalResultReviewSourceAdapter)
             or not source_port.uses_volume_store(volumes)
+            or (
+                single_volumes is not None
+                and single_volumes.coordinator is not workflow.coordinator
+            )
         ):
             raise ValueError("external result projection requires the exact durable volume graph")
         self._volumes = volumes
+        self._single_volumes = single_volumes
         self._workflow = workflow
         self._clock = clock or (lambda: datetime.now(UTC))
 
@@ -96,8 +109,18 @@ class ExternalResultReadProjector:
         *,
         volumes: ExternalRelativeVolumeStore,
         workflow: ExternalReobservationProposalService,
+        single_volumes: ExternalSingleVolumeStore | None = None,
     ) -> bool:
-        return self._volumes is volumes and self._workflow is workflow
+        return (
+            self._volumes is volumes
+            and self._workflow is workflow
+            and self._single_volumes is single_volumes
+        )
+
+    @property
+    def single_volumes(self) -> ExternalSingleVolumeStore | None:
+        """The exact single-volume store this projection reads, if configured (read-only)."""
+        return self._single_volumes
 
     @property
     def workflow(self) -> ExternalReobservationProposalService:
@@ -124,30 +147,34 @@ class ExternalResultReadProjector:
             assert proposal is not None
             return self._for_report_ref(proposal.report_ref, organization_id=organization_id)
 
-        candidates = tuple(
-            record
+        candidates: list[tuple[datetime, datetime, str]] = [
+            (record.request.current.captured_to, record.report.reported_at, record.report.report_id)
             for record in self._volumes.list_for_work_order(
                 work_order_id, organization_id=organization_id
             )
             if record.report is not None
-        )
+        ]
+        if self._single_volumes is not None:
+            candidates.extend(
+                (
+                    record.request.target.captured_to,
+                    record.report.reported_at,
+                    record.report.report_id,
+                )
+                for record in self._single_volumes.list_for_work_order(
+                    work_order_id, organization_id=organization_id
+                )
+                if record.report is not None
+            )
         if not candidates:
             return ExternalResultProjectionView(state=ExternalResultProjectionState.NO_RESULT)
-        latest = max(
-            candidates,
-            key=lambda record: (
-                record.request.current.captured_to,
-                record.report.reported_at if record.report is not None else record.issued_at,
-                record.report.report_id if record.report is not None else "",
-            ),
-        )
-        assert latest.report is not None
-        return self._for_report_ref(latest.report.report_id, organization_id=organization_id)
+        latest = max(candidates)
+        return self._for_report_ref(latest[2], organization_id=organization_id)
 
     def for_site(self, site_id: str, *, organization_id: str) -> ExternalResultProjectionView:
         if self._workflow.sites.get_scoped(site_id, organization_id) is None:
             raise LookupError("현장을 찾을 수 없다")
-        report_refs = self._volumes.report_refs_for_site(site_id, organization_id=organization_id)
+        report_refs = self._report_index(site_id, organization_id=organization_id)
         if not report_refs:
             return ExternalResultProjectionView(state=ExternalResultProjectionState.NO_RESULT)
         # The retained latest is selected before historical resolution. If it is
@@ -161,12 +188,17 @@ class ExternalResultReadProjector:
         organization_id: str,
         after: str | None,
         limit: int,
+        kinds: frozenset[str] | None = None,
     ) -> ExternalResultHistoryView:
-        """Resolve a bounded retained history without falling back across rows."""
+        """Resolve a bounded retained history without falling back across rows.
+
+        ``kinds`` restricts the merged history to the named result families;
+        ``None`` merges every configured family in one newest-first order.
+        """
 
         if self._workflow.sites.get_scoped(site_id, organization_id) is None:
             raise LookupError("현장을 찾을 수 없다")
-        report_refs = self._volumes.report_refs_for_site(site_id, organization_id=organization_id)
+        report_refs = self._report_index(site_id, organization_id=organization_id, kinds=kinds)
         start = 0
         if after is not None:
             try:
@@ -206,7 +238,7 @@ class ExternalResultReadProjector:
 
         if self._workflow.sites.get_scoped(site_id, organization_id) is None:
             raise LookupError("현장을 찾을 수 없다")
-        refs = self._volumes.report_refs_for_site(site_id, organization_id=organization_id)
+        refs = self._report_index(site_id, organization_id=organization_id)
         if report_ref not in refs:
             raise LookupError("external relative volume report was not found")
         projection = self._for_report_ref(report_ref, organization_id=organization_id)
@@ -229,6 +261,31 @@ class ExternalResultReadProjector:
             return None
         uncertainty = result.metrics.uncertainty_m3
         uncertainty_value = "UNKNOWN" if uncertainty is None else f"{uncertainty:.12g}"
+        if result.kind == _SINGLE_KIND:
+            return CopilotCitation(
+                citation_id=(
+                    "external-single-volume-report:"
+                    f"{result.report_ref}:{result.report_digest.removeprefix('sha256:')}"
+                ),
+                object_type="EXTERNAL_SINGLE_VOLUME_REPORT",
+                object_id=result.report_ref,
+                label=f"{site_name} 외부 단일 시점 체적 결과",
+                source_path=(
+                    f"/v1/external-single-volume-reports/{quote(result.report_ref, safe='')}"
+                ),
+                captured_from=iso_utc(result.current_captured_from),
+                captured_to=iso_utc(result.current_captured_to),
+                model_version=(
+                    f"{result.execution_policy.policy_id}:{result.execution_policy.version}"
+                ),
+                geometry_ref=result.zone_definition_digest,
+                uncertainty_summary=(
+                    f"{result.execution_policy.uncertainty_method}; "
+                    f"uncertaintyM3={uncertainty_value}"
+                ),
+            )
+        if result.baseline_captured_from is None:
+            return None
         return CopilotCitation(
             citation_id=(
                 "external-relative-volume-report:"
@@ -252,9 +309,38 @@ class ExternalResultReadProjector:
             ),
         )
 
+    def _report_index(
+        self,
+        site_id: str,
+        *,
+        organization_id: str,
+        kinds: frozenset[str] | None = None,
+    ) -> tuple[str, ...]:
+        """Merge retained family indexes into one deterministic newest-first order."""
+
+        include_relative = kinds is None or _RELATIVE_KIND in kinds
+        single_volumes = self._single_volumes
+        if single_volumes is None or (kinds is not None and _SINGLE_KIND not in kinds):
+            # Relative-only reads keep the exact pre-existing retained index path.
+            if not include_relative:
+                return ()
+            return self._volumes.report_refs_for_site(site_id, organization_id=organization_id)
+        entries = list(
+            single_volumes.report_index_for_site(site_id, organization_id=organization_id)
+        )
+        if include_relative:
+            entries.extend(
+                self._volumes.report_index_for_site(site_id, organization_id=organization_id)
+            )
+        return tuple(entry[2] for entry in sorted(entries, reverse=True))
+
     def _for_report_ref(
         self, report_ref: str, *, organization_id: str
     ) -> ExternalResultProjectionView:
+        if self._single_volumes is not None and report_ref.startswith(_SINGLE_REPORT_PREFIX):
+            return self._for_single_report_ref(
+                self._single_volumes, report_ref, organization_id=organization_id
+            )
         resolved = self._volumes.resolve_historical_report_ref(
             report_ref, organization_id=organization_id, now=self._clock()
         )
@@ -347,6 +433,84 @@ class ExternalResultReadProjector:
                 reviewed_at=review.reviewed_at if review is not None else None,
                 proposal_count=len(proposals),
                 approved_proposal_count=approved,
+            ),
+        )
+
+    def _for_single_report_ref(
+        self,
+        single_volumes: ExternalSingleVolumeStore,
+        report_ref: str,
+        *,
+        organization_id: str,
+    ) -> ExternalResultProjectionView:
+        """Project one single-epoch report; review/proposal do not apply to this family."""
+
+        resolved = single_volumes.resolve_historical_report_ref(
+            report_ref, organization_id=organization_id, now=self._clock()
+        )
+        if resolved is None:
+            return ExternalResultProjectionView(
+                state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
+            )
+        request, report, authority = (
+            resolved.request,
+            resolved.report,
+            resolved.execution_authority,
+        )
+        if (
+            request.request_digest is None
+            or report.report_digest is None
+            or authority.zone_snapshot.definition_digest is None
+            or authority.execution_policy.policy_digest is None
+            or authority.organization_id != organization_id
+            or request.current_work_order_id != authority.current_work_order_id
+            or report.request_id != request.request_id
+            or report.request_digest != request.request_digest
+        ):
+            return ExternalResultProjectionView(
+                state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
+            )
+        return ExternalResultProjectionView(
+            state=ExternalResultProjectionState.AVAILABLE,
+            result=ExternalResultSummaryView(
+                kind=_SINGLE_KIND,
+                report_ref=report.report_id,
+                report_digest=report.report_digest,
+                request_ref=request.request_id,
+                request_digest=request.request_digest,
+                source_work_order_id=request.current_work_order_id,
+                current_work_order_id=request.current_work_order_id,
+                baseline_work_order_id=None,
+                decision_id=request.decision_id,
+                decision_digest=request.decision_digest,
+                work_area_id=authority.zone_snapshot.work_area_id,
+                zone_definition_digest=authority.zone_snapshot.definition_digest,
+                crs=authority.zone_snapshot.crs,
+                observed_crs_digest=authority.zone_snapshot.observed_crs_digest,
+                vertical_reference_digest=authority.zone_snapshot.analysis_vertical_reference_digest,
+                baseline_captured_from=None,
+                baseline_captured_to=None,
+                current_captured_from=request.target.captured_from,
+                current_captured_to=request.target.captured_to,
+                reported_at=report.reported_at,
+                measurement_status="SUCCEEDED",
+                measurement_reason=None,
+                metrics=ExternalResultMetricsView.model_validate(
+                    report.payload.metrics.model_dump(by_alias=True, mode="json")
+                ),
+                execution_policy=ExternalResultExecutionPolicyView(
+                    policy_id=authority.execution_policy.policy_id,
+                    version=authority.execution_policy.version,
+                    policy_digest=authority.execution_policy.policy_digest,
+                    algorithm_build_digest=authority.execution_policy.algorithm_build_digest,
+                    config_digest=authority.execution_policy.config_digest,
+                    uncertainty_method=authority.execution_policy.uncertainty_method,
+                ),
+                review_ref=None,
+                review_digest=None,
+                reviewed_at=None,
+                proposal_count=0,
+                approved_proposal_count=0,
             ),
         )
 
