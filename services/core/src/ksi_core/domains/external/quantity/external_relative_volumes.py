@@ -2641,7 +2641,7 @@ class ExternalRelativeVolumeStore(
         return None
 
 
-def _to_view(record: ExternalRelativeVolumeRecord) -> ExternalRelativeVolumeRequestView:
+def _to_view(record: ExternalVolumeRecord[Any, Any, Any]) -> ExternalRelativeVolumeRequestView:
     return ExternalRelativeVolumeRequestView(
         request_ref=record.request.request_id,
         status=record.status,
