@@ -1,0 +1,924 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-single-volume-result-review-receipt.v1.json",
+  "title": "External Single Volume Result Review Receipt v1",
+  "description": "A durable exact review of a server-resolved external single-volume report. The retained authority, request, report and decision are embedded so the receipt validates alone.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "reviewRef",
+    "organizationId",
+    "siteId",
+    "sourceWorkOrderId",
+    "reportRef",
+    "request",
+    "report",
+    "authority",
+    "decision",
+    "factualLimitations",
+    "reviewedAt",
+    "reviewDigest"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "external-single-volume-result-review-receipt.v1"
+    },
+    "reviewRef": {
+      "$ref": "#/$defs/text"
+    },
+    "organizationId": {
+      "$ref": "#/$defs/text"
+    },
+    "siteId": {
+      "$ref": "#/$defs/text"
+    },
+    "sourceWorkOrderId": {
+      "$ref": "#/$defs/text"
+    },
+    "reportRef": {
+      "$ref": "#/$defs/text"
+    },
+    "request": {
+      "$ref": "#/$defs/singleVolumeRequest"
+    },
+    "report": {
+      "$ref": "#/$defs/singleVolumeReport"
+    },
+    "authority": {
+      "$ref": "#/$defs/singleVolumeResultReviewAuthority"
+    },
+    "decision": {
+      "$ref": "#/$defs/singleVolumeDecision"
+    },
+    "factualLimitations": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "SINGLE_VOLUME_IS_OPERATIONAL_ONLY"
+        },
+        {
+          "const": "ABSOLUTE_ACCURACY_NOT_CLAIMED"
+        },
+        {
+          "const": "NO_AUTOMATIC_REOBSERVATION_THRESHOLD"
+        }
+      ],
+      "minItems": 3,
+      "maxItems": 3,
+      "items": false
+    },
+    "reviewedAt": {
+      "$ref": "#/$defs/utcDateTime"
+    },
+    "reviewDigest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "codes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "string",
+        "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "inputBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "inspectionReportDigest",
+        "dsmArtifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "observedCrsDigest",
+        "observedVerticalReferenceDigest",
+        "capturedFrom",
+        "capturedTo"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "inspectionReportDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "dsmArtifactId": {
+          "$ref": "#/$defs/text"
+        },
+        "observedSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedSizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observedCrsDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedVerticalReferenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "capturedFrom": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "capturedTo": {
+          "$ref": "#/$defs/utcDateTime"
+        }
+      }
+    },
+    "longText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zoneCellCount",
+        "commonValidCellCount",
+        "zoneAreaM2",
+        "measuredAreaM2",
+        "commonValidFraction",
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM",
+        "uncertaintyM3",
+        "uncertaintyNote",
+        "baseRoughnessM",
+        "boundaryCellCount",
+        "boundarySampleCount",
+        "boundaryValidFraction"
+      ],
+      "properties": {
+        "zoneCellCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "commonValidCellCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "zoneAreaM2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1e+300
+        },
+        "measuredAreaM2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1e+300
+        },
+        "commonValidFraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "cutM3": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "fillM3": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "netM3": {
+          "type": "number",
+          "minimum": -1e+300,
+          "maximum": 1e+300
+        },
+        "thresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "uncertaintyM3": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "uncertaintyNote": {
+          "$ref": "#/$defs/longText"
+        },
+        "baseRoughnessM": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "boundaryCellCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "boundarySampleCount": {
+          "type": "integer",
+          "minimum": 3
+        },
+        "boundaryValidFraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "factClass",
+        "requestDigest",
+        "decisionDigest",
+        "targetDsmDigest",
+        "zoneSnapshotDigest",
+        "executionPolicyDigest",
+        "algorithmBuildDigest",
+        "configDigest",
+        "metrics"
+      ],
+      "properties": {
+        "factClass": {
+          "const": "OBSERVED"
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "targetDsmDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "zoneSnapshotDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "executionPolicyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "algorithmBuildDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "configDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        }
+      }
+    },
+    "polygon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "properties": {
+        "type": {
+          "const": "Polygon"
+        },
+        "coordinates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ring"
+          }
+        }
+      }
+    },
+    "position": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": -1e+300,
+        "maximum": 1e+300
+      }
+    },
+    "ring": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/position"
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "properties": {
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "workOrderId": {
+          "$ref": "#/$defs/text"
+        },
+        "submissionId": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "submissionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "utcDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+      "$comment": "The pattern enforces UTC RFC3339 lexical form. Draft 2020-12 format is annotation unless a consumer enables a format assertion; canonical Pydantic contracts parse calendar semantics and UTC offset."
+    },
+    "uuid4": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "zone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "zoneId",
+        "revision",
+        "definitionDigest",
+        "observedCrsDigest",
+        "observedVerticalReferenceDigest"
+      ],
+      "properties": {
+        "zoneId": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedCrsDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedVerticalReferenceDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "zoneSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "revision",
+        "polygon",
+        "crs",
+        "observedCrsDigest",
+        "analysisVerticalReferenceDigest",
+        "definitionDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-volume-zone-snapshot.v1"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "workAreaId": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "const": 1
+        },
+        "polygon": {
+          "$ref": "#/$defs/polygon"
+        },
+        "crs": {
+          "$ref": "#/$defs/text"
+        },
+        "observedCrsDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "analysisVerticalReferenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "singleVolumeDecision": {
+      "title": "ExternalSingleVolumeDecisionV1",
+      "description": "Immutable single-subject SINGLE_VOLUME decision; model validation owns the subject digest and non-BLOCKED authority bindings.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "decisionId",
+        "subject",
+        "subjectDigest",
+        "use",
+        "policyDigest",
+        "inspectionReportDigest",
+        "evidenceRecordDigests",
+        "zone",
+        "compatibilityMappingDigest",
+        "verdict",
+        "reasons",
+        "remediations",
+        "decidedAt",
+        "decisionDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-single-volume-decision.v1"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/text"
+        },
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "subjectDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "use": {
+          "const": "SINGLE_VOLUME"
+        },
+        "policyDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inspectionReportDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "evidenceRecordDigests": {
+          "type": "array",
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "zone": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/zone"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "compatibilityMappingDigest": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "enum": [
+            "ELIGIBLE",
+            "RESTRICTED",
+            "BLOCKED"
+          ]
+        },
+        "reasons": {
+          "$ref": "#/$defs/codes"
+        },
+        "remediations": {
+          "$ref": "#/$defs/codes"
+        },
+        "decidedAt": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "verdict"
+            ],
+            "properties": {
+              "verdict": {
+                "enum": [
+                  "ELIGIBLE",
+                  "RESTRICTED"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "compatibilityMappingDigest",
+              "zone",
+              "policyDigest",
+              "inspectionReportDigest"
+            ],
+            "properties": {
+              "compatibilityMappingDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "zone": {
+                "$ref": "#/$defs/zone"
+              },
+              "policyDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "inspectionReportDigest": {
+                "$ref": "#/$defs/digest"
+              },
+              "evidenceRecordDigests": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "compatibilityMappingDigest": {
+                "type": "null"
+              },
+              "zone": {
+                "type": "null"
+              },
+              "evidenceRecordDigests": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "singleVolumeExecutionPolicy": {
+      "title": "External Single Volume Execution Policy v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "policyId",
+        "version",
+        "algorithmBuildDigest",
+        "configDigest",
+        "thresholdM",
+        "minimumCommonValidFraction",
+        "minimumBoundaryValidFraction",
+        "uncertaintyMethod",
+        "baseSurfaceMethod",
+        "resourceEnvelopeDigest",
+        "authorityRecordDigest",
+        "syntheticTestOnly",
+        "policyDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-single-volume-execution-policy.v1"
+        },
+        "policyId": {
+          "$ref": "#/$defs/text"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "algorithmBuildDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "configDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "thresholdM": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1e+300
+        },
+        "minimumCommonValidFraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "uncertaintyMethod": {
+          "const": "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1"
+        },
+        "resourceEnvelopeDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authorityRecordDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "syntheticTestOnly": {
+          "type": "boolean"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "baseSurfaceMethod": {
+          "const": "BOUNDARY_LINEAR_INTERPOLATION_V1"
+        },
+        "minimumBoundaryValidFraction": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "singleVolumeReport": {
+      "title": "External Single Volume Report v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "reportId",
+        "requestId",
+        "requestDigest",
+        "payload",
+        "measurementPayloadDigest",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "leaseGeneration",
+        "computedAt",
+        "reportedAt",
+        "reportDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-single-volume-report.v1"
+        },
+        "reportId": {
+          "$ref": "#/$defs/text"
+        },
+        "requestId": {
+          "$ref": "#/$defs/text"
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        },
+        "measurementPayloadDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "workerInstanceId": {
+          "$ref": "#/$defs/uuid4"
+        },
+        "leaseAcquisitionId": {
+          "$ref": "#/$defs/uuid4"
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "computedAt": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "reportedAt": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "reportDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "singleVolumeRequest": {
+      "title": "External Single Volume Request v1",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "requestId",
+        "currentWorkOrderId",
+        "decisionId",
+        "decisionDigest",
+        "target",
+        "evidenceRecordDigests",
+        "validationPolicyDigest",
+        "executionPolicyDigest",
+        "zoneSnapshot",
+        "issuedAt",
+        "idempotencyKey",
+        "requestDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-single-volume-request.v1"
+        },
+        "requestId": {
+          "$ref": "#/$defs/text"
+        },
+        "currentWorkOrderId": {
+          "$ref": "#/$defs/text"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/text"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "target": {
+          "$ref": "#/$defs/inputBinding"
+        },
+        "evidenceRecordDigests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "validationPolicyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "executionPolicyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "zoneSnapshot": {
+          "$ref": "#/$defs/zoneSnapshot"
+        },
+        "issuedAt": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "idempotencyKey": {
+          "$ref": "#/$defs/text"
+        },
+        "requestDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "singleVolumeResultReviewAuthority": {
+      "title": "External Single Volume Result Review Authority v1",
+      "description": "Exact server-resolved single-epoch authority retained with one reviewed report; constructed by Core from actual history, never submitted by callers.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "organizationId",
+        "siteId",
+        "currentWorkOrderId",
+        "decisionId",
+        "decisionDigest",
+        "compatibilityMappingDigest",
+        "target",
+        "evidenceRecordDigests",
+        "validationPolicyDigest",
+        "zoneSnapshot",
+        "executionPolicy",
+        "authorizedActorIds",
+        "validFrom",
+        "validUntil",
+        "historicalAuthorityDigest",
+        "targetRmseM",
+        "maximumZoneCellCount",
+        "maximumZoneAreaM2",
+        "syntheticTestOnly",
+        "authorityDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-single-volume-result-review-authority.v1"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "currentWorkOrderId": {
+          "$ref": "#/$defs/text"
+        },
+        "decisionId": {
+          "$ref": "#/$defs/text"
+        },
+        "decisionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "compatibilityMappingDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "target": {
+          "$ref": "#/$defs/inputBinding"
+        },
+        "evidenceRecordDigests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1,
+          "items": {
+            "$ref": "#/$defs/digest"
+          }
+        },
+        "validationPolicyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "zoneSnapshot": {
+          "$ref": "#/$defs/zoneSnapshot"
+        },
+        "executionPolicy": {
+          "$ref": "#/$defs/singleVolumeExecutionPolicy"
+        },
+        "authorizedActorIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/text"
+          }
+        },
+        "validFrom": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "validUntil": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "historicalAuthorityDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "targetRmseM": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1e+300
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "maximumZoneCellCount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100000000
+        },
+        "maximumZoneAreaM2": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1e+300
+        },
+        "syntheticTestOnly": {
+          "type": "boolean"
+        },
+        "authorityDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}
