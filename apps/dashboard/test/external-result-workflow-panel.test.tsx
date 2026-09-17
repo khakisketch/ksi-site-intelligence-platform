@@ -598,6 +598,45 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
   });
 
+  it("treats a missing single-volume router (404) as not configured instead of a read failure", async () => {
+    const listError = "체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.";
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+
+    expect(await screen.findByText("이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.")).toBeTruthy();
+    expect(screen.queryByText(listError)).toBeNull();
+    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "체적 목록 새로고침" })).toBeNull();
+    expect(screen.queryByText("체적 측정 요청 목록")).toBeNull();
+    const singleReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("single-volume")).length;
+    expect(singleReads()).toBe(1);
+    vi.useFakeTimers();
+    try {
+      await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(singleReads()).toBe(1);
+    expect(screen.getByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeTruthy();
+  });
+
+  it("keeps the list read-failure text for a non-404 single-volume list failure", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return { ok: false, status: 500, json: async () => ({ code: "INTERNAL" }) };
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+
+    expect(await screen.findByText("체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.")).toBeTruthy();
+    expect(screen.queryByText("이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.")).toBeNull();
+    expect(screen.getByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeTruthy();
+  });
+
   it("explains a refused single-volume issue with the mapped reason instead of the same-selection retry text", async () => {
     const retryText = "단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
     const refuse = (issueResponse: () => unknown) => fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {

@@ -329,6 +329,9 @@ function SingleVolumeWorkflow({
   const activeMutation = useRef<AbortController | null>(null);
   const listAbort = useRef<AbortController | null>(null);
   const [listPhase, setListPhase] = useState<Phase>("loading");
+  // Core mounts the single-volume router only when a single-volume execution template is
+  // configured, so a 404 list read means this environment does not offer the family.
+  const [notConfigured, setNotConfigured] = useState(false);
   const [list, setList] = useState<ExternalRelativeVolumeRequestView[]>([]);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -350,13 +353,22 @@ function SingleVolumeWorkflow({
     listAbort.current = controller;
     setListPhase("loading");
     try {
-      const value = await responseJson<{ items: unknown }>(await fetch(requestsPath, { cache: "no-store", signal: controller.signal }));
+      const listResponse = await fetch(requestsPath, { cache: "no-store", signal: controller.signal });
+      if (listResponse.status === 404) {
+        if (listAbort.current !== controller) return;
+        setNotConfigured(true);
+        setListPhase("idle");
+        return;
+      }
+      const value = await responseJson<{ items: unknown }>(listResponse);
       if (!Array.isArray(value.items) || !value.items.every(isKnownRequestView)) throw new Error(UNKNOWN_REQUEST_STATUS);
       if (listAbort.current !== controller) return;
+      setNotConfigured(false);
       setList(value.items);
       setListPhase("ready");
     } catch (error) {
       if (isAbort(error) || listAbort.current !== controller) return;
+      setNotConfigured(false);
       setListPhase("error");
     } finally {
       if (listAbort.current === controller) listAbort.current = null;
@@ -523,6 +535,15 @@ function SingleVolumeWorkflow({
       }
     }
   };
+
+  if (notConfigured) {
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
+        <h3 className="font-semibold">단일 시점 체적 측정</h3>
+        <p className="text-ink-2">이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
