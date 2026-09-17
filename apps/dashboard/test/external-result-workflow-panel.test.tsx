@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const router = { push: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import { ExternalResultWorkflowPanel } from "@/app/field/ExternalResultWorkflowPanel";
-import type { ExternalRelativeVolumeReportView, ExternalResultReview } from "@/lib/core-api/external-result-workflow";
+import type { ExternalRelativeVolumeReportView, ExternalResultReview, ExternalSingleVolumeReportView } from "@/lib/core-api/external-result-workflow";
 
 const fetchMock = vi.fn();
 const digest = (character: string) => `sha256:${character.repeat(64)}`;
@@ -446,4 +446,155 @@ it("records review, proposes the exact report zone, approves separately, refresh
   fireEvent.click(screen.getByRole("button", { name: "재관측 후속 작업 승인" }));
   await waitFor(() => expect(router.push).toHaveBeenCalledWith("/field/work-orders/successor-1"));
   expect(router.refresh).toHaveBeenCalled();
+});
+
+const singleRequestRef = `external-single-volume-${"6".repeat(32)}`;
+const singleReportRef = `external-single-volume-report-${"7".repeat(32)}`;
+const singleDecision = {
+  decisionId: `external-use-decision-${"5".repeat(32)}`,
+  decisionDigest: digest("5"),
+  verdict: "ELIGIBLE" as const,
+  reasons: [],
+  remediations: [],
+};
+
+function singleReportView(overrides: { uncertaintyM3?: number | null; boundaryValidFraction?: number } = {}): ExternalSingleVolumeReportView {
+  return {
+    request: {
+      contractVersion: "external-single-volume-request.v1",
+      requestId: singleRequestRef,
+      currentWorkOrderId: "work-1",
+      decisionId: singleDecision.decisionId,
+      decisionDigest: singleDecision.decisionDigest,
+      target: {
+        subject: { organizationId: "org-1", siteId: "site-1", workOrderId: "work-1", submissionId: "submission-s", revision: 1, submissionDigest: digest("1"), manifestDigest: digest("2") },
+        inspectionReportDigest: digest("3"), dsmArtifactId: "dsm-s", observedSha256: digest("4"), observedSizeBytes: 2, observedCrsDigest: digest("f"), observedVerticalReferenceDigest: digest("0"), capturedFrom: "2026-09-15T00:00:00Z", capturedTo: "2026-09-15T00:30:00Z",
+      },
+      evidenceRecordDigests: [digest("5")], validationPolicyDigest: digest("6"), executionPolicyDigest: digest("7"),
+      zoneSnapshot: { contractVersion: "external-volume-zone-snapshot.v1", organizationId: "org-1", siteId: "site-1", workAreaId: "pile-1", revision: 1, polygon: {}, crs: "EPSG:5186", observedCrsDigest: digest("f"), analysisVerticalReferenceDigest: digest("0"), definitionDigest: digest("8") },
+      issuedAt: "2026-09-15T01:00:00Z", idempotencyKey: "core-key", requestDigest: digest("9"),
+    },
+    report: {
+      contractVersion: "external-single-volume-report.v1", reportId: singleReportRef, requestId: singleRequestRef, requestDigest: digest("9"),
+      payload: {
+        factClass: "OBSERVED", requestDigest: digest("9"), decisionDigest: singleDecision.decisionDigest, targetDsmDigest: digest("4"), zoneSnapshotDigest: digest("8"), executionPolicyDigest: digest("7"), algorithmBuildDigest: digest("a"), configDigest: digest("b"),
+        metrics: {
+          zoneCellCount: 100, commonValidCellCount: 95, zoneAreaM2: 100, measuredAreaM2: 95, commonValidFraction: 0.95,
+          cutM3: 0.5, fillM3: 1234.5, netM3: 1234, thresholdM: 0.1,
+          uncertaintyM3: overrides.uncertaintyM3 === undefined ? 12.25 : overrides.uncertaintyM3,
+          uncertaintyNote: "boundary base RSS bound",
+          baseRoughnessM: 0.123, boundaryCellCount: 40, boundarySampleCount: 38,
+          boundaryValidFraction: overrides.boundaryValidFraction ?? 0.95,
+        },
+      },
+      measurementPayloadDigest: digest("c"), workerInstanceId: "worker", leaseAcquisitionId: "lease", leaseGeneration: 1, computedAt: "2026-09-15T02:00:00Z", reportedAt: "2026-09-15T02:01:00Z", reportDigest: digest("d"),
+    },
+    executionPolicy: {
+      contractVersion: "external-single-volume-execution-policy.v1", policyId: "single-policy", version: 1, algorithmBuildDigest: digest("a"), configDigest: digest("b"),
+      thresholdM: 0.1, minimumCommonValidFraction: 0.75, minimumBoundaryValidFraction: 0.8,
+      uncertaintyMethod: "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1", baseSurfaceMethod: "BOUNDARY_LINEAR_INTERPOLATION_V1",
+      resourceEnvelopeDigest: digest("f"), authorityRecordDigest: digest("0"), syntheticTestOnly: true, policyDigest: digest("e"),
+    },
+  };
+}
+
+function singleRequest(status: "QUEUED" | "SUCCEEDED" | "FAILED") {
+  return {
+    requestRef: singleRequestRef,
+    status,
+    currentWorkOrderId: "work-1",
+    decisionDigest: singleDecision.decisionDigest,
+    issuedAt: "2026-09-15T01:00:00Z",
+    deadlineAt: "2099-01-01T00:00:00Z",
+    reportRef: status === "SUCCEEDED" ? singleReportRef : null,
+    reportDigest: status === "SUCCEEDED" ? digest("d") : null,
+  };
+}
+
+describe("SINGLE_VOLUME measurement", () => {
+  it("issues an ELIGIBLE single-volume decision, polls the request, and shows Core's volume without any review action", async () => {
+    const posts: Array<{ url: string; body: unknown; key: string }> = [];
+    let itemReads = 0;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") {
+        posts.push({ url, body: JSON.parse(String(init.body)), key: (init.headers as Record<string, string>)["idempotency-key"] });
+        return response({ verdict: "ISSUED", request: singleRequest("QUEUED"), detail: null });
+      }
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) {
+        itemReads += 1;
+        return response(singleRequest(itemReads === 1 ? "QUEUED" : "SUCCEEDED"));
+      }
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) return response(singleReportView());
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE", "WORK_ORDERS_WRITE", "REOBSERVATION_APPROVE"]} />);
+    const issueButton = await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" });
+    vi.useFakeTimers();
+    try {
+      // act() flushes React's passive effects, whose scheduler is not driven by fake timers.
+      await act(async () => { fireEvent.click(issueButton); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(posts).toEqual([{ url: "/api/observation-work-orders/work-1/single-volume-requests", body: { decisionRef: singleDecision.decisionId }, key: "console-stable-key" }]);
+      expect(itemReads).toBe(1);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith("/api/external-single-volume-reports/"))).toBe(false);
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(itemReads).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await screen.findByText("1,234.5 m³")).toBeTruthy();
+    expect(screen.getByText("체적")).toBeTruthy();
+    expect(screen.getByText("±12.25 m³")).toBeTruthy();
+    expect(screen.getByText("기저면 거칠기")).toBeTruthy();
+    expect(screen.getByText("0.12 m")).toBeTruthy();
+    expect(screen.getByText("경계 유효 비율")).toBeTruthy();
+    expect(screen.getByText("95%")).toBeTruthy();
+    expect(screen.getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
+    expect(screen.queryByText("순변화")).toBeNull();
+    expect(screen.queryByText(/기준 촬영/)).toBeNull();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/reviews"))).toBe(false);
+  });
+
+  it("shows unknown uncertainty as not estimated and hides the volume when boundary coverage is below policy", async () => {
+    let view = singleReportView({ uncertaintyM3: null });
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return response({ items: [singleRequest("SUCCEEDED")] });
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) return response(singleRequest("SUCCEEDED"));
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) return response(view);
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} />);
+    expect(await screen.findByText("현재 선택에서 단일 시점 체적 결정을 요청하세요.")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
+    expect(await screen.findByText("불확도 미산정")).toBeTruthy();
+    expect(screen.getByText("1,234.5 m³")).toBeTruthy();
+
+    view = singleReportView({ boundaryValidFraction: 0.5 });
+    fireEvent.click(screen.getByRole("button", { name: "체적 요청 상태" }));
+    expect(await screen.findByText("적용 범위가 측정 기준을 충족하지 않아 체적을 표시하지 않습니다.")).toBeTruthy();
+    expect(screen.queryByText("1,234.5 m³")).toBeNull();
+  });
+
+  it("keeps a blocked single-volume decision from issuing and does not load single requests unless wired", async () => {
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={["SITES_WRITE"]} />);
+    expect(await screen.findByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("single-volume"))).toBe(false);
+    cleanup();
+
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/relative-volume-requests") || url.endsWith("/single-volume-requests")) return response({ items: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={{ ...singleDecision, verdict: "BLOCKED", reasons: ["SINGLE_VOLUME_MAPPING_UNAVAILABLE"], remediations: ["AUTHORIZE_SINGLE_VOLUME_MAPPING"] }} permissions={["SITES_WRITE"]} />);
+    expect(await screen.findByText("현재 선택으로는 단일 시점 체적 측정을 요청할 수 없습니다.")).toBeTruthy();
+    expect(screen.getByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
+  });
 });

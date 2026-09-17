@@ -92,18 +92,64 @@ describe("ExternalSiteResultSummary", () => {
     expect(copy).not.toContain("1970");
   });
 
-  it("omits the baseline range instead of inventing a 1970 date for a single-volume result with no baseline epoch", () => {
+  it("summarizes a single-volume result as a pile volume at one capture time, without comparison wording or review actions", () => {
+    const single = available({
+      kind: "EXTERNAL_SINGLE_VOLUME",
+      reportRef: `external-single-volume-report-${"a".repeat(32)}`,
+      baselineWorkOrderId: null,
+      baselineCapturedFrom: null,
+      baselineCapturedTo: null,
+      metrics: {
+        zoneCellCount: 100,
+        commonValidCellCount: 95,
+        zoneAreaM2: 1_000,
+        measuredAreaM2: 950,
+        commonValidFraction: 0.95,
+        cutM3: 1,
+        fillM3: 1234.5,
+        netM3: 1233.5,
+        thresholdM: 0.1,
+        uncertaintyM3: 12.25,
+        uncertaintyNote: "경계 기저면 기준",
+        baseRoughnessM: 0.1,
+        boundaryCellCount: 40,
+        boundarySampleCount: 38,
+        boundaryValidFraction: 0.9,
+      },
+    });
+    const { container } = render(<ExternalSiteResultSummary externalResult={single} workAreaName="야적장 1" />);
+    const text = container.textContent ?? "";
+    expect(screen.getByRole("heading", { name: "단일 시점 체적 결과" })).toBeTruthy();
+    expect(screen.getByText("단일 시점 체적")).toBeTruthy();
+    expect(screen.getByText(/작업구역\s+야적장 1/)).toBeTruthy();
+    expect(screen.getByText("체적")).toBeTruthy();
+    expect(screen.getByText("1,234.5 m³")).toBeTruthy();
+    expect(screen.getByText("±12.25 m³")).toBeTruthy();
+    expect(screen.getByText("0.10 m")).toBeTruthy();
+    expect(screen.getByText("90%")).toBeTruthy();
+    expect(text).toContain("촬영 2026. 9. 8.");
+    expect(text).not.toContain("1970");
+    expect(text).not.toContain("비교");
+    expect(text).not.toContain("순변화");
+    expect(text).not.toContain("+1,233.5");
+    expect(screen.getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "체적 측정 기록 보기" }).getAttribute("href")).toBe(
+      "/field/work-orders/work-current#external-volume",
+    );
+  });
+
+  it("shows an unestimated single-volume uncertainty as not estimated", () => {
+    const base = available().result!;
     const single = available({
       kind: "EXTERNAL_SINGLE_VOLUME",
       baselineWorkOrderId: null,
       baselineCapturedFrom: null,
       baselineCapturedTo: null,
+      metrics: { ...base.metrics!, uncertaintyM3: null, baseRoughnessM: 0.2, boundaryValidFraction: 0.8 },
     });
-    const { container } = render(<ExternalSiteResultSummary externalResult={single} workAreaName="동측 절성토 구역" />);
-    const copy = container.querySelector("h3 + p")?.textContent ?? "";
-    expect(copy).not.toContain("1970");
-    expect(copy).not.toContain("와");
-    expect(copy).toContain("를 비교했습니다.");
+    render(<ExternalSiteResultSummary externalResult={single} compact />);
+    expect(screen.getByText("불확도 미산정")).toBeTruthy();
+    expect(screen.getByText("21 m³")).toBeTruthy();
   });
 
   it("keeps a retained non-success result distinct and never presents aggregate values as a result", () => {

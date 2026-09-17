@@ -1,6 +1,7 @@
 "use client";
 
 import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
+import { SINGLE_VOLUME_REVIEW_PENDING, SingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,11 +13,16 @@ import type {
   ExternalRelativeVolumeReportView,
   ExternalRelativeVolumeRequestView,
   ExternalResultReview,
+  ExternalSingleVolumeReportView,
 } from "@/lib/core-api/external-result-workflow";
 import {
   isExternalRelativeVolumeReportReference,
   isExternalRelativeVolumeRequestReference,
 } from "@/lib/external-relative-volume-references";
+import {
+  isExternalSingleVolumeReportReference,
+  isExternalSingleVolumeRequestReference,
+} from "@/lib/external-single-volume-references";
 
 export type ExternalRelativeVolumeDecision = {
   decisionId: string;
@@ -241,10 +247,292 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
   );
 }
 
+function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportView }) {
+  const metrics = view.report.payload.metrics;
+  const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction
+    && metrics.boundaryValidFraction >= view.executionPolicy.minimumBoundaryValidFraction;
+  return (
+    <section className="mt-2 rounded-lg border border-line bg-surface text-[13px]">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+        <div>
+          <h4 className="text-[15px] font-bold tracking-tight">단일 시점 체적 결과</h4>
+          <p className="mt-1 leading-5 text-ink-2">작업구역 {view.request.zoneSnapshot.workAreaId}</p>
+        </div>
+        <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
+      </div>
+      {coveragePassed ? (
+        <div className="border-t border-line px-4 py-3">
+          <SingleVolumeResult
+            fillM3={metrics.fillM3}
+            uncertaintyM3={metrics.uncertaintyM3}
+            uncertaintyNote={metrics.uncertaintyNote}
+            baseRoughnessM={metrics.baseRoughnessM}
+            boundaryValidFraction={metrics.boundaryValidFraction}
+            capturedFrom={view.request.target.capturedFrom}
+            capturedTo={view.request.target.capturedTo}
+          />
+        </div>
+      ) : (
+        <p role="alert" className="border-t border-line px-4 py-3 text-high-ink">적용 범위가 측정 기준을 충족하지 않아 체적을 표시하지 않습니다.</p>
+      )}
+      <details className="mx-4 mb-3 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
+        <summary className="cursor-pointer font-semibold">전문가용 기록 및 검증 정보</summary>
+        <div className="mt-2 flex flex-col gap-1 break-all">
+          <p>대상: {subjectLabel(view.request.target.subject)}</p>
+          <p>구역 ID {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision} · 정의 {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+          <p>정책: 검증 {view.request.validationPolicyDigest} · 실행 {view.executionPolicy.policyDigest ?? view.request.executionPolicyDigest}</p>
+          <p>경계 셀 {metrics.boundaryCellCount}개 · 경계 표본 {metrics.boundarySampleCount}개</p>
+          <p>보고서: {view.report.reportDigest ?? "기록 없음"} · 요청 {view.request.requestDigest ?? "기록 없음"}</p>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+/**
+ * SINGLE_VOLUME issue, request status and result. Review, proposal and team share do
+ * not exist for single-epoch results in this plan, so no such action is offered.
+ */
+function SingleVolumeWorkflow({
+  workOrderId,
+  decision,
+  canIssuePermission,
+  newIntentAllowed,
+}: {
+  workOrderId: string;
+  decision: ExternalRelativeVolumeDecision | null;
+  canIssuePermission: boolean;
+  newIntentAllowed: boolean;
+}) {
+  const scope = useRef(0);
+  const activeMutation = useRef<AbortController | null>(null);
+  const listAbort = useRef<AbortController | null>(null);
+  const [listPhase, setListPhase] = useState<Phase>("loading");
+  const [list, setList] = useState<ExternalRelativeVolumeRequestView[]>([]);
+  const [selectedRef, setSelectedRef] = useState<string | null>(null);
+  const [selectionGeneration, setSelectionGeneration] = useState(0);
+  const [selected, setSelected] = useState<ExternalRelativeVolumeRequestView | null>(null);
+  const [selectedError, setSelectedError] = useState<string | null>(null);
+  const [report, setReport] = useState<ExternalSingleVolumeReportView | null>(null);
+  const [reportPhase, setReportPhase] = useState<Phase>("idle");
+  const [busy, setBusy] = useState(false);
+  const [issueAttempt, setIssueAttempt] = useState<FrozenIssue | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const requestsPath = `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/single-volume-requests`;
+  const canIssue = canIssuePermission && (newIntentAllowed || issueAttempt !== null);
+  const decisionIdentity = decision ? `${decision.decisionId}|${decision.decisionDigest}` : "";
+
+  const loadList = useCallback(async () => {
+    listAbort.current?.abort();
+    const controller = new AbortController();
+    listAbort.current = controller;
+    setListPhase("loading");
+    try {
+      const value = await responseJson<{ items: unknown }>(await fetch(requestsPath, { cache: "no-store", signal: controller.signal }));
+      if (!Array.isArray(value.items) || !value.items.every(isKnownRequestView)) throw new Error(UNKNOWN_REQUEST_STATUS);
+      if (listAbort.current !== controller) return;
+      setList(value.items);
+      setListPhase("ready");
+    } catch (error) {
+      if (isAbort(error) || listAbort.current !== controller) return;
+      setListPhase("error");
+    } finally {
+      if (listAbort.current === controller) listAbort.current = null;
+    }
+  }, [requestsPath]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (active) void loadList();
+    });
+    return () => {
+      active = false;
+      listAbort.current?.abort();
+    };
+  }, [loadList]);
+
+  // Reads the selected request and, while it is unfinished, re-reads it on a bounded
+  // GET-only schedule. A SUCCEEDED request loads its exact retained report.
+  useEffect(() => {
+    if (!selectedRef || !isExternalSingleVolumeRequestReference(selectedRef)) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let budget = 0;
+    const loadReport = async (reportRef: string) => {
+      if (!isExternalSingleVolumeReportReference(reportRef)) throw new Error("INVALID_REPORT_REFERENCE");
+      setReportPhase("loading");
+      const value = await responseJson<ExternalSingleVolumeReportView>(await fetch(
+        `/api/external-single-volume-reports/${encodeURIComponent(reportRef)}`,
+        { cache: "no-store", signal: controller.signal },
+      ));
+      if (controller.signal.aborted) return;
+      if (value.report.reportId !== reportRef || value.request.requestId !== selectedRef) throw new Error("REPORT_BINDING_CHANGED");
+      setReport(value);
+      setReportPhase("ready");
+    };
+    const read = async () => {
+      let requestRead = false;
+      try {
+        const value = await responseJson<unknown>(await fetch(
+          `${requestsPath}/${encodeURIComponent(selectedRef)}`,
+          { cache: "no-store", signal: controller.signal },
+        ));
+        if (!isKnownRequestView(value)) throw new Error(UNKNOWN_REQUEST_STATUS);
+        if (controller.signal.aborted) return;
+        requestRead = true;
+        setSelected(value);
+        setSelectedError(null);
+        if (value.status === "SUCCEEDED" && value.reportRef) {
+          await loadReport(value.reportRef);
+          return;
+        }
+        setReport(null);
+        setReportPhase("idle");
+        if (isUnfinishedRequest(value.status) && budget < AUTO_REQUEST_REFRESH_BUDGET) {
+          budget += 1;
+          timer = setTimeout(() => {
+            timer = null;
+            if (document.visibilityState !== "hidden") void read();
+          }, AUTO_REQUEST_REFRESH_DELAY_MS);
+        }
+      } catch (error) {
+        if (isAbort(error) || controller.signal.aborted) return;
+        if (requestRead) {
+          setReport(null);
+          setReportPhase("error");
+        } else {
+          setSelectedError("요청 상태를 확인하지 못했습니다. 마지막으로 확인한 요청과 목록을 유지합니다. 다시 시도하세요.");
+        }
+      }
+    };
+    void Promise.resolve().then(read);
+    return () => {
+      controller.abort();
+      if (timer !== null) clearTimeout(timer);
+    };
+  }, [requestsPath, selectedRef, selectionGeneration]);
+
+  useEffect(() => {
+    scope.current += 1;
+    const decisionScope = scope.current;
+    activeMutation.current?.abort();
+    activeMutation.current = null;
+    void Promise.resolve().then(() => {
+      if (scope.current !== decisionScope) return;
+      setBusy(false);
+      setIssueAttempt(null);
+      setMessage(null);
+    });
+  }, [decisionIdentity]);
+
+  useEffect(() => () => {
+    activeMutation.current?.abort();
+    listAbort.current?.abort();
+  }, []);
+
+  const selectRequest = (requestRef: string) => {
+    setSelectedError(null);
+    // Never leave another request's volume on screen while this selection is read.
+    setReport(null);
+    setReportPhase("idle");
+    if (selectedRef === requestRef) setSelectionGeneration((current) => current + 1);
+    setSelectedRef(requestRef);
+  };
+
+  const issue = async () => {
+    if (!decision || decision.verdict !== "ELIGIBLE" || !canIssue || busy) return;
+    let attempt = issueAttempt;
+    const matchesDecision = attempt?.decisionId === decision.decisionId
+      && attempt.decisionDigest === decision.decisionDigest;
+    if (!newIntentAllowed && !matchesDecision) {
+      setMessage("업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.");
+      return;
+    }
+    if (!matchesDecision) {
+      attempt = { decisionId: decision.decisionId, decisionDigest: decision.decisionDigest, idempotencyKey: makeKey() };
+      setIssueAttempt(attempt);
+    }
+    if (!attempt) return;
+    activeMutation.current?.abort();
+    const controller = new AbortController();
+    activeMutation.current = controller;
+    const requestScope = scope.current;
+    const owns = () => activeMutation.current === controller && scope.current === requestScope;
+    setBusy(true);
+    setMessage(null);
+    try {
+      const value = await responseJson<{ verdict: string; request: unknown; detail: string | null }>(await fetch(requestsPath, {
+        method: "POST",
+        headers: { "content-type": "application/json", "idempotency-key": attempt.idempotencyKey },
+        body: JSON.stringify({ decisionRef: attempt.decisionId }),
+        signal: controller.signal,
+      }));
+      if (!owns()) return;
+      if (!isKnownRequestView(value.request)) throw new Error(value.request === null ? (value.detail ?? value.verdict) : UNKNOWN_REQUEST_STATUS);
+      selectRequest(value.request.requestRef);
+      setMessage("단일 시점 체적 측정을 요청했습니다.");
+      void loadList();
+    } catch (error) {
+      if (!isAbort(error) && owns()) setMessage("단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.");
+    } finally {
+      if (activeMutation.current === controller) {
+        activeMutation.current = null;
+        if (scope.current === requestScope) setBusy(false);
+      }
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
+      <h3 className="font-semibold">단일 시점 체적 측정</h3>
+      {!decision ? (
+        <p className="text-ink-2">{newIntentAllowed ? "현재 선택에서 단일 시점 체적 결정을 요청하세요." : "업무 종료된 작업입니다. 기존 체적 측정 기록만 확인할 수 있습니다."}</p>
+      ) : decision.verdict !== "ELIGIBLE" ? (
+        <ExternalUseBlockerCard
+          reasons={decision.reasons}
+          remediations={decision.remediations}
+          intro="현재 선택으로는 단일 시점 체적 측정을 요청할 수 없습니다."
+        />
+      ) : canIssue ? (
+        <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="단일 시점 체적 측정 요청은 노트북 이상의 화면에서 진행합니다.">
+          <button className="btn w-fit" disabled={busy} onClick={() => void issue()}>
+            {busy ? "체적 측정 요청 중" : "단일 시점 체적 측정 요청"}
+          </button>
+        </ResponsiveActionBoundary>
+      ) : (
+        <p className="text-ink-2">{newIntentAllowed ? "단일 시점 체적 요청에는 SITES_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다."}</p>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h4 className="font-semibold">체적 측정 요청 목록</h4>
+        <button className="btn" disabled={listPhase === "loading"} onClick={() => void loadList()}>체적 목록 새로고침</button>
+      </div>
+      {listPhase === "loading" && <p role="status" className="text-ink-2">체적 측정 요청 목록을 읽는 중입니다.</p>}
+      {listPhase === "error" && <p role="alert" className="text-high-ink">체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.</p>}
+      {listPhase === "ready" && (list.length === 0
+        ? <p className="text-ink-2">기록된 단일 시점 체적 측정 요청이 없습니다.</p>
+        : <ul className="flex flex-col gap-2">{list.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>체적 요청 상태</button></li>)}</ul>)}
+
+      {selected && <p className="text-ink-2">선택한 체적 요청: {statusLabel(selected.status)}{isUnfinishedRequest(selected.status) ? ` · 마감 ${selected.deadlineAt}${recordedDeadlineElapsed(selected.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
+      {selectedError && <p role="alert" className="text-high-ink">{selectedError}</p>}
+      {selected?.status === "FAILED" && <p role="alert" className="text-high-ink">이 단일 시점 체적 측정을 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.</p>}
+      {reportPhase === "loading" && <p role="status">체적 결과를 읽는 중입니다.</p>}
+      {reportPhase === "error" && <p role="alert">체적 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.</p>}
+      {report && reportPhase === "ready" && <>
+        <SingleVolumeReportDetail view={report} />
+        <p className="text-ink-2">{SINGLE_VOLUME_REVIEW_PENDING}</p>
+      </>}
+      {message && <p role="status">{message}</p>}
+    </div>
+  );
+}
+
 export function ExternalResultWorkflowPanel({
   workOrderId,
   siteId,
   decision,
+  singleVolumeDecision,
   permissions,
   initialReport,
   newIntentAllowed = true,
@@ -252,6 +540,11 @@ export function ExternalResultWorkflowPanel({
   workOrderId: string;
   siteId: string;
   decision: ExternalRelativeVolumeDecision | null;
+  /**
+   * The current SINGLE_VOLUME decision. `undefined` means the single-volume family is not
+   * wired into this view, so its request list is not read.
+   */
+  singleVolumeDecision?: ExternalRelativeVolumeDecision | null;
   permissions: readonly string[];
   initialReport?: TrustedExternalResultLink;
   newIntentAllowed?: boolean;
@@ -772,6 +1065,14 @@ export function ExternalResultWorkflowPanel({
         {report.review ? <><p>결과 검토 기록이 있습니다. · {report.review.reviewedAt}</p><ReviewAuditDetail review={report.review} /></> : canReview ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="비교 결과 검토 기록은 노트북 이상의 화면에서 진행합니다."><button className="btn w-fit" disabled={busy !== null} onClick={() => void review()}>{busy === "review" ? "결과 검토 기록 중" : "결과 검토 기록"}</button></ResponsiveActionBoundary> : <p className="text-ink-2">{newIntentAllowed ? "보고서 검토에는 WORK_ORDERS_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 결과 검토를 기록할 수 없습니다."}</p>}
         {report.review && (canProposal ? <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="재관측 제안은 노트북 이상의 화면에서 기록합니다."><div className="flex flex-col gap-2"><label className="flex flex-col gap-1">재관측 제안 사유<input className="input" aria-label="재관측 제안 사유" value={reason} disabled={busy !== null || !newIntentAllowed} onChange={(event) => { setReason(event.target.value); setProposalAttempt(null); }} /></label><p className="text-ink-2">대상: 이 비교에 사용한 작업구역</p>{!currentProposal && <button className="btn w-fit" disabled={busy !== null} onClick={() => void createProposal()}>{busy === "proposal" ? "제안 기록 중" : "이 작업구역으로 재관측 제안"}</button>}</div></ResponsiveActionBoundary> : <p className="text-ink-2">{newIntentAllowed ? "재관측 제안에는 WORK_ORDERS_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 재관측 제안을 기록할 수 없습니다."}</p>)}
       </>}
+
+      {singleVolumeDecision !== undefined && <SingleVolumeWorkflow
+        key={workOrderId}
+        workOrderId={workOrderId}
+        decision={singleVolumeDecision}
+        canIssuePermission={hasIssuePermission}
+        newIntentAllowed={newIntentAllowed}
+      />}
 
       {currentProposal && <div className="rounded border border-line p-3"><p>재관측 제안이 기록되었습니다.</p><p className="mt-1 text-ink-2">대상: 이 비교에 사용한 작업구역</p>{approvalReceipt ? <div className="mt-2 flex flex-wrap items-center gap-2"><p>후속 작업이 생성되었습니다.</p><Link href={`/field/work-orders/${encodeURIComponent(approvalReceipt.successorWorkOrderId)}`} className="btn">후속 작업 보기</Link></div> : canApprove ? <ResponsiveActionBoundary action="REOBSERVATION_APPROVE" reason="후속 작업 승인은 노트북 이상의 화면에서 별도로 기록합니다."><button className="btn mt-2 w-fit" disabled={busy !== null} onClick={() => void approve()}>{busy === "approval" ? "승인 기록 중" : "재관측 후속 작업 승인"}</button></ResponsiveActionBoundary> : <p className="mt-2 text-ink-2">{newIntentAllowed ? "후속 작업 승인에는 REOBSERVATION_APPROVE 권한이 필요합니다." : "업무 종료 상태에서는 새 후속 작업 승인을 시작할 수 없습니다."}</p>}<details className="mt-2 text-[12px] text-ink-2"><summary className="cursor-pointer font-semibold">전문가 정보</summary><p className="mt-1 break-all">제안 {currentProposal.proposal.proposalRef} · v{currentProposal.proposal.version} · 대상 {currentProposal.proposal.targetWorkAreas?.map((item) => item.workAreaId).join(", ") || "기록 없음"}{approvalReceipt ? ` · 후속 작업 ${approvalReceipt.successorWorkOrderId}` : ""}</p></details></div>}
       {message && <p role="status">{message}</p>}

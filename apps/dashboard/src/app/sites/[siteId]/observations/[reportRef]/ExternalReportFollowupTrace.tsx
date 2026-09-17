@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SINGLE_VOLUME_REVIEW_PENDING } from "@/components/external-results/SingleVolumeResult";
 import type { ObservationWorkOrderWorkflowStatus } from "@/lib/core-api/types";
 
 export type ReportSuccessorTrace = {
@@ -18,17 +19,26 @@ function successorStatusLabel(status: ObservationWorkOrderWorkflowStatus | null)
 /** Links only to reports and successors already retained by the server. */
 export function ExternalReportFollowupTrace({
   reportRef,
+  singleVolume = false,
   baselineWorkOrderId,
   currentWorkOrderId,
   successors,
 }: {
   reportRef: string;
+  /** A SINGLE_VOLUME result has no review, proposal or successor steps yet. */
+  singleVolume?: boolean;
   /** Null for a SINGLE_VOLUME result — there is no baseline epoch, so no baseline link is shown. */
   baselineWorkOrderId: string | null;
   currentWorkOrderId: string;
   /** Null means the report detail could not be re-verified, so no successor fact is shown. */
   successors: readonly ReportSuccessorTrace[] | null;
 }) {
+  if (singleVolume) {
+    return <section className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="text-[16px] font-bold tracking-tight">검토·재관측 흐름</h2>
+      <p className="mt-1 text-[13px] leading-5 text-ink-2">{SINGLE_VOLUME_REVIEW_PENDING}</p>
+    </section>;
+  }
   const reviewHref = `/field/work-orders/${encodeURIComponent(currentWorkOrderId)}?reportRef=${encodeURIComponent(reportRef)}#external-result`;
   return <section className="rounded-xl border border-line bg-surface p-4">
     <h2 className="text-[16px] font-bold tracking-tight">검토·재관측 흐름</h2>

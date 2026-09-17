@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import type { ExternalRelativeVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
+import {
+  ExternalVolumeKindBadge,
+  isSingleVolumeResult,
+  SINGLE_VOLUME_REVIEW_PENDING,
+  SingleVolumeResult,
+} from "@/components/external-results/SingleVolumeResult";
+import type { ExternalVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 function number(value: number, digits = 1) {
@@ -14,9 +20,11 @@ function signed(value: number) {
   return `${value > 0 ? "+" : ""}${number(value)} m³`;
 }
 
-function compatibilityKey(item: ExternalRelativeVolumeHistoryItem): string | null {
+function compatibilityKey(item: ExternalVolumeHistoryItem): string | null {
   const result = item.result;
   if (item.state !== "AVAILABLE" || result?.measurementStatus !== "SUCCEEDED" || !result.metrics) return null;
+  // The net-change trend compares relative results only; a single-epoch volume has no net change.
+  if (isSingleVolumeResult(result)) return null;
   return [
     result.workAreaId,
     result.zoneDefinitionDigest,
@@ -44,7 +52,7 @@ function CopyLink({ href }: { href: string }) {
 }
 
 function MetricRow({ item, workAreaName, siteId, detailMode }: {
-  item: ExternalRelativeVolumeHistoryItem;
+  item: ExternalVolumeHistoryItem;
   workAreaName: string | null;
   siteId: string;
   detailMode?: boolean;
@@ -61,30 +69,33 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
   }
   const metrics = result.measurementStatus === "SUCCEEDED" ? result.metrics : null;
   const exactHref = `/sites/${encodeURIComponent(siteId)}/observations/${encodeURIComponent(item.reportRef)}`;
+  const single = isSingleVolumeResult(result);
   return (
     <article className="rounded-lg border border-line bg-surface">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
-          <p className="text-[14px] font-bold">{workAreaName ?? "작업구역"} · {formatKoreanDateTime(result.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</p>
-          {/* baselineCapturedFrom/To 는 SINGLE_VOLUME 결과에서 null 이다(기준 시기가 없다). 이
-              카드는 이 목록 페이지 전용 경로(관측이력, relative-volume-reports 만 반환)로 올 때는
-              항상 채워져 있지만, 보고서 상세 페이지([reportRef]/page.tsx)가 병합 조회
-              (report_for_site)로 얻은 단일 항목을 그대로 이 컴포넌트에 넘기기도 하므로 null 을
-              실제로 만날 수 있다 — 날짜를 지어내지 않고 기준 구간을 생략한다. */}
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{result.baselineCapturedFrom !== null && result.baselineCapturedTo !== null ? <>기준 {formatKoreanDateTime(result.baselineCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.baselineCapturedTo, { dateStyle: "short", timeStyle: "short" })} → </> : null}현재 {formatKoreanDateTime(result.currentCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.currentCapturedTo, { dateStyle: "short", timeStyle: "short" })}</p>
+          <p className="flex flex-wrap items-center gap-2 text-[14px] font-bold"><span>{workAreaName ?? "작업구역"} · {formatKoreanDateTime(result.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span><ExternalVolumeKindBadge single={single} /></p>
+          {/* 병합 이력(external-volume-reports)과 상세 페이지 조회는 SINGLE_VOLUME 결과도 돌려준다.
+              그 결과의 baselineCapturedFrom/To 는 null 이다(기준 시기가 없다) — 날짜를 지어내지
+              않고 기준 구간을 생략한다. */}
+          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{!single && result.baselineCapturedFrom !== null && result.baselineCapturedTo !== null ? <>기준 {formatKoreanDateTime(result.baselineCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.baselineCapturedTo, { dateStyle: "short", timeStyle: "short" })} → </> : null}현재 {formatKoreanDateTime(result.currentCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.currentCapturedTo, { dateStyle: "short", timeStyle: "short" })}</p>
         </div>
-        <div className="flex flex-wrap items-start gap-2"><CopyLink href={exactHref} /><Link className="btn print:hidden" href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}`}>작업 관리</Link><Link className="btn print:hidden" href={`/sites/${encodeURIComponent(siteId)}/observations/new?repeatReportRef=${encodeURIComponent(item.reportRef)}`}>이 범위로 새 관측</Link>{!detailMode && <Link className="btn btn-primary print:hidden" href={exactHref}>상세 보기</Link>}</div>
+        <div className="flex flex-wrap items-start gap-2"><CopyLink href={exactHref} /><Link className="btn print:hidden" href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}`}>작업 관리</Link>{!single && <Link className="btn print:hidden" href={`/sites/${encodeURIComponent(siteId)}/observations/new?repeatReportRef=${encodeURIComponent(item.reportRef)}`}>이 범위로 새 관측</Link>}{!detailMode && <Link className="btn btn-primary print:hidden" href={exactHref}>상세 보기</Link>}</div>
       </div>
-      {metrics ? (
+      {single ? (
+        metrics ? (
+          <div className="px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{SINGLE_VOLUME_REVIEW_PENDING}</p><SingleVolumeResult fillM3={metrics.fillM3} uncertaintyM3={metrics.uncertaintyM3} uncertaintyNote={metrics.uncertaintyNote} baseRoughnessM={metrics.baseRoughnessM} boundaryValidFraction={metrics.boundaryValidFraction} /></div>
+        ) : <p className="px-4 py-3 text-[13px] leading-5 text-ink-2">체적 결과 수치를 표시할 수 없습니다.</p>
+      ) : metrics ? (
         <div className="overflow-x-auto px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p><table className="w-full min-w-[40rem] text-left text-[12.5px]"><thead className="text-ink-muted"><tr><th className="pb-2 pr-4 font-semibold">절토</th><th className="pb-2 pr-4 font-semibold">성토</th><th className="pb-2 pr-4 font-semibold">순변화</th><th className="pb-2 pr-4 font-semibold">공통 유효 영역</th><th className="pb-2 font-semibold">불확실성</th></tr></thead><tbody><tr className="border-t border-line"><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.cutM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.fillM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{signed(metrics.netM3)}</td><td className="py-2 pr-4">{number(metrics.commonValidFraction * 100)}%<span className="block text-[11px] text-ink-muted">{number(metrics.measuredAreaM2)} / {number(metrics.zoneAreaM2)} m²</span></td><td className="py-2">{metrics.uncertaintyM3 === null ? "미산정" : `±${number(metrics.uncertaintyM3)} m³`}<span className="block text-[11px] leading-4 text-ink-muted">{metrics.uncertaintyNote}</span></td></tr></tbody></table></div>
       ) : <p className="px-4 py-3 text-[13px] leading-5 text-ink-2">비교 결과 수치를 표시할 수 없습니다.</p>}
     </article>
   );
 }
 
-function NetTrend({ items, workAreaNames }: { items: readonly ExternalRelativeVolumeHistoryItem[]; workAreaNames: ReadonlyMap<string, string> }) {
+function NetTrend({ items, workAreaNames }: { items: readonly ExternalVolumeHistoryItem[]; workAreaNames: ReadonlyMap<string, string> }) {
   const groups = useMemo(() => {
-    const output = new Map<string, ExternalRelativeVolumeHistoryItem[]>();
+    const output = new Map<string, ExternalVolumeHistoryItem[]>();
     for (const item of items) {
       const key = compatibilityKey(item);
       if (key === null) continue;
@@ -127,7 +138,7 @@ export function ExternalObservationHistory({
   detailMode = false,
 }: {
   siteId: string;
-  items: readonly ExternalRelativeVolumeHistoryItem[];
+  items: readonly ExternalVolumeHistoryItem[];
   workAreaNames: ReadonlyMap<string, string>;
   detailMode?: boolean;
 }) {

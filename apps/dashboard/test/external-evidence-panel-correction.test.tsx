@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalEvidencePanel } from "@/app/field/ExternalEvidencePanel";
 
@@ -590,4 +590,93 @@ it("retires a pending evidence operation when the target changes so the next tar
   expect(evidenceSignal?.aborted).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
   await waitFor(() => expect(displayAttempts).toBe(1));
+});
+
+describe("SINGLE_VOLUME decision", () => {
+  const singleVolumeFetch = (outcomes: Array<"fail" | "eligible" | "blocked">, bodies: unknown[], keys: string[]) =>
+    async (url: string, init?: RequestInit) => {
+      if (url.endsWith("/evidence")) return response({ items: [] });
+      if (url === "/api/sites/site-1/work-areas") {
+        return response({ workAreas: [{ workAreaId: "pile-1", name: "야적장 1", status: "ACTIVE" }] });
+      }
+      if (url === "/api/sites/site-1/observation-work-orders") return response({ workOrders: [] });
+      if (url.endsWith("/use-decisions/single-volume")) {
+        bodies.push(JSON.parse(String(init?.body)));
+        keys.push((init?.headers as Record<string, string>)["idempotency-key"]);
+        const outcome = outcomes[bodies.length - 1];
+        if (outcome === "fail") return { ok: false, json: async () => ({}) };
+        return response({
+          decision: {
+            decisionId: `external-use-decision-${"5".repeat(32)}`,
+            decisionDigest: `sha256:${"5".repeat(64)}`,
+            use: "SINGLE_VOLUME",
+            verdict: outcome === "blocked" ? "BLOCKED" : "ELIGIBLE",
+            reasons: outcome === "blocked" ? ["SINGLE_VOLUME_MAPPING_UNAVAILABLE"] : [],
+            remediations: outcome === "blocked" ? ["AUTHORIZE_SINGLE_VOLUME_MAPPING"] : [],
+            decidedAt: "2026-09-17T00:00:00Z",
+          },
+        });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    };
+
+  it("requires a WorkArea but no baseline, posts only the zone to the single-volume route and reuses the key on retry", async () => {
+    const bodies: unknown[] = [];
+    const keys: string[] = [];
+    let counter = 0;
+    vi.stubGlobal("crypto", { randomUUID: () => `key-${(counter += 1)}` });
+    fetchMock.mockImplementation(singleVolumeFetch(["fail", "eligible"], bodies, keys));
+    const onSingleVolumeDecisionChange = vi.fn();
+    const onRelativeVolumeDecisionChange = vi.fn();
+
+    render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} onRelativeVolumeDecisionChange={onRelativeVolumeDecisionChange} />);
+    fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
+    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
+
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    expect(await screen.findByText("단일 시점 체적 작업구역을 선택하세요.")).toBeTruthy();
+    expect(bodies).toHaveLength(0);
+
+    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    expect(await screen.findByText("SINGLE_VOLUME Core 결정을 읽지 못했습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    expect(await screen.findByText(/현재 Core 결정: SINGLE_VOLUME · ELIGIBLE/)).toBeTruthy();
+
+    expect(bodies).toEqual([{ zoneId: "pile-1" }, { zoneId: "pile-1" }]);
+    expect(keys[0]).toBeTruthy();
+    expect(keys[1]).toBe(keys[0]);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/pair"))).toBe(false);
+    expect((screen.getByLabelText("비교 기준 봉인 재구성") as HTMLSelectElement).value).toBe("");
+    expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
+      decisionId: `external-use-decision-${"5".repeat(32)}`,
+      verdict: "ELIGIBLE",
+    }));
+    expect(onRelativeVolumeDecisionChange).not.toHaveBeenCalledWith(expect.objectContaining({ use: "SINGLE_VOLUME" }));
+  });
+
+  it("refuses a single-volume decision for a revision without DSM", async () => {
+    const bodies: unknown[] = [];
+    fetchMock.mockImplementation(singleVolumeFetch(["eligible"], bodies, []));
+    render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[orthoOnly]} canWrite />);
+    fireEvent.click(await screen.findByRole("button", { name: /ortho-only\.tif/ }));
+    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    expect(await screen.findByText("DSM이 없어 이 결정을 요청할 수 없습니다.")).toBeTruthy();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("explains a BLOCKED single-volume decision with the generated blocker copy", async () => {
+    const onSingleVolumeDecisionChange = vi.fn();
+    fetchMock.mockImplementation(singleVolumeFetch(["blocked"], [], []));
+    render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} />);
+    fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
+    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    expect(await screen.findByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
+    expect(screen.getByText("관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
+    expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "BLOCKED" }));
+  });
 });

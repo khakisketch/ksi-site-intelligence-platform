@@ -135,6 +135,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [relativeVolumeDecision, setRelativeVolumeDecision] = useState<ExternalRelativeVolumeDecision | null>(null);
+  const [singleVolumeDecision, setSingleVolumeDecision] = useState<ExternalRelativeVolumeDecision | null>(null);
   const [documentVisible, setDocumentVisible] = useState(true);
 
   const captureStartedAt = captureStartedLocal ? seoulDateTimeLocalToUtc(captureStartedLocal) : null;
@@ -425,7 +426,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     && (Boolean(resume) || Boolean(frozenAttempt) || Boolean(newIntentAllowed && expectedEpochId && softwareName.trim() && softwareVersion.trim() && captureIntervalValid));
   const formIsFrozen = Boolean(frozenAttempt || resume);
 
-  const receiveRelativeVolumeDecision = (value: {
+  const volumeDecisionReceiver = (store: (decision: ExternalRelativeVolumeDecision | null) => void) => (value: {
     decisionId: string;
     decisionDigest?: string;
     verdict: string;
@@ -433,10 +434,10 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     remediations: string[];
   } | null) => {
     if (!value || !value.decisionDigest || (value.verdict !== "ELIGIBLE" && value.verdict !== "RESTRICTED" && value.verdict !== "BLOCKED")) {
-      setRelativeVolumeDecision(null);
+      store(null);
       return;
     }
-    setRelativeVolumeDecision({
+    store({
       decisionId: value.decisionId,
       decisionDigest: value.decisionDigest,
       verdict: value.verdict,
@@ -444,6 +445,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       remediations: value.remediations,
     });
   };
+  const receiveRelativeVolumeDecision = volumeDecisionReceiver(setRelativeVolumeDecision);
+  const receiveSingleVolumeDecision = volumeDecisionReceiver(setSingleVolumeDecision);
 
   return <><section id="external-submissions" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
     <div><h2 className="text-[16px] font-bold">재구성 산출물 등록</h2><p className="text-ink-2">파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.</p></div>
@@ -498,7 +501,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         <details className="mt-1 text-[12px] text-ink-2"><summary>전문가 정보</summary><div className="mt-1 break-all"><p>등록 상태: {revision.state}</p>{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
     })}</ul>}
-  </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} newIntentAllowed={newIntentAllowed} /></>;
+  </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} newIntentAllowed={newIntentAllowed} /></>;
 }
 
 export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean }) {

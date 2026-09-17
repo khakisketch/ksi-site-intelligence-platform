@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
-import { listSiteExternalRelativeVolumeHistory } from "@/lib/core-api/external-result-workflow";
+import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
@@ -32,13 +32,13 @@ export default async function SiteObservationHistoryPage({
   }
   let loaded: {
     site: Awaited<ReturnType<typeof getSite>>;
-    history: Awaited<ReturnType<typeof listSiteExternalRelativeVolumeHistory>>;
+    history: Awaited<ReturnType<typeof listSiteExternalVolumeHistory>>;
     areas: Awaited<ReturnType<typeof listWorkAreas>>;
   } | null = null;
   try {
     const [site, history, areas] = await Promise.all([
       getSite(siteId),
-      listSiteExternalRelativeVolumeHistory(siteId, { after, limit: 50 }),
+      listSiteExternalVolumeHistory(siteId, { after, limit: 50 }),
       listWorkAreas(siteId),
     ]);
     loaded = { site, history, areas };

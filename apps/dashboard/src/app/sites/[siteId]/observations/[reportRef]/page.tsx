@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ErrorState } from "@/components/ui/ErrorState";
 import { PrintReportButton } from "@/components/reports/PrintReportButton";
+import { isSingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
 import { TeamReportShare } from "@/components/external-results/TeamReportShare";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
@@ -111,7 +112,10 @@ export default async function SiteObservationDetailPage({
   }
   const names = new Map(loaded.areas.workAreas.map((area) => [area.workAreaId, area.name]));
   const projection = loaded.projection.state === "AVAILABLE" ? loaded.projection.result ?? null : null;
-  const detail = projection === null
+  // A SINGLE_VOLUME result has no baseline pair, relative report detail, team share or
+  // review/successor trace in this plan; render only its retained Core row.
+  const single = isSingleVolumeResult(projection);
+  const detail = projection === null || single
     ? null
     : await getExternalRelativeVolumeReport(reportRef).catch(() => null);
   const organizationId = session.principal.organizationId;
@@ -134,13 +138,18 @@ export default async function SiteObservationDetailPage({
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
         <p className="text-[12.5px] text-ink-2">{loaded.site.name}</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 비교 결과</h1>
-        <p className="mt-1 text-[13px] leading-5 text-ink-2">기준 관측과 현재 관측을 비교한 보관 결과입니다.</p>
+        {single ? <>
+          <h1 className="mt-1 text-[22px] font-bold tracking-tight">단일 시점 체적 결과</h1>
+          <p className="mt-1 text-[13px] leading-5 text-ink-2">한 시점 관측으로 측정한 보관 체적 결과입니다.</p>
+        </> : <>
+          <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 비교 결과</h1>
+          <p className="mt-1 text-[13px] leading-5 text-ink-2">기준 관측과 현재 관측을 비교한 보관 결과입니다.</p>
+        </>}
       </div>
       <div className="flex flex-wrap gap-2"><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">관측 이력</Link></div>
     </header>
     <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: loaded.projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: loaded.projection.result ?? null }]} workAreaNames={names} />
-    <ExternalReportSafeDerivativeComparison pair={displayPair} />
+    {!single && <ExternalReportSafeDerivativeComparison pair={displayPair} />}
     {exactDetail !== null && <TeamReportShare
       key={`${organizationId}:${session.principal.principalId}:${reportRef}`}
       reportRef={reportRef}
@@ -151,10 +160,9 @@ export default async function SiteObservationDetailPage({
     />}
     {projection !== null && <ExternalReportFollowupTrace
       reportRef={reportRef}
-      // Core's report_for_site merges both external volume families with no kind filter,
-      // so projection can already be a SINGLE_VOLUME result with baselineWorkOrderId
-      // null — ExternalReportFollowupTrace omits the baseline link in that case rather
-      // than linking to a fabricated work order.
+      singleVolume={single}
+      // Core's report_for_site merges both external volume families; a SINGLE_VOLUME
+      // result has baselineWorkOrderId null and the trace shows no baseline link for it.
       baselineWorkOrderId={projection.baselineWorkOrderId}
       currentWorkOrderId={projection.currentWorkOrderId}
       successors={successors}

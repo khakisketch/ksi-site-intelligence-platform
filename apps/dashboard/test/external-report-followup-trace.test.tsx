@@ -31,15 +31,18 @@ describe("external report followup trace", () => {
     expect(screen.queryByText("승인된 후속 작업")).toBeNull();
   });
 
-  it("omits the baseline work-order link instead of linking to a fabricated work order for a single-volume result (no baseline epoch)", () => {
+  it("shows only the review readiness text for a single-volume result (no baseline epoch, no review, no successor)", () => {
     render(<ExternalReportFollowupTrace
       reportRef={`external-single-volume-report-${"a".repeat(32)}`}
+      singleVolume
       baselineWorkOrderId={null}
       currentWorkOrderId="current-order"
-      successors={null}
+      successors={[{ workOrderId: "successor-order", workflowStatus: "CLOSED", closeNote: null }]}
     />);
-    expect(screen.getByRole("link", { name: "결과 검토와 후속 작업" })).toBeTruthy();
+    expect(screen.getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "결과 검토와 후속 작업" })).toBeNull();
     expect(screen.queryByRole("link", { name: "기준 작업 보기" })).toBeNull();
+    expect(screen.queryByText("승인된 후속 작업")).toBeNull();
     expect(document.body.innerHTML).not.toContain("work-orders/null");
   });
 });

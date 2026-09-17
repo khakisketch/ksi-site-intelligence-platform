@@ -1,5 +1,11 @@
 import Link from "next/link";
 
+import {
+  ExternalVolumeKindBadge,
+  isSingleVolumeResult,
+  SINGLE_VOLUME_REVIEW_PENDING,
+  SingleVolumeResult,
+} from "@/components/external-results/SingleVolumeResult";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import type { ExternalResultProjectionView, ExternalResultSummaryView } from "@/lib/core-api/types";
@@ -19,18 +25,12 @@ function observationRange(from: string, to: string): string {
   return start === end ? start : `${start} ~ ${end}`;
 }
 
-/**
- * Core's `for_site()` merges both external volume families with no kind filter, so
- * `result` here can already be a SINGLE_VOLUME row (baselineCapturedFrom/To null — there
- * is no baseline epoch to compare against). This renders only the current-epoch range in
- * that case rather than inventing a baseline date; the full SINGLE_VOLUME-aware layout is
- * Task 5's job.
- */
+/** Relative results only — a single-volume result is summarized by `SingleVolumeSummary`. */
 function comparisonCopy(result: ExternalResultSummaryView, workAreaName: string | null | undefined): string {
   const areaLabel = workAreaName ?? result.workAreaId;
   const currentRange = observationRange(result.currentCapturedFrom, result.currentCapturedTo);
   if (result.baselineCapturedFrom === null || result.baselineCapturedTo === null) {
-    return `작업구역 ${areaLabel} · ${currentRange}를 비교했습니다.`;
+    return `작업구역 ${areaLabel} · ${currentRange}`;
   }
   const baselineRange = observationRange(result.baselineCapturedFrom, result.baselineCapturedTo);
   return `작업구역 ${areaLabel} · ${baselineRange}와 ${currentRange}를 비교했습니다.`;
@@ -70,6 +70,79 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function singleMeasurementCopy(result: ExternalResultSummaryView): { label: string; tone: "positive" | "caution" | "progress" } {
+  if (result.measurementStatus === "SUCCEEDED" && result.metrics !== null) {
+    return { label: "체적 결과 준비됨", tone: "positive" };
+  }
+  if (result.measurementStatus === "FAILED") {
+    return { label: "체적 결과 확인 필요", tone: "caution" };
+  }
+  return { label: "체적 결과 확인 중", tone: "progress" };
+}
+
+/**
+ * Core's `for_site()` merges both external volume families, so the latest result can be
+ * a single-epoch stockpile volume: one capture window, no baseline, no net change.
+ */
+function SingleVolumeSummary({
+  result,
+  compact,
+  workAreaName,
+}: {
+  result: ExternalResultSummaryView;
+  compact: boolean;
+  workAreaName: string | null | undefined;
+}) {
+  const metrics = result.measurementStatus === "SUCCEEDED" ? result.metrics : null;
+  const measurement = singleMeasurementCopy(result);
+  return (
+    <section className="rounded-lg border border-line bg-surface">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-bold tracking-tight break-keep">단일 시점 체적 결과</h3>
+          <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
+            작업구역 {workAreaName ?? result.workAreaId} · 촬영 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <ExternalVolumeKindBadge single />
+          <StateBadge label={measurement.label} tone={measurement.tone} />
+        </div>
+      </div>
+
+      {metrics ? (
+        <div className="px-4 py-4">
+          <SingleVolumeResult
+            fillM3={metrics.fillM3}
+            uncertaintyM3={metrics.uncertaintyM3}
+            uncertaintyNote={metrics.uncertaintyNote}
+            baseRoughnessM={metrics.baseRoughnessM}
+            boundaryValidFraction={metrics.boundaryValidFraction}
+          />
+        </div>
+      ) : (
+        <p className="px-4 py-3 text-[13px] leading-5 break-keep text-ink-2">
+          {result.measurementStatus === "FAILED"
+            ? "체적 측정을 완료하지 못했습니다. 결과 수치는 표시하지 않습니다."
+            : "측정이 완료되면 체적 수치가 표시됩니다."}
+        </p>
+      )}
+
+      {!compact && (
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
+          <p className="text-[12px] break-keep text-ink-muted">{SINGLE_VOLUME_REVIEW_PENDING}</p>
+          <Link
+            href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}#external-volume`}
+            className="btn shrink-0 print:hidden"
+          >
+            체적 측정 기록 보기
+          </Link>
+        </div>
+      )}
+    </section>
+  );
+}
+
 /**
  * One exact Core-retained external result. It deliberately does not aggregate
  * Site history or use managed processing results as a fallback.
@@ -105,6 +178,9 @@ export function ExternalSiteResultSummary({
   }
 
   const result = externalResult.result;
+  if (isSingleVolumeResult(result)) {
+    return <SingleVolumeSummary result={result} compact={compact} workAreaName={workAreaName} />;
+  }
   const metrics = result.measurementStatus === "SUCCEEDED" ? result.metrics : null;
   const measurement = measurementCopy(result);
 

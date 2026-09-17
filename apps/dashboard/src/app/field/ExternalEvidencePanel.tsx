@@ -99,6 +99,7 @@ type DecisionSlot =
 
 type PairLoadPhase = "loading" | "ready" | "partial" | "error";
 type PairLoadFailure = { workOrderId: string; label: string };
+type DecisionUse = "DISPLAY" | "HEIGHT" | "VISUAL_COMPARISON" | "RELATIVE_VOLUME" | "SINGLE_VOLUME";
 
 const subject = (revision: Revision) => `${revision.submissionRef}:${revision.submission.revision}`;
 const hasDsm = (revision: Revision) =>
@@ -243,6 +244,7 @@ export function ExternalEvidencePanel({
   canWrite,
   newIntentAllowed = true,
   onRelativeVolumeDecisionChange,
+  onSingleVolumeDecisionChange,
 }: {
   workOrderId: string;
   siteId: string;
@@ -250,6 +252,7 @@ export function ExternalEvidencePanel({
   canWrite: boolean;
   newIntentAllowed?: boolean;
   onRelativeVolumeDecisionChange?: (decision: Decision | null) => void;
+  onSingleVolumeDecisionChange?: (decision: Decision | null) => void;
 }) {
   const generation = useRef(0);
   const active = useRef<AbortController | null>(null);
@@ -259,6 +262,7 @@ export function ExternalEvidencePanel({
   const [target, setTarget] = useState<Revision | null>(null);
   const [baseline, setBaseline] = useState("");
   const [zone, setZone] = useState("");
+  const [singleZone, setSingleZone] = useState("");
   const [areas, setAreas] = useState<Area[]>([]);
   const [pairs, setPairs] = useState<Pair[]>([]);
   const [pairLoad, setPairLoad] = useState<PairLoadPhase>("loading");
@@ -380,6 +384,7 @@ export function ExternalEvidencePanel({
     setTries({});
     setDecisions({});
     onRelativeVolumeDecisionChange?.(null);
+    onSingleVolumeDecisionChange?.(null);
     setHistory(null);
     setHistoryRef("");
     setMessage("");
@@ -392,10 +397,15 @@ export function ExternalEvidencePanel({
   };
 
   const decisionIntent = (
-    use: "DISPLAY" | "HEIGHT" | "VISUAL_COMPARISON" | "RELATIVE_VOLUME",
+    use: DecisionUse,
     selected?: Pair,
     selectedZone?: string,
-  ) => [current, use, selected?.value ?? "", use === "RELATIVE_VOLUME" ? selectedZone ?? "" : ""].join("|");
+  ) => [
+    current,
+    use,
+    selected?.value ?? "",
+    use === "RELATIVE_VOLUME" || use === "SINGLE_VOLUME" ? selectedZone ?? "" : "",
+  ].join("|");
 
   const currentSlot = (use: string) =>
     Object.entries(decisions).find(([intent]) => intent.startsWith(`${current}|${use}|`))?.[1];
@@ -494,13 +504,12 @@ export function ExternalEvidencePanel({
     }
   };
 
-  const decide = async (
-    use: "DISPLAY" | "HEIGHT" | "VISUAL_COMPARISON" | "RELATIVE_VOLUME",
-    fresh = false,
-  ) => {
+  const decide = async (use: DecisionUse, fresh = false) => {
     if (!target || busy) return;
     const pair = use === "VISUAL_COMPARISON" || use === "RELATIVE_VOLUME";
-    const selected = choices.find((item) => item.value === baseline);
+    const singleVolume = use === "SINGLE_VOLUME";
+    // A single-epoch volume never binds a baseline, even when one is selected for another use.
+    const selected = singleVolume ? undefined : choices.find((item) => item.value === baseline);
     if (pair && !selected) {
       setMessage("비교 기준 봉인 재구성을 선택하세요.");
       return;
@@ -509,11 +518,15 @@ export function ExternalEvidencePanel({
       setMessage("상대 물량 작업구역을 선택하세요.");
       return;
     }
-    if ((use === "HEIGHT" || use === "RELATIVE_VOLUME") && !hasDsm(target)) {
+    if (singleVolume && !singleZone) {
+      setMessage("단일 시점 체적 작업구역을 선택하세요.");
+      return;
+    }
+    if ((use === "HEIGHT" || use === "RELATIVE_VOLUME" || singleVolume) && !hasDsm(target)) {
       setMessage("DSM이 없어 이 결정을 요청할 수 없습니다.");
       return;
     }
-    const intent = decisionIntent(use, selected, zone);
+    const intent = decisionIntent(use, selected, singleVolume ? singleZone : zone);
     if (!newIntentAllowed && (!tries[intent] || fresh)) {
       setMessage("업무 종료 상태에서는 새 사용 결정을 요청할 수 없습니다.");
       return;
@@ -526,10 +539,18 @@ export function ExternalEvidencePanel({
     active.current = controller;
     setBusy(true);
     if (use === "RELATIVE_VOLUME") onRelativeVolumeDecisionChange?.(null);
+    if (singleVolume) onSingleVolumeDecisionChange?.(null);
     setDecisions((previous) => ({ ...previous, [intent]: { phase: "pending" } }));
     try {
       const root = `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(target.submissionRef)}/revisions/${target.submission.revision}/use-decisions`;
-      const response = pair
+      const response = singleVolume
+        ? await fetch(`${root}/single-volume`, {
+            method: "POST",
+            headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
+            body: JSON.stringify({ zoneId: singleZone }),
+            signal: controller.signal,
+          })
+        : pair
         ? await fetch(`${root}/pair`, {
             method: "POST",
             headers: { "content-type": "application/json", "idempotency-key": idempotencyKey },
@@ -553,6 +574,7 @@ export function ExternalEvidencePanel({
       if (generation.current === scope && active.current === controller) {
         setDecisions((previous) => ({ ...previous, [intent]: { phase: "ready", decision: value } }));
         if (use === "RELATIVE_VOLUME") onRelativeVolumeDecisionChange?.(value);
+        if (singleVolume) onSingleVolumeDecisionChange?.(value);
       }
     } catch {
       if (!controller.signal.aborted && generation.current === scope && active.current === controller) {
@@ -741,11 +763,31 @@ export function ExternalEvidencePanel({
                     </button>
                   </>
                 )}
+
+                <select
+                  aria-label="단일 시점 체적 작업구역"
+                  value={singleZone}
+                  disabled={!newIntentAllowed}
+                  onChange={(event) => {
+                    reset();
+                    setSingleZone(event.target.value);
+                  }}
+                >
+                  <option value="">작업구역 선택</option>
+                  {areas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
+                </select>
+                <button
+                  className="btn"
+                  disabled={!newIntentAllowed && currentSlot("SINGLE_VOLUME")?.phase !== "error"}
+                  onClick={() => void decide("SINGLE_VOLUME", currentSlot("SINGLE_VOLUME")?.phase === "ready")}
+                >
+                  단일 시점 체적 결정 다시 평가
+                </button>
               </div>
             </ResponsiveActionBoundary>
           )}
 
-          {(["DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME"] as const).map((use) => {
+          {(["DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME", "SINGLE_VOLUME"] as const).map((use) => {
             const slot = currentSlot(use);
             if (!slot) return null;
             if (slot.phase === "pending") return <p key={use} role="status">{use} Core 결정 요청 중</p>;
