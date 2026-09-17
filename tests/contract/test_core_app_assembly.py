@@ -357,6 +357,7 @@ def test_assembly_requirements_table_keys_match_create_app_store_parameters() ->
         "runtime_capability_projector",
         "external_use_evaluator",
         "external_volume_input_capability_issuer",
+        "external_single_volume",
         "external_result_workflow_service",
         "external_result_read_projector",
     }

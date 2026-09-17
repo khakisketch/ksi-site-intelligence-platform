@@ -250,7 +250,11 @@ def test_forever_uses_explicit_bounded_failure_backoff_separately_from_idle_back
 def test_single_volume_lane_has_a_fixed_lane_operation_mapping() -> None:
     from uuid import uuid4
 
-    from ksi_processing_controller.external_validation_lanes import MeasurementValidationLane
+    from ksi_processing_controller.external_validation_lanes import (
+        MeasurementCorePort,
+        MeasurementLaneDependencies,
+        MeasurementValidationLane,
+    )
 
     assert ExternalLane.SINGLE_VOLUME.value == "single-volume"
     assert len(ExternalLane) == 4
@@ -258,21 +262,22 @@ def test_single_volume_lane_has_a_fixed_lane_operation_mapping() -> None:
         MeasurementValidationLane(
             lane=ExternalLane.SINGLE_VOLUME,
             operation="RELATIVE_VOLUME",
-            core=None,
+            core=cast(MeasurementCorePort, None),
             worker_instance_id=str(uuid4()),
-            dependencies=None,
+            dependencies=cast(MeasurementLaneDependencies, None),
         )
     with pytest.raises(ValueError, match="fixed Core operation"):
         MeasurementValidationLane(
             lane=ExternalLane.RELATIVE_VOLUME,
             operation="SINGLE_VOLUME",
-            core=None,
+            core=cast(MeasurementCorePort, None),
             worker_instance_id=str(uuid4()),
-            dependencies=None,
+            dependencies=cast(MeasurementLaneDependencies, None),
         )
 
 
 def test_default_worker_graph_includes_the_single_volume_lane(tmp_path: Path) -> None:
+    from ksi_processing_controller.external_validation_lanes import MeasurementValidationLane
     from ksi_processing_controller.external_validation_worker import (
         build_validation_worker_graph,
     )
@@ -285,6 +290,9 @@ def test_default_worker_graph_includes_the_single_volume_lane(tmp_path: Path) ->
         lanes = graph.runner._lanes  # noqa: SLF001 - assert assembled lane wiring.
         by_lane = {lane.lane: lane for lane in lanes}
         assert tuple(by_lane) == tuple(ExternalLane)
-        assert by_lane[ExternalLane.SINGLE_VOLUME]._operation == "SINGLE_VOLUME"  # noqa: SLF001
+        single_volume_lane = cast(
+            MeasurementValidationLane, by_lane[ExternalLane.SINGLE_VOLUME]
+        )
+        assert single_volume_lane._operation == "SINGLE_VOLUME"  # noqa: SLF001
     finally:
         graph.close()

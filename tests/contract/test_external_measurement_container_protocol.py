@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from hashlib import sha256
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -21,6 +22,10 @@ from ksi_processing_controller.external_measurement_container_protocol import (
     validate_terminal_frame_v2,
 )
 from test_external_measurement_protocol import measurement_manifest_request
+
+if TYPE_CHECKING:
+    from ksi_event_contracts.inspector_execution_manifest import InspectorExecutionManifestV1
+    from ksi_processing_controller.external_measurement_protocol import MeasurementLaunchRequestV2
 
 
 def test_prepare_is_closed_canonical_and_binds_both_ordered_inputs() -> None:
@@ -242,13 +247,12 @@ def test_prepare_normalizes_malformed_nested_authority_to_a_typed_error(
         validate_prepare_frame_v2(malformed, expected=malformed, limits=limits)
 
 
-def _single_volume_aggregate(request: object) -> dict[str, object]:
+def _single_volume_aggregate(request: MeasurementLaunchRequestV2) -> dict[str, Any]:
     import numpy as np
 
-    assert hasattr(request, "single_volume_request")
-    single = request.single_volume_request  # type: ignore[attr-defined]
-    execution = request.single_volume_execution_policy  # type: ignore[attr-defined]
-    records = request.volume_evidence_records  # type: ignore[attr-defined]
+    single = request.single_volume_request
+    execution = request.single_volume_execution_policy
+    records = request.volume_evidence_records
     assert single is not None and execution is not None
     assert records[0].measurement_payload is not None
     rmse = records[0].measurement_payload.rmse_m
@@ -278,7 +282,9 @@ def _single_volume_aggregate(request: object) -> dict[str, object]:
     }
 
 
-def _single_volume_unknown_request() -> tuple[object, object]:
+def _single_volume_unknown_request() -> (
+    tuple[InspectorExecutionManifestV1, MeasurementLaunchRequestV2]
+):
     from ksi_event_contracts.external_evidence import EvidenceCoreVerdict
     from test_external_measurement_protocol import single_volume_manifest_request
 
@@ -320,7 +326,7 @@ def test_single_volume_terminal_passes_with_the_exact_metric_field_set() -> None
             "observedSha256": item.observed_sha256,
             "observedSizeBytes": item.observed_size_bytes,
         }
-        for item in request.inputs  # type: ignore[attr-defined]
+        for item in request.inputs
     ]
     completed = build_completed_frame_v2(
         prepare=prepare, input_bindings=bindings, aggregate=aggregate
@@ -374,11 +380,11 @@ def test_single_volume_terminal_branches_on_known_vs_unknown_target_rmse() -> No
             "observedSha256": item.observed_sha256,
             "observedSizeBytes": item.observed_size_bytes,
         }
-        for item in unknown.inputs  # type: ignore[attr-defined]
+        for item in unknown.inputs
     ]
     aggregate = _single_volume_aggregate(unknown)
     aggregate["metrics"] = {
-        **aggregate["metrics"],  # type: ignore[dict-item]
+        **aggregate["metrics"],
         "uncertaintyM3": None,
         "uncertaintyNote": (
             "Independent target-epoch checkpoint RMSE is unavailable; uncertainty is unknown."
@@ -390,14 +396,14 @@ def test_single_volume_terminal_branches_on_known_vs_unknown_target_rmse() -> No
     assert validate_terminal_frame_v2(missing, prepare=unknown_prepare, limits=limits) == missing
 
     claimed = deepcopy(aggregate)
-    claimed["metrics"] = {**claimed["metrics"], "uncertaintyM3": 1.0}  # type: ignore[dict-item]
+    claimed["metrics"] = {**claimed["metrics"], "uncertaintyM3": 1.0}
     with pytest.raises(MeasurementContainerProtocolViolation, match="aggregate"):
         build_completed_frame_v2(
             prepare=unknown_prepare, input_bindings=unknown_bindings, aggregate=claimed
         )
     misnoted = deepcopy(_single_volume_aggregate(request))
-    misnoted["metrics"] = {  # type: ignore[dict-item]
-        **misnoted["metrics"],  # type: ignore[dict-item]
+    misnoted["metrics"] = {
+        **misnoted["metrics"],
         "uncertaintyNote": (
             "Independent target-epoch checkpoint RMSE is unavailable; uncertainty is unknown."
         ),
@@ -428,7 +434,7 @@ def test_single_volume_terminal_rejects_altered_uncertainty_fields_and_drift() -
     rmse = request.volume_evidence_records[0].measurement_payload.rmse_m
 
     altered = deepcopy(aggregate)
-    altered["metrics"] = {**altered["metrics"], "uncertaintyM3": 4.0 * rmse}  # type: ignore[dict-item]
+    altered["metrics"] = {**altered["metrics"], "uncertaintyM3": 4.0 * rmse}
     with pytest.raises(MeasurementContainerProtocolViolation, match="aggregate"):
         build_completed_frame_v2(
             prepare=prepare, input_bindings=bindings, aggregate=altered
@@ -436,20 +442,20 @@ def test_single_volume_terminal_rejects_altered_uncertainty_fields_and_drift() -
     assert float(np.hypot(0.02, rmse)) != rmse
 
     missing = deepcopy(aggregate)
-    del missing["metrics"]["baseRoughnessM"]  # type: ignore[attr-defined]
+    del missing["metrics"]["baseRoughnessM"]
     with pytest.raises(MeasurementContainerProtocolViolation, match="aggregate"):
         build_completed_frame_v2(
             prepare=prepare, input_bindings=bindings, aggregate=missing
         )
 
     extra = deepcopy(aggregate)
-    extra["metrics"]["extraField"] = 1.0  # type: ignore[attr-defined]
+    extra["metrics"]["extraField"] = 1.0
     with pytest.raises(MeasurementContainerProtocolViolation, match="aggregate"):
         build_completed_frame_v2(prepare=prepare, input_bindings=bindings, aggregate=extra)
 
     drifted = deepcopy(aggregate)
-    drifted["metrics"] = {  # type: ignore[dict-item]
-        **drifted["metrics"],  # type: ignore[dict-item]
+    drifted["metrics"] = {
+        **drifted["metrics"],
         "commonValidCellCount": 1,
         "measuredAreaM2": 1.0,
         "commonValidFraction": 0.25,
@@ -460,7 +466,7 @@ def test_single_volume_terminal_rejects_altered_uncertainty_fields_and_drift() -
         )
 
     threshold = deepcopy(aggregate)
-    threshold["metrics"] = {**threshold["metrics"], "thresholdM": 99.0}  # type: ignore[dict-item]
+    threshold["metrics"] = {**threshold["metrics"], "thresholdM": 99.0}
     with pytest.raises(MeasurementContainerProtocolViolation, match="aggregate"):
         build_completed_frame_v2(
             prepare=prepare, input_bindings=bindings, aggregate=threshold
@@ -472,8 +478,8 @@ def test_single_volume_terminal_rejects_altered_uncertainty_fields_and_drift() -
         build_completed_frame_v2(prepare=prepare, input_bindings=bindings, aggregate=zone)
 
     count = deepcopy(aggregate)
-    count["metrics"] = {  # type: ignore[dict-item]
-        **count["metrics"],  # type: ignore[dict-item]
+    count["metrics"] = {
+        **count["metrics"],
         "boundarySampleCount": 1,
         "boundaryValidFraction": 0.25,
     }
