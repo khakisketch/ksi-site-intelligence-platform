@@ -8,17 +8,14 @@ external evidence to a managed ProcessingJob or a managed processing profile.
 
 from __future__ import annotations
 
-import hashlib
 import math
-import re
 import threading
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Protocol, cast
 
-from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import (
     ArtifactOutcome,
     DecisionVerdict,
@@ -46,6 +43,16 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicySelectionStatus,
 )
+from ksi_core.domains.external.quantity.external_quantitative_common import (
+    _PROFILE,
+    _digest,
+    _event_digest,
+    _parse_time,
+    _required_digest,
+    _strict_mapping,
+    _utc,
+    _wire_time,
+)
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     ExternalRelativeVolumeAuthority,
 )
@@ -58,8 +65,6 @@ from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedErr
 from ksi_core.identity.auth import Principal
 
 _VERSION = 1
-_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
-_PROFILE = "external-geotiff-profile.v1"
 _MAPPING_ACTIVATED = "external-quantitative-mapping-activated"
 _MAPPING_REVOKED = "external-quantitative-mapping-revoked"
 _EXECUTION_ACTIVATED = "external-quantitative-execution-activated"
@@ -68,44 +73,6 @@ _EXECUTION_REVOKED = "external-quantitative-execution-revoked"
 
 class ExternalQuantitativeAuthorityRecoveryError(RuntimeError):
     """The authority journal cannot be replayed as exact, safe history."""
-
-
-def _digest(payload: Mapping[str, object]) -> str:
-    return "sha256:" + hashlib.sha256(canonical_json_bytes(dict(payload))).hexdigest()
-
-
-def _event_digest(event: Mapping[str, object]) -> str:
-    return _digest({key: value for key, value in event.items() if key != "eventDigest"})
-
-
-def _utc(value: datetime, *, name: str) -> None:
-    if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
-        raise ValueError(f"{name} must be UTC-aware")
-
-
-def _wire_time(value: datetime) -> str:
-    _utc(value, name="authority time")
-    return value.isoformat().replace("+00:00", "Z")
-
-
-def _parse_time(value: object, *, name: str) -> datetime:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a UTC timestamp")
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    _utc(parsed, name=name)
-    return parsed
-
-
-def _required_digest(value: object, *, name: str) -> str:
-    if not isinstance(value, str) or _DIGEST.fullmatch(value) is None:
-        raise ValueError(f"{name} must be a sha256 digest")
-    return value
-
-
-def _strict_mapping(raw: object, keys: frozenset[str], *, name: str) -> dict[str, object]:
-    if type(raw) is not dict or set(raw) != keys or any(type(key) is not str for key in raw):
-        raise ValueError(f"{name} has an invalid object shape")
-    return raw
 
 
 @dataclass(frozen=True, slots=True)
