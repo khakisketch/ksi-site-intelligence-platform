@@ -23,6 +23,7 @@ from ksi_event_contracts.external_artifact_validation import (
 )
 from ksi_event_contracts.external_evidence import (
     EvidenceCoreVerdict,
+    ExternalEvidenceManifestV1,
     ExternalEvidenceMeasurementPayloadV1,
     ExternalEvidenceRecordV1,
     ExternalEvidenceValidationRequestV1,
@@ -1058,6 +1059,30 @@ class ExternalEvidenceValidationStore:
             ):
                 return None
             return snapshot_result, snapshot_context
+
+    def sealed_evidence_object_for(
+        self, record_digest: str, *, subject: SealedExternalSubjectV1, policy_digest: str
+    ) -> tuple[str, ExternalEvidenceManifestV1] | None:
+        """Return the sealed evidence object key/manifest behind one VALIDATED record.
+
+        Read-only projection for a worker capability issuer that already holds
+        current launch authority; it grants no use by itself.
+        """
+        with self._lock:
+            for record in self._records.values():
+                result = record.result
+                manifest = record.item.manifest
+                if (
+                    result is not None
+                    and manifest is not None
+                    and result.evidence_record_digest == record_digest
+                    and result.core_verdict is EvidenceCoreVerdict.VALIDATED
+                    and manifest.subject == subject
+                    and result.policy_digest == policy_digest
+                    and manifest.evidence_manifest_digest == result.evidence_manifest_digest
+                ):
+                    return record.item.object_key, manifest
+        return None
 
     def record_for_locally_current_use(
         self, record_digest: str, *, subject: SealedExternalSubjectV1, policy_digest: str

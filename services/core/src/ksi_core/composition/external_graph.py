@@ -37,6 +37,15 @@ from ksi_core.external_validation_policy import ExternalValidationPolicyRegistry
 
 
 @dataclass(frozen=True)
+class ExternalSingleVolumeWiring:
+    """The single-epoch volume ledger and its two execution seams, mounted together."""
+
+    store: Any
+    input_capability_issuer: Any
+    execution_activator: Any
+
+
+@dataclass(frozen=True)
 class ExternalPreWorkOrderGraph:
     """External graph components built before its WorkOrder participant exists."""
 
@@ -55,6 +64,7 @@ class ExternalPreWorkOrderGraph:
     reviews: Any
     proposals: Any
     proposal_authority: Any
+    single_volume: ExternalSingleVolumeWiring | None = None
 
 
 @dataclass(frozen=True)
@@ -260,6 +270,7 @@ def build_external_pre_work_order_graph(
         else None
     )
     external_relative_volume_store: ExternalRelativeVolumeStore | None = None
+    external_single_volume: ExternalSingleVolumeWiring | None = None
     external_volume_execution_activator = None
     external_proposal_authority: CoreExternalReobservationProposalAuthorityPort | None = None
     if external_result_workflow is not None:
@@ -294,6 +305,17 @@ def build_external_pre_work_order_graph(
                 currentness_coordinator=coordinator,
             ),
         )
+        if runtime.single_execution is not None:
+            external_single_volume = _single_volume_wiring(
+                runtime=runtime,
+                journal=journal,
+                coordinator=coordinator,
+                workflow=external_result_workflow,
+                reconstruction=external_reconstruction_store,
+                policy_registry=external_validation_policy_registry,
+                evidence_validations=external_evidence_validation_store,
+                evidence_storage=evidence_storage,
+            )
         reviews = ExternalResultReviewStore(
             journal("external-result-reviews.jsonl"),
             source_port=CoreExternalResultReviewSourceAdapter(
@@ -331,6 +353,55 @@ def build_external_pre_work_order_graph(
         reviews=reviews,
         proposals=proposals,
         proposal_authority=external_proposal_authority,
+        single_volume=external_single_volume,
+    )
+
+
+def _single_volume_wiring(
+    *,
+    runtime: Any,
+    journal: Callable[[str], Any],
+    coordinator: Any,
+    workflow: Any,
+    reconstruction: ExternalReconstructionStore,
+    policy_registry: ExternalValidationPolicyRegistry,
+    evidence_validations: ExternalEvidenceValidationStore,
+    evidence_storage: Any,
+) -> ExternalSingleVolumeWiring:
+    from ksi_core.domains.external.quantity.external_single_volume_s3_capabilities import (
+        ExternalSingleVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.domains.external.quantity.external_single_volumes import (
+        ExternalSingleVolumeStore,
+        SingleVolumeWorkerLaunchMaterialResolver,
+    )
+
+    if runtime.single_execution.currentness_coordinator is not coordinator:
+        raise ValueError("single-volume execution must share the Core coordinator")
+    issuer = workflow.single_input_capability_issuer
+    if issuer is None and evidence_storage is not None:
+        issuer = ExternalSingleVolumeS3InputCapabilityIssuer(
+            reconstruction=reconstruction,
+            evidence_validations=evidence_validations,
+            storage=evidence_storage,
+        )
+    if not callable(issuer):
+        raise ValueError("single-volume execution requires worker byte capabilities")
+    store = ExternalSingleVolumeStore(
+        journal("external-single-volumes.jsonl"),
+        authority_port=runtime.single_execution,
+        currentness_coordinator=coordinator,
+        queue_policy=workflow.queue_policy,
+        launch_material_resolver=SingleVolumeWorkerLaunchMaterialResolver(
+            policy_registry=policy_registry,
+            evidence_validations=evidence_validations,
+            currentness_coordinator=coordinator,
+        ),
+    )
+    return ExternalSingleVolumeWiring(
+        store=store,
+        input_capability_issuer=issuer,
+        execution_activator=runtime.activate_single_execution,
     )
 
 

@@ -149,6 +149,7 @@ def create_app(
     external_volume_input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer
     | None = None,
     external_volume_execution_activator: ExternalRelativeVolumeExecutionActivator | None = None,
+    external_single_volume: Any | None = None,
     external_display_artifact_store: ExternalDisplayArtifactStore | None = None,
     external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
@@ -377,6 +378,7 @@ def create_app(
         "external_result_workflow_service": external_result_workflow_service,
         "external_result_read_projector": external_result_read_projector,
         "external_volume_input_capability_issuer": external_volume_input_capability_issuer,
+        "external_single_volume": external_single_volume,
         "external_display_artifact_store": external_display_artifact_store,
         "external_artifact_inspection_store": external_artifact_inspection_store,
         "acquisition_connectivity_store": acquisition_connectivity_store,
@@ -444,6 +446,7 @@ def create_app(
         external_evidence_validation_store=external_evidence_validation_store,
         external_volume_input_capability_issuer=external_volume_input_capability_issuer,
         external_volume_execution_activator=external_volume_execution_activator,
+        external_single_volume=external_single_volume,
         external_use_evaluator=external_use_evaluator,
         external_artifact_inspection_store=external_artifact_inspection_store,
         external_display_artifact_store=external_display_artifact_store,

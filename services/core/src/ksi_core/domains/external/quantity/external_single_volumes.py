@@ -14,7 +14,8 @@ checked) — so the hardened measurement sandbox transport stays unchanged.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -353,6 +354,42 @@ ResolvedSingleVolumeReport = ResolvedVolumeReport[
 ExternalSingleVolumeObservedReportInput = ExternalVolumeObservedReportInput[
     ExternalSingleVolumeMeasurementPayloadV1
 ]
+
+
+class DefaultClosedExternalSingleVolumeExecutionPort:
+    """Production-safe execution seam when no single-volume catalog is configured."""
+
+    def __init__(self, *, currentness_coordinator: ExternalAuthorityCurrentnessCoordinator) -> None:
+        self.currentness_coordinator = currentness_coordinator
+
+    def resolve_for_issue(
+        self, *, principal: Principal, current_work_order_id: str, decision_ref: str, now: datetime
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        del principal, current_work_order_id, decision_ref, now
+        return None
+
+    @contextmanager
+    def guard_current(
+        self,
+        *,
+        authority: ExternalSingleVolumeExecutionAuthority,
+        principal: Principal,
+        now: datetime,
+    ) -> Iterator[ExternalSingleVolumeExecutionAuthority | None]:
+        del authority, principal, now
+        yield None
+
+    def resolve_historical(
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        issued_at: datetime,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        del historical_authority_digest, decision_id, decision_digest, issued_at, now
+        return None
 
 
 class ExternalSingleVolumeExecutionActivator(Protocol):
@@ -1054,6 +1091,7 @@ def build_external_single_volume_router(
 
 
 __all__ = [
+    "DefaultClosedExternalSingleVolumeExecutionPort",
     "ExternalSingleVolumeExecutionActivator",
     "ExternalSingleVolumeExecutionAuthority",
     "ExternalSingleVolumeExecutionAuthorityPort",

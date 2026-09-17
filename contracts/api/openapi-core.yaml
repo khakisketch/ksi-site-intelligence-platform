@@ -6441,6 +6441,376 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/HTTPValidationError'
+  /v1/observation-work-orders/{work_order_id}/single-volume-requests:
+    post:
+      tags:
+      - external-single-volumes
+      summary: Issue Single Volume
+      operationId: issue_single_volume_v1_observation_work_orders__work_order_id__single_volume_requests_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      - name: Idempotency-Key
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Idempotency-Key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeIssueInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+    get:
+      tags:
+      - external-single-volumes
+      summary: List Single Volumes
+      operationId: list_single_volumes_v1_observation_work_orders__work_order_id__single_volume_requests_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeListResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/observation-work-orders/{work_order_id}/single-volume-requests/{request_ref}:
+    get:
+      tags:
+      - external-single-volumes
+      summary: Get Single Volume
+      operationId: get_single_volume_v1_observation_work_orders__work_order_id__single_volume_requests__request_ref__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: work_order_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Order Id
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeRequestView'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes:
+    get:
+      tags:
+      - external-single-volumes
+      summary: List Pending Single Volumes
+      operationId: list_pending_single_volumes_v1_internal_external_validation_single_volumes_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumePendingResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes/{request_ref}/lease:
+    post:
+      tags:
+      - external-single-volumes
+      summary: Lease Single Volume
+      operationId: lease_single_volume_v1_internal_external_validation_single_volumes__request_ref__lease_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeLeaseInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes/{request_ref}/heartbeat:
+    post:
+      tags:
+      - external-single-volumes
+      summary: Heartbeat Single Volume
+      operationId: heartbeat_single_volume_v1_internal_external_validation_single_volumes__request_ref__heartbeat_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeHeartbeatInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes/{request_ref}/input:
+    get:
+      tags:
+      - external-single-volumes
+      summary: Get Single Volume Input
+      operationId: get_single_volume_input_v1_internal_external_validation_single_volumes__request_ref__input_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalSingleVolumeWorkerInputResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes/{request_ref}/report:
+    post:
+      tags:
+      - external-single-volumes
+      summary: Report Single Volume
+      operationId: report_single_volume_v1_internal_external_validation_single_volumes__request_ref__report_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalSingleVolumeWorkerReportInput'
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/external-validation/single-volumes/{request_ref}/incomplete-failure:
+    post:
+      tags:
+      - external-single-volumes
+      summary: Fail Single Volume
+      operationId: fail_single_volume_v1_internal_external_validation_single_volumes__request_ref__incomplete_failure_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: request_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Request Ref
+      - name: X-KSI-Worker-Instance-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Worker-Instance-Id
+      - name: X-KSI-Lease-Acquisition-Id
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: X-Ksi-Lease-Acquisition-Id
+      - name: X-KSI-Lease-Generation
+        in: header
+        required: false
+        schema:
+          anyOf:
+          - type: integer
+          - type: 'null'
+          title: X-Ksi-Lease-Generation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalRelativeVolumeWorkerFailureInput'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalRelativeVolumeMutationResponse'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/external-relative-volume-reports/{report_ref}:
     get:
       tags:
@@ -8130,6 +8500,213 @@ components:
       properties:
         reason: { type: string, pattern: '^[A-Z][A-Z0-9_]{0,127}$' }
       required: [reason]
+    ExternalSingleVolumeMeasurementPayloadV1:
+      properties:
+        factClass:
+          type: string
+          const: OBSERVED
+          title: Factclass
+          default: OBSERVED
+        requestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Requestdigest
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        targetDsmDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Targetdsmdigest
+        zoneSnapshotDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Zonesnapshotdigest
+        executionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Executionpolicydigest
+        algorithmBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmbuilddigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        metrics:
+          $ref: '#/components/schemas/ExternalSingleVolumeMetricsV1'
+      additionalProperties: false
+      type: object
+      required:
+      - requestDigest
+      - decisionDigest
+      - targetDsmDigest
+      - zoneSnapshotDigest
+      - executionPolicyDigest
+      - algorithmBuildDigest
+      - configDigest
+      - metrics
+      title: ExternalSingleVolumeMeasurementPayloadV1
+      description: Deterministic observed measurement content, excluding worker and fence facts.
+    ExternalSingleVolumeMetricsV1:
+      properties:
+        zoneCellCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Zonecellcount
+        commonValidCellCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Commonvalidcellcount
+        zoneAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Zoneaream2
+        measuredAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Measuredaream2
+        commonValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Commonvalidfraction
+        cutM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Cutm3
+        fillM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Fillm3
+        netM3:
+          type: number
+          maximum: 1.0e+300
+          minimum: -1.0e+300
+          title: Netm3
+        thresholdM:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Thresholdm
+        uncertaintyM3:
+          anyOf:
+          - type: number
+            maximum: 1.0e+300
+            minimum: 0.0
+          - type: 'null'
+          title: Uncertaintym3
+        uncertaintyNote:
+          type: string
+          maxLength: 4096
+          minLength: 1
+          title: Uncertaintynote
+        baseRoughnessM:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Baseroughnessm
+        boundaryCellCount:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Boundarycellcount
+        boundarySampleCount:
+          type: integer
+          minimum: 3.0
+          title: Boundarysamplecount
+        boundaryValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Boundaryvalidfraction
+      additionalProperties: false
+      type: object
+      required:
+      - zoneCellCount
+      - commonValidCellCount
+      - zoneAreaM2
+      - measuredAreaM2
+      - commonValidFraction
+      - cutM3
+      - fillM3
+      - netM3
+      - thresholdM
+      - uncertaintyNote
+      - baseRoughnessM
+      - boundaryCellCount
+      - boundarySampleCount
+      - boundaryValidFraction
+      title: ExternalSingleVolumeMetricsV1
+      description: Relative volume metrics plus the boundary-base facts that bound them.
+    ExternalSingleVolumeWorkerInputResponse:
+      properties:
+        verdict:
+          $ref: '#/components/schemas/ExternalRelativeVolumeVerdict'
+        input:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalSingleVolumeWorkerInputView'
+          - type: 'null'
+        detail:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - verdict
+      title: ExternalSingleVolumeWorkerInputResponse
+    ExternalSingleVolumeWorkerInputView:
+      properties:
+        request:
+          additionalProperties: true
+          type: object
+          title: Request
+        executionPolicy:
+          additionalProperties: true
+          type: object
+          title: Executionpolicy
+        validationPolicy:
+          $ref: '#/components/schemas/ExternalValidationPolicyV1'
+        evidenceRecord:
+          $ref: '#/components/schemas/ExternalEvidenceRecordV1'
+        inputs:
+          prefixItems:
+          - $ref: '#/components/schemas/ExternalRelativeVolumeInputCapability'
+          - $ref: '#/components/schemas/ExternalRelativeVolumeInputCapability'
+          type: array
+          maxItems: 2
+          minItems: 2
+          title: Inputs
+      additionalProperties: false
+      type: object
+      required:
+      - request
+      - executionPolicy
+      - validationPolicy
+      - evidenceRecord
+      - inputs
+      title: ExternalSingleVolumeWorkerInputView
+    ExternalSingleVolumeWorkerReportInput:
+      properties:
+        payload:
+          $ref: '#/components/schemas/ExternalSingleVolumeMeasurementPayloadV1'
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+      additionalProperties: false
+      type: object
+      required:
+      - payload
+      - computedAt
+      title: ExternalSingleVolumeWorkerReportInput
     ExternalUseDecisionResponse:
       type: object
       additionalProperties: false

@@ -198,6 +198,7 @@ def assemble_app(
     external_relative_volume_store = external_pre_work_order.relative_volume_store
     external_volume_execution_activator = external_pre_work_order.volume_execution_activator
     external_volume_input_capability_issuer = external_pre_work_order.volume_input_capability_issuer
+    external_single_volume = external_pre_work_order.single_volume
 
     organization_work_roster_store = OrganizationWorkRosterStore(
         journal("organization-work-roster.jsonl"), coordinator=external_authority_currentness
@@ -326,6 +327,7 @@ def assemble_app(
         external_result_read_projector=external_result_read_projector,
         external_volume_input_capability_issuer=external_volume_input_capability_issuer,
         external_volume_execution_activator=external_volume_execution_activator,
+        external_single_volume=external_single_volume,
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,

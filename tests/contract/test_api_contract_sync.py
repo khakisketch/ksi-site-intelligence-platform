@@ -41,6 +41,7 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.civil_readiness import CivilReadinessProjector
 from ksi_core.comparison_requests import ComparisonRequestStore
+from ksi_core.composition.external_graph import ExternalSingleVolumeWiring
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.copilot_conversations import (
     CopilotConversationService,
@@ -51,6 +52,10 @@ from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.design_conformance_reports import DesignConformanceStore
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
+from ksi_core.domains.external.quantity.external_single_volumes import (
+    DefaultClosedExternalSingleVolumeExecutionPort,
+    ExternalSingleVolumeStore,
+)
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_dispatch import (
     EdgeDispatchStore,
@@ -536,6 +541,23 @@ def _max_assembly(
         external_result_workflow_service=external_result_workflow_service,
         external_result_read_projector=external_result_read_projector,
         external_volume_input_capability_issuer=closed_volume_capabilities,
+        external_single_volume=ExternalSingleVolumeWiring(
+            store=ExternalSingleVolumeStore(
+                DurableJournal(tmp_path / "external-single-volumes.jsonl"),
+                authority_port=DefaultClosedExternalSingleVolumeExecutionPort(
+                    currentness_coordinator=volume_coordinator or external_authority_currentness
+                ),
+                currentness_coordinator=volume_coordinator or external_authority_currentness,
+                queue_policy=ExternalRelativeVolumeQueuePolicy(
+                    lease_ttl=timedelta(seconds=5),
+                    deadline_after_issue=timedelta(seconds=30),
+                    max_attempts=1,
+                    max_active_requests_per_organization=2,
+                ),
+            ),
+            input_capability_issuer=closed_volume_capabilities,
+            execution_activator=None,
+        ),
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
         acquisition_connectivity_store=acquisition_connectivity_store,

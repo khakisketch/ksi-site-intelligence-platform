@@ -24,6 +24,7 @@ def mount_external_routes(
     external_volume_input_capability_issuer: Any,
     external_volume_execution_activator: Any,
     external_use_evaluator: Any,
+    external_single_volume: Any = None,
     external_artifact_inspection_store: Any,
     external_display_artifact_store: Any,
 ) -> Any:
@@ -114,6 +115,25 @@ def mount_external_routes(
             )
         )
         app.state.external_relative_volume_store = external_relative_volume_store
+
+    if external_single_volume is not None:
+        from ksi_core.domains.external.quantity.external_single_volumes import (
+            build_external_single_volume_router,
+        )
+
+        single_store = external_single_volume.store
+        assert external_reconstruction_store is not None
+        if single_store.coordinator is not external_reconstruction_store.coordinator:
+            raise ValueError("single volume and reconstruction must share one coordinator")
+        app.include_router(
+            build_external_single_volume_router(
+                single_store,
+                input_capability_issuer=external_single_volume.input_capability_issuer,
+                execution_activator=external_single_volume.execution_activator,
+                work_orders=observation_work_order_store,
+            )
+        )
+        app.state.external_single_volume_store = single_store
 
     if external_result_workflow_service is not None:
         from ksi_core.external_reobservation_proposals import (

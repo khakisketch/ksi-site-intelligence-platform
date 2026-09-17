@@ -192,6 +192,17 @@ _ASSEMBLY_REQUIREMENTS: tuple[tuple[str, tuple[tuple[str, ...], ...], str], ...]
         "external result read projection requires the exact durable workflow graph",
     ),
     (
+        "external_single_volume",
+        (
+            (
+                "external_relative_volume_store",
+                "external_use_evaluator",
+                "observation_work_order_store",
+            ),
+        ),
+        "external single-volume execution requires the quantitative workflow graph",
+    ),
+    (
         "external_volume_input_capability_issuer",
         (("external_relative_volume_store",),),
         "external relative volume byte capabilities require the durable request store",
