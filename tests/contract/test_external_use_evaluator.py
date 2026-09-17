@@ -14,7 +14,11 @@ from ksi_core.external_artifact_inspections import PublicInspectionSnapshot
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_evidence_validations import ExternalEvidenceValidationStore
 from ksi_core.external_relative_volume_authorities import ExternalRelativeVolumeAuthority
-from ksi_core.external_use_decisions import ExternalUseDecisionStore
+from ksi_core.external_single_volume_authorities import ExternalSingleVolumeAuthority
+from ksi_core.external_use_decisions import (
+    ExternalUseDecisionConflictError,
+    ExternalUseDecisionStore,
+)
 from ksi_core.external_use_evaluator import ExternalUseEvaluator, _PairSnapshot
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
@@ -34,6 +38,7 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedZoneReferenceV1,
 )
 from ksi_event_contracts.external_display_artifact import SanitizedDisplayReceiptV1
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeDecisionV1
 from support.external_artifact_inspection_fixtures import (
     NOW,
     digest,
@@ -173,9 +178,7 @@ class _PairReconstruction:
         coordinator: ExternalAuthorityCurrentnessCoordinator,
     ) -> None:
         self.coordinator = coordinator
-        self._revisions = {
-            value: SimpleNamespace(manifest=sealed_manifest()) for value in subjects
-        }
+        self._revisions = {value: SimpleNamespace(manifest=sealed_manifest()) for value in subjects}
 
     def resolve_sealed_subject(self, value: SealedExternalSubjectV1) -> object | None:
         return self._revisions.get(value)
@@ -627,8 +630,12 @@ def test_execution_recheck_uses_retained_local_evidence_projection() -> None:
     )
     policy = cast(ExternalValidationPolicyV1, SimpleNamespace(policy_digest=digest("c")))
     snapshot = SimpleNamespace(
-        baseline=SimpleNamespace(inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("a")))),
-        current=SimpleNamespace(inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("b")))),
+        baseline=SimpleNamespace(
+            inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("a")))
+        ),
+        current=SimpleNamespace(
+            inspection=SimpleNamespace(report=SimpleNamespace(report_digest=digest("b")))
+        ),
     )
 
     assert evaluator._candidate_evidence_remains_locally_current(
@@ -899,3 +906,231 @@ def test_relative_volume_pair_is_eligible_with_attested_current_evidence(tmp_pat
     assert decision.evidence_record_digests == (digest("e"), digest("f"))
     assert decision.zone == volume.authority.zone
     assert decision.compatibility_mapping_digest == digest("4")
+
+
+class _SingleVolumeAuthority:
+    """Fixture port: an optionally resolvable single-volume mapping authority."""
+
+    def __init__(
+        self,
+        coordinator: ExternalAuthorityCurrentnessCoordinator,
+        authority: ExternalSingleVolumeAuthority | None,
+    ) -> None:
+        self.currentness_coordinator = coordinator
+        self.authority = authority
+        self.resolve_calls = 0
+
+    def resolve_for_use(self, **kwargs: object) -> ExternalSingleVolumeAuthority | None:
+        del kwargs
+        self.resolve_calls += 1
+        return self.authority
+
+    def is_current_for_use(
+        self, authority: ExternalSingleVolumeAuthority, *, now: datetime
+    ) -> bool:
+        del now
+        return authority == self.authority
+
+    def resolve_historical_for_decision(
+        self, decision: ExternalSingleVolumeDecisionV1
+    ) -> ExternalSingleVolumeAuthority | None:
+        del decision
+        return self.authority
+
+
+def _single_volume_evaluator(
+    tmp_path: Path, *, attested: bool | None, mapping: bool = True
+) -> tuple[ExternalUseEvaluator, SealedExternalSubjectV1, _SingleVolumeAuthority]:
+    """``attested`` None files no validated evidence; False files unattested evidence."""
+    sealed_subject = subject()
+    template = policy_template()
+    authority = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=template.version,
+        authorized_policy_body_digest=authorized_policy_body_digest(template),
+        permitted_subjects=(sealed_subject,),
+        permitted_uses=("SINGLE_VOLUME",),
+        authorized_actor_ids=("authority",),
+        active_from=NOW - timedelta(minutes=1),
+        active_until=datetime.now(UTC) + timedelta(days=14),
+        synthetic_test_only=True,
+    ).sealed()
+    policy = template.model_copy(
+        update={"authority_record_digest": authority.digest, "policy_digest": None}, deep=True
+    ).sealed()
+    assert policy.policy_digest is not None
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    policy_authority = _PolicyAuthority(authority)
+    registry = ExternalValidationPolicyRegistry(
+        DurableJournal(tmp_path / "policy.jsonl"),
+        authority_port=policy_authority,
+        authority_currentness_port=policy_authority.bind(coordinator),
+        clock=lambda: NOW,
+        coordinator=coordinator,
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    accepted = _report_with_measured_dsm(
+        _report_for_subject(sealed_subject, policy, request_id="single-volume")
+    )
+    records: dict[tuple[SealedExternalSubjectV1, str], tuple[tuple[str, object, object], ...]] = {}
+    if attested is not None:
+        records[(sealed_subject, policy.policy_digest)] = (
+            (
+                digest("e"),
+                SimpleNamespace(evidence_record_digest=digest("e")),
+                SimpleNamespace(
+                    independent_attestation=object() if attested else None,
+                    target_dsm_artifact_id="dsm",
+                    target_dsm_observed_sha256=digest("d"),
+                ),
+            ),
+        )
+    volume = _SingleVolumeAuthority(
+        coordinator,
+        ExternalSingleVolumeAuthority(
+            zone=SealedZoneReferenceV1(
+                zone_id="zone-1",
+                revision=1,
+                definition_digest=digest("1"),
+                observed_crs_digest=digest("2"),
+                observed_vertical_reference_digest=digest("3"),
+            ),
+            compatibility_mapping_digest=digest("4"),
+            historical_authority_digest=digest("4"),
+            synthetic_test_only=False,
+        )
+        if mapping
+        else None,
+    )
+    evaluator = ExternalUseEvaluator(
+        decisions=ExternalUseDecisionStore(
+            DurableJournal(tmp_path / "decisions.jsonl"),
+            coordinator=coordinator,
+            history_verifier=_SyntheticHistoryVerifier(),
+        ),
+        reconstruction=_Reconstruction(sealed_subject, coordinator),  # type: ignore[arg-type]
+        inspections=_Inspections(sealed_subject, accepted, _receipt(accepted, policy), coordinator),
+        policy_registry=registry,
+        evidence_validations=cast(
+            ExternalEvidenceValidationStore, _EvidenceProjection(coordinator, records)
+        ),
+        coordinator=coordinator,
+        single_volume_authority=volume,
+    )
+    return evaluator, sealed_subject, volume
+
+
+def test_single_volume_is_eligible_with_attested_evidence_and_mapping(tmp_path: Path) -> None:
+    evaluator, sealed_subject, volume = _single_volume_evaluator(tmp_path, attested=True)
+
+    decision = evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-eligible",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert isinstance(decision, ExternalSingleVolumeDecisionV1)
+    assert decision.verdict is DecisionVerdict.ELIGIBLE
+    assert decision.reasons == ("USE_ELIGIBLE",)
+    assert decision.evidence_record_digests == (digest("e"),)
+    assert volume.authority is not None
+    assert decision.zone == volume.authority.zone
+    assert decision.compatibility_mapping_digest == digest("4")
+    assert (
+        evaluator.existing_single_volume_retry(
+            sealed_subject,
+            zone_id="zone-1",
+            principal=_principal(),
+            idempotency_key="sv-eligible",
+        )
+        == decision
+    )
+    retried = evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-eligible",
+        principal=_principal(),
+        now=NOW + timedelta(seconds=5),
+    )
+    assert retried == decision
+    assert volume.resolve_calls == 1
+
+
+def test_single_volume_names_unattested_evidence_before_the_mapping(tmp_path: Path) -> None:
+    evaluator, sealed_subject, _ = _single_volume_evaluator(tmp_path, attested=False, mapping=False)
+
+    decision = evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-unattested",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == ("EVIDENCE_INDEPENDENCE_UNATTESTED",)
+    assert decision.remediations == ("ATTEST_INDEPENDENT_EVIDENCE",)
+    assert decision.evidence_record_digests == ()
+
+
+def test_single_volume_without_evidence_reports_binding_invalid(tmp_path: Path) -> None:
+    evaluator, sealed_subject, _ = _single_volume_evaluator(tmp_path, attested=None)
+
+    decision = evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-no-evidence",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert decision.reasons == ("EVIDENCE_RECORD_BINDING_INVALID",)
+    assert decision.remediations == ("VALIDATE_INDEPENDENT_EVIDENCE",)
+
+
+def test_single_volume_without_mapping_is_blocked_with_its_own_reason(tmp_path: Path) -> None:
+    evaluator, sealed_subject, _ = _single_volume_evaluator(tmp_path, attested=True, mapping=False)
+
+    decision = evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-no-mapping",
+        principal=_principal(),
+        now=NOW,
+    )
+
+    assert decision.verdict is DecisionVerdict.BLOCKED
+    assert decision.reasons == ("SINGLE_VOLUME_MAPPING_UNAVAILABLE",)
+    assert decision.remediations == ("AUTHORIZE_SINGLE_VOLUME_MAPPING",)
+    assert decision.zone is None
+    assert decision.compatibility_mapping_digest is None
+
+
+def test_single_volume_requires_a_zone_and_does_not_collide_with_display(tmp_path: Path) -> None:
+    evaluator, sealed_subject, _ = _single_volume_evaluator(tmp_path, attested=True)
+
+    with pytest.raises(ValueError, match="zone"):
+        evaluator.request_single_volume(
+            sealed_subject,
+            zone_id="",
+            idempotency_key="sv-zone",
+            principal=_principal(),
+            now=NOW,
+        )
+    evaluator.request_single_volume(
+        sealed_subject,
+        zone_id="zone-1",
+        idempotency_key="sv-shared-key",
+        principal=_principal(),
+        now=NOW,
+    )
+    with pytest.raises(ExternalUseDecisionConflictError):
+        evaluator.request_single(
+            sealed_subject,
+            use="DISPLAY",
+            idempotency_key="sv-shared-key",
+            principal=_principal(),
+            now=NOW,
+        )

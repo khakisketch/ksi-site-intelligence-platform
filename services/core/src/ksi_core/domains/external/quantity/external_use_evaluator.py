@@ -47,6 +47,11 @@ from ksi_core.domains.external.quantity.external_relative_volume_authorities imp
     ExternalRelativeVolumeAuthority,
     ExternalRelativeVolumeAuthorityPort,
 )
+from ksi_core.domains.external.quantity.external_single_volume_authorities import (
+    DefaultClosedExternalSingleVolumeAuthorityPort,
+    ExternalSingleVolumeAuthority,
+    ExternalSingleVolumeAuthorityPort,
+)
 from ksi_core.domains.external.quantity.external_use_decisions import (
     DecisionCandidate,
     ExternalDecisionIntent,
@@ -104,12 +109,14 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         policy_registry: ExternalValidationPolicyRegistry,
         evidence_validations: ExternalEvidenceValidationStore,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
+        single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
     ) -> None:
         self._reconstruction = reconstruction
         self._inspections = inspections
         self._policy_registry = policy_registry
         self._evidence_validations = evidence_validations
         self._relative_volume_authority = relative_volume_authority
+        self._single_volume_authority = single_volume_authority
 
     def verify(self, candidate: DecisionCandidate) -> bool:
         if isinstance(candidate, ExternalUseDecisionV1):
@@ -119,9 +126,53 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
         return self._verify_pair(candidate)
 
     def _verify_single_volume(self, candidate: ExternalSingleVolumeDecisionV1) -> bool:
-        # Fail closed until a single-volume mapping authority is bound.
-        del candidate
-        return False
+        policy_digest = candidate.policy_digest
+        report_digest = candidate.inspection_report_digest
+        if (
+            policy_digest is None
+            or report_digest is None
+            or self._single_volume_authority is None
+            or not self._policy_registry.historical_use_permitted(
+                policy_digest,
+                use="SINGLE_VOLUME",
+                subjects=(candidate.subject,),
+                at=candidate.decided_at,
+            )
+        ):
+            return False
+        policy = self._policy_registry.resolve(policy_digest).policy
+        report = self._inspections.historical_report(
+            candidate.subject, report_digest=report_digest, policy_digest=policy_digest
+        )
+        if (
+            policy is None
+            or report is None
+            or self._reconstruction.resolve_sealed_subject(candidate.subject) is None
+            or not ExternalUseEvaluator._report_binds(candidate.subject, report, policy)
+        ):
+            return False
+        authority = self._single_volume_authority.resolve_historical_for_decision(candidate)
+        if (
+            authority is None
+            or candidate.compatibility_mapping_digest != authority.compatibility_mapping_digest
+            or candidate.zone != authority.zone
+            or len(candidate.evidence_record_digests) != 1
+        ):
+            return False
+        evidence = self._evidence_validations.record_for_use(
+            candidate.evidence_record_digests[0],
+            subject=candidate.subject,
+            policy_digest=policy_digest,
+        )
+        if evidence is None:
+            return False
+        _record, context = evidence
+        return (
+            context.independent_attestation is not None
+            and ExternalUseEvaluator._report_measures_dsm(
+                report, context.target_dsm_artifact_id, context.target_dsm_observed_sha256
+            )
+        )
 
     def _verify_single(self, candidate: ExternalUseDecisionV1) -> bool:
         policy_digest, report_digest = candidate.policy_digest, candidate.inspection_report_digest
@@ -272,6 +323,10 @@ class ExternalPairUseDecisionRequest(CamelModel):
     zone_id: str | None = Field(default=None, min_length=1, max_length=255)
 
 
+class ExternalSingleVolumeDecisionRequest(CamelModel):
+    zone_id: str = Field(min_length=1, max_length=255)
+
+
 class ExternalUseDecisionResponse(CamelModel):
     decision: dict[str, Any]
 
@@ -292,6 +347,7 @@ PAIR_REASON_REMEDIATIONS: dict[str, str] = {
     "EVIDENCE_RECORD_BINDING_INVALID": "VALIDATE_INDEPENDENT_EVIDENCE",
     "EVIDENCE_INDEPENDENCE_UNATTESTED": "ATTEST_INDEPENDENT_EVIDENCE",
     "PAIR_SUBJECTS_NOT_DISTINCT": "SELECT_DISTINCT_EPOCHS",
+    "SINGLE_VOLUME_MAPPING_UNAVAILABLE": "AUTHORIZE_SINGLE_VOLUME_MAPPING",
 }
 
 
@@ -314,6 +370,7 @@ class ExternalUseEvaluator:
         evidence_validations: ExternalEvidenceValidationStore,
         coordinator: ExternalAuthorityCurrentnessCoordinator,
         relative_volume_authority: ExternalRelativeVolumeAuthorityPort | None = None,
+        single_volume_authority: ExternalSingleVolumeAuthorityPort | None = None,
     ) -> None:
         for name, dependency in (
             ("external decision store", decisions),
@@ -329,6 +386,11 @@ class ExternalUseEvaluator:
             and relative_volume_authority.currentness_coordinator is not coordinator
         ):
             raise ValueError("relative-volume authority must share currentness coordinator")
+        if (
+            single_volume_authority is not None
+            and single_volume_authority.currentness_coordinator is not coordinator
+        ):
+            raise ValueError("single-volume authority must share currentness coordinator")
         self._decisions = decisions
         self._reconstruction = reconstruction
         self._inspections = inspections
@@ -337,6 +399,10 @@ class ExternalUseEvaluator:
         self._coordinator = coordinator
         self._relative_volume_authority = relative_volume_authority or (
             DefaultClosedExternalRelativeVolumeAuthorityPort(currentness_coordinator=coordinator)
+        )
+        self._single_volume_authority: ExternalSingleVolumeAuthorityPort = (
+            single_volume_authority
+            or DefaultClosedExternalSingleVolumeAuthorityPort(currentness_coordinator=coordinator)
         )
 
     def request_single(
@@ -491,6 +557,171 @@ class ExternalUseEvaluator:
             intent=intent, principal=principal, idempotency_key=idempotency_key
         )
         return existing if isinstance(existing, ExternalPairUseDecisionV1) else None
+
+    def request_single_volume(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        zone_id: str,
+        idempotency_key: str,
+        principal: Principal,
+        now: datetime,
+    ) -> ExternalSingleVolumeDecisionV1:
+        """Resolve one sealed DSM epoch, attested evidence, zone and single mapping."""
+        self._require_scope(principal, subject)
+        if not zone_id or zone_id != zone_id.strip() or len(zone_id) > 255:
+            raise ValueError("single volume requires a zone selection")
+        intent = ExternalDecisionIntent(
+            requested_use="SINGLE_VOLUME", subject=subject, requested_zone_id=zone_id
+        )
+        existing = self._decisions.existing_for_intent(
+            intent=intent, principal=principal, idempotency_key=idempotency_key
+        )
+        if existing is not None:
+            if not isinstance(existing, ExternalSingleVolumeDecisionV1):
+                raise ValueError("idempotency decision operation conflicts")
+            self._decisions.reconcile_pending()
+            return existing
+        evaluation_identity = self._decisions.evaluation_identity(
+            intent=intent, principal=principal, idempotency_key=idempotency_key
+        )
+        snapshot = self._single_snapshot(subject, "SINGLE_VOLUME")
+        # Authority ports are resolved before the guard, exactly like the pair path.
+        volume = (
+            self._single_volume_authority.resolve_for_use(
+                subject=subject, zone_id=zone_id, policy=snapshot.policy, now=now
+            )
+            if snapshot.policy is not None
+            else None
+        )
+        evidence_reason = (
+            self._single_volume_evidence_block_reason(subject, snapshot)
+            if snapshot.policy is not None
+            else None
+        )
+        with self._coordinator.guarded_read():
+            current = self._single_still_current(subject, "SINGLE_VOLUME", snapshot, now=now)
+            if volume is not None and not self._single_volume_authority.is_current_for_use(
+                volume, now=now
+            ):
+                volume = None
+            candidate = self._single_volume_candidate(
+                subject,
+                zone_id,
+                current,
+                volume,
+                evaluation_identity,
+                now,
+                evidence_reason=evidence_reason,
+            )
+            return cast(
+                ExternalSingleVolumeDecisionV1,
+                self._record(candidate, intent, principal, idempotency_key),
+            )
+
+    def existing_single_volume_retry(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        zone_id: str,
+        principal: Principal,
+        idempotency_key: str,
+    ) -> ExternalSingleVolumeDecisionV1 | None:
+        """Read an exact retained single-volume retry without evaluating live authority."""
+        intent = ExternalDecisionIntent(
+            requested_use="SINGLE_VOLUME", subject=subject, requested_zone_id=zone_id
+        )
+        existing = self._decisions.existing_for_intent(
+            intent=intent, principal=principal, idempotency_key=idempotency_key
+        )
+        return existing if isinstance(existing, ExternalSingleVolumeDecisionV1) else None
+
+    def _single_volume_evidence_block_reason(
+        self, subject: SealedExternalSubjectV1, snapshot: _SingleSnapshot
+    ) -> str | None:
+        policy, report = snapshot.policy, snapshot.inspection.report
+        if policy is None:
+            return "POLICY_UNAVAILABLE"
+        if report is None:
+            return "INSPECTION_REPORT_BINDING_INVALID"
+        matching, blocker = self._evidence_binding(subject, policy, report, locally_current=False)
+        return None if matching is not None else blocker
+
+    def _single_volume_reason(
+        self,
+        subject: SealedExternalSubjectV1,
+        snapshot: _SingleSnapshot,
+        volume: ExternalSingleVolumeAuthority | None,
+        *,
+        evidence_reason: str | None,
+    ) -> tuple[str | None, tuple[str, ...]]:
+        if snapshot.revision is None:
+            return "SUBJECT_NOT_SEALED", ()
+        if snapshot.policy is None:
+            return "POLICY_UNAVAILABLE", ()
+        report = snapshot.inspection.report
+        if report is None or not self._report_binds(subject, report, snapshot.policy):
+            return "INSPECTION_REPORT_BINDING_INVALID", ()
+        # Attested evidence is a prerequisite of any admitted mapping, so an
+        # evidence blocker is named before the mapping itself.
+        if evidence_reason is not None:
+            return evidence_reason, ()
+        if volume is None:
+            return "SINGLE_VOLUME_MAPPING_UNAVAILABLE", ()
+        if volume.zone.zone_id == "" or volume.zone.revision != 1:
+            return "VOLUME_ZONE_BINDING_INVALID", ()
+        matching, blocker = self._evidence_binding(subject, snapshot.policy, report)
+        if matching is None:
+            return blocker, ()
+        return None, (matching,)
+
+    def _single_volume_candidate(
+        self,
+        subject: SealedExternalSubjectV1,
+        requested_zone_id: str,
+        snapshot: _SingleSnapshot,
+        volume: ExternalSingleVolumeAuthority | None,
+        evaluation_identity: str,
+        now: datetime,
+        *,
+        evidence_reason: str | None,
+    ) -> ExternalSingleVolumeDecisionV1:
+        reason, evidence = self._single_volume_reason(
+            subject, snapshot, volume, evidence_reason=evidence_reason
+        )
+        eligible = reason is None
+        policy, report = snapshot.policy, snapshot.inspection.report
+        decision_id = self._decision_id(
+            {
+                "intent": ExternalDecisionIntent(
+                    requested_use="SINGLE_VOLUME",
+                    subject=subject,
+                    requested_zone_id=requested_zone_id,
+                ).payload(),
+                "policy": policy.policy_digest if policy else None,
+                "zone": volume.zone.model_dump(by_alias=True, mode="json") if volume else None,
+                "compatibilityMapping": volume.compatibility_mapping_digest if volume else None,
+                "evaluationIdentity": evaluation_identity,
+            }
+        )
+        return ExternalSingleVolumeDecisionV1(
+            decision_id=decision_id,
+            subject=subject,
+            subject_digest=subject.canonical_digest(),
+            policy_digest=policy.policy_digest if eligible and policy else None,
+            inspection_report_digest=report.report_digest if eligible and report else None,
+            evidence_record_digests=evidence if eligible else (),
+            zone=volume.zone if eligible and volume else None,
+            compatibility_mapping_digest=(
+                volume.compatibility_mapping_digest if eligible and volume else None
+            ),
+            verdict=DecisionVerdict.ELIGIBLE if eligible else DecisionVerdict.BLOCKED,
+            reasons=("USE_ELIGIBLE",) if eligible else (reason or "POLICY_UNAVAILABLE",),
+            remediations=("CURRENT_DEPENDENCIES_RETAINED",)
+            if eligible
+            else (self._remediation(reason),),
+            decided_at=now,
+        ).sealed()
 
     def resolve_eligible_pair_for_execution(
         self, decision_id: str, *, principal: Principal, site_id: str
@@ -1274,6 +1505,51 @@ def mount_external_use_evaluator(
                         baseline,
                         current,
                         use=request.use,
+                        zone_id=request.zone_id,
+                        idempotency_key=idempotency_key,
+                        principal=principal,
+                        now=datetime.now(UTC),
+                    )
+                )
+        except ExternalUseDecisionConflictError as exc:
+            raise HTTPException(409, "IDEMPOTENCY_CONFLICT") from exc
+        except ValueError as exc:
+            raise HTTPException(422, "EXTERNAL_USE_SELECTION_INVALID") from exc
+        except RuntimeError as exc:
+            if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
+                raise HTTPException(409, str(exc)) from exc
+            raise
+
+    @router.post(
+        base + "/single-volume", response_model=ExternalUseDecisionResponse, status_code=201
+    )
+    def request_single_volume(
+        work_order_id: str,
+        submission_ref: str,
+        revision: int,
+        request: ExternalSingleVolumeDecisionRequest,
+        idempotency_key: str = Depends(idempotency_header),  # noqa: B008
+        principal: Principal = Depends(write),  # noqa: B008
+    ) -> ExternalUseDecisionResponse:
+        human(principal)
+        subject = subject_for(work_order_id, submission_ref, revision, principal)
+        try:
+            with work_orders.guard_new_external_intent(
+                work_order_id,
+                organization_id=principal.organization_id,
+                is_durable_retry=lambda: (
+                    evaluator.existing_single_volume_retry(
+                        subject,
+                        zone_id=request.zone_id,
+                        principal=principal,
+                        idempotency_key=idempotency_key,
+                    )
+                    is not None
+                ),
+            ):
+                return write_result(
+                    evaluator.request_single_volume(
+                        subject,
                         zone_id=request.zone_id,
                         idempotency_key=idempotency_key,
                         principal=principal,

@@ -6007,6 +6007,37 @@ paths:
         '422': { description: selection invalid }
         '401': { description: authentication failed }
         '403': { description: SITES_WRITE human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/single-volume:
+    post:
+      summary: Resolve and persist a scoped SINGLE_VOLUME external use decision
+      description: >-
+        SITES_WRITE human selection only. Core resolves the sealed DSM epoch, current policy,
+        MEASURED inspection report, one independently attested checkpoint evidence record,
+        the selected ACTIVE WorkArea and an admitted single-volume compatibility mapping.
+        The decision records eligibility only and no numeric result.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+        - { in: path, name: submission_ref, required: true, schema: { type: string, pattern: '^ers-v1-[0-9a-f]{64}$' } }
+        - { in: path, name: revision, required: true, schema: { type: integer, minimum: 1 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                zoneId: { type: string, minLength: 1, maxLength: 255 }
+              required: [zoneId]
+      responses:
+        '201': { description: immutable Core-resolved decision, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalUseDecisionResponse' } } } }
+        '404': { description: revision absent or outside organization }
+        '409': { description: idempotency conflict or closed workflow }
+        '422': { description: selection invalid }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE human authority required }
   /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/use-decisions/{decision_id}:
     get:
       summary: Read a scoped immutable external use decision

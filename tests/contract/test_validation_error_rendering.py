@@ -402,6 +402,10 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
             "/v1/observation-work-orders/order-1/external-reconstruction-submissions/"
             "ers-v1-" + "a" * 64 + "/revisions/1/use-decisions/pair"
         ),
+        (
+            "/v1/observation-work-orders/order-1/external-reconstruction-submissions/"
+            "ers-v1-" + "a" * 64 + "/revisions/1/use-decisions/single-volume"
+        ),
     ],
 )
 @pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
