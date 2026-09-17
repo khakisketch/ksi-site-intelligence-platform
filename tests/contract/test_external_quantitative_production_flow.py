@@ -704,6 +704,28 @@ def _worker_principal() -> Principal:
     )
 
 
+def _assert_single_report_reads(
+    client: TestClient, report_ref: str, *, expected_digest: str | None
+) -> str:
+    """The merged site history and the exact single report both serve the sealed report."""
+
+    headers = {"Authorization": f"Bearer {_OPERATOR_TOKEN}"}
+    history = client.get("/v1/sites/site-a/external-volume-reports", headers=headers)
+    assert history.status_code == 200, history.text
+    rows = [item for item in history.json()["items"] if item["reportRef"] == report_ref]
+    assert len(rows) == 1, history.text
+    assert rows[0]["state"] == "AVAILABLE", rows[0]
+    assert rows[0]["result"]["kind"] == "EXTERNAL_SINGLE_VOLUME"
+    exact = client.get(f"/v1/external-single-volume-reports/{report_ref}", headers=headers)
+    assert exact.status_code == 200, exact.text
+    digest = exact.json()["report"]["reportDigest"]
+    assert isinstance(digest, str) and digest.startswith("sha256:")
+    assert rows[0]["result"]["reportDigest"] == digest
+    if expected_digest is not None:
+        assert digest == expected_digest
+    return digest
+
+
 def _operator_registry() -> AuthRegistry:
     return AuthRegistry(
         [
@@ -2226,6 +2248,9 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         single_report_ref = single_report_response.json()["request"]["reportRef"]
         assert single_report_ref.startswith("external-single-volume-report-")
         single_request_digest = single_record.request.request_digest
+        single_report_digest = _assert_single_report_reads(
+            single_client, single_report_ref, expected_digest=None
+        )
         _close_journals(opened)
         opened = []
         receipts.close()
@@ -2283,6 +2308,13 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         assert single_resolved is not None
         assert single_resolved.request.request_digest == single_request_digest
         assert single_resolved.report.report_id == single_report_ref
+        assert (
+            app.state.external_result_read_projector.single_volumes
+            is app.state.external_single_volume_store
+        )
+        _assert_single_report_reads(
+            TestClient(app), single_report_ref, expected_digest=single_report_digest
+        )
         _close_journals(opened)
         opened = []
         receipts.close()

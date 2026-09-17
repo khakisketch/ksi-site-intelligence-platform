@@ -336,9 +336,23 @@ def _max_assembly(
         authority_port=proposal_authority,
         coordinator=external_authority_currentness,
     )
+    external_single_volume_store = ExternalSingleVolumeStore(
+        DurableJournal(tmp_path / "external-single-volumes.jsonl"),
+        authority_port=DefaultClosedExternalSingleVolumeExecutionPort(
+            currentness_coordinator=volume_coordinator or external_authority_currentness
+        ),
+        currentness_coordinator=volume_coordinator or external_authority_currentness,
+        queue_policy=ExternalRelativeVolumeQueuePolicy(
+            lease_ttl=timedelta(seconds=5),
+            deadline_after_issue=timedelta(seconds=30),
+            max_attempts=1,
+            max_active_requests_per_organization=2,
+        ),
+    )
     external_result_read_projector = ExternalResultReadProjector(
         volumes=external_relative_volume_store,
         workflow=external_result_workflow_service,
+        single_volumes=external_single_volume_store,
     )
     work_inbox_store = WorkInboxStore(
         DurableJournal(tmp_path / "work-inbox.jsonl"),
@@ -542,19 +556,7 @@ def _max_assembly(
         external_result_read_projector=external_result_read_projector,
         external_volume_input_capability_issuer=closed_volume_capabilities,
         external_single_volume=ExternalSingleVolumeWiring(
-            store=ExternalSingleVolumeStore(
-                DurableJournal(tmp_path / "external-single-volumes.jsonl"),
-                authority_port=DefaultClosedExternalSingleVolumeExecutionPort(
-                    currentness_coordinator=volume_coordinator or external_authority_currentness
-                ),
-                currentness_coordinator=volume_coordinator or external_authority_currentness,
-                queue_policy=ExternalRelativeVolumeQueuePolicy(
-                    lease_ttl=timedelta(seconds=5),
-                    deadline_after_issue=timedelta(seconds=30),
-                    max_attempts=1,
-                    max_active_requests_per_organization=2,
-                ),
-            ),
+            store=external_single_volume_store,
             input_capability_issuer=closed_volume_capabilities,
             execution_activator=None,
         ),
@@ -642,6 +644,7 @@ def test_create_app_rejects_disconnected_external_result_workspace_participants(
         external_results = ExternalResultReadProjector(
             volumes=arguments["external_relative_volume_store"],
             workflow=arguments["external_result_workflow_service"],
+            single_volumes=arguments["external_single_volume"].store,
         )
     elif mismatch == "different-sites":
         site_store = SiteStore(DurableJournal(tmp_path / "different-sites.jsonl"))
@@ -681,6 +684,7 @@ def test_max_assembly_shares_external_result_projection_with_context_workspace_a
 
     app = create_app(**arguments)
     assert app.state.external_result_read_projector is projector
+    assert projector.single_volumes is app.state.external_single_volume_store
     assert app.state.site_workspace_projector is workspace
 
     headers = {"Authorization": "Bearer contract-sync-test-token"}

@@ -6873,6 +6873,69 @@ paths:
         '404': { description: scoped Site or report cursor not found }
         '401': { description: authentication failed }
         '403': { description: SITES_READ required }
+  /v1/sites/{site_id}/external-volume-reports:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Site Volume Report History
+      operationId: site_volume_report_history_v1_sites__site_id__external_volume_reports_get
+      description: >-
+        Merged newest-first retained history across every configured external volume
+        family (relative and single-epoch). Each row carries result.kind.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema: { type: string, title: Site Id }
+      - name: after
+        in: query
+        required: false
+        schema:
+          anyOf:
+          - type: string
+          - type: 'null'
+          title: After
+      - name: limit
+        in: query
+        required: false
+        schema: { type: integer, minimum: 1, maximum: 50, default: 20, title: Limit }
+      responses:
+        '200':
+          description: Bounded retained report history of both families. Unavailable sources remain visible without numeric results.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalResultHistoryView' }
+        '404': { description: 'EXTERNAL_VOLUME_REPORT_NOT_FOUND: scoped Site or report cursor not found' }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
+  /v1/external-single-volume-reports/{report_ref}:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Single Report View
+      operationId: single_report_view_v1_external_single_volume_reports__report_ref__get
+      description: >-
+        Recorded single-epoch provenance for the caller's organization. Mounted only
+        when the single-volume family is configured. Review and proposals do not apply.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: report_ref
+        in: path
+        required: true
+        schema: { type: string, title: Report Ref }
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalSingleVolumeReportView'
+        '404': { description: 'EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND: not a single-volume report of the caller organization' }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
   /v1/sites/{site_id}/observations/{report_ref}:
     get:
       tags:
@@ -13561,6 +13624,251 @@ components:
       - proposals
       title: ExternalResultReportView
       description: Recorded provenance, never an assertion of present usage eligibility.
+    ExternalSingleVolumeReportView:
+      properties:
+        request:
+          $ref: '#/components/schemas/ExternalSingleVolumeRequestV1'
+        report:
+          $ref: '#/components/schemas/ExternalSingleVolumeReportV1'
+        executionPolicy:
+          $ref: '#/components/schemas/ExternalSingleVolumeExecutionPolicyV1'
+      additionalProperties: false
+      type: object
+      required:
+      - request
+      - report
+      - executionPolicy
+      title: ExternalSingleVolumeReportView
+      description: Recorded single-epoch provenance; review and proposals do not apply to this family.
+    ExternalSingleVolumeRequestV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-request.v1
+          title: Contractversion
+          default: external-single-volume-request.v1
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        currentWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentworkorderid
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        target:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 1
+          minItems: 1
+          title: Evidencerecorddigests
+        validationPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Validationpolicydigest
+        executionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Executionpolicydigest
+        zoneSnapshot:
+          $ref: '#/components/schemas/ExternalVolumeZoneSnapshotV1'
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        idempotencyKey:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Idempotencykey
+        requestDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Requestdigest
+      additionalProperties: false
+      type: object
+      required:
+      - requestId
+      - currentWorkOrderId
+      - decisionId
+      - decisionDigest
+      - target
+      - evidenceRecordDigests
+      - validationPolicyDigest
+      - executionPolicyDigest
+      - zoneSnapshot
+      - issuedAt
+      - idempotencyKey
+      title: ExternalSingleVolumeRequestV1
+      description: Core-issued single-epoch intent; binds claims and declares no eligibility.
+    ExternalSingleVolumeReportV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-report.v1
+          title: Contractversion
+          default: external-single-volume-report.v1
+        reportId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportid
+        requestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Requestid
+        requestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Requestdigest
+        payload:
+          $ref: '#/components/schemas/ExternalSingleVolumeMeasurementPayloadV1'
+        measurementPayloadDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Measurementpayloaddigest
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+        reportedAt:
+          type: string
+          format: date-time
+          title: Reportedat
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reportId
+      - requestId
+      - requestDigest
+      - payload
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      - computedAt
+      - reportedAt
+      title: ExternalSingleVolumeReportV1
+      description: Fenced worker report whose payload is independently canonicalized.
+    ExternalSingleVolumeExecutionPolicyV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-execution-policy.v1
+          title: Contractversion
+          default: external-single-volume-execution-policy.v1
+        policyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Policyid
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        algorithmBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmbuilddigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        thresholdM:
+          type: number
+          maximum: 1.0e+300
+          minimum: 0.0
+          title: Thresholdm
+        minimumCommonValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Minimumcommonvalidfraction
+        minimumBoundaryValidFraction:
+          type: number
+          maximum: 1.0
+          exclusiveMinimum: 0.0
+          title: Minimumboundaryvalidfraction
+        uncertaintyMethod:
+          type: string
+          const: SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1
+          title: Uncertaintymethod
+        baseSurfaceMethod:
+          type: string
+          const: BOUNDARY_LINEAR_INTERPOLATION_V1
+          title: Basesurfacemethod
+        resourceEnvelopeDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Resourceenvelopedigest
+        authorityRecordDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Authorityrecorddigest
+        syntheticTestOnly:
+          type: boolean
+          title: Synthetictestonly
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+      additionalProperties: false
+      type: object
+      required:
+      - policyId
+      - version
+      - algorithmBuildDigest
+      - configDigest
+      - thresholdM
+      - minimumCommonValidFraction
+      - minimumBoundaryValidFraction
+      - uncertaintyMethod
+      - baseSurfaceMethod
+      - resourceEnvelopeDigest
+      - authorityRecordDigest
+      - syntheticTestOnly
+      title: ExternalSingleVolumeExecutionPolicyV1
+      description: Versioned single-epoch execution limits; authority is always supplied.
     ExternalResultReviewAuthorityV1:
       properties:
         contractVersion:

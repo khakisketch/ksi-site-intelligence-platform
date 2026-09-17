@@ -29,6 +29,9 @@ def mount_external_routes(
     external_display_artifact_store: Any,
 ) -> Any:
     external_result_projection = external_result_read_projector
+    single_volume_store = (
+        external_single_volume.store if external_single_volume is not None else None
+    )
     if external_result_workflow_service is not None:
         from ksi_core.external_reobservation_proposals import verify_external_reobservation_graph
         from ksi_core.external_result_workflow_api import ExternalResultReadProjector
@@ -46,9 +49,12 @@ def mount_external_routes(
             external_result_projection = ExternalResultReadProjector(
                 volumes=external_relative_volume_store,
                 workflow=service,
+                single_volumes=single_volume_store,
             )
         elif not external_result_projection.uses_exact_graph(
-            volumes=external_relative_volume_store, workflow=service
+            volumes=external_relative_volume_store,
+            workflow=service,
+            single_volumes=single_volume_store,
         ):
             raise ValueError("external result read projection must use the mounted durable graph")
 
@@ -144,7 +150,9 @@ def mount_external_routes(
         service = external_result_workflow_service
         assert external_relative_volume_store is not None
         app.include_router(
-            build_external_result_workflow_router(external_relative_volume_store, service)
+            build_external_result_workflow_router(
+                external_relative_volume_store, service, single_volumes=single_volume_store
+            )
         )
         app.include_router(build_external_reobservation_proposal_router(service))
         app.state.external_result_workflow_service = service

@@ -431,6 +431,11 @@ def complete_external_graph(
         result_read_projector = ExternalResultReadProjector(
             volumes=pre_work_order.relative_volume_store,
             workflow=result_workflow_service,
+            single_volumes=(
+                pre_work_order.single_volume.store
+                if pre_work_order.single_volume is not None
+                else None
+            ),
         )
     return ExternalCompletedGraph(
         result_workflow_service=result_workflow_service,

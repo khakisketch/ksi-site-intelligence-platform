@@ -13,6 +13,11 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalRelativeVolumeRequestV1,
 )
 from ksi_event_contracts.external_result_review import ExternalResultReviewReceiptV1
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeExecutionPolicyV1,
+    ExternalSingleVolumeReportV1,
+    ExternalSingleVolumeRequestV1,
+)
 
 from ksi_core.domains.external.quantity.external_relative_volumes import ExternalRelativeVolumeStore
 from ksi_core.domains.external.quantity.external_single_volumes import ExternalSingleVolumeStore
@@ -48,6 +53,14 @@ class ExternalResultReportView(CamelModel):
     execution_policy: ExternalRelativeVolumeExecutionPolicyV1
     review: ExternalResultReviewReceiptV1 | None = None
     proposals: list[ExternalReobservationProposalView]
+
+
+class ExternalSingleVolumeReportView(CamelModel):
+    """Recorded single-epoch provenance; review and proposals do not apply to this family."""
+
+    request: ExternalSingleVolumeRequestV1
+    report: ExternalSingleVolumeReportV1
+    execution_policy: ExternalSingleVolumeExecutionPolicyV1
 
 
 class ExternalResultReviewIntent(CamelModel):
@@ -543,9 +556,12 @@ def build_external_result_workflow_router(
     volumes: ExternalRelativeVolumeStore,
     service: ExternalReobservationProposalService,
     *,
+    single_volumes: ExternalSingleVolumeStore | None = None,
     clock: Callable[[], datetime] | None = None,
 ) -> APIRouter:
-    if volumes.coordinator is not service.coordinator:
+    if volumes.coordinator is not service.coordinator or (
+        single_volumes is not None and single_volumes.coordinator is not service.coordinator
+    ):
         raise ValueError("result workflow participants must share one coordinator")
     source = service.reviews.source_port
     if not isinstance(
@@ -554,7 +570,9 @@ def build_external_result_workflow_router(
         raise ValueError("result workflow review source must use the exact volume store")
 
     now = clock or (lambda: datetime.now(UTC))
-    projector = ExternalResultReadProjector(volumes=volumes, workflow=service, clock=now)
+    projector = ExternalResultReadProjector(
+        volumes=volumes, workflow=service, single_volumes=single_volumes, clock=now
+    )
     router = APIRouter(tags=["external-result-workflow"])
     read = require_permission(Permission.SITES_READ)
     write = require_permission(Permission.WORK_ORDERS_WRITE)
@@ -577,6 +595,26 @@ def build_external_result_workflow_router(
         )
 
     @router.get(
+        "/v1/sites/{site_id}/external-volume-reports",
+        response_model=ExternalResultHistoryView,
+    )
+    def site_volume_report_history(
+        site_id: str,
+        after: str | None = None,
+        limit: int = Query(default=20, ge=1, le=50),
+        principal: Principal = read_dependency,
+    ) -> ExternalResultHistoryView:
+        try:
+            return projector.history_for_site(
+                site_id,
+                organization_id=principal.organization_id,
+                after=after,
+                limit=limit,
+            )
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail="EXTERNAL_VOLUME_REPORT_NOT_FOUND") from exc
+
+    @router.get(
         "/v1/sites/{site_id}/external-relative-volume-reports",
         response_model=ExternalResultHistoryView,
     )
@@ -592,6 +630,7 @@ def build_external_result_workflow_router(
                 organization_id=principal.organization_id,
                 after=after,
                 limit=limit,
+                kinds=frozenset({_RELATIVE_KIND}),
             )
         except LookupError as exc:
             raise HTTPException(
@@ -647,6 +686,29 @@ def build_external_result_workflow_router(
             review=review,
             proposals=proposals,
         )
+
+    if single_volumes is not None:
+        single_store = single_volumes
+
+        @router.get(
+            "/v1/external-single-volume-reports/{report_ref}",
+            response_model=ExternalSingleVolumeReportView,
+        )
+        def single_report_view(
+            report_ref: str, principal: Principal = read_dependency
+        ) -> ExternalSingleVolumeReportView:
+            resolved = single_store.resolve_historical_report_ref(
+                report_ref, organization_id=principal.organization_id, now=now()
+            )
+            if resolved is None:
+                raise HTTPException(
+                    status_code=404, detail="EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND"
+                )
+            return ExternalSingleVolumeReportView(
+                request=resolved.request,
+                report=resolved.report,
+                execution_policy=resolved.execution_authority.execution_policy,
+            )
 
     @router.post(
         "/v1/external-relative-volume-reports/{report_ref}/reviews",

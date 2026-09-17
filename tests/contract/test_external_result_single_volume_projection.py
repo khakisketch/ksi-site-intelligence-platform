@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
@@ -18,6 +19,9 @@ from external_single_volume_fixture import (
     _payload,
     _store,
 )
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from ksi_core.auth import AuthRegistry, PrincipalTokenRecord, mount_auth
 from ksi_core.domains.external.quantity.external_relative_volumes import (
     ExternalRelativeVolumeExecutionAuthority,
     ExternalRelativeVolumeObservedReportInput,
@@ -28,13 +32,16 @@ from ksi_core.domains.external.quantity.external_single_volumes import (
     ExternalSingleVolumeObservedReportInput,
     ExternalSingleVolumeStore,
 )
-from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_core.external_result_workflow_api import (
+    ExternalResultReadProjector,
+    build_external_result_workflow_router,
+)
 from ksi_core.foundation.api_base import iso_utc
 from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
 from ksi_event_contracts.external_single_volume import ExternalSingleVolumeReportV1
 from test_external_relative_volumes import _fence
 from test_external_relative_volumes import _payload as _relative_payload
-from test_external_result_review_proposals import _NOW, _principal
+from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _token_record
 
 _ORG = "org-a"
 _SITE = "site-a"
@@ -377,5 +384,102 @@ def test_projector_rejects_single_store_on_another_coordinator(
         assert not projector.uses_exact_graph(
             volumes=harness.graph.volumes, workflow=harness.graph.service
         )
+    finally:
+        foreign._journal.close()
+
+
+def _http_client(harness: _Harness) -> TestClient:
+    other = PrincipalTokenRecord(
+        token_sha256=hashlib.sha256(b"other-org-fixture").hexdigest(),
+        principal=_principal(organization_id="org-b", principal_id="operator-b"),
+    )
+    app = FastAPI()
+    mount_auth(app, AuthRegistry([_token_record(), other]))
+    app.include_router(
+        build_external_result_workflow_router(
+            harness.graph.volumes,
+            harness.graph.service,
+            single_volumes=harness.single,
+            clock=lambda: _NOW,
+        )
+    )
+    return TestClient(app)
+
+
+def test_http_routes_serve_single_reports_and_merged_history(harness: _Harness) -> None:
+    relative = record_measurement(harness.graph)
+    single = _record_single(harness)
+    headers = {"Authorization": f"Bearer {_TOKEN}"}
+    other = {"Authorization": "Bearer other-org-fixture"}
+    with _http_client(harness) as client:
+        merged = client.get(f"/v1/sites/{_SITE}/external-volume-reports", headers=headers)
+        assert merged.status_code == 200, merged.text
+        rows = [(i["reportRef"], i["result"]["kind"]) for i in merged.json()["items"]]
+        assert rows == [
+            (single.report_id, "EXTERNAL_SINGLE_VOLUME"),
+            (relative.report_id, "EXTERNAL_RELATIVE_VOLUME"),
+        ]
+        paged = client.get(
+            f"/v1/sites/{_SITE}/external-volume-reports?limit=1", headers=headers
+        ).json()
+        assert paged["nextCursor"] == single.report_id
+        unknown = client.get(
+            f"/v1/sites/{_SITE}/external-volume-reports?after=unknown-report", headers=headers
+        )
+        assert unknown.status_code == 404
+        assert unknown.json()["detail"] == "EXTERNAL_VOLUME_REPORT_NOT_FOUND"
+
+        relative_only = client.get(
+            f"/v1/sites/{_SITE}/external-relative-volume-reports", headers=headers
+        )
+        assert relative_only.status_code == 200, relative_only.text
+        assert [i["reportRef"] for i in relative_only.json()["items"]] == [relative.report_id]
+
+        exact = client.get(f"/v1/sites/{_SITE}/observations/{single.report_id}", headers=headers)
+        assert exact.status_code == 200, exact.text
+        assert exact.json()["result"]["kind"] == "EXTERNAL_SINGLE_VOLUME"
+
+        path = f"/v1/external-single-volume-reports/{single.report_id}"
+        assert client.get(path).status_code == 401
+        shown = client.get(path, headers=headers)
+        assert shown.status_code == 200, shown.text
+        body = shown.json()
+        assert set(body) == {"request", "report", "executionPolicy"}
+        assert body["report"] == single.model_dump(by_alias=True, mode="json")
+        assert body["request"]["requestId"] == single.request_id
+        assert body["request"]["requestDigest"] == single.request_digest
+        assert body["executionPolicy"] == harness.port.authority.execution_policy.model_dump(
+            by_alias=True, mode="json"
+        )
+        for denied in (
+            client.get(path, headers=other),
+            client.get(f"/v1/external-single-volume-reports/{relative.report_id}", headers=headers),
+            client.get("/v1/external-single-volume-reports/unknown", headers=headers),
+        ):
+            assert denied.status_code == 404
+            assert denied.json()["detail"] == "EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND"
+        foreign_history = client.get(f"/v1/sites/{_SITE}/external-volume-reports", headers=other)
+        assert foreign_history.status_code == 404
+        assert foreign_history.json()["detail"] == "EXTERNAL_VOLUME_REPORT_NOT_FOUND"
+
+
+def test_single_report_route_is_absent_without_single_store(harness: _Harness) -> None:
+    router = build_external_result_workflow_router(harness.graph.volumes, harness.graph.service)
+    paths = {getattr(route, "path", None) for route in router.routes}
+    assert "/v1/external-single-volume-reports/{report_ref}" not in paths
+    assert "/v1/sites/{site_id}/external-volume-reports" in paths
+
+
+def test_router_rejects_single_store_on_another_coordinator(
+    harness: _Harness, tmp_path: Path
+) -> None:
+    foreign_path = tmp_path / "foreign-router"
+    foreign_path.mkdir()
+    foreign = _store(foreign_path, _AuthorityPort(harness.port.authority), now=_NOW)
+    try:
+        with pytest.raises(ValueError, match="share one coordinator"):
+            build_external_result_workflow_router(
+                harness.graph.volumes, harness.graph.service, single_volumes=foreign
+            )
     finally:
         foreign._journal.close()
