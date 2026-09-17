@@ -1176,6 +1176,58 @@ def _mapping(
     ).sealed()
 
 
+def _single_mapping(
+    *,
+    subject: Any,
+    revision: Any,
+    report: Any,
+    evidence_record: Any,
+    policy: Any,
+    area: Any,
+    now: datetime,
+    catalog_digest: str,
+) -> Any:
+    from ksi_core.external_single_volume_authority import ExternalSingleVolumeCompatibilityRecord
+
+    dsm = next(
+        entry for entry in revision.manifest.entries if entry.kind is ProcessingArtifactKind.DSM
+    )
+    target = ExternalVolumeInputBindingV1(
+        subject=subject,
+        inspection_report_digest=report.report_digest,
+        dsm_artifact_id=dsm.artifact_id,
+        observed_sha256="sha256:" + dsm.observed_sha256,
+        observed_size_bytes=dsm.observed_size_bytes,
+        observed_crs_digest=_digest("observed-crs-5186"),
+        observed_vertical_reference_digest=_observed_vertical_reference().canonical_digest(),
+        captured_from=revision.submission.input_declaration.capture_started_at,
+        captured_to=revision.submission.input_declaration.capture_ended_at,
+    )
+    zone = ExternalVolumeZoneSnapshotV1(
+        organization_id="org-a",
+        site_id="site-a",
+        work_area_id=area.work_area_id,
+        polygon=area.polygon,
+        crs=area.crs,
+        observed_crs_digest=_digest("observed-crs-5186"),
+        analysis_vertical_reference_digest=_observed_vertical_reference().canonical_digest(),
+    ).sealed()
+    return ExternalSingleVolumeCompatibilityRecord(
+        organization_id="org-a",
+        site_id="site-a",
+        target=target,
+        zone_snapshot=zone,
+        validation_policy_digest=policy.policy_digest,
+        external_profile="external-geotiff-profile.v1",
+        grammar_digest=policy.grammar_digest,
+        inspector_build_digest=policy.parser_build_digest,
+        evidence_record_digests=(evidence_record.evidence_record_digest,),
+        execution_policy_ref=catalog_digest,
+        valid_from=now - timedelta(hours=1),
+        valid_until=now + timedelta(hours=1),
+    ).sealed()
+
+
 def test_external_quantitative_real_participants_complete_authorized_cycle_across_restart(
     tmp_path: Path,
 ) -> None:

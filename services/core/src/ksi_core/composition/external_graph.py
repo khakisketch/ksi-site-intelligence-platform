@@ -89,9 +89,7 @@ def build_external_pre_work_order_graph(
         else None
     )
     external_evidence_store = (
-        ExternalEvidenceStore(
-            journal("external-evidence.jsonl"), coordinator=coordinator
-        )
+        ExternalEvidenceStore(journal("external-evidence.jsonl"), coordinator=coordinator)
         if external_reconstruction_store is not None
         else None
     )
@@ -223,6 +221,7 @@ def build_external_pre_work_order_graph(
             or external_volume_mapping.currentness_coordinator is not coordinator
         ):
             raise ValueError("external result workflow mapping must share the Core coordinator")
+    external_single_volume_mapping = getattr(external_volume_mapping, "single_mapping_port", None)
     external_use_decision_store = (
         ExternalUseDecisionStore(
             journal("external-use-decisions.jsonl"),
@@ -233,6 +232,7 @@ def build_external_pre_work_order_graph(
                 policy_registry=external_validation_policy_registry,
                 evidence_validations=external_evidence_validation_store,
                 relative_volume_authority=external_volume_mapping,
+                single_volume_authority=external_single_volume_mapping,
             ),
         )
         if external_reconstruction_store is not None
@@ -250,6 +250,7 @@ def build_external_pre_work_order_graph(
             evidence_validations=external_evidence_validation_store,
             coordinator=coordinator,
             relative_volume_authority=external_volume_mapping,
+            single_volume_authority=external_single_volume_mapping,
         )
         if external_use_decision_store is not None
         and external_reconstruction_store is not None
@@ -277,10 +278,7 @@ def build_external_pre_work_order_graph(
             policy_registry=external_validation_policy_registry,
             evidence_validations=external_evidence_validation_store,
         )
-        if (
-            runtime is None
-            or runtime.execution.currentness_coordinator is not coordinator
-        ):
+        if runtime is None or runtime.execution.currentness_coordinator is not coordinator:
             raise ValueError("external result workflow execution must share the Core coordinator")
         if runtime.historical_use is None:
             raise ValueError("external result workflow requires independent use history")

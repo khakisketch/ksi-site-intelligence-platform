@@ -54,6 +54,9 @@ from ksi_core.domains.external.quantity.external_quantitative_authority import (
     ExternalQuantitativeCatalogAuthorityCurrentnessPort,
     ExternalQuantitativeCompatibilityRecord,
 )
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
+    ExternalSingleVolumeCompatibilityRecord,
+)
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal
 
@@ -443,6 +446,36 @@ class ExternalAuthorityProvider:
                     is None
                 ):
                     raise ExternalAuthorityProviderError("signed mapping admission was not applied")
+            elif action.kind == "ADMIT_SINGLE_MAPPING":
+                if action.actor_id != self._config.catalog_administration_actor_id:
+                    raise ValueError(
+                        "mapping action actor is not the configured catalog administrator"
+                    )
+                single = ExternalSingleVolumeCompatibilityRecord.from_event_payload(
+                    action.payload["mapping"]
+                )
+                if (
+                    single.organization_id != self.organization_id
+                    or catalog.admit_single_mapping(
+                        single, actor=action.actor_id, now=action.effective_at
+                    )
+                    is None
+                ):
+                    raise ExternalAuthorityProviderError(
+                        "signed single-volume mapping admission was not applied"
+                    )
+            elif action.kind == "REVOKE_SINGLE_MAPPING":
+                if (
+                    action.actor_id != self._config.catalog_administration_actor_id
+                    or not catalog.revoke_single_mapping(
+                        cast(str, action.payload["mappingDigest"]),
+                        actor=action.actor_id,
+                        now=action.effective_at,
+                    )
+                ):
+                    raise ExternalAuthorityProviderError(
+                        "signed single-volume mapping revocation was not applied"
+                    )
             elif action.kind == "REVOKE_MAPPING":
                 if (
                     action.actor_id != self._config.catalog_administration_actor_id
@@ -544,9 +577,7 @@ class ExternalAuthorityProvider:
                 return None
             return generation
 
-    def _live_snapshot(
-        self, now: datetime, *, permit_staged: bool
-    ) -> _VerifiedSnapshot | None:
+    def _live_snapshot(self, now: datetime, *, permit_staged: bool) -> _VerifiedSnapshot | None:
         """Return the one current live snapshot, or this thread's reconciliation candidate."""
         if permit_staged:
             staged = getattr(self._staged, "candidate", None)

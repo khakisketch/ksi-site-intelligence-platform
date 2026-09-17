@@ -49,10 +49,17 @@ from ksi_core.domains.external.quantity.external_quantitative_authority import (
 from ksi_core.domains.external.quantity.external_relative_volumes import (
     ExternalRelativeVolumeQueuePolicy,
 )
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
+    ExternalSingleVolumeCompatibilityRecord,
+)
 
 
 def _protected_bytes(
-    path: Path, *, name: str, maximum: int, private: bool,
+    path: Path,
+    *,
+    name: str,
+    maximum: int,
+    private: bool,
 ) -> bytes:
     """Read only the bounded regular descriptor whose metadata was checked."""
     if not path.is_absolute() or ".." in path.parts:
@@ -90,11 +97,21 @@ def _protected_bytes(
             content.extend(chunk)
         after = os.fstat(descriptor)
         if len(content) != before.st_size or (
-            after.st_size, after.st_mtime_ns, after.st_ctime_ns,
-            after.st_mode, after.st_uid, after.st_gid, after.st_nlink,
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+            after.st_mode,
+            after.st_uid,
+            after.st_gid,
+            after.st_nlink,
         ) != (
-            before.st_size, before.st_mtime_ns, before.st_ctime_ns,
-            before.st_mode, before.st_uid, before.st_gid, before.st_nlink,
+            before.st_size,
+            before.st_mtime_ns,
+            before.st_ctime_ns,
+            before.st_mode,
+            before.st_uid,
+            before.st_gid,
+            before.st_nlink,
         ):
             raise ValueError(f"{name} changed during its bounded read")
         return bytes(content)
@@ -184,9 +201,7 @@ def _config_from_path(path: Path) -> _ProviderConfig:
     )
 
 
-def _active_key(
-    registry_path: Path, snapshot_key_id: str, now: datetime
-) -> _ActiveKey:
+def _active_key(registry_path: Path, snapshot_key_id: str, now: datetime) -> _ActiveKey:
     raw = _exact_mapping(
         _private_json(registry_path, name="authority key registry"),
         frozenset({"version", "keys"}),
@@ -234,7 +249,10 @@ def _active_key(
     key_path = _safe_child(registry_path.parent, key["publicKeyFile"], name="publicKeyFile")
     try:
         material = _protected_bytes(
-            key_path, name="authority public key", maximum=16_384, private=False,
+            key_path,
+            name="authority public key",
+            maximum=16_384,
+            private=False,
         )
         loaded = serialization.load_pem_public_key(material)
     except (OSError, TypeError, ValueError) as exc:
@@ -344,7 +362,9 @@ def _snapshot_from_path(
             or policy.authority_record_digest not in current_policy_digests
             or authority is None
             or not authority.authorizes_admission(
-                policy, actor=action.actor_id, now=action.effective_at,
+                policy,
+                actor=action.actor_id,
+                now=action.effective_at,
             )
         ):
             raise ValueError("signed policy admission is not exactly sealed and authorized")
@@ -435,6 +455,8 @@ def _administration_actions(
         "SUPERSEDE_POLICY": 0,
         "ADMIT_MAPPING": 1,
         "REVOKE_MAPPING": 1,
+        "ADMIT_SINGLE_MAPPING": 1,
+        "REVOKE_SINGLE_MAPPING": 1,
     }
     prior_rank = -1
     for raw_action in raw_actions:
@@ -450,7 +472,7 @@ def _administration_actions(
             required.update(
                 {"policyId", "policyVersion", "successorPolicyId", "successorPolicyVersion"}
             )
-        elif kind == "ADMIT_MAPPING":
+        elif kind in {"ADMIT_MAPPING", "ADMIT_SINGLE_MAPPING"}:
             required.add("mapping")
         else:
             required.add("mappingDigest")
@@ -481,13 +503,15 @@ def _administration_actions(
                     action["successorPolicyVersion"], bool
                 ):
                     raise ValueError("successorPolicyVersion must be an integer")
-        elif kind == "REVOKE_MAPPING" and (
+        elif kind in {"REVOKE_MAPPING", "REVOKE_SINGLE_MAPPING"} and (
             not isinstance(action["mappingDigest"], str)
             or _DIGEST.fullmatch(action["mappingDigest"]) is None
         ):
             raise ValueError("mappingDigest must be a sha256 digest")
         elif kind == "ADMIT_MAPPING":
             ExternalQuantitativeCompatibilityRecord.from_event_payload(action["mapping"])
+        elif kind == "ADMIT_SINGLE_MAPPING":
+            ExternalSingleVolumeCompatibilityRecord.from_event_payload(action["mapping"])
         seen_ids.add(action_id)
         previous_at = effective_at
         prior_rank = ranks[kind]

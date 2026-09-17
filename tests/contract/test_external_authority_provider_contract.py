@@ -23,6 +23,7 @@ from ksi_core.external_quantitative_authority import (
     ExternalQuantitativeAuthorityCatalog,
     ExternalQuantitativeCatalogAuthorityRecord,
 )
+from ksi_core.external_single_volume_authority import SingleVolumeCompatibilityRuleDescriptorV1
 from ksi_core.external_validation_policy import (
     ExternalValidationPolicyRegistry,
     PolicyAuthorityRecord,
@@ -78,7 +79,8 @@ def test_provider_rejects_unsafe_public_key_material(tmp_path: Path, damage: str
 
 
 def test_provider_consumes_descriptor_bytes_without_path_reopens(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from ksi_core.external_authority_provider import load_external_authority_provider
 
@@ -108,13 +110,15 @@ def test_preflight_rejects_unusable_signed_policy_actions(tmp_path: Path, damage
     config = _provider_config(
         tmp_path,
         policy_records=() if damage == "missing_authority" else (authority.event_payload(),),
-        actions=({
-            "actionId": "test-policy-admission",
-            "kind": "ADMIT_POLICY",
-            "effectiveAt": "2026-09-11T00:00:00Z",
-            "actorId": "unapproved" if damage == "wrong_actor" else "policy-admin",
-            "policy": payload,
-        },),
+        actions=(
+            {
+                "actionId": "test-policy-admission",
+                "kind": "ADMIT_POLICY",
+                "effectiveAt": "2026-09-11T00:00:00Z",
+                "actorId": "unapproved" if damage == "wrong_actor" else "policy-admin",
+                "policy": payload,
+            },
+        ),
     )
     with pytest.raises(ExternalAuthorityProviderError):
         load_external_authority_provider(config, clock=lambda: NOW)
@@ -502,7 +506,10 @@ def _provider_policy_admission(
         authority_record_digest=production_flow._digest("unbound-policy-authority"),
         inspection_rule_ids=("EXTERNAL_GEOTIFF_MEASURED_V1",),
         evidence_rule_ids=("CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",),
-        compatibility_mapping_digests=(CompatibilityRuleDescriptorV1().canonical_digest(),),
+        compatibility_mapping_digests=(
+            CompatibilityRuleDescriptorV1().canonical_digest(),
+            SingleVolumeCompatibilityRuleDescriptorV1().canonical_digest(),
+        ),
         synthetic_test_only=False,
     ).sealed()
     authority = PolicyAuthorityRecord(
@@ -510,7 +517,7 @@ def _provider_policy_admission(
         policy_version=template.version,
         authorized_policy_body_digest=authorized_policy_body_digest(template),
         permitted_subjects=subjects,
-        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME"),
+        permitted_uses=("INSPECTION", "EVIDENCE", "RELATIVE_VOLUME", "SINGLE_VOLUME"),
         authorized_actor_ids=("policy-admin",),
         active_from=now - timedelta(hours=1),
         active_until=now + timedelta(hours=1),
@@ -1276,14 +1283,13 @@ def test_failed_graph_attachment_does_not_claim_provider_identity(
 
 
 def test_reconciliation_candidate_is_invisible_to_other_threads_until_receipt_publication(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The thread-local reconciliation permit cannot become a cross-thread live port."""
     policy, authority = _administrable_policy()
     assert authority.digest is not None
-    replacement_authority = replace(
-        authority, policy_id="policy-replacement", digest=None
-    ).sealed()
+    replacement_authority = replace(authority, policy_id="policy-replacement", digest=None).sealed()
     assert replacement_authority.digest is not None
     fixture_signers: list[Ed25519PrivateKey] = []
     provider_module = importlib.import_module("ksi_core.external_authority_provider")
@@ -1340,9 +1346,12 @@ def test_reconciliation_candidate_is_invisible_to_other_threads_until_receipt_pu
     reload_thread.join(timeout=1)
 
     assert not reload_thread.is_alive()
-    assert provider.participants.policy_authority_port.resolve(
-        replacement_authority.digest, NOW + timedelta(minutes=2)
-    ) == replacement_authority
+    assert (
+        provider.participants.policy_authority_port.resolve(
+            replacement_authority.digest, NOW + timedelta(minutes=2)
+        )
+        == replacement_authority
+    )
 
 
 def test_blocked_provider_recovers_a_signed_policy_admission_without_exposing_it_early(
@@ -1407,9 +1416,7 @@ def test_blocked_provider_recovers_a_signed_policy_admission_without_exposing_it
         clock_now[0] = NOW + timedelta(minutes=2)
         assert provider.reload_and_reconcile(now=clock_now[0])["status"] == "BLOCKED"
         assert (
-            provider.participants.policy_authority_port.resolve(
-                authority.digest, clock_now[0]
-            )
+            provider.participants.policy_authority_port.resolve(authority.digest, clock_now[0])
             is None
         )
         assert registry._journal.replay() == []  # noqa: SLF001 - no malformed action persists.
@@ -1426,15 +1433,11 @@ def test_blocked_provider_recovers_a_signed_policy_admission_without_exposing_it
             original_apply(registry, candidate)
 
         monkeypatch.setattr(provider, "_apply_policy_actions", delayed_apply)
-        recovery = threading.Thread(
-            target=lambda: provider.reload_and_reconcile(now=clock_now[0])
-        )
+        recovery = threading.Thread(target=lambda: provider.reload_and_reconcile(now=clock_now[0]))
         recovery.start()
         assert entered.wait(timeout=1)
         assert (
-            provider.participants.policy_authority_port.resolve(
-                authority.digest, clock_now[0]
-            )
+            provider.participants.policy_authority_port.resolve(authority.digest, clock_now[0])
             is None
         )
         release.set()
@@ -1706,8 +1709,7 @@ def test_attach_reconciles_a_signed_mapping_admission_through_the_actual_catalog
         assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == second_digest
         assert provider.participants.policy_authority_port is not None
         assert (
-            provider.participants.policy_authority_port.resolve(authority.digest, now)
-            == authority
+            provider.participants.policy_authority_port.resolve(authority.digest, now) == authority
         )
         assert policy.policy_digest is not None
         assert authority.permits_selection(
@@ -1718,7 +1720,9 @@ def test_attach_reconciles_a_signed_mapping_admission_through_the_actual_catalog
             is PolicySelectionStatus.ACTIVE
         )
         assert (
-            app.state.external_validation_policy_registry.select_for_inspection(baseline_subject).status
+            app.state.external_validation_policy_registry.select_for_inspection(
+                baseline_subject
+            ).status
             is PolicySelectionStatus.ACTIVE
         )
 
@@ -1767,6 +1771,27 @@ def test_attach_reconciles_a_signed_mapping_admission_through_the_actual_catalog
                 **mapping.canonical_payload(),
             },
         }
+        single = production_flow._single_mapping(
+            subject=baseline_subject,
+            revision=baseline_revision,
+            report=baseline_report,
+            evidence_record=baseline_evidence,
+            policy=policy,
+            area=area,
+            now=now,
+            catalog_digest=catalog_record.digest,
+        )
+        assert single.mapping_digest is not None
+        single_action = {
+            "actionId": "provider-admit-single-mapping",
+            "kind": "ADMIT_SINGLE_MAPPING",
+            "effectiveAt": now.isoformat().replace("+00:00", "Z"),
+            "actorId": "catalog-admin",
+            "mapping": {
+                "mappingRecordDigest": single.mapping_digest,
+                **single.canonical_payload(),
+            },
+        }
         third_digest = _replace_signed_snapshot(
             tmp_path,
             fixture_signers[0],
@@ -1774,15 +1799,59 @@ def test_attach_reconciles_a_signed_mapping_admission_through_the_actual_catalog
                 "sequence": 3,
                 "previousSnapshotDigest": second_digest,
                 "issuedAt": now.isoformat().replace("+00:00", "Z"),
-                "quantitativeAdministration": {"actions": [policy_action, mapping_action]},
+                "quantitativeAdministration": {
+                    "actions": [policy_action, mapping_action, single_action]
+                },
             },
         )
         assert provider.reload_and_reconcile(now=now)["snapshotDigest"] == third_digest
         catalog = app.state.external_relative_volume_mapping_authority
         assert isinstance(catalog, ExternalQuantitativeAuthorityCatalog)
         assert [event["kind"] for event in catalog._journal.replay()] == [  # noqa: SLF001
-            "external-quantitative-mapping-activated"
+            "external-quantitative-mapping-activated",
+            "external-quantitative-single-mapping-activated",
         ]
+        assert (
+            catalog.resolve_single_for_use(
+                subject=baseline_subject, zone_id=area.work_area_id, policy=policy, now=now
+            )
+            is not None
+        )
+
+        revoke_at = now + timedelta(seconds=30)
+        single_revoke = {
+            "actionId": "provider-revoke-single-mapping",
+            "kind": "REVOKE_SINGLE_MAPPING",
+            "effectiveAt": revoke_at.isoformat().replace("+00:00", "Z"),
+            "actorId": "catalog-admin",
+            "mappingDigest": single.mapping_digest,
+        }
+        clock_now[0] = revoke_at
+        third_digest = _replace_signed_snapshot(
+            tmp_path,
+            fixture_signers[0],
+            {
+                "sequence": 4,
+                "previousSnapshotDigest": third_digest,
+                # Actions may not precede issuance; the revocation takes effect later.
+                "issuedAt": now.isoformat().replace("+00:00", "Z"),
+                "quantitativeAdministration": {
+                    "actions": [policy_action, mapping_action, single_action, single_revoke]
+                },
+            },
+        )
+        assert provider.reload_and_reconcile(now=revoke_at)["snapshotDigest"] == third_digest
+        assert [event["kind"] for event in catalog._journal.replay()] == [  # noqa: SLF001
+            "external-quantitative-mapping-activated",
+            "external-quantitative-single-mapping-activated",
+            "external-quantitative-single-mapping-revoked",
+        ]
+        assert (
+            catalog.resolve_single_for_use(
+                subject=baseline_subject, zone_id=area.work_area_id, policy=policy, now=revoke_at
+            )
+            is None
+        )
 
         invalid = replace(
             mapping,
@@ -1805,17 +1874,27 @@ def test_attach_reconciles_a_signed_mapping_admission_through_the_actual_catalog
             tmp_path,
             fixture_signers[0],
             {
-                "sequence": 4,
+                "sequence": 5,
                 "previousSnapshotDigest": third_digest,
-                "issuedAt": clock_now[0].isoformat().replace("+00:00", "Z"),
+                "issuedAt": now.isoformat().replace("+00:00", "Z"),
                 "quantitativeAdministration": {
-                    "actions": [policy_action, mapping_action, invalid_action]
+                    "actions": [
+                        policy_action,
+                        mapping_action,
+                        single_action,
+                        single_revoke,
+                        invalid_action,
+                    ]
                 },
             },
         )
         assert provider.reload_and_reconcile(now=clock_now[0])["status"] == "BLOCKED"
+        # The snapshot itself loads; only the unevidenced mapping fails reconciliation.
+        assert provider._blocked_reason == "RECONCILIATION"  # noqa: SLF001
         assert [event["kind"] for event in catalog._journal.replay()] == [  # noqa: SLF001
-            "external-quantitative-mapping-activated"
+            "external-quantitative-mapping-activated",
+            "external-quantitative-single-mapping-activated",
+            "external-quantitative-single-mapping-revoked",
         ]
     finally:
         receipts.close()
@@ -1881,7 +1960,8 @@ def test_attach_refuses_a_signed_administration_action_before_its_effective_time
 
 
 def test_restart_recovers_exactly_after_policy_actions_persist_but_receipt_append_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     policy, authority = _administrable_policy()
     assert policy.policy_digest is not None
