@@ -34,6 +34,7 @@ from ksi_core.external_reobservation_proposals import (
 )
 from ksi_core.external_result_reviews import (
     ExternalResultReviewRecoveryError,
+    ExternalResultReviewSource,
     ExternalResultReviewSourceV1,
     ExternalResultReviewStore,
 )
@@ -62,6 +63,7 @@ from ksi_event_contracts.external_reobservation import (
 from ksi_event_contracts.external_result_review import (
     ExternalReobservationProposalV1,
     ExternalResultReviewAuthorityV1,
+    ExternalResultReviewReceiptV1,
     external_reobservation_proposal_wire_dict,
     external_result_review_receipt_wire_dict,
 )
@@ -308,7 +310,7 @@ class _SyntheticSourcePort:
         return source
 
     def is_current(
-        self, source: ExternalResultReviewSourceV1, *, principal: Principal, evaluated_at: datetime
+        self, source: ExternalResultReviewSource, *, principal: Principal, evaluated_at: datetime
     ) -> bool:
         return bool(
             self.live
@@ -1095,7 +1097,7 @@ def test_sealed_review_and_proposal_wires_validate_published_contract_schemas(
 ) -> None:
     harness = _harness(tmp_path)
     review = harness.reviews.get_for_report(harness.source.report_ref, organization_id="org-a")
-    assert review is not None
+    assert isinstance(review, ExternalResultReviewReceiptV1)
     proposal = harness.service.create(
         organization_id="org-a",
         report_ref=harness.source.report_ref,

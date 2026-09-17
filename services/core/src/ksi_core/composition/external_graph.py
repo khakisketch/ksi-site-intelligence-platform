@@ -323,6 +323,12 @@ def build_external_pre_work_order_graph(
                 decisions=external_use_decision_store,
                 historical_use_authority=runtime.historical_use,
                 coordinator=coordinator,
+                single_volume_store=(
+                    external_single_volume.store if external_single_volume is not None else None
+                ),
+                single_historical_use_authority=(
+                    runtime.single_execution if external_single_volume is not None else None
+                ),
             ),
             coordinator=coordinator,
         )

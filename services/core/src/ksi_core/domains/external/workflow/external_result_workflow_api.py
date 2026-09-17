@@ -723,11 +723,17 @@ def build_external_result_workflow_router(
         del request
         if principal.kind is not PrincipalKind.OPERATOR:
             raise HTTPException(status_code=403, detail="HUMAN_REVIEW_REQUIRED")
+        if report_ref.startswith(_SINGLE_REPORT_PREFIX):
+            # A single-volume ref never reaches the review store through the
+            # relative route; this keeps the response it returned before SV-3b.
+            raise HTTPException(status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE")
         try:
             existing = service.reviews.get_for_report(
                 report_ref, organization_id=principal.organization_id
             )
-            if existing is not None and service.work_orders.is_external_workflow_closed(
+            if isinstance(
+                existing, ExternalResultReviewReceiptV1
+            ) and service.work_orders.is_external_workflow_closed(
                 existing.source_work_order_id, organization_id=principal.organization_id
             ):
                 return ExternalResultReviewView(review=existing)
@@ -768,6 +774,9 @@ def build_external_result_workflow_router(
             raise HTTPException(
                 status_code=422, detail="INVALID_EXTERNAL_RESULT_REVIEW_INTENT"
             ) from exc
+        if not isinstance(receipt, ExternalResultReviewReceiptV1):
+            # Unreachable: only single-prefixed refs resolve single sources.
+            raise HTTPException(status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE")
         return ExternalResultReviewView(review=receipt)
 
     @router.get("/v1/external-result-reviews/{review_ref}", response_model=ExternalResultReviewView)
@@ -775,7 +784,8 @@ def build_external_result_workflow_router(
         review_ref: str, principal: Principal = read_dependency
     ) -> ExternalResultReviewView:
         receipt = service.reviews.get_scoped(review_ref, organization_id=principal.organization_id)
-        if receipt is None:
+        # Single-volume receipts are served once this view carries both families.
+        if not isinstance(receipt, ExternalResultReviewReceiptV1):
             raise HTTPException(status_code=404, detail="EXTERNAL_RESULT_REVIEW_NOT_FOUND")
         return ExternalResultReviewView(review=receipt)
 

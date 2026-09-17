@@ -36,7 +36,8 @@ from ksi_event_contracts.work_area import WorkArea, WorkAreaStatus
 from pydantic import Field, ValidationError, field_validator
 
 from ksi_core.domains.external.workflow.external_result_reviews import (
-    ExternalResultReviewSourceV1,
+    AnyExternalResultReviewReceipt,
+    ExternalResultReviewSource,
     ExternalResultReviewStore,
 )
 from ksi_core.domains.sites.observation_work_orders import (
@@ -82,7 +83,7 @@ def _require_utc(value: datetime, *, field: str) -> None:
         raise ValueError(f"{field} must be UTC-aware")
 
 
-def _review_target(review: ExternalResultReviewReceiptV1) -> ExternalWorkAreaSnapshotV1:
+def _review_target(review: AnyExternalResultReviewReceipt) -> ExternalWorkAreaSnapshotV1:
     """Derive the sole allowed target from the reviewed report zone, never intent."""
 
     zone = review.authority.zone_snapshot
@@ -104,14 +105,14 @@ def _area_target(area: WorkArea) -> ExternalWorkAreaSnapshotV1:
 
 
 def _target_matches_review(
-    review: ExternalResultReviewReceiptV1, area: WorkArea
+    review: AnyExternalResultReviewReceipt, area: WorkArea
 ) -> ExternalWorkAreaSnapshotV1 | None:
     target = _area_target(area)
     return target if target == _review_target(review) else None
 
 
 def _proposal_intent_digest(
-    review: ExternalResultReviewReceiptV1,
+    review: AnyExternalResultReviewReceipt,
     target: ExternalWorkAreaSnapshotV1,
     *,
     reason: str | None,
@@ -214,7 +215,7 @@ class ExternalReobservationProposalStore:
     def create(
         self,
         *,
-        review: ExternalResultReviewReceiptV1,
+        review: AnyExternalResultReviewReceipt,
         target: ExternalWorkAreaSnapshotV1,
         reason: str | None,
         actor: str,
@@ -412,7 +413,7 @@ class ExternalReobservationProposalStore:
 @dataclass(frozen=True, slots=True)
 class _HistoricalProposalLineage:
     proposal: ExternalReobservationProposalV1
-    review: ExternalResultReviewReceiptV1
+    review: AnyExternalResultReviewReceipt
     target: ExternalWorkAreaSnapshotV1
 
 
@@ -424,8 +425,8 @@ class _CurrentApprovalWitness:
     principal: Principal
     actor: str
     approval_input_digest: str
-    review: ExternalResultReviewReceiptV1
-    source: ExternalResultReviewSourceV1
+    review: AnyExternalResultReviewReceipt
+    source: ExternalResultReviewSource
     evaluated_at: datetime
 
 
@@ -539,7 +540,7 @@ class CoreExternalReobservationProposalAuthorityPort(ExternalReobservationPropos
 
     @staticmethod
     def _proposal_matches_review(
-        proposal: ExternalReobservationProposalV1, review: ExternalResultReviewReceiptV1
+        proposal: ExternalReobservationProposalV1, review: AnyExternalResultReviewReceipt
     ) -> bool:
         return (
             proposal.organization_id == review.organization_id

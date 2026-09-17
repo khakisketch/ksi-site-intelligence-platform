@@ -1,4 +1,4 @@
-"""Durable exact reviews for externally measured relative-volume results.
+"""Durable exact reviews for externally measured relative- and single-volume results.
 
 The source port is intentionally report-ref keyed.  It never treats a request
 identifier as a report identifier and defaults closed until the reviewed 4B/4C
@@ -27,6 +27,18 @@ from ksi_event_contracts.external_result_review import (
     ExternalResultReviewReceiptV1,
     external_result_review_receipt_wire_dict,
 )
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeDecisionV1,
+    ExternalSingleVolumeReportV1,
+    ExternalSingleVolumeRequestV1,
+)
+from ksi_event_contracts.external_single_volume_result_review import (
+    SINGLE_VOLUME_REVIEW_FACTUAL_LIMITATIONS,
+    ExternalSingleVolumeResultReviewAuthorityV1,
+    ExternalSingleVolumeResultReviewReceiptV1,
+    external_single_volume_result_review_receipt_wire_dict,
+    parse_external_result_review_receipt,
+)
 from pydantic import ValidationError
 
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
@@ -40,6 +52,12 @@ _FACTUAL_LIMITATIONS = (
     "ABSOLUTE_ACCURACY_NOT_CLAIMED",
     "NO_AUTOMATIC_REOBSERVATION_THRESHOLD",
 )
+# One review journal holds both families; the event kind must match the
+# receipt contract so a relative line can never replay a single receipt.
+_KIND_BY_CONTRACT = {
+    "external-result-review-receipt.v1": "external-result-reviewed",
+    "external-single-volume-result-review-receipt.v1": "external-single-volume-result-reviewed",
+}
 
 
 class ExternalResultReviewRecoveryError(RuntimeError):
@@ -57,6 +75,23 @@ class ExternalResultReviewSourceV1:
     decision: ExternalPairUseDecisionV1
 
 
+@dataclass(frozen=True, slots=True)
+class ExternalSingleVolumeResultReviewSourceV1:
+    """Trusted Core single-epoch source snapshot; never a public request body."""
+
+    report_ref: str
+    request: ExternalSingleVolumeRequestV1
+    report: ExternalSingleVolumeReportV1
+    authority: ExternalSingleVolumeResultReviewAuthorityV1
+    decision: ExternalSingleVolumeDecisionV1
+
+
+ExternalResultReviewSource = ExternalResultReviewSourceV1 | ExternalSingleVolumeResultReviewSourceV1
+AnyExternalResultReviewReceipt = (
+    ExternalResultReviewReceiptV1 | ExternalSingleVolumeResultReviewReceiptV1
+)
+
+
 class ExternalResultReviewSourcePort(Protocol):
     """Resolve source authority by report reference, independently of reviews."""
 
@@ -67,7 +102,7 @@ class ExternalResultReviewSourcePort(Protocol):
         report_ref: str,
         principal: Principal,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewSourceV1 | None: ...
+    ) -> ExternalResultReviewSource | None: ...
 
     def resolve_historical(
         self,
@@ -76,10 +111,10 @@ class ExternalResultReviewSourcePort(Protocol):
         report_ref: str,
         report_digest: str,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewSourceV1 | None: ...
+    ) -> ExternalResultReviewSource | None: ...
 
     def is_current(
-        self, source: ExternalResultReviewSourceV1, *, principal: Principal, evaluated_at: datetime
+        self, source: ExternalResultReviewSource, *, principal: Principal, evaluated_at: datetime
     ) -> bool:
         """Perform only a retained local recheck while the coordinator is held."""
         ...
@@ -93,7 +128,7 @@ class _ClosedExternalResultReviewSourcePort:
         report_ref: str,
         principal: Principal,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewSourceV1 | None:
+    ) -> ExternalResultReviewSource | None:
         del organization_id, report_ref, principal, evaluated_at
         return None
 
@@ -104,12 +139,12 @@ class _ClosedExternalResultReviewSourcePort:
         report_ref: str,
         report_digest: str,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewSourceV1 | None:
+    ) -> ExternalResultReviewSource | None:
         del organization_id, report_ref, report_digest, evaluated_at
         return None
 
     def is_current(
-        self, source: ExternalResultReviewSourceV1, *, principal: Principal, evaluated_at: datetime
+        self, source: ExternalResultReviewSource, *, principal: Principal, evaluated_at: datetime
     ) -> bool:
         del source, principal, evaluated_at
         return False
@@ -121,6 +156,12 @@ def _digest(value: dict[str, Any]) -> str:
 
 def _event_digest(event: dict[str, Any]) -> str:
     return _digest({key: value for key, value in event.items() if key != "eventDigest"})
+
+
+def _receipt_wire_dict(receipt: AnyExternalResultReviewReceipt) -> dict[str, Any]:
+    if isinstance(receipt, ExternalSingleVolumeResultReviewReceiptV1):
+        return external_single_volume_result_review_receipt_wire_dict(receipt)
+    return external_result_review_receipt_wire_dict(receipt)
 
 
 def _require_utc(value: datetime, *, field: str) -> None:
@@ -149,9 +190,9 @@ class ExternalResultReviewStore:
         self._journal = journal
         self._source_port = source_port or _ClosedExternalResultReviewSourcePort()
         self._coordinator = coordinator
-        self._reviews_by_ref: dict[str, ExternalResultReviewReceiptV1] = {}
-        self._reviews_by_report_ref: dict[tuple[str, str], ExternalResultReviewReceiptV1] = {}
-        self._review_listeners: list[Callable[[ExternalResultReviewReceiptV1], None]] = []
+        self._reviews_by_ref: dict[str, AnyExternalResultReviewReceipt] = {}
+        self._reviews_by_report_ref: dict[tuple[str, str], AnyExternalResultReviewReceipt] = {}
+        self._review_listeners: list[Callable[[AnyExternalResultReviewReceipt], None]] = []
         self._lock = threading.RLock()
         try:
             for raw in journal.replay():
@@ -161,14 +202,14 @@ class ExternalResultReviewStore:
             raise
 
     def bind_review_listener(
-        self, listener: Callable[[ExternalResultReviewReceiptV1], None]
+        self, listener: Callable[[AnyExternalResultReviewReceipt], None]
     ) -> None:
         """Bind a post-commit projection; the review receipt never depends on it."""
         with self._lock:
             if listener not in self._review_listeners:
                 self._review_listeners.append(listener)
 
-    def _notify_review_listeners(self, receipt: ExternalResultReviewReceiptV1) -> None:
+    def _notify_review_listeners(self, receipt: AnyExternalResultReviewReceipt) -> None:
         for listener in tuple(self._review_listeners):
             try:
                 listener(receipt)
@@ -192,7 +233,7 @@ class ExternalResultReviewStore:
         return self._journal.sealed_reason
 
     @staticmethod
-    def _review_ref(source: ExternalResultReviewSourceV1) -> str:
+    def _review_ref(source: ExternalResultReviewSource) -> str:
         report_digest = source.report.report_digest
         if report_digest is None:
             raise ValueError("review source report must be sealed")
@@ -201,8 +242,22 @@ class ExternalResultReviewStore:
 
     @staticmethod
     def _receipt(
-        source: ExternalResultReviewSourceV1, *, reviewed_at: datetime
-    ) -> ExternalResultReviewReceiptV1:
+        source: ExternalResultReviewSource, *, reviewed_at: datetime
+    ) -> AnyExternalResultReviewReceipt:
+        if isinstance(source, ExternalSingleVolumeResultReviewSourceV1):
+            return ExternalSingleVolumeResultReviewReceiptV1(
+                review_ref=ExternalResultReviewStore._review_ref(source),
+                organization_id=source.authority.organization_id,
+                site_id=source.authority.site_id,
+                source_work_order_id=source.authority.current_work_order_id,
+                report_ref=source.report_ref,
+                request=source.request,
+                report=source.report,
+                authority=source.authority,
+                decision=source.decision,
+                factual_limitations=SINGLE_VOLUME_REVIEW_FACTUAL_LIMITATIONS,
+                reviewed_at=reviewed_at,
+            ).sealed()
         receipt = ExternalResultReviewReceiptV1(
             review_ref=ExternalResultReviewStore._review_ref(source),
             organization_id=source.authority.organization_id,
@@ -220,8 +275,13 @@ class ExternalResultReviewStore:
 
     @staticmethod
     def _same_source(
-        receipt: ExternalResultReviewReceiptV1, source: ExternalResultReviewSourceV1
+        receipt: AnyExternalResultReviewReceipt, source: ExternalResultReviewSource
     ) -> bool:
+        # A receipt only ever matches a source of its own family.
+        if isinstance(receipt, ExternalSingleVolumeResultReviewReceiptV1) != isinstance(
+            source, ExternalSingleVolumeResultReviewSourceV1
+        ):
+            return False
         return (
             receipt.report_ref == source.report_ref
             and receipt.request == source.request
@@ -236,7 +296,7 @@ class ExternalResultReviewStore:
         expected = {"kind", "version", "review", "eventDigest"}
         if (
             set(raw) != expected
-            or raw.get("kind") != "external-result-reviewed"
+            or raw.get("kind") not in _KIND_BY_CONTRACT.values()
             or type(raw.get("version")) is not int
             or raw.get("version") != _VERSION
         ):
@@ -244,9 +304,11 @@ class ExternalResultReviewStore:
         if type(raw["eventDigest"]) is not str or raw["eventDigest"] != _event_digest(raw):
             raise ExternalResultReviewRecoveryError("review journal event digest is invalid")
         try:
-            receipt = ExternalResultReviewReceiptV1.model_validate(raw["review"])
+            receipt = parse_external_result_review_receipt(raw["review"])
         except (TypeError, ValidationError) as exc:
             raise ExternalResultReviewRecoveryError("review journal receipt is invalid") from exc
+        if _KIND_BY_CONTRACT[receipt.contract_version] != raw["kind"]:
+            raise ExternalResultReviewRecoveryError("review journal kind does not match receipt")
         if receipt.review_digest is None or receipt.review_digest != receipt.canonical_digest():
             raise ExternalResultReviewRecoveryError("review journal receipt is unsealed")
         key = (receipt.organization_id, receipt.report_ref)
@@ -266,7 +328,7 @@ class ExternalResultReviewStore:
         report_ref: str,
         principal: Principal,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewReceiptV1:
+    ) -> AnyExternalResultReviewReceipt:
         """Durably review one exact current source; missing authority is closed."""
 
         _require_utc(evaluated_at, field="evaluated_at")
@@ -304,9 +366,9 @@ class ExternalResultReviewStore:
             if self._journal.sealed_reason is not None:
                 raise JournalSealedError(self._journal.sealed_reason)
             raw: dict[str, Any] = {
-                "kind": "external-result-reviewed",
+                "kind": _KIND_BY_CONTRACT[receipt.contract_version],
                 "version": _VERSION,
-                "review": external_result_review_receipt_wire_dict(receipt),
+                "review": _receipt_wire_dict(receipt),
             }
             raw["eventDigest"] = _event_digest(raw)
             self._journal.append(raw)
@@ -317,7 +379,7 @@ class ExternalResultReviewStore:
 
     def get_scoped(
         self, review_ref: str, *, organization_id: str
-    ) -> ExternalResultReviewReceiptV1 | None:
+    ) -> AnyExternalResultReviewReceipt | None:
         with self._lock:
             receipt = self._reviews_by_ref.get(review_ref)
             if receipt is None or receipt.organization_id != organization_id:
@@ -326,7 +388,7 @@ class ExternalResultReviewStore:
 
     def get_for_report(
         self, report_ref: str, *, organization_id: str
-    ) -> ExternalResultReviewReceiptV1 | None:
+    ) -> AnyExternalResultReviewReceipt | None:
         with self._lock:
             receipt = self._reviews_by_report_ref.get((organization_id, report_ref))
             return receipt.model_copy(deep=True) if receipt is not None else None
@@ -336,7 +398,7 @@ class ExternalResultReviewStore:
         with self._lock:
             return frozenset(item.organization_id for item in self._reviews_by_ref.values())
 
-    def list_scoped(self, *, organization_id: str) -> tuple[ExternalResultReviewReceiptV1, ...]:
+    def list_scoped(self, *, organization_id: str) -> tuple[AnyExternalResultReviewReceipt, ...]:
         """Return sealed review records for read-only startup graph validation."""
 
         with self._lock:
@@ -354,7 +416,7 @@ class ExternalResultReviewStore:
         review_digest: str,
         evaluated_at: datetime,
         actor: str | None,
-    ) -> ExternalResultReviewReceiptV1 | None:
+    ) -> AnyExternalResultReviewReceipt | None:
         """Verify source facts at review time and one later durable instant."""
 
         _require_utc(evaluated_at, field="evaluated_at")
@@ -401,7 +463,7 @@ class ExternalResultReviewStore:
         review_digest: str,
         actor: str,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewReceiptV1 | None:
+    ) -> AnyExternalResultReviewReceipt | None:
         """Verify durable source facts and the actual approval actor."""
 
         return self._resolve_historical(
@@ -417,7 +479,7 @@ class ExternalResultReviewStore:
         review_ref: str,
         review_digest: str,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewReceiptV1 | None:
+    ) -> AnyExternalResultReviewReceipt | None:
         """Verify source facts without inventing an undisclosed review actor."""
 
         return self._resolve_historical(
@@ -429,8 +491,8 @@ class ExternalResultReviewStore:
 
     def local_source_matches(
         self,
-        receipt: ExternalResultReviewReceiptV1,
-        source: ExternalResultReviewSourceV1,
+        receipt: AnyExternalResultReviewReceipt,
+        source: ExternalResultReviewSource,
     ) -> bool:
         """Coordinator-held retained recheck used by the proposal authority port."""
 
@@ -440,11 +502,11 @@ class ExternalResultReviewStore:
 
     def preflight_current_source(
         self,
-        receipt: ExternalResultReviewReceiptV1,
+        receipt: AnyExternalResultReviewReceipt,
         *,
         principal: Principal,
         evaluated_at: datetime,
-    ) -> ExternalResultReviewSourceV1 | None:
+    ) -> ExternalResultReviewSource | None:
         """Resolve a source before taking the shared currentness coordinator.
 
         Source implementations may need a separately owned historical or remote
@@ -467,8 +529,8 @@ class ExternalResultReviewStore:
 
     def local_source_is_current(
         self,
-        receipt: ExternalResultReviewReceiptV1,
-        source: ExternalResultReviewSourceV1,
+        receipt: AnyExternalResultReviewReceipt,
+        source: ExternalResultReviewSource,
         *,
         principal: Principal,
         evaluated_at: datetime,
@@ -481,8 +543,11 @@ class ExternalResultReviewStore:
 
 
 __all__ = [
+    "AnyExternalResultReviewReceipt",
     "ExternalResultReviewRecoveryError",
+    "ExternalResultReviewSource",
     "ExternalResultReviewSourcePort",
     "ExternalResultReviewSourceV1",
     "ExternalResultReviewStore",
+    "ExternalSingleVolumeResultReviewSourceV1",
 ]

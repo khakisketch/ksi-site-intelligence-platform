@@ -1,9 +1,15 @@
 """Actual durable Core graph; only independent authority providers are synthetic."""
 
+from collections.abc import Callable
 from dataclasses import dataclass, fields
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 
+from ksi_core.domains.external.quantity.external_single_volume_use_history import (
+    ExternalSingleVolumeHistoricalUseAuthorityPort,
+)
+from ksi_core.domains.external.quantity.external_single_volumes import ExternalSingleVolumeStore
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_relative_volumes import (
@@ -113,13 +119,27 @@ class LoopGraph:
     authority_port: _AuthorityPort
     journals: list[DurableJournal]
     source: ExternalResultReviewSourceV1
+    single_volumes: ExternalSingleVolumeStore | None = None
+    single_history: Any = None
 
     def close(self) -> None:
         for journal in reversed(self.journals):
             journal.close()
 
 
-def build_graph(path: Path, source: ExternalResultReviewSourceV1) -> LoopGraph:
+SingleFamilyFactory = Callable[
+    [ExternalAuthorityCurrentnessCoordinator],
+    tuple[ExternalSingleVolumeStore, ExternalSingleVolumeHistoricalUseAuthorityPort],
+]
+
+
+def build_graph(
+    path: Path,
+    source: ExternalResultReviewSourceV1,
+    *,
+    single: SingleFamilyFactory | None = None,
+) -> LoopGraph:
+    """Build the loop graph; ``single`` also configures the single-volume review family."""
     journals: list[DurableJournal] = []
 
     def journal(name: str) -> DurableJournal:
@@ -160,11 +180,18 @@ def build_graph(path: Path, source: ExternalResultReviewSourceV1) -> LoopGraph:
         clock=lambda: _NOW,
     )
     history = _History(authority)
+    single_volumes: ExternalSingleVolumeStore | None = None
+    single_history: ExternalSingleVolumeHistoricalUseAuthorityPort | None = None
+    if single is not None:
+        single_volumes, single_history = single(coordinator)
+        journals.append(single_volumes._journal)  # noqa: SLF001 - close with the graph.
     adapter = CoreExternalResultReviewSourceAdapter(
         volume_store=volumes,
         decisions=decisions,
         historical_use_authority=history,
         coordinator=coordinator,
+        single_volume_store=single_volumes,
+        single_historical_use_authority=single_history,
     )
     reviews = ExternalResultReviewStore(
         journal("reviews.jsonl"), source_port=adapter, coordinator=coordinator
@@ -193,7 +220,17 @@ def build_graph(path: Path, source: ExternalResultReviewSourceV1) -> LoopGraph:
     verify_external_reobservation_organization_graph(
         organization_id="org-a", work_orders=orders, authority_port=proposal_authority
     )
-    return LoopGraph(service, volumes, decisions, history, port, journals, source)
+    return LoopGraph(
+        service,
+        volumes,
+        decisions,
+        history,
+        port,
+        journals,
+        source,
+        single_volumes=single_volumes,
+        single_history=single_history,
+    )
 
 
 def record_measurement(graph: LoopGraph) -> ExternalRelativeVolumeReportV1:

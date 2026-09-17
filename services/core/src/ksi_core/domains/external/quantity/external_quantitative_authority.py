@@ -2668,6 +2668,23 @@ class ExternalSingleVolumeExecutionPort:
             now=now,
         )
 
+    def resolve_historical_for_use(
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        evaluated_at: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        """Independent single-volume use permission at ``evaluated_at``."""
+        return self._catalog.resolve_single_historical(
+            historical_authority_digest=historical_authority_digest,
+            decision_id=decision_id,
+            decision_digest=decision_digest,
+            issued_at=evaluated_at,
+            now=evaluated_at,
+        )
+
 
 class ExternalSingleVolumeMappingPort:
     """Evaluator-facing single-volume view of the shared quantitative catalog."""
