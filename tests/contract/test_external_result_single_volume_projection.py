@@ -7,6 +7,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import quote
 
 import pytest
@@ -42,6 +43,7 @@ from ksi_event_contracts.external_single_volume import ExternalSingleVolumeRepor
 from test_external_relative_volumes import _fence
 from test_external_relative_volumes import _payload as _relative_payload
 from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _token_record
+from test_external_single_volume_result_reviews import _new, _single_lifecycle
 
 _ORG = "org-a"
 _SITE = "site-a"
@@ -444,7 +446,8 @@ def test_http_routes_serve_single_reports_and_merged_history(harness: _Harness) 
         shown = client.get(path, headers=headers)
         assert shown.status_code == 200, shown.text
         body = shown.json()
-        assert set(body) == {"request", "report", "executionPolicy"}
+        assert set(body) == {"request", "report", "executionPolicy", "review", "proposals"}
+        assert body["review"] is None and body["proposals"] == []
         assert body["report"] == single.model_dump(by_alias=True, mode="json")
         assert body["request"]["requestId"] == single.request_id
         assert body["request"]["requestDigest"] == single.request_digest
@@ -483,3 +486,75 @@ def test_router_rejects_single_store_on_another_coordinator(
             )
     finally:
         foreign._journal.close()
+
+
+def test_single_summary_joins_review_proposals_and_successor(tmp_path: Path) -> None:
+    graph, store, port = _new(tmp_path)
+    try:
+        report, receipt, _, approved = _single_lifecycle(graph, store, port)
+        projector = ExternalResultReadProjector(
+            volumes=graph.volumes, workflow=graph.service, single_volumes=store, clock=lambda: _NOW
+        )
+        projection = projector.report_for_site(_SITE, report.report_id, organization_id=_ORG)
+        assert projection.state == "AVAILABLE"
+        result = projection.result
+        assert result is not None and result.kind == "EXTERNAL_SINGLE_VOLUME"
+        assert result.review_ref == receipt.review_ref
+        assert result.review_digest == receipt.review_digest
+        assert result.reviewed_at == receipt.reviewed_at
+        assert result.proposal_count == 1
+        assert result.approved_proposal_count == 1
+        successor = approved.successor_work_order.work_order_id
+        through_binding = projector.for_work_order(successor, organization_id=_ORG)
+        assert through_binding.state == "AVAILABLE"
+        assert through_binding.result is not None
+        assert through_binding.result.report_ref == report.report_id
+        assert through_binding.result.kind == "EXTERNAL_SINGLE_VOLUME"
+        assert through_binding.result.approved_proposal_count == 1
+    finally:
+        graph.close()
+
+
+def test_exact_report_routes_hide_broken_retained_provenance(
+    harness: _Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    relative = record_measurement(harness.graph)
+    single = _record_single(harness)
+    headers = {"Authorization": f"Bearer {_TOKEN}"}
+    routes = (
+        (
+            f"/v1/external-relative-volume-reports/{relative.report_id}",
+            "EXTERNAL_RELATIVE_VOLUME_REPORT_NOT_FOUND",
+        ),
+        (
+            f"/v1/external-single-volume-reports/{single.report_id}",
+            "EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND",
+        ),
+    )
+    with _http_client(harness) as client:
+        for path, _ in routes:
+            assert client.get(path, headers=headers).status_code == 200
+    for store in (harness.graph.volumes, harness.single):
+        original = store.resolve_historical_report_ref
+
+        def tampered(
+            report_ref: str,
+            *,
+            organization_id: str,
+            now: datetime | None = None,
+            _original: Any = original,
+        ) -> Any:
+            resolved = _original(report_ref, organization_id=organization_id, now=now)
+            if resolved is None:
+                return None
+            report = resolved.report.model_copy(
+                update={"request_digest": _digest("tampered-request")}
+            )
+            return replace(resolved, report=report)
+
+        monkeypatch.setattr(store, "resolve_historical_report_ref", tampered)
+    with _http_client(harness) as client:
+        for path, detail in routes:
+            response = client.get(path, headers=headers)
+            assert response.status_code == 404, response.text
+            assert response.json() == {"detail": detail}

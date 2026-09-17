@@ -382,6 +382,10 @@ def _single_volume_wiring(
         SingleVolumeWorkerLaunchMaterialResolver,
     )
 
+    if not callable(getattr(runtime.single_execution, "resolve_historical_for_use", None)):
+        # Single reviews resolve historical use through this same port; a runtime
+        # without it must fail here rather than on the first review request.
+        raise ValueError("single-volume execution must also answer historical use")
     if runtime.single_execution.currentness_coordinator is not coordinator:
         raise ValueError("single-volume execution must share the Core coordinator")
     issuer = workflow.single_input_capability_issuer

@@ -29,8 +29,10 @@ from ksi_event_contracts.external_reobservation import (
 )
 from ksi_event_contracts.external_result_review import (
     ExternalReobservationProposalV1,
-    ExternalResultReviewReceiptV1,
     external_reobservation_proposal_wire_dict,
+)
+from ksi_event_contracts.external_single_volume_result_review import (
+    parse_external_result_review_receipt,
 )
 from ksi_event_contracts.work_area import WorkArea, WorkAreaStatus
 from pydantic import Field, ValidationError, field_validator
@@ -239,7 +241,8 @@ class ExternalReobservationProposalStore:
             target_wire = dict(target.__dict__)
             if type(target_wire.get("revision")) is not int:
                 raise ValueError("proposal target revision must be an exact integer")
-            review = ExternalResultReviewReceiptV1.model_validate(review_wire)
+            # Either review family is re-validated by its own ``contractVersion``.
+            review = parse_external_result_review_receipt(review_wire)
             target = ExternalWorkAreaSnapshotV1.model_validate(target_wire)
         except (AttributeError, TypeError, ValueError, ValidationError) as exc:
             raise ValueError("proposal review or target is invalid") from exc

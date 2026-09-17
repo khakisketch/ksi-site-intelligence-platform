@@ -6917,8 +6917,9 @@ paths:
       summary: Single Report View
       operationId: single_report_view_v1_external_single_volume_reports__report_ref__get
       description: >-
-        Recorded single-epoch provenance for the caller's organization. Mounted only
-        when the single-volume family is configured. Review and proposals do not apply.
+        Recorded single-epoch provenance for the caller's organization, with its
+        retained human review and reobservation proposals. Mounted only when the
+        single-volume family is configured.
       security:
       - bearerAuth: []
       parameters:
@@ -6933,7 +6934,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalSingleVolumeReportView'
-        '404': { description: 'EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND: not a single-volume report of the caller organization' }
+        '404': { description: 'EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND: not a single-volume report of the caller organization, or its retained provenance is not intact' }
+        '503': { description: 'EXTERNAL_RESULT_REVIEW_INCONSISTENT: the retained review does not match the report' }
         '401': { description: authentication failed }
         '403': { description: SITES_READ required }
   /v1/sites/{site_id}/observations/{report_ref}:
@@ -6962,6 +6964,50 @@ paths:
         '404': { description: scoped Site or report not found }
         '401': { description: authentication failed }
         '403': { description: SITES_READ required }
+  /v1/external-single-volume-reports/{report_ref}/reviews:
+    post:
+      tags:
+      - external-result-workflow
+      summary: Review Single Report
+      operationId: review_single_report_v1_external_single_volume_reports__report_ref__reviews_post
+      description: >-
+        Record one human review of a single-volume report. Mounted only when the
+        single-volume family is configured. Shares the relative review handler, so
+        status codes and details are identical; a relative report ref is rejected.
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: report_ref
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Report Ref
+      requestBody:
+        content:
+          application/json:
+            schema:
+              anyOf:
+              - $ref: '#/components/schemas/ExternalResultReviewIntent'
+              - type: 'null'
+              title: Request
+      responses:
+        '201':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalResultReviewView'
+        '401': { description: authentication failed }
+        '403': { description: 'WORK_ORDERS_WRITE required; HUMAN_REVIEW_REQUIRED for a non-operator principal' }
+        '409': { description: 'EXTERNAL_WORKFLOW_CLOSED, or EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE (including a foreign-organization or relative report ref)' }
+        '503': { description: 'EXTERNAL_RESULT_REVIEW_STORAGE_UNAVAILABLE' }
+        '422':
+          description: 'Validation Error (INVALID_EXTERNAL_RESULT_REVIEW_INTENT)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
   /v1/external-relative-volume-reports/{report_ref}/reviews:
     post:
       tags:
@@ -13632,6 +13678,15 @@ components:
           $ref: '#/components/schemas/ExternalSingleVolumeReportV1'
         executionPolicy:
           $ref: '#/components/schemas/ExternalSingleVolumeExecutionPolicyV1'
+        review:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalSingleVolumeResultReviewReceiptV1'
+          - type: 'null'
+        proposals:
+          items:
+            $ref: '#/components/schemas/ExternalReobservationProposalView'
+          type: array
+          title: Proposals
       additionalProperties: false
       type: object
       required:
@@ -13639,7 +13694,7 @@ components:
       - report
       - executionPolicy
       title: ExternalSingleVolumeReportView
-      description: Recorded single-epoch provenance; review and proposals do not apply to this family.
+      description: Recorded single-epoch provenance, never an assertion of present usage eligibility.
     ExternalSingleVolumeRequestV1:
       properties:
         contractVersion:
@@ -14094,12 +14149,224 @@ components:
     ExternalResultReviewView:
       properties:
         review:
-          $ref: '#/components/schemas/ExternalResultReviewReceiptV1'
+          oneOf:
+          - $ref: '#/components/schemas/ExternalResultReviewReceiptV1'
+          - $ref: '#/components/schemas/ExternalSingleVolumeResultReviewReceiptV1'
+          title: Review
+          discriminator:
+            propertyName: contractVersion
+            mapping:
+              external-result-review-receipt.v1: '#/components/schemas/ExternalResultReviewReceiptV1'
+              external-single-volume-result-review-receipt.v1: '#/components/schemas/ExternalSingleVolumeResultReviewReceiptV1'
       additionalProperties: false
       type: object
       required:
       - review
       title: ExternalResultReviewView
+      description: One review receipt of either family, discriminated on ``contractVersion``.
+    ExternalSingleVolumeResultReviewReceiptV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-result-review-receipt.v1
+          title: Contractversion
+          default: external-single-volume-result-review-receipt.v1
+        reviewRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reviewref
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        sourceWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Sourceworkorderid
+        reportRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportref
+        request:
+          $ref: '#/components/schemas/ExternalSingleVolumeRequestV1'
+        report:
+          $ref: '#/components/schemas/ExternalSingleVolumeReportV1'
+        authority:
+          $ref: '#/components/schemas/ExternalSingleVolumeResultReviewAuthorityV1'
+        decision:
+          $ref: ../schemas/external-single-volume-decision.v1.json
+        factualLimitations:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 3
+          minItems: 3
+          title: Factuallimitations
+        reviewedAt:
+          type: string
+          format: date-time
+          title: Reviewedat
+        reviewDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reviewdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reviewRef
+      - organizationId
+      - siteId
+      - sourceWorkOrderId
+      - reportRef
+      - request
+      - report
+      - authority
+      - decision
+      - factualLimitations
+      - reviewedAt
+      title: ExternalSingleVolumeResultReviewReceiptV1
+      description: A durable exact review of a server-resolved external single-volume report.
+    ExternalSingleVolumeResultReviewAuthorityV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-result-review-authority.v1
+          title: Contractversion
+          default: external-single-volume-result-review-authority.v1
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        currentWorkOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentworkorderid
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        decisionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Decisiondigest
+        compatibilityMappingDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Compatibilitymappingdigest
+        target:
+          $ref: '#/components/schemas/ExternalVolumeInputBindingV1'
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 1
+          minItems: 1
+          title: Evidencerecorddigests
+        validationPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Validationpolicydigest
+        zoneSnapshot:
+          $ref: '#/components/schemas/ExternalVolumeZoneSnapshotV1'
+        executionPolicy:
+          $ref: '#/components/schemas/ExternalSingleVolumeExecutionPolicyV1'
+        authorizedActorIds:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Authorizedactorids
+        validFrom:
+          type: string
+          format: date-time
+          title: Validfrom
+        validUntil:
+          type: string
+          format: date-time
+          title: Validuntil
+        historicalAuthorityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Historicalauthoritydigest
+        targetRmseM:
+          anyOf:
+          - type: number
+            maximum: 1.0e+300
+            minimum: 0.0
+          - type: 'null'
+          title: Targetrmsem
+        maximumZoneCellCount:
+          type: integer
+          maximum: 100000000.0
+          minimum: 1.0
+          title: Maximumzonecellcount
+        maximumZoneAreaM2:
+          type: number
+          maximum: 1.0e+300
+          exclusiveMinimum: 0.0
+          title: Maximumzoneaream2
+        syntheticTestOnly:
+          type: boolean
+          title: Synthetictestonly
+        authorityDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Authoritydigest
+      additionalProperties: false
+      type: object
+      required:
+      - organizationId
+      - siteId
+      - currentWorkOrderId
+      - decisionId
+      - decisionDigest
+      - compatibilityMappingDigest
+      - target
+      - evidenceRecordDigests
+      - validationPolicyDigest
+      - zoneSnapshot
+      - executionPolicy
+      - authorizedActorIds
+      - validFrom
+      - validUntil
+      - historicalAuthorityDigest
+      - maximumZoneCellCount
+      - maximumZoneAreaM2
+      - syntheticTestOnly
+      title: ExternalSingleVolumeResultReviewAuthorityV1
+      description: 'Exact server-resolved single-epoch authority retained with one reviewed report.
+
+
+        Independent of the Core authority class; a Core adapter constructs it from
+
+        actual Core history and callers never submit it through a public route.'
     ExternalVolumeInputBindingV1:
       properties:
         subject:

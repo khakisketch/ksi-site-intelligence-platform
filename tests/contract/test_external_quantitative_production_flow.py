@@ -44,6 +44,7 @@ from ksi_core.external_relative_volumes import (
     ExternalRelativeVolumeQueuePolicy,
     ExternalRelativeVolumeVerdict,
 )
+from ksi_core.external_reobservation_proposals import verify_external_reobservation_graph
 from ksi_core.external_result_workflow_config import (
     ExternalQuantitativeWorkflowParticipants,
     catalog_admission_body_digest,
@@ -775,6 +776,89 @@ def _request_single_volume_over_http(
     read = client.get(f"{path}/{decision['decisionId']}", headers=headers)
     assert read.status_code == 200 and read.json()["decision"] == decision
     return cast(dict[str, Any], decision)
+
+
+def _review_propose_and_approve_single_over_http(
+    client: TestClient, report_ref: str, *, work_area_id: str
+) -> dict[str, str]:
+    """Review, propose and approve one single-volume report through the public routes."""
+
+    headers = {"Authorization": f"Bearer {_OPERATOR_TOKEN}"}
+    reviewed = client.post(
+        f"/v1/external-single-volume-reports/{report_ref}/reviews", headers=headers, json={}
+    )
+    assert reviewed.status_code == 201, reviewed.text
+    review = reviewed.json()["review"]
+    assert review["contractVersion"] == "external-single-volume-result-review-receipt.v1"
+    assert review["reportRef"] == report_ref
+    wrong_route = client.post(
+        f"/v1/external-relative-volume-reports/{report_ref}/reviews", headers=headers, json={}
+    )
+    assert wrong_route.status_code == 409, wrong_route.text
+    proposed = client.post(
+        "/v1/external-reobservation-proposals",
+        headers={**headers, "Idempotency-Key": "signed-provider-single-proposal"},
+        json={
+            "reportRef": report_ref,
+            "targetWorkAreaIds": [work_area_id],
+            "reason": "Single-volume result requires a planning-only successor.",
+        },
+    )
+    assert proposed.status_code == 201, proposed.text
+    proposal = proposed.json()["proposal"]
+    assert proposal["reportRef"] == report_ref
+    assert proposal["reviewRef"] == review["reviewRef"]
+    approved = client.post(
+        "/v1/external-reobservation-proposals/approve",
+        headers={**headers, "Idempotency-Key": "signed-provider-single-approval"},
+        json={"proposalRef": proposal["proposalRef"], "expectedVersion": proposal["version"]},
+    )
+    assert approved.status_code == 200, approved.text
+    receipt = approved.json()["approvalReceipt"]
+    assert receipt is not None and receipt["proposalId"] == proposal["proposalRef"]
+    shown = client.get(f"/v1/external-single-volume-reports/{report_ref}", headers=headers)
+    assert shown.status_code == 200, shown.text
+    assert shown.json()["review"] == review
+    assert [item["approvalReceipt"] for item in shown.json()["proposals"]] == [receipt]
+    return {
+        "reportRef": report_ref,
+        "reviewRef": review["reviewRef"],
+        "reviewDigest": review["reviewDigest"],
+        "proposalRef": proposal["proposalRef"],
+        "proposalDigest": proposal["proposalDigest"],
+        "successorWorkOrderId": receipt["successorWorkOrderId"],
+    }
+
+
+def _assert_single_lifecycle_replayed(app: Any, lifecycle: dict[str, str]) -> None:
+    """After restart the single review, proposal and successor binding still resolve."""
+
+    service = app.state.external_result_workflow_service
+    verify_external_reobservation_graph(service=service)
+    review = service.reviews.get_scoped(lifecycle["reviewRef"], organization_id="org-a")
+    assert review is not None
+    assert review.contract_version == "external-single-volume-result-review-receipt.v1"
+    assert review.review_digest == lifecycle["reviewDigest"]
+    assert review.report_ref == lifecycle["reportRef"]
+    proposal = service.proposals.get_scoped(lifecycle["proposalRef"], organization_id="org-a")
+    assert proposal is not None and proposal.proposal_digest == lifecycle["proposalDigest"]
+    binding = service.work_orders.get_external_reobservation_binding(
+        lifecycle["successorWorkOrderId"], organization_id="org-a"
+    )
+    assert binding is not None and binding.proposal_id == lifecycle["proposalRef"]
+    projection = app.state.external_result_read_projector.for_work_order(
+        lifecycle["successorWorkOrderId"], organization_id="org-a"
+    )
+    assert projection.result is not None
+    assert projection.result.report_ref == lifecycle["reportRef"]
+    assert projection.result.review_ref == lifecycle["reviewRef"]
+    assert projection.result.approved_proposal_count == 1
+
+
+def _catalog(app: Any) -> ExternalQuantitativeAuthorityCatalog:
+    catalog = app.state.external_relative_volume_mapping_authority
+    assert isinstance(catalog, ExternalQuantitativeAuthorityCatalog)
+    return catalog
 
 
 def _close_journals(journals: list[DurableJournal]) -> None:
@@ -2251,6 +2335,9 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         single_report_digest = _assert_single_report_reads(
             single_client, single_report_ref, expected_digest=None
         )
+        single_lifecycle = _review_propose_and_approve_single_over_http(
+            single_client, single_report_ref, work_area_id=area.work_area_id
+        )
         _close_journals(opened)
         opened = []
         receipts.close()
@@ -2315,6 +2402,7 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         _assert_single_report_reads(
             TestClient(app), single_report_ref, expected_digest=single_report_digest
         )
+        _assert_single_lifecycle_replayed(app, single_lifecycle)
         _close_journals(opened)
         opened = []
         receipts.close()
@@ -2358,6 +2446,44 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             idempotency_key="signed-provider-approval",
         )
         assert approval.planning_binding.report_digest == review.report.report_digest
+        _assert_single_lifecycle_replayed(app, single_lifecycle)
+        # The retained single review is verified through the real catalog: after the
+        # real single execution is revoked, use at a later instant is unavailable
+        # while the instant the review was recorded still verifies.
+        single_review = service.reviews.get_scoped(
+            single_lifecycle["reviewRef"], organization_id="org-a"
+        )
+        assert single_review is not None and single_review.review_digest is not None
+        single_revoked_at = max(datetime.now(UTC), single_review.reviewed_at) + timedelta(seconds=1)
+        assert (
+            service.reviews.verify_historical(
+                review_ref=single_review.review_ref,
+                review_digest=single_review.review_digest,
+                evaluated_at=single_revoked_at,
+            )
+            == single_review
+        )
+        assert _catalog(app).revoke_single_execution(
+            single_authority.historical_authority_digest,
+            actor="catalog-admin",
+            now=single_revoked_at,
+        )
+        assert (
+            service.reviews.verify_historical(
+                review_ref=single_review.review_ref,
+                review_digest=single_review.review_digest,
+                evaluated_at=single_revoked_at,
+            )
+            is None
+        )
+        assert (
+            service.reviews.verify_historical(
+                review_ref=single_review.review_ref,
+                review_digest=single_review.review_digest,
+                evaluated_at=single_review.reviewed_at,
+            )
+            == single_review
+        )
         with pytest.raises(
             ExternalReobservationExecutionDenied,
             match="EXTERNAL_RECONSTRUCTION_ONLY",

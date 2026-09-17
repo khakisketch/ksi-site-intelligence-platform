@@ -13,7 +13,8 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import external_product_loop_fixture
 import pytest
@@ -21,7 +22,7 @@ from external_product_loop_fixture import LoopGraph, build_graph, record_measure
 from external_single_volume_fixture import _authority, _AuthorityPort, _payload, _store
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from ksi_core.auth import AuthRegistry, mount_auth
+from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, mount_auth
 from ksi_core.domains.external.quantity.external_relative_volumes import (
     ExternalRelativeVolumeVerdict,
 )
@@ -35,15 +36,24 @@ from ksi_core.domains.external.workflow.external_result_reviews import (
     ExternalResultReviewSourceV1,
     ExternalResultReviewStore,
 )
+from ksi_core.domains.sites.observation_work_orders import ExternalReobservationApprovalResult
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+from ksi_core.external_reobservation_proposals import (
+    ExternalReobservationProposalUnavailableError,
+    build_external_reobservation_proposal_router,
+    verify_external_reobservation_graph,
+)
 from ksi_core.external_result_review_sources import CoreExternalResultReviewSourceAdapter
 from ksi_core.external_result_workflow_api import build_external_result_workflow_router
 from ksi_core.external_use_decisions import ExternalDecisionIntent
 from ksi_core.leasing import LeaseFence
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_artifact_validation import DecisionVerdict
-from ksi_event_contracts.external_result_review import ExternalResultReviewReceiptV1
+from ksi_event_contracts.external_result_review import (
+    ExternalReobservationProposalV1,
+    ExternalResultReviewReceiptV1,
+)
 from ksi_event_contracts.external_single_volume import (
     ExternalSingleVolumeDecisionV1,
     ExternalSingleVolumeReportV1,
@@ -482,3 +492,253 @@ def test_relative_review_route_rejects_single_ref(
         assert graph.service.reviews.get_for_report(report.report_id, organization_id=_ORG) is None
     finally:
         graph.close()
+
+
+_OTHER_POLYGON: dict[str, object] = {
+    "type": "Polygon",
+    "coordinates": [[[20.0, 20.0], [20.0, 30.0], [30.0, 30.0], [20.0, 20.0]]],
+}
+
+
+def _single_lifecycle(
+    graph: LoopGraph, store: ExternalSingleVolumeStore, port: _SingleAuthority
+) -> tuple[
+    ExternalSingleVolumeReportV1,
+    ExternalSingleVolumeResultReviewReceiptV1,
+    ExternalReobservationProposalV1,
+    ExternalReobservationApprovalResult,
+]:
+    """Report, review, propose and approve one single-volume result in the real graph."""
+
+    report = _record_single(graph, store, port)
+    receipt = _review(graph, report.report_id)
+    assert isinstance(receipt, ExternalSingleVolumeResultReviewReceiptV1)
+    principal = _principal()
+    proposal = graph.service.create(
+        organization_id=_ORG,
+        report_ref=report.report_id,
+        target_work_area_ids=(port.authority.zone_snapshot.work_area_id,),
+        reason="Single-volume result needs a planning-only successor.",
+        principal=principal,
+        actor=principal.principal_id,
+        now=_NOW,
+        idempotency_key="single-proposal",
+    )
+    approved = graph.service.approve(
+        organization_id=_ORG,
+        proposal_ref=proposal.proposal_ref,
+        expected_version=proposal.version,
+        principal=principal,
+        actor=principal.principal_id,
+        now=_NOW,
+        idempotency_key="single-approval",
+    )
+    return report, receipt, proposal, approved
+
+
+def test_single_review_drives_proposal_and_approval_across_restart(tmp_path: Path) -> None:
+    source = seed_original(tmp_path)
+    port = _single_authority(source)
+    graph, store = _open(tmp_path, source, port)
+    try:
+        report, receipt, proposal, approved = _single_lifecycle(graph, store, port)
+        zone = port.authority.zone_snapshot
+        assert proposal.report_ref == report.report_id
+        assert proposal.report_digest == report.report_digest
+        assert proposal.review_ref == receipt.review_ref
+        assert proposal.review_digest == receipt.review_digest
+        assert proposal.zone_digest == zone.definition_digest
+        assert proposal.decision_digest == receipt.decision.decision_digest
+        assert proposal.evidence_digests == port.authority.evidence_record_digests
+        assert [item.work_area_id for item in proposal.target_work_areas] == [zone.work_area_id]
+        successor = approved.successor_work_order
+        binding = graph.service.work_orders.get_external_reobservation_binding(
+            successor.work_order_id, organization_id=_ORG
+        )
+        assert binding is not None
+        assert binding.proposal_id == proposal.proposal_ref
+        assert binding.report_digest == report.report_digest
+        assert binding.zone_digest == zone.definition_digest
+        assert binding.source_work_order_id == port.authority.current_work_order_id
+        other = graph.service.work_areas.register(
+            "site-a",
+            name="Other zone",
+            polygon=_OTHER_POLYGON,
+            crs="EPSG:5186",
+            supersedes=None,
+            actor="operator-a",
+            now=_NOW - timedelta(minutes=5),
+        ).work_area
+        assert other is not None
+        with pytest.raises(
+            ExternalReobservationProposalUnavailableError,
+            match="EXTERNAL_REOBSERVATION_TARGET_NOT_REPORT_ZONE",
+        ):
+            graph.service.create(
+                organization_id=_ORG,
+                report_ref=report.report_id,
+                target_work_area_ids=(other.work_area_id,),
+                reason=None,
+                principal=_principal(),
+                actor="operator-a",
+                now=_NOW,
+                idempotency_key="single-other-zone",
+            )
+    finally:
+        graph.close()
+    reopened, _ = _open(tmp_path, source, port)
+    try:
+        service = reopened.service
+        verify_external_reobservation_graph(service=service)
+        assert service.reviews.get_scoped(receipt.review_ref, organization_id=_ORG) == receipt
+        assert service.proposals.get_scoped(proposal.proposal_ref, organization_id=_ORG) == proposal
+        assert (
+            service.approval_receipt(
+                organization_id=_ORG,
+                proposal_ref=proposal.proposal_ref,
+                expected_version=proposal.version,
+            )
+            == approved.approval_receipt
+        )
+    finally:
+        reopened.close()
+
+
+_OTHER_TOKEN = "single-review-other-org"  # noqa: S105 - deterministic test credential
+_WORKER_TOKEN = "single-review-worker"  # noqa: S105 - deterministic test credential
+
+
+def _http_app(graph: LoopGraph, store: ExternalSingleVolumeStore) -> FastAPI:
+    other = PrincipalTokenRecord(
+        token_sha256=hashlib.sha256(_OTHER_TOKEN.encode()).hexdigest(),
+        principal=_principal(organization_id="org-b", principal_id="operator-b"),
+    )
+    worker = PrincipalTokenRecord(
+        token_sha256=hashlib.sha256(_WORKER_TOKEN.encode()).hexdigest(),
+        principal=Principal("worker-principal", PrincipalKind.PROCESSING_WORKER, None, None, _ORG),
+    )
+    app = FastAPI()
+    mount_auth(app, AuthRegistry([_token_record(), other, worker]))
+    app.include_router(
+        build_external_result_workflow_router(
+            graph.volumes, graph.service, single_volumes=store, clock=lambda: _NOW
+        )
+    )
+    app.include_router(
+        build_external_reobservation_proposal_router(graph.service, clock=lambda: _NOW)
+    )
+    return app
+
+
+def test_single_review_http_route_serves_review_proposal_and_report(tmp_path: Path) -> None:
+    graph, store, port = _new(tmp_path)
+    unavailable = {"detail": "EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE"}
+    try:
+        relative = record_measurement(graph)
+        single = _record_single(graph, store, port)
+        operator = {"Authorization": f"Bearer {_TOKEN}"}
+        other = {"Authorization": f"Bearer {_OTHER_TOKEN}"}
+        worker = {"Authorization": f"Bearer {_WORKER_TOKEN}"}
+        single_path = f"/v1/external-single-volume-reports/{single.report_id}/reviews"
+        relative_path = f"/v1/external-relative-volume-reports/{relative.report_id}/reviews"
+        with TestClient(_http_app(graph, store)) as client:
+            assert client.post(single_path, json={}).status_code == 401
+            assert client.post(single_path, headers=worker, json={}).status_code == 403
+            # R4: a foreign ref answers exactly like the relative route does.
+            foreign_single = client.post(single_path, headers=other, json={})
+            foreign_relative = client.post(relative_path, headers=other, json={})
+            assert foreign_single.status_code == foreign_relative.status_code == 409
+            assert foreign_single.json() == foreign_relative.json() == unavailable
+            # Neither route reviews the other family's report.
+            crossed = (
+                f"/v1/external-relative-volume-reports/{single.report_id}/reviews",
+                f"/v1/external-single-volume-reports/{relative.report_id}/reviews",
+            )
+            for path in crossed:
+                response = client.post(path, headers=operator, json={})
+                assert response.status_code == 409
+                assert response.json() == unavailable
+            assert graph.service.reviews.list_scoped(organization_id=_ORG) == ()
+            assert graph.service.reviews.list_scoped(organization_id="org-b") == ()
+
+            created = client.post(single_path, headers=operator, json={})
+            assert created.status_code == 201, created.text
+            review = created.json()["review"]
+            assert review["contractVersion"] == "external-single-volume-result-review-receipt.v1"
+            assert review["reportRef"] == single.report_id
+            assert review["factualLimitations"] == list(SINGLE_VOLUME_REVIEW_FACTUAL_LIMITATIONS)
+            retry = client.post(single_path, headers=operator)
+            assert retry.status_code == 201 and retry.json() == created.json()
+
+            shown = client.get(
+                f"/v1/external-result-reviews/{review['reviewRef']}", headers=operator
+            )
+            assert shown.status_code == 200, shown.text
+            assert shown.json() == {"review": review}
+            hidden = client.get(f"/v1/external-result-reviews/{review['reviewRef']}", headers=other)
+            assert hidden.status_code == 404
+
+            proposal = client.post(
+                "/v1/external-reobservation-proposals",
+                headers={**operator, "Idempotency-Key": "single-http-proposal"},
+                json={
+                    "reportRef": single.report_id,
+                    "targetWorkAreaIds": [port.authority.zone_snapshot.work_area_id],
+                },
+            )
+            assert proposal.status_code == 201, proposal.text
+            proposal_ref = proposal.json()["proposal"]["proposalRef"]
+            assert proposal.json()["proposal"]["reportRef"] == single.report_id
+
+            report_view = client.get(
+                f"/v1/external-single-volume-reports/{single.report_id}", headers=operator
+            )
+            assert report_view.status_code == 200, report_view.text
+            body = report_view.json()
+            assert set(body) == {"request", "report", "executionPolicy", "review", "proposals"}
+            assert body["review"] == review
+            assert [item["proposal"]["proposalRef"] for item in body["proposals"]] == [proposal_ref]
+            assert body["proposals"][0]["approvalReceipt"] is None
+
+            relative_review = client.post(relative_path, headers=operator, json={})
+            assert relative_review.status_code == 201, relative_review.text
+            assert relative_review.json()["review"]["contractVersion"] == (
+                "external-result-review-receipt.v1"
+            )
+            relative_view = client.get(
+                f"/v1/external-relative-volume-reports/{relative.report_id}", headers=operator
+            )
+            assert relative_view.status_code == 200, relative_view.text
+            assert relative_view.json()["review"] == relative_review.json()["review"]
+    finally:
+        graph.close()
+
+
+def test_graph_rejects_single_runtime_without_historical_use() -> None:
+    """Carried from Task 2: a runtime lacking use history fails at assembly, not at review."""
+
+    from ksi_core.composition.external_graph import _single_volume_wiring
+
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+
+    class _NoHistory:
+        currentness_coordinator = coordinator
+
+    runtime = SimpleNamespace(
+        single_execution=_NoHistory(), activate_single_execution=lambda **_: None
+    )
+
+    def unexpected(name: str) -> DurableJournal:
+        raise AssertionError(f"no journal may open before the runtime is checked: {name}")
+
+    with pytest.raises(ValueError, match="historical use"):
+        _single_volume_wiring(
+            runtime=runtime,
+            journal=unexpected,
+            coordinator=coordinator,
+            workflow=SimpleNamespace(single_input_capability_issuer=None),
+            reconstruction=cast(Any, None),
+            policy_registry=cast(Any, None),
+            evidence_validations=cast(Any, None),
+            evidence_storage=None,
+        )

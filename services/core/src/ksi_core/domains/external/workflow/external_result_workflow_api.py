@@ -1,6 +1,7 @@
 """Scoped retained result views and human review intent for external measurements."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
 from urllib.parse import quote
@@ -18,6 +19,11 @@ from ksi_event_contracts.external_single_volume import (
     ExternalSingleVolumeReportV1,
     ExternalSingleVolumeRequestV1,
 )
+from ksi_event_contracts.external_single_volume_result_review import (
+    ExternalResultReviewReceipt,
+    ExternalSingleVolumeResultReviewReceiptV1,
+)
+from pydantic import Field
 
 from ksi_core.domains.external.quantity.external_relative_volumes import ExternalRelativeVolumeStore
 from ksi_core.domains.external.quantity.external_single_volumes import ExternalSingleVolumeStore
@@ -42,7 +48,9 @@ from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require
 
 
 class ExternalResultReviewView(CamelModel):
-    review: ExternalResultReviewReceiptV1
+    """One review receipt of either family, discriminated on ``contractVersion``."""
+
+    review: ExternalResultReviewReceipt
 
 
 class ExternalResultReportView(CamelModel):
@@ -56,11 +64,13 @@ class ExternalResultReportView(CamelModel):
 
 
 class ExternalSingleVolumeReportView(CamelModel):
-    """Recorded single-epoch provenance; review and proposals do not apply to this family."""
+    """Recorded single-epoch provenance, never an assertion of present usage eligibility."""
 
     request: ExternalSingleVolumeRequestV1
     report: ExternalSingleVolumeReportV1
     execution_policy: ExternalSingleVolumeExecutionPolicyV1
+    review: ExternalSingleVolumeResultReviewReceiptV1 | None = None
+    proposals: list[ExternalReobservationProposalView] = Field(default_factory=list)
 
 
 class ExternalResultReviewIntent(CamelModel):
@@ -83,6 +93,17 @@ class ExternalResultHistoryView(CamelModel):
 _SINGLE_REPORT_PREFIX = "external-single-volume-report-"
 _RELATIVE_KIND: ExternalResultKind = "EXTERNAL_RELATIVE_VOLUME"
 _SINGLE_KIND: ExternalResultKind = "EXTERNAL_SINGLE_VOLUME"
+
+
+@dataclass(frozen=True, slots=True)
+class _ReviewJoin:
+    """The retained review and proposal counts joined to one report of either family."""
+
+    review_ref: str | None
+    review_digest: str | None
+    reviewed_at: datetime | None
+    proposal_count: int
+    approved_proposal_count: int
 
 
 class ExternalResultReadProjector:
@@ -377,32 +398,11 @@ class ExternalResultReadProjector:
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
             )
-        review = self._workflow.reviews.get_for_report(report_ref, organization_id=organization_id)
-        if review is not None and (
-            review.report != report
-            or review.request != request
-            or review.report.report_digest != report.report_digest
-        ):
+        join = self._review_join(report_ref, request, report, authority, organization_id)
+        if join is None:
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
             )
-        proposals = tuple(
-            proposal
-            for proposal in self._workflow.proposals.list_scoped(organization_id=organization_id)
-            if proposal.report_ref == report_ref
-            and proposal.report_digest == report.report_digest
-            and proposal.decision_digest == request.decision_digest
-            and proposal.zone_digest == authority.zone_snapshot.definition_digest
-        )
-        approved = sum(
-            self._workflow.approval_receipt(
-                organization_id=organization_id,
-                proposal_ref=proposal.proposal_ref,
-                expected_version=proposal.version,
-            )
-            is not None
-            for proposal in proposals
-        )
         metrics = report.payload.metrics
         return ExternalResultProjectionView(
             state=ExternalResultProjectionState.AVAILABLE,
@@ -432,11 +432,11 @@ class ExternalResultReadProjector:
                     metrics.model_dump(by_alias=True, mode="json")
                 ),
                 execution_policy=self._policy_view(authority.execution_policy),
-                review_ref=review.review_ref if review is not None else None,
-                review_digest=review.review_digest if review is not None else None,
-                reviewed_at=review.reviewed_at if review is not None else None,
-                proposal_count=len(proposals),
-                approved_proposal_count=approved,
+                review_ref=join.review_ref,
+                review_digest=join.review_digest,
+                reviewed_at=join.reviewed_at,
+                proposal_count=join.proposal_count,
+                approved_proposal_count=join.approved_proposal_count,
             ),
         )
 
@@ -447,7 +447,7 @@ class ExternalResultReadProjector:
         *,
         organization_id: str,
     ) -> ExternalResultProjectionView:
-        """Project one single-epoch report; review/proposal do not apply to this family."""
+        """Project one single-epoch report with the same review/proposal join."""
 
         resolved = single_volumes.resolve_historical_report_ref(
             report_ref, organization_id=organization_id, now=self._clock()
@@ -469,6 +469,11 @@ class ExternalResultReadProjector:
             or authority.zone_snapshot.definition_digest is None
             or authority.execution_policy.policy_digest is None
         ):
+            return ExternalResultProjectionView(
+                state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
+            )
+        join = self._review_join(report_ref, request, report, authority, organization_id)
+        if join is None:
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
             )
@@ -501,12 +506,58 @@ class ExternalResultReadProjector:
                     report.payload.metrics.model_dump(by_alias=True, mode="json")
                 ),
                 execution_policy=self._policy_view(authority.execution_policy),
-                review_ref=None,
-                review_digest=None,
-                reviewed_at=None,
-                proposal_count=0,
-                approved_proposal_count=0,
+                review_ref=join.review_ref,
+                review_digest=join.review_digest,
+                reviewed_at=join.reviewed_at,
+                proposal_count=join.proposal_count,
+                approved_proposal_count=join.approved_proposal_count,
             ),
+        )
+
+    def _review_join(
+        self,
+        report_ref: str,
+        request: Any,
+        report: Any,
+        authority: Any,
+        organization_id: str,
+    ) -> _ReviewJoin | None:
+        """Join the retained review and proposals of one report of either family.
+
+        ``None`` means a retained review no longer matches the resolved report,
+        which the caller shows as an unavailable historical source.
+        """
+
+        review = self._workflow.reviews.get_for_report(report_ref, organization_id=organization_id)
+        if review is not None and (
+            review.report != report
+            or review.request != request
+            or review.report.report_digest != report.report_digest
+        ):
+            return None
+        proposals = tuple(
+            proposal
+            for proposal in self._workflow.proposals.list_scoped(organization_id=organization_id)
+            if proposal.report_ref == report_ref
+            and proposal.report_digest == report.report_digest
+            and proposal.decision_digest == request.decision_digest
+            and proposal.zone_digest == authority.zone_snapshot.definition_digest
+        )
+        approved = sum(
+            self._workflow.approval_receipt(
+                organization_id=organization_id,
+                proposal_ref=proposal.proposal_ref,
+                expected_version=proposal.version,
+            )
+            is not None
+            for proposal in proposals
+        )
+        return _ReviewJoin(
+            review_ref=review.review_ref if review is not None else None,
+            review_digest=review.review_digest if review is not None else None,
+            reviewed_at=review.reviewed_at if review is not None else None,
+            proposal_count=len(proposals),
+            approved_proposal_count=approved,
         )
 
     @staticmethod
@@ -655,17 +706,18 @@ def build_external_result_workflow_router(
                 status_code=404, detail="EXTERNAL_RELATIVE_VOLUME_REPORT_NOT_FOUND"
             ) from exc
 
-    @router.get(
-        "/v1/external-relative-volume-reports/{report_ref}", response_model=ExternalResultReportView
-    )
-    def report_view(
-        report_ref: str, principal: Principal = read_dependency
-    ) -> ExternalResultReportView:
-        resolved = volumes.resolve_historical_report_ref(
-            report_ref, organization_id=principal.organization_id, now=now()
-        )
-        if resolved is None:
-            raise HTTPException(status_code=404, detail="EXTERNAL_RELATIVE_VOLUME_REPORT_NOT_FOUND")
+    def report_join(
+        report_ref: str, resolved: Any, principal: Principal, review_type: type[Any]
+    ) -> tuple[Any, list[ExternalReobservationProposalView]]:
+        """The exact report's retained review and proposals, shared by both families."""
+
+        if not projector._provenance_intact(  # noqa: SLF001 - the shared provenance gate
+            resolved.request,
+            resolved.report,
+            resolved.execution_authority,
+            principal.organization_id,
+        ):
+            raise LookupError(report_ref)
         proposals = [
             proposal_view(item.proposal_ref, principal)
             for item in service.proposals.list_scoped(organization_id=principal.organization_id)
@@ -675,10 +727,32 @@ def build_external_result_workflow_router(
             report_ref, organization_id=principal.organization_id
         )
         if review is not None and (
-            review.report.report_digest != resolved.report.report_digest
+            not isinstance(review, review_type)
+            or review.report.report_digest != resolved.report.report_digest
             or review.report != resolved.report
         ):
             raise HTTPException(status_code=503, detail="EXTERNAL_RESULT_REVIEW_INCONSISTENT")
+        return review, proposals
+
+    @router.get(
+        "/v1/external-relative-volume-reports/{report_ref}", response_model=ExternalResultReportView
+    )
+    def report_view(
+        report_ref: str, principal: Principal = read_dependency
+    ) -> ExternalResultReportView:
+        resolved = volumes.resolve_historical_report_ref(
+            report_ref, organization_id=principal.organization_id, now=now()
+        )
+        try:
+            if resolved is None:
+                raise LookupError(report_ref)
+            review, proposals = report_join(
+                report_ref, resolved, principal, ExternalResultReviewReceiptV1
+            )
+        except LookupError as exc:
+            raise HTTPException(
+                status_code=404, detail="EXTERNAL_RELATIVE_VOLUME_REPORT_NOT_FOUND"
+            ) from exc
         return ExternalResultReportView(
             request=resolved.request,
             report=resolved.report,
@@ -687,57 +761,33 @@ def build_external_result_workflow_router(
             proposals=proposals,
         )
 
-    if single_volumes is not None:
-        single_store = single_volumes
-
-        @router.get(
-            "/v1/external-single-volume-reports/{report_ref}",
-            response_model=ExternalSingleVolumeReportView,
-        )
-        def single_report_view(
-            report_ref: str, principal: Principal = read_dependency
-        ) -> ExternalSingleVolumeReportView:
-            resolved = single_store.resolve_historical_report_ref(
-                report_ref, organization_id=principal.organization_id, now=now()
-            )
-            if resolved is None:
-                raise HTTPException(
-                    status_code=404, detail="EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND"
-                )
-            return ExternalSingleVolumeReportView(
-                request=resolved.request,
-                report=resolved.report,
-                execution_policy=resolved.execution_authority.execution_policy,
-            )
-
-    @router.post(
-        "/v1/external-relative-volume-reports/{report_ref}/reviews",
-        response_model=ExternalResultReviewView,
-        status_code=201,
-    )
-    def review_report(
+    def _review_report(
         report_ref: str,
-        request: ExternalResultReviewIntent | None = None,
-        principal: Principal = write_dependency,
+        principal: Principal,
+        resolver: Callable[..., Any],
+        *,
+        owns_ref: Callable[[str], bool],
+        review_type: type[Any],
     ) -> ExternalResultReviewView:
-        del request
+        """Record one human review through the family route that owns ``report_ref``."""
+
         if principal.kind is not PrincipalKind.OPERATOR:
             raise HTTPException(status_code=403, detail="HUMAN_REVIEW_REQUIRED")
-        if report_ref.startswith(_SINGLE_REPORT_PREFIX):
-            # A single-volume ref never reaches the review store through the
-            # relative route; this keeps the response it returned before SV-3b.
+        if not owns_ref(report_ref):
+            # A ref of the other family never reaches the review store through
+            # this route; the relative route answered this way before SV-3b.
             raise HTTPException(status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE")
         try:
             existing = service.reviews.get_for_report(
                 report_ref, organization_id=principal.organization_id
             )
             if isinstance(
-                existing, ExternalResultReviewReceiptV1
+                existing, review_type
             ) and service.work_orders.is_external_workflow_closed(
                 existing.source_work_order_id, organization_id=principal.organization_id
             ):
                 return ExternalResultReviewView(review=existing)
-            resolved = volumes.resolve_historical_report_ref(
+            resolved = resolver(
                 report_ref,
                 organization_id=principal.organization_id,
                 now=now(),
@@ -774,18 +824,86 @@ def build_external_result_workflow_router(
             raise HTTPException(
                 status_code=422, detail="INVALID_EXTERNAL_RESULT_REVIEW_INTENT"
             ) from exc
-        if not isinstance(receipt, ExternalResultReviewReceiptV1):
-            # Unreachable: only single-prefixed refs resolve single sources.
+        if not isinstance(receipt, review_type):
+            # Unreachable: ``owns_ref`` keeps each family on its own route.
             raise HTTPException(status_code=409, detail="EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE")
         return ExternalResultReviewView(review=receipt)
+
+    @router.post(
+        "/v1/external-relative-volume-reports/{report_ref}/reviews",
+        response_model=ExternalResultReviewView,
+        status_code=201,
+    )
+    def review_report(
+        report_ref: str,
+        request: ExternalResultReviewIntent | None = None,
+        principal: Principal = write_dependency,
+    ) -> ExternalResultReviewView:
+        del request
+        return _review_report(
+            report_ref,
+            principal,
+            volumes.resolve_historical_report_ref,
+            owns_ref=lambda ref: not ref.startswith(_SINGLE_REPORT_PREFIX),
+            review_type=ExternalResultReviewReceiptV1,
+        )
+
+    if single_volumes is not None:
+        single_store = single_volumes
+
+        @router.get(
+            "/v1/external-single-volume-reports/{report_ref}",
+            response_model=ExternalSingleVolumeReportView,
+        )
+        def single_report_view(
+            report_ref: str, principal: Principal = read_dependency
+        ) -> ExternalSingleVolumeReportView:
+            resolved = single_store.resolve_historical_report_ref(
+                report_ref, organization_id=principal.organization_id, now=now()
+            )
+            try:
+                if resolved is None:
+                    raise LookupError(report_ref)
+                review, proposals = report_join(
+                    report_ref, resolved, principal, ExternalSingleVolumeResultReviewReceiptV1
+                )
+            except LookupError as exc:
+                raise HTTPException(
+                    status_code=404, detail="EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND"
+                ) from exc
+            return ExternalSingleVolumeReportView(
+                request=resolved.request,
+                report=resolved.report,
+                execution_policy=resolved.execution_authority.execution_policy,
+                review=review,
+                proposals=proposals,
+            )
+
+        @router.post(
+            "/v1/external-single-volume-reports/{report_ref}/reviews",
+            response_model=ExternalResultReviewView,
+            status_code=201,
+        )
+        def review_single_report(
+            report_ref: str,
+            request: ExternalResultReviewIntent | None = None,
+            principal: Principal = write_dependency,
+        ) -> ExternalResultReviewView:
+            del request
+            return _review_report(
+                report_ref,
+                principal,
+                single_store.resolve_historical_report_ref,
+                owns_ref=lambda ref: ref.startswith(_SINGLE_REPORT_PREFIX),
+                review_type=ExternalSingleVolumeResultReviewReceiptV1,
+            )
 
     @router.get("/v1/external-result-reviews/{review_ref}", response_model=ExternalResultReviewView)
     def review_view(
         review_ref: str, principal: Principal = read_dependency
     ) -> ExternalResultReviewView:
         receipt = service.reviews.get_scoped(review_ref, organization_id=principal.organization_id)
-        # Single-volume receipts are served once this view carries both families.
-        if not isinstance(receipt, ExternalResultReviewReceiptV1):
+        if receipt is None:
             raise HTTPException(status_code=404, detail="EXTERNAL_RESULT_REVIEW_NOT_FOUND")
         return ExternalResultReviewView(review=receipt)
 

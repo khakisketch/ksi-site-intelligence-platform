@@ -42,6 +42,9 @@ from ksi_event_contracts.external_single_volume import (
 from test_external_relative_volumes import _fence
 from test_external_relative_volumes import _payload as _relative_payload
 from test_external_result_review_proposals import _NOW, _principal
+from test_external_single_volume_result_reviews import _new
+from test_external_single_volume_result_reviews import _record_single as _record_reviewable_single
+from test_external_single_volume_result_reviews import _review as _review_single
 
 _MEASURED_AREA_M2 = 123.0
 
@@ -387,3 +390,42 @@ def test_single_rows_do_not_push_previous_relative_out_of_delta_window(
     assert latest.why_it_matters.startswith("직전 결과(4.0 m³)보다 순변화가 ")
     single._journal.close()
     graph.close()
+
+
+def test_single_volume_review_records_reviewed_briefing(tmp_path: Path) -> None:
+    graph, single, port = _new(tmp_path)
+    try:
+        briefings = SiteBriefingStore(
+            DurableJournal(tmp_path / "site-briefings.jsonl"), site_store=graph.service.sites
+        )
+        graph.journals.append(briefings._journal)  # noqa: SLF001 - close with the graph.
+        read = ExternalResultReadProjector(
+            volumes=graph.volumes, workflow=graph.service, single_volumes=single, clock=lambda: _NOW
+        )
+        projector = ExternalResultBriefingProjector(
+            briefings=briefings,
+            projector=read,
+            work_areas=graph.service.work_areas,
+            clock=lambda: _NOW,
+        )
+        projector.bind(
+            volumes=graph.volumes,
+            reviews=graph.service.reviews,
+            service=graph.service,
+            single_volumes=single,
+        )
+        report = _record_reviewable_single(graph, single, port)
+        assert projector.flush()
+        _review_single(graph, report.report_id)
+        assert projector.flush()
+
+        latest = briefings.latest("site-a", organization_id="org-a")
+        assert latest is not None and latest.status is SiteBriefingStatus.READY
+        assert latest.source_watermark == f"external-report:{report.report_digest}:REVIEWED"
+        assert latest.decision_prompt == "재관측이 필요하면 제안을 만들고 승인하세요."
+        first = latest.citations[0]
+        assert first.object_type == "external-single-volume-report"
+        assert first.object_id == report.report_id
+        assert first.source_path == f"/v1/external-single-volume-reports/{report.report_id}"
+    finally:
+        graph.close()
