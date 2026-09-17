@@ -24,7 +24,7 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Any, Protocol
+from typing import Annotated, Any, ClassVar, Protocol, cast
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from ksi_domain.canonical_json import canonical_json_bytes
@@ -46,7 +46,6 @@ from ksi_event_contracts.processing_job import ProcessingJobStatus
 from pydantic import Field, StrictInt, StringConstraints, field_validator
 
 from ksi_core.domains.external.quantity.external_relative_volume_launch_material import (
-    VolumeWorkerLaunchMaterial,
     VolumeWorkerLaunchMaterialResolver,
 )
 from ksi_core.foundation.api_base import CamelModel, iso_utc
@@ -639,12 +638,108 @@ def _canonical_authority_snapshot(
 
 class ExternalRelativeVolumeExecutionActivator(Protocol):
     def __call__(
-        self, *, principal: Principal, current_work_order_id: str,
-        decision_ref: str, now: datetime,
+        self,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+        decision_ref: str,
+        now: datetime,
     ) -> ExternalRelativeVolumeExecutionAuthority | None: ...
 
 
-class ExternalRelativeVolumeExecutionAuthorityPort(Protocol):
+class _VolumeExecutionPolicy(Protocol):
+    @property
+    def synthetic_test_only(self) -> bool: ...
+
+    def canonical_digest(self) -> str: ...
+
+
+class _VolumeAuthority(Protocol):
+    @property
+    def organization_id(self) -> str: ...
+    @property
+    def site_id(self) -> str: ...
+    @property
+    def current_work_order_id(self) -> str: ...
+    @property
+    def decision_id(self) -> str: ...
+    @property
+    def decision_digest(self) -> str: ...
+    @property
+    def historical_authority_digest(self) -> str: ...
+    @property
+    def authorized_actor_ids(self) -> frozenset[str]: ...
+    @property
+    def valid_until(self) -> datetime: ...
+    @property
+    def synthetic_test_only(self) -> bool: ...
+    @property
+    def validation_policy_digest(self) -> str: ...
+    @property
+    def execution_policy(self) -> _VolumeExecutionPolicy: ...
+    @property
+    def zone_snapshot(self) -> ExternalVolumeZoneSnapshotV1: ...
+
+    def is_current_at(self, now: datetime) -> bool: ...
+
+    def snapshot_payload(self) -> dict[str, Any]: ...
+
+
+class _VolumeRequest(Protocol):
+    @property
+    def request_id(self) -> str: ...
+    @property
+    def request_digest(self) -> str | None: ...
+    @property
+    def current_work_order_id(self) -> str: ...
+    @property
+    def decision_id(self) -> str: ...
+    @property
+    def decision_digest(self) -> str: ...
+    @property
+    def idempotency_key(self) -> str: ...
+    @property
+    def issued_at(self) -> datetime: ...
+    @property
+    def validation_policy_digest(self) -> str: ...
+    @property
+    def execution_policy_digest(self) -> str: ...
+    @property
+    def zone_snapshot(self) -> ExternalVolumeZoneSnapshotV1: ...
+
+    def model_copy(self, *, deep: bool = ...) -> Any: ...
+
+
+class _VolumeReport(Protocol):
+    @property
+    def report_id(self) -> str: ...
+    @property
+    def report_digest(self) -> str | None: ...
+    @property
+    def request_id(self) -> str: ...
+    @property
+    def request_digest(self) -> str: ...
+    @property
+    def measurement_payload_digest(self) -> str | None: ...
+    @property
+    def worker_instance_id(self) -> str: ...
+    @property
+    def lease_acquisition_id(self) -> str: ...
+    @property
+    def lease_generation(self) -> int: ...
+    @property
+    def reported_at(self) -> datetime: ...
+    @property
+    def payload(self) -> Any: ...
+
+    def model_copy(self, *, deep: bool = ...) -> Any: ...
+
+
+class _VolumePayload(Protocol):
+    def canonical_digest(self) -> str: ...
+
+
+class ExternalVolumeExecutionAuthorityPort[AuthorityT: _VolumeAuthority](Protocol):
     """Trusted Core seam.  Implementations must have no caller-derived truth."""
 
     currentness_coordinator: ExternalAuthorityCurrentnessCoordinator
@@ -656,15 +751,15 @@ class ExternalRelativeVolumeExecutionAuthorityPort(Protocol):
         current_work_order_id: str,
         decision_ref: str,
         now: datetime,
-    ) -> ExternalRelativeVolumeExecutionAuthority | None: ...
+    ) -> AuthorityT | None: ...
 
     def guard_current(
         self,
         *,
-        authority: ExternalRelativeVolumeExecutionAuthority,
+        authority: AuthorityT,
         principal: Principal,
         now: datetime,
-    ) -> AbstractContextManager[ExternalRelativeVolumeExecutionAuthority | None]: ...
+    ) -> AbstractContextManager[AuthorityT | None]: ...
 
     def resolve_historical(
         self,
@@ -674,7 +769,26 @@ class ExternalRelativeVolumeExecutionAuthorityPort(Protocol):
         decision_digest: str,
         issued_at: datetime,
         now: datetime,
-    ) -> ExternalRelativeVolumeExecutionAuthority | None: ...
+    ) -> AuthorityT | None: ...
+
+
+class VolumeLaunchMaterialResolverPort[RequestT: _VolumeRequest, AuthorityT: _VolumeAuthority](
+    Protocol
+):
+    @property
+    def currentness_coordinator(self) -> ExternalAuthorityCurrentnessCoordinator: ...
+
+    def preflight(self, request: RequestT, authority: AuthorityT, *, now: datetime) -> Any: ...
+
+    def material_remains_current(
+        self, request: RequestT, authority: AuthorityT, material: Any, *, now: datetime
+    ) -> bool: ...
+
+
+class ExternalRelativeVolumeExecutionAuthorityPort(
+    ExternalVolumeExecutionAuthorityPort[ExternalRelativeVolumeExecutionAuthority], Protocol
+):
+    """Relative-volume parametrization of the execution authority seam."""
 
 
 class ExternalRelativeVolumeStatus(StrEnum):
@@ -685,32 +799,44 @@ class ExternalRelativeVolumeStatus(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ExternalRelativeVolumeRecord:
-    request: ExternalRelativeVolumeRequestV1
-    authority: ExternalRelativeVolumeExecutionAuthority
+class ExternalVolumeRecord[
+    RequestT: _VolumeRequest,
+    AuthorityT: _VolumeAuthority,
+    ReportT: _VolumeReport,
+]:
+    request: RequestT
+    authority: AuthorityT
     status: ExternalRelativeVolumeStatus
     issued_by: str
     issued_at: datetime
     deadline_at: datetime
     attempts: int = 0
     lease: JobLease | None = None
-    report: ExternalRelativeVolumeReportV1 | None = None
+    report: ReportT | None = None
     failure_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
-class ResolvedRelativeVolumeReport:
+class ResolvedVolumeReport[
+    RequestT: _VolumeRequest,
+    AuthorityT: _VolumeAuthority,
+    ReportT: _VolumeReport,
+]:
     """Immutable report source proof for a downstream Core-only consumer."""
 
-    request: ExternalRelativeVolumeRequestV1
-    report: ExternalRelativeVolumeReportV1
-    execution_authority: ExternalRelativeVolumeExecutionAuthority
+    request: RequestT
+    report: ReportT
+    execution_authority: AuthorityT
 
 
 @dataclass(frozen=True, slots=True)
-class ExternalRelativeVolumeResult:
+class ExternalVolumeResult[
+    RequestT: _VolumeRequest,
+    AuthorityT: _VolumeAuthority,
+    ReportT: _VolumeReport,
+]:
     verdict: ExternalRelativeVolumeVerdict
-    record: ExternalRelativeVolumeRecord | None = None
+    record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT] | None = None
     created: bool = False
     detail: str | None = None
 
@@ -726,14 +852,34 @@ class ExternalRelativeVolumeResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ExternalRelativeVolumeObservedReportInput:
+class ExternalVolumeObservedReportInput[PayloadT: _VolumePayload]:
     """Worker observation.  Core supplies id, fence and report sealing fields."""
 
-    payload: ExternalRelativeVolumeMeasurementPayloadV1
+    payload: PayloadT
     computed_at: datetime
 
     def __post_init__(self) -> None:
         _require_utc(self.computed_at, name="computed_at")
+
+
+ExternalRelativeVolumeRecord = ExternalVolumeRecord[
+    ExternalRelativeVolumeRequestV1,
+    ExternalRelativeVolumeExecutionAuthority,
+    ExternalRelativeVolumeReportV1,
+]
+ExternalRelativeVolumeResult = ExternalVolumeResult[
+    ExternalRelativeVolumeRequestV1,
+    ExternalRelativeVolumeExecutionAuthority,
+    ExternalRelativeVolumeReportV1,
+]
+ResolvedRelativeVolumeReport = ResolvedVolumeReport[
+    ExternalRelativeVolumeRequestV1,
+    ExternalRelativeVolumeExecutionAuthority,
+    ExternalRelativeVolumeReportV1,
+]
+ExternalRelativeVolumeObservedReportInput = ExternalVolumeObservedReportInput[
+    ExternalRelativeVolumeMeasurementPayloadV1
+]
 
 
 class ExternalRelativeVolumeIssueInput(CamelModel):
@@ -847,17 +993,117 @@ class ExternalRelativeVolumeInputCapabilityIssuer(Protocol):
     ): ...
 
 
-class ExternalRelativeVolumeStore:
-    """One append-only journal, one lock, and rechecked authoritative permission."""
+class ExternalVolumeLedger[
+    RequestT: _VolumeRequest,
+    AuthorityT: _VolumeAuthority,
+    ReportT: _VolumeReport,
+    PayloadT: _VolumePayload,
+]:
+    """One append-only journal, one lock, and rechecked authoritative permission.
+
+    Family-neutral: a concrete volume family supplies its contract types, journal
+    kind prefix and the hooks below.  Everything about queueing, leasing,
+    fencing, idempotency and replay is shared.
+    """
+
+    _LABEL: ClassVar[str]
+    _KIND_PREFIX: ClassVar[str]
+    _recovery_error: ClassVar[type[RuntimeError]]
+
+    # -- family hooks ---------------------------------------------------------------------
+    def _authority_from_snapshot(self, raw: dict[str, Any]) -> AuthorityT:
+        raise NotImplementedError
+
+    def _request_from_wire(self, raw: object) -> RequestT:
+        raise NotImplementedError
+
+    def _request_wire(self, request: RequestT) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def _report_from_wire(self, raw: object) -> ReportT:
+        raise NotImplementedError
+
+    def _report_wire(self, report: ReportT) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def _build_report(self, **fields: Any) -> ReportT:
+        raise NotImplementedError
+
+    def _build_request(
+        self,
+        authority: AuthorityT,
+        *,
+        request_id: str,
+        current_work_order_id: str,
+        issued_at: datetime,
+        idempotency_key: str,
+    ) -> RequestT:
+        raise NotImplementedError
+
+    @staticmethod
+    def _natural_fingerprint(
+        *, organization_id: str, current_work_order_id: str, authority: Any
+    ) -> str:
+        raise NotImplementedError
+
+    def _inputs_binding_error(self, request: RequestT, authority: AuthorityT) -> str | None:
+        raise NotImplementedError
+
+    def _primary_site_id(self, authority: AuthorityT) -> str:
+        raise NotImplementedError
+
+    def _report_sort_time(
+        self, record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT]
+    ) -> datetime:
+        raise NotImplementedError
+
+    def _measurement_payload_error(
+        self, record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT], payload: PayloadT
+    ) -> str | None:
+        raise NotImplementedError
+
+    # -- shared helpers -------------------------------------------------------------------
+    def _kind(self, suffix: str) -> str:
+        return f"{self._KIND_PREFIX}-{suffix}"
+
+    def _raw_string(self, raw: dict[str, Any], name: str) -> str:
+        value = raw.get(name)
+        if type(value) is not str:
+            raise self._recovery_error(f"external {self._LABEL} journal {name} must be a string")
+        return value
+
+    def _raw_int(self, raw: dict[str, Any], name: str) -> int:
+        value = raw.get(name)
+        if type(value) is not int:
+            raise self._recovery_error(f"external {self._LABEL} journal {name} must be an integer")
+        return value
+
+    def _raw_mapping(self, raw: dict[str, Any], name: str) -> dict[str, Any]:
+        value = raw.get(name)
+        if type(value) is not dict:
+            raise self._recovery_error(f"external {self._LABEL} journal {name} must be an object")
+        return value
+
+    def _canonical_authority_snapshot(
+        self, authority: AuthorityT
+    ) -> tuple[AuthorityT, dict[str, Any]]:
+        """Return a complete strict snapshot and its reconstruction for live publication.
+
+        Authority ports are trusted Core seams, but an unsafe in-memory mutation must
+        still not append a journal record that strict recovery will reject.
+        """
+        snapshot = authority.snapshot_payload()
+        return self._authority_from_snapshot(snapshot), snapshot
 
     def __init__(
         self,
         journal: DurableJournal,
         *,
-        authority_port: ExternalRelativeVolumeExecutionAuthorityPort,
+        authority_port: ExternalVolumeExecutionAuthorityPort[AuthorityT],
         currentness_coordinator: ExternalAuthorityCurrentnessCoordinator,
         queue_policy: ExternalRelativeVolumeQueuePolicy,
-        launch_material_resolver: VolumeWorkerLaunchMaterialResolver | None = None,
+        launch_material_resolver: VolumeLaunchMaterialResolverPort[RequestT, AuthorityT]
+        | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         if authority_port.currentness_coordinator is not currentness_coordinator:
@@ -876,35 +1122,41 @@ class ExternalRelativeVolumeStore:
         self._queue_policy = queue_policy
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lock = threading.RLock()
-        self._records: dict[str, ExternalRelativeVolumeRecord] = {}
+        self._records: dict[str, ExternalVolumeRecord[RequestT, AuthorityT, ReportT]] = {}
         self._idempotency: dict[tuple[str, str, str], tuple[str, str]] = {}
         self._natural: dict[str, str] = {}
         self._report_refs: dict[tuple[str, str], str] = {}
         self._lease_generation: dict[str, int] = {}
         self._lease_acquisition_ids: dict[str, set[str]] = {}
-        self._report_listeners: list[Callable[[ExternalRelativeVolumeRecord], None]] = []
+        self._report_listeners: list[
+            Callable[[ExternalVolumeRecord[RequestT, AuthorityT, ReportT]], None]
+        ] = []
         self._replay()
 
     @property
-    def launch_material_resolver(self) -> VolumeWorkerLaunchMaterialResolver | None:
+    def launch_material_resolver(
+        self,
+    ) -> VolumeLaunchMaterialResolverPort[RequestT, AuthorityT] | None:
         return self._launch_material_resolver
 
     def bind_report_listener(
-        self, listener: Callable[[ExternalRelativeVolumeRecord], None]
+        self, listener: Callable[[ExternalVolumeRecord[RequestT, AuthorityT, ReportT]], None]
     ) -> None:
         """Bind a post-commit projection; the report verdict never depends on it."""
         with self._lock:
             if listener not in self._report_listeners:
                 self._report_listeners.append(listener)
 
-    def _notify_report_listeners(self, record: ExternalRelativeVolumeRecord) -> None:
+    def _notify_report_listeners(
+        self, record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT]
+    ) -> None:
         """Run outside store locks and coordinator guards; failures are logged only."""
         for listener in tuple(self._report_listeners):
             try:
                 listener(record)
             except Exception:
                 _LOGGER.exception(
-                    "relative volume report listener failed",
+                    self._LABEL.replace("-", " ") + " report listener failed",
                     extra={"request_ref": record.request.request_id},
                 )
 
@@ -923,36 +1175,9 @@ class ExternalRelativeVolumeStore:
             raise ValueError("Idempotency-Key required")
         return hashlib.sha256(normalized.encode()).hexdigest()
 
-    @staticmethod
-    def _natural_fingerprint(
-        *,
-        organization_id: str,
-        current_work_order_id: str,
-        authority: ExternalRelativeVolumeExecutionAuthority,
-    ) -> str:
-        return _digest(
-            {
-                "domain": "external-relative-volume-issue.v1",
-                "organizationId": organization_id,
-                "currentWorkOrderId": current_work_order_id,
-                "decisionId": authority.decision_id,
-                "decisionDigest": authority.decision_digest,
-                "compatibilityMapping": authority.compatibility_mapping_digest,
-                "baseline": authority.baseline.observed_sha256,
-                "current": authority.current.observed_sha256,
-                "evidence": list(authority.evidence_record_digests),
-                "validationPolicy": authority.validation_policy_digest,
-                "executionPolicy": authority.execution_policy.canonical_digest(),
-                "zone": authority.zone_snapshot.canonical_digest(),
-            }
-        )
-
-    @staticmethod
-    def _request_id(natural: str) -> str:
-        return (
-            "external-relative-volume-"
-            + hashlib.sha256((natural + "\0id").encode()).hexdigest()[:32]
-        )
+    @classmethod
+    def _request_id(cls, natural: str) -> str:
+        return cls._KIND_PREFIX + "-" + hashlib.sha256((natural + "\0id").encode()).hexdigest()[:32]
 
     def _now(self, supplied: datetime | None) -> datetime:
         value = supplied if supplied is not None else self._clock()
@@ -963,7 +1188,7 @@ class ExternalRelativeVolumeStore:
         self,
         raw: dict[str, Any],
         *,
-        issued_authority: ExternalRelativeVolumeExecutionAuthority | None = None,
+        issued_authority: AuthorityT | None = None,
     ) -> None:
         raw["eventDigest"] = _event_digest(raw)
         self._journal.append(raw)
@@ -971,22 +1196,18 @@ class ExternalRelativeVolumeStore:
 
     def _replay(self) -> None:
         for raw in self._journal.replay():
-            issued_authority: ExternalRelativeVolumeExecutionAuthority | None = None
-            kind = _raw_journal_string(raw, "kind")
-            if _raw_journal_int(raw, "version") != _VERSION:
-                raise ExternalRelativeVolumeRecoveryError(
-                    "external relative-volume event version is invalid"
-                )
-            if kind == "external-relative-volume-issued":
+            issued_authority: AuthorityT | None = None
+            kind = self._raw_string(raw, "kind")
+            if self._raw_int(raw, "version") != _VERSION:
+                raise self._recovery_error(f"external {self._LABEL} event version is invalid")
+            if kind == self._kind("issued"):
                 try:
-                    request = ExternalRelativeVolumeRequestV1.model_validate(raw["request"])
+                    request = self._request_from_wire(raw["request"])
                     if request.request_digest is None:
                         raise ValueError("issued request must be sealed")
-                    issued_at = datetime.fromisoformat(_raw_journal_string(raw, "issuedAt"))
+                    issued_at = datetime.fromisoformat(self._raw_string(raw, "issuedAt"))
                     _require_utc(issued_at, name="issuedAt")
-                    snapshot_authority = ExternalRelativeVolumeExecutionAuthority.from_snapshot(
-                        raw["authority"]
-                    )
+                    snapshot_authority = self._authority_from_snapshot(raw["authority"])
                     issued_authority = self._authority_port.resolve_historical(
                         historical_authority_digest=snapshot_authority.historical_authority_digest,
                         decision_id=request.decision_id,
@@ -995,19 +1216,17 @@ class ExternalRelativeVolumeStore:
                         now=issued_at,
                     )
                 except (KeyError, TypeError, ValueError) as exc:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "malformed historical relative-volume issue authority"
+                    raise self._recovery_error(
+                        f"malformed historical {self._LABEL} issue authority"
                     ) from exc
                 if issued_authority is None:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "historical relative-volume authority is unavailable"
-                    )
+                    raise self._recovery_error(f"historical {self._LABEL} authority is unavailable")
             self._apply(raw, recovery=True, issued_authority=issued_authority)
 
     def _issued_request_authority_error(
         self,
-        request: ExternalRelativeVolumeRequestV1,
-        authority: ExternalRelativeVolumeExecutionAuthority,
+        request: RequestT,
+        authority: AuthorityT,
         *,
         organization_id: str,
         key_hash: str,
@@ -1028,10 +1247,9 @@ class ExternalRelativeVolumeStore:
             or request.decision_digest != authority.decision_digest
         ):
             return "issued decision differs from authority"
-        if request.baseline != authority.baseline or request.current != authority.current:
-            return "issued DSM inputs differ from authority"
-        if request.evidence_record_digests != authority.evidence_record_digests:
-            return "issued evidence differs from authority"
+        inputs_error = self._inputs_binding_error(request, authority)
+        if inputs_error is not None:
+            return inputs_error
         if request.validation_policy_digest != authority.validation_policy_digest:
             return "issued validation policy differs from authority"
         if request.execution_policy_digest != authority.execution_policy.canonical_digest():
@@ -1058,48 +1276,40 @@ class ExternalRelativeVolumeStore:
         raw: dict[str, Any],
         *,
         recovery: bool = False,
-        issued_authority: ExternalRelativeVolumeExecutionAuthority | None = None,
+        issued_authority: AuthorityT | None = None,
     ) -> None:
         try:
-            if _raw_journal_int(raw, "version") != _VERSION or raw.get(
-                "eventDigest"
-            ) != _event_digest(raw):
-                raise ExternalRelativeVolumeRecoveryError(
-                    "external relative-volume event digest/version mismatch"
-                )
-            kind = _raw_journal_string(raw, "kind")
-            if kind == "external-relative-volume-issued":
-                request = ExternalRelativeVolumeRequestV1.model_validate(raw["request"])
+            if self._raw_int(raw, "version") != _VERSION or raw.get("eventDigest") != _event_digest(
+                raw
+            ):
+                raise self._recovery_error(f"external {self._LABEL} event digest/version mismatch")
+            kind = self._raw_string(raw, "kind")
+            if kind == self._kind("issued"):
+                request = self._request_from_wire(raw["request"])
                 if request.request_digest is None:
-                    raise ExternalRelativeVolumeRecoveryError("issued request must be sealed")
-                snapshot_authority = ExternalRelativeVolumeExecutionAuthority.from_snapshot(
-                    raw["authority"]
-                )
+                    raise self._recovery_error("issued request must be sealed")
+                snapshot_authority = self._authority_from_snapshot(raw["authority"])
                 if issued_authority is None or issued_authority != snapshot_authority:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "historical relative-volume authority differs from issued snapshot"
+                    raise self._recovery_error(
+                        f"historical {self._LABEL} authority differs from issued snapshot"
                     )
                 authority = issued_authority
-                request_ref = _raw_journal_string(raw, "requestRef")
+                request_ref = self._raw_string(raw, "requestRef")
                 if request.request_id in self._records or request.request_id != request_ref:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "duplicate or substituted relative-volume request"
-                    )
-                natural = _raw_journal_string(raw, "natural")
-                binding = _raw_journal_mapping(raw, "idempotency")
-                organization_id = _raw_journal_string(binding, "organizationId")
-                key_hash = _raw_journal_string(binding, "keyHash")
-                fingerprint = _raw_journal_string(binding, "fingerprint")
+                    raise self._recovery_error(f"duplicate or substituted {self._LABEL} request")
+                natural = self._raw_string(raw, "natural")
+                binding = self._raw_mapping(raw, "idempotency")
+                organization_id = self._raw_string(binding, "organizationId")
+                key_hash = self._raw_string(binding, "keyHash")
+                fingerprint = self._raw_string(binding, "fingerprint")
                 if fingerprint != natural or natural in self._natural:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "forged relative-volume idempotency binding"
-                    )
-                issued_at = datetime.fromisoformat(_raw_journal_string(raw, "issuedAt"))
-                deadline_at = datetime.fromisoformat(_raw_journal_string(raw, "deadlineAt"))
+                    raise self._recovery_error(f"forged {self._LABEL} idempotency binding")
+                issued_at = datetime.fromisoformat(self._raw_string(raw, "issuedAt"))
+                deadline_at = datetime.fromisoformat(self._raw_string(raw, "deadlineAt"))
                 _require_utc(issued_at, name="issuedAt")
                 _require_utc(deadline_at, name="deadlineAt")
                 if deadline_at <= issued_at:
-                    raise ExternalRelativeVolumeRecoveryError("issued deadline is not ordered")
+                    raise self._recovery_error("issued deadline is not ordered")
                 binding_error = self._issued_request_authority_error(
                     request,
                     authority,
@@ -1107,17 +1317,17 @@ class ExternalRelativeVolumeStore:
                     key_hash=key_hash,
                     natural=natural,
                     issued_at=issued_at,
-                    issued_by=_raw_journal_string(raw, "issuedBy"),
+                    issued_by=self._raw_string(raw, "issuedBy"),
                 )
                 if binding_error is not None:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        f"historical relative-volume issue binding is invalid: {binding_error}"
+                    raise self._recovery_error(
+                        f"historical {self._LABEL} issue binding is invalid: {binding_error}"
                     )
-                record = ExternalRelativeVolumeRecord(
+                record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT] = ExternalVolumeRecord(
                     request=request,
                     authority=authority,
                     status=ExternalRelativeVolumeStatus.QUEUED,
-                    issued_by=_raw_journal_string(raw, "issuedBy"),
+                    issued_by=self._raw_string(raw, "issuedBy"),
                     issued_at=issued_at,
                     deadline_at=deadline_at,
                 )
@@ -1127,15 +1337,13 @@ class ExternalRelativeVolumeStore:
                     natural,
                     request.request_id,
                 )
-            elif kind == "external-relative-volume-idempotency-bound":
-                binding = _raw_journal_mapping(raw, "idempotency")
-                target = _raw_journal_string(raw, "requestRef")
+            elif kind == self._kind("idempotency-bound"):
+                binding = self._raw_mapping(raw, "idempotency")
+                target = self._raw_string(raw, "requestRef")
                 target_record = self._records.get(target)
                 if target_record is None:
-                    raise ExternalRelativeVolumeRecoveryError(
-                        "idempotency binding refers to absent request"
-                    )
-                organization_id = _raw_journal_string(binding, "organizationId")
+                    raise self._recovery_error("idempotency binding refers to absent request")
+                organization_id = self._raw_string(binding, "organizationId")
                 natural = self._natural_fingerprint(
                     organization_id=organization_id,
                     current_work_order_id=target_record.request.current_work_order_id,
@@ -1144,75 +1352,69 @@ class ExternalRelativeVolumeStore:
                 key = (
                     organization_id,
                     target_record.request.current_work_order_id,
-                    _raw_journal_string(binding, "keyHash"),
+                    self._raw_string(binding, "keyHash"),
                 )
-                expected = (_raw_journal_string(binding, "fingerprint"), target)
+                expected = (self._raw_string(binding, "fingerprint"), target)
                 if (
                     organization_id != target_record.authority.organization_id
                     or expected != (natural, target)
                     or self._natural.get(natural) != target
                     or self._idempotency.get(key, expected) != expected
                 ):
-                    raise ExternalRelativeVolumeRecoveryError("conflicting idempotency binding")
+                    raise self._recovery_error("conflicting idempotency binding")
                 self._idempotency[key] = expected
-            elif kind == "external-relative-volume-leased":
+            elif kind == self._kind("leased"):
                 self._apply_lease(raw)
-            elif kind == "external-relative-volume-reported":
+            elif kind == self._kind("reported"):
                 self._apply_report(raw)
-            elif kind == "external-relative-volume-failed":
+            elif kind == self._kind("failed"):
                 self._apply_failure(raw)
             else:
-                raise ExternalRelativeVolumeRecoveryError("unknown external relative-volume event")
+                raise self._recovery_error(f"unknown external {self._LABEL} event")
         except (KeyError, TypeError, ValueError) as exc:
             if recovery:
-                raise ExternalRelativeVolumeRecoveryError(
-                    "malformed external relative-volume journal"
-                ) from exc
+                raise self._recovery_error(f"malformed external {self._LABEL} journal") from exc
             raise
 
     def _apply_lease(self, raw: dict[str, Any]) -> None:
-        request_id = _raw_journal_string(raw, "requestRef")
+        request_id = self._raw_string(raw, "requestRef")
         record = self._records.get(request_id)
         if record is None or record.status not in {
             ExternalRelativeVolumeStatus.QUEUED,
             ExternalRelativeVolumeStatus.RUNNING,
         }:
-            raise ExternalRelativeVolumeRecoveryError(
-                "lease targets inactive relative-volume request"
-            )
+            raise self._recovery_error(f"lease targets inactive {self._LABEL} request")
         lease = JobLease(
-            worker_id=_raw_journal_string(raw, "workerInstanceId"),
-            granted_at=datetime.fromisoformat(_raw_journal_string(raw, "grantedAt")),
-            expires_at=datetime.fromisoformat(_raw_journal_string(raw, "expiresAt")),
-            lease_acquisition_id=_raw_journal_string(raw, "leaseAcquisitionId"),
-            lease_generation=_raw_journal_int(raw, "leaseGeneration"),
-            authenticated_actor_id=_raw_journal_string(raw, "authenticatedActorId"),
+            worker_id=self._raw_string(raw, "workerInstanceId"),
+            granted_at=datetime.fromisoformat(self._raw_string(raw, "grantedAt")),
+            expires_at=datetime.fromisoformat(self._raw_string(raw, "expiresAt")),
+            lease_acquisition_id=self._raw_string(raw, "leaseAcquisitionId"),
+            lease_generation=self._raw_int(raw, "leaseGeneration"),
+            authenticated_actor_id=self._raw_string(raw, "authenticatedActorId"),
         )
         if (
             lease.fence is None
             or not lease.fence.is_well_formed()
             or lease.expires_at <= lease.granted_at
         ):
-            raise ExternalRelativeVolumeRecoveryError("malformed relative-volume lease")
+            raise self._recovery_error(f"malformed {self._LABEL} lease")
         high_water = self._lease_generation.get(request_id, 0)
-        lease_mode = _raw_journal_string(raw, "leaseMode")
+        lease_mode = self._raw_string(raw, "leaseMode")
         if lease_mode not in {LeaseMode.CLAIM.value, LeaseMode.RENEW.value}:
-            raise ExternalRelativeVolumeRecoveryError("relative-volume lease mode is invalid")
+            raise self._recovery_error(f"{self._LABEL} lease mode is invalid")
         if lease.lease_generation != high_water + 1 and not (
             lease_mode == LeaseMode.RENEW.value
             and record.lease is not None
             and lease.lease_generation == high_water
             and record.lease.fence == lease.fence
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume lease generation is not monotonic"
-            )
+            raise self._recovery_error(f"{self._LABEL} lease generation is not monotonic")
         used_acquisitions = self._lease_acquisition_ids.setdefault(request_id, set())
         acquisition_id = lease.lease_acquisition_id
         if acquisition_id is None:
-            raise ExternalRelativeVolumeRecoveryError("relative-volume lease acquisition is absent")
+            raise self._recovery_error(f"{self._LABEL} lease acquisition is absent")
         if lease_mode == LeaseMode.CLAIM.value and acquisition_id in used_acquisitions:
-            raise ExternalRelativeVolumeRecoveryError("relative-volume lease acquisition is reused")
+            raise self._recovery_error(f"{self._LABEL} lease acquisition is reused")
         self._lease_generation[request_id] = max(high_water, lease.lease_generation)
         if lease_mode == LeaseMode.CLAIM.value:
             used_acquisitions.add(acquisition_id)
@@ -1222,7 +1424,7 @@ class ExternalRelativeVolumeStore:
         )
 
     def _apply_report(self, raw: dict[str, Any]) -> None:
-        request_id = _raw_journal_string(raw, "requestRef")
+        request_id = self._raw_string(raw, "requestRef")
         record = self._records.get(request_id)
         if (
             record is None
@@ -1230,18 +1432,14 @@ class ExternalRelativeVolumeStore:
             or record.status is not ExternalRelativeVolumeStatus.RUNNING
             or record.lease is None
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "duplicate or inactive relative-volume report"
-            )
-        report = ExternalRelativeVolumeReportV1.model_validate(raw["report"])
+            raise self._recovery_error(f"duplicate or inactive {self._LABEL} report")
+        report = self._report_from_wire(raw["report"])
         if (
             report.report_digest is None
             or report.request_id != request_id
             or report.request_digest != record.request.request_digest
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume report request binding mismatch"
-            )
+            raise self._recovery_error(f"{self._LABEL} report request binding mismatch")
         if (
             report.worker_instance_id != record.lease.worker_instance_id
             or report.lease_acquisition_id != record.lease.lease_acquisition_id
@@ -1249,19 +1447,15 @@ class ExternalRelativeVolumeStore:
             or report.reported_at >= record.lease.expires_at
             or report.reported_at >= record.deadline_at
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume report lease lineage mismatch"
-            )
+            raise self._recovery_error(f"{self._LABEL} report lease lineage mismatch")
         error = self._measurement_payload_error(record, report.payload)
         if error is not None:
-            raise ExternalRelativeVolumeRecoveryError(
-                f"relative-volume report violates sealed authority: {error}"
-            )
+            raise self._recovery_error(f"{self._LABEL} report violates sealed authority: {error}")
         report_key = (record.authority.organization_id, report.report_id)
         existing_request_ref = self._report_refs.get(report_key)
         if existing_request_ref is not None and existing_request_ref != request_id:
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume report identity conflicts with another request"
+            raise self._recovery_error(
+                f"{self._LABEL} report identity conflicts with another request"
             )
         self._report_refs[report_key] = request_id
         self._records[request_id] = replace(
@@ -1269,27 +1463,25 @@ class ExternalRelativeVolumeStore:
         )
 
     def _apply_failure(self, raw: dict[str, Any]) -> None:
-        request_id = _raw_journal_string(raw, "requestRef")
+        request_id = self._raw_string(raw, "requestRef")
         record = self._records.get(request_id)
         if (
             record is None
             or record.status is not ExternalRelativeVolumeStatus.RUNNING
             or record.lease is None
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume failure transition is invalid"
-            )
-        reason = _raw_journal_string(raw, "reason")
+            raise self._recovery_error(f"{self._LABEL} failure transition is invalid")
+        reason = self._raw_string(raw, "reason")
         if not _valid_failure_reason(reason):
-            raise ExternalRelativeVolumeRecoveryError("relative-volume failure reason is invalid")
-        failure_at = datetime.fromisoformat(_raw_journal_string(raw, "failedAt"))
+            raise self._recovery_error(f"{self._LABEL} failure reason is invalid")
+        failure_at = datetime.fromisoformat(self._raw_string(raw, "failedAt"))
         _require_utc(failure_at, name="failedAt")
         fence = LeaseFence(
-            _raw_journal_string(raw, "workerInstanceId"),
-            _raw_journal_string(raw, "leaseAcquisitionId"),
-            _raw_journal_int(raw, "leaseGeneration"),
+            self._raw_string(raw, "workerInstanceId"),
+            self._raw_string(raw, "leaseAcquisitionId"),
+            self._raw_int(raw, "leaseGeneration"),
         )
-        authenticated_actor_id = _raw_journal_string(raw, "authenticatedActorId")
+        authenticated_actor_id = self._raw_string(raw, "authenticatedActorId")
         if (
             not fence.is_well_formed()
             or record.lease.fence != fence
@@ -1298,9 +1490,7 @@ class ExternalRelativeVolumeStore:
             or failure_at >= record.lease.expires_at
             or failure_at >= record.deadline_at
         ):
-            raise ExternalRelativeVolumeRecoveryError(
-                "relative-volume failure lease lineage mismatch"
-            )
+            raise self._recovery_error(f"{self._LABEL} failure lease lineage mismatch")
         self._records[request_id] = replace(
             record, status=ExternalRelativeVolumeStatus.FAILED, failure_reason=reason
         )
@@ -1312,22 +1502,20 @@ class ExternalRelativeVolumeStore:
         current_work_order_id: str,
         key_hash: str,
         decision_ref: str,
-    ) -> ExternalRelativeVolumeResult | None:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT] | None:
         prior = self._idempotency.get((organization_id, current_work_order_id, key_hash))
         if prior is None:
             return None
         _, request_ref = prior
         record = self._records.get(request_ref)
         if record is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
         if decision_ref != record.authority.decision_id:
-            return ExternalRelativeVolumeResult(
-                ExternalRelativeVolumeVerdict.IDEMPOTENCY_CONFLICT, record
-            )
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.IDEMPOTENCY_CONFLICT, record)
         # This is a read of an already immutable issue.  It grants no new
         # numerical execution, so it remains available after live authority
         # withdrawal or expiry.
-        return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.ALREADY_ISSUED, record)
+        return ExternalVolumeResult(ExternalRelativeVolumeVerdict.ALREADY_ISSUED, record)
 
     def _active_request_count_locked(self, *, organization_id: str, now: datetime) -> int:
         return sum(
@@ -1366,7 +1554,7 @@ class ExternalRelativeVolumeStore:
         decision_ref: str,
         idempotency_key: str,
         now: datetime,
-    ) -> tuple[ExternalRelativeVolumeResult | None, bool]:
+    ) -> tuple[ExternalVolumeResult[RequestT, AuthorityT, ReportT] | None, bool]:
         """Read-only classification under the caller's authenticated WorkOrder guard.
 
         Existing idempotency results, including conflicts, must precede activation.
@@ -1402,9 +1590,7 @@ class ExternalRelativeVolumeStore:
             if prior is not None:
                 return prior, False
             if self._journal.sealed_reason is not None:
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
-                ), False
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE), False
         return None, authority is None
 
     def issue(
@@ -1415,7 +1601,7 @@ class ExternalRelativeVolumeStore:
         decision_ref: str,
         idempotency_key: str,
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         issued_at = self._now(now)
         key_hash = self._idempotency_hash(idempotency_key)
         # An exact retry is a historical read, not a fresh execution request.
@@ -1439,35 +1625,28 @@ class ExternalRelativeVolumeStore:
             now=issued_at,
         )
         if authority is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
         try:
-            canonical_authority, authority_snapshot = _canonical_authority_snapshot(authority)
+            canonical_authority, authority_snapshot = self._canonical_authority_snapshot(authority)
         except (AttributeError, TypeError, ValueError):
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
         if (
             canonical_authority.organization_id != principal.organization_id
-            or canonical_authority.site_id != canonical_authority.current.subject.site_id
+            or canonical_authority.site_id != self._primary_site_id(canonical_authority)
         ):
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
         natural = self._natural_fingerprint(
             organization_id=principal.organization_id,
             current_work_order_id=current_work_order_id,
             authority=canonical_authority,
         )
-        request = ExternalRelativeVolumeRequestV1(
+        request = self._build_request(
+            canonical_authority,
             request_id=self._request_id(natural),
             current_work_order_id=current_work_order_id,
-            decision_id=canonical_authority.decision_id,
-            decision_digest=canonical_authority.decision_digest,
-            baseline=canonical_authority.baseline,
-            current=canonical_authority.current,
-            evidence_record_digests=canonical_authority.evidence_record_digests,
-            validation_policy_digest=canonical_authority.validation_policy_digest,
-            execution_policy_digest=canonical_authority.execution_policy.canonical_digest(),
-            zone_snapshot=canonical_authority.zone_snapshot,
             issued_at=issued_at,
             idempotency_key=idempotency_key.strip(),
-        ).sealed()
+        )
         binding_error = self._issued_request_authority_error(
             request,
             canonical_authority,
@@ -1478,7 +1657,7 @@ class ExternalRelativeVolumeStore:
             issued_by=principal.principal_id,
         )
         if binding_error is not None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
         # A reviewed adapter's guard is local/coordinator-backed.  It may not
         # perform remote I/O and it is opened before this store's lock.
         with (
@@ -1488,25 +1667,17 @@ class ExternalRelativeVolumeStore:
             ) as current_authority,
         ):
             if current_authority is None:
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
-                )
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
             if current_authority != authority:
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
-                )
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
             try:
                 current_canonical_authority, current_authority_snapshot = (
-                    _canonical_authority_snapshot(current_authority)
+                    self._canonical_authority_snapshot(current_authority)
                 )
             except (AttributeError, TypeError, ValueError):
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
-                )
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
             if not _strict_snapshot_equal(authority_snapshot, current_authority_snapshot):
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
-                )
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
             with self._lock:
                 prior = self._prior_idempotency_result_locked(
                     organization_id=principal.organization_id,
@@ -1517,14 +1688,12 @@ class ExternalRelativeVolumeStore:
                 if prior is not None:
                     return prior
                 if self._journal.sealed_reason is not None:
-                    return ExternalRelativeVolumeResult(
-                        ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
-                    )
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
                 existing_ref = self._natural.get(natural)
                 if existing_ref is not None:
                     record = self._records[existing_ref]
                     raw = {
-                        "kind": "external-relative-volume-idempotency-bound",
+                        "kind": self._kind("idempotency-bound"),
                         "version": _VERSION,
                         "requestRef": existing_ref,
                         "idempotency": {
@@ -1536,10 +1705,8 @@ class ExternalRelativeVolumeStore:
                     try:
                         self._append_locked(raw)
                     except JournalSealedError:
-                        return ExternalRelativeVolumeResult(
-                            ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
-                        )
-                    return ExternalRelativeVolumeResult(
+                        return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.ALREADY_ISSUED, record
                     )
                 if (
@@ -1548,12 +1715,12 @@ class ExternalRelativeVolumeStore:
                     )
                     >= self._queue_policy.max_active_requests_per_organization
                 ):
-                    return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.QUEUE_FULL)
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.QUEUE_FULL)
                 raw = {
-                    "kind": "external-relative-volume-issued",
+                    "kind": self._kind("issued"),
                     "version": _VERSION,
                     "requestRef": request.request_id,
-                    "request": external_relative_volume_request_wire_dict(request),
+                    "request": self._request_wire(request),
                     "authority": current_authority_snapshot,
                     "natural": natural,
                     "idempotency": {
@@ -1568,16 +1735,16 @@ class ExternalRelativeVolumeStore:
                 try:
                     self._append_locked(raw, issued_authority=current_canonical_authority)
                 except JournalSealedError:
-                    return ExternalRelativeVolumeResult(
-                        ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
-                    )
-                return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.ISSUED,
                     self._records[request.request_id],
                     created=True,
                 )
 
-    def get(self, request_ref: str, *, organization_id: str) -> ExternalRelativeVolumeRecord | None:
+    def get(
+        self, request_ref: str, *, organization_id: str
+    ) -> ExternalVolumeRecord[RequestT, AuthorityT, ReportT] | None:
         with self._lock:
             record = self._records.get(request_ref)
             return (
@@ -1588,7 +1755,7 @@ class ExternalRelativeVolumeStore:
 
     def list_for_work_order(
         self, current_work_order_id: str, *, organization_id: str
-    ) -> tuple[ExternalRelativeVolumeRecord, ...]:
+    ) -> tuple[ExternalVolumeRecord[RequestT, AuthorityT, ReportT], ...]:
         with self._lock:
             return tuple(
                 record
@@ -1618,7 +1785,7 @@ class ExternalRelativeVolumeStore:
             for record in sorted(
                 records,
                 key=lambda record: (
-                    record.request.current.captured_to,
+                    self._report_sort_time(record),
                     record.report.reported_at if record.report is not None else record.issued_at,
                     record.report.report_id if record.report is not None else "",
                 ),
@@ -1633,7 +1800,7 @@ class ExternalRelativeVolumeStore:
         organization_id: str,
         now: datetime | None = None,
         limit: int = 50,
-    ) -> tuple[ExternalRelativeVolumeRecord, ...]:
+    ) -> tuple[ExternalVolumeRecord[RequestT, AuthorityT, ReportT], ...]:
         when = self._now(now)
         if limit < 1 or limit > 200:
             raise ValueError("pending limit must be between 1 and 200")
@@ -1656,7 +1823,7 @@ class ExternalRelativeVolumeStore:
 
     def _lease_denial_locked(
         self,
-        record: ExternalRelativeVolumeRecord,
+        record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT],
         *,
         fence: LeaseFence,
         principal_id: str,
@@ -1676,18 +1843,18 @@ class ExternalRelativeVolumeStore:
         fence: LeaseFence,
         now: datetime | None = None,
         mode: LeaseMode = LeaseMode.CLAIM,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         when = self._now(now)
         if type(fence.lease_generation) is not int:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.INVALID_LEASE_FENCE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.INVALID_LEASE_FENCE)
         is_initial_claim = (
             mode is LeaseMode.CLAIM and fence.lease_generation == 0 and fence.has_valid_ids()
         )
         if not fence.is_well_formed() and not is_initial_claim:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.INVALID_LEASE_FENCE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.INVALID_LEASE_FENCE)
         record = self.get(request_ref, organization_id=organization_id)
         if record is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
         worker = Principal(
             principal_id=principal_id,
             kind=PrincipalKind.PROCESSING_WORKER,
@@ -1706,26 +1873,24 @@ class ExternalRelativeVolumeStore:
             ) as authority,
         ):
             if authority is None or authority != record.authority:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, record
                 )
             with self._lock:
                 if self._journal.sealed_reason is not None:
-                    return ExternalRelativeVolumeResult(
-                        ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE
-                    )
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE)
                 record = self.get(request_ref, organization_id=organization_id)
                 if record is None:
-                    return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
                 if record.status not in {
                     ExternalRelativeVolumeStatus.QUEUED,
                     ExternalRelativeVolumeStatus.RUNNING,
                 }:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, record
                     )
                 if when >= record.deadline_at:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.DEADLINE_EXPIRED, record
                     )
                 if mode is LeaseMode.RENEW:
@@ -1733,7 +1898,7 @@ class ExternalRelativeVolumeStore:
                         record, fence=fence, principal_id=principal_id, now=when
                     )
                     if denied is not None:
-                        return ExternalRelativeVolumeResult(denied, record)
+                        return ExternalVolumeResult(denied, record)
                     generation = fence.lease_generation
                     verdict = ExternalRelativeVolumeVerdict.LEASE_RENEWED
                 else:
@@ -1746,25 +1911,25 @@ class ExternalRelativeVolumeStore:
                                 and record.lease.lease_acquisition_id == fence.lease_acquisition_id
                             )
                         ):
-                            return ExternalRelativeVolumeResult(
+                            return ExternalVolumeResult(
                                 ExternalRelativeVolumeVerdict.LEASED, record
                             )
-                        return ExternalRelativeVolumeResult(
+                        return ExternalVolumeResult(
                             ExternalRelativeVolumeVerdict.LEASE_HELD_BY_ANOTHER, record
                         )
                     if record.attempts >= self._queue_policy.max_attempts:
-                        return ExternalRelativeVolumeResult(
+                        return ExternalVolumeResult(
                             ExternalRelativeVolumeVerdict.RETRY_EXHAUSTED, record
                         )
                     if fence.lease_acquisition_id in self._lease_acquisition_ids.get(
                         request_ref, set()
                     ):
-                        return ExternalRelativeVolumeResult(
+                        return ExternalVolumeResult(
                             ExternalRelativeVolumeVerdict.STALE_LEASE_ACQUISITION, record
                         )
                     generation = self._lease_generation.get(request_ref, 0) + 1
                     if not is_initial_claim and fence.lease_generation != generation:
-                        return ExternalRelativeVolumeResult(
+                        return ExternalVolumeResult(
                             ExternalRelativeVolumeVerdict.STALE_LEASE_GENERATION, record
                         )
                     verdict = ExternalRelativeVolumeVerdict.LEASED
@@ -1777,7 +1942,7 @@ class ExternalRelativeVolumeStore:
                     authenticated_actor_id=principal_id,
                 )
                 raw = {
-                    "kind": "external-relative-volume-leased",
+                    "kind": self._kind("leased"),
                     "version": _VERSION,
                     "requestRef": request_ref,
                     "grantedAt": iso_utc(lease.granted_at),
@@ -1787,10 +1952,10 @@ class ExternalRelativeVolumeStore:
                 try:
                     self._append_locked(raw)
                 except JournalSealedError:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, record
                     )
-                return ExternalRelativeVolumeResult(verdict, self._records[request_ref])
+                return ExternalVolumeResult(verdict, self._records[request_ref])
 
     def heartbeat(
         self,
@@ -1800,7 +1965,7 @@ class ExternalRelativeVolumeStore:
         principal_id: str,
         fence: LeaseFence,
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         return self.claim(
             request_ref,
             organization_id=organization_id,
@@ -1817,15 +1982,13 @@ class ExternalRelativeVolumeStore:
         principal: Principal,
         fence: LeaseFence,
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         when = self._now(now)
         record = self.get(request_ref, organization_id=principal.organization_id)
         if record is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
         if record.status is not ExternalRelativeVolumeStatus.RUNNING:
-            return ExternalRelativeVolumeResult(
-                ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, record
-            )
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, record)
         with (
             self._coordinator.guarded_read(),
             self._authority_port.guard_current(
@@ -1833,29 +1996,27 @@ class ExternalRelativeVolumeStore:
             ) as authority,
         ):
             if authority is None or authority != record.authority:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, record
                 )
             with self._lock:
                 fresh = self.get(request_ref, organization_id=principal.organization_id)
                 if fresh is None:
-                    return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
                 if fresh.status is not ExternalRelativeVolumeStatus.RUNNING:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, fresh
                     )
                 if when >= fresh.deadline_at:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.DEADLINE_EXPIRED, fresh
                     )
                 denied = self._lease_denial_locked(
                     fresh, fence=fence, principal_id=principal.principal_id, now=when
                 )
                 if denied is not None:
-                    return ExternalRelativeVolumeResult(denied, fresh)
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.INPUT_READY, fresh
-                )
+                    return ExternalVolumeResult(denied, fresh)
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.INPUT_READY, fresh)
 
     def confirm_worker_launch_material(
         self,
@@ -1863,10 +2024,10 @@ class ExternalRelativeVolumeStore:
         *,
         principal: Principal,
         fence: LeaseFence,
-        expected_record: ExternalRelativeVolumeRecord,
-        material: VolumeWorkerLaunchMaterial,
+        expected_record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT],
+        material: Any,
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         """Final local-only material/lease recheck after capability issuance.
 
         ``preflight`` may call policy/evidence authority ports and is therefore
@@ -1876,7 +2037,7 @@ class ExternalRelativeVolumeStore:
         """
         resolver = self._launch_material_resolver
         if resolver is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE)
         when = self._now(now)
         with (
             self._coordinator.guarded_read(),
@@ -1885,88 +2046,42 @@ class ExternalRelativeVolumeStore:
             ) as authority,
         ):
             if authority is None or authority != expected_record.authority:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, expected_record
                 )
             with self._lock:
                 fresh = self.get(request_ref, organization_id=principal.organization_id)
                 if fresh is None:
-                    return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
                 if fresh.status is not ExternalRelativeVolumeStatus.RUNNING:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, fresh
                     )
                 if when >= fresh.deadline_at:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.DEADLINE_EXPIRED, fresh
                     )
                 if fresh != expected_record:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, fresh
                     )
                 denied = self._lease_denial_locked(
                     fresh, fence=fence, principal_id=principal.principal_id, now=when
                 )
                 if denied is not None:
-                    return ExternalRelativeVolumeResult(denied, fresh)
+                    return ExternalVolumeResult(denied, fresh)
                 if not resolver.material_remains_current(
                     fresh.request, fresh.authority, material, now=when
                 ):
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, fresh
                     )
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.INPUT_READY, fresh
-                )
-
-    def _measurement_payload_error(
-        self,
-        record: ExternalRelativeVolumeRecord,
-        payload: ExternalRelativeVolumeMeasurementPayloadV1,
-    ) -> str | None:
-        request, authority = record.request, record.authority
-        if (
-            request.request_digest is None
-            or payload.request_digest != request.request_digest
-            or payload.decision_digest != authority.decision_digest
-            or payload.baseline_dsm_digest != authority.baseline.observed_sha256
-            or payload.current_dsm_digest != authority.current.observed_sha256
-            or payload.zone_snapshot_digest != authority.zone_snapshot.canonical_digest()
-            or payload.execution_policy_digest != authority.execution_policy.canonical_digest()
-            or payload.algorithm_build_digest != authority.execution_policy.algorithm_build_digest
-            or payload.config_digest != authority.execution_policy.config_digest
-        ):
-            return "worker payload does not match sealed request authority"
-        metrics = payload.metrics
-        if metrics.threshold_m != authority.execution_policy.threshold_m:
-            return "worker threshold differs from selected execution policy"
-        if metrics.common_valid_fraction < authority.execution_policy.minimum_common_valid_fraction:
-            return "coverage is below the selected execution policy minimum"
-        if (
-            metrics.zone_cell_count > authority.maximum_zone_cell_count
-            or metrics.zone_area_m2 > authority.maximum_zone_area_m2
-        ):
-            return "worker metrics exceed the selected resource envelope"
-        expected_uncertainty: float | None
-        if authority.baseline_rmse_m is None or authority.current_rmse_m is None:
-            expected_uncertainty = None
-        else:
-            expected_uncertainty = metrics.measured_area_m2 * math.hypot(
-                authority.baseline_rmse_m, authority.current_rmse_m
-            )
-        if expected_uncertainty is None:
-            if metrics.uncertainty_m3 is not None:
-                return "uncertainty must be unknown without two trusted RMSE values"
-        elif metrics.uncertainty_m3 is None or not math.isclose(
-            metrics.uncertainty_m3, expected_uncertainty, rel_tol=1e-12, abs_tol=1e-12
-        ):
-            return "uncertainty does not match the independent epoch RMSE bound"
-        return None
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.INPUT_READY, fresh)
 
     def _validate_report(
         self,
-        record: ExternalRelativeVolumeRecord,
-        observed: ExternalRelativeVolumeObservedReportInput,
+        record: ExternalVolumeRecord[RequestT, AuthorityT, ReportT],
+        observed: ExternalVolumeObservedReportInput[PayloadT],
         *,
         fence: LeaseFence,
         now: datetime,
@@ -1987,9 +2102,9 @@ class ExternalRelativeVolumeStore:
         organization_id: str,
         principal_id: str,
         fence: LeaseFence,
-        observed: ExternalRelativeVolumeObservedReportInput,
+        observed: ExternalVolumeObservedReportInput[PayloadT],
         now: datetime,
-    ) -> ExternalRelativeVolumeResult | None:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT] | None:
         """Return an immutable report retry without reopening execution authority.
 
         Historical authority resolution deliberately happens before the shared
@@ -2007,11 +2122,11 @@ class ExternalRelativeVolumeStore:
         with self._coordinator.mutation(), self._lock:
             fresh = self.get(request_ref, organization_id=organization_id)
             if fresh is None:
-                return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
             if fresh.report is None:
                 return None
             if historical_report is None or fresh.report != historical_report:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, fresh
                 )
             same = (
@@ -2022,7 +2137,7 @@ class ExternalRelativeVolumeStore:
                 and fresh.lease is not None
                 and fresh.lease.authenticated_actor_id == principal_id
             )
-            return ExternalRelativeVolumeResult(
+            return ExternalVolumeResult(
                 ExternalRelativeVolumeVerdict.REPORTED
                 if same
                 else ExternalRelativeVolumeVerdict.REPORT_CONFLICT,
@@ -2036,9 +2151,9 @@ class ExternalRelativeVolumeStore:
         organization_id: str,
         principal_id: str,
         fence: LeaseFence,
-        observed: ExternalRelativeVolumeObservedReportInput,
+        observed: ExternalVolumeObservedReportInput[PayloadT],
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         when = self._now(now)
         completed_retry = self._completed_report_retry(
             request_ref,
@@ -2052,8 +2167,8 @@ class ExternalRelativeVolumeStore:
             return completed_retry
         record = self.get(request_ref, organization_id=organization_id)
         if record is None:
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
-        reported: ExternalRelativeVolumeRecord | None = None
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+        reported: ExternalVolumeRecord[RequestT, AuthorityT, ReportT] | None = None
         # Result authority is rechecked under the shared coordinator before the
         # journal lock.  The port is never called while the store lock is held.
         worker = Principal(
@@ -2070,15 +2185,15 @@ class ExternalRelativeVolumeStore:
             ) as authority,
         ):
             if authority is None or authority != record.authority:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE, record
                 )
             with self._lock:
                 fresh = self.get(request_ref, organization_id=organization_id)
                 if fresh is None:
-                    return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                    return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
                 if self._journal.sealed_reason is not None:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, fresh
                     )
                 if fresh.report is not None:
@@ -2089,28 +2204,29 @@ class ExternalRelativeVolumeStore:
                         and fresh.report.lease_acquisition_id == fence.lease_acquisition_id
                         and fresh.report.lease_generation == fence.lease_generation
                     )
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REPORTED
                         if same
                         else ExternalRelativeVolumeVerdict.REPORT_CONFLICT,
                         fresh,
                     )
                 if fresh.status is not ExternalRelativeVolumeStatus.RUNNING:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, fresh
                     )
                 denied = self._lease_denial_locked(
                     fresh, fence=fence, principal_id=principal_id, now=when
                 )
                 if denied is not None:
-                    return ExternalRelativeVolumeResult(denied, fresh)
+                    return ExternalVolumeResult(denied, fresh)
                 failure = self._validate_report(fresh, observed, fence=fence, now=when)
                 if failure is not None:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.INVALID_REPORT, fresh, detail=failure
                     )
-                report = ExternalRelativeVolumeReportV1(
-                    report_id="external-relative-volume-report-"
+                report = self._build_report(
+                    report_id=self._KIND_PREFIX
+                    + "-report-"
                     + hashlib.sha256((fresh.request.request_id + "\0report").encode()).hexdigest()[
                         :32
                     ],
@@ -2122,31 +2238,31 @@ class ExternalRelativeVolumeStore:
                     lease_generation=fence.lease_generation,
                     computed_at=observed.computed_at,
                     reported_at=when,
-                ).sealed()
+                )
                 indexed_request_ref = self._report_refs.get((organization_id, report.report_id))
                 if (
                     indexed_request_ref is not None
                     and indexed_request_ref != fresh.request.request_id
                 ):
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.REPORT_CONFLICT, fresh
                     )
                 raw = {
-                    "kind": "external-relative-volume-reported",
+                    "kind": self._kind("reported"),
                     "version": _VERSION,
                     "requestRef": fresh.request.request_id,
-                    "report": external_relative_volume_report_wire_dict(report),
+                    "report": self._report_wire(report),
                 }
                 try:
                     self._append_locked(raw)
                 except JournalSealedError:
-                    return ExternalRelativeVolumeResult(
+                    return ExternalVolumeResult(
                         ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, fresh
                     )
                 reported = self._records[request_ref]
         assert reported is not None
         self._notify_report_listeners(reported)
-        return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.REPORTED, reported)
+        return ExternalVolumeResult(ExternalRelativeVolumeVerdict.REPORTED, reported)
 
     def record_incomplete_failure(
         self,
@@ -2157,28 +2273,28 @@ class ExternalRelativeVolumeStore:
         fence: LeaseFence,
         reason: str,
         now: datetime | None = None,
-    ) -> ExternalRelativeVolumeResult:
+    ) -> ExternalVolumeResult[RequestT, AuthorityT, ReportT]:
         when = self._now(now)
         if not _valid_failure_reason(reason):
-            return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.INVALID_REPORT)
+            return ExternalVolumeResult(ExternalRelativeVolumeVerdict.INVALID_REPORT)
         # Failure closes an already leased attempt and grants no new numerical
         # capability.  It intentionally remains available after withdrawal,
         # while participating in the shared mutation -> store -> journal order.
         with self._coordinator.mutation(), self._lock:
             record = self.get(request_ref, organization_id=organization_id)
             if record is None:
-                return ExternalRelativeVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.NOT_FOUND)
             if record.status is not ExternalRelativeVolumeStatus.RUNNING:
-                return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(
                     ExternalRelativeVolumeVerdict.REQUEST_NOT_ACTIVE, record
                 )
             denied = self._lease_denial_locked(
                 record, fence=fence, principal_id=principal_id, now=when
             )
             if denied is not None:
-                return ExternalRelativeVolumeResult(denied, record)
+                return ExternalVolumeResult(denied, record)
             raw = {
-                "kind": "external-relative-volume-failed",
+                "kind": self._kind("failed"),
                 "version": _VERSION,
                 "requestRef": request_ref,
                 "reason": reason,
@@ -2191,16 +2307,14 @@ class ExternalRelativeVolumeStore:
             try:
                 self._append_locked(raw)
             except JournalSealedError:
-                return ExternalRelativeVolumeResult(
-                    ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, record
-                )
-            return ExternalRelativeVolumeResult(
+                return ExternalVolumeResult(ExternalRelativeVolumeVerdict.STORE_UNAVAILABLE, record)
+            return ExternalVolumeResult(
                 ExternalRelativeVolumeVerdict.FAILED, self._records[request_ref]
             )
 
     def resolve_historical_report(
         self, request_ref: str, *, organization_id: str, now: datetime | None = None
-    ) -> ExternalRelativeVolumeReportV1 | None:
+    ) -> ReportT | None:
         record = self.get(request_ref, organization_id=organization_id)
         if record is None or record.report is None or record.request.request_digest is None:
             return None
@@ -2250,7 +2364,7 @@ class ExternalRelativeVolumeStore:
 
     def resolve_historical_report_ref(
         self, report_ref: str, *, organization_id: str, now: datetime | None = None
-    ) -> ResolvedRelativeVolumeReport | None:
+    ) -> ResolvedVolumeReport[RequestT, AuthorityT, ReportT] | None:
         """Resolve one organization-scoped immutable report without live authority.
 
         The index is persisted only through the report event and rebuilt under
@@ -2293,12 +2407,10 @@ class ExternalRelativeVolumeStore:
                 or fresh.report != report
             ):
                 return None
-        return ResolvedRelativeVolumeReport(
+        return ResolvedVolumeReport(
             request=record.request.model_copy(deep=True),
             report=report.model_copy(deep=True),
-            execution_authority=ExternalRelativeVolumeExecutionAuthority.from_snapshot(
-                authority.snapshot_payload()
-            ),
+            execution_authority=self._authority_from_snapshot(authority.snapshot_payload()),
         )
 
     def preflight_current_report_ref(
@@ -2308,7 +2420,7 @@ class ExternalRelativeVolumeStore:
         organization_id: str,
         principal: Principal,
         now: datetime | None = None,
-    ) -> ResolvedRelativeVolumeReport | None:
+    ) -> ResolvedVolumeReport[RequestT, AuthorityT, ReportT] | None:
         """Resolve a current-use witness before the final local guard.
 
         The only potentially independent current authority resolution happens
@@ -2341,9 +2453,9 @@ class ExternalRelativeVolumeStore:
         *,
         organization_id: str,
         principal: Principal,
-        witness: ResolvedRelativeVolumeReport,
+        witness: ResolvedVolumeReport[RequestT, AuthorityT, ReportT],
         now: datetime | None = None,
-    ) -> Iterator[ResolvedRelativeVolumeReport | None]:
+    ) -> Iterator[ResolvedVolumeReport[RequestT, AuthorityT, ReportT] | None]:
         """Locally recheck an already-preflighted report witness under Core lock."""
         when = self._now(now)
         if principal.organization_id != organization_id:
@@ -2371,13 +2483,162 @@ class ExternalRelativeVolumeStore:
                 ):
                     yield None
                     return
-                yield ResolvedRelativeVolumeReport(
+                yield ResolvedVolumeReport(
                     request=record.request.model_copy(deep=True),
                     report=record.report.model_copy(deep=True),
-                    execution_authority=ExternalRelativeVolumeExecutionAuthority.from_snapshot(
+                    execution_authority=self._authority_from_snapshot(
                         record.authority.snapshot_payload()
                     ),
                 )
+
+
+class ExternalRelativeVolumeStore(
+    ExternalVolumeLedger[
+        ExternalRelativeVolumeRequestV1,
+        ExternalRelativeVolumeExecutionAuthority,
+        ExternalRelativeVolumeReportV1,
+        ExternalRelativeVolumeMeasurementPayloadV1,
+    ]
+):
+    """The external relative-volume family: an ordered baseline/current DSM pair."""
+
+    _LABEL = "relative-volume"
+    _KIND_PREFIX = "external-relative-volume"
+    _recovery_error = ExternalRelativeVolumeRecoveryError
+
+    @property
+    def launch_material_resolver(self) -> VolumeWorkerLaunchMaterialResolver | None:
+        # Assembly binds the concrete relative-volume resolver; keep its type visible.
+        return cast(VolumeWorkerLaunchMaterialResolver | None, self._launch_material_resolver)
+
+    def _authority_from_snapshot(
+        self, raw: dict[str, Any]
+    ) -> ExternalRelativeVolumeExecutionAuthority:
+        return ExternalRelativeVolumeExecutionAuthority.from_snapshot(raw)
+
+    def _request_from_wire(self, raw: object) -> ExternalRelativeVolumeRequestV1:
+        return ExternalRelativeVolumeRequestV1.model_validate(raw)
+
+    def _request_wire(self, request: ExternalRelativeVolumeRequestV1) -> dict[str, Any]:
+        return external_relative_volume_request_wire_dict(request)
+
+    def _report_from_wire(self, raw: object) -> ExternalRelativeVolumeReportV1:
+        return ExternalRelativeVolumeReportV1.model_validate(raw)
+
+    def _report_wire(self, report: ExternalRelativeVolumeReportV1) -> dict[str, Any]:
+        return external_relative_volume_report_wire_dict(report)
+
+    def _build_report(self, **fields: Any) -> ExternalRelativeVolumeReportV1:
+        return ExternalRelativeVolumeReportV1(**fields).sealed()
+
+    def _build_request(
+        self,
+        authority: ExternalRelativeVolumeExecutionAuthority,
+        *,
+        request_id: str,
+        current_work_order_id: str,
+        issued_at: datetime,
+        idempotency_key: str,
+    ) -> ExternalRelativeVolumeRequestV1:
+        return ExternalRelativeVolumeRequestV1(
+            request_id=request_id,
+            current_work_order_id=current_work_order_id,
+            decision_id=authority.decision_id,
+            decision_digest=authority.decision_digest,
+            baseline=authority.baseline,
+            current=authority.current,
+            evidence_record_digests=authority.evidence_record_digests,
+            validation_policy_digest=authority.validation_policy_digest,
+            execution_policy_digest=authority.execution_policy.canonical_digest(),
+            zone_snapshot=authority.zone_snapshot,
+            issued_at=issued_at,
+            idempotency_key=idempotency_key,
+        ).sealed()
+
+    @staticmethod
+    def _natural_fingerprint(
+        *,
+        organization_id: str,
+        current_work_order_id: str,
+        authority: Any,
+    ) -> str:
+        return _digest(
+            {
+                "domain": "external-relative-volume-issue.v1",
+                "organizationId": organization_id,
+                "currentWorkOrderId": current_work_order_id,
+                "decisionId": authority.decision_id,
+                "decisionDigest": authority.decision_digest,
+                "compatibilityMapping": authority.compatibility_mapping_digest,
+                "baseline": authority.baseline.observed_sha256,
+                "current": authority.current.observed_sha256,
+                "evidence": list(authority.evidence_record_digests),
+                "validationPolicy": authority.validation_policy_digest,
+                "executionPolicy": authority.execution_policy.canonical_digest(),
+                "zone": authority.zone_snapshot.canonical_digest(),
+            }
+        )
+
+    def _inputs_binding_error(
+        self,
+        request: ExternalRelativeVolumeRequestV1,
+        authority: ExternalRelativeVolumeExecutionAuthority,
+    ) -> str | None:
+        if request.baseline != authority.baseline or request.current != authority.current:
+            return "issued DSM inputs differ from authority"
+        if request.evidence_record_digests != authority.evidence_record_digests:
+            return "issued evidence differs from authority"
+        return None
+
+    def _primary_site_id(self, authority: ExternalRelativeVolumeExecutionAuthority) -> str:
+        return authority.current.subject.site_id
+
+    def _report_sort_time(self, record: ExternalRelativeVolumeRecord) -> datetime:
+        return record.request.current.captured_to
+
+    def _measurement_payload_error(
+        self,
+        record: ExternalRelativeVolumeRecord,
+        payload: ExternalRelativeVolumeMeasurementPayloadV1,
+    ) -> str | None:
+        request, authority = record.request, record.authority
+        if (
+            request.request_digest is None
+            or payload.request_digest != request.request_digest
+            or payload.decision_digest != authority.decision_digest
+            or payload.baseline_dsm_digest != authority.baseline.observed_sha256
+            or payload.current_dsm_digest != authority.current.observed_sha256
+            or payload.zone_snapshot_digest != authority.zone_snapshot.canonical_digest()
+            or payload.execution_policy_digest != authority.execution_policy.canonical_digest()
+            or payload.algorithm_build_digest != authority.execution_policy.algorithm_build_digest
+            or payload.config_digest != authority.execution_policy.config_digest
+        ):
+            return "worker payload does not match sealed request authority"
+        metrics = payload.metrics
+        if metrics.threshold_m != authority.execution_policy.threshold_m:
+            return "worker threshold differs from selected execution policy"
+        if metrics.common_valid_fraction < authority.execution_policy.minimum_common_valid_fraction:
+            return "coverage is below the selected execution policy minimum"
+        if (
+            metrics.zone_cell_count > authority.maximum_zone_cell_count
+            or metrics.zone_area_m2 > authority.maximum_zone_area_m2
+        ):
+            return "worker metrics exceed the selected resource envelope"
+        expected_uncertainty: float | None
+        if authority.baseline_rmse_m is None or authority.current_rmse_m is None:
+            expected_uncertainty = None
+        else:
+            expected_uncertainty = metrics.measured_area_m2 * math.hypot(
+                authority.baseline_rmse_m, authority.current_rmse_m
+            )
+        if expected_uncertainty is None:
+            if metrics.uncertainty_m3 is not None:
+                return "uncertainty must be unknown without two trusted RMSE values"
+        elif metrics.uncertainty_m3 is None or not math.isclose(
+            metrics.uncertainty_m3, expected_uncertainty, rel_tol=1e-12, abs_tol=1e-12
+        ):
+            return "uncertainty does not match the independent epoch RMSE bound"
+        return None
 
 
 def _to_view(record: ExternalRelativeVolumeRecord) -> ExternalRelativeVolumeRequestView:
@@ -2498,12 +2759,16 @@ def build_external_relative_volume_router(
                             verdict=ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE,
                             request=None,
                         )
-                result = prior_result if prior_result is not None else store.issue(
-                    principal=principal,
-                    current_work_order_id=work_order_id,
-                    decision_ref=request.decision_ref,
-                    idempotency_key=idempotency_key or "",
-                    now=issued_at,
+                result = (
+                    prior_result
+                    if prior_result is not None
+                    else store.issue(
+                        principal=principal,
+                        current_work_order_id=work_order_id,
+                        decision_ref=request.decision_ref,
+                        idempotency_key=idempotency_key or "",
+                        now=issued_at,
+                    )
                 )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -2774,6 +3039,13 @@ def build_external_relative_volume_router(
 
 
 __all__ = [
+    "ExternalVolumeExecutionAuthorityPort",
+    "ExternalVolumeLedger",
+    "ExternalVolumeObservedReportInput",
+    "ExternalVolumeRecord",
+    "ExternalVolumeResult",
+    "ResolvedVolumeReport",
+    "VolumeLaunchMaterialResolverPort",
     "ExternalRelativeVolumeExecutionAuthority",
     "ExternalRelativeVolumeExecutionAuthorityPort",
     "ExternalRelativeVolumeInputCapability",
