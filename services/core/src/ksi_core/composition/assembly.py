@@ -274,6 +274,7 @@ def assemble_app(
             volumes=external_relative_volume_store,
             reviews=external_result_workflow_service.reviews,
             service=external_result_workflow_service,
+            single_volumes=external_result_read_projector.single_volumes,
         )
 
     analysis = build_analysis_graph(

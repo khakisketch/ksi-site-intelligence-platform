@@ -55,10 +55,12 @@ class ExternalResultBriefingProjector:
         self._worker: threading.Thread | None = None
         self._start_lock = threading.Lock()
 
-    def bind(self, *, volumes: Any, reviews: Any, service: Any) -> None:
+    def bind(self, *, volumes: Any, reviews: Any, service: Any, single_volumes: Any = None) -> None:
         volumes.bind_report_listener(self.on_report)
         reviews.bind_review_listener(self.on_review)
         service.bind_approval_listener(self.on_approval)
+        if single_volumes is not None:
+            single_volumes.bind_report_listener(self.on_report)
 
     def on_report(self, record: Any) -> None:
         self._enqueue("REPORTED", record)
@@ -107,7 +109,8 @@ class ExternalResultBriefingProjector:
                 self._queue.task_done()
 
     def _project_report(self, record: Any) -> None:
-        subject = record.request.current.subject
+        binding = getattr(record.request, "current", None) or record.request.target
+        subject = binding.subject
         report = record.report
         if report is None:
             return
@@ -153,52 +156,81 @@ class ExternalResultBriefingProjector:
             area = self._work_areas.get(result.work_area_id)
             zone = area.name if area is not None else result.work_area_id
             metrics = result.metrics
-            what_changed = (
-                f"{zone} 구역의 상대 물량 결과: 절토 {_m3(metrics.cut_m3)}, "
-                f"성토 {_m3(metrics.fill_m3)}, 순변화 {_m3(metrics.net_m3)} "
-                f"(기준 {result.baseline_captured_from:%Y-%m-%d} → 현재 "
-                f"{result.current_captured_from:%Y-%m-%d}, "
-                f"유효 면적 {metrics.common_valid_fraction * 100:.0f}%)."
+            uncertainty = (
+                metrics.uncertainty_note
+                if metrics.uncertainty_m3 is None
+                else f"불확도 ±{_m3(metrics.uncertainty_m3)} · {metrics.uncertainty_note}"
             )
-            previous = self._previous_net(site_id, organization_id, result)
-            if previous is None:
-                why_it_matters = "이 구역의 첫 결과입니다. 이후 결과와 비교할 기준이 됩니다."
-            else:
-                delta = metrics.net_m3 - previous
-                direction = "늘었습니다" if delta >= 0 else "줄었습니다"
-                why_it_matters = (
-                    f"직전 결과({_m3(previous)})보다 순변화가 {_m3(abs(delta))} {direction}."
+            site_observation_citation = CopilotCitation(
+                citation_id=f"site-observation:{report_ref}",
+                object_type="site-observation",
+                object_id=report_ref,
+                label="현장 관측 결과 보기",
+                source_path=f"/v1/sites/{site_id}/observations/{report_ref}",
+            )
+            if result.kind == "EXTERNAL_SINGLE_VOLUME":
+                uncertainty_phrase = (
+                    "불확도 미산정"
+                    if metrics.uncertainty_m3 is None
+                    else f"±{_m3(metrics.uncertainty_m3)}"
                 )
+                assert metrics.base_roughness_m is not None
+                what_changed = (
+                    f"{zone} 적치물 체적 {_m3(metrics.fill_m3)} "
+                    f"({uncertainty_phrase}, 기저면 거칠기 {metrics.base_roughness_m:.2f} m)."
+                )
+                why_it_matters = (
+                    "단일 시점 측정입니다. 같은 구역의 다음 측정과 비교할 수 있습니다."
+                )
+                citations = [
+                    CopilotCitation(
+                        citation_id=f"report:{report_ref}",
+                        object_type="external-single-volume-report",
+                        object_id=report_ref,
+                        label=f"{zone} 단일 시점 체적 보고서",
+                        source_path=f"/v1/external-single-volume-reports/{report_ref}",
+                        captured_from=result.current_captured_from.isoformat(),
+                        captured_to=result.current_captured_to.isoformat(),
+                        uncertainty_summary=uncertainty[:500],
+                    ),
+                    site_observation_citation,
+                ]
+            else:
+                what_changed = (
+                    f"{zone} 구역의 상대 물량 결과: 절토 {_m3(metrics.cut_m3)}, "
+                    f"성토 {_m3(metrics.fill_m3)}, 순변화 {_m3(metrics.net_m3)} "
+                    f"(기준 {result.baseline_captured_from:%Y-%m-%d} → 현재 "
+                    f"{result.current_captured_from:%Y-%m-%d}, "
+                    f"유효 면적 {metrics.common_valid_fraction * 100:.0f}%)."
+                )
+                previous = self._previous_net(site_id, organization_id, result)
+                if previous is None:
+                    why_it_matters = "이 구역의 첫 결과입니다. 이후 결과와 비교할 기준이 됩니다."
+                else:
+                    delta = metrics.net_m3 - previous
+                    direction = "늘었습니다" if delta >= 0 else "줄었습니다"
+                    why_it_matters = (
+                        f"직전 결과({_m3(previous)})보다 순변화가 {_m3(abs(delta))} {direction}."
+                    )
+                citations = [
+                    CopilotCitation(
+                        citation_id=f"report:{report_ref}",
+                        object_type="external-relative-volume-report",
+                        object_id=report_ref,
+                        label=f"{zone} 상대 물량 보고서",
+                        source_path=f"/v1/external-relative-volume-reports/{report_ref}",
+                        captured_from=result.baseline_captured_from.isoformat(),
+                        captured_to=result.current_captured_to.isoformat(),
+                        uncertainty_summary=uncertainty[:500],
+                    ),
+                    site_observation_citation,
+                ]
             if stage == "REPORTED":
                 decision_prompt = "결과와 근거를 검토하세요."
             elif stage == "REVIEWED":
                 decision_prompt = "재관측이 필요하면 제안을 만들고 승인하세요."
             else:
                 decision_prompt = f"후속 작업 {successor}에 다음 산출물을 등록하세요."
-            uncertainty = (
-                metrics.uncertainty_note
-                if metrics.uncertainty_m3 is None
-                else f"불확도 ±{_m3(metrics.uncertainty_m3)} · {metrics.uncertainty_note}"
-            )
-            citations = [
-                CopilotCitation(
-                    citation_id=f"report:{report_ref}",
-                    object_type="external-relative-volume-report",
-                    object_id=report_ref,
-                    label=f"{zone} 상대 물량 보고서",
-                    source_path=f"/v1/external-relative-volume-reports/{report_ref}",
-                    captured_from=result.baseline_captured_from.isoformat(),
-                    captured_to=result.current_captured_to.isoformat(),
-                    uncertainty_summary=uncertainty[:500],
-                ),
-                CopilotCitation(
-                    citation_id=f"site-observation:{report_ref}",
-                    object_type="site-observation",
-                    object_id=report_ref,
-                    label="현장 관측 결과 보기",
-                    source_path=f"/v1/sites/{site_id}/observations/{report_ref}",
-                ),
-            ]
             self._briefings.record(
                 organization_id=organization_id,
                 site_id=site_id,
@@ -228,6 +260,7 @@ class ExternalResultBriefingProjector:
             for item in history.items
             if item.result is not None
             and item.result.metrics is not None
+            and item.result.kind == "EXTERNAL_RELATIVE_VOLUME"
             and item.result.work_area_id == current.work_area_id
             and item.result.report_ref != current.report_ref
             and item.result.reported_at < current.reported_at
