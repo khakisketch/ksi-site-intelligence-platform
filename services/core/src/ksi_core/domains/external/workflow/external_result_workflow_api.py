@@ -353,15 +353,13 @@ class ExternalResultReadProjector:
             resolved.report,
             resolved.execution_authority,
         )
+        # The shared gate decides; the trailing ``is None`` terms only narrow types.
         if (
-            request.request_digest is None
+            not self._provenance_intact(request, report, authority, organization_id)
+            or request.request_digest is None
             or report.report_digest is None
             or authority.zone_snapshot.definition_digest is None
             or authority.execution_policy.policy_digest is None
-            or authority.organization_id != organization_id
-            or request.current_work_order_id != authority.current_work_order_id
-            or report.request_id != request.request_id
-            or report.request_digest != request.request_digest
         ):
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
@@ -420,14 +418,7 @@ class ExternalResultReadProjector:
                 metrics=ExternalResultMetricsView.model_validate(
                     metrics.model_dump(by_alias=True, mode="json")
                 ),
-                execution_policy=ExternalResultExecutionPolicyView(
-                    policy_id=authority.execution_policy.policy_id,
-                    version=authority.execution_policy.version,
-                    policy_digest=authority.execution_policy.policy_digest,
-                    algorithm_build_digest=authority.execution_policy.algorithm_build_digest,
-                    config_digest=authority.execution_policy.config_digest,
-                    uncertainty_method=authority.execution_policy.uncertainty_method,
-                ),
+                execution_policy=self._policy_view(authority.execution_policy),
                 review_ref=review.review_ref if review is not None else None,
                 review_digest=review.review_digest if review is not None else None,
                 reviewed_at=review.reviewed_at if review is not None else None,
@@ -457,15 +448,13 @@ class ExternalResultReadProjector:
             resolved.report,
             resolved.execution_authority,
         )
+        # The shared gate decides; the trailing ``is None`` terms only narrow types.
         if (
-            request.request_digest is None
+            not self._provenance_intact(request, report, authority, organization_id)
+            or request.request_digest is None
             or report.report_digest is None
             or authority.zone_snapshot.definition_digest is None
             or authority.execution_policy.policy_digest is None
-            or authority.organization_id != organization_id
-            or request.current_work_order_id != authority.current_work_order_id
-            or report.request_id != request.request_id
-            or report.request_digest != request.request_digest
         ):
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
@@ -498,20 +487,38 @@ class ExternalResultReadProjector:
                 metrics=ExternalResultMetricsView.model_validate(
                     report.payload.metrics.model_dump(by_alias=True, mode="json")
                 ),
-                execution_policy=ExternalResultExecutionPolicyView(
-                    policy_id=authority.execution_policy.policy_id,
-                    version=authority.execution_policy.version,
-                    policy_digest=authority.execution_policy.policy_digest,
-                    algorithm_build_digest=authority.execution_policy.algorithm_build_digest,
-                    config_digest=authority.execution_policy.config_digest,
-                    uncertainty_method=authority.execution_policy.uncertainty_method,
-                ),
+                execution_policy=self._policy_view(authority.execution_policy),
                 review_ref=None,
                 review_digest=None,
                 reviewed_at=None,
                 proposal_count=0,
                 approved_proposal_count=0,
             ),
+        )
+
+    @staticmethod
+    def _provenance_intact(request: Any, report: Any, authority: Any, organization_id: str) -> bool:
+        """The historical provenance gate shared by every external volume family."""
+        return bool(
+            request.request_digest is not None
+            and report.report_digest is not None
+            and authority.zone_snapshot.definition_digest is not None
+            and authority.execution_policy.policy_digest is not None
+            and authority.organization_id == organization_id
+            and request.current_work_order_id == authority.current_work_order_id
+            and report.request_id == request.request_id
+            and report.request_digest == request.request_digest
+        )
+
+    @staticmethod
+    def _policy_view(policy: Any) -> ExternalResultExecutionPolicyView:
+        return ExternalResultExecutionPolicyView(
+            policy_id=policy.policy_id,
+            version=policy.version,
+            policy_digest=policy.policy_digest,
+            algorithm_build_digest=policy.algorithm_build_digest,
+            config_digest=policy.config_digest,
+            uncertainty_method=policy.uncertainty_method,
         )
 
     @staticmethod
