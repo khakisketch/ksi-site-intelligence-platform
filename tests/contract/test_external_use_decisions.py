@@ -24,6 +24,7 @@ from ksi_event_contracts.external_artifact_validation import (
     ExternalUseDecisionV1,
     SealedExternalSubjectV1,
 )
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeDecisionV1
 
 NOW = datetime(2026, 9, 8, 1, 2, 3, tzinfo=UTC)
 
@@ -531,3 +532,123 @@ def test_foreign_or_pending_read_is_absent(tmp_path: Path) -> None:
         is None
     )
     assert store.get_scoped("decision-single", principal=_principal(), site_id="site-b") is None
+
+
+def _single_volume(
+    *, decision_id: str = "decision-single-volume"
+) -> ExternalSingleVolumeDecisionV1:
+    subject = _subject(marker="a")
+    return ExternalSingleVolumeDecisionV1(
+        decision_id=decision_id,
+        subject=subject,
+        subject_digest=subject.canonical_digest(),
+        evidence_record_digests=(),
+        verdict=DecisionVerdict.BLOCKED,
+        reasons=("SINGLE_VOLUME_MAPPING_UNAVAILABLE",),
+        remediations=("AUTHORIZE_SINGLE_VOLUME_MAPPING",),
+        decided_at=NOW,
+    ).sealed()
+
+
+def _single_volume_intent(
+    candidate: ExternalSingleVolumeDecisionV1, zone_id: str = "zone-1"
+) -> ExternalDecisionIntent:
+    return ExternalDecisionIntent(
+        requested_use="SINGLE_VOLUME", subject=candidate.subject, requested_zone_id=zone_id
+    )
+
+
+def test_single_volume_candidate_keeps_its_zone_intent_and_resolves_for_issue(
+    tmp_path: Path,
+) -> None:
+    """A single-volume decision is a third, separately scoped candidate type."""
+    store = _store(tmp_path)
+    candidate = _single_volume()
+    intent = _single_volume_intent(candidate)
+    store.stage_evaluated(candidate, intent=intent, principal=_principal(), idempotency_key="sv-1")
+    store.reconcile_pending()
+
+    assert (
+        store.existing_for_intent(intent=intent, principal=_principal(), idempotency_key="sv-1")
+        == candidate
+    )
+    with pytest.raises(ExternalUseDecisionConflictError):
+        store.existing_for_intent(
+            intent=_single_volume_intent(candidate, "zone-2"),
+            principal=_principal(),
+            idempotency_key="sv-1",
+        )
+    with pytest.raises(ValueError, match="zone selection"):
+        ExternalDecisionIntent(requested_use="SINGLE_VOLUME", subject=candidate.subject).payload()
+    assert (
+        store.resolve_current_single_volume_for_issue(
+            "decision-single-volume", principal=_principal(), current_work_order_id="work-order-a"
+        )
+        == candidate
+    )
+    assert (
+        store.resolve_current_pair_for_issue(
+            "decision-single-volume", principal=_principal(), current_work_order_id="work-order-a"
+        )
+        is None
+    )
+    assert (
+        store.resolve_current_single_volume_for_issue(
+            "decision-single-volume",
+            principal=_principal(organization_id="org-b"),
+            current_work_order_id="work-order-a",
+        )
+        is None
+    )
+    assert (
+        store.resolve_current_single_volume_for_issue(
+            "decision-single-volume", principal=_principal(), current_work_order_id="other"
+        )
+        is None
+    )
+    assert candidate.decision_digest is not None
+    assert (
+        store.resolve_historical_single_volume(
+            organization_id="org-a",
+            site_id="site-a",
+            decision_id="decision-single-volume",
+            decision_digest=candidate.decision_digest,
+        )
+        == candidate
+    )
+    assert (
+        store.resolve_historical_pair(
+            organization_id="org-a",
+            site_id="site-a",
+            decision_id="decision-single-volume",
+            decision_digest=candidate.decision_digest,
+        )
+        is None
+    )
+
+
+def test_single_volume_candidate_survives_journal_replay(tmp_path: Path) -> None:
+    candidate = _single_volume()
+    store = _store(tmp_path)
+    store.stage_evaluated(
+        candidate,
+        intent=_single_volume_intent(candidate),
+        principal=_principal(),
+        idempotency_key="sv-replay",
+    )
+    store.reconcile_pending()
+    store._journal.close()  # noqa: SLF001 - reopen the same durable journal.
+
+    reopened = _store(tmp_path)
+    assert (
+        reopened.get_scoped("decision-single-volume", principal=_principal(), site_id="site-a")
+        == candidate
+    )
+    assert (
+        reopened.existing_for_intent(
+            intent=_single_volume_intent(candidate),
+            principal=_principal(),
+            idempotency_key="sv-replay",
+        )
+        == candidate
+    )

@@ -26,6 +26,7 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_display_artifact import SanitizedDisplayReceiptV1
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeDecisionV1
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from pydantic import Field
 
@@ -113,7 +114,14 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
     def verify(self, candidate: DecisionCandidate) -> bool:
         if isinstance(candidate, ExternalUseDecisionV1):
             return self._verify_single(candidate)
+        if isinstance(candidate, ExternalSingleVolumeDecisionV1):
+            return self._verify_single_volume(candidate)
         return self._verify_pair(candidate)
+
+    def _verify_single_volume(self, candidate: ExternalSingleVolumeDecisionV1) -> bool:
+        # Fail closed until a single-volume mapping authority is bound.
+        del candidate
+        return False
 
     def _verify_single(self, candidate: ExternalUseDecisionV1) -> bool:
         policy_digest, report_digest = candidate.policy_digest, candidate.inspection_report_digest
@@ -183,10 +191,9 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
                 if digest is not None
                 else None
             )
-            if (
-                self._reconstruction.resolve_sealed_subject(subject) is None
-                or not ExternalUseEvaluator._report_binds(subject, report, policy)
-            ):
+            if self._reconstruction.resolve_sealed_subject(
+                subject
+            ) is None or not ExternalUseEvaluator._report_binds(subject, report, policy):
                 return False
             assert report is not None
             resolved_reports.append((subject, report))
@@ -195,17 +202,20 @@ class CoreExternalUseDecisionHistoryVerifier(ExternalUseDecisionHistoryVerifier)
                 candidate.baseline_sanitized_display_receipt_digest,
                 candidate.current_sanitized_display_receipt_digest,
             )
-            return all(
-                receipt is not None
-                and self._inspections.historical_display_receipt(
-                    subject,
-                    report_digest=report.report_digest or "",
-                    receipt_digest=receipt,
-                    policy_digest=policy_digest,
+            return (
+                all(
+                    receipt is not None
+                    and self._inspections.historical_display_receipt(
+                        subject,
+                        report_digest=report.report_digest or "",
+                        receipt_digest=receipt,
+                        policy_digest=policy_digest,
+                    )
+                    is not None
+                    for (subject, report), receipt in zip(resolved_reports, receipts, strict=True)
                 )
-                is not None
-                for (subject, report), receipt in zip(resolved_reports, receipts, strict=True)
-            ) and not candidate.evidence_record_digests
+                and not candidate.evidence_record_digests
+            )
         if candidate.use != "RELATIVE_VOLUME" or self._relative_volume_authority is None:
             return False
         authority = self._relative_volume_authority.resolve_historical_for_decision(candidate)
@@ -326,9 +336,7 @@ class ExternalUseEvaluator:
         self._evidence_validations = evidence_validations
         self._coordinator = coordinator
         self._relative_volume_authority = relative_volume_authority or (
-            DefaultClosedExternalRelativeVolumeAuthorityPort(
-                currentness_coordinator=coordinator
-            )
+            DefaultClosedExternalRelativeVolumeAuthorityPort(currentness_coordinator=coordinator)
         )
 
     def request_single(
@@ -439,15 +447,10 @@ class ExternalUseEvaluator:
             else None
         )
         with self._coordinator.guarded_read():
-            current_snapshot = self._pair_still_current(
-                baseline, current, use, snapshot, now=now
-            )
-            if (
-                use == "RELATIVE_VOLUME"
-                and (
-                    volume is None
-                    or not self._relative_volume_authority.is_current_for_use(volume, now=now)
-                )
+            current_snapshot = self._pair_still_current(baseline, current, use, snapshot, now=now)
+            if use == "RELATIVE_VOLUME" and (
+                volume is None
+                or not self._relative_volume_authority.is_current_for_use(volume, now=now)
             ):
                 volume = None
             candidate = self._pair_candidate(
@@ -545,11 +548,8 @@ class ExternalUseEvaluator:
                 if (
                     volume is None
                     or volume.zone != candidate.zone
-                    or volume.compatibility_mapping_digest
-                    != candidate.compatibility_mapping_digest
-                    or not self._relative_volume_authority.is_current_for_use(
-                        volume, now=now
-                    )
+                    or volume.compatibility_mapping_digest != candidate.compatibility_mapping_digest
+                    or not self._relative_volume_authority.is_current_for_use(volume, now=now)
                 ):
                     return None
                 if not evidence_current:
@@ -860,9 +860,7 @@ class ExternalUseEvaluator:
         *,
         locally_current: bool = True,
     ) -> str | None:
-        return self._evidence_binding(
-            subject, policy, report, locally_current=locally_current
-        )[0]
+        return self._evidence_binding(subject, policy, report, locally_current=locally_current)[0]
 
     def _evidence_binding(
         self,
@@ -1212,13 +1210,15 @@ def mount_external_use_evaluator(
             with work_orders.guard_new_external_intent(
                 work_order_id,
                 organization_id=principal.organization_id,
-                is_durable_retry=lambda: evaluator.existing_single_retry(
-                    subject,
-                    use=request.use,
-                    principal=principal,
-                    idempotency_key=idempotency_key,
-                )
-                is not None,
+                is_durable_retry=lambda: (
+                    evaluator.existing_single_retry(
+                        subject,
+                        use=request.use,
+                        principal=principal,
+                        idempotency_key=idempotency_key,
+                    )
+                    is not None
+                ),
             ):
                 return write_result(
                     evaluator.request_single(
@@ -1257,15 +1257,17 @@ def mount_external_use_evaluator(
             with work_orders.guard_new_external_intent(
                 work_order_id,
                 organization_id=principal.organization_id,
-                is_durable_retry=lambda: evaluator.existing_pair_retry(
-                    baseline,
-                    current,
-                    use=request.use,
-                    zone_id=request.zone_id,
-                    principal=principal,
-                    idempotency_key=idempotency_key,
-                )
-                is not None,
+                is_durable_retry=lambda: (
+                    evaluator.existing_pair_retry(
+                        baseline,
+                        current,
+                        use=request.use,
+                        zone_id=request.zone_id,
+                        principal=principal,
+                        idempotency_key=idempotency_key,
+                    )
+                    is not None
+                ),
             ):
                 return write_result(
                     evaluator.request_pair(
@@ -1300,7 +1302,7 @@ def mount_external_use_evaluator(
         candidate = evaluator.get_scoped(decision_id, principal=principal, site_id=subject.site_id)
         if candidate is None:
             raise HTTPException(404, "EXTERNAL_USE_DECISION_NOT_FOUND")
-        if isinstance(candidate, ExternalUseDecisionV1):
+        if isinstance(candidate, ExternalUseDecisionV1 | ExternalSingleVolumeDecisionV1):
             if candidate.subject != subject:
                 raise HTTPException(404, "EXTERNAL_USE_DECISION_NOT_FOUND")
         elif candidate.current_subject != subject:

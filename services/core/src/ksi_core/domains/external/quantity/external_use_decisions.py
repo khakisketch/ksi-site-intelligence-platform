@@ -25,6 +25,10 @@ from ksi_event_contracts.external_artifact_validation import (
     external_pair_use_decision_wire_dict,
     external_use_decision_wire_dict,
 )
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeDecisionV1,
+    external_single_volume_decision_wire_dict,
+)
 
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal
@@ -36,7 +40,9 @@ _RECORDED_KIND = "external-use-decision-recorded"
 _FINGERPRINT_DOMAIN = "ksi.external-use-decision-idempotency.v1"
 _SHA256_DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
-type DecisionCandidate = ExternalUseDecisionV1 | ExternalPairUseDecisionV1
+type DecisionCandidate = (
+    ExternalUseDecisionV1 | ExternalPairUseDecisionV1 | ExternalSingleVolumeDecisionV1
+)
 
 
 class ExternalUseDecisionHistoryVerifier(Protocol):
@@ -73,6 +79,13 @@ class ExternalDecisionIntent:
     def from_candidate(cls, candidate: DecisionCandidate) -> ExternalDecisionIntent:
         if isinstance(candidate, ExternalUseDecisionV1):
             return cls(requested_use=candidate.use, subject=candidate.subject)
+        if isinstance(candidate, ExternalSingleVolumeDecisionV1):
+            return cls(
+                requested_use="SINGLE_VOLUME",
+                subject=candidate.subject,
+                zone=candidate.zone,
+                requested_zone_id=candidate.zone.zone_id if candidate.zone is not None else None,
+            )
         return cls(
             requested_use=candidate.use,
             baseline_subject=candidate.baseline_subject,
@@ -82,6 +95,23 @@ class ExternalDecisionIntent:
         )
 
     def payload(self) -> dict[str, object]:
+        if self.subject is not None and self.requested_use == "SINGLE_VOLUME":
+            if (
+                self.baseline_subject is not None
+                or self.current_subject is not None
+                or self.requested_zone_id is None
+                or not self.requested_zone_id.strip()
+                or len(self.requested_zone_id) > 255
+            ):
+                raise ValueError("single-volume intent requires a zone selection")
+            if self.zone is not None and self.requested_zone_id != self.zone.zone_id:
+                raise ValueError("sealed volume zone does not match selected zone")
+            return {
+                "requestedUse": self.requested_use,
+                "subject": self.subject.canonical_payload(),
+                "zone": self.zone.model_dump(by_alias=True, mode="json") if self.zone else None,
+                "requestedZoneId": self.requested_zone_id,
+            }
         if self.subject is not None:
             if (
                 self.requested_use not in {"DISPLAY", "HEIGHT"}
@@ -127,6 +157,20 @@ def _intent_from_payload(raw: object) -> ExternalDecisionIntent:
         return ExternalDecisionIntent(
             requested_use=raw["requestedUse"],
             subject=SealedExternalSubjectV1.model_validate(raw["subject"]),
+        )
+    if set(raw) == {"requestedUse", "subject", "zone", "requestedZoneId"}:
+        single_zone = raw["zone"]
+        return ExternalDecisionIntent(
+            requested_use=raw["requestedUse"],
+            subject=SealedExternalSubjectV1.model_validate(raw["subject"]),
+            zone=(
+                SealedZoneReferenceV1.model_validate(single_zone)
+                if single_zone is not None
+                else None
+            ),
+            requested_zone_id=_require_text(
+                raw["requestedZoneId"], field="requested volume zone", maximum=255
+            ),
         )
     if set(raw) == {
         "requestedUse",
@@ -231,6 +275,8 @@ def _require_text(value: object, *, field: str, maximum: int = 255) -> str:
 def _candidate_wire(candidate: DecisionCandidate) -> dict[str, Any]:
     if isinstance(candidate, ExternalUseDecisionV1):
         return external_use_decision_wire_dict(candidate)
+    if isinstance(candidate, ExternalSingleVolumeDecisionV1):
+        return external_single_volume_decision_wire_dict(candidate)
     return external_pair_use_decision_wire_dict(candidate)
 
 
@@ -251,6 +297,8 @@ def _candidate_from_wire(raw: object) -> DecisionCandidate:
         candidate: DecisionCandidate = ExternalUseDecisionV1.model_validate(raw)
     elif contract_version == "external-pair-use-decision.v1":
         candidate = ExternalPairUseDecisionV1.model_validate(raw)
+    elif contract_version == "external-single-volume-decision.v1":
+        candidate = ExternalSingleVolumeDecisionV1.model_validate(raw)
     else:
         raise ValueError("decision candidate contract version is unknown")
     return _sealed_candidate(candidate)
@@ -260,6 +308,9 @@ def _scope_and_operation(candidate: DecisionCandidate) -> tuple[_Scope, str]:
     if isinstance(candidate, ExternalUseDecisionV1):
         subject = candidate.subject
         return _Scope(subject.organization_id, subject.site_id), "SINGLE"
+    if isinstance(candidate, ExternalSingleVolumeDecisionV1):
+        subject = candidate.subject
+        return _Scope(subject.organization_id, subject.site_id), "SINGLE_VOLUME"
     baseline, current = candidate.baseline_subject, candidate.current_subject
     if baseline.organization_id != current.organization_id or baseline.site_id != current.site_id:
         raise ValueError("pair candidate subjects must share organization and site")
@@ -275,7 +326,8 @@ def _scope_and_operation_for_intent(intent: ExternalDecisionIntent) -> tuple[_Sc
     timestamp would spuriously conflict with the earlier decision.
     """
     if intent.subject is not None:
-        return _Scope(intent.subject.organization_id, intent.subject.site_id), "SINGLE"
+        operation = "SINGLE_VOLUME" if intent.requested_use == "SINGLE_VOLUME" else "SINGLE"
+        return _Scope(intent.subject.organization_id, intent.subject.site_id), operation
     if intent.baseline_subject is None or intent.current_subject is None:
         raise ValueError("pair decision intent requires ordered subjects")
     baseline, current = intent.baseline_subject, intent.current_subject
@@ -327,6 +379,19 @@ def _fingerprint(
 
 def _validate_intent(candidate: DecisionCandidate, intent: ExternalDecisionIntent) -> None:
     expected = ExternalDecisionIntent.from_candidate(candidate)
+    if isinstance(candidate, ExternalSingleVolumeDecisionV1):
+        # Like a blocked relative-volume pair, a blocked single-volume candidate
+        # has no sealed zone; the requested zone still binds the retry intent.
+        if (
+            intent.requested_use != "SINGLE_VOLUME"
+            or intent.subject != candidate.subject
+            or intent.baseline_subject is not None
+            or intent.current_subject is not None
+            or intent.requested_zone_id is None
+            or (candidate.zone is not None and intent.requested_zone_id != candidate.zone.zone_id)
+        ):
+            raise ValueError("decision intent does not match evaluator candidate")
+        return
     if isinstance(candidate, ExternalPairUseDecisionV1) and candidate.use == "RELATIVE_VOLUME":
         # A blocked candidate intentionally has no sealed zone: no trusted
         # WorkArea authority was resolved.  Its requested opaque zone still
@@ -554,6 +619,56 @@ class ExternalUseDecisionStore:
             scope = self._scopes.get(decision_id)
             if (
                 not isinstance(candidate, ExternalPairUseDecisionV1)
+                or scope != _Scope(organization_id, site_id)
+                or candidate.decision_id != decision_id
+                or candidate.decision_digest != decision_digest
+                or candidate.canonical_digest() != decision_digest
+            ):
+                return None
+            return candidate.model_copy(deep=True)
+
+    def resolve_current_single_volume_for_issue(
+        self,
+        decision_id: str,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+    ) -> ExternalSingleVolumeDecisionV1 | None:
+        """Return one recorded single-volume decision for a future numeric issue.
+
+        Same private-join rules as :meth:`resolve_current_pair_for_issue`:
+        the authenticated organization and exact WorkOrder scope the lookup,
+        and pending, pair, display, foreign or substituted candidates are absent.
+        """
+        with self._lock:
+            candidate = self._recorded.get(decision_id)
+            scope = self._scopes.get(decision_id)
+            if (
+                not isinstance(candidate, ExternalSingleVolumeDecisionV1)
+                or scope is None
+                or scope.organization_id != principal.organization_id
+                or candidate.decision_id != decision_id
+                or candidate.subject.work_order_id != current_work_order_id
+                or candidate.decision_digest is None
+                or candidate.canonical_digest() != candidate.decision_digest
+            ):
+                return None
+            return candidate.model_copy(deep=True)
+
+    def resolve_historical_single_volume(
+        self,
+        *,
+        organization_id: str,
+        site_id: str,
+        decision_id: str,
+        decision_digest: str,
+    ) -> ExternalSingleVolumeDecisionV1 | None:
+        """Read exact recorded single-volume provenance without current permission."""
+        with self._lock:
+            candidate = self._recorded.get(decision_id)
+            scope = self._scopes.get(decision_id)
+            if (
+                not isinstance(candidate, ExternalSingleVolumeDecisionV1)
                 or scope != _Scope(organization_id, site_id)
                 or candidate.decision_id != decision_id
                 or candidate.decision_digest != decision_digest

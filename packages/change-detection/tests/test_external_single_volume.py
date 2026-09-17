@@ -36,7 +36,9 @@ def _with_box(ground: np.ndarray, height: float) -> np.ndarray:
     return dsm
 
 
-def _measure(dsm: np.ndarray, valid: np.ndarray | None = None, **overrides: Any):
+def _measure(
+    dsm: np.ndarray, valid: np.ndarray | None = None, **overrides: Any
+) -> ExternalSingleVolumeZoneMeasurement | ExternalVolumeMeasurementError:
     arguments: dict[str, Any] = {
         "transform": _TRANSFORM,
         "crs": "EPSG:5186",
