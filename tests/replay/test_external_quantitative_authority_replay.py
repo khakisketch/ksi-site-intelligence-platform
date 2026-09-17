@@ -166,3 +166,31 @@ def test_restart_rejects_test_corrupted_activation_before_exact_decision(tmp_pat
     with pytest.raises(ExternalQuantitativeAuthorityRecoveryError, match="decision"):
         recovered.bind_decision_store(_DecisionStore())
     recovered._journal.close()
+
+
+def test_restart_rejects_mutated_single_mapping_activation(tmp_path: Path) -> None:
+    """A digest-resealed forged single mapping must not replay as authority."""
+    from test_external_single_volume_authority import _NOW as _SV_NOW
+    from test_external_single_volume_authority import single_mapping
+
+    path = tmp_path / "quantitative-authority.jsonl"
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(path),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+    )
+    assert catalog.admit_single_mapping(single_mapping(), actor="authority-a", now=_SV_NOW)
+    catalog._journal.close()  # noqa: SLF001 - rewrite the closed journal below.
+    events = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    events[0]["mapping"]["siteId"] = "site-forged"
+    events[0]["eventDigest"] = _event_digest(events[0])
+    path.write_text(
+        "".join(json.dumps(event, separators=(",", ":")) + "\n" for event in events),
+        encoding="utf-8",
+    )
+    with pytest.raises(ExternalQuantitativeAuthorityRecoveryError):
+        ExternalQuantitativeAuthorityCatalog(
+            DurableJournal(path),
+            currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+            mapping_admission_validator=lambda _record, _now: True,
+        )

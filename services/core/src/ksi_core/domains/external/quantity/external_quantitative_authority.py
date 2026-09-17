@@ -29,6 +29,7 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalVolumeZoneSnapshotV1,
     external_volume_zone_snapshot_wire_dict,
 )
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeDecisionV1
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.work_area import WorkAreaStatus
 
@@ -59,6 +60,12 @@ from ksi_core.domains.external.quantity.external_relative_volume_authorities imp
 from ksi_core.domains.external.quantity.external_relative_volumes import (
     ExternalRelativeVolumeExecutionAuthority,
 )
+from ksi_core.domains.external.quantity.external_single_volume_authorities import (
+    ExternalSingleVolumeAuthority,
+)
+from ksi_core.domains.external.quantity.external_single_volume_authority import (
+    ExternalSingleVolumeCompatibilityRecord,
+)
 from ksi_core.domains.sites.work_areas import WorkAreaStore
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
@@ -69,6 +76,12 @@ _MAPPING_ACTIVATED = "external-quantitative-mapping-activated"
 _MAPPING_REVOKED = "external-quantitative-mapping-revoked"
 _EXECUTION_ACTIVATED = "external-quantitative-execution-activated"
 _EXECUTION_REVOKED = "external-quantitative-execution-revoked"
+_SINGLE_MAPPING_ACTIVATED = "external-quantitative-single-mapping-activated"
+_SINGLE_MAPPING_REVOKED = "external-quantitative-single-mapping-revoked"
+
+type AnyCompatibilityRecord = (
+    ExternalQuantitativeCompatibilityRecord | ExternalSingleVolumeCompatibilityRecord
+)
 
 
 class ExternalQuantitativeAuthorityRecoveryError(RuntimeError):
@@ -256,7 +269,7 @@ class ExternalQuantitativeCatalogAuthorityBinding:
             raise ValueError("catalog authority currentness binding requires a local checker")
 
     def resolve_current(
-        self, record: ExternalQuantitativeCompatibilityRecord, now: datetime
+        self, record: AnyCompatibilityRecord, now: datetime
     ) -> ExternalQuantitativeCatalogAuthorityRecord | None:
         try:
             authority = self.authority_port.resolve(record.execution_policy_ref, now)
@@ -280,7 +293,7 @@ class ExternalQuantitativeCatalogAuthorityBinding:
 
     def locally_permits(
         self,
-        record: ExternalQuantitativeCompatibilityRecord,
+        record: AnyCompatibilityRecord,
         authority: ExternalQuantitativeCatalogAuthorityRecord,
         now: datetime,
     ) -> bool:
@@ -300,7 +313,7 @@ class ExternalQuantitativeCatalogAuthorityBinding:
             and record.organization_id == authority.organization_id
         )
 
-    def permits(self, record: ExternalQuantitativeCompatibilityRecord, now: datetime) -> bool:
+    def permits(self, record: AnyCompatibilityRecord, now: datetime) -> bool:
         """Compatibility helper for preflight callers outside a coordinator guard."""
         return self.resolve_current(record, now) is not None
 
@@ -698,86 +711,187 @@ class ExternalQuantitativeAuthorityParticipants:
     def _record_facts_match(
         self, record: ExternalQuantitativeCompatibilityRecord, policy: ExternalValidationPolicyV1
     ) -> bool:
-        area = self.work_areas.get(record.zone_snapshot.work_area_id)
-        if (
+        del policy
+        return (
+            self._zone_facts_match(record.zone_snapshot, site_id=record.site_id)
+            and len(record.evidence_record_digests) == 2
+            and all(
+                self._binding_facts_match(
+                    binding,
+                    validation_policy_digest=record.validation_policy_digest,
+                    inspector_build_digest=record.inspector_build_digest,
+                )
+                for binding in (record.baseline, record.current)
+            )
+        )
+
+    def _zone_facts_match(self, zone: ExternalVolumeZoneSnapshotV1, *, site_id: str) -> bool:
+        area = self.work_areas.get(zone.work_area_id)
+        return not (
             area is None
             or area.status is not WorkAreaStatus.ACTIVE
-            or area.site_id != record.site_id
-            or area.polygon != record.zone_snapshot.polygon
-            or area.crs != record.zone_snapshot.crs
-            or record.zone_snapshot.definition_digest
-            != record.zone_snapshot.definition_canonical_digest()
+            or area.site_id != site_id
+            or area.polygon != zone.polygon
+            or area.crs != zone.crs
+            or zone.definition_digest != zone.definition_canonical_digest()
+        )
+
+    def _binding_facts_match(
+        self,
+        binding: ExternalVolumeInputBindingV1,
+        *,
+        validation_policy_digest: str,
+        inspector_build_digest: str,
+    ) -> bool:
+        revision = self.reconstruction.resolve_sealed_subject(binding.subject)
+        if revision is None or revision.manifest is None:
+            return False
+        capture_from = revision.submission.input_declaration.capture_started_at
+        capture_to = revision.submission.input_declaration.capture_ended_at
+        if capture_from is None or capture_to is None:
+            return False
+        try:
+            _utc(capture_from, name="sealed capture start")
+            _utc(capture_to, name="sealed capture end")
+        except ValueError:
+            return False
+        if (
+            capture_from > capture_to
+            or capture_from != binding.captured_from
+            or capture_to != binding.captured_to
         ):
             return False
-        if len(record.evidence_record_digests) != 2:
+        entry = next(
+            (
+                candidate
+                for candidate in revision.manifest.entries
+                if candidate.artifact_id == binding.dsm_artifact_id
+                and candidate.kind is ProcessingArtifactKind.DSM
+                and "sha256:" + candidate.observed_sha256 == binding.observed_sha256
+                and candidate.observed_size_bytes == binding.observed_size_bytes
+            ),
+            None,
+        )
+        if entry is None:
             return False
-        for binding in (record.baseline, record.current):
-            revision = self.reconstruction.resolve_sealed_subject(binding.subject)
-            if revision is None or revision.manifest is None:
-                return False
-            capture_from = revision.submission.input_declaration.capture_started_at
-            capture_to = revision.submission.input_declaration.capture_ended_at
-            if capture_from is None or capture_to is None:
-                return False
-            try:
-                _utc(capture_from, name="sealed capture start")
-                _utc(capture_to, name="sealed capture end")
-            except ValueError:
-                return False
-            if (
-                capture_from > capture_to
-                or capture_from != binding.captured_from
-                or capture_to != binding.captured_to
-            ):
-                return False
-            entry = next(
-                (
-                    candidate
-                    for candidate in revision.manifest.entries
-                    if candidate.artifact_id == binding.dsm_artifact_id
-                    and candidate.kind is ProcessingArtifactKind.DSM
-                    and "sha256:" + candidate.observed_sha256 == binding.observed_sha256
-                    and candidate.observed_size_bytes == binding.observed_size_bytes
-                ),
-                None,
+        report = self.inspections.historical_report(
+            binding.subject,
+            report_digest=binding.inspection_report_digest,
+            policy_digest=validation_policy_digest,
+        )
+        if (
+            report is None
+            or report.inspector_build_digest != inspector_build_digest
+            or report.inspection_policy_digest != validation_policy_digest
+            or any(
+                outcome.outcome is not ArtifactOutcome.MEASURED
+                for outcome in report.measurement_payload.outcomes
             )
-            if entry is None:
-                return False
-            report = self.inspections.historical_report(
-                binding.subject,
-                report_digest=binding.inspection_report_digest,
-                policy_digest=record.validation_policy_digest,
+        ):
+            return False
+        measured = next(
+            (
+                outcome
+                for outcome in report.measurement_payload.outcomes
+                if outcome.artifact_id == binding.dsm_artifact_id
+                and outcome.observed_sha256 == binding.observed_sha256
+                and outcome.measurements is not None
+            ),
+            None,
+        )
+        return not (
+            measured is None
+            or measured.measurements is None
+            or measured.measurements.observed_crs_digest != binding.observed_crs_digest
+            or measured.measurements.observed_vertical_reference is None
+            or measured.measurements.observed_vertical_reference.canonical_digest()
+            != binding.observed_vertical_reference_digest
+        )
+
+    def single_current_snapshot(
+        self, record: ExternalSingleVolumeCompatibilityRecord, now: datetime
+    ) -> _SingleParticipantSnapshot | None:
+        """Resolve single-epoch source currentness before the coordinator guard."""
+        catalog_authority = self.catalog_authority.resolve_current(record, now)
+        if catalog_authority is None:
+            return None
+        selected = self.policy_registry.select_for_use("SINGLE_VOLUME", (record.target.subject,))
+        policy = selected.policy
+        if (
+            selected.status is not PolicySelectionStatus.ACTIVE
+            or policy is None
+            or policy.policy_digest != record.validation_policy_digest
+            or policy.synthetic_test_only
+            or policy.grammar_digest != record.grammar_digest
+            or policy.parser_build_digest != record.inspector_build_digest
+            or policy.resource_envelope is None
+            or policy.resource_envelope_digest is None
+            or record.compatibility_rule_digest not in policy.compatibility_mapping_digests
+        ):
+            return None
+        if not self._single_record_facts_match(record):
+            return None
+        evidence = self.evidence_validations.record_for_current_use(
+            record.evidence_record_digests[0],
+            subject=record.target.subject,
+            policy_digest=record.validation_policy_digest,
+        )
+        if evidence is None or not self._evidence_matches_binding(record.target, evidence):
+            return None
+        return _SingleParticipantSnapshot(
+            catalog_authority=catalog_authority, policy=policy, evidence_record=evidence
+        )
+
+    def single_locally_current(
+        self,
+        record: ExternalSingleVolumeCompatibilityRecord,
+        snapshot: _SingleParticipantSnapshot,
+        now: datetime,
+    ) -> bool:
+        """Recheck retained single-epoch currentness under the shared coordinator."""
+        if not self.catalog_authority.locally_permits(record, snapshot.catalog_authority, now):
+            return False
+        if not self.policy_registry.locally_current_use_permitted(
+            record.validation_policy_digest,
+            use="SINGLE_VOLUME",
+            subjects=(record.target.subject,),
+            at=now,
+        ):
+            return False
+        selected = self.policy_registry.resolve(record.validation_policy_digest)
+        policy = selected.policy
+        if (
+            selected.status is not PolicySelectionStatus.ACTIVE
+            or policy is None
+            or policy != snapshot.policy
+            or not self._single_record_facts_match(record)
+        ):
+            return False
+        evidence = self.evidence_validations.record_for_locally_current_use(
+            record.evidence_record_digests[0],
+            subject=record.target.subject,
+            policy_digest=record.validation_policy_digest,
+        )
+        return evidence == snapshot.evidence_record and self._evidence_matches_binding(
+            record.target, evidence
+        )
+
+    def validates_single(
+        self, record: ExternalSingleVolumeCompatibilityRecord, now: datetime
+    ) -> bool:
+        snapshot = self.single_current_snapshot(record, now)
+        return snapshot is not None and self.single_locally_current(record, snapshot, now)
+
+    def _single_record_facts_match(self, record: ExternalSingleVolumeCompatibilityRecord) -> bool:
+        return (
+            len(record.evidence_record_digests) == 1
+            and self._zone_facts_match(record.zone_snapshot, site_id=record.site_id)
+            and self._binding_facts_match(
+                record.target,
+                validation_policy_digest=record.validation_policy_digest,
+                inspector_build_digest=record.inspector_build_digest,
             )
-            if (
-                report is None
-                or report.inspector_build_digest != record.inspector_build_digest
-                or report.inspection_policy_digest != record.validation_policy_digest
-                or any(
-                    outcome.outcome is not ArtifactOutcome.MEASURED
-                    for outcome in report.measurement_payload.outcomes
-                )
-            ):
-                return False
-            measured = next(
-                (
-                    outcome
-                    for outcome in report.measurement_payload.outcomes
-                    if outcome.artifact_id == binding.dsm_artifact_id
-                    and outcome.observed_sha256 == binding.observed_sha256
-                    and outcome.measurements is not None
-                ),
-                None,
-            )
-            if (
-                measured is None
-                or measured.measurements is None
-                or measured.measurements.observed_crs_digest != binding.observed_crs_digest
-                or measured.measurements.observed_vertical_reference is None
-                or measured.measurements.observed_vertical_reference.canonical_digest()
-                != binding.observed_vertical_reference_digest
-            ):
-                return False
-        return True
+        )
 
     @staticmethod
     def _evidence_matches_binding(
@@ -798,6 +912,13 @@ class ExternalQuantitativeAuthorityParticipants:
             and getattr(context, "synthetic_test_only", None) is False
             and getattr(context, "independent_attestation", None) is not None
         )
+
+
+@dataclass(frozen=True, slots=True)
+class _SingleParticipantSnapshot:
+    catalog_authority: ExternalQuantitativeCatalogAuthorityRecord
+    policy: ExternalValidationPolicyV1
+    evidence_record: tuple[object, object]
 
 
 @dataclass(frozen=True, slots=True)
@@ -848,6 +969,20 @@ class _ExecutionTemplateResolver(Protocol):
     def __call__(
         self, record: ExternalQuantitativeCompatibilityRecord, now: datetime
     ) -> ExternalQuantitativeExecutionTemplate | None: ...
+
+
+@dataclass(frozen=True, slots=True)
+class _SingleMappingState:
+    record: ExternalSingleVolumeCompatibilityRecord
+    activated_at: datetime
+    revoked_at: datetime | None = None
+
+    def active_at(self, at: datetime) -> bool:
+        return (
+            self.activated_at <= at
+            and self.record.is_active_at(at)
+            and (self.revoked_at is None or at < self.revoked_at)
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -910,9 +1045,7 @@ class ExternalQuantitativeAuthorityCatalog:
         *,
         currentness_coordinator: ExternalAuthorityCurrentnessCoordinator,
         participants: ExternalQuantitativeAuthorityParticipants | None = None,
-        mapping_admission_validator: Callable[
-            [ExternalQuantitativeCompatibilityRecord, datetime], bool
-        ]
+        mapping_admission_validator: Callable[[AnyCompatibilityRecord, datetime], bool]
         | None = None,
         execution_template_resolver: _ExecutionTemplateResolver | None = None,
         decision_resolver: _DecisionResolver | None = None,
@@ -934,8 +1067,9 @@ class ExternalQuantitativeAuthorityCatalog:
                 "quantitative authority catalog currentness must share the Core coordinator"
             )
         self._participants = participants
+        # Only consulted when no real participants are bound (tests/tools).
         self._mapping_admission_validator = (
-            participants.validates if participants is not None else mapping_admission_validator
+            None if participants is not None else mapping_admission_validator
         )
         self._execution_template_resolver = execution_template_resolver
         self._decision_resolver = decision_resolver
@@ -943,6 +1077,8 @@ class ExternalQuantitativeAuthorityCatalog:
         self._mappings: dict[str, _MappingState] = {}
         self._current_participant_snapshots: dict[str, _QuantitativeParticipantSnapshot] = {}
         self._executions: dict[str, _ExecutionState] = {}
+        self._single_mappings: dict[str, _SingleMappingState] = {}
+        self._current_single_snapshots: dict[str, _SingleParticipantSnapshot] = {}
         try:
             self._replay()
         except BaseException:
@@ -1070,6 +1206,197 @@ class ExternalQuantitativeAuthorityCatalog:
             except JournalSealedError:
                 return False
         return True
+
+    def _current_single_participants(
+        self, record: ExternalSingleVolumeCompatibilityRecord, now: datetime
+    ) -> _SingleParticipantSnapshot | bool | None:
+        participants = self._participants
+        if participants is not None:
+            return participants.single_current_snapshot(record, now)
+        validator = self._mapping_admission_validator
+        return True if validator is not None and validator(record, now) else None
+
+    def _single_participants_remain_current(
+        self,
+        record: ExternalSingleVolumeCompatibilityRecord,
+        snapshot: _SingleParticipantSnapshot | bool,
+        now: datetime,
+    ) -> bool:
+        participants = self._participants
+        if participants is None:
+            return bool(snapshot)
+        return isinstance(snapshot, _SingleParticipantSnapshot) and (
+            participants.single_locally_current(record, snapshot, now)
+        )
+
+    def admit_single_mapping(
+        self, record: ExternalSingleVolumeCompatibilityRecord, *, actor: str, now: datetime
+    ) -> ExternalSingleVolumeCompatibilityRecord | None:
+        """Append a verified single-epoch compatibility record before any decision."""
+        _utc(now, name="single mapping activation time")
+        if not actor or actor != actor.strip():
+            raise ValueError("single mapping activation actor is invalid")
+        sealed = record.sealed()
+        if not sealed.is_active_at(now):
+            return None
+        snapshot = self._current_single_participants(sealed, now)
+        if snapshot is None:
+            return None
+        assert sealed.mapping_digest is not None
+        with self.currentness_coordinator.mutation(), self._lock:
+            prior = self._single_mappings.get(sealed.mapping_digest)
+            if prior is not None:
+                return sealed if prior.record == sealed else None
+            if not self._single_participants_remain_current(sealed, snapshot, now):
+                return None
+            event: dict[str, object] = {
+                "kind": _SINGLE_MAPPING_ACTIVATED,
+                "version": _VERSION,
+                "mapping": {
+                    "mappingRecordDigest": sealed.mapping_digest,
+                    **sealed.canonical_payload(),
+                },
+                "activatedBy": actor,
+                "activatedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return None
+        return sealed
+
+    def revoke_single_mapping(self, mapping_digest: str, *, actor: str, now: datetime) -> bool:
+        _required_digest(mapping_digest, name="single mapping")
+        _utc(now, name="single mapping revocation time")
+        if not actor or actor != actor.strip():
+            raise ValueError("single mapping revocation actor is invalid")
+        with self.currentness_coordinator.mutation(), self._lock:
+            state = self._single_mappings.get(mapping_digest)
+            if state is None or now < state.activated_at:
+                return False
+            if state.revoked_at is not None:
+                return state.revoked_at == now
+            event: dict[str, object] = {
+                "kind": _SINGLE_MAPPING_REVOKED,
+                "version": _VERSION,
+                "mappingDigest": mapping_digest,
+                "revokedBy": actor,
+                "revokedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return False
+        return True
+
+    def resolve_single_for_use(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        zone_id: str,
+        policy: ExternalValidationPolicyV1,
+        now: datetime,
+    ) -> ExternalSingleVolumeAuthority | None:
+        _utc(now, name="single mapping use time")
+        policy_digest = getattr(policy, "policy_digest", None)
+        if not isinstance(policy_digest, str):
+            return None
+        with self._lock:
+            matches = tuple(
+                state
+                for state in self._single_mappings.values()
+                if state.active_at(now)
+                and state.record.target.subject == subject
+                and state.record.zone_snapshot.work_area_id == zone_id
+                and state.record.validation_policy_digest == policy_digest
+            )
+        if len(matches) != 1:
+            return None
+        record = matches[0].record
+        assert record.mapping_digest is not None
+        snapshot = self._current_single_participants(record, now)
+        if snapshot is None:
+            return None
+        with self.currentness_coordinator.guarded_read(), self._lock:
+            state = self._single_mappings.get(record.mapping_digest)
+            if (
+                state is None
+                or state.record != record
+                or not state.active_at(now)
+                or not self._single_participants_remain_current(record, snapshot, now)
+            ):
+                return None
+            if isinstance(snapshot, _SingleParticipantSnapshot):
+                self._current_single_snapshots[record.mapping_digest] = snapshot
+        return ExternalSingleVolumeAuthority(
+            zone=record.zone_snapshot.to_zone_reference(),
+            compatibility_mapping_digest=record.mapping_digest,
+            historical_authority_digest=record.mapping_digest,
+            synthetic_test_only=False,
+        )
+
+    def is_current_for_single_use(
+        self, authority: ExternalSingleVolumeAuthority, *, now: datetime
+    ) -> bool:
+        _utc(now, name="single mapping currentness time")
+        digest = authority.compatibility_mapping_digest
+        with self._lock:
+            state = self._single_mappings.get(digest)
+            record = state.record if state is not None else None
+            snapshot = self._current_single_snapshots.get(digest)
+        if record is None:
+            return False
+        with self.currentness_coordinator.guarded_read(), self._lock:
+            state = self._single_mappings.get(digest)
+            participants = self._participants
+            return bool(
+                state
+                and state.record == record
+                and state.active_at(now)
+                and authority.historical_authority_digest == digest
+                and authority.synthetic_test_only is False
+                and authority.zone == record.zone_snapshot.to_zone_reference()
+                and (
+                    participants is None
+                    or (
+                        isinstance(snapshot, _SingleParticipantSnapshot)
+                        and participants.single_locally_current(record, snapshot, now)
+                    )
+                )
+            )
+
+    def resolve_historical_for_single_decision(
+        self, decision: ExternalSingleVolumeDecisionV1
+    ) -> ExternalSingleVolumeAuthority | None:
+        if (
+            decision.use != "SINGLE_VOLUME"
+            or decision.compatibility_mapping_digest is None
+            or decision.zone is None
+            or decision.policy_digest is None
+        ):
+            return None
+        with self._lock:
+            state = self._single_mappings.get(decision.compatibility_mapping_digest)
+            if state is None or not state.active_at(decision.decided_at):
+                return None
+            record = state.record
+            if (
+                record.target.subject != decision.subject
+                or record.validation_policy_digest != decision.policy_digest
+                or record.zone_snapshot.to_zone_reference() != decision.zone
+            ):
+                return None
+        return ExternalSingleVolumeAuthority(
+            zone=record.zone_snapshot.to_zone_reference(),
+            compatibility_mapping_digest=decision.compatibility_mapping_digest,
+            historical_authority_digest=decision.compatibility_mapping_digest,
+            synthetic_test_only=False,
+        )
+
+    @property
+    def single_mapping_port(self) -> ExternalSingleVolumeMappingPort:
+        """The catalog as an ``ExternalSingleVolumeAuthorityPort`` for the evaluator."""
+        return ExternalSingleVolumeMappingPort(self)
 
     def resolve_for_use(
         self,
@@ -1701,6 +2028,57 @@ class ExternalQuantitativeAuthorityCatalog:
                 ):
                     raise ValueError("execution has conflicting revocation")
                 self._executions[digest] = replace(execution_state, revoked_at=revoked_at)
+            elif kind == _SINGLE_MAPPING_ACTIVATED:
+                expected = {
+                    "kind",
+                    "version",
+                    "mapping",
+                    "activatedBy",
+                    "activatedAt",
+                    "eventDigest",
+                }
+                if set(event) != expected or not isinstance(event["activatedBy"], str):
+                    raise ValueError("single mapping activation shape is invalid")
+                single = ExternalSingleVolumeCompatibilityRecord.from_event_payload(
+                    event["mapping"]
+                )
+                assert single.mapping_digest is not None
+                single_activated_at = _parse_time(
+                    event["activatedAt"], name="single mapping activatedAt"
+                )
+                if not single.is_active_at(single_activated_at):
+                    raise ValueError("single mapping activation lies outside validity")
+                prior_single = self._single_mappings.get(single.mapping_digest)
+                if prior_single is not None and prior_single.record != single:
+                    raise ValueError("single mapping identity conflicts")
+                if prior_single is None:
+                    self._single_mappings[single.mapping_digest] = _SingleMappingState(
+                        single, single_activated_at
+                    )
+            elif kind == _SINGLE_MAPPING_REVOKED:
+                expected = {
+                    "kind",
+                    "version",
+                    "mappingDigest",
+                    "revokedBy",
+                    "revokedAt",
+                    "eventDigest",
+                }
+                if set(event) != expected or not isinstance(event["revokedBy"], str):
+                    raise ValueError("single mapping revocation shape is invalid")
+                single_digest = _required_digest(event["mappingDigest"], name="single mapping")
+                single_revoked_at = _parse_time(event["revokedAt"], name="single mapping revokedAt")
+                single_state = self._single_mappings.get(single_digest)
+                if single_state is None or single_revoked_at < single_state.activated_at:
+                    raise ValueError("single mapping revoked before activation")
+                if (
+                    single_state.revoked_at is not None
+                    and single_state.revoked_at != single_revoked_at
+                ):
+                    raise ValueError("single mapping has conflicting revocation")
+                self._single_mappings[single_digest] = replace(
+                    single_state, revoked_at=single_revoked_at
+                )
             else:
                 raise ValueError("unknown quantitative authority event")
         except (KeyError, TypeError, ValueError) as exc:
@@ -1711,7 +2089,38 @@ class ExternalQuantitativeAuthorityCatalog:
             raise
 
 
+class ExternalSingleVolumeMappingPort:
+    """Evaluator-facing single-volume view of the shared quantitative catalog."""
+
+    def __init__(self, catalog: ExternalQuantitativeAuthorityCatalog) -> None:
+        self._catalog = catalog
+        self.currentness_coordinator = catalog.currentness_coordinator
+
+    def resolve_for_use(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        zone_id: str,
+        policy: ExternalValidationPolicyV1,
+        now: datetime,
+    ) -> ExternalSingleVolumeAuthority | None:
+        return self._catalog.resolve_single_for_use(
+            subject=subject, zone_id=zone_id, policy=policy, now=now
+        )
+
+    def is_current_for_use(
+        self, authority: ExternalSingleVolumeAuthority, *, now: datetime
+    ) -> bool:
+        return self._catalog.is_current_for_single_use(authority, now=now)
+
+    def resolve_historical_for_decision(
+        self, decision: ExternalSingleVolumeDecisionV1
+    ) -> ExternalSingleVolumeAuthority | None:
+        return self._catalog.resolve_historical_for_single_decision(decision)
+
+
 __all__ = [
+    "ExternalSingleVolumeMappingPort",
     "ExternalQuantitativeAuthorityCatalog",
     "ExternalQuantitativeAuthorityParticipants",
     "ExternalQuantitativeAuthorityRecoveryError",

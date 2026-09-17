@@ -807,3 +807,98 @@ def test_mapping_evidence_binding_requires_an_independent_attestation() -> None:
     assert matches(binding, (record, context(object())))
     assert not matches(binding, (record, context(None)))
     assert not matches(binding, None)
+
+
+def test_single_mapping_is_durable_and_resolves_only_for_its_subject_and_zone(
+    tmp_path: Path,
+) -> None:
+    """Single-epoch mappings live beside pair mappings without leaking into them."""
+    from test_external_single_volume_authority import _NOW as _SV_NOW
+    from test_external_single_volume_authority import single_mapping
+
+    mapping = single_mapping()
+    assert mapping.mapping_digest is not None
+    path = tmp_path / "quantitative-authority.jsonl"
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(path),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+    )
+    assert catalog.admit_single_mapping(mapping, actor="authority-a", now=_SV_NOW) == mapping
+    assert catalog.admit_single_mapping(mapping, actor="authority-a", now=_SV_NOW) == mapping
+    policy = cast(
+        ExternalValidationPolicyV1,
+        SimpleNamespace(policy_digest=mapping.validation_policy_digest),
+    )
+
+    resolved = catalog.resolve_single_for_use(
+        subject=mapping.target.subject, zone_id="work-area-a", policy=policy, now=_SV_NOW
+    )
+    assert resolved is not None
+    assert resolved.compatibility_mapping_digest == mapping.mapping_digest
+    assert resolved.zone == mapping.zone_snapshot.to_zone_reference()
+    assert catalog.is_current_for_single_use(resolved, now=_SV_NOW)
+    port = catalog.single_mapping_port
+    assert port.currentness_coordinator is catalog.currentness_coordinator
+    assert port.is_current_for_use(resolved, now=_SV_NOW)
+    assert (
+        catalog.resolve_single_for_use(
+            subject=mapping.target.subject, zone_id="work-area-other", policy=policy, now=_SV_NOW
+        )
+        is None
+    )
+    assert (
+        catalog.resolve_for_use(
+            baseline=mapping.target.subject,
+            current=mapping.target.subject,
+            zone_id="work-area-a",
+            policy=policy,
+            now=_SV_NOW,
+        )
+        is None
+    )
+
+    revoked_at = _SV_NOW + timedelta(seconds=1)
+    assert catalog.revoke_single_mapping(
+        mapping.mapping_digest, actor="authority-a", now=revoked_at
+    )
+    assert not catalog.is_current_for_single_use(resolved, now=revoked_at)
+    assert not catalog.revoke_mapping(mapping.mapping_digest, actor="authority-a", now=revoked_at)
+    catalog._journal.close()  # noqa: SLF001 - reopen the same durable journal.
+
+    reopened = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(path),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+    )
+    assert [event["kind"] for event in reopened._journal.replay()] == [  # noqa: SLF001
+        "external-quantitative-single-mapping-activated",
+        "external-quantitative-single-mapping-revoked",
+    ]
+    assert (
+        reopened.resolve_single_for_use(
+            subject=mapping.target.subject, zone_id="work-area-a", policy=policy, now=revoked_at
+        )
+        is None
+    )
+    assert (
+        reopened.resolve_single_for_use(
+            subject=mapping.target.subject, zone_id="work-area-a", policy=policy, now=_SV_NOW
+        )
+        is not None
+    )
+
+
+def test_single_mapping_admission_fails_closed_without_validator_approval(
+    tmp_path: Path,
+) -> None:
+    from test_external_single_volume_authority import _NOW as _SV_NOW
+    from test_external_single_volume_authority import single_mapping
+
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(tmp_path / "quantitative-authority.jsonl"),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: False,
+    )
+    assert catalog.admit_single_mapping(single_mapping(), actor="authority-a", now=_SV_NOW) is None
+    assert list(catalog._journal.replay()) == []  # noqa: SLF001
