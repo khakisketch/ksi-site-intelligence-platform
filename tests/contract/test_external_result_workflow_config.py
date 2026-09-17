@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Self, cast
+from typing import Any, Self, cast
 
 import pytest
 from ksi_core.durable_journal import DurableJournal
@@ -137,9 +137,7 @@ class _UnavailablePolicyAuthority:
         assert self._coordinator is not None
         return self._coordinator
 
-    def resolve(
-        self, authority_record_digest: str, now: datetime
-    ) -> PolicyAuthorityRecord | None:
+    def resolve(self, authority_record_digest: str, now: datetime) -> PolicyAuthorityRecord | None:
         del authority_record_digest, now
         return None
 
@@ -708,6 +706,128 @@ def test_catalog_cannot_supply_status_client_scope_or_managed_profile(
     policy[field] = value
     _write_private(catalog_path, catalog)
 
+    with pytest.raises(ExternalQuantitativeWorkflowConfigUnavailable):
+        load_external_result_workflow_config(
+            config_path,
+            participants=participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+        )
+
+
+def _single_template_body(authority_record_digest: str | None) -> dict[str, object]:
+    now = datetime(2026, 9, 9, tzinfo=UTC)
+    policy: dict[str, object] = {
+        "contractVersion": "external-single-volume-execution-policy.v1",
+        "policyId": "single-policy-a",
+        "version": 1,
+        "algorithmBuildDigest": _digest("single-algorithm"),
+        "configDigest": _digest("single-config"),
+        "thresholdM": 0.0,
+        "minimumCommonValidFraction": 0.8,
+        "minimumBoundaryValidFraction": 0.5,
+        "uncertaintyMethod": "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1",
+        "baseSurfaceMethod": "BOUNDARY_LINEAR_INTERPOLATION_V1",
+        "resourceEnvelopeDigest": _digest("resource-envelope"),
+        "syntheticTestOnly": False,
+    }
+    if authority_record_digest is not None:
+        policy["authorityRecordDigest"] = authority_record_digest
+    return {
+        "executionPolicy": policy,
+        "authorizedActorIds": ["operator-a"],
+        "validFrom": (now - timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "validUntil": (now + timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "maximumZoneCellCount": 500,
+        "maximumZoneAreaM2": 500.0,
+    }
+
+
+def _single_approved_files(tmp_path: Path) -> tuple[Path, ExternalQuantitativeWorkflowParticipants]:
+    admission_body = {
+        **_catalog_body(),
+        "singleExecutionTemplates": [_single_template_body(None)],
+    }
+    record = ExternalQuantitativeCatalogAuthorityRecord(
+        organization_id="org-a",
+        catalog_body_digest=_catalog_digest(admission_body),
+        authorized_administration_actor_ids=("catalog-admin",),
+        active_from=datetime(2026, 9, 9, tzinfo=UTC) - timedelta(minutes=1),
+        active_until=datetime(2026, 9, 9, tzinfo=UTC) + timedelta(minutes=1),
+        synthetic_test_only=False,
+    ).sealed()
+    assert record.digest is not None
+    catalog = {
+        "version": "external-quantitative-catalog.v1",
+        "authorityRecordDigest": record.digest,
+        "body": {
+            **_catalog_body(record.digest),
+            "singleExecutionTemplates": [_single_template_body(record.digest)],
+        },
+    }
+    catalog_path = tmp_path / "catalog.json"
+    _write_private(catalog_path, catalog)
+    config_path = tmp_path / "workflow.json"
+    _write_private(
+        config_path,
+        {
+            "version": "external-result-workflow-config.v1",
+            "authorityJournalPath": str(tmp_path / "authority.jsonl"),
+            "catalogPath": str(catalog_path),
+        },
+    )
+    return config_path, _participants(record)
+
+
+def test_optional_single_execution_template_is_part_of_the_approved_body(
+    tmp_path: Path,
+) -> None:
+    """Adding a single template changes the approved body; omitting it changes nothing."""
+    from ksi_core.external_result_workflow_config import (
+        catalog_admission_body_digest,
+        load_external_result_workflow_config,
+    )
+
+    config_path, participants = _single_approved_files(tmp_path)
+    workflow = load_external_result_workflow_config(
+        config_path,
+        participants=participants,
+        input_capability_issuer=lambda *_args, **_kwargs: None,
+    )
+    assert callable(workflow.build_runtime)
+    catalog = json.loads((tmp_path / "catalog.json").read_text(encoding="utf-8"))
+    authority_record = cast(_CatalogAuthority, participants.catalog_authority_port)._record
+    assert catalog_admission_body_digest(catalog) == authority_record.catalog_body_digest
+    relative_only = {**catalog, "body": {**catalog["body"]}}
+    relative_only["body"].pop("singleExecutionTemplates")
+    assert catalog_admission_body_digest(relative_only) != authority_record.catalog_body_digest
+    assert catalog_admission_body_digest(relative_only) == _catalog_digest(_catalog_body())
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda body: body.update(singleExecutionTemplates=[]),
+        lambda body: body["singleExecutionTemplates"][0]["executionPolicy"].update(
+            authorityRecordDigest=_digest("substituted-catalog-authority")
+        ),
+        lambda body: body["singleExecutionTemplates"][0]["executionPolicy"].update(
+            uncertaintyMethod="INDEPENDENT_EPOCH_RSS_AREA_BOUND_V1"
+        ),
+    ),
+)
+def test_loader_rejects_malformed_single_execution_templates(
+    tmp_path: Path, mutation: Callable[[dict[str, Any]], object]
+) -> None:
+    from ksi_core.external_result_workflow_config import (
+        ExternalQuantitativeWorkflowConfigUnavailable,
+        load_external_result_workflow_config,
+    )
+
+    config_path, participants = _single_approved_files(tmp_path)
+    catalog_path = tmp_path / "catalog.json"
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+    mutation(catalog["body"])
+    _write_private(catalog_path, catalog)
     with pytest.raises(ExternalQuantitativeWorkflowConfigUnavailable):
         load_external_result_workflow_config(
             config_path,

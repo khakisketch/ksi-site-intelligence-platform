@@ -8,12 +8,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
+import pytest
 from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_quantitative_authority import (
     ExternalQuantitativeAuthorityCatalog,
     ExternalQuantitativeAuthorityParticipants,
+    ExternalQuantitativeAuthorityRecoveryError,
     ExternalQuantitativeCatalogAuthorityBinding,
     ExternalQuantitativeCatalogAuthorityRecord,
     ExternalQuantitativeCompatibilityRecord,
@@ -902,3 +904,221 @@ def test_single_mapping_admission_fails_closed_without_validator_approval(
     )
     assert catalog.admit_single_mapping(single_mapping(), actor="authority-a", now=_SV_NOW) is None
     assert list(catalog._journal.replay()) == []  # noqa: SLF001
+
+
+def _single_execution_fixture() -> tuple[Any, Any, Any]:
+    from ksi_core.domains.external.quantity.external_quantitative_authority import (
+        ExternalQuantitativeSingleExecutionTemplate,
+    )
+    from ksi_event_contracts.external_artifact_validation import DecisionVerdict
+    from ksi_event_contracts.external_single_volume import (
+        ExternalSingleVolumeDecisionV1,
+        ExternalSingleVolumeExecutionPolicyV1,
+    )
+    from test_external_single_volume_authority import _NOW as SV_NOW
+    from test_external_single_volume_authority import single_mapping
+
+    mapping = single_mapping()
+    decision = ExternalSingleVolumeDecisionV1(
+        decision_id="single-decision-a",
+        subject=mapping.target.subject,
+        subject_digest=mapping.target.subject.canonical_digest(),
+        policy_digest=mapping.validation_policy_digest,
+        inspection_report_digest=mapping.target.inspection_report_digest,
+        evidence_record_digests=mapping.evidence_record_digests,
+        zone=mapping.zone_snapshot.to_zone_reference(),
+        compatibility_mapping_digest=mapping.mapping_digest,
+        verdict=DecisionVerdict.ELIGIBLE,
+        reasons=("USE_ELIGIBLE",),
+        remediations=("CURRENT_DEPENDENCIES_RETAINED",),
+        decided_at=SV_NOW,
+    ).sealed()
+    policy = ExternalSingleVolumeExecutionPolicyV1(
+        policy_id="single-execution-policy-a",
+        version=1,
+        algorithm_build_digest=_digest("single-algorithm"),
+        config_digest=_digest("single-config"),
+        threshold_m=0.0,
+        minimum_common_valid_fraction=0.8,
+        minimum_boundary_valid_fraction=0.5,
+        uncertainty_method="SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1",
+        base_surface_method="BOUNDARY_LINEAR_INTERPOLATION_V1",
+        resource_envelope_digest=_digest("resources"),
+        authority_record_digest=mapping.execution_policy_ref,
+        synthetic_test_only=False,
+    ).sealed()
+    template = ExternalQuantitativeSingleExecutionTemplate(
+        execution_policy=policy,
+        authorized_actor_ids=frozenset({"operator-a"}),
+        valid_from=SV_NOW - timedelta(minutes=1),
+        valid_until=SV_NOW + timedelta(minutes=5),
+        maximum_zone_cell_count=1000,
+        maximum_zone_area_m2=1000.0,
+    )
+    return mapping, decision, template
+
+
+def _operator() -> Principal:
+    return Principal(
+        principal_id="operator-a",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        organization_id="org-a",
+    )
+
+
+def test_single_execution_is_activated_after_decision_and_revocable(tmp_path: Path) -> None:
+    from test_external_single_volume_authority import _NOW as SV_NOW
+
+    mapping, decision, template = _single_execution_fixture()
+    path = tmp_path / "quantitative-authority.jsonl"
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(path),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+        single_execution_template_resolver=lambda _record, _now: template,
+    )
+    assert catalog.admit_single_mapping(mapping, actor="authority-a", now=SV_NOW) == mapping
+    work_order_id = mapping.target.subject.work_order_id
+    assert (
+        catalog.resolve_single_for_issue(
+            principal=_operator(),
+            current_work_order_id=work_order_id,
+            decision_ref=decision.decision_id,
+            now=SV_NOW,
+        )
+        is None
+    )
+    catalog.bind_single_decision_resolver(
+        lambda decision_id, _principal, _order: (
+            decision if decision_id == decision.decision_id else None
+        )
+    )
+    authority = catalog.activate_single_execution(
+        decision_ref=decision.decision_id,
+        principal=_operator(),
+        current_work_order_id=work_order_id,
+        now=SV_NOW,
+    )
+    assert authority is not None
+    assert authority.target == mapping.target
+    assert authority.target_rmse_m is None  # the test validator carries no evidence record
+    assert authority.execution_policy == template.execution_policy
+    port = catalog.single_execution_port
+    assert (
+        port.resolve_for_issue(
+            principal=_operator(),
+            current_work_order_id=work_order_id,
+            decision_ref=decision.decision_id,
+            now=SV_NOW,
+        )
+        == authority
+    )
+    with port.guard_current(authority=authority, principal=_operator(), now=SV_NOW) as guarded:
+        assert guarded == authority
+    assert (
+        port.resolve_historical(
+            historical_authority_digest=authority.historical_authority_digest,
+            decision_id=decision.decision_id,
+            decision_digest=decision.decision_digest or "",
+            issued_at=SV_NOW,
+            now=SV_NOW,
+        )
+        == authority
+    )
+    later = SV_NOW + timedelta(seconds=1)
+    assert catalog.revoke_single_execution(
+        authority.historical_authority_digest, actor="authority-a", now=later
+    )
+    with port.guard_current(authority=authority, principal=_operator(), now=later) as guarded:
+        assert guarded is None
+    catalog._journal.close()  # noqa: SLF001 - reopen the same durable journal.
+
+    reopened = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(path),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+    )
+    assert [event["kind"] for event in reopened._journal.replay()] == [  # noqa: SLF001
+        "external-quantitative-single-mapping-activated",
+        "external-quantitative-single-execution-activated",
+        "external-quantitative-single-execution-revoked",
+    ]
+
+    class _Decisions:
+        def resolve_current_pair_for_issue(self, *_a: Any, **_k: Any) -> None:
+            return None
+
+        def resolve_historical_pair(self, **_k: Any) -> None:
+            return None
+
+        def resolve_current_single_volume_for_issue(self, *_a: Any, **_k: Any) -> Any:
+            return decision
+
+        def resolve_historical_single_volume(self, **_k: Any) -> Any:
+            return decision
+
+    reopened.bind_decision_store(_Decisions())
+
+    class _NoSingleDecision(_Decisions):
+        def resolve_historical_single_volume(self, **_k: Any) -> Any:
+            return None
+
+    with pytest.raises(ExternalQuantitativeAuthorityRecoveryError, match="single execution"):
+        reopened.bind_decision_store(_NoSingleDecision())
+    reopened._journal.close()  # noqa: SLF001
+
+
+def test_single_execution_refuses_a_decision_that_does_not_bind_the_mapping(
+    tmp_path: Path,
+) -> None:
+    from test_external_single_volume_authority import _NOW as SV_NOW
+
+    mapping, decision, template = _single_execution_fixture()
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(tmp_path / "quantitative-authority.jsonl"),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+        single_execution_template_resolver=lambda _record, _now: template,
+    )
+    catalog.admit_single_mapping(mapping, actor="authority-a", now=SV_NOW)
+    wrong_zone = decision.model_copy(
+        update={
+            "zone": decision.zone.model_copy(update={"zone_id": "other-zone"})
+            if decision.zone
+            else None,
+            "decision_digest": None,
+        },
+        deep=True,
+    ).sealed()
+    catalog.bind_single_decision_resolver(lambda *_args: wrong_zone)
+    assert (
+        catalog.activate_single_execution(
+            decision_ref=decision.decision_id,
+            principal=_operator(),
+            current_work_order_id=mapping.target.subject.work_order_id,
+            now=SV_NOW,
+        )
+        is None
+    )
+    unauthorized = Principal(
+        principal_id="someone-else",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        organization_id="org-a",
+    )
+    catalog.bind_single_decision_resolver(lambda *_args: decision)
+    assert (
+        catalog.activate_single_execution(
+            decision_ref=decision.decision_id,
+            principal=unauthorized,
+            current_work_order_id=mapping.target.subject.work_order_id,
+            now=SV_NOW,
+        )
+        is None
+    )
+    assert [e["kind"] for e in catalog._journal.replay()] == [  # noqa: SLF001
+        "external-quantitative-single-mapping-activated"
+    ]

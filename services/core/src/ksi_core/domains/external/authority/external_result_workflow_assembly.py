@@ -35,6 +35,11 @@ from ksi_core.domains.external.quantity.external_relative_volumes import (
     ExternalRelativeVolumeInputCapabilityIssuer,
     ExternalRelativeVolumeQueuePolicy,
 )
+from ksi_core.domains.external.quantity.external_single_volumes import (
+    ExternalSingleVolumeExecutionActivator,
+    ExternalSingleVolumeExecutionAuthorityPort,
+    ExternalSingleVolumeInputCapabilityIssuer,
+)
 from ksi_core.domains.external.quantity.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.domains.sites.work_areas import WorkAreaStore
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
@@ -60,12 +65,20 @@ class ExternalRelativeVolumeRuntimeAuthorities:
     execution: ExternalRelativeVolumeExecutionAuthorityPort
     historical_use: ExternalRelativeVolumeHistoricalUseAuthorityPort
     activate_execution: ExternalRelativeVolumeExecutionActivator | None = None
+    single_execution: ExternalSingleVolumeExecutionAuthorityPort | None = None
+    activate_single_execution: ExternalSingleVolumeExecutionActivator | None = None
 
     def __post_init__(self) -> None:
         if self.execution is None or self.historical_use is None:
             raise ValueError("external result workflow requires explicit execution and use history")
         if self.activate_execution is not None and not callable(self.activate_execution):
             raise ValueError("external result workflow execution activator must be callable")
+        if (self.single_execution is None) != (self.activate_single_execution is None):
+            raise ValueError("single-volume execution needs both its port and its activator")
+        if self.activate_single_execution is not None and not callable(
+            self.activate_single_execution
+        ):
+            raise ValueError("single-volume execution activator must be callable")
 
 
 class ExternalRelativeVolumeRuntimeFactory(Protocol):
@@ -106,12 +119,11 @@ class ExternalResultWorkflowAssemblyConfig:
         | None
     ) = None
     build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None
+    # Test/tool override; production assembly builds the S3 issuer from its storage.
+    single_input_capability_issuer: ExternalSingleVolumeInputCapabilityIssuer | None = None
 
     def __post_init__(self) -> None:
-        if not all(
-            callable(value)
-            for value in (self.build_mapping, self.build_runtime)
-        ):
+        if not all(callable(value) for value in (self.build_mapping, self.build_runtime)):
             raise ValueError("external result workflow requires explicit factories and byte issuer")
         if (self.input_capability_issuer is None) == (self.build_input_capability_issuer is None):
             raise ValueError("external result workflow requires exactly one byte issuer source")

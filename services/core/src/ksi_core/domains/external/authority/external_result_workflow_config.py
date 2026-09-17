@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeExecutionPolicyV1
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeExecutionPolicyV1
 
 from ksi_core.domains.external.authority.external_result_workflow_assembly import (
     ExternalRelativeVolumeInputCapabilityFactory,
@@ -45,6 +46,7 @@ from ksi_core.domains.external.quantity.external_quantitative_authority import (
     ExternalQuantitativeCatalogAuthorityCurrentnessPort,
     ExternalQuantitativeCatalogAuthorityPort,
     ExternalQuantitativeExecutionTemplate,
+    ExternalQuantitativeSingleExecutionTemplate,
 )
 from ksi_core.domains.external.quantity.external_relative_volume_authorities import (
     ExternalRelativeVolumeAuthorityPort,
@@ -147,6 +149,7 @@ class _Catalog:
     authority_record_digest: str
     organization_id: str
     template: ExternalQuantitativeExecutionTemplate
+    single_template: ExternalQuantitativeSingleExecutionTemplate | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -306,6 +309,24 @@ def _workflow_config(
                 return None
             return catalog.template
 
+        def single_template_for(
+            record: object, now: datetime
+        ) -> ExternalQuantitativeSingleExecutionTemplate | None:
+            from ksi_core.domains.external.quantity.external_single_volume_authority import (
+                ExternalSingleVolumeCompatibilityRecord,
+            )
+
+            single = catalog.single_template
+            if (
+                single is None
+                or not isinstance(record, ExternalSingleVolumeCompatibilityRecord)
+                or record.execution_policy_ref != catalog.authority_record_digest
+                or binding.resolve_current(record, now) is None
+                or not (single.valid_from <= now < single.valid_until)
+            ):
+                return None
+            return single
+
         instance = ExternalQuantitativeAuthorityCatalog(
             _open_protected_authority_journal(
                 open_authority_journal, catalog.authority_journal_path
@@ -320,6 +341,7 @@ def _workflow_config(
                 catalog_authority=binding,
             ),
             execution_template_resolver=template_for,
+            single_execution_template_resolver=single_template_for,
         )
         return instance
 
@@ -342,9 +364,15 @@ def _workflow_config(
         ):
             raise ValueError("quantitative workflow runtime requires its exact mapping catalog")
         instance.bind_decision_store(decisions)
+        single_enabled = catalog.single_template is not None
         return ExternalRelativeVolumeRuntimeAuthorities(
-            execution=instance, historical_use=instance,
+            execution=instance,
+            historical_use=instance,
             activate_execution=instance.activate_execution,
+            single_execution=instance.single_execution_port if single_enabled else None,
+            activate_single_execution=(
+                instance.activate_single_execution if single_enabled else None
+            ),
         )
 
     return ExternalResultWorkflowAssemblyConfig(
@@ -377,7 +405,7 @@ def _parse_catalog(
         admission_body = _catalog_admission_body(envelope, authority_record_digest)
         body = _mapping(
             envelope["body"],
-            {"organizationId", "executionTemplates"},
+            _catalog_body_keys(envelope["body"]),
             unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
         )
         organization_id = _text(body["organizationId"])
@@ -402,12 +430,19 @@ def _parse_catalog(
         if not isinstance(templates, list) or len(templates) != 1:
             raise ValueError("V1 quantitative catalog requires exactly one execution template")
         template = _parse_template(templates[0], authority_record_digest)
+        single_template = None
+        if "singleExecutionTemplates" in body:
+            singles = body["singleExecutionTemplates"]
+            if not isinstance(singles, list) or len(singles) != 1:
+                raise ValueError("single execution templates must list exactly one template")
+            single_template = _parse_single_template(singles[0], authority_record_digest)
         return _Catalog(
             authority_journal_path=authority_journal_path,
             body_digest=body_digest,
             authority_record_digest=authority_record_digest,
             organization_id=organization_id,
             template=template,
+            single_template=single_template,
         )
     except ExternalQuantitativeWorkflowConfigUnavailable:
         raise
@@ -463,6 +498,75 @@ def _parse_template(
     ):
         raise ValueError("catalog execution actors are invalid")
     return ExternalQuantitativeExecutionTemplate(
+        execution_policy=policy,
+        authorized_actor_ids=frozenset(actor_ids),
+        valid_from=_parse_time(template["validFrom"]),
+        valid_until=_parse_time(template["validUntil"]),
+        maximum_zone_cell_count=_positive_integer(template["maximumZoneCellCount"]),
+        maximum_zone_area_m2=_positive_float(template["maximumZoneAreaM2"]),
+    )
+
+
+_TEMPLATE_KEYS = {
+    "executionPolicy",
+    "authorizedActorIds",
+    "validFrom",
+    "validUntil",
+    "maximumZoneCellCount",
+    "maximumZoneAreaM2",
+}
+_SINGLE_POLICY_KEYS = {
+    "contractVersion",
+    "policyId",
+    "version",
+    "algorithmBuildDigest",
+    "configDigest",
+    "thresholdM",
+    "minimumCommonValidFraction",
+    "minimumBoundaryValidFraction",
+    "uncertaintyMethod",
+    "baseSurfaceMethod",
+    "resourceEnvelopeDigest",
+    "authorityRecordDigest",
+    "syntheticTestOnly",
+}
+
+
+def _catalog_body_keys(raw: object) -> set[str]:
+    """The optional single-volume key keeps relative-only catalog digests unchanged."""
+    keys = {"organizationId", "executionTemplates"}
+    if isinstance(raw, dict) and "singleExecutionTemplates" in raw:
+        keys.add("singleExecutionTemplates")
+    return keys
+
+
+def _parse_single_template(
+    raw: object, authority_record_digest: str
+) -> ExternalQuantitativeSingleExecutionTemplate:
+    template = _mapping(
+        raw,
+        _TEMPLATE_KEYS,
+        unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
+    )
+    policy_body = _mapping(
+        template["executionPolicy"],
+        _SINGLE_POLICY_KEYS,
+        unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
+    )
+    if policy_body["authorityRecordDigest"] != authority_record_digest:
+        raise ValueError("single execution policy authority reference does not match catalog")
+    policy = ExternalSingleVolumeExecutionPolicyV1.model_validate(policy_body).sealed()
+    actor_ids = template["authorizedActorIds"]
+    if (
+        not isinstance(actor_ids, list)
+        or not actor_ids
+        or any(
+            not isinstance(actor, str) or not actor or actor != actor.strip() for actor in actor_ids
+        )
+        or len(set(actor_ids)) != len(actor_ids)
+    ):
+        raise ValueError("single execution actors are invalid")
+    return ExternalQuantitativeSingleExecutionTemplate(
         execution_policy=policy,
         authorized_actor_ids=frozenset(actor_ids),
         valid_from=_parse_time(template["validFrom"]),
@@ -828,7 +932,7 @@ def _catalog_admission_body(
 ) -> dict[str, object]:
     body = _mapping(
         envelope["body"],
-        {"organizationId", "executionTemplates"},
+        _catalog_body_keys(envelope["body"]),
         unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
     )
     organization_id = _text(body["organizationId"])
@@ -876,7 +980,42 @@ def _catalog_admission_body(
                 },
             }
         )
-    return {"organizationId": organization_id, "executionTemplates": admission_templates}
+    admission: dict[str, object] = {
+        "organizationId": organization_id,
+        "executionTemplates": admission_templates,
+    }
+    if "singleExecutionTemplates" in body:
+        singles = body["singleExecutionTemplates"]
+        if not isinstance(singles, list) or len(singles) != 1:
+            raise ValueError("single execution templates must list exactly one template")
+        admission_singles: list[dict[str, object]] = []
+        for raw_single in singles:
+            single = _mapping(
+                raw_single,
+                _TEMPLATE_KEYS,
+                unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
+            )
+            single_policy = _mapping(
+                single["executionPolicy"],
+                _SINGLE_POLICY_KEYS,
+                unknown_code=ExternalQuantitativeWorkflowConfigBlockedCode.UNKNOWN_FIELD,
+            )
+            if _digest(single_policy["authorityRecordDigest"]) != authority_record_digest:
+                raise ValueError(
+                    "single execution policy authority reference does not match catalog"
+                )
+            admission_singles.append(
+                {
+                    **single,
+                    "executionPolicy": {
+                        key: value
+                        for key, value in single_policy.items()
+                        if key != "authorityRecordDigest"
+                    },
+                }
+            )
+        admission["singleExecutionTemplates"] = admission_singles
+    return admission
 
 
 def _catalog_admission_body_digest(body: dict[str, object]) -> str:

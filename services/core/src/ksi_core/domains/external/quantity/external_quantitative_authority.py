@@ -11,7 +11,7 @@ from __future__ import annotations
 import math
 import threading
 from collections.abc import Callable, Iterator, Mapping
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, Protocol, cast
@@ -29,7 +29,10 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalVolumeZoneSnapshotV1,
     external_volume_zone_snapshot_wire_dict,
 )
-from ksi_event_contracts.external_single_volume import ExternalSingleVolumeDecisionV1
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeDecisionV1,
+    ExternalSingleVolumeExecutionPolicyV1,
+)
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.work_area import WorkAreaStatus
 
@@ -66,6 +69,9 @@ from ksi_core.domains.external.quantity.external_single_volume_authorities impor
 from ksi_core.domains.external.quantity.external_single_volume_authority import (
     ExternalSingleVolumeCompatibilityRecord,
 )
+from ksi_core.domains.external.quantity.external_single_volumes import (
+    ExternalSingleVolumeExecutionAuthority,
+)
 from ksi_core.domains.sites.work_areas import WorkAreaStore
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
@@ -78,6 +84,8 @@ _EXECUTION_ACTIVATED = "external-quantitative-execution-activated"
 _EXECUTION_REVOKED = "external-quantitative-execution-revoked"
 _SINGLE_MAPPING_ACTIVATED = "external-quantitative-single-mapping-activated"
 _SINGLE_MAPPING_REVOKED = "external-quantitative-single-mapping-revoked"
+_SINGLE_EXECUTION_ACTIVATED = "external-quantitative-single-execution-activated"
+_SINGLE_EXECUTION_REVOKED = "external-quantitative-single-execution-revoked"
 
 type AnyCompatibilityRecord = (
     ExternalQuantitativeCompatibilityRecord | ExternalSingleVolumeCompatibilityRecord
@@ -600,6 +608,38 @@ class ExternalQuantitativeExecutionTemplate:
 
 
 @dataclass(frozen=True, slots=True)
+class ExternalQuantitativeSingleExecutionTemplate:
+    """Approved single-epoch execution limits supplied by a non-client authority source."""
+
+    execution_policy: ExternalSingleVolumeExecutionPolicyV1
+    authorized_actor_ids: frozenset[str]
+    valid_from: datetime
+    valid_until: datetime
+    maximum_zone_cell_count: int
+    maximum_zone_area_m2: float
+
+    def __post_init__(self) -> None:
+        if self.execution_policy.synthetic_test_only:
+            raise ValueError("production single execution template rejects synthetic policy")
+        if self.execution_policy.policy_digest is None:
+            raise ValueError("single execution template requires a sealed policy")
+        if not self.authorized_actor_ids:
+            raise ValueError("single execution template requires authorized actors")
+        _utc(self.valid_from, name="single execution valid_from")
+        _utc(self.valid_until, name="single execution valid_until")
+        if self.valid_from >= self.valid_until:
+            raise ValueError("single execution validity interval must be ordered")
+        if type(self.maximum_zone_cell_count) is not int or self.maximum_zone_cell_count < 1:
+            raise ValueError("single execution maximum zone cells must be positive")
+        if (
+            type(self.maximum_zone_area_m2) is not float
+            or not math.isfinite(self.maximum_zone_area_m2)
+            or self.maximum_zone_area_m2 <= 0
+        ):
+            raise ValueError("single execution maximum zone area must be finite and positive")
+
+
+@dataclass(frozen=True, slots=True)
 class ExternalQuantitativeAuthorityParticipants:
     """The already assembled Core facts required for mapping admission.
 
@@ -1014,6 +1054,56 @@ class _ExecutionState:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class _SingleExecutionState:
+    authority: ExternalSingleVolumeExecutionAuthority
+    mapping_digest: str
+    activated_at: datetime
+    revoked_at: datetime | None = None
+
+    def active_at(self, at: datetime) -> bool:
+        return (
+            self.activated_at <= at
+            and self.authority.is_current_at(at)
+            and (self.revoked_at is None or at < self.revoked_at)
+        )
+
+
+def _single_execution_identity(authority: ExternalSingleVolumeExecutionAuthority) -> str:
+    payload = authority.snapshot_payload()
+    payload.pop("historicalAuthorityDigest")
+    return _digest({"domain": "ksi.external-quantitative-single-execution.v1", "snapshot": payload})
+
+
+def _single_snapshot_rmse(snapshot: object) -> float | None:
+    """Return the one VALIDATED target-epoch RMSE, or ``None`` when unknown."""
+    if not isinstance(snapshot, _SingleParticipantSnapshot):
+        return None
+    evidence_record, _context = snapshot.evidence_record
+    verdict = getattr(evidence_record, "core_verdict", None)
+    rmse = getattr(getattr(evidence_record, "measurement_payload", None), "rmse_m", None)
+    if (
+        getattr(verdict, "value", verdict) != "VALIDATED"
+        or type(rmse) is not float
+        or not math.isfinite(rmse)
+        or rmse < 0.0
+    ):
+        return None
+    return rmse
+
+
+class _SingleDecisionResolver(Protocol):
+    def __call__(
+        self, decision_id: str, principal: Principal, current_work_order_id: str
+    ) -> ExternalSingleVolumeDecisionV1 | None: ...
+
+
+class _SingleExecutionTemplateResolver(Protocol):
+    def __call__(
+        self, record: ExternalSingleVolumeCompatibilityRecord, now: datetime
+    ) -> ExternalQuantitativeSingleExecutionTemplate | None: ...
+
+
 def _execution_identity(authority: ExternalRelativeVolumeExecutionAuthority) -> str:
     payload = authority.snapshot_payload()
     payload.pop("historicalAuthorityDigest")
@@ -1049,6 +1139,7 @@ class ExternalQuantitativeAuthorityCatalog:
         | None = None,
         execution_template_resolver: _ExecutionTemplateResolver | None = None,
         decision_resolver: _DecisionResolver | None = None,
+        single_execution_template_resolver: _SingleExecutionTemplateResolver | None = None,
     ) -> None:
         self.currentness_coordinator = currentness_coordinator
         self._journal = journal
@@ -1073,12 +1164,15 @@ class ExternalQuantitativeAuthorityCatalog:
         )
         self._execution_template_resolver = execution_template_resolver
         self._decision_resolver = decision_resolver
+        self._single_execution_template_resolver = single_execution_template_resolver
+        self._single_decision_resolver: _SingleDecisionResolver | None = None
         self._lock = threading.RLock()
         self._mappings: dict[str, _MappingState] = {}
         self._current_participant_snapshots: dict[str, _QuantitativeParticipantSnapshot] = {}
         self._executions: dict[str, _ExecutionState] = {}
         self._single_mappings: dict[str, _SingleMappingState] = {}
         self._current_single_snapshots: dict[str, _SingleParticipantSnapshot] = {}
+        self._single_executions: dict[str, _SingleExecutionState] = {}
         try:
             self._replay()
         except BaseException:
@@ -1115,6 +1209,33 @@ class ExternalQuantitativeAuthorityCatalog:
                 decision_id,
                 principal=principal,
                 current_work_order_id=work_order_id,
+            )
+            single_current = getattr(decisions, "resolve_current_single_volume_for_issue", None)
+            single_historical = getattr(decisions, "resolve_historical_single_volume", None)
+            if not callable(single_current) or not callable(single_historical):
+                if self._single_executions:
+                    raise ExternalQuantitativeAuthorityRecoveryError(
+                        "single execution snapshots need the single-volume decision joins"
+                    )
+                return
+            for single_state in self._single_executions.values():
+                single_authority = single_state.authority
+                single_decision = single_historical(
+                    organization_id=single_authority.organization_id,
+                    site_id=single_authority.site_id,
+                    decision_id=single_authority.decision_id,
+                    decision_digest=single_authority.decision_digest,
+                )
+                if not self._single_execution_decision_matches(single_state, single_decision):
+                    raise ExternalQuantitativeAuthorityRecoveryError(
+                        "single execution snapshot has no exact durable decision"
+                    )
+            self._single_decision_resolver = lambda decision_id, principal, work_order_id: (
+                single_current(
+                    decision_id,
+                    principal=principal,
+                    current_work_order_id=work_order_id,
+                )
             )
 
     def _append_apply(self, event: dict[str, object]) -> None:
@@ -1392,6 +1513,321 @@ class ExternalQuantitativeAuthorityCatalog:
             historical_authority_digest=decision.compatibility_mapping_digest,
             synthetic_test_only=False,
         )
+
+    # -- single-volume execution ------------------------------------------------------------
+    def bind_single_decision_resolver(self, resolver: _SingleDecisionResolver) -> None:
+        """Bind an explicit single-volume decision join (tests and assembly)."""
+        if not callable(resolver):
+            raise ValueError("single decision resolver must be callable")
+        with self._lock:
+            self._single_decision_resolver = resolver
+
+    @staticmethod
+    def _single_execution_decision_matches(state: _SingleExecutionState, decision: object) -> bool:
+        authority = state.authority
+        return bool(
+            isinstance(decision, ExternalSingleVolumeDecisionV1)
+            and decision.decision_id == authority.decision_id
+            and decision.decision_digest == authority.decision_digest
+            and decision.canonical_digest() == authority.decision_digest
+            and decision.verdict is DecisionVerdict.ELIGIBLE
+            and decision.use == "SINGLE_VOLUME"
+            and decision.subject == authority.target.subject
+            and decision.zone == authority.zone_snapshot.to_zone_reference()
+            and decision.policy_digest == authority.validation_policy_digest
+            and decision.evidence_record_digests == authority.evidence_record_digests
+            and decision.compatibility_mapping_digest == state.mapping_digest
+            and _decision_precedes_activation(decision.decided_at, state.activated_at)
+        )
+
+    def _eligible_single_decision(
+        self,
+        decision_ref: str,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+        now: datetime,
+    ) -> ExternalSingleVolumeDecisionV1 | None:
+        resolver = self._single_decision_resolver
+        decision = (
+            resolver(decision_ref, principal, current_work_order_id)
+            if resolver is not None
+            else None
+        )
+        if (
+            not isinstance(decision, ExternalSingleVolumeDecisionV1)
+            or decision.decision_id != decision_ref
+            or decision.decision_digest is None
+            or decision.verdict is not DecisionVerdict.ELIGIBLE
+            or decision.use != "SINGLE_VOLUME"
+            or decision.zone is None
+            or decision.compatibility_mapping_digest is None
+            or decision.subject.work_order_id != current_work_order_id
+            or decision.subject.organization_id != principal.organization_id
+        ):
+            return None
+        try:
+            _utc(decision.decided_at, name="decision decided_at")
+        except ValueError:
+            return None
+        return decision if decision.decided_at <= now else None
+
+    @staticmethod
+    def _single_decision_binds_record(
+        decision: ExternalSingleVolumeDecisionV1,
+        record: ExternalSingleVolumeCompatibilityRecord,
+    ) -> bool:
+        return (
+            decision.subject == record.target.subject
+            and decision.zone == record.zone_snapshot.to_zone_reference()
+            and decision.policy_digest == record.validation_policy_digest
+            and decision.evidence_record_digests == record.evidence_record_digests
+            and decision.compatibility_mapping_digest == record.mapping_digest
+        )
+
+    def activate_single_execution(
+        self,
+        *,
+        decision_ref: str,
+        principal: Principal,
+        current_work_order_id: str,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        """Snapshot approved single-epoch limits after the durable decision exists."""
+        _utc(now, name="single execution activation time")
+        if not decision_ref or not current_work_order_id:
+            raise ValueError("single execution activation identifiers are required")
+        decision = self._eligible_single_decision(
+            decision_ref,
+            principal=principal,
+            current_work_order_id=current_work_order_id,
+            now=now,
+        )
+        if decision is None or decision.compatibility_mapping_digest is None:
+            return None
+        mapping_digest = decision.compatibility_mapping_digest
+        with self._lock:
+            mapping_state = self._single_mappings.get(mapping_digest)
+            record = mapping_state.record if mapping_state is not None else None
+        if record is None or not self._single_decision_binds_record(decision, record):
+            return None
+        snapshot = self._current_single_participants(record, now)
+        if snapshot is None:
+            return None
+        resolver = self._single_execution_template_resolver
+        template = resolver(record, now) if resolver is not None else None
+        if template is None or not (template.valid_from <= now < template.valid_until):
+            return None
+        policy = template.execution_policy
+        if (
+            principal.principal_id not in template.authorized_actor_ids
+            or policy.authority_record_digest != record.execution_policy_ref
+            or policy.synthetic_test_only
+            or decision.decision_digest is None
+        ):
+            return None
+        with self.currentness_coordinator.mutation(), self._lock:
+            state = self._single_mappings.get(mapping_digest)
+            if (
+                state is None
+                or state.record != record
+                or not state.active_at(now)
+                or not self._single_participants_remain_current(record, snapshot, now)
+            ):
+                return None
+            provisional = ExternalSingleVolumeExecutionAuthority(
+                organization_id=record.organization_id,
+                site_id=record.site_id,
+                current_work_order_id=current_work_order_id,
+                decision_id=decision_ref,
+                decision_digest=decision.decision_digest,
+                compatibility_mapping_digest=mapping_digest,
+                target=record.target,
+                evidence_record_digests=record.evidence_record_digests,
+                validation_policy_digest=record.validation_policy_digest,
+                zone_snapshot=record.zone_snapshot,
+                execution_policy=policy,
+                authorized_actor_ids=template.authorized_actor_ids,
+                valid_from=template.valid_from,
+                valid_until=template.valid_until,
+                historical_authority_digest=_digest({"provisional": "single-execution"}),
+                target_rmse_m=_single_snapshot_rmse(snapshot),
+                maximum_zone_cell_count=template.maximum_zone_cell_count,
+                maximum_zone_area_m2=template.maximum_zone_area_m2,
+                synthetic_test_only=False,
+            )
+            authority = replace(
+                provisional, historical_authority_digest=_single_execution_identity(provisional)
+            )
+            prior = self._single_executions.get(authority.historical_authority_digest)
+            if prior is not None:
+                return authority if prior.authority == authority else None
+            event: dict[str, object] = {
+                "kind": _SINGLE_EXECUTION_ACTIVATED,
+                "version": _VERSION,
+                "mappingDigest": mapping_digest,
+                "authority": authority.snapshot_payload(),
+                "activatedBy": principal.principal_id,
+                "activatedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return None
+        return authority
+
+    def revoke_single_execution(self, authority_digest: str, *, actor: str, now: datetime) -> bool:
+        _required_digest(authority_digest, name="single execution authority")
+        _utc(now, name="single execution revocation time")
+        if not actor or actor != actor.strip():
+            raise ValueError("single execution revocation actor is invalid")
+        with self.currentness_coordinator.mutation(), self._lock:
+            state = self._single_executions.get(authority_digest)
+            if state is None or now < state.activated_at:
+                return False
+            if state.revoked_at is not None:
+                return state.revoked_at == now
+            event: dict[str, object] = {
+                "kind": _SINGLE_EXECUTION_REVOKED,
+                "version": _VERSION,
+                "historicalAuthorityDigest": authority_digest,
+                "revokedBy": actor,
+                "revokedAt": _wire_time(now),
+            }
+            try:
+                self._append_apply(event)
+            except JournalSealedError:
+                return False
+        return True
+
+    def resolve_single_for_issue(
+        self,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+        decision_ref: str,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        _utc(now, name="single execution issue time")
+        decision = self._eligible_single_decision(
+            decision_ref,
+            principal=principal,
+            current_work_order_id=current_work_order_id,
+            now=now,
+        )
+        if decision is None:
+            return None
+        with self._lock:
+            matches = tuple(
+                state
+                for state in self._single_executions.values()
+                if state.active_at(now)
+                and state.mapping_digest == decision.compatibility_mapping_digest
+                and self._single_mapping_active(state.mapping_digest, now)
+                and state.authority.organization_id == principal.organization_id
+                and state.authority.current_work_order_id == current_work_order_id
+                and state.authority.decision_id == decision_ref
+                and state.authority.decision_digest == decision.decision_digest
+                and principal.principal_id in state.authority.authorized_actor_ids
+                and self._single_execution_decision_matches(state, decision)
+            )
+            if len(matches) != 1:
+                return None
+            state = matches[0]
+            mapping_state = self._single_mappings.get(state.mapping_digest)
+            record = mapping_state.record if mapping_state is not None else None
+        if record is None:
+            return None
+        snapshot = self._current_single_participants(record, now)
+        if snapshot is None:
+            return None
+        with self.currentness_coordinator.guarded_read(), self._lock:
+            current_mapping = self._single_mappings.get(state.mapping_digest)
+            current_execution = self._single_executions.get(
+                state.authority.historical_authority_digest
+            )
+            if (
+                current_mapping is None
+                or current_mapping.record != record
+                or not current_mapping.active_at(now)
+                or current_execution != state
+                or not current_execution.active_at(now)
+                or not self._single_participants_remain_current(record, snapshot, now)
+            ):
+                return None
+            if isinstance(snapshot, _SingleParticipantSnapshot):
+                assert record.mapping_digest is not None
+                self._current_single_snapshots[record.mapping_digest] = snapshot
+            return state.authority
+
+    @contextmanager
+    def guard_single_current(
+        self,
+        *,
+        authority: ExternalSingleVolumeExecutionAuthority,
+        principal: Principal,
+        now: datetime,
+    ) -> Iterator[ExternalSingleVolumeExecutionAuthority | None]:
+        with self._lock:
+            current = self._single_executions.get(authority.historical_authority_digest)
+            mapping = (
+                self._single_mappings.get(current.mapping_digest) if current is not None else None
+            )
+            snapshot = self._current_single_snapshots.get(
+                current.mapping_digest if current is not None else ""
+            )
+            participants = self._participants
+            if (
+                current is None
+                or current.authority != authority
+                or not current.active_at(now)
+                or not self._single_mapping_active(current.mapping_digest, now)
+                or principal.organization_id != authority.organization_id
+                or principal.principal_id not in authority.authorized_actor_ids
+                or (
+                    participants is not None
+                    and (
+                        mapping is None
+                        or not isinstance(snapshot, _SingleParticipantSnapshot)
+                        or not participants.single_locally_current(mapping.record, snapshot, now)
+                    )
+                )
+            ):
+                yield None
+                return
+            yield authority
+
+    def resolve_single_historical(
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        issued_at: datetime,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        del now
+        _utc(issued_at, name="single historical issue time")
+        with self._lock:
+            state = self._single_executions.get(historical_authority_digest)
+            if (
+                state is None
+                or not state.active_at(issued_at)
+                or not self._single_mapping_active(state.mapping_digest, issued_at)
+                or state.authority.decision_id != decision_id
+                or state.authority.decision_digest != decision_digest
+            ):
+                return None
+            return state.authority
+
+    def _single_mapping_active(self, mapping_digest: str, at: datetime) -> bool:
+        state = self._single_mappings.get(mapping_digest)
+        return state is not None and state.active_at(at)
+
+    @property
+    def single_execution_port(self) -> ExternalSingleVolumeExecutionPort:
+        """The catalog as the single-volume ledger's execution authority port."""
+        return ExternalSingleVolumeExecutionPort(self)
 
     @property
     def single_mapping_port(self) -> ExternalSingleVolumeMappingPort:
@@ -2079,6 +2515,101 @@ class ExternalQuantitativeAuthorityCatalog:
                 self._single_mappings[single_digest] = replace(
                     single_state, revoked_at=single_revoked_at
                 )
+            elif kind == _SINGLE_EXECUTION_ACTIVATED:
+                expected = {
+                    "kind",
+                    "version",
+                    "mappingDigest",
+                    "authority",
+                    "activatedBy",
+                    "activatedAt",
+                    "eventDigest",
+                }
+                if set(event) != expected or not isinstance(event["activatedBy"], str):
+                    raise ValueError("single execution activation shape is invalid")
+                single_mapping_digest = _required_digest(
+                    event["mappingDigest"], name="single mapping"
+                )
+                single_activated = _parse_time(
+                    event["activatedAt"], name="single execution activatedAt"
+                )
+                single_mapping_state = self._single_mappings.get(single_mapping_digest)
+                if single_mapping_state is None or not single_mapping_state.active_at(
+                    single_activated
+                ):
+                    raise ValueError("single execution activated without active mapping")
+                single_raw = event["authority"]
+                if type(single_raw) is not dict:
+                    raise ValueError("single execution authority shape is invalid")
+                single_authority = ExternalSingleVolumeExecutionAuthority.from_snapshot(
+                    cast(dict[str, Any], single_raw)
+                )
+                single_record = single_mapping_state.record
+                if (
+                    single_authority.compatibility_mapping_digest != single_mapping_digest
+                    or single_authority.historical_authority_digest
+                    != _single_execution_identity(single_authority)
+                    or single_authority.organization_id != single_record.organization_id
+                    or single_authority.site_id != single_record.site_id
+                    or single_authority.target != single_record.target
+                    or single_authority.validation_policy_digest
+                    != single_record.validation_policy_digest
+                    or single_authority.zone_snapshot != single_record.zone_snapshot
+                    or single_authority.evidence_record_digests
+                    != single_record.evidence_record_digests
+                    or single_authority.execution_policy.authority_record_digest
+                    != single_record.execution_policy_ref
+                    or single_authority.current_work_order_id
+                    != single_record.target.subject.work_order_id
+                    or single_authority.synthetic_test_only
+                    or not single_authority.is_current_at(single_activated)
+                ):
+                    raise ValueError("single execution snapshot does not bind mapping")
+                prior_single_execution = self._single_executions.get(
+                    single_authority.historical_authority_digest
+                )
+                if (
+                    prior_single_execution is not None
+                    and prior_single_execution.authority != single_authority
+                ):
+                    raise ValueError("single execution authority identity conflicts")
+                if prior_single_execution is None:
+                    self._single_executions[single_authority.historical_authority_digest] = (
+                        _SingleExecutionState(
+                            single_authority, single_mapping_digest, single_activated
+                        )
+                    )
+            elif kind == _SINGLE_EXECUTION_REVOKED:
+                expected = {
+                    "kind",
+                    "version",
+                    "historicalAuthorityDigest",
+                    "revokedBy",
+                    "revokedAt",
+                    "eventDigest",
+                }
+                if set(event) != expected or not isinstance(event["revokedBy"], str):
+                    raise ValueError("single execution revocation shape is invalid")
+                single_exec_digest = _required_digest(
+                    event["historicalAuthorityDigest"], name="single execution authority"
+                )
+                single_exec_revoked = _parse_time(
+                    event["revokedAt"], name="single execution revokedAt"
+                )
+                single_exec_state = self._single_executions.get(single_exec_digest)
+                if (
+                    single_exec_state is None
+                    or single_exec_revoked < single_exec_state.activated_at
+                ):
+                    raise ValueError("single execution revoked before activation")
+                if (
+                    single_exec_state.revoked_at is not None
+                    and single_exec_state.revoked_at != single_exec_revoked
+                ):
+                    raise ValueError("single execution has conflicting revocation")
+                self._single_executions[single_exec_digest] = replace(
+                    single_exec_state, revoked_at=single_exec_revoked
+                )
             else:
                 raise ValueError("unknown quantitative authority event")
         except (KeyError, TypeError, ValueError) as exc:
@@ -2087,6 +2618,55 @@ class ExternalQuantitativeAuthorityCatalog:
                     "external quantitative authority journal is malformed"
                 ) from exc
             raise
+
+
+class ExternalSingleVolumeExecutionPort:
+    """Single-volume ledger execution authority seam backed by the shared catalog."""
+
+    def __init__(self, catalog: ExternalQuantitativeAuthorityCatalog) -> None:
+        self._catalog = catalog
+        self.currentness_coordinator = catalog.currentness_coordinator
+
+    def resolve_for_issue(
+        self,
+        *,
+        principal: Principal,
+        current_work_order_id: str,
+        decision_ref: str,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        return self._catalog.resolve_single_for_issue(
+            principal=principal,
+            current_work_order_id=current_work_order_id,
+            decision_ref=decision_ref,
+            now=now,
+        )
+
+    def guard_current(
+        self,
+        *,
+        authority: ExternalSingleVolumeExecutionAuthority,
+        principal: Principal,
+        now: datetime,
+    ) -> AbstractContextManager[ExternalSingleVolumeExecutionAuthority | None]:
+        return self._catalog.guard_single_current(authority=authority, principal=principal, now=now)
+
+    def resolve_historical(
+        self,
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        issued_at: datetime,
+        now: datetime,
+    ) -> ExternalSingleVolumeExecutionAuthority | None:
+        return self._catalog.resolve_single_historical(
+            historical_authority_digest=historical_authority_digest,
+            decision_id=decision_id,
+            decision_digest=decision_digest,
+            issued_at=issued_at,
+            now=now,
+        )
 
 
 class ExternalSingleVolumeMappingPort:
@@ -2120,6 +2700,8 @@ class ExternalSingleVolumeMappingPort:
 
 
 __all__ = [
+    "ExternalQuantitativeSingleExecutionTemplate",
+    "ExternalSingleVolumeExecutionPort",
     "ExternalSingleVolumeMappingPort",
     "ExternalQuantitativeAuthorityCatalog",
     "ExternalQuantitativeAuthorityParticipants",
