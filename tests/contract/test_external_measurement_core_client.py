@@ -1424,3 +1424,239 @@ def test_actual_core_evidence_router_claim_input_v2_and_measurement_parity(
     finally:
         client.close()
         shared.close()
+
+
+def _single_volume_launch_fixture() -> tuple[Any, Any]:
+    """Manifest-bound SINGLE_VOLUME launch with one sealed VALIDATED record."""
+
+    from test_external_measurement_protocol import single_volume_manifest_request
+
+    return single_volume_manifest_request()
+
+
+def _single_volume_input_body(launch: Any) -> dict[str, Any]:
+    assert launch.single_volume_request is not None
+    assert launch.single_volume_execution_policy is not None
+    assert len(launch.volume_evidence_records) == 1
+    return {
+        "verdict": "INPUT_READY",
+        "input": {
+            "request": launch.single_volume_request.model_dump(by_alias=True, mode="json"),
+            "executionPolicy": launch.single_volume_execution_policy.model_dump(
+                by_alias=True, mode="json"
+            ),
+            "validationPolicy": launch.validation_policy.model_dump(by_alias=True, mode="json"),
+            "evidenceRecord": launch.volume_evidence_records[0].model_dump(
+                by_alias=True, mode="json"
+            ),
+            "inputs": [
+                {
+                    "role": item.role,
+                    "artifactId": item.artifact_id,
+                    "observedSha256": item.observed_sha256,
+                    "observedSizeBytes": item.observed_size_bytes,
+                    "downloadUrl": f"https://objects.invalid/{item.artifact_id}?private=capability",
+                    "requiredHeaders": {"x-bound-role": item.role},
+                    "expiresAt": "2026-09-09T01:10:00Z",
+                }
+                for item in launch.inputs
+            ],
+        },
+        "detail": None,
+    }
+
+
+def _completed_single_volume_result(launch: Any, manifest: Any) -> Any:
+    import numpy as np
+
+    assert launch.single_volume_request is not None
+    assert launch.single_volume_execution_policy is not None
+    assert launch.volume_evidence_records[0].measurement_payload is not None
+    rmse = launch.volume_evidence_records[0].measurement_payload.rmse_m
+    aggregate = {
+        "metricType": "SINGLE_VOLUME_AGGREGATE_V2",
+        "zoneId": launch.single_volume_request.zone_snapshot.work_area_id,
+        "metrics": {
+            "zoneCellCount": 4,
+            "commonValidCellCount": 4,
+            "zoneAreaM2": 4.0,
+            "measuredAreaM2": 4.0,
+            "commonValidFraction": 1.0,
+            "cutM3": 1.0,
+            "fillM3": 5.0,
+            "netM3": 4.0,
+            "thresholdM": launch.single_volume_execution_policy.threshold_m,
+            "uncertaintyM3": 4.0 * float(np.hypot(0.02, rmse)),
+            "uncertaintyNote": (
+                "Validated target-epoch checkpoint RMSE and boundary base "
+                "roughness were used."
+            ),
+            "baseRoughnessM": 0.02,
+            "boundaryCellCount": 4,
+            "boundarySampleCount": 4,
+            "boundaryValidFraction": 1.0,
+        },
+    }
+    terminal = build_completed_frame_v2(
+        prepare=build_prepare_frame_v2(request=launch, manifest=manifest),
+        input_bindings=[item.model_dump(by_alias=True, mode="json") for item in launch.inputs],
+        aggregate=aggregate,
+    )
+    return build_measurement_result(
+        terminal=terminal, request=launch, manifest=manifest, limits=limits()
+    )
+
+
+def test_single_volume_launch_maps_capabilities_and_seals_the_launch() -> None:
+    """Capabilities are addressed as (TARGET_DSM, CHECKPOINT_CSV) in launch order."""
+
+    _manifest, expected = _single_volume_launch_fixture()
+    body = _single_volume_input_body(expected)
+    fence = ExternalMeasurementCoreClient.fence_from_grant(str(uuid4()), str(uuid4()), 7)
+    shared = _core_client(httpx.MockTransport(lambda _: httpx.Response(200, json=body)))
+    client = ExternalMeasurementCoreClient(core_client=shared)
+    try:
+        launch = client.current_input(
+            "SINGLE_VOLUME",
+            expected.request_id,
+            fence,
+            attempt_nonce=expected.attempt_nonce,
+            deadline_monotonic=time.monotonic() + 1,
+        )
+        assert launch is not None
+        assert launch == expected.model_copy(
+            update={"fence": fence, "canonical_input_digest": None}
+        ).sealed()
+        assert launch.operation == "SINGLE_VOLUME"
+        assert [item.role for item in launch.inputs] == ["TARGET_DSM", "CHECKPOINT_CSV"]
+        assert launch.single_volume_request is not None
+        assert launch.request_id == launch.single_volume_request.request_id
+        assert len(launch.volume_evidence_records) == 1
+        record = launch.volume_evidence_records[0]
+        assert record.evidence_record_digest == record.canonical_digest()
+        assert "capability" not in launch.model_dump_json()
+        for item in launch.inputs:
+            capability = client.capability_for(
+                "SINGLE_VOLUME", expected.request_id, fence, item
+            )
+            assert "capability" not in repr(capability)
+    finally:
+        client.close()
+        shared.close()
+
+
+def test_single_volume_payload_builds_the_report_body() -> None:
+    """The Core report body binds the sealed request, policy and observed metrics."""
+
+    from ksi_processing_controller.external_measurement_result import SingleVolumeAggregateV2
+
+    manifest, launch = _single_volume_launch_fixture()
+    assert launch.single_volume_request is not None
+    assert launch.single_volume_execution_policy is not None
+    result = _completed_single_volume_result(launch, manifest)
+    assert isinstance(result.aggregate, SingleVolumeAggregateV2)
+    payload = ExternalMeasurementCoreClient._single_volume_payload(  # noqa: SLF001
+        launch, result
+    )
+    assert payload.request_digest == launch.single_volume_request.request_digest
+    assert payload.decision_digest == launch.single_volume_request.decision_digest
+    assert payload.target_dsm_digest == launch.single_volume_request.target.observed_sha256
+    assert (
+        payload.zone_snapshot_digest
+        == launch.single_volume_request.zone_snapshot.canonical_digest()
+    )
+    assert payload.execution_policy_digest == launch.single_volume_execution_policy.policy_digest
+    assert payload.algorithm_build_digest == launch.execution_manifest_digest
+    assert payload.config_digest == launch.single_volume_execution_policy.config_digest
+    assert payload.metrics == result.aggregate.metrics
+
+
+def test_single_volume_queue_branches_target_the_single_volume_base() -> None:
+    """Pending, claim and input calls use the single-volume internal base path."""
+
+    _manifest, expected = _single_volume_launch_fixture()
+    assert expected.single_volume_request is not None
+    seen: list[str] = []
+    worker_id, acquisition_id = str(uuid4()), str(uuid4())
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        seen.append(f"{http_request.method} {http_request.url.path}")
+        path = http_request.url.path
+        if http_request.method == "GET" and path == (
+            "/v1/internal/external-validation/single-volumes"
+        ):
+            return httpx.Response(
+                200,
+                json={
+                    "items": [
+                        {
+                            "requestRef": expected.request_id,
+                            "issuedAt": "2026-09-09T01:00:00Z",
+                        }
+                    ]
+                },
+            )
+        if path.endswith("/lease"):
+            assert path.startswith("/v1/internal/external-validation/single-volumes/")
+            return httpx.Response(
+                200,
+                json={
+                    "verdict": "LEASED",
+                    "request": {
+                        "requestRef": expected.request_id,
+                        "status": "LEASED",
+                        "currentWorkOrderId": (
+                            expected.single_volume_request.current_work_order_id
+                        ),
+                        "decisionDigest": expected.single_volume_request.decision_digest,
+                        "issuedAt": expected.single_volume_request.issued_at.isoformat().replace(
+                            "+00:00", "Z"
+                        ),
+                        "deadlineAt": "2026-09-09T02:00:00Z",
+                        "reportRef": None,
+                        "reportDigest": None,
+                    },
+                    "fence": {
+                        "workerInstanceId": worker_id,
+                        "leaseAcquisitionId": acquisition_id,
+                        "leaseGeneration": 7,
+                    },
+                    "leaseExpiresAt": "2026-09-09T01:05:00Z",
+                    "detail": None,
+                },
+            )
+        if http_request.method == "GET" and path.endswith("/input"):
+            assert path.startswith("/v1/internal/external-validation/single-volumes/")
+            return httpx.Response(200, json=_single_volume_input_body(expected))
+        raise AssertionError(path)
+
+    shared = _core_client(httpx.MockTransport(handler))
+    client = ExternalMeasurementCoreClient(core_client=shared)
+    try:
+        pending = client.list_pending("SINGLE_VOLUME", deadline_monotonic=time.monotonic() + 1)
+        assert [item.request_id for item in pending] == [expected.request_id]
+        assert all(item.operation == "SINGLE_VOLUME" for item in pending)
+        grant = client.claim(
+            "SINGLE_VOLUME",
+            expected.request_id,
+            worker_instance_id=worker_id,
+            acquisition_id=acquisition_id,
+            deadline_monotonic=time.monotonic() + 1,
+        )
+        assert grant.operation == "SINGLE_VOLUME"
+        launch = client.current_input(
+            "SINGLE_VOLUME",
+            expected.request_id,
+            grant.fence,
+            attempt_nonce=expected.attempt_nonce,
+            deadline_monotonic=time.monotonic() + 1,
+        )
+        assert launch is not None and launch.operation == "SINGLE_VOLUME"
+        assert [item.role for item in launch.inputs] == ["TARGET_DSM", "CHECKPOINT_CSV"]
+    finally:
+        client.close()
+        shared.close()
+    assert seen[0] == "GET /v1/internal/external-validation/single-volumes"
+    assert seen[1].startswith("POST /v1/internal/external-validation/single-volumes/")
+    assert seen[2].startswith("GET /v1/internal/external-validation/single-volumes/")
+    assert not any("relative-volumes" in path for path in seen)

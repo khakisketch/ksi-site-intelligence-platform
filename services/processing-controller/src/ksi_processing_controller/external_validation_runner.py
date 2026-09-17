@@ -1,4 +1,4 @@
-"""Bounded, fair scheduling for three independently fenced external worker lanes.
+"""Bounded, fair scheduling for four independently fenced external worker lanes.
 
 Lane adapters own Core transport, launch, adjudication and byte cleanup. This
 scheduler neither interprets measurements nor manufactures terminal receipts.
@@ -34,6 +34,7 @@ class ExternalLane(StrEnum):
     INSPECTION = "inspection"
     CHECKPOINT = "checkpoint"
     RELATIVE_VOLUME = "relative-volume"
+    SINGLE_VOLUME = "single-volume"
 
 
 class TurnOutcome(StrEnum):

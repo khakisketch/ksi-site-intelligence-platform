@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 import rasterio
 from ksi_change_detection.dsm_diff import DiffResult
+from ksi_change_detection.external_single_volume import measure_single_volume_zone
 from ksi_change_detection.external_volume import (
     ExternalVolumeMeasurementError,
     measure_external_volume_zone,
@@ -52,6 +53,10 @@ from ksi_processing_controller.external_geotiff_inspector import (
     _require_no_subdatasets,
     inspect_synthetic_sealed_geotiff,
 )
+from ksi_processing_controller.external_measurement_container_protocol import (
+    SINGLE_VOLUME_KNOWN_UNCERTAINTY_NOTE,
+    SINGLE_VOLUME_UNKNOWN_UNCERTAINTY_NOTE,
+)
 from ksi_processing_controller.external_measurement_protocol import (
     MeasurementInputV2,
     MeasurementLaunchRequestV2,
@@ -78,6 +83,10 @@ _CHECKPOINT_WORKING_BYTES = 2 * _READ_CHUNK_BYTES
 _DIFF_RESULT_BYTES_PER_PIXEL = 16
 _VOLUME_ZONE_BYTES_PER_CELL = 32
 _VOLUME_ZONE_WORKING_BYTES = _READ_CHUNK_BYTES
+# Target grid values/valid plus the derived difference grid and its mask.
+_SINGLE_VOLUME_BYTES_PER_PIXEL = 18
+# Zone masks, boundary ring, base surface, interpolation coordinates and values.
+_SINGLE_VOLUME_ZONE_BYTES_PER_CELL = 96
 
 
 class MeasurementAlgorithmError(RuntimeError):
@@ -143,9 +152,7 @@ class MeasurementWatchdogV2:
         is_cancelled: Callable[[], bool] | None = None,
     ) -> MeasurementWatchdogV2:
         wall = (
-            envelope.max_deadline_seconds
-            if maximum_wall_seconds is None
-            else maximum_wall_seconds
+            envelope.max_deadline_seconds if maximum_wall_seconds is None else maximum_wall_seconds
         )
         if not math.isfinite(wall) or wall <= 0.0:
             raise MeasurementAlgorithmError("RESOURCE_LIMIT_EXCEEDED")
@@ -294,6 +301,14 @@ def preflight_volume_measurement_memory(
         envelope=envelope,
         baseline_cell_count=baseline.width * baseline.height,
     )
+
+
+def preflight_single_volume_measurement_memory(
+    *, target: DsmMemoryPreflightV2, envelope: ResourceEnvelopeV1
+) -> None:
+    """Reserve the target grid, its derived difference and later zone workspace."""
+
+    _single_volume_zone_grid_cells(envelope=envelope, cell_count=target.width * target.height)
 
 
 def inspect_primary_dsm(
@@ -496,6 +511,108 @@ def measure_relative_volume_aggregate(
     }
 
 
+def measure_single_volume_aggregate(
+    request: MeasurementLaunchRequestV2,
+    *,
+    primary: ObservedDsmV2,
+    envelope: ResourceEnvelopeV1,
+    watchdog: MeasurementWatchdogV2,
+) -> dict[str, Any]:
+    """Measure the target DSM against its zone-boundary base surface."""
+
+    single = request.single_volume_request
+    policy = request.single_volume_execution_policy
+    if (
+        request.operation != "SINGLE_VOLUME"
+        or single is None
+        or policy is None
+        or request.inputs[0].role != "TARGET_DSM"
+        or request.inputs[1].role != "CHECKPOINT_CSV"
+    ):
+        raise MeasurementAlgorithmError("OPERATION_BINDING_MISMATCH")
+    target = single.target
+    zone = single.zone_snapshot
+    if (
+        primary.observed_crs_digest != target.observed_crs_digest
+        or primary.observed_vertical_reference_digest != target.observed_vertical_reference_digest
+    ):
+        raise MeasurementAlgorithmError("VOLUME_RASTER_CONTEXT_MISMATCH")
+    try:
+        assert_same_crs(primary.crs, zone.crs)
+    except ValueError as exc:
+        raise MeasurementAlgorithmError("VOLUME_CRS_MISMATCH") from exc
+    try:
+        with (
+            _offline_gdal_environment(),
+            rasterio.open(primary.path, "r", driver="GTiff") as dataset,
+        ):
+            values, valid = _read_valid_dsm(dataset, watchdog=watchdog)
+            transform = dataset.transform
+    except RasterioError as exc:
+        raise MeasurementAlgorithmError("PRIMARY_DSM_REJECTED") from exc
+    watchdog.check()
+    rmse = _validated_target_rmse(request)
+    result = measure_single_volume_zone(
+        values,
+        valid,
+        transform=transform,
+        crs=primary.crs,
+        cell_area_m2=abs(transform.a * transform.e - transform.b * transform.d),
+        polygon_geojson=zone.polygon,
+        zone_id=zone.work_area_id,
+        from_crs=zone.crs,
+        threshold_m=policy.threshold_m,
+        minimum_common_valid_fraction=policy.minimum_common_valid_fraction,
+        minimum_boundary_valid_fraction=policy.minimum_boundary_valid_fraction,
+        maximum_zone_grid_cells=_single_volume_zone_grid_cells(
+            envelope=envelope, cell_count=int(values.size)
+        ),
+        uncertainty_note=(
+            SINGLE_VOLUME_KNOWN_UNCERTAINTY_NOTE
+            if rmse is not None
+            else SINGLE_VOLUME_UNKNOWN_UNCERTAINTY_NOTE
+        ),
+        dsm_rmse_m=rmse,
+    )
+    watchdog.check()
+    if isinstance(result, ExternalVolumeMeasurementError):
+        raise MeasurementAlgorithmError(result.reason.value)
+    return {
+        "metricType": "SINGLE_VOLUME_AGGREGATE_V2",
+        "zoneId": result.zone_id,
+        "metrics": result.metrics.model_dump(by_alias=True, mode="json"),
+    }
+
+
+def _validated_target_rmse(request: MeasurementLaunchRequestV2) -> float | None:
+    single = request.single_volume_request
+    records = request.volume_evidence_records
+    if single is None or len(records) != 1:
+        raise MeasurementAlgorithmError("VOLUME_EVIDENCE_BINDING_MISMATCH")
+    record = records[0]
+    if (
+        record.subject_digest != single.target.subject.canonical_digest()
+        or record.target_dsm_observed_sha256 != single.target.observed_sha256
+        or record.policy_digest != request.validation_policy.policy_digest
+    ):
+        raise MeasurementAlgorithmError("VOLUME_EVIDENCE_BINDING_MISMATCH")
+    payload = record.measurement_payload
+    if record.core_verdict is not EvidenceCoreVerdict.VALIDATED or payload is None:
+        return None
+    return payload.rmse_m
+
+
+def _single_volume_zone_grid_cells(*, envelope: ResourceEnvelopeV1, cell_count: int) -> int:
+    available_bytes = (
+        envelope.max_memory_bytes
+        - cell_count * _SINGLE_VOLUME_BYTES_PER_PIXEL
+        - _VOLUME_ZONE_WORKING_BYTES
+    )
+    if available_bytes < _SINGLE_VOLUME_ZONE_BYTES_PER_CELL:
+        raise MeasurementAlgorithmError("RESOURCE_LIMIT_EXCEEDED")
+    return min(envelope.max_pixels, available_bytes // _SINGLE_VOLUME_ZONE_BYTES_PER_CELL)
+
+
 def align_masked_dsm_difference(
     *,
     baseline_path: Path,
@@ -508,9 +625,11 @@ def align_masked_dsm_difference(
     if envelope is None:
         raise MeasurementAlgorithmError("RESOURCE_LIMIT_EXCEEDED")
     try:
-        with _offline_gdal_environment(), rasterio.open(
-            baseline_path, "r", driver="GTiff"
-        ) as baseline, rasterio.open(current_path, "r", driver="GTiff") as current:
+        with (
+            _offline_gdal_environment(),
+            rasterio.open(baseline_path, "r", driver="GTiff") as baseline,
+            rasterio.open(current_path, "r", driver="GTiff") as current,
+        ):
             _require_contained_dsm(baseline, envelope=envelope, watchdog=watchdog)
             _require_contained_dsm(current, envelope=envelope, watchdog=watchdog)
             _require_alignment_memory(
@@ -828,9 +947,7 @@ def _observed_dsm_references(
         ):
             raise MeasurementAlgorithmError("SECONDARY_DSM_UNSUPPORTED")
         vertical_digest = _vertical_digest(
-            ObservedVerticalReferenceV1(
-                identifier=f"EPSG:{vertical_code}", basis=vertical_crs.name
-            )
+            ObservedVerticalReferenceV1(identifier=f"EPSG:{vertical_code}", basis=vertical_crs.name)
         )
         horizontal_crs = horizontal[0]
     else:
@@ -887,9 +1004,12 @@ def _offline_gdal_environment() -> Iterator[None]:
 def _vertical_digest(reference: ObservedVerticalReferenceV1 | None) -> str | None:
     if reference is None:
         return None
-    return "sha256:" + hashlib.sha256(
-        canonical_json_bytes(reference.model_dump(by_alias=True, mode="json"))
-    ).hexdigest()
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            canonical_json_bytes(reference.model_dump(by_alias=True, mode="json"))
+        ).hexdigest()
+    )
 
 
 def _text_digest(value: str) -> str:

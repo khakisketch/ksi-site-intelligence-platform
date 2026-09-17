@@ -27,6 +27,11 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalRelativeVolumeMeasurementPayloadV1,
     ExternalRelativeVolumeRequestV1,
 )
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeExecutionPolicyV1,
+    ExternalSingleVolumeMeasurementPayloadV1,
+    ExternalSingleVolumeRequestV1,
+)
 from ksi_event_contracts.inspector_execution_manifest import InspectorExecutionManifestV1
 from pydantic import ConfigDict, Field, StrictInt, ValidationError, field_validator
 
@@ -42,6 +47,7 @@ from ksi_processing_controller.external_measurement_result import (
     CheckpointAggregateV2,
     MeasurementResultV2,
     RelativeVolumeAggregateV2,
+    SingleVolumeAggregateV2,
 )
 from ksi_processing_controller.external_object_streams import ExternalObjectCapabilityV1
 from ksi_processing_controller.external_validation_core_client import (
@@ -49,9 +55,14 @@ from ksi_processing_controller.external_validation_core_client import (
     ExternalValidationCoreClient,
 )
 
-MeasurementOperationV2 = Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME"]
+MeasurementOperationV2 = Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME", "SINGLE_VOLUME"]
 _EVIDENCE_BASE = "/v1/internal/external-validation/evidence-validations"
 _VOLUME_BASE = "/v1/internal/external-validation/relative-volumes"
+_SINGLE_VOLUME_BASE = "/v1/internal/external-validation/single-volumes"
+_VOLUME_BASES: dict[str, str] = {
+    "RELATIVE_VOLUME": _VOLUME_BASE,
+    "SINGLE_VOLUME": _SINGLE_VOLUME_BASE,
+}
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}\Z")
 _FAILURE_REASON = re.compile(r"[A-Z][A-Z0-9_]{0,127}\Z")
 _MAX_CACHE_KEYS = 32
@@ -163,6 +174,20 @@ class _VolumeInputResponse(_Wire):
     detail: str | None = None
 
 
+class _SingleVolumeWorkerInput(_Wire):
+    request: ExternalSingleVolumeRequestV1
+    execution_policy: ExternalSingleVolumeExecutionPolicyV1
+    validation_policy: ExternalValidationPolicyV1
+    evidence_record: ExternalEvidenceRecordV1
+    inputs: tuple[_CapabilityWire, _CapabilityWire]
+
+
+class _SingleVolumeInputResponse(_Wire):
+    verdict: Literal["INPUT_READY"]
+    input: _SingleVolumeWorkerInput
+    detail: str | None = None
+
+
 class _EvidenceInputResponse(_Wire):
     verdict: Literal["LEASED"]
     request: ExternalEvidenceValidationRequestV1
@@ -254,7 +279,7 @@ def _aware(value: datetime) -> datetime:
 
 
 def _operation(value: str) -> MeasurementOperationV2:
-    if value not in {"CHECKPOINT_VALIDATION", "RELATIVE_VOLUME"}:
+    if value not in {"CHECKPOINT_VALIDATION", "RELATIVE_VOLUME", "SINGLE_VOLUME"}:
         raise ExternalMeasurementCoreClientError("INVALID_MEASUREMENT_OPERATION")
     return cast(MeasurementOperationV2, value)
 
@@ -422,9 +447,10 @@ class ExternalMeasurementCoreClient:
                     )
                     for item in evidence_items
                 )
+            base = _VOLUME_BASES[operation]
             volume_items = _PendingList.model_validate(
                 self._request(
-                    "GET", f"{_VOLUME_BASE}?limit={limit}", deadline_monotonic=deadline_monotonic
+                    "GET", f"{base}?limit={limit}", deadline_monotonic=deadline_monotonic
                 )
             ).items
             return tuple(
@@ -467,7 +493,7 @@ class ExternalMeasurementCoreClient:
                 volume_response = _VolumeLeaseResponse.model_validate(
                     self._request(
                         "POST",
-                        f"{_VOLUME_BASE}/{request_id}/lease",
+                        f"{_VOLUME_BASES[operation]}/{request_id}/lease",
                         deadline_monotonic=deadline_monotonic,
                         body={
                             "workerInstanceId": worker_instance_id,
@@ -528,7 +554,7 @@ class ExternalMeasurementCoreClient:
                 volume_response = _VolumeLeaseResponse.model_validate(
                     self._request(
                         "POST",
-                        f"{_VOLUME_BASE}/{request_id}/heartbeat",
+                        f"{_VOLUME_BASES[operation]}/{request_id}/heartbeat",
                         deadline_monotonic=deadline_monotonic,
                         body={
                             "workerInstanceId": fence.worker_instance_id,
@@ -588,6 +614,18 @@ class ExternalMeasurementCoreClient:
                     )
                 )
                 launch, capabilities = self._checkpoint_launch(evidence_body, fence, attempt_nonce)
+            elif operation == "SINGLE_VOLUME":
+                single_body = _SingleVolumeInputResponse.model_validate(
+                    self._request(
+                        "GET",
+                        f"{_SINGLE_VOLUME_BASE}/{request_id}/input",
+                        deadline_monotonic=deadline_monotonic,
+                        headers=_fence_headers(fence),
+                    )
+                )
+                launch, capabilities = self._single_volume_launch(
+                    single_body, fence, attempt_nonce
+                )
             else:
                 volume_body = _VolumeInputResponse.model_validate(
                     self._request(
@@ -715,11 +753,18 @@ class ExternalMeasurementCoreClient:
                     evidence_terminal, launch, checkpoint_payload
                 )
             else:
-                volume_payload = self._volume_payload(launch, result)
+                volume_payload: (
+                    ExternalRelativeVolumeMeasurementPayloadV1
+                    | ExternalSingleVolumeMeasurementPayloadV1
+                ) = (
+                    self._single_volume_payload(launch, result)
+                    if launch.operation == "SINGLE_VOLUME"
+                    else self._volume_payload(launch, result)
+                )
                 computed_at_wire = computed_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
                 response = self._request(
                     "POST",
-                    f"{_VOLUME_BASE}/{launch.request_id}/report",
+                    f"{_VOLUME_BASES[launch.operation]}/{launch.request_id}/report",
                     deadline_monotonic=deadline_monotonic,
                     headers=_fence_headers(launch.fence),
                     body={
@@ -795,7 +840,7 @@ class ExternalMeasurementCoreClient:
             else:
                 response = self._request(
                     "POST",
-                    f"{_VOLUME_BASE}/{request_id}/incomplete-failure",
+                    f"{_VOLUME_BASES[operation]}/{request_id}/incomplete-failure",
                     deadline_monotonic=deadline_monotonic,
                     headers=_fence_headers(fence),
                     body={"reason": reason},
@@ -831,7 +876,11 @@ class ExternalMeasurementCoreClient:
     def _require_volume_report_terminal(
         terminal: _VolumeReportedTerminalResponse, launch: MeasurementLaunchRequestV2
     ) -> None:
-        request = launch.volume_request
+        request: ExternalRelativeVolumeRequestV1 | ExternalSingleVolumeRequestV1 | None = (
+            launch.single_volume_request
+            if launch.operation == "SINGLE_VOLUME"
+            else launch.volume_request
+        )
         returned = terminal.request
         if (
             request is None
@@ -896,6 +945,79 @@ class ExternalMeasurementCoreClient:
         ).sealed()
         return launch, ExternalMeasurementCoreClient._capabilities_for(
             launch.inputs, material.inputs
+        )
+
+    @staticmethod
+    def _single_volume_launch(
+        body: _SingleVolumeInputResponse, fence: LocalLeaseFenceV1, attempt_nonce: str
+    ) -> tuple[MeasurementLaunchRequestV2, tuple[ExternalObjectCapabilityV1, ...]]:
+        material = body.input
+        request = material.request
+        by_role = {capability.role: capability for capability in material.inputs}
+        evidence = by_role.get("CHECKPOINT_CSV")
+        if (
+            set(by_role) != {"TARGET_DSM", "CHECKPOINT_CSV"}
+            or evidence is None
+            or evidence.artifact_id is None
+            or evidence.observed_sha256 is None
+            or evidence.observed_size_bytes is None
+        ):
+            raise ExternalMeasurementCoreClientError("INPUT_BINDING_MISMATCH")
+        inputs = (
+            MeasurementInputV2(
+                role="TARGET_DSM",
+                artifact_id=request.target.dsm_artifact_id,
+                observed_sha256=request.target.observed_sha256,
+                observed_size_bytes=request.target.observed_size_bytes,
+            ),
+            MeasurementInputV2(
+                role="CHECKPOINT_CSV",
+                artifact_id=evidence.artifact_id,
+                observed_sha256=evidence.observed_sha256,
+                observed_size_bytes=evidence.observed_size_bytes,
+            ),
+        )
+        launch = MeasurementLaunchRequestV2(
+            operation="SINGLE_VOLUME",
+            inputs=inputs,
+            validation_policy=material.validation_policy,
+            checkpoint_request=None,
+            evidence_context=None,
+            volume_request=None,
+            volume_execution_policy=None,
+            volume_evidence_records=(material.evidence_record,),
+            single_volume_request=request,
+            single_volume_execution_policy=material.execution_policy,
+            fence=fence,
+            attempt_nonce=attempt_nonce,
+        ).sealed()
+        return launch, ExternalMeasurementCoreClient._capabilities_for(
+            launch.inputs, material.inputs
+        )
+
+    @staticmethod
+    def _single_volume_payload(
+        launch: MeasurementLaunchRequestV2, result: MeasurementResultV2
+    ) -> ExternalSingleVolumeMeasurementPayloadV1:
+        request = launch.single_volume_request
+        execution = launch.single_volume_execution_policy
+        if (
+            request is None
+            or execution is None
+            or not isinstance(result.aggregate, SingleVolumeAggregateV2)
+            or request.request_digest is None
+            or execution.policy_digest is None
+        ):
+            raise ExternalMeasurementCoreClientError("RESULT_BINDING_MISMATCH")
+        return ExternalSingleVolumeMeasurementPayloadV1(
+            request_digest=request.request_digest,
+            decision_digest=request.decision_digest,
+            target_dsm_digest=request.target.observed_sha256,
+            zone_snapshot_digest=request.zone_snapshot.canonical_digest(),
+            execution_policy_digest=execution.policy_digest,
+            algorithm_build_digest=launch.execution_manifest_digest,
+            config_digest=execution.config_digest,
+            metrics=result.aggregate.metrics,
         )
 
     @staticmethod

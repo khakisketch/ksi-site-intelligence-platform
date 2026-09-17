@@ -1550,6 +1550,29 @@ def _run_until_three_lane_evidence_is_complete(
     pytest.fail(f"three-lane evidence did not complete before deadline: {outcomes!r}")
 
 
+class _IdleLane:
+    """An empty external lane; its own queue is exercised by dedicated tests."""
+
+    def __init__(self, lane: ExternalLane) -> None:
+        self.lane = lane
+
+    def poll(self, *, deadline_monotonic: float) -> str | None:
+        del deadline_monotonic
+        return None
+
+    def claim(self, request_id: str, acquisition_id: str, *, deadline_monotonic: float) -> Any:
+        raise AssertionError("idle lane is never claimed")
+
+    def execute(self, lease: Any, *, deadline_monotonic: float, stop: Any) -> Any:
+        raise AssertionError("idle lane is never executed")
+
+    def release(self, lease: Any) -> None:
+        del lease
+
+    def close(self) -> None:
+        return None
+
+
 def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1829,6 +1852,7 @@ def test_single_runner_composes_actual_core_clients_and_real_uds_for_three_lanes
                                                             inspection_lane,
                                                             checkpoint_lane,
                                                             volume_lane,
+                                                            _IdleLane(ExternalLane.SINGLE_VOLUME),
                                                         ),
                                                         policy=RunnerPolicy(
                                                             turn_budget_seconds=20,

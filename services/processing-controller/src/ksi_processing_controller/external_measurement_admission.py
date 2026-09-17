@@ -25,6 +25,7 @@ from ksi_processing_controller.external_measurement_protocol import (
     MeasurementLaunchRequestV2,
     compiled_measurement_backend_profile_digest_v2,
     compiled_measurement_protocol_digest_v2,
+    compiled_single_volume_config_digest_v2,
     compiled_volume_config_digest_v2,
 )
 
@@ -147,6 +148,12 @@ def admit_measurement_manifest(
         and request.volume_execution_policy.config_digest != compiled_volume_config_digest_v2()
     ):
         raise ProtocolViolation("V2 volume algorithm configuration differs")
+    if (
+        request.single_volume_execution_policy is not None
+        and request.single_volume_execution_policy.config_digest
+        != compiled_single_volume_config_digest_v2()
+    ):
+        raise ProtocolViolation("V2 single-volume algorithm configuration differs")
     if request.combined_input_bytes > min(
         limits.max_input_bytes,
         body.hard_ceilings.max_input_bytes,

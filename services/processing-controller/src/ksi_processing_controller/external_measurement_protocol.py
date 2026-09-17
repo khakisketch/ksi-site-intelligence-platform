@@ -26,6 +26,10 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalRelativeVolumeExecutionPolicyV1,
     ExternalRelativeVolumeRequestV1,
 )
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeExecutionPolicyV1,
+    ExternalSingleVolumeRequestV1,
+)
 from pydantic import ConfigDict, Field, StrictInt, StringConstraints, model_validator
 
 from ksi_processing_controller.external_inspector_protocol import (
@@ -49,7 +53,7 @@ class MeasurementInputV2(_CamelModel):
 class MeasurementLaunchRequestV2(_CamelModel):
     model_config = ConfigDict(frozen=True, revalidate_instances="always")
     protocol_version: Literal["external-measurement-launch.v2"] = "external-measurement-launch.v2"
-    operation: Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME"]
+    operation: Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME", "SINGLE_VOLUME"]
     inputs: tuple[MeasurementInputV2, MeasurementInputV2]
     validation_policy: ExternalValidationPolicyV1
     checkpoint_request: ExternalEvidenceValidationRequestV1 | None
@@ -57,6 +61,8 @@ class MeasurementLaunchRequestV2(_CamelModel):
     volume_request: ExternalRelativeVolumeRequestV1 | None
     volume_execution_policy: ExternalRelativeVolumeExecutionPolicyV1 | None
     volume_evidence_records: tuple[ExternalEvidenceRecordV1, ...] = Field(max_length=64)
+    single_volume_request: ExternalSingleVolumeRequestV1 | None = None
+    single_volume_execution_policy: ExternalSingleVolumeExecutionPolicyV1 | None = None
     fence: LocalLeaseFenceV1
     attempt_nonce: Text
     canonical_input_digest: Digest | None = None
@@ -80,8 +86,10 @@ class MeasurementLaunchRequestV2(_CamelModel):
             raise ValueError("secondary spool exceeds private workspace ceiling")
         if self.operation == "CHECKPOINT_VALIDATION":
             self._checkpoint_bindings()
-        else:
+        elif self.operation == "RELATIVE_VOLUME":
             self._volume_bindings()
+        else:
+            self._single_volume_bindings()
         if self.canonical_input_digest is not None and self.canonical_input_digest != self.digest():
             raise ValueError("measurement launch canonical digest differs")
         return self
@@ -94,6 +102,8 @@ class MeasurementLaunchRequestV2(_CamelModel):
             or self.volume_request is not None
             or self.volume_execution_policy is not None
             or self.volume_evidence_records
+            or self.single_volume_request is not None
+            or self.single_volume_execution_policy is not None
         ):
             raise ValueError("checkpoint operation has conflicting request fields")
         if context.context_digest is None or context.context_digest != context.canonical_digest():
@@ -125,6 +135,8 @@ class MeasurementLaunchRequestV2(_CamelModel):
             or execution is None
             or self.checkpoint_request is not None
             or self.evidence_context is not None
+            or self.single_volume_request is not None
+            or self.single_volume_execution_policy is not None
         ):
             raise ValueError("volume operation has conflicting request fields")
         if (
@@ -171,6 +183,48 @@ class MeasurementLaunchRequestV2(_CamelModel):
             ):
                 raise ValueError("volume evidence record differs from its ordered epoch or policy")
 
+    def _single_volume_bindings(self) -> None:
+        request, execution = self.single_volume_request, self.single_volume_execution_policy
+        if (
+            request is None
+            or execution is None
+            or self.checkpoint_request is not None
+            or self.evidence_context is not None
+            or self.volume_request is not None
+            or self.volume_execution_policy is not None
+        ):
+            raise ValueError("single-volume operation has conflicting request fields")
+        policy = self.validation_policy
+        if (
+            request.request_digest is None
+            or execution.policy_digest is None
+            or request.execution_policy_digest != execution.policy_digest
+            or request.validation_policy_digest != policy.policy_digest
+            or execution.resource_envelope_digest != policy.resource_envelope_digest
+        ):
+            raise ValueError("single-volume execution bindings differ")
+        primary, secondary = self.inputs
+        target = request.target
+        if (
+            (primary.role, secondary.role) != ("TARGET_DSM", "CHECKPOINT_CSV")
+            or primary.artifact_id != target.dsm_artifact_id
+            or primary.observed_sha256 != target.observed_sha256
+            or primary.observed_size_bytes != target.observed_size_bytes
+        ):
+            raise ValueError("single-volume input bindings differ")
+        if len(self.volume_evidence_records) != 1:
+            raise ValueError("single-volume uncertainty requires exactly one evidence record")
+        record = self.volume_evidence_records[0]
+        if (
+            record.evidence_record_digest is None
+            or record.evidence_record_digest != record.canonical_digest()
+            or (record.evidence_record_digest,) != request.evidence_record_digests
+            or record.subject_digest != target.subject.canonical_digest()
+            or record.target_dsm_observed_sha256 != target.observed_sha256
+            or record.policy_digest != policy.policy_digest
+        ):
+            raise ValueError("single-volume evidence record differs from its target or policy")
+
     @property
     def combined_input_bytes(self) -> int:
         return sum(binding.observed_size_bytes for binding in self.inputs)
@@ -179,6 +233,8 @@ class MeasurementLaunchRequestV2(_CamelModel):
     def execution_manifest_digest(self) -> str:
         if self.evidence_context is not None:
             return self.evidence_context.measurement_execution_manifest_digest
+        if self.single_volume_execution_policy is not None:
+            return self.single_volume_execution_policy.algorithm_build_digest
         assert self.volume_execution_policy is not None
         return self.volume_execution_policy.algorithm_build_digest
 
@@ -186,6 +242,8 @@ class MeasurementLaunchRequestV2(_CamelModel):
     def request_id(self) -> str:
         if self.checkpoint_request is not None:
             return self.checkpoint_request.validation_id
+        if self.single_volume_request is not None:
+            return self.single_volume_request.request_id
         assert self.volume_request is not None
         return self.volume_request.request_id
 
@@ -275,6 +333,25 @@ def compiled_volume_config_digest_v2() -> str:
     )
 
 
+def compiled_single_volume_config_digest_v2() -> str:
+    return (
+        "sha256:"
+        + hashlib.sha256(
+            canonical_json_bytes(
+                {
+                    "algorithm": "EXTERNAL_SINGLE_EPOCH_BOUNDARY_BASE_VOLUME_V2",
+                    "baseSurface": "BOUNDARY_LINEAR_INTERPOLATION_V1",
+                    "boundary": "FOUR_NEIGHBOUR_ZONE_RING_VALID_SAMPLES",
+                    "zoneCoverage": "FULL_ZONE_CELL_CENTERS_INCLUDING_OUTSIDE_RASTERS",
+                    "cutFill": "ABS_NEGATIVE_AND_POSITIVE_AFTER_POLICY_THRESHOLD",
+                    "uncertainty": "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1",
+                    "secondaryInput": "BOUND_CHECKPOINT_CSV_HASH_VERIFIED_ONLY",
+                }
+            )
+        ).hexdigest()
+    )
+
+
 def compiled_measurement_backend_profile_digest_v2() -> str:
     from ksi_processing_controller.external_geotiff_profile import (
         external_geotiff_profile_digest_v1,
@@ -289,6 +366,7 @@ def compiled_measurement_backend_profile_digest_v2() -> str:
                     "rasterGrammarDigest": external_geotiff_profile_digest_v1(),
                     "checkpointRule": "CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",
                     "volumeConfigDigest": compiled_volume_config_digest_v2(),
+                    "singleVolumeConfigDigest": compiled_single_volume_config_digest_v2(),
                     "hostParser": False,
                     "secondaryHostMount": False,
                 }

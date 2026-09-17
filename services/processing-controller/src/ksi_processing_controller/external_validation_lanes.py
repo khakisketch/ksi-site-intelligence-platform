@@ -648,6 +648,7 @@ class MeasurementValidationLane:
         expected = {
             ExternalLane.CHECKPOINT: "CHECKPOINT_VALIDATION",
             ExternalLane.RELATIVE_VOLUME: "RELATIVE_VOLUME",
+            ExternalLane.SINGLE_VOLUME: "SINGLE_VOLUME",
         }
         if lane not in expected or operation != expected[lane]:
             raise ValueError("measurement lane must retain its fixed Core operation")

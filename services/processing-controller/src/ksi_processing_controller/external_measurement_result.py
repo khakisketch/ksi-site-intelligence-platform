@@ -13,6 +13,7 @@ from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts._base import _CamelModel
 from ksi_event_contracts.external_artifact_validation import Digest
 from ksi_event_contracts.external_relative_volume import ExternalVolumeMetricsV1
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeMetricsV1
 from ksi_event_contracts.inspector_execution_manifest import InspectorExecutionManifestV1
 from pydantic import ConfigDict, Field, StrictFloat, StrictInt
 
@@ -51,8 +52,16 @@ class RelativeVolumeAggregateV2(_CamelModel):
     metrics: ExternalVolumeMetricsV1
 
 
+class SingleVolumeAggregateV2(_CamelModel):
+    model_config = ConfigDict(frozen=True, revalidate_instances="always")
+    metric_type: Literal["SINGLE_VOLUME_AGGREGATE_V2"]
+    zone_id: Text
+    metrics: ExternalSingleVolumeMetricsV1
+
+
 AggregateV2 = Annotated[
-    CheckpointAggregateV2 | RelativeVolumeAggregateV2, Field(discriminator="metric_type")
+    CheckpointAggregateV2 | RelativeVolumeAggregateV2 | SingleVolumeAggregateV2,
+    Field(discriminator="metric_type"),
 ]
 
 
@@ -63,7 +72,7 @@ class MeasurementResultV2(_CamelModel):
     request_id: Text
     attempt_nonce: Text
     canonical_input_digest: Digest
-    operation: Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME"]
+    operation: Literal["CHECKPOINT_VALIDATION", "RELATIVE_VOLUME", "SINGLE_VOLUME"]
     execution_manifest_digest: Digest
     fence: LocalLeaseFenceV1
     inputs: tuple[MeasurementInputV2, MeasurementInputV2]

@@ -27,10 +27,12 @@ from ksi_processing_controller.external_measurement_algorithms import (
     inspect_primary_dsm,
     measure_checkpoint_aggregate,
     measure_relative_volume_aggregate,
+    measure_single_volume_aggregate,
     preflight_checkpoint_measurement_memory,
     preflight_owned_secondary_dsm_memory,
     preflight_primary_dsm_memory,
     preflight_secondary_stream_memory,
+    preflight_single_volume_measurement_memory,
     preflight_volume_measurement_memory,
     verify_owned_secondary_fd,
 )
@@ -211,6 +213,10 @@ def _run_prepared(
                 maximum_checkpoint_count=request.evidence_context.maximum_checkpoint_count,
                 envelope=envelope,
             )
+        elif request.operation == "SINGLE_VOLUME":
+            # The bound checkpoint CSV was hash-verified above; the algorithm
+            # itself reads only the target DSM.
+            preflight_single_volume_measurement_memory(target=primary_memory, envelope=envelope)
         else:
             current_memory = preflight_owned_secondary_dsm_memory(
                 secondary,
@@ -250,6 +256,13 @@ def _run_prepared(
                 request,
                 primary=primary,
                 secondary=secondary,
+                envelope=envelope,
+                watchdog=watchdog,
+            )
+        elif request.operation == "SINGLE_VOLUME":
+            aggregate = measure_single_volume_aggregate(
+                request,
+                primary=primary,
                 envelope=envelope,
                 watchdog=watchdog,
             )
@@ -399,9 +412,7 @@ def _read_control(stream: BinaryIO, limits: MeasurementContainerFrameLimitsV2) -
     if size > limits.maximum_frame_bytes:
         raise MeasurementContainerEntrypointError("measurement control frame exceeds cap")
     try:
-        return decode_measurement_container_frame(
-            header + _read_exact(stream, size), limits=limits
-        )
+        return decode_measurement_container_frame(header + _read_exact(stream, size), limits=limits)
     except MeasurementContainerProtocolViolation as exc:
         raise MeasurementContainerEntrypointError("measurement control frame is invalid") from exc
 

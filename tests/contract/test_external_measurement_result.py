@@ -141,3 +141,118 @@ def test_result_respects_output_cap_even_when_header_cap_is_larger() -> None:
     restricted = limits().model_copy(update={"max_output_bytes": 1})
     with pytest.raises(ProtocolViolation):
         result.canonical_bytes(request=request, manifest=manifest, limits=restricted)
+
+
+def single_volume_aggregate() -> tuple[Any, Any, dict[str, Any]]:
+    import numpy as np
+    from test_external_measurement_protocol import single_volume_manifest_request
+
+    manifest, request = single_volume_manifest_request()
+    assert request.single_volume_request is not None
+    assert request.single_volume_execution_policy is not None
+    assert request.volume_evidence_records[0].measurement_payload is not None
+    rmse = request.volume_evidence_records[0].measurement_payload.rmse_m
+    aggregate = {
+        "metricType": "SINGLE_VOLUME_AGGREGATE_V2",
+        "zoneId": request.single_volume_request.zone_snapshot.work_area_id,
+        "metrics": {
+            "zoneCellCount": 4,
+            "commonValidCellCount": 4,
+            "zoneAreaM2": 4.0,
+            "measuredAreaM2": 4.0,
+            "commonValidFraction": 1.0,
+            "cutM3": 1.0,
+            "fillM3": 5.0,
+            "netM3": 4.0,
+            "thresholdM": request.single_volume_execution_policy.threshold_m,
+            "uncertaintyM3": 4.0 * float(np.hypot(0.02, rmse)),
+            "uncertaintyNote": (
+                "Validated target-epoch checkpoint RMSE and boundary base "
+                "roughness were used."
+            ),
+            "baseRoughnessM": 0.02,
+            "boundaryCellCount": 4,
+            "boundarySampleCount": 4,
+            "boundaryValidFraction": 1.0,
+        },
+    }
+    return manifest, request, aggregate
+
+
+def test_completed_single_volume_roundtrip_binds_operation_and_metrics() -> None:
+    from ksi_processing_controller.external_measurement_container_protocol import (
+        build_completed_frame_v2,
+        build_prepare_frame_v2,
+    )
+    from ksi_processing_controller.external_measurement_result import SingleVolumeAggregateV2
+
+    manifest, request, aggregate = single_volume_aggregate()
+    terminal = build_completed_frame_v2(
+        prepare=build_prepare_frame_v2(request=request, manifest=manifest),
+        input_bindings=[i.model_dump(by_alias=True, mode="json") for i in request.inputs],
+        aggregate=aggregate,
+    )
+    result = build_measurement_result(
+        terminal=terminal, request=request, manifest=manifest, limits=limits()
+    )
+    assert result.operation == "SINGLE_VOLUME"
+    encoded = result.canonical_bytes(request=request, manifest=manifest, limits=limits())
+    decoded = decode_measurement_result(
+        encoded, request=request, manifest=manifest, limits=limits()
+    )
+    assert isinstance(decoded.aggregate, SingleVolumeAggregateV2)
+    assert decoded.aggregate.metric_type == "SINGLE_VOLUME_AGGREGATE_V2"
+    assert decoded.aggregate.metrics.base_roughness_m == 0.02
+    for field, value in (
+        ("netM3", 9.0),
+        ("uncertaintyM3", 0.0),
+        ("thresholdM", 999.0),
+        ("commonValidFraction", 0.1),
+        ("boundaryValidFraction", 0.5),
+    ):
+        body = deepcopy(result.model_dump(by_alias=True, mode="json"))
+        body["aggregate"]["metrics"][field] = value
+        with pytest.raises(ProtocolViolation):
+            decode_measurement_result(
+                canonical_json_bytes(body), request=request, manifest=manifest, limits=limits()
+            )
+
+
+def test_single_volume_result_rejects_metric_type_and_operation_mismatch() -> None:
+    from ksi_processing_controller.external_measurement_container_protocol import (
+        MeasurementContainerProtocolViolation,
+        build_completed_frame_v2,
+        build_prepare_frame_v2,
+    )
+
+    manifest, request, aggregate = single_volume_aggregate()
+    relative = deepcopy(aggregate)
+    relative["metricType"] = "RELATIVE_VOLUME_AGGREGATE_V2"
+    with pytest.raises(MeasurementContainerProtocolViolation):
+        build_completed_frame_v2(
+            prepare=build_prepare_frame_v2(request=request, manifest=manifest),
+            input_bindings=[i.model_dump(by_alias=True, mode="json") for i in request.inputs],
+            aggregate=relative,
+        )
+    terminal = build_completed_frame_v2(
+        prepare=build_prepare_frame_v2(request=request, manifest=manifest),
+        input_bindings=[i.model_dump(by_alias=True, mode="json") for i in request.inputs],
+        aggregate=aggregate,
+    )
+    result = build_measurement_result(
+        terminal=terminal, request=request, manifest=manifest, limits=limits()
+    )
+    body = result.model_dump(by_alias=True, mode="json")
+    body["operation"] = "RELATIVE_VOLUME"
+    with pytest.raises(ProtocolViolation):
+        decode_measurement_result(
+            canonical_json_bytes(body), request=request, manifest=manifest, limits=limits()
+        )
+    volume_manifest, volume_request = measurement_manifest_request()
+    with pytest.raises(ProtocolViolation):
+        decode_measurement_result(
+            result.canonical_bytes(request=request, manifest=manifest, limits=limits()),
+            request=volume_request,
+            manifest=volume_manifest,
+            limits=limits(),
+        )

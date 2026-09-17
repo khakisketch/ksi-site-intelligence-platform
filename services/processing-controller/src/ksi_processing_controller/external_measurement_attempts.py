@@ -68,16 +68,16 @@ class MeasurementAttemptBindingV2:
     secondary_input: MeasurementInputV2
 
     def __post_init__(self) -> None:
-        if self.operation not in {"CHECKPOINT_VALIDATION", "RELATIVE_VOLUME"}:
+        if self.operation not in {"CHECKPOINT_VALIDATION", "RELATIVE_VOLUME", "SINGLE_VOLUME"}:
             raise ValueError("V2 operation is not a measurement")
         if self.algorithm_build_digest != self.execution_manifest_digest:
             raise ValueError("V2 algorithm build must identify its execution manifest")
         primary = MeasurementInputV2.model_validate(self.primary_input.__dict__)
         secondary = MeasurementInputV2.model_validate(self.secondary_input.__dict__)
         expected_roles = (
-            ("TARGET_DSM", "CHECKPOINT_CSV")
-            if self.operation == "CHECKPOINT_VALIDATION"
-            else ("BASELINE_DSM", "CURRENT_DSM")
+            ("BASELINE_DSM", "CURRENT_DSM")
+            if self.operation == "RELATIVE_VOLUME"
+            else ("TARGET_DSM", "CHECKPOINT_CSV")
         )
         if (primary.role, secondary.role) != expected_roles:
             raise ValueError("V2 input roles are not in fixed operation order")

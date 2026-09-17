@@ -66,7 +66,7 @@ def build_validation_worker_graph(
     *,
     core_token: str,
 ) -> _ValidationWorkerGraph:
-    """Assemble exactly the three reviewed external lanes; start no listener or host service."""
+    """Assemble exactly the four reviewed external lanes; start no listener or host service."""
 
     manifest = load_pinned_measurement_manifest(config.measurement)
     validation_core = ExternalValidationCoreClient(
@@ -130,9 +130,17 @@ def build_validation_worker_graph(
             worker_instance_id=config.worker_instance_id,
             dependencies=measurement_dependencies,
         )
+        single_volume = MeasurementValidationLane(
+            lane=ExternalLane.SINGLE_VOLUME,
+            operation="SINGLE_VOLUME",
+            core=measurement_core,
+            worker_instance_id=config.worker_instance_id,
+            dependencies=measurement_dependencies,
+        )
         return _ValidationWorkerGraph(
             runner=ExternalValidationRunner(
-                lanes=(inspection, checkpoint, relative_volume), policy=config.runner_policy
+                lanes=(inspection, checkpoint, relative_volume, single_volume),
+                policy=config.runner_policy,
             ),
             measurement_core=measurement_core,
             validation_core=validation_core,

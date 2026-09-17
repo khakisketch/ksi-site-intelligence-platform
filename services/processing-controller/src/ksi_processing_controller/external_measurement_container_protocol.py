@@ -19,6 +19,7 @@ from typing import Any
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.external_evidence import EvidenceCoreVerdict
 from ksi_event_contracts.external_relative_volume import ExternalVolumeMetricsV1
+from ksi_event_contracts.external_single_volume import ExternalSingleVolumeMetricsV1
 from ksi_event_contracts.inspector_execution_manifest import (
     InspectorExecutionManifestBodyV1,
     InspectorExecutionManifestV1,
@@ -118,7 +119,21 @@ _TERMINAL_FAILURE_REASONS = frozenset(
         "EMPTY_ZONE",
         "OVERSIZED_ZONE",
         "INSUFFICIENT_COMMON_VALID_COVERAGE",
+        "INSUFFICIENT_BOUNDARY_COVERAGE",
+        "BOUNDARY_SAMPLES_INSUFFICIENT",
     }
+)
+_SINGLE_VOLUME_METRIC_FIELDS = _VOLUME_METRIC_FIELDS | {
+    "baseRoughnessM",
+    "boundaryCellCount",
+    "boundarySampleCount",
+    "boundaryValidFraction",
+}
+SINGLE_VOLUME_KNOWN_UNCERTAINTY_NOTE = (
+    "Validated target-epoch checkpoint RMSE and boundary base roughness were used."
+)
+SINGLE_VOLUME_UNKNOWN_UNCERTAINTY_NOTE = (
+    "Independent target-epoch checkpoint RMSE is unavailable; uncertainty is unknown."
 )
 _KNOWN_UNCERTAINTY_NOTE = "Independent validated checkpoint RMSE was used for both epochs."
 _UNKNOWN_UNCERTAINTY_NOTE = "Independent checkpoint RMSE is unavailable for one or both epochs."
@@ -516,8 +531,84 @@ def _require_terminal_aggregate(request: MeasurementLaunchRequestV2, aggregate: 
         raise MeasurementContainerProtocolViolation("terminal aggregate is invalid")
     if request.operation == "CHECKPOINT_VALIDATION":
         _require_checkpoint_aggregate(request, aggregate)
+    elif request.operation == "SINGLE_VOLUME":
+        _require_single_volume_aggregate(request, aggregate)
     else:
         _require_volume_aggregate(request, aggregate)
+
+
+def _require_single_volume_aggregate(
+    request: MeasurementLaunchRequestV2, aggregate: dict[str, Any]
+) -> None:
+    single = request.single_volume_request
+    execution = request.single_volume_execution_policy
+    if (
+        single is None
+        or execution is None
+        or set(aggregate) != _VOLUME_AGGREGATE_FIELDS
+        or aggregate.get("metricType") != "SINGLE_VOLUME_AGGREGATE_V2"
+        or aggregate.get("zoneId") != single.zone_snapshot.work_area_id
+        or type(aggregate.get("metrics")) is not dict
+        or set(aggregate["metrics"]) != _SINGLE_VOLUME_METRIC_FIELDS
+    ):
+        raise MeasurementContainerProtocolViolation("terminal single-volume aggregate is invalid")
+    try:
+        metrics = ExternalSingleVolumeMetricsV1.model_validate(aggregate["metrics"])
+    except (TypeError, ValueError) as exc:
+        raise MeasurementContainerProtocolViolation(
+            "terminal single-volume aggregate is invalid"
+        ) from exc
+    if (
+        metrics.model_dump(by_alias=True, mode="json") != aggregate["metrics"]
+        or metrics.threshold_m != execution.threshold_m
+        or metrics.common_valid_fraction < execution.minimum_common_valid_fraction
+        or metrics.boundary_valid_fraction < execution.minimum_boundary_valid_fraction
+    ):
+        raise MeasurementContainerProtocolViolation(
+            "terminal single-volume aggregate is inconsistent"
+        )
+    rmse = terminal_target_rmse(request)
+    if rmse is None:
+        if (
+            metrics.uncertainty_m3 is not None
+            or metrics.uncertainty_note != SINGLE_VOLUME_UNKNOWN_UNCERTAINTY_NOTE
+        ):
+            raise MeasurementContainerProtocolViolation(
+                "terminal single-volume aggregate is inconsistent"
+            )
+        return
+    expected = metrics.measured_area_m2 * math.hypot(metrics.base_roughness_m, rmse)
+    if (
+        metrics.uncertainty_m3 is None
+        or not math.isclose(metrics.uncertainty_m3, expected, rel_tol=1e-12, abs_tol=1e-12)
+        or metrics.uncertainty_note != SINGLE_VOLUME_KNOWN_UNCERTAINTY_NOTE
+    ):
+        raise MeasurementContainerProtocolViolation(
+            "terminal single-volume aggregate is inconsistent"
+        )
+
+
+def terminal_target_rmse(request: MeasurementLaunchRequestV2) -> float | None:
+    """The one bound target-epoch RMSE, or ``None`` when it is not VALIDATED."""
+    single = request.single_volume_request
+    records = request.volume_evidence_records
+    if single is None or len(records) != 1:
+        raise MeasurementContainerProtocolViolation(
+            "terminal single-volume aggregate is inconsistent"
+        )
+    record = records[0]
+    payload = record.measurement_payload
+    if (
+        record.subject_digest != single.target.subject.canonical_digest()
+        or record.target_dsm_observed_sha256 != single.target.observed_sha256
+        or record.policy_digest != request.validation_policy.policy_digest
+    ):
+        raise MeasurementContainerProtocolViolation(
+            "terminal single-volume aggregate is inconsistent"
+        )
+    if record.core_verdict is not EvidenceCoreVerdict.VALIDATED or payload is None:
+        return None
+    return payload.rmse_m
 
 
 def _require_checkpoint_aggregate(
@@ -527,9 +618,7 @@ def _require_checkpoint_aggregate(
     if context is None or set(aggregate) != _CHECKPOINT_AGGREGATE_FIELDS:
         raise MeasurementContainerProtocolViolation("terminal checkpoint aggregate is invalid")
     count = aggregate.get("measuredCheckpointCount")
-    values = tuple(
-        aggregate[field] for field in ("meanErrorM", "maeM", "rmseM", "maxAbsErrorM")
-    )
+    values = tuple(aggregate[field] for field in ("meanErrorM", "maeM", "rmseM", "maxAbsErrorM"))
     if (
         aggregate.get("metricType") != "CHECKPOINT_VALIDATION_AGGREGATE_V2"
         or type(count) is not int
@@ -567,8 +656,7 @@ def _require_volume_aggregate(
         or metrics.threshold_m != execution.threshold_m
         or execution.uncertainty_method != "INDEPENDENT_EPOCH_RSS_AREA_BOUND_V1"
         or metrics.common_valid_fraction < execution.minimum_common_valid_fraction
-        or metrics.measured_area_m2
-        < metrics.zone_area_m2 * execution.minimum_common_valid_fraction
+        or metrics.measured_area_m2 < metrics.zone_area_m2 * execution.minimum_common_valid_fraction
     ):
         raise MeasurementContainerProtocolViolation("terminal volume aggregate is inconsistent")
     rmses = _terminal_epoch_rmses(request)
@@ -601,9 +689,7 @@ def _terminal_epoch_rmses(request: MeasurementLaunchRequestV2) -> tuple[float, f
     if volume is None or len(records) != 2:
         raise MeasurementContainerProtocolViolation("terminal volume aggregate is inconsistent")
     rmses: list[float] = []
-    for record, binding in zip(
-        records, (volume.baseline, volume.current), strict=True
-    ):
+    for record, binding in zip(records, (volume.baseline, volume.current), strict=True):
         payload = record.measurement_payload
         if (
             record.core_verdict is not EvidenceCoreVerdict.VALIDATED

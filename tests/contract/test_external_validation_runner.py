@@ -2,6 +2,7 @@
 
 import threading
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -82,11 +83,12 @@ def fixture_runner(
 def test_hot_inspection_queue_cannot_starve_evidence_or_volume() -> None:
     runner, lanes, calls = fixture_runner()
     try:
-        assert [runner.run_once() for _ in range(6)] == [TurnOutcome.COMPLETED] * 6
+        rounds = 2 * len(ExternalLane)
+        assert [runner.run_once() for _ in range(rounds)] == [TurnOutcome.COMPLETED] * rounds
         assert [lane for lane, action in calls if action == "execute"] == list(ExternalLane) * 2
     finally:
         runner.close()
-    assert [lane.closed for lane in lanes] == [1, 1, 1]
+    assert [lane.closed for lane in lanes] == [1] * len(ExternalLane)
 
 
 def test_uncertain_claim_retries_same_identity_without_blocking_other_lanes() -> None:
@@ -94,8 +96,8 @@ def test_uncertain_claim_retries_same_identity_without_blocking_other_lanes() ->
     lanes[0].fail_claim_once = True
     try:
         assert runner.run_once() is TurnOutcome.RETRY_PENDING
-        assert runner.run_once() is TurnOutcome.COMPLETED
-        assert runner.run_once() is TurnOutcome.COMPLETED
+        for _ in range(len(ExternalLane) - 1):
+            assert runner.run_once() is TurnOutcome.COMPLETED
         assert runner.run_once() is TurnOutcome.COMPLETED
         assert len(lanes[0].claim_ids) == 2
         assert lanes[0].claim_ids[0] == lanes[0].claim_ids[1]
@@ -110,8 +112,8 @@ def test_expired_uncertain_acquisition_is_not_reissued_with_a_new_identity() -> 
     lanes[0].fail_claim_once = True
     try:
         assert runner.run_once() is TurnOutcome.RETRY_PENDING
-        runner.run_once()
-        runner.run_once()
+        for _ in range(len(ExternalLane) - 1):
+            runner.run_once()
         clock[0] += 3
         assert runner.run_once() is TurnOutcome.DEFERRED
         assert len(lanes[0].claim_ids) == 1
@@ -127,7 +129,7 @@ def test_stop_after_claim_releases_without_execution_and_closes_once() -> None:
     assert (lanes[0].lane, "release") in calls
     runner.close()
     runner.close()
-    assert [lane.closed for lane in lanes] == [1, 1, 1]
+    assert [lane.closed for lane in lanes] == [1] * len(ExternalLane)
     assert runner.run_once() is TurnOutcome.STOPPED
 
 
@@ -172,7 +174,7 @@ def test_close_during_active_execution_cancels_then_closes_every_lane_once() -> 
     assert not thread.is_alive()
     assert results == [TurnOutcome.STOPPED]
     assert (lanes[0].lane, "release") in calls
-    assert [lane.closed for lane in lanes] == [1, 1, 1]
+    assert [lane.closed for lane in lanes] == [1] * len(ExternalLane)
 
 
 def test_cleanup_failure_does_not_replace_primary_execution_failure() -> None:
@@ -206,8 +208,7 @@ def test_base_exception_during_one_lane_close_still_closes_every_owned_lane_once
     with pytest.raises(KeyboardInterrupt):
         runner.close()
 
-    assert lanes[1].closed == 1
-    assert lanes[2].closed == 1
+    assert all(lane.closed == 1 for lane in lanes[1:])
     assert runner.run_once() is TurnOutcome.STOPPED
 
 
@@ -244,3 +245,46 @@ def test_forever_uses_explicit_bounded_failure_backoff_separately_from_idle_back
     cast(Any, runner)._stop = failure_stop
     runner.run_forever()
     assert failure_stop.waits == [0.2]
+
+
+def test_single_volume_lane_has_a_fixed_lane_operation_mapping() -> None:
+    from uuid import uuid4
+
+    from ksi_processing_controller.external_validation_lanes import MeasurementValidationLane
+
+    assert ExternalLane.SINGLE_VOLUME.value == "single-volume"
+    assert len(ExternalLane) == 4
+    with pytest.raises(ValueError, match="fixed Core operation"):
+        MeasurementValidationLane(
+            lane=ExternalLane.SINGLE_VOLUME,
+            operation="RELATIVE_VOLUME",
+            core=None,
+            worker_instance_id=str(uuid4()),
+            dependencies=None,
+        )
+    with pytest.raises(ValueError, match="fixed Core operation"):
+        MeasurementValidationLane(
+            lane=ExternalLane.RELATIVE_VOLUME,
+            operation="SINGLE_VOLUME",
+            core=None,
+            worker_instance_id=str(uuid4()),
+            dependencies=None,
+        )
+
+
+def test_default_worker_graph_includes_the_single_volume_lane(tmp_path: Path) -> None:
+    from ksi_processing_controller.external_validation_worker import (
+        build_validation_worker_graph,
+    )
+    from test_external_validation_worker import _valid_config
+
+    graph = build_validation_worker_graph(
+        _valid_config(tmp_path), core_token="private-worker-token"
+    )
+    try:
+        lanes = graph.runner._lanes  # noqa: SLF001 - assert assembled lane wiring.
+        by_lane = {lane.lane: lane for lane in lanes}
+        assert tuple(by_lane) == tuple(ExternalLane)
+        assert by_lane[ExternalLane.SINGLE_VOLUME]._operation == "SINGLE_VOLUME"  # noqa: SLF001
+    finally:
+        graph.close()

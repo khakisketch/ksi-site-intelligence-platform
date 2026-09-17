@@ -1022,3 +1022,257 @@ def test_actual_entrypoint_process_closes_malformed_frame_bytes(payload: bytes) 
     assert result.returncode == 2
     assert result.stdout == b""
     assert b"Traceback (most recent call last)" not in result.stderr
+
+
+def _single_volume_request(
+    *, primary: Path, checkpoint_csv: bytes
+) -> tuple[InspectorExecutionManifestV1, MeasurementLaunchRequestV2]:
+    """One SINGLE_VOLUME launch: synthetic target DSM plus hash-verified CSV bytes."""
+    from ksi_event_contracts.external_relative_volume import (
+        ExternalVolumeInputBindingV1,
+        ExternalVolumeZoneSnapshotV1,
+    )
+    from ksi_event_contracts.external_single_volume import (
+        ExternalSingleVolumeExecutionPolicyV1,
+        ExternalSingleVolumeRequestV1,
+    )
+    from ksi_processing_controller.external_measurement_protocol import (
+        compiled_single_volume_config_digest_v2,
+    )
+
+    manifest, original = measurement_manifest_request()
+    primary_digest, primary_size, crs_digest, vertical_digest = _observed(primary)
+    policy = original.validation_policy
+    assert policy.policy_digest is not None
+    assert policy.resource_envelope_digest is not None
+    subject = SealedExternalSubjectV1(
+        organization_id="organization-1",
+        site_id="site-1",
+        work_order_id="work-order-1",
+        submission_id="submission-1",
+        revision=1,
+        submission_digest="sha256:" + "a" * 64,
+        manifest_digest="sha256:" + "b" * 64,
+    )
+    zone = ExternalVolumeZoneSnapshotV1(
+        organization_id="organization-1",
+        site_id="site-1",
+        work_area_id="work-area-1",
+        revision=1,
+        polygon={
+            "type": "Polygon",
+            "coordinates": [
+                [
+                    [200_001.0, 499_999.0],
+                    [200_007.0, 499_999.0],
+                    [200_007.0, 499_993.0],
+                    [200_001.0, 499_993.0],
+                    [200_001.0, 499_999.0],
+                ]
+            ],
+        },
+        crs="EPSG:5186",
+        observed_crs_digest=crs_digest,
+        analysis_vertical_reference_digest=vertical_digest,
+    ).sealed()
+    target = ExternalVolumeInputBindingV1(
+        subject=subject,
+        inspection_report_digest="sha256:" + "e" * 64,
+        dsm_artifact_id="target-dsm-1",
+        observed_sha256=primary_digest,
+        observed_size_bytes=primary_size,
+        observed_crs_digest=crs_digest,
+        observed_vertical_reference_digest=vertical_digest,
+        captured_from=_NOW - timedelta(hours=2),
+        captured_to=_NOW - timedelta(hours=1),
+    )
+    execution = ExternalSingleVolumeExecutionPolicyV1(
+        policy_id="single-volume-policy-1",
+        version=1,
+        algorithm_build_digest=manifest.canonical_body_digest(),
+        config_digest=compiled_single_volume_config_digest_v2(),
+        threshold_m=0.0,
+        minimum_common_valid_fraction=1.0,
+        minimum_boundary_valid_fraction=0.5,
+        uncertainty_method="SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1",
+        base_surface_method="BOUNDARY_LINEAR_INTERPOLATION_V1",
+        resource_envelope_digest=policy.resource_envelope_digest,
+        authority_record_digest="sha256:" + "4" * 64,
+        synthetic_test_only=True,
+    ).sealed()
+    assert execution.policy_digest is not None
+    payload = ExternalEvidenceMeasurementPayloadV1(
+        validation_id="validation-single-0",
+        evidence_manifest_digest="sha256:" + "0" * 64,
+        target_dsm_observed_sha256=primary_digest,
+        policy_digest=policy.policy_digest,
+        measured_checkpoint_count=3,
+        mean_error_m=0.0,
+        mae_m=0.05,
+        rmse_m=0.05,
+        max_abs_error_m=0.05,
+        measured_at=_NOW,
+    )
+    record = ExternalEvidenceRecordV1(
+        evidence_record_id="record-single-0",
+        validation_id=payload.validation_id,
+        subject_digest=subject.canonical_digest(),
+        evidence_manifest_digest=payload.evidence_manifest_digest,
+        target_dsm_observed_sha256=primary_digest,
+        policy_digest=policy.policy_digest,
+        measurement_payload=payload,
+        core_verdict=EvidenceCoreVerdict.VALIDATED,
+        core_recorded_at=payload.measured_at,
+    ).sealed()
+    assert record.evidence_record_digest is not None
+    single = ExternalSingleVolumeRequestV1(
+        request_id="external-single-volume-1",
+        current_work_order_id="work-order-1",
+        decision_id="single-volume-decision-1",
+        decision_digest="sha256:" + "5" * 64,
+        target=target,
+        evidence_record_digests=(record.evidence_record_digest,),
+        validation_policy_digest=policy.policy_digest,
+        execution_policy_digest=execution.policy_digest,
+        zone_snapshot=zone,
+        issued_at=_NOW,
+        idempotency_key="single-volume-idempotency-1",
+    ).sealed()
+    request = MeasurementLaunchRequestV2(
+        operation="SINGLE_VOLUME",
+        inputs=(
+            MeasurementInputV2(
+                role="TARGET_DSM",
+                artifact_id=target.dsm_artifact_id,
+                observed_sha256=primary_digest,
+                observed_size_bytes=primary_size,
+            ),
+            MeasurementInputV2(
+                role="CHECKPOINT_CSV",
+                artifact_id="checkpoint-evidence-1",
+                observed_sha256=_digest_bytes(checkpoint_csv),
+                observed_size_bytes=len(checkpoint_csv),
+            ),
+        ),
+        validation_policy=policy,
+        checkpoint_request=None,
+        evidence_context=None,
+        volume_request=None,
+        volume_execution_policy=None,
+        volume_evidence_records=(record,),
+        single_volume_request=single,
+        single_volume_execution_policy=execution,
+        fence=LocalLeaseFenceV1(
+            worker_instance_id=str(uuid4()),
+            lease_acquisition_id=str(uuid4()),
+            lease_generation=1,
+        ),
+        attempt_nonce=str(uuid4()),
+    ).sealed()
+    return manifest, request
+
+
+def _with_single_volume_manifest_memory_ceiling(
+    manifest: InspectorExecutionManifestV1,
+    request: MeasurementLaunchRequestV2,
+    *,
+    max_memory_bytes: int,
+) -> tuple[InspectorExecutionManifestV1, MeasurementLaunchRequestV2]:
+    """Rebind single-volume execution authority to a deliberately smaller ceiling."""
+
+    ceilings = manifest.body.hard_ceilings.model_copy(update={"max_memory_bytes": max_memory_bytes})
+    body = manifest.body.model_copy(update={"hard_ceilings": ceilings})
+    signature = manifest.signature.model_copy(update={"digest": body.canonical_body_digest()})
+    manifest = manifest.model_copy(update={"body": body, "signature": signature})
+    execution = request.single_volume_execution_policy
+    single = request.single_volume_request
+    assert execution is not None and single is not None
+    execution = execution.model_copy(
+        update={"algorithm_build_digest": body.canonical_body_digest(), "policy_digest": None}
+    ).sealed()
+    single = single.model_copy(
+        update={"execution_policy_digest": execution.policy_digest, "request_digest": None}
+    ).sealed()
+    request = request.model_copy(
+        update={
+            "single_volume_execution_policy": execution,
+            "single_volume_request": single,
+            "canonical_input_digest": None,
+        }
+    ).sealed()
+    return manifest, request
+
+
+def test_direct_entrypoint_single_volume_measures_the_known_box_volume(
+    tmp_path: Path,
+) -> None:
+    primary = tmp_path / "target.tif"
+    workspace = tmp_path / "work"
+    workspace.mkdir(mode=0o700)
+    values = np.full((16, 16), 10.0, dtype=np.float32)
+    values[3:5, 3:5] += 3.0
+    _write_compound_dsm(primary, values)
+    checkpoint_csv = (
+        b"checkpoint_id,easting_m,northing_m,elevation_m\n"
+        b"a,200001.5,499998.5,10\n"
+    )
+    manifest, request = _single_volume_request(primary=primary, checkpoint_csv=checkpoint_csv)
+
+    frames = _run(
+        manifest=manifest,
+        request=request,
+        primary=primary,
+        secondary=checkpoint_csv,
+        workspace=workspace,
+    )
+
+    assert [frame["frame"] for frame in frames] == [
+        "SECONDARY_STAGED",
+        "PRIMARY_MOUNT_VERIFIED",
+        "COMPLETED",
+    ]
+    aggregate = cast(dict[str, Any], frames[-1]["aggregate"])
+    assert aggregate["metricType"] == "SINGLE_VOLUME_AGGREGATE_V2"
+    metrics = cast(dict[str, Any], aggregate["metrics"])
+    assert metrics["zoneCellCount"] == 36
+    assert metrics["boundaryCellCount"] == 20
+    assert metrics["boundarySampleCount"] == 20
+    assert metrics["fillM3"] == pytest.approx(12.0)
+    assert metrics["cutM3"] == pytest.approx(0.0)
+    assert metrics["netM3"] == pytest.approx(12.0)
+    assert metrics["baseRoughnessM"] == pytest.approx(0.0, abs=1e-9)
+    assert metrics["uncertaintyM3"] == pytest.approx(36.0 * 0.05)
+    assert metrics["uncertaintyNote"] == (
+        "Validated target-epoch checkpoint RMSE and boundary base roughness were used."
+    )
+    assert not list(workspace.iterdir())
+
+
+def test_manifest_memory_ceiling_blocks_single_volume_before_zone_allocation(
+    tmp_path: Path,
+) -> None:
+    primary = tmp_path / "target.tif"
+    workspace = tmp_path / "work"
+    workspace.mkdir(mode=0o700)
+    values = np.full((16, 16), 10.0, dtype=np.float32)
+    values[3:5, 3:5] += 3.0
+    _write_compound_dsm(primary, values)
+    checkpoint_csv = (
+        b"checkpoint_id,easting_m,northing_m,elevation_m\n"
+        b"a,200001.5,499998.5,10\n"
+    )
+    manifest, request = _single_volume_request(primary=primary, checkpoint_csv=checkpoint_csv)
+    manifest, request = _with_single_volume_manifest_memory_ceiling(
+        manifest, request, max_memory_bytes=1
+    )
+
+    frames = _run(
+        manifest=manifest,
+        request=request,
+        primary=primary,
+        secondary=checkpoint_csv,
+        workspace=workspace,
+    )
+
+    assert frames[-1]["frame"] == "FAILED"
+    assert frames[-1]["reason"] == "RESOURCE_LIMIT_EXCEEDED"
