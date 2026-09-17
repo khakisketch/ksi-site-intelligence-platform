@@ -66,7 +66,9 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
         <div>
           <p className="text-[14px] font-bold">{workAreaName ?? "작업구역"} · {formatKoreanDateTime(result.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</p>
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 {formatKoreanDateTime(result.baselineCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.baselineCapturedTo, { dateStyle: "short", timeStyle: "short" })} → 현재 {formatKoreanDateTime(result.currentCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.currentCapturedTo, { dateStyle: "short", timeStyle: "short" })}</p>
+          {/* baselineCapturedFrom/To 는 SINGLE_VOLUME 결과에서 null 이다 — 이 이력 카드는 아직
+              RELATIVE_VOLUME 표시만 다룬다(타입만 nullable 로 넓어짐, SV-3 Task 5 가 계열별 표시를 맡는다). */}
+          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 {formatKoreanDateTime(result.baselineCapturedFrom!, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.baselineCapturedTo!, { dateStyle: "short", timeStyle: "short" })} → 현재 {formatKoreanDateTime(result.currentCapturedFrom, { dateStyle: "short", timeStyle: "short" })}–{formatKoreanDateTime(result.currentCapturedTo, { dateStyle: "short", timeStyle: "short" })}</p>
         </div>
         <div className="flex flex-wrap items-start gap-2"><CopyLink href={exactHref} /><Link className="btn print:hidden" href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}`}>작업 관리</Link><Link className="btn print:hidden" href={`/sites/${encodeURIComponent(siteId)}/observations/new?repeatReportRef=${encodeURIComponent(item.reportRef)}`}>이 범위로 새 관측</Link>{!detailMode && <Link className="btn btn-primary print:hidden" href={exactHref}>상세 보기</Link>}</div>
       </div>

@@ -230,6 +230,9 @@ export function sealExternalEvidence(workOrderId: string, submissionRef: string,
 export function requestExternalSingleUseDecision(workOrderId: string, submissionRef: string, revision: number, use: "DISPLAY" | "HEIGHT", idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/single`, { method: "POST", body: { use }, headers: { "Idempotency-Key": idempotencyKey } });
 }
+export function requestExternalSingleVolumeDecision(workOrderId: string, submissionRef: string, revision: number, zoneId: string, idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
+  return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/single-volume`, { method: "POST", body: { zoneId }, headers: { "Idempotency-Key": idempotencyKey } });
+}
 export function requestExternalPairUseDecision(workOrderId: string, submissionRef: string, revision: number, intent: { use: "VISUAL_COMPARISON" | "RELATIVE_VOLUME"; baselineWorkOrderId: string; baselineSubmissionRef: string; baselineRevision: number; zoneId?: string | null }, idempotencyKey: string): Promise<{ decision: ExternalUseDecision }> {
   return coreFetch(`${decisionBase(workOrderId, submissionRef, revision)}/pair`, { method: "POST", body: intent, headers: { "Idempotency-Key": idempotencyKey } });
 }

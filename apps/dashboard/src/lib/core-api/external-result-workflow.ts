@@ -340,3 +340,136 @@ export function getSiteExternalRelativeVolumeReport(
     `/v1/sites/${encodeURIComponent(siteId)}/observations/${encodeURIComponent(reportRef)}`,
   );
 }
+
+// ── SINGLE_VOLUME (single-epoch boundary-base comparison) ──────────────────
+
+const singleRequestBase = (workOrderId: string) =>
+  `/v1/observation-work-orders/${encodeURIComponent(workOrderId)}/single-volume-requests`;
+
+export function issueExternalSingleVolume(
+  workOrderId: string,
+  decisionRef: string,
+  idempotencyKey: string,
+): Promise<ExternalRelativeVolumeMutation> {
+  return coreFetch(singleRequestBase(workOrderId), {
+    method: "POST",
+    body: { decisionRef },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function listExternalSingleVolumeRequests(
+  workOrderId: string,
+): Promise<ExternalRelativeVolumeRequestView[]> {
+  return (await coreFetch<{ items: ExternalRelativeVolumeRequestView[] }>(singleRequestBase(workOrderId))).items;
+}
+
+export function getExternalSingleVolumeRequest(
+  workOrderId: string,
+  requestRef: string,
+): Promise<ExternalRelativeVolumeRequestView> {
+  return coreFetch(`${singleRequestBase(workOrderId)}/${encodeURIComponent(requestRef)}`);
+}
+
+export type ExternalSingleVolumeMetrics = {
+  zoneCellCount: number;
+  commonValidCellCount: number;
+  zoneAreaM2: number;
+  measuredAreaM2: number;
+  commonValidFraction: number;
+  cutM3: number;
+  fillM3: number;
+  netM3: number;
+  thresholdM: number;
+  uncertaintyM3: number | null;
+  uncertaintyNote: string;
+  baseRoughnessM: number;
+  boundaryCellCount: number;
+  boundarySampleCount: number;
+  boundaryValidFraction: number;
+};
+
+export type ExternalSingleVolumeMeasurementPayload = {
+  factClass: "OBSERVED";
+  requestDigest: string;
+  decisionDigest: string;
+  targetDsmDigest: string;
+  zoneSnapshotDigest: string;
+  executionPolicyDigest: string;
+  algorithmBuildDigest: string;
+  configDigest: string;
+  metrics: ExternalSingleVolumeMetrics;
+};
+
+export type ExternalSingleVolumeRequest = {
+  contractVersion: "external-single-volume-request.v1";
+  requestId: string;
+  currentWorkOrderId: string;
+  decisionId: string;
+  decisionDigest: string;
+  target: ExternalVolumeInputBinding;
+  evidenceRecordDigests: string[];
+  validationPolicyDigest: string;
+  executionPolicyDigest: string;
+  zoneSnapshot: ExternalVolumeZoneSnapshot;
+  issuedAt: string;
+  idempotencyKey: string;
+  requestDigest: string | null;
+};
+
+export type ExternalSingleVolumeReport = {
+  contractVersion: "external-single-volume-report.v1";
+  reportId: string;
+  requestId: string;
+  requestDigest: string;
+  payload: ExternalSingleVolumeMeasurementPayload;
+  measurementPayloadDigest: string | null;
+  workerInstanceId: string;
+  leaseAcquisitionId: string;
+  leaseGeneration: number;
+  computedAt: string;
+  reportedAt: string;
+  reportDigest: string | null;
+};
+
+export type ExternalSingleVolumeExecutionPolicy = {
+  contractVersion: "external-single-volume-execution-policy.v1";
+  policyId: string;
+  version: number;
+  algorithmBuildDigest: string;
+  configDigest: string;
+  thresholdM: number;
+  minimumCommonValidFraction: number;
+  minimumBoundaryValidFraction: number;
+  uncertaintyMethod: "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1";
+  baseSurfaceMethod: "BOUNDARY_LINEAR_INTERPOLATION_V1";
+  resourceEnvelopeDigest: string;
+  authorityRecordDigest: string;
+  syntheticTestOnly: boolean;
+  policyDigest: string | null;
+};
+
+export type ExternalSingleVolumeReportView = {
+  request: ExternalSingleVolumeRequest;
+  report: ExternalSingleVolumeReport;
+  executionPolicy: ExternalSingleVolumeExecutionPolicy;
+};
+
+export function getExternalSingleVolumeReport(
+  reportRef: string,
+): Promise<ExternalSingleVolumeReportView> {
+  return coreFetch(`/v1/external-single-volume-reports/${encodeURIComponent(reportRef)}`);
+}
+
+/** Merged newest-first history across both external volume families; `result.kind` distinguishes rows. */
+export type ExternalVolumeHistoryItem = ExternalRelativeVolumeHistoryItem;
+
+export function listSiteExternalVolumeHistory(
+  siteId: string,
+  options: { after?: string; limit?: number } = {},
+): Promise<ExternalRelativeVolumeHistory> {
+  return coreFetch<ExternalRelativeVolumeHistory>(
+    `/v1/sites/${encodeURIComponent(siteId)}/external-volume-reports`,
+    { query: { after: options.after, limit: options.limit } },
+  );
+}

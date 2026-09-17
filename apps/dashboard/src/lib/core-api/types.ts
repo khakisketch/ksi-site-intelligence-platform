@@ -838,14 +838,14 @@ export interface ExternalResultExecutionPolicyView {
 }
 
 export interface ExternalResultSummaryView {
-  kind?: string;
+  kind?: "EXTERNAL_RELATIVE_VOLUME" | "EXTERNAL_SINGLE_VOLUME";
   reportRef: string;
   reportDigest: string;
   requestRef: string;
   requestDigest: string;
   sourceWorkOrderId: string;
   currentWorkOrderId: string;
-  baselineWorkOrderId: string;
+  baselineWorkOrderId: string | null;
   decisionId: string;
   decisionDigest: string;
   workAreaId: string;
@@ -853,8 +853,8 @@ export interface ExternalResultSummaryView {
   crs: string;
   observedCrsDigest: string;
   verticalReferenceDigest: string;
-  baselineCapturedFrom: string;
-  baselineCapturedTo: string;
+  baselineCapturedFrom: string | null;
+  baselineCapturedTo: string | null;
   currentCapturedFrom: string;
   currentCapturedTo: string;
   reportedAt: string;

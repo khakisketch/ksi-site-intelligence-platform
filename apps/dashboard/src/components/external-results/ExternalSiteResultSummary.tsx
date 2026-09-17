@@ -97,7 +97,9 @@ export function ExternalSiteResultSummary({
         <div className="min-w-0">
           <h3 className="text-[15px] font-bold tracking-tight break-keep">외부 관측 비교 결과</h3>
           <p className="mt-1 text-[13px] leading-5 break-keep text-ink-2">
-            작업구역 {workAreaName ?? result.workAreaId} · {observationRange(result.baselineCapturedFrom, result.baselineCapturedTo)}와 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}를 비교했습니다.
+            {/* baselineCapturedFrom/To 는 SINGLE_VOLUME 결과에서 null 이다 — 이 요약 카드는 아직
+                RELATIVE_VOLUME 표시만 다룬다(타입만 nullable 로 넓어짐, SV-3 Task 5 가 계열별 표시를 맡는다). */}
+            작업구역 {workAreaName ?? result.workAreaId} · {observationRange(result.baselineCapturedFrom!, result.baselineCapturedTo!)}와 {observationRange(result.currentCapturedFrom, result.currentCapturedTo)}를 비교했습니다.
           </p>
         </div>
         <StateBadge label={measurement.label} tone={measurement.tone} />

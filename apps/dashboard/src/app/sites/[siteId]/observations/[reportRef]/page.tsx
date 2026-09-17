@@ -151,7 +151,9 @@ export default async function SiteObservationDetailPage({
     />}
     {projection !== null && <ExternalReportFollowupTrace
       reportRef={reportRef}
-      baselineWorkOrderId={projection.baselineWorkOrderId}
+      // baselineWorkOrderId 는 SINGLE_VOLUME 결과에서 null 이다 — 이 페이지는 relative-volume
+      // 조회 함수로 얻은 projection 만 다루므로 항상 채워져 있다(타입만 nullable 로 넓어짐).
+      baselineWorkOrderId={projection.baselineWorkOrderId!}
       currentWorkOrderId={projection.currentWorkOrderId}
       successors={successors}
     />}
