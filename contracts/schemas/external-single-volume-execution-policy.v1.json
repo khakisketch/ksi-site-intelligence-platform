@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-single-volume-execution-policy.v1.json",
+  "title": "External Single Volume Execution Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "policyId",
+    "version",
+    "algorithmBuildDigest",
+    "configDigest",
+    "thresholdM",
+    "minimumCommonValidFraction",
+    "minimumBoundaryValidFraction",
+    "uncertaintyMethod",
+    "baseSurfaceMethod",
+    "resourceEnvelopeDigest",
+    "authorityRecordDigest",
+    "syntheticTestOnly",
+    "policyDigest"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "external-single-volume-execution-policy.v1"
+    },
+    "policyId": {
+      "$ref": "#/$defs/text"
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "algorithmBuildDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "configDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "thresholdM": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1e+300
+    },
+    "minimumCommonValidFraction": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    },
+    "uncertaintyMethod": {
+      "const": "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1"
+    },
+    "resourceEnvelopeDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "authorityRecordDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "syntheticTestOnly": {
+      "type": "boolean"
+    },
+    "policyDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "baseSurfaceMethod": {
+      "const": "BOUNDARY_LINEAR_INTERPOLATION_V1"
+    },
+    "minimumBoundaryValidFraction": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    }
+  }
+}

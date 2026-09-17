@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-single-volume-request.v1.json",
+  "title": "External Single Volume Request v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion",
+    "requestId",
+    "currentWorkOrderId",
+    "decisionId",
+    "decisionDigest",
+    "target",
+    "evidenceRecordDigests",
+    "validationPolicyDigest",
+    "executionPolicyDigest",
+    "zoneSnapshot",
+    "issuedAt",
+    "idempotencyKey",
+    "requestDigest"
+  ],
+  "properties": {
+    "contractVersion": {
+      "const": "external-single-volume-request.v1"
+    },
+    "requestId": {
+      "$ref": "#/$defs/text"
+    },
+    "currentWorkOrderId": {
+      "$ref": "#/$defs/text"
+    },
+    "decisionId": {
+      "$ref": "#/$defs/text"
+    },
+    "decisionDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "target": {
+      "$ref": "#/$defs/inputBinding"
+    },
+    "evidenceRecordDigests": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "$ref": "#/$defs/digest"
+      }
+    },
+    "validationPolicyDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "executionPolicyDigest": {
+      "$ref": "#/$defs/digest"
+    },
+    "zoneSnapshot": {
+      "$ref": "#/$defs/zoneSnapshot"
+    },
+    "issuedAt": {
+      "$ref": "#/$defs/utcDateTime"
+    },
+    "idempotencyKey": {
+      "$ref": "#/$defs/text"
+    },
+    "requestDigest": {
+      "$ref": "#/$defs/digest"
+    }
+  },
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "utcDateTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|\\+00:00)$",
+      "$comment": "The pattern enforces UTC RFC3339 lexical form. Draft 2020-12 format is annotation unless a consumer enables a format assertion; canonical Pydantic contracts parse calendar semantics and UTC offset."
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "properties": {
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "workOrderId": {
+          "$ref": "#/$defs/text"
+        },
+        "submissionId": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "submissionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "manifestDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "inputBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "subject",
+        "inspectionReportDigest",
+        "dsmArtifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "observedCrsDigest",
+        "observedVerticalReferenceDigest",
+        "capturedFrom",
+        "capturedTo"
+      ],
+      "properties": {
+        "subject": {
+          "$ref": "#/$defs/subject"
+        },
+        "inspectionReportDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "dsmArtifactId": {
+          "$ref": "#/$defs/text"
+        },
+        "observedSha256": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedSizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "observedCrsDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "observedVerticalReferenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "capturedFrom": {
+          "$ref": "#/$defs/utcDateTime"
+        },
+        "capturedTo": {
+          "$ref": "#/$defs/utcDateTime"
+        }
+      }
+    },
+    "position": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "number",
+        "minimum": -1e+300,
+        "maximum": 1e+300
+      }
+    },
+    "ring": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/position"
+      }
+    },
+    "polygon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "coordinates"
+      ],
+      "properties": {
+        "type": {
+          "const": "Polygon"
+        },
+        "coordinates": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/ring"
+          }
+        }
+      }
+    },
+    "zoneSnapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "revision",
+        "polygon",
+        "crs",
+        "observedCrsDigest",
+        "analysisVerticalReferenceDigest",
+        "definitionDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-volume-zone-snapshot.v1"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "workAreaId": {
+          "$ref": "#/$defs/text"
+        },
+        "revision": {
+          "const": 1
+        },
+        "polygon": {
+          "$ref": "#/$defs/polygon"
+        },
+        "crs": {
+          "$ref": "#/$defs/text"
+        },
+        "observedCrsDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "analysisVerticalReferenceDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "definitionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}
