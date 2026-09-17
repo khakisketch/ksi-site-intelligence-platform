@@ -84,6 +84,10 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalVolumeMetricsV1,
     ExternalVolumeZoneSnapshotV1,
 )
+from ksi_event_contracts.external_single_volume import (
+    ExternalSingleVolumeMeasurementPayloadV1,
+    ExternalSingleVolumeMetricsV1,
+)
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_mission_contracts.models import SiteFrame
 
@@ -401,6 +405,30 @@ def _workflow_material(
                 "maximumZoneAreaM2": 1_000_000.0,
             }
         ],
+        "singleExecutionTemplates": [
+            {
+                "executionPolicy": {
+                    "contractVersion": "external-single-volume-execution-policy.v1",
+                    "policyId": "single-policy-a",
+                    "version": 1,
+                    "algorithmBuildDigest": _digest("single-algorithm"),
+                    "configDigest": _digest("single-config"),
+                    "thresholdM": 0.0,
+                    "minimumCommonValidFraction": 0.8,
+                    "minimumBoundaryValidFraction": 0.5,
+                    "uncertaintyMethod": "SINGLE_EPOCH_BOUNDARY_BASE_RSS_AREA_BOUND_V1",
+                    "baseSurfaceMethod": "BOUNDARY_LINEAR_INTERPOLATION_V1",
+                    "resourceEnvelopeDigest": envelope.resource_envelope_digest,
+                    "authorityRecordDigest": _digest("placeholder"),
+                    "syntheticTestOnly": False,
+                },
+                "authorizedActorIds": ["operator-a", "worker-principal"],
+                "validFrom": (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+                "validUntil": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+                "maximumZoneCellCount": 10_000,
+                "maximumZoneAreaM2": 1_000_000.0,
+            }
+        ],
     }
     provisional = {
         "version": "external-quantitative-catalog.v1",
@@ -417,6 +445,9 @@ def _workflow_material(
     ).sealed()
     assert authority.digest is not None
     body["executionTemplates"][0]["executionPolicy"]["authorityRecordDigest"] = authority.digest
+    body["singleExecutionTemplates"][0]["executionPolicy"]["authorityRecordDigest"] = (
+        authority.digest
+    )
     catalog = {
         "version": "external-quantitative-catalog.v1",
         "authorityRecordDigest": authority.digest,
@@ -660,6 +691,17 @@ def _assemble(
 
 
 _OPERATOR_TOKEN = "single-volume-operator"  # noqa: S105 - deterministic test token
+_WORKER_TOKEN = "single-volume-worker"  # noqa: S105 - deterministic test token
+
+
+def _worker_principal() -> Principal:
+    return Principal(
+        principal_id="worker-principal",
+        kind=PrincipalKind.PROCESSING_WORKER,
+        role=None,
+        device_id=None,
+        organization_id="org-a",
+    )
 
 
 def _operator_registry() -> AuthRegistry:
@@ -668,7 +710,11 @@ def _operator_registry() -> AuthRegistry:
             PrincipalTokenRecord(
                 token_sha256=hashlib.sha256(_OPERATOR_TOKEN.encode()).hexdigest(),
                 principal=_principal(),
-            )
+            ),
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(_WORKER_TOKEN.encode()).hexdigest(),
+                principal=_worker_principal(),
+            ),
         ]
     )
 
@@ -2074,6 +2120,112 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             now=active_now,
         )
         assert execution is not None
+        single_client = TestClient(app)
+        single_issue = single_client.post(
+            f"/v1/observation-work-orders/{current_order.work_order_id}/single-volume-requests",
+            headers={
+                "Authorization": f"Bearer {_OPERATOR_TOKEN}",
+                "Idempotency-Key": "signed-provider-single-volume-issue",
+            },
+            json={"decisionRef": single_decision["decisionId"]},
+        )
+        assert single_issue.status_code == 201, single_issue.text
+        assert single_issue.json()["verdict"] == "ISSUED", single_issue.text
+        single_request_ref = single_issue.json()["request"]["requestRef"]
+        assert single_request_ref.startswith("external-single-volume-")
+        single_store = app.state.external_single_volume_store
+        single_issued_record = single_store.get(single_request_ref, organization_id="org-a")
+        assert single_issued_record is not None
+        single_claimed = single_store.claim(
+            single_request_ref,
+            organization_id="org-a",
+            principal_id="worker-principal",
+            fence=LeaseFence(str(uuid4()), str(uuid4()), 0),
+            now=single_issued_record.issued_at,
+        )
+        assert single_claimed.verdict is ExternalRelativeVolumeVerdict.LEASED
+        assert single_claimed.fence is not None and single_claimed.record is not None
+        single_fence = single_claimed.fence
+        single_fence_headers = {
+            "X-KSI-Worker-Instance-Id": single_fence.worker_instance_id,
+            "X-KSI-Lease-Acquisition-Id": single_fence.lease_acquisition_id,
+            "X-KSI-Lease-Generation": str(single_fence.lease_generation),
+        }
+        single_worker_input = single_client.get(
+            f"/v1/internal/external-validation/single-volumes/{single_request_ref}/input",
+            headers={"Authorization": f"Bearer {_WORKER_TOKEN}", **single_fence_headers},
+        )
+        assert single_worker_input.status_code == 200, single_worker_input.text
+        assert single_worker_input.json()["verdict"] == "INPUT_READY", single_worker_input.text
+        single_input = single_worker_input.json()["input"]
+        assert single_input["request"]["contractVersion"] == "external-single-volume-request.v1"
+        assert [item["role"] for item in single_input["inputs"]] == [
+            "TARGET_DSM",
+            "CHECKPOINT_CSV",
+        ]
+        assert single_input["evidenceRecord"]["measurementPayload"]["rmseM"] == 0.1
+        assert (
+            single_input["executionPolicy"]["baseSurfaceMethod"]
+            == "BOUNDARY_LINEAR_INTERPOLATION_V1"
+        )
+        assert len(single_input["inputs"]) == 2
+        assert all(item["downloadUrl"] for item in single_input["inputs"])
+        single_record = single_store.get(single_request_ref, organization_id="org-a")
+        assert single_record is not None and single_record.request.request_digest is not None
+        single_authority = single_record.authority
+        assert single_authority.target_rmse_m == 0.1
+        single_measured_area = 40.0
+        single_base_roughness = 0.02
+        assert single_authority.target_rmse_m is not None
+        single_uncertainty = single_measured_area * math.hypot(
+            single_base_roughness, single_authority.target_rmse_m
+        )
+        single_metrics = ExternalSingleVolumeMetricsV1(
+            zone_cell_count=40,
+            common_valid_cell_count=40,
+            zone_area_m2=40.0,
+            measured_area_m2=single_measured_area,
+            common_valid_fraction=1.0,
+            cut_m3=0.0,
+            fill_m3=12.0,
+            net_m3=12.0,
+            threshold_m=single_authority.execution_policy.threshold_m,
+            uncertainty_m3=single_uncertainty,
+            uncertainty_note=(
+                "Independent validated checkpoint RMSE was used for the single epoch."
+            ),
+            base_roughness_m=single_base_roughness,
+            boundary_cell_count=20,
+            boundary_sample_count=20,
+            boundary_valid_fraction=1.0,
+        )
+        assert single_metrics.threshold_m == 0.0
+        assert single_metrics.common_valid_fraction >= 0.8
+        assert single_metrics.boundary_valid_fraction >= 0.5
+        assert single_metrics.zone_cell_count <= single_authority.maximum_zone_cell_count
+        assert single_metrics.zone_area_m2 <= single_authority.maximum_zone_area_m2
+        single_payload = ExternalSingleVolumeMeasurementPayloadV1(
+            request_digest=single_record.request.request_digest,
+            decision_digest=single_authority.decision_digest,
+            target_dsm_digest=single_authority.target.observed_sha256,
+            zone_snapshot_digest=single_authority.zone_snapshot.canonical_digest(),
+            execution_policy_digest=single_authority.execution_policy.canonical_digest(),
+            algorithm_build_digest=single_authority.execution_policy.algorithm_build_digest,
+            config_digest=single_authority.execution_policy.config_digest,
+            metrics=single_metrics,
+        )
+        single_report_response = single_client.post(
+            f"/v1/internal/external-validation/single-volumes/{single_request_ref}/report",
+            headers={"Authorization": f"Bearer {_WORKER_TOKEN}", **single_fence_headers},
+            json={
+                "payload": single_payload.model_dump(by_alias=True, mode="json"),
+                "computedAt": single_record.issued_at.isoformat().replace("+00:00", "Z"),
+            },
+        )
+        assert single_report_response.status_code == 201, single_report_response.text
+        single_report_ref = single_report_response.json()["request"]["reportRef"]
+        assert single_report_ref.startswith("external-single-volume-report-")
+        single_request_digest = single_record.request.request_digest
         _close_journals(opened)
         opened = []
         receipts.close()
@@ -2087,7 +2239,7 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             participants=provider.participants,
             input_capability_issuer=lambda *_args, **_kwargs: None,
         )
-        app, opened = _assemble(tmp_path, workflow, storage)
+        app, opened = _assemble(tmp_path, workflow, storage, auth_registry=_operator_registry())
         receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
         provider.bind_receipt_journal(receipts)
         provider.attach_app(app)
@@ -2125,6 +2277,12 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
         )
         assert report.record is not None and report.record.report is not None
         report_ref = report.record.report.report_id
+        single_resolved = app.state.external_single_volume_store.resolve_historical_report_ref(
+            single_report_ref, organization_id="org-a", now=active_now
+        )
+        assert single_resolved is not None
+        assert single_resolved.request.request_digest == single_request_digest
+        assert single_resolved.report.report_id == single_report_ref
         _close_journals(opened)
         opened = []
         receipts.close()
@@ -2137,7 +2295,7 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             participants=provider.participants,
             input_capability_issuer=lambda *_args, **_kwargs: None,
         )
-        app, opened = _assemble(tmp_path, workflow, storage)
+        app, opened = _assemble(tmp_path, workflow, storage, auth_registry=_operator_registry())
         receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
         provider.bind_receipt_journal(receipts)
         provider.attach_app(app)
