@@ -173,9 +173,7 @@ class FakePolicyAuthorityPort(PolicyAuthorityPort):
         self.resolutions: list[tuple[str, datetime]] = []
         self._coordinator: ExternalAuthorityCurrentnessCoordinator | None = None
 
-    def bind(
-        self, coordinator: ExternalAuthorityCurrentnessCoordinator
-    ) -> FakePolicyAuthorityPort:
+    def bind(self, coordinator: ExternalAuthorityCurrentnessCoordinator) -> FakePolicyAuthorityPort:
         self._coordinator = coordinator
         return self
 
@@ -813,3 +811,20 @@ def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority
     assert not selector.is_alive()
     assert not revoker.is_alive()
     assert selected == [PolicySelectionStatus.POLICY_UNAVAILABLE]
+
+
+def test_single_volume_is_a_single_subject_use(tmp_path: Path) -> None:
+    """SINGLE_VOLUME is selected for exactly one sealed subject, never a pair."""
+    subject = _subject(marker="a")
+    policy, authority = _bound_policy(subjects=(subject,), uses=("SINGLE_VOLUME",))
+    registry = _registry(tmp_path, FakePolicyAuthorityPort(authority))
+    assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+
+    selected = registry.select_for_use("SINGLE_VOLUME", (subject,))
+    assert selected.status is PolicySelectionStatus.ACTIVE
+    assert registry.locally_current_use_permitted(
+        policy.policy_digest or "", use="SINGLE_VOLUME", subjects=(subject,), at=NOW
+    )
+    paired = registry.select_for_use("SINGLE_VOLUME", (subject, _subject(marker="d")))
+    assert paired.status is PolicySelectionStatus.POLICY_UNAVAILABLE
+    assert paired.reason == "SUBJECT_ARITY_INVALID"

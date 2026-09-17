@@ -37,8 +37,17 @@ _SUPERSEDED_KIND = "external-validation-policy-superseded"
 _POLICY_BODY_DOMAIN = "ksi.external-validation-policy-authority-body.v1"
 _AUTHORITY_RECORD_DOMAIN = "ksi.external-validation-policy-authority-record.v1"
 _PERMITTED_USES = frozenset(
-    {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME"}
+    {
+        "INSPECTION",
+        "EVIDENCE",
+        "DISPLAY",
+        "HEIGHT",
+        "VISUAL_COMPARISON",
+        "RELATIVE_VOLUME",
+        "SINGLE_VOLUME",
+    }
 )
+_SINGLE_SUBJECT_USES = frozenset({"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT", "SINGLE_VOLUME"})
 
 
 class ExternalValidationPolicyConflictError(ValueError):
@@ -193,7 +202,7 @@ class PolicyAuthorityRecord:
         permitted_subjects = tuple(
             subject.canonical_digest() for subject in self.permitted_subjects
         )
-        if use in {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT"}:
+        if use in _SINGLE_SUBJECT_USES:
             subject_scope_matches = (
                 len(requested_subjects) == 1 and requested_subjects[0] in permitted_subjects
             )
@@ -932,7 +941,7 @@ def _require_use(use: str) -> None:
 
 def _selection_arity_reason(use: str, subjects: Sequence[SealedExternalSubjectV1]) -> str | None:
     """Reject malformed use scope before a policy can become selectable."""
-    if use in {"INSPECTION", "EVIDENCE", "DISPLAY", "HEIGHT"}:
+    if use in _SINGLE_SUBJECT_USES:
         return None if len(subjects) == 1 else "SINGLE_SUBJECT_REQUIRED"
     if len(subjects) != 2:
         return "DISTINCT_ORDERED_PAIR_REQUIRED"
