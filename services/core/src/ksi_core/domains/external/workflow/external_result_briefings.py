@@ -1,4 +1,7 @@
-"""Deterministic site briefings for external relative-volume results (AX-2).
+"""Deterministic site briefings for external volume results (AX-2, SV-3).
+
+Relative-volume and single-volume reports each get their own sentence; the
+relative delta only ever compares relative results.
 
 The projector copies sealed report values into the existing ``SiteBriefing``
 record after a report, review or approval is durably committed. The only
@@ -21,6 +24,7 @@ from ksi_event_contracts.copilot import CopilotCitation, SiteBriefingStatus
 _LOGGER = logging.getLogger(__name__)
 _ACTOR = "system:external-result-briefing"
 _HISTORY_WINDOW = 50
+_RELATIVE_KINDS = frozenset({"EXTERNAL_RELATIVE_VOLUME"})
 
 
 def _m3(value: float) -> str:
@@ -253,7 +257,11 @@ class ExternalResultBriefingProjector:
 
     def _previous_net(self, site_id: str, organization_id: str, current: Any) -> float | None:
         history = self._projector.history_for_site(
-            site_id, organization_id=organization_id, after=None, limit=_HISTORY_WINDOW
+            site_id,
+            organization_id=organization_id,
+            after=None,
+            limit=_HISTORY_WINDOW,
+            kinds=_RELATIVE_KINDS,
         )
         candidates = [
             item.result

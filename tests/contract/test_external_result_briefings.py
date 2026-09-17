@@ -3,17 +3,22 @@
 from __future__ import annotations
 
 import math
-from datetime import timedelta
+from dataclasses import replace
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import cast
 
+import pytest
 from external_product_loop_fixture import LoopGraph, build_graph, record_measurement, seed_original
 from external_single_volume_fixture import _authority as _build_single_authority
 from external_single_volume_fixture import _AuthorityPort as _SingleAuthorityPort
+from external_single_volume_fixture import _digest
 from external_single_volume_fixture import _issue_and_claim as _single_issue_and_claim
 from external_single_volume_fixture import _payload as _single_payload
 from external_single_volume_fixture import _store as _single_store
 from ksi_core.domains.external.quantity.external_relative_volumes import (
+    ExternalRelativeVolumeExecutionAuthority,
+    ExternalRelativeVolumeObservedReportInput,
     ExternalRelativeVolumeVerdict,
 )
 from ksi_core.domains.external.quantity.external_single_volumes import (
@@ -21,6 +26,7 @@ from ksi_core.domains.external.quantity.external_single_volumes import (
     ExternalSingleVolumeObservedReportInput,
     ExternalSingleVolumeStore,
 )
+from ksi_core.domains.external.workflow import external_result_briefings as briefings_module
 from ksi_core.domains.external.workflow.external_result_briefings import (
     ExternalResultBriefingProjector,
 )
@@ -28,10 +34,13 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_result_workflow_api import ExternalResultReadProjector
 from ksi_core.site_workspace import SiteBriefingStore
 from ksi_event_contracts.copilot import SiteBriefingStatus
+from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
 from ksi_event_contracts.external_single_volume import (
     ExternalSingleVolumeMetricsV1,
     ExternalSingleVolumeReportV1,
 )
+from test_external_relative_volumes import _fence
+from test_external_relative_volumes import _payload as _relative_payload
 from test_external_result_review_proposals import _NOW, _principal
 
 _MEASURED_AREA_M2 = 123.0
@@ -282,5 +291,99 @@ def test_single_results_do_not_feed_relative_delta(tmp_path: Path) -> None:
     latest = briefings.latest("site-a", organization_id="org-a")
     assert latest is not None
     assert "첫 결과" in latest.why_it_matters
+    single._journal.close()
+    graph.close()
+
+
+def _record_later_relative(graph: LoopGraph, *, now: datetime) -> ExternalRelativeVolumeReportV1:
+    """A second relative report, reported strictly after the fixture report."""
+
+    port = graph.authority_port
+    first = port.authority
+    current = first.current.model_copy(
+        update={
+            "observed_sha256": _digest("dsm-bytes-current-later"),
+            "captured_from": _NOW + timedelta(hours=5),
+            "captured_to": _NOW + timedelta(hours=6),
+        }
+    )
+    second = replace(
+        first,
+        current=current,
+        historical_authority_digest=_digest("historical-authority-later"),
+    )
+    port.authority = second
+    by_digest = {a.historical_authority_digest: a for a in (first, second)}
+
+    def resolve_historical(
+        *,
+        historical_authority_digest: str,
+        decision_id: str,
+        decision_digest: str,
+        issued_at: datetime,
+        now: datetime,
+    ) -> ExternalRelativeVolumeExecutionAuthority | None:
+        del now
+        a = by_digest.get(historical_authority_digest)
+        if (
+            a is None
+            or a.decision_id != decision_id
+            or a.decision_digest != decision_digest
+            or not a.is_current_at(issued_at)
+        ):
+            return None
+        return a
+
+    port.resolve_historical = resolve_historical  # type: ignore[method-assign]
+    issued = graph.volumes.issue(
+        principal=_principal(),
+        current_work_order_id=second.current_work_order_id,
+        decision_ref=second.decision_id,
+        idempotency_key="later-relative",
+        now=_NOW,
+    )
+    assert issued.verdict is ExternalRelativeVolumeVerdict.ISSUED, issued.detail
+    assert issued.record is not None and issued.record.request.request_digest is not None
+    request = issued.record.request
+    assert request.request_digest is not None
+    fence = _fence()
+    graph.volumes.claim(
+        request.request_id, organization_id="org-a", principal_id="worker", fence=fence, now=now
+    )
+    result = graph.volumes.record_observed_report(
+        request.request_id,
+        organization_id="org-a",
+        principal_id="worker",
+        fence=fence,
+        observed=ExternalRelativeVolumeObservedReportInput(
+            payload=_relative_payload(request.request_digest, second), computed_at=now
+        ),
+        now=now,
+    )
+    assert result.record is not None and result.record.report is not None, result.detail
+    return result.record.report
+
+
+def test_single_rows_do_not_push_previous_relative_out_of_delta_window(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The window holds the current report plus one more row: a merged window
+    # would be [B, single] and lose A; a relative-only window is [B, A].
+    monkeypatch.setattr(briefings_module, "_HISTORY_WINDOW", 2)
+    source = seed_original(tmp_path)
+    graph = build_graph(tmp_path, source)
+    briefings, projector, single, authority = _projector_with_single(tmp_path, graph)
+    record_measurement(graph)  # relative A, current captured_to = +3h
+    assert projector.flush()
+    _record_single_report(single, authority, fill_m3=10.0, base_roughness_m=0.02)  # +4h
+    assert projector.flush()
+    later = _record_later_relative(graph, now=_NOW + timedelta(seconds=1))  # relative B, +6h
+    assert projector.flush()
+
+    latest = briefings.latest("site-a", organization_id="org-a")
+    assert latest is not None
+    assert latest.source_watermark == f"external-report:{later.report_digest}:REPORTED"
+    assert "첫 결과" not in latest.why_it_matters
+    assert latest.why_it_matters.startswith("직전 결과(4.0 m³)보다 순변화가 ")
     single._journal.close()
     graph.close()
