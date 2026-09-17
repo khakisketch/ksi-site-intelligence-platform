@@ -597,4 +597,112 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.getByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
   });
+
+  it("explains a refused single-volume issue with the mapped reason instead of the same-selection retry text", async () => {
+    const retryText = "단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
+    const refuse = (issueResponse: () => unknown) => fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests" && init?.method === "POST") return issueResponse();
+      throw new Error(`unexpected fetch ${url}`);
+    });
+
+    refuse(() => response({ verdict: "REFUSED", request: null, detail: "DEADLINE_EXPIRED" }));
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("이 요청의 마감 시간이 지났습니다. 현재 선택을 다시 확인해 새 요청을 만드세요.")).toBeTruthy();
+    expect(screen.queryByText(retryText)).toBeNull();
+    expect(screen.queryByText("단일 시점 체적 측정을 요청했습니다.")).toBeNull();
+    cleanup();
+
+    refuse(() => response({ code: "AUTHORITY_UNAVAILABLE" }, false));
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("측정에 필요한 대상이나 증거를 지금 사용할 수 없습니다. 현재 선택을 다시 확인한 뒤 재시도하세요.")).toBeTruthy();
+    expect(screen.queryByText(retryText)).toBeNull();
+    expect(document.body.textContent).not.toContain("비교에 필요한");
+    cleanup();
+
+    refuse(() => response({ code: "RETRY_EXHAUSTED" }, false));
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" }));
+    expect(await screen.findByText("이 요청의 재시도 한도에 도달했습니다. 요청 상태를 새로고침하고 원인을 확인하세요.")).toBeTruthy();
+    expect(screen.queryByText(retryText)).toBeNull();
+  });
+
+  describe("selected request polling", () => {
+    let visibility: DocumentVisibilityState = "visible";
+    let itemReads = 0;
+
+    beforeEach(() => {
+      visibility = "visible";
+      itemReads = 0;
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => visibility });
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+        if (url === "/api/observation-work-orders/work-1/single-volume-requests") return response({ items: [singleRequest("QUEUED")] });
+        if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) {
+          itemReads += 1;
+          return response(singleRequest("QUEUED"));
+        }
+        throw new Error(`unexpected fetch ${url}`);
+      });
+    });
+
+    afterEach(() => {
+      Reflect.deleteProperty(document, "visibilityState");
+    });
+
+    const stopNotice = "자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요.";
+
+    it("pauses while the tab is hidden and resumes the read when it becomes visible", async () => {
+      render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} />);
+      const select = await screen.findByRole("button", { name: "체적 요청 상태" });
+      vi.useFakeTimers();
+      try {
+        await act(async () => { fireEvent.click(select); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        expect(itemReads).toBe(1);
+        visibility = "hidden";
+        await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+        expect(itemReads).toBe(1);
+        visibility = "visible";
+        await act(async () => {
+          document.dispatchEvent(new Event("visibilitychange"));
+          await vi.advanceTimersByTimeAsync(0);
+        });
+        expect(itemReads).toBe(2);
+        await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        expect(itemReads).toBe(3);
+        expect(screen.queryByText(stopNotice)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it("stops after the bounded budget, says so with the relative stop notice, and restarts on a manual status read", async () => {
+      render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} />);
+      const select = await screen.findByRole("button", { name: "체적 요청 상태" });
+      vi.useFakeTimers();
+      try {
+        await act(async () => { fireEvent.click(select); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        expect(itemReads).toBe(1);
+        for (let attempt = 0; attempt < 12; attempt += 1) {
+          await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+        }
+        expect(itemReads).toBe(7);
+        expect(screen.getByText(stopNotice)).toBeTruthy();
+        await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+        expect(itemReads).toBe(7);
+
+        await act(async () => { fireEvent.click(screen.getByRole("button", { name: "체적 요청 상태" })); });
+        await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+        expect(itemReads).toBe(8);
+        expect(screen.queryByText(stopNotice)).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

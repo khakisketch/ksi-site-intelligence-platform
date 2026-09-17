@@ -143,6 +143,27 @@ function issueFailureMessage(error: unknown): string {
   return "외부 상대 물량 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
 }
 
+const SHARED_ISSUE_FAILURE_CODES = new Set([
+  "DEADLINE_EXPIRED",
+  "RETRY_EXHAUSTED",
+  "QUEUE_FULL",
+  "STORE_UNAVAILABLE",
+  UNKNOWN_REQUEST_STATUS,
+]);
+
+/** Single-volume counterpart of `issueFailureMessage`, without comparison wording. */
+function singleIssueFailureMessage(error: unknown): string {
+  const code = error instanceof Error ? error.message : "";
+  if (code === "AUTHORITY_UNAVAILABLE") {
+    return "측정에 필요한 대상이나 증거를 지금 사용할 수 없습니다. 현재 선택을 다시 확인한 뒤 재시도하세요.";
+  }
+  // These relative messages contain no comparison wording, so both families share them.
+  if (SHARED_ISSUE_FAILURE_CODES.has(code)) return issueFailureMessage(error);
+  return "단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
+}
+
+const AUTO_REFRESH_STOPPED_NOTICE = "자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요.";
+
 function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
   const { request, report, executionPolicy } = view;
   return (
@@ -313,6 +334,7 @@ function SingleVolumeWorkflow({
   const [selectionGeneration, setSelectionGeneration] = useState(0);
   const [selected, setSelected] = useState<ExternalRelativeVolumeRequestView | null>(null);
   const [selectedError, setSelectedError] = useState<string | null>(null);
+  const [pollStopped, setPollStopped] = useState(false);
   const [report, setReport] = useState<ExternalSingleVolumeReportView | null>(null);
   const [reportPhase, setReportPhase] = useState<Phase>("idle");
   const [busy, setBusy] = useState(false);
@@ -353,12 +375,34 @@ function SingleVolumeWorkflow({
   }, [loadList]);
 
   // Reads the selected request and, while it is unfinished, re-reads it on a bounded
-  // GET-only schedule. A SUCCEEDED request loads its exact retained report.
+  // GET-only schedule that pauses while the tab is hidden and resumes when it is shown
+  // again. A SUCCEEDED request loads its exact retained report.
   useEffect(() => {
     if (!selectedRef || !isExternalSingleVolumeRequestReference(selectedRef)) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | null = null;
     let budget = 0;
+    let resumeWhenVisible = false;
+    const scheduleRead = () => {
+      if (budget >= AUTO_REQUEST_REFRESH_BUDGET) {
+        setPollStopped(true);
+        return;
+      }
+      budget += 1;
+      timer = setTimeout(() => {
+        timer = null;
+        if (document.visibilityState === "hidden") {
+          resumeWhenVisible = true;
+          return;
+        }
+        void read();
+      }, AUTO_REQUEST_REFRESH_DELAY_MS);
+    };
+    const resume = () => {
+      if (document.visibilityState === "hidden" || !resumeWhenVisible || controller.signal.aborted) return;
+      resumeWhenVisible = false;
+      void read();
+    };
     const loadReport = async (reportRef: string) => {
       if (!isExternalSingleVolumeReportReference(reportRef)) throw new Error("INVALID_REPORT_REFERENCE");
       setReportPhase("loading");
@@ -389,13 +433,7 @@ function SingleVolumeWorkflow({
         }
         setReport(null);
         setReportPhase("idle");
-        if (isUnfinishedRequest(value.status) && budget < AUTO_REQUEST_REFRESH_BUDGET) {
-          budget += 1;
-          timer = setTimeout(() => {
-            timer = null;
-            if (document.visibilityState !== "hidden") void read();
-          }, AUTO_REQUEST_REFRESH_DELAY_MS);
-        }
+        if (isUnfinishedRequest(value.status)) scheduleRead();
       } catch (error) {
         if (isAbort(error) || controller.signal.aborted) return;
         if (requestRead) {
@@ -406,9 +444,11 @@ function SingleVolumeWorkflow({
         }
       }
     };
+    document.addEventListener("visibilitychange", resume);
     void Promise.resolve().then(read);
     return () => {
       controller.abort();
+      document.removeEventListener("visibilitychange", resume);
       if (timer !== null) clearTimeout(timer);
     };
   }, [requestsPath, selectedRef, selectionGeneration]);
@@ -433,6 +473,7 @@ function SingleVolumeWorkflow({
 
   const selectRequest = (requestRef: string) => {
     setSelectedError(null);
+    setPollStopped(false);
     // Never leave another request's volume on screen while this selection is read.
     setReport(null);
     setReportPhase("idle");
@@ -474,7 +515,7 @@ function SingleVolumeWorkflow({
       setMessage("단일 시점 체적 측정을 요청했습니다.");
       void loadList();
     } catch (error) {
-      if (!isAbort(error) && owns()) setMessage("단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.");
+      if (!isAbort(error) && owns()) setMessage(singleIssueFailureMessage(error));
     } finally {
       if (activeMutation.current === controller) {
         activeMutation.current = null;
@@ -515,6 +556,7 @@ function SingleVolumeWorkflow({
         : <ul className="flex flex-col gap-2">{list.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>체적 요청 상태</button></li>)}</ul>)}
 
       {selected && <p className="text-ink-2">선택한 체적 요청: {statusLabel(selected.status)}{isUnfinishedRequest(selected.status) ? ` · 마감 ${selected.deadlineAt}${recordedDeadlineElapsed(selected.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
+      {pollStopped && isUnfinishedRequest(selected?.status) && <p role="status" className="text-ink-2">{AUTO_REFRESH_STOPPED_NOTICE}</p>}
       {selectedError && <p role="alert" className="text-high-ink">{selectedError}</p>}
       {selected?.status === "FAILED" && <p role="alert" className="text-high-ink">이 단일 시점 체적 측정을 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.</p>}
       {reportPhase === "loading" && <p role="status">체적 결과를 읽는 중입니다.</p>}
@@ -649,7 +691,7 @@ export function ExternalResultWorkflowPanel({
           setWorklistAutoRefreshStopped(true);
           setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
             ? "요청 상태 형식을 확인하지 못해 자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요."
-            : "자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요.");
+            : AUTO_REFRESH_STOPPED_NOTICE);
         } else {
           setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
             ? "요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요."
