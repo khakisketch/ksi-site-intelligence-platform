@@ -6,7 +6,11 @@ from dataclasses import replace
 from datetime import timedelta
 
 from external_product_loop_fixture import record_measurement
+from ksi_core.domains.external.workflow.external_result_projection_models import (
+    ExternalPendingDecisionItem,
+)
 from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_event_contracts.external_result_review import ExternalReobservationProposalV1
 from test_external_result_review_proposals import _NOW, _TOKEN, _principal
 from test_external_result_single_volume_projection import (  # noqa: F401 - pytest fixture
     _Harness,
@@ -26,7 +30,7 @@ def _review(h: _Harness, report_ref: str) -> None:
     )
 
 
-def _propose(h: _Harness, report_ref: str, key: str):
+def _propose(h: _Harness, report_ref: str, key: str) -> ExternalReobservationProposalV1:
     return h.graph.service.create(
         organization_id="org-a",
         report_ref=report_ref,
@@ -39,7 +43,7 @@ def _propose(h: _Harness, report_ref: str, key: str):
     )
 
 
-def _pending(h: _Harness, organization_id: str = "org-a"):
+def _pending(h: _Harness, organization_id: str = "org-a") -> list[ExternalPendingDecisionItem]:
     return h.projector().pending_decisions(organization_id=organization_id).items
 
 
