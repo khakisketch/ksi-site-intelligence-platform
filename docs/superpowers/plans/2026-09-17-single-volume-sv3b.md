@@ -327,3 +327,12 @@ Follow-ups (not blocking; candidates for the product-state backlog at SV-4 close
 - Low: `selectedRefRef`/`selectionGenerationRef` mirrors update one render after `selectRequest`; a reload invoked in the same tick is dropped (fail-closed, retry needed). Prefer a synchronous ref update.
 - Test gaps: unmount-during-reload, same-ref reselect reload race, REPORT_BINDING_CHANGED error UI, `reportId` mismatch on the detail page, single share idempotency/unresolved retry, single approval abort.
 - SV-4 copy review list: single reviewReason; "대상: 이 측정에 사용한 작업구역"; "대상 촬영 …" / "대상 독립 검사점 RMSE:" / "미기록"; detail subcopy "한 시점 관측으로 측정한 보관 체적 결과입니다."; summary/history review-status copy; `미기록` vs `기록 없음`; the hierarchy deltas above.
+
+### Visual review and consistency follow-up (2026-09-18)
+
+- The delegated design-task failed twice with an unavailable-tool error, and every subagent dispatch was unavailable for a period; Build rendered the real dashboard components directly instead, using the product's compiled CSS with synthetic fixtures and mocked APIs in Chrome at 1280x800 and 390x844 (8 captures, all read; harness, captures and FINDINGS.md under `design-previews/sv3b-single-volume/`, gitignored).
+- Verdict: the shared review/proposal/approval component is token-identical across both families (DOM-verified 12-state matrix); the single review audit detail shows the target capture window and target RMSE with no baseline fields; mobile action boundaries and the placeholder removal behave as designed. This is Build visual verification, not Design or Human approval.
+- SV-V1 fixed: `ExternalResultWorkflowPanel.tsx` single result card heading `h4 text-[15px]` to `h3 text-[16px]`, matching the sibling relative result card.
+- SV-V2 fixed: `ExternalSiteResultSummary.tsx` single summary CTA gained `btn-primary`, matching the relative summary CTA.
+- Evidence: commit `fd79c76`; dashboard gates on the exact revision tsc 0, lint 0, 896/896 tests, next build 0; independent test-runner and reviewer runs; post-fix re-capture and re-read confirm the larger heading and the dark primary CTA.
+- Remaining for SV-4: SV-V3 raw ISO `reviewedAt` in the shared review status line; SV-V4 new single-volume copy review; accessibility note — the single workflow now has a local `h3` to `h4` to `h3` heading-order backtrack (the result card lives in its own section, so it is defensible; decide during the a11y/copy review).
