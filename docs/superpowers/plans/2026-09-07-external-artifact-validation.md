@@ -978,3 +978,21 @@ startup refuses the whole Core, while expiry at runtime only blocks the
 provider. Recorded as a product-state backlog item for an owner decision; no
 code changed. Remaining: AX-3..AX-7, slice acceptance review, EXT-VAL-06
 (release-evidence gate).
+
+## Execution state — 2026-09-18 (AX-3 upload auto-recognition)
+
+Implemented per the AX spec §8 short design (dashboard only): commits `08b8157`
+(bounded trimmed `declaredCrs` in form type and BFF; Core Python golden
+`sha256:e9239da2…` for a declared CRS, reproduced alongside the existing null golden)
+and `6450542` (header reader, recognition card, pre-fill, mismatch/unreadable warnings,
+resume without CRS field). Evidence: dashboard vitest 918/918, tsc/lint/build 0;
+contract tests that read dashboard sources plus external reconstruction 163 passed.
+Real-data check: the real reader on NodeODM 3.5.6 madeira-beach outputs
+(orthophoto/dsm/dtm) recognised EPSG:32617, ODM 3.5.6 and correct kind hints; a local
+preview (untracked `design-previews/ax3-upload-recognition`) drove the real panel in
+headless Chrome with those files — correct, mismatch and non-TIFF cases, no page errors;
+at 390 px registration stays behind the laptop-only boundary. This run corrected the
+design: ODM writes the photo date in DateTime, so it is labelled neutrally and still not
+used as capture time. Not verified: live Core registration of a declared CRS through the
+running stack (the stack is down; covered by the BFF test and the cross-language golden).
+Remaining: AX-4..AX-7, slice acceptance review, EXT-VAL-06 (release-evidence gate).

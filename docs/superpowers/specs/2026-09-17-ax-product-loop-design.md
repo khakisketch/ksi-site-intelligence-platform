@@ -159,3 +159,25 @@ Reuse `SiteBriefing` (schema 1.0). New briefings are deterministic:
 LLM-generated briefings for external results (possible later via `SiteBriefingService`
 once the copilot tools expose external reports), notifications outside the app, guest
 sharing, 3D viewers. No contract schema of a sealed record changes.
+
+## 8. AX-3 Upload auto-recognition (short design, approved 2026-09-18)
+
+Client-side only; no Core, contract schema or authority change.
+
+- On file selection the browser reads only the GeoTIFF header (`geotiff` `fromBlob`
+  range reads) in parallel with the existing SHA-256 hash
+  (`apps/dashboard/src/lib/geo/geotiff-header.ts`).
+- **Declared (customer declaration, EXT-VAL-02):** the embedded EPSG becomes the editable
+  per-artifact `declaredCrs` (the contract already allows bounded text; the BFF accepts
+  `null` or an already-trimmed string ≤255 so the dashboard digest matches Core, which
+  strips whitespace). The TIFF Software tag fills the producer name/version **only when
+  those fields are empty**.
+- **Reference only:** size, pixel size, and the TIFF DateTime. Band layout (1 float band →
+  DSM, 3–4 × 8-bit → ortho) drives a slot-mismatch warning; the file is never moved.
+  An unreadable header warns; Core inspection still decides the format.
+- **Deviations from the §3 row:** capture time is not pre-filled — the TIFF DateTime is a
+  single instant whose meaning varies by producer (ODM 3.5.6 writes the photo date with an
+  offset; other tools write the file time) and the form needs a start/end interval. GSD is
+  not declared because dashboard canonical JSON accepts only safe integers.
+- Resuming an already registered declaration shows header facts but no CRS field; resume
+  never re-sends the declaration.
