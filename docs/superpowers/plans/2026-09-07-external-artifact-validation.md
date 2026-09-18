@@ -941,3 +941,21 @@ proposal 500). Remaining: next AX slices (AX-3 upload auto-recognition,
 AX-4 triage, AX-5 proactive proposal, AX-6 report draft, AX-7 numeric Q&A),
 EXT-VAL-06 long-running worker run, boot-hazard investigation, slice
 acceptance review.
+
+## Execution state — 2026-09-18 (EXT-VAL-06 deployment-gate finding)
+
+Investigated running EXT-VAL-06 with the real long-running
+`ksi-external-validation-worker` / inspector / measurement daemons instead of
+the script lane. Not attempted: the worker is only reachable through the
+deployment boundary in `deploy/external-runtime/README.md`, which needs root
+host bootstrap (`ksi-validator`/`ksi-inspector` accounts, subordinate maps,
+user-systemd socket units, socket ACL helper) **and** a separate
+release-evidence gate that installs the application bundle under
+`/usr/local/lib/ksi-external-runtime/bin/` bound to a reviewed
+`release-evidence.v1` + `external-runtime-host-binding.v1` record (image IDs,
+CycloneDX SBOMs, scanner reports). No dev harness runs these daemons outside
+contract tests. Bootstrap alone would leave root state without a runnable
+worker, so it was deliberately not applied (owner decision 2026-09-18).
+EXT-VAL-06 therefore stays open, blocked on a release-evidence run on a
+prepared host, not on product code. Remaining: boot-hazard investigation,
+AX-3..AX-7, slice acceptance review.
