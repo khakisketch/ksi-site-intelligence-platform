@@ -181,3 +181,33 @@ Client-side only; no Core, contract schema or authority change.
   not declared because dashboard canonical JSON accepts only safe integers.
 - Resuming an already registered declaration shows header facts but no CRS field; resume
   never re-sends the declaration.
+
+## 9. AX-4 External decisions on Home (short design, approved 2026-09-18)
+
+Re-scoped by the owner on 2026-09-18 from "change and defect triage": no production
+producer posts defect candidates, and change detection exists only on the managed path.
+The Home attention area (ADR-KSI-025 D1) instead gains the external results that actually
+wait for a person. ADR-KSI-025 D1 is amended accordingly.
+
+**Core (read-only, no journal).** `GET /v1/external-decisions/pending` (`SITES_READ`,
+organization-scoped, INV-060) filters the existing `ExternalResultReadProjector` summaries
+across the organization's sites:
+
+- `AWAITING_REVIEW` — `measurementStatus == "SUCCEEDED"`, metrics present, no review.
+- `AWAITING_APPROVAL` — `proposalCount > approvedProposalCount`.
+
+One item per site: the longest-waiting pending result (`reportedAt` ascending, ties by
+report ref); review waits rank before approval waits. Rows whose historical source is
+unavailable are skipped, never guessed. Each item carries site id, report ref, kind, stage,
+`reportedAt`, net m³, uncertainty m³ (nullable) and the work area id. Relative and single
+volume families are both included.
+
+**Dashboard Home.** A new attention kind `EXTERNAL_DECISION` is inserted after unattended
+events and before WorkOrder decisions; the one-card-per-site and no-repeat rules stay.
+The card shows the stage (`검토 대기` / `승인 대기`), the value with its uncertainty, the
+work area name when known, and links to the site observation report. If the pending call
+fails, Home shows the other sources and states that external decisions could not be read;
+it never implies there is nothing to decide.
+
+**Out of scope.** Change/defect triage (until a production producer exists), notifications,
+ranking by value magnitude.
