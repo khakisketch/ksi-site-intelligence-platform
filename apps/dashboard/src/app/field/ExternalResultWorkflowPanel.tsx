@@ -273,7 +273,7 @@ function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolum
         <p>검토 보고 다이제스트: {report.reportDigest ?? "기록 없음"} · 요청 다이제스트 {request.requestDigest ?? "기록 없음"}</p>
         <p>검토 결정: {decision.decisionId} · {decision.decisionDigest ?? "기록 없음"}</p>
         <p>대상 촬영 {observationRange(request.target.capturedFrom, request.target.capturedTo)}</p>
-        <p>대상 독립 검사점 RMSE: {authority.targetRmseM === null ? "미기록" : `${authority.targetRmseM}m`}</p>
+        <p>대상 독립 검사점 RMSE: {authority.targetRmseM === null ? "기록 없음" : `${authority.targetRmseM}m`}</p>
         <p>대상: {subjectLabel(authority.target.subject)} · 검사 {authority.target.inspectionReportDigest}</p>
         <p>구역 ID: {authority.zoneSnapshot.workAreaId} · rev {authority.zoneSnapshot.revision} · 정의 {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
         <p>검증 정책: {authority.validationPolicyDigest} · 실행 정책: {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
@@ -293,7 +293,7 @@ function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportVi
     <section className="mt-2 rounded-lg border border-line bg-surface text-[13px]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
-          <h3 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h3>
+          <h4 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h4>
           <p className="mt-1 leading-5 text-ink-2">작업구역 {view.request.zoneSnapshot.workAreaId}</p>
         </div>
         <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>

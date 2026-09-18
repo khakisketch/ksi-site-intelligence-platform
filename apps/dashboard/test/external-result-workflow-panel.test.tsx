@@ -669,7 +669,7 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(document.body.textContent ?? "").not.toContain("준비 중");
   });
 
-  it("shows an unrecorded single target RMSE as 미기록 without baseline fields", async () => {
+  it("shows an unrecorded single target RMSE as 기록 없음 without baseline fields", async () => {
     const request = singleRequest("SUCCEEDED");
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
@@ -685,7 +685,7 @@ describe("SINGLE_VOLUME measurement", () => {
     await screen.findByText(/결과 검토 기록이 있습니다\./);
     fireEvent.click(screen.getByText("전문가용 검토 기록"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
-    expect(audit.textContent).toContain("미기록");
+    expect(audit.textContent).toContain("기록 없음");
     expect(audit.textContent).not.toContain("기준");
   });
 
