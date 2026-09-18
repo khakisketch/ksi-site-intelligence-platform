@@ -959,3 +959,22 @@ worker, so it was deliberately not applied (owner decision 2026-09-18).
 EXT-VAL-06 therefore stays open, blocked on a release-evidence run on a
 prepared host, not on product code. Remaining: boot-hazard investigation,
 AX-3..AX-7, slice acceptance review.
+
+## Execution state — 2026-09-18 (boot-hazard investigation)
+
+The recorded hazard ("evidence-validation replay re-validates old-policy
+issued events after policy rotation + restart") was not reproduced. Replay
+resolves the issued policy by digest from the policy registry's own retained
+journal (`resolve` returns superseded entries) and the context from the
+provider's receipt history, which `production.py` binds before
+`assemble_app` constructs the store. An in-process boot of a copy of the a2
+console root (protected copy `~/.local/state/ksi-boothazard-replay`, clock
+frozen at 2026-09-16T15:20Z) built the production app and replayed all eight
+evidence validations across policy versions 4–7.
+
+The same boot at 17:30Z and on 2026-09-18 failed with
+`authority snapshot is outside its validity interval`: an expired snapshot at
+startup refuses the whole Core, while expiry at runtime only blocks the
+provider. Recorded as a product-state backlog item for an owner decision; no
+code changed. Remaining: AX-3..AX-7, slice acceptance review, EXT-VAL-06
+(release-evidence gate).
