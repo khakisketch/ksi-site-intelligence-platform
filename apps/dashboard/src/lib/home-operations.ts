@@ -1,3 +1,4 @@
+import type { ExternalPendingDecision } from "@/lib/core-api/external-decisions";
 import { isSettled, isUnattended, sortForTriage } from "@/lib/core-api/triage";
 import type {
   SiteBriefing,
@@ -94,6 +95,7 @@ export function selectHomeActiveWorkOrders(
 
 export type HomeAttentionSource =
   | { kind: "EVENT"; key: string; siteId: string; observedAt: string; event: EventSummaryResponse }
+  | { kind: "EXTERNAL_DECISION"; key: string; siteId: string; observedAt: string; decision: ExternalPendingDecision }
   | { kind: "WORK_ORDER"; key: string; siteId: string; observedAt: string; workOrder: ObservationWorkOrderView }
   | { kind: "SITE"; key: string; siteId: string; observedAt: string; site: SiteView };
 
@@ -167,6 +169,8 @@ export function selectHomeAttentionSources(
     workOrders: readonly ObservationWorkOrderView[];
     sites: readonly SiteView[];
     operationsByWorkOrderId?: HomeWorkOrderOperationOptions["operationsByWorkOrderId"];
+    /** Core 순서(검토 대기 우선, 오래 기다린 순)를 그대로 쓴다 — AX-4. */
+    externalDecisions?: readonly ExternalPendingDecision[];
   },
   limit = 3,
 ): HomeAttentionSource[] {
@@ -177,6 +181,13 @@ export function selectHomeAttentionSources(
       siteId: event.siteId,
       observedAt: event.occurredAt,
       event,
+    })),
+    ...(input.externalDecisions ?? []).map((decision) => ({
+      kind: "EXTERNAL_DECISION" as const,
+      key: `external-decision:${decision.reportRef}`,
+      siteId: decision.siteId,
+      observedAt: decision.reportedAt,
+      decision,
     })),
     ...selectHomeDecisionWorkOrders(input.workOrders, input.workOrders.length, {
       operationsByWorkOrderId: input.operationsByWorkOrderId,

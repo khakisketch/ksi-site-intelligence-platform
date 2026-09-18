@@ -15,6 +15,7 @@ import type {
   ObservationWorkOrderView,
   SiteView,
 } from "@/lib/core-api/types";
+import type { ExternalPendingDecision } from "@/lib/core-api/external-decisions";
 
 function workOrder(
   status: ObservationWorkOrderStatus,
@@ -174,6 +175,46 @@ describe("Home 현장 인텔리전스 projection", () => {
       ["WORK_ORDER", "site-b"],
       ["SITE", "site-c"],
     ]);
+  });
+
+  it("외부 결과 결정 대기는 미조치 사건 다음, 사람 결정 작업보다 앞에 둔다 (AX-4)", () => {
+    const decision = (siteId: string, stage: ExternalPendingDecision["stage"]): ExternalPendingDecision => ({
+      siteId,
+      reportRef: `report-${siteId}`,
+      kind: "EXTERNAL_RELATIVE_VOLUME",
+      stage,
+      reportedAt: "2026-08-22T08:00:00Z",
+      netM3: 12.5,
+      uncertaintyM3: 3,
+      workAreaId: "zone-1",
+    });
+    const sources = selectHomeAttentionSources({
+      events: [event({ eventKey: "event-a", siteId: "site-a" })],
+      workOrders: [
+        { ...workOrder("AWAITING_APPROVAL", "approval-c", "2026-08-22T12:00:00Z"), siteId: "site-c" },
+        { ...workOrder("REVIEW_READY", "results-b", "2026-08-22T12:00:00Z"), siteId: "site-b" },
+      ],
+      sites: [site("site-a"), site("site-b"), site("site-c")],
+      externalDecisions: [decision("site-a", "AWAITING_REVIEW"), decision("site-b", "AWAITING_APPROVAL")],
+    });
+
+    expect(sources.map((source) => [source.kind, source.siteId])).toEqual([
+      ["EVENT", "site-a"],
+      ["EXTERNAL_DECISION", "site-b"],
+      ["WORK_ORDER", "site-c"],
+    ]);
+    const external = sources[1];
+    expect(external?.kind === "EXTERNAL_DECISION" && external.decision.reportRef).toBe("report-site-b");
+    expect(external?.observedAt).toBe("2026-08-22T08:00:00Z");
+  });
+
+  it("외부 결정 목록이 없으면 기존 순서를 그대로 유지한다 (AX-4)", () => {
+    const input = {
+      events: [event({ eventKey: "event-a", siteId: "site-a" })],
+      workOrders: [{ ...workOrder("AWAITING_APPROVAL", "approval-b", "2026-08-22T12:00:00Z"), siteId: "site-b" }],
+      sites: [site("site-a"), site("site-b")],
+    };
+    expect(selectHomeAttentionSources(input)).toEqual(selectHomeAttentionSources({ ...input, externalDecisions: [] }));
   });
 
   it("최근 업데이트는 결과·완료·종료 안건만 쓰고 기술 진행 상태를 넣지 않는다", () => {

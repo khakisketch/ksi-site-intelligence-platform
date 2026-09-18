@@ -32,6 +32,8 @@ import {
 } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { listLatestSiteBriefings } from "@/lib/core-api/site-workspace";
+import { listExternalPendingDecisions } from "@/lib/core-api/external-decisions";
+import { externalDecisionCardText } from "@/lib/home-external-decision";
 
 import { HomeAttentionCarousel, type HomeAttentionCardView } from "./HomeAttentionCarousel";
 import { HomeRecentUpdates, type HomeRecentUpdateView } from "./HomeRecentUpdates";
@@ -129,6 +131,22 @@ function attentionView(
           ? { src: outcome.preview.src, alt: `${siteName}의 ${humanizeEventType(event.eventType)} 관측 근거` }
           : null,
       imageFallback: previewFallback(outcome),
+    };
+  }
+
+  if (source.kind === "EXTERNAL_DECISION") {
+    const text = externalDecisionCardText(source.decision);
+    return {
+      key: source.key,
+      siteName,
+      label: text.label,
+      title: text.title,
+      detail: text.detail,
+      observedAt: observedAt(source.observedAt),
+      href: text.href,
+      actionLabel: text.actionLabel,
+      image: null,
+      imageFallback: previewFallback(undefined),
     };
   }
 
@@ -289,13 +307,14 @@ function recentSiteView(
 }
 
 export default async function HomePage() {
-  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult, operationsResult, briefingsResult] = await Promise.all([
+  const [sitesResult, eventsResult, whoAmIResult, workOrdersResult, operationsResult, briefingsResult, externalDecisionsResult] = await Promise.all([
     settle(listSitesCached()),
     settle(listAllEventsCached()),
     settle(whoAmI()),
     settle(listObservationWorkOrdersForOrganization()),
     settle(listObservationWorkOrderOperations()),
     settle(listLatestSiteBriefings()),
+    settle(listExternalPendingDecisions()),
   ]);
 
   const sites = sitesResult.ok ? sitesResult.value : [];
@@ -308,11 +327,19 @@ export default async function HomePage() {
     (workOrder) => workOrder.executionMode === "EXTERNAL_RECONSTRUCTION",
   );
   const operationsUnavailable = hasExternalWorkOrders && !operationsResult.ok;
+  // AX-4: 외부 결과 결정 대기를 읽지 못하면 "결정할 것이 없다"로 보이지 않게 따로 알린다.
+  const externalDecisionsUnavailable = hasExternalWorkOrders && !externalDecisionsResult.ok;
   const permissions = whoAmIResult.ok ? whoAmIResult.value.permissions : [];
   const canRegisterSite = permissions.includes("SITES_WRITE") && permissions.includes("MISSIONS_ISSUE");
 
   const allAttentionSources = selectHomeAttentionSources(
-    { events, workOrders, sites, operationsByWorkOrderId },
+    {
+      events,
+      workOrders,
+      sites,
+      operationsByWorkOrderId,
+      externalDecisions: externalDecisionsResult.ok ? externalDecisionsResult.value.items : [],
+    },
     Number.MAX_SAFE_INTEGER,
   );
   // 상단은 큰 이미지 중심의 운영 브리핑을 유지한다. 최초 설정만 남은 UNMAPPED
@@ -387,7 +414,7 @@ export default async function HomePage() {
     };
   });
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById, previews));
-  const portfolioComplete = sitesResult.ok && eventsResult.ok && workOrdersResult.ok && !operationsUnavailable;
+  const portfolioComplete = sitesResult.ok && eventsResult.ok && workOrdersResult.ok && !operationsUnavailable && !externalDecisionsUnavailable;
 
   return (
     <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
@@ -424,6 +451,14 @@ export default async function HomePage() {
           {operationsResult.forbidden
             ? "외부 작업의 담당·마감·업무 종료 상태를 볼 권한이 없습니다. 권한이 있는 계정에서 작업 운영을 확인하세요."
             : "외부 작업의 담당·마감·업무 종료 상태를 불러오지 못했습니다. 해당 작업은 확인 필요나 진행 중으로 분류하지 않았습니다."}
+        </p>
+      )}
+
+      {externalDecisionsUnavailable && (
+        <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">
+          {externalDecisionsResult.ok || !externalDecisionsResult.forbidden
+            ? "외부 결과의 검토·승인 대기 여부를 불러오지 못했습니다. 확인할 결과가 없다는 뜻이 아닙니다."
+            : "외부 결과의 검토·승인 대기 여부를 볼 권한이 없습니다. 권한이 있는 계정에서 확인하세요."}
         </p>
       )}
 
