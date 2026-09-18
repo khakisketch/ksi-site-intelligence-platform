@@ -1011,3 +1011,18 @@ Remaining: AX-4..AX-7, slice acceptance review, EXT-VAL-06 (release-evidence gat
 3. AX-4 is re-scoped from change/defect triage (no production producer for defect
    candidates; change detection only on the managed path) to "external results awaiting a
    human decision" as a Home attention source, with ADR-KSI-025 D1 amended.
+
+## Execution state — 2026-09-18 (AX-4 external decisions on Home)
+
+Implemented per AX spec §9 and plan `2026-09-18-ax-4-external-decisions-home.md`:
+`c0874f8` (read-only `pending_decisions` projection), `96521ae`
+(`GET /v1/external-decisions/pending`, SITES_READ, organization-scoped, OpenAPI
+documented), `8bbe621` (Home `EXTERNAL_DECISION` attention kind after unattended events
+and before WorkOrder decisions; card text; failed read stated, portfolio incomplete),
+`b8e1bdb` (mypy annotations). ADR-KSI-025 D1 amended (`279544a`).
+Evidence: pending-decision contract tests 7/7; full contract suite 6036 passed / 112
+skipped / 0 failed; `uv run --locked mypy packages services tests tools` 0 issues in 820
+files; `ruff check .` clean; dashboard vitest 923/923, tsc/lint/build 0; local preview
+of the real Home carousel with real card text (desktop/mobile, no page errors).
+Not verified yet: Home against a live Core with real pending results (planned in the
+browser acceptance pass).
