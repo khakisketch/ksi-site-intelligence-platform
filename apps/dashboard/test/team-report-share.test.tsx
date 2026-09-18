@@ -30,6 +30,21 @@ describe("TeamReportShare", () => {
     expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body)).toEqual({ recipientPrincipalId: "operator-a" });
   });
 
+  it("posts a single-volume share to the single shares route and accepts the single-ref receipt", async () => {
+    const singleRef = `external-single-volume-report-${"b".repeat(32)}`;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ members: [{ principalId: "operator-a", displayName: "현장 담당", roleHint: "FIELD_OPERATOR", status: "ACTIVE" }] }) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ schemaVersion: "1.0", shareRef: "share-1", organizationId: "org-1", senderPrincipalId: "operator-a", recipientPrincipalId: "operator-a", siteId: "site-1", reportRef: singleRef, reportDigest: "digest-1", createdAt: "2026-09-10T00:00:00Z" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<TeamReportShare reportRef={singleRef} siteId="site-1" organizationId="org-1" principalId="operator-a" canWrite />);
+    await screen.findByRole("option", { name: /현장 담당/ });
+    fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-a" } });
+    fireEvent.click(screen.getByRole("button", { name: "팀원에게 결과 공유" }));
+    await screen.findByText("받은 업무에 전달했습니다.");
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`/api/external-single-volume-reports/${singleRef}/shares`);
+    expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body)).toEqual({ recipientPrincipalId: "operator-a" });
+  });
+
   it("does not claim delivery when Core returns a receipt for another report or recipient", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ members: [{ principalId: "operator-a", displayName: "현장 담당", roleHint: "FIELD_OPERATOR", status: "ACTIVE" }] }) })

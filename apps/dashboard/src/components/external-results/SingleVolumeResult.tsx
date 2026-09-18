@@ -9,8 +9,6 @@ export function isSingleVolumeResult(result: { kind?: ExternalVolumeKind } | nul
   return result?.kind === "EXTERNAL_SINGLE_VOLUME";
 }
 
-export const SINGLE_VOLUME_REVIEW_PENDING = "단일 시점 결과 검토는 준비 중입니다.";
-
 export function ExternalVolumeKindBadge({ single }: { single: boolean }) {
   return <StateBadge label={single ? "단일 시점 체적" : "상대 물량"} tone="neutral" />;
 }

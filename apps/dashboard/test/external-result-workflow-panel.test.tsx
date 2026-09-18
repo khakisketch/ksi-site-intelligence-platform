@@ -6,7 +6,7 @@ const router = { push: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import { ExternalResultWorkflowPanel } from "@/app/field/ExternalResultWorkflowPanel";
-import type { ExternalRelativeVolumeReportView, ExternalResultReview, ExternalSingleVolumeReportView } from "@/lib/core-api/external-result-workflow";
+import type { ExternalRelativeVolumeReportView, ExternalResultReview, ExternalSingleVolumeReportView, ExternalSingleVolumeResultReview } from "@/lib/core-api/external-result-workflow";
 
 const fetchMock = vi.fn();
 const digest = (character: string) => `sha256:${character.repeat(64)}`;
@@ -511,10 +511,68 @@ function singleRequest(status: "QUEUED" | "SUCCEEDED" | "FAILED") {
   };
 }
 
+function singleReviewReceipt(targetRmseM: number | null = 0.04): ExternalSingleVolumeResultReview {
+  const view = singleReportView();
+  return {
+    contractVersion: "external-single-volume-result-review-receipt.v1",
+    reviewRef: `err-v1-${"e".repeat(64)}`,
+    organizationId: "org-1",
+    siteId: "site-1",
+    sourceWorkOrderId: "work-1",
+    reportRef: singleReportRef,
+    request: view.request,
+    report: view.report,
+    authority: {
+      contractVersion: "external-single-volume-result-review-authority.v1",
+      organizationId: "org-1",
+      siteId: "site-1",
+      currentWorkOrderId: "work-1",
+      decisionId: singleDecision.decisionId,
+      decisionDigest: singleDecision.decisionDigest,
+      compatibilityMappingDigest: digest("f"),
+      target: view.request.target,
+      evidenceRecordDigests: view.request.evidenceRecordDigests,
+      validationPolicyDigest: view.request.validationPolicyDigest,
+      zoneSnapshot: view.request.zoneSnapshot,
+      executionPolicy: view.executionPolicy,
+      authorizedActorIds: ["operator-1"],
+      validFrom: "2026-09-15T00:00:00Z",
+      validUntil: "2026-09-16T00:00:00Z",
+      historicalAuthorityDigest: digest("0"),
+      targetRmseM,
+      maximumZoneCellCount: 100,
+      maximumZoneAreaM2: 100,
+      syntheticTestOnly: true,
+      authorityDigest: digest("1"),
+    },
+    decision: {
+      contractVersion: "external-single-volume-decision.v1",
+      decisionId: singleDecision.decisionId,
+      subject: view.request.target.subject,
+      subjectDigest: digest("2"),
+      use: "SINGLE_VOLUME",
+      policyDigest: null,
+      inspectionReportDigest: digest("3"),
+      evidenceRecordDigests: view.request.evidenceRecordDigests,
+      zone: null,
+      compatibilityMappingDigest: digest("f"),
+      verdict: "ELIGIBLE",
+      reasons: [],
+      remediations: [],
+      decidedAt: "2026-09-15T00:00:00Z",
+      decisionDigest: singleDecision.decisionDigest,
+    },
+    factualLimitations: ["recorded", "source only", "not current authority"],
+    reviewedAt: "2026-09-15T03:00:00Z",
+    reviewDigest: digest("e"),
+  };
+}
+
 describe("SINGLE_VOLUME measurement", () => {
-  it("issues an ELIGIBLE single-volume decision, polls the request, and shows Core's volume without any review action", async () => {
+  it("issues an ELIGIBLE single-volume decision, polls the request, and mounts review on the single review path", async () => {
     const posts: Array<{ url: string; body: unknown; key: string }> = [];
     let itemReads = 0;
+    let reported = false;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
       if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
       if (url === "/api/observation-work-orders/work-1/single-volume-requests" && !init?.method) return response({ items: [] });
@@ -526,7 +584,13 @@ describe("SINGLE_VOLUME measurement", () => {
         itemReads += 1;
         return response(singleRequest(itemReads === 1 ? "QUEUED" : "SUCCEEDED"));
       }
-      if (url === `/api/external-single-volume-reports/${singleReportRef}`) return response(singleReportView());
+      if (url === `/api/external-single-volume-reports/${singleReportRef}/reviews`) {
+        reported = true;
+        return response({ review: { reviewRef: "review-1" } });
+      }
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) {
+        return response({ ...singleReportView(), review: reported ? singleReviewReceipt() : null, proposals: [] });
+      }
       throw new Error(`unexpected fetch ${url}`);
     });
 
@@ -553,12 +617,76 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.getByText("0.12 m")).toBeTruthy();
     expect(screen.getByText("경계 유효 비율")).toBeTruthy();
     expect(screen.getByText("95%")).toBeTruthy();
-    expect(screen.getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
+    expect(document.body.textContent ?? "").not.toContain("준비 중");
     expect(screen.queryByText("순변화")).toBeNull();
     expect(screen.queryByText(/기준 촬영/)).toBeNull();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/reviews"))).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "결과 검토 기록" }));
+    await screen.findByText("결과 검토를 기록했습니다.");
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === `/api/external-single-volume-reports/${singleReportRef}/reviews`)).toBe(true);
+    expect(screen.getByText("대상: 이 측정에 사용한 작업구역")).toBeTruthy();
+    expect(screen.queryByText("대상: 이 비교에 사용한 작업구역")).toBeNull();
+  });
+
+  it("proposes the exact single report zone, approves the successor, and shows only the target audit detail", async () => {
+    const request = singleRequest("SUCCEEDED");
+    const singleProposalRef = `erop-v1-${"d".repeat(64)}`;
+    let proposed: { proposal: Record<string, unknown>; approvalReceipt: Record<string, unknown> | null } | null = null;
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return response({ items: [request] });
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) return response(request);
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) {
+        return response({ ...singleReportView(), review: singleReviewReceipt(), proposals: proposed ? [proposed] : [] });
+      }
+      if (url === "/api/external-reobservation-proposals") {
+        proposed = { proposal: { proposalRef: singleProposalRef, version: 1, reportRef: singleReportRef, targetWorkAreas: [{ workAreaId: "pile-1" }] }, approvalReceipt: null };
+        return response(proposed);
+      }
+      if (url === "/api/external-reobservation-proposals/approve") {
+        proposed = { ...proposed!, approvalReceipt: { successorWorkOrderId: "successor-1", receiptDigest: digest("f"), approvedAt: "2026-09-15T04:00:00Z" } };
+        return response(proposed);
+      }
+      if (url === "/api/sites/site-1/observation-work-orders") return response({ workOrders: [{ workOrderId: "successor-1", name: "Core successor" }] });
+      throw new Error(`unexpected fetch ${url} ${init?.method ?? "GET"}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["WORK_ORDERS_WRITE", "REOBSERVATION_APPROVE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
+    expect(await screen.findByText("대상: 이 측정에 사용한 작업구역")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("재관측 제안 사유"), { target: { value: "현장 확인" } });
+    fireEvent.click(screen.getByRole("button", { name: "이 작업구역으로 재관측 제안" }));
+    await screen.findByText("재관측 제안이 기록되었습니다.");
+    const proposalCall = fetchMock.mock.calls.find(([url]) => url === "/api/external-reobservation-proposals")?.[1] as RequestInit;
+    expect(JSON.parse(String(proposalCall.body))).toEqual({ reportRef: singleReportRef, targetWorkAreaIds: ["pile-1"], reason: "현장 확인" });
+    fireEvent.click(screen.getByRole("button", { name: "재관측 후속 작업 승인" }));
+    await waitFor(() => expect(router.push).toHaveBeenCalledWith("/field/work-orders/successor-1"));
+    expect(router.refresh).toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-1");
+    fireEvent.click(screen.getByText("전문가용 검토 기록"));
+    const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
+    expect(audit.textContent).toContain("대상 촬영");
+    expect(audit.textContent).toContain("0.04m");
+    expect(audit.textContent).not.toContain("기준");
+    expect(document.body.textContent ?? "").not.toContain("준비 중");
+  });
+
+  it("shows an unrecorded single target RMSE as 미기록 without baseline fields", async () => {
+    const request = singleRequest("SUCCEEDED");
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return response({ items: [request] });
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) return response(request);
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) {
+        return response({ ...singleReportView(), review: singleReviewReceipt(null), proposals: [] });
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["WORK_ORDERS_WRITE"]} />);
+    fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
+    await screen.findByText(/결과 검토 기록이 있습니다\./);
+    fireEvent.click(screen.getByText("전문가용 검토 기록"));
+    const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
+    expect(audit.textContent).toContain("미기록");
+    expect(audit.textContent).not.toContain("기준");
   });
 
   it("shows unknown uncertainty as not estimated and hides the volume when boundary coverage is below policy", async () => {

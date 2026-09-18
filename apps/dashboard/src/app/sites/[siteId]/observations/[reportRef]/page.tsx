@@ -8,8 +8,10 @@ import { TeamReportShare } from "@/components/external-results/TeamReportShare";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
   getExternalRelativeVolumeReport,
+  getExternalSingleVolumeReport,
   getSiteExternalRelativeVolumeReport,
   type ExternalRelativeVolumeReportView,
+  type ExternalSingleVolumeReportView,
 } from "@/lib/core-api/external-result-workflow";
 import { getObservationWorkOrderOperations } from "@/lib/core-api/observation-work-orders";
 import { resolveExactReportSafeDerivativePair } from "@/lib/core-api/external-report-display";
@@ -49,14 +51,14 @@ function isExactReportDetail(
 }
 
 async function resolveSuccessorTrace(
-  detail: ExternalRelativeVolumeReportView,
+  detail: ExternalRelativeVolumeReportView | ExternalSingleVolumeReportView,
   reportRef: string,
   reportDigest: string,
   scope: { organizationId: string; siteId: string },
 ): Promise<ReportSuccessorTrace[]> {
   const review = detail.review;
-  if (review === null || review.reportRef !== reportRef || review.report.reportDigest !== reportDigest) return [];
-  const successorIds = [...new Set(detail.proposals.flatMap((entry) => (
+  if (review === null || review === undefined || review.reportRef !== reportRef || review.report.reportDigest !== reportDigest) return [];
+  const successorIds = [...new Set((detail.proposals ?? []).flatMap((entry) => (
     entry.approvalReceipt !== null
       && entry.proposal.reportRef === reportRef
       && entry.proposal.reportDigest === reportDigest
@@ -112,15 +114,25 @@ export default async function SiteObservationDetailPage({
   }
   const names = new Map(loaded.areas.workAreas.map((area) => [area.workAreaId, area.name]));
   const projection = loaded.projection.state === "AVAILABLE" ? loaded.projection.result ?? null : null;
-  // A SINGLE_VOLUME result has no baseline pair, relative report detail, team share or
-  // review/successor trace in this plan; render only its retained Core row.
+  // A SINGLE_VOLUME result has no baseline pair or relative report detail; its exact
+  // single report is re-verified below before it feeds share or successor facts.
   const single = isSingleVolumeResult(projection);
   const detail = projection === null || single
     ? null
     : await getExternalRelativeVolumeReport(reportRef).catch(() => null);
+  const singleDetail = projection === null || !single
+    ? null
+    : await getExternalSingleVolumeReport(reportRef).catch(() => null);
   const organizationId = session.principal.organizationId;
   const exactDetail = detail !== null && projection !== null && isExactReportDetail(detail, projection, siteId, reportRef, organizationId)
     ? detail
+    : null;
+  // The single exact view is trusted only when it re-verifies against the projection:
+  // the same report id and the same retained report digest. No weaker binding is shown.
+  const exactSingleDetail = singleDetail !== null && projection !== null
+    && singleDetail.report.reportId === reportRef
+    && singleDetail.report.reportDigest === projection.reportDigest
+    ? singleDetail
     : null;
   const displayPair = exactDetail === null
     ? unavailablePair("보관된 보고서 상세와 현재 표시 결속을 함께 확인하지 못했습니다.")
@@ -128,9 +140,10 @@ export default async function SiteObservationDetailPage({
       organizationId,
       siteId,
     });
-  const successors = exactDetail === null || projection === null
+  const verifiedDetail = exactDetail ?? exactSingleDetail;
+  const successors = verifiedDetail === null || projection === null
     ? null
-    : await resolveSuccessorTrace(exactDetail, reportRef, projection.reportDigest, {
+    : await resolveSuccessorTrace(verifiedDetail, reportRef, projection.reportDigest, {
       organizationId,
       siteId,
     });
@@ -150,7 +163,7 @@ export default async function SiteObservationDetailPage({
     </header>
     <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: loaded.projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: loaded.projection.result ?? null }]} workAreaNames={names} />
     {!single && <ExternalReportSafeDerivativeComparison pair={displayPair} />}
-    {exactDetail !== null && <TeamReportShare
+    {verifiedDetail !== null && <TeamReportShare
       key={`${organizationId}:${session.principal.principalId}:${reportRef}`}
       reportRef={reportRef}
       siteId={siteId}
@@ -160,7 +173,6 @@ export default async function SiteObservationDetailPage({
     />}
     {projection !== null && <ExternalReportFollowupTrace
       reportRef={reportRef}
-      singleVolume={single}
       // Core's report_for_site merges both external volume families; a SINGLE_VOLUME
       // result has baselineWorkOrderId null and the trace shows no baseline link for it.
       baselineWorkOrderId={projection.baselineWorkOrderId}

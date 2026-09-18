@@ -132,10 +132,25 @@ describe("ExternalSiteResultSummary", () => {
     expect(text).not.toContain("비교");
     expect(text).not.toContain("순변화");
     expect(text).not.toContain("+1,233.5");
-    expect(screen.getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
+    expect(text).not.toContain("준비 중");
+    expect(screen.getByText("결과를 확인한 뒤 검토 또는 추가 관측을 선택할 수 있습니다.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "체적 측정 기록 보기" }).getAttribute("href")).toBe(
       "/field/work-orders/work-current#external-volume",
     );
+  });
+
+  it("marks a reviewed single-volume result with the retained review record", () => {
+    const reviewed = available({
+      kind: "EXTERNAL_SINGLE_VOLUME",
+      reportRef: `external-single-volume-report-${"b".repeat(32)}`,
+      baselineWorkOrderId: null,
+      baselineCapturedFrom: null,
+      baselineCapturedTo: null,
+      reviewedAt: "2026-09-08T04:00:00Z",
+    });
+    render(<ExternalSiteResultSummary externalResult={reviewed} />);
+    expect(screen.getByText("결과 검토 기록이 있습니다.")).toBeTruthy();
+    expect(document.body.textContent ?? "").not.toContain("준비 중");
   });
 
   it("shows an unestimated single-volume uncertainty as not estimated", () => {

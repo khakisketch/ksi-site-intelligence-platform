@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { isExternalSingleVolumeReportReference } from "@/lib/external-single-volume-references";
 
 type Member = {
   principalId: string;
@@ -78,7 +79,12 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
     setPending(attempt);
     setFeedback(null);
     try {
-      const response = await fetch(`/api/external-relative-volume-reports/${encodeURIComponent(reportRef)}/shares`, {
+      // A single-volume result is shared through its own family route; any other
+      // ref keeps the relative route (current behavior).
+      const sharePath = isExternalSingleVolumeReportReference(reportRef)
+        ? `/api/external-single-volume-reports/${encodeURIComponent(reportRef)}/shares`
+        : `/api/external-relative-volume-reports/${encodeURIComponent(reportRef)}/shares`;
+      const response = await fetch(sharePath, {
         method: "POST",
         headers: { "content-type": "application/json", "Idempotency-Key": attempt.key },
         body: JSON.stringify({ recipientPrincipalId: attempt.recipientPrincipalId }),

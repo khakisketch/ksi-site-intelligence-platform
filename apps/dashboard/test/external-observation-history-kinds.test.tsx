@@ -10,6 +10,7 @@ const mocked = vi.hoisted(() => ({
   relativeHistory: vi.fn(),
   projection: vi.fn(),
   detail: vi.fn(),
+  singleDetail: vi.fn(),
   pair: vi.fn(),
   operations: vi.fn(),
   share: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("@/lib/core-api/external-result-workflow", () => ({
   listSiteExternalRelativeVolumeHistory: mocked.relativeHistory,
   getSiteExternalRelativeVolumeReport: mocked.projection,
   getExternalRelativeVolumeReport: mocked.detail,
+  getExternalSingleVolumeReport: mocked.singleDetail,
 }));
 vi.mock("@/lib/core-api/external-report-display", () => ({ resolveExactReportSafeDerivativePair: mocked.pair }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ getObservationWorkOrderOperations: mocked.operations }));
@@ -131,6 +133,8 @@ describe("merged external volume history rows", () => {
     expect(singleScope.getByText("0.46 m")).toBeTruthy();
     expect(singleScope.getByText("경계 유효 비율")).toBeTruthy();
     expect(singleScope.getByText("87.5%")).toBeTruthy();
+    expect(singleScope.getByText("검토 기록 없음")).toBeTruthy();
+    expect(singleRow!.textContent ?? "").not.toContain("준비 중");
     expect(singleRow!.textContent).toContain("현재");
     expect(singleRow!.textContent).not.toContain("기준");
     expect(singleRow!.textContent).not.toContain("순변화");
@@ -205,23 +209,56 @@ describe("site observation pages", () => {
     );
   });
 
-  it("renders a single-volume detail with the single row and no pair display, share, or review trace", async () => {
+  it("renders a single-volume detail with the single row, team share, and a review trace without baseline", async () => {
     mocked.projection.mockResolvedValue({ state: "AVAILABLE", result: single });
+    mocked.singleDetail.mockResolvedValue({
+      request: { requestId: "single-request-1" },
+      report: { reportId: singleRef, reportDigest: "sha256:report" },
+      executionPolicy: {},
+      review: null,
+      proposals: [],
+    });
+    mocked.operations.mockResolvedValue(null);
     const { container } = render(await SiteObservationDetailPage({
       params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
     }));
     expect(mocked.projection).toHaveBeenCalledWith("site-1", singleRef);
+    expect(mocked.singleDetail).toHaveBeenCalledWith(singleRef);
     expect(mocked.detail).not.toHaveBeenCalled();
     expect(mocked.pair).not.toHaveBeenCalled();
-    expect(screen.queryByTestId("team-share")).toBeNull();
+    expect(screen.getByTestId("team-share")).toBeTruthy();
+    expect(mocked.share).toHaveBeenCalledWith(expect.objectContaining({ reportRef: singleRef }));
     const [row] = rows(container);
     expect(within(row!).getByText("단일 시점 체적")).toBeTruthy();
     expect(within(row!).getByText("1,234.5 m³")).toBeTruthy();
     expect(within(row!).getByText("0.46 m")).toBeTruthy();
     expect(within(row!).queryByRole("link", { name: "이 범위로 새 관측" })).toBeNull();
     const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
-    expect(within(trace).getByText("단일 시점 결과 검토는 준비 중입니다.")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "결과 검토와 후속 작업" })).toBeNull();
+    expect(trace.textContent ?? "").not.toContain("준비 중");
+    expect(within(trace).getByRole("link", { name: "결과 검토와 후속 작업" }).getAttribute("href")).toContain(encodeURIComponent(singleRef));
+    expect(within(trace).queryByRole("link", { name: "기준 작업 보기" })).toBeNull();
     expect(container.textContent).not.toContain("기준 관측과 현재 관측을 비교한");
+  });
+
+  it("withholds single-volume share and successor facts when the exact single digest diverges", async () => {
+    mocked.projection.mockResolvedValue({ state: "AVAILABLE", result: single });
+    mocked.singleDetail.mockResolvedValue({
+      request: { requestId: "single-request-1" },
+      report: { reportId: singleRef, reportDigest: "sha256:other" },
+      executionPolicy: {},
+      review: { reviewRef: "review-1", reviewDigest: "sha256:review", reportRef: singleRef, report: { reportDigest: "sha256:other" } },
+      proposals: [{
+        proposal: { reportRef: singleRef, reportDigest: "sha256:other", reviewRef: "review-1", reviewDigest: "sha256:review" },
+        approvalReceipt: { successorWorkOrderId: "successor-1" },
+      }],
+    });
+    render(await SiteObservationDetailPage({
+      params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
+    }));
+    expect(screen.queryByTestId("team-share")).toBeNull();
+    expect(mocked.share).not.toHaveBeenCalled();
+    expect(mocked.operations).not.toHaveBeenCalled();
+    const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
+    expect(within(trace).queryByRole("link", { name: "승인된 후속 작업 보기" })).toBeNull();
   });
 });

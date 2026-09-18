@@ -3,7 +3,6 @@ import Link from "next/link";
 import {
   ExternalVolumeKindBadge,
   isSingleVolumeResult,
-  SINGLE_VOLUME_REVIEW_PENDING,
   SingleVolumeResult,
 } from "@/components/external-results/SingleVolumeResult";
 import { StateBadge } from "@/components/ui/StatusBadge";
@@ -130,7 +129,9 @@ function SingleVolumeSummary({
 
       {!compact && (
         <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-4 py-3">
-          <p className="text-[12px] break-keep text-ink-muted">{SINGLE_VOLUME_REVIEW_PENDING}</p>
+          <p className="text-[12px] break-keep text-ink-muted">
+            {result.reviewedAt ? "결과 검토 기록이 있습니다." : "결과를 확인한 뒤 검토 또는 추가 관측을 선택할 수 있습니다."}
+          </p>
           <Link
             href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}#external-volume`}
             className="btn shrink-0 print:hidden"

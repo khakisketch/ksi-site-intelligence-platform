@@ -2,7 +2,7 @@
 
 import { ExternalResultReviewActions } from "@/components/external-results/ExternalResultReviewActions";
 import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUseBlockerCard";
-import { SINGLE_VOLUME_REVIEW_PENDING, SingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
+import { SingleVolumeResult } from "@/components/external-results/SingleVolumeResult";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -14,6 +14,7 @@ import type {
   ExternalRelativeVolumeRequestView,
   ExternalResultReview,
   ExternalSingleVolumeReportView,
+  ExternalSingleVolumeResultReview,
 } from "@/lib/core-api/external-result-workflow";
 import {
   isExternalRelativeVolumeReportReference,
@@ -256,6 +257,34 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
   );
 }
 
+/**
+ * A single-volume review binds one capture window and one target RMSE. It has no
+ * baseline epoch, so no baseline field is ever shown here.
+ */
+function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolumeResultReview }) {
+  const { authority, decision, report, request } = review;
+  return (
+    <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
+      <summary className="cursor-pointer font-semibold">전문가용 검토 기록</summary>
+      <div className="mt-2 flex flex-col gap-1 break-all">
+        <p>검토 다이제스트: {review.reviewDigest ?? "기록 없음"}</p>
+        <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
+        <p>검토 보고서: {review.reportRef} · 요청 {request.requestId}</p>
+        <p>검토 보고 다이제스트: {report.reportDigest ?? "기록 없음"} · 요청 다이제스트 {request.requestDigest ?? "기록 없음"}</p>
+        <p>검토 결정: {decision.decisionId} · {decision.decisionDigest ?? "기록 없음"}</p>
+        <p>대상 촬영 {observationRange(request.target.capturedFrom, request.target.capturedTo)}</p>
+        <p>대상 독립 검사점 RMSE: {authority.targetRmseM === null ? "미기록" : `${authority.targetRmseM}m`}</p>
+        <p>대상: {subjectLabel(authority.target.subject)} · 검사 {authority.target.inspectionReportDigest}</p>
+        <p>구역 ID: {authority.zoneSnapshot.workAreaId} · rev {authority.zoneSnapshot.revision} · 정의 {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>검증 정책: {authority.validationPolicyDigest} · 실행 정책: {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
+        <p>호환 매핑: {authority.compatibilityMappingDigest} · 권한 기록: {authority.authorityDigest ?? "기록 없음"}</p>
+        <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
+        {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
+      </div>
+    </details>
+  );
+}
+
 function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportView }) {
   const metrics = view.report.payload.metrics;
   const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction
@@ -299,19 +328,31 @@ function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportVi
 }
 
 /**
- * SINGLE_VOLUME issue, request status and result. Review, proposal and team share do
- * not exist for single-epoch results in this plan, so no such action is offered.
+ * SINGLE_VOLUME issue, request status, result, review, proposal, approval and the
+ * shared successor navigation. Review, proposal and approval reuse the family's own
+ * review path through `ExternalResultReviewActions`.
  */
 function SingleVolumeWorkflow({
   workOrderId,
   decision,
   canIssuePermission,
   newIntentAllowed,
+  hasReviewPermission,
+  canApprovePermission,
+  onApproved,
 }: {
   workOrderId: string;
   decision: ExternalRelativeVolumeDecision | null;
   canIssuePermission: boolean;
   newIntentAllowed: boolean;
+  hasReviewPermission: boolean;
+  canApprovePermission: boolean;
+  /**
+   * Core approved the proposal and bound a successor. The parent finishes the approval
+   * (work list refresh, navigation) and must stop as soon as `signal` is aborted, which
+   * happens when this attempt is retired.
+   */
+  onApproved: (view: ExternalReobservationProposalView, signal: AbortSignal) => void | Promise<void>;
 }) {
   const scope = useRef(0);
   const activeMutation = useRef<AbortController | null>(null);
@@ -524,6 +565,32 @@ function SingleVolumeWorkflow({
     }
   };
 
+  // Re-reads the exact retained single report after Core records a review or a
+  // proposal, so the UI shows Core truth. The binding check matches the selection
+  // read above: a report bound to another request is never shown.
+  const reloadSingleReport = useCallback(async (reportRef: string, requestRef: string) => {
+    try {
+      const value = await responseJson<ExternalSingleVolumeReportView>(await fetch(
+        `/api/external-single-volume-reports/${encodeURIComponent(reportRef)}`,
+        { cache: "no-store" },
+      ));
+      if (value.report.reportId !== reportRef || value.request.requestId !== requestRef) throw new Error("REPORT_BINDING_CHANGED");
+      setReport(value);
+      setReportPhase("ready");
+    } catch {
+      setReport(null);
+      setReportPhase("error");
+    }
+  }, []);
+
+  const singleReportId = report?.report.reportId ?? null;
+  const handleSingleReviewed = useCallback(() => {
+    if (selectedRef && singleReportId) void reloadSingleReport(singleReportId, selectedRef);
+  }, [reloadSingleReport, selectedRef, singleReportId]);
+  const handleSingleProposal = useCallback(() => {
+    if (selectedRef && singleReportId) void reloadSingleReport(singleReportId, selectedRef);
+  }, [reloadSingleReport, selectedRef, singleReportId]);
+
   if (notConfigured) {
     return (
       <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
@@ -572,7 +639,23 @@ function SingleVolumeWorkflow({
       {reportPhase === "error" && <p role="alert">체적 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.</p>}
       {report && reportPhase === "ready" && <>
         <SingleVolumeReportDetail view={report} />
-        <p className="text-ink-2">{SINGLE_VOLUME_REVIEW_PENDING}</p>
+        <ExternalResultReviewActions
+          key={selectedRef ?? report.report.reportId}
+          reportRef={report.report.reportId}
+          reviewPath={`/api/external-single-volume-reports/${encodeURIComponent(report.report.reportId)}/reviews`}
+          review={report.review ?? null}
+          proposals={report.proposals ?? []}
+          targetWorkAreaId={report.request.zoneSnapshot.workAreaId}
+          targetLabel="대상: 이 측정에 사용한 작업구역"
+          reviewReason="단일 시점 결과 검토 기록은 노트북 이상의 화면에서 진행합니다."
+          newIntentAllowed={newIntentAllowed}
+          hasReviewPermission={hasReviewPermission}
+          canApprovePermission={canApprovePermission}
+          onReviewed={handleSingleReviewed}
+          onProposal={handleSingleProposal}
+          onApproved={onApproved}
+          renderReviewDetail={(item) => <SingleVolumeReviewAuditDetail review={item} />}
+        />
       </>}
       {message && <p role="status">{message}</p>}
     </div>
@@ -1021,6 +1104,9 @@ export function ExternalResultWorkflowPanel({
         decision={singleVolumeDecision}
         canIssuePermission={hasIssuePermission}
         newIntentAllowed={newIntentAllowed}
+        hasReviewPermission={hasReviewPermission}
+        canApprovePermission={hasApprovalPermission}
+        onApproved={handleApproved}
       />}
 
       {message && <p role="status">{message}</p>}

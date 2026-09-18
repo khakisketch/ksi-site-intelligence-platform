@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import {
   ExternalVolumeKindBadge,
   isSingleVolumeResult,
-  SINGLE_VOLUME_REVIEW_PENDING,
   SingleVolumeResult,
 } from "@/components/external-results/SingleVolumeResult";
 import type { ExternalVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
@@ -84,7 +83,7 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
       </div>
       {single ? (
         metrics ? (
-          <div className="px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{SINGLE_VOLUME_REVIEW_PENDING}</p><SingleVolumeResult fillM3={metrics.fillM3} uncertaintyM3={metrics.uncertaintyM3} uncertaintyNote={metrics.uncertaintyNote} baseRoughnessM={metrics.baseRoughnessM} boundaryValidFraction={metrics.boundaryValidFraction} /></div>
+          <div className="px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p><SingleVolumeResult fillM3={metrics.fillM3} uncertaintyM3={metrics.uncertaintyM3} uncertaintyNote={metrics.uncertaintyNote} baseRoughnessM={metrics.baseRoughnessM} boundaryValidFraction={metrics.boundaryValidFraction} /></div>
         ) : <p className="px-4 py-3 text-[13px] leading-5 text-ink-2">체적 결과 수치를 표시할 수 없습니다.</p>
       ) : metrics ? (
         <div className="overflow-x-auto px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p><table className="w-full min-w-[40rem] text-left text-[12.5px]"><thead className="text-ink-muted"><tr><th className="pb-2 pr-4 font-semibold">절토</th><th className="pb-2 pr-4 font-semibold">성토</th><th className="pb-2 pr-4 font-semibold">순변화</th><th className="pb-2 pr-4 font-semibold">공통 유효 영역</th><th className="pb-2 font-semibold">불확실성</th></tr></thead><tbody><tr className="border-t border-line"><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.cutM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.fillM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{signed(metrics.netM3)}</td><td className="py-2 pr-4">{number(metrics.commonValidFraction * 100)}%<span className="block text-[11px] text-ink-muted">{number(metrics.measuredAreaM2)} / {number(metrics.zoneAreaM2)} m²</span></td><td className="py-2">{metrics.uncertaintyM3 === null ? "미산정" : `±${number(metrics.uncertaintyM3)} m³`}<span className="block text-[11px] leading-4 text-ink-muted">{metrics.uncertaintyNote}</span></td></tr></tbody></table></div>
