@@ -32,6 +32,8 @@ from ksi_core.domains.external.workflow.external_reobservation_proposals import 
     ExternalReobservationProposalView,
 )
 from ksi_core.domains.external.workflow.external_result_projection_models import (
+    ExternalPendingDecisionItem,
+    ExternalPendingDecisionsView,
     ExternalResultExecutionPolicyView,
     ExternalResultKind,
     ExternalResultMetricsView,
@@ -281,6 +283,56 @@ class ExternalResultReadProjector:
             if result is None or result.work_area_id == "":
                 raise LookupError("external relative volume report was not found")
         return projection
+
+    def pending_decisions(self, *, organization_id: str) -> ExternalPendingDecisionsView:
+        """External results that wait for a person, one per site (AX-4, ADR-KSI-025 D1).
+
+        Pending is read from retained ledgers only: a succeeded measurement
+        without a review waits for review; a proposal without an approval
+        receipt waits for approval. A row whose historical source cannot be
+        resolved is skipped rather than guessed.
+        """
+
+        chosen: list[tuple[int, datetime, str, ExternalPendingDecisionItem]] = []
+        for site in self._workflow.sites.list_scoped(organization_id):
+            best: tuple[int, datetime, str, ExternalPendingDecisionItem] | None = None
+            for report_ref in self._report_index(site.site_id, organization_id=organization_id):
+                projection = self._for_report_ref(report_ref, organization_id=organization_id)
+                result = projection.result
+                if (
+                    projection.state is not ExternalResultProjectionState.AVAILABLE
+                    or result is None
+                    or result.metrics is None
+                ):
+                    continue
+                stage: Literal["AWAITING_REVIEW", "AWAITING_APPROVAL"]
+                if result.measurement_status == "SUCCEEDED" and result.review_ref is None:
+                    rank, stage = 0, "AWAITING_REVIEW"
+                elif result.proposal_count > result.approved_proposal_count:
+                    rank, stage = 1, "AWAITING_APPROVAL"
+                else:
+                    continue
+                if best is not None and (rank, result.reported_at, report_ref) >= best[:3]:
+                    continue
+                best = (
+                    rank,
+                    result.reported_at,
+                    report_ref,
+                    ExternalPendingDecisionItem(
+                        site_id=site.site_id,
+                        report_ref=report_ref,
+                        kind=result.kind,
+                        stage=stage,
+                        reported_at=result.reported_at,
+                        net_m3=result.metrics.net_m3,
+                        uncertainty_m3=result.metrics.uncertainty_m3,
+                        work_area_id=result.work_area_id,
+                    ),
+                )
+            if best is not None:
+                chosen.append(best)
+        chosen.sort(key=lambda entry: entry[:3])
+        return ExternalPendingDecisionsView(items=[entry[3] for entry in chosen])
 
     def citation_for(
         self, projection: ExternalResultProjectionView, *, site_name: str

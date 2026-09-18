@@ -84,7 +84,26 @@ class ExternalResultProjectionView(CamelModel):
     result: ExternalResultSummaryView | None = None
 
 
+class ExternalPendingDecisionItem(CamelModel):
+    """One external result that waits for a person (AX-4, ADR-KSI-025 D1)."""
+
+    site_id: str
+    report_ref: str
+    kind: ExternalResultKind
+    stage: Literal["AWAITING_REVIEW", "AWAITING_APPROVAL"]
+    reported_at: datetime
+    net_m3: float
+    uncertainty_m3: float | None
+    work_area_id: str
+
+
+class ExternalPendingDecisionsView(CamelModel):
+    items: list[ExternalPendingDecisionItem]
+
+
 __all__ = [
+    "ExternalPendingDecisionItem",
+    "ExternalPendingDecisionsView",
     "ExternalResultExecutionPolicyView",
     "ExternalResultKind",
     "ExternalResultMetricsView",
