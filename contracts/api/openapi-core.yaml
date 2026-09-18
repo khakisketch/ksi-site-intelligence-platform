@@ -14164,6 +14164,112 @@ components:
       - review
       title: ExternalResultReviewView
       description: One review receipt of either family, discriminated on ``contractVersion``.
+    ExternalSingleVolumeDecisionV1:
+      properties:
+        contractVersion:
+          type: string
+          const: external-single-volume-decision.v1
+          title: Contractversion
+          default: external-single-volume-decision.v1
+        decisionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Decisionid
+        subject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        subjectDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Subjectdigest
+        use:
+          type: string
+          const: SINGLE_VOLUME
+          title: Use
+          default: SINGLE_VOLUME
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+        inspectionReportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Inspectionreportdigest
+        evidenceRecordDigests:
+          items:
+            type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          type: array
+          maxItems: 64
+          title: Evidencerecorddigests
+        zone:
+          anyOf:
+          - $ref: '#/components/schemas/SealedZoneReferenceV1'
+          - type: 'null'
+        compatibilityMappingDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Compatibilitymappingdigest
+        verdict:
+          $ref: '#/components/schemas/DecisionVerdict'
+        reasons:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          maxItems: 32
+          minItems: 1
+          title: Reasons
+        remediations:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          maxItems: 32
+          minItems: 1
+          title: Remediations
+        decidedAt:
+          type: string
+          format: date-time
+          title: Decidedat
+        decisionDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Decisiondigest
+      additionalProperties: false
+      type: object
+      required:
+      - decisionId
+      - subject
+      - subjectDigest
+      - evidenceRecordDigests
+      - verdict
+      - reasons
+      - remediations
+      - decidedAt
+      title: ExternalSingleVolumeDecisionV1
+      description: 'Core''s immutable single-subject SINGLE_VOLUME decision.
+
+
+        A non-BLOCKED decision binds the current policy, the MEASURED inspection
+
+        report, exactly one independently attested evidence record, the immutable
+
+        zone reference and the admitted single mapping.  A BLOCKED decision binds
+
+        none of them so a later reader cannot mistake a blocker for authority.'
     ExternalSingleVolumeResultReviewReceiptV1:
       properties:
         contractVersion:
@@ -14203,7 +14309,7 @@ components:
         authority:
           $ref: '#/components/schemas/ExternalSingleVolumeResultReviewAuthorityV1'
         decision:
-          $ref: ../schemas/external-single-volume-decision.v1.json
+          $ref: '#/components/schemas/ExternalSingleVolumeDecisionV1'
         factualLimitations:
           items:
             type: string
