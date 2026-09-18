@@ -1,5 +1,5 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-09-17
+Updated: 2026-09-18
 ## Goal
 현장 관측·임무·증거를 다루는 Site Intelligence 플랫폼.
 First-release 방향(ADR-KSI-036)은 고객 장비 재구성 + KSI 등록·검증·분석이며, 원본은 고객 장비에 둔다.
@@ -113,6 +113,7 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 | external-reconstruction-contract-v1 | 외부 재구성 제출·관측 매니페스트 계약 검증 | done | docs/audit/EXTERNAL_RECONSTRUCTION_CONTRACT_V1_VERIFICATION.md |
 | external-reconstruction-ingress-api-v1 | External reconstruction authenticated registration upload sealing and replay API | done | docs/audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md |
 | external-artifact-validation-v1 | 외부 재구성 산출물 파일 검사와 용도별 사용 적합성 판정 | in_progress | 2026-09-07 |
+| external-single-volume-v1 | 단일 시점 체적 — 외부 산출물의 단일 시점 적치물 체적 측정·검토·재관측 (SV-1..SV-4) | done | docs/superpowers/plans/2026-09-18-single-volume-sv4.md · 커밋 90c7ec5/89d7533/77a3840 · 리허설 .dev-data/sv4-rehearsal/EVIDENCE.md (machine-local) |
 ## Current slice
 - Name: 외부 재구성 산출물 파일 검사와 용도별 사용 적합성 판정
 - Acceptance (user-visible end-to-end): EXT-VAL-01 actual sealed derived bytes format and spatial metadata inspection; EXT-VAL-02 customer declarations separated from measured facts; EXT-VAL-03 versioned Core per-use display comparison height volume decisions with evidence-bound positive and negative paths; EXT-VAL-04 explicit remediation without blanket raw-upload or DSM absence denial; EXT-VAL-05 bounded resources transient retry fencing tenant isolation and restart replay; EXT-VAL-06 mounted Core and processing-controller workflow without managed identity impersonation; EXT-VAL-07 reviewed detailed plan contracts tests independent and integrated verification; EXT-VAL-08 durable docs goal evidence and local versus release acceptance boundaries
@@ -150,3 +151,6 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - [2026-09-17] `tests/contract/test_external_runtime_deployment_contract.py::test_private_bus_rejects_hard_link_and_detects_substitution` fails on this workstation (deploy bash helper `private_socket_identity` returns 1 after the hard link is removed); files untouched by recent merges, environment-dependent, not blocking the external slice — reproduce on a clean host before changing the helper
 - [2026-09-17] ExternalEvidenceValidationStore replay re-validates old-policy issued events after policy rotation + restart (latent boot hazard) (rehearsal observation; not reproduced — provenance: A2-fix session summary, not EVIDENCE.md) - source(investigation) - not blocking — docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md and docs/superpowers/plans/2026-09-07-external-artifact-validation.md (Execution state section)
 - [2026-09-17] Dashboard experience audit (27-capture design review + run2 source work-order next-action finding): 21 work items across state honesty, consistency and mobile ergonomics; verify-first items marked, A5 likely covered by AX-1 — docs/superpowers/plans/2026-09-17-dashboard-experience-improvements.md - source(design-review) - not blocking
+- [2026-09-18] Selected-request status line renders raw ISO `issuedAt` ("보고 완료 · 2026-09-15T01:00:00Z") in both external result families; overlaps dashboard date-format SSOT (2026-09-17-dashboard-experience-improvements.md B1) - source(design-review) - not blocking
+- [2026-09-18] SV-3b render-lag follow-up: selectedRefRef/selectionGenerationRef mirrors update one render after selectRequest; a reload invoked in the same tick is dropped (fail-closed, retry needed) - source(review) - not blocking
+- [2026-09-18] Rehearsal evidence doc M-3: the runA/runB differ-by-design list omits the inspection report digest (measurement/evidence/briefing values identical) - source(review) - not blocking
