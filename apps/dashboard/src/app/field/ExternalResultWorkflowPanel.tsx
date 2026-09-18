@@ -293,7 +293,7 @@ function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportVi
     <section className="mt-2 rounded-lg border border-line bg-surface text-[13px]">
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
-          <h4 className="text-[15px] font-bold tracking-tight">단일 시점 체적 결과</h4>
+          <h3 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h3>
           <p className="mt-1 leading-5 text-ink-2">작업구역 {view.request.zoneSnapshot.workAreaId}</p>
         </div>
         <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>

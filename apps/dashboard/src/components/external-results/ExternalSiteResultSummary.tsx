@@ -134,7 +134,7 @@ function SingleVolumeSummary({
           </p>
           <Link
             href={`/field/work-orders/${encodeURIComponent(result.currentWorkOrderId)}#external-volume`}
-            className="btn shrink-0 print:hidden"
+            className="btn btn-primary shrink-0 print:hidden"
           >
             체적 측정 기록 보기
           </Link>
