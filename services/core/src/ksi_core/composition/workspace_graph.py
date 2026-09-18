@@ -63,9 +63,23 @@ def build_workspace_graph(
     # rather than being bound to one family's store — see
     # ``ExternalVolumeReportResolver``.  ``single`` stays ``None`` (today's
     # behavior) when single volume is not configured.
-    external_volume_report_resolver = ExternalVolumeReportResolver(
-        relative=external_relative_volume_store,
-        single=external_single_volume_store,
+    #
+    # The composite is built only when a relative store exists.  Wrapping a
+    # missing relative store in a composite that is never ``None`` would
+    # silently defeat ``WorkInboxStore``'s own
+    # ``if self._report_resolver is None: raise RuntimeError(...)`` guard,
+    # turning today's 503 EXTERNAL_REPORT_SHARING_UNAVAILABLE for an
+    # unconfigured relative family into a 404.  Single volume can only be
+    # configured alongside relative volume (``external_graph.py`` builds it
+    # nested inside the relative-volume branch), so this never leaves a
+    # configured single store unreachable.
+    external_volume_report_resolver = (
+        ExternalVolumeReportResolver(
+            relative=external_relative_volume_store,
+            single=external_single_volume_store,
+        )
+        if external_relative_volume_store is not None
+        else None
     )
     work_inbox_store = WorkInboxStore(
         journal("work-inbox.jsonl"),

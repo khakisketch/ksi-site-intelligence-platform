@@ -130,6 +130,16 @@ class WorkInboxStoreRecoveryError(RuntimeError):
     pass
 
 
+#: ``share_report``'s not-found detail, family-aware by the ref's own prefix
+#: (see :data:`SINGLE_VOLUME_REPORT_REF_PREFIX`).  The relative wording is
+#: exactly the pre-SV-3b text; both values are also each family route's
+#: own guard rejection detail (``build_work_inbox_router``), so a ref of the
+#: wrong family and a ref of its own family that fails to resolve read the
+#: same regardless of which check produced them.
+RELATIVE_SHARE_NOT_FOUND = "external relative volume report was not found"
+SINGLE_SHARE_NOT_FOUND = "external single volume report was not found"
+
+
 def _is_digest(value: object) -> bool:
     return (
         isinstance(value, str)
@@ -521,7 +531,11 @@ class WorkInboxStore:
                 report_ref, organization_id=organization_id, now=now.astimezone(UTC)
             )
             if exact is None:
-                raise LookupError("external relative volume report was not found")
+                raise LookupError(
+                    SINGLE_SHARE_NOT_FOUND
+                    if report_ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX)
+                    else RELATIVE_SHARE_NOT_FOUND
+                )
             site_id, report_digest = exact
             share_ref = (
                 "external-report-share-"
@@ -722,9 +736,6 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
 
-    _RELATIVE_SHARE_NOT_FOUND = "external relative volume report was not found"
-    _SINGLE_SHARE_NOT_FOUND = "external single volume report was not found"
-
     @router.post(
         "/v1/external-relative-volume-reports/{report_ref}/shares",
         response_model=ExternalReportShare,
@@ -742,7 +753,7 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
             idempotency_key,
             principal,
             owns_ref=lambda ref: not ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX),
-            not_found_detail=_RELATIVE_SHARE_NOT_FOUND,
+            not_found_detail=RELATIVE_SHARE_NOT_FOUND,
         )
 
     @router.post(
@@ -762,7 +773,7 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
             idempotency_key,
             principal,
             owns_ref=lambda ref: ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX),
-            not_found_detail=_SINGLE_SHARE_NOT_FOUND,
+            not_found_detail=SINGLE_SHARE_NOT_FOUND,
         )
 
     return router

@@ -1051,7 +1051,10 @@ def test_work_inbox_share_of_foreign_organization_single_volume_ref_is_not_found
         report_resolver=resolver,
     )
 
-    with pytest.raises(LookupError):
+    # Fix round 1 (Important): a genuine single-volume miss — not a
+    # family-mismatch — must still read with single-family wording, not the
+    # relative family's hardcoded text.
+    with pytest.raises(LookupError, match="^external single volume report was not found$"):
         inbox.share_report(
             _SINGLE_REPORT_REF,
             organization_id="org-b",
@@ -1216,6 +1219,51 @@ def test_single_volume_share_route_hides_a_foreign_organization_ref(tmp_path: Pa
     )
 
     assert response.status_code == 404
+    # Fix round 1 (Important): family-aware wording, not the relative
+    # family's hardcoded text.
+    assert response.json()["detail"] == "external single volume report was not found"
+
+
+def test_relative_share_route_keeps_its_own_not_found_wording_on_a_genuine_miss(
+    tmp_path: Path,
+) -> None:
+    """Fix round 1 (Important): making the single family's not-found wording
+    family-aware must not touch the relative family's own genuine-miss
+    wording or status — only the ref's own family's detail changes."""
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="viewer-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(inbox)
+
+    response = client.post(
+        "/v1/external-relative-volume-reports/report-does-not-exist/shares",
+        headers={"Authorization": "Bearer operator", "Idempotency-Key": "k1"},
+        json={"recipientPrincipalId": "viewer-b"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "external relative volume report was not found"
 
 
 def test_relative_share_journal_bytes_are_unchanged_by_a_composite_resolver(
@@ -1270,3 +1318,143 @@ def test_relative_share_journal_bytes_are_unchanged_by_a_composite_resolver(
     )
 
     assert relative_only_bytes == composite_bytes
+
+
+def test_relative_share_route_stays_unavailable_without_a_relative_store(tmp_path: Path) -> None:
+    """Fix round 1 (Critical): the workspace graph must not wrap a missing
+    relative store in a composite resolver — the composite object is never
+    ``None``, so the pre-existing ``if self._report_resolver is None`` 503
+    guard in ``WorkInboxStore._resolve_exact_report`` would go dead and a
+    relative share would 404 instead of 503 in an assembly with no relative
+    store configured (the exact shape
+    ``tests/contract/test_hostile_input_route_coverage.py``'s
+    ``_mounted_write_routes`` uses — no ``external_result_workflow``)."""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from ksi_core.app_assembly import assemble_app
+
+    opened: list[Any] = []
+
+    def journal(name: str) -> DurableJournal:
+        item = DurableJournal(tmp_path / name)
+        opened.append(item)
+        return item
+
+    try:
+        app = assemble_app(
+            tmp_path,
+            journal=journal,
+            opened=opened,
+            edge_sync_snapshot_every=100,
+            auth_registry=AuthRegistry([_token("operator", "operator-a", Role.FIELD_OPERATOR)]),
+            evidence_storage=None,
+            mission_signing_key=Ed25519PrivateKey.generate(),
+            mission_signing_key_id="regression-key",
+        )
+        app.state.organization_work_roster_store.put_member(
+            organization_id="org-a",
+            principal_id="viewer-b",
+            expected_revision=0,
+            display_name="검토자 B",
+            role_hint=OrganizationWorkRoleHint.VIEWER,
+            status=OrganizationWorkRosterStatus.ACTIVE,
+            actor="admin-a",
+            idempotency_key="member",
+            now=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+        client = TestClient(app, raise_server_exceptions=False)
+
+        response = client.post(
+            "/v1/external-relative-volume-reports/report-a/shares",
+            headers={"Authorization": "Bearer operator", "Idempotency-Key": "k1"},
+            json={"recipientPrincipalId": "viewer-b"},
+        )
+
+        assert response.status_code == 503
+        assert response.json()["detail"] == "EXTERNAL_REPORT_SHARING_UNAVAILABLE"
+    finally:
+        for item in opened:
+            item.close()
+
+
+def _minimal_workspace_graph_dependencies(tmp_path: Path) -> dict[str, Any]:
+    """Real, minimally-wired dependencies for ``build_workspace_graph`` — enough
+    to exercise its ``external_relative_volume_store``/``external_single_volume_store``
+    conditional wiring without needing the full ``assemble_app`` surface."""
+    from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
+    from ksi_core.mission_plans import MissionStore
+    from ksi_core.sites import SiteStore
+    from ksi_core.source_media import SourceMediaStore
+
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"), coordinator=coordinator)
+    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
+    source_media_store = SourceMediaStore(
+        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
+    )
+    roster = OrganizationWorkRosterStore(
+        DurableJournal(tmp_path / "roster.jsonl"), coordinator=coordinator
+    )
+    work_orders = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "orders.jsonl"),
+        site_exists=lambda site_id, organization_id: (
+            site_store.get_scoped(site_id, organization_id) is not None
+        ),
+        operations_coordinator=coordinator,
+        assignment_member_is_active=roster.is_assignable_member,
+    )
+    return {
+        "journal": lambda name: DurableJournal(tmp_path / name),
+        "coordinator": coordinator,
+        "observation_work_order_store": work_orders,
+        "organization_work_roster_store": roster,
+        "site_store": site_store,
+        "mission_store": mission_store,
+        "coverage_report_store": None,
+        "source_media_store": source_media_store,
+        "processing_job_store": None,
+        "design_surface_store": None,
+        "external_result_read_projector": None,
+        "acquisition_coordination_enabled": False,
+        "copilot_runtime_config": None,
+        "event_journal": DurableJournal(tmp_path / "events.jsonl"),
+    }
+
+
+def test_workspace_graph_report_resolver_wiring_matches_configured_stores(tmp_path: Path) -> None:
+    """Fix round 1 (Critical): pin ``build_workspace_graph``'s exact resolver
+    shape for every relative/single configuration, directly (not through the
+    heavier full-app assembly above)."""
+    from ksi_core.composition.workspace_graph import build_workspace_graph
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+
+    relative_store = object()
+    single_store = object()
+
+    none_dir = tmp_path / "none"
+    none_dir.mkdir()
+    none_workspace = build_workspace_graph(
+        **_minimal_workspace_graph_dependencies(none_dir),
+        external_relative_volume_store=None,
+    )
+    assert none_workspace.work_inbox_store._report_resolver is None  # noqa: SLF001
+
+    relative_only_dir = tmp_path / "relative-only"
+    relative_only_dir.mkdir()
+    relative_only_workspace = build_workspace_graph(
+        **_minimal_workspace_graph_dependencies(relative_only_dir),
+        external_relative_volume_store=relative_store,
+    )
+    relative_only_resolver = relative_only_workspace.work_inbox_store._report_resolver  # noqa: SLF001
+    assert isinstance(relative_only_resolver, ExternalVolumeReportResolver)
+    assert relative_only_resolver.uses(relative_store, None)
+
+    composite_dir = tmp_path / "composite"
+    composite_dir.mkdir()
+    composite_workspace = build_workspace_graph(
+        **_minimal_workspace_graph_dependencies(composite_dir),
+        external_relative_volume_store=relative_store,
+        external_single_volume_store=single_store,
+    )
+    composite_resolver = composite_workspace.work_inbox_store._report_resolver  # noqa: SLF001
+    assert isinstance(composite_resolver, ExternalVolumeReportResolver)
+    assert composite_resolver.uses(relative_store, single_store)
