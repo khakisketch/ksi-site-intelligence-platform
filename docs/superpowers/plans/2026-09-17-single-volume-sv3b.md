@@ -1,6 +1,6 @@
 # SINGLE_VOLUME SV-3b Implementation Plan — review, reobservation proposal and team share
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** An operator can review a SINGLE_VOLUME result, propose reobservation of its WorkArea, approve the successor work order and share the result with a teammate — with the same durable, replay-verified guarantees as a relative-volume result, and without changing a single relative-volume byte.
 
@@ -80,14 +80,14 @@
   - `parse_external_result_review_receipt(raw: object) -> ExternalResultReviewReceiptV1 | ExternalSingleVolumeResultReviewReceiptV1` (a module-level `TypeAdapter`).
   - `external_single_volume_result_review_receipt_wire_dict(receipt) -> dict[str, Any]` (sealed, `by_alias=True, mode="json", exclude_none=False`).
 
-- [ ] **Step 1: Write failing tests** (reuse the synthetic builders in `tests/contract/test_external_single_volume_contracts.py`; move any you need into `tests/contract/external_single_volume_contract_fixture.py` and import them from both files — no copies):
+- [x] **Step 1: Write failing tests** (reuse the synthetic builders in `tests/contract/test_external_single_volume_contracts.py`; move any you need into `tests/contract/external_single_volume_contract_fixture.py` and import them from both files — no copies):
   1. `test_receipt_seals_and_round_trips` — a receipt built from a sealed request, report, authority and ELIGIBLE decision seals; `model_validate(wire)` equals it; `review_digest == canonical_digest()`.
   2. `test_receipt_rejects_each_broken_binding` — parametrized: request target ≠ authority target; request evidence digests ≠ authority; validation policy digest mismatch; zone snapshot mismatch; execution policy digest mismatch; report request id/digest mismatch; `payload.target_dsm_digest != request.target.observed_sha256`; `payload.zone_snapshot_digest` mismatch; payload policy/algorithm/config digest mismatch; decision not ELIGIBLE; decision subject ≠ `request.target.subject`; decision `inspection_report_digest` ≠ target's; decision evidence ≠ request's; decision zone ≠ `request.zone_snapshot.to_zone_reference()`; decision mapping digest ≠ authority's; `source_work_order_id != request.current_work_order_id`; wrong factual limitations; each raises `ValidationError`.
   3. `test_union_dispatches_on_contract_version` — `parse_external_result_review_receipt` returns the relative class for a relative wire dict (use `test_external_result_review_proposals.py` builders) and the single class for a single wire dict; an unknown `contractVersion` raises.
   4. `test_relative_receipt_digest_is_unchanged` — pin the relative receipt digest from the existing relative fixture as a literal computed before this change.
   5. `test_schema_accepts_wire_and_rejects_extra_keys` — Draft 2020-12 validation of the wire dict against the new schema; an added top-level key fails (pattern: `test_external_single_volume_contracts.py` ~line 216).
-- [ ] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_review_contracts.py -q` → FAIL (module missing).
-- [ ] **Step 3: Implement.** Authority validator mirrors `ExternalResultReviewAuthorityV1._binds_full_authority` with `target` in place of `baseline/current` and `target_rmse_m` in place of the two RMSE fields:
+- [x] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_review_contracts.py -q` → FAIL (module missing).
+- [x] **Step 3: Implement.** Authority validator mirrors `ExternalResultReviewAuthorityV1._binds_full_authority` with `target` in place of `baseline/current` and `target_rmse_m` in place of the two RMSE fields:
 
 ```python
 class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
@@ -117,8 +117,8 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 ```
 
   Receipt validator: the checks listed in Step 1 test 2, in that order, each raising `ValueError` with a short message; decision checks require `decision.use == "SINGLE_VOLUME"` and `decision.verdict is DecisionVerdict.ELIGIBLE`. Export everything in `__all__`. Write the JSON schema by hand in the style of `contracts/schemas/external-result-review-receipt.v1.json` (`additionalProperties: false`, `$ref`s to the existing single-volume schemas where that file does so for relative ones).
-- [ ] **Step 4: Run** the Step 2 command plus `uv run --locked pytest tests/contract/test_external_single_volume_contracts.py tests/contract/test_external_result_review_proposals.py -q` → PASS; `uv run --locked mypy packages/event-contracts tests/contract/test_external_single_volume_result_review_contracts.py`.
-- [ ] **Step 5: Commit** `feat(contracts): single-volume result review receipt (SV-3b)`
+- [x] **Step 4: Run** the Step 2 command plus `uv run --locked pytest tests/contract/test_external_single_volume_contracts.py tests/contract/test_external_result_review_proposals.py -q` → PASS; `uv run --locked mypy packages/event-contracts tests/contract/test_external_single_volume_result_review_contracts.py`.
+- [x] **Step 5: Commit** `feat(contracts): single-volume result review receipt (SV-3b)`
 
 ---
 
@@ -142,20 +142,20 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
   - `ExternalResultReviewSource = ExternalResultReviewSourceV1 | ExternalSingleVolumeResultReviewSourceV1`; `AnyExternalResultReviewReceipt = ExternalResultReviewReceiptV1 | ExternalSingleVolumeResultReviewReceiptV1`. Every store/port method that took or returned the relative types now takes/returns these unions (`review`, `get_scoped`, `get_for_report`, `list_scoped`, `resolve_historical`, `verify_historical`, `local_source_matches`, `preflight_current_source`, `local_source_is_current`, listener type).
   - `CoreExternalResultReviewSourceAdapter(*, volume_store, decisions, historical_use_authority, coordinator, single_volume_store: ExternalSingleVolumeStore | None = None, single_historical_use_authority: ExternalSingleVolumeHistoricalUseAuthorityPort | None = None)`; both single arguments must be given together (else `ValueError`); `uses_single_volume_store(store) -> bool`.
 
-- [ ] **Step 1: Failing tests** (build the relative loop graph with `external_product_loop_fixture` plus the SV-3a single fixture `tests/contract/external_single_volume_fixture.py`; give the single authority port a `resolve_historical_for_use` that mirrors `resolve_historical`):
+- [x] **Step 1: Failing tests** (build the relative loop graph with `external_product_loop_fixture` plus the SV-3a single fixture `tests/contract/external_single_volume_fixture.py`; give the single authority port a `resolve_historical_for_use` that mirrors `resolve_historical`):
   1. `test_single_report_review_is_durable_and_idempotent` — report a single measurement; `reviews.review(...)` returns a sealed `ExternalSingleVolumeResultReviewReceiptV1`, `review_ref` starts with `err-v1-`; a second call returns the same receipt; the journal line has `"kind": "external-single-volume-result-reviewed"`.
   2. `test_relative_review_bytes_are_unchanged` — record a relative review with a store that has the single family configured and one without; the two journal files are byte-identical.
   3. `test_single_review_replays_and_verifies_historically` — close, reopen; `get_for_report` returns the same receipt; `verify_historical(review_ref, review_digest, evaluated_at=reviewed_at)` returns it; revoking the single execution before `reviewed_at` makes it `None`.
   4. `test_single_review_is_closed_without_authority` — actor not in `authorized_actor_ids`, expired authority, missing decision, or no single store configured → `RuntimeError("EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE")`.
   5. `test_replay_rejects_kind_and_receipt_mismatch` — a journal line with kind `external-single-volume-result-reviewed` carrying a relative receipt (with a valid `eventDigest`) raises `ExternalResultReviewRecoveryError`, and vice versa.
   6. `test_adapter_requires_both_single_arguments` — `ValueError`.
-- [ ] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_reviews.py -q` → FAIL.
-- [ ] **Step 3: Implement.**
+- [x] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_reviews.py -q` → FAIL.
+- [x] **Step 3: Implement.**
   - Store: `_KIND_BY_CONTRACT = {"external-result-review-receipt.v1": "external-result-reviewed", "external-single-volume-result-review-receipt.v1": "external-single-volume-result-reviewed"}`; `_apply` accepts both kinds and parses with `parse_external_result_review_receipt`, then requires `_KIND_BY_CONTRACT[receipt.contract_version] == raw["kind"]`; `_receipt` builds the class matching the source type (single uses `SINGLE_VOLUME_REVIEW_FACTUAL_LIMITATIONS`); `review` writes the kind for the receipt's contract and the wire dict from the matching `*_wire_dict` helper. Relative path untouched byte-for-byte.
   - Adapter: `_is_single(report_ref) = self._single_volumes is not None and report_ref.startswith("external-single-volume-report-")`. Single `_join` uses `decisions.resolve_historical_single_volume(...)` and `ExternalSingleVolumeResultReviewAuthorityV1.model_validate(authority.snapshot_payload()).sealed()`; `_history_permits` uses the single history port; `is_current` rebuilds `ExternalSingleVolumeExecutionAuthority` from the receipt authority the same way `_execution_authority` does for relative, and guards through `single_volume_store.guard_current_report_ref`. A single-typed source reaching the relative branch (or the reverse) returns `None`/`False`.
   - Graph: pass `single_volume_store=external_single_volume.store` and `single_historical_use_authority=runtime.single_execution` when `external_single_volume is not None`.
-- [ ] **Step 4: Run** Step 2 plus `uv run --locked pytest tests/contract/test_external_result_review_proposals.py tests/contract/test_external_result_workflow_api.py tests/contract/test_external_quantitative_authority.py tests/contract/test_api_contract_sync.py -q`; `uv run --locked mypy services/core tests/contract/test_external_single_volume_result_reviews.py`.
-- [ ] **Step 5: Commit** `feat(core): family-aware result review store and source (SV-3b)`
+- [x] **Step 4: Run** Step 2 plus `uv run --locked pytest tests/contract/test_external_result_review_proposals.py tests/contract/test_external_result_workflow_api.py tests/contract/test_external_quantitative_authority.py tests/contract/test_api_contract_sync.py -q`; `uv run --locked mypy services/core tests/contract/test_external_single_volume_result_reviews.py`.
+- [x] **Step 5: Commit** `feat(core): family-aware result review store and source (SV-3b)`
 
 ---
 
@@ -177,7 +177,7 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
   - Single summaries carry `review_ref/review_digest/reviewed_at/proposal_count/approved_proposal_count` computed by one shared `_review_join(report_ref, request, report, authority, organization_id)` helper used by both families.
   - Both exact report GET routes return 404 (their existing detail) when `_provenance_intact(...)` is false.
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
   1. Proposal service on a single review: create proposal for the report's WorkArea → sealed proposal with `report_ref` = single ref and `zone_digest` = single zone definition digest; approve → successor work order with an external reobservation binding; `verify_external_reobservation_graph` passes after restart; a proposal for another WorkArea → `EXTERNAL_REOBSERVATION_TARGET_NOT_REPORT_ZONE`.
   2. Projection: after review + proposal + approval, the single summary has `review_ref` set, `proposal_count == 1`, `approved_proposal_count == 1`; `for_work_order(successor)` projects the single result through the binding.
   3. HTTP: single review route 201 for an operator, 403 for a service principal, 404/409 for another org's ref; the relative review route with a single ref still returns the same non-2xx it returns today (pin the status); `GET /v1/external-result-reviews/{ref}` returns the single receipt with `contractVersion` `external-single-volume-result-review-receipt.v1`; `GET /v1/external-single-volume-reports/{ref}` includes `review` and `proposals`; `POST /v1/external-reobservation-proposals` with a single `reportRef` returns 201.
@@ -185,10 +185,10 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
   5. Briefing: a single review produces a `REVIEWED` briefing whose `decision_prompt` is "재관측이 필요하면 제안을 만들고 승인하세요." and whose first citation is the single report.
   6. Production flow (`test_signed_provider_drives_complete_external_relative_volume_lifecycle`, after the single report is accepted): review over HTTP → proposal → approval → successor work order; after restart the single review and proposal still resolve and `verify_external_reobservation_graph` passes.
   7. `test_api_contract_sync.py` passes with the new path and schema changes.
-- [ ] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_reviews.py tests/contract/test_external_result_single_volume_projection.py tests/contract/test_external_result_briefings.py -q` → FAIL.
-- [ ] **Step 3: Implement** (Interfaces above). OpenAPI: add the review path, make `ExternalResultReviewView.review` a `oneOf` with discriminator `contractVersion`, add `ExternalSingleVolumeResultReviewReceiptV1` and its authority schema, extend `ExternalSingleVolumeReportView`.
-- [ ] **Step 4: Run** Step 2 plus `uv run --locked pytest tests/contract/test_external_quantitative_production_flow.py -q` (timeout 600000 ms), `uv run --locked pytest tests/contract -q -k "reobservation or result_review or workflow_api or contract_sync or workspace"`; ruff; mypy on changed files.
-- [ ] **Step 5: Commit** `feat(core): single-volume review, proposal and approval lifecycle (SV-3b)`
+- [x] **Step 2: Run** `uv run --locked pytest tests/contract/test_external_single_volume_result_reviews.py tests/contract/test_external_result_single_volume_projection.py tests/contract/test_external_result_briefings.py -q` → FAIL.
+- [x] **Step 3: Implement** (Interfaces above). OpenAPI: add the review path, make `ExternalResultReviewView.review` a `oneOf` with discriminator `contractVersion`, add `ExternalSingleVolumeResultReviewReceiptV1` and its authority schema, extend `ExternalSingleVolumeReportView`.
+- [x] **Step 4: Run** Step 2 plus `uv run --locked pytest tests/contract/test_external_quantitative_production_flow.py -q` (timeout 600000 ms), `uv run --locked pytest tests/contract -q -k "reobservation or result_review or workflow_api or contract_sync or workspace"`; ruff; mypy on changed files.
+- [x] **Step 5: Commit** `feat(core): single-volume review, proposal and approval lifecycle (SV-3b)`
 
 ---
 
@@ -204,11 +204,11 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 **Interfaces:**
 - Produces: `ExternalVolumeReportResolver(*, relative, single=None)` with `resolve_historical_report_ref(report_ref, *, organization_id, now=None)` dispatching on the single prefix (single only when `single` is set; otherwise relative, i.e. today's behavior); `uses(relative, single) -> bool`. `POST /v1/external-single-volume-reports/{report_ref}/shares` → `ExternalReportShare` 201 via the same `share_report` call as the relative route (one shared handler function).
 
-- [ ] **Step 1: Failing tests** — sharing a single report creates an inbox item for the recipient with `target.kind == "EXTERNAL_REPORT"`, `report_ref` = single ref and the report's `site_id`; replay keeps it; sharing another org's single ref → 404; the relative share route with a single ref keeps its current status (pin it); relative share journal bytes unchanged when the resolver is the composite (compare with a relative-only store).
-- [ ] **Step 2: Run** the work-inbox tests → FAIL.
-- [ ] **Step 3: Implement**; the workspace graph builds `ExternalVolumeReportResolver(relative=external_relative_volume_store, single=external_single_volume_store)` (the single store reaches the workspace graph as a new keyword argument, `None` when unconfigured).
-- [ ] **Step 4: Run** the work-inbox tests, `tests/contract/test_api_contract_sync.py`, `-k "workspace or inbox or assembly"`; ruff; mypy.
-- [ ] **Step 5: Commit** `feat(core): share single-volume results with teammates (SV-3b)`
+- [x] **Step 1: Failing tests** — sharing a single report creates an inbox item for the recipient with `target.kind == "EXTERNAL_REPORT"`, `report_ref` = single ref and the report's `site_id`; replay keeps it; sharing another org's single ref → 404; the relative share route with a single ref keeps its current status (pin it); relative share journal bytes unchanged when the resolver is the composite (compare with a relative-only store).
+- [x] **Step 2: Run** the work-inbox tests → FAIL.
+- [x] **Step 3: Implement**; the workspace graph builds `ExternalVolumeReportResolver(relative=external_relative_volume_store, single=external_single_volume_store)` (the single store reaches the workspace graph as a new keyword argument, `None` when unconfigured).
+- [x] **Step 4: Run** the work-inbox tests, `tests/contract/test_api_contract_sync.py`, `-k "workspace or inbox or assembly"`; ruff; mypy.
+- [x] **Step 5: Commit** `feat(core): share single-volume results with teammates (SV-3b)`
 
 ---
 
@@ -225,11 +225,11 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 - Produces (TS): `ExternalSingleVolumeResultReview` type (mirror of the Core receipt), `ExternalAnyResultReview = ExternalResultReview | ExternalSingleVolumeResultReview` discriminated on `contractVersion`; `reviewExternalSingleVolumeReport(reportRef)`; `shareExternalSingleVolumeReport(reportRef, recipientPrincipalId, idempotencyKey)`; `ExternalSingleVolumeReportView` gains `review` and `proposals`.
 - Deep link: accepted when `reportRef` matches either prefix, the family's exact report has `request.currentWorkOrderId === workOrderId` and `report.reportId === reportRef`, and `getSiteExternalRelativeVolumeReport(siteId, reportRef)` is `AVAILABLE` with the same `reportDigest`. The notice copy for failures is unchanged.
 
-- [ ] **Step 1: Failing vitest** — both new BFF routes (also add the new POST routes to the hostile-input coverage list in Task 3/4 Core tests only; the dashboard has no such list) (cross-site 403, missing key 400, bad ref 404, forwarding, Core error passthrough); proposal BFF accepts a single ref and still rejects other prefixes; deep link: a relative report that is not the site-latest is accepted; a single report is accepted; a digest mismatch is rejected with the existing notice.
-- [ ] **Step 2: Run** `cd apps/dashboard && npx vitest run test/external-single-volume-routes.test.ts test/external-result-workflow-route.test.ts` (+ deep-link test) → FAIL.
-- [ ] **Step 3: Implement.**
-- [ ] **Step 4: Run** Step 2, `npx tsc --noEmit`, `npm run lint`; from repo root `uv run --locked pytest tests/contract/test_api_contract_sync.py -q`.
-- [ ] **Step 5: Commit** `feat(dashboard): single-volume review and share client, exact deep links (SV-3b)`
+- [x] **Step 1: Failing vitest** — both new BFF routes (also add the new POST routes to the hostile-input coverage list in Task 3/4 Core tests only; the dashboard has no such list) (cross-site 403, missing key 400, bad ref 404, forwarding, Core error passthrough); proposal BFF accepts a single ref and still rejects other prefixes; deep link: a relative report that is not the site-latest is accepted; a single report is accepted; a digest mismatch is rejected with the existing notice.
+- [x] **Step 2: Run** `cd apps/dashboard && npx vitest run test/external-single-volume-routes.test.ts test/external-result-workflow-route.test.ts` (+ deep-link test) → FAIL.
+- [x] **Step 3: Implement.**
+- [x] **Step 4: Run** Step 2, `npx tsc --noEmit`, `npm run lint`; from repo root `uv run --locked pytest tests/contract/test_api_contract_sync.py -q`.
+- [x] **Step 5: Commit** `feat(dashboard): single-volume review and share client, exact deep links (SV-3b)`
 
 ---
 
@@ -243,11 +243,11 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 **Interfaces:**
 - Produces: `ExternalResultReviewActions` props: `{ reportRef: string; reviewPath: string; review: ExternalAnyResultReview | null; proposals: ExternalReobservationProposalView[]; targetLabel: string; newIntentAllowed: boolean; hasReviewPermission: boolean; canApprovePermission: boolean; onReviewed(review): void; onProposal(view): void; onApproved(view): void; renderReviewDetail?(review): ReactNode }`. It owns the frozen idempotency attempts, busy state, abort handling and all existing Korean strings for these three actions.
 
-- [ ] **Step 1:** Write the component test (review click posts to `reviewPath` with a frozen key reused on retry; proposal posts `{ reportRef, targetWorkAreaIds, reason }`; approval posts `{ proposalRef, expectedVersion }`; `targetLabel` is rendered).
-- [ ] **Step 2:** Run it → FAIL.
-- [ ] **Step 3:** Move the logic without behavior change; the relative panel passes `reviewPath = /api/external-relative-volume-reports/{ref}/reviews`, `targetLabel = "대상: 이 비교에 사용한 작업구역"`, `renderReviewDetail = ReviewAuditDetail`.
-- [ ] **Step 4:** Run the new test and the two existing panel test files (unchanged, must pass), `npx tsc --noEmit`, `npm run lint`.
-- [ ] **Step 5: Commit** `refactor(dashboard): shared external result review actions (SV-3b)`
+- [x] **Step 1:** Write the component test (review click posts to `reviewPath` with a frozen key reused on retry; proposal posts `{ reportRef, targetWorkAreaIds, reason }`; approval posts `{ proposalRef, expectedVersion }`; `targetLabel` is rendered).
+- [x] **Step 2:** Run it → FAIL.
+- [x] **Step 3:** Move the logic without behavior change; the relative panel passes `reviewPath = /api/external-relative-volume-reports/{ref}/reviews`, `targetLabel = "대상: 이 비교에 사용한 작업구역"`, `renderReviewDetail = ReviewAuditDetail`.
+- [x] **Step 4:** Run the new test and the two existing panel test files (unchanged, must pass), `npx tsc --noEmit`, `npm run lint`.
+- [x] **Step 5: Commit** `refactor(dashboard): shared external result review actions (SV-3b)`
 
 ---
 
@@ -263,28 +263,66 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 **Interfaces:**
 - Consumes: Task 5 client/BFF, Task 6 component.
 
-- [ ] **Step 1: Failing vitest**
+- [x] **Step 1: Failing vitest**
   1. Workflow panel: a SUCCEEDED single report shows `ExternalResultReviewActions` with `reviewPath = /api/external-single-volume-reports/{ref}/reviews` and "대상: 이 측정에 사용한 작업구역"; after review the proposal and approval path works and "후속 작업 보기" links to the successor; "단일 시점 결과 검토는 준비 중입니다." is absent everywhere (`grep` in the test via rendered text).
   2. Single review audit detail shows the target capture window and `targetRmseM` (or "미기록"), never baseline fields.
   3. Followup trace: for a single result with a review and an approved proposal, the review/proposal/successor steps render with the existing copy.
   4. Detail page: `TeamReportShare` renders for a single result and posts to `/api/external-single-volume-reports/{ref}/shares`; the share receipt check accepts the single ref.
-- [ ] **Step 2: Run** those test files → FAIL.
-- [ ] **Step 3: Implement.** Remove the "준비 중" constant and every branch that rendered it.
-- [ ] **Step 4: Full dashboard gates**: `npx tsc --noEmit && npm run lint && npm test && npm run build` (read each exit code).
-- [ ] **Step 5: Commit** `feat(dashboard): single-volume review, proposal and share (SV-3b)`
+- [x] **Step 2: Run** those test files → FAIL.
+- [x] **Step 3: Implement.** Remove the "준비 중" constant and every branch that rendered it.
+- [x] **Step 4: Full dashboard gates**: `npx tsc --noEmit && npm run lint && npm test && npm run build` (read each exit code).
+- [x] **Step 5: Commit** `feat(dashboard): single-volume review, proposal and share (SV-3b)`
 
 ---
 
 ### Task 8: Gates, evidence and close-out
 
-- [ ] `uv run --locked ruff check .` → clean; `uv run --locked mypy packages services tests tools` → Success.
-- [ ] Full pytest in bounded chunks (as in SV-3a: `tests/contract` in 30-file chunks, `packages services`, remaining `tests/*` dirs); record passed/skipped/failed per chunk and the aggregate; 0 failed.
-- [ ] Dashboard gates from Task 7 Step 4 on the final commit.
-- [ ] Live check: if no local deployment has a single execution template with sealed DSM and attested checkpoint evidence, record that explicitly; the rehearsal belongs to SV-4.
-- [ ] Append "Execution outcome" to this plan; update `.opencode/working-state.md` (Next = SV-4). `docs/superpowers/product-state.md` is not touched.
+- [x] `uv run --locked ruff check .` → clean; `uv run --locked mypy packages services tests tools` → Success.
+- [x] Full pytest in bounded chunks (as in SV-3a: `tests/contract` in 30-file chunks, `packages services`, remaining `tests/*` dirs); record passed/skipped/failed per chunk and the aggregate; 0 failed.
+- [x] Dashboard gates from Task 7 Step 4 on the final commit.
+- [x] Live check: not run — no local deployment has a single execution template with a sealed DSM and attested checkpoint evidence; recorded in the Execution outcome below (rehearsal belongs to SV-4).
+- [x] Append "Execution outcome" to this plan; update `.opencode/working-state.md` (Next = SV-4). `docs/superpowers/product-state.md` is not touched.
 - [ ] Merge/push only with owner approval.
 
 ## Self-review notes
 
 - Spec §8 review/proposal coverage: review contract ✔ (T1), store/source ✔ (T2), proposal/approval + projection + route ✔ (T3), dashboard review/proposal ✔ (T5-T7). Shares (spec §8 BFF `external-single-volume-reports/{ref}` + shares) ✔ (T4, T5, T7). SV-3a follow-ups: regression that relative mutation routes reject single refs ✔ (T3, T4); provenance on exact routes ✔ (T3); deep link ✔ (T5); single briefing prompt now truthful because review exists ✔ (T3 test 5); neutral type names — covered by the `ExternalAnyResultReview` union (T5); remaining hygiene items stay in the SV-3a follow-up list.
 - Names used across tasks: `ExternalSingleVolumeResultReviewReceiptV1`, `ExternalSingleVolumeResultReviewAuthorityV1`, `parse_external_result_review_receipt`, `SINGLE_VOLUME_REVIEW_FACTUAL_LIMITATIONS`, `ExternalSingleVolumeResultReviewSourceV1`, `AnyExternalResultReviewReceipt`, `ExternalSingleVolumeHistoricalUseAuthorityPort`, `resolve_historical_for_use`, `ExternalVolumeReportResolver`, `ExternalResultReviewActions`, `ExternalAnyResultReview`, `reviewExternalSingleVolumeReport`, `shareExternalSingleVolumeReport`.
+
+---
+
+## Execution outcome (2026-09-18, OpenCode Build)
+
+Continuation note: Tasks 1-5 were executed and committed by a previous Claude session on this branch; its ledger checkboxes were never updated. This session resumed at the interrupted Task 6 (uncommitted shared-component extraction), completed Tasks 6-8, and independently re-verified the branch with fresh test-runner and reviewer sessions.
+
+Base: main `9cb94f6` (this plan). Branch `feat/single-volume-sv3b`, final HEAD `b88edd4`; not pushed. Merge/push awaits owner approval.
+
+Commits:
+- Task 1 `3a1b12e` receipt contract; Task 2 `924033a` family-aware store/source; Task 3 `c60205f` + `99b620d`; Task 4 `a021d41` + `472bf8e`; Task 5 `4048ea8` (previous session).
+- Task 6 `67c7315` shared review-actions component (resumed from the interrupted state).
+- Task 7 `42a49ce` single-volume review/proposal/approval/share UI.
+- Task 7 review fixes `b8745ac` (blocker: single detail scope binding; major: reload abort/selection guard).
+- Task 8 `b88edd4` mypy test annotation.
+
+Evidence (independent runs, real exit codes):
+- @67c7315: targeted vitest 3 files 40/40; tsc 0; lint 0. Reviewer: no blocker; accepted minors (generic component interface, render-phase proposal sync).
+- @42a49ce: targeted 50/50; full dashboard 118 files 889/889; tsc 0; lint 0; next build 0. Reviewer found the blocker + major above.
+- @b8745ac: targeted 44/44; full dashboard 896/896; tsc 0; lint 0; build 0; reviewer confirmed both findings CONFIRMED-FIXED.
+- Backend @b8745ac + @b88edd4: ruff 0; mypy Success 819 files (b88edd4 repaired the one error mypy found at b8745ac, `tests/contract/test_external_result_read_projection.py:68`); contract combined 6029 passed / 112 skipped / 0 failed (K1-K7 @b8745ac + K8-K12 @b88edd4); tests non-contract 575 / 9 skipped; packages+services 193 / 0; this-run aggregate 2814 passed / 11 skipped / 0 failed.
+- Dashboard final gates @b8745ac: tsc 0, lint 0, 896/896, build 0 (27 static pages). `b88edd4` changes only a Python test file, so the dashboard tree is identical to that verified revision.
+
+Decisions:
+- Task 6 interface drift kept: `targetWorkAreaId`, `reviewReason`, generic `TReview`, AbortSignal on approval — the single mount needs family wording and abort-aware navigation.
+- Single `reviewReason` is "단일 시점 결과 검토 기록은 노트북 이상의 화면에서 진행합니다." — deliberate exception to "all other strings are the existing relative strings" because "비교 결과" is false for a one-epoch measurement; routed to the SV-4 copy review.
+- Commit trailer is `Co-Authored-By: Claude Opus 5` only; no Claude-Session link (owner decision).
+- K1-K7 contract chunks were not re-run at `b88edd4`; the only changed file belongs to K11, which was re-run.
+
+Boundaries (not verified):
+- No visual approval: the delegated design fidelity review returned BLOCKED-no-render (no preview/browser permission, no local single-volume data). Source-level hierarchy deltas (single report detail `h4` vs relative `h3`; summary CTA `btn` vs `btn-primary`) remain unreviewed in pixels. Escalated to the owner.
+- Live check not run: no local deployment has a single execution template with a sealed DSM and attested checkpoint evidence; the end-to-end rehearsal belongs to SV-4.
+- No real S3/MinIO, container worker or HIL run.
+
+Follow-ups (not blocking; candidates for the product-state backlog at SV-4 close):
+- Low: `selectedRefRef`/`selectionGenerationRef` mirrors update one render after `selectRequest`; a reload invoked in the same tick is dropped (fail-closed, retry needed). Prefer a synchronous ref update.
+- Test gaps: unmount-during-reload, same-ref reselect reload race, REPORT_BINDING_CHANGED error UI, `reportId` mismatch on the detail page, single share idempotency/unresolved retry, single approval abort.
+- SV-4 copy review list: single reviewReason; "대상: 이 측정에 사용한 작업구역"; "대상 촬영 …" / "대상 독립 검사점 RMSE:" / "미기록"; detail subcopy "한 시점 관측으로 측정한 보관 체적 결과입니다."; summary/history review-status copy; `미기록` vs `기록 없음`; the hierarchy deltas above.
