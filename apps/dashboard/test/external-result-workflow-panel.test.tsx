@@ -611,6 +611,7 @@ describe("SINGLE_VOLUME measurement", () => {
     }
 
     expect(await screen.findByText("1,234.5 m³")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "단일 시점 체적 결과", level: 4 })).toBeTruthy();
     expect(screen.getByText("체적")).toBeTruthy();
     expect(screen.getByText("±12.25 m³")).toBeTruthy();
     expect(screen.getByText("기저면 거칠기")).toBeTruthy();
@@ -683,9 +684,13 @@ describe("SINGLE_VOLUME measurement", () => {
     render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["WORK_ORDERS_WRITE"]} />);
     fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
     await screen.findByText(/결과 검토 기록이 있습니다\./);
+    const reviewStatusLine = screen.getByText(/결과 검토 기록이 있습니다\./);
+    expect(reviewStatusLine.textContent).toContain("2026. 9. 15. 12:00");
+    expect(reviewStatusLine.textContent).not.toMatch(/T\d{2}:\d{2}:\d{2}Z/);
     fireEvent.click(screen.getByText("전문가용 검토 기록"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
     expect(audit.textContent).toContain("기록 없음");
+    expect(audit.textContent).toContain("대상 독립 검사점 RMSE: 기록 없음");
     expect(audit.textContent).not.toContain("기준");
   });
 
