@@ -4,9 +4,12 @@ import { createExternalReobservationProposal } from "@/lib/core-api/external-res
 import { isCrossSiteMutation } from "@/lib/core-api/origin-guard";
 import { coreApiErrorResponse } from "@/lib/core-api/route-handler-util";
 import { getSessionToken } from "@/lib/core-api/session";
+import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative-volume-references";
+import { isExternalSingleVolumeReportReference } from "@/lib/external-single-volume-references";
 
 const safeRef = /^[A-Za-z0-9][A-Za-z0-9_-]{0,254}$/;
-const reportRef = /^external-relative-volume-report-[A-Za-z0-9_-]{1,255}$/;
+const isEitherFamilyReportRef = (value: unknown): value is string =>
+  isExternalRelativeVolumeReportReference(value) || isExternalSingleVolumeReportReference(value);
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]) =>
   Object.keys(value).length === keys.length && Object.keys(value).every((key) => keys.includes(key));
 
@@ -23,8 +26,7 @@ export async function POST(request: NextRequest) {
       typeof value !== "object" ||
       Array.isArray(value) ||
       !exactKeys(value as Record<string, unknown>, ["reportRef", "targetWorkAreaIds", "reason"]) ||
-      typeof (value as { reportRef?: unknown }).reportRef !== "string" ||
-      !reportRef.test((value as { reportRef: string }).reportRef) ||
+      !isEitherFamilyReportRef((value as { reportRef?: unknown }).reportRef) ||
       !Array.isArray((value as { targetWorkAreaIds?: unknown }).targetWorkAreaIds) ||
       (value as { targetWorkAreaIds: unknown[] }).targetWorkAreaIds.length !== 1 ||
       typeof (value as { targetWorkAreaIds: unknown[] }).targetWorkAreaIds[0] !== "string" ||

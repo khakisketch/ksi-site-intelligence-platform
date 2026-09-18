@@ -278,7 +278,7 @@ export function reviewExternalRelativeVolumeReport(
   });
 }
 
-export function getExternalResultReview(reviewRef: string): Promise<{ review: ExternalResultReview }> {
+export function getExternalResultReview(reviewRef: string): Promise<{ review: ExternalAnyResultReview }> {
   return coreFetch(`/v1/external-result-reviews/${encodeURIComponent(reviewRef)}`);
 }
 
@@ -449,16 +449,94 @@ export type ExternalSingleVolumeExecutionPolicy = {
   policyDigest: string | null;
 };
 
+export type ExternalSingleVolumeReviewAuthority = {
+  contractVersion: "external-single-volume-result-review-authority.v1";
+  organizationId: string;
+  siteId: string;
+  currentWorkOrderId: string;
+  decisionId: string;
+  decisionDigest: string;
+  compatibilityMappingDigest: string;
+  target: ExternalVolumeInputBinding;
+  evidenceRecordDigests: string[];
+  validationPolicyDigest: string;
+  zoneSnapshot: ExternalVolumeZoneSnapshot;
+  executionPolicy: ExternalSingleVolumeExecutionPolicy;
+  authorizedActorIds: string[];
+  validFrom: string;
+  validUntil: string;
+  historicalAuthorityDigest: string;
+  targetRmseM: number | null;
+  maximumZoneCellCount: number;
+  maximumZoneAreaM2: number;
+  syntheticTestOnly: boolean;
+  authorityDigest: string | null;
+};
+
+export type ExternalSingleVolumeDecision = {
+  contractVersion: "external-single-volume-decision.v1";
+  decisionId: string;
+  subject: ExternalVolumeSubject;
+  subjectDigest: string;
+  use: "SINGLE_VOLUME";
+  policyDigest: string | null;
+  inspectionReportDigest: string | null;
+  evidenceRecordDigests: string[];
+  zone: {
+    zoneId: string;
+    revision: number;
+    definitionDigest: string;
+    observedCrsDigest: string;
+    observedVerticalReferenceDigest: string;
+  } | null;
+  compatibilityMappingDigest: string | null;
+  verdict: "ELIGIBLE" | "RESTRICTED" | "BLOCKED";
+  reasons: string[];
+  remediations: string[];
+  decidedAt: string;
+  decisionDigest: string | null;
+};
+
+/** Lossless Console projection of Core's ExternalSingleVolumeResultReviewReceiptV1. */
+export type ExternalSingleVolumeResultReview = {
+  contractVersion: "external-single-volume-result-review-receipt.v1";
+  reviewRef: string;
+  organizationId: string;
+  siteId: string;
+  sourceWorkOrderId: string;
+  reportRef: string;
+  request: ExternalSingleVolumeRequest;
+  report: ExternalSingleVolumeReport;
+  authority: ExternalSingleVolumeReviewAuthority;
+  decision: ExternalSingleVolumeDecision;
+  reviewDigest: string | null;
+  reviewedAt: string;
+  factualLimitations: string[];
+};
+
+/** Either family's review receipt, discriminated on `contractVersion`. */
+export type ExternalAnyResultReview = ExternalResultReview | ExternalSingleVolumeResultReview;
+
 export type ExternalSingleVolumeReportView = {
   request: ExternalSingleVolumeRequest;
   report: ExternalSingleVolumeReport;
   executionPolicy: ExternalSingleVolumeExecutionPolicy;
+  review?: ExternalSingleVolumeResultReview | null;
+  proposals?: ExternalReobservationProposalView[];
 };
 
 export function getExternalSingleVolumeReport(
   reportRef: string,
 ): Promise<ExternalSingleVolumeReportView> {
   return coreFetch(`/v1/external-single-volume-reports/${encodeURIComponent(reportRef)}`);
+}
+
+export function reviewExternalSingleVolumeReport(
+  reportRef: string,
+): Promise<{ review: ExternalSingleVolumeResultReview }> {
+  return coreFetch(`/v1/external-single-volume-reports/${encodeURIComponent(reportRef)}/reviews`, {
+    method: "POST",
+  });
 }
 
 /** Merged newest-first history across both external volume families; `result.kind` distinguishes rows. */

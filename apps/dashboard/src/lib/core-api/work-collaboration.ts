@@ -109,3 +109,25 @@ export async function createExternalRelativeVolumeReportShare(
     headers: { "Idempotency-Key": idempotencyKey },
   });
 }
+
+export async function shareExternalSingleVolumeReport(
+  reportRef: string,
+  recipientPrincipalId: string,
+  idempotencyKey: string,
+): Promise<{
+  schemaVersion: "1.0";
+  shareRef: string;
+  organizationId: string;
+  senderPrincipalId: string;
+  recipientPrincipalId: string;
+  siteId: string;
+  reportRef: string;
+  reportDigest: string;
+  createdAt: string;
+}> {
+  return coreFetch(`/v1/external-single-volume-reports/${encodeURIComponent(reportRef)}/shares`, {
+    method: "POST",
+    body: { recipientPrincipalId },
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}

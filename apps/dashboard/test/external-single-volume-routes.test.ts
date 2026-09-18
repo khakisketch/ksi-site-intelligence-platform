@@ -9,6 +9,8 @@ const mocked = vi.hoisted(() => ({
   getRequest: vi.fn(),
   getReport: vi.fn(),
   history: vi.fn(),
+  review: vi.fn(),
+  share: vi.fn(),
 }));
 
 vi.mock("@/lib/core-api/session", async (importOriginal) => {
@@ -22,12 +24,16 @@ vi.mock("@/lib/core-api/external-result-workflow", () => ({
   getExternalSingleVolumeRequest: mocked.getRequest,
   getExternalSingleVolumeReport: mocked.getReport,
   listSiteExternalVolumeHistory: mocked.history,
+  reviewExternalSingleVolumeReport: mocked.review,
 }));
+vi.mock("@/lib/core-api/work-collaboration", () => ({ shareExternalSingleVolumeReport: mocked.share }));
 
 import { POST as decide } from "@/app/api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/single-volume/route";
 import { GET as listRequests, POST as issue } from "@/app/api/observation-work-orders/[workOrderId]/single-volume-requests/route";
 import { GET as getRequest } from "@/app/api/observation-work-orders/[workOrderId]/single-volume-requests/[requestRef]/route";
 import { GET as getReport } from "@/app/api/external-single-volume-reports/[reportRef]/route";
+import { POST as review } from "@/app/api/external-single-volume-reports/[reportRef]/reviews/route";
+import { POST as share } from "@/app/api/external-single-volume-reports/[reportRef]/shares/route";
 import { GET as getHistory } from "@/app/api/sites/[siteId]/external-volume-reports/route";
 
 const decisionRef = `external-use-decision-${"a".repeat(32)}`;
@@ -42,6 +48,7 @@ const decisionContext = { params: Promise.resolve({ workOrderId: "work-1", submi
 const requestContext = { params: Promise.resolve({ workOrderId: "work-1" }) };
 const requestRefContext = { params: Promise.resolve({ workOrderId: "work-1", requestRef }) };
 const reportContext = { params: Promise.resolve({ reportRef }) };
+const relativeReportContext = { params: Promise.resolve({ reportRef: relativeReportRef }) };
 const siteContext = { params: Promise.resolve({ siteId: "site-1" }) };
 
 function post(body: unknown, headers: Record<string, string> = {}) {
@@ -65,6 +72,8 @@ beforeEach(() => {
   mocked.getRequest.mockResolvedValue({ requestRef, status: "QUEUED" });
   mocked.getReport.mockResolvedValue({ report: { reportId: reportRef } });
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
+  mocked.review.mockResolvedValue({ review: { reviewRef: `err-v1-${"d".repeat(64)}` } });
+  mocked.share.mockResolvedValue({ shareRef: `ers-share-${"e".repeat(32)}` });
 });
 
 describe("external single-volume use-decision BFF", () => {
@@ -176,6 +185,68 @@ describe("external single-volume request BFF", () => {
     expect((await getReport(get() as never, crossKindReportContext)).status).toBe(404);
     expect(mocked.getRequest).not.toHaveBeenCalled();
     expect(mocked.getReport).not.toHaveBeenCalled();
+  });
+});
+
+describe("external single-volume review BFF", () => {
+  it("rejects a cross-site review request before session or body processing", async () => {
+    const response = await review(new Request("http://console.test/api", { method: "POST", headers: { origin: "https://other.test", host: "console.test" } }) as never, reportContext);
+    expect(response.status).toBe(403);
+    expect(mocked.session).not.toHaveBeenCalled();
+  });
+
+  it("posts an empty human-review intent and never accepts browser authority fields", async () => {
+    const response = await review(new Request("http://console.test/api", { method: "POST", headers: { host: "console.test" } }) as never, reportContext);
+    expect(response.status).toBe(201);
+    expect(mocked.review).toHaveBeenCalledWith(reportRef);
+    const rejected = await review(post({ reportDigest: `sha256:${"a".repeat(64)}` }) as never, reportContext);
+    expect(rejected.status).toBe(400);
+  });
+
+  it("rejects a relative-volume reference on the single-volume review route", async () => {
+    const response = await review(new Request("http://console.test/api", { method: "POST", headers: { host: "console.test" } }) as never, relativeReportContext);
+    expect(response.status).toBe(400);
+    expect(mocked.review).not.toHaveBeenCalled();
+  });
+
+  it("passes a Core review conflict through unmodified", async () => {
+    const { CoreApiError } = await import("@/lib/core-api/client");
+    mocked.review.mockRejectedValue(new CoreApiError(409, { verdict: "EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE" }));
+    const response = await review(new Request("http://console.test/api", { method: "POST", headers: { host: "console.test" } }) as never, reportContext);
+    expect(response.status).toBe(409);
+  });
+});
+
+describe("external single-volume share BFF", () => {
+  it("rejects a cross-site share request before session or body processing", async () => {
+    const response = await share(new Request("http://console.test/api", { method: "POST", headers: { origin: "https://other.test", host: "console.test" } }) as never, reportContext);
+    expect(response.status).toBe(403);
+    expect(mocked.session).not.toHaveBeenCalled();
+  });
+
+  it("rejects a missing recipient before forwarding", async () => {
+    const response = await share(post({}, { "idempotency-key": "share-1" }) as never, reportContext);
+    expect(response.status).toBe(400);
+    expect(mocked.share).not.toHaveBeenCalled();
+  });
+
+  it("rejects a relative-volume reference on the single-volume share route", async () => {
+    const response = await share(post({ recipientPrincipalId: "operator-b" }, { "idempotency-key": "share-1" }) as never, relativeReportContext);
+    expect(response.status).toBe(404);
+    expect(mocked.share).not.toHaveBeenCalled();
+  });
+
+  it("forwards only the exact report reference, recipient and idempotency key", async () => {
+    const response = await share(post({ recipientPrincipalId: "operator-b" }, { "idempotency-key": "share-1" }) as never, reportContext);
+    expect(response.status).toBe(201);
+    expect(mocked.share).toHaveBeenCalledWith(reportRef, "operator-b", "share-1");
+  });
+
+  it("passes a Core share conflict through unmodified", async () => {
+    const { CoreApiError } = await import("@/lib/core-api/client");
+    mocked.share.mockRejectedValue(new CoreApiError(409, { verdict: "IDEMPOTENCY_CONFLICT" }));
+    const response = await share(post({ recipientPrincipalId: "operator-b" }, { "idempotency-key": "share-1" }) as never, reportContext);
+    expect(response.status).toBe(409);
   });
 });
 

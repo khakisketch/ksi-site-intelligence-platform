@@ -38,6 +38,7 @@ import { POST as approveProposal } from "@/app/api/external-reobservation-propos
 const decisionRef = `external-use-decision-${"a".repeat(32)}`;
 const requestRef = `external-relative-volume-${"b".repeat(32)}`;
 const reportRef = `external-relative-volume-report-${"c".repeat(32)}`;
+const singleVolumeReportRef = `external-single-volume-report-${"f".repeat(32)}`;
 const reviewRef = `err-v1-${"d".repeat(64)}`;
 const proposalRef = `erop-v1-${"e".repeat(64)}`;
 const overlongRequestRef = `external-relative-volume-${"a".repeat(255)}`;
@@ -136,6 +137,22 @@ describe("external relative-volume workflow BFF", () => {
     [{ reportRef, targetWorkAreaIds: ["area-1"], authority: "spoof" }],
   ])("rejects proposal inputs outside Core's narrow DTO %j", async (body) => {
     const response = await createProposal(post(body, { "idempotency-key": "proposal-key" }) as never);
+    expect(response.status).toBe(400);
+    expect(mocked.createProposal).not.toHaveBeenCalled();
+  });
+
+  it("forwards a single-volume report ref for a reobservation proposal", async () => {
+    const response = await createProposal(post({ reportRef: singleVolumeReportRef, targetWorkAreaIds: ["area-1"], reason: null }, { "idempotency-key": "proposal-key" }) as never);
+    expect(response.status).toBe(201);
+    expect(mocked.createProposal).toHaveBeenCalledWith({ reportRef: singleVolumeReportRef, targetWorkAreaIds: ["area-1"], reason: null }, "proposal-key");
+  });
+
+  it.each([
+    [`external-relative-volume-report-${"a".repeat(31)}`], // short suffix, not 32 hex chars
+    [`external-single-volume-report-${"g".repeat(32)}`], // g is not hex
+    [`external-unknown-family-report-${"c".repeat(32)}`], // neither family prefix
+  ])("rejects a reobservation proposal report ref outside both exact families %j", async (badReportRef) => {
+    const response = await createProposal(post({ reportRef: badReportRef, targetWorkAreaIds: ["area-1"], reason: null }, { "idempotency-key": "proposal-key" }) as never);
     expect(response.status).toBe(400);
     expect(mocked.createProposal).not.toHaveBeenCalled();
   });

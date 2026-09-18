@@ -12,6 +12,8 @@ const mocked = vi.hoisted(() => ({
   readiness: vi.fn(),
   workspace: vi.fn(),
   report: vi.fn(),
+  singleReport: vi.fn(),
+  siteProjection: vi.fn(),
   operations: vi.fn(),
 }));
 
@@ -26,7 +28,11 @@ vi.mock("@/lib/core-api/site-workspace", () => ({
   getSiteWorkspace: mocked.workspace,
   getLatestSiteBriefing: () => Promise.reject(new Error("no briefing in this test")),
 }));
-vi.mock("@/lib/core-api/external-result-workflow", () => ({ getExternalRelativeVolumeReport: mocked.report }));
+vi.mock("@/lib/core-api/external-result-workflow", () => ({
+  getExternalRelativeVolumeReport: mocked.report,
+  getExternalSingleVolumeReport: mocked.singleReport,
+  getSiteExternalRelativeVolumeReport: mocked.siteProjection,
+}));
 vi.mock("@/lib/core-api/acquisition-coordination", () => ({ getAcquisitionProgress: mocked.progress }));
 vi.mock("@/lib/core-api/acquisition-connectivity", () => ({ getAcquisitionReadiness: mocked.readiness }));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
@@ -118,6 +124,8 @@ beforeEach(() => {
   mocked.readiness.mockResolvedValue(null);
   mocked.workspace.mockResolvedValue({ externalResult: { state: "NO_RESULT" } });
   mocked.report.mockResolvedValue(null);
+  mocked.singleReport.mockResolvedValue(null);
+  mocked.siteProjection.mockResolvedValue({ state: "NO_RESULT" });
   mocked.operations.mockResolvedValue(null);
 });
 afterEach(cleanup);
@@ -218,15 +226,13 @@ describe("external planning-only WorkOrder page", () => {
     expect(screen.getByTestId("external-upload").getAttribute("data-new-intent")).toBe("false");
   });
 
-  it("opens an exact result only when the Site summary and retained report bind to this WorkOrder", async () => {
+  it("opens an exact result only when the exact Site projection and retained report bind to this WorkOrder", async () => {
     const reportRef = `external-relative-volume-report-${"a".repeat(32)}`;
     const reportDigest = digest("r");
     mocked.context.mockResolvedValue({ workOrderId: "successor-1", siteId: "site-1", expectedEpochId: "epoch-1", cycleNumber: 2, workOrderVersion: 3, executionMode: null, externalPlanningBinding: planningBinding });
-    mocked.workspace.mockResolvedValue({
-      externalResult: {
-        state: "AVAILABLE",
-        result: { reportRef, reportDigest, requestRef: "request-1", requestDigest: digest("q"), currentWorkOrderId: "successor-1" },
-      },
+    mocked.siteProjection.mockResolvedValue({
+      state: "AVAILABLE",
+      result: { reportRef, reportDigest, requestRef: "request-1", requestDigest: digest("q"), currentWorkOrderId: "successor-1" },
     });
     mocked.report.mockResolvedValue({
       request: { currentWorkOrderId: "successor-1", requestId: "request-1", requestDigest: digest("q") },
@@ -236,5 +242,6 @@ describe("external planning-only WorkOrder page", () => {
     await renderPage(reportRef);
 
     expect(screen.getByTestId("external-upload").getAttribute("data-report-ref")).toBe(reportRef);
+    expect(mocked.siteProjection).toHaveBeenCalledWith("site-1", reportRef);
   });
 });

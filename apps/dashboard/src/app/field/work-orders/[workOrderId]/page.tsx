@@ -16,13 +16,18 @@ import {
   listExternalReconstructionSubmissions,
   resolveExternalWorkOrderExecutionContext,
 } from "@/lib/core-api/external-reconstruction";
-import { getExternalRelativeVolumeReport } from "@/lib/core-api/external-result-workflow";
+import {
+  getExternalRelativeVolumeReport,
+  getExternalSingleVolumeReport,
+  getSiteExternalRelativeVolumeReport,
+} from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
 import { getLatestSiteBriefing, getSiteWorkspace } from "@/lib/core-api/site-workspace";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import type { ReobservationDraftView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative-volume-references";
+import { isExternalSingleVolumeReportReference } from "@/lib/external-single-volume-references";
 
 import { CopilotPanel } from "../../CopilotPanel";
 import { ExternalReconstructionPanel } from "../../ExternalReconstructionPanel";
@@ -48,9 +53,12 @@ export default async function FieldWorkOrderPage({
 }) {
   const { workOrderId } = await params;
   const { reportRef: requestedReportRef } = await searchParams;
-  const reportRef = isExternalRelativeVolumeReportReference(requestedReportRef)
-    ? requestedReportRef
-    : null;
+  const reportRef =
+    isExternalRelativeVolumeReportReference(requestedReportRef) ||
+    isExternalSingleVolumeReportReference(requestedReportRef)
+      ? requestedReportRef
+      : null;
+  const isSingleVolumeReportRef = reportRef !== null && isExternalSingleVolumeReportReference(reportRef);
   const workOrderPath = "/field/work-orders/" + encodeURIComponent(workOrderId);
   const next = reportRef === null
     ? workOrderPath
@@ -67,38 +75,66 @@ export default async function FieldWorkOrderPage({
     if (error instanceof CoreApiError && error.status === 404) notFound();
     throw error;
   }
-  const [site, drafts, acquisitionProgress, readinessFallback, externalContext, resultWorkspace, exactReport, workAreas] = await Promise.all([
+  const [
+    site,
+    drafts,
+    acquisitionProgress,
+    readinessFallback,
+    externalContext,
+    resultWorkspace,
+    exactRelativeReport,
+    exactSingleReport,
+    siteExactProjection,
+    workAreas,
+  ] = await Promise.all([
     getSite(workOrder.siteId).catch(() => null),
     listReobservationDrafts(workOrder.workOrderId).catch(() => []),
     getAcquisitionProgress(workOrder.workOrderId).catch(() => null),
     getAcquisitionReadiness(workOrder.siteId).catch(() => null),
     getExternalReconstructionContext(workOrder.workOrderId).catch(() => null),
     reportRef ? getSiteWorkspace(workOrder.siteId).catch(() => null) : Promise.resolve(null),
-    reportRef ? getExternalRelativeVolumeReport(reportRef).catch(() => null) : Promise.resolve(null),
+    reportRef && !isSingleVolumeReportRef
+      ? getExternalRelativeVolumeReport(reportRef).catch(() => null)
+      : Promise.resolve(null),
+    reportRef && isSingleVolumeReportRef
+      ? getExternalSingleVolumeReport(reportRef).catch(() => null)
+      : Promise.resolve(null),
+    reportRef
+      ? getSiteExternalRelativeVolumeReport(workOrder.siteId, reportRef).catch(() => null)
+      : Promise.resolve(null),
     reportRef ? listWorkAreas(workOrder.siteId).catch(() => null) : Promise.resolve(null),
   ]);
+  // Exactly one of these is fetched, keyed by the ref's own family prefix.
+  const exactReport = exactRelativeReport ?? exactSingleReport;
   let initialReport: TrustedExternalResultLink | undefined;
   let reportLinkNotice: string | null = null;
   if (requestedReportRef && !reportRef) {
     reportLinkNotice = "열려는 비교 결과 주소가 올바르지 않습니다. 현장 결과 목록에서 다시 열어 주세요.";
   } else if (reportRef) {
-    const summary = resultWorkspace?.externalResult.state === "AVAILABLE"
-      ? resultWorkspace.externalResult.result ?? null
-      : null;
-    if (summary !== null && exactReport !== null &&
-      summary.currentWorkOrderId === workOrder.workOrderId &&
-      summary.reportRef === reportRef &&
+    // The site-scoped exact projection (not the site-latest summary) resolves
+    // both families and is the only source trusted to confirm this ref is
+    // still the retained report at its digest.
+    const projection = siteExactProjection?.state === "AVAILABLE" ? siteExactProjection.result ?? null : null;
+    if (
+      exactReport !== null &&
+      projection !== null &&
       exactReport.request.currentWorkOrderId === workOrder.workOrderId &&
       exactReport.report.reportId === reportRef &&
-      exactReport.report.reportDigest === summary.reportDigest) {
-      initialReport = {
-        reportRef,
-        reportDigest: summary.reportDigest,
-        view: exactReport,
-        workAreaName: workAreas?.workAreas.find(
-          (area) => area.workAreaId === exactReport.request.zoneSnapshot.workAreaId,
-        )?.name ?? null,
-      };
+      exactReport.report.reportDigest === projection.reportDigest
+    ) {
+      // The trusted-link panel only renders RELATIVE_VOLUME views today; a
+      // verified SINGLE_VOLUME deep link is accepted (no failure notice) but
+      // is not yet wired into the panel.
+      if (exactRelativeReport !== null) {
+        initialReport = {
+          reportRef,
+          reportDigest: projection.reportDigest,
+          view: exactRelativeReport,
+          workAreaName: workAreas?.workAreas.find(
+            (area) => area.workAreaId === exactRelativeReport.request.zoneSnapshot.workAreaId,
+          )?.name ?? null,
+        };
+      }
     } else {
       reportLinkNotice = "이 작업에서 확인할 수 있는 최신 비교 결과인지 검증하지 못했습니다. 현장 결과 목록에서 다시 열어 주세요.";
     }
