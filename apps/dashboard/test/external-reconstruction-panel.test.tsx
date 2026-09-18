@@ -3,6 +3,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionPanel";
+import { NotGeoTiffError, type GeoTiffRawHeader } from "@/lib/geo/geotiff-header";
+
+const headerMock = vi.hoisted(() => ({ read: vi.fn() }));
+vi.mock("@/lib/geo/geotiff-header", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/geo/geotiff-header")>()),
+  readGeoTiffHeader: headerMock.read,
+}));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
 
@@ -21,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal("Worker", FakeWorker);
   fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [] }) });
   FakeWorker.instances = [];
+  headerMock.read.mockRejectedValue(new NotGeoTiffError());
 });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
@@ -400,4 +408,108 @@ describe("ExternalReconstructionPanel", () => {
     expect(await screen.findByText("등록을 중단했습니다.")).toBeTruthy();
   });
 
+});
+
+describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
+  const orthoHeader: GeoTiffRawHeader = {
+    width: 4000, height: 3000, samplesPerPixel: 4, bitsPerSample: 8, sampleFormat: 1,
+    geoKeys: { ProjectedCSTypeGeoKey: 5186 }, software: "Pix4Dmapper 4.8.4", dateTime: "2026:09:15 10:20:30", pixelSize: [0.05, 0.05],
+  };
+  const dsmHeader: GeoTiffRawHeader = { ...orthoHeader, samplesPerPixel: 1, bitsPerSample: 32, sampleFormat: 3 };
+
+  function registerFlow() {
+    const registrations: Record<string, unknown>[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions")) {
+        registrations.push(JSON.parse(init.body as string));
+        return { ok: true, json: async () => ({ submissionRef: "opaque", submission: { revision: 1 } }) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    return registrations;
+  }
+
+  async function chooseOrtho() {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+  }
+
+  it("pre-fills the CRS and empty producer fields from the header and declares the CRS", async () => {
+    const registrations = registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    await chooseOrtho();
+    expect(((await screen.findByLabelText("정사영상 좌표계 신고")) as HTMLInputElement).value).toBe("EPSG:5186");
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Pix4Dmapper");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
+    expect(screen.getByText(/2026-09-15 10:20:30 \(참고: 소프트웨어에 따라 촬영 시각 또는 파일 생성 시각\)/)).toBeTruthy();
+    expect((screen.getByLabelText("촬영 시작 시각 (한국 표준시)") as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+    expect(registrations[0]).toMatchObject({ softwareName: "Pix4Dmapper", softwareVersion: "4.8.4", captureStartedAt: null });
+    expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBe("EPSG:5186");
+  });
+
+  it("never overwrites producer text the operator already typed", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Metashape" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByLabelText("정사영상 좌표계 신고");
+    expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Metashape");
+    expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
+  });
+
+  it("warns when a DSM-looking file is placed in the ortho slot without moving it", async () => {
+    registerFlow();
+    headerMock.read.mockResolvedValue(dsmHeader);
+    await chooseOrtho();
+    expect(await screen.findByText(/이 파일은 DSM처럼 보입니다/)).toBeTruthy();
+    expect(screen.getByText(/정사영상 1 KB 확인 완료/)).toBeTruthy();
+  });
+
+  it("warns on an unreadable header and declares no CRS", async () => {
+    const registrations = registerFlow();
+    await chooseOrtho();
+    expect(await screen.findByText(/GeoTIFF 헤더를 읽지 못했습니다/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+    expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
+  });
+
+  it("shows header facts but no CRS field when resuming an already registered declaration", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "epoch-1", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    fetchMock.mockImplementation(async () => ({ ok: true, json: async () => ({ submissions: [registered] }) }));
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    headerMock.read.mockResolvedValue(orthoHeader);
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/파일 헤더에서 읽은 정사영상 정보입니다/);
+    expect(screen.queryByLabelText("정사영상 좌표계 신고")).toBeNull();
+    expect(screen.getByText(/이미 등록된 신고를 그대로 사용합니다/)).toBeTruthy();
+  });
+
+  it("declares what the operator leaves in the CRS field, trimmed, or nothing when cleared", async () => {
+    const registrations = registerFlow();
+    headerMock.read.mockResolvedValue(orthoHeader);
+    await chooseOrtho();
+    fireEvent.change(await screen.findByLabelText("정사영상 좌표계 신고"), { target: { value: "  " } });
+    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    await waitFor(() => expect(registrations).toHaveLength(1));
+    expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
+    expect((screen.getByLabelText("정사영상 좌표계 신고") as HTMLInputElement).disabled).toBe(true);
+  });
 });

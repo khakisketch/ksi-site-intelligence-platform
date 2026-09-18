@@ -12,6 +12,8 @@ import {
   type TrustedExternalResultLink,
 } from "@/app/field/ExternalResultWorkflowPanel";
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
+import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
+import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import {
   seoulDateTimeLocalToUtc,
   type ExternalArtifactKind,
@@ -19,7 +21,7 @@ import {
 import type { ExternalArtifactInspectionView } from "@/lib/core-api/external-reconstruction";
 
 type HashResult = { file: File; sha256: string; size: number };
-type ArtifactDeclaration = { artifactId: ExternalArtifactKind; kind: ExternalArtifactKind; fileName: string; format: "GeoTIFF"; contentType: "application/octet-stream"; declaredSha256: string; declaredSizeBytes: number; declaredCrs: null; declaredVerticalReference: null; declaredGsdM: null };
+type ArtifactDeclaration = { artifactId: ExternalArtifactKind; kind: ExternalArtifactKind; fileName: string; format: "GeoTIFF"; contentType: "application/octet-stream"; declaredSha256: string; declaredSizeBytes: number; declaredCrs: string | null; declaredVerticalReference: null; declaredGsdM: null };
 type Revision = { submissionRef: string; submission: { submissionId?: string; revision: number; observationEpochId?: string; producerDeclaration?: { softwareName?: string; softwareVersion?: string }; submittedAt?: string; artifacts?: { artifactId: "ortho" | "dsm"; kind: "ortho" | "dsm"; fileName: string; declaredSha256: string; declaredSizeBytes: number }[] }; state: "REGISTERED" | "SEALED" };
 type FrozenAttempt = { requestBody: Readonly<{ submissionId: string; expectedEpochId: string; submittedAt: string; softwareName: string; softwareVersion: string; captureStartedAt: string | null; captureEndedAt: string | null; artifacts: readonly ArtifactDeclaration[] }>; bindings: readonly HashResult[] };
 type InspectionLoad =
@@ -92,8 +94,19 @@ async function hashFile(file: File, workers: Set<Worker>, onProgress: (bytes: nu
   });
 }
 
-function artifact(kind: ExternalArtifactKind, value: HashResult): ArtifactDeclaration {
-  return { artifactId: kind, kind, fileName: value.file.name, format: "GeoTIFF", contentType: "application/octet-stream", declaredSha256: value.sha256, declaredSizeBytes: value.size, declaredCrs: null, declaredVerticalReference: null, declaredGsdM: null };
+function artifact(kind: ExternalArtifactKind, value: HashResult, crs: string): ArtifactDeclaration {
+  // AX-3: 헤더에서 읽었거나 운영자가 고친 좌표계는 고객 신고일 뿐이다. 빈 칸은 신고하지 않는다.
+  const declaredCrs = crs.trim() === "" ? null : crs.trim();
+  return { artifactId: kind, kind, fileName: value.file.name, format: "GeoTIFF", contentType: "application/octet-stream", declaredSha256: value.sha256, declaredSizeBytes: value.size, declaredCrs, declaredVerticalReference: null, declaredGsdM: null };
+}
+
+async function recognizeHeader(file: File, signal: AbortSignal): Promise<HeaderRecognitionState> {
+  try {
+    return { status: "recognized", value: recognizeGeoTiffHeader(await readGeoTiffHeader(file, signal)) };
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { status: "not-geotiff" };
+  }
 }
 
 function exactBindingsMatch(expected: NonNullable<Revision["submission"]["artifacts"]>, actual: readonly ArtifactDeclaration[]): boolean {
@@ -124,6 +137,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [captureIntervalTouched, setCaptureIntervalTouched] = useState(false);
   const [ortho, setOrtho] = useState<HashResult | null>(null);
   const [dsm, setDsm] = useState<HashResult | null>(null);
+  const [headers, setHeaders] = useState<Partial<Record<ExternalArtifactKind, HeaderRecognitionState>>>({});
+  const [declaredCrs, setDeclaredCrs] = useState<Record<ExternalArtifactKind, string>>({ ortho: "", dsm: "" });
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [inspectionByRevision, setInspectionByRevision] = useState<Map<string, InspectionLoad>>(new Map());
   const [inspectionAutoRefreshStopped, setInspectionAutoRefreshStopped] = useState(false);
@@ -280,17 +295,33 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     setHashing(true);
     setHashProgress(0);
     try {
-      const result = await hashFile(file, workers.current, setHashProgress, controller.signal);
+      const [result, header] = await Promise.all([
+        hashFile(file, workers.current, setHashProgress, controller.signal),
+        recognizeHeader(file, controller.signal),
+      ]);
       if (!currentScope(requestScope) || hashAbort.current !== controller) return;
       if (kind === "ortho") {
         if (ortho && (ortho.sha256 !== result.sha256 || ortho.size !== result.size)) {
           setSubmissionId(attemptId());
           setSubmittedAt(utcSeconds());
           setDsm(null);
+          setHeaders((current) => ({ ortho: current.ortho }));
+          setDeclaredCrs((current) => ({ ...current, dsm: "" }));
         }
         setOrtho(result);
       } else {
         setDsm(result);
+      }
+      setHeaders((current) => ({ ...current, [kind]: header }));
+      if (!resume) {
+        const recognized = header.status === "recognized" ? header.value : null;
+        setDeclaredCrs((current) => ({ ...current, [kind]: recognized?.declaredCrs ?? "" }));
+        const producer = recognized?.producer;
+        if (producer) {
+          // 운영자가 이미 적은 값은 덮지 않는다. 빈 칸만 헤더 값으로 채운다.
+          setSoftwareName((current) => (current.trim() ? current : producer.name));
+          if (producer.version) setSoftwareVersion((current) => (current.trim() ? current : producer.version ?? ""));
+        }
       }
       setMessage(null);
     } catch (error) {
@@ -332,7 +363,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
 
   const freezeCurrentAttempt = (): FrozenAttempt | null => {
     if (!ortho || !expectedEpochId || !softwareName.trim() || !softwareVersion.trim() || !captureIntervalValid) return null;
-    const artifacts = Object.freeze([artifact("ortho", ortho), ...(dsm ? [artifact("dsm", dsm)] : [])]);
+    const artifacts = Object.freeze([artifact("ortho", ortho, declaredCrs.ortho), ...(dsm ? [artifact("dsm", dsm, declaredCrs.dsm)] : [])]);
     const requestBody = Object.freeze({ submissionId, expectedEpochId, submittedAt, softwareName: softwareName.trim(), softwareVersion: softwareVersion.trim(), captureStartedAt, captureEndedAt, artifacts });
     return Object.freeze({ requestBody, bindings: Object.freeze([ortho, ...(dsm ? [dsm] : [])]) });
   };
@@ -343,7 +374,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     let bindings: readonly HashResult[];
     let attempt = frozenAttempt;
     if (revision) {
-      const selectedArtifacts = [artifact("ortho", ortho), ...(dsm ? [artifact("dsm", dsm)] : [])];
+      // 재개는 종류·해시·크기만 대조한다(이미 등록된 신고를 다시 보내지 않는다).
+      const selectedArtifacts = [artifact("ortho", ortho, ""), ...(dsm ? [artifact("dsm", dsm, "")] : [])];
       const expectedArtifacts = revision.submission.artifacts ?? [];
       if (!exactBindingsMatch(expectedArtifacts, selectedArtifacts)) {
         setMessage("선택한 파일이 등록된 선언의 종류, 해시 또는 크기와 일치하지 않습니다.");
@@ -465,7 +497,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           {captureIntervalTouched && !captureIntervalValid && <p role="alert" className="text-[12px] text-high-ink">시작과 종료를 모두 입력하고, 종료가 시작보다 늦은지 확인하세요.</p>}
         </fieldset>
         <label className="flex flex-col gap-1 font-semibold">정사영상 (필수)<input className="input" aria-label="정사영상 GeoTIFF" type="file" accept=".tif,.tiff" disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onChange={(event) => void select("ortho", event.target.files?.[0])} /></label>
+        {ortho && headers.ortho && <ExternalHeaderRecognition slot="ortho" state={headers.ortho} crs={declaredCrs.ortho} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, ortho: value }))} />}
         <label className="flex flex-col gap-1 font-semibold">DSM (선택)<input className="input" aria-label="DSM GeoTIFF" type="file" accept=".tif,.tiff" disabled={busy || hashing || Boolean(frozenAttempt) || !ortho || (!newIntentAllowed && !resume)} onChange={(event) => void select("dsm", event.target.files?.[0])} /></label>
+        {dsm && headers.dsm && <ExternalHeaderRecognition slot="dsm" state={headers.dsm} crs={declaredCrs.dsm} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, dsm: value }))} />}
         {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새 선언으로 전환</button>}
         {hashing && <p role="status" className="text-ink-2">파일 확인 중: {hashProgress?.toLocaleString() ?? 0} bytes</p>}
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
