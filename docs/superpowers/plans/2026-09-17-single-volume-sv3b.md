@@ -282,7 +282,7 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 - [x] Dashboard gates from Task 7 Step 4 on the final commit.
 - [x] Live check: not run — no local deployment has a single execution template with a sealed DSM and attested checkpoint evidence; recorded in the Execution outcome below (rehearsal belongs to SV-4).
 - [x] Append "Execution outcome" to this plan; update `.opencode/working-state.md` (Next = SV-4). `docs/superpowers/product-state.md` is not touched.
-- [ ] Merge/push only with owner approval.
+- [x] Merge/push only with owner approval — fast-forward merge and push completed 2026-09-18 (main = origin/main = 6d3fa4b; feature branch deleted).
 
 ## Self-review notes
 
@@ -295,7 +295,7 @@ class ExternalSingleVolumeResultReviewAuthorityV1(_FrozenResultReviewModel):
 
 Continuation note: Tasks 1-5 were executed and committed by a previous Claude session on this branch; its ledger checkboxes were never updated. This session resumed at the interrupted Task 6 (uncommitted shared-component extraction), completed Tasks 6-8, and independently re-verified the branch with fresh test-runner and reviewer sessions.
 
-Base: main `9cb94f6` (this plan). Branch `feat/single-volume-sv3b`, final HEAD `b88edd4`; not pushed. Merge/push awaits owner approval.
+Base: main `9cb94f6` (this plan). Branch `feat/single-volume-sv3b`, reviewed HEAD `b88edd4`; bookkeeping commit `6d3fa4b` recorded this outcome. Fast-forward merged into main and pushed 2026-09-18: `origin/main` = `main` = `6d3fa4b` (push range `02cb6fc..6d3fa4b`); feature branch deleted.
 
 Commits:
 - Task 1 `3a1b12e` receipt contract; Task 2 `924033a` family-aware store/source; Task 3 `c60205f` + `99b620d`; Task 4 `a021d41` + `472bf8e`; Task 5 `4048ea8` (previous session).
@@ -310,6 +310,7 @@ Evidence (independent runs, real exit codes):
 - @b8745ac: targeted 44/44; full dashboard 896/896; tsc 0; lint 0; build 0; reviewer confirmed both findings CONFIRMED-FIXED.
 - Backend @b8745ac + @b88edd4: ruff 0; mypy Success 819 files (b88edd4 repaired the one error mypy found at b8745ac, `tests/contract/test_external_result_read_projection.py:68`); contract combined 6029 passed / 112 skipped / 0 failed (K1-K7 @b8745ac + K8-K12 @b88edd4); tests non-contract 575 / 9 skipped; packages+services 193 / 0; this-run aggregate 2814 passed / 11 skipped / 0 failed.
 - Dashboard final gates @b8745ac: tsc 0, lint 0, 896/896, build 0 (27 static pages). `b88edd4` changes only a Python test file, so the dashboard tree is identical to that verified revision.
+- Integration: `git merge --ff-only` 9cb94f6..6d3fa4b; `git push origin main` 02cb6fc..6d3fa4b; tracked tree clean (only git-ignored .claude/settings.local.json remains untracked).
 
 Decisions:
 - Task 6 interface drift kept: `targetWorkAreaId`, `reviewReason`, generic `TReview`, AbortSignal on approval — the single mount needs family wording and abort-aware navigation.
