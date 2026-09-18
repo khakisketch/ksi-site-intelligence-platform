@@ -20,6 +20,7 @@ from ksi_core.external_relative_volumes import (
     ExternalRelativeVolumeVerdict,
     ResolvedRelativeVolumeReport,
 )
+from ksi_core.external_result_reviews import AnyExternalResultReviewReceipt
 from ksi_core.external_result_workflow_api import ExternalResultReadProjector
 from ksi_core.external_use_decisions import ExternalDecisionIntent
 from ksi_core.observation_work_orders import ExternalReobservationApprovalResult
@@ -27,7 +28,6 @@ from ksi_core.site_workspace import SiteWorkspaceProjector, build_workspace_copi
 from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
 from ksi_event_contracts.external_result_review import (
     ExternalReobservationProposalV1,
-    ExternalResultReviewReceiptV1,
 )
 from test_external_relative_volumes import _fence
 from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _token_record
@@ -36,7 +36,7 @@ from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _tok
 def _review_and_approve(
     graph: LoopGraph, report: ExternalRelativeVolumeReportV1
 ) -> tuple[
-    ExternalResultReviewReceiptV1,
+    AnyExternalResultReviewReceipt,
     ExternalReobservationProposalV1,
     ExternalReobservationApprovalResult,
 ]:
