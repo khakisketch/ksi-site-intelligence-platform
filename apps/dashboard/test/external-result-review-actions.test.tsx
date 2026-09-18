@@ -181,7 +181,7 @@ it("renders the retained review through the family's own detail renderer", async
     renderReviewDetail: (review) => <p>검토 상세 {review.reviewRef}</p>,
   })} />);
 
-  expect(await screen.findByText("결과 검토 기록이 있습니다. · 2026-09-17T03:00:00Z")).toBeTruthy();
+  expect(await screen.findByText("결과 검토 기록이 있습니다. · 2026. 9. 17. 12:00")).toBeTruthy();
   expect(screen.getByText(`검토 상세 err-v1-${"e".repeat(64)}`)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
 });
