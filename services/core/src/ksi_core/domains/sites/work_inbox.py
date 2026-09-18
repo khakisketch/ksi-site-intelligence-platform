@@ -10,13 +10,15 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
+from collections.abc import Callable
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, runtime_checkable
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import Field, ValidationError, field_validator, model_validator
 
+from ksi_core.domains.sites.external_report_resolver import SINGLE_VOLUME_REPORT_REF_PREFIX
 from ksi_core.domains.sites.observation_work_orders import (
     ObservationWorkOrderStore,
     WorkOrderAssignmentTransition,
@@ -109,6 +111,19 @@ class _HistoricalReportResolver(Protocol):
     def resolve_historical_report_ref(
         self, report_ref: str, *, organization_id: str, now: datetime | None = None
     ) -> Any | None: ...
+
+
+@runtime_checkable
+class _EquivalenceCheckedReportResolver(Protocol):
+    """A resolver that can prove which dependencies it wraps (``ExternalVolumeReportResolver``).
+
+    ``uses_exact_dependencies`` needs this because the mounted composite
+    resolver is built once inside the workspace graph; a caller proving the
+    graph's wiring away from that build site cannot compare it by identity to
+    a freshly-built stand-in, only by asking what it wraps.
+    """
+
+    def uses(self, relative: object, single: object) -> bool: ...
 
 
 class WorkInboxStoreRecoveryError(RuntimeError):
@@ -214,14 +229,26 @@ class WorkInboxStore:
         work_orders: ObservationWorkOrderStore,
         roster: OrganizationWorkRosterStore,
         report_resolver: object | None,
+        single_report_resolver: object | None = None,
     ) -> bool:
-        """Prove the mounted router reads the same durable Core participants."""
+        """Prove the mounted router reads the same durable Core participants.
 
-        return (
-            self._work_orders is work_orders
-            and self._roster is roster
-            and self._report_resolver is report_resolver
-        )
+        ``report_resolver`` is compared by identity first — the exact shape
+        every non-composite caller (a relative-only resolver, or none) has
+        always used.  When the mounted resolver is instead the composite
+        ``ExternalVolumeReportResolver``, identity never holds for a resolver
+        built at the call site, so the composite is asked what it wraps
+        through ``uses`` instead.
+        """
+
+        if self._work_orders is not work_orders or self._roster is not roster:
+            return False
+        if self._report_resolver is report_resolver:
+            return True
+        resolver = self._report_resolver
+        if isinstance(resolver, _EquivalenceCheckedReportResolver):
+            return resolver.uses(report_resolver, single_report_resolver)
+        return False
 
     def _apply(self, raw: dict[str, Any]) -> None:
         try:
@@ -663,18 +690,26 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
 
-    @router.post(
-        "/v1/external-relative-volume-reports/{report_ref}/shares",
-        response_model=ExternalReportShare,
-        status_code=201,
-    )
-    def share_external_report(
+    def _share_external_report(
         report_ref: str,
         request: ExternalReportShareIntent,
-        idempotency_key: str = Header(..., alias="Idempotency-Key"),
-        principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
+        idempotency_key: str,
+        principal: Principal,
+        *,
+        owns_ref: Callable[[str], bool],
+        not_found_detail: str,
     ) -> ExternalReportShare:
+        """Record one share through the family route that owns ``report_ref``.
+
+        A ref of the other family never reaches the store: the route
+        guards it up front, before any store call, so each family route's
+        not-found answer stays fixed to its own family regardless of what
+        the other family's resolver would have made of the ref.
+        """
+
         _require_human(principal)
+        if not owns_ref(report_ref):
+            raise HTTPException(status_code=404, detail=not_found_detail)
         try:
             return store.share_report(
                 report_ref,
@@ -686,5 +721,48 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
             )
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
+
+    _RELATIVE_SHARE_NOT_FOUND = "external relative volume report was not found"
+    _SINGLE_SHARE_NOT_FOUND = "external single volume report was not found"
+
+    @router.post(
+        "/v1/external-relative-volume-reports/{report_ref}/shares",
+        response_model=ExternalReportShare,
+        status_code=201,
+    )
+    def share_external_report(
+        report_ref: str,
+        request: ExternalReportShareIntent,
+        idempotency_key: str = Header(..., alias="Idempotency-Key"),
+        principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
+    ) -> ExternalReportShare:
+        return _share_external_report(
+            report_ref,
+            request,
+            idempotency_key,
+            principal,
+            owns_ref=lambda ref: not ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX),
+            not_found_detail=_RELATIVE_SHARE_NOT_FOUND,
+        )
+
+    @router.post(
+        "/v1/external-single-volume-reports/{report_ref}/shares",
+        response_model=ExternalReportShare,
+        status_code=201,
+    )
+    def share_single_volume_external_report(
+        report_ref: str,
+        request: ExternalReportShareIntent,
+        idempotency_key: str = Header(..., alias="Idempotency-Key"),
+        principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
+    ) -> ExternalReportShare:
+        return _share_external_report(
+            report_ref,
+            request,
+            idempotency_key,
+            principal,
+            owns_ref=lambda ref: ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX),
+            not_found_detail=_SINGLE_SHARE_NOT_FOUND,
+        )
 
     return router

@@ -7277,6 +7277,30 @@ paths:
         '409': { description: Idempotency conflict }
         '422': { description: Invalid body or header }
         '503': { description: Report source unavailable or durable journal unavailable }
+  /v1/external-single-volume-reports/{report_ref}/shares:
+    post:
+      summary: Share one exact retained single-volume external report with an active organization roster recipient
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: report_ref, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+        - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255, pattern: '.*\S.*' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ExternalReportShareIntent' }
+      responses:
+        '201':
+          description: Exact scoped share intent; it does not create a public link or grant resource authorization.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalReportShare' }
+        '401': { description: Authentication failed }
+        '403': { description: Human WORK_ORDERS_WRITE required }
+        '404': { description: Scoped report or active recipient not found }
+        '409': { description: Idempotency conflict }
+        '422': { description: Invalid body or header }
+        '503': { description: Report source unavailable or durable journal unavailable }
 components:
   parameters:
     WorkerInstanceId:

@@ -911,3 +911,362 @@ def test_exact_report_share_remains_readable_after_recipient_roster_deactivation
     )
 
     assert resumed._read_receipts[("org-a", "viewer-b", page.items[0].notification_ref)] == receipt  # noqa: SLF001
+
+
+_SINGLE_REPORT_REF = "external-single-volume-report-a"
+
+
+class _SingleVolumeReportResolver:
+    """A single-volume-only resolver double, scoped like the real store."""
+
+    def resolve_historical_report_ref(
+        self, report_ref: str, *, organization_id: str, now: datetime | None = None
+    ) -> Any | None:
+        del now
+        if (report_ref, organization_id) != (_SINGLE_REPORT_REF, "org-a"):
+            return None
+        return SimpleNamespace(
+            request=SimpleNamespace(zone_snapshot=SimpleNamespace(site_id="site-b")),
+            report=SimpleNamespace(report_digest="sha256:" + "b" * 64),
+        )
+
+
+def test_external_volume_report_resolver_dispatches_on_single_prefix_only_when_configured() -> (
+    None
+):
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+
+    relative = _ExactReportResolver()
+    single = _SingleVolumeReportResolver()
+
+    composite = ExternalVolumeReportResolver(relative=relative, single=single)
+    assert composite.resolve_historical_report_ref(
+        "report-a", organization_id="org-a"
+    ) == relative.resolve_historical_report_ref("report-a", organization_id="org-a")
+    assert composite.resolve_historical_report_ref(
+        _SINGLE_REPORT_REF, organization_id="org-a"
+    ) == single.resolve_historical_report_ref(_SINGLE_REPORT_REF, organization_id="org-a")
+    assert composite.uses(relative, single)
+    assert not composite.uses(relative, None)
+    assert not composite.uses(None, single)
+
+    # A resolver built with no ``single`` argument never recognizes a
+    # single-volume ref — exactly today's (pre-SV-3b) behavior.
+    relative_only = ExternalVolumeReportResolver(relative=relative)
+    assert (
+        relative_only.resolve_historical_report_ref(_SINGLE_REPORT_REF, organization_id="org-a")
+        is None
+    )
+    assert relative_only.uses(relative, None)
+
+
+def test_work_inbox_shares_single_volume_report_and_replay_keeps_it(tmp_path: Path) -> None:
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="viewer-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox_path = tmp_path / "inbox.jsonl"
+    inbox = WorkInboxStore(
+        DurableJournal(inbox_path),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+
+    share = inbox.share_report(
+        _SINGLE_REPORT_REF,
+        organization_id="org-a",
+        recipient_principal_id="viewer-b",
+        actor="operator-a",
+        idempotency_key="share",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    assert share.site_id == "site-b"
+    assert share.report_ref == _SINGLE_REPORT_REF
+    assert share.report_digest == "sha256:" + "b" * 64
+
+    page = inbox.list_for_recipient(
+        organization_id="org-a", recipient_principal_id="viewer-b", unread_only=False
+    )
+    assert page.items[0].target.model_dump(by_alias=True) == {
+        "kind": "EXTERNAL_REPORT",
+        "workOrderId": None,
+        "siteId": "site-b",
+        "reportRef": _SINGLE_REPORT_REF,
+    }
+    inbox._journal.close()  # noqa: SLF001 -- test owns the replay journal
+
+    resumed = WorkInboxStore(
+        DurableJournal(inbox_path),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    resumed_page = resumed.list_for_recipient(
+        organization_id="org-a", recipient_principal_id="viewer-b", unread_only=False
+    )
+    assert resumed_page.items[0].target.report_ref == _SINGLE_REPORT_REF
+    assert resumed_page.items[0].target.site_id == "site-b"
+
+
+def test_work_inbox_share_of_foreign_organization_single_volume_ref_is_not_found(
+    tmp_path: Path,
+) -> None:
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-b",
+        principal_id="viewer-c",
+        expected_revision=0,
+        display_name="검토자 C",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-b",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+
+    with pytest.raises(LookupError):
+        inbox.share_report(
+            _SINGLE_REPORT_REF,
+            organization_id="org-b",
+            recipient_principal_id="viewer-c",
+            actor="operator-b",
+            idempotency_key="share",
+            now=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+
+
+def _share_app(store: Any, *, tokens: list[PrincipalTokenRecord] | None = None) -> TestClient:
+    from ksi_core.work_inbox import build_work_inbox_router
+
+    app = FastAPI()
+    mount_auth(
+        app,
+        AuthRegistry(tokens or [_token("operator", "operator-a", Role.FIELD_OPERATOR)]),
+    )
+    app.include_router(build_work_inbox_router(store))
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def _foreign_org_token(token: str, principal_id: str, organization_id: str) -> PrincipalTokenRecord:
+    return PrincipalTokenRecord(
+        token_sha256=hashlib.sha256(token.encode()).hexdigest(),
+        principal=Principal(
+            principal_id=principal_id,
+            kind=PrincipalKind.OPERATOR,
+            role=Role.FIELD_OPERATOR,
+            device_id=None,
+            organization_id=organization_id,
+        ),
+    )
+
+
+def test_relative_share_route_rejects_a_single_volume_ref_with_its_pinned_not_found(
+    tmp_path: Path,
+) -> None:
+    """R2: once the resolver is composite, the relative route must keep
+    answering a single-volume ref exactly as it did before SV-3b — a plain
+    report-not-found 404 — rather than resolving it through the single leg."""
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="viewer-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(inbox)
+
+    response = client.post(
+        f"/v1/external-relative-volume-reports/{_SINGLE_REPORT_REF}/shares",
+        headers={"Authorization": "Bearer operator", "Idempotency-Key": "k1"},
+        json={"recipientPrincipalId": "viewer-b"},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "external relative volume report was not found"
+
+
+def test_single_volume_share_route_creates_recipient_inbox_item(tmp_path: Path) -> None:
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="viewer-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(inbox)
+
+    response = client.post(
+        f"/v1/external-single-volume-reports/{_SINGLE_REPORT_REF}/shares",
+        headers={"Authorization": "Bearer operator", "Idempotency-Key": "k1"},
+        json={"recipientPrincipalId": "viewer-b"},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["siteId"] == "site-b"
+    assert body["reportRef"] == _SINGLE_REPORT_REF
+
+    page = inbox.list_for_recipient(
+        organization_id="org-a", recipient_principal_id="viewer-b", unread_only=False
+    )
+    assert page.items[0].target.model_dump(by_alias=True) == {
+        "kind": "EXTERNAL_REPORT",
+        "workOrderId": None,
+        "siteId": "site-b",
+        "reportRef": _SINGLE_REPORT_REF,
+    }
+
+
+def test_single_volume_share_route_hides_a_foreign_organization_ref(tmp_path: Path) -> None:
+    """``_SINGLE_REPORT_REF`` only resolves for org-a; an org-b operator must
+    see a plain not-found, never the org-a site id or digest."""
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-b",
+        principal_id="viewer-c",
+        expected_revision=0,
+        display_name="검토자 C",
+        role_hint=OrganizationWorkRoleHint.VIEWER,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-b",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = ExternalVolumeReportResolver(
+        relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+    )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(
+        inbox, tokens=[_foreign_org_token("operator-b", "operator-b", "org-b")]
+    )
+
+    response = client.post(
+        f"/v1/external-single-volume-reports/{_SINGLE_REPORT_REF}/shares",
+        headers={"Authorization": "Bearer operator-b", "Idempotency-Key": "k1"},
+        json={"recipientPrincipalId": "viewer-c"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_relative_share_journal_bytes_are_unchanged_by_a_composite_resolver(
+    tmp_path: Path,
+) -> None:
+    """The relative route's durable copy must not shift when the resolver
+    gains a single-volume leg it never uses for a relative ref."""
+    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
+    from ksi_core.work_inbox import WorkInboxStore
+
+    def _share_with(resolver: Any, journal_path: Path) -> bytes:
+        roster, work_orders = _empty_inbox_dependencies(journal_path.parent)
+        roster.put_member(
+            organization_id="org-a",
+            principal_id="viewer-b",
+            expected_revision=0,
+            display_name="검토자 B",
+            role_hint=OrganizationWorkRoleHint.VIEWER,
+            status=OrganizationWorkRosterStatus.ACTIVE,
+            actor="admin-a",
+            idempotency_key="member",
+            now=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+        inbox = WorkInboxStore(
+            DurableJournal(journal_path),
+            work_orders=work_orders,
+            roster=roster,
+            report_resolver=resolver,
+        )
+        inbox.share_report(
+            "report-a",
+            organization_id="org-a",
+            recipient_principal_id="viewer-b",
+            actor="operator-a",
+            idempotency_key="share",
+            now=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+        inbox._journal.close()  # noqa: SLF001 -- test owns the journal
+        return journal_path.read_bytes()
+
+    relative_only_dir = tmp_path / "relative-only"
+    relative_only_dir.mkdir()
+    composite_dir = tmp_path / "composite"
+    composite_dir.mkdir()
+
+    relative_only_bytes = _share_with(_ExactReportResolver(), relative_only_dir / "inbox.jsonl")
+    composite_bytes = _share_with(
+        ExternalVolumeReportResolver(
+            relative=_ExactReportResolver(), single=_SingleVolumeReportResolver()
+        ),
+        composite_dir / "inbox.jsonl",
+    )
+
+    assert relative_only_bytes == composite_bytes

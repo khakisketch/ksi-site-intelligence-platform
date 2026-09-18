@@ -244,6 +244,10 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
         "POST",
         "/v1/external-relative-volume-reports/{report_ref}/shares",
     ): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/external-single-volume-reports/{report_ref}/shares",
+    ): _BASE,
 }
 
 _TOKEN = "hostile-coverage-admin"  # noqa: S105 -- 테스트 고정값

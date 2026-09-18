@@ -430,6 +430,7 @@ def create_app(
         organization_work_roster_store=organization_work_roster_store,
         work_inbox_store=work_inbox_store,
         external_relative_volume_store=external_relative_volume_store,
+        external_single_volume=external_single_volume,
     )
     mount_external_routes(
         app,

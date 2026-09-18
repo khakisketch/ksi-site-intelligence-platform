@@ -245,6 +245,9 @@ def assemble_app(
         acquisition_coordination_enabled=acquisition_coordination_enabled,
         copilot_runtime_config=copilot_runtime_config,
         event_journal=event_journal,
+        external_single_volume_store=(
+            external_single_volume.store if external_single_volume is not None else None
+        ),
     )
     work_inbox_store = workspace.work_inbox_store
     acquisition_connectivity_store = workspace.acquisition_connectivity_store

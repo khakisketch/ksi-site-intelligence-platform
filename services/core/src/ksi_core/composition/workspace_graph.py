@@ -15,6 +15,7 @@ from ksi_core.acquisition import (
 from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.capture_quality_reports import CaptureQualityReportStore
 from ksi_core.civil_readiness import CivilReadinessProjector
+from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
 from ksi_core.events import EventStore
 from ksi_core.work_inbox import WorkInboxStore
 
@@ -54,12 +55,23 @@ def build_workspace_graph(
     acquisition_coordination_enabled: bool,
     copilot_runtime_config: Any,
     event_journal: Any,
+    external_single_volume_store: Any = None,
 ) -> WorkspaceGraph:
+    # The work inbox shares reports of either external-volume family with
+    # teammates through one resolver.  A ref's family is only decidable by
+    # its own identity prefix, so the resolver must dispatch on that prefix
+    # rather than being bound to one family's store — see
+    # ``ExternalVolumeReportResolver``.  ``single`` stays ``None`` (today's
+    # behavior) when single volume is not configured.
+    external_volume_report_resolver = ExternalVolumeReportResolver(
+        relative=external_relative_volume_store,
+        single=external_single_volume_store,
+    )
     work_inbox_store = WorkInboxStore(
         journal("work-inbox.jsonl"),
         work_orders=observation_work_order_store,
         roster=organization_work_roster_store,
-        report_resolver=external_relative_volume_store,
+        report_resolver=external_volume_report_resolver,
         coordinator=coordinator,
     )
     acquisition_connectivity_store = AcquisitionConnectivityStore(

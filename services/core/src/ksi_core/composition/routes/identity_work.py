@@ -23,6 +23,7 @@ def mount_identity_work_routes(
     organization_work_roster_store: Any,
     work_inbox_store: Any,
     external_relative_volume_store: Any,
+    external_single_volume: Any = None,
 ) -> None:
     if auth_registry is not None:
         from ksi_core.auth import mount_auth
@@ -75,10 +76,20 @@ def mount_identity_work_routes(
 
         assert observation_work_order_store is not None  # checked by assembly requirements
         assert organization_work_roster_store is not None  # checked by assembly requirements
+        # The mounted work inbox may read a plain relative-only resolver (no
+        # single volume configured — the resolver equals
+        # ``external_relative_volume_store`` by identity, today's shape) or
+        # the composite ``ExternalVolumeReportResolver`` wrapping both
+        # stores.  ``uses_exact_dependencies`` proves either shape without
+        # this route needing to know which one the graph built.
+        single_report_resolver = (
+            external_single_volume.store if external_single_volume is not None else None
+        )
         if not work_inbox_store.uses_exact_dependencies(
             work_orders=observation_work_order_store,
             roster=organization_work_roster_store,
             report_resolver=external_relative_volume_store,
+            single_report_resolver=single_report_resolver,
         ):
             raise ValueError(
                 "work inbox must use the mounted durable roster, WorkOrder and report graph"
