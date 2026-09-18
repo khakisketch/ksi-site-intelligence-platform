@@ -872,4 +872,75 @@ describe("SINGLE_VOLUME measurement", () => {
       }
     });
   });
+
+  it("keeps a stale single reload from overwriting a newer selection", async () => {
+    const secondRequestRef = `external-single-volume-${"8".repeat(32)}`;
+    const secondReportRef = `external-single-volume-report-${"9".repeat(32)}`;
+    const firstRequest = { ...singleRequest("SUCCEEDED") };
+    const secondRequest = {
+      ...singleRequest("SUCCEEDED"),
+      requestRef: secondRequestRef,
+      reportRef: secondReportRef,
+      reportDigest: digest("e"),
+    };
+    const viewFor = (requestId: string, reportId: string, fillM3: number) => {
+      const base = singleReportView();
+      return {
+        ...base,
+        request: { ...base.request, requestId },
+        report: {
+          ...base.report,
+          reportId,
+          requestId,
+          payload: { ...base.report.payload, metrics: { ...base.report.payload.metrics, fillM3 } },
+        },
+      };
+    };
+    const firstView = viewFor(singleRequestRef, singleReportRef, 1234.5);
+    const secondView = viewFor(secondRequestRef, secondReportRef, 5555.5);
+    let reportAReads = 0;
+    let resolveStaleReload: ((value: unknown) => void) | null = null;
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return Promise.resolve(response({ items: [] }));
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") {
+        return Promise.resolve(response({ items: [firstRequest, secondRequest] }));
+      }
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${singleRequestRef}`) {
+        return Promise.resolve(response(firstRequest));
+      }
+      if (url === `/api/observation-work-orders/work-1/single-volume-requests/${secondRequestRef}`) {
+        return Promise.resolve(response(secondRequest));
+      }
+      if (url === `/api/external-single-volume-reports/${singleReportRef}/reviews`) {
+        return Promise.resolve(response({ review: { reviewRef: "review-1" } }));
+      }
+      if (url === `/api/external-single-volume-reports/${singleReportRef}`) {
+        reportAReads += 1;
+        if (reportAReads === 1) return Promise.resolve(response(firstView));
+        return new Promise((resolve) => {
+          resolveStaleReload = resolve;
+        }).then(() => response({ ...firstView, review: singleReviewReceipt() })) as Promise<unknown> as Promise<Response>;
+      }
+      if (url === `/api/external-single-volume-reports/${secondReportRef}`) {
+        return Promise.resolve(response(secondView));
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["WORK_ORDERS_WRITE"]} />);
+    const selects = await screen.findAllByRole("button", { name: "체적 요청 상태" });
+    fireEvent.click(selects[0]!);
+    expect(await screen.findByText("1,234.5 m³")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "결과 검토 기록" }));
+    await screen.findByText("결과 검토를 기록했습니다.");
+    await waitFor(() => expect(reportAReads).toBe(2));
+    fireEvent.click(screen.getAllByRole("button", { name: "체적 요청 상태" })[1]!);
+    expect(await screen.findByText("5,555.5 m³", {}, { timeout: 3000 })).toBeTruthy();
+    await act(async () => {
+      resolveStaleReload?.(undefined);
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(screen.getByText("5,555.5 m³")).toBeTruthy(), { timeout: 3000 });
+    expect(screen.queryByText("1,234.5 m³")).toBeNull();
+    expect(screen.queryByText("체적 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.")).toBeNull();
+  });
 });

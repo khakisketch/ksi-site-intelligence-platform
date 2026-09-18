@@ -50,6 +50,23 @@ function isExactReportDetail(
     && request.current.subject.organizationId === organizationId;
 }
 
+function isExactSingleReportDetail(
+  detail: ExternalSingleVolumeReportView,
+  projection: NonNullable<Awaited<ReturnType<typeof getSiteExternalRelativeVolumeReport>>["result"]>,
+  siteId: string,
+  reportRef: string,
+  organizationId: string,
+): boolean {
+  const { request, report } = detail;
+  return report.reportId === reportRef
+    && report.reportDigest === projection.reportDigest
+    && request.currentWorkOrderId === projection.currentWorkOrderId
+    && projection.sourceWorkOrderId === projection.currentWorkOrderId
+    && request.target.subject.workOrderId === projection.currentWorkOrderId
+    && request.target.subject.siteId === siteId
+    && request.target.subject.organizationId === organizationId;
+}
+
 async function resolveSuccessorTrace(
   detail: ExternalRelativeVolumeReportView | ExternalSingleVolumeReportView,
   reportRef: string,
@@ -128,10 +145,11 @@ export default async function SiteObservationDetailPage({
     ? detail
     : null;
   // The single exact view is trusted only when it re-verifies against the projection:
-  // the same report id and the same retained report digest. No weaker binding is shown.
+  // the same report id, the same retained report digest, and the same exact scope
+  // binding as the relative path (current work order, source work order, and the
+  // target subject's work order, site, and organization). No weaker binding is shown.
   const exactSingleDetail = singleDetail !== null && projection !== null
-    && singleDetail.report.reportId === reportRef
-    && singleDetail.report.reportDigest === projection.reportDigest
+    && isExactSingleReportDetail(singleDetail, projection, siteId, reportRef, organizationId)
     ? singleDetail
     : null;
   const displayPair = exactDetail === null

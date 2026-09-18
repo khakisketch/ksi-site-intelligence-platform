@@ -212,7 +212,13 @@ describe("site observation pages", () => {
   it("renders a single-volume detail with the single row, team share, and a review trace without baseline", async () => {
     mocked.projection.mockResolvedValue({ state: "AVAILABLE", result: single });
     mocked.singleDetail.mockResolvedValue({
-      request: { requestId: "single-request-1" },
+      request: {
+        requestId: "single-request-1",
+        currentWorkOrderId: "work-1",
+        target: {
+          subject: { organizationId: "org-1", siteId: "site-1", workOrderId: "work-1", submissionId: "submission-s", revision: 1, submissionDigest: "sha256:s", manifestDigest: "sha256:m" },
+        },
+      },
       report: { reportId: singleRef, reportDigest: "sha256:report" },
       executionPolicy: {},
       review: null,
@@ -252,6 +258,84 @@ describe("site observation pages", () => {
         approvalReceipt: { successorWorkOrderId: "successor-1" },
       }],
     });
+    render(await SiteObservationDetailPage({
+      params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
+    }));
+    expect(screen.queryByTestId("team-share")).toBeNull();
+    expect(mocked.share).not.toHaveBeenCalled();
+    expect(mocked.operations).not.toHaveBeenCalled();
+    const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
+    expect(within(trace).queryByRole("link", { name: "승인된 후속 작업 보기" })).toBeNull();
+  });
+
+  function boundSingleDetail(overrides: {
+    currentWorkOrderId?: string;
+    subject?: { organizationId: string; siteId: string; workOrderId: string };
+  } = {}) {
+    const subject = {
+      organizationId: "org-1",
+      siteId: "site-1",
+      workOrderId: "work-1",
+      submissionId: "submission-s",
+      revision: 1,
+      submissionDigest: "sha256:s",
+      manifestDigest: "sha256:m",
+      ...overrides.subject,
+    };
+    return {
+      request: {
+        requestId: "single-request-1",
+        currentWorkOrderId: overrides.currentWorkOrderId ?? "work-1",
+        target: { subject },
+      },
+      report: { reportId: singleRef, reportDigest: "sha256:report" },
+      executionPolicy: {},
+      review: { reviewRef: "review-1", reviewDigest: "sha256:review", reportRef: singleRef, report: { reportDigest: "sha256:report" } },
+      proposals: [{
+        proposal: { reportRef: singleRef, reportDigest: "sha256:report", reviewRef: "review-1", reviewDigest: "sha256:review" },
+        approvalReceipt: { successorWorkOrderId: "successor-1" },
+      }],
+    };
+  }
+
+  it("renders single-volume share and successor facts when the single detail binds the exact scope", async () => {
+    mocked.projection.mockResolvedValue({ state: "AVAILABLE", result: single });
+    mocked.singleDetail.mockResolvedValue(boundSingleDetail());
+    mocked.operations.mockResolvedValue({ workOrderId: "successor-1", organizationId: "org-1", siteId: "site-1", workflowStatus: "CLOSED", closeNote: "현장 확인 완료" });
+    render(await SiteObservationDetailPage({
+      params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
+    }));
+    expect(screen.getByTestId("team-share")).toBeTruthy();
+    expect(mocked.share).toHaveBeenCalledWith(expect.objectContaining({ reportRef: singleRef }));
+    expect(mocked.operations).toHaveBeenCalledWith("successor-1");
+    const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
+    expect(within(trace).getByRole("link", { name: "승인된 후속 작업 보기" })).toBeTruthy();
+  });
+
+  it.each([
+    ["work order", { subject: { organizationId: "org-1", siteId: "site-1", workOrderId: "foreign-order" } }],
+    ["site", { subject: { organizationId: "org-1", siteId: "foreign-site", workOrderId: "work-1" } }],
+    ["organization", { subject: { organizationId: "foreign-org", siteId: "site-1", workOrderId: "work-1" } }],
+    ["current work order", { currentWorkOrderId: "foreign-order" }],
+  ])("withholds single-volume share and successor facts when the single detail %s scope mismatches", async (_label, overrides) => {
+    mocked.projection.mockResolvedValue({ state: "AVAILABLE", result: single });
+    mocked.singleDetail.mockResolvedValue(boundSingleDetail(overrides));
+    render(await SiteObservationDetailPage({
+      params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
+    }));
+    expect(screen.queryByTestId("team-share")).toBeNull();
+    expect(mocked.share).not.toHaveBeenCalled();
+    expect(mocked.operations).not.toHaveBeenCalled();
+    const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
+    expect(within(trace).queryByRole("link", { name: "승인된 후속 작업 보기" })).toBeNull();
+  });
+
+  it("withholds single-volume share and successor facts when the projection source work order is not current", async () => {
+    mocked.projection.mockResolvedValue({
+      state: "AVAILABLE",
+      result: { ...single, sourceWorkOrderId: "foreign-order", currentWorkOrderId: "work-1" },
+    });
+    mocked.singleDetail.mockResolvedValue(boundSingleDetail());
     render(await SiteObservationDetailPage({
       params: Promise.resolve({ siteId: "site-1", reportRef: singleRef }),
     }));

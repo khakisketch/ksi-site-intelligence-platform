@@ -357,6 +357,7 @@ function SingleVolumeWorkflow({
   const scope = useRef(0);
   const activeMutation = useRef<AbortController | null>(null);
   const listAbort = useRef<AbortController | null>(null);
+  const singleReloadAbort = useRef<AbortController | null>(null);
   const [listPhase, setListPhase] = useState<Phase>("loading");
   // Core mounts the single-volume router only when a single-volume execution template is
   // configured, so a 404 list read means this environment does not offer the family.
@@ -364,6 +365,14 @@ function SingleVolumeWorkflow({
   const [list, setList] = useState<ExternalRelativeVolumeRequestView[]>([]);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
+  const selectedRefRef = useRef<string | null>(null);
+  const selectionGenerationRef = useRef(0);
+  useEffect(() => {
+    selectedRefRef.current = selectedRef;
+  }, [selectedRef]);
+  useEffect(() => {
+    selectionGenerationRef.current = selectionGeneration;
+  }, [selectionGeneration]);
   const [selected, setSelected] = useState<ExternalRelativeVolumeRequestView | null>(null);
   const [selectedError, setSelectedError] = useState<string | null>(null);
   const [pollStopped, setPollStopped] = useState(false);
@@ -510,11 +519,15 @@ function SingleVolumeWorkflow({
   useEffect(() => () => {
     activeMutation.current?.abort();
     listAbort.current?.abort();
+    singleReloadAbort.current?.abort();
+    singleReloadAbort.current = null;
   }, []);
 
   const selectRequest = (requestRef: string) => {
     setSelectedError(null);
     setPollStopped(false);
+    singleReloadAbort.current?.abort();
+    singleReloadAbort.current = null;
     // Never leave another request's volume on screen while this selection is read.
     setReport(null);
     setReportPhase("idle");
@@ -567,19 +580,35 @@ function SingleVolumeWorkflow({
 
   // Re-reads the exact retained single report after Core records a review or a
   // proposal, so the UI shows Core truth. The binding check matches the selection
-  // read above: a report bound to another request is never shown.
+  // read above: a report bound to another request is never shown. The reload is
+  // bound to the selection generation at invocation: a stale response cannot
+  // overwrite a newer selection or an unmounted state.
   const reloadSingleReport = useCallback(async (reportRef: string, requestRef: string) => {
+    singleReloadAbort.current?.abort();
+    const controller = new AbortController();
+    singleReloadAbort.current = controller;
+    const expectedGeneration = selectionGenerationRef.current;
+    if (selectedRefRef.current !== requestRef) {
+      if (singleReloadAbort.current === controller) singleReloadAbort.current = null;
+      return;
+    }
     try {
       const value = await responseJson<ExternalSingleVolumeReportView>(await fetch(
         `/api/external-single-volume-reports/${encodeURIComponent(reportRef)}`,
-        { cache: "no-store" },
+        { cache: "no-store", signal: controller.signal },
       ));
+      if (controller.signal.aborted || singleReloadAbort.current !== controller) return;
+      if (selectedRefRef.current !== requestRef || selectionGenerationRef.current !== expectedGeneration) return;
       if (value.report.reportId !== reportRef || value.request.requestId !== requestRef) throw new Error("REPORT_BINDING_CHANGED");
       setReport(value);
       setReportPhase("ready");
-    } catch {
+    } catch (error) {
+      if (isAbort(error) || controller.signal.aborted || singleReloadAbort.current !== controller) return;
+      if (selectedRefRef.current !== requestRef || selectionGenerationRef.current !== expectedGeneration) return;
       setReport(null);
       setReportPhase("error");
+    } finally {
+      if (singleReloadAbort.current === controller) singleReloadAbort.current = null;
     }
   }, []);
 
