@@ -169,6 +169,33 @@ docker compose up -d --build        # rerun after code change
   (`BLOCKED_AUTHORITY_SOURCE`); host identities `NOT_APPLIED`. Do not present a
   local dev run as activation evidence.
 
+### 3a. Restarting Core with external authority configured (time windows)
+
+Owner decision 2026-09-18: a degraded "authority BLOCKED" boot is designed separately; until
+it ships, Core **refuses to start** when a signed authority time window has passed. Check
+before every restart:
+
+```bash
+# snapshot window, from the provider's configured snapshot file (paths are operator-private)
+jq -r '"snapshot seq \(.sequence) valid \(.issuedAt) -> \(.validUntil)"' <protected>/operator/authority-snapshot.json
+# catalog authority windows inside the same snapshot
+jq -r '.catalogAuthorities.records[] | "catalog \(.digest[7:19]) \(.activeFrom) -> \(.activeUntil)"' <protected>/operator/authority-snapshot.json
+# signing key window
+jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <protected>/operator/authority-keys.json
+```
+
+- Expired snapshot at startup: `external authority provider is blocked`, chained
+  `authority snapshot is outside its validity interval`
+  (`domains/external/authority/provider_loading.py`). Expired catalog authority: workflow
+  config `CATALOG_AUTHORITY` (`external_result_workflow_config.py`). Whole Core stays down.
+- Fix before restart: issue a new signed snapshot that extends the retained history
+  (next `sequence`, `previousSnapshotDigest` = last receipt). Re-issue the catalog authority
+  record only when its own window has expired: a changed catalog authority digest silently
+  invalidates every active compatibility mapping (see the local rehearsal notes).
+- Expiry while Core is running is different: `GET /ready/external-authority` turns
+  `BLOCKED`, quantitative use is refused, the rest of Core keeps serving. Recover with a new
+  snapshot and `POST /v1/operations/external-authority/reload` (admin), no restart.
+
 ## Appendix H. Pre-ADR-036 managed pipeline (HISTORICAL — not the first-release route)
 
 The KSI-managed reconstruction pipeline below (`source-media` /

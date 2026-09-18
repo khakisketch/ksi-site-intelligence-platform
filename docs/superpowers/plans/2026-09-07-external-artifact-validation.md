@@ -996,3 +996,18 @@ design: ODM writes the photo date in DateTime, so it is labelled neutrally and s
 used as capture time. Not verified: live Core registration of a declared CRS through the
 running stack (the stack is down; covered by the BFF test and the cross-language golden).
 Remaining: AX-4..AX-7, slice acceptance review, EXT-VAL-06 (release-evidence gate).
+
+## Owner decisions — 2026-09-18
+
+1. EXT-VAL-06 is deferred until a staging/release host exists. Slice acceptance records it
+   at the local script-lane grade; the release-evidence gate is not part of this slice.
+2. Startup with an expired authority snapshot: target behaviour is to boot with external
+   authority BLOCKED (like runtime expiry). Investigation found two time gates at boot
+   (snapshot window; catalog authority window → `CATALOG_AUTHORITY`) and that booting
+   without external config fails policy-journal replay, so this needs a designed degraded
+   boot across provider, workflow config, catalog and policy registry. A spec is written
+   after AX-4; meanwhile `docs/ops/DEV_EXTERNAL_RUNBOOK.md` §3a documents the pre-restart
+   window check.
+3. AX-4 is re-scoped from change/defect triage (no production producer for defect
+   candidates; change detection only on the managed path) to "external results awaiting a
+   human decision" as a Home attention source, with ADR-KSI-025 D1 amended.
