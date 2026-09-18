@@ -6873,6 +6873,28 @@ paths:
         '404': { description: scoped Site or report cursor not found }
         '401': { description: authentication failed }
         '403': { description: SITES_READ required }
+  /v1/external-decisions/pending:
+    get:
+      tags:
+      - external-result-workflow
+      summary: Pending External Decisions
+      operationId: pending_external_decisions_v1_external_decisions_pending_get
+      description: >-
+        External volume results in the caller's organization that wait for a person,
+        one per Site (AX-4, ADR-KSI-025 D1). AWAITING_REVIEW is a succeeded measurement
+        without a review; AWAITING_APPROVAL is a reobservation proposal without an
+        approval receipt. Review waits rank first, then the longest-waiting result.
+        Results whose historical source cannot be resolved are omitted. Read-only.
+      security:
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Pending external decisions, one per Site, in Home ranking order.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExternalPendingDecisionsView' }
+        '401': { description: authentication failed }
+        '403': { description: SITES_READ required }
   /v1/sites/{site_id}/external-volume-reports:
     get:
       tags:
@@ -13552,6 +13574,40 @@ components:
       type: object
       required: [reportRef, state]
       title: ExternalResultHistoryItem
+    ExternalPendingDecisionItem:
+      properties:
+        siteId: { type: string, title: Siteid }
+        reportRef: { type: string, title: Reportref }
+        kind:
+          type: string
+          enum: [EXTERNAL_RELATIVE_VOLUME, EXTERNAL_SINGLE_VOLUME]
+          title: Kind
+        stage:
+          type: string
+          enum: [AWAITING_REVIEW, AWAITING_APPROVAL]
+          title: Stage
+        reportedAt: { type: string, format: date-time, title: Reportedat }
+        netM3: { type: number, title: Netm3 }
+        uncertaintyM3:
+          anyOf:
+          - type: number
+          - type: 'null'
+          title: Uncertaintym3
+        workAreaId: { type: string, title: Workareaid }
+      additionalProperties: false
+      type: object
+      required: [siteId, reportRef, kind, stage, reportedAt, netM3, uncertaintyM3, workAreaId]
+      title: ExternalPendingDecisionItem
+    ExternalPendingDecisionsView:
+      properties:
+        items:
+          items: { $ref: '#/components/schemas/ExternalPendingDecisionItem' }
+          type: array
+          title: Items
+      additionalProperties: false
+      type: object
+      required: [items]
+      title: ExternalPendingDecisionsView
     ExternalResultHistoryView:
       properties:
         items:

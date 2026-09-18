@@ -7,9 +7,10 @@ from datetime import timedelta
 
 from external_product_loop_fixture import record_measurement
 from ksi_core.external_result_workflow_api import ExternalResultReadProjector
-from test_external_result_review_proposals import _NOW, _principal
+from test_external_result_review_proposals import _NOW, _TOKEN, _principal
 from test_external_result_single_volume_projection import (  # noqa: F401 - pytest fixture
     _Harness,
+    _http_client,
     _record_second_relative,
     _record_single,
     harness,
@@ -126,3 +127,29 @@ def test_unavailable_historical_source_is_skipped_not_guessed(harness: _Harness)
     )
 
     assert projector.pending_decisions(organization_id="org-a").items == []
+
+
+def test_pending_route_is_authenticated_and_organization_scoped(harness: _Harness) -> None:  # noqa: F811
+    report = record_measurement(harness.graph)
+    path = "/v1/external-decisions/pending"
+    with _http_client(harness) as client:
+        assert client.get(path).status_code == 401
+        mine = client.get(path, headers={"Authorization": f"Bearer {_TOKEN}"})
+        assert mine.status_code == 200, mine.text
+        body = mine.json()
+        assert [(i["siteId"], i["reportRef"], i["stage"]) for i in body["items"]] == [
+            ("site-a", report.report_id, "AWAITING_REVIEW")
+        ]
+        assert set(body["items"][0]) == {
+            "siteId",
+            "reportRef",
+            "kind",
+            "stage",
+            "reportedAt",
+            "netM3",
+            "uncertaintyM3",
+            "workAreaId",
+        }
+        other = client.get(path, headers={"Authorization": "Bearer other-org-fixture"})
+        assert other.status_code == 200
+        assert other.json() == {"items": []}

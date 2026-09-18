@@ -697,6 +697,13 @@ def build_external_result_workflow_router(
             ),
         )
 
+    @router.get("/v1/external-decisions/pending", response_model=ExternalPendingDecisionsView)
+    def pending_external_decisions(
+        principal: Principal = read_dependency,
+    ) -> ExternalPendingDecisionsView:
+        """External results waiting for a person, one per site (AX-4, ADR-KSI-025 D1)."""
+        return projector.pending_decisions(organization_id=principal.organization_id)
+
     @router.get(
         "/v1/sites/{site_id}/external-volume-reports",
         response_model=ExternalResultHistoryView,
