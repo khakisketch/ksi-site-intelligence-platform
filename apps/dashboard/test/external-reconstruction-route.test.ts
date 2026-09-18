@@ -64,6 +64,26 @@ describe("external reconstruction collection BFF", () => {
     expect(mocked.whoAmI).not.toHaveBeenCalled();
     expect(mocked.register).not.toHaveBeenCalled();
   });
+  it("carries a header-read CRS declaration into the sealed submission", async () => {
+    const withCrs = { ...body, artifacts: [{ ...body.artifacts[0], declaredCrs: "EPSG:5186" }] };
+    expect((await POST(request(withCrs) as never, context)).status).toBe(201);
+    const declared = mocked.register.mock.calls[0][1];
+    expect(declared.artifacts[0].declaredCrs).toBe("EPSG:5186");
+    expect((await POST(request(body) as never, context)).status).toBe(201);
+    expect(mocked.register.mock.calls[1][1].submissionDigest).not.toBe(declared.submissionDigest);
+  });
+  it.each([
+    ["an empty CRS", { declaredCrs: "" }],
+    ["an untrimmed CRS that Core would normalise", { declaredCrs: " EPSG:5186" }],
+    ["an over-long CRS", { declaredCrs: "E".repeat(256) }],
+    ["a non-text CRS", { declaredCrs: 5186 }],
+    ["a GSD declaration", { declaredGsdM: 0.05 }],
+    ["a vertical reference declaration", { declaredVerticalReference: { source: "USER_DECLARED" } }],
+  ])("rejects %s before Core calls", async (_label, override) => {
+    const response = await POST(request({ ...body, artifacts: [{ ...body.artifacts[0], ...override }] }) as never, context);
+    expect(response.status).toBe(400);
+    expect(mocked.register).not.toHaveBeenCalled();
+  });
   it("enforces the JSON byte limit while streaming before Core calls", async () => {
     const response = await POST(request({ ...body, padding: "x".repeat(2 * 1024 * 1024) }) as never, context);
     expect(response.status).toBe(413);

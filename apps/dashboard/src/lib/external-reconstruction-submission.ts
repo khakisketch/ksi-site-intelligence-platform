@@ -11,7 +11,7 @@ export type ExternalArtifactDeclaration = {
   contentType: "application/octet-stream";
   declaredSha256: string;
   declaredSizeBytes: number;
-  declaredCrs: null;
+  declaredCrs: string | null;
   declaredVerticalReference: null;
   declaredGsdM: null;
 };
@@ -46,6 +46,18 @@ export type ExternalSubmissionCandidate = {
   artifacts: ExternalArtifactDeclaration[];
   submissionDigest?: string;
 };
+
+/**
+ * CRS declaration read from a GeoTIFF header (AX-3). Core strips surrounding
+ * whitespace before it digests the submission, so only an already-trimmed text
+ * keeps the dashboard digest and the Core digest identical.
+ */
+export function isDeclaredCrs(value: unknown): value is string | null {
+  if (value === null) return true;
+  if (typeof value !== "string" || value.length === 0 || value.length > 255 || value !== value.trim()) return false;
+  assertUtf8SafeString(value);
+  return true;
+}
 
 export function assertUtf8SafeString(value: string): void {
   try {

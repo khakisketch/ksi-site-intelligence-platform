@@ -5,7 +5,7 @@ import { getExternalReconstructionContext, listExternalReconstructionSubmissions
 import { isCrossSiteMutation } from "@/lib/core-api/origin-guard";
 import { getObservationWorkOrder } from "@/lib/core-api/observation-work-orders";
 import { getSessionToken } from "@/lib/core-api/session";
-import { assertUtf8SafeString, canonicalSubmissionDigest, type ExternalArtifactDeclaration, type ExternalSubmissionCandidate } from "@/lib/external-reconstruction-submission";
+import { assertUtf8SafeString, canonicalSubmissionDigest, isDeclaredCrs, type ExternalArtifactDeclaration, type ExternalSubmissionCandidate } from "@/lib/external-reconstruction-submission";
 
 const MAX_DECLARATION_BYTES = 1024 * 1024;
 
@@ -77,7 +77,7 @@ function parseBody(value: unknown): { submissionId: string; expectedEpochId: str
   }
   const artifacts = body.artifacts as ExternalArtifactDeclaration[];
   const artifactKeys = ["artifactId", "kind", "fileName", "format", "contentType", "declaredSha256", "declaredSizeBytes", "declaredCrs", "declaredVerticalReference", "declaredGsdM"] as const;
-  if (artifacts.length < 1 || artifacts.length > 2 || !artifacts.every((item) => item && typeof item === "object" && hasExactKeys(item, artifactKeys) && (item.kind === "ortho" || item.kind === "dsm") && item.artifactId === item.kind && boundedText(item.fileName) && typeof item.declaredSha256 === "string" && /^[a-f0-9]{64}$/.test(item.declaredSha256) && Number.isSafeInteger(item.declaredSizeBytes) && item.declaredSizeBytes > 0 && item.format === "GeoTIFF" && item.contentType === "application/octet-stream" && item.declaredCrs === null && item.declaredVerticalReference === null && item.declaredGsdM === null) || artifacts.filter((item) => item.kind === "ortho").length !== 1 || new Set(artifacts.map((item) => item.kind)).size !== artifacts.length) throw new TypeError("invalid artifact declaration");
+  if (artifacts.length < 1 || artifacts.length > 2 || !artifacts.every((item) => item && typeof item === "object" && hasExactKeys(item, artifactKeys) && (item.kind === "ortho" || item.kind === "dsm") && item.artifactId === item.kind && boundedText(item.fileName) && typeof item.declaredSha256 === "string" && /^[a-f0-9]{64}$/.test(item.declaredSha256) && Number.isSafeInteger(item.declaredSizeBytes) && item.declaredSizeBytes > 0 && item.format === "GeoTIFF" && item.contentType === "application/octet-stream" && isDeclaredCrs(item.declaredCrs) && item.declaredVerticalReference === null && item.declaredGsdM === null) || artifacts.filter((item) => item.kind === "ortho").length !== 1 || new Set(artifacts.map((item) => item.kind)).size !== artifacts.length) throw new TypeError("invalid artifact declaration");
   return { submissionId: body.submissionId.trim(), expectedEpochId: body.expectedEpochId.trim(), submittedAt: body.submittedAt, softwareName: body.softwareName.trim(), softwareVersion: body.softwareVersion.trim(), captureStartedAt, captureEndedAt, artifacts };
 }
 

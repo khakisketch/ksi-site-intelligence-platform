@@ -44,6 +44,11 @@ describe("external reconstruction submission canonicalization", () => {
     orthoOnly.artifacts = orthoOnly.artifacts.filter((artifact) => artifact.kind === "ortho");
     expect(canonicalSubmissionDigest(orthoOnly)).toBe("sha256:0f842b03c077d76d0e98a7e37d0ba259e552d95d3c564f9ae6834dc6c2249ea7");
   });
+  it("matches the Core Python golden when a header-read CRS is declared", () => {
+    const declared = candidate();
+    declared.artifacts = declared.artifacts.map((artifact) => ({ ...artifact, declaredCrs: "EPSG:5186" }));
+    expect(canonicalSubmissionDigest(declared)).toBe("sha256:e9239da2c843b54b27a5a28cb6f894ff5951fae5a9d95219e5102fef62bdb8c2");
+  });
   it("rejects an unsafe number and a lone UTF-16 surrogate", () => {
     expect(() => validateExternalSubmissionCandidate({ ...candidate(), revision: Number.MAX_SAFE_INTEGER + 1 as never })).toThrow();
     expect(() => assertUtf8SafeString(String.fromCharCode(0xd800))).toThrow();
