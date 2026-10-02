@@ -1833,15 +1833,31 @@ def test_partial_subordinate_range_rejects_overlap_in_other_map(
     assert "ksi-inspector" not in other_map.read_text(encoding="utf-8")
 
 
-def test_private_bus_rejects_hard_link_and_detects_substitution(tmp_path: Path) -> None:
-    env = _bootstrap_library_env(tmp_path)
+@pytest.mark.parametrize("locale", ["C", "ko_KR.utf8"])
+def test_private_bus_rejects_hard_link_and_detects_substitution(
+    tmp_path: Path, locale: str
+) -> None:
+    # A translated stat file type must not reject an otherwise valid private bus.
+    # Both locales must still reject hard links and reveal socket substitution.
+    env = {**_bootstrap_library_env(tmp_path), "LC_ALL": locale}
     bus = tmp_path / "bus.sock"
     linked = tmp_path / "bus-linked.sock"
     first = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     first.bind(str(bus))
     bus.chmod(0o600)
-    os.link(bus, linked)
     try:
+        if locale != "C":
+            translated_type = subprocess.run(
+                ["stat", "--format=%F", "--", str(bus)],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            assert translated_type.returncode == 0, translated_type.stderr
+            if translated_type.stdout.strip() != "소켓":
+                pytest.skip("NOT_VERIFIED: Korean stat translation is unavailable")
+        os.link(bus, linked)
         linked_result = _run_bootstrap_helper(
             tmp_path, f'private_socket_identity "{bus}" "{os.getuid()}"', env=env
         )

@@ -321,7 +321,7 @@ ensure_subordinate_maps() {
 private_socket_identity() {
   local socket_path="$1" expected_uid="$2" identity device inode owner_uid owner_gid mode links file_type
   [[ -S "$socket_path" && ! -L "$socket_path" ]] || return 1
-  identity="$(stat --format='%d:%i:%u:%g:%a:%h:%F' -- "$socket_path")" || return 1
+  identity="$(LC_ALL=C stat --format='%d:%i:%u:%g:%a:%h:%F' -- "$socket_path")" || return 1
   IFS=: read -r device inode owner_uid owner_gid mode links file_type <<<"$identity"
   [[ -n "$device" && -n "$inode" && "$owner_uid" == "$expected_uid" && "$owner_gid" =~ ^[0-9]+$ && "$mode" == 600 && "$links" == 1 && "$file_type" == socket ]] || return 1
   printf '%s' "$identity"
