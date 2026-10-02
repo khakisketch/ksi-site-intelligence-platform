@@ -39,7 +39,7 @@ integration, no change to residency, lineage, eligibility, or organization autho
   bootstrap or host changes; minimal regression/fix with RED/GREEN evidence when appropriate.
 - [x] Task 4: relevant and full prepared-environment verification with UV sync/network/download
   disabled; one independent final review of the bounded delta; integrate verified task commits.
-- [ ] Task 5: record remaining clean-install/default-build/customer-input gates honestly, preserve
+- [x] Task 5: record remaining clean-install/default-build/customer-input gates honestly, preserve
   evidence, and leave idle checkpoint. No customer/field acceptance or slice transition.
 
 ## Progress and evidence
@@ -120,4 +120,18 @@ no second browser or defaultTurbopack/clean-install success claimed here.
 - EXT-VAL, product slice and real-device/customer/field acceptance are unchanged. Task-owned
   archival refs, worktrees and ignored preservation/test evidence are retained; no cleanup.
 
-Final integration/closure evidence is appended after the verified local fast-forward and main check.
+## Local closure
+
+Private-bus fix recorded as `c6f195c0aa271b2e5b197b2eedc4fd3291b22c2a`, locally fast-forwarded
+into main after rechecking its HEAD/index/status. Actual main interpreter imports main Core
+source; post-integration deployment suite **52passed3.90s**. Full suite source tree is identical
+to the integrated source tree. Final audit independently rechecks all314 original archive blobs
+and ignored-copy hashes, exact84refs and existing45worktree records (only task main/integration
+HEADs and the explicit archive ref differ), clean main/candidate and unchanged runtime/UI/contracts/
+references except the bounded private-bus change. Evidence: task workspace `final-audit.json`.
+
+Documentation-only closure adds no code and does not create a second review or feature.
+No push, deploy, installation, host provisioning, customer-data access or cleanup performed by
+this follow-up. All bounded engineering/integration tasks are locally complete; the external
+input, clean-install/default-build and production/customer/field gates above remain unverified.
+Native goals were not created/resumed and product-state/slice acceptance did not change.
