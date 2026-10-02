@@ -71,9 +71,9 @@ Interfaces: consumes existing Next/Vitest/Playwright harness; produces durable p
 ## Task 5: Verify and record committed integration candidate
 - [x] Audit exact task diff versus main314 snapshot; preserve all other files/ref heads except newly created integration branch.
 - [x] Run actual broad PythonCI/static/scoped/full and Dashboard gates; distinguish1knowninherited host failure and unverified clean-install/Turbopack from new regressions.
-- [ ] Commit coherent local sets: governance/archive snapshot separately, coupled accumulated runtime/contracts/tests plus verified repairs together if splitting would produce invalid intermediate trees. Exclude ignored checkpoint/artifacts and sensitive/generated files; inspect exact index.
+- [x] Commit coherent local baseline dc5ff1e (326paths) as ruled below; exclude ignored checkpoints/artifacts, dependencies and sensitive files; exact index inspected.
 - [x] Dispatch one independent read-only final review of baseline+repair delta;2ImportantRED→GREEN, noCritical, minor dispositions below.
-- [ ] Finish without advancing dirty main unless safe explicit reconciliation is established. Record verified commit/evidence, remaining blockers and next decision, no next feature/slice or native goal inferred.
+- [x] Finish with committed candidate retained; dirty main unchanged, known host/test gates explicit. No next feature/slice/goal, push/deploy or cleanup.
 
 ## Pre-flight and rulings
 - Shared interface1: Task1 produces unchanged key/pending API; Tasks2/3 consume unchanged contract/test identities. No wire incompatibility required.
@@ -164,3 +164,18 @@ Interfaces: consumes existing Next/Vitest/Playwright harness; produces durable p
   passes. Default `git diff --cached --check` reports inherited whitespace in6byte-identical original
   WIP files (Markdown hard breaks and one EOF blank); retained rather than sweeping preserved history.
   Unstaged repair diff check passes; the default staged check is not claimed green.
+
+## Local closure
+
+The code/contracts/tests/governance baseline is committed as `dc5ff1e` on
+`integration/readiness-20261002`. A documentation-only closure records this evidence; it is not a
+second independent review or another product feature. Both Important review findings have covering
+RED→GREEN tests; final965Dashboard tests, type/lint, webpackbuild and5actualbrowser scenarios pass.
+Python956source type/Ruff gates pass; aggregate8154passed with1unchanged private-bus host failure
+remains an explicitly red full-suite gate. All required bounded repair work is locally recorded.
+
+Original dirty main, recovery and frozen candidate, their evidence and existing branches/worktrees
+remain preserved. This candidate is **not merged, pushed or deployed**. No branch/worktree cleanup
+was performed. Release/EXT-VAL/customer/field acceptance is unchanged. Next material decision is
+safe main-WIP reconciliation plus the separate host/clean-install/external acceptance gates, not an
+automatic new product slice. No new native session goal was created or resumed.
