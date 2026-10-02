@@ -24,9 +24,12 @@ promote a capability, perform HIL, write to a device, or change production autho
 
 - Product definition and durable decisions remain in Product Constitution, Final Decision Ledger,
   Master PRD, contracts, and ADRs in that order.
-- Current execution state remains in `docs/goals/PHASE_REGISTRY.yaml` and `.ksi/goals.json` via the
-  goal-ledger helper. `.ai/*`, dated handoffs, audits, and implementation plans are evidence or
-  session continuity, not product authority.
+- `docs/superpowers/product-state.md` owns the current product slice, Backlog, named slice ledger,
+  and product-level next-work selection only when no active bounded checkout task exists. Resume an
+  active checkout task through the revalidated `.opencode/working-state.md` checkpoint and its named
+  task ledger. `docs/goals/PHASE_REGISTRY.yaml` is a capability-track index. `.ksi/goals.json` is
+  retained historical evidence only. `.ai/*`, dated handoffs, audits, and generic implementation
+  plans are evidence or session continuity, not product authority or external authorization.
 - `docs/DOCUMENT_STATUS.md` records active, historical, and superseded document families and their
   replacements. An active authority document must not cite a superseded document as canonical.
 

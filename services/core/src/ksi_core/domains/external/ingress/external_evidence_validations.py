@@ -288,6 +288,38 @@ class EvidenceValidationMeasurementResult:
     record: ExternalEvidenceRecordV1 | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class AnalysisEvidenceFactSnapshot:
+    """Sanitized immutable terminal fact for one exact DSM analysis scope.
+
+    This is deliberately internal to Core.  It contains the criterion context
+    alongside the terminal result so a later evaluator cannot pair a record
+    with a different context that happens to share a policy digest.
+    """
+
+    evidence_ref: str
+    manifest: ExternalEvidenceManifestV1
+    context: ExternalEvidenceMeasurementContextV1
+    terminal_record: ExternalEvidenceRecordV1
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisEvidenceValidationLifecycleSnapshot:
+    """One retained validation lifecycle for an exact sealed DSM scope.
+
+    Pending, leased, and context-unresolvable validation requests are facts
+    about the checkpoint state too.  Returning them prevents a caller from
+    turning issued work into an apparently absent checkpoint by waiting for a
+    context rotation or selecting another evidence reference.
+    """
+
+    evidence_ref: str
+    manifest: ExternalEvidenceManifestV1
+    context: ExternalEvidenceMeasurementContextV1
+    phase: EvidenceValidationPhase
+    terminal_record: ExternalEvidenceRecordV1 | None
+
+
 class ExternalEvidenceValidationLeaseFenceView(CamelModel):
     worker_instance_id: str
     lease_acquisition_id: str
@@ -1169,6 +1201,280 @@ class ExternalEvidenceValidationStore:
                     and result.measurement_payload is not None
                 )
             )
+
+    def terminal_records_for_analysis_scope(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        evidence_manifest_digest: str,
+        target_dsm_observed_sha256: str,
+        policy_digest: str,
+        context_digest: str,
+    ) -> tuple[ExternalEvidenceRecordV1, ...]:
+        """Return every occurred terminal fact for one exact sealed analysis scope.
+
+        This is an internal historical projection for the V2 suitability
+        store.  Unlike the human display projection, it intentionally keeps a
+        payload-less ``REJECTED`` record: a known worker failure has priority
+        over an otherwise absent checkpoint measurement.  It grants neither a
+        capability nor current-use authority.
+        """
+        with self._lock:
+            return tuple(
+                result
+                for record in self._records.values()
+                if (
+                    (result := record.result) is not None
+                    and record.item.manifest is not None
+                    and record.item.manifest.subject == subject
+                    and record.request.evidence_manifest_digest == evidence_manifest_digest
+                    and record.request.target_dsm_observed_sha256 == target_dsm_observed_sha256
+                    and record.request.policy_digest == policy_digest
+                    and record.context.context_digest == context_digest
+                )
+            )
+
+    def analysis_facts_for_subject_dsm(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        target_dsm_artifact_id: str,
+        target_dsm_observed_sha256: str,
+    ) -> tuple[AnalysisEvidenceFactSnapshot, ...]:
+        """Return *all* terminal facts for one sealed subject and DSM.
+
+        The projection intentionally spans evidence refs and retained context
+        versions.  A later policy rotation must not hide a previously recorded
+        rejected measurement by narrowing a caller-selected evidence ref or by
+        selecting only today's context.  Facts for every other subject or DSM
+        are excluded before leaving this store.
+        """
+        with self._lock:
+            facts = tuple(
+                AnalysisEvidenceFactSnapshot(
+                    evidence_ref=record.evidence_ref,
+                    manifest=manifest,
+                    context=record.context,
+                    terminal_record=result,
+                )
+                for record in self._records.values()
+                if (result := record.result) is not None
+                and (manifest := record.item.manifest) is not None
+                and manifest.subject == subject
+                and manifest.target_dsm_artifact_id == target_dsm_artifact_id
+                and manifest.target_dsm_observed_sha256 == target_dsm_observed_sha256
+                and result.evidence_manifest_digest == manifest.evidence_manifest_digest
+                and result.target_dsm_observed_sha256 == target_dsm_observed_sha256
+                and result.policy_digest == record.context.policy_digest
+            )
+        return tuple(
+            sorted(
+                facts,
+                key=lambda fact: (
+                    fact.evidence_ref,
+                    fact.context.context_digest or "",
+                    fact.terminal_record.evidence_record_digest or "",
+                ),
+            )
+        )
+
+    def analysis_validation_lifecycles_for_subject_dsm(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        target_dsm_artifact_id: str,
+        target_dsm_observed_sha256: str,
+    ) -> tuple[AnalysisEvidenceValidationLifecycleSnapshot, ...]:
+        """Snapshot every issued lifecycle for one subject/DSM across contexts.
+
+        This is intentionally broader than terminal facts: an issued, leased,
+        or no-longer-locally-resolvable request is evidence that the scope is
+        not genuinely empty.  The snapshot is sanitized and deterministic.
+        """
+        with self._lock:
+            snapshots = tuple(
+                AnalysisEvidenceValidationLifecycleSnapshot(
+                    evidence_ref=record.evidence_ref,
+                    manifest=manifest,
+                    context=record.context,
+                    phase=record.phase,
+                    terminal_record=record.result,
+                )
+                for record in self._records.values()
+                if (manifest := record.item.manifest) is not None
+                and manifest.subject == subject
+                and manifest.target_dsm_artifact_id == target_dsm_artifact_id
+                and manifest.target_dsm_observed_sha256 == target_dsm_observed_sha256
+            )
+        return tuple(
+            sorted(
+                snapshots,
+                key=lambda item: (
+                    item.evidence_ref,
+                    item.context.context_digest or "",
+                    item.phase.value,
+                    item.terminal_record.evidence_record_digest
+                    if item.terminal_record is not None
+                    and item.terminal_record.evidence_record_digest is not None
+                    else "",
+                ),
+            )
+        )
+
+    def analysis_validation_lifecycles_are_locally_current(
+        self,
+        lifecycles: tuple[AnalysisEvidenceValidationLifecycleSnapshot, ...],
+        *,
+        now: datetime,
+    ) -> bool:
+        """Check an issued lifecycle snapshot without fresh authority lookup."""
+        _wire_time(now)
+        with self._coordinator.guarded_read(), self._lock:
+            for lifecycle in lifecycles:
+                matching = next(
+                    (
+                        record
+                        for record in self._records.values()
+                        if record.evidence_ref == lifecycle.evidence_ref
+                        and record.item.manifest == lifecycle.manifest
+                        and record.context == lifecycle.context
+                        and record.phase == lifecycle.phase
+                        and record.result == lifecycle.terminal_record
+                    ),
+                    None,
+                )
+                if matching is None:
+                    return False
+                policy = self._policy_for(matching)
+                if (
+                    policy is None
+                    or policy.policy_digest != lifecycle.context.policy_digest
+                    or not self._policy_registry.locally_current_use_permitted(
+                        policy.policy_digest,
+                        use="EVIDENCE",
+                        subjects=(lifecycle.context.subject,),
+                        at=now,
+                    )
+                    or not self._context_authority.is_current(lifecycle.context)
+                    or not self._context_binds(lifecycle.context, matching.item, policy, now)
+                ):
+                    return False
+            return True
+
+    def analysis_facts_are_locally_current(
+        self,
+        facts: tuple[AnalysisEvidenceFactSnapshot, ...],
+        *,
+        now: datetime,
+    ) -> bool:
+        """Verify an already captured analysis snapshot without authority I/O.
+
+        The caller holds (or enters) the shared coordinator immediately before
+        its own journal append.  This checks that every captured record still
+        exists byte-for-byte and that its exact policy/context remains current.
+        It deliberately does not resolve an evidence item, select a policy, or
+        query the context authority.
+        """
+        return all(self.analysis_fact_currentness(facts, now=now))
+
+    def analysis_fact_currentness(
+        self,
+        facts: tuple[AnalysisEvidenceFactSnapshot, ...],
+        *,
+        now: datetime,
+    ) -> tuple[bool, ...]:
+        """Return local-current status for each retained immutable fact.
+
+        A current rejection must remain actionable when an unrelated retained
+        fact is unavailable.  The caller preserves this aligned tuple in its
+        guarded snapshot instead of collapsing it to one all-or-nothing bit.
+        """
+        _wire_time(now)
+        with self._coordinator.guarded_read(), self._lock:
+            return tuple(self._analysis_fact_is_locally_current(fact, now=now) for fact in facts)
+
+    def _analysis_fact_is_locally_current(
+        self, fact: AnalysisEvidenceFactSnapshot, *, now: datetime
+    ) -> bool:
+        matching = next(
+            (
+                record
+                for record in self._records.values()
+                if record.evidence_ref == fact.evidence_ref
+                and record.item.manifest == fact.manifest
+                and record.context == fact.context
+                and record.result == fact.terminal_record
+            ),
+            None,
+        )
+        if matching is None:
+            return False
+        policy = self._policy_for(matching)
+        return bool(
+            policy is not None
+            and policy.policy_digest == fact.context.policy_digest
+            and self._policy_registry.locally_current_use_permitted(
+                policy.policy_digest,
+                use="EVIDENCE",
+                subjects=(fact.context.subject,),
+                at=now,
+            )
+            and self._context_authority.is_current(fact.context)
+            and self._context_binds(fact.context, matching.item, policy, now)
+        )
+
+    def analysis_scope_for_current_use(
+        self,
+        *,
+        evidence_ref: str,
+        subject: SealedExternalSubjectV1,
+        evidence_manifest_digest: str,
+        target_dsm_observed_sha256: str,
+    ) -> ExternalEvidenceMeasurementContextV1 | None:
+        """Resolve one exact evidence scope and recheck it before V2 suitability use.
+
+        The initial evidence/policy/context lookup deliberately occurs before
+        the coordinator because a deployment may back it with external
+        authority.  Under the final guard this method touches only retained
+        projections and local-current checks.  A missing or changed scope is
+        distinguishable to the caller as unavailable, never as absent evidence.
+        """
+        now = self._clock()
+        item = self._evidence.resolve_for_validation(evidence_ref)
+        if item is None or item.manifest is None or item.manifest.subject != subject:
+            return None
+        manifest = item.manifest
+        if (
+            manifest.evidence_manifest_digest != evidence_manifest_digest
+            or manifest.target_dsm_observed_sha256 != target_dsm_observed_sha256
+        ):
+            return None
+        selected = self._policy_registry.select_for_use("EVIDENCE", (subject,))
+        policy = selected.policy
+        if selected.status is not PolicySelectionStatus.ACTIVE or policy is None:
+            return None
+        assert policy.policy_digest is not None
+        policy_digest = policy.policy_digest
+        context = self._context_authority.resolve_for_validation(
+            subject=subject,
+            evidence_manifest_digest=evidence_manifest_digest,
+            target_dsm_artifact_id=manifest.target_dsm_artifact_id,
+            target_dsm_observed_sha256=target_dsm_observed_sha256,
+            policy_digest=policy_digest,
+            now=now,
+        )
+        if context is None or not self._context_binds(context, item, policy, now):
+            return None
+        with self._coordinator.guarded_read(), self._lock:
+            if (
+                not self._policy_registry.locally_current_use_permitted(
+                    policy_digest, use="EVIDENCE", subjects=(subject,), at=now
+                )
+                or not self._context_authority.is_current(context)
+                or not self._context_binds(context, item, policy, now)
+            ):
+                return None
+            return context
 
     def _context_binds(
         self,

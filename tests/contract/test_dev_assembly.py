@@ -103,6 +103,19 @@ def _load_dev_module() -> Any:
     return module
 
 
+def test_dev_oidc_uses_explicit_issuer_subject_mappings() -> None:
+    module = _load_dev_module()
+    issuer = "http://127.0.0.1:9010"
+    registry = module._dev_oidc_subject_registry(issuer)
+
+    mapped = registry.resolve(issuer, "local-field-operator")
+    assert mapped is not None
+    assert mapped.principal_id == "local-field-operator"
+    assert mapped.organization_id == "org-local-pilot"
+    assert mapped.role is Role.FIELD_OPERATOR
+    assert registry.resolve("https://other.example", "local-field-operator") is None
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [(0, None), (1, 1), (500, 500), (64 * 1024 * 1024, 64 * 1024 * 1024)],
@@ -659,3 +672,248 @@ def test_external_reconstruction_requires_complete_supported_assembly_and_is_abs
         assert external_base not in dev.app.openapi()["paths"]
     finally:
         dev.close()
+
+
+# ── PX-20260922: explicit protected local Analysis runtime ──────────────────
+
+
+def _analysis_local_graph(*, policy_id: str = "dev-analysis-policy") -> Any:
+    from ksi_core.composition.external_graph import ExternalAnalysisLocalGraphConfig
+    from ksi_core.domains.external.quantity.external_relative_volume_analysis import (
+        AnalysisRuntimeIdentityV2,
+    )
+    from ksi_event_contracts.external_artifact_validation import ResourceEnvelopeV1
+    from ksi_event_contracts.external_relative_volume_analysis import AnalysisPolicyV2
+
+    def digest(value: str) -> str:
+        return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    policy = AnalysisPolicyV2(
+        policy_id=policy_id,
+        version=1,
+        profile_id="KSI-GIS-RELATIVE-VOLUME-V2",
+        profile_digest=digest("dev-analysis-profile"),
+        algorithm_digest=digest("dev-analysis-algorithm"),
+        config_digest=digest("dev-analysis-config"),
+        baseline_grid_rule="BASELINE_NATIVE_NORTH_UP_AFFINE_V1",
+        current_elevation_resampling="BILINEAR",
+        current_mask_resampling="NEAREST",
+        work_area_rasterization="CELL_CENTER",
+        minimum_common_valid_fraction=1.0,
+        threshold_m=0.0,
+        cell_area_rule="ABSOLUTE_AFFINE_DETERMINANT",
+        delta_rule="CURRENT_MINUS_BASELINE",
+        uncertainty_method="NONE_UNCERTAINTY_M3_NULL_V1",
+    ).sealed()
+    envelope = ResourceEnvelopeV1(
+        max_input_bytes=1_000_000,
+        max_streamed_bytes=1_000_000,
+        max_tiff_directories=8,
+        max_tiff_entries=128,
+        max_pixels=10_000_000,
+        max_bands=4,
+        max_blocks=1_024,
+        max_decompressed_bytes=2_000_000,
+        max_sample_bytes=64_000,
+        max_geometry_vertices=512,
+        max_cpu_seconds=10.0,
+        max_memory_bytes=64_000_000,
+        max_workspace_bytes=64_000_000,
+        max_output_bytes=1_000_000,
+        max_tenant_concurrency=1,
+        max_queue_depth=4,
+        max_deadline_seconds=20.0,
+        lease_duration_seconds=30.0,
+        max_retry_attempts=1,
+    ).sealed()
+    return ExternalAnalysisLocalGraphConfig(
+        policy=policy,
+        runtime=AnalysisRuntimeIdentityV2(
+            worker_executable_digest=digest("dev-analysis-worker"),
+            worker_build_digest=digest("dev-analysis-build"),
+            runtime_image_version="local-analysis-dev-v1",
+            runtime_image_oci_digest=digest("dev-analysis-oci"),
+            dependency_lock_digest=digest("dev-analysis-lock"),
+        ),
+        resource_envelope=envelope,
+    )
+
+
+class _AttachedDevAuthorityProvider:
+    organization_id = "legacy"
+
+    def __init__(self) -> None:
+        self.receipt_journal: DurableJournal | None = None
+        self.attached_app: Any = None
+
+    def bind_receipt_journal(self, journal: DurableJournal) -> None:
+        self.receipt_journal = journal
+
+    def attach_app(self, app: Any) -> None:
+        self.attached_app = app
+
+    def status(self) -> dict[str, object]:
+        return {"status": "PROVIDER_CONFIGURED"}
+
+    def reload_and_reconcile(self, *, now: object) -> dict[str, object]:
+        del now
+        return {"status": "PROVIDER_CONFIGURED", "sequence": 1, "snapshotDigest": "sha256:0"}
+
+
+def test_dev_assembly_mounts_existing_analysis_graph_only_with_complete_opt_in(
+    tmp_path: Path,
+) -> None:
+    module = _load_dev_module()
+    provider = _AttachedDevAuthorityProvider()
+    dev = module.build_dev_app(
+        tmp_path / "dev",
+        segment_bytes=None,
+        edge_sync_snapshot_every=None,
+        s3_endpoint="http://127.0.0.1:9000",
+        s3_bucket="dev-evidence",
+        external_result_workflow=_closed_external_result_workflow([]),
+        external_analysis_local_graph=_analysis_local_graph(),
+        external_authority_provider=provider,
+    )
+    try:
+        paths = dev.app.openapi()["paths"]
+        assert "/v1/sites/{site_id}/analysis-observations" in paths
+        assert "/v1/sites/{site_id}/work-areas/{work_area_id}/analyses" in paths
+        assert provider.attached_app is dev.app
+        assert provider.receipt_journal is not None
+    finally:
+        dev.close()
+
+
+@pytest.mark.parametrize(
+    ("s3_endpoint", "s3_bucket", "workflow", "provider"),
+    [
+        (None, None, _closed_external_result_workflow([]), _AttachedDevAuthorityProvider()),
+        (
+            "http://127.0.0.1:9000",
+            None,
+            _closed_external_result_workflow([]),
+            _AttachedDevAuthorityProvider(),
+        ),
+        ("http://127.0.0.1:9000", "dev-evidence", None, _AttachedDevAuthorityProvider()),
+        ("http://127.0.0.1:9000", "dev-evidence", _closed_external_result_workflow([]), None),
+    ],
+    ids=["missing-s3", "incomplete-s3-pair", "missing-workflow", "missing-provider"],
+)
+def test_analysis_opt_in_rejects_incomplete_graph_before_bootstrap(
+    tmp_path: Path,
+    s3_endpoint: str | None,
+    s3_bucket: str | None,
+    workflow: Any,
+    provider: Any,
+) -> None:
+    module = _load_dev_module()
+    data_dir = tmp_path / "dev"
+    with pytest.raises(ValueError):
+        module.build_dev_app(
+            data_dir,
+            segment_bytes=None,
+            edge_sync_snapshot_every=None,
+            s3_endpoint=s3_endpoint,
+            s3_bucket=s3_bucket,
+            external_result_workflow=workflow,
+            external_analysis_local_graph=_analysis_local_graph(),
+            external_authority_provider=provider,
+        )
+    assert not (data_dir / "signing").exists()
+
+
+def test_analysis_start_failure_closes_provider_receipt_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_dev_module()
+    provider = _AttachedDevAuthorityProvider()
+    data_dir = tmp_path / "dev"
+    def fail_assembly(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("assembly failed")
+
+    monkeypatch.setattr(module, "assemble_app", fail_assembly)
+
+    with pytest.raises(RuntimeError, match="assembly failed"):
+        module.build_dev_app(
+            data_dir,
+            segment_bytes=None,
+            edge_sync_snapshot_every=None,
+            s3_endpoint="http://127.0.0.1:9000",
+            s3_bucket="dev-evidence",
+            external_result_workflow=_closed_external_result_workflow([]),
+            external_analysis_local_graph=_analysis_local_graph(),
+            external_authority_provider=provider,
+        )
+
+    replay = DurableJournal(data_dir / "external-authority-provider-receipts.jsonl")
+    replay.close()
+
+
+def test_cli_rejects_analysis_opt_in_before_reset_or_key_bootstrap(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = _load_dev_module()
+    data_dir = tmp_path / "existing"
+    data_dir.mkdir()
+    marker = data_dir / "must-survive"
+    marker.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_core_dev.py",
+            "--data-dir",
+            str(data_dir),
+            "--reset",
+            "--local-analysis-config",
+            str(tmp_path / "analysis.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        module.main()
+
+    assert raised.value.code == 2
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert not (data_dir / "signing").exists()
+    assert "--local-analysis-config" in capsys.readouterr().err
+
+
+def test_cli_rejects_nonliteral_loopback_analysis_opt_in_before_reset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    module = _load_dev_module()
+    data_dir = tmp_path / "existing"
+    data_dir.mkdir()
+    marker = data_dir / "must-survive"
+    marker.write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_core_dev.py",
+            "--host",
+            "localhost",
+            "--data-dir",
+            str(data_dir),
+            "--reset",
+            "--s3-endpoint",
+            "http://127.0.0.1:9000",
+            "--s3-bucket",
+            "dev-evidence",
+            "--local-analysis-config",
+            str(tmp_path / "analysis.json"),
+            "--external-result-workflow-config",
+            str(tmp_path / "workflow.json"),
+            "--external-authority-provider-config",
+            str(tmp_path / "provider.json"),
+        ],
+    )
+
+    with pytest.raises(SystemExit) as raised:
+        module.main()
+
+    assert raised.value.code == 2
+    assert marker.read_text(encoding="utf-8") == "keep"
+    assert not (data_dir / "signing").exists()

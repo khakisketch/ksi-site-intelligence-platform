@@ -53,6 +53,8 @@ ksi-external-inspector-entrypoint = "ksi_processing_controller.external_inspecto
 ksi-external-measurement-entrypoint = "ksi_processing_controller.external_measurement_container_entrypoint:main"
 ksi-external-measurement-daemon = "ksi_processing_controller.external_measurement_daemon:main"
 ksi-external-validation-worker = "ksi_processing_controller.external_validation_worker:main"
+ksi-external-analysis-worker = "ksi_processing_controller.external_analysis_runner:main"
+ksi-spatial-data-worker = "ksi_processing_controller.spatial_data_runner:main"
 
 [tool.uv.sources]
 ksi-change-detection = { workspace = true }

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -12,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 from ksi_core.acquisition import observation_epoch_id
+from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     DigestBoundUploadCapability,
@@ -22,9 +24,14 @@ from ksi_core.external_reconstruction import (
     ExternalReconstructionRecoveryError,
     ExternalReconstructionStore,
     ExternalReconstructionVerdict,
+    build_external_reconstruction_submission_ref,
 )
 from ksi_core.observation_work_orders import ObservationWorkOrder
-from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
+from ksi_event_contracts.external_reconstruction import (
+    ExternalReconstructionSubmissionV1,
+    ExternalReconstructionSubmissionV2,
+    parse_external_reconstruction_submission_v2,
+)
 
 _NOW = datetime(2026, 9, 6, tzinfo=UTC)
 
@@ -111,6 +118,60 @@ def _submission(
     return ExternalReconstructionSubmissionV1.model_validate(wire)
 
 
+def _submission_v2(
+    order: ObservationWorkOrder,
+    *,
+    revision: int = 1,
+    submission_id: str = "submission-v2",
+    payload: bytes = b"dsm-bytes",
+    content_type: str = "application/octet-stream",
+) -> ExternalReconstructionSubmissionV2:
+    wire: dict[str, Any] = {
+        "contractVersion": "external-reconstruction-submission.v2",
+        "submissionId": submission_id,
+        "revision": revision,
+        "organizationId": "org-a",
+        "siteId": "site-a",
+        "observationEpochId": observation_epoch_id(order),
+        "submittedAt": "2026-09-06T00:00:00Z",
+        "submittedBy": "operator-a",
+        "executionResponsibility": "customer_operator",
+        "executionLocus": "customer_workstation",
+        "producerDeclaration": {
+            "softwareName": "Mapper",
+            "softwareVersion": "1",
+            "buildIdentifier": None,
+            "producerRunIdentifier": None,
+            "configurationDigest": None,
+            "completedAt": None,
+        },
+        "inputDeclaration": {
+            "rawMediaStoredByKsi": False,
+            "originalRetentionLocus": "customer_workstation",
+            "localInputManifestDigest": None,
+            "imageCount": None,
+            "captureStartedAt": None,
+            "captureEndedAt": None,
+        },
+        "artifacts": [
+            {
+                "artifactId": "dsm",
+                "kind": "dsm",
+                "fileName": "dsm.tif",
+                "format": "GeoTIFF",
+                "contentType": content_type,
+                "declaredSha256": hashlib.sha256(payload).hexdigest(),
+                "declaredSizeBytes": len(payload),
+                "declaredCrs": None,
+                "declaredVerticalReference": None,
+                "declaredGsdM": None,
+            }
+        ],
+    }
+    wire["submissionDigest"] = ExternalReconstructionSubmissionV2.digest_for_wire(wire)
+    return parse_external_reconstruction_submission_v2(wire)
+
+
 def test_replay_restores_exact_sealed_manifest_and_refuses_unknown_event(
     tmp_path: Path,
 ) -> None:
@@ -162,6 +223,250 @@ def test_replay_restores_exact_sealed_manifest_and_refuses_unknown_event(
     forged.close()
     with pytest.raises(ExternalReconstructionRecoveryError):
         ExternalReconstructionStore(DurableJournal(forged_path))
+
+
+def test_spatial_asset_reference_and_observed_identity_survive_replay(tmp_path: Path) -> None:
+    path = tmp_path / "catalog-identity.jsonl"
+    order, storage = _order(), _Storage()
+    journal = DurableJournal(path)
+    store = ExternalReconstructionStore(journal)
+    submission = _submission(order)
+    assert store.register(
+        submission, work_order=order, registered_by="operator-a", now=_NOW
+    ).revision is not None
+    grant = store.upload_grants(
+        "order-a", "submission-a", 1, organization_id="org-a", site_id="site-a", storage=storage
+    ).grants[0]
+    storage.observations[grant.object_key] = ObjectStorageObservation(
+        object_key=grant.object_key,
+        exists=True,
+        size_bytes=5,
+        sha256="sha256:" + hashlib.sha256(b"bytes").hexdigest(),
+        content_type="application/octet-stream",
+    )
+    sealed = store.seal(
+        "order-a",
+        "submission-a",
+        1,
+        organization_id="org-a",
+        site_id="site-a",
+        storage=storage,
+        now=_NOW,
+    )
+    assert sealed.revision is not None and sealed.revision.manifest is not None
+    assert store.register(
+        _submission(order, revision=2),
+        work_order=order,
+        registered_by="operator-a",
+        now=_NOW,
+    ).revision is not None
+    before_ref = build_external_reconstruction_submission_ref(
+        organization_id="org-a", work_order_id="order-a", submission_id="submission-a"
+    )
+    before_asset_ref = SpatialAssetCatalog._asset_ref(before_ref, 1, "ortho")
+    before_manifest_digest = sealed.revision.manifest.manifest_digest
+    journal.close()
+
+    replayed_store = ExternalReconstructionStore(DurableJournal(path))
+    replayed = replayed_store.get(
+        "order-a", "submission-a", 1, organization_id="org-a", site_id="site-a"
+    )
+    assert replayed is not None and replayed.manifest is not None
+    bounded_revisions = replayed_store.list_bounded_for_work_order(
+        "order-a",
+        organization_id="org-a",
+        site_id="site-a",
+        max_submissions=1,
+        max_revisions=2,
+    )
+    assert bounded_revisions[0] == replayed
+    assert bounded_revisions[1].submission.revision == 2
+    after_ref = build_external_reconstruction_submission_ref(
+        organization_id=replayed.submission.organization_id,
+        work_order_id=replayed.work_order_id,
+        submission_id=replayed.submission.submission_id,
+    )
+    after_asset_ref = SpatialAssetCatalog._asset_ref(
+        after_ref, replayed.submission.revision, replayed.submission.artifacts[0].artifact_id
+    )
+
+    assert after_asset_ref == before_asset_ref
+    assert replayed.manifest.manifest_digest == before_manifest_digest
+    assert replayed.manifest.entries[0].observed_sha256 == hashlib.sha256(b"bytes").hexdigest()
+    replayed_store._journal.close()  # noqa: SLF001 -- close replay fixture journal
+
+
+def test_v2_dsm_register_grant_seal_retry_and_replay_preserve_v1_manifest_shape(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "v2-dsm.jsonl"
+    order, storage = _order(), _Storage()
+    journal = DurableJournal(path)
+    store = ExternalReconstructionStore(journal)
+    submission = _submission_v2(order)
+
+    registered = store.register(
+        submission, work_order=order, registered_by="operator-a", now=_NOW
+    )
+    assert registered.verdict is ExternalReconstructionVerdict.REGISTERED
+    assert registered.revision is not None
+    submission_ref = build_external_reconstruction_submission_ref(
+        organization_id="org-a", work_order_id="order-a", submission_id="submission-v2"
+    )
+    assert store.resolve_submission_ref(
+        "order-a", submission_ref, organization_id="org-a", site_id="site-a"
+    ) == "submission-v2"
+    retry = store.register(
+        submission, work_order=order, registered_by="operator-a", now=_NOW
+    )
+    assert retry.verdict is ExternalReconstructionVerdict.REGISTERED
+    assert retry.revision is registered.revision
+    assert len(journal.replay()) == 1
+
+    cross_version = _submission(order, revision=2, submission_id="submission-v2")
+    assert store.register(
+        cross_version, work_order=order, registered_by="operator-a", now=_NOW
+    ).verdict is ExternalReconstructionVerdict.CONFLICT
+
+    v1_first = ExternalReconstructionStore(DurableJournal(tmp_path / "v1-first.jsonl"))
+    first_v1 = _submission(order, submission_id="submission-mixed")
+    assert v1_first.register(
+        first_v1, work_order=order, registered_by="operator-a", now=_NOW
+    ).verdict is ExternalReconstructionVerdict.REGISTERED
+    v2_successor = _submission_v2(
+        order, revision=2, submission_id="submission-mixed", payload=b"successor"
+    )
+    assert v1_first.register(
+        v2_successor, work_order=order, registered_by="operator-a", now=_NOW
+    ).verdict is ExternalReconstructionVerdict.CONFLICT
+    v1_first._journal.close()
+
+    grants = store.upload_grants(
+        "order-a", "submission-v2", 1, organization_id="org-a", site_id="site-a", storage=storage
+    )
+    grant = grants.grants[0]
+    _observe_declared(storage, grant, payload=b"wrong")
+    mismatch = store.seal(
+        "order-a",
+        "submission-v2",
+        1,
+        organization_id="org-a",
+        site_id="site-a",
+        storage=storage,
+        now=_NOW,
+    )
+    assert mismatch.verdict is ExternalReconstructionVerdict.OBSERVATION_MISMATCH
+    _observe_declared(storage, grant, payload=b"dsm-bytes")
+    sealed = store.seal(
+        "order-a",
+        "submission-v2",
+        1,
+        organization_id="org-a",
+        site_id="site-a",
+        storage=storage,
+        now=_NOW,
+    )
+    assert sealed.verdict is ExternalReconstructionVerdict.SEALED
+    assert sealed.revision is not None and sealed.revision.manifest is not None
+    assert sealed.revision.submission.submission_digest == submission.submission_digest
+    assert sealed.revision.manifest.contract_version == "external-reconstruction-manifest.v1"
+    assert [(entry.artifact_id, entry.kind) for entry in sealed.revision.manifest.entries] == [
+        ("dsm", "dsm")
+    ]
+    assert len(journal.replay()) == 2
+    sealed_retry = store.seal(
+        "order-a",
+        "submission-v2",
+        1,
+        organization_id="org-a",
+        site_id="site-a",
+        storage=storage,
+        now=_NOW,
+    )
+    assert sealed_retry.verdict is ExternalReconstructionVerdict.SEALED
+    assert len(journal.replay()) == 2
+    journal.close()
+
+    reopened = ExternalReconstructionStore(DurableJournal(path))
+    replayed = reopened.get(
+        "order-a", "submission-v2", 1, organization_id="org-a", site_id="site-a"
+    )
+    assert replayed is not None and replayed.manifest is not None
+    assert isinstance(replayed.submission, ExternalReconstructionSubmissionV2)
+    assert replayed.submission.submission_digest == submission.submission_digest
+    assert replayed.manifest.manifest_digest == sealed.revision.manifest.manifest_digest
+    assert reopened.resolve_submission_ref(
+        "order-a", submission_ref, organization_id="org-a", site_id="site-a"
+    ) == "submission-v2"
+    reopened._journal.close()
+
+
+@pytest.mark.parametrize(
+    "tamper", ("missing-version", "forged-version", "missing-digest", "forged-digest")
+)
+def test_v2_registration_replay_rejects_version_or_digest_tampering(
+    tmp_path: Path, tamper: str
+) -> None:
+    from ksi_core.external_reconstruction import _event_digest
+
+    source = ExternalReconstructionStore(DurableJournal(tmp_path / f"source-{tamper}.jsonl"))
+    assert source.register(
+        _submission_v2(_order()), work_order=_order(), registered_by="operator-a", now=_NOW
+    ).revision
+    event = copy.deepcopy(source._journal.replay()[0])
+    source._journal.close()
+    submission = event["submission"]
+    if tamper == "missing-version":
+        submission.pop("contractVersion")
+    elif tamper == "forged-version":
+        submission["contractVersion"] = "external-reconstruction-submission.v3"
+    elif tamper == "missing-digest":
+        submission.pop("submissionDigest")
+    else:
+        submission["submissionDigest"] = "sha256:" + "0" * 64
+    event["eventDigest"] = _event_digest(event)
+    forged_path = tmp_path / f"forged-{tamper}.jsonl"
+    forged = DurableJournal(forged_path)
+    forged.append(event)
+    forged.close()
+
+    with pytest.raises(ExternalReconstructionRecoveryError):
+        ExternalReconstructionStore(DurableJournal(forged_path))
+
+
+def test_v2_replay_rejects_cross_version_revision_stream(tmp_path: Path) -> None:
+    target_path = tmp_path / "mixed-stream.jsonl"
+    order = _order()
+    target = ExternalReconstructionStore(DurableJournal(target_path))
+    assert target.register(
+        _submission_v2(order, submission_id="submission-mixed"),
+        work_order=order,
+        registered_by="operator-a",
+        now=_NOW,
+    ).revision
+    target._journal.close()
+
+    source = ExternalReconstructionStore(DurableJournal(tmp_path / "v1-source.jsonl"))
+    assert source.register(
+        _submission(order, submission_id="submission-mixed"),
+        work_order=order,
+        registered_by="operator-a",
+        now=_NOW,
+    ).revision
+    assert source.register(
+        _submission(order, revision=2, submission_id="submission-mixed", payload=b"next"),
+        work_order=order,
+        registered_by="operator-a",
+        now=_NOW,
+    ).revision
+    v1_revision_two = source._journal.replay()[1]
+    source._journal.close()
+
+    append = DurableJournal(target_path)
+    append.append(v1_revision_two)
+    append.close()
+    with pytest.raises(ExternalReconstructionRecoveryError):
+        ExternalReconstructionStore(DurableJournal(target_path))
 
 
 def test_replay_rejects_boolean_event_version_even_with_recomputed_digest(

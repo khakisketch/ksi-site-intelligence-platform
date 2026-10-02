@@ -1,8 +1,12 @@
 # KSI Site Intelligence repository structure
 
 Status: canonical repository owner/purpose/runtime map for R0-R3. Product authority remains
-[`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md); current execution status remains
-[`docs/goals/PHASE_REGISTRY.yaml`](docs/goals/PHASE_REGISTRY.yaml) and the goal ledger.
+[`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md). `.opencode/working-state.md`, when present,
+identifies an active checkout task and its task ledger after Git revalidation; it does not
+close/reprioritize a product slice. [`docs/superpowers/product-state.md`](docs/superpowers/product-state.md)
+identifies the current product slice and slice ledger, from which work is selected only when no
+active bounded checkout task exists. [`docs/goals/PHASE_REGISTRY.yaml`](docs/goals/PHASE_REGISTRY.yaml)
+is a capability-track index, not a competing current-task or next-priority source.
 
 The service-versus-package placement is normalized: independently operated processes live in
 `services/`, while import-only algorithms and adapters live in `packages/`. The earlier `PARTIAL`
@@ -63,9 +67,17 @@ Manifold Edge: local acquisition, perception, world model, risk and tactical dec
 Core: signed Mission Contract and workflow; never low-level flight control
 ```
 
+ADR-KSI-037 places the API-first Site/WorkArea/Epoch/result/evidence record at the product core.
+The displayed acquisition topology remains a future-compatible observation path, not an automatic
+flight or robot-execution prerequisite for the weekly two-epoch MVP; no runtime ownership changes.
+
 PSDK Liveview stays on the Manifold acquisition/perception path. `EDGE_UPLINK` carries bounded
-observations/telemetry/events, while original source media uses the current SD/storage -> field PC ->
-web path or a separately gated target `MEDIA_PULL`/`MEDIA_UPLOAD` adapter.
+observations/telemetry/events. For the ADR-KSI-036 D6 external first-release route, a customer field
+PC reconstructs M4D captures with DJI Terra as the initial reference workflow and KSI receives
+derived artifacts/evidence; originals remain customer-side. The SD/storage -> field PC -> web raw
+path is retained managed/test or separately authorized source-media scope, with a separately gated
+target `MEDIA_PULL`/`MEDIA_UPLOAD` adapter. This routing does not verify a vendor tool, RTK/map
+accuracy, field acceptance, or alter Edge/acquisition authority.
 
 `KSI Safety` is a separate multi-sensor real-time safety operations product concept. It does not
 absorb the Site Intelligence safety-patrol Mission type, and this repository must not create a
@@ -88,9 +100,12 @@ contracts, establish Pilot/device support, or change the `NOT_VERIFIED` HIL/fiel
 |---|---|---:|---|
 | Product definition and durable decision | `docs/product/`, `docs/architecture/ADR-*` | No | RETAIN |
 | Domain/API/HIL contract | `contracts/` | Runtime input | RETAIN |
-| Current phase and durable goal state | `docs/goals/PHASE_REGISTRY.yaml`, `.ksi/` | No | RETAIN |
-| Session continuity and audit snapshots | `.ai/`, dated handoffs/audits | No | RETAIN as evidence, never product authority |
-| Current source-media ingress | SD/storage → field PC → KSI web upload | Operational path | RETAIN |
+| Active checkout task resume | `.opencode/working-state.md` when present and its named task ledger | No | RETAIN; Git revalidate; does not close/reprioritize product slice |
+| Current product slice | `docs/superpowers/product-state.md` and its named slice ledger | No | RETAIN; select only when no active bounded checkout task exists |
+| Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | No | RETAIN; not current task selection |
+| Session continuity and audit snapshots | `.ai/`, `.ksi/`, dated handoffs/audits | No | RETAIN as historical evidence, never current state or product authority |
+| External first-release result ingress | M4D → customer field PC/Terra → KSI derived artifacts/evidence | Product direction | RETAIN; license/export/accuracy acceptance separate |
+| Managed/test source-media ingress | SD/storage → field PC → KSI web upload | Operational path | RETAIN scoped |
 | Target automated source-media ingress | separately gated `MEDIA_PULL` → `MEDIA_UPLOAD` adapter | Target runtime | RETAIN gated; do not activate |
 | Local acquisition video | PSDK Liveview inside Manifold acquisition/perception | Edge runtime input | RETAIN |
 | Continuous central video | not a core product path | No | REMOVE from product assumptions |
@@ -104,12 +119,12 @@ trash.
 | Path | Owner | Purpose | Runtime | R0-R2 decision |
 |---|---|---|---|---|
 | `.agents/` | Agent tooling | Local agent configuration | No | RETAIN |
-| `.ai/` | Repository governance | Current/previous goal, plan, handoff, audit snapshots | No | RETAIN; evidence only |
+| `.ai/` | Repository governance | Historical session handoffs and audit snapshots | No | RETAIN; evidence only, not current state |
 | `.claude/` | Local agent tooling | Local sessions/worktrees/plugins | No | RETAIN local; outside product source |
 | `.codex/` | Local agent tooling | Local Codex configuration | No | RETAIN local |
 | `.dev-data/` | Development operator | Ignored local Core/OIDC state and keys | Local runtime state | RETAIN; never archive to Git |
 | `.github/` | Platform/CI | CI workflows | Build/verification | RETAIN |
-| `.ksi/` | Goal governance | Durable goal/risk ledger and state | No | RETAIN; helper-owned |
+| `.ksi/` | Legacy goal governance | Retired helper-era goal/risk state | No | RETAIN as archive/evidence; product slice is `docs/superpowers/product-state.md` + named slice ledger, while an active checkout task uses its checkpoint + named task ledger |
 | `.venv/` | Python toolchain | Reproducible local environment from `uv.lock` | No | RETAIN local; regenerated only by operator choice |
 | `apps/` | Dashboard | User-facing applications | Yes | RETAIN |
 | `cmake/` | Edge | Cross-build toolchains | Build/runtime delivery | RETAIN |

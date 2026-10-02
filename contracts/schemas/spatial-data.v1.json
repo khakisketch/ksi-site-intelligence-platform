@@ -1,0 +1,2183 @@
+{
+  "$defs": {
+    "ArtifactInspectionOutcomeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/ArtifactOutcome"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "measurements": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RasterMeasurementsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "artifactId",
+        "observedSha256",
+        "outcome"
+      ],
+      "title": "ArtifactInspectionOutcomeV1",
+      "type": "object"
+    },
+    "ArtifactOutcome": {
+      "enum": [
+        "MEASURED",
+        "NOT_APPLICABLE",
+        "REJECTED"
+      ],
+      "title": "ArtifactOutcome",
+      "type": "string"
+    },
+    "ExecutionLocus": {
+      "description": "처리 실행 위치 (ADR-KSI-010 운영 표면의 판정 대상 — INV-050이 이 값을 강제 조건으로 쓴다).",
+      "enum": [
+        "site_onprem",
+        "ksi_server_gpu",
+        "customer_workstation",
+        "vendor_cloud"
+      ],
+      "title": "ExecutionLocus",
+      "type": "string"
+    },
+    "NodataRepresentation": {
+      "description": "JSON-safe parser observation; NAN is a token, never a non-finite JSON value.",
+      "enum": [
+        "NONE",
+        "FINITE",
+        "NAN",
+        "MASK"
+      ],
+      "title": "NodataRepresentation",
+      "type": "string"
+    },
+    "ObservedVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Parser-observed vertical identifier/basis, distinct from a user declaration.",
+      "properties": {
+        "identifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "ObservedVerticalReferenceV1",
+      "type": "object"
+    },
+    "RasterMeasurementsV1": {
+      "additionalProperties": false,
+      "description": "Worker-observed raster facts, never a compatibility or accuracy assertion.",
+      "properties": {
+        "observedCrsIdentifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsWkt": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedcrswkt"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "footprintWkt": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Footprintwkt",
+          "type": "string"
+        },
+        "footprintDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Footprintdigest",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Dtype",
+          "type": "string"
+        },
+        "layout": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Layout",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "$ref": "#/$defs/NodataRepresentation"
+        },
+        "nodataValue": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodatavalue"
+        },
+        "validPixelCount": {
+          "minimum": 0,
+          "title": "Validpixelcount",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "footprintWkt",
+        "footprintDigest",
+        "width",
+        "height",
+        "bandCount",
+        "dtype",
+        "layout",
+        "nodataRepresentation",
+        "validPixelCount"
+      ],
+      "title": "RasterMeasurementsV1",
+      "type": "object"
+    },
+    "ResourceEnvelopeV1": {
+      "additionalProperties": false,
+      "description": "Configured finite worker limits; values are policy data, never client input.",
+      "properties": {
+        "maxInputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxinputbytes",
+          "type": "integer"
+        },
+        "maxStreamedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxstreamedbytes",
+          "type": "integer"
+        },
+        "maxTiffDirectories": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffdirectories",
+          "type": "integer"
+        },
+        "maxTiffEntries": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffentries",
+          "type": "integer"
+        },
+        "maxPixels": {
+          "exclusiveMinimum": 0,
+          "title": "Maxpixels",
+          "type": "integer"
+        },
+        "maxBands": {
+          "exclusiveMinimum": 0,
+          "title": "Maxbands",
+          "type": "integer"
+        },
+        "maxBlocks": {
+          "exclusiveMinimum": 0,
+          "title": "Maxblocks",
+          "type": "integer"
+        },
+        "maxDecompressedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdecompressedbytes",
+          "type": "integer"
+        },
+        "maxSampleBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxsamplebytes",
+          "type": "integer"
+        },
+        "maxGeometryVertices": {
+          "exclusiveMinimum": 0,
+          "title": "Maxgeometryvertices",
+          "type": "integer"
+        },
+        "maxCpuSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxcpuseconds",
+          "type": "number"
+        },
+        "maxMemoryBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmemorybytes",
+          "type": "integer"
+        },
+        "maxWorkspaceBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxworkspacebytes",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "maxTenantConcurrency": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtenantconcurrency",
+          "type": "integer"
+        },
+        "maxQueueDepth": {
+          "exclusiveMinimum": 0,
+          "title": "Maxqueuedepth",
+          "type": "integer"
+        },
+        "maxDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdeadlineseconds",
+          "type": "number"
+        },
+        "leaseDurationSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Leasedurationseconds",
+          "type": "number"
+        },
+        "maxRetryAttempts": {
+          "exclusiveMinimum": 0,
+          "title": "Maxretryattempts",
+          "type": "integer"
+        },
+        "resourceEnvelopeDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resourceenvelopedigest"
+        }
+      },
+      "required": [
+        "maxInputBytes",
+        "maxStreamedBytes",
+        "maxTiffDirectories",
+        "maxTiffEntries",
+        "maxPixels",
+        "maxBands",
+        "maxBlocks",
+        "maxDecompressedBytes",
+        "maxSampleBytes",
+        "maxGeometryVertices",
+        "maxCpuSeconds",
+        "maxMemoryBytes",
+        "maxWorkspaceBytes",
+        "maxOutputBytes",
+        "maxTenantConcurrency",
+        "maxQueueDepth",
+        "maxDeadlineSeconds",
+        "leaseDurationSeconds",
+        "maxRetryAttempts"
+      ],
+      "title": "ResourceEnvelopeV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    },
+    "SpatialDataAttemptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "frozenJobDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Frozenjobdigest",
+          "type": "string"
+        },
+        "attemptNumber": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Attemptnumber",
+          "type": "integer"
+        },
+        "fence": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Fence",
+          "type": "integer"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "acquisitionKeyHash": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Acquisitionkeyhash",
+          "type": "string"
+        },
+        "acquiredAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Acquiredat",
+          "type": "string"
+        },
+        "leaseUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Leaseuntil",
+          "type": "string"
+        },
+        "attemptDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attemptdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "frozenJobDigest",
+        "attemptNumber",
+        "fence",
+        "workerPrincipalId",
+        "workerInstanceId",
+        "acquisitionKeyHash",
+        "acquiredAt",
+        "leaseUntil"
+      ],
+      "title": "SpatialDataAttemptV1",
+      "type": "object"
+    },
+    "SpatialDataAvailabilityV1": {
+      "enum": [
+        "NOT_READY",
+        "AVAILABLE",
+        "ACCESS_REVOKED",
+        "ACCESS_EXPIRED",
+        "RETENTION_EXPIRED",
+        "UNAVAILABLE"
+      ],
+      "title": "SpatialDataAvailabilityV1",
+      "type": "string"
+    },
+    "SpatialDataErrorV1": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "PERMISSION_DENIED",
+            "NOT_FOUND",
+            "ACCESS_REVOKED",
+            "ACCESS_EXPIRED",
+            "RETENTION_EXPIRED",
+            "AI_EGRESS_DENIED",
+            "PROCESSING_LOCATION_DENIED",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "ACTIVATION_UNAVAILABLE",
+            "POLICY_UNAVAILABLE",
+            "SOURCE_UNSEALED",
+            "SOURCE_NOT_MEASURED",
+            "SOURCE_UNAVAILABLE",
+            "SOURCE_NOT_REGULAR_FILE",
+            "SOURCE_BYTES_MISMATCH",
+            "SOURCE_MEASUREMENTS_MISMATCH",
+            "UNSUPPORTED_ARTIFACT_KIND",
+            "UNSUPPORTED_SOURCE_PROFILE",
+            "INVALID_REQUEST_BOUNDS",
+            "INVALID_RESOURCE_LIMIT",
+            "CRS_MISMATCH",
+            "VERTICAL_REFERENCE_MISMATCH",
+            "UNSUPPORTED_GRID",
+            "UNREPRESENTABLE_GRID",
+            "INVALID_SOURCE_GEOMETRY",
+            "REQUEST_OUTSIDE_SOURCE",
+            "OUTPUT_OUTSIDE_GRANT",
+            "EMPTY_PIXEL_WINDOW",
+            "EMPTY_VALID_WINDOW",
+            "INVALID_SOURCE_SAMPLE",
+            "INVALID_SOURCE_MASK",
+            "INPUT_BYTE_LIMIT_EXCEEDED",
+            "INPUT_PIXEL_LIMIT_EXCEEDED",
+            "INPUT_BAND_LIMIT_EXCEEDED",
+            "OUTPUT_BYTE_LIMIT_EXCEEDED",
+            "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+            "WORKSPACE_LIMIT_EXCEEDED",
+            "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+            "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+            "PRIVATE_WORKSPACE_UNAVAILABLE",
+            "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+            "OUTPUT_ALREADY_EXISTS",
+            "OUTPUT_NOT_PRIVATE",
+            "RASTER_PREPARATION_FAILED",
+            "RASTER_WRITE_FAILED",
+            "OUTPUT_VERIFICATION_FAILED",
+            "EMPTY_OUTPUT",
+            "CONCURRENCY_LIMIT_EXCEEDED",
+            "IDEMPOTENCY_CONFLICT",
+            "FENCE_CONFLICT",
+            "LEASE_EXPIRED",
+            "REPORT_CONFLICT",
+            "CANCELED",
+            "CANCELLED",
+            "DEADLINE_EXCEEDED",
+            "STORAGE_UNAVAILABLE",
+            "INTEGRITY_MISMATCH",
+            "CURRENTNESS_UNAVAILABLE",
+            "AUDIT_UNAVAILABLE",
+            "RANGE_NOT_SUPPORTED",
+            "CLEANUP_FAILED",
+            "NOT_READY",
+            "UNAVAILABLE",
+            "RESOURCE_LIMIT_EXCEEDED"
+          ],
+          "title": "Reason",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "remediation": {
+          "items": {
+            "enum": [
+              "RETRY_REQUEST",
+              "REQUEST_NEW_GRANT",
+              "CONTACT_OPERATOR",
+              "REINSPECT_SOURCE",
+              "SUPPLY_SUPPORTED_SOURCE",
+              "REDUCE_REQUEST",
+              "REQUEST_NEW_JOB",
+              "WAIT_FOR_COMPLETION",
+              "CHECK_AUTHENTICATION",
+              "CHECK_AI_CONSENT",
+              "CHECK_PROCESSING_LOCATION"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Remediation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason",
+        "message",
+        "retryable",
+        "remediation"
+      ],
+      "title": "SpatialDataErrorV1",
+      "type": "object"
+    },
+    "SpatialDataExecutionStateV1": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELED",
+        "EXPIRED"
+      ],
+      "title": "SpatialDataExecutionStateV1",
+      "type": "string"
+    },
+    "SpatialDataFrozenJobV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "requesterPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requesterprincipalid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/SpatialDataRequestV1"
+        },
+        "source": {
+          "$ref": "#/$defs/SpatialDataSourceV1"
+        },
+        "grant": {
+          "$ref": "#/$defs/SpatialDataGrantV1"
+        },
+        "policy": {
+          "$ref": "#/$defs/SpatialDataPolicyV1"
+        },
+        "runtime": {
+          "$ref": "#/$defs/SpatialDataRuntimeV1"
+        },
+        "idempotencyKeyHash": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Idempotencykeyhash",
+          "type": "string"
+        },
+        "requestFingerprint": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestfingerprint",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "deadline": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Deadline",
+          "type": "string"
+        },
+        "jobDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Jobdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "organizationId",
+        "requesterPrincipalId",
+        "siteId",
+        "workAreaId",
+        "request",
+        "source",
+        "grant",
+        "policy",
+        "runtime",
+        "idempotencyKeyHash",
+        "requestFingerprint",
+        "createdAt",
+        "deadline"
+      ],
+      "title": "SpatialDataFrozenJobV1",
+      "type": "object"
+    },
+    "SpatialDataGrantV1": {
+      "additionalProperties": false,
+      "properties": {
+        "grantId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Grantid",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "beneficiaryPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Beneficiaryprincipalid",
+          "type": "string"
+        },
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "allowedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Allowedbounds",
+          "type": "array"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "operations": {
+          "items": {
+            "enum": [
+              "PREPARE",
+              "READ"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Operations",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "purposes": {
+          "items": {
+            "enum": [
+              "GENERAL_DATA_USE",
+              "EXTERNAL_AI"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Purposes",
+          "type": "array",
+          "uniqueItems": true
+        },
+        "processingLocation": {
+          "$ref": "#/$defs/ExecutionLocus"
+        },
+        "licenseProvenanceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Licenseprovenancedigest",
+          "type": "string"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "validFrom": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validfrom",
+          "type": "string"
+        },
+        "validUntil": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Validuntil",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "grantDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Grantdigest"
+        }
+      },
+      "required": [
+        "grantId",
+        "revision",
+        "organizationId",
+        "beneficiaryPrincipalId",
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "allowedBounds",
+        "observedCrsDigest",
+        "operations",
+        "purposes",
+        "processingLocation",
+        "licenseProvenanceDigest",
+        "attribution",
+        "validFrom",
+        "validUntil",
+        "policyDigest"
+      ],
+      "title": "SpatialDataGrantV1",
+      "type": "object"
+    },
+    "SpatialDataJobViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "executionState": {
+          "$ref": "#/$defs/SpatialDataExecutionStateV1"
+        },
+        "availability": {
+          "$ref": "#/$defs/SpatialDataAvailabilityV1"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_FOUND",
+                "ACCESS_REVOKED",
+                "ACCESS_EXPIRED",
+                "RETENTION_EXPIRED",
+                "AI_EGRESS_DENIED",
+                "PROCESSING_LOCATION_DENIED",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "ACTIVATION_UNAVAILABLE",
+                "POLICY_UNAVAILABLE",
+                "SOURCE_UNSEALED",
+                "SOURCE_NOT_MEASURED",
+                "SOURCE_UNAVAILABLE",
+                "SOURCE_NOT_REGULAR_FILE",
+                "SOURCE_BYTES_MISMATCH",
+                "SOURCE_MEASUREMENTS_MISMATCH",
+                "UNSUPPORTED_ARTIFACT_KIND",
+                "UNSUPPORTED_SOURCE_PROFILE",
+                "INVALID_REQUEST_BOUNDS",
+                "INVALID_RESOURCE_LIMIT",
+                "CRS_MISMATCH",
+                "VERTICAL_REFERENCE_MISMATCH",
+                "UNSUPPORTED_GRID",
+                "UNREPRESENTABLE_GRID",
+                "INVALID_SOURCE_GEOMETRY",
+                "REQUEST_OUTSIDE_SOURCE",
+                "OUTPUT_OUTSIDE_GRANT",
+                "EMPTY_PIXEL_WINDOW",
+                "EMPTY_VALID_WINDOW",
+                "INVALID_SOURCE_SAMPLE",
+                "INVALID_SOURCE_MASK",
+                "INPUT_BYTE_LIMIT_EXCEEDED",
+                "INPUT_PIXEL_LIMIT_EXCEEDED",
+                "INPUT_BAND_LIMIT_EXCEEDED",
+                "OUTPUT_BYTE_LIMIT_EXCEEDED",
+                "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+                "WORKSPACE_LIMIT_EXCEEDED",
+                "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+                "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+                "PRIVATE_WORKSPACE_UNAVAILABLE",
+                "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+                "OUTPUT_ALREADY_EXISTS",
+                "OUTPUT_NOT_PRIVATE",
+                "RASTER_PREPARATION_FAILED",
+                "RASTER_WRITE_FAILED",
+                "OUTPUT_VERIFICATION_FAILED",
+                "EMPTY_OUTPUT",
+                "CONCURRENCY_LIMIT_EXCEEDED",
+                "IDEMPOTENCY_CONFLICT",
+                "FENCE_CONFLICT",
+                "LEASE_EXPIRED",
+                "REPORT_CONFLICT",
+                "CANCELED",
+                "CANCELLED",
+                "DEADLINE_EXCEEDED",
+                "STORAGE_UNAVAILABLE",
+                "INTEGRITY_MISMATCH",
+                "CURRENTNESS_UNAVAILABLE",
+                "AUDIT_UNAVAILABLE",
+                "RANGE_NOT_SUPPORTED",
+                "CLEANUP_FAILED",
+                "NOT_READY",
+                "UNAVAILABLE",
+                "RESOURCE_LIMIT_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "remediation": {
+          "default": [],
+          "items": {
+            "enum": [
+              "RETRY_REQUEST",
+              "REQUEST_NEW_GRANT",
+              "CONTACT_OPERATOR",
+              "REINSPECT_SOURCE",
+              "SUPPLY_SUPPORTED_SOURCE",
+              "REDUCE_REQUEST",
+              "REQUEST_NEW_JOB",
+              "WAIT_FOR_COMPLETION",
+              "CHECK_AUTHENTICATION",
+              "CHECK_AI_CONSENT",
+              "CHECK_PROCESSING_LOCATION"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Remediation",
+          "type": "array"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialDataReceiptV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "jobId",
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "createdAt",
+        "executionState",
+        "availability"
+      ],
+      "title": "SpatialDataJobViewV1",
+      "type": "object"
+    },
+    "SpatialDataPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SpatialDataJobViewV1"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextcursor"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SpatialDataPageV1",
+      "type": "object"
+    },
+    "SpatialDataPolicyV1": {
+      "additionalProperties": false,
+      "properties": {
+        "policyId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Policyid",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "resourceEnvelope": {
+          "$ref": "#/$defs/ResourceEnvelopeV1"
+        },
+        "maxOutputPixels": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxoutputpixels",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "streamChunkBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Streamchunkbytes",
+          "type": "integer"
+        },
+        "maxStreamBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxstreambytes",
+          "type": "integer"
+        },
+        "streamDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Streamdeadlineseconds",
+          "type": "number"
+        },
+        "maxActiveJobsPerOrganization": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxactivejobsperorganization",
+          "type": "integer"
+        },
+        "maxActiveDownloadsPerOrganization": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxactivedownloadsperorganization",
+          "type": "integer"
+        },
+        "maxPendingRecords": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxpendingrecords",
+          "type": "integer"
+        },
+        "maxListRecords": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxlistrecords",
+          "type": "integer"
+        },
+        "maxSnapshotBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxsnapshotbytes",
+          "type": "integer"
+        },
+        "maxJsonBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxjsonbytes",
+          "type": "integer"
+        },
+        "maxIdempotencyKeyBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxidempotencykeybytes",
+          "type": "integer"
+        },
+        "leaseSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Leaseseconds",
+          "type": "number"
+        },
+        "maxAttempts": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxattempts",
+          "type": "integer"
+        },
+        "minRetryBackoffSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Minretrybackoffseconds",
+          "type": "number"
+        },
+        "maxRetryBackoffSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Maxretrybackoffseconds",
+          "type": "number"
+        },
+        "retentionSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Retentionseconds",
+          "type": "number"
+        },
+        "maxCleanupAttempts": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Maxcleanupattempts",
+          "type": "integer"
+        },
+        "cleanupDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "maximum": 1.7976931348623157e+308,
+          "title": "Cleanupdeadlineseconds",
+          "type": "number"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        }
+      },
+      "required": [
+        "policyId",
+        "revision",
+        "resourceEnvelope",
+        "maxOutputPixels",
+        "maxOutputBytes",
+        "streamChunkBytes",
+        "maxStreamBytes",
+        "streamDeadlineSeconds",
+        "maxActiveJobsPerOrganization",
+        "maxActiveDownloadsPerOrganization",
+        "maxPendingRecords",
+        "maxListRecords",
+        "maxSnapshotBytes",
+        "maxJsonBytes",
+        "maxIdempotencyKeyBytes",
+        "leaseSeconds",
+        "maxAttempts",
+        "minRetryBackoffSeconds",
+        "maxRetryBackoffSeconds",
+        "retentionSeconds",
+        "maxCleanupAttempts",
+        "cleanupDeadlineSeconds"
+      ],
+      "title": "SpatialDataPolicyV1",
+      "type": "object"
+    },
+    "SpatialDataPurposeV1": {
+      "enum": [
+        "GENERAL_DATA_USE",
+        "EXTERNAL_AI"
+      ],
+      "title": "SpatialDataPurposeV1",
+      "type": "string"
+    },
+    "SpatialDataReceiptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "jobDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Jobdigest",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "requestDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestdigest",
+          "type": "string"
+        },
+        "preparationProfile": {
+          "const": "ksi-native-window.v1",
+          "default": "ksi-native-window.v1",
+          "title": "Preparationprofile",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "grantDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Grantdigest",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "artifactKind": {
+          "enum": [
+            "dsm",
+            "ortho"
+          ],
+          "title": "Artifactkind",
+          "type": "string"
+        },
+        "sourceSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcesha256",
+          "type": "string"
+        },
+        "sourceSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Sourcesizebytes",
+          "type": "integer"
+        },
+        "requestedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Requestedbounds",
+          "type": "array"
+        },
+        "requestedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestedcrsdigest",
+          "type": "string"
+        },
+        "actualBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Actualbounds",
+          "type": "array"
+        },
+        "pixelWindow": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "title": "Pixelwindow",
+          "type": "array"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Height",
+          "type": "integer"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "sourceTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Sourcetransform",
+          "type": "array"
+        },
+        "sourceResolution": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Sourceresolution",
+          "type": "array"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "enum": [
+            "float32",
+            "float64",
+            "uint8"
+          ],
+          "title": "Dtype",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "$ref": "#/$defs/NodataRepresentation"
+        },
+        "nodataValue": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodatavalue"
+        },
+        "validPixelCount": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Validpixelcount",
+          "type": "integer"
+        },
+        "outputSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Outputsha256",
+          "type": "string"
+        },
+        "outputSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Outputsizebytes",
+          "type": "integer"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "preparedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Preparedat",
+          "type": "string"
+        },
+        "declarationRecordedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declarationrecordedat",
+          "type": "string"
+        },
+        "timestampProvenance": {
+          "const": "SUBMISSION_DECLARATION",
+          "default": "SUBMISSION_DECLARATION",
+          "title": "Timestampprovenance",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "producerProcessedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerprocessedat"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "modificationNotice": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Modificationnotice",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "receiptDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiptdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "jobDigest",
+        "sourceDigest",
+        "requestDigest",
+        "runtimeDigest",
+        "policyDigest",
+        "grantDigest",
+        "artifactId",
+        "artifactKind",
+        "sourceSha256",
+        "sourceSizeBytes",
+        "requestedBounds",
+        "requestedCrsDigest",
+        "actualBounds",
+        "pixelWindow",
+        "width",
+        "height",
+        "transform",
+        "sourceTransform",
+        "sourceResolution",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "bandCount",
+        "dtype",
+        "nodataRepresentation",
+        "validPixelCount",
+        "outputSha256",
+        "outputSizeBytes",
+        "accuracyAssessed",
+        "preparedAt",
+        "declarationRecordedAt",
+        "attribution",
+        "modificationNotice",
+        "limitations"
+      ],
+      "title": "SpatialDataReceiptV1",
+      "type": "object"
+    },
+    "SpatialDataRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "requestedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Requestedbounds",
+          "type": "array"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "resolutionMode": {
+          "const": "NATIVE",
+          "title": "Resolutionmode",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/SpatialDataPurposeV1"
+        }
+      },
+      "required": [
+        "assetRef",
+        "requestedBounds",
+        "observedCrsDigest",
+        "resolutionMode",
+        "purpose"
+      ],
+      "title": "SpatialDataRequestV1",
+      "type": "object"
+    },
+    "SpatialDataRuntimeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "preparationProfile": {
+          "const": "ksi-native-window.v1",
+          "default": "ksi-native-window.v1",
+          "title": "Preparationprofile",
+          "type": "string"
+        },
+        "executableDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Executabledigest",
+          "type": "string"
+        },
+        "buildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Builddigest",
+          "type": "string"
+        },
+        "runtimeImage": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimage",
+          "type": "string"
+        },
+        "runtimeImageVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimageversion",
+          "type": "string"
+        },
+        "runtimeImageDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimeimagedigest",
+          "type": "string"
+        },
+        "dependencyLockDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependencylockdigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Runtimedigest"
+        }
+      },
+      "required": [
+        "executableDigest",
+        "buildDigest",
+        "runtimeImage",
+        "runtimeImageVersion",
+        "runtimeImageDigest",
+        "dependencyLockDigest"
+      ],
+      "title": "SpatialDataRuntimeV1",
+      "type": "object"
+    },
+    "SpatialDataSourceV1": {
+      "additionalProperties": false,
+      "description": "Binding shape only: Core must authenticate the actual sealed inspection.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "epochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Epochid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "artifactKind": {
+          "enum": [
+            "dsm",
+            "ortho"
+          ],
+          "title": "Artifactkind",
+          "type": "string"
+        },
+        "sealedSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "inspection": {
+          "$ref": "#/$defs/ArtifactInspectionOutcomeV1"
+        },
+        "inspectionReportDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "workAreaBoundaryDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workareaboundarydigest",
+          "type": "string"
+        },
+        "observedCrsUnits": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsunits",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "producerProcessedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerprocessedat"
+        },
+        "declarationRecordedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declarationrecordedat",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcedigest"
+        }
+      },
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "epochId",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "artifactKind",
+        "sealedSubject",
+        "observedSha256",
+        "observedSizeBytes",
+        "inspection",
+        "inspectionReportDigest",
+        "inspectorBuildDigest",
+        "workAreaBoundaryDigest",
+        "observedCrsUnits",
+        "declarationRecordedAt"
+      ],
+      "title": "SpatialDataSourceV1",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -32,4 +32,23 @@ describe("standard local development entrypoint", () => {
     expect(userService).toContain("Restart=on-failure");
     expect(userService).not.toContain("0.0.0.0");
   });
+
+  it("forwards local Analysis only when the operator supplies all protected inputs", () => {
+    const stack = readFileSync(join(process.cwd(), "scripts/run-local-oidc-stack.mjs"), "utf8");
+
+    expect(stack).toContain("const localAnalysisOptInValues =");
+    expect(stack).toContain(
+      "local Analysis requires S3 endpoint/bucket and three protected config paths",
+    );
+    expect(stack).toContain('"--s3-endpoint",\n        localAnalysisS3Endpoint');
+    expect(stack).toContain('"--s3-bucket",\n        localAnalysisS3Bucket');
+    expect(stack).toContain('"--local-analysis-config",\n        localAnalysisConfig');
+    expect(stack).toContain(
+      '"--external-result-workflow-config",\n        externalResultWorkflowConfig',
+    );
+    expect(stack).toContain(
+      '"--external-authority-provider-config",\n        externalAuthorityProviderConfig',
+    );
+    expect(stack).not.toContain("KSI_LOCAL_ANALYSIS_");
+  });
 });

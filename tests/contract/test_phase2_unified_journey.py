@@ -44,7 +44,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from httpx import Response
+from httpx2 import Response
 from ksi_core.auth import (
     AuthRegistry,
     Principal,

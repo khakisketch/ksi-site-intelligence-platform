@@ -21,6 +21,10 @@ from ksi_core.auth import (
     Role,
     mount_auth,
 )
+from ksi_core.identity.oidc_subject_registry import (
+    OidcSubjectRegistry,
+    load_oidc_subject_registry,
+)
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 
 _ISSUER = "https://issuer.example.test"
@@ -51,6 +55,7 @@ def _claims(**overrides: Any) -> dict[str, Any]:
     claims: dict[str, Any] = {
         "iss": _ISSUER,
         "aud": _AUDIENCE,
+        "sub": "provider-subject-1",
         "exp": _NOW + 3600,
         "nbf": _NOW - 60,
         "ksi_principal_id": "oidc-user-1",
@@ -106,6 +111,28 @@ def _verifier(key: RSAPrivateKey) -> OidcJwtVerifier:
             jwks_url=f"{_ISSUER}/jwks.json",
         ),
         fetch_jwks=lambda: {"keys": [_jwk(key, "key-1")]},
+        subject_registry=_subject_registry(),
+    )
+
+
+def _subject_registry(*, status: str = "ACTIVE") -> OidcSubjectRegistry:
+    return OidcSubjectRegistry.from_document(
+        {
+            "version": "oidc-subject-registry.v1",
+            "subjects": [
+                {
+                    "issuer": _ISSUER,
+                    "subject": "provider-subject-1",
+                    "principalId": "oidc-user-1",
+                    "organizationId": "org-1",
+                    "role": "FIELD_OPERATOR",
+                    "status": status,
+                    "allowedSiteIds": ["site-1"],
+                    "allowedWorkAreaIds": ["area-1"],
+                }
+            ],
+        },
+        expected_issuer=_ISSUER,
     )
 
 
@@ -128,6 +155,163 @@ def test_valid_oidc_operator_maps_existing_role_and_permissions() -> None:
     assert "MISSIONS_ISSUE" in response.json()["permissions"]
 
 
+def test_verified_iss_sub_mapping_overrides_forged_ksi_claims() -> None:
+    key = generate_private_key(public_exponent=65537, key_size=2048)
+    forged = _claims(
+        ksi_principal_id="attacker-principal",
+        ksi_organization_id="attacker-org",
+        ksi_role="ADMIN",
+    )
+
+    principal = _verifier(key).verify(_token(key, claims=forged))
+
+    assert principal is not None
+    assert principal.principal_id == "oidc-user-1"
+    assert principal.organization_id == "org-1"
+    assert principal.role is Role.FIELD_OPERATOR
+    assert principal.allowed_site_ids == frozenset({"site-1"})
+    assert principal.allowed_work_area_ids == frozenset({"area-1"})
+
+
+@pytest.mark.parametrize(
+    "claims",
+    [
+        _claims(sub="unknown-subject"),
+        {key: value for key, value in _claims().items() if key != "sub"},
+    ],
+)
+def test_unknown_or_missing_oidc_subject_is_rejected(claims: dict[str, Any]) -> None:
+    key = generate_private_key(public_exponent=65537, key_size=2048)
+    assert _verifier(key).verify(_token(key, claims=claims)) is None
+
+
+def test_revoked_oidc_subject_mapping_is_rejected() -> None:
+    key = generate_private_key(public_exponent=65537, key_size=2048)
+    verifier = OidcJwtVerifier(
+        OidcVerifierConfig(_ISSUER, _AUDIENCE, f"{_ISSUER}/jwks.json"),
+        fetch_jwks=lambda: {"keys": [_jwk(key, "key-1")]},
+        subject_registry=_subject_registry(status="REVOKED"),
+    )
+    assert verifier.verify(_token(key)) is None
+
+
+def test_oidc_subject_registry_rejects_duplicate_and_wrong_issuer_records() -> None:
+    row = {
+        "issuer": _ISSUER,
+        "subject": "provider-subject-1",
+        "principalId": "oidc-user-1",
+        "organizationId": "org-1",
+        "role": "FIELD_OPERATOR",
+        "status": "ACTIVE",
+        "allowedSiteIds": [],
+        "allowedWorkAreaIds": [],
+    }
+    document = {"version": "oidc-subject-registry.v1", "subjects": [row, dict(row)]}
+    with pytest.raises(ValueError, match="duplicate"):
+        OidcSubjectRegistry.from_document(document, expected_issuer=_ISSUER)
+
+    with pytest.raises(ValueError, match="issuer"):
+        OidcSubjectRegistry.from_document(
+            {"version": "oidc-subject-registry.v1", "subjects": [dict(row, issuer="https://other.test")]},
+            expected_issuer=_ISSUER,
+        )
+
+
+@pytest.mark.parametrize(
+    "second_overrides",
+    [
+        {},
+        {
+            "organizationId": "org-2",
+            "role": "ADMIN",
+            "allowedSiteIds": ["site-2"],
+            "allowedWorkAreaIds": ["area-2"],
+        },
+    ],
+)
+def test_oidc_subject_registry_rejects_principal_id_aliases(
+    second_overrides: dict[str, object],
+) -> None:
+    first = {
+        "issuer": _ISSUER,
+        "subject": "provider-subject-1",
+        "principalId": "shared-ksi-user",
+        "organizationId": "org-1",
+        "role": "FIELD_OPERATOR",
+        "status": "ACTIVE",
+        "allowedSiteIds": ["site-1"],
+        "allowedWorkAreaIds": ["area-1"],
+    }
+    second = {**first, "subject": "provider-subject-2", **second_overrides}
+
+    with pytest.raises(ValueError, match="principalId"):
+        OidcSubjectRegistry.from_document(
+            {"version": "oidc-subject-registry.v1", "subjects": [first, second]},
+            expected_issuer=_ISSUER,
+        )
+
+
+def test_oidc_subject_registry_rejects_invalid_authority_and_unknown_fields() -> None:
+    base = {
+        "issuer": _ISSUER,
+        "subject": "provider-subject-1",
+        "principalId": "oidc-user-1",
+        "organizationId": "org-1",
+        "role": "FIELD_OPERATOR",
+        "status": "ACTIVE",
+        "allowedSiteIds": ["site-1"],
+        "allowedWorkAreaIds": ["area-1"],
+    }
+    for mutation in (
+        {**base, "principalId": "../other"},
+        {**base, "organizationId": ""},
+        {**base, "role": "UNKNOWN"},
+        {**base, "status": "PAUSED"},
+        {**base, "untrusted": True},
+    ):
+        with pytest.raises(ValueError):
+            OidcSubjectRegistry.from_document(
+                {"version": "oidc-subject-registry.v1", "subjects": [mutation]},
+                expected_issuer=_ISSUER,
+            )
+
+
+def test_oidc_subject_registry_loader_requires_private_nofollow_file(tmp_path: Any) -> None:
+    import json
+    from pathlib import Path
+
+    document = {
+        "version": "oidc-subject-registry.v1",
+        "subjects": [
+            {
+                "issuer": _ISSUER,
+                "subject": "provider-subject-1",
+                "principalId": "oidc-user-1",
+                "organizationId": "org-1",
+                "role": "FIELD_OPERATOR",
+                "status": "ACTIVE",
+                "allowedSiteIds": ["site-1"],
+                "allowedWorkAreaIds": ["area-1"],
+            }
+        ],
+    }
+    file = Path(tmp_path) / "subjects.json"
+    file.write_text(json.dumps(document), encoding="utf-8")
+    file.chmod(0o600)
+    registry = load_oidc_subject_registry(file, expected_issuer=_ISSUER)
+    assert registry.resolve(_ISSUER, "provider-subject-1") is not None
+
+    link = Path(tmp_path) / "subjects-link.json"
+    link.symlink_to(file)
+    with pytest.raises(ValueError, match="unsafe"):
+        load_oidc_subject_registry(link, expected_issuer=_ISSUER)
+
+    file.write_text('{"version":"wrong","version":"oidc-subject-registry.v1"}', encoding="utf-8")
+    file.chmod(0o600)
+    with pytest.raises(ValueError, match="JSON"):
+        load_oidc_subject_registry(file, expected_issuer=_ISSUER)
+
+
 def test_openapi_describes_human_jwt_and_device_opaque_bearer_split() -> None:
     key = generate_private_key(public_exponent=65537, key_size=2048)
     client = _client(HumanAuthMode.OIDC, _verifier(key))
@@ -146,10 +330,7 @@ def test_openapi_describes_human_jwt_and_device_opaque_bearer_split() -> None:
         _claims(aud="other-api"),
         _claims(exp=_NOW - 60),
         _claims(nbf=_NOW + 3600),
-        _claims(ksi_role="UNKNOWN"),
-        _claims(ksi_organization_id=""),
-        _claims(ksi_principal_id="bad/principal"),
-        {key: value for key, value in _claims().items() if key != "ksi_role"},
+        {key: value for key, value in _claims().items() if key != "sub"},
         {key: value for key, value in _claims().items() if key != "nbf"},
     ],
 )
@@ -230,6 +411,7 @@ def test_unknown_kid_refreshes_jwks_once() -> None:
     verifier = OidcJwtVerifier(
         OidcVerifierConfig(_ISSUER, _AUDIENCE, f"{_ISSUER}/jwks.json"),
         fetch_jwks=fetch,
+        subject_registry=_subject_registry(),
     )
     assert verifier.verify(_token(old_key, kid="old")) is not None
     assert verifier.verify(_token(new_key, kid="new")) is not None
@@ -248,6 +430,7 @@ def test_expired_jwks_cache_and_issuer_failure_is_fail_closed() -> None:
             _ISSUER, _AUDIENCE, f"{_ISSUER}/jwks.json", jwks_ttl_seconds=1
         ),
         fetch_jwks=lambda: fetch(),
+        subject_registry=_subject_registry(),
         monotonic=lambda: clock[0],
     )
     token = _token(key)

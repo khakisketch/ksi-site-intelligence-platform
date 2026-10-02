@@ -1012,7 +1012,12 @@ def build_sites_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> SiteListResponse:
         return SiteListResponse(
-            sites=[_to_view(r) for r in store.list_scoped(principal.organization_id)]
+            sites=[
+                _to_view(r)
+                for r in store.list_scoped(principal.organization_id)
+                if principal.allowed_site_ids is None
+                or r.site_id in principal.allowed_site_ids
+            ]
         )
 
     @router.get("/{site_id}", response_model=SiteDetailView)
@@ -1021,7 +1026,13 @@ def build_sites_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> SiteDetailView:
         record = store.get_scoped(site_id, principal.organization_id)
-        if record is None:
+        if (
+            record is None
+            or (
+                principal.allowed_site_ids is not None
+                and site_id not in principal.allowed_site_ids
+            )
+        ):
             raise HTTPException(status_code=404, detail=_SITE_NOT_FOUND_DETAIL)
         site = _to_view(record)
         if processing_job_store is None:

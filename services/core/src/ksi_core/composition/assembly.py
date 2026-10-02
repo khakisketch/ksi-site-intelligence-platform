@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI
+from ksi_event_contracts.external_analysis_activation import AnalysisActivationV1
 from ksi_event_contracts.work_area import WorkAreaStatus
 
 from ksi_core.auth import HumanAuthMode
@@ -44,10 +45,16 @@ from ksi_core.composition.app_factory import create_app
 from ksi_core.composition.base_graph import build_base_graph
 from ksi_core.composition.capability_graph import build_capability_graph
 from ksi_core.composition.external_graph import (
+    ExternalAnalysisLocalGraphConfig,
+    build_external_analysis_wiring,
     build_external_pre_work_order_graph,
     complete_external_graph,
 )
 from ksi_core.composition.runtime_surfaces import mount_runtime_surfaces
+from ksi_core.composition.spatial_data_graph import (
+    SpatialDataLocalAssemblyConfig,
+    build_spatial_data_wiring,
+)
 from ksi_core.composition.workspace_graph import build_workspace_graph
 from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.durable_journal import DurableJournal
@@ -111,6 +118,9 @@ def assemble_app(
     runtime_route_configurations: tuple[TrustedRuntimeRouteConfigurationV1, ...] = (),
     copilot_runtime_config: CopilotRuntimeConfig | None = None,
     external_result_workflow: ExternalResultWorkflowAssemblyConfig | None = None,
+    external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
+    analysis_activation: AnalysisActivationV1 | None = None,
+    spatial_data: SpatialDataLocalAssemblyConfig | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """모든 store 를 조립하고 ``create_app`` 을 호출한다 — dev/production 공용.
@@ -314,6 +324,49 @@ def assemble_app(
     runtime_observation_store = capability.observation_store
     runtime_capability_projector = capability.projector
 
+    external_analysis_wiring = (
+        build_external_analysis_wiring(
+            journal=journal,
+            config=external_analysis_local_graph,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            work_areas=work_area_store,
+            evidence=external_evidence_store,
+            validations=external_evidence_validation_store,
+            storage=evidence_storage,
+            sites=site_store,
+            work_orders=observation_work_order_store,
+            coordinator=external_authority_currentness,
+            activation=analysis_activation,
+        )
+        if external_analysis_local_graph is not None
+        else None
+    )
+
+    data_lane = None
+    if spatial_data is not None:
+        if (
+            not isinstance(spatial_data, SpatialDataLocalAssemblyConfig)
+            or external_reconstruction_store is None
+            or external_artifact_inspection_store is None
+        ):
+            raise ValueError(
+                "spatial data requires complete local config and actual ingress/inspection"
+            )
+        data_lane = build_spatial_data_wiring(
+            journal=journal,
+            config=spatial_data.config,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            sites=site_store,
+            work_areas=work_area_store,
+            work_orders=observation_work_order_store,
+            coordinator=external_authority_currentness,
+            storage=spatial_data.build_storage(external_reconstruction_store),
+            currentness=spatial_data.build_currentness(external_authority_currentness),
+            spool_root=spatial_data.spool_root,
+        )
+
     app = create_app(
         auth_registry=auth_registry,
         human_auth_mode=human_auth_mode,
@@ -332,8 +385,10 @@ def assemble_app(
         external_volume_input_capability_issuer=external_volume_input_capability_issuer,
         external_volume_execution_activator=external_volume_execution_activator,
         external_single_volume=external_single_volume,
+        spatial_data=data_lane,
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
+        external_analysis_wiring=external_analysis_wiring,
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,

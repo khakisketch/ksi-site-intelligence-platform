@@ -115,8 +115,9 @@ VERIFIED 승격의 유일한 근거는 `acceptance_status=PASS`뿐이다.
 
 **목표(50ms) 미달(`acceptance_status=FAIL`)도 VERIFIED 승격 근거가 아니다** — 실측을
 정직하게 해냈다는 사실과 "요구사항을 만족했다"는 별개다. FAIL은 `BLOCKED`(사유:
-"p95 목표 미달 — requirement_not_met")로 남기고, 별도 리스크(`.ksi/goals.json` risk
-항목 등)로도 추적한다. "측정했으면 그 수치 그대로 VERIFIED"라는 경로는 없다.
+"p95 목표 미달 — requirement_not_met")로 남기고, current task ledger에 리스크를 기록한다.
+제품 Backlog 반영·triage는 `product-state.md`의 authorized slice close에서만 한다. `.ksi/goals.json`
+리스크 항목은 역사적 근거일 뿐이다. "측정했으면 그 수치 그대로 VERIFIED"라는 경로는 없다.
 
 ## 3. 짐벌 (Gimbal)
 

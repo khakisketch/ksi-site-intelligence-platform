@@ -1,0 +1,1551 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-analysis-worker.v1.json",
+  "title": "External Analysis Worker API V1",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "AnalysisExecutionAttemptV2": {
+      "additionalProperties": false,
+      "description": "A fenced worker ownership interval for exactly one authorization.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-execution-attempt.v2",
+          "default": "external-relative-volume-execution-attempt.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "attemptId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Attemptid",
+          "type": "string"
+        },
+        "authorization": {
+          "$ref": "#/$defs/AnalysisExecutionAuthorizationV2"
+        },
+        "authorizationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Authorizationdigest",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 1,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "title": "Leaseexpiresat",
+          "type": "string"
+        },
+        "executionAttemptDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executionattemptdigest"
+        }
+      },
+      "required": [
+        "attemptId",
+        "authorization",
+        "authorizationDigest",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "leaseGeneration",
+        "issuedAt",
+        "leaseExpiresAt"
+      ],
+      "title": "AnalysisExecutionAttemptV2",
+      "type": "object"
+    },
+    "AnalysisExecutionAuthorizationV2": {
+      "additionalProperties": false,
+      "description": "Core-selected resource and authority snapshot, separate from numeric identity.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-execution-authorization.v2",
+          "default": "external-relative-volume-execution-authorization.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "authorizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Authorizationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "calculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Calculationidentitydigest",
+          "type": "string"
+        },
+        "admissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Admissiondigest",
+          "type": "string"
+        },
+        "resourceEnvelope": {
+          "$ref": "#/$defs/ResourceEnvelopeV1"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "authorizedAt": {
+          "format": "date-time",
+          "title": "Authorizedat",
+          "type": "string"
+        },
+        "executionAuthorizationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executionauthorizationdigest"
+        }
+      },
+      "required": [
+        "authorizationId",
+        "organizationId",
+        "calculationIdentityDigest",
+        "admissionDigest",
+        "resourceEnvelope",
+        "resourceEnvelopeDigest",
+        "authorizedAt"
+      ],
+      "title": "AnalysisExecutionAuthorizationV2",
+      "type": "object"
+    },
+    "AnalysisPolicyV2": {
+      "additionalProperties": false,
+      "description": "The first V2 profile's mathematical identity, without an execution result.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-analysis-policy.v2",
+          "default": "external-relative-volume-analysis-policy.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "policyId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Policyid",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "profileId": {
+          "const": "KSI-GIS-RELATIVE-VOLUME-V2",
+          "title": "Profileid",
+          "type": "string"
+        },
+        "profileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Profiledigest",
+          "type": "string"
+        },
+        "algorithmDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Algorithmdigest",
+          "type": "string"
+        },
+        "configDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configdigest",
+          "type": "string"
+        },
+        "baselineGridRule": {
+          "const": "BASELINE_NATIVE_NORTH_UP_AFFINE_V1",
+          "title": "Baselinegridrule",
+          "type": "string"
+        },
+        "currentElevationResampling": {
+          "const": "BILINEAR",
+          "title": "Currentelevationresampling",
+          "type": "string"
+        },
+        "currentMaskResampling": {
+          "const": "NEAREST",
+          "title": "Currentmaskresampling",
+          "type": "string"
+        },
+        "workAreaRasterization": {
+          "const": "CELL_CENTER",
+          "title": "Workarearasterization",
+          "type": "string"
+        },
+        "minimumCommonValidFraction": {
+          "title": "Minimumcommonvalidfraction",
+          "type": "number"
+        },
+        "thresholdM": {
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "cellAreaRule": {
+          "const": "ABSOLUTE_AFFINE_DETERMINANT",
+          "title": "Cellarearule",
+          "type": "string"
+        },
+        "deltaRule": {
+          "const": "CURRENT_MINUS_BASELINE",
+          "title": "Deltarule",
+          "type": "string"
+        },
+        "uncertaintyMethod": {
+          "const": "NONE_UNCERTAINTY_M3_NULL_V1",
+          "title": "Uncertaintymethod",
+          "type": "string"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        }
+      },
+      "required": [
+        "policyId",
+        "version",
+        "profileId",
+        "profileDigest",
+        "algorithmDigest",
+        "configDigest",
+        "baselineGridRule",
+        "currentElevationResampling",
+        "currentMaskResampling",
+        "workAreaRasterization",
+        "minimumCommonValidFraction",
+        "thresholdM",
+        "cellAreaRule",
+        "deltaRule",
+        "uncertaintyMethod"
+      ],
+      "title": "AnalysisPolicyV2",
+      "type": "object"
+    },
+    "AnalysisWorkerFailureRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "failure": {
+          "$ref": "#/$defs/RelativeVolumeCalculationFailureV2"
+        }
+      },
+      "required": [
+        "failure"
+      ],
+      "title": "AnalysisWorkerFailureRequestV1",
+      "type": "object"
+    },
+    "AnalysisWorkerInputCapabilityV1": {
+      "additionalProperties": false,
+      "description": "One short-lived URL bound to one immutable DSM identity.",
+      "properties": {
+        "role": {
+          "enum": [
+            "BASELINE_DSM",
+            "CURRENT_DSM"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "downloadUrl": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Downloadurl",
+          "type": "string"
+        },
+        "requiredHeaders": {
+          "maxProperties": 32,
+          "patternProperties": {
+            "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$": {
+              "maxLength": 8192,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "title": "Requiredheaders",
+          "type": "object"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "downloadUrl",
+        "requiredHeaders",
+        "expiresAt"
+      ],
+      "title": "AnalysisWorkerInputCapabilityV1",
+      "type": "object"
+    },
+    "AnalysisWorkerInputResponseV1": {
+      "additionalProperties": false,
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/AnalysisWorkerInputV1"
+        }
+      },
+      "required": [
+        "input"
+      ],
+      "title": "AnalysisWorkerInputResponseV1",
+      "type": "object"
+    },
+    "AnalysisWorkerInputV1": {
+      "additionalProperties": false,
+      "description": "Exact attempt, identity, and ordered bounded inputs for one measurement.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "calculationRequestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationrequestid",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+        },
+        "calculationIdentity": {
+          "$ref": "#/$defs/CalculationIdentityV2"
+        },
+        "inputs": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/AnalysisWorkerInputCapabilityV1"
+            },
+            {
+              "$ref": "#/$defs/AnalysisWorkerInputCapabilityV1"
+            }
+          ],
+          "title": "Inputs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "analysisId",
+        "calculationRequestId",
+        "attempt",
+        "calculationIdentity",
+        "inputs"
+      ],
+      "title": "AnalysisWorkerInputV1",
+      "type": "object"
+    },
+    "AnalysisWorkerLeaseRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerInstanceId",
+        "leaseAcquisitionId"
+      ],
+      "title": "AnalysisWorkerLeaseRequestV1",
+      "type": "object"
+    },
+    "AnalysisWorkerLeaseViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "calculationRequestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationrequestid",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+        }
+      },
+      "required": [
+        "analysisId",
+        "calculationRequestId",
+        "attempt"
+      ],
+      "title": "AnalysisWorkerLeaseViewV1",
+      "type": "object"
+    },
+    "AnalysisWorkerMutationViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "calculationRequestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationrequestid",
+          "type": "string"
+        },
+        "executionState": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "FAILED"
+          ],
+          "title": "Executionstate",
+          "type": "string"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "analysisId",
+        "calculationRequestId",
+        "executionState"
+      ],
+      "title": "AnalysisWorkerMutationViewV1",
+      "type": "object"
+    },
+    "AnalysisWorkerPendingItemV1": {
+      "additionalProperties": false,
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "calculationRequestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationrequestid",
+          "type": "string"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysisId",
+        "calculationRequestId",
+        "issuedAt"
+      ],
+      "title": "AnalysisWorkerPendingItemV1",
+      "type": "object"
+    },
+    "AnalysisWorkerPendingListV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AnalysisWorkerPendingItemV1"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "AnalysisWorkerPendingListV1",
+      "type": "object"
+    },
+    "AnalysisWorkerRenewRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+        }
+      },
+      "required": [
+        "attempt"
+      ],
+      "title": "AnalysisWorkerRenewRequestV1",
+      "type": "object"
+    },
+    "AnalysisWorkerReportRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "report": {
+          "$ref": "#/$defs/RelativeVolumeCalculationReportV2"
+        }
+      },
+      "required": [
+        "report"
+      ],
+      "title": "AnalysisWorkerReportRequestV1",
+      "type": "object"
+    },
+    "CalculationIdentityV2": {
+      "additionalProperties": false,
+      "description": "The immutable, non-numeric identity of one future worker calculation.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-calculation-identity.v2",
+          "default": "external-relative-volume-calculation-identity.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "calculationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "workAreaPolygon": {
+          "additionalProperties": true,
+          "title": "Workareapolygon",
+          "type": "object"
+        },
+        "workAreaCrs": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareacrs",
+          "type": "string"
+        },
+        "workAreaDefinitionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workareadefinitiondigest",
+          "type": "string"
+        },
+        "baselineSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "currentSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "baselineCaptureStartedAt": {
+          "format": "date-time",
+          "title": "Baselinecapturestartedat",
+          "type": "string"
+        },
+        "baselineCaptureEndedAt": {
+          "format": "date-time",
+          "title": "Baselinecaptureendedat",
+          "type": "string"
+        },
+        "currentCaptureStartedAt": {
+          "format": "date-time",
+          "title": "Currentcapturestartedat",
+          "type": "string"
+        },
+        "currentCaptureEndedAt": {
+          "format": "date-time",
+          "title": "Currentcaptureendedat",
+          "type": "string"
+        },
+        "baselineDsmArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Baselinedsmartifactid",
+          "type": "string"
+        },
+        "currentDsmArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Currentdsmartifactid",
+          "type": "string"
+        },
+        "baselineInputDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineinputdigest",
+          "type": "string"
+        },
+        "currentInputDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentinputdigest",
+          "type": "string"
+        },
+        "baselineDsmObservedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselinedsmobservedsha256",
+          "type": "string"
+        },
+        "currentDsmObservedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentdsmobservedsha256",
+          "type": "string"
+        },
+        "baselineDsmObservedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Baselinedsmobservedsizebytes",
+          "type": "integer"
+        },
+        "currentDsmObservedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Currentdsmobservedsizebytes",
+          "type": "integer"
+        },
+        "baselineObservedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Baselineobservedcrsidentifier",
+          "type": "string"
+        },
+        "currentObservedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Currentobservedcrsidentifier",
+          "type": "string"
+        },
+        "baselineObservedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineobservedcrsdigest",
+          "type": "string"
+        },
+        "currentObservedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentobservedcrsdigest",
+          "type": "string"
+        },
+        "baselineProjectedUnit": {
+          "const": "metre",
+          "title": "Baselineprojectedunit",
+          "type": "string"
+        },
+        "currentProjectedUnit": {
+          "const": "metre",
+          "title": "Currentprojectedunit",
+          "type": "string"
+        },
+        "baselineVerticalReference": {
+          "$ref": "#/$defs/ObservedVerticalReferenceV1"
+        },
+        "currentVerticalReference": {
+          "$ref": "#/$defs/ObservedVerticalReferenceV1"
+        },
+        "baselineVerticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineverticalreferencedigest",
+          "type": "string"
+        },
+        "currentVerticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentverticalreferencedigest",
+          "type": "string"
+        },
+        "baselineVerticalUnit": {
+          "const": "metre",
+          "title": "Baselineverticalunit",
+          "type": "string"
+        },
+        "currentVerticalUnit": {
+          "const": "metre",
+          "title": "Currentverticalunit",
+          "type": "string"
+        },
+        "baselineVerticalUnitProvenance": {
+          "const": "OBSERVED_VERTICAL_CRS_AXIS",
+          "title": "Baselineverticalunitprovenance",
+          "type": "string"
+        },
+        "currentVerticalUnitProvenance": {
+          "const": "OBSERVED_VERTICAL_CRS_AXIS",
+          "title": "Currentverticalunitprovenance",
+          "type": "string"
+        },
+        "baselineInspectionReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineinspectionreportdigest",
+          "type": "string"
+        },
+        "currentInspectionReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentinspectionreportdigest",
+          "type": "string"
+        },
+        "baselineInspectionPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineinspectionpolicydigest",
+          "type": "string"
+        },
+        "currentInspectionPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentinspectionpolicydigest",
+          "type": "string"
+        },
+        "baselineInspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineinspectorbuilddigest",
+          "type": "string"
+        },
+        "currentInspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentinspectorbuilddigest",
+          "type": "string"
+        },
+        "baselineTransformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselinetransformdigest",
+          "type": "string"
+        },
+        "currentTransformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currenttransformdigest",
+          "type": "string"
+        },
+        "baselineTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Baselinetransform",
+          "type": "array"
+        },
+        "currentTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Currenttransform",
+          "type": "array"
+        },
+        "horizontalCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Horizontalcrsdigest",
+          "type": "string"
+        },
+        "verticalReferenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Verticalreferencedigest",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/AnalysisPolicyV2"
+        },
+        "workerExecutableDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerexecutabledigest",
+          "type": "string"
+        },
+        "workerBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerbuilddigest",
+          "type": "string"
+        },
+        "runtimeImageVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimageversion",
+          "type": "string"
+        },
+        "runtimeImageOciDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimeimageocidigest",
+          "type": "string"
+        },
+        "dependencyLockDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependencylockdigest",
+          "type": "string"
+        },
+        "calculationIdentityDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Calculationidentitydigest"
+        }
+      },
+      "required": [
+        "calculationId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "workAreaPolygon",
+        "workAreaCrs",
+        "workAreaDefinitionDigest",
+        "baselineSubject",
+        "currentSubject",
+        "baselineCaptureStartedAt",
+        "baselineCaptureEndedAt",
+        "currentCaptureStartedAt",
+        "currentCaptureEndedAt",
+        "baselineDsmArtifactId",
+        "currentDsmArtifactId",
+        "baselineInputDigest",
+        "currentInputDigest",
+        "baselineDsmObservedSha256",
+        "currentDsmObservedSha256",
+        "baselineDsmObservedSizeBytes",
+        "currentDsmObservedSizeBytes",
+        "baselineObservedCrsIdentifier",
+        "currentObservedCrsIdentifier",
+        "baselineObservedCrsDigest",
+        "currentObservedCrsDigest",
+        "baselineProjectedUnit",
+        "currentProjectedUnit",
+        "baselineVerticalReference",
+        "currentVerticalReference",
+        "baselineVerticalReferenceDigest",
+        "currentVerticalReferenceDigest",
+        "baselineVerticalUnit",
+        "currentVerticalUnit",
+        "baselineVerticalUnitProvenance",
+        "currentVerticalUnitProvenance",
+        "baselineInspectionReportDigest",
+        "currentInspectionReportDigest",
+        "baselineInspectionPolicyDigest",
+        "currentInspectionPolicyDigest",
+        "baselineInspectorBuildDigest",
+        "currentInspectorBuildDigest",
+        "baselineTransformDigest",
+        "currentTransformDigest",
+        "baselineTransform",
+        "currentTransform",
+        "horizontalCrsDigest",
+        "verticalReferenceDigest",
+        "policy",
+        "workerExecutableDigest",
+        "workerBuildDigest",
+        "runtimeImageVersion",
+        "runtimeImageOciDigest",
+        "dependencyLockDigest"
+      ],
+      "title": "CalculationIdentityV2",
+      "type": "object"
+    },
+    "ObservedVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Parser-observed vertical identifier/basis, distinct from a user declaration.",
+      "properties": {
+        "identifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "ObservedVerticalReferenceV1",
+      "type": "object"
+    },
+    "RelativeVolumeCalculationFailureV2": {
+      "additionalProperties": false,
+      "description": "A typed immutable attempt outcome that contains no partial numeric result.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-calculation-failure.v2",
+          "default": "external-relative-volume-calculation-failure.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "failureId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Failureid",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+        },
+        "attemptDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Attemptdigest",
+          "type": "string"
+        },
+        "reasonCode": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+          "title": "Reasoncode",
+          "type": "string"
+        },
+        "failedAt": {
+          "format": "date-time",
+          "title": "Failedat",
+          "type": "string"
+        },
+        "failureDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failuredigest"
+        }
+      },
+      "required": [
+        "failureId",
+        "attempt",
+        "attemptDigest",
+        "reasonCode",
+        "failedAt"
+      ],
+      "title": "RelativeVolumeCalculationFailureV2",
+      "type": "object"
+    },
+    "RelativeVolumeCalculationReportV2": {
+      "additionalProperties": false,
+      "description": "Fenced worker report that wraps, but cannot alter, numeric calculation content.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-calculation-report.v2",
+          "default": "external-relative-volume-calculation-report.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "reportId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Reportid",
+          "type": "string"
+        },
+        "attempt": {
+          "$ref": "#/$defs/AnalysisExecutionAttemptV2"
+        },
+        "attemptDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Attemptdigest",
+          "type": "string"
+        },
+        "numericResult": {
+          "$ref": "#/$defs/RelativeVolumeNumericResultV2"
+        },
+        "numericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Numericresultidentitydigest",
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        },
+        "reportedAt": {
+          "format": "date-time",
+          "title": "Reportedat",
+          "type": "string"
+        },
+        "reportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reportdigest"
+        }
+      },
+      "required": [
+        "reportId",
+        "attempt",
+        "attemptDigest",
+        "numericResult",
+        "numericResultIdentityDigest",
+        "computedAt",
+        "reportedAt"
+      ],
+      "title": "RelativeVolumeCalculationReportV2",
+      "type": "object"
+    },
+    "RelativeVolumeCoverageWitnessV2": {
+      "additionalProperties": false,
+      "description": "Lossless bounded full-zone masks for a baseline-grid calculation.\n\nBits are row-major and big-endian within each byte.  ``selected`` is the\ncomplete cell-centre WorkArea mask; ``commonValid`` is the exact cells that\nhad finite values in both epochs; ``unavailable`` is the selected-minus-\ncommon mask.  The first fixed profile has a zero threshold, so its\nthreshold-excluded mask must always be empty.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-coverage-witness.v2",
+          "default": "external-relative-volume-coverage-witness.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "rows": {
+          "exclusiveMinimum": 0,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "columns": {
+          "exclusiveMinimum": 0,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "rowOffset": {
+          "title": "Rowoffset",
+          "type": "integer"
+        },
+        "columnOffset": {
+          "title": "Columnoffset",
+          "type": "integer"
+        },
+        "selectedMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Selectedmaskb64",
+          "type": "string"
+        },
+        "commonValidMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Commonvalidmaskb64",
+          "type": "string"
+        },
+        "unavailableMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Unavailablemaskb64",
+          "type": "string"
+        },
+        "thresholdExcludedMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Thresholdexcludedmaskb64",
+          "type": "string"
+        },
+        "selectedCellCount": {
+          "minimum": 0,
+          "title": "Selectedcellcount",
+          "type": "integer"
+        },
+        "commonValidCellCount": {
+          "minimum": 0,
+          "title": "Commonvalidcellcount",
+          "type": "integer"
+        },
+        "unavailableCellCount": {
+          "minimum": 0,
+          "title": "Unavailablecellcount",
+          "type": "integer"
+        },
+        "thresholdExcludedCellCount": {
+          "minimum": 0,
+          "title": "Thresholdexcludedcellcount",
+          "type": "integer"
+        },
+        "cellAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cellaream2",
+          "type": "number"
+        },
+        "selectedAreaM2": {
+          "minimum": 0.0,
+          "title": "Selectedaream2",
+          "type": "number"
+        },
+        "commonValidAreaM2": {
+          "minimum": 0.0,
+          "title": "Commonvalidaream2",
+          "type": "number"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        },
+        "coverageWitnessDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coveragewitnessdigest"
+        }
+      },
+      "required": [
+        "rows",
+        "columns",
+        "rowOffset",
+        "columnOffset",
+        "selectedMaskB64",
+        "commonValidMaskB64",
+        "unavailableMaskB64",
+        "thresholdExcludedMaskB64",
+        "selectedCellCount",
+        "commonValidCellCount",
+        "unavailableCellCount",
+        "thresholdExcludedCellCount",
+        "cellAreaM2",
+        "selectedAreaM2",
+        "commonValidAreaM2",
+        "bounds"
+      ],
+      "title": "RelativeVolumeCoverageWitnessV2",
+      "type": "object"
+    },
+    "RelativeVolumeMetricsV2": {
+      "additionalProperties": false,
+      "description": "Finite cut/fill arithmetic for the one fixed profile.",
+      "properties": {
+        "cutM3": {
+          "minimum": 0.0,
+          "title": "Cutm3",
+          "type": "number"
+        },
+        "fillM3": {
+          "minimum": 0.0,
+          "title": "Fillm3",
+          "type": "number"
+        },
+        "netM3": {
+          "title": "Netm3",
+          "type": "number"
+        },
+        "thresholdM": {
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "uncertaintyM3": {
+          "default": null,
+          "title": "Uncertaintym3",
+          "type": "null"
+        }
+      },
+      "required": [
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM"
+      ],
+      "title": "RelativeVolumeMetricsV2",
+      "type": "object"
+    },
+    "RelativeVolumeNumericResultV2": {
+      "additionalProperties": false,
+      "description": "Calculation content only: it deliberately excludes attempt/admission state.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-relative-volume-numeric-result.v2",
+          "default": "external-relative-volume-numeric-result.v2",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "calculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Calculationidentitydigest",
+          "type": "string"
+        },
+        "profileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Profiledigest",
+          "type": "string"
+        },
+        "metrics": {
+          "$ref": "#/$defs/RelativeVolumeMetricsV2"
+        },
+        "coverage": {
+          "$ref": "#/$defs/RelativeVolumeCoverageWitnessV2"
+        },
+        "numericResultIdentityDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numericresultidentitydigest"
+        }
+      },
+      "required": [
+        "calculationIdentityDigest",
+        "profileDigest",
+        "metrics",
+        "coverage"
+      ],
+      "title": "RelativeVolumeNumericResultV2",
+      "type": "object"
+    },
+    "ResourceEnvelopeV1": {
+      "additionalProperties": false,
+      "description": "Configured finite worker limits; values are policy data, never client input.",
+      "properties": {
+        "maxInputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxinputbytes",
+          "type": "integer"
+        },
+        "maxStreamedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxstreamedbytes",
+          "type": "integer"
+        },
+        "maxTiffDirectories": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffdirectories",
+          "type": "integer"
+        },
+        "maxTiffEntries": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffentries",
+          "type": "integer"
+        },
+        "maxPixels": {
+          "exclusiveMinimum": 0,
+          "title": "Maxpixels",
+          "type": "integer"
+        },
+        "maxBands": {
+          "exclusiveMinimum": 0,
+          "title": "Maxbands",
+          "type": "integer"
+        },
+        "maxBlocks": {
+          "exclusiveMinimum": 0,
+          "title": "Maxblocks",
+          "type": "integer"
+        },
+        "maxDecompressedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdecompressedbytes",
+          "type": "integer"
+        },
+        "maxSampleBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxsamplebytes",
+          "type": "integer"
+        },
+        "maxGeometryVertices": {
+          "exclusiveMinimum": 0,
+          "title": "Maxgeometryvertices",
+          "type": "integer"
+        },
+        "maxCpuSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxcpuseconds",
+          "type": "number"
+        },
+        "maxMemoryBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmemorybytes",
+          "type": "integer"
+        },
+        "maxWorkspaceBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxworkspacebytes",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "maxTenantConcurrency": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtenantconcurrency",
+          "type": "integer"
+        },
+        "maxQueueDepth": {
+          "exclusiveMinimum": 0,
+          "title": "Maxqueuedepth",
+          "type": "integer"
+        },
+        "maxDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdeadlineseconds",
+          "type": "number"
+        },
+        "leaseDurationSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Leasedurationseconds",
+          "type": "number"
+        },
+        "maxRetryAttempts": {
+          "exclusiveMinimum": 0,
+          "title": "Maxretryattempts",
+          "type": "integer"
+        },
+        "resourceEnvelopeDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resourceenvelopedigest"
+        }
+      },
+      "required": [
+        "maxInputBytes",
+        "maxStreamedBytes",
+        "maxTiffDirectories",
+        "maxTiffEntries",
+        "maxPixels",
+        "maxBands",
+        "maxBlocks",
+        "maxDecompressedBytes",
+        "maxSampleBytes",
+        "maxGeometryVertices",
+        "maxCpuSeconds",
+        "maxMemoryBytes",
+        "maxWorkspaceBytes",
+        "maxOutputBytes",
+        "maxTenantConcurrency",
+        "maxQueueDepth",
+        "maxDeadlineSeconds",
+        "leaseDurationSeconds",
+        "maxRetryAttempts"
+      ],
+      "title": "ResourceEnvelopeV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    }
+  }
+}

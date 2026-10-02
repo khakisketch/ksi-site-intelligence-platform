@@ -214,6 +214,26 @@ class ExternalAuthorityProvider:
                             candidate = self._candidate_snapshot
                         if candidate is None:
                             raise ExternalAuthorityProviderError("authority provider is blocked")
+                        if now < candidate.issued_at:
+                            raise ExternalAuthorityProviderError(
+                                "authority snapshot is not yet issued at attach time"
+                            )
+                        if (
+                            now >= candidate.valid_until
+                            or now >= candidate.key_not_after
+                        ):
+                            # Keep the signed snapshot and complete workflow
+                            # graph available for replay, but never reconcile,
+                            # publish, or append a receipt for stale authority.
+                            with self._state_lock:
+                                self._blocked_reason = "EXPIRED"
+                                self._configured = False
+                                state.external_authority_provider = self
+                            return
+                        if not self._snapshot_valid_at(candidate, now):
+                            raise ExternalAuthorityProviderError(
+                                "authority snapshot is not current at attach time"
+                            )
                         receipt = self._reconcile_candidate(candidate, now=now)
                         self._publish_generation(candidate, receipt)
                         state.external_authority_provider = self
@@ -619,6 +639,48 @@ class ExternalAuthorityProvider:
                 return candidate
             return None
 
+    def catalog_configuration_was_authorized(
+        self,
+        *,
+        authority_record_digest: str,
+        catalog_body_digest: str,
+        organization_id: str,
+        administration_actor_id: str,
+    ) -> bool:
+        """Check a catalog binding from its exact signed record and valid history."""
+        try:
+            now = self._clock()
+        except Exception:
+            return False
+        with self._state_lock:
+            snapshot = self._candidate_snapshot
+        if (
+            snapshot is None
+            or now.tzinfo is None
+            or now.utcoffset() != UTC.utcoffset(now)
+            or snapshot.issued_at > now
+            or organization_id != self.organization_id
+            or authority_record_digest not in snapshot.current_catalog_digests
+        ):
+            return False
+        record = snapshot.catalog_records.get(authority_record_digest)
+        if record is None:
+            return False
+        if now < snapshot.valid_until and now < record.active_until:
+            return False
+        historical_at = max(snapshot.issued_at, snapshot.key_not_before, record.active_from)
+        historical_until = min(snapshot.valid_until, snapshot.key_not_after, record.active_until)
+        return bool(
+            historical_at < historical_until
+            and historical_at <= now
+            and record.permits_catalog(
+                catalog_body_digest=catalog_body_digest,
+                organization_id=organization_id,
+                administration_actor_id=administration_actor_id,
+                now=historical_at,
+            )
+        )
+
     def _historical_policy(
         self, authority_record_digest: str, at: datetime
     ) -> PolicyAuthorityRecord | None:
@@ -744,23 +806,24 @@ def _load(
     *,
     clock: Callable[[], datetime],
     validation_now: datetime | None = None,
+    allow_expired: bool = False,
 ) -> ExternalAuthorityProvider:
     validation_clock = clock if validation_now is None else lambda: validation_now
     return ExternalAuthorityProvider(
         config,
-        _snapshot_from_path(config, clock=validation_clock),
+        _snapshot_from_path(config, clock=validation_clock, allow_expired=allow_expired),
         clock=clock,
     )
 
 
 def load_external_authority_provider(
-    path: Path, *, clock: Callable[[], datetime]
+    path: Path, *, clock: Callable[[], datetime], allow_expired: bool = False
 ) -> ExternalAuthorityProvider:
     """Verify file-backed authority inputs without opening a receipt journal."""
     if not callable(clock):
         raise ValueError("authority provider requires a clock")
     try:
-        return _load(_config_from_path(path), clock=clock)
+        return _load(_config_from_path(path), clock=clock, allow_expired=allow_expired)
     except (OSError, ValueError, TypeError) as exc:
         raise ExternalAuthorityProviderError("external authority provider is blocked") from exc
 

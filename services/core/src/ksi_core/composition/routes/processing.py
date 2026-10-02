@@ -158,7 +158,7 @@ def mount_processing_routes(
     if work_area_store is not None:
         from ksi_core.work_areas import mount_work_areas
 
-        mount_work_areas(app, work_area_store)
+        mount_work_areas(app, work_area_store, site_store=site_store)
 
     if equipment_state_store is not None:
         from ksi_core.equipment_states import mount_equipment_states

@@ -18,15 +18,16 @@
   > 따라가지 않아 두 세션이 "장비 대기"로 오독될 뻔했다.
   >
   > **2026-08-14 추가 정정.** 위 "psdk_tap이 SDK 시작 단계에서 크래시" 서술도 저장소
-  > 근거로 뒷받침되지 않아 제거했다(`.ksi/goals.json` `track-a` 2026-08-14 정정,
+  > 근거로 뒷받침되지 않아 제거했다(역사적 `.ksi/goals.json` `track-a` 2026-08-14 정정,
   > 12-agent 코드감사 재확인). 그 표현은 2026-08-04 하드웨어 없는 워크스테이션에서 난
   > SIGSEGV(이미 `usb_bulk_glue.c` 핸들 등록 방어선으로 처리됨)와 2026-08-12 실기의
   > `0x000000EC`(정상 오류 반환 — SSH 단독 실행이 USB bulk 채널을 DJI 상주 데몬과
   > 경합한 것이지 크래시가 아니다)를 뒤섞은 것이었다. 다음 세션이 이 문구만 보고
   > "코드 디버깅이 남았다"고 오독하지 않도록 굳힌다.
 - 근거: `docs/product/MASTER_PRD_v3.0.md` §20.3(SPIKE_REQUIRED 9항목), §21.1(Edge 실시간
-  목표), `docs/dji/SPIKE_PROCEDURE.md`(8단계 실행 순서, 이 문서가 그 절차의 운영 세부판),
-  `.ksi/goals.json` `track-a` 목표
+  목표), `docs/dji/SPIKE_PROCEDURE.md`(8단계 실행 순서, 이 문서가 그 절차의 운영 세부판).
+  현재 HIL 작업은 active checkout의 task ledger로 기록하고, slice/Backlog triage는
+  `docs/superpowers/product-state.md`의 authorized slice close에서만 한다.
 - 이 문서와 `docs/dji/SPIKE_PROCEDURE.md`의 관계: `SPIKE_PROCEDURE.md`가 절차 SSOT(단계
   순서·evidence 게이트 원칙)이고, 이 문서는 **세션 당일 실제로 손으로 진행할 체크리스트**
   — 단계별 목적/실행 항목/수집 증거/PASS·BLOCKED 판정 기준을 구체화한다. 두 문서가
@@ -570,8 +571,8 @@ uv run python tools/hil/capture_frame_telemetry_timing.py summarize \
   표본 수 ≥ 100(권장, 통계적 신뢰를 위한 최소치) **그리고** p95 ≤ 50ms. VERIFIED 승격
   근거는 이 조합뿐이다. `timestamp_basis=recv`의 PASS는 이 행을 만족하지 않는다.
 - **`measurement_status=MEASURED` + `acceptance_status=FAIL`**: p95 > 50ms. 표본 수가
-  충분해도 **VERIFIED 승격 금지** — 목표 미달은 별도로 리스크 기록(`.ksi/goals.json`
-  risk 항목 등)으로 남기고, 이 단계는 `BLOCKED`(사유: "p95 목표 미달 —
+  충분해도 **VERIFIED 승격 금지** — 목표 미달은 current task ledger에 리스크로 남기고,
+  product-state Backlog triage는 authorized slice close까지 미룬다. 이 단계는 `BLOCKED`(사유: "p95 목표 미달 —
   requirement_not_met")로 정직하게 남긴다.
 - **`measurement_status=MEASURED` + `acceptance_status=INSUFFICIENT_SAMPLES`**: 표본을
   모았으나 100건 미만 — PASS도 FAIL도 주장하지 않는다. 표본 수와 이유를 명시하고
@@ -879,6 +880,7 @@ capability PASS가 아니다. 그 단계는 별도 승인 세션에서 독립적
    `SpikeEvidence` 레코드(11필드)를 실제로 구성한다.
 3. PASS한 capability는 `CapabilityRegistry.transition(..., VERIFIED, spike_evidence=...)`로
    승격한다(`docs/dji/SPIKE_PROCEDURE.md` §3 코드 예시).
-4. BLOCKED로 남은 항목은 사유와 함께 `.ksi/goals.json`의 관련 목표/리스크에 반영한다.
+4. BLOCKED로 남은 항목은 사유와 함께 current task ledger에 기록한다. 제품 Backlog 반영은
+   `product-state.md`의 authorized slice close에서만 triage한다; `.ksi/goals.json`은 역사적 근거다.
 5. `hil_raw_logs/<session_id>/` 전체를 durable 저장소로 옮기고, 옮긴 URI로
    `raw_log_ref`를 갱신한다(로컬 전용 경로만 남기지 않는다 — §RAW_LOG_CONVENTIONS §1).

@@ -60,11 +60,11 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 from _digest import sha256_file
@@ -99,6 +99,25 @@ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 #: presigned URL 에 바이트를 올리는 이음매 — ``(url, body, *, content_type, timeout) -> 상태코드``.
 PutObject = Callable[..., int]
+
+
+class _SourceBundleResponse(Protocol):
+    @property
+    def headers(self) -> Mapping[str, str]: ...
+
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    def json(self) -> Any: ...
+
+
+class _SourceBundleHttpClient(Protocol):
+    def get(self, url: str) -> _SourceBundleResponse: ...
+
+    def post(self, url: str, *, json: dict[str, Any] | None = None) -> _SourceBundleResponse: ...
 
 
 def default_put_object(url: str, body: bytes, *, content_type: str, timeout: float) -> int:
@@ -224,7 +243,7 @@ def store_confirmed(state_dir: Path | None, confirmed: dict[str, str]) -> None:
 # ── 단계별 동작 ──────────────────────────────────────────────────────────────
 
 
-def _is_bundle_sealed_response(response: httpx.Response) -> bool:
+def _is_bundle_sealed_response(response: _SourceBundleResponse) -> bool:
     """배치 등록 거부 사유가 "이미 봉인됨"인가 — 다른 409 와 구분한다."""
     if response.status_code != 409:
         return False
@@ -266,7 +285,7 @@ def _local_bundle_digest(
 
 
 def _sealed_bundle_matches(
-    client: httpx.Client, *, mission_id: str, expected_digest: str
+    client: _SourceBundleHttpClient, *, mission_id: str, expected_digest: str
 ) -> bool:
     """서버의 봉인된 번들이 우리가 가진 **그 묶음**인가.
 
@@ -295,7 +314,7 @@ def _sealed_bundle_matches(
 
 
 def _register_and_upload(
-    client: httpx.Client,
+    client: _SourceBundleHttpClient,
     *,
     mission_id: str,
     files: list[Path],
@@ -408,7 +427,7 @@ def _register_and_upload(
 
 
 def attach_ground_control(
-    client: httpx.Client,
+    client: _SourceBundleHttpClient,
     mission_id: str,
     path: Path,
     crs: str,
@@ -483,7 +502,7 @@ def attach_ground_control(
     return True
 
 
-def _fetch_bundle(client: httpx.Client, mission_id: str) -> dict[str, Any] | None:
+def _fetch_bundle(client: _SourceBundleHttpClient, mission_id: str) -> dict[str, Any] | None:
     """현재 번들 상태 — 등록된 적 없으면(404) None. 조회 실패도 None 으로 접는다.
 
     조회가 안 되면 등록을 시도해 서버가 판정하게 둔다 — 여기서 실패로 끊으면
@@ -502,7 +521,7 @@ def _fetch_bundle(client: httpx.Client, mission_id: str) -> dict[str, Any] | Non
     return payload if isinstance(payload, dict) else None
 
 
-def seal_bundle(client: httpx.Client, mission_id: str, outcome: SyncOutcome) -> bool:
+def seal_bundle(client: _SourceBundleHttpClient, mission_id: str, outcome: SyncOutcome) -> bool:
     """번들 봉인. ``ALREADY_SEALED``(200)도 성공으로 다룬다 — 재시도가 안전해야 한다."""
     try:
         response = client.post(f"/v1/missions/{mission_id}/source-media/seal")
@@ -522,7 +541,7 @@ def seal_bundle(client: httpx.Client, mission_id: str, outcome: SyncOutcome) -> 
 
 
 def issue_reconstruction(
-    client: httpx.Client,
+    client: _SourceBundleHttpClient,
     mission_id: str,
     outcome: SyncOutcome,
     *,
@@ -547,7 +566,7 @@ def issue_reconstruction(
 
 
 def run_sync(
-    client: httpx.Client,
+    client: _SourceBundleHttpClient,
     *,
     mission_id: str,
     source_dir: Path,

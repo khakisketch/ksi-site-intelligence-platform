@@ -1,6 +1,8 @@
 # GEOID_ACQUISITION — KNGeoid24 격자 확보·변환·검증 기록
 
-> 목적: risk `geoid-grid-provenance-unverified`(정본: `.ksi/goals.json`)의 해소 조건
+> 목적: historical risk `geoid-grid-provenance-unverified`의 해소 조건. 현재 작업·리스크는
+> active checkout의 task ledger에 기록하고, 제품 Backlog triage는 `product-state.md`의
+> authorized slice close에서만 한다; `.ksi/goals.json`은 역사적 근거다.
 > "국토지리정보원 정식 경로 취득 + 통합기준점 실측 대조 통과" 진행 상황을 정직하게
 > 기록한다.
 >

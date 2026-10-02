@@ -56,7 +56,7 @@ export default async function SiteObservationHistoryPage({
         <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과 이력</h1>
         <p className="mt-1 text-[13px] leading-5 text-ink-2">보관 근거가 확인된 결과만 수치와 추이를 표시합니다.</p>
       </div>
-      <Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link>
+      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/analysis`} className="btn">현장 분석</Link><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-assets`} className="btn">공간 자산</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
     </header>
     <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} />
     {loaded.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}

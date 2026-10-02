@@ -5,9 +5,12 @@
 This audit records local software evidence for the bounded Slice 2 Core API described by
 [ADR-KSI-036](../architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md) and the
 [external-reconstruction release plan](../superpowers/plans/2026-09-06-external-reconstruction-release.md).
-It is evidence, not product or current-state authority. The helper-managed goal record at
-[`/.ksi/goals.json`](../../.ksi/goals.json) is the canonical location for the Lead's final
-integration decision; this audit supplies evidence to that gate and does not set it.
+It is evidence, not product or current-state authority. The historical helper record is archived at
+[`archive/ksi-legacy-2026/goals.json`](../archive/ksi-legacy-2026/goals.json); it does not make a
+current decision. `docs/superpowers/product-state.md` and its named slice ledger own the current
+product slice, Backlog, and product-level next-work selection only when no active bounded checkout
+task exists. An active checkout task resumes through the revalidated checkpoint and named task
+ledger; this audit supplies evidence only.
 
 Evidence was collected in `/tmp/ksi-flight-planning-design.wdFlvL/worktree` from base HEAD
 `542fe0a272adfc9c964d3fd871fda3676385aea5`. The worktree intentionally contains uncommitted
@@ -24,7 +27,7 @@ or device action occurred for this evidence.
 | EXT-API-04 | [Digest-bound grant/seal implementation](../../services/core/src/ksi_core/external_reconstruction.py); [loopback boto3 PUT/HEAD/restart E2E](../../tests/e2e/test_external_reconstruction_upload_flow.py); [storage-failure and observation-mismatch tests](../../tests/replay/test_external_reconstruction_replay.py) | The synthetic loopback includes returned-ref addressing and local direct PUT/HEAD behavior. It is not AWS/MinIO authorization interoperability, object-lock, or permanent byte immutability. Already-issued URLs are not revoked; seal is point-in-time observation. |
 | EXT-API-05 | [Strict replay and opaque-ref recovery](../../services/core/src/ksi_core/external_reconstruction.py); [restart, old-event ref derivation, forged-event, append-failure, and manifest-tamper tests](../../tests/replay/test_external_reconstruction_replay.py) | Local durable-journal replay restores stable refs without journal migration and rejects tested malformed/forged transitions. Its digest is an integrity binding, not unkeyed tamper authentication. |
 | EXT-API-06 | [OpenAPI five-route contract](../../contracts/api/openapi-core.yaml); [assembly wiring](../../services/core/src/ksi_core/app.py); [shared assembly](../../services/core/src/ksi_core/app_assembly.py); [conformance and assembly tests](../../tests/contract/test_api_contract_sync.py) | Registration/list/detail expose `submissionRef`; detail/grant/seal accept only it, with no raw-route fallback. Routes require supported shared storage assembly; this is local conformance evidence, not a deployed service. |
-| EXT-API-07 | [current Task 1 report](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/task-1-report.md), [opaque-ref task review](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-task-review.md), [current verifier refresh](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-verification.md), and this audit | Corrected Task 1 review is PASS and current local evidence is recorded below. Final documentation/integration review and helper-goal decision remain Lead-owned separate gates; this audit does not announce either verdict. |
+| EXT-API-07 | Historical machine-local paths unavailable in this checkout: `../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/task-1-report.md`, `../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-task-review.md`, and `../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-verification.md`; and this audit | The corrected Task 1 review was reported PASS in unavailable historical artifacts; it is not current acceptance proof. Final documentation/integration review and helper-goal decision remain Lead-owned separate gates; this audit does not announce either verdict. |
 
 ## Current execution evidence and historical supersession
 
@@ -53,19 +56,21 @@ separately because JUnit does not encode it. This is worker evidence, not an ind
 
 The independent Task 1 reviewer first inspected the corrected source with 16 focused checks, then
 executed the latest three opaque-reference tests (`7 passed, 1 known warning in 0.64s`), Ruff on
-the changed API test, and `git diff --check`; its
-[PASS review](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-task-review.md)
-explicitly covers special customer IDs, all-three raw-ID route refusal, unknown valid-shaped refs,
+the changed API test, and `git diff --check`; its reported PASS review at historical machine-local
+path `../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-task-review.md`
+(unavailable in this checkout) explicitly covered special customer IDs, all-three raw-ID route refusal, unknown valid-shaped refs,
 and fail-closed collision handling. It did not independently rerun the full nine-file suite.
 
 The independent verifier's current refresh ran API, replay, and real loopback HTTP flow tests
 (`60 passed, 1 known warning in 5.33s`), Ruff/mypy on 11 files, and current-import checks; its
-[verification report](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-verification.md)
-labels the prior 324-test verifier run historical. This is distinct from the worker's 339-test run
+reported verification at historical machine-local path
+`../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/submission-ref-verification.md`
+(unavailable in this checkout) labels the prior 324-test verifier run historical. This is distinct from the worker's 339-test run
 and is not a verifier full-suite rerun.
 
-The Lead independently ran the current 11-file suite below and retained
-[`lead-ref-final-pytest.xml`](../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/lead-ref-final-pytest.xml):
+The Lead independently reported running the current 11-file suite below and retained the historical
+machine-local artifact `../../.superpowers/sdd/2026-09-06-external-reconstruction-ingress-api/lead-ref-final-pytest.xml`
+(unavailable in this checkout):
 
 ```bash
 env PYTHONPATH=services/core/src:packages/event-contracts/src:packages/domain/src \

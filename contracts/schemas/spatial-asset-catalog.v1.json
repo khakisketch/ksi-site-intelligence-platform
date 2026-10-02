@@ -1,0 +1,760 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "spatial-asset-catalog.v1.json",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/SpatialAssetCatalogPageV1"
+    },
+    {
+      "$ref": "#/$defs/SpatialAssetCatalogDetailV1"
+    }
+  ],
+  "$defs": {
+    "SpatialAssetCatalogPageV1": {
+      "properties": {
+        "contractVersion": {
+          "type": "string",
+          "const": "spatial-asset-catalog-page.v1",
+          "title": "Contractversion",
+          "default": "spatial-asset-catalog-page.v1"
+        },
+        "siteId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid"
+        },
+        "workAreaId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid"
+        },
+        "scopePolicy": {
+          "type": "string",
+          "const": "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+          "title": "Scopepolicy",
+          "default": "SINGLE_WORK_AREA_WORK_ORDERS_ONLY"
+        },
+        "scopeNote": {
+          "type": "string",
+          "const": "Register one WorkOrder per WorkArea for catalog attribution; multi-area records are omitted.",
+          "title": "Scopenote",
+          "default": "Register one WorkOrder per WorkArea for catalog attribution; multi-area records are omitted."
+        },
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/SpatialAssetCatalogItemV1"
+          },
+          "type": "array",
+          "maxItems": 50,
+          "title": "Assets"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 1024,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Nextcursor"
+        },
+        "hasMore": {
+          "type": "boolean",
+          "title": "Hasmore"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "siteId",
+        "workAreaId",
+        "assets",
+        "hasMore"
+      ],
+      "title": "SpatialAssetCatalogPageV1"
+    },
+    "SpatialAssetCatalogItemV1": {
+      "properties": {
+        "assetRef": {
+          "type": "string",
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref"
+        },
+        "siteId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid"
+        },
+        "workAreaId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid"
+        },
+        "workOrderId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid"
+        },
+        "observationEpochId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid"
+        },
+        "submissionRef": {
+          "type": "string",
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1.0,
+          "title": "Revision"
+        },
+        "artifactId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProcessingArtifactKind"
+        },
+        "lifecycleState": {
+          "$ref": "#/$defs/SpatialAssetLifecycleStateV1"
+        },
+        "declared": {
+          "$ref": "#/$defs/SpatialAssetDeclaredFactsV1"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedFactsV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inspection": {
+          "$ref": "#/$defs/SpatialAssetInspectionV1"
+        },
+        "dataAccess": {
+          "type": "string",
+          "const": "NOT_AVAILABLE_FROM_CATALOG",
+          "title": "Dataaccess",
+          "default": "NOT_AVAILABLE_FROM_CATALOG"
+        },
+        "analysisStatus": {
+          "type": "string",
+          "const": "NOT_EVALUATED",
+          "title": "Analysisstatus",
+          "default": "NOT_EVALUATED"
+        },
+        "supportedActions": {
+          "items": {
+            "type": "string",
+            "const": "VIEW_METADATA"
+          },
+          "type": "array",
+          "title": "Supportedactions",
+          "default": [
+            "VIEW_METADATA"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "observationEpochId",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "kind",
+        "lifecycleState",
+        "declared",
+        "inspection"
+      ],
+      "title": "SpatialAssetCatalogItemV1"
+    },
+    "ProcessingArtifactKind": {
+      "type": "string",
+      "enum": [
+        "point_cloud",
+        "camera_poses",
+        "ortho",
+        "dsm",
+        "dtm",
+        "mesh",
+        "tiles_3d",
+        "report"
+      ],
+      "title": "ProcessingArtifactKind",
+      "description": "산출물 종류. ADR-KSI-003 원칙상 POINT_CLOUD/CAMERA_POSES가 원본,\nORTHO/DSM/DTM/MESH/TILES_3D가 파생 서빙 계층, REPORT가 파생 분석 산출물이다 —\n실제 계보는 이 값이 아니라 ``lineage.authority``가 밝힌다."
+    },
+    "SpatialAssetLifecycleStateV1": {
+      "type": "string",
+      "enum": [
+        "UNSEALED",
+        "SEALED",
+        "SUPERSEDED"
+      ],
+      "title": "SpatialAssetLifecycleStateV1"
+    },
+    "SpatialAssetDeclaredFactsV1": {
+      "properties": {
+        "factClass": {
+          "type": "string",
+          "const": "DECLARED",
+          "title": "Factclass",
+          "default": "DECLARED"
+        },
+        "fileName": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Filename"
+        },
+        "format": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Format"
+        },
+        "contentType": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Contenttype"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "maximum": 9.223372036854776e+18,
+          "minimum": 1.0,
+          "title": "Sizebytes"
+        },
+        "crs": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 8192
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Crs"
+        },
+        "verticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExternalDeclaredVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gsdM": {
+          "anyOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0.0
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Gsdm"
+        },
+        "submittedAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Submittedat"
+        },
+        "producerCompletedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Producercompletedat"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Captureendedat"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "fileName",
+        "format",
+        "contentType",
+        "sha256",
+        "sizeBytes",
+        "submittedAt"
+      ],
+      "title": "SpatialAssetDeclaredFactsV1",
+      "description": "Customer-supplied metadata. It must never be presented as measured fact."
+    },
+    "ExternalDeclaredVerticalReferenceV1": {
+      "properties": {
+        "datum": {
+          "$ref": "#/$defs/VerticalDatum"
+        },
+        "basis": {
+          "type": "string",
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Basis"
+        },
+        "source": {
+          "type": "string",
+          "const": "user_declared",
+          "title": "Source"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "datum",
+        "basis",
+        "source"
+      ],
+      "title": "ExternalDeclaredVerticalReferenceV1",
+      "description": "A bounded external declaration, never a pipeline-produced fact."
+    },
+    "VerticalDatum": {
+      "type": "string",
+      "enum": [
+        "ellipsoidal",
+        "ellipsoidal_native",
+        "orthometric_kngeoid2018",
+        "orthometric_kngeoid2024"
+      ],
+      "title": "VerticalDatum",
+      "description": "산출물이 어느 수직기준인지 — wire 계약에 실리는 값.\n\n``ELLIPSOIDAL_NATIVE`` 는 \"재구성 엔진이 낸 타원체고를 변환 없이 그대로\n쓴다\"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로\n선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할\n수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는\n산출물이 곧 재처리 대상 목록이 된다.\n\n두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의\n높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와\n비교 가능성은 다른 축이다.\n\n**정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는\n기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를\n타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은\n\"이 높이가 어느 격자로 되돌려지는가\"다. 모델이 다르면 국내 지점 대조에서\n수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적\n집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서\n모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와\n잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`)."
+    },
+    "SpatialAssetObservedFactsV1": {
+      "properties": {
+        "factClass": {
+          "type": "string",
+          "const": "OBSERVED",
+          "title": "Factclass",
+          "default": "OBSERVED"
+        },
+        "manifestDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest"
+        },
+        "observedAt": {
+          "type": "string",
+          "format": "date-time",
+          "title": "Observedat"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Sha256"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "maximum": 9.223372036854776e+18,
+          "minimum": 1.0,
+          "title": "Sizebytes"
+        },
+        "contentType": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Contenttype"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "manifestDigest",
+        "observedAt",
+        "sha256",
+        "sizeBytes",
+        "contentType"
+      ],
+      "title": "SpatialAssetObservedFactsV1",
+      "description": "Core-sealed byte observations; storage paths and capabilities are excluded."
+    },
+    "SpatialAssetInspectionV1": {
+      "properties": {
+        "state": {
+          "type": "string",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "State"
+        },
+        "reportDigest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reportdigest"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "MEASURED",
+                "NOT_APPLICABLE",
+                "REJECTED"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Outcome"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "inspectorBuildDigest": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Inspectorbuilddigest"
+        },
+        "raster": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetInspectedRasterFactsV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "title": "SpatialAssetInspectionV1",
+      "description": "Compact inspection status, never an analysis or accuracy conclusion."
+    },
+    "SpatialAssetInspectedRasterFactsV1": {
+      "properties": {
+        "factClass": {
+          "type": "string",
+          "const": "INSPECTED",
+          "title": "Factclass",
+          "default": "INSPECTED"
+        },
+        "sourceReportDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcereportdigest"
+        },
+        "inspectorBuildDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest"
+        },
+        "observedCrsIdentifier": {
+          "type": "string",
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Observedcrsidentifier"
+        },
+        "observedCrsWkt": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 65536,
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Observedcrswkt"
+        },
+        "observedCrsDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "transform": {
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "type": "array",
+          "maxItems": 6,
+          "minItems": 6,
+          "title": "Transform"
+        },
+        "footprintWkt": {
+          "type": "string",
+          "maxLength": 65536,
+          "minLength": 1,
+          "title": "Footprintwkt"
+        },
+        "footprintDigest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Footprintdigest"
+        },
+        "width": {
+          "type": "integer",
+          "exclusiveMinimum": 0.0,
+          "title": "Width"
+        },
+        "height": {
+          "type": "integer",
+          "exclusiveMinimum": 0.0,
+          "title": "Height"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "sourceReportDigest",
+        "inspectorBuildDigest",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "footprintWkt",
+        "footprintDigest",
+        "width",
+        "height"
+      ],
+      "title": "SpatialAssetInspectedRasterFactsV1",
+      "description": "Measured raster geometry tied to its exact inspection report and build."
+    },
+    "SpatialAssetObservedVerticalReferenceV1": {
+      "properties": {
+        "identifier": {
+          "type": "string",
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Identifier"
+        },
+        "basis": {
+          "type": "string",
+          "maxLength": 8192,
+          "minLength": 1,
+          "title": "Basis"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "SpatialAssetObservedVerticalReferenceV1"
+    },
+    "SpatialAssetCatalogDetailV1": {
+      "properties": {
+        "assetRef": {
+          "type": "string",
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref"
+        },
+        "siteId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid"
+        },
+        "workAreaId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid"
+        },
+        "workOrderId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid"
+        },
+        "observationEpochId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid"
+        },
+        "submissionRef": {
+          "type": "string",
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1.0,
+          "title": "Revision"
+        },
+        "artifactId": {
+          "type": "string",
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProcessingArtifactKind"
+        },
+        "lifecycleState": {
+          "$ref": "#/$defs/SpatialAssetLifecycleStateV1"
+        },
+        "declared": {
+          "$ref": "#/$defs/SpatialAssetDeclaredFactsV1"
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialAssetObservedFactsV1"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inspection": {
+          "$ref": "#/$defs/SpatialAssetInspectionV1"
+        },
+        "dataAccess": {
+          "type": "string",
+          "const": "NOT_AVAILABLE_FROM_CATALOG",
+          "title": "Dataaccess",
+          "default": "NOT_AVAILABLE_FROM_CATALOG"
+        },
+        "analysisStatus": {
+          "type": "string",
+          "const": "NOT_EVALUATED",
+          "title": "Analysisstatus",
+          "default": "NOT_EVALUATED"
+        },
+        "supportedActions": {
+          "items": {
+            "type": "string",
+            "const": "VIEW_METADATA"
+          },
+          "type": "array",
+          "title": "Supportedactions",
+          "default": [
+            "VIEW_METADATA"
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "observationEpochId",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "kind",
+        "lifecycleState",
+        "declared",
+        "inspection"
+      ],
+      "title": "SpatialAssetCatalogDetailV1",
+      "description": "The exact same fact projection used in list pages."
+    }
+  }
+}

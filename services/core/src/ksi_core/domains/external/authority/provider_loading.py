@@ -268,7 +268,10 @@ def _active_key(registry_path: Path, snapshot_key_id: str, now: datetime) -> _Ac
 
 
 def _snapshot_from_path(
-    config: _ProviderConfig, *, clock: Callable[[], datetime]
+    config: _ProviderConfig,
+    *,
+    clock: Callable[[], datetime],
+    allow_expired: bool = False,
 ) -> _VerifiedSnapshot:
     raw = _exact_mapping(
         _private_json(config.snapshot_path, name="authority snapshot"),
@@ -292,10 +295,17 @@ def _snapshot_from_path(
     now = clock()
     if now.tzinfo is None or now.utcoffset() != UTC.utcoffset(now):
         raise ValueError("authority provider clock must return UTC time")
-    if issued_at >= valid_until or not issued_at <= now < valid_until:
+    expired = now >= valid_until and issued_at <= now
+    if issued_at >= valid_until or not issued_at <= now or (expired and not allow_expired):
         raise ValueError("authority snapshot is outside its validity interval")
     key_id = _text(raw["keyId"], name="snapshot keyId")
-    active_key = _active_key(config.key_registry_path, key_id, now)
+    # An expired snapshot may be retained for history only after its signing
+    # key is confirmed to have been valid when the snapshot was issued. It is
+    # never thereby made current; provider live ports apply the current-time
+    # validity gate independently.
+    active_key = _active_key(
+        config.key_registry_path, key_id, issued_at if expired else now
+    )
     signature_value = raw["signature"]
     if not isinstance(signature_value, str):
         raise ValueError("authority snapshot signature must be base64 text")

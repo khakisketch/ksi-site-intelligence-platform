@@ -1,3 +1,7 @@
+> HISTORICAL / NOT CURRENT: This preserved plan is context only. Read `docs/00_READ_FIRST.md`,
+> `docs/superpowers/product-state.md`, and its named ledger; revalidate Git. No old next action here
+> supplies external authorization.
+
 # 완성형까지의 잔여 작업 계획 (2026-08-08 개정)
 
 > 상태의 SSOT는 goal-ledger(`ksi-goals.py status`)다 — 이 문서는 구조 개요만 담고

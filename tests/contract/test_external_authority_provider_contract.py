@@ -697,6 +697,81 @@ def test_status_fails_closed_when_the_current_snapshot_expires(tmp_path: Path) -
     }
 
 
+def test_expired_boot_verification_still_rejects_forgery_and_future_issuance(
+    tmp_path: Path,
+) -> None:
+    from ksi_core.external_authority_provider import (
+        ExternalAuthorityProviderError,
+        load_external_authority_provider,
+    )
+
+    signers: list[Ed25519PrivateKey] = []
+    config = _provider_config(tmp_path, fixture_signers=signers)
+    now = NOW + timedelta(hours=2)
+
+    expired = load_external_authority_provider(
+        config, clock=lambda: now, allow_expired=True
+    )
+    assert expired.status()["status"] == "BLOCKED"
+
+    snapshot_path = tmp_path / "authority-snapshot.json"
+    raw = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    raw["signature"] = base64.b64encode(bytes(64)).decode("ascii")
+    _write(snapshot_path, raw)
+    with pytest.raises(ExternalAuthorityProviderError):
+        load_external_authority_provider(config, clock=lambda: now, allow_expired=True)
+
+    _replace_signed_snapshot(
+        tmp_path,
+        signers[0],
+        {
+            "issuedAt": "2026-09-11T03:00:00Z",
+            "validUntil": "2026-09-11T04:00:00Z",
+        },
+    )
+    with pytest.raises(ExternalAuthorityProviderError):
+        load_external_authority_provider(config, clock=lambda: now, allow_expired=True)
+
+
+@pytest.mark.parametrize("boundary", ["key-expiry", "clock-before-issued-at"])
+def test_attach_rechecks_all_snapshot_time_bounds_before_receipt_append(
+    tmp_path: Path, boundary: str
+) -> None:
+    from ksi_core.external_authority_provider import (
+        ExternalAuthorityProviderError,
+        load_external_authority_provider,
+    )
+
+    load_now = NOW + timedelta(minutes=1)
+    clock_now = [load_now]
+    config = _provider_config(tmp_path)
+    if boundary == "key-expiry":
+        key_path = tmp_path / "authority-keys.json"
+        registry = json.loads(key_path.read_text(encoding="utf-8"))
+        registry["keys"][0]["notAfter"] = "2026-09-11T00:30:00Z"
+        _write(key_path, registry)
+        attach_at = NOW + timedelta(minutes=40)
+    else:
+        attach_at = NOW - timedelta(seconds=1)
+
+    provider = load_external_authority_provider(config, clock=lambda: clock_now[0])
+    clock_now[0] = attach_at
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    app = _empty_app(provider, coordinator)
+    receipt_path = tmp_path / "external-authority-provider-receipts.jsonl"
+    receipts = DurableJournal(receipt_path)
+    try:
+        provider.bind_receipt_journal(receipts)
+        if boundary == "clock-before-issued-at":
+            with pytest.raises(ExternalAuthorityProviderError):
+                provider.attach_app(app)
+        else:
+            provider.attach_app(app)
+            assert provider.status()["status"] == "BLOCKED"
+        assert not receipt_path.exists()
+    finally:
+        receipts.close()
+
 def test_disk_key_revocation_requires_explicit_reload_and_never_mutates_status(
     tmp_path: Path,
 ) -> None:

@@ -1,6 +1,9 @@
 # KSI Site Intelligence Agent Instructions
 
-## Authority
+## Product authority precedence
+
+For product-decision conflicts, read in this order. This is a product-authority precedence list;
+it does not replace the session checkpoint/product-state/ledger/Git revalidation route below.
 
 Read in this order:
 
@@ -9,12 +12,51 @@ Read in this order:
 3. `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
 4. `docs/product/MASTER_PRD_v3.0.md` and relevant section
 5. Relevant contract/schema
-6. Acceptance criteria
-7. Reference adoption matrix
-8. Reference code
+6. Relevant accepted ADR
+7. Acceptance criteria
+8. Reference adoption matrix
+9. Reference code
 
 Domain invariants (INV-xxx) are canonical in `docs/product/DOMAIN_INVARIANTS.md`.
 Every implementation task must state which invariants it touches and how they are enforced.
+Read a supporting design document only when an accepted ADR or higher authority explicitly selects it;
+the design keeps its declared subordination and is not a same-rank authority source.
+
+## First-release product-direction routing
+
+For work that touches capture, reconstruction, spatial artifacts, or analysis, read
+`docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md` after the
+authority sequence. It is the accepted first-release responsibility boundary: the customer
+controls reconstruction on its equipment and KSI registers, verifies, and analyzes exported
+derived artifacts. It does not authorize a proprietary KSI photogrammetry engine, a customer
+production reconstruction service, a vendor integration, or a claim that registration, RTK FIX,
+or a software check establishes quantitative or settlement accuracy.
+
+The shared worktree checkpoint `.opencode/working-state.md`, when present, identifies the active
+checkout task and its task ledger; revalidate Git before relying on it. A current Human-assigned
+bounded task persists without closing or reprioritizing the product slice. Separately,
+`docs/superpowers/product-state.md` identifies the current product slice and its slice ledger.
+Only when no active bounded checkout task exists may work selection begin from product-state.
+`docs/goals/PHASE_REGISTRY.yaml` is a capability-track index, not a competing current-task or
+next-priority source.
+Historical `.ksi/` records and managed NodeODM/ProcessingJob evidence remain historical or
+managed/test scope unless the applicable authority says otherwise.
+Tool auto-memory, session summaries, and handoffs are context only: re-read current product
+authority and revalidate Git before deriving product direction, authorization, or readiness from
+cached memory.
+
+For API-first earthwork evidence, external-system integration, future MCP access, or first-request
+design, also read `docs/architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md`
+and `docs/design/API_FIRST_EARTHWORK_FIRST_REQUEST_CONTRACT.md`. They set product-direction and
+target requirements only; they create no endpoint, MCP server, client topology, vendor support,
+runtime authorization, or product-state transition.
+
+For platform identity, spatial-data delivery, external application reuse, or long-term scope, also
+read `docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md` and its selected roadmap
+`docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md`. ADR-KSI-038 places data access
+and analysis under the platform goal; ADR-KSI-037 remains the first analysis use-case contract.
+Read target capability and verified implementation separately. Resume authority still comes from
+the current user instruction and the revalidated checkpoint/named task ledger.
 
 ## Repository routing
 
@@ -34,7 +76,9 @@ These files route work; they do not override product authority or contracts. Rou
 | Measurement worker | `services/processing-controller/` | Independently operated worker; measures artifacts while Core adjudicates durable state |
 | Reusable domain and algorithm code | `packages/` | Import-only code, including change/BIM/defect processing libraries, through explicit package/contract boundaries |
 | Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
-| Phase/goal state | `docs/goals/PHASE_REGISTRY.yaml`, `docs/superpowers/product-state.md` | Current status; update product-state only at slice close (`.ksi/` retired archive) |
+| Active checkout task | `.opencode/working-state.md` when present + its task ledger | Resume the current Human-assigned bounded task after Git revalidation; does not close/reprioritize a product slice |
+| Product slice | `docs/superpowers/product-state.md` + its named slice ledger | Current Goal/Milestone/slice/Backlog; select from it only when no active bounded checkout task exists; update at slice close (`.ksi/` retired archive) |
+| Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | Track/status routing only; not current task or next-priority selection |
 
 ### Terrain-aware planning route (design-only)
 

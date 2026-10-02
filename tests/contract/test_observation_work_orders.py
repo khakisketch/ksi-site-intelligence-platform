@@ -38,7 +38,13 @@ def _digest(token: str) -> str:
 
 
 def _principal(
-    token: str, principal_id: str, organization_id: str, role: Role
+    token: str,
+    principal_id: str,
+    organization_id: str,
+    role: Role,
+    *,
+    allowed_site_ids: frozenset[str] | None = None,
+    allowed_work_area_ids: frozenset[str] | None = None,
 ) -> PrincipalTokenRecord:
     return PrincipalTokenRecord(
         token_sha256=_digest(token),
@@ -48,6 +54,8 @@ def _principal(
             role=role,
             device_id=None,
             organization_id=organization_id,
+            allowed_site_ids=allowed_site_ids,
+            allowed_work_area_ids=allowed_work_area_ids,
         ),
     )
 
@@ -75,6 +83,14 @@ def _api(tmp_path: Path) -> tuple[TestClient, ObservationWorkOrderStore]:
             _principal(_TOKEN_A, "operator-a", "org-a", Role.FIELD_OPERATOR),
             _principal(_TOKEN_B, "operator-b", "org-b", Role.FIELD_OPERATOR),
             _principal(_VIEWER_TOKEN, "viewer-a", "org-a", Role.VIEWER),
+            _principal(
+                "observation-scoped-token",
+                "scoped-operator-a",
+                "org-a",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"wa-site-a-0001"}),
+            ),
         ]
     )
     return TestClient(
@@ -88,6 +104,109 @@ def _api(tmp_path: Path) -> tuple[TestClient, ObservationWorkOrderStore]:
 
 def _headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_mapped_scope_guards_work_order_and_reobservation_approvals(tmp_path: Path) -> None:
+    client, store = _api(tmp_path)
+    hidden = client.post(
+        "/v1/sites/site-a/observation-work-orders",
+        headers=_headers(_TOKEN_A),
+        json={"name": "다른 구역 승인", "workAreaIds": ["wa-site-a-0002"]},
+    )
+    assert hidden.status_code == 201, hidden.text
+    hidden_id = hidden.json()["workOrderId"]
+    approval = client.post(
+        f"/v1/observation-work-orders/{hidden_id}/approve",
+        headers=_headers("observation-scoped-token"),
+        json={"expectedVersion": 1},
+    )
+    assert approval.status_code == 404
+    hidden_order = store.get(hidden_id, organization_id="org-a")
+    assert hidden_order is not None
+    assert hidden_order.status is ObservationWorkOrderStatus.AWAITING_APPROVAL
+
+    def review_ready_order(work_order_id: str) -> ObservationWorkOrder:
+        order = store.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name=work_order_id,
+            work_area_ids=["wa-site-a-0002"],
+            schedule_id=None,
+            actor="operator-a",
+            now=_NOW,
+        )
+        order = store.approve(
+            order.work_order_id,
+            organization_id="org-a",
+            expected_version=order.version,
+            actor="operator-a",
+            now=_NOW + timedelta(minutes=1),
+        )
+        for offset, status in enumerate(
+            (
+                ObservationWorkOrderStatus.DISPATCHED,
+                ObservationWorkOrderStatus.START_REPORTED,
+                ObservationWorkOrderStatus.MEDIA_RECEIVING,
+                ObservationWorkOrderStatus.PROCESSING,
+                ObservationWorkOrderStatus.REVIEW_READY,
+            ),
+            start=2,
+        ):
+            order = store.record_status(
+                order.work_order_id,
+                organization_id="org-a",
+                status=status,
+                status_reason=None,
+                mission_ids=["mission-1"],
+                processing_job_ids=["job-1"],
+                report_refs=["report-1"],
+                actor="verified-adapter",
+                now=_NOW + timedelta(minutes=offset),
+            )
+        return order
+
+    create_draft_source = review_ready_order("hidden-draft-create")
+    draft_create = client.post(
+        f"/v1/observation-work-orders/{create_draft_source.work_order_id}/reobservation-drafts",
+        headers=_headers("observation-scoped-token"),
+        json={
+            "reasonRefs": ["report-1#gap"],
+            "targetRegionRefs": ["wa-site-a-0002"],
+            "proposedEffort": "추가 촬영",
+            "plannerVersion": "planner-1",
+            "policyVersion": "policy-1",
+            "expiresAt": (_NOW + timedelta(hours=2)).isoformat(),
+        },
+    )
+    assert draft_create.status_code == 404
+
+    approval_source = review_ready_order("hidden-draft-approval")
+    draft = store.create_reobservation_draft(
+        approval_source.work_order_id,
+        organization_id="org-a",
+        reason_refs=["report-1#gap"],
+        target_region_refs=["wa-site-a-0002"],
+        proposed_effort="추가 촬영",
+        planner_version="planner-1",
+        policy_version="policy-1",
+        expires_at=_NOW + timedelta(hours=2),
+        actor="copilot:conversation-1",
+        now=_NOW + timedelta(minutes=10),
+    )
+    drafts = client.get(
+        f"/v1/observation-work-orders/{approval_source.work_order_id}/reobservation-drafts",
+        headers=_headers("observation-scoped-token"),
+    )
+    assert drafts.status_code == 404
+    draft_approval = client.post(
+        f"/v1/reobservation-drafts/{draft.draft_id}/approve",
+        headers=_headers("observation-scoped-token"),
+        json={"expectedVersion": 1},
+    )
+    assert draft_approval.status_code == 404
+    source_order = store.get(approval_source.work_order_id, organization_id="org-a")
+    assert source_order is not None
+    assert source_order.status is ObservationWorkOrderStatus.REOBSERVATION_PENDING
 
 
 def test_api_is_organization_scoped_and_approval_is_optimistic(tmp_path: Path) -> None:
@@ -578,6 +697,9 @@ def test_initial_external_work_order_replay_keeps_execution_guard_and_legacy_is_
     assert restored is not None
     assert restored.execution_mode is not None
     assert restored.execution_mode.value == "EXTERNAL_RECONSTRUCTION"
+    assert replayed.list_for_site_bounded(
+        "site-a", organization_id="org-a", max_records=1
+    ) == [restored]
     replayed._journal.close()  # noqa: SLF001 -- fixture closes its durable handle
 
     legacy = ObservationWorkOrder.model_validate(

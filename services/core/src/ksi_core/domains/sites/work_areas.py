@@ -535,8 +535,28 @@ class WorkAreaListResponse(CamelModel):
     work_areas: list[WorkArea]
 
 
-def build_work_area_router(store: WorkAreaStore) -> APIRouter:
+def build_work_area_router(store: WorkAreaStore, *, site_store: Any = None) -> APIRouter:
     router = APIRouter(tags=["work-areas"])
+
+    def require_site_scope(principal: Principal, site_id: str) -> None:
+        if principal.allowed_site_ids is not None and site_id not in principal.allowed_site_ids:
+            raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
+        if site_store is not None:
+            visible = site_store.get_scoped(site_id, principal.organization_id) is not None
+        elif principal.allowed_site_ids is not None:
+            # Mapped OIDC grants must resolve through the organization-owned Site projection.
+            visible = False
+        else:
+            visible = store.site_is_visible(site_id)
+        if not visible:
+            raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
+
+    def require_work_area_grant(principal: Principal, work_area_id: str) -> None:
+        if (
+            principal.allowed_work_area_ids is not None
+            and work_area_id not in principal.allowed_work_area_ids
+        ):
+            raise HTTPException(status_code=404, detail="작업구역을 찾을 수 없다")
 
     @router.post(
         "/v1/sites/{site_id}/work-areas",
@@ -554,6 +574,9 @@ def build_work_area_router(store: WorkAreaStore) -> APIRouter:
         고치려면 ``supersedes`` 로 새 구역을 만든다(모듈 docstring). 201 은 "이
         범위로 앞으로 계속 잴 수 있다"는 뜻이다.
         """
+        require_site_scope(principal, site_id)
+        if request.supersedes is not None:
+            require_work_area_grant(principal, request.supersedes)
         result = store.register(
             site_id,
             name=request.name,
@@ -577,11 +600,16 @@ def build_work_area_router(store: WorkAreaStore) -> APIRouter:
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> WorkAreaListResponse:
         """현장의 작업구역 목록. 기본은 고를 수 있는 것(ACTIVE)만."""
-        del principal
-        if not store.site_is_visible(site_id):
-            raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
+        require_site_scope(principal, site_id)
+        work_areas = store.list_for_site(site_id, include_archived=include_archived)
+        if principal.allowed_work_area_ids is not None:
+            work_areas = [
+                area
+                for area in work_areas
+                if area.work_area_id in principal.allowed_work_area_ids
+            ]
         return WorkAreaListResponse(
-            work_areas=store.list_for_site(site_id, include_archived=include_archived)
+            work_areas=work_areas
         )
 
     @router.post(
@@ -599,6 +627,8 @@ def build_work_area_router(store: WorkAreaStore) -> APIRouter:
         이 구역으로 낸 리포트들이 ``zoneId`` 로 이 id 를 들고 있어, 지우면 그
         리포트들이 무슨 범위였는지를 잃는다.
         """
+        require_site_scope(principal, site_id)
+        require_work_area_grant(principal, work_area_id)
         result = store.archive(
             work_area_id,
             site_id=site_id,
@@ -615,10 +645,10 @@ def build_work_area_router(store: WorkAreaStore) -> APIRouter:
     return router
 
 
-def mount_work_areas(app: FastAPI, store: WorkAreaStore) -> None:
+def mount_work_areas(app: FastAPI, store: WorkAreaStore, *, site_store: Any = None) -> None:
     """앱에 작업구역 라우터를 장착한다."""
     app.state.work_area_store = store
-    app.include_router(build_work_area_router(store))
+    app.include_router(build_work_area_router(store, site_store=site_store))
 
 
 __all__ = [

@@ -52,7 +52,15 @@ _FRAME = SiteFrame(
 )
 
 
-def _token(token: str, principal_id: str, organization_id: str, role: Role) -> PrincipalTokenRecord:
+def _token(
+    token: str,
+    principal_id: str,
+    organization_id: str,
+    role: Role,
+    *,
+    allowed_site_ids: frozenset[str] | None = None,
+    allowed_work_area_ids: frozenset[str] | None = None,
+) -> PrincipalTokenRecord:
     return PrincipalTokenRecord(
         token_sha256=hashlib.sha256(token.encode()).hexdigest(),
         principal=Principal(
@@ -61,6 +69,8 @@ def _token(token: str, principal_id: str, organization_id: str, role: Role) -> P
             role=role,
             device_id=None,
             organization_id=organization_id,
+            allowed_site_ids=allowed_site_ids,
+            allowed_work_area_ids=allowed_work_area_ids,
         ),
     )
 
@@ -74,7 +84,11 @@ def _headers(token: str, *, key: str | None = None) -> dict[str, str]:
 
 def _api(tmp_path: Path) -> tuple[TestClient, ObservationWorkOrderStore, SiteStore, Path]:
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
-    for site_id, organization_id in (("site-a", "org-a"), ("site-b", "org-b")):
+    for site_id, organization_id in (
+        ("site-a", "org-a"),
+        ("site-b", "org-b"),
+        ("site-c", "org-a"),
+    ):
         registered = site_store.register(
             site_id,
             site_id,
@@ -96,6 +110,22 @@ def _api(tmp_path: Path) -> tuple[TestClient, ObservationWorkOrderStore, SiteSto
             _token(_OPERATOR_A, "operator-a", "org-a", Role.FIELD_OPERATOR),
             _token(_OPERATOR_B, "operator-b", "org-b", Role.FIELD_OPERATOR),
             _token(_VIEWER_A, "viewer-a", "org-a", Role.VIEWER),
+            _token(
+                "operations-scoped-a",
+                "scoped-operator-a",
+                "org-a",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+            _token(
+                "operations-empty-scope",
+                "empty-scope-operator",
+                "org-a",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset(),
+                allowed_work_area_ids=frozenset(),
+            ),
         ]
     )
     return (
@@ -112,19 +142,93 @@ def _api(tmp_path: Path) -> tuple[TestClient, ObservationWorkOrderStore, SiteSto
     )
 
 
-def _create_external(client: TestClient, *, key: str = "external-create") -> dict[str, object]:
+def _create_external(
+    client: TestClient,
+    *,
+    key: str = "external-create",
+    work_area_ids: list[str] | None = None,
+    site_id: str = "site-a",
+) -> dict[str, object]:
     response = client.post(
-        "/v1/sites/site-a/observation-work-orders",
+        f"/v1/sites/{site_id}/observation-work-orders",
         headers=_headers(_OPERATOR_A, key=key),
         json={
             "name": "외부 관측 운영",
-            "workAreaIds": ["area-a"],
+            "workAreaIds": work_area_ids or ["area-a"],
             "scheduleId": None,
             "executionMode": "EXTERNAL_RECONSTRUCTION",
         },
     )
     assert response.status_code == 201, response.text
     return response.json()
+
+
+def test_mapped_scope_filters_operations_and_blocks_known_order_retry_paths(
+    tmp_path: Path,
+) -> None:
+    client, store, _, _ = _api(tmp_path)
+    allowed = _create_external(client, key="allowed-order", work_area_ids=["area-a"])
+    hidden = _create_external(client, key="hidden-order", work_area_ids=["area-b"])
+    mixed = _create_external(client, key="mixed-order", work_area_ids=["area-a", "area-b"])
+    other_site = _create_external(
+        client, key="other-site-order", work_area_ids=["area-a"], site_id="site-c"
+    )
+    allowed_id = str(allowed["workOrderId"])
+    hidden_id = str(hidden["workOrderId"])
+    mixed_id = str(mixed["workOrderId"])
+    other_site_id = str(other_site["workOrderId"])
+    scoped_headers = _headers("operations-scoped-a")
+
+    scoped_operations = client.get(
+        "/v1/observation-work-order-operations", headers=scoped_headers
+    )
+    assert scoped_operations.status_code == 200, scoped_operations.text
+    assert [item["workOrderId"] for item in scoped_operations.json()["operations"]] == [
+        allowed_id
+    ]
+    empty_scope = client.get(
+        "/v1/observation-work-order-operations",
+        headers=_headers("operations-empty-scope"),
+    )
+    assert empty_scope.status_code == 200
+    assert empty_scope.json()["operations"] == []
+
+    assigned = client.post(
+        f"/v1/observation-work-orders/{allowed_id}/operations/assignment",
+        headers=_headers("operations-scoped-a", key="shared-retry"),
+        json={"expectedOperationsRevision": 1, "action": "ASSIGN_TO_ME"},
+    )
+    assert assigned.status_code == 200, assigned.text
+    hidden_retry = client.post(
+        f"/v1/observation-work-orders/{hidden_id}/operations/assignment",
+        headers=_headers("operations-scoped-a", key="shared-retry"),
+        json={"expectedOperationsRevision": 1, "action": "ASSIGN_TO_ME"},
+    )
+    assert hidden_retry.status_code == 404
+
+    for work_order_id in (hidden_id, mixed_id, other_site_id):
+        assert client.get(
+            f"/v1/observation-work-orders/{work_order_id}/operations",
+            headers=scoped_headers,
+        ).status_code == 404
+        assert client.put(
+            f"/v1/observation-work-orders/{work_order_id}/operations/due-date",
+            headers=_headers("operations-scoped-a", key=f"due-{work_order_id}"),
+            json={"expectedOperationsRevision": 1, "dueAt": "2026-09-11T00:00:00Z"},
+        ).status_code == 404
+        assert client.post(
+            f"/v1/observation-work-orders/{work_order_id}/operations/close",
+            headers=_headers("operations-scoped-a", key=f"close-{work_order_id}"),
+            json={"expectedOperationsRevision": 1, "note": "hidden"},
+        ).status_code == 404
+        assert client.post(
+            f"/v1/observation-work-orders/{work_order_id}/operations/reopen",
+            headers=_headers("operations-scoped-a", key=f"reopen-{work_order_id}"),
+            json={"expectedOperationsRevision": 1},
+        ).status_code == 404
+
+    assert store.get_operations(hidden_id, organization_id="org-a").operations_revision == 1
+    assert store.get_operations(mixed_id, organization_id="org-a").operations_revision == 1
 
 
 class _NeverIssueRelativeVolumeStore:

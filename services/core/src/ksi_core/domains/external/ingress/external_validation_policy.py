@@ -58,6 +58,10 @@ class ExternalValidationPolicyRecoveryError(RuntimeError):
     """A policy lifecycle journal event cannot be trusted during replay."""
 
 
+class ExternalValidationPolicySelectionBudgetExceeded(RuntimeError):
+    """Retained policies for one exact subject exceed a finite selection budget."""
+
+
 class PolicySelectionStatus(StrEnum):
     """Current lifecycle state or a typed fail-closed selection result."""
 
@@ -369,6 +373,7 @@ class ExternalValidationPolicyRegistry:
         self._lock = threading.RLock()
         self._entries_by_identity: dict[tuple[str, int], _PolicyEntry] = {}
         self._entries_by_digest: dict[str, _PolicyEntry] = {}
+        self._entry_keys_by_subject_digest: dict[str, set[tuple[str, int]]] = {}
         try:
             self._replay(journal)
         except BaseException:
@@ -383,9 +388,31 @@ class ExternalValidationPolicyRegistry:
     def authority_currentness_port(self) -> PolicyAuthorityCurrentnessPort | None:
         return self._authority_currentness_port
 
+    @property
+    def sealed_reason(self) -> str | None:
+        return self._journal.sealed_reason
+
     def select_for_inspection(self, subject: SealedExternalSubjectV1) -> PolicySelection:
         """Select exactly one currently authorized inspection policy, or show pending."""
         selection = self._select("INSPECTION", (subject,))
+        return self._inspection_selection(selection)
+
+    def select_for_inspection_bounded(
+        self, subject: SealedExternalSubjectV1, *, max_retained_policies: int
+    ) -> PolicySelection:
+        """Select through the bounded retained-policy index for this exact sealed subject."""
+        if type(max_retained_policies) is not int or max_retained_policies < 1:
+            raise ValueError("max_retained_policies must be a positive integer")
+        selection = self._select(
+            "INSPECTION",
+            (subject,),
+            max_retained_entries=max_retained_policies,
+            scope_subject_digest=subject.canonical_digest(),
+        )
+        return self._inspection_selection(selection)
+
+    @staticmethod
+    def _inspection_selection(selection: PolicySelection) -> PolicySelection:
         if selection.status is PolicySelectionStatus.POLICY_UNAVAILABLE:
             return PolicySelection(
                 status=PolicySelectionStatus.INSPECTION_PENDING_POLICY,
@@ -570,11 +597,33 @@ class ExternalValidationPolicyRegistry:
             entry.status = PolicyStatus.SUPERSEDED
             return _receipt(entry.policy, PolicyReceiptStatus.SUPERSEDED)
 
-    def _select(self, use: str, subjects: Sequence[SealedExternalSubjectV1]) -> PolicySelection:
+    def _select(
+        self,
+        use: str,
+        subjects: Sequence[SealedExternalSubjectV1],
+        *,
+        max_retained_entries: int | None = None,
+        scope_subject_digest: str | None = None,
+    ) -> PolicySelection:
         now = self._clock()
         _require_utc(now, "selection time")
         with self._lock:
-            candidates = self._active_selection_snapshot()
+            if (max_retained_entries is None) != (scope_subject_digest is None):
+                raise ValueError("bounded policy selection requires an exact subject scope")
+            subject_keys = (
+                self._entry_keys_by_subject_digest.get(scope_subject_digest, set())
+                if scope_subject_digest is not None
+                else None
+            )
+            if (
+                max_retained_entries is not None
+                and subject_keys is not None
+                and len(subject_keys) > max_retained_entries
+            ):
+                raise ExternalValidationPolicySelectionBudgetExceeded(
+                    "policy selection source budget exceeded"
+                )
+            candidates = self._active_selection_snapshot(scope_subject_digest)
         matches: list[ExternalValidationPolicyV1] = []
         for policy, expected_authority in candidates:
             authority_digest = policy.authority_record_digest
@@ -587,7 +636,21 @@ class ExternalValidationPolicyRegistry:
             if authority.permits_selection(policy, use=use, subjects=subjects, now=now):
                 matches.append(policy)
         with self._lock:
-            if candidates != self._active_selection_snapshot():
+            subject_keys = (
+                self._entry_keys_by_subject_digest.get(scope_subject_digest, set())
+                if scope_subject_digest is not None
+                else None
+            )
+            if (
+                max_retained_entries is not None
+                and subject_keys is not None
+                and len(subject_keys) > max_retained_entries
+            ):
+                raise ExternalValidationPolicySelectionBudgetExceeded(
+                    "policy selection source budget exceeded"
+                )
+            current_candidates = self._active_selection_snapshot(scope_subject_digest)
+            if candidates != current_candidates:
                 return PolicySelection(
                     status=PolicySelectionStatus.POLICY_UNAVAILABLE,
                     policy=None,
@@ -611,8 +674,18 @@ class ExternalValidationPolicyRegistry:
             reason=None,
         )
 
+    def _check_selection_budget(self, subject_digest: str | None, limit: int | None) -> None:
+        if (
+            limit is not None
+            and subject_digest is not None
+            and len(self._entry_keys_by_subject_digest.get(subject_digest, ())) > limit
+        ):
+            raise ExternalValidationPolicySelectionBudgetExceeded(
+                "policy selection source budget exceeded"
+            )
+
     def _active_selection_snapshot(
-        self,
+        self, subject_digest: str | None = None
     ) -> tuple[tuple[ExternalValidationPolicyV1, PolicyAuthorityRecord], ...]:
         """Copy active candidate authority while the registry lock is held.
 
@@ -621,9 +694,18 @@ class ExternalValidationPolicyRegistry:
         publishing a selection, so an admission/revocation/supersession during
         external resolution fails closed instead of selecting a stale policy.
         """
+        entries = (
+            (
+                self._entries_by_identity[key]
+                for key in self._entry_keys_by_subject_digest.get(subject_digest, ())
+                if key in self._entries_by_identity
+            )
+            if subject_digest is not None
+            else self._entries_by_identity.values()
+        )
         return tuple(
             (entry.policy.model_copy(deep=True), entry.authority)
-            for entry in self._entries_by_identity.values()
+            for entry in entries
             if (
                 entry.status is PolicyStatus.ACTIVE
                 and entry.policy.authority_record_digest is not None
@@ -680,8 +762,13 @@ class ExternalValidationPolicyRegistry:
     ) -> None:
         digest = _policy_digest(policy)
         entry = _PolicyEntry(policy=policy, authority=authority, status=PolicyStatus.ACTIVE)
-        self._entries_by_identity[(policy.policy_id, policy.version)] = entry
+        key = (policy.policy_id, policy.version)
+        self._entries_by_identity[key] = entry
         self._entries_by_digest[digest] = entry
+        for subject in authority.permitted_subjects:
+            self._entry_keys_by_subject_digest.setdefault(subject.canonical_digest(), set()).add(
+                key
+            )
 
     def _admitted_event(
         self,

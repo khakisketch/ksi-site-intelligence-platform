@@ -2,6 +2,20 @@
 
 KSI Core: identity, site, Mission Contract, event workflow, map/model registry and audit.
 
+## Spatial data delivery (explicit local lane)
+
+`ksi_core.domains.external.delivery` owns distinct scoped grants, exact inspected
+source snapshots, durable preparation jobs/fences and guarded derivative access.
+It does not reconstruct customer originals or grant analysis/accuracy eligibility.
+`SpatialDataLocalAssemblyConfig` requires connected storage/currentness factories;
+an optional existing protected `0700` `spool_root` enables full-hash private downloads.
+No default production/environment activation is added. Every GET/HEAD rechecks fresh
+credentials/current rights; Range and redirects are unsupported. Cleanup deletes only
+exact owned derivative versions after capability/lease/retention expiry, keeping history.
+
+See [local verification and external-consumer instructions](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md)
+for generated-parser/worker/HTTP/replay evidence and open public/host/customer gates.
+
 ## Core R1 module routing (partial)
 
 `KSI-CORE-R1-20260914` has relocated the reusable foundation and identity
@@ -161,3 +175,32 @@ submissions, inspections, checkpoint validations, use decisions, authority lifec
 requests, reports, reviews, and WorkOrders. Local tests do not establish customer export
 compatibility, authority provisioning, backup/restore, signed OCI/SBOM evidence, deployment,
 owner operation, HIL, or field acceptance.
+
+## Spatial asset metadata catalog (V1 local software)
+
+`GET /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets` lists up to 50
+external reconstruction artifact revisions per page. The companion
+`GET .../spatial-assets/{asset_ref}` reads one exact asset. Both require
+`SITES_READ` and recheck organization, Site, and WorkArea grants on each request;
+the exact GET templates are available to scoped customer OIDC operators. The
+Analysis MCP client is not granted these routes. Foreign or revoked scope is a
+non-disclosing `404`.
+
+This is a read-only projection of existing WorkOrder, submission revision,
+observed manifest, and inspection records. Customer declaration, Core's
+point-in-time byte observation, and inspector-measured raster geometry are
+separate fields. `assetRef` is a server-derived opaque reference; storage object
+keys and download URLs are not returned. `dataAccess` is
+`NOT_AVAILABLE_FROM_CATALOG`, and `analysisStatus` is `NOT_EVALUATED` even for a
+measured raster. A WorkOrder spanning multiple WorkAreas has no per-artifact
+area binding and is omitted from this WorkArea catalog; register an exact
+single-WorkArea observation for this view rather than inferring coverage.
+
+The response is capped at 512 KiB. Core also refuses the catalog with `503`
+before returning a partial list when its bounded source budget is exceeded:
+256 WorkOrders per Site, 2,048 revisions per request, 256 submissions per
+WorkOrder, 128 inspection attempts per sealed subject, and 64 retained
+policies per sealed subject. These are current software limits, not measured
+customer capacity. The exact contract is in `contracts/api/openapi-core.yaml`
+and `contracts/schemas/spatial-asset-catalog.v1.json`. Local verification is
+recorded in `docs/superpowers/plans/2026-09-30-spatial-asset-catalog-v1.md`.

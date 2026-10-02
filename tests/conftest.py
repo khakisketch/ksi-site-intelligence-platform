@@ -23,6 +23,9 @@ import pytest
 # 공유 헬퍼(tests/_real_model_gate.py)를 어디서든 flat import 가능하게 —
 # hil/replay 테스트들의 기존 sys.path 주입 관행과 동일.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+# New contract fixtures follow the existing flat test-helper convention. Include this
+# directory even when running a replay file alone, not only after contract collection.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "contract"))
 
 REAL_MODEL_GATE_FILES = (
     "test_dfine_detector.py",

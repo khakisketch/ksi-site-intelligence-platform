@@ -436,7 +436,14 @@ def test_assignment_notice_replays_with_deterministic_recipient_reference(tmp_pa
     assert second.items[0].target.work_order_id == order.work_order_id
 
 
-def _token(token: str, principal_id: str, role: Role) -> PrincipalTokenRecord:
+def _token(
+    token: str,
+    principal_id: str,
+    role: Role,
+    *,
+    allowed_site_ids: frozenset[str] | None = None,
+    allowed_work_area_ids: frozenset[str] | None = None,
+) -> PrincipalTokenRecord:
     return PrincipalTokenRecord(
         token_sha256=hashlib.sha256(token.encode()).hexdigest(),
         principal=Principal(
@@ -445,6 +452,8 @@ def _token(token: str, principal_id: str, role: Role) -> PrincipalTokenRecord:
             role=role,
             device_id=None,
             organization_id="org-a",
+            allowed_site_ids=allowed_site_ids,
+            allowed_work_area_ids=allowed_work_area_ids,
         ),
     )
 
@@ -549,6 +558,115 @@ def test_member_assignment_is_a_recipient_only_inbox_notice(tmp_path: Path) -> N
     assert notices.items[0].unread
 
 
+def test_mapped_inbox_filters_assignments_before_pagination_and_rechecks_read_retries(
+    tmp_path: Path,
+) -> None:
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster = OrganizationWorkRosterStore(DurableJournal(tmp_path / "roster.jsonl"))
+    work_orders = ObservationWorkOrderStore(
+        DurableJournal(tmp_path / "orders.jsonl"),
+        site_exists=lambda _site_id, _organization_id: True,
+        operations_coordinator=roster.coordinator,
+        assignment_member_is_active=roster.is_assignable_member,
+    )
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="operator-b",
+        expected_revision=0,
+        display_name="현장 담당자 B",
+        role_hint=OrganizationWorkRoleHint.FIELD_OPERATOR,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    orders = [
+        work_orders.create_work_order(
+            organization_id="org-a",
+            site_id=site_id,
+            name=name,
+            work_area_ids=areas,
+            schedule_id=None,
+            execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
+            actor="operator-a",
+            idempotency_key=f"create-{name}",
+            now=datetime(2026, 9, 10, tzinfo=UTC),
+        )
+        for site_id, name, areas in (
+            ("site-a", "allowed", ["area-a"]),
+            ("site-a", "hidden-area", ["area-b"]),
+            ("site-a", "mixed", ["area-a", "area-b"]),
+            ("site-b", "hidden-site", ["area-a"]),
+        )
+    ]
+    for index, order in enumerate(orders, start=1):
+        work_orders.assign_operations_to_member(
+            order.work_order_id,
+            organization_id="org-a",
+            expected_operations_revision=1,
+            action=WorkOrderOperationsAssignmentAction.ASSIGN_TO_MEMBER,
+            assignee_principal_id="operator-b",
+            actor="operator-a",
+            idempotency_key=f"assign-{order.work_order_id}",
+            now=datetime(2026, 9, 10, index, tzinfo=UTC),
+        )
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"), work_orders=work_orders, roster=roster
+    )
+    scoped_token = _token(
+        "scoped-recipient",
+        "operator-b",
+        Role.FIELD_OPERATOR,
+        allowed_site_ids=frozenset({"site-a"}),
+        allowed_work_area_ids=frozenset({"area-a"}),
+    )
+    client = _share_app(inbox, tokens=[scoped_token])
+
+    page = client.get(
+        "/v1/work-inbox?limit=1", headers={"Authorization": "Bearer scoped-recipient"}
+    )
+
+    assert page.status_code == 200, page.text
+    assert [item["target"]["workOrderId"] for item in page.json()["items"]] == [
+        orders[0].work_order_id
+    ]
+    assert page.json()["nextCursor"] is None
+    notification_ref = page.json()["items"][0]["notificationRef"]
+    headers = {"Authorization": "Bearer scoped-recipient", "Idempotency-Key": "read-once"}
+    read = client.post(f"/v1/work-inbox/{notification_ref}/read", headers=headers)
+    assert read.status_code == 200
+
+    assert isinstance(client.app, FastAPI)
+    client.app.state.auth_registry = AuthRegistry(
+        [
+            _token(
+                "scoped-recipient",
+                "operator-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset(),
+            )
+        ]
+    )
+    revoked_page = client.get(
+        "/v1/work-inbox", headers={"Authorization": "Bearer scoped-recipient"}
+    )
+    assert revoked_page.status_code == 200, revoked_page.text
+    assert revoked_page.json()["items"] == []
+    assert (
+        client.post(f"/v1/work-inbox/{notification_ref}/read", headers=headers).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/v1/work-inbox/{notification_ref}/read",
+            headers={"Authorization": "Bearer scoped-recipient", "Idempotency-Key": "new-key"},
+        ).status_code
+        == 404
+    )
+
+
 class _ExactReportResolver:
     def resolve_historical_report_ref(
         self, report_ref: str, *, organization_id: str, now: datetime | None = None
@@ -558,6 +676,30 @@ class _ExactReportResolver:
             return None
         return SimpleNamespace(
             request=SimpleNamespace(zone_snapshot=SimpleNamespace(site_id="site-a")),
+            report=SimpleNamespace(report_digest="sha256:" + "a" * 64),
+        )
+
+
+class _WorkOrderBoundReportResolver:
+    def __init__(self, work_order_id: str, *, work_area_id: str = "area-b") -> None:
+        self.work_order_id = work_order_id
+        self.work_area_id = work_area_id
+
+    def resolve_historical_report_ref(
+        self, report_ref: str, *, organization_id: str, now: datetime | None = None
+    ) -> Any | None:
+        del now
+        if (report_ref, organization_id) != ("report-a", "org-a"):
+            return None
+        return SimpleNamespace(
+            request=SimpleNamespace(
+                current_work_order_id=self.work_order_id,
+                zone_snapshot=SimpleNamespace(
+                    organization_id="org-a",
+                    site_id="site-a",
+                    work_area_id=self.work_area_id,
+                ),
+            ),
             report=SimpleNamespace(report_digest="sha256:" + "a" * 64),
         )
 
@@ -1087,6 +1229,285 @@ def _foreign_org_token(token: str, principal_id: str, organization_id: str) -> P
             device_id=None,
             organization_id=organization_id,
         ),
+    )
+
+
+def test_mapped_report_shares_and_notifications_require_current_core_work_area_scope(
+    tmp_path: Path,
+) -> None:
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="recipient-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.FIELD_OPERATOR,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    order = work_orders.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="restricted report work order",
+        work_area_ids=["area-b"],
+        schedule_id=None,
+        execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
+        actor="operator-a",
+        idempotency_key="report-order",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = _WorkOrderBoundReportResolver(order.work_order_id)
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(
+        inbox,
+        tokens=[
+            _token(
+                "restricted-sender",
+                "sender-a",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+            _token(
+                "area-b-sender",
+                "sender-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-b"}),
+            ),
+            _token("opaque-sender", "operator-a", Role.FIELD_OPERATOR),
+            _token(
+                "restricted-recipient",
+                "recipient-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+        ],
+    )
+    share_path = "/v1/external-relative-volume-reports/report-a/shares"
+    body = {"recipientPrincipalId": "recipient-b"}
+    denied = client.post(
+        share_path,
+        headers={"Authorization": "Bearer restricted-sender", "Idempotency-Key": "denied"},
+        json=body,
+    )
+    assert denied.status_code == 404
+
+    resolver.work_order_id = "missing-core-work-order"
+    missing_proof = client.post(
+        share_path,
+        headers={
+            "Authorization": "Bearer restricted-sender",
+            "Idempotency-Key": "missing-proof",
+        },
+        json=body,
+    )
+    assert missing_proof.status_code == 404
+
+    resolver.work_order_id = order.work_order_id
+    scoped_share = client.post(
+        share_path,
+        headers={"Authorization": "Bearer area-b-sender", "Idempotency-Key": "scoped-share"},
+        json=body,
+    )
+    assert scoped_share.status_code == 201, scoped_share.text
+    assert isinstance(client.app, FastAPI)
+    client.app.state.auth_registry = AuthRegistry(
+        [
+            _token(
+                "area-b-sender",
+                "sender-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+            _token("opaque-sender", "operator-a", Role.FIELD_OPERATOR),
+            _token(
+                "restricted-recipient",
+                "recipient-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+        ]
+    )
+    revoked_retry = client.post(
+        share_path,
+        headers={"Authorization": "Bearer area-b-sender", "Idempotency-Key": "scoped-share"},
+        json=body,
+    )
+    assert revoked_retry.status_code == 404
+
+    resolver.work_order_id = order.work_order_id
+    opaque_share = client.post(
+        share_path,
+        headers={"Authorization": "Bearer opaque-sender", "Idempotency-Key": "opaque"},
+        json=body,
+    )
+    assert opaque_share.status_code == 201, opaque_share.text
+    share_ref = opaque_share.json()["shareRef"]
+    notification_ref = "work-inbox-share-" + share_ref.removeprefix("external-report-share-")
+    scoped_headers = {"Authorization": "Bearer restricted-recipient"}
+    page = client.get("/v1/work-inbox", headers=scoped_headers)
+    assert page.status_code == 200, page.text
+    assert page.json()["items"] == []
+    marked = client.post(
+        f"/v1/work-inbox/{notification_ref}/read",
+        headers={**scoped_headers, "Idempotency-Key": "restricted-read"},
+    )
+    assert marked.status_code == 404
+
+
+def test_report_scope_requires_every_core_work_order_area_on_share_and_read_retry(
+    tmp_path: Path,
+) -> None:
+    from ksi_core.work_inbox import WorkInboxStore
+
+    roster, work_orders = _empty_inbox_dependencies(tmp_path)
+    roster.put_member(
+        organization_id="org-a",
+        principal_id="recipient-b",
+        expected_revision=0,
+        display_name="검토자 B",
+        role_hint=OrganizationWorkRoleHint.FIELD_OPERATOR,
+        status=OrganizationWorkRosterStatus.ACTIVE,
+        actor="admin-a",
+        idempotency_key="member",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    order = work_orders.create_work_order(
+        organization_id="org-a",
+        site_id="site-a",
+        name="multi-area report work order",
+        work_area_ids=["area-a", "area-b"],
+        schedule_id=None,
+        execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
+        actor="operator-a",
+        idempotency_key="multi-area-report-order",
+        now=datetime(2026, 9, 10, tzinfo=UTC),
+    )
+    resolver = _WorkOrderBoundReportResolver(order.work_order_id, work_area_id="area-a")
+    inbox = WorkInboxStore(
+        DurableJournal(tmp_path / "inbox.jsonl"),
+        work_orders=work_orders,
+        roster=roster,
+        report_resolver=resolver,
+    )
+    client = _share_app(
+        inbox,
+        tokens=[
+            _token(
+                "partial-sender",
+                "partial-sender",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+            _token(
+                "all-area-sender",
+                "all-area-sender",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a", "area-b"}),
+            ),
+            _token("opaque-sender", "operator-a", Role.FIELD_OPERATOR),
+            _token(
+                "all-area-recipient",
+                "recipient-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a", "area-b"}),
+            ),
+        ],
+    )
+    share_path = "/v1/external-relative-volume-reports/report-a/shares"
+    body = {"recipientPrincipalId": "recipient-b"}
+    partial_share = client.post(
+        share_path,
+        headers={"Authorization": "Bearer partial-sender", "Idempotency-Key": "partial"},
+        json=body,
+    )
+    assert partial_share.status_code == 404
+
+    authorized_share = client.post(
+        share_path,
+        headers={
+            "Authorization": "Bearer all-area-sender",
+            "Idempotency-Key": "all-areas-share",
+        },
+        json=body,
+    )
+    assert authorized_share.status_code == 201, authorized_share.text
+    share_ref = authorized_share.json()["shareRef"]
+    notification_ref = "work-inbox-share-" + share_ref.removeprefix("external-report-share-")
+    recipient_headers = {"Authorization": "Bearer all-area-recipient"}
+    visible = client.get("/v1/work-inbox", headers=recipient_headers)
+    assert visible.status_code == 200, visible.text
+    assert [item["notificationRef"] for item in visible.json()["items"]] == [notification_ref]
+    read_headers = {
+        "Authorization": "Bearer all-area-recipient",
+        "Idempotency-Key": "read-all-areas",
+    }
+    assert (
+        client.post(f"/v1/work-inbox/{notification_ref}/read", headers=read_headers).status_code
+        == 200
+    )
+
+    assert isinstance(client.app, FastAPI)
+    client.app.state.auth_registry = AuthRegistry(
+        [
+            _token(
+                "all-area-sender",
+                "all-area-sender",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+            _token("opaque-sender", "operator-a", Role.FIELD_OPERATOR),
+            _token(
+                "all-area-recipient",
+                "recipient-b",
+                Role.FIELD_OPERATOR,
+                allowed_site_ids=frozenset({"site-a"}),
+                allowed_work_area_ids=frozenset({"area-a"}),
+            ),
+        ]
+    )
+    revoked_share_retry = client.post(
+        share_path,
+        headers={
+            "Authorization": "Bearer all-area-sender",
+            "Idempotency-Key": "all-areas-share",
+        },
+        json=body,
+    )
+    assert revoked_share_retry.status_code == 404
+    hidden = client.get("/v1/work-inbox", headers={"Authorization": "Bearer all-area-recipient"})
+    assert hidden.status_code == 200, hidden.text
+    assert hidden.json()["items"] == []
+    assert (
+        client.post(f"/v1/work-inbox/{notification_ref}/read", headers=read_headers).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/v1/work-inbox/{notification_ref}/read",
+            headers={
+                "Authorization": "Bearer all-area-recipient",
+                "Idempotency-Key": "new-read-key",
+            },
+        ).status_code
+        == 404
     )
 
 

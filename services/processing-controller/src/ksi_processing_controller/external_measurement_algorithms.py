@@ -303,6 +303,27 @@ def preflight_volume_measurement_memory(
     )
 
 
+def maximum_fixed_profile_zone_grid_cells(
+    *, envelope: ResourceEnvelopeV1, baseline_cell_count: int
+) -> int:
+    """Return the remaining full-zone capacity after retained diff arrays.
+
+    The V2 profile retains three boolean coverage masks in addition to the
+    regular zone selection and delta buffers. The existing conservative V1
+    zone charge is the shared floor; V2 callers apply their own additional
+    witness charge before allocating a full WorkArea window.
+    """
+    available_bytes = (
+        envelope.max_memory_bytes
+        - baseline_cell_count * _DIFF_RESULT_BYTES_PER_PIXEL
+        - _VOLUME_ZONE_WORKING_BYTES
+    )
+    v2_zone_bytes_per_cell = _VOLUME_ZONE_BYTES_PER_CELL + 3
+    if available_bytes < v2_zone_bytes_per_cell:
+        raise MeasurementAlgorithmError("RESOURCE_LIMIT_EXCEEDED")
+    return min(envelope.max_pixels, available_bytes // v2_zone_bytes_per_cell)
+
+
 def preflight_single_volume_measurement_memory(
     *, target: DsmMemoryPreflightV2, envelope: ResourceEnvelopeV1
 ) -> None:

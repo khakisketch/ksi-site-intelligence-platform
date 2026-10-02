@@ -54,6 +54,7 @@ ksi-bim-integration = { workspace = true }
 ksi-equipment-intelligence = { workspace = true }
 ksi-defect-detection = { workspace = true }
 ksi-geo-spatial = { workspace = true }
+ksi-analysis-mcp = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -83,6 +84,9 @@ dev = [
     "ksi-equipment-intelligence",
     # 같은 이유의 leaf 멤버(M1 측지 기반 — EPSG:5186 재투영·KNGeoid 수직기준).
     "ksi-geo-spatial",
+    # Local stdio adapter used only by the explicit Analysis MCP compatibility
+    # tests.  It does not add an AI host configuration or a network listener.
+    "ksi-analysis-mcp",
     # 같은 이유의 leaf 멤버(Phase 4 결함탐지 계약 + adapter, MODEL-P4-001). 실모델
     # 스택(torch/mmcv 등)은 [mixercseg] extra 로 격리 — 모델 보유 환경에서만 설치.
     "ksi-defect-detection",
@@ -144,7 +148,7 @@ exclude = [
 # 경로에 명시해 이 flat import 가 스캔 순서와 무관하게 해석되게 한다
 # (위 exclude 앵커링과 별개 사안 — 앵커링은 "파일이 체크되는가", mypy_path는
 #  "그 파일이 import하는 모듈이 해석되는가").
-mypy_path = ["tools/hil", "tools/edge"]
+mypy_path = ["tools/hil", "tools/edge", "typings"]
 
 # [dfine] extra(torch·transformers·onnx 계열)는 CI 에 설치되지 않는다 — mypy 는
 # 지연 import 도 모듈 해석을 시도해 미설치 시 import-not-found **에러**를 내므로

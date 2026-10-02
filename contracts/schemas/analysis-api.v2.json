@@ -1,0 +1,1691 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "analysis-api.v2.json",
+  "title": "KSI bounded external Analysis API V2",
+  "description": "Compact projections of Core-owned Analysis history; full coverage is a separate byte-range resource.",
+  "$defs": {
+    "AnalysisCoverageRangeV2": {
+      "additionalProperties": false,
+      "description": "Metadata for one inclusive byte range of the separate coverage resource.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "coverageDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Coveragedigest",
+          "type": "string"
+        },
+        "totalLengthBytes": {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "title": "Totallengthbytes",
+          "type": "integer"
+        },
+        "rangeStart": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Rangestart",
+          "type": "integer"
+        },
+        "rangeEnd": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Rangeend",
+          "type": "integer"
+        },
+        "contentLengthBytes": {
+          "maximum": 65536,
+          "minimum": 1,
+          "title": "Contentlengthbytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "analysisId",
+        "coverageDigest",
+        "totalLengthBytes",
+        "rangeStart",
+        "rangeEnd",
+        "contentLengthBytes"
+      ],
+      "title": "AnalysisCoverageRangeV2",
+      "type": "object"
+    },
+    "AnalysisCoverageSummaryV2": {
+      "additionalProperties": false,
+      "description": "Small digest-bound coverage facts; coverage masks are never embedded.",
+      "properties": {
+        "coverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Coveragewitnessdigest",
+          "type": "string"
+        },
+        "rows": {
+          "maximum": 1000000000,
+          "minimum": 1,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "columns": {
+          "maximum": 1000000000,
+          "minimum": 1,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "selectedCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Selectedcellcount",
+          "type": "integer"
+        },
+        "commonValidCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Commonvalidcellcount",
+          "type": "integer"
+        },
+        "unavailableCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Unavailablecellcount",
+          "type": "integer"
+        },
+        "thresholdExcludedCellCount": {
+          "maximum": 1000000000000000,
+          "minimum": 0,
+          "title": "Thresholdexcludedcellcount",
+          "type": "integer"
+        },
+        "cellAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cellaream2",
+          "type": "number"
+        },
+        "selectedAreaM2": {
+          "minimum": 0.0,
+          "title": "Selectedaream2",
+          "type": "number"
+        },
+        "commonValidAreaM2": {
+          "minimum": 0.0,
+          "title": "Commonvalidaream2",
+          "type": "number"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "coverageWitnessDigest",
+        "rows",
+        "columns",
+        "selectedCellCount",
+        "commonValidCellCount",
+        "unavailableCellCount",
+        "thresholdExcludedCellCount",
+        "cellAreaM2",
+        "selectedAreaM2",
+        "commonValidAreaM2",
+        "bounds"
+      ],
+      "title": "AnalysisCoverageSummaryV2",
+      "type": "object"
+    },
+    "AnalysisEvidenceItemV2": {
+      "discriminator": {
+        "mapping": {
+          "AUTHORITY_REFERENCE": "#/$defs/AnalysisAuthorityEvidenceItemV2",
+          "CALCULATION_IDENTITY": "#/$defs/AnalysisCalculationEvidenceItemV2",
+          "CHECKPOINT_FACT": "#/$defs/AnalysisCheckpointEvidenceItemV2",
+          "EPOCH_IDENTITY": "#/$defs/AnalysisEpochEvidenceItemV2",
+          "EVALUATION": "#/$defs/AnalysisEvaluationEvidenceItemV2",
+          "LIMITATION": "#/$defs/AnalysisLimitationEvidenceItemV2",
+          "NUMERIC_RESULT": "#/$defs/AnalysisNumericResultEvidenceItemV2",
+          "SOURCE_REFERENCE": "#/$defs/AnalysisReferenceEvidenceItemV2"
+        },
+        "propertyName": "kind"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AnalysisEpochEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisCalculationEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisEvaluationEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisCheckpointEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisAuthorityEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisReferenceEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisNumericResultEvidenceItemV2"
+        },
+        {
+          "$ref": "#/$defs/AnalysisLimitationEvidenceItemV2"
+        }
+      ]
+    },
+    "AnalysisEvidencePageV2": {
+      "additionalProperties": false,
+      "description": "At most 32 evidence records; each evaluation item can retain all 64 reasons.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "evidenceRevision": {
+          "minimum": 1,
+          "title": "Evidencerevision",
+          "type": "integer"
+        },
+        "evidenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencedigest",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AnalysisEvidenceItemV2"
+          },
+          "maxItems": 32,
+          "title": "Items",
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextcursor"
+        }
+      },
+      "required": [
+        "analysisId",
+        "evidenceRevision",
+        "evidenceDigest",
+        "items"
+      ],
+      "title": "AnalysisEvidencePageV2",
+      "type": "object"
+    },
+    "AnalysisExecutionStateV1": {
+      "description": "Lifecycle of the Core-recorded request, independent from suitability.",
+      "enum": [
+        "NOT_STARTED",
+        "QUEUED",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED"
+      ],
+      "title": "AnalysisExecutionStateV1",
+      "type": "string"
+    },
+    "AnalysisMetricsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "cutM3": {
+          "minimum": 0.0,
+          "title": "Cutm3",
+          "type": "number"
+        },
+        "fillM3": {
+          "minimum": 0.0,
+          "title": "Fillm3",
+          "type": "number"
+        },
+        "netM3": {
+          "title": "Netm3",
+          "type": "number"
+        },
+        "thresholdM": {
+          "minimum": 0.0,
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "uncertaintyM3": {
+          "default": null,
+          "title": "Uncertaintym3",
+          "type": "null"
+        }
+      },
+      "required": [
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM"
+      ],
+      "title": "AnalysisMetricsV1",
+      "type": "object"
+    },
+    "AnalysisSuitabilityStateV1": {
+      "description": "Current AP/NX usability projection; it never certifies field accuracy.",
+      "enum": [
+        "BLOCKED",
+        "REMEDIATION_REQUIRED",
+        "PROVISIONAL_ACCURACY_UNVERIFIED",
+        "EVALUATED",
+        "REASSESSMENT_REQUIRED"
+      ],
+      "title": "AnalysisSuitabilityStateV1",
+      "type": "string"
+    },
+    "AnalysisListItemV2": {
+      "additionalProperties": false,
+      "description": "Small listing; limitation count covers blockers and result codes in analysisHref.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "executionState": {
+          "$ref": "#/$defs/AnalysisExecutionStateV1"
+        },
+        "suitabilityState": {
+          "$ref": "#/$defs/AnalysisSuitabilityStateV1"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "resultId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resultid"
+        },
+        "metrics": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisMetricsV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limitationCount": {
+          "description": "Number of blocker and result limitation codes in the linked detail; the linked detail is authoritative and evidence pages may carry additional facts.",
+          "maximum": 256,
+          "minimum": 0,
+          "title": "Limitationcount",
+          "type": "integer"
+        },
+        "analysisHref": {
+          "maxLength": 2048,
+          "minLength": 5,
+          "pattern": "^/v2/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+          "title": "Analysishref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysisId",
+        "siteId",
+        "workAreaId",
+        "executionState",
+        "suitabilityState",
+        "createdAt",
+        "limitationCount",
+        "analysisHref"
+      ],
+      "title": "AnalysisListItemV2",
+      "type": "object"
+    },
+    "AnalysisListPageV2": {
+      "additionalProperties": false,
+      "properties": {
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AnalysisListItemV2"
+          },
+          "maxItems": 50,
+          "title": "Items",
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextcursor"
+        }
+      },
+      "required": [
+        "siteId",
+        "items"
+      ],
+      "title": "AnalysisListPageV2",
+      "type": "object"
+    },
+    "AnalysisResultSummaryV2": {
+      "additionalProperties": false,
+      "description": "Compact numeric result projection with unchanged provisional semantics.",
+      "properties": {
+        "resultId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Resultid",
+          "type": "string"
+        },
+        "reportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Reportdigest",
+          "type": "string"
+        },
+        "numericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Numericresultidentitydigest",
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        },
+        "metrics": {
+          "$ref": "#/$defs/AnalysisMetricsV1"
+        },
+        "coverage": {
+          "$ref": "#/$defs/AnalysisCoverageSummaryV2"
+        },
+        "limitationCodes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Limitationcodes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "resultId",
+        "reportDigest",
+        "numericResultIdentityDigest",
+        "computedAt",
+        "metrics",
+        "coverage",
+        "limitationCodes"
+      ],
+      "title": "AnalysisResultSummaryV2",
+      "type": "object"
+    },
+    "AnalysisBlockerV1": {
+      "additionalProperties": false,
+      "description": "Typed cause with optional epoch/evidence linkage for a fail-closed view.",
+      "properties": {
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "epoch": {
+          "anyOf": [
+            {
+              "enum": [
+                "BASELINE",
+                "CURRENT"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epoch"
+        },
+        "evidenceRef": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidenceref"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "title": "AnalysisBlockerV1",
+      "type": "object"
+    },
+    "AnalysisObservationSelectorV1": {
+      "additionalProperties": false,
+      "description": "The only caller-controlled epoch reference accepted by analysis create.",
+      "properties": {
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "workOrderId",
+        "submissionRef",
+        "revision"
+      ],
+      "title": "AnalysisObservationSelectorV1",
+      "type": "object"
+    },
+    "AnalysisViewV2": {
+      "additionalProperties": false,
+      "description": "Bounded detail projection; evidence and full coverage are separate resources.",
+      "properties": {
+        "analysisId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Analysisid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "baseline": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "current": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "executionState": {
+          "$ref": "#/$defs/AnalysisExecutionStateV1"
+        },
+        "suitabilityState": {
+          "$ref": "#/$defs/AnalysisSuitabilityStateV1"
+        },
+        "blockers": {
+          "items": {
+            "$ref": "#/$defs/AnalysisBlockerV1"
+          },
+          "maxItems": 128,
+          "title": "Blockers",
+          "type": "array"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnalysisResultSummaryV2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidenceRevision": {
+          "minimum": 1,
+          "title": "Evidencerevision",
+          "type": "integer"
+        },
+        "evidenceDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencedigest",
+          "type": "string"
+        },
+        "evidenceHref": {
+          "maxLength": 2048,
+          "minLength": 5,
+          "pattern": "^/v2/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+          "title": "Evidencehref",
+          "type": "string"
+        },
+        "coverageHref": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/v2/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coveragehref"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "title": "Createdat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "analysisId",
+        "siteId",
+        "workAreaId",
+        "baseline",
+        "current",
+        "executionState",
+        "suitabilityState",
+        "blockers",
+        "evidenceRevision",
+        "evidenceDigest",
+        "evidenceHref",
+        "createdAt"
+      ],
+      "title": "AnalysisViewV2",
+      "type": "object"
+    },
+    "AnalysisAuthorityEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "One AP/NX authority reference without an invented fetch URL.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "AUTHORITY_REFERENCE",
+          "title": "Kind",
+          "type": "string"
+        },
+        "referenceName": {
+          "enum": [
+            "assessmentRequestId",
+            "admissionId",
+            "admissionDigest",
+            "calculationIdentityDigest",
+            "calculationRequestId",
+            "authorizationId",
+            "reportDigest",
+            "failureDigest"
+          ],
+          "title": "Referencename",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcedigest"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "referenceName"
+      ],
+      "title": "AnalysisAuthorityEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisCalculationEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "Sealed AP calculation, policy, and runtime identity facts.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "CALCULATION_IDENTITY",
+          "title": "Kind",
+          "type": "string"
+        },
+        "calculation": {
+          "$ref": "#/$defs/AnalysisCalculationIdentityEvidenceV1"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "calculation"
+      ],
+      "title": "AnalysisCalculationEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisCalculationIdentityEvidenceV1": {
+      "additionalProperties": false,
+      "description": "Non-numeric sealed calculation identity facts exposed by evidence GET.",
+      "properties": {
+        "calculationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Calculationid",
+          "type": "string"
+        },
+        "workAreaDefinitionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workareadefinitiondigest",
+          "type": "string"
+        },
+        "baselineInputDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Baselineinputdigest",
+          "type": "string"
+        },
+        "currentInputDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Currentinputdigest",
+          "type": "string"
+        },
+        "policy": {
+          "$ref": "#/$defs/AnalysisPolicyEvidenceV1"
+        },
+        "runtime": {
+          "$ref": "#/$defs/AnalysisRuntimeEvidenceV1"
+        }
+      },
+      "required": [
+        "calculationId",
+        "workAreaDefinitionDigest",
+        "baselineInputDigest",
+        "currentInputDigest",
+        "policy",
+        "runtime"
+      ],
+      "title": "AnalysisCalculationIdentityEvidenceV1",
+      "type": "object"
+    },
+    "AnalysisCheckpointEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "One exact terminal checkpoint fact paired with its retained context.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "CHECKPOINT_FACT",
+          "title": "Kind",
+          "type": "string"
+        },
+        "evaluationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Evaluationid",
+          "type": "string"
+        },
+        "epoch": {
+          "enum": [
+            "BASELINE",
+            "CURRENT"
+          ],
+          "title": "Epoch",
+          "type": "string"
+        },
+        "evaluationRevision": {
+          "minimum": 1,
+          "title": "Evaluationrevision",
+          "type": "integer"
+        },
+        "evidenceRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Evidenceref",
+          "type": "string"
+        },
+        "contextId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Contextid",
+          "type": "string"
+        },
+        "contextDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Contextdigest",
+          "type": "string"
+        },
+        "evidenceManifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencemanifestdigest",
+          "type": "string"
+        },
+        "evidenceRecordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Evidencerecordid",
+          "type": "string"
+        },
+        "evidenceRecordDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evidencerecorddigest",
+          "type": "string"
+        },
+        "coreVerdict": {
+          "enum": [
+            "VALIDATED",
+            "REJECTED"
+          ],
+          "title": "Coreverdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "evaluationId",
+        "epoch",
+        "evaluationRevision",
+        "evidenceRef",
+        "contextId",
+        "contextDigest",
+        "evidenceManifestDigest",
+        "evidenceRecordId",
+        "evidenceRecordDigest",
+        "coreVerdict"
+      ],
+      "title": "AnalysisCheckpointEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisEpochEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "Self-contained CRS, vertical, transform, and inspection-reference facts.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "EPOCH_IDENTITY",
+          "title": "Kind",
+          "type": "string"
+        },
+        "epoch": {
+          "enum": [
+            "BASELINE",
+            "CURRENT"
+          ],
+          "title": "Epoch",
+          "type": "string"
+        },
+        "selector": {
+          "$ref": "#/$defs/AnalysisObservationSelectorV1"
+        },
+        "observationEpochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "verticalReferenceIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Verticalreferenceidentifier",
+          "type": "string"
+        },
+        "verticalReferenceBasis": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Verticalreferencebasis",
+          "type": "string"
+        },
+        "verticalUnit": {
+          "const": "metre",
+          "title": "Verticalunit",
+          "type": "string"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "transformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Transformdigest",
+          "type": "string"
+        },
+        "inspectionReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "inspectionReportRecordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Inspectionreportrecordid",
+          "type": "string"
+        },
+        "inputDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inputdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "epoch",
+        "selector",
+        "observationEpochId",
+        "artifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "verticalReferenceIdentifier",
+        "verticalReferenceBasis",
+        "verticalUnit",
+        "transform",
+        "transformDigest",
+        "inspectionReportDigest",
+        "inspectionReportRecordId",
+        "inputDigest"
+      ],
+      "title": "AnalysisEpochEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisEvaluationEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "One immutable AP evaluation header and every recorded reason code.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "EVALUATION",
+          "title": "Kind",
+          "type": "string"
+        },
+        "evaluationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Evaluationid",
+          "type": "string"
+        },
+        "epoch": {
+          "enum": [
+            "BASELINE",
+            "CURRENT"
+          ],
+          "title": "Epoch",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "evaluationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Evaluationdigest",
+          "type": "string"
+        },
+        "outcome": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "UNASSESSED",
+            "UNAVAILABLE"
+          ],
+          "title": "Outcome",
+          "type": "string"
+        },
+        "reasonCodes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Reasoncodes",
+          "type": "array"
+        },
+        "assessedAt": {
+          "format": "date-time",
+          "title": "Assessedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "evaluationId",
+        "epoch",
+        "revision",
+        "evaluationDigest",
+        "outcome",
+        "reasonCodes",
+        "assessedAt"
+      ],
+      "title": "AnalysisEvaluationEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisLimitationEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "One blocker, result limitation, or other explicit reason.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "LIMITATION",
+          "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "BLOCKER",
+            "RESULT"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "code": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "epoch": {
+          "anyOf": [
+            {
+              "enum": [
+                "BASELINE",
+                "CURRENT"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Epoch"
+        },
+        "evidenceRef": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidenceref"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "source",
+        "code"
+      ],
+      "title": "AnalysisLimitationEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisNumericResultEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "Identity of the immutable numeric report, without its coverage masks.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "NUMERIC_RESULT",
+          "title": "Kind",
+          "type": "string"
+        },
+        "resultId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Resultid",
+          "type": "string"
+        },
+        "reportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Reportdigest",
+          "type": "string"
+        },
+        "numericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Numericresultidentitydigest",
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "resultId",
+        "reportDigest",
+        "numericResultIdentityDigest",
+        "computedAt"
+      ],
+      "title": "AnalysisNumericResultEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisPolicyEvidenceV1": {
+      "additionalProperties": false,
+      "description": "Sealed fixed-profile facts used by the resolved calculation identity.",
+      "properties": {
+        "policyId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Policyid",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "profileId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Profileid",
+          "type": "string"
+        },
+        "profileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Profiledigest",
+          "type": "string"
+        },
+        "algorithmDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Algorithmdigest",
+          "type": "string"
+        },
+        "configDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Configdigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policyId",
+        "version",
+        "profileId",
+        "profileDigest",
+        "algorithmDigest",
+        "configDigest",
+        "policyDigest"
+      ],
+      "title": "AnalysisPolicyEvidenceV1",
+      "type": "object"
+    },
+    "AnalysisReferenceEvidenceItemV2": {
+      "additionalProperties": false,
+      "description": "One retained source reference; href is present only for a scoped resolver.",
+      "properties": {
+        "recordId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Recordid",
+          "type": "string"
+        },
+        "digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Digest",
+          "type": "string"
+        },
+        "href": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 5,
+              "pattern": "^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\\-]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Href"
+        },
+        "limitationCodes": {
+          "default": [],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Limitationcodes",
+          "type": "array"
+        },
+        "kind": {
+          "const": "SOURCE_REFERENCE",
+          "title": "Kind",
+          "type": "string"
+        },
+        "referenceKind": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Referencekind",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sourcedigest"
+        }
+      },
+      "required": [
+        "recordId",
+        "digest",
+        "kind",
+        "referenceKind"
+      ],
+      "title": "AnalysisReferenceEvidenceItemV2",
+      "type": "object"
+    },
+    "AnalysisRuntimeEvidenceV1": {
+      "additionalProperties": false,
+      "description": "Core-selected local runtime facts, not a signed-runtime claim.",
+      "properties": {
+        "workerExecutableDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerexecutabledigest",
+          "type": "string"
+        },
+        "workerBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerbuilddigest",
+          "type": "string"
+        },
+        "runtimeImageVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimageversion",
+          "type": "string"
+        },
+        "runtimeImageOciDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimeimageocidigest",
+          "type": "string"
+        },
+        "dependencyLockDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependencylockdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerExecutableDigest",
+        "workerBuildDigest",
+        "runtimeImageVersion",
+        "runtimeImageOciDigest",
+        "dependencyLockDigest"
+      ],
+      "title": "AnalysisRuntimeEvidenceV1",
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/AnalysisCoverageRangeV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisCoverageSummaryV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisEvidenceItemV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisEvidencePageV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisListItemV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisListPageV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisResultSummaryV2"
+    },
+    {
+      "$ref": "#/$defs/AnalysisViewV2"
+    }
+  ]
+}

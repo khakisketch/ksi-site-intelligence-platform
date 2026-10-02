@@ -13,12 +13,13 @@ import time
 import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import jwt
 
-from ksi_core.foundation.identifiers import is_path_safe_identifier
-from ksi_core.identity.auth import Principal, PrincipalKind, Role
+from ksi_core.identity.auth import Principal
+from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 
 JwksFetcher = Callable[[], dict[str, Any]]
 
@@ -31,10 +32,15 @@ class OidcVerifierConfig:
     allowed_algorithms: tuple[str, ...] = ("RS256",)
     jwks_ttl_seconds: int = 300
     http_timeout_seconds: float = 5.0
+    subject_registry_file: Path | None = None
 
     def __post_init__(self) -> None:
         if not self.issuer or not self.audience or not self.jwks_url:
             raise ValueError("OIDC issuer, audience, jwks_url은 비어 있을 수 없다")
+        if self.subject_registry_file is not None and (
+            not self.subject_registry_file.is_absolute() or ".." in self.subject_registry_file.parts
+        ):
+            raise ValueError("OIDC subject registry file must be absolute and normalized")
         if not self.allowed_algorithms or any(not alg for alg in self.allowed_algorithms):
             raise ValueError("OIDC allowed_algorithms는 비어 있지 않은 문자열 집합이어야 한다")
         if self.jwks_ttl_seconds <= 0:
@@ -44,16 +50,18 @@ class OidcVerifierConfig:
 
 
 class OidcJwtVerifier:
-    """서명·issuer·audience·시간·KSI claims를 모두 검증해 OPERATOR를 만든다."""
+    """서명된 issuer-subject mapping으로 OPERATOR를 resolve한다."""
 
     def __init__(
         self,
         config: OidcVerifierConfig,
         *,
+        subject_registry: OidcSubjectRegistry,
         fetch_jwks: JwksFetcher | None = None,
         monotonic: Callable[[], float] = time.monotonic,
     ) -> None:
         self._config = config
+        self._subject_registry = subject_registry
         self._fetch_jwks = fetch_jwks or self._fetch_remote_jwks
         self._monotonic = monotonic
         self._lock = threading.Lock()
@@ -87,34 +95,14 @@ class OidcJwtVerifier:
                         "nbf",
                         "iss",
                         "aud",
-                        "ksi_principal_id",
-                        "ksi_organization_id",
-                        "ksi_role",
+                        "sub",
                     ]
                 },
             )
-            principal_id = claims["ksi_principal_id"]
-            organization_id = claims["ksi_organization_id"]
-            role_raw = claims["ksi_role"]
-            if not isinstance(principal_id, str) or not is_path_safe_identifier(principal_id):
+            subject = claims["sub"]
+            if not isinstance(subject, str) or not subject:
                 return None
-            if not isinstance(organization_id, str) or not is_path_safe_identifier(
-                organization_id
-            ):
-                return None
-            if not isinstance(role_raw, str):
-                return None
-            try:
-                role = Role(role_raw)
-            except ValueError:
-                return None
-            return Principal(
-                principal_id=principal_id,
-                organization_id=organization_id,
-                kind=PrincipalKind.OPERATOR,
-                role=role,
-                device_id=None,
-            )
+            return self._subject_registry.resolve(self._config.issuer, subject)
         except (jwt.PyJWTError, KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
             return None
 

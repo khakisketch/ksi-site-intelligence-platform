@@ -64,6 +64,21 @@ _REGRESSION_POLYGON_DEPTH = "폴리곤 중첩 깊이 상한 회귀 있음"
 _REGRESSION_CRS_WHITELIST = "좌표계 화이트리스트 거부 회귀 있음"
 
 REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
+    (
+        "POST",
+        "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests",
+    ): "test_spatial_data_write_routes_receive_hostile_json_directly: six forms + strict JSON",
+    (
+        "POST",
+        "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests/{request_id}/cancel",
+    ): "test_spatial_data_write_routes_receive_hostile_json_directly: six forms + empty body",
+    **{
+        (
+            "POST",
+            "/v1/internal/spatial-data-jobs/{job_id}/" + tail,
+        ): "test_spatial_data_write_routes_receive_hostile_json_directly: six forms + fence"
+        for tail in ("lease", "renew", "output-upload", "complete", "failure")
+    },
     ("POST", "/v1/capability-runtime/observations"): _FIRED_DIRECTLY,
     ("POST", "/v1/capability-runtime/preflight"): _FIRED_DIRECTLY,
     (
@@ -175,6 +190,10 @@ REVIEWED_WRITE_ROUTES: dict[tuple[str, str], str] = {
     (
         "POST",
         "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
+    ): _FIRED_DIRECTLY,
+    (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2",
     ): _FIRED_DIRECTLY,
     (
         "POST",
@@ -330,6 +349,20 @@ def _mounted_write_routes() -> set[tuple[str, str]]:
                 mission_signing_key_id="gate-key",
             )
             spec = app.openapi()
+            from ksi_core.app import create_app
+            from test_spatial_data_assembly import maximal_data_arguments
+
+            data_dir = Path(tmp) / "data-lane"
+            data_dir.mkdir()
+            spec["paths"].update(
+                {
+                    path: item
+                    for path, item in create_app(**maximal_data_arguments(data_dir))
+                    .openapi()["paths"]
+                    .items()
+                    if "spatial-data" in path
+                }
+            )
         finally:
             for item in opened:
                 item.close()
@@ -373,3 +406,27 @@ def test_every_entry_states_its_basis() -> None:
     """근거 없는 등재는 목록을 통과 도장으로 만든다."""
     empty = sorted(route for route, basis in REVIEWED_WRITE_ROUTES.items() if not basis.strip())
     assert not empty, f"근거가 비어 있는 등재: {empty}"
+
+
+def test_spatial_data_write_routes_receive_hostile_json_directly(tmp_path: Path) -> None:
+    """Every new handler must reject the six hostile forms without mutation or a raw 500."""
+    from fastapi.testclient import TestClient
+    from test_spatial_data_api import AUTH, base
+    from test_spatial_data_worker_api import INTERNAL, WORKER, worker_mounted
+    from test_validation_error_rendering import _HOSTILE_BODIES
+
+    _, graph, _ = worker_mounted(tmp_path)
+    client = TestClient(graph.app, raise_server_exceptions=False)
+    paths = [(base(graph), AUTH), (base(graph) + "/" + graph.job_id + "/cancel", AUTH)]
+    paths.extend(
+        (INTERNAL + "/" + graph.job_id + "/" + tail, WORKER)
+        for tail in ("lease", "renew", "output-upload", "complete", "failure")
+    )
+    for path, headers in paths:
+        for label, raw in _HOSTILE_BODIES:
+            response = client.post(
+                path,
+                content=raw.encode("utf-8"),
+                headers={**headers, "Content-Type": "application/json"},
+            )
+            assert response.status_code == 422, (path, label, response.text)

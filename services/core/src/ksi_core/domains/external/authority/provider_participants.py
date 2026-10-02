@@ -55,6 +55,21 @@ class _CatalogPort(ExternalQuantitativeCatalogAuthorityPort):
             return None
         return record
 
+    def resolve_historical_configuration(
+        self,
+        authority_record_digest: str,
+        *,
+        catalog_body_digest: str,
+        organization_id: str,
+        administration_actor_id: str,
+    ) -> bool:
+        return self._provider.catalog_configuration_was_authorized(
+            authority_record_digest=authority_record_digest,
+            catalog_body_digest=catalog_body_digest,
+            organization_id=organization_id,
+            administration_actor_id=administration_actor_id,
+        )
+
 
 class _PolicyPort(PolicyAuthorityPort):
     def __init__(self, provider: ExternalAuthorityProvider) -> None:

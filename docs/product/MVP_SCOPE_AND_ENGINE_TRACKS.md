@@ -1,15 +1,23 @@
-# MVP Scope and Engine Tracks (Subordinate to ADR-KSI-036)
+# MVP Scope and Engine Tracks (Subordinate to ADR-KSI-036/037/038)
+
+> 2026-09-30 scope amendment: [ADR-KSI-038](../architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md)
+> and [SDP-20260930](../superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md) own the
+> expanded platform direction and staged roadmap. Earthwork is its first analysis case; this
+> document's engine/analysis boundaries do not exhaust spatial-data delivery. Existing detailed
+> calculation and historical evidence remain scoped as written below.
 
 > Status: ACTIVE clarification for MVP scope, explicitly subordinate to
 > [ADR-KSI-036](../architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md)
-> (ACCEPTED 2026-09-06). This file changes no frozen product authority:
+> (ACCEPTED 2026-09-06) and [ADR-KSI-037](../architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md)
+> (ACCEPTED 2026-09-20). This file changes no frozen product authority:
 > `docs/product/PRODUCT_CONSTITUTION.md`,
 > `docs/product/FINAL_DECISION_LEDGER_v1.0.md`,
 > `docs/product/MASTER_PRD_v3.0.md`, and
 > `docs/product/DOMAIN_INVARIANTS.md` remain the product authority in the
 > order fixed by `docs/00_READ_FIRST.md`. Routing is owned by
 > `REPOSITORY_STRUCTURE.md` and `docs/DOCUMENT_STATUS.md`; current phase
-> state is owned by `docs/goals/PHASE_REGISTRY.yaml` and `.ksi/`.
+> state is owned by `docs/goals/PHASE_REGISTRY.yaml` and
+> `docs/superpowers/product-state.md` with its named plan ledger.
 > Rank: this file sits **below** the frozen product authorities above and
 > **below** accepted ADRs and acceptance criteria (`docs/00_READ_FIRST.md`
 > items 5-6), including ADR-KSI-036 and
@@ -19,8 +27,10 @@
 > and the quantitative specification
 > `docs/superpowers/specs/2026-09-09-external-quantitative-authority-v1.md`
 > (implementation history per `docs/DOCUMENT_STATUS.md`, not items 5-6).
-> Where this file conflicts with any of them, the frozen document, ADR, or
-> acceptance/specification wins. Indexing/routing of this file in
+> Where this file conflicts with any frozen product authority or accepted ADR, that authority wins;
+> in particular, the named historical release plan cannot restore a pre-ADR-KSI-037 first-MVP
+> priority. The quantitative specification still controls its narrow existing execution gates.
+> Indexing/routing of this file in
 > `docs/DOCUMENT_STATUS.md` or `docs/goals/PHASE_REGISTRY.yaml` is owned
 > by the Primary, not by this edit.
 > Any pre-ADR-036 text describing KSI-server reconstruction as the
@@ -31,16 +41,22 @@
 
 ## 1. MVP range (what is in, what is not)
 
-- MVP is the civil-operations closed loop only: repeat observation →
-  capture-quality supplement → two-epoch change/progress/relative quantity →
-  evidence-grounded query → human-approved re-observation.
-- First paid job is progress/relative-quantity management on repeated
-  observation (ADR-KSI-022). Contract settlement and survey-grade accuracy
-  are out of MVP claims.
+- The first analysis use-case MVP is the API-first weekly, per-WorkArea two-epoch observed-terrain
+  volume-change review (ADR-KSI-037). This document's earlier civil-operations closed-loop detail
+  is long-term acquisition/workflow context, not a requirement for automatic capture or progress
+  determination.
+- ADR-KSI-036 D6 names RTK-equipped Matrice 4D capture and customer-controlled
+  DJI Terra on the field PC as the initial reconstruction **reference workflow**.
+  This is neither a KSI provider integration nor a license/export/accuracy or field-acceptance
+  decision; the customer still selects, licenses, runs, and exports its own tool.
+- ADR-KSI-022's first-paid-job progress/relative-quantity wording is historical
+  acquisition/workflow context. ADR-KSI-037 controls the first analysis use-case MVP;
+  contract settlement and survey-grade accuracy are out of MVP claims.
 - Surveying (licensed survey acceptance, cadastral/procurement use) is a
-  **separated** concern. MVP produces operations-relative quantities plus an
-  optional independent-checkpoint error bound as operations evidence; it does
-  not approve survey-grade or settlement acceptance.
+  **separated** concern. MVP produces operations-relative quantities; independent
+  checkpoint metrics, when available, remain separate evaluation evidence.
+  The V2 volume result has `uncertaintyM3 = null` and does not approve
+  survey-grade or settlement acceptance.
 - Security posture for MVP in frozen terms only: vendor-cloud execution
   without site egress consent is refused at creation (`EGRESS_NOT_ALLOWED`,
   INV-050), and there is no remote deployment/release authorization
@@ -129,8 +145,10 @@
   `services/core/src/ksi_core/processing_jobs.py` refuses it as
   `UNKNOWN_PROCESSING_PROFILE`). This file issues no new normative profile
   ID. Terra and Pix4D names, where they appear in comparison research, are
-  research labels only, not issuable profile IDs; no Terra or Pix4D job can
-  be issued until a registry entry plus ADR exist.
+  research labels only, not issuable profile IDs; no **KSI-managed** Terra or Pix4D
+  ProcessingJob can be issued until a registry entry plus ADR exist. This does not prevent a
+  customer from running its own reconstruction software and registering derived exports under
+  ADR-KSI-036.
 - No vendor-cloud run operated by KSI is claimed here as a first-release or
   evaluation route. Any future vendor-cloud consideration stays bounded by
   the existing creation-time gate (refused without
@@ -142,10 +160,11 @@
 - Trial/commercial split is recorded, not executed: Terra trial runs and
   commercial runs would be recorded separately; trial evidence never backs a
   commercial accuracy or quantity claim. This file authorizes no trial run.
-- DJI Terra remains separately licensed Windows/NVIDIA software usable only
-  through a provider adapter; this note does not change the
-  `services/core/` ← `services/processing-controller/` ← `packages/`
-  ownership boundary.
+- DJI Terra remains separately licensed Windows/NVIDIA software. A future,
+  separately authorized **KSI-managed** execution or evaluation route would use a provider
+  adapter and retain the listed license/research gates. The ADR-KSI-036 D6 customer-operated
+  desktop reconstruction/export path needs no KSI execution adapter. This note does not change
+  the `services/core/` ← `services/processing-controller/` ← `packages/` ownership boundary.
 
 ## 7. Point-cloud principle (SSOT; managed scope)
 

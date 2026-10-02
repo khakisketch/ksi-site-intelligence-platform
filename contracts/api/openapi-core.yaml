@@ -5632,6 +5632,31 @@ paths:
         '404': { description: scoped WorkOrder not found }
         '401': { description: authentication failed }
         '403': { description: SITES_READ required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2:
+    post:
+      summary: Register a DSM-required customer-owned reconstruction declaration
+      description: >-
+        SITES_WRITE and human OPERATOR authority required. The V2 wire parser verifies the
+        complete declaration and canonical digest. Registration records a customer assertion;
+        it does not observe bytes, establish accuracy, validate reconstruction quality, or grant
+        quantitative eligibility. Existing revision GET, upload-grant, and seal operations use
+        the returned submissionRef.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-reconstruction-submission.v2.json' }
+      responses:
+        '201': { description: REGISTERED or identical retry, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' } } } }
+        '404': { description: scoped WorkOrder not found }
+        '409': { description: conflicting revision or closed workflow }
+        '422': { description: incomplete, invalid, or digest-mismatched declaration }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE or human authority required }
   /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}:
     get:
       summary: Read one scoped external reconstruction revision
@@ -7323,6 +7348,946 @@ paths:
         '409': { description: Idempotency conflict }
         '422': { description: Invalid body or header }
         '503': { description: Report source unavailable or durable journal unavailable }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets:
+    get:
+      tags: [spatial-asset-catalog]
+      summary: List Site WorkArea spatial artifact metadata
+      description: >-
+        Read-only metadata projection of customer-declared and Core-observed external artifacts.
+        Only WorkOrders bound to exactly this WorkArea are included because ingress has no
+        per-artifact WorkArea mapping. Register one WorkOrder per WorkArea to catalog its artifacts.
+        This route does not grant file bytes or analysis eligibility.
+      operationId: list_assets_v1_sites__site_id__work_areas__work_area_id__spatial_assets_get
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: work_area_id, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 1024 }, description: Scope-bound navigation only; authorization is rechecked on every request. }
+      responses:
+        '200':
+          description: Bounded current page; declaration, observation and inspection facts are separate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpatialAssetCatalogPageV1' }
+        '400': { description: Invalid or out-of-scope continuation cursor }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller grant }
+        '422': { description: Invalid pagination bounds }
+        '503': { description: A projected response would exceed the structured response budget }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}:
+    get:
+      tags: [spatial-asset-catalog]
+      summary: Get one exact spatial artifact metadata view
+      description: Uses the same Core projection and current scope checks as catalog listing.
+      operationId: get_asset_v1_sites__site_id__work_areas__work_area_id__spatial_assets__asset_ref__get
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: work_area_id, in: path, required: true, schema: { type: string } }
+        - { name: asset_ref, in: path, required: true, schema: { type: string, pattern: '^ksa-v1-[0-9a-f]{64}$' } }
+      responses:
+        '200':
+          description: Exact asset metadata; no object key, signed URL, byte grant, or analysis decision.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SpatialAssetCatalogDetailV1' }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Site, WorkArea or asset is absent or outside the caller grant }
+        '503': { description: A projected response would exceed the structured response budget }
+  /v1/sites/{site_id}/analysis-observations:
+    get:
+      tags:
+      - external-analysis
+      summary: Observation Options
+      operationId: observation_options_v1_sites__site_id__analysis_observations_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      responses:
+        '200':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisObservationOptionsV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/work-areas/{work_area_id}/analyses:
+    post:
+      tags:
+      - external-analysis
+      summary: Create Analysis
+      operationId: create_analysis_v1_sites__site_id__work_areas__work_area_id__analyses_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: work_area_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Work Area Id
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 255
+          pattern: '.*\S.*'
+        description: Retained only as a hash with the frozen selector fingerprint.
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAnalysisRequestV1'
+      responses:
+        '202':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/analyses:
+    get:
+      tags:
+      - external-analysis
+      summary: List Analyses
+      operationId: list_analyses_v1_sites__site_id__analyses_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      responses:
+        '200':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisListV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/analyses/{analysis_id}:
+    get:
+      tags:
+      - external-analysis
+      summary: Get Analysis
+      operationId: get_analysis_v1_sites__site_id__analyses__analysis_id__get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      responses:
+        '200':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/analyses/{analysis_id}/result:
+    get:
+      tags:
+      - external-analysis
+      summary: Get Result
+      operationId: get_result_v1_sites__site_id__analyses__analysis_id__result_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      responses:
+        '200':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/analyses/{analysis_id}/evidence:
+    get:
+      tags:
+      - external-analysis
+      summary: Get Evidence
+      operationId: get_evidence_v1_sites__site_id__analyses__analysis_id__evidence_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: site_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Site Id
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: "Compatibility hint only; it does not identify the caller or grant or skip consent. Core derives external AI access from the authenticated ANALYSIS_MCP_CLIENT identity and current Site consent."
+      responses:
+        '200':
+          description: Successful Response
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: "Present only after Core authenticates ANALYSIS_MCP_CLIENT and confirms current consent for the scoped Site."
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisEvidenceViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v2/sites/{site_id}/work-areas/{work_area_id}/analyses:
+    post:
+      tags: [external-analysis]
+      summary: Create or resume a bounded Analysis projection
+      description: >-
+        Reuses the exact V1 selector request and durable AP/NX authority. A current signed
+        AnalysisActivationV1 is required for create and idempotent resume. The response is the
+        compact V2 projection and never embeds coverage masks.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: path, name: work_area_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAnalysisRequestV1' }
+      responses:
+        '202':
+          description: Created or resumed bounded immutable Analysis projection.
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisViewV2' }
+        '400': { description: Missing idempotency key }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied or current Site consent denied }
+        '404': { description: Site, WorkArea, or selected input not found within current grants }
+        '409': { description: Idempotency key conflicts with another immutable request }
+        '503': { description: AnalysisActivationV1 is absent or expired }
+  /v2/sites/{site_id}/analyses:
+    get:
+      tags: [external-analysis]
+      summary: List compact Analysis projections
+      description: >-
+        Pages are ordered by immutable (createdAt, analysisId) keyset; each page is separately
+        authorized and contains at most 50 items. limitationCount counts blockers plus result
+        limitation codes in the linked AnalysisViewV2; analysisHref resolves the complete list.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+      - { in: query, name: cursor, required: false, schema: { type: string, minLength: 1, maxLength: 512 } }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      responses:
+        '200':
+          description: One bounded keyset page; nextCursor continues without truncating records.
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisListPageV2' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Site not found within current grants }
+  /v2/sites/{site_id}/analyses/{analysis_id}:
+    get:
+      tags: [external-analysis]
+      summary: Get compact Analysis detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      responses:
+        '200':
+          description: Compact view with metrics, limitations, evidence digest, and scoped resource links; no coverage masks.
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisViewV2' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Analysis not found within current grants }
+  /v2/sites/{site_id}/analyses/{analysis_id}/evidence:
+    get:
+      tags: [external-analysis]
+      summary: Get a digest-bound Analysis evidence page
+      description: >-
+        The opaque cursor is bound to analysisId, evidenceRevision, and evidenceDigest. If the
+        evidence revision changes, pagination restarts rather than silently skipping records. A
+        page has at most 32 records; one V1 evaluation evidence record carries up to 64 reason codes.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 32, default: 32 } }
+      - { in: query, name: cursor, required: false, schema: { type: string, minLength: 1, maxLength: 512, description: Bound to analysis ID, evidence revision, and evidence digest. } }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      responses:
+        '200':
+          description: Exact references and limitations; cursor continuation never silently omits evidence.
+          headers:
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisEvidencePageV2' }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Analysis not found within current grants }
+        '409': { description: Evidence revision changed; restart pagination }
+  /v2/sites/{site_id}/analyses/{analysis_id}/coverage:
+    get:
+      tags: [external-analysis]
+      summary: Read one bounded coverage byte range
+      description: >-
+        The response is the canonical coverage byte resource. Header metadata corresponds to
+        Coverage range metadata: Content-Range carries rangeStart, rangeEnd, and totalLengthBytes;
+        Content-Length carries contentLengthBytes; X-KSI-Coverage-Digest carries coverageDigest.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      - name: Range
+        in: header
+        required: true
+        description: Exactly one byte range, inclusive, no longer than 65536 bytes.
+        schema: { type: string, pattern: '^bytes=[0-9]+-[0-9]+$' }
+      - name: X-KSI-Access-Purpose
+        in: header
+        required: false
+        schema: { type: string, enum: [EXTERNAL_AI] }
+        description: Compatibility hint only; identity and current Site consent determine MCP access.
+      responses:
+        '206':
+          description: Canonical coverage bytes for the requested range (at most 64 KiB).
+          headers:
+            Content-Length:
+              required: true
+              schema: { type: integer, minimum: 1, maximum: 65536 }
+            Content-Range:
+              required: true
+              schema: { type: string }
+              description: Inclusive returned byte range and complete resource length.
+            X-KSI-Coverage-Digest:
+              required: true
+              schema: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+            X-KSI-Coverage-Total-Length:
+              required: true
+              schema: { type: integer, minimum: 1 }
+            X-KSI-External-AI-Egress:
+              required: false
+              schema: { type: string, const: ALLOWED }
+              description: Present only for ANALYSIS_MCP_CLIENT after current Site consent passes.
+          content:
+            application/vnd.ksi.analysis-coverage+json:
+              schema: { type: string, format: binary }
+        '401': { description: Authentication failed }
+        '403': { description: Permission denied }
+        '404': { description: Coverage resource not found within current grants }
+        '416': { description: Missing, multi-range, or unsatisfiable range }
+  /v1/internal/analysis-jobs:
+    get:
+      tags:
+      - external-analysis-worker
+      summary: List Jobs
+      operationId: list_jobs_v1_internal_analysis_jobs_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          maximum: 200
+          minimum: 1
+          default: 50
+          title: Limit
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerPendingListV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/analysis-jobs/{analysis_id}:lease:
+    post:
+      tags:
+      - external-analysis-worker
+      summary: Lease Job
+      operationId: lease_job_v1_internal_analysis_jobs__analysis_id__lease_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisWorkerLeaseRequestV1'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerLeaseViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/analysis-jobs/{analysis_id}/input:
+    get:
+      tags:
+      - external-analysis-worker
+      summary: Job Input
+      operationId: job_input_v1_internal_analysis_jobs__analysis_id__input_get
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      - name: X-Analysis-Attempt-Digest
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      - name: X-Analysis-Worker-Instance-Id
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerInputResponseV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/analysis-jobs/{analysis_id}:renew:
+    post:
+      tags:
+      - external-analysis-worker
+      summary: Renew Job
+      operationId: renew_job_v1_internal_analysis_jobs__analysis_id__renew_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisWorkerRenewRequestV1'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerLeaseViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/analysis-jobs/{analysis_id}:report:
+    post:
+      tags:
+      - external-analysis-worker
+      summary: Report Job
+      operationId: report_job_v1_internal_analysis_jobs__analysis_id__report_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisWorkerReportRequestV1'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerMutationViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/internal/analysis-jobs/{analysis_id}:failure:
+    post:
+      tags:
+      - external-analysis-worker
+      summary: Fail Job
+      operationId: fail_job_v1_internal_analysis_jobs__analysis_id__failure_post
+      security:
+      - bearerAuth: []
+      parameters:
+      - name: analysis_id
+        in: path
+        required: true
+        schema:
+          type: string
+          title: Analysis Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalysisWorkerFailureRequestV1'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalysisWorkerMutationViewV1'
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests:
+    x-assembly: explicit-local-spatial-data-wiring
+    description: >-
+      SDP-DATA-01 native-grid DSM/ORTHO preparation only. Explicit data grant, current
+      scope/purpose/location and retained MEASURED inspection required. No production
+      activation is synthesized; delivery does not establish quantitative accuracy.
+    parameters: &spatialDataScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: List scoped preparation history without exposing storage capabilities
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Retained immutable history with current availability
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope unavailable or foreign}
+        '422': {description: Invalid bounded query}
+        '503': {description: Authority unavailable}
+    post:
+      summary: Admit an exact asset native rectangle under current explicit rights
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataRequestV1'}}}
+      responses:
+        '200':
+          description: Same durable job on an authorized identical retry
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataJobViewV1'}}}
+        '201':
+          description: New durable preparation job
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Rights purpose or location denied}
+        '404': {description: Scope or source unavailable or foreign}
+        '409': {description: Idempotency conflict}
+        '422': {description: Bounded strict UTF-8 JSON or request invalid}
+        '429': {description: Organization preparation budget exhausted}
+        '503': {description: Authority or journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests/{request_id}:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: &spatialDataRequestScope
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+      - {name: request_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Read owned preparation state and receipt with separate current availability
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Exact immutable preparation identity and optional receipt
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Read permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '503': {description: Journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests/{request_id}/cancel:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataRequestScope
+    post:
+      summary: Idempotently cancel owned active preparation without deleting accepted output
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: false
+        content: {application/json: {schema: {type: object, additionalProperties: false}}}
+      responses:
+        '200':
+          description: Current durable state after cancellation
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataJobViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Request permission denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Cannot cancel completed preparation}
+        '422': {description: Only an absent or empty strict JSON body is accepted}
+        '503': {description: Journal unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests/{request_id}/file:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataRequestScope
+    description: >-
+      Requires fresh credentials and current exact rights. V1 refuses Range after
+      authentication/scope checks. No redirect or cache. Absent explicit download
+      implementation returns 503 without bytes; this mounted seam is not serving evidence.
+    get:
+      summary: Retrieve an authorized immutable GeoTIFF through guarded Core delivery
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Exact authorized output bytes
+          content: {image/tiff: {schema: {type: string, format: binary}}}
+        '401': {description: Authentication required}
+        '403': {description: Current read rights or purpose denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Output not ready}
+        '416': {description: Range unsupported}
+        '503': {description: Download authority audit or storage unavailable}
+    head:
+      summary: Check current immutable file availability without content transfer
+      security: [{bearerAuth: []}]
+      responses:
+        '200': {description: Current authorized file metadata without content}
+        '401': {description: Authentication required}
+        '403': {description: Current read rights or purpose denied}
+        '404': {description: Scope or job unavailable or foreign}
+        '409': {description: Output not ready}
+        '416': {description: Range unsupported}
+        '503': {description: Download authority audit or storage unavailable}
+  /v1/internal/spatial-data-jobs:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: &spatialDataWorkerIdentity
+      - name: X-Spatial-Data-Worker-Instance-Id
+        in: header
+        required: true
+        schema: {type: string, minLength: 1, maxLength: 255}
+    get:
+      summary: Bounded pending jobs for the dedicated activated data worker only
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200':
+          description: Bounded frozen pending jobs; never a public client response
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataWorkerPendingPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Dedicated worker permission required}
+        '409': {description: Worker instance mismatch}
+        '503': {description: Current data activation unavailable}
+  /v1/internal/spatial-data-jobs/{job_id}/lease:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters:
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Spatial-Data-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+    post:
+      summary: Acquire a finite exact-worker attempt with durable monotonic fence
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataLeaseRequestV1'}}}
+      responses: &spatialDataLeaseResponses
+        '200':
+          description: Exact leased attempt and full payload digest
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataLeaseViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Worker or current data rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Lease fence state or acquisition conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Authority or journal unavailable}
+  /v1/internal/spatial-data-jobs/{job_id}/renew:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: &spatialDataWorkerFence
+      - {name: job_id, in: path, required: true, schema: {type: string}}
+      - {name: X-Spatial-Data-Worker-Instance-Id, in: header, required: true, schema: {type: string}}
+      - name: X-Spatial-Data-Attempt-Digest
+        in: header
+        required: true
+        schema: {type: string, pattern: '^sha256:[0-9a-f]{64}$'}
+    post:
+      summary: Renew the current exact attempt and supersede its renewable payload digest
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataRenewRequestV1'}}}
+      responses: *spatialDataLeaseResponses
+  /v1/internal/spatial-data-jobs/{job_id}/input:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataWorkerFence
+    get:
+      summary: Resolve exactly bound input after current authority checks before and after I/O
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Worker-private source capability bounded by lease grant activation and deadline
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataWorkerInputResponseV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or data rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Stale instance fence or lease}
+        '503': {description: Current authority storage or integrity unavailable}
+  /v1/internal/spatial-data-jobs/{job_id}/output-upload:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataWorkerFence
+    post:
+      summary: Journal exact cleanup ownership before signing a checksum-bound private output PUT
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataOutputUploadRequestV1'}}}
+      responses:
+        '200':
+          description: Private capability with exact declaration digest and reserved expiry
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataOutputUploadViewV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or data rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Fence receipt declaration or reserved-target conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Current authority storage integrity or journal unavailable}
+  /v1/internal/spatial-data-jobs/{job_id}/complete:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataWorkerFence
+    post:
+      summary: Accept Core-observed immutable output under current exact fence and rights
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataCompleteRequestV1'}}}
+      responses: &spatialDataMutationResponses
+        '200':
+          description: Durable state; identical completion retries preserve the accepted version
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataWorkerMutationViewV1'}}}
+        '401': {description: Current credentials required}
+        '403': {description: Worker or data rights denied}
+        '404': {description: Unknown or foreign job}
+        '409': {description: Fence lease state or report conflict}
+        '422': {description: Strict body invalid}
+        '503': {description: Current authority storage integrity or journal unavailable}
+  /v1/internal/spatial-data-jobs/{job_id}/failure:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters: *spatialDataWorkerFence
+    post:
+      summary: Preserve typed failure with storage-only bounded retry classification
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataFailureRequestV1'}}}
+      responses: *spatialDataMutationResponses
+
 components:
   parameters:
     WorkerInstanceId:
@@ -9686,6 +10651,464 @@ components:
       type: string
       enum: [MANAGED_ACQUISITION, EXTERNAL_RECONSTRUCTION]
       description: Durable execution boundary; nullable only for records written before this field existed.
+    ExternalDeclaredVerticalReferenceV1:
+      properties:
+        datum:
+          $ref: '#/components/schemas/VerticalDatum'
+        basis:
+          type: string
+          maxLength: 1000
+          minLength: 1
+          title: Basis
+        source:
+          type: string
+          const: user_declared
+          title: Source
+      additionalProperties: false
+      type: object
+      required:
+      - datum
+      - basis
+      - source
+      title: ExternalDeclaredVerticalReferenceV1
+      description: A bounded external declaration, never a pipeline-produced fact.
+    SpatialAssetCatalogDetailV1:
+      properties:
+        assetRef:
+          type: string
+          pattern: ^ksa-v1-[0-9a-f]{64}$
+          title: Assetref
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        workOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+        observationEpochId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+        submissionRef:
+          type: string
+          pattern: ^ers-v1-[0-9a-f]{64}$
+          title: Submissionref
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        kind:
+          $ref: '#/components/schemas/ProcessingArtifactKind'
+        lifecycleState:
+          $ref: '#/components/schemas/SpatialAssetLifecycleStateV1'
+        declared:
+          $ref: '#/components/schemas/SpatialAssetDeclaredFactsV1'
+        observed:
+          anyOf:
+          - $ref: '#/components/schemas/SpatialAssetObservedFactsV1'
+          - type: 'null'
+        inspection:
+          $ref: '#/components/schemas/SpatialAssetInspectionV1'
+        dataAccess:
+          type: string
+          const: NOT_AVAILABLE_FROM_CATALOG
+          title: Dataaccess
+          default: NOT_AVAILABLE_FROM_CATALOG
+        analysisStatus:
+          type: string
+          const: NOT_EVALUATED
+          title: Analysisstatus
+          default: NOT_EVALUATED
+        supportedActions:
+          items:
+            type: string
+            const: VIEW_METADATA
+          type: array
+          title: Supportedactions
+          default:
+          - VIEW_METADATA
+      additionalProperties: false
+      type: object
+      required:
+      - assetRef
+      - siteId
+      - workAreaId
+      - workOrderId
+      - observationEpochId
+      - submissionRef
+      - revision
+      - artifactId
+      - kind
+      - lifecycleState
+      - declared
+      - inspection
+      title: SpatialAssetCatalogDetailV1
+      description: The exact same fact projection used in list pages.
+    SpatialAssetCatalogItemV1:
+      properties:
+        assetRef:
+          type: string
+          pattern: ^ksa-v1-[0-9a-f]{64}$
+          title: Assetref
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        workOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+        observationEpochId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+        submissionRef:
+          type: string
+          pattern: ^ers-v1-[0-9a-f]{64}$
+          title: Submissionref
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        kind:
+          $ref: '#/components/schemas/ProcessingArtifactKind'
+        lifecycleState:
+          $ref: '#/components/schemas/SpatialAssetLifecycleStateV1'
+        declared:
+          $ref: '#/components/schemas/SpatialAssetDeclaredFactsV1'
+        observed:
+          anyOf:
+          - $ref: '#/components/schemas/SpatialAssetObservedFactsV1'
+          - type: 'null'
+        inspection:
+          $ref: '#/components/schemas/SpatialAssetInspectionV1'
+        dataAccess:
+          type: string
+          const: NOT_AVAILABLE_FROM_CATALOG
+          title: Dataaccess
+          default: NOT_AVAILABLE_FROM_CATALOG
+        analysisStatus:
+          type: string
+          const: NOT_EVALUATED
+          title: Analysisstatus
+          default: NOT_EVALUATED
+        supportedActions:
+          items:
+            type: string
+            const: VIEW_METADATA
+          type: array
+          title: Supportedactions
+          default:
+          - VIEW_METADATA
+      additionalProperties: false
+      type: object
+      required:
+      - assetRef
+      - siteId
+      - workAreaId
+      - workOrderId
+      - observationEpochId
+      - submissionRef
+      - revision
+      - artifactId
+      - kind
+      - lifecycleState
+      - declared
+      - inspection
+      title: SpatialAssetCatalogItemV1
+    SpatialAssetCatalogPageV1:
+      properties:
+        contractVersion:
+          type: string
+          const: spatial-asset-catalog-page.v1
+          title: Contractversion
+          default: spatial-asset-catalog-page.v1
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        scopePolicy:
+          type: string
+          const: SINGLE_WORK_AREA_WORK_ORDERS_ONLY
+          title: Scopepolicy
+          default: SINGLE_WORK_AREA_WORK_ORDERS_ONLY
+        scopeNote:
+          type: string
+          const: Register one WorkOrder per WorkArea for catalog attribution; multi-area records are omitted.
+          title: Scopenote
+          default: Register one WorkOrder per WorkArea for catalog attribution; multi-area records are omitted.
+        assets:
+          items:
+            $ref: '#/components/schemas/SpatialAssetCatalogItemV1'
+          type: array
+          maxItems: 50
+          title: Assets
+        nextCursor:
+          anyOf:
+          - type: string
+            maxLength: 1024
+            minLength: 1
+          - type: 'null'
+          title: Nextcursor
+        hasMore:
+          type: boolean
+          title: Hasmore
+      additionalProperties: false
+      type: object
+      required:
+      - siteId
+      - workAreaId
+      - assets
+      - hasMore
+      title: SpatialAssetCatalogPageV1
+    SpatialAssetDeclaredFactsV1:
+      properties:
+        factClass:
+          type: string
+          const: DECLARED
+          title: Factclass
+          default: DECLARED
+        fileName:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Filename
+        format:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Format
+        contentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Contenttype
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+        sizeBytes:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 1.0
+          title: Sizebytes
+        crs:
+          anyOf:
+          - type: string
+            maxLength: 8192
+          - type: 'null'
+          title: Crs
+        verticalReference:
+          anyOf:
+          - $ref: '#/components/schemas/ExternalDeclaredVerticalReferenceV1'
+          - type: 'null'
+        gsdM:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Gsdm
+        submittedAt:
+          type: string
+          format: date-time
+          title: Submittedat
+        producerCompletedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Producercompletedat
+        captureStartedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Capturestartedat
+        captureEndedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Captureendedat
+      additionalProperties: false
+      type: object
+      required:
+      - fileName
+      - format
+      - contentType
+      - sha256
+      - sizeBytes
+      - submittedAt
+      title: SpatialAssetDeclaredFactsV1
+      description: Customer-supplied metadata. It must never be presented as measured fact.
+    SpatialAssetInspectionV1:
+      properties:
+        state:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: State
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+        outcome:
+          anyOf:
+          - type: string
+            enum:
+            - MEASURED
+            - NOT_APPLICABLE
+            - REJECTED
+          - type: 'null'
+          title: Outcome
+        reason:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Reason
+        inspectorBuildDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Inspectorbuilddigest
+        raster:
+          anyOf:
+          - $ref: '#/components/schemas/SpatialAssetInspectedRasterFactsV1'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - state
+      title: SpatialAssetInspectionV1
+      description: Compact inspection status, never an analysis or accuracy conclusion.
+    SpatialAssetLifecycleStateV1:
+      type: string
+      enum:
+      - UNSEALED
+      - SEALED
+      - SUPERSEDED
+      title: SpatialAssetLifecycleStateV1
+    SpatialAssetObservedFactsV1:
+      properties:
+        factClass:
+          type: string
+          const: OBSERVED
+          title: Factclass
+          default: OBSERVED
+        manifestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Manifestdigest
+        observedAt:
+          type: string
+          format: date-time
+          title: Observedat
+        sha256:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+          title: Sha256
+        sizeBytes:
+          type: integer
+          maximum: 9.223372036854776e+18
+          minimum: 1.0
+          title: Sizebytes
+        contentType:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Contenttype
+      additionalProperties: false
+      type: object
+      required:
+      - manifestDigest
+      - observedAt
+      - sha256
+      - sizeBytes
+      - contentType
+      title: SpatialAssetObservedFactsV1
+      description: Core-sealed byte observations; storage paths and capabilities are excluded.
+    VerticalDatum:
+      type: string
+      enum:
+      - ellipsoidal
+      - ellipsoidal_native
+      - orthometric_kngeoid2018
+      - orthometric_kngeoid2024
+      title: VerticalDatum
+      description: '산출물이 어느 수직기준인지 — wire 계약에 실리는 값.
+
+
+        ``ELLIPSOIDAL_NATIVE`` 는 "재구성 엔진이 낸 타원체고를 변환 없이 그대로
+
+        쓴다"는 뜻이다. ``ELLIPSOIDAL`` 과 굳이 나눈 이유는, 전자가 **의도적으로
+
+        선택한 기준**이 아니라 **변환을 하지 못해 남은 상태**임을 소비자가 구분할
+
+        수 있어야 하기 때문이다 — 나중에 격자가 확보되면 이 값이 남아 있는
+
+        산출물이 곧 재처리 대상 목록이 된다.
+
+
+        두 값의 이 차이는 **호환성 판정에는 영향이 없다** — 둘 다 타원체 기준의
+
+        높이라 서로 빼도 되는 값이다(:func:`family_of`). 재처리 대상 표시와
+
+        비교 가능성은 다른 축이다.
+
+
+        **정표고 멤버가 지오이드 모델 이름을 달고 있는 이유.** 정표고가 서 있는
+
+        기준면은 하나다(KVD1964 = 인천 평균해면, EPSG:5193). 그런데 그 높이를
+
+        타원체고와 잇는 지오이드고 N 은 **격자 모델이 준다** — 즉 모델 이름은
+
+        "이 높이가 어느 격자로 되돌려지는가"다. 모델이 다르면 국내 지점 대조에서
+
+        수 cm 가 어긋나고(KNGeoid18↔24 실측 비교 0.001~0.071m), 그 크기는 체적
+
+        집계 문턱(``DEFAULT_VOLUME_THRESHOLD_M`` = 0.05m)과 같은 자릿수다. 그래서
+
+        모델을 이름에 박아 두고, **우리가 실제로 격자를 가진 모델만** 타원체고와
+
+        잇는다(:data:`_GEOID_BRIDGEABLE_ORTHOMETRIC`).'
     ExternalReconstructionRevisionView:
       type: object
       required: [submissionRef, submission, state]
@@ -14700,6 +16123,2902 @@ components:
       - observedCrsDigest
       - observedVerticalReferenceDigest
       title: SealedZoneReferenceV1
+    AnalysisAuthorityReferencesV1:
+      properties:
+        assessmentRequestId:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Assessmentrequestid
+        admissionId:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Admissionid
+        admissionDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Admissiondigest
+        calculationIdentityDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Calculationidentitydigest
+        calculationRequestId:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Calculationrequestid
+        authorizationId:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Authorizationid
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+        failureDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Failuredigest
+      additionalProperties: false
+      type: object
+      title: AnalysisAuthorityReferencesV1
+      description: Opaque links to the AP/NX durable records used for this projection.
+    AnalysisBlockerV1:
+      properties:
+        code:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Code
+        epoch:
+          anyOf:
+          - type: string
+            enum:
+            - BASELINE
+            - CURRENT
+          - type: 'null'
+          title: Epoch
+        evidenceRef:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Evidenceref
+        detail:
+          anyOf:
+          - type: string
+            maxLength: 512
+            minLength: 1
+          - type: 'null'
+          title: Detail
+      additionalProperties: false
+      type: object
+      required:
+      - code
+      title: AnalysisBlockerV1
+      description: Typed cause with optional epoch/evidence linkage for a fail-closed
+        view.
+    AnalysisEvidenceReferenceV1:
+      properties:
+        kind:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Kind
+        recordId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+        href:
+          type: string
+          maxLength: 2048
+          minLength: 4
+          pattern: ^/v1/[A-Za-z0-9._~/%?=&;:@,\-]+$
+          title: Href
+      additionalProperties: false
+      type: object
+      required:
+      - kind
+      - recordId
+      - href
+      title: AnalysisEvidenceReferenceV1
+      description: Tenant-scoped resolvable evidence reference; a digest alone is insufficient.
+    AnalysisPolicyEvidenceV1:
+      properties:
+        policyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Policyid
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        profileId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Profileid
+        profileDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Profiledigest
+        algorithmDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmdigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        policyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Policydigest
+      additionalProperties: false
+      type: object
+      required:
+      - policyId
+      - version
+      - profileId
+      - profileDigest
+      - algorithmDigest
+      - configDigest
+      - policyDigest
+      title: AnalysisPolicyEvidenceV1
+      description: Sealed fixed-profile facts used by the resolved calculation identity.
+    AnalysisRuntimeEvidenceV1:
+      properties:
+        workerExecutableDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workerexecutabledigest
+        workerBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workerbuilddigest
+        runtimeImageVersion:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Runtimeimageversion
+        runtimeImageOciDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Runtimeimageocidigest
+        dependencyLockDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Dependencylockdigest
+      additionalProperties: false
+      type: object
+      required:
+      - workerExecutableDigest
+      - workerBuildDigest
+      - runtimeImageVersion
+      - runtimeImageOciDigest
+      - dependencyLockDigest
+      title: AnalysisRuntimeEvidenceV1
+      description: Core-selected local runtime facts, not a signed-runtime claim.
+    AnalysisCalculationIdentityEvidenceV1:
+      properties:
+        calculationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationid
+        workAreaDefinitionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workareadefinitiondigest
+        baselineInputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineinputdigest
+        currentInputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentinputdigest
+        policy:
+          $ref: '#/components/schemas/AnalysisPolicyEvidenceV1'
+        runtime:
+          $ref: '#/components/schemas/AnalysisRuntimeEvidenceV1'
+      additionalProperties: false
+      type: object
+      required:
+      - calculationId
+      - workAreaDefinitionDigest
+      - baselineInputDigest
+      - currentInputDigest
+      - policy
+      - runtime
+      title: AnalysisCalculationIdentityEvidenceV1
+      description: Non-numeric sealed calculation identity facts exposed by evidence GET.
+    AnalysisEvaluationEvidenceFactV1:
+      properties:
+        evidenceRef:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Evidenceref
+        contextId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Contextid
+        contextDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Contextdigest
+        evidenceManifestDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencemanifestdigest
+        evidenceRecordId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Evidencerecordid
+        evidenceRecordDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencerecorddigest
+        coreVerdict:
+          type: string
+          enum:
+          - VALIDATED
+          - REJECTED
+          title: Coreverdict
+        href:
+          type: string
+          maxLength: 2048
+          minLength: 4
+          pattern: ^/v1/[A-Za-z0-9._~/%?=&;:@,\-]+$
+          title: Href
+      additionalProperties: false
+      type: object
+      required:
+      - evidenceRef
+      - contextId
+      - contextDigest
+      - evidenceManifestDigest
+      - evidenceRecordId
+      - evidenceRecordDigest
+      - coreVerdict
+      - href
+      title: AnalysisEvaluationEvidenceFactV1
+      description: Exact checkpoint authority consulted by one sealed AP evaluation revision.
+    AnalysisEvaluationEvidenceV1:
+      properties:
+        evaluationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Evaluationid
+        epoch:
+          type: string
+          enum:
+          - BASELINE
+          - CURRENT
+          title: Epoch
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        evaluationDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evaluationdigest
+        outcome:
+          type: string
+          enum:
+          - PASS
+          - FAIL
+          - UNASSESSED
+          - UNAVAILABLE
+          title: Outcome
+        reasonCodes:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          maxItems: 64
+          minItems: 1
+          title: Reasoncodes
+        assessedAt:
+          type: string
+          format: date-time
+          title: Assessedat
+        evidenceFacts:
+          items:
+            $ref: '#/components/schemas/AnalysisEvaluationEvidenceFactV1'
+          type: array
+          maxItems: 64
+          title: Evidencefacts
+      additionalProperties: false
+      type: object
+      required:
+      - evaluationId
+      - epoch
+      - revision
+      - evaluationDigest
+      - outcome
+      - reasonCodes
+      - assessedAt
+      - evidenceFacts
+      title: AnalysisEvaluationEvidenceV1
+      description: A recorded per-epoch suitability evaluation, never a newly computed
+        verdict.
+    AnalysisExecutionAttemptV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-execution-attempt.v2
+          title: Contractversion
+          default: external-relative-volume-execution-attempt.v2
+        attemptId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Attemptid
+        authorization:
+          $ref: '#/components/schemas/AnalysisExecutionAuthorizationV2'
+        authorizationDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Authorizationdigest
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+        leaseGeneration:
+          type: integer
+          minimum: 1.0
+          title: Leasegeneration
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+        leaseExpiresAt:
+          type: string
+          format: date-time
+          title: Leaseexpiresat
+        executionAttemptDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Executionattemptdigest
+      additionalProperties: false
+      type: object
+      required:
+      - attemptId
+      - authorization
+      - authorizationDigest
+      - workerInstanceId
+      - leaseAcquisitionId
+      - leaseGeneration
+      - issuedAt
+      - leaseExpiresAt
+      title: AnalysisExecutionAttemptV2
+      description: A fenced worker ownership interval for exactly one authorization.
+    AnalysisExecutionAuthorizationV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-execution-authorization.v2
+          title: Contractversion
+          default: external-relative-volume-execution-authorization.v2
+        authorizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Authorizationid
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        calculationIdentityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Calculationidentitydigest
+        admissionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Admissiondigest
+        resourceEnvelope:
+          $ref: '#/components/schemas/ResourceEnvelopeV1'
+        resourceEnvelopeDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Resourceenvelopedigest
+        authorizedAt:
+          type: string
+          format: date-time
+          title: Authorizedat
+        executionAuthorizationDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Executionauthorizationdigest
+      additionalProperties: false
+      type: object
+      required:
+      - authorizationId
+      - organizationId
+      - calculationIdentityDigest
+      - admissionDigest
+      - resourceEnvelope
+      - resourceEnvelopeDigest
+      - authorizedAt
+      title: AnalysisExecutionAuthorizationV2
+      description: Core-selected resource and authority snapshot, separate from numeric
+        identity.
+    AnalysisExecutionStateV1:
+      type: string
+      enum:
+      - NOT_STARTED
+      - QUEUED
+      - RUNNING
+      - COMPLETED
+      - FAILED
+      title: AnalysisExecutionStateV1
+      description: Lifecycle of the Core-recorded request, independent from suitability.
+    AnalysisMetricsV1:
+      properties:
+        cutM3:
+          type: number
+          minimum: 0.0
+          title: Cutm3
+        fillM3:
+          type: number
+          minimum: 0.0
+          title: Fillm3
+        netM3:
+          type: number
+          title: Netm3
+        thresholdM:
+          type: number
+          minimum: 0.0
+          title: Thresholdm
+        uncertaintyM3:
+          type: 'null'
+          title: Uncertaintym3
+      additionalProperties: false
+      type: object
+      required:
+      - cutM3
+      - fillM3
+      - netM3
+      - thresholdM
+      title: AnalysisMetricsV1
+    AnalysisObservationOptionV1:
+      properties:
+        selector:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        observationEpochId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+        captureStartedAt:
+          type: string
+          format: date-time
+          title: Capturestartedat
+        captureEndedAt:
+          type: string
+          format: date-time
+          title: Captureendedat
+      additionalProperties: false
+      type: object
+      required:
+      - selector
+      - observationEpochId
+      - captureStartedAt
+      - captureEndedAt
+      title: AnalysisObservationOptionV1
+      description: Read-only candidate exposed to a Site-scoped selector UI.
+    AnalysisObservationOptionsV1:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisObservationOptionV1'
+          type: array
+          maxItems: 500
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: AnalysisObservationOptionsV1
+    AnalysisObservationSelectorV1:
+      properties:
+        workOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+        submissionRef:
+          type: string
+          pattern: ^ers-v1-[0-9a-f]{64}$
+          title: Submissionref
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+      additionalProperties: false
+      type: object
+      required:
+      - workOrderId
+      - submissionRef
+      - revision
+      title: AnalysisObservationSelectorV1
+      description: The only caller-controlled epoch reference accepted by analysis create.
+    AnalysisPolicyV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-analysis-policy.v2
+          title: Contractversion
+          default: external-relative-volume-analysis-policy.v2
+        policyId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Policyid
+        version:
+          type: integer
+          minimum: 1.0
+          title: Version
+        profileId:
+          type: string
+          const: KSI-GIS-RELATIVE-VOLUME-V2
+          title: Profileid
+        profileDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Profiledigest
+        algorithmDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Algorithmdigest
+        configDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Configdigest
+        baselineGridRule:
+          type: string
+          const: BASELINE_NATIVE_NORTH_UP_AFFINE_V1
+          title: Baselinegridrule
+        currentElevationResampling:
+          type: string
+          const: BILINEAR
+          title: Currentelevationresampling
+        currentMaskResampling:
+          type: string
+          const: NEAREST
+          title: Currentmaskresampling
+        workAreaRasterization:
+          type: string
+          const: CELL_CENTER
+          title: Workarearasterization
+        minimumCommonValidFraction:
+          type: number
+          title: Minimumcommonvalidfraction
+        thresholdM:
+          type: number
+          title: Thresholdm
+        cellAreaRule:
+          type: string
+          const: ABSOLUTE_AFFINE_DETERMINANT
+          title: Cellarearule
+        deltaRule:
+          type: string
+          const: CURRENT_MINUS_BASELINE
+          title: Deltarule
+        uncertaintyMethod:
+          type: string
+          const: NONE_UNCERTAINTY_M3_NULL_V1
+          title: Uncertaintymethod
+        policyDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Policydigest
+      additionalProperties: false
+      type: object
+      required:
+      - policyId
+      - version
+      - profileId
+      - profileDigest
+      - algorithmDigest
+      - configDigest
+      - baselineGridRule
+      - currentElevationResampling
+      - currentMaskResampling
+      - workAreaRasterization
+      - minimumCommonValidFraction
+      - thresholdM
+      - cellAreaRule
+      - deltaRule
+      - uncertaintyMethod
+      title: AnalysisPolicyV2
+      description: The first V2 profile's mathematical identity, without an execution
+        result.
+    AnalysisResultV1:
+      properties:
+        resultId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Resultid
+        resultRevision:
+          type: integer
+          const: 1
+          title: Resultrevision
+          default: 1
+        reportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reportdigest
+        numericResultIdentityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Numericresultidentitydigest
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+        metrics:
+          $ref: '#/components/schemas/AnalysisMetricsV1'
+        coverage:
+          $ref: '#/components/schemas/RelativeVolumeCoverageWitnessV2'
+        limitationCodes:
+          items:
+            type: string
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          type: array
+          title: Limitationcodes
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - resultId
+      - reportDigest
+      - numericResultIdentityDigest
+      - computedAt
+      - metrics
+      - coverage
+      title: AnalysisResultV1
+      description: Current completed numeric projection; no accuracy/settlement interpretation.
+    AnalysisSuitabilityStateV1:
+      type: string
+      enum:
+      - BLOCKED
+      - REMEDIATION_REQUIRED
+      - PROVISIONAL_ACCURACY_UNVERIFIED
+      - EVALUATED
+      - REASSESSMENT_REQUIRED
+      title: AnalysisSuitabilityStateV1
+      description: Current AP/NX usability projection; it never certifies field accuracy.
+    AnalysisViewV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        baseline:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        current:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        executionState:
+          $ref: '#/components/schemas/AnalysisExecutionStateV1'
+        suitabilityState:
+          $ref: '#/components/schemas/AnalysisSuitabilityStateV1'
+        blockers:
+          items:
+            $ref: '#/components/schemas/AnalysisBlockerV1'
+          type: array
+          maxItems: 128
+          title: Blockers
+        evidenceRefs:
+          items:
+            $ref: '#/components/schemas/AnalysisEvidenceReferenceV1'
+          type: array
+          maxItems: 256
+          title: Evidencerefs
+        authority:
+          $ref: '#/components/schemas/AnalysisAuthorityReferencesV1'
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisResultV1'
+          - type: 'null'
+        createdAt:
+          type: string
+          format: date-time
+          title: Createdat
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - siteId
+      - workAreaId
+      - baseline
+      - current
+      - executionState
+      - suitabilityState
+      - blockers
+      - evidenceRefs
+      - createdAt
+      title: AnalysisViewV1
+      description: Canonical create/list/detail/result projection shared by UI and API
+        clients.
+    AnalysisCoverageRangeV2:
+      x-status: planned
+      additionalProperties: false
+      description: Metadata for one inclusive byte range of the separate coverage resource.
+      properties:
+        analysisId:
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+          type: string
+        coverageDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Coveragedigest
+          type: string
+        totalLengthBytes:
+          maximum: 9223372036854775807
+          minimum: 1
+          title: Totallengthbytes
+          type: integer
+        rangeStart:
+          maximum: 9223372036854775807
+          minimum: 0
+          title: Rangestart
+          type: integer
+        rangeEnd:
+          maximum: 9223372036854775807
+          minimum: 0
+          title: Rangeend
+          type: integer
+        contentLengthBytes:
+          maximum: 65536
+          minimum: 1
+          title: Contentlengthbytes
+          type: integer
+      required:
+      - analysisId
+      - coverageDigest
+      - totalLengthBytes
+      - rangeStart
+      - rangeEnd
+      - contentLengthBytes
+      title: AnalysisCoverageRangeV2
+      type: object
+    AnalysisCoverageSummaryV2:
+      additionalProperties: false
+      description: Small digest-bound coverage facts; coverage masks are never embedded.
+      properties:
+        coverageWitnessDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Coveragewitnessdigest
+          type: string
+        rows:
+          maximum: 1000000000
+          minimum: 1
+          title: Rows
+          type: integer
+        columns:
+          maximum: 1000000000
+          minimum: 1
+          title: Columns
+          type: integer
+        selectedCellCount:
+          maximum: 1000000000000000
+          minimum: 0
+          title: Selectedcellcount
+          type: integer
+        commonValidCellCount:
+          maximum: 1000000000000000
+          minimum: 0
+          title: Commonvalidcellcount
+          type: integer
+        unavailableCellCount:
+          maximum: 1000000000000000
+          minimum: 0
+          title: Unavailablecellcount
+          type: integer
+        thresholdExcludedCellCount:
+          maximum: 1000000000000000
+          minimum: 0
+          title: Thresholdexcludedcellcount
+          type: integer
+        cellAreaM2:
+          exclusiveMinimum: 0.0
+          title: Cellaream2
+          type: number
+        selectedAreaM2:
+          minimum: 0.0
+          title: Selectedaream2
+          type: number
+        commonValidAreaM2:
+          minimum: 0.0
+          title: Commonvalidaream2
+          type: number
+        bounds:
+          maxItems: 4
+          minItems: 4
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          title: Bounds
+          type: array
+      required:
+      - coverageWitnessDigest
+      - rows
+      - columns
+      - selectedCellCount
+      - commonValidCellCount
+      - unavailableCellCount
+      - thresholdExcludedCellCount
+      - cellAreaM2
+      - selectedAreaM2
+      - commonValidAreaM2
+      - bounds
+      title: AnalysisCoverageSummaryV2
+      type: object
+    AnalysisEvidenceItemV2:
+      oneOf:
+      - $ref: '#/components/schemas/AnalysisEpochEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisCalculationEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisEvaluationEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisCheckpointEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisAuthorityEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisReferenceEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisNumericResultEvidenceItemV2'
+      - $ref: '#/components/schemas/AnalysisLimitationEvidenceItemV2'
+      discriminator:
+        propertyName: kind
+        mapping:
+          EPOCH_IDENTITY: '#/components/schemas/AnalysisEpochEvidenceItemV2'
+          CALCULATION_IDENTITY: '#/components/schemas/AnalysisCalculationEvidenceItemV2'
+          EVALUATION: '#/components/schemas/AnalysisEvaluationEvidenceItemV2'
+          CHECKPOINT_FACT: '#/components/schemas/AnalysisCheckpointEvidenceItemV2'
+          AUTHORITY_REFERENCE: '#/components/schemas/AnalysisAuthorityEvidenceItemV2'
+          SOURCE_REFERENCE: '#/components/schemas/AnalysisReferenceEvidenceItemV2'
+          NUMERIC_RESULT: '#/components/schemas/AnalysisNumericResultEvidenceItemV2'
+          LIMITATION: '#/components/schemas/AnalysisLimitationEvidenceItemV2'
+    AnalysisEpochEvidenceItemV2:
+      additionalProperties: false
+      description: Self-contained CRS, vertical, transform, and inspection-reference facts.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: EPOCH_IDENTITY
+          title: Kind
+          type: string
+        epoch:
+          enum:
+          - BASELINE
+          - CURRENT
+          title: Epoch
+          type: string
+        selector:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        observationEpochId:
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+          type: string
+        artifactId:
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+          type: string
+        observedSha256:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+          type: string
+        observedSizeBytes:
+          exclusiveMinimum: 0
+          title: Observedsizebytes
+          type: integer
+        observedCrsIdentifier:
+          maxLength: 255
+          minLength: 1
+          title: Observedcrsidentifier
+          type: string
+        observedCrsDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+          type: string
+        verticalReferenceIdentifier:
+          maxLength: 255
+          minLength: 1
+          title: Verticalreferenceidentifier
+          type: string
+        verticalReferenceBasis:
+          maxLength: 255
+          minLength: 1
+          title: Verticalreferencebasis
+          type: string
+        verticalUnit:
+          const: metre
+          title: Verticalunit
+          type: string
+        transform:
+          maxItems: 6
+          minItems: 6
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          title: Transform
+          type: array
+        transformDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Transformdigest
+          type: string
+        inspectionReportDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionreportdigest
+          type: string
+        inspectionReportRecordId:
+          maxLength: 255
+          minLength: 1
+          title: Inspectionreportrecordid
+          type: string
+        inputDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inputdigest
+          type: string
+      required:
+      - recordId
+      - digest
+      - kind
+      - epoch
+      - selector
+      - observationEpochId
+      - artifactId
+      - observedSha256
+      - observedSizeBytes
+      - observedCrsIdentifier
+      - observedCrsDigest
+      - verticalReferenceIdentifier
+      - verticalReferenceBasis
+      - verticalUnit
+      - transform
+      - transformDigest
+      - inspectionReportDigest
+      - inspectionReportRecordId
+      - inputDigest
+      title: AnalysisEpochEvidenceItemV2
+      type: object
+    AnalysisCalculationEvidenceItemV2:
+      additionalProperties: false
+      description: Sealed AP calculation, policy, and runtime identity facts.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: CALCULATION_IDENTITY
+          title: Kind
+          type: string
+        calculation:
+          $ref: '#/components/schemas/AnalysisCalculationIdentityEvidenceV1'
+      required:
+      - recordId
+      - digest
+      - kind
+      - calculation
+      title: AnalysisCalculationEvidenceItemV2
+      type: object
+    AnalysisEvaluationEvidenceItemV2:
+      additionalProperties: false
+      description: One immutable AP evaluation header and every recorded reason code.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: EVALUATION
+          title: Kind
+          type: string
+        evaluationId:
+          maxLength: 255
+          minLength: 1
+          title: Evaluationid
+          type: string
+        epoch:
+          enum:
+          - BASELINE
+          - CURRENT
+          title: Epoch
+          type: string
+        revision:
+          minimum: 1
+          title: Revision
+          type: integer
+        evaluationDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evaluationdigest
+          type: string
+        outcome:
+          enum:
+          - PASS
+          - FAIL
+          - UNASSESSED
+          - UNAVAILABLE
+          title: Outcome
+          type: string
+        reasonCodes:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          minItems: 1
+          title: Reasoncodes
+          type: array
+        assessedAt:
+          format: date-time
+          title: Assessedat
+          type: string
+      required:
+      - recordId
+      - digest
+      - kind
+      - evaluationId
+      - epoch
+      - revision
+      - evaluationDigest
+      - outcome
+      - reasonCodes
+      - assessedAt
+      title: AnalysisEvaluationEvidenceItemV2
+      type: object
+    AnalysisCheckpointEvidenceItemV2:
+      additionalProperties: false
+      description: One exact terminal checkpoint fact paired with its retained context.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: CHECKPOINT_FACT
+          title: Kind
+          type: string
+        evaluationId:
+          maxLength: 255
+          minLength: 1
+          title: Evaluationid
+          type: string
+        epoch:
+          enum:
+          - BASELINE
+          - CURRENT
+          title: Epoch
+          type: string
+        evaluationRevision:
+          minimum: 1
+          title: Evaluationrevision
+          type: integer
+        evidenceRef:
+          maxLength: 255
+          minLength: 1
+          title: Evidenceref
+          type: string
+        contextId:
+          maxLength: 255
+          minLength: 1
+          title: Contextid
+          type: string
+        contextDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Contextdigest
+          type: string
+        evidenceManifestDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencemanifestdigest
+          type: string
+        evidenceRecordId:
+          maxLength: 255
+          minLength: 1
+          title: Evidencerecordid
+          type: string
+        evidenceRecordDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencerecorddigest
+          type: string
+        coreVerdict:
+          enum:
+          - VALIDATED
+          - REJECTED
+          title: Coreverdict
+          type: string
+      required:
+      - recordId
+      - digest
+      - kind
+      - evaluationId
+      - epoch
+      - evaluationRevision
+      - evidenceRef
+      - contextId
+      - contextDigest
+      - evidenceManifestDigest
+      - evidenceRecordId
+      - evidenceRecordDigest
+      - coreVerdict
+      title: AnalysisCheckpointEvidenceItemV2
+      type: object
+    AnalysisAuthorityEvidenceItemV2:
+      additionalProperties: false
+      description: One AP/NX authority reference without an invented fetch URL.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: AUTHORITY_REFERENCE
+          title: Kind
+          type: string
+        referenceName:
+          enum:
+          - assessmentRequestId
+          - admissionId
+          - admissionDigest
+          - calculationIdentityDigest
+          - calculationRequestId
+          - authorizationId
+          - reportDigest
+          - failureDigest
+          title: Referencename
+          type: string
+        sourceDigest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          default: null
+          title: Sourcedigest
+      required:
+      - recordId
+      - digest
+      - kind
+      - referenceName
+      title: AnalysisAuthorityEvidenceItemV2
+      type: object
+    AnalysisReferenceEvidenceItemV2:
+      additionalProperties: false
+      description: One retained source reference; href is present only for a scoped resolver.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: SOURCE_REFERENCE
+          title: Kind
+          type: string
+        referenceKind:
+          maxLength: 255
+          minLength: 1
+          title: Referencekind
+          type: string
+        sourceDigest:
+          anyOf:
+          - pattern: ^sha256:[0-9a-f]{64}$
+            type: string
+          - type: 'null'
+          default: null
+          title: Sourcedigest
+      required:
+      - recordId
+      - digest
+      - kind
+      - referenceKind
+      title: AnalysisReferenceEvidenceItemV2
+      type: object
+    AnalysisNumericResultEvidenceItemV2:
+      additionalProperties: false
+      description: Identity of the immutable numeric report, without its coverage masks.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: NUMERIC_RESULT
+          title: Kind
+          type: string
+        resultId:
+          maxLength: 255
+          minLength: 1
+          title: Resultid
+          type: string
+        reportDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reportdigest
+          type: string
+        numericResultIdentityDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Numericresultidentitydigest
+          type: string
+        computedAt:
+          format: date-time
+          title: Computedat
+          type: string
+      required:
+      - recordId
+      - digest
+      - kind
+      - resultId
+      - reportDigest
+      - numericResultIdentityDigest
+      - computedAt
+      title: AnalysisNumericResultEvidenceItemV2
+      type: object
+    AnalysisLimitationEvidenceItemV2:
+      additionalProperties: false
+      description: One blocker, result limitation, or other explicit reason.
+      properties:
+        recordId:
+          maxLength: 255
+          minLength: 1
+          title: Recordid
+          type: string
+        digest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Digest
+          type: string
+        href:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/(?:v1|v2)/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Href
+        limitationCodes:
+          default: []
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 64
+          title: Limitationcodes
+          type: array
+        kind:
+          const: LIMITATION
+          title: Kind
+          type: string
+        source:
+          enum:
+          - BLOCKER
+          - RESULT
+          title: Source
+          type: string
+        code:
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Code
+          type: string
+        epoch:
+          anyOf:
+          - enum:
+            - BASELINE
+            - CURRENT
+            type: string
+          - type: 'null'
+          default: null
+          title: Epoch
+        evidenceRef:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Evidenceref
+        detail:
+          anyOf:
+          - maxLength: 512
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Detail
+      required:
+      - recordId
+      - digest
+      - kind
+      - source
+      - code
+      title: AnalysisLimitationEvidenceItemV2
+      type: object
+    AnalysisEvidencePageV2:
+      additionalProperties: false
+      description: At most 32 evidence records; each evaluation item can retain all 64 reasons.
+      properties:
+        analysisId:
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+          type: string
+        evidenceRevision:
+          minimum: 1
+          title: Evidencerevision
+          type: integer
+        evidenceDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencedigest
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisEvidenceItemV2'
+          maxItems: 32
+          title: Items
+          type: array
+        nextCursor:
+          anyOf:
+          - maxLength: 512
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Nextcursor
+      required:
+      - analysisId
+      - evidenceRevision
+      - evidenceDigest
+      - items
+      title: AnalysisEvidencePageV2
+      type: object
+    AnalysisListItemV2:
+      additionalProperties: false
+      description: Small listing; limitation count covers blockers and result codes in analysisHref.
+      properties:
+        analysisId:
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+          type: string
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        workAreaId:
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+          type: string
+        executionState:
+          $ref: '#/components/schemas/AnalysisExecutionStateV1'
+        suitabilityState:
+          $ref: '#/components/schemas/AnalysisSuitabilityStateV1'
+        createdAt:
+          format: date-time
+          title: Createdat
+          type: string
+        resultId:
+          anyOf:
+          - maxLength: 255
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Resultid
+        metrics:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisMetricsV1'
+          - type: 'null'
+          default: null
+        limitationCount:
+          description: Number of blocker and result limitation codes in the linked detail;
+            the linked detail is authoritative and evidence pages may carry additional facts.
+          maximum: 256
+          minimum: 0
+          title: Limitationcount
+          type: integer
+        analysisHref:
+          maxLength: 2048
+          minLength: 5
+          pattern: ^/v2/[A-Za-z0-9._~/%?=&;:@,\-]+$
+          title: Analysishref
+          type: string
+      required:
+      - analysisId
+      - siteId
+      - workAreaId
+      - executionState
+      - suitabilityState
+      - createdAt
+      - limitationCount
+      - analysisHref
+      title: AnalysisListItemV2
+      type: object
+    AnalysisListPageV2:
+      additionalProperties: false
+      properties:
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisListItemV2'
+          maxItems: 50
+          title: Items
+          type: array
+        nextCursor:
+          anyOf:
+          - maxLength: 512
+            minLength: 1
+            type: string
+          - type: 'null'
+          default: null
+          title: Nextcursor
+      required:
+      - siteId
+      - items
+      title: AnalysisListPageV2
+      type: object
+    AnalysisResultSummaryV2:
+      additionalProperties: false
+      description: Compact numeric result projection with unchanged provisional semantics.
+      properties:
+        resultId:
+          maxLength: 255
+          minLength: 1
+          title: Resultid
+          type: string
+        reportDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Reportdigest
+          type: string
+        numericResultIdentityDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Numericresultidentitydigest
+          type: string
+        computedAt:
+          format: date-time
+          title: Computedat
+          type: string
+        metrics:
+          $ref: '#/components/schemas/AnalysisMetricsV1'
+        coverage:
+          $ref: '#/components/schemas/AnalysisCoverageSummaryV2'
+        limitationCodes:
+          items:
+            maxLength: 128
+            minLength: 1
+            pattern: ^[A-Z][A-Z0-9_]{0,127}$
+            type: string
+          maxItems: 128
+          title: Limitationcodes
+          type: array
+      required:
+      - resultId
+      - reportDigest
+      - numericResultIdentityDigest
+      - computedAt
+      - metrics
+      - coverage
+      - limitationCodes
+      title: AnalysisResultSummaryV2
+      type: object
+    AnalysisViewV2:
+      additionalProperties: false
+      description: Bounded detail projection; evidence and full coverage are separate resources.
+      properties:
+        analysisId:
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+          type: string
+        siteId:
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+          type: string
+        workAreaId:
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+          type: string
+        baseline:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        current:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        executionState:
+          $ref: '#/components/schemas/AnalysisExecutionStateV1'
+        suitabilityState:
+          $ref: '#/components/schemas/AnalysisSuitabilityStateV1'
+        blockers:
+          items:
+            $ref: '#/components/schemas/AnalysisBlockerV1'
+          maxItems: 128
+          title: Blockers
+          type: array
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisResultSummaryV2'
+          - type: 'null'
+          default: null
+        evidenceRevision:
+          minimum: 1
+          title: Evidencerevision
+          type: integer
+        evidenceDigest:
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Evidencedigest
+          type: string
+        evidenceHref:
+          maxLength: 2048
+          minLength: 5
+          pattern: ^/v2/[A-Za-z0-9._~/%?=&;:@,\-]+$
+          title: Evidencehref
+          type: string
+        coverageHref:
+          anyOf:
+          - maxLength: 2048
+            minLength: 5
+            pattern: ^/v2/[A-Za-z0-9._~/%?=&;:@,\-]+$
+            type: string
+          - type: 'null'
+          default: null
+          title: Coveragehref
+        createdAt:
+          format: date-time
+          title: Createdat
+          type: string
+      required:
+      - analysisId
+      - siteId
+      - workAreaId
+      - baseline
+      - current
+      - executionState
+      - suitabilityState
+      - blockers
+      - evidenceRevision
+      - evidenceDigest
+      - evidenceHref
+      - createdAt
+      title: AnalysisViewV2
+      type: object
+    AnalysisWorkerFailureRequestV1:
+      properties:
+        failure:
+          $ref: '#/components/schemas/RelativeVolumeCalculationFailureV2'
+      additionalProperties: false
+      type: object
+      required:
+      - failure
+      title: AnalysisWorkerFailureRequestV1
+    AnalysisWorkerInputCapabilityV1:
+      properties:
+        role:
+          type: string
+          enum:
+          - BASELINE_DSM
+          - CURRENT_DSM
+          title: Role
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+        observedSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Observedsizebytes
+        downloadUrl:
+          type: string
+          maxLength: 16384
+          minLength: 1
+          title: Downloadurl
+        requiredHeaders:
+          patternProperties:
+            ^[A-Za-z0-9!#$%&'*+.^_`|~-]+$:
+              type: string
+              maxLength: 8192
+              minLength: 1
+          propertyNames:
+            maxLength: 128
+            minLength: 1
+          type: object
+          maxProperties: 32
+          title: Requiredheaders
+        expiresAt:
+          type: string
+          format: date-time
+          title: Expiresat
+      additionalProperties: false
+      type: object
+      required:
+      - role
+      - artifactId
+      - observedSha256
+      - observedSizeBytes
+      - downloadUrl
+      - requiredHeaders
+      - expiresAt
+      title: AnalysisWorkerInputCapabilityV1
+      description: One short-lived URL bound to one immutable DSM identity.
+    AnalysisWorkerInputResponseV1:
+      properties:
+        input:
+          $ref: '#/components/schemas/AnalysisWorkerInputV1'
+      additionalProperties: false
+      type: object
+      required:
+      - input
+      title: AnalysisWorkerInputResponseV1
+    AnalysisWorkerInputV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        calculationRequestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationrequestid
+        attempt:
+          $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+        calculationIdentity:
+          $ref: '#/components/schemas/CalculationIdentityV2'
+        inputs:
+          prefixItems:
+          - $ref: '#/components/schemas/AnalysisWorkerInputCapabilityV1'
+          - $ref: '#/components/schemas/AnalysisWorkerInputCapabilityV1'
+          type: array
+          maxItems: 2
+          minItems: 2
+          title: Inputs
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - calculationRequestId
+      - attempt
+      - calculationIdentity
+      - inputs
+      title: AnalysisWorkerInputV1
+      description: Exact attempt, identity, and ordered bounded inputs for one measurement.
+    AnalysisWorkerLeaseRequestV1:
+      properties:
+        workerInstanceId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workerinstanceid
+        leaseAcquisitionId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Leaseacquisitionid
+      additionalProperties: false
+      type: object
+      required:
+      - workerInstanceId
+      - leaseAcquisitionId
+      title: AnalysisWorkerLeaseRequestV1
+    AnalysisWorkerLeaseViewV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        calculationRequestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationrequestid
+        attempt:
+          $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - calculationRequestId
+      - attempt
+      title: AnalysisWorkerLeaseViewV1
+    AnalysisWorkerMutationViewV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        calculationRequestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationrequestid
+        executionState:
+          type: string
+          enum:
+          - QUEUED
+          - RUNNING
+          - COMPLETED
+          - FAILED
+          title: Executionstate
+        attempt:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+          - type: 'null'
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - calculationRequestId
+      - executionState
+      title: AnalysisWorkerMutationViewV1
+    AnalysisWorkerPendingItemV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        calculationRequestId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationrequestid
+        issuedAt:
+          type: string
+          format: date-time
+          title: Issuedat
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - calculationRequestId
+      - issuedAt
+      title: AnalysisWorkerPendingItemV1
+    AnalysisWorkerPendingListV1:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisWorkerPendingItemV1'
+          type: array
+          maxItems: 200
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: AnalysisWorkerPendingListV1
+    AnalysisWorkerRenewRequestV1:
+      properties:
+        attempt:
+          $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+      additionalProperties: false
+      type: object
+      required:
+      - attempt
+      title: AnalysisWorkerRenewRequestV1
+    AnalysisWorkerReportRequestV1:
+      properties:
+        report:
+          $ref: '#/components/schemas/RelativeVolumeCalculationReportV2'
+      additionalProperties: false
+      type: object
+      required:
+      - report
+      title: AnalysisWorkerReportRequestV1
+    CalculationIdentityV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-calculation-identity.v2
+          title: Contractversion
+          default: external-relative-volume-calculation-identity.v2
+        calculationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Calculationid
+        organizationId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Organizationid
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        workAreaPolygon:
+          additionalProperties: true
+          type: object
+          title: Workareapolygon
+        workAreaCrs:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareacrs
+        workAreaDefinitionDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workareadefinitiondigest
+        baselineSubject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        currentSubject:
+          $ref: '#/components/schemas/SealedExternalSubjectV1'
+        baselineCaptureStartedAt:
+          type: string
+          format: date-time
+          title: Baselinecapturestartedat
+        baselineCaptureEndedAt:
+          type: string
+          format: date-time
+          title: Baselinecaptureendedat
+        currentCaptureStartedAt:
+          type: string
+          format: date-time
+          title: Currentcapturestartedat
+        currentCaptureEndedAt:
+          type: string
+          format: date-time
+          title: Currentcaptureendedat
+        baselineDsmArtifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Baselinedsmartifactid
+        currentDsmArtifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentdsmartifactid
+        baselineInputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineinputdigest
+        currentInputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentinputdigest
+        baselineDsmObservedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselinedsmobservedsha256
+        currentDsmObservedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentdsmobservedsha256
+        baselineDsmObservedSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Baselinedsmobservedsizebytes
+        currentDsmObservedSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Currentdsmobservedsizebytes
+        baselineObservedCrsIdentifier:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Baselineobservedcrsidentifier
+        currentObservedCrsIdentifier:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Currentobservedcrsidentifier
+        baselineObservedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineobservedcrsdigest
+        currentObservedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentobservedcrsdigest
+        baselineProjectedUnit:
+          type: string
+          const: metre
+          title: Baselineprojectedunit
+        currentProjectedUnit:
+          type: string
+          const: metre
+          title: Currentprojectedunit
+        baselineVerticalReference:
+          $ref: '#/components/schemas/ObservedVerticalReferenceV1'
+        currentVerticalReference:
+          $ref: '#/components/schemas/ObservedVerticalReferenceV1'
+        baselineVerticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineverticalreferencedigest
+        currentVerticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentverticalreferencedigest
+        baselineVerticalUnit:
+          type: string
+          const: metre
+          title: Baselineverticalunit
+        currentVerticalUnit:
+          type: string
+          const: metre
+          title: Currentverticalunit
+        baselineVerticalUnitProvenance:
+          type: string
+          const: OBSERVED_VERTICAL_CRS_AXIS
+          title: Baselineverticalunitprovenance
+        currentVerticalUnitProvenance:
+          type: string
+          const: OBSERVED_VERTICAL_CRS_AXIS
+          title: Currentverticalunitprovenance
+        baselineInspectionReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineinspectionreportdigest
+        currentInspectionReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentinspectionreportdigest
+        baselineInspectionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineinspectionpolicydigest
+        currentInspectionPolicyDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentinspectionpolicydigest
+        baselineInspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselineinspectorbuilddigest
+        currentInspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currentinspectorbuilddigest
+        baselineTransformDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Baselinetransformdigest
+        currentTransformDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Currenttransformdigest
+        baselineTransform:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 6
+          minItems: 6
+          title: Baselinetransform
+        currentTransform:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 6
+          minItems: 6
+          title: Currenttransform
+        horizontalCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Horizontalcrsdigest
+        verticalReferenceDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Verticalreferencedigest
+        policy:
+          $ref: '#/components/schemas/AnalysisPolicyV2'
+        workerExecutableDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workerexecutabledigest
+        workerBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Workerbuilddigest
+        runtimeImageVersion:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Runtimeimageversion
+        runtimeImageOciDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Runtimeimageocidigest
+        dependencyLockDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Dependencylockdigest
+        calculationIdentityDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Calculationidentitydigest
+      additionalProperties: false
+      type: object
+      required:
+      - calculationId
+      - organizationId
+      - siteId
+      - workAreaId
+      - workAreaPolygon
+      - workAreaCrs
+      - workAreaDefinitionDigest
+      - baselineSubject
+      - currentSubject
+      - baselineCaptureStartedAt
+      - baselineCaptureEndedAt
+      - currentCaptureStartedAt
+      - currentCaptureEndedAt
+      - baselineDsmArtifactId
+      - currentDsmArtifactId
+      - baselineInputDigest
+      - currentInputDigest
+      - baselineDsmObservedSha256
+      - currentDsmObservedSha256
+      - baselineDsmObservedSizeBytes
+      - currentDsmObservedSizeBytes
+      - baselineObservedCrsIdentifier
+      - currentObservedCrsIdentifier
+      - baselineObservedCrsDigest
+      - currentObservedCrsDigest
+      - baselineProjectedUnit
+      - currentProjectedUnit
+      - baselineVerticalReference
+      - currentVerticalReference
+      - baselineVerticalReferenceDigest
+      - currentVerticalReferenceDigest
+      - baselineVerticalUnit
+      - currentVerticalUnit
+      - baselineVerticalUnitProvenance
+      - currentVerticalUnitProvenance
+      - baselineInspectionReportDigest
+      - currentInspectionReportDigest
+      - baselineInspectionPolicyDigest
+      - currentInspectionPolicyDigest
+      - baselineInspectorBuildDigest
+      - currentInspectorBuildDigest
+      - baselineTransformDigest
+      - currentTransformDigest
+      - baselineTransform
+      - currentTransform
+      - horizontalCrsDigest
+      - verticalReferenceDigest
+      - policy
+      - workerExecutableDigest
+      - workerBuildDigest
+      - runtimeImageVersion
+      - runtimeImageOciDigest
+      - dependencyLockDigest
+      title: CalculationIdentityV2
+      description: The immutable, non-numeric identity of one future worker calculation.
+    CreateAnalysisRequestV1:
+      properties:
+        baseline:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        current:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+      additionalProperties: false
+      type: object
+      required:
+      - baseline
+      - current
+      title: CreateAnalysisRequestV1
+      description: Two ordered selectors; caller policy/runtime/digest fields are forbidden.
+    RelativeVolumeCalculationFailureV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-calculation-failure.v2
+          title: Contractversion
+          default: external-relative-volume-calculation-failure.v2
+        failureId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Failureid
+        attempt:
+          $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+        attemptDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Attemptdigest
+        reasonCode:
+          type: string
+          maxLength: 128
+          minLength: 1
+          pattern: ^[A-Z][A-Z0-9_]{0,127}$
+          title: Reasoncode
+        failedAt:
+          type: string
+          format: date-time
+          title: Failedat
+        failureDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Failuredigest
+      additionalProperties: false
+      type: object
+      required:
+      - failureId
+      - attempt
+      - attemptDigest
+      - reasonCode
+      - failedAt
+      title: RelativeVolumeCalculationFailureV2
+      description: A typed immutable attempt outcome that contains no partial numeric
+        result.
+    RelativeVolumeCalculationReportV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-calculation-report.v2
+          title: Contractversion
+          default: external-relative-volume-calculation-report.v2
+        reportId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Reportid
+        attempt:
+          $ref: '#/components/schemas/AnalysisExecutionAttemptV2'
+        attemptDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Attemptdigest
+        numericResult:
+          $ref: '#/components/schemas/RelativeVolumeNumericResultV2'
+        numericResultIdentityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Numericresultidentitydigest
+        computedAt:
+          type: string
+          format: date-time
+          title: Computedat
+        reportedAt:
+          type: string
+          format: date-time
+          title: Reportedat
+        reportDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Reportdigest
+      additionalProperties: false
+      type: object
+      required:
+      - reportId
+      - attempt
+      - attemptDigest
+      - numericResult
+      - numericResultIdentityDigest
+      - computedAt
+      - reportedAt
+      title: RelativeVolumeCalculationReportV2
+      description: Fenced worker report that wraps, but cannot alter, numeric calculation
+        content.
+    RelativeVolumeCoverageWitnessV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-coverage-witness.v2
+          title: Contractversion
+          default: external-relative-volume-coverage-witness.v2
+        rows:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Rows
+        columns:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Columns
+        rowOffset:
+          type: integer
+          title: Rowoffset
+        columnOffset:
+          type: integer
+          title: Columnoffset
+        selectedMaskB64:
+          type: string
+          maxLength: 2000000
+          minLength: 4
+          pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+          title: Selectedmaskb64
+        commonValidMaskB64:
+          type: string
+          maxLength: 2000000
+          minLength: 4
+          pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+          title: Commonvalidmaskb64
+        unavailableMaskB64:
+          type: string
+          maxLength: 2000000
+          minLength: 4
+          pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+          title: Unavailablemaskb64
+        thresholdExcludedMaskB64:
+          type: string
+          maxLength: 2000000
+          minLength: 4
+          pattern: ^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
+          title: Thresholdexcludedmaskb64
+        selectedCellCount:
+          type: integer
+          minimum: 0.0
+          title: Selectedcellcount
+        commonValidCellCount:
+          type: integer
+          minimum: 0.0
+          title: Commonvalidcellcount
+        unavailableCellCount:
+          type: integer
+          minimum: 0.0
+          title: Unavailablecellcount
+        thresholdExcludedCellCount:
+          type: integer
+          minimum: 0.0
+          title: Thresholdexcludedcellcount
+        cellAreaM2:
+          type: number
+          exclusiveMinimum: 0.0
+          title: Cellaream2
+        selectedAreaM2:
+          type: number
+          minimum: 0.0
+          title: Selectedaream2
+        commonValidAreaM2:
+          type: number
+          minimum: 0.0
+          title: Commonvalidaream2
+        bounds:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 4
+          minItems: 4
+          title: Bounds
+        coverageWitnessDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Coveragewitnessdigest
+      additionalProperties: false
+      type: object
+      required:
+      - rows
+      - columns
+      - rowOffset
+      - columnOffset
+      - selectedMaskB64
+      - commonValidMaskB64
+      - unavailableMaskB64
+      - thresholdExcludedMaskB64
+      - selectedCellCount
+      - commonValidCellCount
+      - unavailableCellCount
+      - thresholdExcludedCellCount
+      - cellAreaM2
+      - selectedAreaM2
+      - commonValidAreaM2
+      - bounds
+      title: RelativeVolumeCoverageWitnessV2
+      description: 'Lossless bounded full-zone masks for a baseline-grid calculation.
+
+
+        Bits are row-major and big-endian within each byte.  ``selected`` is the
+
+        complete cell-centre WorkArea mask; ``commonValid`` is the exact cells that
+
+        had finite values in both epochs; ``unavailable`` is the selected-minus-
+
+        common mask.  The first fixed profile has a zero threshold, so its
+
+        threshold-excluded mask must always be empty.'
+    RelativeVolumeMetricsV2:
+      properties:
+        cutM3:
+          type: number
+          minimum: 0.0
+          title: Cutm3
+        fillM3:
+          type: number
+          minimum: 0.0
+          title: Fillm3
+        netM3:
+          type: number
+          title: Netm3
+        thresholdM:
+          type: number
+          title: Thresholdm
+        uncertaintyM3:
+          type: 'null'
+          title: Uncertaintym3
+      additionalProperties: false
+      type: object
+      required:
+      - cutM3
+      - fillM3
+      - netM3
+      - thresholdM
+      title: RelativeVolumeMetricsV2
+      description: Finite cut/fill arithmetic for the one fixed profile.
+    RelativeVolumeNumericResultV2:
+      properties:
+        contractVersion:
+          type: string
+          const: external-relative-volume-numeric-result.v2
+          title: Contractversion
+          default: external-relative-volume-numeric-result.v2
+        calculationIdentityDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Calculationidentitydigest
+        profileDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Profiledigest
+        metrics:
+          $ref: '#/components/schemas/RelativeVolumeMetricsV2'
+        coverage:
+          $ref: '#/components/schemas/RelativeVolumeCoverageWitnessV2'
+        numericResultIdentityDigest:
+          anyOf:
+          - type: string
+            pattern: ^sha256:[0-9a-f]{64}$
+          - type: 'null'
+          title: Numericresultidentitydigest
+      additionalProperties: false
+      type: object
+      required:
+      - calculationIdentityDigest
+      - profileDigest
+      - metrics
+      - coverage
+      title: RelativeVolumeNumericResultV2
+      description: 'Calculation content only: it deliberately excludes attempt/admission
+        state.'
+    AnalysisListV1:
+      properties:
+        items:
+          items:
+            $ref: '#/components/schemas/AnalysisViewV1'
+          type: array
+          maxItems: 500
+          title: Items
+      additionalProperties: false
+      type: object
+      required:
+      - items
+      title: AnalysisListV1
+    AnalysisEpochEvidenceV1:
+      properties:
+        selector:
+          $ref: '#/components/schemas/AnalysisObservationSelectorV1'
+        observationEpochId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        observedSha256:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedsha256
+        observedSizeBytes:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Observedsizebytes
+        observedCrsIdentifier:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observedcrsidentifier
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        verticalReferenceIdentifier:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Verticalreferenceidentifier
+        verticalReferenceBasis:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Verticalreferencebasis
+        verticalUnit:
+          type: string
+          const: metre
+          title: Verticalunit
+        transform:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 6
+          minItems: 6
+          title: Transform
+        transformDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Transformdigest
+        inspectionReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectionreportdigest
+        inspectionReportRef:
+          $ref: '#/components/schemas/AnalysisEvidenceReferenceV1'
+        inputDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inputdigest
+      additionalProperties: false
+      type: object
+      required:
+      - selector
+      - observationEpochId
+      - artifactId
+      - observedSha256
+      - observedSizeBytes
+      - observedCrsIdentifier
+      - observedCrsDigest
+      - verticalReferenceIdentifier
+      - verticalReferenceBasis
+      - verticalUnit
+      - transform
+      - transformDigest
+      - inspectionReportDigest
+      - inspectionReportRef
+      - inputDigest
+      title: AnalysisEpochEvidenceV1
+      description: Resolved AP identity facts for one epoch, returned by the evidence
+        endpoint.
+    AnalysisEvidenceViewV1:
+      properties:
+        analysisId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Analysisid
+        authority:
+          $ref: '#/components/schemas/AnalysisAuthorityReferencesV1'
+        baseline:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisEpochEvidenceV1'
+          - type: 'null'
+        current:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisEpochEvidenceV1'
+          - type: 'null'
+        calculation:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisCalculationIdentityEvidenceV1'
+          - type: 'null'
+        evaluations:
+          items:
+            $ref: '#/components/schemas/AnalysisEvaluationEvidenceV1'
+          type: array
+          maxItems: 2
+          title: Evaluations
+          default: []
+        result:
+          anyOf:
+          - $ref: '#/components/schemas/AnalysisResultV1'
+          - type: 'null'
+        evidenceRefs:
+          items:
+            $ref: '#/components/schemas/AnalysisEvidenceReferenceV1'
+          type: array
+          maxItems: 256
+          title: Evidencerefs
+      additionalProperties: false
+      type: object
+      required:
+      - analysisId
+      - authority
+      - evidenceRefs
+      title: AnalysisEvidenceViewV1
+    SpatialAssetInspectedRasterFactsV1:
+      properties:
+        factClass:
+          type: string
+          const: INSPECTED
+          title: Factclass
+          default: INSPECTED
+        sourceReportDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Sourcereportdigest
+        inspectorBuildDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Inspectorbuilddigest
+        observedCrsIdentifier:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Observedcrsidentifier
+        observedCrsWkt:
+          anyOf:
+          - type: string
+            maxLength: 65536
+            minLength: 1
+          - type: 'null'
+          title: Observedcrswkt
+        observedCrsDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Observedcrsdigest
+        observedVerticalReference:
+          anyOf:
+          - $ref: '#/components/schemas/SpatialAssetObservedVerticalReferenceV1'
+          - type: 'null'
+        transform:
+          prefixItems:
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          - type: number
+          type: array
+          maxItems: 6
+          minItems: 6
+          title: Transform
+        footprintWkt:
+          type: string
+          maxLength: 65536
+          minLength: 1
+          title: Footprintwkt
+        footprintDigest:
+          type: string
+          pattern: ^sha256:[0-9a-f]{64}$
+          title: Footprintdigest
+        width:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Width
+        height:
+          type: integer
+          exclusiveMinimum: 0.0
+          title: Height
+      additionalProperties: false
+      type: object
+      required:
+      - sourceReportDigest
+      - inspectorBuildDigest
+      - observedCrsIdentifier
+      - observedCrsDigest
+      - transform
+      - footprintWkt
+      - footprintDigest
+      - width
+      - height
+      title: SpatialAssetInspectedRasterFactsV1
+      description: Measured raster geometry tied to its exact inspection report and build.
+    SpatialAssetObservedVerticalReferenceV1:
+      properties:
+        identifier:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Identifier
+        basis:
+          type: string
+          maxLength: 8192
+          minLength: 1
+          title: Basis
+      additionalProperties: false
+      type: object
+      required:
+      - identifier
+      - basis
+      title: SpatialAssetObservedVerticalReferenceV1
+
+    SpatialDataRequestV1:
+      $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataRequestV1'
+    SpatialDataPageV1:
+      $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataPageV1'
+    SpatialDataJobViewV1:
+      $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataJobViewV1'
+    SpatialDataErrorV1:
+      $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataErrorV1'
+    SpatialDataWorkerPendingPageV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerPendingPageV1'
+    SpatialDataLeaseRequestV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataLeaseRequestV1'
+    SpatialDataLeaseViewV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataLeaseViewV1'
+    SpatialDataRenewRequestV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataRenewRequestV1'
+    SpatialDataWorkerInputResponseV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerInputResponseV1'
+    SpatialDataOutputUploadRequestV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataOutputUploadRequestV1'
+    SpatialDataOutputUploadViewV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataOutputUploadViewV1'
+    SpatialDataCompleteRequestV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataCompleteRequestV1'
+    SpatialDataFailureRequestV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataFailureRequestV1'
+    SpatialDataWorkerMutationViewV1:
+      $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerMutationViewV1'
   securitySchemes:
     bearerAuth:
       type: http

@@ -4,7 +4,7 @@
 - Date: 2026-09-06
 - Human approval provenance: 2026-09-06 explicit first-release decision
 - Requirements: REQ-INT-101/102/103/104, REQ-SEC-101, REQ-OPS-102
-- Invariants: preserves INV-051, INV-053, and INV-060; no invariant or schema is changed.
+- Invariants: preserves INV-024, INV-051, INV-053, and INV-060; no invariant or schema is changed.
 - Runtime status: the bounded Core registration and byte-seal API has local software evidence in
   the [verification audit](../audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md). This ADR
   remains product direction, not a vendor/export compatibility decision, deployment, or release.
@@ -21,7 +21,8 @@ For the first release, customers normally run reconstruction software on equipme
 control. KSI's product role is to register, verify, and analyze exported artifacts. KSI-server
 reconstruction is retained only for testing and demonstration. This direction does not select a
 vendor, promise provider compatibility, approve a license, or establish an external software
-guarantee.
+guarantee. D6 later records DJI Terra as the initial customer-PC **reference workflow**; it does
+not retrospectively turn that reference into a provider, license, export, or accuracy approval.
 
 ## Decision
 
@@ -120,6 +121,50 @@ contracts, validation, compatibility policy, security review, tests, and accepta
 No runtime path may treat an external result as eligible by default or backfill absent facts. This
 ADR does not change managed ProcessingJob state transitions, sealed-bundle semantics, Analysis
 Readiness, or any invariant enforcement.
+
+### D6 — 2026-09-20 initial field workflow clarification
+
+The Human clarified the intended initial MVP reference workflow as:
+
+```text
+RTK-equipped Matrice 4D capture -> customer-controlled field PC / DJI Terra reconstruction
+-> customer submits derived artifacts and bounded evidence -> KSI inspection, compatible
+comparison, relative-quantity/evidence workflow, human review, and re-observation
+```
+
+Matrice 4D is the company's initial field-validation equipment. Its RTK status, including a FIX,
+is capture evidence only: it does not itself establish final map accuracy, height accuracy,
+quantitative eligibility, survey acceptance, or contract-settlement suitability. Those claims
+remain constrained by D3–D5, applicable compatibility/evidence policy, independent checkpoints
+where required, and separate field acceptance.
+
+DJI Terra is the initial customer-PC reconstruction **reference workflow**, not a KSI-operated
+provider integration. This clarification does not select or verify a Terra license, validate an
+export format, issue a KSI Terra ProcessingJob or profile, promise automation, or report a vendor
+accuracy result. A customer remains responsible for selecting, licensing, running, and exporting
+its reconstruction software under D1.
+
+KSI's first-release role is therefore to inspect submitted derived artifacts, determine which
+uses have adequate compatible evidence, make allowed change/height/relative-quantity analysis
+available with its limits, and connect results to review, reporting, and re-observation. KSI does
+not develop or promise a proprietary photogrammetry/reconstruction engine, and it does not operate
+customer production reconstruction. This boundary does not turn KSI into a mere viewer: evidence
+adjudication, compatible comparison, measurement, durable workflow, and the approved acquisition
+and autonomous-roadmap boundaries remain KSI responsibilities.
+
+The D4 artifact distinctions apply without change: an ortho may be registered and viewed; under
+the current external V1 measurement route, DSM is required for any eligible height or
+relative-volume use; point cloud and DTM are function-specific additions; and a mesh is optional
+visualization. This does not prohibit a future point-cloud measurement route that has its own
+approved specification, contracts, validation, and acceptance evidence. Registration is not
+verification, and verification is not quantitative eligibility. Customer originals stay
+customer-side for the normal external first-release path; their absence neither creates managed
+source authority nor permanently denies an otherwise supported derived-result use.
+
+This clarification preserves D2 and INV-024/INV-051/INV-053/INV-060. Existing managed NodeODM, raw
+bundle, ProcessingJob, profile, source-authority point-cloud, and historical-result rules remain
+immutable managed/test/demonstration scope. It neither removes nor disables existing runtime paths
+or records, and it grants no exception to their fail-closed safeguards.
 
 ## Consequences and rollback
 

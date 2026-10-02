@@ -254,6 +254,91 @@ class ExternalReconstructionSubmissionV1(_FrozenExternalModel):
         return cls.model_validate(candidate).canonical_digest()
 
 
+class ExternalReconstructionSubmissionV2(_FrozenExternalModel):
+    """A customer declaration requiring one DSM, with an optional orthophoto.
+
+    Declarations remain customer assertions. This version changes only the
+    artifact-count contract and does not establish byte observation, quality,
+    compatibility, or quantitative eligibility.
+    """
+
+    contract_version: Literal["external-reconstruction-submission.v2"] = (
+        "external-reconstruction-submission.v2"
+    )
+    submission_id: _BoundedText
+    revision: StrictInt = Field(ge=1)
+    organization_id: _BoundedText
+    site_id: _BoundedText
+    observation_epoch_id: _BoundedText
+    submitted_at: datetime
+    submitted_by: _BoundedText
+    execution_responsibility: Literal["customer_operator"] = "customer_operator"
+    execution_locus: Literal["customer_workstation"] = "customer_workstation"
+    producer_declaration: ExternalReconstructionSubmissionV1Producer
+    input_declaration: ExternalReconstructionSubmissionV1Input
+    artifacts: tuple[ExternalArtifactDeclarationV1, ...] = Field(min_length=1, max_length=8)
+    submission_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
+
+    @field_validator("submitted_at", mode="before")
+    @classmethod
+    def _submitted_at_is_datetime_wire_value(cls, value: object) -> object:
+        return _require_datetime_wire_value(value, "submittedAt")
+
+    @field_validator("submitted_at")
+    @classmethod
+    def _submitted_at_is_aware(cls, value: datetime) -> datetime:
+        return _require_aware(value, "submittedAt")
+
+    @model_validator(mode="after")
+    def _validate_submission(self) -> ExternalReconstructionSubmissionV2:
+        kinds = [artifact.kind for artifact in self.artifacts]
+        if kinds.count(ProcessingArtifactKind.DSM) != 1:
+            raise ValueError("artifacts must contain exactly one dsm")
+        if kinds.count(ProcessingArtifactKind.ORTHO) > 1:
+            raise ValueError("artifacts may contain at most one ortho")
+        if len(set(artifact.artifact_id for artifact in self.artifacts)) != len(self.artifacts):
+            raise ValueError("artifactId values must be unique")
+        if len(set(kinds)) != len(kinds):
+            raise ValueError("each artifact kind may appear at most once")
+        object.__setattr__(
+            self,
+            "artifacts",
+            tuple(sorted(self.artifacts, key=lambda artifact: artifact.artifact_id)),
+        )
+        if self.submission_digest is not None and self.submission_digest != self.canonical_digest():
+            raise ValueError("submissionDigest does not match canonical submission content")
+        return self
+
+    def canonical_payload(self) -> dict[str, Any]:
+        payload = self.model_dump(by_alias=True, mode="json", exclude={"submission_digest"})
+        payload["artifacts"] = sorted(
+            payload["artifacts"], key=lambda artifact: artifact["artifactId"]
+        )
+        return payload
+
+    def canonical_digest(self) -> str:
+        payload = canonical_json_bytes(self.canonical_payload())
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+    def sealed(self) -> ExternalReconstructionSubmissionV2:
+        validated = type(self).model_validate(self.__dict__)
+        payload = validated.model_dump(by_alias=True, mode="json")
+        payload["submissionDigest"] = validated.canonical_digest()
+        return type(self).model_validate(payload)
+
+    @classmethod
+    def digest_for_wire(cls, payload: dict[str, Any]) -> str:
+        """Compute a candidate using the same validated canonical form as sealing."""
+        candidate = dict(payload)
+        candidate.pop("submissionDigest", None)
+        return cls.model_validate(candidate).canonical_digest()
+
+
+ExternalReconstructionSubmission = (
+    ExternalReconstructionSubmissionV1 | ExternalReconstructionSubmissionV2
+)
+
+
 class ExternalReconstructionManifestEntryV1(_FrozenExternalModel):
     """A server-observed byte identity; not a format or quality verdict."""
 
@@ -333,7 +418,7 @@ class ExternalReconstructionManifestV1(_FrozenExternalModel):
     @classmethod
     def from_submission(
         cls,
-        submission: ExternalReconstructionSubmissionV1,
+        submission: ExternalReconstructionSubmission,
         *,
         manifest_id: str,
         observed_at: datetime,
@@ -343,9 +428,16 @@ class ExternalReconstructionManifestV1(_FrozenExternalModel):
         observation_epoch_id: str,
         entries: tuple[ExternalReconstructionManifestEntryV1, ...],
     ) -> ExternalReconstructionManifestV1:
-        validated_submission = ExternalReconstructionSubmissionV1.model_validate(
-            submission.__dict__
-        )
+        if isinstance(submission, ExternalReconstructionSubmissionV1):
+            validated_submission: ExternalReconstructionSubmission = (
+                ExternalReconstructionSubmissionV1.model_validate(submission.__dict__)
+            )
+        elif isinstance(submission, ExternalReconstructionSubmissionV2):
+            validated_submission = ExternalReconstructionSubmissionV2.model_validate(
+                submission.__dict__
+            )
+        else:  # pragma: no cover - defensive runtime boundary for untyped callers
+            raise TypeError("unsupported external reconstruction submission version")
         validated_entries = tuple(
             ExternalReconstructionManifestEntryV1.model_validate(entry.__dict__)
             for entry in entries
@@ -397,6 +489,113 @@ def external_reconstruction_submission_wire_dict(
     return submission.sealed().model_dump(by_alias=True, mode="json")
 
 
+def external_reconstruction_submission_v2_wire_dict(
+    submission: ExternalReconstructionSubmissionV2,
+) -> dict[str, Any]:
+    """Serialize a sealed V2 customer declaration for its JSON Schema."""
+    return submission.sealed().model_dump(by_alias=True, mode="json")
+
+
+def parse_external_reconstruction_submission_v2(
+    payload: dict[str, Any],
+) -> ExternalReconstructionSubmissionV2:
+    """Validate a V2 wire payload at the trusted application boundary.
+
+    The JSON Schema describes structural constraints. This parser additionally
+    enforces cross-artifact identity uniqueness and the canonical self-digest.
+    """
+    wire = _require_v2_wire_object_fields(
+        payload,
+        path="submission",
+        fields=(
+            "contractVersion",
+            "submissionId",
+            "revision",
+            "organizationId",
+            "siteId",
+            "observationEpochId",
+            "submittedAt",
+            "submittedBy",
+            "executionResponsibility",
+            "executionLocus",
+            "producerDeclaration",
+            "inputDeclaration",
+            "artifacts",
+            "submissionDigest",
+        ),
+    )
+    if wire["submissionDigest"] is None:
+        raise ValueError("submissionDigest is required for a V2 wire payload")
+
+    _require_v2_wire_object_fields(
+        wire["producerDeclaration"],
+        path="producerDeclaration",
+        fields=(
+            "softwareName",
+            "softwareVersion",
+            "buildIdentifier",
+            "producerRunIdentifier",
+            "configurationDigest",
+            "completedAt",
+        ),
+    )
+    _require_v2_wire_object_fields(
+        wire["inputDeclaration"],
+        path="inputDeclaration",
+        fields=(
+            "rawMediaStoredByKsi",
+            "originalRetentionLocus",
+            "localInputManifestDigest",
+            "imageCount",
+            "captureStartedAt",
+            "captureEndedAt",
+        ),
+    )
+    artifacts = wire["artifacts"]
+    if not isinstance(artifacts, list):
+        raise ValueError("artifacts must be an array")
+    for index, artifact in enumerate(artifacts):
+        artifact_path = f"artifacts[{index}]"
+        artifact_object = _require_v2_wire_object_fields(
+            artifact,
+            path=artifact_path,
+            fields=(
+                "artifactId",
+                "kind",
+                "fileName",
+                "format",
+                "contentType",
+                "declaredSha256",
+                "declaredSizeBytes",
+                "declaredCrs",
+                "declaredVerticalReference",
+                "declaredGsdM",
+            ),
+        )
+        vertical_reference = artifact_object["declaredVerticalReference"]
+        if vertical_reference is not None:
+            _require_v2_wire_object_fields(
+                vertical_reference,
+                path=f"{artifact_path}.declaredVerticalReference",
+                fields=("datum", "basis", "source"),
+            )
+    return ExternalReconstructionSubmissionV2.model_validate(payload)
+
+
+def _require_v2_wire_object_fields(
+    value: object,
+    *,
+    path: str,
+    fields: tuple[str, ...],
+) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{path} must be an object")
+    missing = [field for field in fields if field not in value]
+    if missing:
+        raise ValueError(f"{path} is missing required fields: {', '.join(missing)}")
+    return value
+
+
 def external_reconstruction_manifest_wire_dict(
     manifest: ExternalReconstructionManifestV1,
 ) -> dict[str, Any]:
@@ -409,9 +608,13 @@ __all__ = [
     "ExternalDeclaredVerticalReferenceV1",
     "ExternalReconstructionManifestEntryV1",
     "ExternalReconstructionManifestV1",
+    "ExternalReconstructionSubmission",
     "ExternalReconstructionSubmissionV1",
     "ExternalReconstructionSubmissionV1Input",
     "ExternalReconstructionSubmissionV1Producer",
+    "ExternalReconstructionSubmissionV2",
     "external_reconstruction_manifest_wire_dict",
     "external_reconstruction_submission_wire_dict",
+    "external_reconstruction_submission_v2_wire_dict",
+    "parse_external_reconstruction_submission_v2",
 ]

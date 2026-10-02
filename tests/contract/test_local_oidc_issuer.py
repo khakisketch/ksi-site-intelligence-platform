@@ -14,6 +14,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 from fastapi.testclient import TestClient
+from ksi_core.identity.auth import Role
+from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -57,9 +59,10 @@ def _authorize_and_exchange(
     client: TestClient,
     secret: str,
     *,
+    account: str = "local-field-operator",
+    verifier: str = "v" * 43,
     redirect_uri: str = "http://127.0.0.1:3210/api/auth/callback/ksi-oidc",
 ) -> dict[str, object]:
-    verifier = "v" * 43
     params = {
         "response_type": "code",
         "client_id": "ksi-operations-console",
@@ -80,7 +83,7 @@ def _authorize_and_exchange(
     assert "KSI 빈 조직 관리자" in selection.text
     assert "KSI 개발 열람자" in selection.text
     completed = client.post(
-        "/authorize", data={**params, "account": "local-field-operator"}, follow_redirects=False
+        "/authorize", data={**params, "account": account}, follow_redirects=False
     )
     assert completed.status_code == 302
     query = parse_qs(urlparse(completed.headers["location"]).query)
@@ -116,6 +119,24 @@ def test_local_oidc_authorization_code_pkce_token_is_accepted_by_core(tmp_path: 
             jwks_url="http://127.0.0.1:9010/jwks.json",
         ),
         fetch_jwks=lambda: client.get("/jwks.json").json(),
+        subject_registry=OidcSubjectRegistry.from_document(
+            {
+                "version": "oidc-subject-registry.v1",
+                "subjects": [
+                    {
+                        "issuer": "http://127.0.0.1:9010",
+                        "subject": "local-field-operator",
+                        "principalId": "local-field-operator",
+                        "organizationId": "org-local-pilot",
+                        "role": Role.FIELD_OPERATOR.value,
+                        "status": "ACTIVE",
+                        "allowedSiteIds": [],
+                        "allowedWorkAreaIds": [],
+                    }
+                ],
+            },
+            expected_issuer="http://127.0.0.1:9010",
+        ),
     )
     principal = oidc_verifier.verify(access_token)
     assert principal is not None

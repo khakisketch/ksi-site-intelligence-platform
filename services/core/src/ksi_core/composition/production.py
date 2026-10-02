@@ -63,12 +63,15 @@ from typing import TYPE_CHECKING, Any
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import (
     AuthRegistry,
+    HumanAuthMode,
+    PrincipalKind,
 )
 from ksi_core.composition.production_config import (
     _EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT,
     _JOURNAL_SEGMENT_BYTES_DEFAULT,
     _acquisition_coordination_env,
     _acquisition_issue_gate_env,
+    _analysis_activation_paths_env,
     _checkpoint_validation_registration_env,
     _copilot_runtime_config_env,
     _expose_docs_env,
@@ -88,6 +91,7 @@ from ksi_core.composition.production_config import (
 )
 from ksi_core.device_attestation import load_device_attestation_registry
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.identity.oidc_subject_registry import load_oidc_subject_registry
 from ksi_core.observability import configure_structured_logging
 from ksi_core.oidc import OidcJwtVerifier
 from ksi_core.signing_keys import load_signing_keys
@@ -139,11 +143,70 @@ def build_production_app() -> FastAPI:
     checkpoint_validation_registration_enabled = _checkpoint_validation_registration_env()
     copilot_runtime_config = _copilot_runtime_config_env()
     human_auth_mode, oidc_config = _human_auth_config_env()
+    oidc_subject_registry = None
+    if oidc_config is not None:
+        if oidc_config.subject_registry_file is None:
+            raise RuntimeError("production OIDC requires a protected subject registry file")
+        try:
+            oidc_subject_registry = load_oidc_subject_registry(
+                oidc_config.subject_registry_file,
+                expected_issuer=oidc_config.issuer,
+            )
+        except ValueError as exc:
+            raise RuntimeError("protected OIDC subject registry is invalid") from exc
     mission_contract_writer_version, mission_contract_issuer_id = (
         _mission_contract_writer_config()
     )
 
     principal_records = _parse_principal_tokens(principal_tokens_raw)
+    if (
+        human_auth_mode in (HumanAuthMode.OIDC, HumanAuthMode.DUAL)
+        and oidc_subject_registry is not None
+    ):
+        opaque_principal_ids = {record.principal.principal_id for record in principal_records}
+        if oidc_subject_registry.principal_ids & opaque_principal_ids:
+            raise RuntimeError(
+                "OIDC subject principalId collides with opaque principalId"
+            )
+    external_analysis_local_graph = None
+    analysis_activation = None
+    analysis_paths = _analysis_activation_paths_env()
+    if analysis_paths is not None:
+        from ksi_core.composition.local_analysis_runtime_config import (
+            load_local_analysis_runtime_config,
+        )
+        from ksi_core.domains.external.quantity.analysis_activation_authority import (
+            load_analysis_activation,
+        )
+        runtime_path, activation_path, verification_keys_path = analysis_paths
+        try:
+            external_analysis_local_graph = load_local_analysis_runtime_config(runtime_path)
+        except (RuntimeError, ValueError) as exc:
+            raise RuntimeError("protected Analysis runtime configuration is invalid") from exc
+        analysis_workers = {
+            record.principal
+            for record in principal_records
+            if record.principal.kind is PrincipalKind.ANALYSIS_WORKER
+        }
+        if len(analysis_workers) != 1:
+            raise RuntimeError(
+                "Analysis activation requires exactly one registered ANALYSIS_WORKER identity"
+            )
+        worker_principal = next(iter(analysis_workers))
+        try:
+            analysis_activation = load_analysis_activation(
+                activation_path,
+                verification_keys_path,
+                organization_id=worker_principal.organization_id,
+                policy=external_analysis_local_graph.policy,
+                runtime=external_analysis_local_graph.runtime,
+                resource_envelope=external_analysis_local_graph.resource_envelope,
+                worker_principal=worker_principal,
+                now=datetime.now(UTC),
+                allow_expired=True,
+            )
+        except ValueError as exc:
+            raise RuntimeError("signed Analysis activation is invalid") from exc
     risk_policy_packs = _optional_risk_policy_packs()
     edge_runtime_profiles = _optional_edge_runtime_profiles()
     capability_freshness_policies = _optional_capability_freshness_policies()
@@ -165,12 +228,13 @@ def build_production_app() -> FastAPI:
 
         workflow_path, provider_path = external_authority_paths
         external_authority_provider = load_external_authority_provider(
-            provider_path, clock=lambda: datetime.now(UTC)
+            provider_path, clock=lambda: datetime.now(UTC), allow_expired=True
         )
         external_result_workflow = load_external_result_workflow_config(
             workflow_path,
             participants=external_authority_provider.participants,
             build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+            allow_historical_catalog_binding=True,
         )
 
     # ── 2단계: 무거운 조립 — 여기부터는 검증을 통과한 입력만 다룬다.
@@ -189,7 +253,11 @@ def build_production_app() -> FastAPI:
     )
 
     auth_registry = AuthRegistry(principal_records)
-    oidc_verifier = OidcJwtVerifier(oidc_config) if oidc_config is not None else None
+    oidc_verifier = (
+        OidcJwtVerifier(oidc_config, subject_registry=oidc_subject_registry)
+        if oidc_config is not None and oidc_subject_registry is not None
+        else None
+    )
 
     opened: list[Any] = []
 
@@ -228,6 +296,8 @@ def build_production_app() -> FastAPI:
             runtime_route_configurations=runtime_route_configurations,
             copilot_runtime_config=copilot_runtime_config,
             external_result_workflow=external_result_workflow,
+            external_analysis_local_graph=external_analysis_local_graph,
+            analysis_activation=analysis_activation,
             expose_docs=expose_docs,
         )
         if external_authority_provider is not None:

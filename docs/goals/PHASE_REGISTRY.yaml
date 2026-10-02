@@ -1,10 +1,27 @@
-# Phase Registry — 멀티세션 단계 원장 (정본)
+# Phase Registry — capability-track/status index (not current task or next-priority SSOT)
 # 근거: MASTER_PRD v3.0 §25(구현 단계)·§26(완료 기준). GitHub Milestone과 동기 유지.
+# Product-state owns product slice/Backlog and product-level next-work selection only when no active bounded checkout task exists; resume that task through the revalidated checkpoint and named task ledger.
 # 상태: PLANNED | IN_PROGRESS | GATED(수용기준 검증 대기) | DONE | BLOCKED
 # 완료 판정은 자기신고가 아니라 acceptance의 게이트 통과 증거로만 한다 (green≠작동).
 
 version: 1
 updated: "2026-09-17"
+
+spatial_data_platform:
+  direction_updated: "2026-09-30"
+  authority: docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md
+  planning_ledger: docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md
+  status: PLANNED
+  direction_status: ACCEPTED
+  execution_status: PAUSED_BY_USER
+  scope: >-
+    Spatial-data delivery and reproducible analysis for external agents and industrial software.
+    First platform validation: DSM/ortho area-data reuse plus the existing earthwork analysis case.
+    Point cloud, Mesh, external result layers and additional clients are staged successor scopes.
+  evidence_boundary: >-
+    Direction/planning documentation only. Existing Analysis local evidence remains in its ledgers;
+    new data-serving acceptance, customer field evidence and platform release are not established.
+    This index neither closes EXT-VAL nor selects the next implementation task.
 
 terrain_aware_planning:
   authority: >-

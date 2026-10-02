@@ -171,9 +171,10 @@ docker compose up -d --build        # rerun after code change
 
 ### 3a. Restarting Core with external authority configured (time windows)
 
-Owner decision 2026-09-18: a degraded "authority BLOCKED" boot is designed separately; until
-it ships, Core **refuses to start** when a signed authority time window has passed. Check
-before every restart:
+The 2026-09-18 degraded-boot decision is implemented: a previously valid signed snapshot
+that expires moves the external authority route to `BLOCKED` without taking unrelated Core
+routes down. Forged, unsafe, future-issued, or history-inconsistent bundles still fail boot.
+Check the signed time windows before every restart:
 
 ```bash
 # snapshot window, from the provider's configured snapshot file (paths are operator-private)
@@ -184,17 +185,26 @@ jq -r '.catalogAuthorities.records[] | "catalog \(.digest[7:19]) \(.activeFrom) 
 jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <protected>/operator/authority-keys.json
 ```
 
-- Expired snapshot at startup: `external authority provider is blocked`, chained
-  `authority snapshot is outside its validity interval`
-  (`domains/external/authority/provider_loading.py`). Expired catalog authority: workflow
-  config `CATALOG_AUTHORITY` (`external_result_workflow_config.py`). Whole Core stays down.
-- Fix before restart: issue a new signed snapshot that extends the retained history
-  (next `sequence`, `previousSnapshotDigest` = last receipt). Re-issue the catalog authority
-  record only when its own window has expired: a changed catalog authority digest silently
-  invalidates every active compatibility mapping (see the local rehearsal notes).
-- Expiry while Core is running is different: `GET /ready/external-authority` turns
-  `BLOCKED`, quantitative use is refused, the rest of Core keeps serving. Recover with a new
-  snapshot and `POST /v1/operations/external-authority/reload` (admin), no restart.
+- A signed, previously valid snapshot that has expired by startup now opens Core in a
+  degraded state: `GET /ready` remains available, `GET /ready/external-authority` is
+  `BLOCKED` (503), and no external authority reconciliation or receipt append occurs.
+  Existing external policy/result journals still replay. Use a new signed snapshot
+  that extends the retained history (`sequence`, `previousSnapshotDigest` = last receipt)
+  and the admin reload operation below to restore the external route. A forged, unsafe,
+  future-issued, or history-inconsistent bundle still prevents startup.
+- If only the signed catalog authority record has expired while the snapshot/key remain
+  current, Core starts with its historical quantitative journals. `/ready` remains 200;
+  `/ready/external-authority` can still report `PROVIDER_CONFIGURED` because the snapshot
+  provider is valid. The expired catalog cannot authorize a new quantitative request.
+  To restore that catalog, install a new approved catalog configuration and a chained
+  signed snapshot containing its new authority-record digest, then restart Core. Old
+  compatibility mappings retain their old digest; admit a new mapping explicitly before
+  new work. Wrong catalog body, organization, actor, or future-only authority is still
+  a `CATALOG_AUTHORITY` startup failure.
+- If the snapshot expires while Core is running, `GET /ready/external-authority` turns
+  `BLOCKED`, quantitative use is refused, and the rest of Core keeps serving. Recover
+  with a new snapshot and `POST /v1/operations/external-authority/reload` (admin),
+  without a restart when the catalog configuration itself is unchanged.
 
 ## Appendix H. Pre-ADR-036 managed pipeline (HISTORICAL — not the first-release route)
 

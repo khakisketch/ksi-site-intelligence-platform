@@ -242,14 +242,7 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   const briefing = page.getByRole("heading", { name: "KSI 현장 브리핑" });
   await expect(nextAction).toBeVisible();
   await expect(briefing).toBeVisible();
-  await expect(
-    page.getByText(
-      process.env.KSI_DASHBOARD_E2E_PHASE2 === "1"
-        ? "아직 저장된 브리핑이 없습니다"
-        : "AI 브리핑은 아직 사용하지 않습니다",
-      { exact: true },
-    ),
-  ).toBeVisible();
+  await expect(page.getByText("아직 저장된 브리핑이 없습니다", { exact: true })).toBeVisible();
   expect(
     await page.evaluate(() => {
       const headings = Array.from(document.querySelectorAll("h2"));
@@ -333,7 +326,7 @@ test("전역 작업 화면은 결정·진행·완료 원장을 구분하고 모�
   }
 });
 
-test("작업 상세는 근거가 없을 때 분석 준비를 fail-closed로 표현한다", async ({ page }) => {
+test("작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다", async ({ page }) => {
   test.skip(
     Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL),
     "외부 원장은 읽기 전용이며 로컬 합성 evidence gap을 전제하지 않습니다.",
@@ -352,16 +345,15 @@ test("작업 상세는 근거가 없을 때 분석 준비를 fail-closed로 표�
   expect(workOrderHref).toMatch(/^\/field\/work-orders\/[^/]+$/);
 
   await page.goto(workOrderHref!);
-  const progressCard = page
-    .getByText("Acquisition progress", { exact: true })
-    .locator("xpath=ancestor::section");
-  await expect(progressCard.getByText("분석 준비", { exact: true })).toBeVisible();
-  await expect(progressCard.getByText("분석 준비 확인 불가", { exact: true })).toBeVisible();
   await expect(
-    progressCard.getByText("Analysis Readiness 증거 projection이 이 Core 조립에 장착되지 않았습니다.", {
-      exact: true,
-    }),
+    page.getByText(
+      "작업 실행 정보를 확인하지 못했습니다. 비행이나 장비 실행 제어를 표시하지 않습니다.",
+      { exact: true },
+    ),
   ).toBeVisible();
+  await expect(page.getByText("Acquisition progress", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("전문가 복구 정보", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "수동 임무 복구 열기", exact: true })).toHaveCount(0);
   await expectNoHorizontalOverflow(page);
   expect(browserFailures).toEqual([]);
 });

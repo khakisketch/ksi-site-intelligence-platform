@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,7 @@ import ksi_core.app_assembly as app_assembly_module
 import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.app import create_app
@@ -27,6 +29,8 @@ from ksi_core.app_assembly import assemble_app
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.edge_sync import EdgeSyncStore
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
+from ksi_event_contracts.external_analysis_activation import AnalysisActivationV1
+from test_external_analysis_activation import ActivationBindings
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PRODUCTION_SOURCE = (
@@ -130,6 +134,83 @@ def _valid_env(tmp_path: Path) -> dict[str, str]:
 def _apply_env(monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> None:
     for key, value in env.items():
         monkeypatch.setenv(key, value)
+
+
+def _enable_analysis_activation(
+    tmp_path: Path,
+    env: dict[str, str],
+    *,
+    activation_fields: dict[str, object] | None = None,
+    add_ambiguous_worker: bool = False,
+) -> tuple[AnalysisActivationV1, ActivationBindings]:
+    from datetime import UTC, datetime, timedelta
+
+    from test_external_analysis_activation import _bindings, _write_activation
+
+    bindings = _bindings()
+    tokens = json.loads(env["KSI_CORE_PRINCIPAL_TOKENS_JSON"])
+    tokens.append(
+        {
+            "tokenSha256": hashlib.sha256(b"analysis-worker-test-token").hexdigest(),
+            "principalId": bindings["worker_principal"].principal_id,
+            "kind": "ANALYSIS_WORKER",
+            "role": None,
+            "deviceId": None,
+            "organizationId": bindings["organization_id"],
+        }
+    )
+    if add_ambiguous_worker:
+        tokens.append(
+            {
+                "tokenSha256": hashlib.sha256(b"analysis-worker-test-token-b").hexdigest(),
+                "principalId": "analysis-worker-b",
+                "kind": "ANALYSIS_WORKER",
+                "role": None,
+                "deviceId": None,
+                "organizationId": bindings["organization_id"],
+            }
+        )
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(tokens)
+
+    runtime = bindings["runtime"]
+    policy = bindings["policy"]
+    envelope = bindings["resource_envelope"]
+    runtime_config = tmp_path / "local-analysis-runtime.json"
+    runtime_config.write_text(
+        json.dumps(
+            {
+                "version": "local-analysis-runtime.v1",
+                "policy": policy.model_dump(by_alias=True, mode="json"),
+                "runtime": {
+                    "workerExecutableDigest": runtime.worker_executable_digest,
+                    "workerBuildDigest": runtime.worker_build_digest,
+                    "runtimeImageVersion": runtime.runtime_image_version,
+                    "runtimeImageOciDigest": runtime.runtime_image_oci_digest,
+                    "dependencyLockDigest": runtime.dependency_lock_digest,
+                },
+                "resourceEnvelope": envelope.model_dump(by_alias=True, mode="json"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime_config.chmod(0o600)
+    activation_dir = tmp_path / "activation"
+    activation_dir.mkdir(mode=0o700)
+    fields = activation_fields or {
+        "issuedAt": (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace(
+            "+00:00", "Z"
+        ),
+        "validUntil": (datetime.now(UTC) + timedelta(hours=1)).isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+    activation_path, keys_path, activation = _write_activation(
+        activation_dir, bindings=bindings, activation_fields=fields
+    )
+    env["KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE"] = str(runtime_config)
+    env["KSI_CORE_ANALYSIS_ACTIVATION_FILE"] = str(activation_path)
+    env["KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE"] = str(keys_path)
+    return activation, bindings
 
 
 def test_copilot_runtime_is_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -252,6 +333,40 @@ def test_unknown_principal_kind_raises_runtime_error(
 
     with pytest.raises(RuntimeError):
         build_production_app()
+
+
+def test_analysis_mcp_production_principal_requires_explicit_nonempty_scope() -> None:
+    from ksi_core.composition.production_config import _parse_principal_tokens
+
+    row = {
+        "tokenSha256": hashlib.sha256(b"analysis-mcp-production-token").hexdigest(),
+        "principalId": "analysis-mcp-production",
+        "kind": "ANALYSIS_MCP_CLIENT",
+        "role": None,
+        "deviceId": None,
+        "organizationId": "org-prod",
+        "allowedSiteIds": ["site-prod"],
+        "allowedWorkAreaIds": ["wa-site-prod-0001"],
+    }
+    parsed = _parse_principal_tokens(json.dumps([row]))
+    assert parsed[0].principal.allowed_site_ids == frozenset({"site-prod"})
+    assert parsed[0].principal.allowed_work_area_ids == frozenset({"wa-site-prod-0001"})
+
+    invalid_rows = (
+        {key: value for key, value in row.items() if key != "allowedSiteIds"},
+        {key: value for key, value in row.items() if key != "allowedWorkAreaIds"},
+        {**row, "allowedSiteIds": []},
+        {**row, "allowedWorkAreaIds": []},
+        {**row, "allowedSiteIds": ["site-prod", "site-prod"]},
+        {**row, "allowedWorkAreaIds": ["wa-site-prod-0001", "wa-site-prod-0001"]},
+        {**row, "allowedSiteIds": ["site/prod"]},
+        {**row, "allowedWorkAreaIds": [" "]},
+        {**row, "allowedSiteIds": "site-prod"},
+        {**row, "allowedWorkAreaIds": [3]},
+    )
+    for invalid in invalid_rows:
+        with pytest.raises(RuntimeError, match="KSI_CORE_PRINCIPAL_TOKENS_JSON"):
+            _parse_principal_tokens(json.dumps([invalid]))
 
 
 def test_plaintext_token_sha256_raises_runtime_error(
@@ -413,6 +528,286 @@ def test_valid_env_builds_fastapi_app(tmp_path: Path, monkeypatch: pytest.Monkey
 
     app = build_production_app()
     assert isinstance(app, FastAPI)
+    paths = set(app.openapi()["paths"])
+    assert "/v1/sites/{site_id}/analysis-observations" not in paths
+    assert "/v1/internal/analysis-jobs" not in paths
+
+
+def test_production_mounts_analysis_only_from_valid_explicit_activation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    activation, _bindings_for_config = _enable_analysis_activation(tmp_path, env)
+    _apply_env(monkeypatch, env)
+
+    app = build_production_app()
+    paths = set(app.openapi()["paths"])
+
+    assert "/v1/sites/{site_id}/analysis-observations" in paths
+    assert "/v1/sites/{site_id}/work-areas/{work_area_id}/analyses" in paths
+    assert "/v1/internal/analysis-jobs" in paths
+
+    from fastapi.testclient import TestClient
+    from ksi_core.domains.external.quantity import external_analysis_api as analysis_api
+    from ksi_core.domains.external.quantity import (
+        external_analysis_worker_api as worker_api,
+    )
+    from ksi_event_contracts.external_analysis_api import (
+        AnalysisObservationSelectorV1,
+        CreateAnalysisRequestV1,
+    )
+    from ksi_event_contracts.external_relative_volume_calculation import (
+        RelativeVolumeCalculationFailureV2,
+        RelativeVolumeCalculationReportV2,
+        RelativeVolumeCoverageWitnessV2,
+        RelativeVolumeMetricsV2,
+        RelativeVolumeNumericResultV2,
+    )
+    from test_external_analysis_worker_api import _expired_attempt
+
+    class _Clock:
+        value = activation.issued_at + timedelta(seconds=1)
+
+        @classmethod
+        def now(cls, _tz: object = UTC) -> datetime:
+            return cls.value
+
+    monkeypatch.setattr(analysis_api, "datetime", _Clock)
+    monkeypatch.setattr(worker_api, "datetime", _Clock)
+    client = TestClient(app)
+    worker_headers = {"Authorization": "Bearer analysis-worker-test-token"}
+    operator_headers = {"Authorization": "Bearer prod-admin-token"}
+    create_body = CreateAnalysisRequestV1(
+        baseline=AnalysisObservationSelectorV1(
+            work_order_id="work-order-a",
+            submission_ref="ers-v1-" + "a" * 64,
+            revision=1,
+        ),
+        current=AnalysisObservationSelectorV1(
+            work_order_id="work-order-b",
+            submission_ref="ers-v1-" + "b" * 64,
+            revision=1,
+        ),
+    ).model_dump(by_alias=True)
+    active_create = client.post(
+        "/v1/sites/site-a/work-areas/area-a/analyses",
+        headers={**operator_headers, "Idempotency-Key": "activation-live-create"},
+        json=create_body,
+    )
+    assert active_create.status_code == 404  # Current activation reached normal scoped lookup.
+    assert client.get("/v1/internal/analysis-jobs", headers=worker_headers).status_code == 200
+
+    _Clock.value = activation.valid_until + timedelta(seconds=1)
+    expired_create = client.post(
+        "/v1/sites/site-a/work-areas/area-a/analyses",
+        headers={**operator_headers, "Idempotency-Key": "activation-expired-create"},
+        json=create_body,
+    )
+    assert expired_create.status_code == 503
+    assert expired_create.json()["detail"] == "ANALYSIS_ACTIVATION_EXPIRED"
+
+    attempt = _expired_attempt(_Clock.value)
+    assert attempt.execution_attempt_digest is not None
+    failure = RelativeVolumeCalculationFailureV2(
+        failure_id="activation-test-failure",
+        attempt=attempt,
+        attempt_digest=attempt.execution_attempt_digest,
+        reason_code="TEST_FAILURE",
+        failed_at=_Clock.value,
+    ).sealed()
+    coverage = RelativeVolumeCoverageWitnessV2(
+        rows=1,
+        columns=1,
+        row_offset=0,
+        column_offset=0,
+        selected_mask_b64="gA==",
+        common_valid_mask_b64="gA==",
+        unavailable_mask_b64="AA==",
+        threshold_excluded_mask_b64="AA==",
+        selected_cell_count=1,
+        common_valid_cell_count=1,
+        unavailable_cell_count=0,
+        threshold_excluded_cell_count=0,
+        cell_area_m2=1.0,
+        selected_area_m2=1.0,
+        common_valid_area_m2=1.0,
+        bounds=(0.0, 0.0, 1.0, 1.0),
+    ).sealed()
+    numeric = RelativeVolumeNumericResultV2(
+        calculation_identity_digest=attempt.authorization.calculation_identity_digest,
+        profile_digest="sha256:" + "c" * 64,
+        metrics=RelativeVolumeMetricsV2(
+            cut_m3=0.0, fill_m3=0.0, net_m3=0.0, threshold_m=0.0
+        ),
+        coverage=coverage,
+    ).sealed()
+    assert numeric.numeric_result_identity_digest is not None
+    report = RelativeVolumeCalculationReportV2(
+        report_id="activation-test-report",
+        attempt=attempt,
+        attempt_digest=attempt.execution_attempt_digest,
+        numeric_result=numeric,
+        numeric_result_identity_digest=numeric.numeric_result_identity_digest,
+        computed_at=_Clock.value,
+        reported_at=_Clock.value,
+    ).sealed()
+    worker_requests = (
+        ("GET", "/v1/internal/analysis-jobs", None),
+        (
+            "POST",
+            "/v1/internal/analysis-jobs/missing:lease",
+            {"workerInstanceId": "analysis-worker-a", "leaseAcquisitionId": "lease-a"},
+        ),
+        ("GET", "/v1/internal/analysis-jobs/missing/input", None),
+        (
+            "POST",
+            "/v1/internal/analysis-jobs/missing:renew",
+            {"attempt": attempt.model_dump(by_alias=True, mode="json")},
+        ),
+        (
+            "POST",
+            "/v1/internal/analysis-jobs/missing:report",
+            {"report": report.model_dump(by_alias=True, mode="json")},
+        ),
+        (
+            "POST",
+            "/v1/internal/analysis-jobs/missing:failure",
+            {"failure": failure.model_dump(by_alias=True, mode="json")},
+        ),
+    )
+    for method, path, body in worker_requests:
+        response = client.request(method, path, headers=worker_headers, json=body)
+        assert response.status_code == 503, (method, path, response.text)
+        assert response.json()["detail"] == "ANALYSIS_ACTIVATION_EXPIRED"
+
+
+@pytest.mark.parametrize(
+    "activation_fields",
+    [
+        {"runtimeDigest": "sha256:" + "f" * 64},
+        {"workerPrincipalId": "different-analysis-worker"},
+    ],
+)
+def test_production_rejects_signed_activation_bound_to_another_runtime_or_worker(
+    activation_fields: dict[str, object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    _enable_analysis_activation(tmp_path, env, activation_fields=activation_fields)
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="signed Analysis activation is invalid"):
+        build_production_app()
+
+
+def test_production_rejects_ambiguous_analysis_worker_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    _enable_analysis_activation(tmp_path, env, add_ambiguous_worker=True)
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="exactly one registered ANALYSIS_WORKER"):
+        build_production_app()
+
+
+def test_production_rejects_invalid_activation_signature_before_mount(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    _enable_analysis_activation(tmp_path, env)
+    activation_path = Path(env["KSI_CORE_ANALYSIS_ACTIVATION_FILE"])
+    record = json.loads(activation_path.read_text(encoding="utf-8"))
+    signature = record["signature"]
+    record["signature"] = ("A" if signature[0] != "A" else "B") + signature[1:]
+    activation_path.write_text(json.dumps(record), encoding="utf-8")
+    activation_path.chmod(0o600)
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="signed Analysis activation is invalid"):
+        build_production_app()
+
+
+def test_production_rejects_partial_analysis_activation_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    env["KSI_CORE_ANALYSIS_ACTIVATION_FILE"] = str(tmp_path / "activation.json")
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="requires all three explicit file paths"):
+        build_production_app()
+
+
+def test_expired_activation_boot_keeps_analysis_read_routes_mounted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from fastapi.testclient import TestClient
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    _enable_analysis_activation(
+        tmp_path,
+        env,
+        activation_fields={
+            "issuedAt": (datetime.now(UTC) - timedelta(hours=2)).isoformat().replace(
+                "+00:00", "Z"
+            ),
+            "validUntil": (datetime.now(UTC) - timedelta(hours=1)).isoformat().replace(
+                "+00:00", "Z"
+            ),
+        },
+    )
+    _apply_env(monkeypatch, env)
+
+    app = build_production_app()
+    paths = set(app.openapi()["paths"])
+    assert "/v1/sites/{site_id}/analyses/{analysis_id}/result" in paths
+    client = TestClient(app)
+    read = client.get(
+        "/v1/sites/site-a/analyses/historical-result-id/result",
+        headers={"Authorization": "Bearer prod-admin-token"},
+    )
+    create = client.post(
+        "/v1/sites/site-a/work-areas/area-a/analyses",
+        headers={
+            "Authorization": "Bearer prod-admin-token",
+            "Idempotency-Key": "expired-production-create",
+        },
+        json={
+            "baseline": {
+                "workOrderId": "work-order-a",
+                "submissionRef": "ers-v1-" + "a" * 64,
+                "revision": 1,
+            },
+            "current": {
+                "workOrderId": "work-order-b",
+                "submissionRef": "ers-v1-" + "b" * 64,
+                "revision": 1,
+            },
+        },
+    )
+    worker = client.get(
+        "/v1/internal/analysis-jobs",
+        headers={"Authorization": "Bearer analysis-worker-test-token"},
+    )
+    assert read.status_code == 404  # The historical read route remains available.
+    assert create.status_code == worker.status_code == 503
 
 
 def test_expose_docs_defaults_closed_and_opens_when_true(
@@ -547,6 +942,202 @@ def test_oidc_human_auth_requires_all_verification_inputs(
         _human_auth_config_env()
 
 
+@pytest.mark.parametrize("mode", ["OIDC", "DUAL"])
+def test_human_auth_requires_subject_registry_path(
+    mode: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import _human_auth_config_env
+
+    monkeypatch.setenv("KSI_CORE_HUMAN_AUTH_MODE", mode)
+    monkeypatch.setenv("KSI_CORE_OIDC_ISSUER", "https://issuer.example.test")
+    monkeypatch.setenv("KSI_CORE_OIDC_AUDIENCE", "ksi-core")
+    monkeypatch.setenv("KSI_CORE_OIDC_JWKS_URL", "https://issuer.example.test/jwks.json")
+    monkeypatch.delenv("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE", raising=False)
+    with pytest.raises(RuntimeError, match="KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE"):
+        _human_auth_config_env()
+
+
+def test_production_oidc_verifier_uses_loaded_subject_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+    from test_oidc_auth import _jwk, _token
+
+    env = _valid_env(tmp_path)
+    subject_path = tmp_path / "oidc-subjects.json"
+    subject_path.write_text(
+        json.dumps(
+            {
+                "version": "oidc-subject-registry.v1",
+                "subjects": [
+                    {
+                        "issuer": "https://issuer.example.test",
+                        "subject": "provider-subject-1",
+                        "principalId": "prod-oidc-user",
+                        "organizationId": "org-prod-1",
+                        "role": "FIELD_OPERATOR",
+                        "status": "ACTIVE",
+                        "allowedSiteIds": ["site-prod-1"],
+                        "allowedWorkAreaIds": ["area-prod-1"],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    subject_path.chmod(0o600)
+    env.update(
+        {
+            "KSI_CORE_HUMAN_AUTH_MODE": "OIDC",
+            "KSI_CORE_OIDC_ISSUER": "https://issuer.example.test",
+            "KSI_CORE_OIDC_AUDIENCE": "ksi-core",
+            "KSI_CORE_OIDC_JWKS_URL": "https://issuer.example.test/jwks.json",
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE": str(subject_path),
+        }
+    )
+    _apply_env(monkeypatch, env)
+
+    app = build_production_app()
+    verifier = app.state.oidc_verifier
+    signing_key = generate_private_key(public_exponent=65537, key_size=2048)
+    verifier._fetch_jwks = lambda: {"keys": [_jwk(signing_key, "production-test-key")]}
+    token = _token(
+        signing_key,
+        kid="production-test-key",
+        claims={
+            "iss": "https://issuer.example.test",
+            "aud": "ksi-core",
+            "sub": "provider-subject-1",
+            "exp": int(time.time()) + 600,
+            "nbf": int(time.time()) - 30,
+            "ksi_principal_id": "forged-user",
+            "ksi_organization_id": "forged-org",
+            "ksi_role": "ADMIN",
+        },
+    )
+    principal = verifier.verify(token)
+
+    assert principal is not None
+    assert principal.principal_id == "prod-oidc-user"
+    assert principal.organization_id == "org-prod-1"
+    assert principal.role.value == "FIELD_OPERATOR"
+    assert principal.allowed_site_ids == frozenset({"site-prod-1"})
+    assert principal.allowed_work_area_ids == frozenset({"area-prod-1"})
+
+
+def test_production_dual_rejects_oidc_subject_collision_with_opaque_operator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    token_rows = json.loads(env["KSI_CORE_PRINCIPAL_TOKENS_JSON"])
+    token_rows[0]["organizationId"] = "org-collision"
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(token_rows)
+    subject_path = tmp_path / "oidc-subjects.json"
+    subject_path.write_text(
+        json.dumps(
+            {
+                "version": "oidc-subject-registry.v1",
+                "subjects": [
+                    {
+                        "issuer": "https://issuer.example.test",
+                        "subject": "provider-subject-1",
+                        "principalId": "prod-admin",
+                        "organizationId": "org-collision",
+                        "role": "ADMIN",
+                        "status": "ACTIVE",
+                        "allowedSiteIds": [],
+                        "allowedWorkAreaIds": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    subject_path.chmod(0o600)
+    env.update(
+        {
+            "KSI_CORE_HUMAN_AUTH_MODE": "DUAL",
+            "KSI_CORE_OIDC_ISSUER": "https://issuer.example.test",
+            "KSI_CORE_OIDC_AUDIENCE": "ksi-core",
+            "KSI_CORE_OIDC_JWKS_URL": "https://issuer.example.test/jwks.json",
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE": str(subject_path),
+        }
+    )
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="OIDC.*opaque.*principalId"):
+        build_production_app()
+
+
+@pytest.mark.parametrize(
+    ("mode", "opaque_kind", "record_status", "oidc_status"),
+    [
+        ("OIDC", "PROCESSING_WORKER", "ACTIVE", "ACTIVE"),
+        ("DUAL", "GATEWAY_DEVICE", "REVOKED", "REVOKED"),
+    ],
+)
+def test_production_oidc_modes_reject_all_opaque_principal_id_collisions(
+    mode: str,
+    opaque_kind: str,
+    record_status: str,
+    oidc_status: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    token_rows = json.loads(env["KSI_CORE_PRINCIPAL_TOKENS_JSON"])
+    opaque_record: dict[str, object] = {
+        "tokenSha256": hashlib.sha256(b"colliding-opaque-token").hexdigest(),
+        "principalId": "shared-opaque-id",
+        "kind": opaque_kind,
+        "role": None,
+        "deviceId": "gateway-collision" if opaque_kind == "GATEWAY_DEVICE" else None,
+        "organizationId": "org-shared",
+        "status": record_status,
+    }
+    token_rows.append(opaque_record)
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(token_rows)
+    subject_path = tmp_path / "oidc-subjects.json"
+    subject_path.write_text(
+        json.dumps(
+            {
+                "version": "oidc-subject-registry.v1",
+                "subjects": [
+                    {
+                        "issuer": "https://issuer.example.test",
+                        "subject": "provider-subject-1",
+                        "principalId": "shared-opaque-id",
+                        "organizationId": "org-shared",
+                        "role": "FIELD_OPERATOR",
+                        "status": oidc_status,
+                        "allowedSiteIds": [],
+                        "allowedWorkAreaIds": [],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    subject_path.chmod(0o600)
+    env.update(
+        {
+            "KSI_CORE_HUMAN_AUTH_MODE": mode,
+            "KSI_CORE_OIDC_ISSUER": "https://issuer.example.test",
+            "KSI_CORE_OIDC_AUDIENCE": "ksi-core",
+            "KSI_CORE_OIDC_JWKS_URL": "https://issuer.example.test/jwks.json",
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE": str(subject_path),
+        }
+    )
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="OIDC.*opaque.*principalId"):
+        build_production_app()
+
+
 def test_oidc_human_auth_rejects_unknown_mode_and_algorithm(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -560,9 +1151,36 @@ def test_oidc_human_auth_rejects_unknown_mode_and_algorithm(
     monkeypatch.setenv("KSI_CORE_OIDC_ISSUER", "https://issuer.example.test")
     monkeypatch.setenv("KSI_CORE_OIDC_AUDIENCE", "ksi-core")
     monkeypatch.setenv("KSI_CORE_OIDC_JWKS_URL", "https://issuer.example.test/jwks.json")
+    monkeypatch.setenv("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE", "/tmp/subjects.json")
     monkeypatch.setenv("KSI_CORE_OIDC_ALLOWED_ALGORITHMS", "none")
     with pytest.raises(RuntimeError, match="RS256, ES256"):
         _human_auth_config_env()
+
+
+def test_production_oidc_rejects_symlinked_subject_registry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ksi_core.production import build_production_app
+
+    env = _valid_env(tmp_path)
+    source = tmp_path / "subjects-real.json"
+    source.write_text("{}", encoding="utf-8")
+    source.chmod(0o600)
+    symlink = tmp_path / "subjects-link.json"
+    symlink.symlink_to(source)
+    env.update(
+        {
+            "KSI_CORE_HUMAN_AUTH_MODE": "OIDC",
+            "KSI_CORE_OIDC_ISSUER": "https://issuer.example.test",
+            "KSI_CORE_OIDC_AUDIENCE": "ksi-core",
+            "KSI_CORE_OIDC_JWKS_URL": "https://issuer.example.test/jwks.json",
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE": str(symlink),
+        }
+    )
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(RuntimeError, match="protected OIDC subject registry"):
+        build_production_app()
 
 
 def test_acquisition_coordination_rollback_keeps_legacy_mission_surface(

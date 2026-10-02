@@ -1,5 +1,7 @@
 # Civil field data intake — private package
 
+> **적용 범위:** 이 문서는 과거 KSI-managed Civil Processing v1의 원본 사진→재구성·설계면 비교 수용 절차다. ADR-KSI-036/037의 첫 API-first 제품(고객 장비에서 재구성한 DSM 접수→WorkArea 두 시점 변화 분석)의 자료 요청서가 아니다. 첫 제품 입력은 [첫 요청 계약](../design/API_FIRST_EARTHWORK_FIRST_REQUEST_CONTRACT.md)과 [현장 자료 준비 패킷](EXTERNAL_EARTHWORK_FIELD_DATA_INTAKE.md)을 따른다.
+
 이 문서는 Civil Processing v1의 **현장 수용 입력**을 가장 단순하게 준비하는 절차다.
 입력 감사가 통과해도 실제 처리·정량 비교·현장 수용이 통과한 것은 아니다. 감사기는
 `INPUT_READY` 또는 typed `BLOCKED`만 반환하고 항상

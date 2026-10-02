@@ -455,6 +455,49 @@ def test_validation_uses_resolved_context_and_core_adjudicates_observed_metrics(
     )
 
 
+def test_analysis_scope_projection_keeps_a_payloadless_rejected_terminal_record(
+    tmp_path: Path,
+) -> None:
+    """A known validation failure must not disappear behind the display projection."""
+    item = _evidence()
+    registry, policy = _policy_registry(tmp_path)
+    context = _context(item, policy)
+    store = ExternalEvidenceValidationStore(
+        DurableJournal(tmp_path / "payloadless-rejected.jsonl"),
+        evidence=_Evidence(item),
+        policy_registry=registry,
+        context_authority=_ContextAuthority(context),
+        clock=lambda: NOW,
+    )
+    issued = store.issue_after_seal(item.evidence_ref, now=NOW)
+    assert issued.request is not None
+    leased = store.claim(
+        issued.request.validation_id,
+        LeaseFence(str(uuid4()), str(uuid4()), 0),
+        organization_id="org-a",
+        now=NOW,
+    )
+    assert leased.fence is not None
+    rejected = store.record_incomplete_failure(
+        issued.request.validation_id,
+        leased.fence,
+        organization_id="org-a",
+        now=NOW,
+        reason="WORKER_INPUT_UNREADABLE",
+    )
+    assert rejected.record is not None and rejected.record.measurement_payload is None
+    assert item.manifest is not None and item.manifest.evidence_manifest_digest is not None
+    assert policy.policy_digest is not None and context.context_digest is not None
+
+    assert store.terminal_records_for_analysis_scope(
+        subject=item.manifest.subject,
+        evidence_manifest_digest=item.manifest.evidence_manifest_digest,
+        target_dsm_observed_sha256=item.manifest.target_dsm_observed_sha256,
+        policy_digest=policy.policy_digest,
+        context_digest=context.context_digest,
+    ) == (rejected.record,)
+
+
 def test_worker_input_exposes_complete_policy_and_exact_byte_identities(tmp_path: Path) -> None:
     """V2 launch construction needs policy plus artifact id/hash/size, not digest guesses."""
     item = _evidence()

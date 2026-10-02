@@ -106,8 +106,11 @@ REMAP_REQUIRED`로 두 축을 번갈아 지나가고, INV-052가 "검증된 최�
 **임무 유형 목록을 문서에 복제하지 않는다** — 정본은 `MissionType` enum이고,
 유형별 발급 가능 현장상태는 `mission_gating` 모듈 docstring이 SSOT다.
 
-**진행 상태는 여기에도 적지 않는다.** 어느 축이 지금 진행 중이고 어느 축이
-막혀 있는지는 `docs/goals/PHASE_REGISTRY.yaml`과 goal-ledger가 소유한다.
+**진행 상태는 여기에도 적지 않는다.** `docs/superpowers/product-state.md`와 그 named
+slice ledger는 현재 제품 Slice·Backlog와 활성 bounded checkout task가 없을 때의 제품 수준
+다음 작업 선택을 소유한다. 활성 checkout task는 Git 재검증 뒤 checkpoint와 named task ledger로
+재개하며 Slice를 닫거나 우선순위를 바꾸지 않는다. `docs/goals/PHASE_REGISTRY.yaml`은
+capability-track index다.
 
 > **정정 기록 (2026-08-08, 대표자 지적 2건).**
 >
@@ -195,12 +198,15 @@ D2로 선형 순위를 폐기했으므로 이 목록은 "몇 순위"가 아니�
   않는다.
 
 **어느 축이 지금 진행 가능하고 어느 축이 막혀 있는지는 이 문서가 아니라
-`PHASE_REGISTRY.yaml`·goal-ledger가 소유한다** — 그 상태는 몇 주 만에 뒤집힌다.
+`product-state.md`와 그 named ledger가 소유한다** — `PHASE_REGISTRY.yaml`은
+capability-track index이고 그 상태는 몇 주 만에 뒤집힌다.
 
 ### D6 — 정확도 등급: 상대 비교로 시작한다
 
-**현장 관리용 상대 비교**를 목표로 한다. 같은 RTK 좌표계 안에서 시점 간 변화
-(체적 증감·진척)를 신뢰하고, **절대 정확도는 주장하지 않는다**(INV-024).
+**현장 관리용 상대 비교**라는 기존 방향의 기록이다. 첫 API-first MVP의 결과 의미는
+후속 ADR-KSI-037과 첫 요청 계약이 정한다. 지원 조건을 충족한 두 시점 DSM의 관측
+지형 체적 변화를 근거·제한과 함께 기록하며, 그 값만으로 진척·절대 정확도·정산
+적합성을 추론하지 않는다(INV-024).
 
 정확도 계층이 나중에 들어올 자리는 **이미 비어 있다** —
 `packages/event-contracts/src/ksi_event_contracts/processing_artifact.py`의
@@ -254,7 +260,8 @@ UI에서 깨는 것이다.
   local world model·next-best-view)가 곧 현재 능력이라는 오해를 부를 수 있다.
   실제 `edge/`에 그 기능들은 **아직 없다**(명령 유효성 판정·안전 상태기·PSDK
   탭). 헌법과 이 ADR은 제품이 무엇인지를 말하고, **지금 무엇이 되는지는
-  `PHASE_REGISTRY.yaml`·goal-ledger가 말한다** — 그 분리를 지키지 않으면
+  `product-state.md`와 그 named ledger가 말한다** — `PHASE_REGISTRY.yaml`은
+  capability-track index다. 그 분리를 지키지 않으면
   "문서가 되어 있다고 하니 된 것"이라는 판단이 다시 생긴다.
 - **상대 비교의 대가**: 산출한 물량을 **계약 정산 근거로 쓸 수 없다.** 이 한계는
   고객에게 명시해야 하며, 영업 자료에서 "측량"이라는 단어를 쓰지 않는다. 정산

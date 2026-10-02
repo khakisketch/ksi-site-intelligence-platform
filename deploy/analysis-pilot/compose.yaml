@@ -1,0 +1,145 @@
+# Local loopback candidate only. Tailnet Serve is configured separately by an
+# authorized host operator; this project never publishes a public listener.
+name: ksi-analysis-pilot
+
+x-app-hardening: &app-hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=67108864,mode=1777
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    command: ["server", "/data"]
+    environment:
+      MINIO_ROOT_USER: ${KSI_ANALYSIS_PILOT_MINIO_ROOT_USER:?set protected pilot env}
+      MINIO_ROOT_PASSWORD: ${KSI_ANALYSIS_PILOT_MINIO_ROOT_PASSWORD:?set protected pilot env}
+    volumes:
+      - pilot-objects:/data
+    ports:
+      - "127.0.0.1:${KSI_ANALYSIS_PILOT_OBJECTS_PORT:?set protected pilot env}:9000"
+    restart: unless-stopped
+    networks: [pilot-private]
+
+  bucket-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=1048576,uid=10001,gid=10001,mode=0700
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        set -eu
+        mkdir -p /tmp/mc-config
+        attempt=0
+        until mc --config-dir /tmp/mc-config alias set pilot http://minio:9000 "$${KSI_ANALYSIS_PILOT_MINIO_ROOT_USER}" "$${KSI_ANALYSIS_PILOT_MINIO_ROOT_PASSWORD}" && mc --config-dir /tmp/mc-config ready pilot; do
+          attempt=$$((attempt + 1))
+          [ "$$attempt" -lt 30 ] || exit 1
+          sleep 2
+        done
+        mc --config-dir /tmp/mc-config mb --ignore-existing pilot/ksi-analysis-evidence
+    environment:
+      KSI_ANALYSIS_PILOT_MINIO_ROOT_USER: ${KSI_ANALYSIS_PILOT_MINIO_ROOT_USER:?set protected pilot env}
+      KSI_ANALYSIS_PILOT_MINIO_ROOT_PASSWORD: ${KSI_ANALYSIS_PILOT_MINIO_ROOT_PASSWORD:?set protected pilot env}
+    depends_on:
+      minio:
+        condition: service_started
+    restart: "no"
+    networks: [pilot-private]
+
+  core:
+    <<: *app-hardening
+    image: ${KSI_ANALYSIS_PILOT_CORE_IMAGE_ID:?reviewed immutable Core image ID required}
+    user: "10001:10001"
+    environment:
+      KSI_CORE_DATA_DIR: /var/lib/ksi/data
+      KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
+      KSI_CORE_S3_ENDPOINT: http://minio:9000
+      KSI_CORE_S3_PUBLIC_ENDPOINT: ${KSI_ANALYSIS_PILOT_OBJECTS_ORIGIN:?customer Tailnet objects origin required}
+      KSI_CORE_S3_BUCKET: ksi-analysis-evidence
+      AWS_ACCESS_KEY_ID: ${KSI_ANALYSIS_PILOT_MINIO_CORE_ACCESS_KEY:?scoped Core object-store credential required}
+      AWS_SECRET_ACCESS_KEY: ${KSI_ANALYSIS_PILOT_MINIO_CORE_SECRET_KEY:?scoped Core object-store credential required}
+      KSI_CORE_PRINCIPAL_TOKENS_JSON: ${KSI_ANALYSIS_PILOT_CORE_PRINCIPAL_TOKENS_JSON:?one dedicated Analysis worker principal required}
+      KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE: /run/ksi-pilot/device-attestation-keys.json
+      KSI_CORE_HUMAN_AUTH_MODE: OIDC
+      KSI_CORE_OIDC_ISSUER: ${KSI_ANALYSIS_PILOT_OIDC_ISSUER:?customer OIDC issuer required}
+      KSI_CORE_OIDC_AUDIENCE: ${KSI_ANALYSIS_PILOT_OIDC_AUDIENCE:?customer OIDC audience required}
+      KSI_CORE_OIDC_JWKS_URL: ${KSI_ANALYSIS_PILOT_OIDC_JWKS_URL:?customer OIDC JWKS URL required}
+      KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE: /run/ksi-pilot/oidc-subject-registry.json
+      KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
+      KSI_CORE_OIDC_JWKS_TTL_SECONDS: "300"
+      KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE: /run/ksi-pilot/analysis/runtime.json
+      KSI_CORE_ANALYSIS_ACTIVATION_FILE: /run/ksi-pilot/analysis/activation.json
+      KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE: /run/ksi-pilot/analysis/activation-keys.json
+      KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG: /run/ksi-pilot/external/workflow.json
+      KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG: /run/ksi-pilot/external/provider.json
+    volumes:
+      - ${KSI_ANALYSIS_PILOT_STATE_DIR:?Core state directory required}:/var/lib/ksi/data
+      - ${KSI_ANALYSIS_PILOT_AUTHORITY_DIR:?protected authority directory required}:/run/ksi-pilot:ro
+      - ${KSI_ANALYSIS_PILOT_AUTHORITY_DIR:?protected authority directory required}/signing-keys:/var/lib/ksi/signing-keys:ro
+    ports:
+      - "127.0.0.1:${KSI_ANALYSIS_PILOT_API_PORT:?set protected pilot env}:8000"
+    depends_on:
+      bucket-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [pilot-private]
+
+  dashboard:
+    <<: *app-hardening
+    image: ${KSI_ANALYSIS_PILOT_DASHBOARD_IMAGE_ID:?reviewed immutable Dashboard image ID required}
+    user: "10001:10001"
+    environment:
+      CORE_API_BASE_URL: http://core:8000
+      KSI_DASHBOARD_DEPLOYMENT_PROFILE: EXTERNAL_VM
+      KSI_DASHBOARD_HUMAN_AUTH_MODE: OIDC
+      KSI_DASHBOARD_PUBLIC_APP_ORIGIN: ${KSI_ANALYSIS_PILOT_APP_ORIGIN:?customer Tailnet app origin required}
+      KSI_DASHBOARD_PUBLIC_API_ORIGIN: ${KSI_ANALYSIS_PILOT_API_ORIGIN:?customer Tailnet API origin required}
+      KSI_DASHBOARD_OIDC_ISSUER: ${KSI_ANALYSIS_PILOT_OIDC_ISSUER:?customer OIDC issuer required}
+      KSI_DASHBOARD_OIDC_CLIENT_ID: ${KSI_ANALYSIS_PILOT_OIDC_CLIENT_ID:?customer OIDC client ID required}
+      KSI_DASHBOARD_OIDC_CLIENT_SECRET_FILE: /run/secrets/oidc-client-secret
+      KSI_DASHBOARD_SESSION_SECRET_FILE: /run/secrets/dashboard-session-secret
+      AUTH_URL: ${KSI_ANALYSIS_PILOT_APP_ORIGIN:?customer Tailnet app origin required}
+      AUTH_TRUST_HOST: "true"
+    secrets:
+      - oidc-client-secret
+      - dashboard-session-secret
+    ports:
+      - "127.0.0.1:${KSI_ANALYSIS_PILOT_APP_PORT:?set protected pilot env}:3000"
+    tmpfs:
+      - /app/.next/cache:rw,noexec,nosuid,nodev,size=268435456,uid=10001,gid=10001,mode=0700
+    depends_on:
+      core:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    networks: [pilot-private]
+
+secrets:
+  oidc-client-secret:
+    file: ${KSI_ANALYSIS_PILOT_SECRET_DIR:?protected secret directory required}/oidc-client.secret
+  dashboard-session-secret:
+    file: ${KSI_ANALYSIS_PILOT_SECRET_DIR:?protected secret directory required}/dashboard-session.secret
+
+volumes:
+  pilot-objects:
+
+networks:
+  pilot-private:
+    driver: bridge

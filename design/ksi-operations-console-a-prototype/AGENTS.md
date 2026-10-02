@@ -1,5 +1,8 @@
 # Mobile Prototype Agent Guide
 
+Read [`../../AGENTS.md`](../../AGENTS.md) for shared product authority, task routing, and control
+boundaries before applying this prototype's local rules.
+
 ## Prototype Instructions
 
 ### KSI A-direction product decisions

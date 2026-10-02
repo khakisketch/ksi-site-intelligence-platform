@@ -41,7 +41,11 @@ from ksi_core.change_detection import ChangeDetectionStore
 from ksi_core.checkpoint_validations import CheckpointValidationStore
 from ksi_core.civil_readiness import CivilReadinessProjector
 from ksi_core.comparison_requests import ComparisonRequestStore
-from ksi_core.composition.external_graph import ExternalSingleVolumeWiring
+from ksi_core.composition.external_graph import (
+    ExternalAnalysisLocalGraphConfig,
+    ExternalSingleVolumeWiring,
+    build_external_analysis_wiring,
+)
 from ksi_core.copilot import CopilotService, ModelTurn, ToolResult
 from ksi_core.copilot_conversations import (
     CopilotConversationService,
@@ -52,6 +56,9 @@ from ksi_core.defect_candidates import DefectCandidateStore
 from ksi_core.design_conformance_reports import DesignConformanceStore
 from ksi_core.design_conformance_requests import DesignConformanceRequestStore
 from ksi_core.design_surfaces import DesignSurfaceStore
+from ksi_core.domains.external.quantity.external_relative_volume_analysis import (
+    AnalysisRuntimeIdentityV2,
+)
 from ksi_core.domains.external.quantity.external_single_volumes import (
     DefaultClosedExternalSingleVolumeExecutionPort,
     ExternalSingleVolumeStore,
@@ -114,6 +121,8 @@ from ksi_core.source_media import SourceMediaStore
 from ksi_core.volume_reports import VolumeChangeStore
 from ksi_core.work_areas import WorkAreaStore
 from ksi_core.work_inbox import WorkInboxStore
+from ksi_event_contracts.external_artifact_validation import ResourceEnvelopeV1
+from ksi_event_contracts.external_relative_volume_analysis import AnalysisPolicyV2
 from ksi_mission_contracts.models import SiteFrame
 from ksi_mission_contracts.risk_policy import RiskPolicyPackV1
 
@@ -498,6 +507,54 @@ def _max_assembly(
     def closed_volume_capabilities(*_args: Any, **_kwargs: Any) -> Any:
         raise AssertionError("closed contract fixture must never issue a byte capability")
 
+    analysis_local_config = ExternalAnalysisLocalGraphConfig(
+        policy=AnalysisPolicyV2(
+            policy_id="contract-sync-analysis-policy",
+            version=1,
+            profile_id="KSI-GIS-RELATIVE-VOLUME-V2",
+            profile_digest="sha256:" + _digest("contract-sync-analysis-profile"),
+            algorithm_digest="sha256:" + _digest("contract-sync-analysis-algorithm"),
+            config_digest="sha256:" + _digest("contract-sync-analysis-config"),
+            baseline_grid_rule="BASELINE_NATIVE_NORTH_UP_AFFINE_V1",
+            current_elevation_resampling="BILINEAR",
+            current_mask_resampling="NEAREST",
+            work_area_rasterization="CELL_CENTER",
+            minimum_common_valid_fraction=1.0,
+            threshold_m=0.0,
+            cell_area_rule="ABSOLUTE_AFFINE_DETERMINANT",
+            delta_rule="CURRENT_MINUS_BASELINE",
+            uncertainty_method="NONE_UNCERTAINTY_M3_NULL_V1",
+        ).sealed(),
+        runtime=AnalysisRuntimeIdentityV2(
+            worker_executable_digest="sha256:" + _digest("contract-sync-analysis-worker"),
+            worker_build_digest="sha256:" + _digest("contract-sync-analysis-build"),
+            runtime_image_version="contract-sync-analysis-local-v1",
+            runtime_image_oci_digest="sha256:" + _digest("contract-sync-analysis-oci"),
+            dependency_lock_digest="sha256:" + _digest("contract-sync-analysis-lock"),
+        ),
+        resource_envelope=ResourceEnvelopeV1(
+            max_input_bytes=10_000_000,
+            max_streamed_bytes=20_000_000,
+            max_tiff_directories=16,
+            max_tiff_entries=10_000,
+            max_pixels=1_000_000,
+            max_bands=4,
+            max_blocks=10_000,
+            max_decompressed_bytes=40_000_000,
+            max_sample_bytes=1_000_000,
+            max_geometry_vertices=10_000,
+            max_cpu_seconds=30.0,
+            max_memory_bytes=128_000_000,
+            max_workspace_bytes=128_000_000,
+            max_output_bytes=4_000_000,
+            max_tenant_concurrency=2,
+            max_queue_depth=10,
+            max_deadline_seconds=60.0,
+            lease_duration_seconds=10.0,
+            max_retry_attempts=2,
+        ).sealed(),
+    )
+
     return create_app(
         evidence_storage=storage,
         flight_artifact_store=flight_artifact_store,
@@ -562,6 +619,19 @@ def _max_assembly(
         ),
         external_display_artifact_store=external_display_artifact_store,
         external_artifact_inspection_store=external_artifact_inspection_store,
+        external_analysis_wiring=build_external_analysis_wiring(
+            journal=lambda name: DurableJournal(tmp_path / name),
+            config=analysis_local_config,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            work_areas=work_area_store,
+            evidence=external_evidence_store,
+            validations=external_evidence_validation_store,
+            storage=storage,
+            sites=site_store,
+            work_orders=observation_work_order_store,
+            coordinator=external_authority_currentness,
+        ),
         acquisition_connectivity_store=acquisition_connectivity_store,
         acquisition_coordination_store=acquisition_coordination_store,
         capture_quality_report_store=capture_quality_report_store,
@@ -601,19 +671,22 @@ def _max_assembly_arguments(tmp_path: Path) -> dict[str, Any]:
 def _seed_max_assembly_site_and_work_order(arguments: dict[str, Any]) -> str:
     site_store = arguments["site_store"]
     work_orders = arguments["observation_work_order_store"]
-    assert site_store.register(
-        "shared-projector-site",
-        "Shared projector site",
-        SiteFrame(
-            crs="EPSG:5186",
-            vertical_datum="LOCAL",
-            unit="meter",
-            transform_version="v1",
-        ),
-        organization_id="legacy",
-        actor="contract-sync",
-        now=_MAX_ASSEMBLY_NOW,
-    ).record is not None
+    assert (
+        site_store.register(
+            "shared-projector-site",
+            "Shared projector site",
+            SiteFrame(
+                crs="EPSG:5186",
+                vertical_datum="LOCAL",
+                unit="meter",
+                transform_version="v1",
+            ),
+            organization_id="legacy",
+            actor="contract-sync",
+            now=_MAX_ASSEMBLY_NOW,
+        ).record
+        is not None
+    )
     return work_orders.create_work_order(
         organization_id="legacy",
         site_id="shared-projector-site",
@@ -710,6 +783,11 @@ def test_max_assembly_shares_external_result_projection_with_context_workspace_a
 def _implemented_operations(tmp_path: Path) -> dict[str, set[str]]:
     """경로 → 실구현 HTTP 메서드 집합(최대 조립 기준)."""
     paths = _max_assembly(tmp_path).openapi()["paths"]
+    data_dir = tmp_path / "data-lane"
+    data_dir.mkdir(exist_ok=True)
+    from test_spatial_data_assembly import maximal_data_arguments
+
+    paths.update(create_app(**maximal_data_arguments(data_dir)).openapi()["paths"])
     return {path: {m for m in item if m in _HTTP_METHODS} for path, item in paths.items()}
 
 
@@ -813,6 +891,105 @@ def test_protected_paths_declare_security_in_doc() -> None:
     assert not violations, f"보호 경로인데 security 선언이 없다: {violations}"
 
 
+def test_spatial_data_contract_has_every_opt_in_operation_and_exact_models(tmp_path: Path) -> None:
+    """Documentation must cover the real lane, not just ordinary default-closed assembly."""
+    from test_spatial_data_assembly import maximal_data_arguments
+
+    impl = create_app(**maximal_data_arguments(tmp_path)).openapi()
+    doc = _doc()
+    selected = {
+        path: operations for path, operations in impl["paths"].items() if "spatial-data" in path
+    }
+    assert len(selected) == 11  # Four public paths, seven internal paths.
+    for path, operations in selected.items():
+        assert path in doc["paths"], path
+        for method, operation in operations.items():
+            recorded = doc["paths"][path][method]
+            assert recorded["security"] == [{"bearerAuth": []}]
+            for code, response in operation["responses"].items():
+                if code.startswith("2") and "content" in response:
+                    assert _json_schema(recorded["responses"][code]) == _json_schema(response)
+
+
+def test_spatial_data_worker_headers_document_the_same_fence_the_handler_requires(
+    tmp_path: Path,
+) -> None:
+    """Undocumented instance/fence prerequisites must not create an unusable client contract."""
+    from test_spatial_data_assembly import maximal_data_arguments
+
+    impl = create_app(**maximal_data_arguments(tmp_path)).openapi()
+    for path, operations in impl["paths"].items():
+        if not path.startswith("/v1/internal/spatial-data-jobs"):
+            continue
+        for operation in operations.values():
+            headers = {p["name"]: p for p in operation.get("parameters", []) if p["in"] == "header"}
+            assert headers["X-Spatial-Data-Worker-Instance-Id"]["required"] is True
+            if path.endswith(("/input", "/renew", "/output-upload", "/complete", "/failure")):
+                assert headers["X-Spatial-Data-Attempt-Digest"]["required"] is True
+
+
+def _expanded_schema(node: Any, document: Any) -> Any:
+    if isinstance(node, list):
+        return [_expanded_schema(item, document) for item in node]
+    if not isinstance(node, dict):
+        return node
+    if "$ref" in node:
+        ref = node["$ref"]
+        if ref.startswith("../"):
+            target, root = _external_schema(ref)
+        else:
+            assert ref.startswith("#/")
+            target, root = document, document
+            for part in ref[2:].split("/"):
+                target = target[part.replace("~1", "/").replace("~0", "~")]
+        return {
+            **_expanded_schema(target, root),
+            **_expanded_schema(
+                {key: value for key, value in node.items() if key != "$ref"}, document
+            ),
+        }
+    return {
+        key: _expanded_schema(value, document)
+        for key, value in node.items()
+        if key not in {"title", "description", "default"}
+    }
+
+
+def test_spatial_data_external_schemas_match_nested_body_and_response_constraints(
+    tmp_path: Path,
+) -> None:
+    """An existing file alone is insufficient: every referenced nested constraint must match."""
+    from test_spatial_data_assembly import maximal_data_arguments
+
+    doc = _doc()
+    impl = create_app(**maximal_data_arguments(tmp_path)).openapi()
+    for path, operations in impl["paths"].items():
+        if "spatial-data" not in path:
+            continue
+        for method, operation in operations.items():
+            recorded = doc["paths"][path][method]
+            if "requestBody" in operation:
+                actual = operation["requestBody"]["content"]["application/json"]["schema"]
+                expected = recorded["requestBody"]["content"]["application/json"]["schema"]
+                assert _expanded_schema(actual, impl) == _expanded_schema(expected, doc)
+            for code, response in operation["responses"].items():
+                if code.startswith("2") and _json_schema(response):
+                    assert _expanded_schema(_json_schema(response), impl) == _expanded_schema(
+                        _json_schema(recorded["responses"][code]), doc
+                    )
+
+
+def test_external_schema_reference_verifier_rejects_missing_or_foreign_pointer() -> None:
+    """The verifier must not accept a present file with a missing fragment or an external path."""
+    for reference in (
+        "../schemas/spatial-data.v1.json#/$defs/Nonexistent",
+        "../../pyproject.toml",
+        "https://example.invalid/schema.json#/$defs/Model",
+    ):
+        with pytest.raises((AssertionError, KeyError)):
+            _external_schema(reference)
+
+
 def test_asyncapi_refs_point_to_existing_latest_schemas() -> None:
     text = _ASYNCAPI.read_text(encoding="utf-8")
     doc: dict[str, Any] = yaml.safe_load(text)
@@ -885,8 +1062,10 @@ def test_openapi_refs_resolve_to_defined_targets() -> None:
                     dangling.append(f"{pointer_path} -> {ref} (문서 안에 정의가 없다)")
                     break
         elif ref.startswith("../"):
-            if not (_OPENAPI.parent / ref).resolve().is_file():
-                dangling.append(f"{pointer_path} -> {ref} (파일이 없다)")
+            try:
+                _external_schema(ref)
+            except (AssertionError, KeyError, OSError, ValueError) as exc:
+                dangling.append(f"{pointer_path} -> {ref} ({type(exc).__name__})")
         else:
             dangling.append(f"{pointer_path} -> {ref} (저장소 안에서 해소할 수 없는 참조 형태)")
 
@@ -924,8 +1103,45 @@ def _doc() -> dict[str, Any]:
     return yaml.safe_load(_OPENAPI.read_text(encoding="utf-8"))
 
 
+def _external_schema(ref: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve a repository-local file and exact JSON pointer; do not drop fragments."""
+    assert ref.startswith("../")
+    filename, _, fragment = ref.partition("#")
+    path = (_OPENAPI.parent / filename).resolve()
+    assert path.is_relative_to(_OPENAPI.parent.parent.resolve()) and path.is_file()
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    node = document
+    if fragment:
+        assert fragment.startswith("/")
+        for part in fragment[1:].split("/"):
+            node = node[part.replace("~1", "/").replace("~0", "~")]
+    assert isinstance(node, dict)
+    return node, document
+
+
 def _implemented_spec(tmp_path: Path) -> dict[str, Any]:
-    return _max_assembly(tmp_path).openapi()
+    result = _max_assembly(tmp_path).openapi()
+    from test_spatial_data_assembly import maximal_data_arguments
+
+    data_dir = tmp_path / "data-spec"
+    data_dir.mkdir(exist_ok=True)
+    data = create_app(**maximal_data_arguments(data_dir)).openapi()
+    result["paths"].update(data["paths"])
+    result["components"]["schemas"].update(data["components"]["schemas"])
+    # Bounded manual body ingestion documents the exact model inline, not via Depends/Body.
+    for path, operations in data["paths"].items():
+        if "spatial-data" not in path:
+            continue
+        for operation in operations.values():
+            schema = (
+                operation.get("requestBody", {})
+                .get("content", {})
+                .get("application/json", {})
+                .get("schema", {})
+            )
+            if schema.get("title", "").startswith("SpatialData"):
+                result["components"]["schemas"][schema["title"]] = schema
+    return result
 
 
 def _ref_name(node: Any) -> str | None:
@@ -967,6 +1183,10 @@ def test_documented_response_schemas_match_implementation_fields(tmp_path: Path)
 
     mismatches: list[str] = []
     for name, spec in doc_schemas.items():
+        if spec.get("x-status") == "planned":
+            continue
+        if spec.get("$ref", "").startswith("../"):
+            spec, _ = _external_schema(spec["$ref"])
         impl = impl_schemas.get(name)
         if impl is None:
             mismatches.append(f"{name}: 문서에만 있는 모델(구현에 없음)")

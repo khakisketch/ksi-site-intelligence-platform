@@ -25,9 +25,47 @@ def mount_external_routes(
     external_volume_execution_activator: Any,
     external_use_evaluator: Any,
     external_single_volume: Any = None,
+    spatial_data: Any = None,
     external_artifact_inspection_store: Any,
     external_display_artifact_store: Any,
+    external_analysis_wiring: Any = None,
 ) -> Any:
+    if spatial_data is not None:
+        from ksi_core.composition.spatial_data_graph import (
+            SpatialDataWiring,
+            bind_spatial_data_openapi,
+        )
+        from ksi_core.domains.external.delivery.api import build_spatial_data_router
+        from ksi_core.domains.external.delivery.worker_api import build_spatial_data_worker_router
+
+        if not isinstance(spatial_data, SpatialDataWiring):
+            raise ValueError("spatial data requires complete explicit wiring")
+        spatial_data.verify_participants(
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            sites=site_store,
+            work_areas=work_area_store,
+            work_orders=observation_work_order_store,
+        )
+        app.include_router(
+            build_spatial_data_router(
+                jobs=spatial_data.jobs,
+                grants=spatial_data.authorizer,
+                sources=spatial_data.sources,
+                downloads=spatial_data.downloads,
+                clock=spatial_data.config.clock,
+            )
+        )
+        app.include_router(
+            build_spatial_data_worker_router(
+                jobs=spatial_data.jobs,
+                storage=spatial_data.storage,
+                activation=spatial_data.config.activation,
+                clock=spatial_data.config.clock,
+            )
+        )
+        app.state.spatial_data = spatial_data
+        bind_spatial_data_openapi(app)
     external_result_projection = external_result_read_projector
     single_volume_store = (
         external_single_volume.store if external_single_volume is not None else None
@@ -80,6 +118,21 @@ def mount_external_routes(
             storage=evidence_storage,
             external_results=external_result_projection,
         )
+
+        if site_store is not None and work_area_store is not None:
+            from ksi_core.domains.external.ingress.spatial_asset_catalog import (
+                build_spatial_asset_catalog_router,
+            )
+
+            app.include_router(
+                build_spatial_asset_catalog_router(
+                    reconstruction=external_reconstruction_store,
+                    work_orders=observation_work_order_store,
+                    sites=site_store,
+                    work_areas=work_area_store,
+                    inspections=external_artifact_inspection_store,
+                )
+            )
 
     if external_evidence_store is not None:
         from ksi_core.external_evidence import mount_external_evidence
@@ -183,5 +236,39 @@ def mount_external_routes(
             work_orders=observation_work_order_store,
             display_store=external_display_artifact_store,
         )
+
+    if external_analysis_wiring is not None:
+        from ksi_core.domains.external.quantity.external_analysis_api import (
+            build_external_analysis_router,
+        )
+        from ksi_core.domains.external.quantity.external_analysis_worker_api import (
+            build_external_analysis_worker_router,
+        )
+
+        wiring = external_analysis_wiring
+        if any(
+            value is None
+            for value in (
+                wiring.facade,
+                wiring.intents,
+                wiring.assessments,
+                wiring.calculations,
+                wiring.capability_issuer,
+            )
+        ):
+            raise ValueError("external analysis wiring requires its complete local graph")
+        app.include_router(
+            build_external_analysis_router(wiring.facade, activation=wiring.activation)
+        )
+        app.include_router(
+            build_external_analysis_worker_router(
+                intents=wiring.intents,
+                assessments=wiring.assessments,
+                calculations=wiring.calculations,
+                capability_issuer=wiring.capability_issuer,
+                activation=wiring.activation,
+            )
+        )
+        app.state.external_analysis_wiring = wiring
 
     return external_result_projection

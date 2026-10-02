@@ -14,6 +14,7 @@ lease 관문·전이표·INV-051 게이트는 전부 Core(``ksi_core.processing_
 
 from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from threading import RLock
@@ -51,6 +52,54 @@ class CoreClientError(RuntimeError):
         self.verdict = verdict
         self.detail = detail
         super().__init__(f"{what}: {verdict}" + (f" — {detail}" if detail else ""))
+
+
+class _CoreHttpResponse(Protocol):
+    @property
+    def headers(self) -> Mapping[str, str]: ...
+
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    def json(self) -> Any: ...
+
+
+_QueryScalar = str | int | float | bool | None
+_QueryParams = (
+    httpx.QueryParams
+    | Mapping[str, _QueryScalar | Sequence[_QueryScalar]]
+    | list[tuple[str, _QueryScalar]]
+    | tuple[tuple[str, _QueryScalar], ...]
+    | str
+    | bytes
+    | None
+)
+
+
+class _CoreHttpClient(Protocol):
+    @property
+    def headers(self) -> MutableMapping[str, str]: ...
+
+    def get(
+        self,
+        url: str,
+        *,
+        params: _QueryParams = None,
+        headers: dict[str, str] | None = None,
+    ) -> _CoreHttpResponse: ...
+
+    def post(
+        self,
+        url: str,
+        *,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> _CoreHttpResponse: ...
+
+    def close(self) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -657,7 +706,7 @@ class HttpCoreClient:
         base_url: str,
         *,
         token: str,
-        client: httpx.Client | None = None,
+        client: _CoreHttpClient | None = None,
         worker_instance_id: str | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
@@ -772,7 +821,7 @@ class HttpCoreClient:
         work_kind: str,
         resource_id: str,
         payload: dict[str, Any],
-        headers: httpx.Headers,
+        headers: Mapping[str, str],
         expected_acquisition_id: str,
     ) -> LeaseHandle:
         """Read the Core-assigned fence from response headers.
@@ -830,9 +879,9 @@ class HttpCoreClient:
         self,
         path: str,
         *,
-        params: dict[str, Any] | None = None,
+        params: _QueryParams = None,
         headers: dict[str, str] | None = None,
-    ) -> httpx.Response:
+    ) -> _CoreHttpResponse:
         request_headers = self._correlation_headers()
         if headers is not None:
             request_headers.update(headers)
@@ -871,7 +920,7 @@ class HttpCoreClient:
         json: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         include_worker_identity: bool = True,
-    ) -> tuple[dict[str, Any], httpx.Headers]:
+    ) -> tuple[dict[str, Any], Mapping[str, str]]:
         """``ok`` 는 문자열 하나 또는 성공으로 볼 verdict 집합이다.
 
         **집합을 받는 이유가 실기동에서 드러났다.** ``acquire_lease`` 가 처음엔

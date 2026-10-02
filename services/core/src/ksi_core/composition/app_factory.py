@@ -102,6 +102,8 @@ if TYPE_CHECKING:
     from ksi_core.volume_reports import VolumeChangeStore
     from ksi_core.work_areas import WorkAreaStore
     from ksi_core.work_inbox import WorkInboxStore
+
+
 def create_app(
     *,
     registry: CapabilityRegistry | None = None,
@@ -150,8 +152,10 @@ def create_app(
     | None = None,
     external_volume_execution_activator: ExternalRelativeVolumeExecutionActivator | None = None,
     external_single_volume: Any | None = None,
+    spatial_data: Any | None = None,
     external_display_artifact_store: ExternalDisplayArtifactStore | None = None,
     external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None,
+    external_analysis_wiring: Any | None = None,
     acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
     acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
     capture_quality_report_store: CaptureQualityReportStore | None = None,
@@ -349,6 +353,7 @@ def create_app(
     # 표(_ASSEMBLY_REQUIREMENTS)에 있는 각 인자의 실제 값 — 결합 검증 루프와
     # protected_surface 판정이 여기서 이름으로 값을 찾는다.
     _provided: dict[str, Any] = {
+        "spatial_data": spatial_data,
         "mission_signing_key": mission_signing_key,
         "evidence_storage": evidence_storage,
         "flight_artifact_store": flight_artifact_store,
@@ -449,8 +454,10 @@ def create_app(
         external_volume_execution_activator=external_volume_execution_activator,
         external_single_volume=external_single_volume,
         external_use_evaluator=external_use_evaluator,
+        spatial_data=spatial_data,
         external_artifact_inspection_store=external_artifact_inspection_store,
         external_display_artifact_store=external_display_artifact_store,
+        external_analysis_wiring=external_analysis_wiring,
     )
     site_lifecycle = mount_operations_routes(
         app,

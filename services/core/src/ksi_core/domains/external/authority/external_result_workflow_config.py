@@ -168,6 +168,7 @@ def load_external_result_workflow_config(
     participants: ExternalQuantitativeWorkflowParticipants,
     input_capability_issuer: ExternalRelativeVolumeInputCapabilityIssuer | None = None,
     build_input_capability_issuer: ExternalRelativeVolumeInputCapabilityFactory | None = None,
+    allow_historical_catalog_binding: bool = False,
 ) -> ExternalResultWorkflowAssemblyConfig:
     """Load one exact catalog and produce closures for the common assembly.
 
@@ -234,6 +235,7 @@ def load_external_result_workflow_config(
         catalog_raw,
         authority_journal_path=authority_journal_path,
         participants=participants,
+        allow_historical_catalog_binding=allow_historical_catalog_binding,
     )
     return _workflow_config(
         catalog, participants, input_capability_issuer, build_input_capability_issuer
@@ -392,6 +394,7 @@ def _parse_catalog(
     *,
     authority_journal_path: Path,
     participants: ExternalQuantitativeWorkflowParticipants,
+    allow_historical_catalog_binding: bool = False,
 ) -> _Catalog:
     try:
         envelope = _mapping(
@@ -413,16 +416,32 @@ def _parse_catalog(
         now = participants.clock()
         _utc(now)
         authority = participants.catalog_authority_port.resolve(authority_record_digest, now)
-        if (
-            authority is None
-            or authority.digest != authority_record_digest
-            or not authority.permits_catalog(
+        authorized = bool(
+            authority is not None
+            and authority.digest == authority_record_digest
+            and authority.permits_catalog(
                 catalog_body_digest=body_digest,
                 organization_id=organization_id,
                 administration_actor_id=participants.catalog_administration_actor_id,
                 now=now,
             )
-        ):
+        )
+        if not authorized and allow_historical_catalog_binding:
+            historical_binding = getattr(
+                participants.catalog_authority_port,
+                "resolve_historical_configuration",
+                None,
+            )
+            authorized = bool(
+                callable(historical_binding)
+                and historical_binding(
+                    authority_record_digest,
+                    catalog_body_digest=body_digest,
+                    organization_id=organization_id,
+                    administration_actor_id=participants.catalog_administration_actor_id,
+                )
+            )
+        if not authorized:
             raise ExternalQuantitativeWorkflowConfigUnavailable(
                 ExternalQuantitativeWorkflowConfigBlockedCode.CATALOG_AUTHORITY
             )

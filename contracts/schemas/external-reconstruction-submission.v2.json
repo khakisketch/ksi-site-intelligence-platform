@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-reconstruction-submission.v2.json",
+  "title": "ExternalReconstructionSubmissionV2",
+  "description": "Structural contract for a customer-declared reconstruction export requiring one DSM and allowing an optional orthophoto. Consumers must also use the V2 application parser to enforce artifactId uniqueness and canonical digest validity; this schema alone does not establish byte observation, validation, source authority, a ProcessingJob, or quantitative eligibility.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contractVersion", "submissionId", "revision", "organizationId", "siteId",
+    "observationEpochId", "submittedAt", "submittedBy", "executionResponsibility",
+    "executionLocus", "producerDeclaration", "inputDeclaration", "artifacts", "submissionDigest"
+  ],
+  "properties": {
+    "contractVersion": { "const": "external-reconstruction-submission.v2" },
+    "submissionId": { "$ref": "#/$defs/boundedText" },
+    "revision": { "type": "integer", "minimum": 1 },
+    "organizationId": { "$ref": "#/$defs/boundedText" },
+    "siteId": { "$ref": "#/$defs/boundedText" },
+    "observationEpochId": { "$ref": "#/$defs/boundedText" },
+    "submittedAt": { "$ref": "#/$defs/dateTime" },
+    "submittedBy": { "$ref": "#/$defs/boundedText" },
+    "executionResponsibility": { "const": "customer_operator" },
+    "executionLocus": { "const": "customer_workstation" },
+    "producerDeclaration": { "$ref": "#/$defs/producerDeclaration" },
+    "inputDeclaration": { "$ref": "#/$defs/inputDeclaration" },
+    "artifacts": {
+      "type": "array", "minItems": 1, "maxItems": 8,
+      "items": { "$ref": "#/$defs/artifact" },
+      "allOf": [
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "dsm" } }
+          },
+          "minContains": 1,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "ortho" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "point_cloud" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "camera_poses" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "dtm" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "mesh" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "tiles_3d" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        },
+        {
+          "contains": {
+            "type": "object",
+            "required": ["kind"],
+            "properties": { "kind": { "const": "report" } }
+          },
+          "minContains": 0,
+          "maxContains": 1
+        }
+      ]
+    },
+    "submissionDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": {
+    "boundedText": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "longBoundedText": { "type": "string", "minLength": 1, "maxLength": 1000 },
+    "dateTime": { "type": "string", "format": "date-time", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$" },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "verticalReference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["datum", "basis", "source"],
+      "properties": {
+        "datum": { "enum": ["ellipsoidal", "ellipsoidal_native", "orthometric_kngeoid2018", "orthometric_kngeoid2024"] },
+        "basis": { "$ref": "#/$defs/longBoundedText" },
+        "source": { "const": "user_declared" }
+      }
+    },
+    "producerDeclaration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["softwareName", "softwareVersion", "buildIdentifier", "producerRunIdentifier", "configurationDigest", "completedAt"],
+      "properties": {
+        "softwareName": { "$ref": "#/$defs/boundedText" },
+        "softwareVersion": { "$ref": "#/$defs/boundedText" },
+        "buildIdentifier": { "oneOf": [{ "$ref": "#/$defs/boundedText" }, { "type": "null" }] },
+        "producerRunIdentifier": { "oneOf": [{ "$ref": "#/$defs/boundedText" }, { "type": "null" }] },
+        "configurationDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+        "completedAt": { "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }] }
+      }
+    },
+    "inputDeclaration": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rawMediaStoredByKsi", "originalRetentionLocus", "localInputManifestDigest", "imageCount", "captureStartedAt", "captureEndedAt"],
+      "properties": {
+        "rawMediaStoredByKsi": { "const": false },
+        "originalRetentionLocus": { "const": "customer_workstation" },
+        "localInputManifestDigest": { "oneOf": [{ "$ref": "#/$defs/digest" }, { "type": "null" }] },
+        "imageCount": { "oneOf": [{ "type": "integer", "minimum": 1, "maximum": 10000000 }, { "type": "null" }] },
+        "captureStartedAt": { "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }] },
+        "captureEndedAt": { "oneOf": [{ "$ref": "#/$defs/dateTime" }, { "type": "null" }] }
+      }
+    },
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifactId", "kind", "fileName", "format", "contentType", "declaredSha256", "declaredSizeBytes", "declaredCrs", "declaredVerticalReference", "declaredGsdM"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/boundedText" },
+        "kind": { "enum": ["point_cloud", "camera_poses", "ortho", "dsm", "dtm", "mesh", "tiles_3d", "report"] },
+        "fileName": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$" },
+        "format": { "$ref": "#/$defs/boundedText" },
+        "contentType": { "$ref": "#/$defs/boundedText" },
+        "declaredSha256": { "$ref": "#/$defs/sha256" },
+        "declaredSizeBytes": { "type": "integer", "minimum": 1, "maximum": 9223372036854775807 },
+        "declaredCrs": { "oneOf": [{ "$ref": "#/$defs/longBoundedText" }, { "type": "null" }] },
+        "declaredVerticalReference": { "oneOf": [{ "$ref": "#/$defs/verticalReference" }, { "type": "null" }] },
+        "declaredGsdM": { "oneOf": [{ "type": "number", "exclusiveMinimum": 0 }, { "type": "null" }] }
+      }
+    }
+  }
+}

@@ -12,10 +12,12 @@ import hashlib
 import json
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, cast
+from threading import Barrier
+from typing import Any, Protocol, cast, runtime_checkable
 from uuid import uuid4
 
 import pytest
@@ -25,6 +27,19 @@ from fastapi.testclient import TestClient
 from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.domains.external.quantity.external_relative_volume_analysis import (
+    AnalysisAssessmentRecoveryError,
+    AnalysisAssessmentRequestV2,
+    AnalysisEpochSelectionV2,
+    AnalysisRuntimeIdentityV2,
+    ExternalRelativeVolumeAnalysisStore,
+)
+from ksi_core.domains.external.quantity.external_relative_volume_calculations import (
+    CalculationCurrentDispositionV2,
+    CalculationExecutionRecoveryError,
+    CalculationExecutionStatusV2,
+    ExternalRelativeVolumeCalculationStore,
+)
 from ksi_core.domains.external.quantity.external_single_volume_authority import (
     SingleVolumeCompatibilityRuleDescriptorV1,
 )
@@ -85,6 +100,20 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalVolumeMetricsV1,
     ExternalVolumeZoneSnapshotV1,
 )
+from ksi_event_contracts.external_relative_volume_analysis import (
+    AdmissionDispositionV2,
+    AdmissionV2,
+    AnalysisPolicyV2,
+    EvaluationV1,
+)
+from ksi_event_contracts.external_relative_volume_calculation import (
+    AnalysisExecutionAttemptV2,
+    RelativeVolumeCalculationFailureV2,
+    RelativeVolumeCalculationReportV2,
+    RelativeVolumeCoverageWitnessV2,
+    RelativeVolumeMetricsV2,
+    RelativeVolumeNumericResultV2,
+)
 from ksi_event_contracts.external_single_volume import (
     ExternalSingleVolumeMeasurementPayloadV1,
     ExternalSingleVolumeMetricsV1,
@@ -96,6 +125,11 @@ _POLYGON = {
     "type": "Polygon",
     "coordinates": [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [0.0, 0.0]]],
 }
+
+
+@runtime_checkable
+class _OwnershipInspectableLock(Protocol):
+    def _is_owned(self) -> bool: ...
 
 
 def _digest(value: str | bytes) -> str:
@@ -374,16 +408,20 @@ def _envelope() -> ResourceEnvelopeV1:
 
 
 def _observed_vertical_reference() -> ObservedVerticalReferenceV1:
-    return ObservedVerticalReferenceV1(identifier="KNGeoid2018", basis="site datum")
+    return ObservedVerticalReferenceV1(identifier="EPSG:5773", basis="EGM96 height")
 
 
 def _workflow_material(
-    path: Path, *, now: datetime
+    path: Path,
+    *,
+    now: datetime,
+    organization_id: str = "org-a",
+    catalog_active_for: timedelta = timedelta(hours=1),
 ) -> tuple[ExternalQuantitativeCatalogAuthorityRecord, ResourceEnvelopeV1, Path]:
     """Write owner-private catalog/config bytes without selecting an authority port."""
     envelope = _envelope()
     body: dict[str, Any] = {
-        "organizationId": "org-a",
+        "organizationId": organization_id,
         "executionTemplates": [
             {
                 "executionPolicy": {
@@ -401,7 +439,7 @@ def _workflow_material(
                 },
                 "authorizedActorIds": ["operator-a", "volume-worker"],
                 "validFrom": (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
-                "validUntil": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+                "validUntil": (now + catalog_active_for).isoformat().replace("+00:00", "Z"),
                 "maximumZoneCellCount": 10_000,
                 "maximumZoneAreaM2": 1_000_000.0,
             }
@@ -425,7 +463,7 @@ def _workflow_material(
                 },
                 "authorizedActorIds": ["operator-a", "worker-principal"],
                 "validFrom": (now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
-                "validUntil": (now + timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+                "validUntil": (now + catalog_active_for).isoformat().replace("+00:00", "Z"),
                 "maximumZoneCellCount": 10_000,
                 "maximumZoneAreaM2": 1_000_000.0,
             }
@@ -437,11 +475,11 @@ def _workflow_material(
         "body": body,
     }
     authority = ExternalQuantitativeCatalogAuthorityRecord(
-        organization_id="org-a",
+        organization_id=organization_id,
         catalog_body_digest=catalog_admission_body_digest(provisional),
         authorized_administration_actor_ids=("catalog-admin",),
         active_from=now - timedelta(hours=1),
-        active_until=now + timedelta(hours=1),
+        active_until=now + catalog_active_for,
         synthetic_test_only=False,
     ).sealed()
     assert authority.digest is not None
@@ -623,11 +661,16 @@ def _workflow(
     path: Path,
     *,
     now: datetime,
+    organization_id: str = "org-a",
     policy_authority: _RetainedPolicyAuthority,
     context_authority: _RetainedEvidenceContextAuthority,
 ) -> Any:
     """Load a protected real workflow config backed by retained authority records."""
-    authority, envelope, config_path = _workflow_material(path, now=now)
+    authority, envelope, config_path = _workflow_material(
+        path,
+        now=now,
+        organization_id=organization_id,
+    )
     catalog_authority = _RetainedCatalogAuthority(authority)
     participants = ExternalQuantitativeWorkflowParticipants(
         catalog_authority_port=catalog_authority,
@@ -699,6 +742,16 @@ def _worker_principal() -> Principal:
     return Principal(
         principal_id="worker-principal",
         kind=PrincipalKind.PROCESSING_WORKER,
+        role=None,
+        device_id=None,
+        organization_id="org-a",
+    )
+
+
+def _analysis_worker_principal() -> Principal:
+    return Principal(
+        principal_id="analysis-worker-principal",
+        kind=PrincipalKind.ANALYSIS_WORKER,
         role=None,
         device_id=None,
         organization_id="org-a",
@@ -866,6 +919,15 @@ def _close_journals(journals: list[DurableJournal]) -> None:
         journal.close()
 
 
+def _external_journal_bytes(journals: list[DurableJournal]) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    for journal in journals:
+        path = journal._path
+        for candidate in path.parent.glob(f"{path.stem}*.jsonl"):
+            files[str(candidate)] = candidate.read_bytes()
+    return files
+
+
 def _register_signed_provider_site_and_area(app: Any, *, now: datetime) -> Any:
     assert (
         app.state.site_store.register(
@@ -929,9 +991,16 @@ def _volume_payload(request: Any, execution: Any, *, now: datetime) -> Any:
     )
 
 
-def _submission(order: Any, label: str, *, start: datetime, end: datetime) -> Any:
+def _submission(
+    order: Any,
+    label: str,
+    *,
+    start: datetime,
+    end: datetime,
+    dsm_bytes: bytes | None = None,
+) -> Any:
     ortho = b"ortho-" + label.encode()
-    dsm = b"dsm-" + label.encode()
+    dsm = dsm_bytes or b"dsm-" + label.encode()
     submission = ExternalReconstructionSubmissionV1(
         submission_id="external-" + label,
         revision=1,
@@ -990,9 +1059,12 @@ def _sealed_revision(
     start: datetime,
     end: datetime,
     storage: Any,
+    dsm_bytes: bytes | None = None,
 ) -> Any:
     reconstruction = app.state.external_reconstruction_store
-    submission, contents = _submission(order, label, start=start, end=end)
+    submission, contents = _submission(
+        order, label, start=start, end=end, dsm_bytes=dsm_bytes
+    )
     registered = reconstruction.register(
         submission, work_order=order, registered_by="operator-a", now=start
     )
@@ -1090,9 +1162,12 @@ def _inspection_report(
     fence: LeaseFence,
     *,
     now: datetime,
+    transform: tuple[float, float, float, float, float, float] | None = None,
+    vertical_reference: ObservedVerticalReferenceV1 | None = None,
+    observed_crs_digest: str | None = None,
 ) -> Any:
     assert revision.manifest is not None and policy.policy_digest is not None
-    vertical = _observed_vertical_reference()
+    vertical = vertical_reference or _observed_vertical_reference()
     outcomes = []
     bindings = []
     for entry in revision.manifest.entries:
@@ -1108,9 +1183,9 @@ def _inspection_report(
                 measurements=RasterMeasurementsV1(
                     observed_crs_identifier="EPSG:5186",
                     observed_crs_wkt="PROJCRS[EPSG:5186]",
-                    observed_crs_digest=_digest("observed-crs-5186"),
+                    observed_crs_digest=observed_crs_digest or _digest("observed-crs-5186"),
                     observed_vertical_reference=vertical,
-                    transform=(1.0, 0.0, 0.0, 0.0, -1.0, 10.0),
+                    transform=transform or (1.0, 0.0, 0.0, 0.0, -1.0, 10.0),
                     footprint_wkt="POLYGON((0 0,10 0,10 10,0 0,0 0))",
                     footprint_digest=_digest("footprint-" + entry.artifact_id),
                     width=10,
@@ -1147,14 +1222,34 @@ def _inspection_report(
     ).sealed()
 
 
-def _inspect(app: Any, *, revision: Any, subject: Any, policy: Any, now: datetime) -> Any:
+def _inspect(
+    app: Any,
+    *,
+    revision: Any,
+    subject: Any,
+    policy: Any,
+    now: datetime,
+    transform: tuple[float, float, float, float, float, float] | None = None,
+    vertical_reference: ObservedVerticalReferenceV1 | None = None,
+    observed_crs_digest: str | None = None,
+) -> Any:
     inspections = app.state.external_artifact_inspection_store
     issued = inspections.issue_after_seal(subject, now=now)
     assert issued.request is not None and issued.verdict.value in {"ISSUED", "IDEMPOTENT"}
     fence = LeaseFence(str(uuid4()), str(uuid4()), 0)
     leased = inspections.claim(issued.request.request_id, fence, now, organization_id="org-a")
     assert leased.fence is not None and leased.request is not None
-    report = _inspection_report(leased.request, policy, subject, revision, leased.fence, now=now)
+    report = _inspection_report(
+        leased.request,
+        policy,
+        subject,
+        revision,
+        leased.fence,
+        now=now,
+        transform=transform,
+        vertical_reference=vertical_reference,
+        observed_crs_digest=observed_crs_digest,
+    )
     reported = inspections.record_report(
         leased.request.request_id, leased.fence, report, now, organization_id="org-a"
     )
@@ -1170,6 +1265,7 @@ def _seal_evidence(
     now: datetime,
     storage: _LocalObjectStorage,
     label: str,
+    organization_id: str = "org-a",
 ) -> Any:
     evidence_store = app.state.external_evidence_store
     dsm = next(
@@ -1184,7 +1280,7 @@ def _seal_evidence(
             independence_basis="Independent checkpoint survey retained outside KSI.",
         ),
         revision=revision,
-        principal=_principal(),
+        principal=_principal(organization_id),
         key="declare-evidence-" + subject.work_order_id + "-" + label,
         now=now,
     )
@@ -1193,7 +1289,7 @@ def _seal_evidence(
     grant = evidence_store.grant(
         item.evidence_ref,
         revision=revision,
-        principal=_principal(),
+        principal=_principal(organization_id),
         key="grant-evidence-" + subject.work_order_id + "-" + label,
         storage=storage,
         now=now,
@@ -1203,7 +1299,7 @@ def _seal_evidence(
     sealed = evidence_store.seal(
         item.evidence_ref,
         revision=revision,
-        principal=_principal(),
+        principal=_principal(organization_id),
         key="seal-evidence-" + subject.work_order_id + "-" + label,
         storage=storage,
         now=now,
@@ -1219,21 +1315,26 @@ def _evidence_context(
     policy: Any,
     now: datetime,
     label: str,
+    independent: bool = True,
 ) -> ExternalEvidenceMeasurementContextV1:
     manifest = item.manifest
     assert manifest.evidence_manifest_digest is not None and policy.policy_digest is not None
-    attestation = ExternalIndependenceAttestationV1(
-        attestation_id="attestation-" + subject.work_order_id + "-" + label,
-        evidence_manifest_digest=manifest.evidence_manifest_digest,
-        subject_digest=subject.canonical_digest(),
-        target_dsm_observed_sha256=manifest.target_dsm_observed_sha256,
-        confirmed_by_actor_id="independent-validator",
-        confirmed_at=now - timedelta(hours=2),
-        reconstruction_exclusion_basis=(
-            "Independent survey was retained outside the reconstruction run."
-        ),
-        synthetic_test_only=False,
-    ).sealed()
+    attestation = (
+        ExternalIndependenceAttestationV1(
+            attestation_id="attestation-" + subject.work_order_id + "-" + label,
+            evidence_manifest_digest=manifest.evidence_manifest_digest,
+            subject_digest=subject.canonical_digest(),
+            target_dsm_observed_sha256=manifest.target_dsm_observed_sha256,
+            confirmed_by_actor_id="independent-validator",
+            confirmed_at=now - timedelta(hours=2),
+            reconstruction_exclusion_basis=(
+                "Independent survey was retained outside the reconstruction run."
+            ),
+            synthetic_test_only=False,
+        ).sealed()
+        if independent
+        else None
+    )
     return ExternalEvidenceMeasurementContextV1(
         context_id="context-" + subject.work_order_id + "-" + label,
         subject=subject,
@@ -1246,7 +1347,7 @@ def _evidence_context(
         measurement_execution_manifest_digest=_digest("checkpoint-runner-v1"),
         rule_id="CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1",
         csv_horizontal_crs="EPSG:5186",
-        csv_vertical_reference_digest=_digest("observed-vertical-kngeoid2018"),
+        csv_vertical_reference_digest=_observed_vertical_reference().canonical_digest(),
         minimum_checkpoint_count=3,
         maximum_checkpoint_count=100,
         maximum_rmse_m=0.5,
@@ -1266,6 +1367,7 @@ def _record_evidence_validation(
     item: Any,
     now: datetime,
     checkpoint_count: int,
+    organization_id: str = "org-a",
 ) -> Any:
     validations = app.state.external_evidence_validation_store
     issued = validations.issue_after_seal(item.evidence_ref, now=now)
@@ -1276,7 +1378,7 @@ def _record_evidence_validation(
     leased = validations.claim(
         issued.request.validation_id,
         LeaseFence(str(uuid4()), str(uuid4()), 0),
-        organization_id="org-a",
+        organization_id=organization_id,
         now=now,
     )
     assert leased.fence is not None
@@ -1296,7 +1398,7 @@ def _record_evidence_validation(
         issued.request.validation_id,
         leased.fence,
         payload,
-        organization_id="org-a",
+        organization_id=organization_id,
         now=now,
     )
     expected = (
@@ -1320,6 +1422,8 @@ def _validate_evidence(
     storage: _LocalObjectStorage,
     label: str = "validated",
     checkpoint_count: int = 3,
+    independent: bool = True,
+    organization_id: str = "org-a",
 ) -> Any:
     item = _seal_evidence(
         app,
@@ -1328,11 +1432,20 @@ def _validate_evidence(
         now=now,
         storage=storage,
         label=label,
+        organization_id=organization_id,
     )
     context_authority.add(
-        _evidence_context(item, subject=subject, policy=policy, now=now, label=label)
+        _evidence_context(
+            item, subject=subject, policy=policy, now=now, label=label, independent=independent
+        )
     )
-    return _record_evidence_validation(app, item=item, now=now, checkpoint_count=checkpoint_count)
+    return _record_evidence_validation(
+        app,
+        item=item,
+        now=now,
+        checkpoint_count=checkpoint_count,
+        organization_id=organization_id,
+    )
 
 
 def _mapping(
@@ -2007,7 +2120,9 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
     now = datetime.now(UTC).replace(microsecond=0)
     clock_now = [now]
     storage = _LocalObjectStorage()
-    catalog_record, envelope, workflow_config_path = _workflow_material(tmp_path, now=now)
+    catalog_record, envelope, workflow_config_path = _workflow_material(
+        tmp_path, now=now, catalog_active_for=timedelta(minutes=30)
+    )
     provider_config_path, signer = _signed_provider_config(
         tmp_path, now=now, catalog_authority=catalog_record
     )
@@ -2499,7 +2614,180 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             now=active_now,
         )
         assert resolved is not None
-        revoke_at = active_now + timedelta(seconds=1)
+
+        # Expire only the V1 catalog while the signed snapshot and policy remain
+        # current, then restart with a new catalog digest. The old mapping must
+        # replay under its original identity without being promoted to the new
+        # authority; the existing policy and result IDs remain readable.
+        assert catalog_record.digest is not None
+        catalog_expired_at = now + timedelta(minutes=40)
+        journal_bytes_before_catalog_expiry = _external_journal_bytes([*opened, receipts])
+        _close_journals(opened)
+        opened = []
+        receipts.close()
+        clock_now[0] = catalog_expired_at
+        provider = load_external_authority_provider(
+            provider_config_path, clock=lambda: clock_now[0]
+        )
+        workflow = load_external_result_workflow_config(
+            workflow_config_path,
+            participants=provider.participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+            allow_historical_catalog_binding=True,
+        )
+        app, opened = _assemble(
+            tmp_path, workflow, storage, auth_registry=_operator_registry()
+        )
+        receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        assert provider.status()["status"] == "PROVIDER_CONFIGURED"
+        assert provider.participants.catalog_authority_port.resolve(
+            catalog_record.digest, catalog_expired_at
+        ) is None
+        policy_authority_port = provider.participants.policy_authority_port
+        assert policy_authority_port is not None
+        assert policy_authority_port.resolve(
+            policy_authority.digest, catalog_expired_at
+        ) == policy_authority
+        assert app.state.external_relative_volume_mapping_authority.resolve_for_use(
+            baseline=baseline_subject,
+            current=current_subject,
+            zone_id=area.work_area_id,
+            policy=policy,
+            now=catalog_expired_at,
+        ) is None
+        with TestClient(app) as client:
+            assert _assert_single_report_reads(
+                client, single_report_ref, expected_digest=single_report_digest
+            ) == single_report_digest
+            old_relative_report = client.get(
+                f"/v1/external-relative-volume-reports/{report_ref}",
+                headers={"Authorization": f"Bearer {_OPERATOR_TOKEN}"},
+            )
+            assert old_relative_report.status_code == 200, old_relative_report.text
+            assert old_relative_report.json()["report"]["reportId"] == report_ref
+        assert _external_journal_bytes([*opened, receipts]) == journal_bytes_before_catalog_expiry
+
+        recovery_path = tmp_path / "new-catalog-authority"
+        recovery_path.mkdir()
+        replacement_catalog_record, _, replacement_workflow_config = _workflow_material(
+            recovery_path,
+            now=catalog_expired_at,
+            catalog_active_for=timedelta(hours=4),
+        )
+        assert replacement_catalog_record.digest is not None
+        original_workflow = json.loads(workflow_config_path.read_text(encoding="utf-8"))
+        configured_catalog_path = Path(original_workflow["catalogPath"])
+        replacement_workflow = json.loads(
+            replacement_workflow_config.read_text(encoding="utf-8")
+        )
+        replacement_catalog = json.loads(
+            Path(replacement_workflow["catalogPath"]).read_text(encoding="utf-8")
+        )
+        _write_private(configured_catalog_path, replacement_catalog)
+        renewed_snapshot_digest = _replace_signed_provider_snapshot(
+            tmp_path / "authority-snapshot.json",
+            signer,
+            {
+                "sequence": 5,
+                "previousSnapshotDigest": mapping_digest,
+                "issuedAt": catalog_expired_at.isoformat().replace("+00:00", "Z"),
+                "catalogAuthorities": {
+                    "records": [
+                        catalog_record.event_payload(),
+                        replacement_catalog_record.event_payload(),
+                    ],
+                    "currentDigests": [replacement_catalog_record.digest],
+                },
+                "quantitativeAdministration": {"actions": []},
+            },
+        )
+        journal_bytes_before_catalog_recovery = _external_journal_bytes([*opened, receipts])
+        _close_journals(opened)
+        opened = []
+        receipts.close()
+        provider = load_external_authority_provider(
+            provider_config_path, clock=lambda: clock_now[0]
+        )
+        workflow = load_external_result_workflow_config(
+            workflow_config_path,
+            participants=provider.participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+        )
+        app, opened = _assemble(
+            tmp_path, workflow, storage, auth_registry=_operator_registry()
+        )
+        receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        assert provider.status()["status"] == "PROVIDER_CONFIGURED"
+        assert provider.status()["snapshotDigest"] == renewed_snapshot_digest
+        raw_renewed_snapshot = json.loads(
+            (tmp_path / "authority-snapshot.json").read_text(encoding="utf-8")
+        )
+        assert raw_renewed_snapshot["catalogAuthorities"]["currentDigests"] == [
+            replacement_catalog_record.digest
+        ]
+        assert provider.participants.catalog_authority_port.resolve(
+            replacement_catalog_record.digest, catalog_expired_at
+        ) == replacement_catalog_record
+        assert provider.participants.catalog_authority_port.resolve(
+            catalog_record.digest, catalog_expired_at
+        ) is None
+        recovered_catalog = app.state.external_relative_volume_mapping_authority
+        retained_mapping = recovered_catalog._mappings[mapping.mapping_digest].record
+        assert retained_mapping.mapping_digest == mapping.mapping_digest
+        assert retained_mapping.execution_policy_ref == catalog_record.digest
+        retained_single_mapping = recovered_catalog._single_mappings[single.mapping_digest].record
+        assert retained_single_mapping.mapping_digest == single.mapping_digest
+        assert retained_single_mapping.execution_policy_ref == catalog_record.digest
+        assert recovered_catalog.resolve_for_use(
+            baseline=baseline_subject,
+            current=current_subject,
+            zone_id=area.work_area_id,
+            policy=policy,
+            now=catalog_expired_at,
+        ) is None
+        policy_authority_port = provider.participants.policy_authority_port
+        assert policy_authority_port is not None
+        assert policy_authority_port.resolve(
+            policy_authority.digest, catalog_expired_at
+        ) == policy_authority
+        recovered_single_decision = app.state.external_use_decision_store.get_scoped(
+            single_decision["decisionId"], principal=_principal(), site_id="site-a"
+        )
+        assert recovered_single_decision is not None
+        assert recovered_single_decision.decision_digest == single_decision["decisionDigest"]
+        with TestClient(app) as client:
+            assert _assert_single_report_reads(
+                client, single_report_ref, expected_digest=single_report_digest
+            ) == single_report_digest
+            recovered_relative_report = client.get(
+                f"/v1/external-relative-volume-reports/{report_ref}",
+                headers={"Authorization": f"Bearer {_OPERATOR_TOKEN}"},
+            )
+            assert recovered_relative_report.status_code == 200, recovered_relative_report.text
+            assert recovered_relative_report.json()["report"]["reportId"] == report_ref
+        recovered_journal_bytes = _external_journal_bytes([*opened, receipts])
+        for path, content in journal_bytes_before_catalog_recovery.items():
+            if Path(path) != receipts._path:
+                assert recovered_journal_bytes[path] == content
+        assert len(recovered_journal_bytes[str(receipts._path)].splitlines()) == (
+            len(journal_bytes_before_catalog_recovery[str(receipts._path)].splitlines()) + 1
+        )
+        assert (
+            app.state.external_relative_volume_store.issue(
+                principal=_principal(),
+                current_work_order_id=current_order.work_order_id,
+                decision_ref=decision.decision_id,
+                idempotency_key="signed-provider-old-mapping-after-catalog-renewal",
+                now=catalog_expired_at,
+            ).verdict
+            is ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
+        )
+
+        revoke_at = catalog_expired_at + timedelta(seconds=1)
         revoke_action = {
             "actionId": "signed-provider-revoke-policy",
             "kind": "REVOKE_POLICY",
@@ -2512,8 +2800,8 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             tmp_path / "authority-snapshot.json",
             signer,
             {
-                "sequence": 5,
-                "previousSnapshotDigest": mapping_digest,
+                "sequence": 6,
+                "previousSnapshotDigest": renewed_snapshot_digest,
                 "issuedAt": revoke_at.isoformat().replace("+00:00", "Z"),
                 "quantitativeAdministration": {"actions": [revoke_action]},
             },
@@ -2533,6 +2821,1236 @@ def test_signed_provider_drives_complete_external_relative_volume_lifecycle(
             ).verdict
             is ExternalRelativeVolumeVerdict.AUTHORITY_UNAVAILABLE
         )
+
+        # Restart with the retained signed policy/result history after authority expiry.
+        assert policy_authority.digest is not None
+        journal_bytes_before = _external_journal_bytes([*opened, receipts])
+        _close_journals(opened)
+        opened = []
+        receipts.close()
+        clock_now[0] = now + timedelta(hours=2)
+        provider = load_external_authority_provider(
+            provider_config_path,
+            clock=lambda: clock_now[0],
+            allow_expired=True,
+        )
+        workflow = load_external_result_workflow_config(
+            workflow_config_path,
+            participants=provider.participants,
+            input_capability_issuer=lambda *_args, **_kwargs: None,
+            allow_historical_catalog_binding=True,
+        )
+        app, opened = _assemble(tmp_path, workflow, storage, auth_registry=_operator_registry())
+        receipts = DurableJournal(tmp_path / "external-authority-provider-receipts.jsonl")
+        provider.bind_receipt_journal(receipts)
+        provider.attach_app(app)
+        assert provider.status()["status"] == "BLOCKED"
+        policy_authority_port = provider.participants.policy_authority_port
+        assert policy_authority_port is not None
+        assert policy_authority_port.resolve_historical(
+            policy_authority.digest, active_now
+        ) == policy_authority
+        replayed_single = app.state.external_use_decision_store.get_scoped(
+            single_decision["decisionId"], principal=_principal(), site_id="site-a"
+        )
+        assert replayed_single is not None
+        assert replayed_single.decision_digest == single_decision["decisionDigest"]
+        assert _assert_single_report_reads(
+            TestClient(app), single_report_ref, expected_digest=single_report_digest
+        ) == single_report_digest
+        relative_report = TestClient(app).get(
+            f"/v1/external-relative-volume-reports/{report_ref}",
+            headers={"Authorization": f"Bearer {_OPERATOR_TOKEN}"},
+        )
+        assert relative_report.status_code == 200, relative_report.text
+        assert relative_report.json()["report"]["reportId"] == report_ref
+        assert _external_journal_bytes([*opened, receipts]) == journal_bytes_before
     finally:
         receipts.close()
+        _close_journals(opened)
+
+
+def test_analysis_policy_assessment_uses_real_sealed_core_stores(tmp_path: Path) -> None:
+    """A caller cannot turn sealed ingress into an evaluated result without Core evidence facts."""
+    now = datetime.now(UTC).replace(microsecond=0)
+    storage = _LocalObjectStorage()
+    policy_authority = _RetainedPolicyAuthority()
+    context_authority = _RetainedEvidenceContextAuthority(now)
+    workflow, _catalog, envelope, _catalog_authority = _workflow(
+        tmp_path,
+        now=now,
+        policy_authority=policy_authority,
+        context_authority=context_authority,
+    )
+    app, opened = _assemble(tmp_path, workflow, storage)
+    try:
+        area = _register_signed_provider_site_and_area(app, now=now)
+        orders = app.state.observation_work_order_store
+        baseline_order = orders.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name="Analysis policy baseline",
+            work_area_ids=[area.work_area_id],
+            schedule_id=None,
+            actor="operator-a",
+            now=now - timedelta(minutes=28),
+        )
+        current_order = orders.create_work_order(
+            organization_id="org-a",
+            site_id="site-a",
+            name="Analysis policy current",
+            work_area_ids=[area.work_area_id],
+            schedule_id=None,
+            actor="operator-a",
+            now=now - timedelta(minutes=27),
+        )
+        baseline_revision, baseline_subject = _sealed_revision(
+            app,
+            baseline_order,
+            "analysis-baseline",
+            start=now - timedelta(minutes=20),
+            end=now - timedelta(minutes=15),
+            storage=storage,
+        )
+        current_revision, current_subject = _sealed_revision(
+            app,
+            current_order,
+            "analysis-current",
+            start=now - timedelta(minutes=10),
+            end=now - timedelta(minutes=5),
+            storage=storage,
+        )
+        inspection_policy = _admit_policy(
+            app,
+            subjects=(baseline_subject, current_subject),
+            envelope=envelope,
+            authority=policy_authority,
+            now=now,
+        )
+        _inspect(
+            app,
+            revision=baseline_revision,
+            subject=baseline_subject,
+            policy=inspection_policy,
+            now=now,
+        )
+        _inspect(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            policy=inspection_policy,
+            now=now,
+            transform=(1.0, 0.25, 0.0, 0.0, -1.0, 10.0),
+        )
+        policy = AnalysisPolicyV2(
+            policy_id="analysis-policy-v2",
+            version=2,
+            profile_id="KSI-GIS-RELATIVE-VOLUME-V2",
+            profile_digest=_digest("analysis-profile"),
+            algorithm_digest=_digest("analysis-algorithm"),
+            config_digest=_digest("analysis-config"),
+            baseline_grid_rule="BASELINE_NATIVE_NORTH_UP_AFFINE_V1",
+            current_elevation_resampling="BILINEAR",
+            current_mask_resampling="NEAREST",
+            work_area_rasterization="CELL_CENTER",
+            minimum_common_valid_fraction=1.0,
+            threshold_m=0.0,
+            cell_area_rule="ABSOLUTE_AFFINE_DETERMINANT",
+            delta_rule="CURRENT_MINUS_BASELINE",
+            uncertainty_method="NONE_UNCERTAINTY_M3_NULL_V1",
+        ).sealed()
+        empty_store = ExternalRelativeVolumeAnalysisStore(
+            DurableJournal(tmp_path / "analysis-empty-policy.jsonl"),
+            reconstruction=app.state.external_reconstruction_store,
+            inspections=app.state.external_artifact_inspection_store,
+            work_areas=app.state.work_area_store,
+            evidence=app.state.external_evidence_store,
+            validations=app.state.external_evidence_validation_store,
+            policy=policy,
+            runtime=AnalysisRuntimeIdentityV2(
+                worker_executable_digest=_digest("analysis-worker"),
+                worker_build_digest=_digest("analysis-build"),
+                runtime_image_version="2.0.0",
+                runtime_image_oci_digest=_digest("analysis-oci"),
+                dependency_lock_digest=_digest("analysis-lock"),
+            ),
+            clock=lambda: now,
+        )
+        empty_assessment = empty_store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-no-evidence",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-no-evidence",
+            ),
+            now=now,
+        )
+        assert empty_assessment.admission.disposition is AdmissionDispositionV2.ADMIT_PROVISIONAL
+        empty_store._journal.close()  # noqa: SLF001
+        _validate_evidence(
+            app,
+            revision=baseline_revision,
+            subject=baseline_subject,
+            policy=inspection_policy,
+            context_authority=context_authority,
+            now=now,
+            storage=storage,
+            label="analysis-baseline",
+        )
+        _validate_evidence(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            policy=inspection_policy,
+            context_authority=context_authority,
+            now=now,
+            storage=storage,
+            label="analysis-current",
+        )
+        analysis_journal = tmp_path / "analysis-policy.jsonl"
+        store = ExternalRelativeVolumeAnalysisStore(
+            DurableJournal(analysis_journal),
+            reconstruction=app.state.external_reconstruction_store,
+            inspections=app.state.external_artifact_inspection_store,
+            work_areas=app.state.work_area_store,
+            evidence=app.state.external_evidence_store,
+            validations=app.state.external_evidence_validation_store,
+            policy=policy,
+            runtime=AnalysisRuntimeIdentityV2(
+                worker_executable_digest=_digest("analysis-worker"),
+                worker_build_digest=_digest("analysis-build"),
+                runtime_image_version="2.0.0",
+                runtime_image_oci_digest=_digest("analysis-oci"),
+                dependency_lock_digest=_digest("analysis-lock"),
+            ),
+            clock=lambda: now,
+        )
+        chronology_blocked = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-chronology",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=current_subject),
+                current=AnalysisEpochSelectionV2(subject=baseline_subject),
+                idempotency_key="analysis-assessment-chronology",
+            ),
+            now=now,
+        )
+        assert chronology_blocked.admission.disposition is AdmissionDispositionV2.BLOCKED
+        # The selected rotated current DSM cannot become a baseline grid.
+        assert chronology_blocked.admission.reason_codes == ("ESSENTIAL_INPUT_UNAVAILABLE",)
+        missing_area = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-missing-area",
+                work_area_id="wa-site-a-missing",
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-missing-area",
+            ),
+            now=now,
+        )
+        assert missing_area.admission.reason_codes == ("WORK_AREA_UNAVAILABLE",)
+        geographic_area = app.state.work_area_store.register(
+            "site-a",
+            name="Geographic CRS cannot be used against projected DSMs",
+            polygon={
+                "type": "Polygon",
+                "coordinates": [[[127.0, 37.0], [127.0, 37.1], [127.1, 37.1], [127.0, 37.0]]],
+            },
+            crs="EPSG:4326",
+            supersedes=None,
+            actor="operator-a",
+            now=now,
+        ).work_area
+        assert geographic_area is not None
+        crs_blocked = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-crs",
+                work_area_id=geographic_area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-crs",
+            ),
+            now=now,
+        )
+        assert crs_blocked.admission.reason_codes == ("HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH",)
+        recorded = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-1",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-1",
+            ),
+            now=now,
+        )
+
+        assert recorded.admission.disposition is AdmissionDispositionV2.ADMIT_EVALUATED
+        identity = recorded.admission.calculation_identity
+        assert identity is not None
+        registry = app.state.external_validation_policy_registry
+        original_select = registry.select_for_inspection
+        selection_guard_states: list[bool] = []
+
+        def select_outside_final_witness(subject: Any) -> Any:
+            coordinator_lock = store.coordinator._lock  # noqa: SLF001
+            assert isinstance(coordinator_lock, _OwnershipInspectableLock)
+            owned = coordinator_lock._is_owned()
+            selection_guard_states.append(owned)
+            assert not owned
+            return original_select(subject)
+
+        registry.select_for_inspection = select_outside_final_witness
+        assert store.latest_current_for_execution(
+            calculation_identity_digest=identity.canonical_digest(),
+            organization_id="org-a",
+            now=now,
+        ) == recorded
+        execution_journal = tmp_path / "analysis-calculation.jsonl"
+        execution_store = ExternalRelativeVolumeCalculationStore(
+            DurableJournal(execution_journal),
+            assessments=store,
+            resource_envelope=envelope,
+        )
+        issued_execution = execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-1",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-1",
+            now=now,
+        )
+        assert issued_execution.status is CalculationExecutionStatusV2.QUEUED
+        assert execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-1",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-1",
+            now=now,
+        ) == issued_execution
+        attempt = execution_store.acquire_lease(
+            request_id="calculation-request-1",
+            worker_principal=_analysis_worker_principal(),
+            worker_instance_id="calculation-worker-1",
+            lease_acquisition_id="calculation-lease-1",
+            now=now,
+        )
+        assert attempt is not None and attempt.lease_generation == 1
+        assert selection_guard_states
+        registry.select_for_inspection = original_select
+        coverage = RelativeVolumeCoverageWitnessV2(
+            rows=2,
+            columns=2,
+            row_offset=0,
+            column_offset=0,
+            selected_mask_b64="8A==",
+            common_valid_mask_b64="8A==",
+            unavailable_mask_b64="AA==",
+            threshold_excluded_mask_b64="AA==",
+            selected_cell_count=4,
+            common_valid_cell_count=4,
+            unavailable_cell_count=0,
+            threshold_excluded_cell_count=0,
+            cell_area_m2=1.0,
+            selected_area_m2=4.0,
+            common_valid_area_m2=4.0,
+            bounds=(0.0, 8.0, 2.0, 10.0),
+        ).sealed()
+        numeric = RelativeVolumeNumericResultV2(
+            calculation_identity_digest=identity.canonical_digest(),
+            profile_digest=identity.policy.profile_digest,
+            metrics=RelativeVolumeMetricsV2(
+                cut_m3=0.0, fill_m3=1.0, net_m3=1.0, threshold_m=0.0
+            ),
+            coverage=coverage,
+        ).sealed()
+        assert attempt.execution_attempt_digest is not None
+        assert numeric.numeric_result_identity_digest is not None
+        report = RelativeVolumeCalculationReportV2(
+            report_id="calculation-report-1",
+            attempt=attempt,
+            attempt_digest=attempt.execution_attempt_digest,
+            numeric_result=numeric,
+            numeric_result_identity_digest=numeric.numeric_result_identity_digest,
+            computed_at=now,
+            reported_at=now,
+        ).sealed()
+
+        def issue_semantic_attempt(
+            label: str,
+            *,
+            execution_envelope: ResourceEnvelopeV1 = envelope,
+        ) -> tuple[ExternalRelativeVolumeCalculationStore, AnalysisExecutionAttemptV2]:
+            semantic_store = ExternalRelativeVolumeCalculationStore(
+                DurableJournal(tmp_path / f"analysis-calculation-{label}.jsonl"),
+                assessments=store,
+                resource_envelope=execution_envelope,
+            )
+            semantic_store.issue(
+                principal=_principal(),
+                request_id=f"calculation-request-{label}",
+                calculation_identity_digest=identity.canonical_digest(),
+                idempotency_key=f"calculation-issue-{label}",
+                now=now,
+            )
+            semantic_attempt = semantic_store.acquire_lease(
+                request_id=f"calculation-request-{label}",
+                worker_principal=_analysis_worker_principal(),
+                worker_instance_id=f"calculation-worker-{label}",
+                lease_acquisition_id=f"calculation-lease-{label}",
+                now=now,
+            )
+            assert semantic_attempt is not None
+            return semantic_store, semantic_attempt
+
+        def resealed_report(
+            label: str,
+            semantic_attempt: AnalysisExecutionAttemptV2,
+            semantic_numeric: RelativeVolumeNumericResultV2,
+        ) -> RelativeVolumeCalculationReportV2:
+            assert semantic_attempt.execution_attempt_digest is not None
+            assert semantic_numeric.numeric_result_identity_digest is not None
+            return RelativeVolumeCalculationReportV2(
+                report_id=f"calculation-report-{label}",
+                attempt=semantic_attempt,
+                attempt_digest=semantic_attempt.execution_attempt_digest,
+                numeric_result=semantic_numeric,
+                numeric_result_identity_digest=semantic_numeric.numeric_result_identity_digest,
+                computed_at=now,
+                reported_at=now,
+            ).sealed()
+
+        profile_store, profile_attempt = issue_semantic_attempt("wrong-profile")
+        wrong_profile_numeric = numeric.model_copy(
+            update={
+                "profile_digest": _digest("wrong-profile"),
+                "numeric_result_identity_digest": None,
+            }
+        ).sealed()
+        assert profile_store.record_report(
+            request_id="calculation-request-wrong-profile",
+            worker_principal=_analysis_worker_principal(),
+            report=resealed_report("wrong-profile", profile_attempt, wrong_profile_numeric),
+            now=now,
+        ) is None
+
+        coverage_store, coverage_attempt = issue_semantic_attempt("wrong-coverage")
+        wrong_coverage = coverage.model_copy(
+            update={
+                "cell_area_m2": 2.0,
+                "selected_area_m2": 8.0,
+                "common_valid_area_m2": 8.0,
+                "coverage_witness_digest": None,
+            }
+        ).sealed()
+        wrong_coverage_numeric = numeric.model_copy(
+            update={"coverage": wrong_coverage, "numeric_result_identity_digest": None}
+        ).sealed()
+        assert coverage_store.record_report(
+            request_id="calculation-request-wrong-coverage",
+            worker_principal=_analysis_worker_principal(),
+            report=resealed_report("wrong-coverage", coverage_attempt, wrong_coverage_numeric),
+            now=now,
+        ) is None
+
+        bounds_store, bounds_attempt = issue_semantic_attempt("wrong-bounds")
+        wrong_bounds_coverage = coverage.model_copy(
+            update={
+                "bounds": (0.0, 7.0, 2.0, 9.0),
+                "coverage_witness_digest": None,
+            }
+        ).sealed()
+        wrong_bounds_numeric = numeric.model_copy(
+            update={
+                "coverage": wrong_bounds_coverage,
+                "numeric_result_identity_digest": None,
+            }
+        ).sealed()
+        assert bounds_store.record_report(
+            request_id="calculation-request-wrong-bounds",
+            worker_principal=_analysis_worker_principal(),
+            report=resealed_report("wrong-bounds", bounds_attempt, wrong_bounds_numeric),
+            now=now,
+        ) is None
+
+        constrained_envelope = envelope.model_copy(
+            update={"max_pixels": 3, "resource_envelope_digest": None}
+        ).sealed()
+        resource_store, resource_attempt = issue_semantic_attempt(
+            "too-many-pixels", execution_envelope=constrained_envelope
+        )
+        assert resource_store.record_report(
+            request_id="calculation-request-too-many-pixels",
+            worker_principal=_analysis_worker_principal(),
+            report=resealed_report("too-many-pixels", resource_attempt, numeric),
+            now=now,
+        ) is None
+
+        unsealed_store, unsealed_attempt = issue_semantic_attempt("unsealed-report")
+        unsealed_report = resealed_report("unsealed-report", unsealed_attempt, numeric).model_copy(
+            update={"report_digest": None}
+        )
+        assert unsealed_store.record_report(
+            request_id="calculation-request-unsealed-report",
+            worker_principal=_analysis_worker_principal(),
+            report=unsealed_report,
+            now=now,
+        ) is None
+
+        failure_store, failure_attempt = issue_semantic_attempt("unsealed-failure")
+        assert failure_attempt.execution_attempt_digest is not None
+        unsealed_failure = RelativeVolumeCalculationFailureV2(
+            failure_id="calculation-failure-unsealed",
+            attempt=failure_attempt,
+            attempt_digest=failure_attempt.execution_attempt_digest,
+            reason_code="RESOURCE_LIMIT_EXCEEDED",
+            failed_at=now,
+        ).sealed().model_copy(update={"failure_digest": None})
+        assert failure_store.record_failure(
+            request_id="calculation-request-unsealed-failure",
+            worker_principal=_analysis_worker_principal(),
+            failure=unsealed_failure,
+            now=now,
+        ) is None
+        for semantic_store in (
+            profile_store,
+            coverage_store,
+            bounds_store,
+            resource_store,
+            unsealed_store,
+            failure_store,
+        ):
+            semantic_store._journal.close()  # noqa: SLF001
+        completed = execution_store.record_report(
+            request_id="calculation-request-1",
+            worker_principal=_analysis_worker_principal(),
+            report=report,
+            now=now,
+        )
+        assert completed is not None and completed.report == report
+        assert execution_store.get_history(
+            "calculation-request-1", organization_id="org-a"
+        ) == completed
+        current_view = execution_store.get_current(
+            request_id="calculation-request-1", principal=_principal(), now=now
+        )
+        assert current_view is not None
+        assert current_view.disposition is CalculationCurrentDispositionV2.AVAILABLE
+        assert current_view.report == report
+        refreshed = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-1-refreshed",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-1-refreshed",
+            ),
+            now=now,
+        )
+        refreshed_view = execution_store.get_current(
+            request_id="calculation-request-1", principal=_principal(), now=now
+        )
+        assert refreshed_view is not None
+        assert refreshed_view.disposition is CalculationCurrentDispositionV2.AVAILABLE
+        assert refreshed_view.consulted_admission == refreshed.admission
+        assert refreshed_view.report is not None
+        assert (
+            refreshed_view.report.numeric_result.numeric_result_identity_digest
+            == report.numeric_result.numeric_result_identity_digest
+        )
+        execution_store._journal.close()  # noqa: SLF001
+        execution_store = ExternalRelativeVolumeCalculationStore(
+            DurableJournal(execution_journal),
+            assessments=store,
+            resource_envelope=envelope,
+        )
+        assert execution_store.get_history(
+            "calculation-request-1", organization_id="org-a"
+        ) == completed
+        tampered_execution = tmp_path / "analysis-calculation-tampered.jsonl"
+        tampered_events = [
+            json.loads(line) for line in execution_journal.read_text(encoding="utf-8").splitlines()
+        ]
+        tampered_events[1]["attempt"]["leaseGeneration"] = 99
+        unsigned_attempt_event = {
+            key: value for key, value in tampered_events[1].items() if key != "eventDigest"
+        }
+        tampered_events[1]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned_attempt_event)).hexdigest()
+        )
+        tampered_execution.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in tampered_events)
+            + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(CalculationExecutionRecoveryError):
+            ExternalRelativeVolumeCalculationStore(
+                DurableJournal(tampered_execution),
+                assessments=store,
+                resource_envelope=envelope,
+            )
+        rehashed_profile_events = [
+            json.loads(line) for line in execution_journal.read_text(encoding="utf-8").splitlines()
+        ]
+        reported_index = next(
+            index
+            for index, event in enumerate(rehashed_profile_events)
+            if event["kind"] == "external-relative-volume-calculation-reported"
+        )
+        replay_report = RelativeVolumeCalculationReportV2.model_validate(
+            rehashed_profile_events[reported_index]["report"]
+        )
+        replay_numeric = replay_report.numeric_result.model_copy(
+            update={
+                "profile_digest": _digest("rehashed-wrong-profile"),
+                "numeric_result_identity_digest": None,
+            }
+        ).sealed()
+        rehashed_profile_events[reported_index]["report"] = replay_report.model_copy(
+            update={
+                "numeric_result": replay_numeric,
+                "numeric_result_identity_digest": replay_numeric.numeric_result_identity_digest,
+                "report_digest": None,
+            }
+        ).sealed().model_dump(by_alias=True, mode="json")
+        unsigned_profile_event = {
+            key: value
+            for key, value in rehashed_profile_events[reported_index].items()
+            if key != "eventDigest"
+        }
+        rehashed_profile_events[reported_index]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned_profile_event)).hexdigest()
+        )
+        tampered_execution.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in rehashed_profile_events)
+            + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(CalculationExecutionRecoveryError):
+            ExternalRelativeVolumeCalculationStore(
+                DurableJournal(tampered_execution),
+                assessments=store,
+                resource_envelope=envelope,
+            )
+        shortened_lease_events = [
+            json.loads(line) for line in execution_journal.read_text(encoding="utf-8").splitlines()
+        ]
+        original_attempt = AnalysisExecutionAttemptV2.model_validate(
+            shortened_lease_events[1]["attempt"]
+        )
+        shortened_attempt = original_attempt.model_copy(
+            update={
+                "lease_expires_at": original_attempt.lease_expires_at - timedelta(seconds=1),
+                "execution_attempt_digest": None,
+            }
+        ).sealed()
+        shortened_lease_events[1]["attempt"] = shortened_attempt.model_dump(
+            by_alias=True, mode="json"
+        )
+        unsigned_shortened_event = {
+            key: value for key, value in shortened_lease_events[1].items() if key != "eventDigest"
+        }
+        shortened_lease_events[1]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned_shortened_event)).hexdigest()
+        )
+        tampered_execution.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in shortened_lease_events)
+            + "\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(CalculationExecutionRecoveryError):
+            ExternalRelativeVolumeCalculationStore(
+                DurableJournal(tampered_execution),
+                assessments=store,
+                resource_envelope=envelope,
+            )
+        assert identity.current_dsm_artifact_id == next(
+            entry.artifact_id
+            for entry in current_revision.manifest.entries
+            if entry.kind is ProcessingArtifactKind.DSM
+        )
+        assert identity.current_transform == (1.0, 0.25, 0.0, 0.0, -1.0, 10.0)
+        assert identity.baseline_observed_crs_identifier == "EPSG:5186"
+        assert identity.current_observed_crs_identifier == "EPSG:5186"
+        assert (
+            recorded.admission.evaluation_revisions[0]
+            .evidence_facts[0]
+            .terminal_record.measurement_payload
+        )
+        assert "netM3" not in recorded.admission.model_dump(by_alias=True)
+        assert store.get_history("analysis-request-1", organization_id="org-a") == recorded
+        assert store.get_history("analysis-request-1", organization_id="other") is None
+        with pytest.raises(ValueError, match="idempotency key"):
+            store.assess_and_record(
+                principal=_principal(),
+                request=AnalysisAssessmentRequestV2(
+                    request_id="analysis-request-idempotency-conflict",
+                    work_area_id=area.work_area_id,
+                    baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                    current=AnalysisEpochSelectionV2(subject=current_subject),
+                    idempotency_key="analysis-assessment-1",
+                ),
+                now=now,
+            )
+        journal_before_poison = analysis_journal.read_bytes()
+        with pytest.raises(ValueError, match="event is invalid"):
+            store.assess_and_record(
+                principal=_principal(),
+                request=AnalysisAssessmentRequestV2(
+                    request_id="analysis-request-1",
+                    work_area_id=area.work_area_id,
+                    baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                    current=AnalysisEpochSelectionV2(subject=current_subject),
+                    idempotency_key="analysis-assessment-new-key-same-request",
+                ),
+                now=now,
+            )
+        assert analysis_journal.read_bytes() == journal_before_poison
+        assert (
+            store.get_current(
+                "analysis-request-1", principal=_principal(), now=now + timedelta(seconds=1)
+            )
+            == recorded
+        )
+        # Both requests complete preflight before either obtains the final
+        # journal/revision lock.  They must reuse one immutable evaluation
+        # revision rather than allocating duplicate revision numbers.
+        preflight_barrier = Barrier(2)
+        original_prepare = store._prepare  # noqa: SLF001
+
+        def concurrent_prepare(**kwargs: Any) -> Any:
+            prepared = original_prepare(**kwargs)
+            preflight_barrier.wait(timeout=5)
+            return prepared
+
+        store._prepare = concurrent_prepare  # type: ignore[method-assign]  # noqa: SLF001
+        concurrent_requests = tuple(
+            AnalysisAssessmentRequestV2(
+                request_id=f"analysis-request-concurrent-{index}",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key=f"analysis-assessment-concurrent-{index}",
+            )
+            for index in (1, 2)
+        )
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            concurrent_records = tuple(
+                executor.map(
+                    lambda indexed_request: store.assess_and_record(
+                        principal=_principal(),
+                        request=indexed_request[1],
+                        now=now + timedelta(seconds=indexed_request[0]),
+                    ),
+                    tuple(enumerate(concurrent_requests)),
+                )
+            )
+        store._prepare = original_prepare  # type: ignore[method-assign]  # noqa: SLF001
+        assert all(
+            tuple(item.revision for item in result.admission.evaluation_revisions)
+            == tuple(item.revision for item in recorded.admission.evaluation_revisions)
+            for result in concurrent_records
+        )
+        exposed_history = store.get_history("analysis-request-1", organization_id="org-a")
+        assert (
+            exposed_history is not None
+            and exposed_history.admission.calculation_identity is not None
+        )
+        exposed_history.admission.calculation_identity.work_area_polygon["coordinates"][0][0][
+            0
+        ] = -1
+        retained_history = store.get_history("analysis-request-1", organization_id="org-a")
+        assert (
+            retained_history is not None
+            and retained_history.admission.calculation_identity is not None
+        )
+        assert (
+            retained_history.admission.calculation_identity.work_area_polygon["coordinates"][0][0][
+                0
+            ]
+            != -1
+        )
+
+        # A measured checkpoint with no independently resolved attestation is
+        # explicit provisional evidence, never a fabricated accuracy pass.
+        _validate_evidence(
+            app,
+            revision=baseline_revision,
+            subject=baseline_subject,
+            policy=inspection_policy,
+            context_authority=context_authority,
+            now=now,
+            storage=storage,
+            label="analysis-baseline-not-independent",
+            independent=False,
+        )
+        non_independent = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-not-independent",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-not-independent",
+            ),
+            now=now,
+        )
+        assert non_independent.admission.disposition is AdmissionDispositionV2.ADMIT_PROVISIONAL
+        assert "CHECKPOINT_NOT_INDEPENDENT" in non_independent.admission.reason_codes
+
+        # The context changes after preflight but before the guarded retry
+        # check.  Retrying the same idempotency key must not return the former
+        # ADMIT_EVALUATED history as though it were still current.
+        baseline_fact = app.state.external_evidence_validation_store.analysis_facts_for_subject_dsm(
+            subject=baseline_subject,
+            target_dsm_artifact_id=next(
+                entry.artifact_id
+                for entry in baseline_revision.manifest.entries
+                if entry.kind is ProcessingArtifactKind.DSM
+            ),
+            target_dsm_observed_sha256="sha256:"
+            + next(
+                entry.observed_sha256
+                for entry in baseline_revision.manifest.entries
+                if entry.kind is ProcessingArtifactKind.DSM
+            ),
+        )[0]
+        original_recheck = store._prepared_is_locally_current  # noqa: SLF001
+        raced = False
+
+        def revoke_between_preflight_and_append(prepared: Any, *, now: datetime) -> bool:
+            nonlocal raced
+            if not raced:
+                raced = True
+                assert baseline_fact.context.context_digest is not None
+                context_authority.revoke(baseline_fact.context.context_digest)
+            return original_recheck(prepared, now=now)
+
+        store._prepared_is_locally_current = revoke_between_preflight_and_append  # type: ignore[method-assign]  # noqa: SLF001
+        with pytest.raises(RuntimeError, match="historical"):
+            store.assess_and_record(
+                principal=_principal(),
+                request=AnalysisAssessmentRequestV2(
+                    request_id="analysis-request-1",
+                    work_area_id=area.work_area_id,
+                    baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                    current=AnalysisEpochSelectionV2(subject=current_subject),
+                    idempotency_key="analysis-assessment-1",
+                ),
+                now=now,
+            )
+        assert raced
+        store._prepared_is_locally_current = original_recheck  # type: ignore[method-assign]  # noqa: SLF001
+        context_authority.add(baseline_fact.context)
+
+        # A later rejected validation on the same sealed DSM is applicable
+        # evidence.  There is no request-level evidenceRef that could hide it.
+        _validate_evidence(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            policy=inspection_policy,
+            context_authority=context_authority,
+            now=now,
+            storage=storage,
+            label="analysis-current-rejected",
+            checkpoint_count=1,
+        )
+        remediated = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-2",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-2",
+            ),
+            now=now,
+        )
+        assert remediated.admission.disposition is AdmissionDispositionV2.REMEDIATION_REQUIRED
+        suppressed_view = execution_store.get_current(
+            request_id="calculation-request-1", principal=_principal(), now=now
+        )
+        assert suppressed_view is not None
+        assert suppressed_view.disposition is CalculationCurrentDispositionV2.REASSESSMENT_REQUIRED
+        assert suppressed_view.report is None
+        assert suppressed_view.record.report is None
+        rejected_original_retry = execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-1",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-1",
+            now=now,
+        )
+        rejected_new_key = execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-after-rejection",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-after-rejection",
+            now=now,
+        )
+        assert rejected_original_retry.report is None
+        assert rejected_new_key.report is None
+        historical_report = execution_store.get_history_for_principal(
+            "calculation-request-1", principal=_principal()
+        )
+        assert (
+            historical_report is not None
+            and historical_report.report is not None
+            and historical_report.report.numeric_result.numeric_result_identity_digest
+            == report.numeric_result.numeric_result_identity_digest
+        )
+        assert store.get_history("analysis-request-1", organization_id="org-a") == recorded
+        assert store.get_current("analysis-request-1", principal=_principal(), now=now) is None
+        assert (
+            store.get_history_for_principal("analysis-request-1", principal=_principal())
+            == recorded
+        )
+        assert (
+            store.get_history_for_principal("analysis-request-1", principal=_principal("other"))
+            is None
+        )
+
+        # Retained history stays exact when a context later rotates away.  Core
+        # records a typed BLOCKED assessment rather than erasing the rejected
+        # fact or treating an old policy as a perpetual current failure.
+        current_facts = app.state.external_evidence_validation_store.analysis_facts_for_subject_dsm(
+            subject=current_subject,
+            target_dsm_artifact_id=next(
+                entry.artifact_id
+                for entry in current_revision.manifest.entries
+                if entry.kind is ProcessingArtifactKind.DSM
+            ),
+            target_dsm_observed_sha256="sha256:"
+            + next(
+                entry.observed_sha256
+                for entry in current_revision.manifest.entries
+                if entry.kind is ProcessingArtifactKind.DSM
+            ),
+        )
+        rotated = next(
+            fact for fact in current_facts if fact.terminal_record.core_verdict.value == "REJECTED"
+        )
+        assert rotated.context.context_digest is not None
+        context_authority.revoke(rotated.context.context_digest)
+        blocked = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-3",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-3",
+            ),
+            now=now,
+        )
+        assert blocked.admission.disposition is AdmissionDispositionV2.BLOCKED
+        blocked_current = next(
+            evaluation
+            for evaluation in blocked.admission.evaluation_revisions
+            if evaluation.epoch == "CURRENT"
+        )
+        assert blocked_current.outcome.value == "UNAVAILABLE"
+        assert rotated.terminal_record.evidence_record_digest in {
+            fact.terminal_record.evidence_record_digest for fact in blocked_current.evidence_facts
+        }
+        unavailable_original_retry = execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-1",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-1",
+            now=now,
+        )
+        unavailable_new_key = execution_store.issue(
+            principal=_principal(),
+            request_id="calculation-request-after-unavailable",
+            calculation_identity_digest=identity.canonical_digest(),
+            idempotency_key="calculation-issue-after-unavailable",
+            now=now,
+        )
+        assert unavailable_original_retry.report is None
+        assert unavailable_new_key.report is None
+        context_authority.add(rotated.context)
+        with pytest.raises(RuntimeError, match="historical"):
+            store.assess_and_record(
+                principal=_principal(),
+                request=AnalysisAssessmentRequestV2(
+                    request_id="analysis-request-1",
+                    work_area_id=area.work_area_id,
+                    baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                    current=AnalysisEpochSelectionV2(subject=current_subject),
+                    idempotency_key="analysis-assessment-1",
+                ),
+                now=now,
+            )
+        # An issued matching validation remains pending until a terminal
+        # result exists; it cannot use the genuine-absence provisional path.
+        pending_item = _seal_evidence(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            now=now,
+            storage=storage,
+            label="analysis-current-pending",
+        )
+        context_authority.add(
+            _evidence_context(
+                pending_item,
+                subject=current_subject,
+                policy=inspection_policy,
+                now=now,
+                label="analysis-current-pending",
+            )
+        )
+        pending_issue = app.state.external_evidence_validation_store.issue_after_seal(
+            pending_item.evidence_ref, now=now
+        )
+        assert pending_issue.verdict is EvidenceValidationVerdict.ISSUED
+        pending = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-pending",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-pending",
+            ),
+            now=now,
+        )
+        assert pending.admission.disposition is AdmissionDispositionV2.REMEDIATION_REQUIRED
+        remediated_current = next(
+            evaluation
+            for evaluation in remediated.admission.evaluation_revisions
+            if evaluation.epoch == "CURRENT"
+        )
+        pending_current = next(
+            evaluation
+            for evaluation in pending.admission.evaluation_revisions
+            if evaluation.epoch == "CURRENT"
+        )
+        assert pending_current.reason_codes == remediated_current.reason_codes
+        # A sealed matching checkpoint whose context cannot be resolved never
+        # becomes a fictional "no evidence" provisional admission.
+        unavailable_item = _seal_evidence(
+            app,
+            revision=current_revision,
+            subject=current_subject,
+            now=now,
+            storage=storage,
+            label="analysis-current-context-unavailable",
+        )
+        unavailable_issue = app.state.external_evidence_validation_store.issue_after_seal(
+            unavailable_item.evidence_ref, now=now
+        )
+        assert unavailable_issue.verdict is EvidenceValidationVerdict.CONTEXT_UNAVAILABLE
+        unavailable = store.assess_and_record(
+            principal=_principal(),
+            request=AnalysisAssessmentRequestV2(
+                request_id="analysis-request-context-unavailable",
+                work_area_id=area.work_area_id,
+                baseline=AnalysisEpochSelectionV2(subject=baseline_subject),
+                current=AnalysisEpochSelectionV2(subject=current_subject),
+                idempotency_key="analysis-assessment-context-unavailable",
+            ),
+            now=now,
+        )
+        assert unavailable.admission.disposition is AdmissionDispositionV2.REMEDIATION_REQUIRED
+        unavailable_current = next(
+            evaluation
+            for evaluation in unavailable.admission.evaluation_revisions
+            if evaluation.epoch == "CURRENT"
+        )
+        assert unavailable_current.reason_codes == remediated_current.reason_codes
+        store._journal.close()  # noqa: SLF001
+        recovered = ExternalRelativeVolumeAnalysisStore(
+            DurableJournal(analysis_journal),
+            reconstruction=app.state.external_reconstruction_store,
+            inspections=app.state.external_artifact_inspection_store,
+            work_areas=app.state.work_area_store,
+            evidence=app.state.external_evidence_store,
+            validations=app.state.external_evidence_validation_store,
+            policy=policy,
+            runtime=AnalysisRuntimeIdentityV2(
+                worker_executable_digest=_digest("analysis-worker"),
+                worker_build_digest=_digest("analysis-build"),
+                runtime_image_version="2.0.0",
+                runtime_image_oci_digest=_digest("analysis-oci"),
+                dependency_lock_digest=_digest("analysis-lock"),
+            ),
+            clock=lambda: now,
+        )
+        assert recovered.get_history("analysis-request-2", organization_id="org-a") == remediated
+        # Existing exact evidence content retains revision 1; the new rejected
+        # current evidence creates a later current-epoch revision on replay.
+        assert [
+            evaluation.revision for evaluation in remediated.admission.evaluation_revisions
+        ] == [2, 2]
+        recovered._journal.close()  # noqa: SLF001
+
+        # The shared DurableJournal contract treats only an incomplete final
+        # line as absent; the complete compound history remains replayable.
+        with analysis_journal.open("ab") as handle:
+            handle.write(b'{"torn":')
+        torn_tail_recovered = ExternalRelativeVolumeAnalysisStore(
+            DurableJournal(analysis_journal),
+            reconstruction=app.state.external_reconstruction_store,
+            inspections=app.state.external_artifact_inspection_store,
+            work_areas=app.state.work_area_store,
+            evidence=app.state.external_evidence_store,
+            validations=app.state.external_evidence_validation_store,
+            policy=policy,
+            runtime=AnalysisRuntimeIdentityV2(
+                worker_executable_digest=_digest("analysis-worker"),
+                worker_build_digest=_digest("analysis-build"),
+                runtime_image_version="2.0.0",
+                runtime_image_oci_digest=_digest("analysis-oci"),
+                dependency_lock_digest=_digest("analysis-lock"),
+            ),
+            clock=lambda: now,
+        )
+        assert (
+            torn_tail_recovered.get_history("analysis-request-2", organization_id="org-a")
+            == remediated
+        )
+        torn_tail_recovered._journal.close()  # noqa: SLF001
+
+        raw_events = [json.loads(line) for line in analysis_journal.read_text().splitlines()]
+        crosslinked_events = json.loads(json.dumps(raw_events))
+        semantic_events = json.loads(json.dumps(raw_events))
+        raw_events[0]["admission"]["reasonCodes"] = ["TAMPERED"]
+        unsigned = {key: value for key, value in raw_events[0].items() if key != "eventDigest"}
+        raw_events[0]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
+        )
+        analysis_journal.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in raw_events) + "\n"
+        )
+        with pytest.raises(AnalysisAssessmentRecoveryError, match="admission digest"):
+            ExternalRelativeVolumeAnalysisStore(
+                DurableJournal(analysis_journal),
+                reconstruction=app.state.external_reconstruction_store,
+                inspections=app.state.external_artifact_inspection_store,
+                work_areas=app.state.work_area_store,
+                evidence=app.state.external_evidence_store,
+                validations=app.state.external_evidence_validation_store,
+                policy=policy,
+                runtime=AnalysisRuntimeIdentityV2(
+                    worker_executable_digest=_digest("analysis-worker"),
+                    worker_build_digest=_digest("analysis-build"),
+                    runtime_image_version="2.0.0",
+                    runtime_image_oci_digest=_digest("analysis-oci"),
+                    dependency_lock_digest=_digest("analysis-lock"),
+                ),
+                clock=lambda: now,
+            )
+        remediation_event_index = next(
+            index
+            for index, event in enumerate(semantic_events)
+            if event["admission"]["disposition"] == "REMEDIATION_REQUIRED"
+        )
+        remediation_admission = AdmissionV2.model_validate(
+            semantic_events[remediation_event_index]["admission"]
+        )
+        semantic_events[remediation_event_index]["admission"] = (
+            remediation_admission.model_copy(
+                update={
+                    "disposition": AdmissionDispositionV2.ADMIT_EVALUATED,
+                    "admission_digest": None,
+                }
+            )
+            .sealed()
+            .model_dump(by_alias=True, mode="json")
+        )
+        unsigned = {
+            key: value
+            for key, value in semantic_events[remediation_event_index].items()
+            if key != "eventDigest"
+        }
+        semantic_events[remediation_event_index]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
+        )
+        analysis_journal.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in semantic_events) + "\n"
+        )
+        with pytest.raises(AnalysisAssessmentRecoveryError, match="disposition"):
+            ExternalRelativeVolumeAnalysisStore(
+                DurableJournal(analysis_journal),
+                reconstruction=app.state.external_reconstruction_store,
+                inspections=app.state.external_artifact_inspection_store,
+                work_areas=app.state.work_area_store,
+                evidence=app.state.external_evidence_store,
+                validations=app.state.external_evidence_validation_store,
+                policy=policy,
+                runtime=AnalysisRuntimeIdentityV2(
+                    worker_executable_digest=_digest("analysis-worker"),
+                    worker_build_digest=_digest("analysis-build"),
+                    runtime_image_version="2.0.0",
+                    runtime_image_oci_digest=_digest("analysis-oci"),
+                    dependency_lock_digest=_digest("analysis-lock"),
+                ),
+                clock=lambda: now,
+            )
+        evaluation_event_index = next(
+            index
+            for index, event in enumerate(crosslinked_events)
+            if event["admission"]["evaluationRevisions"]
+        )
+        first_admission = AdmissionV2.model_validate(
+            crosslinked_events[evaluation_event_index]["admission"]
+        )
+        first_evaluation = EvaluationV1.model_validate(
+            crosslinked_events[evaluation_event_index]["admission"]["evaluationRevisions"][0]
+        )
+        invalid_revision = first_evaluation.model_copy(
+            update={"revision": 42, "evaluation_digest": None}
+        ).sealed()
+        crosslinked_events[evaluation_event_index]["admission"] = (
+            first_admission.model_copy(
+                update={
+                    "evaluation_revisions": (
+                        invalid_revision,
+                        *first_admission.evaluation_revisions[1:],
+                    ),
+                    "admission_digest": None,
+                }
+            )
+            .sealed()
+            .model_dump(by_alias=True, mode="json")
+        )
+        unsigned = {
+            key: value
+            for key, value in crosslinked_events[evaluation_event_index].items()
+            if key != "eventDigest"
+        }
+        crosslinked_events[evaluation_event_index]["eventDigest"] = (
+            "sha256:" + hashlib.sha256(canonical_json_bytes(unsigned)).hexdigest()
+        )
+        analysis_journal.write_text(
+            "\n".join(json.dumps(event, separators=(",", ":")) for event in crosslinked_events)
+            + "\n"
+        )
+        with pytest.raises(AnalysisAssessmentRecoveryError, match="revision sequence"):
+            ExternalRelativeVolumeAnalysisStore(
+                DurableJournal(analysis_journal),
+                reconstruction=app.state.external_reconstruction_store,
+                inspections=app.state.external_artifact_inspection_store,
+                work_areas=app.state.work_area_store,
+                evidence=app.state.external_evidence_store,
+                validations=app.state.external_evidence_validation_store,
+                policy=policy,
+                runtime=AnalysisRuntimeIdentityV2(
+                    worker_executable_digest=_digest("analysis-worker"),
+                    worker_build_digest=_digest("analysis-build"),
+                    runtime_image_version="2.0.0",
+                    runtime_image_oci_digest=_digest("analysis-oci"),
+                    dependency_lock_digest=_digest("analysis-lock"),
+                ),
+                clock=lambda: now,
+            )
+    finally:
         _close_journals(opened)

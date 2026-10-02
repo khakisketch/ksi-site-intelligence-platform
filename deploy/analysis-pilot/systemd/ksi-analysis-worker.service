@@ -1,0 +1,51 @@
+[Unit]
+Description=KSI first-pilot Analysis worker (local candidate; not deployed)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=ksi-analysis
+Group=ksi-analysis
+UMask=0077
+WorkingDirectory=/opt/ksi-analysis
+Environment=HOME=/var/empty
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/ksi-analysis/venv/bin/ksi-external-analysis-worker --config /etc/ksi-analysis/config.json --worker-token-file /etc/ksi-analysis/worker.token
+Restart=on-failure
+RestartPreventExitStatus=2
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+NoNewPrivileges=yes
+PrivateNetwork=no
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+InaccessiblePaths=/home /root /run/user /var/lib/docker /run/docker.sock /var/run/docker.sock
+ReadOnlyPaths=/opt/ksi-analysis /etc/ksi-analysis/config.json /etc/ksi-analysis/worker.token
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=127.0.0.1/32 ::1/128
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

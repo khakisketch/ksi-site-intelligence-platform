@@ -98,6 +98,10 @@ class ObservationWorkOrderStoreRecoveryError(RuntimeError):
     pass
 
 
+class SiteWorkOrderListBudgetExceeded(RuntimeError):
+    """A bounded Site WorkOrder query found more indexed rows than permitted."""
+
+
 class ExternalReconstructionExecutionDenied(RuntimeError):
     """An external reconstruction WorkOrder was sent to a managed execution path."""
 
@@ -140,9 +144,7 @@ class ObservationWorkOrderOperations(CamelModel):
     @model_validator(mode="after")
     def _validate_operations_snapshot(self) -> ObservationWorkOrderOperations:
         def require_utc(value: datetime | None, *, field_name: str) -> None:
-            if value is not None and (
-                value.tzinfo is None or value.utcoffset() != timedelta(0)
-            ):
+            if value is not None and (value.tzinfo is None or value.utcoffset() != timedelta(0)):
                 raise ValueError(f"{field_name} must be a UTC timestamp")
 
         require_utc(self.due_at, field_name="dueAt")
@@ -280,6 +282,7 @@ class ObservationWorkOrderStore:
         self._assignment_member_is_active = assignment_member_is_active
         self._schedules: dict[str, ObservationSchedule] = {}
         self._orders: dict[str, ObservationWorkOrder] = {}
+        self._orders_by_site: dict[tuple[str, str], dict[str, ObservationWorkOrder]] = {}
         self._drafts: dict[str, ReobservationDraft] = {}
         self._external_reobservation_authority_port = (
             external_reobservation_authority_port
@@ -300,9 +303,7 @@ class ObservationWorkOrderStore:
         ] = {}
         self._create_idempotency: dict[tuple[str, str, str], tuple[str, str]] = {}
         self._operations: dict[tuple[str, str], ObservationWorkOrderOperations] = {}
-        self._operation_snapshots: dict[
-            tuple[str, str, int], ObservationWorkOrderOperations
-        ] = {}
+        self._operation_snapshots: dict[tuple[str, str, int], ObservationWorkOrderOperations] = {}
         self._operations_idempotency: dict[
             tuple[str, str, str], tuple[str, ObservationWorkOrderOperations]
         ] = {}
@@ -388,7 +389,7 @@ class ObservationWorkOrderStore:
                         )
                 if kind.endswith("updated") and "operations" in raw:
                     raise ValueError("WorkOrder update cannot carry operations state")
-                self._orders[order.work_order_id] = order
+                self._store_order(order)
                 if kind.endswith("created") and "operations" in raw:
                     self._apply_initial_operations(order, raw["operations"], raw)
             elif kind == "observation-work-order-operations-updated":
@@ -419,7 +420,7 @@ class ObservationWorkOrderStore:
                 elif current_draft is None or draft.version != current_draft.version + 1:
                     raise ValueError("draft version 계보 불일치")
                 self._drafts[draft.draft_id] = draft
-                self._orders[order.work_order_id] = order
+                self._store_order(order)
             elif kind == "external-reobservation-approved-and-next-order-created":
                 self._apply_external_reobservation_approval(raw)
             else:
@@ -432,6 +433,20 @@ class ObservationWorkOrderStore:
     def _append(self, raw: dict[str, Any]) -> None:
         self._journal.append(raw)
         self._apply(raw)
+
+    def _store_order(self, order: ObservationWorkOrder) -> None:
+        current = self._orders.get(order.work_order_id)
+        if current is not None:
+            old_key = (current.organization_id, current.site_id)
+            new_key = (order.organization_id, order.site_id)
+            if old_key != new_key:
+                previous = self._orders_by_site.get(old_key)
+                if previous is not None:
+                    previous.pop(order.work_order_id, None)
+        self._orders[order.work_order_id] = order
+        self._orders_by_site.setdefault((order.organization_id, order.site_id), {})[
+            order.work_order_id
+        ] = order
 
     @staticmethod
     def _legacy_operations(order: ObservationWorkOrder) -> ObservationWorkOrderOperations:
@@ -455,8 +470,7 @@ class ObservationWorkOrderStore:
     def _is_external_operations_order_locked(self, order: ObservationWorkOrder) -> bool:
         return (
             order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
-            or (order.organization_id, order.work_order_id)
-            in self._external_reobservation_bindings
+            or (order.organization_id, order.work_order_id) in self._external_reobservation_bindings
         )
 
     def _apply_initial_operations(
@@ -771,7 +785,7 @@ class ObservationWorkOrderStore:
             or proposal_key in self._external_reobservation_proposals
         ):
             raise ValueError("duplicate external reobservation approval or successor WorkOrder")
-        self._orders[successor.work_order_id] = successor
+        self._store_order(successor)
         self._external_reobservation_bindings[successor_key] = binding
         self._external_reobservation_receipts[successor_key] = receipt
         self._external_reobservation_idempotency[idempotency_key] = receipt
@@ -809,8 +823,11 @@ class ObservationWorkOrderStore:
 
     @staticmethod
     def _is_create_digest(value: object) -> bool:
-        return isinstance(value, str) and len(value) == 71 and value.startswith("sha256:") and all(
-            character in "0123456789abcdef" for character in value[7:]
+        return (
+            isinstance(value, str)
+            and len(value) == 71
+            and value.startswith("sha256:")
+            and all(character in "0123456789abcdef" for character in value[7:])
         )
 
     @staticmethod
@@ -934,9 +951,7 @@ class ObservationWorkOrderStore:
             )
             create_idempotency = {"keyHash": key_hash, "fingerprint": fingerprint}
             with self._lock:
-                existing = self._create_idempotency.get(
-                    (organization_id, actor, key_hash)
-                )
+                existing = self._create_idempotency.get((organization_id, actor, key_hash))
                 if existing is not None:
                     existing_id, existing_fingerprint = existing
                     if existing_fingerprint != fingerprint:
@@ -1080,10 +1095,7 @@ class ObservationWorkOrderStore:
             raise ValueError("Idempotency-Key must be a nonblank value up to 255 characters")
         if now.tzinfo is None:
             raise ValueError("operations timestamp must be timezone-aware")
-        if (
-            type(expected_operations_revision) is not int
-            or expected_operations_revision < 0
-        ):
+        if type(expected_operations_revision) is not int or expected_operations_revision < 0:
             raise ValueError("expectedOperationsRevision must be a nonnegative integer")
 
     def _require_external_operations_order_locked(
@@ -1122,9 +1134,7 @@ class ObservationWorkOrderStore:
                 and (site_id is None or order.site_id == site_id)
             ]
         if workflow_status is not None:
-            operations = [
-                item for item in operations if item.workflow_status is workflow_status
-            ]
+            operations = [item for item in operations if item.workflow_status is workflow_status]
         return sorted(
             operations,
             key=lambda item: (
@@ -1411,10 +1421,14 @@ class ObservationWorkOrderStore:
             order = self._orders.get(work_order_id)
             if order is None or order.organization_id != organization_id:
                 raise LookupError("관측 작업을 찾을 수 없다")
-            if self._is_external_operations_order_locked(order) and (
-                self._operations_for_order_locked(order).workflow_status
-                is WorkOrderWorkflowStatus.CLOSED
-            ) and (is_durable_retry is None or not is_durable_retry()):
+            if (
+                self._is_external_operations_order_locked(order)
+                and (
+                    self._operations_for_order_locked(order).workflow_status
+                    is WorkOrderWorkflowStatus.CLOSED
+                )
+                and (is_durable_retry is None or not is_durable_retry())
+            ):
                 raise RuntimeError("EXTERNAL_WORKFLOW_CLOSED")
             yield
 
@@ -1423,14 +1437,10 @@ class ObservationWorkOrderStore:
     ) -> None:
         """One-shot compatibility check; writers should retain ``guard_*`` to commit."""
 
-        with self.guard_new_external_intent(
-            work_order_id, organization_id=organization_id
-        ):
+        with self.guard_new_external_intent(work_order_id, organization_id=organization_id):
             return
 
-    def is_external_workflow_closed(
-        self, work_order_id: str, *, organization_id: str
-    ) -> bool:
+    def is_external_workflow_closed(self, work_order_id: str, *, organization_id: str) -> bool:
         """Read only the administrative closure state; unknown historical rows stay false."""
 
         with self._lock:
@@ -1472,6 +1482,23 @@ class ObservationWorkOrderStore:
                     if order.site_id == site_id and order.organization_id == organization_id
                 ),
                 key=lambda item: item.work_order_id,
+            )
+
+    def list_for_site_bounded(
+        self, site_id: str, *, organization_id: str, max_records: int
+    ) -> list[ObservationWorkOrder]:
+        """Complete detached scoped list, with an O(1) budget check before enumeration."""
+        if type(max_records) is not int or max_records < 1:
+            raise ValueError("max_records must be a positive integer")
+        if not self._site_exists(site_id, organization_id):
+            raise LookupError("현장을 찾을 수 없다")
+        with self._lock:
+            indexed = self._orders_by_site.get((organization_id, site_id), {})
+            if len(indexed) > max_records:
+                raise SiteWorkOrderListBudgetExceeded("Site WorkOrder source budget exceeded")
+            return sorted(
+                (order.model_copy(deep=True) for order in indexed.values()),
+                key=lambda order: order.work_order_id,
             )
 
     def list_scoped(
@@ -1533,6 +1560,15 @@ class ObservationWorkOrderStore:
                 ),
                 key=lambda item: item.draft_id,
             )
+
+    def get_reobservation_draft(
+        self, draft_id: str, *, organization_id: str
+    ) -> ReobservationDraft | None:
+        with self._lock:
+            draft = self._drafts.get(draft_id)
+            if draft is None or draft.organization_id != organization_id:
+                return None
+            return draft.model_copy(deep=True)
 
     def approve(
         self,
@@ -2215,6 +2251,38 @@ def build_observation_work_order_router(
 ) -> APIRouter:
     router = APIRouter(tags=["observation-work-orders"])
 
+    def site_granted(principal: Principal, site_id: str) -> bool:
+        return principal.allowed_site_ids is None or site_id in principal.allowed_site_ids
+
+    def work_areas_granted(principal: Principal, work_area_ids: list[str]) -> bool:
+        return principal.allowed_work_area_ids is None or set(work_area_ids).issubset(
+            principal.allowed_work_area_ids
+        )
+
+    def require_resource_scope(
+        principal: Principal, site_id: str, work_area_ids: list[str]
+    ) -> None:
+        if not site_granted(principal, site_id) or not work_areas_granted(principal, work_area_ids):
+            raise HTTPException(status_code=404, detail="관측 작업 범위를 찾을 수 없다")
+
+    def require_work_order_scope(principal: Principal, work_order_id: str) -> ObservationWorkOrder:
+        order = store.get(work_order_id, organization_id=principal.organization_id)
+        if order is None:
+            raise HTTPException(status_code=404, detail="관측 작업을 찾을 수 없다")
+        require_resource_scope(principal, order.site_id, order.work_area_ids)
+        return order
+
+    def operations_are_scoped(
+        principal: Principal, operations: ObservationWorkOrderOperations
+    ) -> bool:
+        order = store.get(operations.work_order_id, organization_id=principal.organization_id)
+        return (
+            order is not None
+            and order.site_id == operations.site_id
+            and site_granted(principal, order.site_id)
+            and work_areas_granted(principal, order.work_area_ids)
+        )
+
     @router.post(
         "/v1/sites/{site_id}/observation-schedules",
         response_model=ObservationSchedule,
@@ -2226,6 +2294,7 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
     ) -> ObservationSchedule:
         try:
+            require_resource_scope(principal, site_id, request.work_area_ids)
             return store.create_schedule(
                 organization_id=principal.organization_id,
                 site_id=site_id,
@@ -2246,8 +2315,16 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> ScheduleListResponse:
         try:
+            if not site_granted(principal, site_id):
+                raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
             return ScheduleListResponse(
-                schedules=store.list_schedules(site_id, organization_id=principal.organization_id)
+                schedules=[
+                    schedule
+                    for schedule in store.list_schedules(
+                        site_id, organization_id=principal.organization_id
+                    )
+                    if work_areas_granted(principal, schedule.work_area_ids)
+                ]
             )
         except LookupError as exc:
             raise _http_error(exc) from exc
@@ -2264,6 +2341,18 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
     ) -> ObservationWorkOrder:
         try:
+            require_resource_scope(principal, site_id, request.work_area_ids)
+            if (
+                request.schedule_id is not None
+                and request.execution_mode
+                is not ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            ):
+                schedules = store.list_schedules(site_id, organization_id=principal.organization_id)
+                schedule = next(
+                    (item for item in schedules if item.schedule_id == request.schedule_id), None
+                )
+                if schedule is None or not work_areas_granted(principal, schedule.work_area_ids):
+                    raise HTTPException(status_code=404, detail="관측 일정을 찾을 수 없다")
             return store.create_work_order(
                 organization_id=principal.organization_id,
                 site_id=site_id,
@@ -2285,8 +2374,16 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> WorkOrderListResponse:
         try:
+            if not site_granted(principal, site_id):
+                raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
             return WorkOrderListResponse(
-                work_orders=store.list_for_site(site_id, organization_id=principal.organization_id)
+                work_orders=[
+                    order
+                    for order in store.list_for_site(
+                        site_id, organization_id=principal.organization_id
+                    )
+                    if work_areas_granted(principal, order.work_area_ids)
+                ]
             )
         except LookupError as exc:
             raise _http_error(exc) from exc
@@ -2301,13 +2398,20 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> WorkOrderListResponse:
         try:
+            if site_id is not None and not site_granted(principal, site_id):
+                raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
             return WorkOrderListResponse(
-                work_orders=store.list_scoped(
-                    organization_id=principal.organization_id,
-                    site_id=site_id,
-                    status=status,
-                    action_group=action_group,
-                )
+                work_orders=[
+                    order
+                    for order in store.list_scoped(
+                        organization_id=principal.organization_id,
+                        site_id=site_id,
+                        status=status,
+                        action_group=action_group,
+                    )
+                    if site_granted(principal, order.site_id)
+                    and work_areas_granted(principal, order.work_area_ids)
+                ]
             )
         except LookupError as exc:
             raise _http_error(exc) from exc
@@ -2318,7 +2422,11 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> ObservationWorkOrder:
         order = store.get(work_order_id, organization_id=principal.organization_id)
-        if order is None:
+        if (
+            order is None
+            or not site_granted(principal, order.site_id)
+            or not work_areas_granted(principal, order.work_area_ids)
+        ):
             raise HTTPException(status_code=404, detail="관측 작업을 찾을 수 없다")
         return order
 
@@ -2332,6 +2440,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrderOperations:
         _require_operations_human(principal)
         try:
+            require_work_order_scope(principal, work_order_id)
             return store.get_operations(work_order_id, organization_id=principal.organization_id)
         except (LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
@@ -2349,12 +2458,18 @@ def build_observation_work_order_router(
     ) -> WorkOrderOperationsListResponse:
         _require_operations_human(principal)
         try:
+            if site_id is not None and not site_granted(principal, site_id):
+                raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
             return WorkOrderOperationsListResponse(
-                operations=store.list_operations(
-                    organization_id=principal.organization_id,
-                    site_id=site_id,
-                    workflow_status=workflow_status,
-                )
+                operations=[
+                    operation
+                    for operation in store.list_operations(
+                        organization_id=principal.organization_id,
+                        site_id=site_id,
+                        workflow_status=workflow_status,
+                    )
+                    if operations_are_scoped(principal, operation)
+                ]
             )
         except (LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
@@ -2371,6 +2486,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrderOperations:
         _require_operations_human(principal)
         try:
+            require_work_order_scope(principal, work_order_id)
             if request.action is WorkOrderOperationsAssignmentAction.ASSIGN_TO_MEMBER:
                 assert request.assignee_principal_id is not None  # validated request
                 return store.assign_operations_to_member(
@@ -2407,6 +2523,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrderOperations:
         _require_operations_human(principal)
         try:
+            require_work_order_scope(principal, work_order_id)
             return store.set_operations_due_date(
                 work_order_id,
                 organization_id=principal.organization_id,
@@ -2431,6 +2548,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrderOperations:
         _require_operations_human(principal)
         try:
+            require_work_order_scope(principal, work_order_id)
             return store.close_operations(
                 work_order_id,
                 organization_id=principal.organization_id,
@@ -2455,6 +2573,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrderOperations:
         _require_operations_human(principal)
         try:
+            require_work_order_scope(principal, work_order_id)
             return store.reopen_operations(
                 work_order_id,
                 organization_id=principal.organization_id,
@@ -2476,6 +2595,7 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrder:
         now = datetime.now(UTC)
         try:
+            require_work_order_scope(principal, work_order_id)
             approved = store.approve(
                 work_order_id,
                 organization_id=principal.organization_id,
@@ -2509,6 +2629,7 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
     ) -> ReobservationDraft:
         try:
+            require_work_order_scope(principal, work_order_id)
             return store.create_reobservation_draft(
                 work_order_id,
                 organization_id=principal.organization_id,
@@ -2533,6 +2654,7 @@ def build_observation_work_order_router(
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> ReobservationDraftListResponse:
         try:
+            require_work_order_scope(principal, work_order_id)
             return ReobservationDraftListResponse(
                 drafts=store.list_reobservation_drafts(
                     work_order_id, organization_id=principal.organization_id
@@ -2549,6 +2671,12 @@ def build_observation_work_order_router(
     ) -> ReobservationDraft:
         now = datetime.now(UTC)
         try:
+            draft = store.get_reobservation_draft(
+                draft_id, organization_id=principal.organization_id
+            )
+            if draft is None:
+                raise HTTPException(status_code=404, detail="재관측 초안을 찾을 수 없다")
+            require_work_order_scope(principal, draft.work_order_id)
             approved_draft = store.approve_reobservation(
                 draft_id,
                 organization_id=principal.organization_id,

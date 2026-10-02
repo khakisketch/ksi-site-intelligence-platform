@@ -19,6 +19,7 @@ from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservat
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
+from ksi_event_contracts.observation_work_order import ObservationWorkOrderExecutionMode
 from ksi_mission_contracts.models import SiteFrame
 
 _NOW = datetime(2026, 9, 6, tzinfo=UTC)
@@ -104,6 +105,7 @@ def _client(
     auth_records: list[PrincipalTokenRecord] | None = None,
     organization_id: str = "org-a",
     site_id: str = "site-a",
+    external_reconstruction: bool = False,
 ) -> tuple[TestClient, _Storage, str, str]:
     sites = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     frame = SiteFrame(
@@ -131,6 +133,12 @@ def _client(
             name="External export",
             work_area_ids=["wa-a"],
             schedule_id=None,
+            execution_mode=(
+                ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+                if external_reconstruction
+                else ObservationWorkOrderExecutionMode.MANAGED_ACQUISITION
+            ),
+            idempotency_key="external-test-order" if external_reconstruction else None,
             actor="fixture",
             now=_NOW,
         )
@@ -232,6 +240,144 @@ def _submission(
 
 def _headers(token: str = _TOKEN) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def _dsm_only_v2_submission(*, epoch_id: str, submission_id: str = "dsm-v2-001") -> dict[str, Any]:
+    from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV2
+
+    wire = _submission(
+        work_order_id="unused",
+        epoch_id=epoch_id,
+        submission_id=submission_id,
+        include_dsm=True,
+    )
+    wire["contractVersion"] = "external-reconstruction-submission.v2"
+    wire["inputDeclaration"]["captureStartedAt"] = "2026-09-06T00:00:00Z"
+    wire["inputDeclaration"]["captureEndedAt"] = "2026-09-06T00:10:00Z"
+    wire["artifacts"] = [artifact for artifact in wire["artifacts"] if artifact["kind"] == "dsm"]
+    wire["submissionDigest"] = ExternalReconstructionSubmissionV2.digest_for_wire(wire)
+    return wire
+
+
+def test_v2_dsm_only_submission_registers_gets_grant_and_seals_observed_bytes(
+    tmp_path: Path,
+) -> None:
+    client, storage, work_order_id, epoch_id = _client(tmp_path)
+    base = (
+        f"/v1/observation-work-orders/{work_order_id}/"
+        "external-reconstruction-submissions-v2"
+    )
+    submitted = _dsm_only_v2_submission(epoch_id=epoch_id)
+
+    registered = client.post(base, headers=_headers(), json=submitted)
+    assert registered.status_code == 201, registered.text
+    body = registered.json()
+    assert body["submission"]["contractVersion"] == "external-reconstruction-submission.v2"
+    assert [item["kind"] for item in body["submission"]["artifacts"]] == ["dsm"]
+    assert "eligibility" not in body and "accuracy" not in body
+
+    submission_ref = body["submissionRef"]
+    revision_path = f"{base.replace('-v2', '')}/{submission_ref}/revisions/1"
+    fetched = client.get(revision_path, headers=_headers())
+    assert fetched.status_code == 200
+    assert fetched.json() == body
+
+    grant_response = client.post(f"{revision_path}/upload-grants", headers=_headers())
+    assert grant_response.status_code == 200, grant_response.text
+    grant = grant_response.json()["grants"][0]
+    storage.objects[grant["objectKey"]] = ObjectStorageObservation(
+        object_key=grant["objectKey"],
+        exists=True,
+        size_bytes=len(b"dsm bytes"),
+        sha256="sha256:" + hashlib.sha256(b"dsm bytes").hexdigest(),
+        content_type="application/octet-stream",
+    )
+    sealed = client.post(f"{revision_path}/seal", headers=_headers())
+    assert sealed.status_code == 200, sealed.text
+    assert sealed.json()["manifest"]["entries"][0]["kind"] == "dsm"
+    assert sealed.json()["manifest"]["entries"][0]["observedSha256"] == hashlib.sha256(
+        b"dsm bytes"
+    ).hexdigest()
+
+
+@pytest.mark.parametrize("digest_mode", ["missing", "forged", "missing-field"])
+def test_v2_route_rejects_missing_or_forged_submission_digest(
+    tmp_path: Path, digest_mode: str
+) -> None:
+    client, _storage, work_order_id, epoch_id = _client(tmp_path)
+    path = (
+        f"/v1/observation-work-orders/{work_order_id}/"
+        "external-reconstruction-submissions-v2"
+    )
+    submitted = _dsm_only_v2_submission(epoch_id=epoch_id)
+    if digest_mode == "missing":
+        submitted.pop("submissionDigest")
+    elif digest_mode == "forged":
+        submitted["submissionDigest"] = "sha256:" + "0" * 64
+    else:
+        submitted.pop("submissionId")
+
+    response = client.post(path, headers=_headers(), json=submitted)
+    assert response.status_code == 422
+    expected_field = "submissionId" if digest_mode == "missing-field" else "submissionDigest"
+    assert expected_field in str(response.json())
+
+
+def test_v2_route_hides_foreign_work_order_and_rejects_worker_principal(tmp_path: Path) -> None:
+    worker_token = "external-reconstruction-v2-worker"  # noqa: S105 -- test credential
+    client, _storage, work_order_id, epoch_id = _client(
+        tmp_path,
+        auth_records=[
+            _record(_TOKEN, principal_id="operator-a", organization_id="org-a"),
+            _record(_OTHER_TOKEN, principal_id="operator-b", organization_id="org-b"),
+            _record(
+                worker_token,
+                principal_id="worker-a",
+                organization_id="org-a",
+                kind=PrincipalKind.PROCESSING_WORKER,
+                role=None,
+            ),
+        ],
+    )
+    path = (
+        f"/v1/observation-work-orders/{work_order_id}/"
+        "external-reconstruction-submissions-v2"
+    )
+    submitted = _dsm_only_v2_submission(epoch_id=epoch_id)
+    assert client.post(path, headers=_headers(_OTHER_TOKEN), json=submitted).status_code == 404
+    assert client.post(path, headers=_headers(worker_token), json=submitted).status_code == 403
+
+
+def test_v2_route_allows_exact_retry_after_close_and_blocks_new_submission(tmp_path: Path) -> None:
+    client, _storage, work_order_id, epoch_id = _client(
+        tmp_path, external_reconstruction=True
+    )
+    path = (
+        f"/v1/observation-work-orders/{work_order_id}/"
+        "external-reconstruction-submissions-v2"
+    )
+    submitted = _dsm_only_v2_submission(epoch_id=epoch_id)
+    first = client.post(path, headers=_headers(), json=submitted)
+    assert first.status_code == 201, first.text
+
+    work_orders = cast(Any, client.app).state.external_reconstruction_test_work_orders
+    operations = work_orders.get_operations(work_order_id, organization_id="org-a")
+    work_orders.close_operations(
+        work_order_id,
+        organization_id="org-a",
+        expected_operations_revision=operations.operations_revision,
+        note=None,
+        actor="operator-a",
+        idempotency_key="close-v2-ingress",
+        now=_NOW,
+    )
+
+    retry = client.post(path, headers=_headers(), json=submitted)
+    assert retry.status_code == 201, retry.text
+    assert retry.json() == first.json()
+    fresh = _dsm_only_v2_submission(epoch_id=epoch_id, submission_id="dsm-v2-002")
+    rejected = client.post(path, headers=_headers(), json=fresh)
+    assert rejected.status_code == 409
 
 
 def test_register_grant_and_seal_observed_ortho_bytes_without_promoting_a_managed_job(
@@ -689,19 +835,24 @@ def test_every_external_route_returns_the_same_absent_response_for_foreign_work_
     )
     absent_base = "/v1/observation-work-orders/not-a-work-order/external-reconstruction-submissions"
     submission_ref = "ers-v1-" + "a" * 64
-    calls = [
-        (client.post, "", submitted),
-        (client.get, "", None),
-        (client.get, f"/{submission_ref}/revisions/1", None),
-        (client.post, f"/{submission_ref}/revisions/1/upload-grants", None),
-        (client.post, f"/{submission_ref}/revisions/1/seal", None),
-    ]
-    for method, suffix, body in calls:
-        kwargs = {"headers": _headers(_OTHER_TOKEN)}
-        if body is not None:
-            kwargs["json"] = body
-        foreign = method(foreign_base + suffix, **kwargs)
-        absent = method(absent_base + suffix, **kwargs)
+    headers = _headers(_OTHER_TOKEN)
+    foreign_submission = client.post(foreign_base, headers=headers, json=submitted)
+    absent_submission = client.post(absent_base, headers=headers, json=submitted)
+    assert foreign_submission.status_code == absent_submission.status_code == 404
+    assert foreign_submission.json() == absent_submission.json()
+
+    for suffix in ("", f"/{submission_ref}/revisions/1"):
+        foreign = client.get(foreign_base + suffix, headers=headers)
+        absent = client.get(absent_base + suffix, headers=headers)
+        assert foreign.status_code == absent.status_code == 404
+        assert foreign.json() == absent.json()
+
+    for suffix in (
+        f"/{submission_ref}/revisions/1/upload-grants",
+        f"/{submission_ref}/revisions/1/seal",
+    ):
+        foreign = client.post(foreign_base + suffix, headers=headers)
+        absent = client.post(absent_base + suffix, headers=headers)
         assert foreign.status_code == absent.status_code == 404
         assert foreign.json() == absent.json()
 

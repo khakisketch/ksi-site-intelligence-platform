@@ -379,7 +379,7 @@ def test_hostile_json_body_error_is_machine_readable(label: str, raw: str, tmp_p
 def test_work_order_hostile_bodies_are_machine_readable_422(
     path: str, label: str, raw: str, tmp_path: Path
 ) -> None:
-    """신규 WorkOrder 쓰기 표면 5개를 적대적 본문 6종으로 직접 조사한다."""
+    """WorkOrder 쓰기 표면을 적대적 본문 6종으로 직접 조사한다."""
     with _work_order_client(tmp_path) as client:
         response = client.post(
             path,
@@ -389,6 +389,35 @@ def test_work_order_hostile_bodies_are_machine_readable_422(
     assert response.status_code == 422, f"{label}: {response.status_code} {response.text[:200]}"
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
+
+
+@pytest.mark.parametrize(("label", "raw"), _HOSTILE_BODIES, ids=[c[0] for c in _HOSTILE_BODIES])
+def test_v2_external_submission_hostile_bodies_are_machine_readable_422(
+    label: str, raw: str, tmp_path: Path
+) -> None:
+    """V2 looks up WorkOrder first, so use a real scoped order to reach its wire parser."""
+    from test_external_reconstruction_api import _TOKEN
+    from test_external_reconstruction_api import _client as reconstruction_client
+
+    base_client, _, work_order_id, _ = reconstruction_client(tmp_path)
+    try:
+        with TestClient(base_client.app, raise_server_exceptions=False) as client:
+            response = client.post(
+                f"/v1/observation-work-orders/{work_order_id}/"
+                "external-reconstruction-submissions-v2",
+                content=raw.encode("utf-8", "surrogatepass"),
+                headers={
+                    "Authorization": f"Bearer {_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+            )
+        assert response.status_code == 422, (
+            f"{label}: {response.status_code} {response.text[:200]}"
+        )
+        assert response.headers["content-type"].startswith("application/json")
+        json.loads(response.text)
+    finally:
+        base_client.close()
 
 
 @pytest.mark.parametrize(

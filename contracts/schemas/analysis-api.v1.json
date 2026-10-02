@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/analysis-api.v1.json",
+  "title": "Analysis API V1",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "createRequest": { "$ref": "#/$defs/CreateAnalysisRequestV1" },
+    "observationOptions": { "$ref": "#/$defs/AnalysisObservationOptionsV1" },
+    "view": { "$ref": "#/$defs/AnalysisViewV1" },
+    "list": { "$ref": "#/$defs/AnalysisListV1" },
+    "evidence": { "$ref": "#/$defs/AnalysisEvidenceViewV1" }
+  },
+  "$defs": {
+    "Digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "Selector": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["workOrderId", "submissionRef", "revision"],
+      "properties": {
+        "workOrderId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "submissionRef": { "type": "string", "pattern": "^ers-v1-[0-9a-f]{64}$" },
+        "revision": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "CreateAnalysisRequestV1": {
+      "type": "object",
+      "description": "baseline and current selectors must differ; that cross-field inequality is enforced by the runtime DTO and HTTP API because portable JSON Schema has no standard sibling-value comparison.",
+      "additionalProperties": false,
+      "required": ["baseline", "current"],
+      "properties": {
+        "baseline": { "$ref": "#/$defs/Selector" },
+        "current": { "$ref": "#/$defs/Selector" }
+      }
+    },
+    "Blocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "epoch": { "enum": ["BASELINE", "CURRENT", null] },
+        "evidenceRef": { "type": ["string", "null"], "minLength": 1, "maxLength": 255 },
+        "detail": { "type": ["string", "null"], "minLength": 1, "maxLength": 512 }
+      }
+    },
+    "EvidenceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "recordId", "href"],
+      "properties": {
+        "kind": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "recordId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "href": { "type": "string", "pattern": "^/v1/" }
+      }
+    },
+    "Metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cutM3", "fillM3", "netM3", "thresholdM", "uncertaintyM3"],
+      "properties": {
+        "cutM3": { "type": "number", "minimum": 0 },
+        "fillM3": { "type": "number", "minimum": 0 },
+        "netM3": { "type": "number" },
+        "thresholdM": { "const": 0 },
+        "uncertaintyM3": { "type": "null" }
+      }
+    },
+    "Coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "rows", "columns", "rowOffset", "columnOffset", "selectedMaskB64", "commonValidMaskB64", "unavailableMaskB64", "thresholdExcludedMaskB64", "selectedCellCount", "commonValidCellCount", "unavailableCellCount", "thresholdExcludedCellCount", "cellAreaM2", "selectedAreaM2", "commonValidAreaM2", "bounds", "coverageWitnessDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-relative-volume-coverage-witness.v2" },
+        "rows": { "type": "integer", "minimum": 1 }, "columns": { "type": "integer", "minimum": 1 },
+        "rowOffset": { "type": "integer" }, "columnOffset": { "type": "integer" },
+        "selectedMaskB64": { "type": "string", "minLength": 4, "maxLength": 2000000 }, "commonValidMaskB64": { "type": "string", "minLength": 4, "maxLength": 2000000 },
+        "unavailableMaskB64": { "type": "string", "minLength": 4, "maxLength": 2000000 }, "thresholdExcludedMaskB64": { "type": "string", "minLength": 4, "maxLength": 2000000 },
+        "selectedCellCount": { "type": "integer", "minimum": 0 }, "commonValidCellCount": { "type": "integer", "minimum": 0 },
+        "unavailableCellCount": { "type": "integer", "minimum": 0 }, "thresholdExcludedCellCount": { "const": 0 },
+        "cellAreaM2": { "type": "number", "exclusiveMinimum": 0 }, "selectedAreaM2": { "type": "number", "minimum": 0 },
+        "commonValidAreaM2": { "type": "number", "minimum": 0 },
+        "bounds": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 },
+        "coverageWitnessDigest": { "$ref": "#/$defs/Digest" }
+      }
+    },
+    "Result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resultId", "resultRevision", "reportDigest", "numericResultIdentityDigest", "computedAt", "metrics", "coverage", "limitationCodes"],
+      "properties": {
+        "resultId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "resultRevision": { "const": 1 },
+        "reportDigest": { "$ref": "#/$defs/Digest" },
+        "numericResultIdentityDigest": { "$ref": "#/$defs/Digest" },
+        "computedAt": { "type": "string", "format": "date-time" },
+        "metrics": { "$ref": "#/$defs/Metrics" },
+        "coverage": { "$ref": "#/$defs/Coverage" },
+        "limitationCodes": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }, "maxItems": 128 }
+      }
+    },
+    "Authority": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "assessmentRequestId": { "type": ["string", "null"] },
+        "admissionId": { "type": ["string", "null"] },
+        "admissionDigest": { "anyOf": [{ "$ref": "#/$defs/Digest" }, { "type": "null" }] },
+        "calculationIdentityDigest": { "anyOf": [{ "$ref": "#/$defs/Digest" }, { "type": "null" }] },
+        "calculationRequestId": { "type": ["string", "null"] },
+        "authorizationId": { "type": ["string", "null"] },
+        "reportDigest": { "anyOf": [{ "$ref": "#/$defs/Digest" }, { "type": "null" }] },
+        "failureDigest": { "anyOf": [{ "$ref": "#/$defs/Digest" }, { "type": "null" }] }
+      }
+    },
+    "ObservationOption": {
+      "type": "object", "additionalProperties": false,
+      "required": ["selector", "observationEpochId", "captureStartedAt", "captureEndedAt"],
+      "properties": {
+        "selector": { "$ref": "#/$defs/Selector" },
+        "observationEpochId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "captureStartedAt": { "type": "string", "format": "date-time" },
+        "captureEndedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "AnalysisObservationOptionsV1": {
+      "type": "object", "additionalProperties": false, "required": ["items"],
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/ObservationOption" }, "maxItems": 500 } }
+    },
+    "AnalysisViewV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analysisId", "siteId", "workAreaId", "baseline", "current", "executionState", "suitabilityState", "blockers", "evidenceRefs", "authority", "result", "createdAt"],
+      "properties": {
+        "analysisId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "siteId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "workAreaId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "baseline": { "$ref": "#/$defs/Selector" },
+        "current": { "$ref": "#/$defs/Selector" },
+        "executionState": { "enum": ["NOT_STARTED", "QUEUED", "RUNNING", "COMPLETED", "FAILED"] },
+        "suitabilityState": { "enum": ["BLOCKED", "REMEDIATION_REQUIRED", "PROVISIONAL_ACCURACY_UNVERIFIED", "EVALUATED", "REASSESSMENT_REQUIRED"] },
+        "blockers": { "type": "array", "items": { "$ref": "#/$defs/Blocker" }, "maxItems": 128 },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/EvidenceReference" }, "maxItems": 256 },
+        "authority": { "$ref": "#/$defs/Authority" },
+        "result": { "anyOf": [{ "$ref": "#/$defs/Result" }, { "type": "null" }] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["suitabilityState"],
+            "properties": { "suitabilityState": { "const": "BLOCKED" } }
+          },
+          "then": {
+            "properties": {
+              "executionState": { "enum": ["NOT_STARTED", "FAILED"] },
+              "blockers": { "minItems": 1 }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["executionState", "suitabilityState"],
+            "properties": {
+              "executionState": { "const": "FAILED" },
+              "suitabilityState": { "const": "BLOCKED" }
+            }
+          },
+          "then": {
+            "properties": {
+              "blockers": {
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "properties": {
+                    "code": {
+                      "enum": [
+                        "EMPTY_COMMON_VALID_COVERAGE",
+                        "INSUFFICIENT_COMMON_VALID_COVERAGE"
+                      ]
+                    }
+                  }
+                }
+              },
+              "result": { "type": "null" }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["executionState", "suitabilityState"],
+            "properties": {
+              "executionState": { "const": "COMPLETED" },
+              "suitabilityState": { "enum": ["PROVISIONAL_ACCURACY_UNVERIFIED", "EVALUATED"] }
+            }
+          },
+          "then": { "properties": { "result": { "not": { "type": "null" } } } }
+        },
+        {
+          "if": {
+            "required": ["result"],
+            "properties": { "result": { "not": { "type": "null" } } }
+          },
+          "then": {
+            "properties": {
+              "executionState": { "const": "COMPLETED" },
+              "suitabilityState": { "enum": ["PROVISIONAL_ACCURACY_UNVERIFIED", "EVALUATED"] }
+            }
+          }
+        }
+      ]
+    },
+    "AnalysisListV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["items"],
+      "properties": { "items": { "type": "array", "items": { "$ref": "#/$defs/AnalysisViewV1" }, "maxItems": 500 } }
+    },
+    "EpochEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["selector", "observationEpochId", "artifactId", "observedSha256", "observedSizeBytes", "observedCrsIdentifier", "observedCrsDigest", "verticalReferenceIdentifier", "verticalReferenceBasis", "verticalUnit", "transform", "transformDigest", "inspectionReportDigest", "inspectionReportRef", "inputDigest"],
+      "properties": {
+        "selector": { "$ref": "#/$defs/Selector" }, "observationEpochId": { "type": "string", "minLength": 1 },
+        "artifactId": { "type": "string", "minLength": 1 }, "observedSha256": { "$ref": "#/$defs/Digest" },
+        "observedSizeBytes": { "type": "integer", "minimum": 1 }, "observedCrsIdentifier": { "type": "string", "minLength": 1 },
+        "observedCrsDigest": { "$ref": "#/$defs/Digest" }, "verticalReferenceIdentifier": { "type": "string", "minLength": 1 },
+        "verticalReferenceBasis": { "type": "string", "minLength": 1 }, "verticalUnit": { "const": "metre" },
+        "transform": { "type": "array", "items": { "type": "number" }, "minItems": 6, "maxItems": 6 },
+        "transformDigest": { "$ref": "#/$defs/Digest" }, "inspectionReportDigest": { "$ref": "#/$defs/Digest" },
+        "inspectionReportRef": { "$ref": "#/$defs/EvidenceReference" },
+        "inputDigest": { "$ref": "#/$defs/Digest" }
+      }
+    },
+    "PolicyEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["policyId", "version", "profileId", "profileDigest", "algorithmDigest", "configDigest", "policyDigest"],
+      "properties": {
+        "policyId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "version": { "type": "integer", "minimum": 1 },
+        "profileId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "profileDigest": { "$ref": "#/$defs/Digest" },
+        "algorithmDigest": { "$ref": "#/$defs/Digest" },
+        "configDigest": { "$ref": "#/$defs/Digest" },
+        "policyDigest": { "$ref": "#/$defs/Digest" }
+      }
+    },
+    "RuntimeEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workerExecutableDigest", "workerBuildDigest", "runtimeImageVersion", "runtimeImageOciDigest", "dependencyLockDigest"],
+      "properties": {
+        "workerExecutableDigest": { "$ref": "#/$defs/Digest" },
+        "workerBuildDigest": { "$ref": "#/$defs/Digest" },
+        "runtimeImageVersion": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "runtimeImageOciDigest": { "$ref": "#/$defs/Digest" },
+        "dependencyLockDigest": { "$ref": "#/$defs/Digest" }
+      }
+    },
+    "CalculationIdentityEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["calculationId", "workAreaDefinitionDigest", "baselineInputDigest", "currentInputDigest", "policy", "runtime"],
+      "properties": {
+        "calculationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "workAreaDefinitionDigest": { "$ref": "#/$defs/Digest" },
+        "baselineInputDigest": { "$ref": "#/$defs/Digest" },
+        "currentInputDigest": { "$ref": "#/$defs/Digest" },
+        "policy": { "$ref": "#/$defs/PolicyEvidence" },
+        "runtime": { "$ref": "#/$defs/RuntimeEvidence" }
+      }
+    },
+    "EvaluationEvidenceFact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evidenceRef", "contextId", "contextDigest", "evidenceManifestDigest", "evidenceRecordId", "evidenceRecordDigest", "coreVerdict", "href"],
+      "properties": {
+        "evidenceRef": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "contextId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "contextDigest": { "$ref": "#/$defs/Digest" },
+        "evidenceManifestDigest": { "$ref": "#/$defs/Digest" },
+        "evidenceRecordId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "evidenceRecordDigest": { "$ref": "#/$defs/Digest" },
+        "coreVerdict": { "enum": ["VALIDATED", "REJECTED"] },
+        "href": { "type": "string", "pattern": "^/v1/" }
+      }
+    },
+    "EvaluationEvidence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["evaluationId", "epoch", "revision", "evaluationDigest", "outcome", "reasonCodes", "assessedAt", "evidenceFacts"],
+      "properties": {
+        "evaluationId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "epoch": { "enum": ["BASELINE", "CURRENT"] },
+        "revision": { "type": "integer", "minimum": 1 },
+        "evaluationDigest": { "$ref": "#/$defs/Digest" },
+        "outcome": { "enum": ["PASS", "FAIL", "UNASSESSED", "UNAVAILABLE"] },
+        "reasonCodes": { "type": "array", "items": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" }, "minItems": 1, "maxItems": 64 },
+        "assessedAt": { "type": "string", "format": "date-time" },
+        "evidenceFacts": { "type": "array", "items": { "$ref": "#/$defs/EvaluationEvidenceFact" }, "maxItems": 64 }
+      }
+    },
+    "AnalysisEvidenceViewV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analysisId", "authority", "baseline", "current", "result", "evidenceRefs"],
+      "properties": {
+        "analysisId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "authority": { "$ref": "#/$defs/Authority" },
+        "baseline": { "anyOf": [{ "$ref": "#/$defs/EpochEvidence" }, { "type": "null" }] },
+        "current": { "anyOf": [{ "$ref": "#/$defs/EpochEvidence" }, { "type": "null" }] },
+        "calculation": { "anyOf": [{ "$ref": "#/$defs/CalculationIdentityEvidence" }, { "type": "null" }] },
+        "evaluations": { "type": "array", "items": { "$ref": "#/$defs/EvaluationEvidence" }, "maxItems": 2 },
+        "result": { "anyOf": [{ "$ref": "#/$defs/Result" }, { "type": "null" }] },
+        "evidenceRefs": { "type": "array", "items": { "$ref": "#/$defs/EvidenceReference" }, "maxItems": 256 }
+      }
+    }
+  }
+}

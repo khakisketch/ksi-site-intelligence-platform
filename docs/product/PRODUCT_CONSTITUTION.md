@@ -1,10 +1,27 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-09-30 — ADR-KSI-038: 제품 정체성을 외부 에이전트·산업용 소프트웨어가 사용하는
+>   공간데이터·분석 기반으로 명확화한다. 데이터 제공과 분석을 두 제품 경로로 두고,
+>   주간 토공 파일럿은 첫 분석 사례로 유지한다. 문서·장기 계획 반영만 승인됐으며 개발은 보류다.
+> - 2026-09-20 — ADR-KSI-037 implementation-condition amendment: 외부 재구성 산출물은
+>   KSI GIS worker의 고정 profile로 측정하고, checkpoint 부재의 잠정 수치와 알려진 실패의
+>   보완 필요를 구분한다. 기존 strict V1 정책은 유지한다.
+> - 2026-09-20 — ADR-KSI-037로 제품 우선순위를 API-first 현장 관측·분석 근거 서비스로
+>   정했다. 첫 완결 MVP는 WorkArea별 주간 2시점 관측 지형 물량 변화 검토다. API·향후 MCP·UI는
+>   같은 계산 기록을 조회하며, 자율 취득·BIM 원본 편집·재구성 엔진은 이 MVP의 실행 약속이
+>   아니다. 이 개정은 current `EXT-VAL` slice, 기존 runtime, 불변식 또는 정량 관문을 바꾸지 않는다.
+> - 2026-09-20 — ADR-KSI-036 D6로 첫 출시의 재구성 책임을 더 명확히 했다. 회사의
+>   RTK-equipped Matrice 4D는 초기 현장 검증 장비이고, 고객이 통제하는 현장 PC의 DJI
+>   Terra는 초기 MVP 재구성 참조 흐름이다. KSI는 제출된 파생 산출물을 검사·비교·계측·
+>   업무/재관측으로 연결하며 자체 사진측량 엔진이나 고객 production 재구성 서비스를
+>   약속하지 않는다. 이 문구는 license/export/RTK 정확도/현장 수용을 검증하지 않고,
+>   managed NodeODM·ProcessingJob·source-authority 규칙도 바꾸지 않는다.
 > - 2026-09-04 — Repository Normalization R0-R2에서 PSDK Liveview, bounded
 >   `EDGE_UPLINK`, 원본 `MEDIA_PULL`/`MEDIA_UPLOAD`를 서로 다른 경로로 고정했다.
->   현재 정상 원본 ingress는 SD/저장매체→현장 PC→KSI 웹 업로드이며 중앙 지속
->   영상 수신은 핵심 제품 경로가 아니다(ADR-KSI-033).
+>   당시 source-media ingress는 SD/저장매체→현장 PC→KSI 웹 업로드였으며 중앙 지속
+>   영상 수신은 핵심 제품 경로가 아니다(ADR-KSI-033). 외부 첫 출시의 결과 경로는
+>   2026-09-20 ADR-KSI-036 D6을 따른다.
 > - 2026-08-30 — 판매 가능한 Civil Operations pilot의 실행 재현성과 자원 보호를
 >   위해 제품 소유 runtime image의 OCI digest pin, Core 소유 versioned processing
 >   resource policy와 발급 snapshot 결속을 확정했다. 이는 비용·정확도·외부 Cloud
@@ -45,25 +62,46 @@
 >   개정 근거와 대가는 ADR-KSI-016이 SSOT다.
 > - 2026-07-24 — 최초 승인.
 >
-> **이 문서에 진행 상태를 적지 않는다.** 무엇이 진행 중이고 무엇이 막혔는지는
-> `docs/goals/PHASE_REGISTRY.yaml`과 goal-ledger가 소유한다 — 몇 주 만에 뒤집히는
-> 사실을 헌법에 넣으면 헌법을 계속 고쳐야 하고, 그러면 동결 문서의 의미가 없다.
+> **이 문서에 진행 상태를 적지 않는다.** `docs/superpowers/product-state.md`와 그 named
+> slice ledger는 현재 제품 Slice·Backlog와 활성 bounded checkout task가 없을 때의 제품 수준
+> 다음 작업 선택을 소유하고 slice close에서만 갱신한다. 활성 checkout task는 Git 재검증 뒤
+> checkpoint와 named task ledger로 재개하며 Slice를 닫거나 우선순위를 바꾸지 않는다.
+> `docs/goals/PHASE_REGISTRY.yaml`은 capability-track index다. 이 문서나 과거 next action은
+> 외부 권한을 만들지 않는다.
 
 ## 제품 정체성
 
-KSI Site Intelligence는 **건설 현장의 반복 비행 데이터를 자동으로 수집·정합·비교해, 현장의 상태·변화·물량을 시계열로 답하고 부족한 데이터의 재수집을 스스로 계획하는 폐루프(closed-loop) 현장 공간 인텔리전스 플랫폼**이다.
+KSI Site Intelligence Platform은 **외부 재구성 엔진이 생성한 현장 공간데이터를
+등록·검사·구조화하고, 필요한 공간데이터와 재현 가능한 분석 결과를 API·MCP로 제공하여
+고객의 에이전트와 산업용 소프트웨어가 재사용하게 하는 데이터·분석 기반**이다.
+제품은 공간데이터 제공과 서버 분석의 두 경로를 갖는다. 공통 Core가 자산·시점·구역·버전,
+권한·용도별 적합성·작업·결과·계보·근거를 소유하며 UI·MCP·향후 SDK/CLI는 그 계약을
+사용한다. 분석 파사드와 클라이언트는 별도 계산·권위를 만들지 않는다(ADR-KSI-038).
+
+첫 플랫폼 검증은 DSM·정사영상으로 같은 현장 데이터의 분석 경로와 외부 코드의 구역 데이터
+활용 경로를 모두 입증한다. Point cloud·Mesh·외부 분석 레이어·산업별 어댑터는 후속
+계약·수용 대상이다. 등록·조회·추출·분석·정확도 평가·사람 검토는 서로 다른 상태다.
+표준·포맷 지원이나 구현 완료는 이 정의에서 추론하지 않는다. 상세 책임·미결정 항목은
+[ADR-KSI-038](../architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md), 장기 과제는
+[SDP-20260930](../superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)을 따른다.
 
 사용자 경험에서 KSI는 현장 데이터를 AI가 읽어 **무엇이 달라졌고, 왜 중요한지,
 지금 무엇을 결정해야 하는지**를 검증된 근거와 함께 제시하고, 사용자의 결정을 다음
 관측과 업무로 연결하는 AX 제품이다. AI는 사실 원장을 대체하거나 승인·Mission·비행
 명령을 직접 만들지 않는다.
 
-이 정의는 표어가 아니라 범위 판정 도구다 — "수집을 스스로 계획한다"가 임무 거버넌스를 만드는 근거이고, "비교해서 답한다"가 epoch 정합·측지·물량을 만드는 근거이며, 그 밖의 것은 만들지 않는 근거다.
+이 정의는 범위 판정 도구다. Core는 Site·WorkArea·Observation Epoch·버전의 지속적 매핑,
+입력 admission, 재현 가능한 계산과 근거, 권한, 결과 조회를 소유한다. LLM은 검증된 도구를
+조율할 수 있지만 수치 사실을 추정하거나 계산·사람 검토·발행을 대체하지 않는다.
 
-현재 채택된 수집 장비는 Matrice 4D + RC Plus 2 + Manifold 3다. 장비는 제품 정의의 중심이 아니라 현재의 수집 수단이며, 수집 계층은 장비 교체를 견디도록 설계한다. 건설은 첫 번째 Vertical이다.
+RTK-equipped Matrice 4D는 초기 현장 검증 장비이자 관측 입력 참조다. 장비는 제품 정의의
+중심이 아니며, 고객 통제 현장 PC/DJI Terra 재구성 흐름도 입력 참조일 뿐 KSI의 API·계산
+엔진·license/export 지원 약속이 아니다. 건설과 토공 운영이 첫 Vertical이고,
+디지털·스마트건설 소프트웨어 파트너는 통합 고객이다.
 
-기본 운용은 RC Plus 2/Pilot 2가 사람의 비행 운영과 인터넷 gateway를, Manifold 3가
-인터넷과 독립된 현장 지능을 맡는다. RC 인터넷은 새 임무 발급 전에 필요하지만
+장기 취득·현장 검증 profile에서는 RC Plus 2/Pilot 2가 사람의 비행 운영과 인터넷 gateway를,
+Manifold 3가 인터넷과 독립된 현장 지능을 맡는다. 이 profile은 API-first MVP의 입력
+admission·계산·결과 조회 전제가 아니다. RC 인터넷은 새 임무 발급 전에 필요하지만
 Manifold SIM은 선택형 Connectivity Add-on이다. 연결 유무와 비행 제어권을 섞지
 않으며, 이미 유효하게 활성화된 계약은 서버 연결 단절만으로 취소하지 않는다.
 
@@ -77,22 +115,30 @@ Console Home은 다현장 포트폴리오의 입구다. KSI가 실제 원장에�
 사람 결정 대기만 현장별 근거와 한계로 요약하며, 공간 결과·보고서·조사 이력은 각
 현장이 소유한다. 합성 현장 사진이나 기술 처리 로그로 경영 브리핑을 꾸미지 않는다.
 
-첫 유료 제품은 **반복 관측 → 촬영 품질 보충 → 시점 간 변화·공정·상대 물량 →
-근거형 질의 → 사람 승인 재관측**을 하나의 작업으로 닫는다. 계약 정산·측량급
-정확도는 독립 checkpoint 검증 없이는 주장하지 않는다. 수동 KMZ 편집, USB 복구와
+첫 분석 사례의 완결 MVP는 **같은 WorkArea의 주간 2시점 관측 지형 물량 변화 검토**다.
+그 수용만으로 공간데이터 제공을 포함한 플랫폼 전체 완료를 주장하지 않는다. 동일한
+Site·WorkArea·mapping/template를 재사용해 `t0→t1` 다음 `t1→t2` 요청을 수행하고, 각
+결과는 출처·좌표·변환·프로파일·공통 유효/제외 영역과 함께 기록한다. 기하 변화,
+증가·감소·순물량 또는 설계 차이는 승인 작업·진척·정산·품질·측량·현장 수용을 증명하지
+않는다. 독립 checkpoint는 정확도 근거일 뿐 그것만으로 계약 정산·검측·품질 승인을 만들지
+않으며, MVP 약속은 운영 검토용 관측 변화다. 수동 KMZ 편집, USB 복구와
 raw 파일 조작은 정상 사용자 흐름이 아니라 장애 복구와 검증을 위한 전문가 경로다.
+MVP 수용에는 하나의 명시적으로 선택·검증된 인증 외부 agent/MCP client와 재사용 가능한
+예시 workflow가 UI/API와 같은 KSI 계산 결과 또는 blocker 기록을 반환하는 것도 포함한다.
+이는 모든 client 지원이나 현재 MCP runtime을 뜻하지 않는다.
 단, ADR-KSI-035의 KSI planned artifact download/Pilot import·예외 편집은 Pilot-default
-planning profile의 명시적 정상 행동이고, 현행 원본 ingress는 아래의 SD/현장 PC/Web
-정상 경로를 따른다. 이 범위 정정은 자동 media, device capability 또는 flight safety
-주장이 아니다.
+planning profile의 명시적 정상 행동이다. 외부 첫 출시 결과 ingress는 아래의 고객
+현장 PC 재구성→파생 산출물/근거 등록 경로를 따르며, SD/현장 PC/Web raw 경로는
+managed/test 또는 별도 승인 source-media scope다. 이 범위 정정은 자동 media, device
+capability 또는 flight safety 주장이 아니다.
 
-첫 토목 처리의 기본 경로는 현장 PC가 SD/저장매체의 원본을 KSI 웹에 올리고,
-고정된 `ksi-odm-civil-v1` profile로 재구성한 뒤, 검증된 설계면과 시점 간 상대
-물량을 비교하는 것이다. profile, 원본 계보, CRS, 수직기준, Analysis Readiness,
-설계면 revision/정규화 규칙 중 하나라도 미상 또는 불일치이면 수치를 추정하지 않고
-비교를 막아 사유를 표시한다. LandXML TIN Surface와 GeoTIFF는 설계면 입력이고,
-IFC→GeoTIFF 변환도 유지한다. DWG/DXF 직접 해석, 엔진·버전 혼합 비교, 독립
-checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다(ADR-KSI-030).
+고정된 `ksi-odm-civil-v1` profile로 원본을 재구성하고 설계면과 시점 간 상대 물량을
+비교하는 경로는 기존 **KSI-managed/test·demo** 토목 처리다. 그 profile, 원본 계보,
+CRS, 수직기준, Analysis Readiness, 설계면 revision/정규화 규칙 중 하나라도 미상 또는
+불일치이면 수치를 추정하지 않고 비교를 막아 사유를 표시한다. LandXML TIN Surface와
+GeoTIFF는 설계면 입력이고, IFC→GeoTIFF 변환도 유지한다. DWG/DXF 직접 해석,
+엔진·버전 혼합 비교, 독립 checkpoint 없는 절대 정확도 주장은 제품 범위가 아니다
+(ADR-KSI-030).
 
 ADR-KSI-036의 새 첫 출시 방향에서는 고객이 자기 장비에서 외부 재구성 소프트웨어를
 운영하고 KSI는 export artifact를 등록·검증·분석한다. 등록은 검증이나 정량 사용 가능과
@@ -105,6 +151,14 @@ ADR-KSI-036의 새 첫 출시 방향에서는 고객이 자기 장비에서 외�
 등의 부족은 높이·물량처럼 의존하는 주장만 제한한다. 원본 미업로드 자체를 외부 결과의
 영구 정량 금지 사유로 삼지 않는다. 지원 형식·실제 export 호환성·검증 정책은 구현과
 별도 수용 증거가 필요하다(ADR-KSI-036 D4/D5).
+
+ADR-KSI-036 D6의 초기 재구성 입력 참조 흐름은 RTK-equipped Matrice 4D 촬영 → 고객이
+통제하는 현장 PC의 DJI Terra 재구성 → 파생 산출물·근거의 KSI 등록/검사 → 호환되는
+변화·높이·상대 물량 분석 → 사람 검토와 재관측이다. RTK FIX는 촬영 근거일 뿐 완성
+지도·물량의 정확도나 정산 적합성을 보장하지 않는다. Terra의 license, export 호환성,
+KSI provider 연동, 자동화, 현장 정확도는 이 결정으로 승인·검증되지 않는다. KSI의
+가치는 사진 재구성 자체가 아니라 사용 적합성, 근거, 비교, 업무와 다음 관측을 연결하는
+데 있으며, 이 경계는 Acquisition/Edge의 승인된 자율 roadmap을 제거하지 않는다.
 
 독립 checkpoint가 있으면 사용자는 좌표계·수직기준·재구성 입력과 분리된 근거를
 명시하고 원본 CSV를 봉인한다. KSI 처리 워커가 그 bytes와 대상 DSM bytes를 직접 읽어
@@ -125,15 +179,21 @@ policy로 판정한 뒤에만 발급한다. 클라이언트가 상한이나 over
   Operations Console이 지속 영상을 중앙 수신하는 것은 핵심 제품 경로가 아니다.
 - `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata와 object reference를 전달한다.
   Liveview frame, 원본 사진, RTK/POS stream 또는 공간 산출물 bytes를 운반하지 않는다.
-- 현재 정상 원본 ingress는 `SD/저장매체 → 현장 PC → KSI 웹 업로드`다.
+- 외부 첫 출시의 정상 결과 ingress는 `M4D 촬영 → 고객 현장 PC 재구성 → 파생 산출물과
+  bounded provenance/품질 근거의 KSI 등록`이다. 원본 사진은 고객 장비에 남는다.
+- `SD/저장매체 → 현장 PC → KSI 웹`의 raw ingress는 기존 managed/test 또는 별도 승인
+  source-media 경로다. 이를 외부 첫 출시의 전체 raw-upload 필수조건으로 읽지 않는다.
 - 자동 원본 반출은 별도 `MEDIA_PULL`과 `MEDIA_UPLOAD` capability다. 정확한 adapter,
   권한, 조직/Site/Mission 결속과 물리 HIL 전에는 목표 경로이며 ordinary DPK는 OFF다.
 - ingress adapter가 바뀌어도 SourceMedia 봉인, Observation Epoch temporal policy,
   Processing, 비교와 원본/파생 계보는 바뀌지 않는다(ADR-KSI-033, INV-018/051/060).
 
-## 두 축과 폐루프
+## 장기 관측·취득 축
 
-이 제품은 기능을 줄 세운 목록이 아니라 **두 축이 닫는 하나의 루프**다.
+Site Intelligence Core와 Autonomous Acquisition은 장기 관측·취득 roadmap의 두 책임 축이다.
+API-first 공간데이터 제공과 첫 주간 2시점 분석 사례는 Acquisition 자동 실행 없이
+검증하는 플랫폼 범위다. 아래의 Mission/Edge 내용은 그 범위를 보존하는 미래 호환 경계이며, 자동
+로봇·비행 실행을 현재 제품 약속으로 만들지 않는다.
 
 ```text
 KSI Site Intelligence Platform
@@ -163,10 +223,10 @@ ADR-KSI-035의 Pilot-default profile에서만, Core의 결정적 planner는 사�
 서버가 정하려 들면 통신 지연·단절 때문에 로봇 시스템이 성립하지 않는다(§제어
 철학 "서버가 프레임별 조종 명령을 보내지 않는다"가 같은 경계를 말한다).
 
-두 축은 계약으로 닫힌다: 하행은 서명된 Mission Contract, 상행은 EventBundle ·
-CoverageReport · ActionIntent다. **이 루프(Observe → Understand → Decide →
-Re-observe)를 닫는 것 자체가 이 제품의 핵심 기술이며, 어느 한 축만으로는
-제품이 성립하지 않는다.**
+장기 취득 축의 계약은 하행의 서명된 Mission Contract와 상행의 EventBundle ·
+CoverageReport · ActionIntent다. API-first 플랫폼은 관측 자산 → 용도별 적합성/권한 →
+구역 데이터 또는 분석 결과·근거 → 외부 활용/사람 검토 → 다음 시점 재사용을 기록한다.
+Acquisition은 그 기록에 관측을 공급하는 별도 roadmap이다.
 
 ## 관측 임무 유형
 

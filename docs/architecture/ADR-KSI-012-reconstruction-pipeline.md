@@ -10,6 +10,13 @@
   `services/processing-controller`, `docs/reference/ksi-terra/KSI_TERRA_ADOPTION_MATRIX.md`
   (`ODMRunner: ADOPT`)
 
+> **Applicability after ADR-KSI-036 D6:** D1–D6 document the historical KSI-operated,
+> unattended managed reconstruction-service decision and its license analysis. They do not reject
+> a customer-controlled desktop DJI Terra workflow. The current external first-release direction
+> is customer reconstruction on a field PC, starting with Terra as a reference workflow; KSI does
+> not operate, automate, license, integrate, or verify that customer tool through this ADR. The
+> historical evidence and managed NodeODM safeguards remain intact.
+
 ## 맥락
 
 `services/processing-controller`는 빈 골격으로 이미 예약돼 있고(ADR-KSI-004와 같은
@@ -23,7 +30,7 @@ ODM/Pix4D 또는 자체 파이프라인을 교체 가능하게 설계한다"고 
 
 ## 결정
 
-### D1 — 기본 엔진은 자체 호스팅 오픈소스 재구성 엔진(ODM/NodeODM)
+### D1 — KSI-managed 재구성 서비스의 기본 엔진은 자체 호스팅 오픈소스 엔진(ODM/NodeODM)
 
 `services/processing-controller`는 어댑터다. 특정 엔진에 고정하지 않고 provider를
 갈아끼울 수 있게 두되(`ODMRunner: ADOPT`, `docs/reference/ksi-terra/KSI_TERRA_ADOPTION_MATRIX.md`),
@@ -66,9 +73,10 @@ ODM/NodeODM은 AGPL-3.0이다(`docs/reference/ksi-terra/KSI_TERRA_IMPLEMENTATION
 offer를 이미지에 동봉해야 한다. KSI 자체 코드(`ksi_processing_controller` 등)는
 별도 프로세스·REST 경계로 결합돼 있으므로 이 의무의 대상이 아니다.
 
-### D3 — 기각한 대안: 상용 재구성 엔진
+### D3 — KSI-managed 무인 서비스에서 기각·보류한 상용 재구성 엔진
 
-기본 엔진을 ODM으로 확정하기 전에 검토한 네 대안과 기각 근거를 남긴다(모든 가격은
+KSI-managed 무인 서비스의 기본 엔진을 ODM으로 확정하기 전에 검토한 네 대안과 기각
+근거를 남긴다(모든 가격은
 2026-08-05 기준, 통화는 USD로 명기).
 
 **DJI 클라우드(FlightHub 2 Mapping API)** — 기술적으로는 REST 기반 무인 자동화가

@@ -43,6 +43,7 @@ apps/dashboard/node_modules/
 apps/dashboard/.next/
 apps/dashboard/.next-*/
 apps/dashboard/.env.local
+apps/dashboard/.tsconfig-analysis-*.json
 
 # 운영 환경변수 실물 — 토큰 digest·객체저장소 자격증명이 들어간다. 예제만 커밋한다
 # (deploy/.env.example). scripts/manifold/manifold.env 와 같은 관례.

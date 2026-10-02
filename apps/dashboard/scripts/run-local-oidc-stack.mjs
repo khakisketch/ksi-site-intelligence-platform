@@ -10,7 +10,7 @@
 
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, openSync, closeSync, writeFileSync, chmodSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -48,6 +48,14 @@ function stringArgument(name, fallback) {
   return value;
 }
 
+function protectedConfigPathArgument(name) {
+  const value = stringArgument(name, undefined);
+  if (value !== undefined && !isAbsolute(value)) {
+    throw new Error(`${name} must be an absolute operator-provisioned path.`);
+  }
+  return value;
+}
+
 const dashboardPort = numberArgument("--dashboard-port", 3210);
 const corePort = numberArgument("--core-port", 8012);
 const issuerPort = numberArgument("--issuer-port", 9010);
@@ -64,6 +72,28 @@ const dashboardDistDirectory = stringArgument(
   "--dashboard-dist-dir",
   ".next-local-oidc",
 );
+const localAnalysisS3Endpoint = stringArgument("--s3-endpoint", undefined);
+const localAnalysisS3Bucket = stringArgument("--s3-bucket", undefined);
+const localAnalysisConfig = protectedConfigPathArgument("--local-analysis-config");
+const externalResultWorkflowConfig = protectedConfigPathArgument(
+  "--external-result-workflow-config",
+);
+const externalAuthorityProviderConfig = protectedConfigPathArgument(
+  "--external-authority-provider-config",
+);
+const localAnalysisOptInValues = [
+  localAnalysisS3Endpoint,
+  localAnalysisS3Bucket,
+  localAnalysisConfig,
+  externalResultWorkflowConfig,
+  externalAuthorityProviderConfig,
+];
+if (localAnalysisOptInValues.some((value) => value !== undefined)
+  && !localAnalysisOptInValues.every((value) => value !== undefined)) {
+  throw new Error(
+    "local Analysis requires S3 endpoint/bucket and three protected config paths.",
+  );
+}
 const seedOperationsConsoleE2e = process.argv.includes("--seed-operations-console-e2e");
 const secretsDirectory = resolve(identityStateDirectory, "secrets");
 const sessionSecretFile = resolve(secretsDirectory, "dashboard-session.secret");
@@ -267,6 +297,18 @@ try {
       "ksi-core",
       "--oidc-jwks-url",
       `http://${bindHost}:${issuerPort}/jwks.json`,
+      ...(localAnalysisConfig ? [
+        "--s3-endpoint",
+        localAnalysisS3Endpoint,
+        "--s3-bucket",
+        localAnalysisS3Bucket,
+        "--local-analysis-config",
+        localAnalysisConfig,
+        "--external-result-workflow-config",
+        externalResultWorkflowConfig,
+        "--external-authority-provider-config",
+        externalAuthorityProviderConfig,
+      ] : []),
     ],
     { cwd: repositoryRoot, env: commonEnvironment, label: "KSI Core" },
   );

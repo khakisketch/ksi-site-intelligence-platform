@@ -11,6 +11,11 @@ if (requestedDistDir && (path.isAbsolute(requestedDistDir) || requestedDistDir.s
   throw new Error("KSI_DASHBOARD_DIST_DIR은 Dashboard 프로젝트 내부의 상대 경로여야 합니다.");
 }
 
+const requestedTsconfig = process.env.KSI_DASHBOARD_TSCONFIG_PATH?.trim();
+if (requestedTsconfig && !/^\.tsconfig-analysis-[0-9a-f]{64}\.json$/.test(requestedTsconfig)) {
+  throw new Error("KSI_DASHBOARD_TSCONFIG_PATH must name an Analysis run-local compiler file.");
+}
+
 const nextConfig: NextConfig = {
   // Playwright 시각 회귀와 실제 개발 검토에서 Next dev 표시기가 모바일 하단 메뉴를
   // 덮지 않게 한다. 오류 overlay와 terminal 로그는 그대로 유지된다.
@@ -18,6 +23,7 @@ const nextConfig: NextConfig = {
   // local OIDC stack은 기존 Dashboard dev 서버와 충돌하지 않도록 전용 distDir를 쓴다.
   // 배포는 env가 비어 있으므로 기존 .next 경로를 그대로 쓴다.
   ...(requestedDistDir ? { distDir: requestedDistDir } : {}),
+  ...(requestedTsconfig ? { typescript: { tsconfigPath: requestedTsconfig } } : {}),
   // VM image는 Next standalone output만 복사한다. 소스·dev 의존을 runtime image에
   // 남기지 않고 Auth.js/Core BFF를 같은 Node 프로세스로 실행한다.
   output: "standalone",

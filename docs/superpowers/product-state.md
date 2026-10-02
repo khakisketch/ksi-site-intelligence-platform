@@ -1,8 +1,15 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-09-18
+Updated: 2026-09-30 (Human resumed software development; slice/evidence unchanged)
 ## Goal
-현장 관측·임무·증거를 다루는 Site Intelligence 플랫폼.
-First-release 방향(ADR-KSI-036)은 고객 장비 재구성 + KSI 등록·검증·분석이며, 원본은 고객 장비에 둔다.
+외부 재구성 산출물을 등록·검사·구조화하고 공간데이터와 재현 가능한 분석을 API·MCP로
+제공하여 외부 에이전트·산업용 소프트웨어가 재사용하는 Site Intelligence 기반(ADR-KSI-038).
+원본은 고객 장비에 두며 고객 소유 재구성 경계(ADR-KSI-036)를 유지한다.
+첫 플랫폼 검증 목표는 DSM·정사영상의 외부 구역 데이터 활용 + 기존 주간 토공 분석 사례다.
+장기 계획·보완 결정: [SDP-20260930](plans/2026-09-30-spatial-data-platform-roadmap.md).
+후속 사용자 지시로 개발을 재개했다. 첫 bounded task는
+[SDP-CATALOG-20260930](plans/2026-09-30-spatial-asset-catalog-v1.md)이다. `EXT-VAL` 및 아래
+milestone/next-slice 목록의 상태·순서는 변경하지 않았다. 이 개발 재개는 slice close·고객
+수용·구현 완료를 뜻하지 않는다.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.
@@ -145,6 +152,15 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - terrain-aware-planning-field-acceptance: M4D·Pilot 실제 계획 운용과 관측 품질 수용
 - pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성
 ## Backlog
+- [2026-09-30] 승인된 플랫폼 방향의 데이터 제공·외부 재사용·후속 PC/Mesh/레이어·연동 패키지:
+  SDP-01..10과 GAP-01..10은 [단일 계획 원장](plans/2026-09-30-spatial-data-platform-roadmap.md)에서 추적.
+  기존 EXT-VAL acceptance에 소급 추가하지 않는다. 카탈로그 개발은 재개됐으며 구역 데이터
+  제공은 고객 표본·상세 계약·권리/운영 검증이 필요하다.
+- [2026-09-30] SDP-CAT-01의 유한 조회 예산은 256 WorkOrders/Site, 2,048 revisions/request,
+  256 submissions/WorkOrder, 128 inspections/subject, 64 retained policies/subject다.
+  초과는 명시적 503이다. 실제 고객 이력·부하를 측정해 인덱스/페이지 전략과 한도를
+  재설계해야 한다. 첫 로컬 소프트웨어 증거는
+  [카탈로그 계획](plans/2026-09-30-spatial-asset-catalog-v1.md)에 기록했다.
 - [2026-09-17] Two active compatibility mappings for the same pair/zone/policy make the pair decision report VOLUME_AUTHORITY_UNAVAILABLE (ambiguity); admission should refuse a duplicate active mapping or the decision should name the ambiguity - source(run3) - not blocking
 - [2026-09-17] Home never shows an external result briefing when its site is already in the attention area (ADR-025 no-repeat rule); consider external results awaiting review as an attention source - source(run3) - not blocking
 - [2026-09-17] External result summary component renders "-0 m³" for zero cut - source(run3 screenshot) - cosmetic

@@ -43,6 +43,7 @@ from ksi_core.domains.artifacts.evidence import (
 from ksi_core.domains.external.ingress.external_reconstruction import ExternalReconstructionRevision
 from ksi_core.domains.external.ingress.external_validation_policy import (
     ExternalValidationPolicyRegistry,
+    ExternalValidationPolicySelectionBudgetExceeded,
     PolicySelectionStatus,
 )
 from ksi_core.foundation.api_base import CamelModel
@@ -66,6 +67,10 @@ _TRANSIENT_IMMEDIATE_FAILURES = frozenset(
 
 class ExternalArtifactInspectionRecoveryError(RuntimeError):
     """Inspection journal replay is malformed, tampered, or out of order."""
+
+
+class ExternalArtifactInspectionSnapshotBudgetExceeded(RuntimeError):
+    """A bounded subject snapshot contains more retained attempts than permitted."""
 
 
 class InspectionVerdict(StrEnum):
@@ -446,6 +451,7 @@ class ExternalArtifactInspectionStore:
         self._clock = clock or (lambda: datetime.now(UTC))
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._records: dict[str, _InspectionRecord] = {}
+        self._record_ids_by_subject_digest: dict[str, list[str]] = {}
         self._requests_by_natural_key: dict[tuple[object, ...], str] = {}
         self._lock = threading.RLock()
         if coordinator is not None and policy_registry.coordinator is not self._coordinator:
@@ -499,10 +505,7 @@ class ExternalArtifactInspectionStore:
         # decision snapshot cannot race a newly issued inspection request.
         with self._coordinator.mutation(), self._lock:
             retained = self._policy_registry.resolve(policy.policy_digest)
-            if (
-                retained.status is not PolicySelectionStatus.ACTIVE
-                or retained.policy != policy
-            ):
+            if retained.status is not PolicySelectionStatus.ACTIVE or retained.policy != policy:
                 return InspectionIssueResult(InspectionVerdict.INSPECTION_PENDING_POLICY)
             existing_id = self._requests_by_natural_key.get(natural_key)
             if existing_id is not None:
@@ -640,6 +643,138 @@ class ExternalArtifactInspectionStore:
                 None,
             )
 
+    def public_snapshot_bounded(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        max_records: int,
+        max_retained_policies: int | None = None,
+        max_policy_records: int | None = None,
+    ) -> PublicInspectionSnapshot:
+        """Return detached exact-subject evidence; never schedule or truncate inspection work.
+
+        This is a preflight snapshot, not byte authorization. Delivery must repeat
+        ``report_for_locally_current_use`` under the shared currentness guard.
+        """
+        if max_policy_records is not None:
+            if max_retained_policies is not None:
+                raise ValueError("supply exactly one inspection policy budget")
+            max_retained_policies = max_policy_records
+        if (
+            type(max_records) is not int
+            or max_records < 1
+            or type(max_retained_policies) is not int
+            or max_retained_policies < 1
+        ):
+            raise ValueError("inspection snapshot limits must be positive integers")
+        try:
+            selection = self._policy_registry.select_for_inspection_bounded(
+                subject, max_retained_policies=max_retained_policies
+            )
+        except ExternalValidationPolicySelectionBudgetExceeded as exc:
+            raise ExternalArtifactInspectionSnapshotBudgetExceeded(
+                "inspection policy source budget exceeded"
+            ) from exc
+        current_digest = selection.policy.policy_digest if selection.policy is not None else None
+        with self._lock:
+            record_ids = self._record_ids_by_subject_digest.get(subject.canonical_digest(), ())
+            if len(record_ids) > max_records:
+                raise ExternalArtifactInspectionSnapshotBudgetExceeded(
+                    "inspection record source budget exceeded"
+                )
+            candidates = tuple(
+                self._records[request_id]
+                for request_id in record_ids
+                if current_digest is None
+                or self._records[request_id].request.inspection_policy_digest == current_digest
+            )
+            record = candidates[-1] if candidates else None
+            if record is None:
+                return PublicInspectionSnapshot(
+                    (
+                        InspectionVerdict.INSPECTION_PENDING_POLICY.value
+                        if selection.status is PolicySelectionStatus.INSPECTION_PENDING_POLICY
+                        else "INSPECTION_PENDING"
+                    ),
+                    None,
+                    None,
+                    None,
+                )
+            request = record.request.model_copy(deep=True)
+            if record.report is not None:
+                return PublicInspectionSnapshot(
+                    "INSPECTION_REPORTED",
+                    request,
+                    self._phase_for_record(record),
+                    record.report.model_copy(deep=True),
+                )
+            if record.terminal_reason is not None or record.state == "FAILED":
+                return PublicInspectionSnapshot(
+                    "INSPECTION_FAILED_INCOMPLETE", request, InspectionPhase.FAILED_INCOMPLETE, None
+                )
+            return PublicInspectionSnapshot(
+                f"INSPECTION_{record.state}", request, InspectionPhase.INSPECTION, None
+            )
+
+    def retained_report_bounded(
+        self,
+        subject: SealedExternalSubjectV1,
+        *,
+        report_digest: str,
+        max_records: int,
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        """Exact bounded detached history, not authorization; no policy-port resolution."""
+        if type(max_records) is not int or max_records < 1:
+            raise ValueError("max_records must be a positive integer")
+        with self._lock:
+            ids = self._record_ids_by_subject_digest.get(subject.canonical_digest(), ())
+            if len(ids) > max_records:
+                raise ExternalArtifactInspectionSnapshotBudgetExceeded(
+                    "inspection record source budget exceeded"
+                )
+            for request_id in ids:
+                record = self._records[request_id]
+                if record.report is not None and record.report.report_digest == report_digest:
+                    return record.report.model_copy(deep=True)
+        return None
+
+    def data_report_for_locally_current_use(
+        self,
+        subject: SealedExternalSubjectV1,
+        expected_report: ExternalArtifactInspectionReportV1,
+        *,
+        now: datetime,
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        """O(1) exact retained-report recheck; no worker/storage/remote authority resolution.
+
+        The caller retains the shared coordinator through its check-and-commit.
+        Legacy independently coordinated metadata assemblies cannot serve this gate.
+        """
+        _wire_time(now)
+        if self._policy_registry.coordinator is not self._coordinator:
+            return None
+        with self._coordinator.guarded_read(), self._lock:
+            if self.sealed_reason is not None or self._policy_registry.sealed_reason is not None:
+                return None
+            record = self._records.get(expected_report.request_id)
+            if (
+                record is None
+                or record.request.subject != subject
+                or record.report != expected_report
+                or record.report is None
+                or record.request.inspection_policy_digest
+                != expected_report.inspection_policy_digest
+            ):
+                return None
+            if not self._policy_registry.locally_current_use_permitted(
+                record.request.inspection_policy_digest,
+                use="INSPECTION",
+                subjects=(subject,),
+                at=now,
+            ):
+                return None
+            return record.report.model_copy(deep=True)
+
     def historical_report(
         self,
         subject: SealedExternalSubjectV1,
@@ -659,6 +794,34 @@ class ExternalArtifactInspectionStore:
                 ):
                     return report
         return None
+
+    def report_for_locally_current_use(
+        self,
+        subject: SealedExternalSubjectV1,
+        expected_report: ExternalArtifactInspectionReportV1,
+        *,
+        now: datetime,
+    ) -> ExternalArtifactInspectionReportV1 | None:
+        """Final local inspection recheck for a caller holding the coordinator.
+
+        ``public_snapshot`` deliberately selects live policy and is therefore
+        only safe before a final currentness guard.  This companion compares a
+        retained report to the preflight snapshot and checks local policy state
+        without another policy selection or any worker/storage operation.
+        """
+        _wire_time(now)
+        with self._coordinator.guarded_read(), self._lock:
+            matching = next(
+                (
+                    record
+                    for record in self._records.values()
+                    if record.request.subject == subject and record.report == expected_report
+                ),
+                None,
+            )
+            if matching is None or not self._policy_is_locally_current(matching, now):
+                return None
+            return matching.report
 
     def historical_display_receipt(
         self,
@@ -695,9 +858,7 @@ class ExternalArtifactInspectionStore:
             record = self._records.get(request_id)
             return record is not None and self._in_organization(record, organization_id)
 
-    def public_display_state(
-        self, subject: SealedExternalSubjectV1
-    ) -> tuple[str, Any | None]:
+    def public_display_state(self, subject: SealedExternalSubjectV1) -> tuple[str, Any | None]:
         """Return receipt state for the current exact report/policy chain only."""
         if self._display_store is None:
             return "PENDING_INSPECTION", None
@@ -1450,9 +1611,7 @@ class ExternalArtifactInspectionStore:
             and selected.policy.policy_digest == record.request.inspection_policy_digest
         )
 
-    def _display_policy_is_locally_current(
-        self, record: _InspectionRecord, now: datetime
-    ) -> bool:
+    def _display_policy_is_locally_current(self, record: _InspectionRecord, now: datetime) -> bool:
         return self._policy_is_locally_current(
             record, now
         ) and self._policy_registry.locally_current_use_permitted(
@@ -1503,9 +1662,7 @@ class ExternalArtifactInspectionStore:
         a mismatched source. Core never upgrades or rewrites that worker outcome; this
         guard only prevents retaining a conflicting ``MEASURED`` fact.
         """
-        outcomes = {
-            item.artifact_id: item for item in report.measurement_payload.outcomes
-        }
+        outcomes = {item.artifact_id: item for item in report.measurement_payload.outcomes}
         for artifact in record.artifacts:
             outcome = outcomes.get(artifact.entry_id)
             if outcome is None or outcome.outcome is not ArtifactOutcome.MEASURED:
@@ -1570,11 +1727,7 @@ class ExternalArtifactInspectionStore:
     def _display_is_unfinished(self, request_id: str) -> bool:
         with self._lock:
             record = self._records.get(request_id)
-            if (
-                record is None
-                or record.terminal_reason is not None
-                or not record.display_required
-            ):
+            if record is None or record.terminal_reason is not None or not record.display_required:
                 return False
             if self._display_store is None:
                 return True
@@ -1602,9 +1755,7 @@ class ExternalArtifactInspectionStore:
             assert report is not None
             self._queue_display_if_eligible(report, self._clock())
 
-    def _record_exhaustion(
-        self, record: _InspectionRecord, reason: str, now: datetime
-    ) -> None:
+    def _record_exhaustion(self, record: _InspectionRecord, reason: str, now: datetime) -> None:
         """Make pre-claim deadline/budget exhaustion durable and non-pending."""
         if record.terminal_reason is not None:
             return
@@ -1708,6 +1859,9 @@ class ExternalArtifactInspectionStore:
             raise ValueError("inspection issue artifacts do not match sealed ingress")
         _parse_time(raw["issuedAt"], "issuedAt")
         self._records[request.request_id] = _InspectionRecord(request, artifacts)
+        self._record_ids_by_subject_digest.setdefault(subject.canonical_digest(), []).append(
+            request.request_id
+        )
         self._requests_by_natural_key[key] = request.request_id
 
     def _apply_lease(self, raw: Mapping[str, object]) -> None:
@@ -1929,19 +2083,11 @@ def mount_external_artifact_inspections(
     read = require_permission(Permission.SITES_READ)
 
     def fence_from_headers(
-        worker_instance_id: str | None = Header(
-            default=None, alias="X-KSI-Worker-Instance-Id"
-        ),
-        lease_acquisition_id: str | None = Header(
-            default=None, alias="X-KSI-Lease-Acquisition-Id"
-        ),
+        worker_instance_id: str | None = Header(default=None, alias="X-KSI-Worker-Instance-Id"),
+        lease_acquisition_id: str | None = Header(default=None, alias="X-KSI-Lease-Acquisition-Id"),
         lease_generation: str | None = Header(default=None, alias="X-KSI-Lease-Generation"),
     ) -> LeaseFence:
-        if (
-            worker_instance_id is None
-            or lease_acquisition_id is None
-            or lease_generation is None
-        ):
+        if worker_instance_id is None or lease_acquisition_id is None or lease_generation is None:
             raise HTTPException(422, "LEASE_FENCE_REQUIRED")
         try:
             fence = LeaseFence(worker_instance_id, lease_acquisition_id, int(lease_generation))
@@ -2071,15 +2217,11 @@ def mount_external_artifact_inspections(
         fence: LeaseFence = Depends(fence_from_headers),  # noqa: B008
         principal: Principal = Depends(worker),  # noqa: B008
     ) -> dict[str, object]:
-        result = store.input_for(
-            request_id, fence, organization_id=principal.organization_id
-        )
+        result = store.input_for(request_id, fence, organization_id=principal.organization_id)
         worker_error(result.verdict)
         return input_wire(result)
 
-    @router.post(
-        "/inspections/{request_id}/heartbeat", response_model=ExternalInspectionLeaseView
-    )
+    @router.post("/inspections/{request_id}/heartbeat", response_model=ExternalInspectionLeaseView)
     def heartbeat_inspection(
         request_id: str,
         response: Response,
@@ -2204,8 +2346,7 @@ def mount_external_artifact_inspections(
 
     public = APIRouter(prefix="/v1/observation-work-orders", tags=["external-validation"])
     public_base = (
-        "/{work_order_id}/external-reconstruction-submissions/{submission_ref}"
-        "/revisions/{revision}"
+        "/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}"
     )
 
     def revision_for(

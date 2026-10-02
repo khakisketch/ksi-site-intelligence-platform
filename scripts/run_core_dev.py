@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import shutil
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,7 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
+from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 from ksi_core.observability import configure_structured_logging
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 from ksi_core.signing_keys import SigningKeySet, load_signing_keys
@@ -56,6 +59,35 @@ _DEV_WORKER_TOKEN = "dev-processing-worker-token"  # noqa: S105
 
 def _digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _dev_oidc_subject_registry(issuer: str) -> OidcSubjectRegistry:
+    """KSI-owned mappings for the local-only issuer; production never imports this."""
+    accounts = (
+        ("local-admin", "org-local-pilot", Role.ADMIN.value),
+        ("local-field-operator", "org-local-pilot", Role.FIELD_OPERATOR.value),
+        ("local-viewer", "org-local-pilot", Role.VIEWER.value),
+        ("local-empty-org-admin", "org-local-empty", Role.ADMIN.value),
+    )
+    return OidcSubjectRegistry.from_document(
+        {
+            "version": "oidc-subject-registry.v1",
+            "subjects": [
+                {
+                    "issuer": issuer,
+                    "subject": subject,
+                    "principalId": subject,
+                    "organizationId": organization_id,
+                    "role": role,
+                    "status": "ACTIVE",
+                    "allowedSiteIds": [],
+                    "allowedWorkAreaIds": [],
+                }
+                for subject, organization_id, role in accounts
+            ],
+        },
+        expected_issuer=issuer,
+    )
 
 
 def _auth_registry() -> AuthRegistry:
@@ -175,6 +207,8 @@ def build_dev_app(
     human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
     oidc_verifier: OidcJwtVerifier | None = None,
     external_result_workflow: ExternalResultWorkflowAssemblyConfig | None = None,
+    external_analysis_local_graph: Any | None = None,
+    external_authority_provider: Any | None = None,
 ) -> DevAssembly:
     """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다.
 
@@ -183,6 +217,13 @@ def build_dev_app(
     "다른 프로세스가 journal 을 소유 중"으로 덮인다(reviewer 재검증 지적 N5 —
     ``DurableJournal.__init__`` 이 정확히 이 이유로 자기 fd 를 닫는 관습과 대칭).
     """
+    _validate_dev_opt_in_graph(
+        s3_endpoint=s3_endpoint,
+        s3_bucket=s3_bucket,
+        external_result_workflow=external_result_workflow,
+        external_analysis_local_graph=external_analysis_local_graph,
+        external_authority_provider=external_authority_provider,
+    )
     opened: list[Any] = []
 
     def _journal(name: str) -> DurableJournal:
@@ -201,6 +242,8 @@ def build_dev_app(
             human_auth_mode=human_auth_mode,
             oidc_verifier=oidc_verifier,
             external_result_workflow=external_result_workflow,
+            external_analysis_local_graph=external_analysis_local_graph,
+            external_authority_provider=external_authority_provider,
         )
     except BaseException:
         for journal in opened:
@@ -219,6 +262,8 @@ def _build_dev_app_locked(
     human_auth_mode: HumanAuthMode,
     oidc_verifier: OidcJwtVerifier | None,
     external_result_workflow: ExternalResultWorkflowAssemblyConfig | None,
+    external_analysis_local_graph: Any | None,
+    external_authority_provider: Any | None,
 ) -> DevAssembly:
     """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
@@ -226,6 +271,13 @@ def _build_dev_app_locked(
     (dev·production 두 조립 지점의 공용부, 모듈 docstring 참조). 여기 남는 것은
     dev 만의 관심사(키 부트스트랩, CLI 의 --s3-* 조건부 evidence storage)뿐이다.
     """
+    _validate_dev_opt_in_graph(
+        s3_endpoint=s3_endpoint,
+        s3_bucket=s3_bucket,
+        external_result_workflow=external_result_workflow,
+        external_analysis_local_graph=external_analysis_local_graph,
+        external_authority_provider=external_authority_provider,
+    )
     key_set = _bootstrap_key_set(data_dir / "signing")
 
     evidence_storage = None
@@ -235,6 +287,11 @@ def _build_dev_app_locked(
         from ksi_core.evidence_s3 import S3EvidenceStorage
 
         evidence_storage = S3EvidenceStorage(bucket=s3_bucket, endpoint_url=s3_endpoint)
+
+    if external_authority_provider is not None:
+        external_authority_provider.bind_receipt_journal(
+            journal("external-authority-provider-receipts.jsonl")
+        )
 
     app = assemble_app(
         data_dir,
@@ -248,11 +305,75 @@ def _build_dev_app_locked(
         mission_signing_key=key_set.active_private_key,
         mission_signing_key_id=key_set.active_key_id,
         external_result_workflow=external_result_workflow,
+        external_analysis_local_graph=external_analysis_local_graph,
     )
+    if external_authority_provider is not None:
+        from ksi_core.external_authority_operations import mount_external_authority_operations
+
+        external_authority_provider.attach_app(app)
+        mount_external_authority_operations(app, external_authority_provider)
+        app.state.external_authority_provider = external_authority_provider
 
     # 열린 순서 그대로 닫는다 — 목록을 손으로 유지하면 새 원장을 추가하면서
     # 빠뜨리기 쉽고, 그 누락은 "재기동이 flock 으로 막힌다"로만 드러난다.
     return DevAssembly(app=app, journals=tuple(opened))
+
+
+def _validate_dev_opt_in_graph(
+    *,
+    s3_endpoint: str | None,
+    s3_bucket: str | None,
+    external_result_workflow: ExternalResultWorkflowAssemblyConfig | None,
+    external_analysis_local_graph: Any | None,
+    external_authority_provider: Any | None,
+) -> None:
+    if bool(s3_endpoint) != bool(s3_bucket):
+        raise ValueError("s3 endpoint and bucket must be supplied together")
+    if external_analysis_local_graph is not None and (
+        s3_endpoint is None
+        or s3_bucket is None
+        or external_result_workflow is None
+        or external_authority_provider is None
+    ):
+        raise ValueError(
+            "local analysis requires S3 endpoint/bucket and workflow/provider authority"
+        )
+
+
+def _literal_loopback_host(host: str) -> bool:
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _absolute_config_path(value: str, *, option: str, parser: argparse.ArgumentParser) -> Path:
+    path = Path(value)
+    if not path.is_absolute() or ".." in path.parts:
+        parser.error(f"{option} must be an absolute path without '..'")
+    return path
+
+
+def _load_dev_external_authority(
+    *,
+    workflow_path: Path,
+    provider_path: Path,
+) -> tuple[ExternalResultWorkflowAssemblyConfig, Any]:
+    from ksi_core.external_authority_provider import load_external_authority_provider
+    from ksi_core.external_relative_volume_s3_capabilities import (
+        ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    from ksi_core.external_result_workflow_config import load_external_result_workflow_config
+
+    provider = load_external_authority_provider(
+        provider_path, clock=lambda: datetime.now(UTC)
+    )
+    workflow = load_external_result_workflow_config(
+        workflow_path,
+        participants=provider.participants,
+        build_input_capability_issuer=ExternalRelativeVolumeS3InputCapabilityIssuer,
+    )
+    return workflow, provider
 
 
 def main() -> None:
@@ -289,6 +410,24 @@ def main() -> None:
     )
     parser.add_argument("--s3-bucket", default=None, help="증거 버킷 이름")
     parser.add_argument(
+        "--local-analysis-config",
+        default=None,
+        help=(
+            "sealed local Analysis runtime material. It requires --s3-* and the "
+            "external workflow/provider configuration pair."
+        ),
+    )
+    parser.add_argument(
+        "--external-result-workflow-config",
+        default=None,
+        help="protected external-result workflow configuration; pair with provider config",
+    )
+    parser.add_argument(
+        "--external-authority-provider-config",
+        default=None,
+        help="protected signed external-authority provider configuration; pair with workflow",
+    )
+    parser.add_argument(
         "--human-auth-mode",
         choices=[mode.value for mode in HumanAuthMode],
         default=HumanAuthMode.OPAQUE.value,
@@ -311,6 +450,53 @@ def main() -> None:
 
     if bool(args.s3_endpoint) != bool(args.s3_bucket):
         parser.error("--s3-endpoint 와 --s3-bucket 은 함께 주어야 한다")
+    if bool(args.external_result_workflow_config) != bool(
+        args.external_authority_provider_config
+    ):
+        parser.error(
+            "--external-result-workflow-config 와 "
+            "--external-authority-provider-config 는 함께 주어야 한다"
+        )
+    if args.local_analysis_config is not None:
+        if not (args.s3_endpoint and args.s3_bucket):
+            parser.error("--local-analysis-config 는 --s3-endpoint/--s3-bucket 을 요구한다")
+        if not (
+            args.external_result_workflow_config
+            and args.external_authority_provider_config
+        ):
+            parser.error(
+                "--local-analysis-config 는 workflow/provider configuration pair를 요구한다"
+            )
+        if not _literal_loopback_host(args.host):
+            parser.error("--local-analysis-config 는 literal loopback --host만 허용한다")
+
+    workflow_path = (
+        _absolute_config_path(
+            args.external_result_workflow_config,
+            option="--external-result-workflow-config",
+            parser=parser,
+        )
+        if args.external_result_workflow_config is not None
+        else None
+    )
+    provider_path = (
+        _absolute_config_path(
+            args.external_authority_provider_config,
+            option="--external-authority-provider-config",
+            parser=parser,
+        )
+        if args.external_authority_provider_config is not None
+        else None
+    )
+    analysis_path = (
+        _absolute_config_path(
+            args.local_analysis_config,
+            option="--local-analysis-config",
+            parser=parser,
+        )
+        if args.local_analysis_config is not None
+        else None
+    )
 
     human_auth_mode = HumanAuthMode(args.human_auth_mode)
     oidc_values = (args.oidc_issuer, args.oidc_audience, args.oidc_jwks_url)
@@ -331,8 +517,35 @@ def main() -> None:
                 audience=args.oidc_audience,
                 jwks_url=args.oidc_jwks_url,
                 jwks_ttl_seconds=args.oidc_jwks_ttl_seconds,
-            )
+            ),
+            subject_registry=_dev_oidc_subject_registry(args.oidc_issuer),
         )
+
+    # Validate/load all optional trusted material before --reset can remove
+    # durable state or key bootstrap can create any new local authority.
+    external_result_workflow = None
+    external_authority_provider = None
+    if workflow_path is not None and provider_path is not None:
+        try:
+            external_result_workflow, external_authority_provider = _load_dev_external_authority(
+                workflow_path=workflow_path, provider_path=provider_path
+            )
+        except Exception as exc:
+            parser.error("external workflow/provider configuration is unavailable")
+            raise AssertionError("argparse parser.error always exits") from exc
+
+    external_analysis_local_graph = None
+    if analysis_path is not None:
+        from ksi_core.composition.local_analysis_runtime_config import (
+            LocalAnalysisRuntimeConfigUnavailable,
+            load_local_analysis_runtime_config,
+        )
+
+        try:
+            external_analysis_local_graph = load_local_analysis_runtime_config(analysis_path)
+        except LocalAnalysisRuntimeConfigUnavailable as exc:
+            parser.error("local analysis configuration is unavailable")
+            raise AssertionError("argparse parser.error always exits") from exc
 
     data_dir = Path(args.data_dir)
     if args.reset and data_dir.exists():
@@ -351,6 +564,9 @@ def main() -> None:
         s3_bucket=args.s3_bucket,
         human_auth_mode=human_auth_mode,
         oidc_verifier=oidc_verifier,
+        external_result_workflow=external_result_workflow,
+        external_analysis_local_graph=external_analysis_local_graph,
+        external_authority_provider=external_authority_provider,
     )
 
     print("=" * 72)

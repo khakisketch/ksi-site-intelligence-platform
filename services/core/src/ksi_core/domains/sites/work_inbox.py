@@ -11,6 +11,7 @@ import hashlib
 import json
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal, Protocol, runtime_checkable
@@ -105,6 +106,16 @@ class WorkInboxReadReceipt(CamelModel):
         if value.tzinfo is None or value.utcoffset() != UTC.utcoffset(value):
             raise ValueError("readAt must be UTC")
         return value
+
+
+@dataclass(frozen=True, slots=True)
+class _ResolvedReport:
+    site_id: str
+    report_digest: str
+    current_work_order_id: str | None
+    work_area_id: str | None
+    work_order_area_ids: frozenset[str] | None
+    core_work_order_bound: bool
 
 
 class _HistoricalReportResolver(Protocol):
@@ -331,14 +342,16 @@ class WorkInboxStore:
             raise WorkInboxStoreRecoveryError(f"work inbox journal replay failed: {exc}") from exc
 
     @staticmethod
-    def _report_site_and_digest(resolved: object) -> tuple[str, str] | None:
-        """Extract the only two exact report facts an inbox share may retain."""
+    def _report_identity(resolved: object) -> _ResolvedReport | None:
+        """Read report identity and its claimed Core WorkOrder/WorkArea binding."""
 
         request = getattr(resolved, "request", None)
         report = getattr(resolved, "report", None)
         zone = getattr(request, "zone_snapshot", None)
         site_id = getattr(zone, "site_id", None)
         digest = getattr(report, "report_digest", None)
+        current_work_order_id = getattr(request, "current_work_order_id", None)
+        work_area_id = getattr(zone, "work_area_id", None)
         if (
             not isinstance(site_id, str)
             or not is_path_safe_identifier(site_id)
@@ -346,11 +359,27 @@ class WorkInboxStore:
             or not _is_digest(digest)
         ):
             return None
-        return site_id, digest
+        if current_work_order_id is not None and (
+            not isinstance(current_work_order_id, str)
+            or not is_path_safe_identifier(current_work_order_id)
+        ):
+            return None
+        if work_area_id is not None and (
+            not isinstance(work_area_id, str) or not is_path_safe_identifier(work_area_id)
+        ):
+            return None
+        return _ResolvedReport(
+            site_id=site_id,
+            report_digest=digest,
+            current_work_order_id=current_work_order_id,
+            work_area_id=work_area_id,
+            work_order_area_ids=None,
+            core_work_order_bound=False,
+        )
 
     def _resolve_exact_report(
         self, report_ref: str, *, organization_id: str, now: datetime
-    ) -> tuple[str, str] | None:
+    ) -> _ResolvedReport | None:
         if self._report_resolver is None:
             raise RuntimeError("EXTERNAL_REPORT_SHARING_UNAVAILABLE")
         if not is_path_safe_identifier(report_ref):
@@ -358,10 +387,83 @@ class WorkInboxStore:
         resolved = self._report_resolver.resolve_historical_report_ref(
             report_ref, organization_id=organization_id, now=now
         )
-        return self._report_site_and_digest(resolved) if resolved is not None else None
+        report = self._report_identity(resolved) if resolved is not None else None
+        if report is None:
+            return None
+        request = getattr(resolved, "request", None)
+        zone = getattr(request, "zone_snapshot", None)
+        zone_organization_id = getattr(zone, "organization_id", None)
+        if zone_organization_id is not None and zone_organization_id != organization_id:
+            return None
+        order = (
+            self._work_orders.get(
+                report.current_work_order_id, organization_id=organization_id
+            )
+            if report.current_work_order_id is not None
+            else None
+        )
+        core_bound = (
+            order is not None
+            and order.site_id == report.site_id
+            and report.work_area_id is not None
+            and report.work_area_id in order.work_area_ids
+        )
+        return _ResolvedReport(
+            site_id=report.site_id,
+            report_digest=report.report_digest,
+            current_work_order_id=report.current_work_order_id,
+            work_area_id=report.work_area_id,
+            work_order_area_ids=(
+                frozenset(order.work_area_ids) if order is not None else None
+            ),
+            core_work_order_bound=core_bound,
+        )
+
+    @staticmethod
+    def _work_order_within_grants(
+        order: Any | None,
+        *,
+        allowed_site_ids: frozenset[str] | None,
+        allowed_work_area_ids: frozenset[str] | None,
+    ) -> bool:
+        return (
+            order is not None
+            and (allowed_site_ids is None or order.site_id in allowed_site_ids)
+            and (
+                allowed_work_area_ids is None
+                or set(order.work_area_ids).issubset(allowed_work_area_ids)
+            )
+        )
+
+    @staticmethod
+    def _report_within_grants(
+        report: _ResolvedReport,
+        *,
+        allowed_site_ids: frozenset[str] | None,
+        allowed_work_area_ids: frozenset[str] | None,
+    ) -> bool:
+        restricted = allowed_site_ids is not None or allowed_work_area_ids is not None
+        if restricted and not report.core_work_order_bound:
+            return False
+        return (
+            (allowed_site_ids is None or report.site_id in allowed_site_ids)
+            and (
+                allowed_work_area_ids is None
+                or (
+                    report.work_order_area_ids is not None
+                    and report.work_order_area_ids.issubset(allowed_work_area_ids)
+                )
+            )
+        )
 
     def _live_items(
-        self, *, organization_id: str, recipient_principal_id: str, now: datetime
+        self,
+        *,
+        organization_id: str,
+        recipient_principal_id: str,
+        now: datetime,
+        allowed_site_ids: frozenset[str] | None = None,
+        allowed_work_area_ids: frozenset[str] | None = None,
     ) -> list[WorkInboxItem]:
         items: list[WorkInboxItem] = []
         receipts = self._read_receipts
@@ -370,9 +472,13 @@ class WorkInboxStore:
         ):
             # A current scoped resource recheck prevents the journal from
             # becoming a disclosure path if an underlying record changes.
-            if (
-                self._work_orders.get(transition.work_order_id, organization_id=organization_id)
-                is None
+            order = self._work_orders.get(
+                transition.work_order_id, organization_id=organization_id
+            )
+            if not self._work_order_within_grants(
+                order,
+                allowed_site_ids=allowed_site_ids,
+                allowed_work_area_ids=allowed_work_area_ids,
             ):
                 continue
             notification_ref = _assignment_notification_ref(transition)
@@ -401,7 +507,15 @@ class WorkInboxStore:
                 )
             except RuntimeError:
                 exact = None
-            if exact != (share.site_id, share.report_digest):
+            if (
+                exact is None
+                or (exact.site_id, exact.report_digest) != (share.site_id, share.report_digest)
+                or not self._report_within_grants(
+                    exact,
+                    allowed_site_ids=allowed_site_ids,
+                    allowed_work_area_ids=allowed_work_area_ids,
+                )
+            ):
                 continue
             notification_ref = _share_notification_ref(share)
             items.append(
@@ -455,6 +569,8 @@ class WorkInboxStore:
         after: str | None = None,
         limit: int = 20,
         now: datetime | None = None,
+        allowed_site_ids: frozenset[str] | None = None,
+        allowed_work_area_ids: frozenset[str] | None = None,
     ) -> WorkInboxPage:
         if not all(
             is_path_safe_identifier(value) for value in (organization_id, recipient_principal_id)
@@ -468,6 +584,8 @@ class WorkInboxStore:
                 organization_id=organization_id,
                 recipient_principal_id=recipient_principal_id,
                 now=when,
+                allowed_site_ids=allowed_site_ids,
+                allowed_work_area_ids=allowed_work_area_ids,
             )
             start = 0
             if after is not None:
@@ -499,6 +617,8 @@ class WorkInboxStore:
         actor: str,
         idempotency_key: str,
         now: datetime,
+        allowed_site_ids: frozenset[str] | None = None,
+        allowed_work_area_ids: frozenset[str] | None = None,
     ) -> ExternalReportShare:
         if not all(
             is_path_safe_identifier(value)
@@ -515,7 +635,23 @@ class WorkInboxStore:
         pending_fingerprint = _fingerprint(
             {"recipientPrincipalId": recipient_principal_id, "reportRef": report_ref}
         )
+        restricted = allowed_site_ids is not None or allowed_work_area_ids is not None
         with self._coordinator.mutation(), self._lock:
+            exact = None
+            if restricted:
+                exact = self._resolve_exact_report(
+                    report_ref, organization_id=organization_id, now=now.astimezone(UTC)
+                )
+                if exact is None or not self._report_within_grants(
+                    exact,
+                    allowed_site_ids=allowed_site_ids,
+                    allowed_work_area_ids=allowed_work_area_ids,
+                ):
+                    raise LookupError(
+                        SINGLE_SHARE_NOT_FOUND
+                        if report_ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX)
+                        else RELATIVE_SHARE_NOT_FOUND
+                    )
             prior = self._share_idempotency.get((organization_id, actor, key_hash))
             if prior is not None:
                 prior_fingerprint, share = prior
@@ -527,16 +663,17 @@ class WorkInboxStore:
             )
             if recipient is None or recipient.status is not OrganizationWorkRosterStatus.ACTIVE:
                 raise LookupError("work inbox recipient was not found")
-            exact = self._resolve_exact_report(
-                report_ref, organization_id=organization_id, now=now.astimezone(UTC)
-            )
+            if exact is None:
+                exact = self._resolve_exact_report(
+                    report_ref, organization_id=organization_id, now=now.astimezone(UTC)
+                )
             if exact is None:
                 raise LookupError(
                     SINGLE_SHARE_NOT_FOUND
                     if report_ref.startswith(SINGLE_VOLUME_REPORT_REF_PREFIX)
                     else RELATIVE_SHARE_NOT_FOUND
                 )
-            site_id, report_digest = exact
+            site_id, report_digest = exact.site_id, exact.report_digest
             share_ref = (
                 "external-report-share-"
                 + hashlib.sha256(
@@ -582,6 +719,8 @@ class WorkInboxStore:
         recipient_principal_id: str,
         idempotency_key: str,
         now: datetime,
+        allowed_site_ids: frozenset[str] | None = None,
+        allowed_work_area_ids: frozenset[str] | None = None,
     ) -> WorkInboxReadReceipt:
         if not all(
             is_path_safe_identifier(value)
@@ -595,6 +734,18 @@ class WorkInboxStore:
         key_hash = _key_hash(idempotency_key)
         fingerprint = _fingerprint({"notificationRef": notification_ref})
         with self._coordinator.mutation(), self._lock:
+            restricted = allowed_site_ids is not None or allowed_work_area_ids is not None
+            if restricted and not any(
+                item.notification_ref == notification_ref
+                for item in self._live_items(
+                    organization_id=organization_id,
+                    recipient_principal_id=recipient_principal_id,
+                    now=now.astimezone(UTC),
+                    allowed_site_ids=allowed_site_ids,
+                    allowed_work_area_ids=allowed_work_area_ids,
+                )
+            ):
+                raise LookupError("work inbox notification was not found")
             prior = self._read_idempotency.get((organization_id, recipient_principal_id, key_hash))
             if prior is not None:
                 prior_fingerprint, receipt = prior
@@ -612,6 +763,8 @@ class WorkInboxStore:
                     organization_id=organization_id,
                     recipient_principal_id=recipient_principal_id,
                     now=now.astimezone(UTC),
+                    allowed_site_ids=allowed_site_ids,
+                    allowed_work_area_ids=allowed_work_area_ids,
                 )
             ):
                 raise LookupError("work inbox notification was not found")
@@ -682,6 +835,8 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
                 unread_only=unread_only,
                 after=after,
                 limit=limit,
+                allowed_site_ids=principal.allowed_site_ids,
+                allowed_work_area_ids=principal.allowed_work_area_ids,
             )
         except (LookupError, ValueError) as exc:
             raise _http_error(exc) from exc
@@ -700,6 +855,8 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
                 recipient_principal_id=principal.principal_id,
                 idempotency_key=idempotency_key,
                 now=datetime.now(UTC),
+                allowed_site_ids=principal.allowed_site_ids,
+                allowed_work_area_ids=principal.allowed_work_area_ids,
             )
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
@@ -732,6 +889,8 @@ def build_work_inbox_router(store: WorkInboxStore) -> APIRouter:
                 actor=principal.principal_id,
                 idempotency_key=idempotency_key,
                 now=datetime.now(UTC),
+                allowed_site_ids=principal.allowed_site_ids,
+                allowed_work_area_ids=principal.allowed_work_area_ids,
             )
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc

@@ -21,9 +21,13 @@ from ksi_event_contracts.external_artifact_validation import SealedExternalSubje
 from ksi_event_contracts.external_reconstruction import (
     ExternalReconstructionManifestEntryV1,
     ExternalReconstructionManifestV1,
+    ExternalReconstructionSubmission,
     ExternalReconstructionSubmissionV1,
+    ExternalReconstructionSubmissionV2,
     external_reconstruction_manifest_wire_dict,
+    external_reconstruction_submission_v2_wire_dict,
     external_reconstruction_submission_wire_dict,
+    parse_external_reconstruction_submission_v2,
 )
 from ksi_event_contracts.external_reobservation import ExternalPlanningOnlyWorkOrderBindingV1
 from ksi_event_contracts.observation_work_order import (
@@ -65,6 +69,10 @@ class ExternalReconstructionRecoveryError(RuntimeError):
     """The external-result journal cannot safely be used after failed replay."""
 
 
+class ExternalReconstructionListBudgetExceeded(RuntimeError):
+    """A bounded WorkOrder revision query exceeded its source-work budget."""
+
+
 class ExternalReconstructionVerdict(StrEnum):
     REGISTERED = "REGISTERED"
     CONFLICT = "CONFLICT"
@@ -85,7 +93,7 @@ class ExternalReconstructionRevision:
     work_order_version: int
     cycle_number: int
     observation_epoch_id: str
-    submission: ExternalReconstructionSubmissionV1
+    submission: ExternalReconstructionSubmission
     registered_at: datetime
     registered_by: str
     bindings: tuple[tuple[str, str], ...]
@@ -119,6 +127,14 @@ def _event_digest(payload: dict[str, Any]) -> str:
     candidate = dict(payload)
     candidate.pop("eventDigest", None)
     return "sha256:" + hashlib.sha256(canonical_json_bytes(candidate)).hexdigest()
+
+
+def _submission_wire_dict(submission: ExternalReconstructionSubmission) -> dict[str, Any]:
+    if isinstance(submission, ExternalReconstructionSubmissionV1):
+        return external_reconstruction_submission_wire_dict(submission)
+    if isinstance(submission, ExternalReconstructionSubmissionV2):
+        return external_reconstruction_submission_v2_wire_dict(submission)
+    raise TypeError("unsupported external reconstruction submission version")
 
 
 def _parse_time(value: Any, *, field: str) -> datetime:
@@ -189,7 +205,11 @@ class ExternalReconstructionStore:
         self._journal = journal
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._streams: dict[tuple[str, str], list[ExternalReconstructionRevision]] = {}
+        self._submission_keys_by_work_order: dict[str, list[tuple[str, str]]] = {}
         self._submission_ids_by_ref: dict[tuple[str, str], str] = {}
+        self._data_submission_keys_by_work_order: dict[
+            tuple[str, str, str], dict[tuple[str, str], None]
+        ] = {}
         self._seal_listeners: list[
             Callable[[ExternalReconstructionRevision, datetime], object]
         ] = []
@@ -240,8 +260,10 @@ class ExternalReconstructionStore:
     ) -> ExternalReconstructionRevision | None:
         """Core-only exact sealed-subject resolution for derived validation work."""
         with self._lock:
-            revisions = self._streams.get((subject.work_order_id, subject.submission_id), ())
-            for revision in revisions:
+            if type(subject.revision) is not int:
+                return None
+            revision = self._record(subject.work_order_id, subject.submission_id, subject.revision)
+            if revision is not None:
                 submission, manifest = revision.submission, revision.manifest
                 if (
                     submission.organization_id == subject.organization_id
@@ -281,7 +303,18 @@ class ExternalReconstructionStore:
         )
         if raw["kind"] != "external-reconstruction-registered":
             raise ValueError("wrong registration event kind")
-        submission = ExternalReconstructionSubmissionV1.model_validate(raw["submission"])
+        submission_payload = raw["submission"]
+        if not isinstance(submission_payload, dict):
+            raise ValueError("submission payload must be an object")
+        contract_version = submission_payload.get("contractVersion")
+        if contract_version == "external-reconstruction-submission.v1":
+            submission: ExternalReconstructionSubmission = (
+                ExternalReconstructionSubmissionV1.model_validate(submission_payload)
+            )
+        elif contract_version == "external-reconstruction-submission.v2":
+            submission = parse_external_reconstruction_submission_v2(submission_payload)
+        else:
+            raise ValueError("unknown external reconstruction submission version")
         if submission.submission_digest is None:
             raise ValueError("unsealed submission")
         if any(
@@ -359,7 +392,11 @@ class ExternalReconstructionStore:
         if existing_raw_id is not None and existing_raw_id != record.submission.submission_id:
             raise ValueError("submissionRef collision")
         key = (record.work_order_id, record.submission.submission_id)
-        stream = self._streams.setdefault(key, [])
+        stream = self._streams.get(key)
+        if stream is None:
+            stream = []
+            self._streams[key] = stream
+            self._submission_keys_by_work_order.setdefault(record.work_order_id, []).append(key)
         if stream:
             first = stream[0]
             if (
@@ -369,12 +406,15 @@ class ExternalReconstructionStore:
                 or record.work_order_version != first.work_order_version
                 or record.cycle_number != first.cycle_number
                 or record.observation_epoch_id != first.observation_epoch_id
+                or record.submission.contract_version != first.submission.contract_version
             ):
                 raise ValueError("illegal revision stream")
         elif record.submission.revision != 1:
             raise ValueError("first revision must be one")
         stream.append(record)
         self._submission_ids_by_ref[ref_key] = record.submission.submission_id
+        scope = (record.submission.organization_id, record.submission.site_id, record.work_order_id)
+        self._data_submission_keys_by_work_order.setdefault(scope, {})[key] = None
 
     def _apply_seal(self, raw: dict[str, Any]) -> None:
         self._require_exact_fields(
@@ -467,7 +507,7 @@ class ExternalReconstructionStore:
 
     def register(
         self,
-        submission: ExternalReconstructionSubmissionV1,
+        submission: ExternalReconstructionSubmission,
         *,
         work_order: ObservationWorkOrder,
         registered_by: str,
@@ -542,6 +582,7 @@ class ExternalReconstructionStore:
                     or submission.organization_id != first.submission.organization_id
                     or submission.site_id != first.submission.site_id
                     or submission.observation_epoch_id != first.observation_epoch_id
+                    or submission.contract_version != first.submission.contract_version
                 ):
                     return ExternalReconstructionResult(ExternalReconstructionVerdict.CONFLICT)
             bindings = tuple(
@@ -571,7 +612,7 @@ class ExternalReconstructionStore:
                 "workOrderVersion": work_order_version,
                 "cycleNumber": cycle_number,
                 "observationEpochId": epoch,
-                "submission": external_reconstruction_submission_wire_dict(submission),
+                "submission": _submission_wire_dict(submission),
                 "bindings": [
                     {"artifactId": artifact_id, "objectKey": object_key}
                     for artifact_id, object_key in bindings
@@ -587,13 +628,11 @@ class ExternalReconstructionStore:
             self._apply(raw)
         return ExternalReconstructionResult(
             ExternalReconstructionVerdict.REGISTERED,
-            self._record(
-                work_order.work_order_id, submission.submission_id, submission.revision
-            ),
+            self._record(work_order.work_order_id, submission.submission_id, submission.revision),
         )
 
     def is_registration_retry(
-        self, submission: ExternalReconstructionSubmissionV1, *, work_order: ObservationWorkOrder
+        self, submission: ExternalReconstructionSubmission, *, work_order: ObservationWorkOrder
     ) -> bool:
         """Retained exact registration retries are reads and remain available after close."""
 
@@ -678,6 +717,41 @@ class ExternalReconstructionStore:
                 if candidate_order == work_order_id
                 for revision in stream
                 if self._in_scope(revision, organization_id=organization_id, site_id=site_id)
+            )
+
+    def list_bounded_for_work_order(
+        self,
+        work_order_id: str,
+        *,
+        organization_id: str,
+        site_id: str,
+        max_submissions: int,
+        max_revisions: int,
+    ) -> tuple[ExternalReconstructionRevision, ...]:
+        """Read exact scoped history completely or deny; no latest aliases/global traversal."""
+        if (
+            type(max_submissions) is not int
+            or max_submissions < 1
+            or type(max_revisions) is not int
+            or max_revisions < 0
+        ):
+            raise ValueError("source enumeration limits must be nonnegative strict integers")
+        with self._lock:
+            keys = self._data_submission_keys_by_work_order.get(
+                (organization_id, site_id, work_order_id), {}
+            )
+            if len(keys) > max_submissions:
+                raise ExternalReconstructionListBudgetExceeded("submission source budget exceeded")
+            if sum(len(self._streams[key]) for key in keys) > max_revisions:
+                raise ExternalReconstructionListBudgetExceeded("revision source budget exceeded")
+            return tuple(
+                replace(
+                    record,
+                    submission=record.submission.model_copy(deep=True),
+                    manifest=record.manifest.model_copy(deep=True) if record.manifest else None,
+                )
+                for key in keys
+                for record in self._streams[key]
             )
 
     def upload_grants(
@@ -889,7 +963,7 @@ def _view(record: ExternalReconstructionRevision) -> ExternalReconstructionRevis
             work_order_id=record.work_order_id,
             submission_id=record.submission.submission_id,
         ),
-        submission=external_reconstruction_submission_wire_dict(record.submission),
+        submission=_submission_wire_dict(record.submission),
         state="SEALED" if record.manifest is not None else "REGISTERED",
         manifest=(
             external_reconstruction_manifest_wire_dict(record.manifest) if record.manifest else None
@@ -901,7 +975,17 @@ def _require_work_order(
     store: ObservationWorkOrderStore, work_order_id: str, principal: Principal
 ) -> ObservationWorkOrder:
     order = store.get(work_order_id, organization_id=principal.organization_id)
-    if order is None:
+    if (
+        order is None
+        or (
+            principal.allowed_site_ids is not None
+            and order.site_id not in principal.allowed_site_ids
+        )
+        or (
+            principal.allowed_work_area_ids is not None
+            and not set(order.work_area_ids).issubset(principal.allowed_work_area_ids)
+        )
+    ):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)
     return order
 
@@ -988,10 +1072,7 @@ def mount_external_reconstruction(
                 order.work_order_id, organization_id=principal.organization_id
             )
             is None
-            and (
-                capture_started_at is None
-                or capture_ended_at is None
-            )
+            and (capture_started_at is None or capture_ended_at is None)
         ):
             raise HTTPException(
                 status_code=422,
@@ -1015,9 +1096,72 @@ def mount_external_reconstruction(
             with work_orders.guard_new_external_intent(
                 order.work_order_id,
                 organization_id=principal.organization_id,
-                is_durable_retry=lambda: store.is_registration_retry(
-                    submission, work_order=order
-                ),
+                is_durable_retry=lambda: store.is_registration_retry(submission, work_order=order),
+            ):
+                result = store.register(
+                    submission,
+                    work_order=order,
+                    registered_by=principal.principal_id,
+                    now=datetime.now(UTC),
+                )
+        except RuntimeError as exc:
+            if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
+        _result_error(result)
+        assert result.revision is not None
+        return _view(result.revision)
+
+    @router.post(
+        base + "-v2",
+        response_model=ExternalReconstructionRevisionView,
+        status_code=201,
+    )
+    def register_v2(
+        work_order_id: str,
+        payload: dict[str, Any],
+        principal: Principal = Depends(write),  # noqa: B008
+    ) -> ExternalReconstructionRevisionView:
+        order = _require_work_order(work_orders, work_order_id, principal)
+        _write_principal(principal)
+        try:
+            submission = parse_external_reconstruction_submission_v2(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        capture_started_at = submission.input_declaration.capture_started_at
+        capture_ended_at = submission.input_declaration.capture_ended_at
+        if (
+            order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            and work_orders.get_external_reobservation_binding(
+                order.work_order_id, organization_id=principal.organization_id
+            )
+            is None
+            and (capture_started_at is None or capture_ended_at is None)
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="CAPTURE_INTERVAL_REQUIRED_FOR_EXTERNAL_INGRESS",
+            )
+        if (
+            order.execution_mode is ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            and work_orders.get_external_reobservation_binding(
+                order.work_order_id, organization_id=principal.organization_id
+            )
+            is None
+            and capture_started_at is not None
+            and capture_ended_at is not None
+            and capture_started_at >= capture_ended_at
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="CAPTURE_INTERVAL_MUST_BE_POSITIVE_FOR_EXTERNAL_INGRESS",
+            )
+        try:
+            with work_orders.guard_new_external_intent(
+                order.work_order_id,
+                organization_id=principal.organization_id,
+                is_durable_retry=lambda: store.is_registration_retry(submission, work_order=order),
             ):
                 result = store.register(
                     submission,

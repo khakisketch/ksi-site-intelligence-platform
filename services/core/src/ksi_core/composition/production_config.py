@@ -28,6 +28,7 @@ from ksi_core.capability.runtime_projection import (
     TrustedRuntimeRouteConfigurationV1,
 )
 from ksi_core.composition.assembly import cli_optional_positive
+from ksi_core.foundation.identifiers import is_path_safe_identifier
 from ksi_core.oidc import OidcVerifierConfig
 
 if TYPE_CHECKING:
@@ -62,6 +63,28 @@ def _require_dir(name: str) -> Path:
     if not path.is_dir():
         raise RuntimeError(f"{name}={raw!r} 는 존재하는 디렉터리가 아니다")
     return path
+
+
+def _analysis_activation_paths_env() -> tuple[Path, Path, Path] | None:
+    """Read the explicit runtime, activation and verification-key file paths.
+
+    An entirely absent trio preserves the existing closed production surface;
+    a partial trio is a configuration error rather than an ambient fallback.
+    """
+    names = (
+        "KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE",
+        "KSI_CORE_ANALYSIS_ACTIVATION_FILE",
+        "KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE",
+    )
+    values = tuple(os.environ.get(name) for name in names)
+    if all(value is None for value in values):
+        return None
+    if any(not value for value in values):
+        raise RuntimeError("Analysis activation requires all three explicit file paths")
+    paths = tuple(Path(cast(str, value)) for value in values)
+    if any(not path.is_absolute() for path in paths):
+        raise RuntimeError("Analysis activation file paths must be absolute")
+    return cast(tuple[Path, Path, Path], paths)
 
 
 def _optional_positive_env(name: str, *, default: int) -> int | None:
@@ -209,6 +232,11 @@ def _human_auth_config_env() -> tuple[HumanAuthMode, OidcVerifierConfig | None]:
     issuer = _require_env("KSI_CORE_OIDC_ISSUER")
     audience = _require_env("KSI_CORE_OIDC_AUDIENCE")
     jwks_url = _require_env("KSI_CORE_OIDC_JWKS_URL")
+    subject_registry_file = Path(_require_env("KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE"))
+    if not subject_registry_file.is_absolute() or ".." in subject_registry_file.parts:
+        raise RuntimeError(
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE은 정규화된 절대 경로여야 한다"
+        )
     algorithms = tuple(
         item.strip()
         for item in os.environ.get("KSI_CORE_OIDC_ALLOWED_ALGORITHMS", "RS256").split(",")
@@ -229,6 +257,7 @@ def _human_auth_config_env() -> tuple[HumanAuthMode, OidcVerifierConfig | None]:
         issuer=issuer,
         audience=audience,
         jwks_url=jwks_url,
+        subject_registry_file=subject_registry_file,
         allowed_algorithms=algorithms,
         jwks_ttl_seconds=ttl,
     )
@@ -280,6 +309,8 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         role_raw = entry.get("role")
         device_id = entry.get("deviceId")
         organization_id = entry.get("organizationId", "legacy")
+        allowed_site_ids: frozenset[str] | None = None
+        allowed_work_area_ids: frozenset[str] | None = None
         status_raw = entry.get("status", TokenStatus.ACTIVE.value)
         not_after_raw = entry.get("notAfter")
 
@@ -302,6 +333,37 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
                 f"{sorted(_KIND_VALUES)} 중 하나여야 한다"
             )
         kind = _KIND_VALUES[kind_raw]
+
+        scope_fields = ("allowedSiteIds", "allowedWorkAreaIds")
+        if kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
+            parsed_grants: list[frozenset[str]] = []
+            for field_name in scope_fields:
+                values = entry.get(field_name)
+                if not isinstance(values, list) or not values:
+                    raise RuntimeError(
+                        f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].{field_name} "
+                        "은 비어 있지 않은 문자열 배열이어야 한다"
+                    )
+                if any(
+                    not isinstance(value, str) or not is_path_safe_identifier(value)
+                    for value in values
+                ):
+                    raise RuntimeError(
+                        f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].{field_name} "
+                        "에는 경로-안전 비공백 식별자만 허용된다"
+                    )
+                if len(values) != len(set(values)):
+                    raise RuntimeError(
+                        f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].{field_name} "
+                        "에는 중복 식별자가 있을 수 없다"
+                    )
+                parsed_grants.append(frozenset(values))
+            allowed_site_ids, allowed_work_area_ids = parsed_grants
+        elif any(field_name in entry for field_name in scope_fields):
+            raise RuntimeError(
+                f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}] scope grants are only valid "
+                "for ANALYSIS_MCP_CLIENT"
+            )
 
         role: Role | None = None
         if role_raw is not None:
@@ -358,6 +420,8 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
                     role=role,
                     device_id=device_id,
                     organization_id=organization_id,
+                    allowed_site_ids=allowed_site_ids,
+                    allowed_work_area_ids=allowed_work_area_ids,
                 ),
             )
         )

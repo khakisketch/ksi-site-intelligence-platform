@@ -20,7 +20,7 @@
 > acceptance/specification wins. It also changes
 > no scope owned by `docs/product/MVP_SCOPE_AND_ENGINE_TRACKS.md`; that file
 > remains the MVP/engine-track clarification and this protocol only consumes it.
-> No new profile is issued, no Terra/Pix4D job is issuable, and no license fact
+> No new profile is issued, no **KSI-managed** Terra/Pix4D ProcessingJob is issuable, and no license fact
 > is asserted here.
 >
 > Requirement IDs: REQ-WRK-101, REQ-INT-101/102/103/104 (civil processing,
@@ -239,10 +239,11 @@ when license documentation allows research at all. **Trial evidence never
 backs a commercial accuracy or quantity claim, and trial results are never
 promotable to commercial evidence.** No trial is installed or executed
 under this protocol; the distinction is a documentation label only. DJI
-Terra remains separately licensed Windows/NVIDIA software usable only
-through a provider adapter; research does not change the
-`services/core/` ← `services/processing-controller/` ← `packages/`
-ownership boundary.
+Terra remains separately licensed Windows/NVIDIA software. A future, separately authorized
+KSI-managed execution or evaluation route would use a provider adapter and remain subject to the
+research and license gates above. The ADR-KSI-036 D6 customer-operated desktop reconstruction/export
+path needs no KSI execution adapter. Research does not change the
+`services/core/` ← `services/processing-controller/` ← `packages/` ownership boundary.
 
 ## 7. Recording rule and escalation
 

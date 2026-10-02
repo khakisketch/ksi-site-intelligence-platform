@@ -232,6 +232,91 @@ def _registry_for_journal(
     )
 
 
+@pytest.mark.parametrize("budget", [True, False, 0, -1, "1", 1.0, None])
+def test_bounded_inspection_policy_rejects_coerced_budget(tmp_path: Path, budget: object) -> None:
+    """A coerced/missing limit must not open an unbounded policy selection path."""
+    registry = _registry(tmp_path)
+    method = getattr(registry, "select_for_inspection_bounded", None)
+    assert callable(method), "bounded inspection policy selection is missing"
+    with pytest.raises(ValueError):
+        method(_subject(), max_retained_policies=budget)
+
+
+def test_bounded_inspection_policy_counts_only_exact_subject_and_replays(tmp_path: Path) -> None:
+    """A global policy scan/budget would let other tenants deny this subject's lookup."""
+    first, first_authority = _bound_policy()
+    unrelated, unrelated_authority = _bound_policy(
+        policy_id="other-policy", subjects=(_subject(marker="b"),)
+    )
+    port = FakePolicyAuthorityPort(first_authority, unrelated_authority)
+    registry = _registry(tmp_path, port)
+    registry.admit(first, actor="authority", now=NOW)
+    registry.admit(unrelated, actor="authority", now=NOW)
+    method = getattr(registry, "select_for_inspection_bounded", None)
+    assert callable(method), "bounded inspection policy selection is missing"
+    selected = method(_subject(), max_retained_policies=1)
+    assert selected.status is PolicySelectionStatus.ACTIVE
+    assert selected.policy == first
+    assert method(_subject(marker="c"), max_retained_policies=1).policy is None
+    registry._journal.close()  # noqa: SLF001 -- fixture restart, not production lifecycle API
+    restarted = _registry(tmp_path, port)
+    assert restarted.select_for_inspection_bounded(_subject(), max_retained_policies=1) == selected
+
+
+def test_bounded_inspection_policy_refuses_retained_overflow_before_remote_resolution(
+    tmp_path: Path,
+) -> None:
+    """Truncating a revoked entry could make the apparent unique current policy misleading."""
+    first, authority = _bound_policy()
+    second, second_authority = _bound_policy(policy_id="second-policy")
+    port = FakePolicyAuthorityPort(authority, second_authority)
+    registry = _registry(tmp_path, port)
+    registry.admit(first, actor="authority", now=NOW)
+    registry.admit(second, actor="authority", now=NOW)
+    registry.revoke(first.policy_id, first.version, actor="authority", now=NOW)
+    port.resolutions.clear()
+    method = getattr(registry, "select_for_inspection_bounded", None)
+    assert callable(method), "bounded inspection policy selection is missing"
+    from ksi_core.domains.external.ingress.external_validation_policy import (
+        ExternalValidationPolicySelectionBudgetExceeded,
+    )
+
+    with pytest.raises(ExternalValidationPolicySelectionBudgetExceeded):
+        method(_subject(), max_retained_policies=1)
+    assert port.resolutions == []
+    assert method(_subject(), max_retained_policies=2).policy == second
+
+
+def test_bounded_inspection_policy_rechecks_budget_after_external_resolution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A new admission during authority resolution must not return a stale unique policy."""
+    first, authority = _bound_policy()
+    second, second_authority = _bound_policy(policy_id="second-policy")
+    port = FakePolicyAuthorityPort(authority, second_authority)
+    registry = _registry(tmp_path, port)
+    registry.admit(first, actor="authority", now=NOW)
+    original = port.resolve
+    admitted = False
+
+    def resolve(digest: str, now: datetime) -> PolicyAuthorityRecord | None:
+        nonlocal admitted
+        if not admitted:
+            admitted = True
+            registry.admit(second, actor="authority", now=NOW)
+        return original(digest, now)
+
+    monkeypatch.setattr(port, "resolve", resolve)
+    method = getattr(registry, "select_for_inspection_bounded", None)
+    assert callable(method), "bounded inspection policy selection is missing"
+    from ksi_core.domains.external.ingress.external_validation_policy import (
+        ExternalValidationPolicySelectionBudgetExceeded,
+    )
+
+    with pytest.raises(ExternalValidationPolicySelectionBudgetExceeded):
+        method(_subject(), max_retained_policies=1)
+
+
 def _event_digest(event: dict[str, object]) -> str:
     body = {key: value for key, value in event.items() if key != "eventDigest"}
     return "sha256:" + hashlib.sha256(canonical_json_bytes(body)).hexdigest()
@@ -758,11 +843,130 @@ def test_selection_releases_registry_lock_while_authority_resolution_waits(tmp_p
     assert selected == [PolicySelectionStatus.ACTIVE]
 
 
+def test_bounded_inspection_selection_rejects_retained_history_before_authority_resolution(
+    tmp_path: Path,
+) -> None:
+    first, first_authority = _bound_policy(policy_id="policy-1")
+    second, second_authority = _bound_policy(policy_id="policy-2")
+    port = FakePolicyAuthorityPort(first_authority, second_authority)
+    registry = _registry(tmp_path, port)
+    assert registry.admit(first, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    assert registry.admit(second, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    port.resolutions.clear()
+
+    with pytest.raises(RuntimeError, match="policy selection source budget exceeded"):
+        registry.select_for_inspection_bounded(_subject(), max_retained_policies=1)
+
+    assert port.resolutions == []
+
+
+def test_bounded_inspection_selection_rechecks_policy_budget_after_concurrent_admission(
+    tmp_path: Path,
+) -> None:
+    first, first_authority = _bound_policy(policy_id="policy-1")
+    second, second_authority = _bound_policy(policy_id="policy-2")
+    port = FakePolicyAuthorityPort(first_authority, second_authority)
+    registry = _registry(tmp_path, port)
+    assert registry.admit(first, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    entered = threading.Event()
+    release = threading.Event()
+    selected: list[PolicySelectionStatus] = []
+    errors: list[BaseException] = []
+    resolution_lock = threading.Lock()
+    resolution_count = 0
+    original_resolve = port.resolve
+
+    def block_selection(
+        authority_record_digest: str, now: datetime
+    ) -> PolicyAuthorityRecord | None:
+        nonlocal resolution_count
+        with resolution_lock:
+            resolution_count += 1
+            should_block = resolution_count == 1
+        if should_block:
+            entered.set()
+            assert release.wait(timeout=3)
+        return original_resolve(authority_record_digest, now)
+
+    port.resolve = block_selection  # type: ignore[method-assign]
+
+    def select() -> None:
+        try:
+            selected.append(
+                registry.select_for_inspection_bounded(_subject(), max_retained_policies=1).status
+            )
+        except BaseException as exc:
+            errors.append(exc)
+
+    selector = threading.Thread(target=select, daemon=True)
+    try:
+        selector.start()
+        assert entered.wait(timeout=1)
+        assert (
+            registry.admit(second, actor="authority", now=NOW).status
+            is PolicyReceiptStatus.ADMITTED
+        )
+    finally:
+        release.set()
+        selector.join(timeout=2)
+
+    assert not selector.is_alive()
+    assert selected == []
+    assert len(errors) == 1
+    assert "policy selection source budget exceeded" in str(errors[0])
+
+
+def test_bounded_inspection_selection_ignores_foreign_subject_policy_history(
+    tmp_path: Path,
+) -> None:
+    target_subject = _subject()
+    foreign_subject = target_subject.model_copy(
+        update={"organization_id": "organization-2", "site_id": "site-2"}
+    )
+    target, target_authority = _bound_policy(policy_id="target-policy", subjects=(target_subject,))
+    foreign, foreign_authority = _bound_policy(
+        policy_id="foreign-policy", subjects=(foreign_subject,)
+    )
+    port = FakePolicyAuthorityPort(target_authority, foreign_authority)
+    registry = _registry(tmp_path, port)
+    assert (
+        registry.admit(target, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    )
+    assert (
+        registry.admit(foreign, actor="authority", now=NOW).status
+        is PolicyReceiptStatus.ADMITTED
+    )
+    port.resolutions.clear()
+
+    selected = registry.select_for_inspection_bounded(
+        target_subject, max_retained_policies=1
+    )
+
+    assert selected.status is PolicySelectionStatus.ACTIVE
+    assert selected.policy == target
+    assert len(port.resolutions) == 1
+
+
+def test_bounded_inspection_policy_index_is_restored_from_journal(tmp_path: Path) -> None:
+    policy, authority = _bound_policy()
+    port = FakePolicyAuthorityPort(authority)
+    path = tmp_path / "bounded-policy-index.jsonl"
+    registry = _registry_for_journal(DurableJournal(path), port)
+    assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
+    registry._journal.close()  # noqa: SLF001 - replay must reconstruct the bounded index.
+
+    restored = _registry_for_journal(DurableJournal(path), port)
+    selected = restored.select_for_inspection_bounded(_subject(), max_retained_policies=1)
+
+    assert selected.status is PolicySelectionStatus.ACTIVE
+    assert selected.policy == policy
+
+
 def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority_resolution(
     tmp_path: Path,
 ) -> None:
     """A policy revoked while its external resolution waits cannot become selectable."""
-    policy, authority = _bound_policy(uses=("EVIDENCE",))
+    policy, authority = _bound_policy(uses=("INSPECTION",))
     port = FakePolicyAuthorityPort(authority)
     registry = _registry(tmp_path, port)
     assert registry.admit(policy, actor="authority", now=NOW).status is PolicyReceiptStatus.ADMITTED
@@ -770,6 +974,20 @@ def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority
     release = threading.Event()
     revoked = threading.Event()
     selected: list[PolicySelectionStatus] = []
+    snapshot_calls = 0
+    original_snapshot = registry._active_selection_snapshot
+
+    def bounded_snapshot(
+        subject_digest: str | None = None,
+    ) -> tuple[tuple[ExternalValidationPolicyV1, PolicyAuthorityRecord], ...]:
+        nonlocal snapshot_calls
+        with registry._lock:
+            assert subject_digest is not None
+            assert len(registry._entry_keys_by_subject_digest.get(subject_digest, ())) <= 1
+            snapshot_calls += 1
+        return original_snapshot(subject_digest)
+
+    registry._active_selection_snapshot = bounded_snapshot  # type: ignore[method-assign]
     resolution_count = 0
     resolution_lock = threading.Lock()
     original_resolve = port.resolve
@@ -788,7 +1006,11 @@ def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority
 
     port.resolve = block_only_selection  # type: ignore[method-assign]
     selector = threading.Thread(
-        target=lambda: selected.append(registry.select_for_use("EVIDENCE", (_subject(),)).status),
+        target=lambda: selected.append(
+            registry.select_for_inspection_bounded(
+                _subject(), max_retained_policies=1
+            ).status
+        ),
         daemon=True,
     )
 
@@ -810,7 +1032,8 @@ def test_selection_fails_closed_when_registry_lifecycle_changes_during_authority
 
     assert not selector.is_alive()
     assert not revoker.is_alive()
-    assert selected == [PolicySelectionStatus.POLICY_UNAVAILABLE]
+    assert selected == [PolicySelectionStatus.INSPECTION_PENDING_POLICY]
+    assert snapshot_calls == 2
 
 
 def test_single_volume_is_a_single_subject_use(tmp_path: Path) -> None:

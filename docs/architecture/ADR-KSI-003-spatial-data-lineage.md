@@ -3,6 +3,14 @@
 - 상태: ACCEPTED (2026-07-29, 대표자 확정)
 - 관련: MASTER_PRD §15.4, PRODUCT_CONSTITUTION §지도철학, INV-020, INV-024, ADR-008(Provider-agnostic processing)
 
+> **Applicability after ADR-KSI-036 D6:** This ADR's Point Cloud source SSOT is the
+> KSI-managed reconstruction lineage. An externally reconstructed customer result remains
+> external derived evidence at registration and cannot inherit this managed source authority.
+> The D6 customer-PC DJI Terra reference workflow does not require point-cloud submission:
+> ortho may be registered for viewing, DSM is required for eligible height/relative-volume uses,
+> point cloud/DTM are function-specific, and mesh is optional visualization. This note preserves
+> INV-051 and does not delete or weaken any managed lineage rule.
+
 ## 맥락
 
 KSI Processing은 정사영상·Dense Point Cloud·Mesh/Texture/3D Tiles·BIM 정합을 생성한다

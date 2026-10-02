@@ -155,9 +155,7 @@ def test_edge_route_observer_is_a_roleless_path_safe_single_permission_principal
         role=None,
         device_id="edge-1",
     )
-    AuthRegistry(
-        [PrincipalTokenRecord(token_sha256=_digest("route-observer"), principal=observer)]
-    )
+    AuthRegistry([PrincipalTokenRecord(token_sha256=_digest("route-observer"), principal=observer)])
     assert principal_permissions(observer) == frozenset({Permission.CAPABILITY_RUNTIME_OBSERVE})
 
     for role, device_id in ((Role.VIEWER, "edge-1"), (None, None), (None, "edge/1")):
@@ -219,9 +217,7 @@ def test_edge_route_observer_is_denied_unrelated_edge_gateway_human_and_worker_r
     app = FastAPI()
     mount_auth(
         app,
-        AuthRegistry(
-            [PrincipalTokenRecord(token_sha256=_digest(token), principal=observer)]
-        ),
+        AuthRegistry([PrincipalTokenRecord(token_sha256=_digest(token), principal=observer)]),
     )
     gateway_permission = require_permission(Permission.GATEWAY_CONNECTIVITY_WRITE)
 
@@ -256,7 +252,7 @@ def test_edge_route_observer_is_denied_unrelated_edge_gateway_human_and_worker_r
 
 
 @pytest.mark.parametrize(
-"bad_digest",
+    "bad_digest",
     [
         "A" * 64,  # 대문자 거부
         "z" * 64,  # hex 밖 문자
@@ -436,6 +432,8 @@ def test_admin_has_all_operator_permissions_except_edge_ingest() -> None:
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
+            Permission.SPATIAL_DATA_REQUEST,
         }
     )
     assert Permission.EDGE_SYNC_INGEST not in perms
@@ -456,6 +454,8 @@ def test_field_operator_permissions() -> None:
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
+            Permission.SPATIAL_DATA_REQUEST,
         }
     )
     assert Permission.SITES_AUTONOMY_APPROVE not in perms
@@ -471,6 +471,7 @@ def test_viewer_permissions() -> None:
             Permission.MISSIONS_READ,
             Permission.EVENTS_READ,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
         }
     )
     assert Permission.ORGANIZATION_MEMBERS_MANAGE not in perms
@@ -564,6 +565,46 @@ def test_no_role_has_processing_work() -> None:
     전이 권한표). ADMIN 을 포함한 **모든** 역할이 대상이다.
     """
     assert all(Permission.PROCESSING_WORK not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def test_analysis_worker_permissions_are_separate_from_processing_worker() -> None:
+    analysis_worker = Principal(
+        principal_id="analysis-worker-1",
+        kind=PrincipalKind.ANALYSIS_WORKER,
+        role=None,
+        device_id=None,
+    )
+
+    assert principal_permissions(analysis_worker) == frozenset({Permission.ANALYSIS_WORK})
+    assert principal_permissions(_worker()) == frozenset({Permission.PROCESSING_WORK})
+    assert all(Permission.ANALYSIS_WORK not in perms for perms in _ROLE_PERMISSIONS.values())
+
+
+def test_analysis_worker_is_rejected_by_generic_processing_route() -> None:
+    token = "analysis-worker-cannot-process-generic-jobs"
+    principal = Principal(
+        principal_id="analysis-worker-1",
+        kind=PrincipalKind.ANALYSIS_WORKER,
+        role=None,
+        device_id=None,
+    )
+    app = FastAPI()
+    mount_auth(
+        app,
+        AuthRegistry([PrincipalTokenRecord(token_sha256=_digest(token), principal=principal)]),
+    )
+
+    @app.get("/v1/processing-only")
+    def processing_only(
+        _: Principal = Depends(require_permission(Permission.PROCESSING_WORK)),  # noqa: B008
+    ) -> dict[str, bool]:
+        return {"allowed": True}
+
+    response = TestClient(app).get(
+        "/v1/processing-only", headers={"Authorization": f"Bearer {token}"}
+    )
+
+    assert response.status_code == 403
 
 
 def _worker(**overrides: object) -> Principal:
@@ -795,6 +836,8 @@ def test_whoami_operator() -> None:
                 "WORK_ORDERS_WRITE",
                 "REOBSERVATION_APPROVE",
                 "COPILOT_QUERY",
+                "SPATIAL_DATA_READ",
+                "SPATIAL_DATA_REQUEST",
             ]
         ),
     }

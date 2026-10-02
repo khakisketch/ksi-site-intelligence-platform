@@ -23,7 +23,7 @@ from ksi_geo_spatial.crs import (
 )
 from rasterio import features, windows
 from rasterio.errors import RasterioError
-from rasterio.transform import Affine
+from rasterio.transform import Affine, array_bounds
 
 from ksi_change_detection.dsm_diff import DiffResult, _same_frame
 
@@ -56,6 +56,25 @@ class ExternalVolumeZoneMeasurement:
 
     zone_id: str
     metrics: ExternalVolumeMetricsV1
+
+
+@dataclass(frozen=True, slots=True)
+class ExternalVolumeZoneCoverageMeasurement:
+    """Fixed-profile metrics plus lossless masks on the complete zone window.
+
+    The caller owns serialising the masks.  Arrays are intentionally returned
+    only by this import-only algorithm, never by the pre-existing V1 metric
+    surface, so the latter's wire behavior remains unchanged.
+    """
+
+    zone_id: str
+    metrics: ExternalVolumeMetricsV1
+    row_offset: int
+    column_offset: int
+    selected_mask: np.ndarray[Any, np.dtype[np.bool_]]
+    common_valid_mask: np.ndarray[Any, np.dtype[np.bool_]]
+    unavailable_mask: np.ndarray[Any, np.dtype[np.bool_]]
+    bounds: tuple[float, float, float, float]
 
 
 @dataclass(frozen=True, slots=True)
@@ -479,9 +498,163 @@ def measure_external_volume_zone(
     return ExternalVolumeZoneMeasurement(zone_id=parameters.zone_id, metrics=metrics)
 
 
+def measure_fixed_profile_external_volume_zone(
+    diff: DiffResult,
+    polygon_geojson: dict[str, Any],
+    *,
+    zone_id: str,
+    from_crs: str,
+    maximum_zone_grid_cells: int,
+) -> ExternalVolumeZoneCoverageMeasurement | ExternalVolumeMeasurementError:
+    """Measure the non-relaxable V2 profile and retain its complete mask facts.
+
+    This has the same grid, interpolation-independent full-zone selection and
+    coverage denominator as :func:`measure_external_volume_zone`, but fixes
+    the approved values ``threshold_m=0`` and ``minimum_common_valid_fraction=1``.
+    Exact-zero deltas are valid common cells and affect neither cut nor fill;
+    they are not threshold exclusions.
+    """
+    parameter_error = _validate_parameters(
+        zone_id=zone_id,
+        threshold_m=0.0,
+        minimum_common_valid_fraction=1.0,
+        maximum_zone_grid_cells=maximum_zone_grid_cells,
+        baseline_rmse_m=None,
+        current_rmse_m=None,
+    )
+    if isinstance(parameter_error, ExternalVolumeMeasurementError):
+        return parameter_error
+    parameters = parameter_error
+    validated_grid = _validate_diff_grid(diff)
+    if isinstance(validated_grid, ExternalVolumeMeasurementError):
+        return validated_grid
+    if not isinstance(from_crs, str) or not from_crs.strip():
+        return _error(
+            ExternalVolumeMeasurementErrorReason.INVALID_INPUT,
+            "from_crs must be a non-empty CRS string",
+        )
+    try:
+        source_crs = normalise_crs(from_crs)
+        assert_polygon_is_usable(polygon_geojson, crs=source_crs)
+        geometry = (
+            polygon_geojson
+            if _same_frame(source_crs, validated_grid.crs)
+            else reproject_geometry(
+                polygon_geojson,
+                from_crs=source_crs,
+                to_crs=validated_grid.crs,
+            )
+        )
+        assert_polygon_is_usable(geometry, crs=validated_grid.crs)
+    except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+        return _error(
+            ExternalVolumeMeasurementErrorReason.INVALID_ZONE,
+            f"zone geometry is invalid or cannot be projected: {exc}",
+        )
+    window = _full_window(geometry, validated_grid.transform, parameters.maximum_zone_grid_cells)
+    if isinstance(window, ExternalVolumeMeasurementError):
+        return window
+    row_start, row_stop, col_start, col_stop = window
+    selected = _masked_full_zone(
+        geometry,
+        transform=validated_grid.transform,
+        row_start=row_start,
+        row_stop=row_stop,
+        col_start=col_start,
+        col_stop=col_stop,
+    )
+    if isinstance(selected, ExternalVolumeMeasurementError):
+        return selected
+    selected_cell_count = int(selected.sum())
+    if selected_cell_count == 0:
+        return _error(
+            ExternalVolumeMeasurementErrorReason.EMPTY_ZONE,
+            "zone selects no baseline-grid cell centers",
+        )
+    available = np.zeros(selected.shape, dtype=np.bool_)
+    delta = np.zeros(selected.shape, dtype=np.float64)
+    source_row_start = max(0, row_start)
+    source_row_stop = min(diff.diff_m.shape[0], row_stop)
+    source_col_start = max(0, col_start)
+    source_col_stop = min(diff.diff_m.shape[1], col_stop)
+    if source_row_start < source_row_stop and source_col_start < source_col_stop:
+        target_rows = slice(source_row_start - row_start, source_row_stop - row_start)
+        target_cols = slice(source_col_start - col_start, source_col_stop - col_start)
+        source_rows = slice(source_row_start, source_row_stop)
+        source_cols = slice(source_col_start, source_col_stop)
+        available[target_rows, target_cols] = diff.valid[source_rows, source_cols]
+        delta[target_rows, target_cols] = diff.diff_m[source_rows, source_cols]
+    common = selected & available
+    unavailable = selected & ~available
+    common_valid_cell_count = int(common.sum())
+    if common_valid_cell_count == 0:
+        return _error(
+            ExternalVolumeMeasurementErrorReason.EMPTY_COMMON_VALID_COVERAGE,
+            "zone has no common valid DSM cells",
+            zone_cell_count=selected_cell_count,
+            common_valid_cell_count=0,
+        )
+    if common_valid_cell_count != selected_cell_count:
+        return _error(
+            ExternalVolumeMeasurementErrorReason.INSUFFICIENT_COMMON_VALID_COVERAGE,
+            "fixed profile requires every selected zone cell to be commonly valid",
+            zone_cell_count=selected_cell_count,
+            common_valid_cell_count=common_valid_cell_count,
+        )
+    common_delta = delta[common]
+    fill_m3 = float(common_delta[common_delta > 0.0].sum() * validated_grid.cell_area_m2)
+    cut_m3 = float(-common_delta[common_delta < 0.0].sum() * validated_grid.cell_area_m2)
+    zone_area_m2 = float(selected_cell_count * validated_grid.cell_area_m2)
+    try:
+        metrics = ExternalVolumeMetricsV1(
+            zone_cell_count=selected_cell_count,
+            common_valid_cell_count=common_valid_cell_count,
+            zone_area_m2=zone_area_m2,
+            measured_area_m2=zone_area_m2,
+            common_valid_fraction=1.0,
+            cut_m3=cut_m3,
+            fill_m3=fill_m3,
+            net_m3=fill_m3 - cut_m3,
+            threshold_m=0.0,
+            uncertainty_m3=None,
+            uncertainty_note="Fixed V2 profile does not calculate uncertaintyM3.",
+        )
+    except ValueError as exc:
+        return _error(ExternalVolumeMeasurementErrorReason.INVALID_INPUT, str(exc))
+    local_transform = validated_grid.transform * Affine.translation(col_start, row_start)
+    try:
+        left, bottom, right, top = (
+            float(value)
+            for value in array_bounds(selected.shape[0], selected.shape[1], local_transform)
+        )
+        bounds = (left, bottom, right, top)
+    except (TypeError, ValueError, OverflowError) as exc:
+        return _error(
+            ExternalVolumeMeasurementErrorReason.INVALID_INPUT,
+            f"zone bounds cannot be represented: {exc}",
+        )
+    if not all(math.isfinite(value) for value in bounds):
+        return _error(
+            ExternalVolumeMeasurementErrorReason.INVALID_INPUT,
+            "zone bounds cannot be represented as finite values",
+        )
+    return ExternalVolumeZoneCoverageMeasurement(
+        zone_id=parameters.zone_id,
+        metrics=metrics,
+        row_offset=row_start,
+        column_offset=col_start,
+        selected_mask=selected,
+        common_valid_mask=common,
+        unavailable_mask=unavailable,
+        bounds=bounds,
+    )
+
+
 __all__ = [
     "ExternalVolumeMeasurementError",
     "ExternalVolumeMeasurementErrorReason",
+    "ExternalVolumeZoneCoverageMeasurement",
     "ExternalVolumeZoneMeasurement",
+    "measure_fixed_profile_external_volume_zone",
     "measure_external_volume_zone",
 ]

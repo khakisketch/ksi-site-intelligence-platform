@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
 
+from ksi_event_contracts.external_analysis_activation import AnalysisActivationV1
+
 from ksi_core.evidence import DigestBoundEvidenceStorage, ObjectStorageObservationPort
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
 from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
@@ -43,6 +45,116 @@ class ExternalSingleVolumeWiring:
     store: Any
     input_capability_issuer: Any
     execution_activator: Any
+
+
+@dataclass(frozen=True)
+class ExternalAnalysisWiring:
+    """Explicit local-only AP/NX graph required to expose Analysis API routes.
+
+    This value is deliberately supplied by a caller that has already constructed
+    the common Core graph.  Production assembly does not synthesize it from
+    environment configuration.
+    """
+
+    facade: Any
+    intents: Any
+    assessments: Any
+    calculations: Any
+    capability_issuer: Any
+    activation: AnalysisActivationV1 | None = None
+
+
+@dataclass(frozen=True)
+class ExternalAnalysisLocalGraphConfig:
+    """Trusted local AP/NX material required for an Analysis API assembly.
+
+    The caller supplies sealed profile, runtime, and resource facts.  It does
+    not supply stores: common assembly creates the facade against its exact
+    reconstruction, inspection, evidence, validation, WorkArea, and
+    coordinator participants after those have been built.
+    """
+
+    policy: Any
+    runtime: Any
+    resource_envelope: Any
+
+
+def build_external_analysis_wiring(
+    *,
+    journal: Callable[[str], Any],
+    config: ExternalAnalysisLocalGraphConfig,
+    reconstruction: Any,
+    inspections: Any,
+    work_areas: Any,
+    evidence: Any,
+    validations: Any,
+    storage: Any,
+    sites: Any,
+    work_orders: Any,
+    coordinator: Any,
+    activation: AnalysisActivationV1 | None = None,
+) -> ExternalAnalysisWiring:
+    """Construct the additive local graph from exact common-assembly stores."""
+    participants = (reconstruction, inspections, work_areas, evidence, validations)
+    if (
+        storage is None
+        or any(item is None for item in participants)
+        or sites is None
+        or work_orders is None
+    ):
+        raise ValueError("external analysis requires the complete local external graph")
+    if any(getattr(item, "coordinator", None) is not coordinator for item in participants):
+        raise ValueError("external analysis requires the common coordinator participants")
+
+    from ksi_core.domains.external.quantity.external_analysis_api import ExternalAnalysisFacade
+    from ksi_core.domains.external.quantity.external_analysis_intents import AnalysisIntentStore
+    from ksi_core.domains.external.quantity.external_analysis_s3_capabilities import (
+        ExternalAnalysisS3InputCapabilityIssuer,
+    )
+    from ksi_core.domains.external.quantity.external_relative_volume_analysis import (
+        ExternalRelativeVolumeAnalysisStore,
+    )
+    from ksi_core.domains.external.quantity.external_relative_volume_calculations import (
+        ExternalRelativeVolumeCalculationStore,
+    )
+
+    assessments = ExternalRelativeVolumeAnalysisStore(
+        journal("external-analysis-assessments.jsonl"),
+        reconstruction=reconstruction,
+        inspections=inspections,
+        work_areas=work_areas,
+        evidence=evidence,
+        validations=validations,
+        policy=config.policy,
+        runtime=config.runtime,
+        coordinator=coordinator,
+    )
+    calculations = ExternalRelativeVolumeCalculationStore(
+        journal("external-analysis-calculations.jsonl"),
+        assessments=assessments,
+        resource_envelope=config.resource_envelope,
+        coordinator=coordinator,
+    )
+    intents = AnalysisIntentStore(journal("external-analysis-intents.jsonl"))
+    return ExternalAnalysisWiring(
+        facade=ExternalAnalysisFacade(
+            intents=intents,
+            assessments=assessments,
+            calculations=calculations,
+            reconstructions=reconstruction,
+            sites=sites,
+            work_areas=work_areas,
+            work_orders=work_orders,
+        ),
+        intents=intents,
+        assessments=assessments,
+        calculations=calculations,
+        capability_issuer=ExternalAnalysisS3InputCapabilityIssuer(
+            reconstruction=reconstruction,
+            storage=storage,
+        ),
+        activation=activation,
+    )
 
 
 @dataclass(frozen=True)

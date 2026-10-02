@@ -381,4 +381,11 @@ def test_replay_preserves_report_time_display_obligation_after_same_time_revocat
         external_reconstruction=_Ingress(),
         clock=lambda: NOW,
     )
+    snapshot = restarted.public_snapshot_bounded(
+        subject(), max_records=128, max_policy_records=64
+    )
+    assert snapshot.report is not None
+    assert snapshot.report.report_digest == report(
+        request_id=issued.request.request_id, policy=policy
+    ).report_digest
     assert restarted._records[issued.request.request_id].display_required  # noqa: SLF001

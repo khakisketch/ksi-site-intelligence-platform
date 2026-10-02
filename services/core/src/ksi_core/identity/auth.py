@@ -6,7 +6,7 @@
 보유한다(조립 시 digest 레코드 주입) — 서버 어디에도 토큰 원문이 남지 않는다.
 외부 Operations Console 사람은 OIDC JWT를, 장비·워커는 이 opaque registry를 사용한다.
 
-## Principal 5종 (2-enum 분리 관습)
+## Principal 7종 (2-enum 분리 관습)
 
 - ``OPERATOR``(사람): :class:`Role` 필수, ``device_id`` 는 가질 수 없다. 권한은
   모듈 상수 ``_ROLE_PERMISSIONS`` 표 하나로만 결정된다(엔드포인트 산재 금지).
@@ -20,6 +20,10 @@
   ``EDGE_ROUTE_PORT`` scope와 다시 exact-match한다.
 - ``PROCESSING_WORKER``(3D 재구성 워커): role 없음, ``device_id`` 도 없음. 권한은
   항상 ``{PROCESSING_WORK}`` 고정.
+- ``ANALYSIS_WORKER``(외부 Analysis 계산 워커): role 없음, ``device_id`` 도 없음.
+  권한은 항상 ``{ANALYSIS_WORK}`` 고정이며 3D 재구성 권한과 분리한다.
+- ``ANALYSIS_MCP_CLIENT``(외부 Analysis MCP 클라이언트): role/device 없음,
+  명시적인 Site/WorkArea grant 필수. Analysis API 전용 읽기·생성 권한만 받는다.
 
 ## 왜 워커가 별도 종류인가 — ``EDGE_DEVICE`` 재사용 금지
 
@@ -98,13 +102,17 @@ class Role(StrEnum):
 
 
 class PrincipalKind(StrEnum):
-    """Principal 종류 — 사람·gateway·Edge·route observer·처리 워커는 분리한다."""
+    """Principal 종류 — 사람·gateway·Edge·route observer·각 워커는 분리한다."""
 
     OPERATOR = "OPERATOR"
     GATEWAY_DEVICE = "GATEWAY_DEVICE"
     EDGE_DEVICE = "EDGE_DEVICE"
     EDGE_ROUTE_OBSERVER = "EDGE_ROUTE_OBSERVER"
     PROCESSING_WORKER = "PROCESSING_WORKER"
+    ANALYSIS_WORKER = "ANALYSIS_WORKER"
+    ANALYSIS_MCP_CLIENT = "ANALYSIS_MCP_CLIENT"
+    SPATIAL_DATA_WORKER = "SPATIAL_DATA_WORKER"
+    SPATIAL_DATA_CLIENT = "SPATIAL_DATA_CLIENT"
 
 
 class TokenStatus(StrEnum):
@@ -177,6 +185,14 @@ class Permission(StrEnum):
     # 3D 재구성 워커 전용 — 처리 작업의 실행 사실 보고(RUNNING/SUCCEEDED/FAILED)와
     # 산출물 등록. 어느 Role 에도 매핑되지 않는다(모듈 docstring).
     PROCESSING_WORK = "PROCESSING_WORK"
+    # 고객 소유 산출물 Analysis 워커 전용. PROCESSING_WORK와 권한을 공유하지 않는다.
+    ANALYSIS_WORK = "ANALYSIS_WORK"
+    # External Analysis MCP client only; these do not imply generic Site access.
+    ANALYSIS_API_READ = "ANALYSIS_API_READ"
+    ANALYSIS_API_CREATE = "ANALYSIS_API_CREATE"
+    SPATIAL_DATA_WORK = "SPATIAL_DATA_WORK"
+    SPATIAL_DATA_READ = "SPATIAL_DATA_READ"
+    SPATIAL_DATA_REQUEST = "SPATIAL_DATA_REQUEST"
     # blast radius 가 큰 site 전이만 가른다(ADR-KSI-015 D2) — 자율비행 개시
     # (MODEL_VALIDATION→PROVISIONAL_AUTONOMY)·정식 순찰 승인(PROVISIONAL_
     # AUTONOMY→PATROL_READY)·운영중단 진입/복귀(↔SUSPENDED). 대상 전이 집합
@@ -221,6 +237,10 @@ class Principal:
     # 기존 단일조직 journal/fixture는 ``legacy``로 replay한다. 신규 production
     # provisioning은 명시적 organizationId를 공급해야 한다(INV-060).
     organization_id: str = "legacy"
+    # OIDC subject registry가 부여한 명시적 자원 scope. ``None``은 기존 opaque
+    # 신원의 미분화 의미를 보존하며, 매핑 OIDC 신원은 빈 집합도 명시한다.
+    allowed_site_ids: frozenset[str] | None = None
+    allowed_work_area_ids: frozenset[str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -326,17 +346,67 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
                 f"{principal.principal_id}: device_id 는 경로-안전 문자만 허용한다"
                 " (eventKey 의 경로 세그먼트 절반이 된다)"
             )
-    elif principal.kind is PrincipalKind.PROCESSING_WORKER:
+    elif principal.kind in (
+        PrincipalKind.PROCESSING_WORKER,
+        PrincipalKind.SPATIAL_DATA_WORKER,
+        PrincipalKind.SPATIAL_DATA_CLIENT,
+    ):
         if principal.role is not None:
             raise AuthRegistryError(
-                f"{principal.principal_id}: PROCESSING_WORKER 는 role 을 가질 수 없다"
+                f"{principal.principal_id}: {principal.kind.value} 는 role 을 가질 수 없다"
             )
         if principal.device_id is not None:
             # 재구성 워커는 기체가 아니다 — device_id 를 허용하면 존재하지 않는
             # 기체 식별자가 원장에 흘러든다(모듈 docstring).
             raise AuthRegistryError(
-                f"{principal.principal_id}: PROCESSING_WORKER 는 device_id 를 가질 수 없다"
+                f"{principal.principal_id}: {principal.kind.value} 는 device_id 를 가질 수 없다"
             )
+    elif principal.kind is PrincipalKind.ANALYSIS_WORKER:
+        if principal.role is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: ANALYSIS_WORKER 는 role 을 가질 수 없다"
+            )
+        if principal.device_id is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: ANALYSIS_WORKER 는 device_id 를 가질 수 없다"
+            )
+    elif principal.kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
+        if principal.role is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: ANALYSIS_MCP_CLIENT 는 role 을 가질 수 없다"
+            )
+        if principal.device_id is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: ANALYSIS_MCP_CLIENT 는 device_id 를 가질 수 없다"
+            )
+        for grant_name, grants in (
+            ("allowed_site_ids", principal.allowed_site_ids),
+            ("allowed_work_area_ids", principal.allowed_work_area_ids),
+        ):
+            if (
+                type(grants) is not frozenset
+                or not grants
+                or any(
+                    not isinstance(grant, str) or not is_path_safe_identifier(grant)
+                    for grant in grants
+                )
+            ):
+                raise AuthRegistryError(
+                    f"{principal.principal_id}: ANALYSIS_MCP_CLIENT 는 명시적인 경로-안전 "
+                    f"{grant_name} 집합이 필요하다"
+                )
+
+    for name, grants in (
+        ("allowed_site_ids", principal.allowed_site_ids),
+        ("allowed_work_area_ids", principal.allowed_work_area_ids),
+    ):
+        if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT and not grants:
+            raise AuthRegistryError(f"{principal.principal_id}: explicit {name} required")
+        if grants is not None and (
+            type(grants) is not frozenset
+            or any(type(grant) is not str or not is_path_safe_identifier(grant) for grant in grants)
+        ):
+            raise AuthRegistryError(f"{principal.principal_id}: invalid {name}")
 
 
 class AuthRegistry:
@@ -361,7 +431,7 @@ class AuthRegistry:
             if existing is not None and existing != record.principal:
                 raise AuthRegistryError(
                     f"principal_id {principal_id!r} 가 서로 다른 신원으로 중복 등록됐다 — "
-                    "같은 id 는 회전 중인 토큰이라도 kind/role/deviceId 가 완전히 같아야 한다"
+                    "같은 id 는 회전 중인 토큰이라도 신원과 grant 가 완전히 같아야 한다"
                 )
             by_digest[record.token_sha256] = record
             principal_by_id[principal_id] = record.principal
@@ -410,6 +480,8 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
+            Permission.SPATIAL_DATA_REQUEST,
         }
     ),
     Role.FIELD_OPERATOR: frozenset(
@@ -423,6 +495,8 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.WORK_ORDERS_WRITE,
             Permission.REOBSERVATION_APPROVE,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
+            Permission.SPATIAL_DATA_REQUEST,
         }
     ),
     Role.VIEWER: frozenset(
@@ -431,6 +505,7 @@ _ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.MISSIONS_READ,
             Permission.EVENTS_READ,
             Permission.COPILOT_QUERY,
+            Permission.SPATIAL_DATA_READ,
         }
     ),
 }
@@ -466,6 +541,128 @@ _EDGE_ROUTE_OBSERVER_PERMISSIONS: frozenset[Permission] = frozenset(
 # 뚫렸을 때 blast radius 가 제품 전체가 된다.
 _PROCESSING_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.PROCESSING_WORK})
 
+# Analysis 계산은 별도 승인·실행 경로를 사용하므로 generic processing worker 자격은
+# Analysis를 조회하거나 변경할 수 없다.
+_ANALYSIS_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.ANALYSIS_WORK})
+
+# External MCP callers reach only the mounted Analysis API. These are not Site or
+# WorkOrder permissions and must never authorize unrelated Core routes.
+_ANALYSIS_MCP_CLIENT_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.ANALYSIS_API_READ, Permission.ANALYSIS_API_CREATE}
+)
+
+# The MCP identity is limited at the authenticated request boundary as well as
+# by its Analysis-only permissions. Match FastAPI's route template and method,
+# never a raw path prefix that could admit lookalike or nested routes.
+_ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/v1/sites/{site_id}/analysis-observations"),
+        ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"),
+        ("GET", "/v2/sites/{site_id}/analyses"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/coverage"),
+    }
+)
+
+# Customer OIDC operators with explicit resource grants may reach only the audited
+# first-pilot routes whose handlers enforce Site/WorkArea scope. Keep this separate
+# from the MCP allowlist: these human routes include reviewed registration and
+# operational workflows, while generic Core routes remain closed by default.
+_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", "/v1/auth/whoami"),
+        ("GET", "/v1/sites"),
+        ("GET", "/v1/sites/{site_id}"),
+        ("GET", "/v1/sites/{site_id}/work-areas"),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets",
+        ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}",
+        ),
+        ("POST", "/v1/sites/{site_id}/work-areas"),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/archive"),
+        ("POST", "/v1/sites/{site_id}/observation-schedules"),
+        ("GET", "/v1/sites/{site_id}/observation-schedules"),
+        ("POST", "/v1/sites/{site_id}/observation-work-orders"),
+        ("GET", "/v1/sites/{site_id}/observation-work-orders"),
+        ("GET", "/v1/observation-work-orders"),
+        ("GET", "/v1/observation-work-orders/{work_order_id}"),
+        ("GET", "/v1/observation-work-orders/{work_order_id}/operations"),
+        ("GET", "/v1/observation-work-order-operations"),
+        ("POST", "/v1/observation-work-orders/{work_order_id}/operations/assignment"),
+        ("PUT", "/v1/observation-work-orders/{work_order_id}/operations/due-date"),
+        ("POST", "/v1/observation-work-orders/{work_order_id}/operations/close"),
+        ("POST", "/v1/observation-work-orders/{work_order_id}/operations/reopen"),
+        ("POST", "/v1/observation-work-orders/{work_order_id}/approve"),
+        ("POST", "/v1/observation-work-orders/{work_order_id}/reobservation-drafts"),
+        ("GET", "/v1/observation-work-orders/{work_order_id}/reobservation-drafts"),
+        ("POST", "/v1/reobservation-drafts/{draft_id}/approve"),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-context",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2",
+        ),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
+        ),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/upload-grants",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/seal",
+        ),
+        ("GET", "/v1/work-inbox"),
+        ("POST", "/v1/work-inbox/{notification_ref}/read"),
+        ("POST", "/v1/external-relative-volume-reports/{report_ref}/shares"),
+        ("POST", "/v1/external-single-volume-reports/{report_ref}/shares"),
+        ("GET", "/v1/sites/{site_id}/analysis-observations"),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/analyses"),
+        ("GET", "/v1/sites/{site_id}/analyses"),
+        ("GET", "/v1/sites/{site_id}/analyses/{analysis_id}"),
+        ("GET", "/v1/sites/{site_id}/analyses/{analysis_id}/result"),
+        ("GET", "/v1/sites/{site_id}/analyses/{analysis_id}/evidence"),
+        ("POST", "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"),
+        ("GET", "/v2/sites/{site_id}/analyses"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/coverage"),
+    }
+)
+
+_SPATIAL_DATA_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.SPATIAL_DATA_WORK})
+_SPATIAL_DATA_CLIENT_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.SPATIAL_DATA_READ, Permission.SPATIAL_DATA_REQUEST}
+)
+_SPATIAL_DATA_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests"
+_SPATIAL_DATA_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    {
+        ("GET", _SPATIAL_DATA_BASE),
+        ("POST", _SPATIAL_DATA_BASE),
+        ("GET", _SPATIAL_DATA_BASE + "/{request_id}"),
+        ("POST", _SPATIAL_DATA_BASE + "/{request_id}/cancel"),
+        ("GET", _SPATIAL_DATA_BASE + "/{request_id}/file"),
+        ("HEAD", _SPATIAL_DATA_BASE + "/{request_id}/file"),
+    }
+)
+
 
 def principal_permissions(principal: Principal) -> frozenset[Permission]:
     """Principal 의 유효 권한 집합. 장비·워커는 고정, OPERATOR 는 role 표 조회."""
@@ -477,6 +674,14 @@ def principal_permissions(principal: Principal) -> frozenset[Permission]:
         return _EDGE_ROUTE_OBSERVER_PERMISSIONS
     if principal.kind is PrincipalKind.PROCESSING_WORKER:
         return _PROCESSING_WORKER_PERMISSIONS
+    if principal.kind is PrincipalKind.ANALYSIS_WORKER:
+        return _ANALYSIS_WORKER_PERMISSIONS
+    if principal.kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
+        return _ANALYSIS_MCP_CLIENT_PERMISSIONS
+    if principal.kind is PrincipalKind.SPATIAL_DATA_WORKER:
+        return _SPATIAL_DATA_WORKER_PERMISSIONS
+    if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
+        return _SPATIAL_DATA_CLIENT_PERMISSIONS
     if principal.role is None:
         # AuthRegistry 를 거친 Principal 은 이 분기에 도달하지 않는다(생성 시
         # role 필수를 거부) — 레지스트리 밖에서 직접 구성된 불변식 위반 객체가
@@ -494,8 +699,10 @@ _BEARER_SCHEME = HTTPBearer(
     bearerFormat="OIDC operator JWT 또는 opaque device credential",
     description=(
         "사람 OPERATOR는 배포 mode에 따라 OIDC JWT를 사용하고, "
-        "GATEWAY_DEVICE·EDGE_DEVICE·EDGE_ROUTE_OBSERVER·PROCESSING_WORKER는 "
-        "별도 opaque 장비 자격을 사용한다. EDGE_ROUTE_OBSERVER는 dedicated credential로 "
+        "GATEWAY_DEVICE·EDGE_DEVICE·EDGE_ROUTE_OBSERVER·PROCESSING_WORKER·"
+        "ANALYSIS_WORKER·ANALYSIS_MCP_CLIENT는 "
+        "별도 opaque 자격을 사용한다. ANALYSIS_MCP_CLIENT는 Analysis API에만 접근하며 "
+        "KSI가 설정한 Site/WorkArea grant 를 가진다. EDGE_ROUTE_OBSERVER는 dedicated credential로 "
         "CAPABILITY_RUNTIME_OBSERVE 하나와 자기 EDGE_ROUTE_PORT scope만 가진다."
     ),
 )
@@ -509,9 +716,7 @@ _BEARER_SCHEME = HTTPBearer(
 # 가 인증한 Principal에서만 설정되고, 요청 밖의 원장 재생·배치 작업에는 설정되지
 # 않는다. 따라서 내부 조정 코드는 명시적 ``get_scoped``를 쓸 수 있고, 공개 API의
 # legacy mission consumer는 중앙 경계를 자동으로 상속한다(INV-060).
-_REQUEST_PRINCIPAL: ContextVar[Principal | None] = ContextVar(
-    "ksi_request_principal", default=None
-)
+_REQUEST_PRINCIPAL: ContextVar[Principal | None] = ContextVar("ksi_request_principal", default=None)
 
 
 def current_request_organization_id() -> str | None:
@@ -533,15 +738,12 @@ def _unauthorized() -> HTTPException:
     )
 
 
-def _resolve_principal(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Security(_BEARER_SCHEME),  # noqa: B008
-) -> Principal:
-    """Authorization 헤더에서 Bearer 토큰을 파싱·해석한다.
+def resolve_bearer_principal(request: Request, token: str, *, now: datetime) -> Principal:
+    """Fresh authentication only, retaining opaque/device and OIDC migration semantics.
 
-    scheme 비교는 RFC 7235 대소문자 관용을 따른다("bearer"/"Bearer"/"BEARER" 모두
-    허용). registry 가 ``app.state.auth_registry`` 에 없으면 조립 결함이므로
-    :class:`RuntimeError` 로 즉시 드러낸다(인증 우회를 조용히 통과시키지 않는다).
+    Opaque expiry uses the supplied instant. The existing OIDC verifier owns its JWT
+    wall clock and mapping/current JWKS behavior; no cached Principal is reused here.
+    Route authorization and resource scope remain the caller's separate gates.
     """
     registry = getattr(request.app.state, "auth_registry", None)
     if registry is None:
@@ -550,12 +752,13 @@ def _resolve_principal(
             "mount_auth() 없이 보호 라우트를 장착한 조립 결함이다"
         )
 
-    if credentials is None or credentials.scheme.lower() != "bearer" or not credentials.credentials:
+    if type(token) is not str or not token:
         raise _unauthorized()
-    token = credentials.credentials
+    if now.tzinfo is None or now.utcoffset() != UTC.utcoffset(now):
+        raise ValueError("authentication time must be UTC-aware")
 
     mode = getattr(request.app.state, "human_auth_mode", HumanAuthMode.OPAQUE)
-    opaque_principal = registry.resolve(token, now=datetime.now(UTC))
+    opaque_principal = registry.resolve(token, now=now)
 
     # 장비·워커는 사람 migration mode와 무관하게 기존 자격을 유지한다.
     if opaque_principal is not None and opaque_principal.kind is not PrincipalKind.OPERATOR:
@@ -572,7 +775,21 @@ def _resolve_principal(
     raise _unauthorized()
 
 
+def _resolve_principal(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Security(_BEARER_SCHEME),  # noqa: B008
+) -> Principal:
+    """Parse the case-insensitive Bearer scheme and use the same fresh resolver."""
+    token = (
+        credentials.credentials
+        if credentials is not None and credentials.scheme.lower() == "bearer"
+        else ""
+    )
+    return resolve_bearer_principal(request, token, now=datetime.now(UTC))
+
+
 async def _principal_request_scope(
+    request: Request,
     principal: Principal = Depends(_resolve_principal),  # noqa: B008
 ) -> AsyncIterator[Principal]:
     """인증된 Principal을 요청 수명 동안 ContextVar로 제공한다.
@@ -582,6 +799,26 @@ async def _principal_request_scope(
     ``set``하면 sync dependency thread의 context가 endpoint까지 전달되지 않을 수
     있고, reset하지 않으면 요청 간 문맥 오염 위험이 생긴다.
     """
+
+    if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
+        route_path = getattr(request.scope.get("route"), "path", None)
+        if (request.method.upper(), route_path) not in _SPATIAL_DATA_ROUTE_ALLOWLIST:
+            raise HTTPException(status_code=403, detail="권한이 부족하다")
+    elif principal.kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", None)
+        if (request.method.upper(), route_path) not in _ANALYSIS_MCP_ROUTE_ALLOWLIST:
+            raise HTTPException(status_code=403, detail="권한이 부족하다")
+    elif principal.kind is PrincipalKind.OPERATOR and (
+        principal.allowed_site_ids is not None or principal.allowed_work_area_ids is not None
+    ):
+        route = request.scope.get("route")
+        route_path = getattr(route, "path", None)
+        if (
+            request.method.upper(),
+            route_path,
+        ) not in (_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST | _SPATIAL_DATA_ROUTE_ALLOWLIST):
+            raise HTTPException(status_code=403, detail="권한이 부족하다")
 
     token = _REQUEST_PRINCIPAL.set(principal)
     try:

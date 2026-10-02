@@ -21,11 +21,27 @@ ACTIVE/HISTORICAL/SUPERSEDED 라우팅은 `docs/DOCUMENT_STATUS.md`가 소유한
 제품 결정보다 아래의 repository-governance 정본이며 제품 의미나 현재 capability 상태를
 독자적으로 바꾸지 않는다.
 
-미디어 경로는 ADR-KSI-033에 따라 분리한다. 현재 정상 원본 ingress는
-`SD/저장매체 → 현장 PC → KSI 웹 업로드`, PSDK Liveview는 Manifold 로컬
+미디어 경로는 ADR-KSI-033에 따라 분리한다. `SD/저장매체 → 현장 PC → KSI 웹 업로드`는
+managed/test 또는 별도 승인 source-media ingress이고, PSDK Liveview는 Manifold 로컬
 acquisition/perception 입력, `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata다.
+외부 첫 출시의 customer-owned reconstruction result path는 ADR-KSI-036 D6을 따른다.
 중앙 지속 영상 수신은 핵심 제품 경로가 아니며 자동 원본 반출은 별도
 `MEDIA_PULL`/`MEDIA_UPLOAD` HIL 전까지 목표 경로일 뿐이다.
+
+API-first 토공 분석·통합 작업은 [ADR-KSI-037](architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md)와
+그 [첫 요청 설계](design/API_FIRST_EARTHWORK_FIRST_REQUEST_CONTRACT.md)를 함께 읽는다.
+첫 분석 사례의 완결 MVP는 WorkArea별 주간 2시점 관측 지형 물량 변화 검토다. API·향후 MCP·UI는
+같은 계산·근거 기록을 조회하는 목표이며, 이 문서만으로 endpoint, MCP server, vendor,
+자동 비행 또는 제품 상태 변경을 추정하지 않는다. 현재 slice와 다음 작업은
+`superpowers/product-state.md`가 slice close에서만 갱신한다.
+
+2026-09-30의 [ADR-KSI-038](architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md)은
+상위 제품 목표를 외부 에이전트·산업용 소프트웨어용 공간데이터·분석 기반으로 명확히 한다.
+데이터 제공과 분석의 두 경로를 두며 첫 플랫폼 검증은 DSM·정사영상의 외부 구역 데이터
+활용과 기존 분석 사례를 함께 입증한다. 제품 전체 범위·고객 해석은 038을, 기존 분석의
+계산·권위·정확도·수용 계약은 037을 읽는다. [SDP-20260930](superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)이
+장기 작업과 보완 결정을 연결한다. 현재 지시는 문서·계획 반영만이며 개발은 보류다.
+이번 명시적 방향 개정에 따른 product-state Goal/계획 연결은 slice close나 완료 판정이 아니다.
 
 `KSI Safety`는 별도 제품 구상이다. 드론 밖 센서까지 포함하는 다중센서 실시간 안전
 운영 제품이며, 이 저장소의 Site Intelligence의 안전순찰 Mission을 흡수하거나 대체하지
@@ -82,5 +98,13 @@ registration does not require full raw upload. KSI holds submitted derived outpu
 Ortho-only registration is allowed; missing DSM or other evidence restricts dependent claims,
 not every use. Read ADR-KSI-036 D4/D5 and the
 [active release implementation plan](superpowers/plans/2026-09-06-external-reconstruction-release.md).
-The earlier SD/PC/raw-upload description remains the existing managed/test implementation,
-not the approved customer-workstation first-release target.
+The 2026-09-20 D6 clarification makes customer-controlled DJI Terra on the field PC the initial
+MVP reconstruction **reference workflow** with RTK-equipped Matrice 4D as the initial
+field-validation equipment. It does not verify a Terra license or export, create a KSI provider
+integration, or establish RTK/map/settlement accuracy. KSI is an artifact-inspection,
+compatible-comparison, relative-quantity/evidence, workflow, and re-observation product; it is
+not a proprietary photogrammetry engine or a customer production reconstruction service.
+
+The earlier SD/PC/raw-upload and KSI-managed NodeODM description remains existing managed/test
+implementation and historical evidence, not the approved customer-workstation first-release
+target. Preserve managed source-authority and ProcessingJob rules; do not infer their removal.

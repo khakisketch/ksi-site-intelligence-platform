@@ -24,8 +24,11 @@ from ksi_event_contracts.external_reconstruction import (
     ExternalReconstructionSubmissionV1,
     ExternalReconstructionSubmissionV1Input,
     ExternalReconstructionSubmissionV1Producer,
+    ExternalReconstructionSubmissionV2,
     external_reconstruction_manifest_wire_dict,
+    external_reconstruction_submission_v2_wire_dict,
     external_reconstruction_submission_wire_dict,
+    parse_external_reconstruction_submission_v2,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from ksi_event_contracts.vertical_reference import (
@@ -36,6 +39,7 @@ from pydantic import ValidationError
 
 _SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "contracts" / "schemas"
 _SUBMISSION_SCHEMA = "external-reconstruction-submission.v1.json"
+_SUBMISSION_V2_SCHEMA = "external-reconstruction-submission.v2.json"
 _MANIFEST_SCHEMA = "external-reconstruction-manifest.v1.json"
 _SHA_A = "a" * 64
 _SHA_B = "b" * 64
@@ -120,6 +124,38 @@ def _submission(
     ).sealed()
 
 
+def _submission_v2(
+    artifacts: tuple[ExternalArtifactDeclarationV1, ...],
+) -> ExternalReconstructionSubmissionV2:
+    submitted_at = datetime(2026, 9, 6, 3, 4, 5, tzinfo=UTC)
+    return ExternalReconstructionSubmissionV2(
+        submission_id="external-submission-v2",
+        revision=1,
+        organization_id="organization-1",
+        site_id="site-1",
+        observation_epoch_id="epoch-1",
+        submitted_at=submitted_at,
+        submitted_by="operator-1",
+        producer_declaration=ExternalReconstructionSubmissionV1Producer(
+            software_name="Customer Reconstruction",
+            software_version="2026.9",
+            build_identifier=None,
+            producer_run_identifier="customer-run-1",
+            configuration_digest="sha256:" + _SHA_A,
+            completed_at=submitted_at,
+        ),
+        input_declaration=ExternalReconstructionSubmissionV1Input(
+            raw_media_stored_by_ksi=False,
+            original_retention_locus="customer_workstation",
+            local_input_manifest_digest=None,
+            image_count=None,
+            capture_started_at=None,
+            capture_ended_at=None,
+        ),
+        artifacts=artifacts,
+    ).sealed()
+
+
 def _schema(name: str) -> dict[str, Any]:
     return json.loads((_SCHEMAS_DIR / name).read_text(encoding="utf-8"))
 
@@ -157,7 +193,9 @@ def _bind(submission: ExternalReconstructionSubmissionV1) -> ExternalReconstruct
     )
 
 
-@pytest.mark.parametrize("schema_name", (_SUBMISSION_SCHEMA, _MANIFEST_SCHEMA))
+@pytest.mark.parametrize(
+    "schema_name", (_SUBMISSION_SCHEMA, _SUBMISSION_V2_SCHEMA, _MANIFEST_SCHEMA)
+)
 def test_schema_files_are_explicit_draft_2020_12_contracts(schema_name: str) -> None:
     """Removing the schema dialect marker must fail this contract-file test."""
     schema = _schema(schema_name)
@@ -175,6 +213,174 @@ def test_ortho_only_submission_round_trips_its_schema_without_eligibility_claim(
     assert "eligible" not in wire
     assert "processingJobId" not in wire
     Draft202012Validator(_schema(_SUBMISSION_SCHEMA)).validate(wire)
+
+
+def test_v2_dsm_only_and_optional_ortho_round_trip_with_order_independent_digest() -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    ortho = _artifact("ortho-1", ProcessingArtifactKind.ORTHO, _SHA_B, 100)
+    dsm_only = _submission_v2((dsm,))
+    with_ortho = _submission_v2((ortho, dsm))
+    reordered = _submission_v2((dsm, ortho))
+
+    dsm_wire = external_reconstruction_submission_v2_wire_dict(dsm_only)
+    ortho_wire = external_reconstruction_submission_v2_wire_dict(with_ortho)
+    assert dsm_wire["contractVersion"] == "external-reconstruction-submission.v2"
+    assert [item["kind"] for item in dsm_wire["artifacts"]] == ["dsm"]
+    assert [item["kind"] for item in ortho_wire["artifacts"]] == ["dsm", "ortho"]
+    assert with_ortho.submission_digest == reordered.submission_digest
+    assert "eligible" not in dsm_wire
+    Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA)).validate(dsm_wire)
+    Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA)).validate(ortho_wire)
+
+
+def test_v1_manifest_binds_v2_dsm_submission_digest_and_exact_artifact() -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    submission = _submission_v2((dsm,))
+
+    manifest = ExternalReconstructionManifestV1.from_submission(
+        submission,
+        manifest_id="manifest-v2-dsm",
+        observed_at=datetime.now(UTC),
+        observed_by_service="core-object-observer",
+        organization_id="organization-1",
+        site_id="site-1",
+        observation_epoch_id="epoch-1",
+        entries=(
+            ExternalReconstructionManifestEntryV1(
+                artifact_id="dsm-1",
+                kind=ProcessingArtifactKind.DSM,
+                object_key="exports/dsm-1.tif",
+                observed_sha256=_SHA_A,
+                observed_size_bytes=200,
+                observed_content_type="image/tiff",
+            ),
+        ),
+    )
+
+    assert manifest.contract_version == "external-reconstruction-manifest.v1"
+    assert manifest.submission_digest == submission.submission_digest
+    assert [(entry.artifact_id, entry.kind) for entry in manifest.entries] == [
+        ("dsm-1", ProcessingArtifactKind.DSM)
+    ]
+    Draft202012Validator(_schema(_MANIFEST_SCHEMA)).validate(
+        external_reconstruction_manifest_wire_dict(manifest)
+    )
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ("submissionDigest", "contractVersion", "executionResponsibility", "executionLocus"),
+)
+def test_v2_wire_parser_requires_schema_required_top_level_fields(missing_field: str) -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    wire = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm,)))
+    wire.pop(missing_field)
+
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA)).validate(wire)
+    with pytest.raises(ValueError, match=missing_field):
+        parse_external_reconstruction_submission_v2(wire)
+
+
+@pytest.mark.parametrize(
+    ("section", "missing_field"),
+    (
+        ("inputDeclaration", "localInputManifestDigest"),
+        ("artifacts", "declaredCrs"),
+    ),
+)
+def test_v2_wire_parser_requires_schema_required_fields_with_model_defaults(
+    section: str, missing_field: str
+) -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    wire = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm,)))
+    if section == "artifacts":
+        wire[section][0].pop(missing_field)
+    else:
+        wire[section].pop(missing_field)
+
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA)).validate(wire)
+    with pytest.raises(ValueError, match=missing_field):
+        parse_external_reconstruction_submission_v2(wire)
+
+
+def test_v2_wire_parser_rejects_null_digest_even_though_model_can_build_candidates() -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    wire = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm,)))
+    wire["submissionDigest"] = None
+
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA)).validate(wire)
+    with pytest.raises(ValueError, match="submissionDigest is required"):
+        parse_external_reconstruction_submission_v2(wire)
+
+
+def test_v2_rejects_missing_or_duplicate_dsm_and_duplicate_artifact_identity() -> None:
+    dsm_a = _artifact("dsm-a", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    dsm_b = _artifact("dsm-b", ProcessingArtifactKind.DSM, _SHA_B, 201)
+    ortho = _artifact("ortho-1", ProcessingArtifactKind.ORTHO, _SHA_A, 100)
+    with pytest.raises(ValidationError, match="exactly one dsm"):
+        _submission_v2((ortho,))
+    with pytest.raises(ValidationError, match="at most one ortho"):
+        second_ortho = _artifact("ortho-2", ProcessingArtifactKind.ORTHO, _SHA_B, 101)
+        _submission_v2((dsm_a, ortho, second_ortho))
+    with pytest.raises(ValidationError, match="exactly one dsm"):
+        _submission_v2((dsm_a, dsm_b))
+    with pytest.raises(ValidationError, match="artifactId values must be unique"):
+        _submission_v2((dsm_a, _artifact("dsm-a", ProcessingArtifactKind.ORTHO, _SHA_B, 100)))
+    report_a = _artifact("report-a", ProcessingArtifactKind.REPORT, _SHA_A, 50)
+    report_b = _artifact("report-b", ProcessingArtifactKind.REPORT, _SHA_B, 60)
+    with pytest.raises(ValidationError, match="each artifact kind may appear at most once"):
+        _submission_v2((dsm_a, report_a, report_b))
+
+    schema = Draft202012Validator(_schema(_SUBMISSION_V2_SCHEMA))
+    missing_dsm = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm_a,)))
+    missing_dsm["artifacts"] = [item for item in missing_dsm["artifacts"] if item["kind"] != "dsm"]
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        schema.validate(missing_dsm)
+    duplicate_dsm = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm_a,)))
+    duplicate_dsm["artifacts"].append(
+        external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm_b,)))["artifacts"][0]
+    )
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        schema.validate(duplicate_dsm)
+    duplicate_report = external_reconstruction_submission_v2_wire_dict(
+        _submission_v2((dsm_a, report_a))
+    )
+    duplicate_report["artifacts"].append(
+        external_reconstruction_submission_v2_wire_dict(
+            _submission_v2((dsm_a, report_b))
+        )["artifacts"][0]
+    )
+    with pytest.raises(Exception):  # noqa: B017,PT011 - jsonschema ValidationError
+        schema.validate(duplicate_report)
+
+    duplicate_id = external_reconstruction_submission_v2_wire_dict(
+        _submission_v2((dsm_a, ortho))
+    )
+    duplicate_id["artifacts"][1]["artifactId"] = duplicate_id["artifacts"][0]["artifactId"]
+    duplicate_id["submissionDigest"] = "sha256:" + _SHA_B
+    schema.validate(duplicate_id)  # JSON Schema cannot enforce uniqueness by one property.
+    with pytest.raises(ValidationError, match="artifactId values must be unique"):
+        parse_external_reconstruction_submission_v2(duplicate_id)
+
+
+def test_v2_rejects_forged_digest_and_v1_contract_digest_is_unchanged() -> None:
+    dsm = _artifact("dsm-1", ProcessingArtifactKind.DSM, _SHA_A, 200)
+    v2_wire = external_reconstruction_submission_v2_wire_dict(_submission_v2((dsm,)))
+    v2_wire["artifacts"][0]["declaredSizeBytes"] = 201
+    with pytest.raises(ValidationError, match="submissionDigest"):
+        ExternalReconstructionSubmissionV2.model_validate(v2_wire)
+
+    v1 = _submission()
+    expected_v1_digest = (
+        "sha256:cd1d1c6da7c2001014ad98b406567bd1662028c8bf5e36ec3fd508de9eeef8b9"
+    )
+    assert v1.submission_digest == expected_v1_digest
+    v1_wire = external_reconstruction_submission_wire_dict(v1)
+    assert v1_wire["contractVersion"] == "external-reconstruction-submission.v1"
+    Draft202012Validator(_schema(_SUBMISSION_SCHEMA)).validate(v1_wire)
 
 
 def test_submission_schema_rejects_boolean_values_for_integer_fields() -> None:

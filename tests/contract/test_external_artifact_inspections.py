@@ -8,15 +8,23 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from ksi_core.durable_journal import DurableJournal
-from ksi_core.evidence import EvidenceStorageError, ObjectStorageObservation
-from ksi_core.external_artifact_inspections import (
+from ksi_core.domains.external.ingress.external_artifact_inspections import (
     ExternalArtifactInspectionRecoveryError,
+    ExternalArtifactInspectionSnapshotBudgetExceeded,
     ExternalArtifactInspectionStore,
     ExternalInspectionFailureV1,
     InspectionPhase,
     SealedExternalReconstructionSnapshotPort,
 )
+from ksi_core.domains.external.ingress.external_validation_policy import (
+    ExternalValidationPolicyRegistry,
+    ExternalValidationPolicySelectionBudgetExceeded,
+    PolicyAuthorityPort,
+    PolicyAuthorityRecord,
+    authorized_policy_body_digest,
+)
+from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorageError, ObjectStorageObservation
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_display_artifacts import (
     DisplayArtifactVerdict,
@@ -26,12 +34,6 @@ from ksi_core.external_display_artifacts import (
 from ksi_core.external_reconstruction import (
     ExternalReconstructionRevision,
     ExternalReconstructionStore,
-)
-from ksi_core.external_validation_policy import (
-    ExternalValidationPolicyRegistry,
-    PolicyAuthorityPort,
-    PolicyAuthorityRecord,
-    authorized_policy_body_digest,
 )
 from ksi_core.leasing import LeaseFence
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
@@ -241,12 +243,256 @@ def _stores(
     return store, policy
 
 
+def _delivery_inspection_stores(
+    tmp_path: Path,
+) -> tuple[ExternalArtifactInspectionStore, ExternalValidationPolicyV1, _Authority]:
+    """Shared real Core stores; synthetic report authority does not prove a parser run."""
+    policy, authority = _bound_policy()
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"), authority, clock=lambda: NOW
+    )
+    registry.admit(policy, actor="authority", now=NOW)
+    store = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "inspection.jsonl"),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        coordinator=registry.coordinator,
+        clock=lambda: NOW,
+    )
+    return store, policy, authority
+
+
+def _accept_delivery_inspection(
+    store: ExternalArtifactInspectionStore, policy: ExternalValidationPolicyV1
+) -> ExternalArtifactInspectionReportV1:
+    issued = store.issue_after_seal(subject(), now=NOW)
+    assert issued.request is not None
+    claimed = store.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
+    assert claimed.fence is not None
+    accepted = report(request_id=issued.request.request_id, policy=policy)
+    assert (
+        store.record_report(issued.request.request_id, claimed.fence, accepted, now=NOW).verdict
+        == "REPORTED"
+    )
+    return accepted
+
+
+@pytest.mark.parametrize("budget", [True, False, 0, -1, "1", 1.0, None])
+@pytest.mark.parametrize("field", ["max_records", "max_retained_policies"])
+def test_bounded_inspection_refuses_invalid_budget(
+    tmp_path: Path, budget: object, field: str
+) -> None:
+    """Coerced limits must not enable unlimited report or policy traversal."""
+    store, _, _ = _delivery_inspection_stores(tmp_path)
+    method = getattr(store, "public_snapshot_bounded", None)
+    assert callable(method), "bounded inspection lookup is missing"
+    kwargs = {"max_records": 1, "max_retained_policies": 1, field: budget}
+    with pytest.raises(ValueError):
+        method(subject(), **kwargs)
+
+
+def test_bounded_inspection_returns_detached_retained_report_without_issuing(
+    tmp_path: Path,
+) -> None:
+    """A forged public metadata outcome or aliased report cannot replace retained Core evidence."""
+    store, policy, _ = _delivery_inspection_stores(tmp_path)
+    method = getattr(store, "public_snapshot_bounded", None)
+    assert callable(method), "bounded inspection lookup is missing"
+    assert not (tmp_path / "inspection.jsonl").exists()
+    pending = method(subject(), max_records=1, max_retained_policies=1)
+    assert pending.report is None
+    assert not (tmp_path / "inspection.jsonl").exists()
+    accepted = _accept_delivery_inspection(store, policy)
+    snapshot = method(subject(), max_records=1, max_retained_policies=1)
+    assert snapshot.state == "INSPECTION_REPORTED" and snapshot.report == accepted
+    assert snapshot.request is not None and snapshot.report is not None
+    object.__setattr__(snapshot.request, "request_id", "forged")
+    object.__setattr__(snapshot.report, "report_digest", digest("f"))
+    fresh = method(subject(), max_records=1, max_retained_policies=1)
+    assert fresh.report == accepted
+    assert fresh.request is not None and fresh.request.request_id == accepted.request_id
+    foreign = subject().model_copy(update={"organization_id": "other-organization"})
+    assert method(foreign, max_records=1, max_retained_policies=1).report is None
+
+
+def test_bounded_inspection_exact_subject_index_survives_restart(tmp_path: Path) -> None:
+    """An index absent on replay would lose an authentic historical measured report."""
+    store, policy, _ = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "public_snapshot_bounded", None)
+    assert callable(method), "bounded inspection lookup is missing"
+    registry = store._policy_registry  # noqa: SLF001
+    store._journal.close()  # noqa: SLF001
+    restarted = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "inspection.jsonl"),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        coordinator=registry.coordinator,
+        clock=lambda: NOW,
+    )
+    assert (
+        restarted.public_snapshot_bounded(subject(), max_records=1, max_retained_policies=1).report
+        == accepted
+    )
+
+
+def test_final_inspection_recheck_is_local_exact_and_withdrawal_closes_access(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-resolving remote authority under the guard, or trusting a supplied report, is unsafe."""
+    store, policy, authority = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "data_report_for_locally_current_use", None)
+    assert callable(method), "final local inspection recheck is missing"
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("final inspection guard performed external policy resolution")
+
+    monkeypatch.setattr(authority, "resolve", forbidden)
+    with store.coordinator.guarded_read():
+        assert method(subject(), accepted, now=NOW) == accepted
+        forged = accepted.model_copy(update={"report_digest": digest("f")})
+        assert method(subject(), forged, now=NOW) is None
+        foreign = subject().model_copy(update={"organization_id": "other-organization"})
+        assert method(foreign, accepted, now=NOW) is None
+        assert method(subject(), accepted, now=NOW + timedelta(minutes=2)) is None
+    with authority.coordinator.mutation():
+        authority._records.clear()  # noqa: SLF001 -- synthetic authority withdrawal
+    assert method(subject(), accepted, now=NOW) is None
+
+
+def test_final_inspection_recheck_refuses_retained_report_after_policy_revocation(
+    tmp_path: Path,
+) -> None:
+    """Immutable historical report retrieval does not authorize bytes after revocation."""
+    store, policy, _ = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "data_report_for_locally_current_use", None)
+    assert callable(method), "final local inspection recheck is missing"
+    registry = store._policy_registry  # noqa: SLF001
+    registry.revoke(policy.policy_id, policy.version, actor="authority", now=NOW)
+    assert method(subject(), accepted, now=NOW) is None
+    assert (
+        store.historical_report(
+            subject(),
+            report_digest=_sealed_digest(accepted.report_digest),
+            policy_digest=_sealed_digest(policy.policy_digest),
+        )
+        == accepted
+    )
+
+
+def test_bounded_inspection_refuses_complete_history_overflow(tmp_path: Path) -> None:
+    """Picking the last report from a truncated history could hide a changed current inspection."""
+    store, policy, authority = _delivery_inspection_stores(tmp_path)
+    _accept_delivery_inspection(store, policy)
+    method = getattr(store, "public_snapshot_bounded", None)
+    assert callable(method), "bounded inspection lookup is missing"
+    template = (
+        policy_template()
+        .model_copy(update={"policy_id": "replacement", "policy_digest": None})
+        .sealed()
+    )
+    record = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=template.version,
+        authorized_policy_body_digest=authorized_policy_body_digest(template),
+        permitted_subjects=(subject(),),
+        permitted_uses=("INSPECTION", "DISPLAY"),
+        authorized_actor_ids=("authority",),
+        active_from=NOW - timedelta(minutes=1),
+        active_until=NOW + timedelta(minutes=1),
+        synthetic_test_only=True,
+    ).sealed()
+    replacement = template.model_copy(
+        update={"authority_record_digest": record.digest, "policy_digest": None}
+    ).sealed()
+    registry = store._policy_registry  # noqa: SLF001
+    registry.revoke(policy.policy_id, policy.version, actor="authority", now=NOW)
+    authority._records[_sealed_digest(record.digest)] = record  # noqa: SLF001
+    registry.admit(replacement, actor="authority", now=NOW)
+    assert store.issue_after_seal(subject(), now=NOW).verdict == "ISSUED"
+    from ksi_core.domains.external.ingress.external_artifact_inspections import (
+        ExternalArtifactInspectionSnapshotBudgetExceeded,
+    )
+
+    with pytest.raises(ExternalArtifactInspectionSnapshotBudgetExceeded):
+        method(subject(), max_records=1, max_retained_policies=2)
+    assert method(subject(), max_records=2, max_retained_policies=2).report is None
+
+
+@pytest.mark.parametrize("failed_journal", ["inspection", "policy"])
+def test_final_inspection_recheck_refuses_sealed_dependency(
+    tmp_path: Path, failed_journal: str
+) -> None:
+    """An in-memory historical projection is not current authority after its journal closes."""
+    store, policy, _ = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "data_report_for_locally_current_use", None)
+    assert callable(method), "final local inspection recheck is missing"
+    dependency = store if failed_journal == "inspection" else store._policy_registry  # noqa: SLF001
+    dependency._journal.close()  # noqa: SLF001
+    assert method(subject(), accepted, now=NOW) is None
+
+
+def test_final_inspection_recheck_refuses_different_coordinators(tmp_path: Path) -> None:
+    """An independently locked legacy metadata store cannot supply an atomic delivery gate."""
+    store, policy = _stores(tmp_path, active=True)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "data_report_for_locally_current_use", None)
+    assert callable(method), "final local inspection recheck is missing"
+    assert method(subject(), accepted, now=NOW) is None
+
+
+def test_bounded_retained_report_lookup_is_exact_and_does_not_resolve_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Frozen data jobs must authenticate their retained report without remote I/O in a guard."""
+    store, policy, authority = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "retained_report_bounded", None)
+    assert callable(method), "bounded retained report lookup missing"
+    monkeypatch.setattr(authority, "resolve", lambda *args: pytest.fail("remote authority lookup"))
+    retained = method(subject(), report_digest=accepted.report_digest, max_records=1)
+    assert retained == accepted
+    assert method(subject(), report_digest=digest("f"), max_records=1) is None
+    foreign = subject().model_copy(update={"organization_id": "other-organization"})
+    assert method(foreign, report_digest=accepted.report_digest, max_records=1) is None
+    object.__setattr__(retained, "report_digest", digest("f"))
+    assert method(subject(), report_digest=accepted.report_digest, max_records=1) == accepted
+    for limit in (True, 0, -1, "1", None):
+        with pytest.raises(ValueError):
+            method(subject(), report_digest=accepted.report_digest, max_records=limit)
+
+
 def test_reconcile_issues_once_after_policy_arrives(tmp_path: Path) -> None:
     """Selecting a default policy or duplicate issue event would fail this test."""
     store, policy = _stores(tmp_path, active=False)
     assert store.issue_after_seal(subject(), now=NOW).verdict == "INSPECTION_PENDING_POLICY"
     store._policy_registry.admit(policy, actor="authority", now=NOW)  # noqa: SLF001
     assert (store.reconcile_sealed(now=NOW), store.reconcile_sealed(now=NOW)) == (1, 0)
+
+
+def test_bounded_public_snapshot_fails_closed_when_policy_selection_budget_is_exceeded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _policy = _stores(tmp_path, active=False)
+
+    def over_budget(
+        sealed_subject: SealedExternalSubjectV1, *, max_retained_policies: int
+    ) -> object:
+        assert sealed_subject == subject()
+        assert max_retained_policies == 7
+        raise ExternalValidationPolicySelectionBudgetExceeded(
+            "policy selection source budget exceeded"
+        )
+
+    monkeypatch.setattr(
+        store._policy_registry, "select_for_inspection_bounded", over_budget
+    )
+
+    with pytest.raises(ExternalArtifactInspectionSnapshotBudgetExceeded):
+        store.public_snapshot_bounded(subject(), max_records=1, max_policy_records=7)
 
 
 def test_stale_fence_cannot_finalize_but_successor_can(tmp_path: Path) -> None:
@@ -595,9 +841,7 @@ def test_retry_attempts_are_policy_bound_and_deadline_does_not_reset(tmp_path: P
     assert exhausted_event["kind"] == "external-artifact-inspection-exhausted"
     assert deadline_store.list_pending(1) == ()
 
-    count_store, _policy = _stores(
-        tmp_path / "count", active=True, max_deadline_seconds=20.0
-    )
+    count_store, _policy = _stores(tmp_path / "count", active=True, max_deadline_seconds=20.0)
     count_issued = count_store.issue_after_seal(subject(), now=NOW)
     assert count_issued.request is not None
     for worker, acquisition, claimed_at in (
@@ -605,16 +849,22 @@ def test_retry_attempts_are_policy_bound_and_deadline_does_not_reset(tmp_path: P
         (WORKER_B, ACQUISITION_B, NOW + timedelta(seconds=5)),
         (WORKER_A, ACQUISITION_C, NOW + timedelta(seconds=9)),
     ):
-        assert count_store.claim(
+        assert (
+            count_store.claim(
+                count_issued.request.request_id,
+                LeaseFence(worker, acquisition, 0),
+                now=claimed_at,
+            ).verdict
+            == "LEASED"
+        )
+    assert (
+        count_store.claim(
             count_issued.request.request_id,
-            LeaseFence(worker, acquisition, 0),
-            now=claimed_at,
-        ).verdict == "LEASED"
-    assert count_store.claim(
-        count_issued.request.request_id,
-        LeaseFence(WORKER_B, "123e4567-e89b-42d3-a456-426614174006", 0),
-        now=NOW + timedelta(seconds=14),
-    ).verdict == "RETRY_EXHAUSTED"
+            LeaseFence(WORKER_B, "123e4567-e89b-42d3-a456-426614174006", 0),
+            now=NOW + timedelta(seconds=14),
+        ).verdict
+        == "RETRY_EXHAUSTED"
+    )
     count_event = tuple(count_store._journal.replay())[-1]  # noqa: SLF001
     assert count_event["reason"] == "RETRY_EXHAUSTED"
     assert count_store.list_pending(1) == ()
@@ -771,12 +1021,15 @@ def test_historical_obligation_ignores_later_display_competition_but_execution_d
     assert issued.request is not None
     first = store.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
     assert first.fence is not None
-    assert store.record_report(
-        issued.request.request_id,
-        first.fence,
-        report(request_id=issued.request.request_id, policy=primary),
-        now=NOW,
-    ).phase is InspectionPhase.DISPLAY
+    assert (
+        store.record_report(
+            issued.request.request_id,
+            first.fence,
+            report(request_id=issued.request.request_id, policy=primary),
+            now=NOW,
+        ).phase
+        is InspectionPhase.DISPLAY
+    )
     assert registry.historical_use_permitted(
         _sealed_digest(primary.policy_digest),
         use="DISPLAY",
@@ -809,9 +1062,10 @@ def test_historical_obligation_ignores_later_display_competition_but_execution_d
         == "POLICY_UNAVAILABLE"
     )
     assert store.input_for(issued.request.request_id, first.fence).verdict == "POLICY_UNAVAILABLE"
-    assert store.heartbeat(
-        issued.request.request_id, first.fence, now=current_time[0]
-    ).verdict == "POLICY_UNAVAILABLE"
+    assert (
+        store.heartbeat(issued.request.request_id, first.fence, now=current_time[0]).verdict
+        == "POLICY_UNAVAILABLE"
+    )
 
 
 def test_revoked_policy_repairs_missing_display_journal_but_blocks_execution(
@@ -843,12 +1097,15 @@ def test_revoked_policy_repairs_missing_display_journal_but_blocks_execution(
     assert issued.request is not None
     initial = queue.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
     assert initial.fence is not None
-    assert queue.record_report(
-        issued.request.request_id,
-        initial.fence,
-        report(request_id=issued.request.request_id, policy=policy),
-        now=NOW,
-    ).phase is InspectionPhase.DISPLAY
+    assert (
+        queue.record_report(
+            issued.request.request_id,
+            initial.fence,
+            report(request_id=issued.request.request_id, policy=policy),
+            now=NOW,
+        ).phase
+        is InspectionPhase.DISPLAY
+    )
     assert display.phase_for(issued.request.request_id) is DisplayPhase.NOT_REQUIRED
 
     registry.revoke(policy.policy_id, policy.version, actor="authority", now=NOW)
@@ -1071,10 +1328,8 @@ def test_display_input_rechecks_source_capability_after_presigning(tmp_path: Pat
         assert resumed.fence is not None
 
         if scenario == "expiry":
-            storage.mutate = (
-                lambda current_time=current_time: current_time.__setitem__(
-                    0, NOW + timedelta(seconds=10)
-                )
+            storage.mutate = lambda current_time=current_time: current_time.__setitem__(
+                0, NOW + timedelta(seconds=10)
             )
         elif scenario == "takeover":
 
@@ -1093,6 +1348,7 @@ def test_display_input_rechecks_source_capability_after_presigning(tmp_path: Pat
 
             storage.mutate = _takeover
         elif scenario == "revocation":
+
             def _revoke(
                 registry: ExternalValidationPolicyRegistry = registry,
                 policy: ExternalValidationPolicyV1 = policy,
@@ -1301,9 +1557,7 @@ def test_display_input_rejects_superseded_policy_before_presigning(tmp_path: Pat
     )
     issued = queue.issue_after_seal(subject(), now=NOW)
     assert issued.request is not None
-    initial = queue.claim(
-        issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW
-    )
+    initial = queue.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
     assert initial.fence is not None
     assert (
         queue.record_report(
@@ -1392,8 +1646,7 @@ def test_reported_display_remains_discoverable_when_enqueue_crashes(tmp_path: Pa
     assert (
         queue.heartbeat(
             issued.request.request_id, successor.fence, now=NOW + timedelta(seconds=5)
-        )
-        .phase
+        ).phase
         is InspectionPhase.DISPLAY
     )
     assert (
@@ -1402,8 +1655,7 @@ def test_reported_display_remains_discoverable_when_enqueue_crashes(tmp_path: Pa
             successor.fence,
             accepted,
             now=NOW + timedelta(seconds=5),
-        )
-        .phase
+        ).phase
         is InspectionPhase.DISPLAY
     )
     queue.reconcile_sealed(now=NOW + timedelta(seconds=5))
@@ -1532,12 +1784,15 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
             now=NOW,
         )
         assert first.fence is not None
-        assert queue.record_report(
-            issued.request.request_id,
-            first.fence,
-            report(request_id=issued.request.request_id, policy=policy),
-            now=NOW,
-        ).verdict == "REPORTED"
+        assert (
+            queue.record_report(
+                issued.request.request_id,
+                first.fence,
+                report(request_id=issued.request.request_id, policy=policy),
+                now=NOW,
+            ).verdict
+            == "REPORTED"
+        )
         current_time[0] = NOW + timedelta(seconds=5)
         resumed = queue.claim(
             issued.request.request_id,
@@ -1565,16 +1820,25 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
         declared_derivative_size_bytes=123,
         declared_derivative_content_type="image/tiff",
     )
-    assert expiry_display.grant(
-        expiry_request.request_id, expiry_declaration, expiry_fence, now=NOW + timedelta(seconds=5)
-    ).grant is not None
+    assert (
+        expiry_display.grant(
+            expiry_request.request_id,
+            expiry_declaration,
+            expiry_fence,
+            now=NOW + timedelta(seconds=5),
+        ).grant
+        is not None
+    )
     assert expiry_storage.last_put_key is not None
     expiry_storage.objects[expiry_storage.last_put_key] = SyntheticObservation(
         expiry_storage.last_put_key, True, 123, digest("9"), "image/tiff"
     )
-    assert expiry_display.seal(
-        expiry_request.request_id, expiry_fence, now=NOW + timedelta(seconds=5)
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        expiry_display.seal(
+            expiry_request.request_id, expiry_fence, now=NOW + timedelta(seconds=5)
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
 
     # A real successor claim while HEAD is in flight fences the prior worker.
     current_time[0] = NOW
@@ -1591,12 +1855,15 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
             "declaration_digest": None,
         }
     )
-    assert takeover_display.grant(
-        takeover_request.request_id,
-        takeover_declaration,
-        takeover_fence,
-        now=NOW + timedelta(seconds=5),
-    ).grant is not None
+    assert (
+        takeover_display.grant(
+            takeover_request.request_id,
+            takeover_declaration,
+            takeover_fence,
+            now=NOW + timedelta(seconds=5),
+        ).grant
+        is not None
+    )
     assert takeover_storage.last_put_key is not None
     takeover_storage.objects[takeover_storage.last_put_key] = SyntheticObservation(
         takeover_storage.last_put_key, True, 123, digest("9"), "image/tiff"
@@ -1612,14 +1879,18 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
         assert successor.fence is not None and successor.fence.lease_generation == 3
 
     takeover_storage._mutate = claim_successor_during_head  # noqa: SLF001 - I/O race seam.
-    assert takeover_display.seal(
-        takeover_request.request_id,
-        takeover_fence,
-        now=NOW + timedelta(seconds=5),
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        takeover_display.seal(
+            takeover_request.request_id,
+            takeover_fence,
+            now=NOW + timedelta(seconds=5),
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
 
     # A fresh report/lease pair isolates policy revocation from expiry/takeover.
     current_time[0] = NOW
+
     def revoke_policy_during_head() -> object:
         return registry.revoke(
             policy.policy_id,
@@ -1641,16 +1912,25 @@ def test_display_seal_rechecks_real_lease_and_policy_after_head(tmp_path: Path) 
             "declaration_digest": None,
         }
     )
-    assert revoke_display.grant(
-        revoke_request.request_id, revoke_declaration, revoke_fence, now=NOW + timedelta(seconds=5)
-    ).grant is not None
+    assert (
+        revoke_display.grant(
+            revoke_request.request_id,
+            revoke_declaration,
+            revoke_fence,
+            now=NOW + timedelta(seconds=5),
+        ).grant
+        is not None
+    )
     assert revoke_storage.last_put_key is not None
     revoke_storage.objects[revoke_storage.last_put_key] = SyntheticObservation(
         revoke_storage.last_put_key, True, 123, digest("9"), "image/tiff"
     )
-    assert revoke_display.seal(
-        revoke_request.request_id, revoke_fence, now=NOW + timedelta(seconds=5)
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        revoke_display.seal(
+            revoke_request.request_id, revoke_fence, now=NOW + timedelta(seconds=5)
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
 
 
 def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Path) -> None:
@@ -1681,14 +1961,13 @@ def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Pat
     )
     issued = queue.issue_after_seal(subject(), now=NOW)
     assert issued.request is not None
-    claimed = queue.claim(
-        issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW
-    )
+    claimed = queue.claim(issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW)
     assert claimed.fence is not None
     retained = report(request_id=issued.request.request_id, policy=policy)
-    assert queue.record_report(
-        issued.request.request_id, claimed.fence, retained, now=NOW
-    ).verdict == "REPORTED"
+    assert (
+        queue.record_report(issued.request.request_id, claimed.fence, retained, now=NOW).verdict
+        == "REPORTED"
+    )
     declaration = SanitizedDisplayDeclarationV1(
         display_id="sealed-retry-display",
         request_id=issued.request.request_id,
@@ -1700,9 +1979,10 @@ def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Pat
         declared_derivative_size_bytes=123,
         declared_derivative_content_type="image/tiff",
     )
-    assert display.grant(
-        issued.request.request_id, declaration, claimed.fence, now=NOW
-    ).grant is not None
+    assert (
+        display.grant(issued.request.request_id, declaration, claimed.fence, now=NOW).grant
+        is not None
+    )
     assert storage.last_put_key is not None
     storage.objects[storage.last_put_key] = SyntheticObservation(
         storage.last_put_key, True, 123, digest("9"), "image/tiff"
@@ -1713,13 +1993,19 @@ def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Pat
     sealed_events = tuple(display._journal.replay())  # noqa: SLF001 - durable retry boundary.
 
     stale_generation = LeaseFence(WORKER_A, ACQUISITION, 999)
-    assert display.seal(  # A forged/superseded generation cannot read a receipt as work success.
-        issued.request.request_id, stale_generation, now=NOW
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        display.seal(  # A forged/superseded generation cannot read a receipt as work success.
+            issued.request.request_id, stale_generation, now=NOW
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
     current_time[0] = NOW + timedelta(seconds=5)
-    assert display.seal(  # The formerly exact fence expires after the receipt is sealed.
-        issued.request.request_id, claimed.fence, now=current_time[0]
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        display.seal(  # The formerly exact fence expires after the receipt is sealed.
+            issued.request.request_id, claimed.fence, now=current_time[0]
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
     assert tuple(display._journal.replay()) == sealed_events  # noqa: SLF001
 
     queue._journal.close()  # noqa: SLF001 - process-boundary replay assertion.
@@ -1737,12 +2023,18 @@ def test_sealed_display_retry_rechecks_current_fence_after_restart(tmp_path: Pat
         display_store=restarted_display,
         clock=lambda: current_time[0],
     )
-    assert restarted_display.seal(
-        issued.request.request_id, stale_generation, now=current_time[0]
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
-    assert restarted_display.seal(
-        issued.request.request_id, claimed.fence, now=current_time[0]
-    ).verdict is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    assert (
+        restarted_display.seal(
+            issued.request.request_id, stale_generation, now=current_time[0]
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
+    assert (
+        restarted_display.seal(
+            issued.request.request_id, claimed.fence, now=current_time[0]
+        ).verdict
+        is DisplayArtifactVerdict.LEASE_FENCE_REJECTED
+    )
     assert tuple(restarted_display._journal.replay()) == sealed_events  # noqa: SLF001
     assert restarted_queue.public_snapshot(subject()).phase is InspectionPhase.COMPLETE
 
