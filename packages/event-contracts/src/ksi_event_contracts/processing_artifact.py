@@ -66,13 +66,16 @@ replay 에서 ``None``으로 재생된다(``extra="forbid"``는 *추가* 필드�
 
 ## ``auxiliary_files`` — mesh-multi-file-artifact-persistence
 
-산출물 하나가 파일 여러 개(메시의 .obj+.mtl+텍스처)로 이뤄질 때, ``digest``는
-이미 그 전부를 정렬된 (경로, 내용) 결합으로 해싱한 값이다
-(``ksi_processing_controller.odm.digest_archive_entries``와 동형 — 이 필드
-신설 이전부터 그랬다, risk mesh-digest-ignores-textures 참고). 이 필드는 digest
-계산식을 바꾸지 않고, 그 파일들 중 주 파일(``objectKey``가 가리키는 파일) 외
-나머지의 저장 위치를 알려주는 **basename 목록**일 뿐이다 — 빈 배열(기본값)이면
-파일 하나짜리 산출물(v1.0과 동일 동작)이다.
+산출물 하나가 파일 여러 개(메시의 .obj+.mtl+텍스처)로 이뤄질 때 이 필드는
+주 파일 외 나머지의 **basename 목록**이다. 빈 배열(기본값)이면 파일 하나짜리다.
+generation-owned ``AuthoritativeArtifactManifestV1``의 신규 산출물은 ``digest``가
+주 파일 ``primary.sha256``와 같아야 한다. 텍스처·재질은 manifest의 이름별
+바인딩 sha256/byte 수/object key로 각각 고정된다(Core ``CandidateArtifact``).
+
+legacy journal은 ``digest_archive_entries``와 동형인 정렬된 (경로, 내용) 결합
+digest를 사용할 수 있다. 그 기록·프로필·reader 의미는 그대로 보존한다. 이
+계약 모델은 digest를 재계산하거나 과거 다중파일 결과를 현재 manifest로 승격하지
+않는다. 신규 worker producer만 이미 존재하는 fenced manifest 계약을 따른다.
 """
 
 from __future__ import annotations

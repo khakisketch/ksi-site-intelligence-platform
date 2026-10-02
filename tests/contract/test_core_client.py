@@ -30,6 +30,7 @@ from ksi_event_contracts.vertical_reference import (
 )
 from ksi_processing_controller.comparison_worker import LeaseHeartbeat
 from ksi_processing_controller.core_client import (
+    ArtifactObjectBinding,
     ArtifactSubmission,
     CheckpointValidationMeasurement,
     CoreClientError,
@@ -754,6 +755,40 @@ def test_register_artifact_success() -> None:
             crs="EPSG:32610", gsd=None,
         ),
     )
+
+
+def test_register_artifact_bindings_match_the_core_request_model() -> None:
+    """Real serialized bytes must satisfy Core, not just a capture-only transport."""
+    import json
+
+    from ksi_core.processing_jobs import ProcessingArtifactRequest
+
+    captured: list[dict[str, object]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        captured.append(json.loads(request.content))
+        return httpx.Response(201, json={"verdict": "ARTIFACT_REGISTERED", "artifact": {}})
+
+    def binding(name: str) -> ArtifactObjectBinding:
+        return ArtifactObjectBinding(
+            name=name, object_key=f"objects/{name}", sha256="sha256:" + "b" * 64,
+            size_bytes=10, content_type="application/octet-stream",
+        )
+
+    client = _leased_client(httpx.MockTransport(handle))
+    client.register_artifact(
+        "job-1",
+        ArtifactSubmission(
+            artifact_id="mesh", kind="mesh", authority="derived", derived_from=("point-cloud",),
+            digest="sha256:" + "b" * 64, format="obj", crs=None, gsd=None,
+            auxiliary_files=("model.mtl",), primary_object=binding("model.obj"),
+            auxiliary_objects=(binding("model.mtl"),),
+        ),
+    )
+    request = ProcessingArtifactRequest.model_validate(captured[0])
+    assert request.primary_object.object_key == "objects/model.obj"
+    assert set(request.auxiliary_objects) == {"model.mtl"}
+    assert request.auxiliary_objects["model.mtl"].object_key == "objects/model.mtl"
 
 
 def test_register_artifact_does_not_send_a_lineage_anchor_field() -> None:

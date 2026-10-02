@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import posixpath
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,7 @@ from ksi_processing_controller.odm import (
     unwrap_response,
 )
 from ksi_processing_controller.odm_assets import ODM_ASSETS, POINT_CLOUD_ID
+from ksi_processing_controller.worker import _archive_object_binding
 from rasterio.transform import from_origin
 
 _PACKAGE_ROOT = (
@@ -447,7 +449,7 @@ def test_no_source_artifact_is_an_error(tmp_path: Path) -> None:
         plan_artifacts(_archive(tmp_path, engine), crs=_CRS, gsd_by_artifact=_GSD)
 
 
-# ── mesh digest 가 텍스처를 덮는가(risk mesh-digest-ignores-textures) ────────
+# ── primary digest and individually bound texture/material bytes ───────────
 
 
 def _mesh_archive(tmp_path: Path, name: str, *, obj: bytes, mtl: bytes, texture: bytes,
@@ -466,34 +468,61 @@ def _mesh_archive(tmp_path: Path, name: str, *, obj: bytes, mtl: bytes, texture:
     return path
 
 
-def _mesh_digest(tmp_path: Path, **kwargs: bytes) -> str:
+def _mesh_report(tmp_path: Path, **kwargs: bytes) -> tuple[Path, ArtifactReport]:
     name = "-".join(f"{k}={v!r}" for k, v in sorted(kwargs.items()))
-    reports = plan_artifacts(_mesh_archive(tmp_path, name, **kwargs), crs=_CRS)
-    return next(r for r in reports if r.artifact_id == "mesh").digest
+    archive = _mesh_archive(tmp_path, name, **kwargs)
+    reports = plan_artifacts(archive, crs=_CRS)
+    return archive, next(r for r in reports if r.artifact_id == "mesh")
 
 
-def test_mesh_digest_changes_when_texture_changes(tmp_path: Path) -> None:
-    """[핵심] .obj 는 그대로인데 텍스처만 바뀌어도 mesh digest 가 바뀐다."""
+def _mesh_file_digests(tmp_path: Path, **kwargs: bytes) -> dict[str, str]:
+    archive, report = _mesh_report(tmp_path, **kwargs)
+    entries = [report.archive_entry] + [
+        posixpath.join(posixpath.dirname(report.archive_entry), aux)
+        for aux in report.auxiliary_files
+    ]
+    return {
+        posixpath.basename(entry): _archive_object_binding(archive, entry, object_key="k").sha256
+        for entry in entries
+    }
+
+
+def test_mesh_digest_is_the_primary_object_digest(tmp_path: Path) -> None:
+    """A new fenced mesh identifies its primary bytes, not the old combined hash."""
+    archive, report = _mesh_report(tmp_path, obj=b"obj", mtl=b"mtl", texture=b"tex")
+    primary = _archive_object_binding(archive, report.archive_entry, object_key="k")
+    assert report.digest == "sha256:" + hashlib.sha256(b"obj").hexdigest()
+    assert report.digest == primary.sha256
+
+
+def test_texture_change_changes_its_bound_object_digest(tmp_path: Path) -> None:
+    """Texture integrity remains bound even when primary bytes do not change."""
     common = dict(obj=b"same-obj", mtl=b"same-mtl")
-    digest_v1 = _mesh_digest(tmp_path, texture=b"texture-v1", **common)
-    digest_v2 = _mesh_digest(tmp_path, texture=b"texture-v2", **common)
-    assert digest_v1 != digest_v2
+    v1 = _mesh_file_digests(tmp_path, texture=b"texture-v1", **common)
+    v2 = _mesh_file_digests(tmp_path, texture=b"texture-v2", **common)
+    texture = "odm_textured_model_geo_material0000_map_Kd.png"
+    assert v1[texture] != v2[texture]
+    assert v1[texture] == "sha256:" + hashlib.sha256(b"texture-v1").hexdigest()
+    assert v1["odm_textured_model_geo.obj"] == v2["odm_textured_model_geo.obj"]
 
 
-def test_mesh_digest_changes_when_mtl_changes(tmp_path: Path) -> None:
-    """[핵심] .mtl 만 바뀌어도 mesh digest 가 바뀐다."""
+def test_mtl_change_changes_its_bound_object_digest(tmp_path: Path) -> None:
+    """Materials are also individually sealed independently of primary identity."""
     common = dict(obj=b"same-obj", texture=b"same-texture")
-    digest_v1 = _mesh_digest(tmp_path, mtl=b"mtl-v1", **common)
-    digest_v2 = _mesh_digest(tmp_path, mtl=b"mtl-v2", **common)
-    assert digest_v1 != digest_v2
+    v1 = _mesh_file_digests(tmp_path, mtl=b"mtl-v1", **common)
+    v2 = _mesh_file_digests(tmp_path, mtl=b"mtl-v2", **common)
+    assert v1["odm_textured_model_geo.mtl"] != v2["odm_textured_model_geo.mtl"]
+    assert v1["odm_textured_model_geo.mtl"] == "sha256:" + hashlib.sha256(b"mtl-v1").hexdigest()
+    assert v1["odm_textured_model_geo.obj"] == v2["odm_textured_model_geo.obj"]
 
 
-def test_mesh_digest_ignores_unrelated_files_in_same_directory(tmp_path: Path) -> None:
-    """[비공허 대조] .glb 는 obj/mtl 이 참조하는 텍스처가 아니라 mesh digest 밖이다."""
+def test_mesh_bindings_ignore_unrelated_files_in_same_directory(tmp_path: Path) -> None:
+    """Unrelated glb bytes do not enter this OBJ artifact's binding set."""
     common = dict(obj=b"same-obj", mtl=b"same-mtl", texture=b"same-texture")
-    digest_v1 = _mesh_digest(tmp_path, glb=b"glb-v1", **common)
-    digest_v2 = _mesh_digest(tmp_path, glb=b"glb-v2", **common)
-    assert digest_v1 == digest_v2
+    v1 = _mesh_file_digests(tmp_path, glb=b"glb-v1", **common)
+    v2 = _mesh_file_digests(tmp_path, glb=b"glb-v2", **common)
+    assert v1 == v2
+    assert "odm_textured_model_geo.glb" not in v1
 
 
 # ── 실행 루프 ───────────────────────────────────────────────────────────────

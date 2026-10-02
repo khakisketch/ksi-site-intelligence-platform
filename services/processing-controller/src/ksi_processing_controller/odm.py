@@ -72,8 +72,9 @@ INV-051 을 지키는 것이다.
 파생 서빙 계층의 몫이고(ADR-KSI-003, INV-051), 저장 단계에서 바꾸면 저장된
 바이트가 등록된 digest 와 달라진다.
 
-**메시는 파일이 여러 개다.** 텍스처·재질이 digest 에 함께 들어가 산출물
-하나가 파일 하나가 아니다(``is_single_file=False``) — 주 파일(``archive_entry``)
+**메시는 파일이 여러 개다.** 현재 fenced digest 는 주 파일 sha256이고 텍스처·재질은
+manifest 의 파일별 바인딩으로 고정한다. 산출물 하나가 파일 하나가 아니다
+(``is_single_file=False``) — 주 파일(``archive_entry``)
 은 기존 객체 키 하나에, 나머지(``auxiliary_files``)는 그 아래 basename 별
 하위 키에 올라간다(``ksi_core.processing_jobs.build_processing_artifact_object_key``
 의 ``filename`` 인자, mesh-multi-file-artifact-persistence). 워커는
@@ -344,15 +345,15 @@ class ArtifactReport:
     # 이 산출물의 바이트가 아카이브 어디에 있는가 — digest 를 계산한 그 파일이다.
     # 이 연결이 없어서 지금까지 digest 만 남기고 바이트를 버려 왔다.
     archive_entry: str = ""
-    # 산출물 하나가 파일 하나인가. 메시처럼 텍스처·재질이 digest 에 함께 들어가는
+    # 산출물 하나가 파일 하나인가. 메시처럼 텍스처·재질의 개별 바인딩이 필요한
     # 산출물은 False 다 — 워커가 이 플래그로 다중 파일 업로드 루프를 탄다
     # (mesh-multi-file-artifact-persistence, worker.py 참고).
     is_single_file: bool = True
     # is_single_file=False 일 때, archive_entry(주 파일) 외 나머지 파일들의
     # **basename**(아카이브 내부 전체 경로가 아니라) — Core 의 객체 키 유도
     # (build_processing_artifact_object_key)와 ProcessingArtifact.auxiliaryFiles
-    # 가 이 값을 그대로 쓴다. digest 는 여전히 archive_entry 전체 경로 기준으로
-    # 계산되므로(digest_archive_entries) 이 필드는 digest 계산과 무관하다.
+    # 가 이 값을 그대로 쓴다. 현재 fenced artifact digest 는 주 파일 sha256이고,
+    # 부속 파일의 무결성은 manifest 의 파일별 바인딩 sha256 으로 고정한다.
     auxiliary_files: tuple[str, ...] = ()
 
 
@@ -534,11 +535,8 @@ def plan_artifacts(
             if asset.auxiliary_suffixes:
                 directory = posixpath.dirname(asset.archive_entry)
                 # sorted — present 는 set(archive.namelist()) 라 반복 순서가
-                # 실행마다 달라질 수 있다. digest_archive_entries 는 내부에서
-                # 다시 정렬해 digest 자체는 이미 순서 무관이지만, 이 목록은
-                # 그대로 auxiliary_files(→ ArtifactReport → wire auxiliaryFiles)
-                # 로 나가므로 여기서도 정렬해야 같은 아카이브가 항상 같은
-                # wire 를 낸다(결정성).
+                # 실행마다 달라질 수 있다. auxiliary_files 와 manifest 의 이름별
+                # 바인딩은 같은 아카이브에 대해 결정적인 순서여야 한다.
                 aux_entries = sorted(
                     e
                     for e in present
@@ -546,10 +544,10 @@ def plan_artifacts(
                     and posixpath.dirname(e) == directory
                     and e.endswith(asset.auxiliary_suffixes)
                 )
-            if aux_entries:
-                digest = digest_archive_entries(archive, (asset.archive_entry, *aux_entries))
-            else:
-                digest = digest_archive_entry(archive, asset.archive_entry)
+            # Current generation-owned CandidateArtifact binds artifact.digest to
+            # primary.sha256; auxiliaries are individually sealed in its manifest.
+            # Do not reinterpret legacy combined-digest journal records.
+            digest = digest_archive_entry(archive, asset.archive_entry)
             # 실제로 파일을 열어 읽은 CRS가 있으면 그것을 신고한다 — 없으면(포맷에
             # CRS가 없거나 헤더가 비었거나 파싱 실패) 그때만 site crs로 폴백한다.
             # 이전엔 실측 없이 site crs를 항상 신고해, 재구성이 GPS 없이 임의

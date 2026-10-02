@@ -131,6 +131,16 @@ class ArtifactObjectBinding:
     content_type: str
 
 
+def _object_binding_wire(binding: ArtifactObjectBinding) -> dict[str, str | int]:
+    """Core owns the target; auxiliary names belong to map keys, not bindings."""
+    return {
+        "objectKey": binding.object_key,
+        "sha256": binding.sha256,
+        "sizeBytes": binding.size_bytes,
+        "contentType": binding.content_type,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class PendingJob:
     """워커가 다음에 잡을 후보 1건 — Core 의 ``PendingProcessingJobView`` 를 옮긴 것.
@@ -1196,23 +1206,11 @@ class HttpCoreClient:
             "auxiliaryFiles": list(submission.auxiliary_files),
         }
         if submission.primary_object is not None:
-            payload["primaryObject"] = {
-                "name": submission.primary_object.name,
-                "objectKey": submission.primary_object.object_key,
-                "sha256": submission.primary_object.sha256,
-                "sizeBytes": submission.primary_object.size_bytes,
-                "contentType": submission.primary_object.content_type,
-            }
-            payload["auxiliaryObjects"] = [
-                {
-                    "name": artifact.name,
-                    "objectKey": artifact.object_key,
-                    "sha256": artifact.sha256,
-                    "sizeBytes": artifact.size_bytes,
-                    "contentType": artifact.content_type,
-                }
+            payload["primaryObject"] = _object_binding_wire(submission.primary_object)
+            payload["auxiliaryObjects"] = {
+                artifact.name: _object_binding_wire(artifact)
                 for artifact in submission.auxiliary_objects
-            ]
+            }
         if submission.vertical_reference is not None:
             # 모를 때 명시적 null 을 보내지 않는다 — 키가 없는 것과 null 은
             # Core 에서 같은 None 이지만, 보내지 않으면 옛 워커의 payload 와

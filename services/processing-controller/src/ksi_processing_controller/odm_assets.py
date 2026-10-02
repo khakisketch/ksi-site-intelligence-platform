@@ -106,10 +106,10 @@ class OdmAsset:
     needs_gsd: bool = False
     # 공간 좌표계가 없는 산출물(카메라 포즈)은 crs 가 null 이어야 한다.
     needs_crs: bool = True
-    # archive_entry 와 같은 디렉터리 안에서, 이 접미사들로 끝나는 파일도 digest 에
-    # 포함한다 — 메시(.obj)의 텍스처(.mtl·*_map_Kd.png)처럼 "산출물 = 파일 하나"가
-    # 깨지는 경우에만 채운다(risk mesh-digest-ignores-textures). 빈 튜플이면 기존처럼
-    # archive_entry 하나만 해싱한다. .glb·.conf 는 포함하지 않는다 — .obj/.mtl 이
+    # archive_entry 와 같은 디렉터리 안에서, 이 접미사들로 끝나는 파일도 개별
+    # manifest 바인딩에 포함한다 — 메시(.obj)의 텍스처(.mtl·*_map_Kd.png)처럼
+    # "산출물 = 파일 하나"가 깨지는 경우에만 채운다. 신규 fenced digest 는 주 파일
+    # sha256이고 legacy combined digest 기록은 보존한다. .glb·.conf 는 제외한다 — .obj/.mtl 이
     # 실제로 참조하는 텍스처가 아니라 별도 서빙 포맷·처리 설정이다.
     auxiliary_suffixes: tuple[str, ...] = ()
 
@@ -148,7 +148,7 @@ ODM_ASSETS: tuple[OdmAsset, ...] = (
         derived_from=(POINT_CLOUD_ID,),
         fmt="obj",
         # 텍스처가 바뀌어도 .obj 는 그대로다 — 시각 산출물의 진짜 내용은 이 셋이
-        # 함께 정한다(risk mesh-digest-ignores-textures, 실물 아카이브 확인 2026-08-06).
+        # 함께 정하므로 파일마다 바인딩한다(실물 아카이브 확인 2026-08-06).
         auxiliary_suffixes=(".mtl", "_map_Kd.png"),
     ),
     OdmAsset(
