@@ -48,11 +48,11 @@ preservation evidence. The dirty recovery/frozen worktrees are retained exceptio
   tests against the actual current Core request and primary/auxiliary identity constraints.
 - [x] Task 2: observe IR06/07 RED, minimally port fixes, update legacy-vs-fenced digest documentation,
   verify mounted Core registration/replay and owner tests; do not rewrite legacy bytes.
-- [ ] Task 3: full guarded suite, Ruff/mypy and one independent whole-delta review; scoped fixes as needed;
+- [x] Task 3: full guarded suite, Ruff/mypy and one independent whole-delta review; scoped fixes as needed;
   commit and fast-forward verified changes to clean main.
-- [ ] Task 4: verified preservation bundle/index, exact missing-registration removals and confirmed
+- [x] Task 4: verified preservation bundle/index, exact missing-registration removals and confirmed
   merged-branch deletion without force; retain occupied/dirty/divergent/history refs and all real worktrees.
-- [ ] Task 5: final current inventory, recoverability/dirty-byte/HEAD audit, durable closure and idle checkpoint.
+- [x] Task 5: final current inventory, recoverability/dirty-byte/HEAD audit, durable closure and idle checkpoint.
 
 Pre-flight: Task2 producer digest must match existing Core manifest without changing legacy readers.
 Task3 source verification precedes cleanup; Task4 consumes verified preservation inventory and cannot
@@ -124,3 +124,53 @@ hash snapshot; after aggregate launch only docstring/comments changed. Independe
 review found no product regressions; its improper registration removal and exact reconciliation
 are separately recorded above. No install, customer data, device, UI, remote CI or deployment claim.
 Local main revalidated clean at originald5abced before scoped commit/fast-forward.
+
+## Verified local integration and consolidation closure
+
+Fix commit `1f266bf69b6c478fc19686816277f61ea8acaae8`: exact8task-owned paths, all7Pythonindex
+hashes matched final verified sources; checkpoint/private evidence excluded. Clean local main safely
+fast-forwarded; actual main imports use main Core/client/ODM sources, not worktree modules.
+Actual main owner suite345passed in13.88s. The aggregate8159suite ran in the integration candidate;
+source equivalence was audited and owner checks rerun on main, not claimed as a second full-main suite.
+
+Prepared exact cleanup completed:41missing unlocked/prunable registrations removed cumulatively
+(1improper reviewer early removal disclosed above +40Primary removals),35unoccupied ancestry-contained
+local branches removed only with non-forced `git branch -d`. No refusal, force deletion, broad prune,
+remote change, live-worktree removal or history rewrite. Original84refs remain independently restorable
+from pinned self-contained bundle; original before/plan/deviation/receipt and fresh restoration proof
+are preserved in main's ignored owner-private consolidation store.
+
+After cleanup:22local branches (57before),27unchanged cached remote-tracking refs,4actual registered
+worktrees (45before). The other20retained non-ancestry refs are not20unfinished features: they include
+patch/semantic-adoption pointers, R3/triage/autosquash historical snapshots, selective recovery,
+original main WIP archive and the A2H branch. A2H's two fixes are semantically adopted; its older3UI
+commits were intentionally not blanket merged. Preserve these histories for evidence/recovery.
+Main and active integration are the2contained occupied branches. No live remote freshness is claimed.
+
+`final_audit.py` passed at integrated1f266bf: clean identical main/candidate HEAD/tree; exact8path
+delta only;49remaining refs match original inventory minus exact35deletions with only main/candidate
+tip updates; all4real registrations exact;328retained dirty-file hashes,314original archive/blob copy
+hashes and436prior ignored evidence hashes unchanged. Original84refs restored in fresh bare repository
+and strict full fsck rerun successfully. Final audit will rerun after this documentation-only closure.
+No environment/customer directory was copied into the ref bundle; Git backup is not a claim to recover
+missing temporary-directory uncommitted files. Recovery/frozen and active evidence directories remain
+in place; cleanliness never authorized deleting unique ignored evidence.
+
+### Remaining external/product gates
+
+This bounded task is technically complete locally; it does not close/reprioritize EXT-VAL or establish
+Human end-to-end/product/customer acceptance. No native goal created/resumed, product-state transition,
+push/fetch/deployment/install, credentials/provisioning, customer contact/data access or reference edit.
+Actual authorized DSM/ORTHO/provenance/rights/Terra exports and an approved contained target remain
+unavailable; real two-cycle customer observation/data-delivery validation is not performed.
+Clean-install/default Turbopack/remote CI, production containment/provider/image/authority compatibility,
+public originals, quantitative accuracy and field acceptance remain unverified. Existing98warnings
+and deferred minor snapshot robustness/concurrent-writer absence TOCTOU/extra-negative coverage,
+prior error-clear/compiler-TOCTOU/inherited whitespace items are not new backlog implementation scope.
+
+Useful evidence: task `.superpowers/sdd/2026-10-02-managed-adoption-and-repository-cleanup/`
+contains RED/owner/final-owner/full/main-owner logs, final source hashes and final audit. Main
+`.opencode/artifacts/repository-consolidation-20261002/` holds preservation inventory, bundle,
+fresh restoration repository/proof, exact plan/deviation/receipt and final audit. Both are ignored;
+all4existing worktrees retained deliberately. Next authorized engineering scope requires a new bounded
+instruction or the missing approved customer inputs/target; no automatic backlog expansion.
