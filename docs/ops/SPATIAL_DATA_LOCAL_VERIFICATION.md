@@ -261,6 +261,28 @@ remaining gates are recorded in the [existing preparation plan](../superpowers/p
 An independent read-only review found no blocking OS-repair code defect; the residual Python
 advisory and missing compliant scanner/release evidence remain activation blockers, not waivers.
 
+### Task 3 blocker-resolution follow-up — documentation/read-only analysis
+
+The [preparation plan's Task 3 follow-up](../superpowers/plans/2026-10-03-contained-runtime-preparation.md#task-3-follow-up-resolve-actual-blockers-through-existing-contracts)
+now separates security disposition, scanner producer/tool authenticity, canonical release/registry
+identity, protected application packaging/configuration, signed execution/Core authority, actual
+containment and durable evidence custody. It names existing consumers/paths, supplier roles, required
+approvals and completion evidence without claiming the unknown suppliers or inputs exist.
+
+Official PSF CNA data for `CVE-2026-82049` lists Python3.12 versions below3.12.15 as affected.
+Both retained repaired image archives contain `tarfile.py` byte-identical to upstream3.12.14;
+component/version presence is confirmed, complete dependency reachability and exploitability are not.
+This is not a waiver or authorization to change the base image. The existing release aggregator
+records supplied scanner bytes but does not generate the strict runtime scanner envelope; no
+accepted production producer was found in the inspected tooling/CI/ops paths. Test fixtures and
+manually added fields cannot supply it. Sigstore verification and actual release/security review
+remain pending, with no invented universal `High == 0` rule.
+
+This follow-up did not change code, images, host configuration or authority inputs, and did not
+re-observe live host state. The proposed gated endpoint is one genuinely Core-admitted, sealed
+input processed by the real inspector and durably returned to Core, not full containment safety,
+quantitative accuracy, customer acceptance or Spatial Data execution acceptance. It remains unrun.
+
 ## Run local checks (no network or public binaries required)
 
 ```text

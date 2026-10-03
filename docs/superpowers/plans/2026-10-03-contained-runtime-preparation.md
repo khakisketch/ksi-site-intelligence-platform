@@ -16,6 +16,22 @@ by the current EXT-VAL ledger, and ADR-KSI-036. The Human on 2026-10-03 selected
 runtime installation/configuration/start preparation. That supersedes the older no-host-work
 restriction only for this bounded task; it does not supply missing release/signing authority.
 
+## Current status — 2026-10-03 review follow-up
+
+Static installation is complete. Both local runtime images have OS repairs, SBOMs and scans;
+each repaired scan reports 185 matches, Critical0/High60. Security disposition and release-evidence
+acceptance remain incomplete. Applications have not been activated; actual containment, public
+TIFF processing and quantitative-result verification have not run. The final Result section below
+is the **earlier static-installation stage**, not the current image/scanner status.
+
+This follow-up changes documentation only. Repository baseline is
+`dbbee981a73a17a5f55aa3db405f7235d312445d`; inspected image source remains
+`81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, and installed templates remain bound to
+`928436f68ea271eaf4045112ab2a03bb590bbbeb`. Host state above is the retained preparation
+observation, not a fresh host/daemon revalidation in this follow-up. No code/image/host change,
+new tool installation, key/credential provisioning, registry publication or activation is approved
+by this plan amendment. Task 3 below separates existing evidence from the work still needed.
+
 ## Global constraints and task record
 
 - Requirements: EXT-VAL-01/05/06/08, REQ-OPS-101/102, REQ-SEC-101.
@@ -202,6 +218,166 @@ Expected: current static prerequisite installed; no functional contained runtime
 - [x] Keep public inspection/preparation/independent pixel-mask comparison explicitly unrun until
   its own approved and verified execution route is available.
 
+### Task 3 follow-up: Resolve actual blockers through existing contracts
+
+**Scope:** identify and document the real route first; execute a repair, evidence producer or
+release operation only within its separately confirmed authority. This is not authorization to
+manufacture missing inputs. Roles below are contract responsibilities, **not assigned people**;
+the Human must identify the actual release/security reviewer, publisher, signing authority, Core
+operator and evidence custodian. No production signing/issuance pipeline was established by this
+read-only investigation.
+
+There are two distinct gates, not a circular install condition: **offline release/security/input
+review** precedes protected bundle installation; **live lifecycle verification** follows actual
+daemon/socket/ACL preparation and consumes fresh host proof. T3-B is a decision-gated work outline,
+not a code-ready implementation plan or approval; missing producer/bundle designs need the bounded
+implementation packet before implementation. T3-C is conditional on genuine input acceptance.
+
+**Contract/code anchors:**
+- Release aggregation: `tools/build_release_evidence.py`, `docs/ops/RELEASE_EVIDENCE.md`.
+- Host consumption: `deploy/bin/external-runtime-stage.sh` functions
+  `require_release_evidence`, `verify_artifact_binding`, `verify_product_image_binding`;
+  `contracts/schemas/external-runtime-host-binding.v1.json`.
+- Application entrypoints: `[project.scripts]` in `services/processing-controller/pyproject.toml`;
+  assembly/startup requirements in `services/processing-controller/README.md` and
+  `deploy/external-runtime/README.md`. Console scripts exist; an installed protected bundle does not.
+- Signed inspector contract: `contracts/schemas/inspector-execution-manifest.v1.json` plus
+  `packages/event-contracts/src/ksi_event_contracts/inspector_execution_manifest.py`.
+- Runtime artifact consumers under `services/processing-controller/src/ksi_processing_controller/`:
+  `external_inspector_operator_config.py`, `external_measurement_operator_config.py`,
+  `external_inspector_catalog.py`, `external_inspector_docker.py`,
+  `external_inspector_host_proof.py`, `external_validation_worker_config.py`.
+  Config versions respectively remain `external-inspector-operator-config.v1`,
+  `external-measurement-operator-config.v2`, and `external-validation-worker-config.v1`.
+- Mounted Core authority: `services/core/src/ksi_core/domains/external/authority/` modules
+  `external_authority_preflight.py`, `provider_loading.py`, `external_result_workflow_config.py`.
+
+| Blocker / current state | Required output and exact destination/contract | Generator / supplier and approval | Completion evidence |
+| --- | --- | --- | --- |
+| B1 Security disposition: scans exist, residual findings not accepted | Image-bound finding decisions under `docs/ops/RELEASE_EVIDENCE.md` and the security gate in `docs/ops/EXTERNAL_VM_DEPENDENCY_BASELINE.md`; Python candidate below is separate from Debian `wont-fix`/`not-fixed` | Security/release reviewer decides applicability and disposition; engineering repairs only after Python/base scope approval | Official advisory, image/package binding, reachability limitations and authorized disposition; repaired image rescan when changed. No suppression or inferred waiver |
+| B2 Scanner evidence/tool authenticity: genuine raw outputs and retained bundles exist; accepted producer/signature verification absent | Runtime scanner JSON must contain nonempty `scanner.name` and `scanner.schemaVersion`, with exact bytes/hash/type bound in host `runtimeProducts[].scanner`; original Grype report remains unchanged | Release tooling owner locates an accepted producer, otherwise proposes a separately approved producer contract/implementation; reviewer approves tool verification method. Additional verifier installation is not currently authorized | Producer provenance to actual tool/version/DB/image/raw output and all findings, successful independent authenticity verification, then existing strict artifact consumer accepts the genuine output |
+| B3 Release identity: two local image/SBOM/scan pairs exist, canonical release/host record incomplete | Example paths `/etc/ksi-external-runtime/release-evidence.json` and `/etc/ksi-external-runtime/host-binding.json` from `deploy/.env.external-reconstruction.example`; canonical Core/Dashboard product evidence plus separate inspector/measurement `runtimeProducts` | Release operator uses existing aggregator; publisher supplies genuine registry promotion/digests only with explicit target authorization (not granted). Host observations are supplied by the deployment operator, not invented by the aggregator | Clean exact source, canonical record hash, actual Docker IDs/RepoDigests and artifact hashes/lengths match; all canonical external pins retained, three candidate dependency observations match. Current local OCI digests are not registry publication |
+| B4 Application bundle/protected configuration: absent at preparation observation | Executables `/usr/local/lib/ksi-external-runtime/bin/ksi-external-inspector-daemon`, `ksi-external-measurement-daemon`, `ksi-external-validation-worker`; configs `/etc/ksi-external-runtime/external-inspector-daemon-config.json`, `external-measurement-daemon-config.json`, `external-validation-worker-config.json`; separate `validator-core.token` there | Processing release owner packages the existing console scripts/dependencies from the selected clean source; deployment operator installs reviewed immutable bytes after offline release/security review, before live lifecycle verification. Credential issuer supplies the token separately; no token creation authority is delegated | Source/dependency/file hashes and protected ancestry, exact runtime-identity readability and ownership/modes, config loader and startup-artifact validation. Bootstrap installs templates, **not** this bundle; a bundle packaging/install producer still needs a bounded plan |
+| B5 Signed execution/OCI-pair/revocation/trust: not supplied/verified | Manifest/revocation files at each protected config's `production.catalog.manifestPath`/`revocationPath`, digest pin `expectedRevocationSha256`; trusted public keys at `production.trustRoot.publicKeys`; offline proof at `production.ociPairs.proofPath` with `expectedSha256` | Actual authorized signer supplies signed profiles, trust and current revocation state; release operator derives OCI proof from preserved raw manifest/config bytes. Signer identity and issuance route must be supplied, never a generated test key | Inspector `validate_operator_startup_artifacts` / measurement `validate_measurement_operator_startup_artifacts` verify actual signature/revocation/profile/pair; Engine resolves the same real image. Config-selected artifact paths are **not yet assigned**; do not invent filenames or an empty revocation grant |
+| B6 Core policy/worker authority: operator roots and genuine inputs absent | One existing `/etc/ksi-external-runtime/operator` or `/var/lib/ksi-external-runtime/operator`, containing `workflow.json`, `provider.json`, `secrets/`, `signing/`; mounted `/run/ksi-operator`; fixed authority journal `/var/lib/ksi/data/external-quantitative-authority.jsonl`. Worker HTTPS origin, UUID, endpoints/profile and separate private token use existing worker config contract | Core/catalog/key authority supplies genuinely authorized current records and scoped worker identity; operator places protected files. No inferred organization, catalog approval, resource limits or credentials | UID10001 validate-only plus detached `CONFIG_VALIDATED`, then actual Core attachment/currentness `PROVIDER_CONFIGURED`; request-level admission/lease remain separate. Neither readiness status grants data use or quantitative eligibility |
+| B7 Host containment: metadata/negative blocking only, not functional proof | Existing user units/slices, `/run/ksi-external-runtime/launcher/inspection.sock` and `measurement.sock`, fresh live helper peer proof, actual procfs/UID-map/cgroup/FD/container facts | Root/deployment operator performs only the separately gated application/socket/ACL sequence; runtime obtains facts from the host. No bootstrap replay, staging mutation or saved positive-proof substitution | Startup host proof, live `OBSERVED_SERVER_PEER_CREDENTIAL` for both lanes/untrusted denial, actual child security/resource checks and cleanup evidence under the existing sandbox contract; normal-input success alone is insufficient |
+| B8 Evidence retention: local originals exist, release archive/custodian undecided | Existing release contract's byte-bound originals, not a new envelope or Git binary store. `/tmp/opencode/…` and ignored `.opencode/artifacts/…` remain local preparation locations | Human names custodian and approved durable private destination/retention; release operator makes verified additive copies. No external upload or deletion authorization follows | Restorable original tools/checksums/bundles, DB, source context, image archives/blobs, raw SBOM/scans and reports retain hashes/provenance; canonical release and host records bind the chosen deployment combination |
+
+#### T3-A — Read-only investigation result (completed)
+
+- [x] Revalidate clean task/main baseline and inspect existing release, host and configuration consumers.
+- [x] Check official Python advisory against retained image bytes without running either runtime.
+- [x] Distinguish evidence producer absence, registry identity prerequisites, protected bundle absence,
+  authority-supplier unknowns and actual host verification; preserve historical results.
+
+**Python finding:** [PSF security announcement](https://mail.python.org/archives/list/security-announce@python.org/message/EFJWGAZJA56AKSBR2WHMHQZO7RRLZPRH)
+and the [PSF CNA record](https://cveawg.mitre.org/api/cve/CVE-2026-82049) confirm
+`CVE-2026-82049`: crafted TAR hard-link-to-symlink interactions affect `tarfile` data/tar extraction
+filters. The CNA record updated 2026-10-02 lists `3.12.0 <= version < 3.12.15` as affected;
+[Python 3.12.15](https://www.python.org/downloads/release/python-31215/) is the reported fixed
+3.12 release, **not an approved replacement image pin**. Both preserved repaired archives were
+rehashed against their receipts, and their `usr/local/lib/python3.12/tarfile.py` bytes equal
+upstream `v3.12.14/Lib/tarfile.py` (SHA256
+`41a9f1930e5285455b4b0db2b9394247cce312c3fa1ef586a58e66c0100668d5`). This establishes
+affected component/version presence, not actual exploitation. Searches of processing-controller
+and reusable package Python code found no direct `tarfile`, `extractall` or `shutil.unpack_archive`
+calls; that is **not** a complete transitive-dependency/dynamic-call reachability assessment or waiver.
+Private CNA/upstream snapshots and per-image bindings:
+`.opencode/artifacts/contained-runtime-preparation-20261003/task3-analysis/python-applicability.json`.
+CNA snapshot SHA256 `a5394b33bdf54db1c338a32114672dec3771c77ecc0cdac116f38623cc4729d6`.
+
+**Scanner route:** the aggregator accepts a nonempty JSON object and records its bytes; it does
+not produce a scanner report, verify a tool signature or decide findings. The runtime host gate
+additionally requires the two scanner identity fields. Focused searches in `tools/`, `scripts/`,
+`.github/`, relevant ops docs and contract tests found **no accepted production producer** for
+that runtime envelope. Test fixtures with `scanner.name="test"` are not production evidence.
+The baseline's Syft/Trivy command examples are scanner invocation guidance, not proof that their
+raw outputs satisfy this stricter contract. Replacing Grype or adding fields by hand is not a fix.
+An explicit, reviewed producer/provenance contract is required if an existing accepted producer
+cannot be supplied; its format/schema/version and ownership must be agreed before implementation.
+Retained Sigstore bundles/checksum equality still do not constitute signature verification.
+
+**Security criterion:** release evidence explicitly delegates security acceptance to review;
+the dependency baseline blocks unapproved High findings for external customer data. No inspected
+consumer implements a universal `High == 0` threshold. Do not impose that threshold, classify all
+residuals as Debian-unfixed, or infer approval from a parser accepting JSON. The reviewer must
+identify the applicable local-public-test/customer-release decision and authorized disposition;
+until supplied, activation remains blocked.
+
+#### T3-B — Bounded remediation and release inputs (not executed)
+
+- [ ] B1: obtain the Python/base applicability/repair decision. If approved, change only the agreed
+  base/Python pins, preserve OS repairs/lockfile/entrypoints/users/context boundaries, and verify
+  exact replacement image versions, regressions and same-tool/same-DB scan comparison. New Python
+  or parser/image identities require newly authorized profiles; old signatures cannot be relabeled.
+- [ ] B2: locate a genuinely accepted scanner producer or approve its bounded contract/implementation.
+  A new producer must test rejection of substituted image/DB/raw bytes and malformed/unknown schema,
+  preserve every finding and raw output, then pass existing strict host artifact checks. Separately
+  verify official tool signatures using an approved method/identity policy; retain actual results.
+- [ ] B3/B8: select the release source and deployment combination, actual publisher/target, and durable
+  private archive/custodian. The lifecycle requires canonical/host source SHA equal to clean `HEAD`;
+  do not submit the old image-source SHA as a fabricated current release. Reconcile any docs-only
+  source difference explicitly through the release review. Generate canonical evidence with the
+  existing aggregator only after genuine Core/Dashboard inputs exist; produce separate observed
+  runtime host binding. Registry effects need their own authorization. Preserve all prior evidence.
+- [ ] B4: approve a source-frozen application-bundle packaging/install packet using the existing
+  scripts and locked dependencies; name its immutable bundle inventory/hash and rollback before
+  installation. Do not install a checkout `.venv` or let editable source/ambient paths supply code.
+- [ ] B5/B6: obtain the actual signer/Core/credential suppliers and authorized immutable materials;
+  choose protected config-referenced artifact paths using those inputs. Validate under the real
+  runtime identities. Neither a test issuer nor a manually synthesized catalog is an alternative.
+
+Relevant prepared-dependency local contract checks (source verification only, not release/host proof):
+
+```bash
+UV_NO_SYNC=1 UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never .venv/bin/python -m pytest -q \
+  tests/contract/test_release_evidence.py \
+  tests/contract/test_runtime_image_pins.py \
+  tests/contract/test_external_runtime_deployment_contract.py \
+  tests/contract/test_external_inspector_operator_artifacts.py \
+  tests/contract/test_external_inspector_catalog.py \
+  tests/contract/test_external_measurement_operator_config.py \
+  tests/contract/test_external_validation_worker_config.py
+```
+
+Expected: zero failures; report actual counts/skips. A future implementation must name exact owned
+files, tests and RED/GREEN assertions in its bounded packet before code changes. Missing producer,
+registry, signer or archive decisions are explicit dependencies, not details an executor may guess.
+
+Follow-up verification on `dbbee981a73a17a5f55aa3db405f7235d312445d` plus these documentation-only
+changes: the exact command above returned **146 passed in 6.88s**; private log
+`.opencode/artifacts/contained-runtime-preparation-20261003/task3-analysis/contract-tests.log`.
+This is not a new image scan, live host check, runtime activation or full-suite result.
+
+#### T3-C — Gated activation and one admitted inspection (not executed)
+
+- [ ] After B1–B6/B8 inputs are genuinely accepted, refresh host facts without bootstrap replay;
+  install only the reviewed bundle/configs under the existing installation authorization. Follow
+  the README's user socket/service and root ACL sequence, proving both actual daemon startups and
+  fresh peer/denial results. Saved helper JSON/metadata or old PID values are not admission evidence.
+- [ ] Resolve selected OCI **platform manifest** and config from raw verified bytes; reconcile actual
+  Engine identity through `FileLocalOciPairResolver` and runtime checks. An index or Syft synthetic
+  Docker manifest is not interchangeable with the signed platform manifest/config pair.
+- [ ] Obtain the required genuine candidate/Core release and deployment authorization before
+  lifecycle `verify/start`: `verify` itself runs disposable validation containers and is not a
+  read-only file check. Follow `deploy/external-runtime/README.md`; leave `ksi-phase2-staging` alone.
+- [ ] For the first raster only after actual existing host/child enforcement checks pass, have Core
+  authorize one sealed public input under the real tenant/policy and scoped worker identity. Use
+  the existing inspection request → worker lease/input → `inspection.sock` → fixed inspector child
+  → Core result route. Do not launch a host parser/test launcher or fake the request/lease.
+- [ ] Retain request/input digest, current policy/profile/manifest binding, observed child controls
+  and resource/cleanup results, exact returned report digest and Core journal/reload confirmation.
+  Acceptance for this step is one real admitted inspection with a durably retrievable result.
+  It is not full hostile-input containment, measurement accuracy, Terra/customer/field acceptance
+  or a Spatial Data execution authorization. Keep unknown vertical datum/accuracy and quantitative
+  claims blocked. Native-window preparation/pixel-mask comparison require their own verified route.
+
+Dependencies: T3-A informs T3-B; release/artifact/authority acceptance in T3-B precedes T3-C.
+Security review and producer discovery may proceed independently; neither unlocks activation alone.
+Stop at an unresolved material supplier/approval, record it, and continue independent authorized
+preparation only. Rollback preserves originals/evidence and predecessors; no automatic key rotation,
+policy alteration, image pruning, broad reset or staging shutdown is permitted.
+
 ## Evidence and state
 
 Private task ledger: `.opencode/artifacts/contained-runtime-preparation-20261003/progress.md`.
@@ -209,7 +385,10 @@ Source baseline: `928436f68ea271eaf4045112ab2a03bb590bbbeb` on the existing isol
 `integration/readiness-20261002` worktree; local-main target initially equal and clean.
 The current EXT-VAL product slice and human acceptance state are unchanged.
 
-## Result — static preparation verified; application activation blocked
+## Result — static-installation stage only (before image/scanner continuation)
+
+Historical result for source `928436f68ea271eaf4045112ab2a03bb590bbbeb`; see Current status and
+Observed security-repair evidence above for the subsequent builds/scans and remaining blockers.
 
 - Existing relevant tests:159passed7.67s. Four operator admission regressions observed RED,
   then operator plus same suite:163passed7.60s; prepared dependencies, offline/no sync.
@@ -228,7 +407,9 @@ The current EXT-VAL product slice and human acceptance state are unchanged.
   application sockets. This proves blocking, not functional parsing or host containment.
 - Task3 remains blocked: configured application binaries/configs absent; current immutable
   image/SBOM/scanner/host and signed execution/OCI-pair/revocation/trust inputs not supplied.
-  No credential/key provisioning, scanner installation, synthetic authority or TIFF decode ran.
+  At that static-installation stage no credential/key provisioning, scanner installation, synthetic
+  authority or TIFF decode ran. Later approved task-private scanner installation/builds/scans are
+  recorded above; credential/key provisioning, synthetic authority and public TIFF decode remain unrun.
 
 Minor audit limitations of the private one-shot installer remain recorded in its task ledger:
 terse assertion diagnostics, partial predecessor metadata, named-tree hash rather than live-HEAD
