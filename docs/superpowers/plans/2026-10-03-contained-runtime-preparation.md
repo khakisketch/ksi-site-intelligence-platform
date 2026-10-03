@@ -39,6 +39,58 @@ restriction only for this bounded task; it does not supply missing release/signi
 - Rollback: preserve predecessor helper bytes/hash/mode before replacement; retain both template
   releases. No service/ACL activation, account/subordinate-map changes, or automatic rollback execution.
 
+## Approved continuation — local images and OS security repair
+
+The Human subsequently approved task-private Syft/Grype/DB downloads and source-frozen local
+rootless image builds/SBOM/scans, then explicitly selected **image security repair** after both
+baseline images reported 253 matches (7 Critical, 87 High). These approvals supersede the earlier
+no-scanner-install restriction only for this bounded preparation. They do not authorize host OS,
+staging, signing-key/policy changes, registry push, application activation, or public TIFF decoding.
+
+### Required implementation packet
+
+- Requirement IDs: REQ-OPS-101, REQ-SEC-101; EXT-VAL-05/08 preparation, not acceptance.
+- Owner module: root `Dockerfile.external-inspector` / `Dockerfile.external-measurement`.
+- Acceptance criteria: preserved baseline; actual source-bound rebuilt images and SBOM show the
+  selected corrected OS versions; same-tool/same-DB scans no longer match the targeted fixed
+  Critical/High OS findings. Report every remaining finding; do not equate improvement with release.
+- Contracts affected: none; strict release/scanner/host/execution admission remains unchanged.
+- Reference assets: existing Dockerfiles, locked workspace dependencies and runtime pin tests;
+  official Debian security tracker and ARM64 snapshot package indices.
+- Adoption decisions: PORT official OS fixes into both final stages; unchanged base-image/uv pins,
+  Python lockfile, distinct non-root users, fixed commands and Docker context allowlists.
+- Files to change: the two Dockerfiles and this plan; later local-verification outcome documentation.
+- Tests: actual old-image SBOM/scanner RED then rebuilt-image GREEN, existing release/pin/deployment
+  contract tests, same-DB before/after scan and archive/source/config/layer identity verification.
+- HIL or real-device assumptions: none; no hostile raster/service execution or field acceptance.
+- License/data implications: retain scanner Apache-2.0 notices/provenance; public package metadata
+  download only, no source/customer/raster uploads. Sigstore bundle retained but not verified.
+- Rollback: new tags/build directories only; preserve old images and scan reports. Revert task-owned
+  Dockerfile commit if needed, never reset user work or prune the daemon.
+- Invariants: INV-054 enforced through unchanged exact base/uv pins plus clean-source/archive/SBOM/
+  scan binding; INV-055/060 and INV-051/053 preserved by no Core/policy/data/activation changes.
+
+### Repair checklist
+
+- [ ] S1 Observe actual baseline RED for selected OS findings and corrected-version requirements.
+- [ ] S2 Pin 20261003T000000Z in both final stages and explicitly upgrade only affected OS packages;
+  run existing contracts, commit source and freeze exact clean Git-tree context.
+- [ ] S3 Rebuild/export under task-specific rootless context, generate SBOM/scans using same DB,
+  verify real package versions and targeted finding removal; preserve all residual matches.
+- [ ] S4 Independent read-only whole-change review; record findings/limitations, verified local
+  integration and activation blockers. Keep product slice unchanged.
+
+Hypothesis: the 20260911 snapshot and selectively upgraded expat/OpenSSL leave vulnerable base OS
+packages in both final stages. Installing official corrected versions from the later fixed snapshot
+should remove their fixed Critical/High matches without changing product code or Python dependencies.
+The earlier metadata probe is unsigned local evidence; actual APT builds must verify repository
+signatures and package integrity normally. No `trusted=yes`, allow-unauthenticated or scanner ignores.
+
+Pre-flight interfaces: clean Git tree -> local build revision/config/OCI layers -> archive -> Syft
+source -> unchanged Grype DB -> real scan findings. Docker-save/Syft manifest transformations and
+local repository digests are not registry publication; preserve each identity separately. Raw Grype
+JSON lacks the host gate's `scanner.name/schemaVersion` envelope; no invented envelope or host proof.
+
 ## Review focus
 
 - Installed template drift: do not overwrite an unknown bundle; create a new immutable release path.

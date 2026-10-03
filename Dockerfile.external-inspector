@@ -13,16 +13,24 @@ RUN uv sync --locked --package ksi-processing-controller --no-dev
 
 FROM python:3.12.14-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
 
+# Upgrade affected base OS packages without changing the locked Python runtime.
+# APT still verifies repository signatures; only the archived Valid-Until is disabled.
 RUN sed -i \
-      -e 's|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/20260911T000000Z|' \
-      -e 's|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/20260911T000000Z|' \
+      -e 's|http://deb.debian.org/debian-security|https://snapshot.debian.org/archive/debian-security/20261003T000000Z|' \
+      -e 's|http://deb.debian.org/debian|https://snapshot.debian.org/archive/debian/20261003T000000Z|' \
       /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Check-Valid-Until=false update -qq \
     && apt-get install -y -qq --no-install-recommends \
+      gzip=1.13-1+deb13u1 \
+      libc-bin=2.41-12+deb13u4 \
+      libc6=2.41-12+deb13u4 \
       libexpat1=2.8.3-1~deb13u1 \
-      openssl=3.5.7-1~deb13u2 \
-      libssl3t64=3.5.7-1~deb13u2 \
-      openssl-provider-legacy=3.5.7-1~deb13u2 \
+      libpcre2-8-0=10.46-1~deb13u3 \
+      libsqlite3-0=3.46.1-7+deb13u2 \
+      openssl=3.5.7-1~deb13u3 \
+      libssl3t64=3.5.7-1~deb13u3 \
+      openssl-provider-legacy=3.5.7-1~deb13u3 \
+      perl-base=5.40.1-6+deb13u1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
