@@ -331,6 +331,22 @@ Verification: parser37RED→GREEN; stage native2RED→GREEN with legacy still va
 contracts147passed9.55s, Ruff/mypy/shell syntax clean. Actual Python evidence4RED→GREEN, combined
 Python/OS evidence8passed0.13s. Full regression results are recorded separately after completion.
 
+One independent read-only branch review confirmed the source/image boundaries and the real
+index/config integration blocker. Its ten-pin coverage gap and legacy annotation false-positive
+were repaired in `c3ee4b7`: mutation tests now reject deletion/version substitution of any ten
+OS pins in either Dockerfile (also correcting the prior whitespace-token regex), while incidental
+legacy `source` notes no longer trigger native classification. Grype-shaped source/descriptor
+still cannot fall back. Review-fix evidence35RED→GREEN; related source/API/permission checks
+242passed14.59s, Ruff/mypy/shell syntax clean. Legacy in-report binding and generic Core/Dashboard
+multi-read behavior remain explicitly unchanged, not new hardening claims.
+
+The first full Python run at c34fc8a with inherited umask0002 produced8193passed/5failed/121skipped,
+98warnings771.60s. All five failures were `UNSAFE_DIRECTORY`/`CONFIG_FILE` in four Analysis-pilot
+fixture paths and one external-analysis fixture: default mkdir created group-writable0775 parents.
+Without any product change or gate relaxation, command-local umask077 rerun of both affected
+files passed54tests5.37s. The original failed log is retained; a final full run is still required
+and will be reported with its actual revision/command/result, not inferred from this scoped rerun.
+
 **Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
 the scan config ID. That is false on this actual containerd store: explicit platform inspection
 also gives a manifest, not a config. Four unchanged real reports (prior/new, both roles) pass the

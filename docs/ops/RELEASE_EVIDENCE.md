@@ -55,13 +55,19 @@ host binding의 `runtimeProducts`에 들어가며, staging gate가 SBOM/scanner 
 
 `tools/verify_external_scanner_evidence.py` verifies strict inspector/measurement scanner
 bytes in the lifecycle. Existing nonempty `scanner.name`/`scanner.schemaVersion` envelopes
-remain supported; genuine Grype0.120.0 JSON is also parsed directly. It requires the supported
+remain supported; genuine Grype0.120.0 JSON is also parsed directly. Native validation requires the supported
 descriptor/DB profile, well-formed matches and exact `source.target.imageID` equality with
 the independently verified host `dockerImageId`. Raw bytes are not rewritten, findings/ignores
 are not dropped, and DBv6.1.10 is not presented as a report schema. The16MiB regular-file
 reader hashes/parses one payload, rejects symlink traversal, changed files, duplicate keys,
 non-finite values and malformed/ambiguous/unknown profiles. Core/Dashboard generic scanner
 handling and canonical/host v1 wire shapes are unchanged.
+Legacy envelopes retain their pre-existing external byte/hash/host association, not a new
+in-report image proof. Incidental legacy source annotations do not make a document native;
+Grype descriptor or structured source `type`/`target` fields identify native candidates.
+Mixed/unsupported native candidates still fail closed. The unchanged generic Core/Dashboard
+artifact path still hashes and parses through separate reads; no TOCTOU-hardening claim is
+made for that path.
 
 This equality rule is deliberately **not** an index-to-config converter. On the observed
 Docker29 containerd store, `.Id` is the OCI index, `--platform` yields the platform manifest,
