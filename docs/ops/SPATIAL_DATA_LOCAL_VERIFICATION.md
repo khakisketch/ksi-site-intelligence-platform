@@ -178,6 +178,40 @@ EPSG:7850 and Pix4D production are catalogue statements, not new measured facts.
 independent accuracy, DJI Terra compatibility, accepted inspection/containment and customer
 two-cycle acceptance remain unverified. This single-epoch public pair does not supply `t0,t1,t2`.
 
+### 2026-10-03 — contained runtime static preparation (not activation)
+
+The Human separately authorized preparing the existing dedicated runtime, including installation
+and eventual start only after its existing gates pass. Read-only operator preflight and dedicated
+rootless Engine observations confirmed that the private user daemon is running with cgroup v2;
+this is not parser containment acceptance. Existing inspector/measurement images have older
+`b2c714e` tags, no source-revision label, and no verified current release binding.
+
+The twelve existing deployment templates were prepared byte-exact from Git tree
+`928436f68ea271eaf4045112ab2a03bb590bbbeb`, independently reviewed, and installed into a new
+root-owned versioned directory under `/usr/share/ksi-external-runtime/releases/<source SHA>/systemd`.
+The installed checksum list is content-equivalent to the source list with canonical reordered
+entries; its SHA-256 is `5d1e95e25ac5eeaa6a4f419a1bee7884ab6483e0a49d59857ba73edcdd03bb35`.
+The older template tree and installed user units were preserved unchanged.
+
+Only the dormant root-owned socket helper was updated to the existing reviewed server-peer-receipt
+implementation. Its identified predecessor bytes were retained in a create-once root-private
+backup. Application sockets remain disabled, daemon/ACL units remain static, all remain inactive,
+and the existing private Docker daemon retains its process identity. The installed helper's real
+negative verification exits 1 and emits no positive proof while the application sockets are absent.
+No bootstrap, service start/reload/enable, ACL mutation, account/map change or staging operation ran.
+
+Relevant deployment/host-proof/listener/catalog/operator/release tests plus four task-private
+operator safety regressions passed **163**. The operator fixes were observed RED→GREEN; actual
+root-owned copy/hash/mode, backup, old-tree preservation and dormant-state checks passed separately.
+The private ledger and root receipts are linked in the
+[bounded preparation plan](../superpowers/plans/2026-10-03-contained-runtime-preparation.md).
+
+**Still blocked:** application daemon/worker bundles and protected configurations are absent at
+their configured paths. Current source/image/SBOM/scanner/host binding, signed execution manifest,
+OCI-pair/revocation/trust configuration and subsequent Core policy/worker authority have not been
+supplied and verified. Static files create none of those approvals. Public inspection, preparation,
+pixel/mask comparison, analysis, actual host containment and customer acceptance remain unrun.
+
 ## Run local checks (no network or public binaries required)
 
 ```text
