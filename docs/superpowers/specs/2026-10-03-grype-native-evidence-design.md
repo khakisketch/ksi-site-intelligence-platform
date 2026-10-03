@@ -1,7 +1,13 @@
 # Native Grype runtime scanner evidence design
 
-Status: written spec approved by Human on 2026-10-03; implementation not yet applied.
+Status: approved spec; narrow equality consumer implemented, actual target integration blocked.
 Date: 2026-10-03
+
+Execution finding (2026-10-04): the assumed equality between Dockerhost `.Id` and scanconfigID
+is false on the actual Docker29 containerd store. The implemented consumer preserves exact
+equality and blocks that mismatch; no runtime identity-link contract or fabricated host record
+was introduced. See the [plan finding](../plans/2026-10-03-grype-native-evidence.md#verified-execution-and-discovered-contract-defect--2026-10-04).
+The approved requirements below remain the original spec, not evidence that its target assumptions hold.
 
 ## Intent and selected approach
 

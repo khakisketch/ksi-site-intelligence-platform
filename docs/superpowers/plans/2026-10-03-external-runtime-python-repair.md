@@ -7,7 +7,18 @@
 replace only the selected Python base pin and repair strict stale regression expectations.
 **Tech stack:** existing Docker, Python3.12, uv0.11.15, pinned private Syft/Grype/DB.
 **Spec:** [approved design](../specs/2026-10-03-external-runtime-python-repair-design.md).
-**State:** written spec approved by Human; this written implementation plan awaits review.
+**State:** spec/plan approved by Human for inline execution. M1/M2 verified; M3 review/integration pending.
+
+## Verified execution boundary — 2026-10-04
+
+M1 source16084bfa6c8bdde6123511ea11660852707e6760: strict pin RED1→GREEN; committed
+pin/packaging/release checks56passed2.38s. M2 both actual ARM64 builds/exports succeeded;
+21OCIblobs/15layers per archive verified, actualPython3.12.15 and fixed upstreamtarfile bytes.
+SameDB scans185→179/Critical0/High59; sixPythonfindings removed includingCVE-2026-82049,
+none added. OS pins/inventory/other dependencies preserved. ActualPython4RED→GREEN,
+Python+OS8passed0.13s. Receipts: image-build-16084bf and task3-analysis in existing task artifacts.
+Source fix is not security/release/containment acceptance. M3 full regressions/review/integration
+are recorded at their evidence boundaries; existing broader runtime gates remain open.
 
 ## Global constraints and implementation packet
 - Requirements: REQ-OPS-101, REQ-SEC-101; EXT-VAL-05/08 preparation only.
@@ -39,18 +50,18 @@ replace only the selected Python base pin and repair strict stale regression exp
 `tests/contract/test_external_runtime_image_packaging.py`,
 `tests/contract/test_external_runtime_image_security_pins.py`.
 **Interfaces:** consumes approved exact pin/current OS package set; produces clean committed image source.
-- [ ] Retain raw official selected index/platform/config JSON outside Git, hash bytes and check
+- [x] Retain raw official selected index/platform/config JSON outside Git, hash bytes and check
   index29113dca…, ARM64/v8 manifest18d23907…, config architecture/os/PYTHON_VERSION3.12.15.
   Refuse mismatching bytes or unavailable selected identity; never guess/pick another digest.
-- [ ] In existing packaging test, set `_PINNED_PYTHON` to the exact spec reference and require
+- [x] In existing packaging test, set `_PINNED_PYTHON` to the exact spec reference and require
   exactly two matching FROM lines per file, one builder and one final; expect distinct existing
   users/commands/copies. Set both existing tests' snapshot to20261003 and OpenSSLdeb13u3;
   retain cryptography50.0.1 and all old negative/context assertions.
-- [ ] Run RED: `UV_NO_SYNC=1 UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never .venv/bin/python -m pytest -q tests/contract/test_external_runtime_image_packaging.py tests/contract/test_external_runtime_image_security_pins.py`.
+- [x] Run RED: `UV_NO_SYNC=1 UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never .venv/bin/python -m pytest -q tests/contract/test_external_runtime_image_packaging.py tests/contract/test_external_runtime_image_security_pins.py`.
   Desired Python pin must fail before Dockerfile repair; earlier stale snapshot failures are recorded separately.
-- [ ] Replace both FROM pins in both Dockerfiles; correct the comment about unchanged Python,
+- [x] Replace both FROM pins in both Dockerfiles; correct the comment about unchanged Python,
   preserving every other approved OS/runtime setting. No lockfile or dependency changes.
-- [ ] Run the same command GREEN plus `tests/contract/test_runtime_image_pins.py` and
+- [x] Run the same command GREEN plus `tests/contract/test_runtime_image_pins.py` and
   `tests/contract/test_release_evidence.py`; require zero failures, inspect scope/index and commit.
 
 ### M2 — Actual source-frozen images and security evidence
@@ -58,19 +69,19 @@ replace only the selected Python base pin and repair strict stale regression exp
 root and new dedicated build workspace; no tracked image/report binaries.
 **Interfaces:** consumes M1 clean source, selected base identity and original tool/DB/archive receipts;
 produces actual archive hashes, final configs, SBOMs, raw scans and comparison receipts.
-- [ ] Revalidate existing rootless target `unix:///run/user/994/docker.sock`, actual inspector UID,
+- [x] Revalidate existing rootless target `unix:///run/user/994/docker.sock`, actual inspector UID,
   dormant application state and task-private tooling/DB bytes. Do not query/reconfigure rootful
   Docker, restart the daemon or run bootstrap. If prerequisites changed, stop that operation.
-- [ ] Freeze allowlisted tracked build inputs from clean source using the existing clean-Git-tree
+- [x] Freeze allowlisted tracked build inputs from clean source using the existing clean-Git-tree
   method. Use a fresh explicit private Docker context/config and additive source-versioned tags.
-- [ ] Build inspector then measurement from that exact context, without build-time secrets or
+- [x] Build inspector then measurement from that exact context, without build-time secrets or
   parser execution; preserve complete logs and actual inspected image/config/source labels.
-- [ ] Export both archives and verify raw index/platform/config/layer hashes using the established
+- [x] Export both archives and verify raw index/platform/config/layer hashes using the established
   OCI verification method. Read regular tarfile.py bytes without filesystem extraction; compare
   to official v3.12.15, retain its hash. Confirm actual Python version and exact ten OS pins.
-- [ ] Run Syft1.54.0 and Grype0.120.0 on those exact archives with unchanged retained DB;
+- [x] Run Syft1.54.0 and Grype0.120.0 on those exact archives with unchanged retained DB;
   retain raw originals, DB before/after hashes and all match/severity/fix-state counts.
-- [ ] Require CVE-2026-82049 absent for the corrected Python binary, preserve all other findings;
+- [x] Require CVE-2026-82049 absent for the corrected Python binary, preserve all other findings;
   compare actual non-Debian dependencies/OS inventory and old image IDs. No High0 rule or waiver.
 
 ### M3 — Review, local integration and truthful handoff

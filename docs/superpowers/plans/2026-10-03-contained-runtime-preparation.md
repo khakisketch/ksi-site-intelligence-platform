@@ -16,36 +16,46 @@ by the current EXT-VAL ledger, and ADR-KSI-036. The Human on 2026-10-03 selected
 runtime installation/configuration/start preparation. That supersedes the older no-host-work
 restriction only for this bounded task; it does not supply missing release/signing authority.
 
-## Current status — 2026-10-03 review follow-up
+## Current status — 2026-10-04 approved development follow-up
 
 **Subsequent Human continuation:** the Human requested all follow-up development improvements,
 selected **Grype original JSON direct support** rather than a scanner envelope producer, and
 approved the detailed two-image Python/native-consumer design and both written specs:
 [Python repair](../specs/2026-10-03-external-runtime-python-repair-design.md)
 and [native Grype evidence](../specs/2026-10-03-grype-native-evidence-design.md).
-Execution plans are now ready for Human review: [image repair](2026-10-03-external-runtime-python-repair.md)
-and [native consumer](2026-10-03-grype-native-evidence.md). They preserve local implementation,
+The Human approved [image repair](2026-10-03-external-runtime-python-repair.md)
+and [native consumer](2026-10-03-grype-native-evidence.md) plans for inline implementation. They preserve local implementation,
 independent verification and the actual external approval boundaries.
 The earlier B2 producer recommendation below is historical investigation, not the selected
-implementation route. New implementation will preserve raw reports and extend the strict runtime
+implementation route. Implemented native parsing preserves raw reports and extends the strict runtime
 consumer with versioned native-profile verification; no fabricated `scanner` fields. Application
 bundle tooling remains a separate design/verification unit. These design decisions supply no
-signing/credential/registry/release-security/host authority. No image repair or new consumer code
-has yet been applied under this continuation.
+signing/credential/registry/release-security/host authority.
 
-Static installation is complete. Both local runtime images have OS repairs, SBOMs and scans;
-each repaired scan reports 185 matches, Critical0/High60. Security disposition and release-evidence
+Static installation is complete. New actual images from clean source16084bf contain fixedPython3.12.15
+and unchanged prior OS repairs. Same-tool/DB scans report179matches, Critical0/High59 per image.
+The confirmed Python tarfile advisory is absent and actual bytes match upstreamfixedversion.
+Security disposition and release-evidence
 acceptance remain incomplete. Applications have not been activated; actual containment, public
 TIFF processing and quantitative-result verification have not run. The final Result section below
 is the **earlier static-installation stage**, not the current image/scanner status.
 
+Native Grype parser/strict consumer source6678e3b/c34fc8a has byte/config equality tests, but
+actual Docker29 `.Id` is an OCIindex whereas Grype identifies the config. The approved design's
+assumption of direct equality is false on this target. Actual reports reject the hostindex;
+no ID reinterpretation or invented hostbinding was applied. A separately reviewed verified
+index/platform/config-link contract is required for full native release binding here. Image repair
+and standalone consumer verification are distinct from this unresolved integration blocker.
+See [actual evidence](../../ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+
 The preceding review follow-up changed documentation only. Its repository baseline was
-`dbbee981a73a17a5f55aa3db405f7235d312445d`; inspected image source remains
+`dbbee981a73a17a5f55aa3db405f7235d312445d`; its then-inspected image source was
 `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, and installed templates remain bound to
-`928436f68ea271eaf4045112ab2a03bb590bbbeb`. Host state above is the retained preparation
-observation, not a fresh host/daemon revalidation in this follow-up. No code/image/host change,
+`928436f68ea271eaf4045112ab2a03bb590bbbeb`. That review used retained preparation
+observations, not a fresh host/daemon revalidation. No code/image/host change,
 new tool installation, key/credential provisioning, registry publication or activation is approved
-by this plan amendment. Task 3 below separates existing evidence from the work still needed.
+by that documentation amendment. Later approved development is recorded above; Task3's B1–B8
+review map remains historical context, not proof that its inputs or deployment gates exist.
 
 ## Global constraints and task record
 

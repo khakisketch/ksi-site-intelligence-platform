@@ -1,6 +1,6 @@
 # External runtime Python security repair design
 
-Status: written spec approved by Human on 2026-10-03; implementation not yet applied.
+Status: approved spec; source and both actual images repaired/verified, review/integration pending.
 Date: 2026-10-03
 
 ## Intent and authority

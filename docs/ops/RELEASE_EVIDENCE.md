@@ -51,6 +51,29 @@ repo digest가 생기기 전의 로컬 tag나 Docker image ID를 `@sha256:` rele
 host binding의 `runtimeProducts`에 들어가며, staging gate가 SBOM/scanner bytes와 실제
 로컬 image identity를 다시 대조한다.
 
+### Runtime scanner content compatibility
+
+`tools/verify_external_scanner_evidence.py` verifies strict inspector/measurement scanner
+bytes in the lifecycle. Existing nonempty `scanner.name`/`scanner.schemaVersion` envelopes
+remain supported; genuine Grype0.120.0 JSON is also parsed directly. It requires the supported
+descriptor/DB profile, well-formed matches and exact `source.target.imageID` equality with
+the independently verified host `dockerImageId`. Raw bytes are not rewritten, findings/ignores
+are not dropped, and DBv6.1.10 is not presented as a report schema. The16MiB regular-file
+reader hashes/parses one payload, rejects symlink traversal, changed files, duplicate keys,
+non-finite values and malformed/ambiguous/unknown profiles. Core/Dashboard generic scanner
+handling and canonical/host v1 wire shapes are unchanged.
+
+This equality rule is deliberately **not** an index-to-config converter. On the observed
+Docker29 containerd store, `.Id` is the OCI index, `--platform` yields the platform manifest,
+and the Grype scan ID is the config digest. These distinct identities fail equality. The
+standalone consumer accepts a retained report with its archive-verified config ID, but that
+does not establish a complete actual host/release binding. A separately reviewed image-link
+contract is required before native reports can satisfy the gate on that store. Never fabricate
+a host observation, reinterpret a manifest as a config, or use the report's own ID as its
+expected trusted ID. Registry promotion, tool signatures, original DB bytes/freshness, security
+disposition and live containment remain separate gates. Detailed verification is in
+[local evidence](SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+
 ```bash
 git status --short
 # 반드시 출력이 없어야 한다.

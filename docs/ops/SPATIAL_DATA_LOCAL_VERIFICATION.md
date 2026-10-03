@@ -283,6 +283,72 @@ re-observe live host state. The proposed gated endpoint is one genuinely Core-ad
 input processed by the real inspector and durably returned to Core, not full containment safety,
 quantitative accuracy, customer acceptance or Spatial Data execution acceptance. It remains unrun.
 
+### Python repair and native scanner consumer — 2026-10-04
+
+After the Human approved both written specs/plans and inline implementation, the two runtime
+Dockerfiles were repaired at source `16084bfa6c8bdde6123511ea11660852707e6760` to official
+Python3.12.15 index `sha256:29113dcae7aad06daa8e95260fa09f27d62be33b9687ea3774f771d601a02256`.
+Both actual ARM64 builds/exports succeeded from the exact clean592-file allowed context;
+only the two Dockerfiles differ from prior built source81f6988. Existing20261003 snapshots,
+all ten exact OS pins, uv/lockfile/dependencies, users and fixed entrypoints were preserved.
+Raw official base index/platform/config bytes and every archived OCI blob were hash-verified.
+Each final image's `tarfile.py` matches upstreamv3.12.15, SHA256
+`f0891b6936a39e5a41bd857fc149191fbe30ca84e5958f203682e76e218ff2a4`.
+No image entrypoint, public TIFF or service was executed.
+
+| Same-tool/same-DB matches per image | Prior OS repair | Python repair |
+| --- | ---: | ---: |
+| Total | 185 | 179 |
+| Critical | 0 | 0 |
+| High | 60 | 59 |
+| Medium | 67 | 63 |
+| Low | 12 | 11 |
+| Negligible | 46 | 46 |
+
+The retained Syft1.54.0/Grype0.120.0 binaries were rehashed to their acquisition receipts.
+DB SHA256 `053403d879610c96cccd011456cd053a3311131f084557132492cf076778e224` stayed identical.
+Six Python package/advisory matches disappeared, including `CVE-2026-82049`; none were added.
+Remaining fix states are fixed13/wont-fix112/not-fixed54 per image. Inventory and all non-Debian
+identities except the intentionally changed Python binary were unchanged. **High59 is not waived**;
+tool Sigstore authenticity and security/release disposition remain unverified.
+
+| Role | Local OCI index (`docker image inspect .Id`) | Actual config (Grype `imageID`) |
+| --- | --- | --- |
+| Inspector | `sha256:8183a062b1bc4b49bb7d16d9c3a2c9075e089d901a01553c82cb31aeea4c7252` | `sha256:e0887275556f3eff7e8bf258c3d9c186d1b80ae0c9f2924f623728ff51284382` |
+| Measurement | `sha256:8586f18203c95e1dacbb80b4d9eb1fa0aebf146969a127d73f6b8fb0c99d1b59` | `sha256:8bd386effecf84db49e4f943b41bc5bcc7e9a43e043cba084f3e8489dadf6d67` |
+
+Platform manifests are inspector
+`sha256:cd63a7201c291594cb8cb742158f6dc6b4d50f0cc69759268de3adcd1c045918` and measurement
+`sha256:8ce68012901dd750b8ac87eec3d7a7cdcaa3aa89ba5988993a7dd5f1a6f3ec8d`.
+All21 OCI blobs/15 layers per archive were checked; these identities are not interchangeable
+and local RepoDigests are not registry publication evidence.
+
+Native consumer source `6678e3b19e33f46ad3f0b2676937c0f6cf71de1a` and strict-stage integration
+`c34fc8a` preserve the original report bytes. Grype0.120.0/DBv6.1.10 profile, findings structure,
+safe-file identity, byte count/SHA256 and exact expected image ID are checked. Legacy envelopes
+remain compatible; there is no report-schema fabrication, security decision or new authority input.
+Verification: parser37RED→GREEN; stage native2RED→GREEN with legacy still valid; related source
+contracts147passed9.55s, Ruff/mypy/shell syntax clean. Actual Python evidence4RED→GREEN, combined
+Python/OS evidence8passed0.13s. Full regression results are recorded separately after completion.
+
+**Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
+the scan config ID. That is false on this actual containerd store: explicit platform inspection
+also gives a manifest, not a config. Four unchanged real reports (prior/new, both roles) pass the
+standalone verifier and strict artifact function when supplied their independently archive-verified
+config ID, and reject the actual Docker index, swapped IDs or wrong hash. This proves parser
+compatibility and fail-closed behavior, **not actual full release binding**. Do not supply that config
+ID as a fabricated host observation. A verified index/platform/config link requires a new reviewed
+security contract; native runtime release support on this actual target remains blocked.
+
+Receipts are retained in `.opencode/artifacts/contained-runtime-preparation-20261003/`:
+`image-build-16084bf/` (source, builds, archives/OCI/SBOM/scans/comparison), and `task3-analysis/`
+(pin/image RED→GREEN, scanner checks, raw-report checks). Private image archives are under
+`/tmp/opencode/ksi-runtime-verification-20261004-16084bf/`, and the rootless build copy under
+`/var/lib/ksi-external-runtime/launcher/build-evidence-20261004-16084bf/`. Earlier archives/reports,
+images/tags, original public files and workspaces were retained. Application bundles/signing/Core
+credentials, registry promotion, tool verification, genuine host containment, public-file analysis
+and customer/field/accuracy acceptance remain open; no push or activation occurred.
+
 ## Run local checks (no network or public binaries required)
 
 ```text

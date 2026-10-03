@@ -7,7 +7,23 @@
 artifact metadata and verified runtime config ID. Legacy scanner compatibility is retained.
 **Tech stack:** existing Python3, Bash/jq, pytest; no new dependencies.
 **Spec:** [approved native-consumer design](../specs/2026-10-03-grype-native-evidence-design.md).
-**State:** written spec approved by Human; this written implementation plan awaits review.
+**State:** spec/plan approved by Human for inline execution. G1/G2 implemented; actual target binding blocked.
+
+## Verified execution and discovered contract defect — 2026-10-04
+
+G1 source6678e3b:37RED→GREEN, Ruff/mypy clean. G2 sourcec34fc8a:2native RED→GREEN with
+legacy compatibility, source/release/scanner related checks147passed9.55s, shell syntax clean.
+G3 four unchanged real reports pass with independently archive-verified config IDs and reject
+wronghash/swappedID and the actual Dockerindex. No full release record/gate was manufactured.
+
+The approved plan assumed Docker's host-observed `.Id` was the config digest. On the actual
+Docker29 containerd store it is the OCIindex, and `--platform` instead returns a manifest;
+neither equals Grype's config ID. Ruling: preserve the approved exact equality and its actual
+blocking result, not a fake ID or weakened binding. A separately reviewed verified
+index/platform/config-link security contract is needed before this target can satisfy native
+release binding. Cost if wrong: current reports remain blocked in the full actual release gate.
+G1/G2 fixture results are not proof of this missing link. A parser-compatible, fail-closed partial
+implementation can be integrated independently while this broader objective remains open.
 
 ## Global constraints and implementation packet
 - Requirements: REQ-OPS-101, REQ-SEC-101; EXT-VAL-05/08 preparation only.
@@ -43,20 +59,20 @@ artifact metadata and verified runtime config ID. Legacy scanner compatibility i
 - `main(argv: Sequence[str] | None = None) -> int`: CLI requires `--path`, `--sha256`,
   `--bytes`, accepts `--image-id`; exit0 on valid, nonzero with safe error otherwise.
   Missing image identity is permitted only for existing legacy compatibility, never native.
-- [ ] Write `test_legacy_and_native_reports_are_disjoint_and_byte_bound`: valid legacy passes;
+- [x] Write `test_legacy_and_native_reports_are_disjoint_and_byte_bound`: valid legacy passes;
   labeled native0.120.0 fixture with exact config ID/hash/bytes passes; wrong ID/hash rejects;
   original file bytes remain equal. Import from tools using existing owner-test pattern.
-- [ ] Run RED: `UV_NO_SYNC=1 UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never .venv/bin/python -m pytest -q tests/contract/test_external_scanner_evidence.py`.
+- [x] Run RED: `UV_NO_SYNC=1 UV_OFFLINE=1 UV_PYTHON_DOWNLOADS=never .venv/bin/python -m pytest -q tests/contract/test_external_scanner_evidence.py`.
   Require failure because verifier is missing, not broken unrelated imports.
-- [ ] Implement normalized absolute descriptor-relative O_NOFOLLOW directory/file read; reject
+- [x] Implement normalized absolute descriptor-relative O_NOFOLLOW directory/file read; reject
   nonregular/empty/>16MiB files; fstat before/after, exact supplied size/hash; parse same bytes with
   duplicate/nonfinite/UTF8/root rejection. Do not dereference embedded report paths or URLs.
-- [ ] Implement exact native/legacy predicates from the spec, including full matches/ignored arrays,
+- [x] Implement exact native/legacy predicates from the spec, including full matches/ignored arrays,
   supported version/DB objects/source type/config identity. No fallback for mixed/malformed native.
-- [ ] Add parametrized tests for every native field rejection, zero matches, preserved ignored
+- [x] Add parametrized tests for every native field rejection, zero matches, preserved ignored
   matches, duplicate/NaN/UTF8 errors, oversized/nonregular/symlink parent/leaf and changed-read
   identity. Add CLI tests for positive validation and non-secret diagnostics/exit failures.
-- [ ] Run GREEN and prepared `.venv/bin/ruff check` for the two files; require zero failures/errors.
+- [x] Run GREEN and prepared `.venv/bin/ruff check` for the two files; require zero failures/errors.
   Inspect scoped diff/index and commit the verifier/tests.
 
 ### G2 — Strict runtime stage integration
@@ -66,26 +82,28 @@ artifact metadata and verified runtime config ID. Legacy scanner compatibility i
 expected_image_id="")`; strict scanner delegates to G1 with the actual runtime image ID.
 `require_release_evidence` passes its already image/RepoDigest-verified runtime `image_id`.
 Generic Core/Dashboard and other artifact behavior stays unchanged.
-- [ ] Write `test_runtime_scanner_accepts_native_grype_only_with_exact_image_binding`: source
+- [x] Write `test_runtime_scanner_accepts_native_grype_only_with_exact_image_binding`: source
   existing stage functions, valid raw native fixture with sixth image argument succeeds;
   missing/wrong ID/unknown native/mixed representation reject, old strict fixture stays valid.
-- [ ] Run RED for that test against the old stage (native report rejected).
-- [ ] Update only strict scanner branch and its two-role caller; delegate before any path-based
+- [x] Run RED for that test against the old stage (native report rejected).
+- [x] Update only strict scanner branch and its two-role caller; delegate before any path-based
   preliminary hash reread, so G1 hashes and validates the same descriptor payload. Reuse existing
   python3 prerequisite, fail closed if verifier unavailable; never execute report instructions.
-- [ ] Extend existing release/host shell fixture test to native runtime reports; changed report,
+- [x] Extend existing release/host shell fixture test to native runtime reports; changed report,
   config ID and RepoDigests remain rejected. No Docker/Compose/host action beyond its test stubs.
-- [ ] Run focused tests GREEN plus `bash -n deploy/bin/external-runtime-stage.sh` and existing
+- [x] Run focused tests GREEN plus `bash -n deploy/bin/external-runtime-stage.sh` and existing
   deployment/release/runtime pin tests; inspect scoped diff/index and commit.
 
 ### G3 — Genuine retained reports, docs and local integration
 **Modify:** `deploy/external-runtime/README.md`, `docs/ops/RELEASE_EVIDENCE.md`,
 `docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md`, existing contained-runtime task record.
 **Interfaces:** consumes G1/G2 plus retained original reports/OCI identity receipts; no producer envelope.
-- [ ] Run verifier and sourced strict-stage function on both unchanged real repaired Grype files
+- [x] Run verifier and sourced strict-stage function on both unchanged real repaired Grype files
   with actual raw hash/size/config IDs from retained receipts; each valid input passes and each
   swapped role/config/hash fails. Retain logs privately; do not fabricate a host release record.
-- [ ] Document native profile/legacy compatibility, DB/report and config/manifest distinctions,
+  **Limitation:** actualDockerindex also rejects; supplied configID was independently archive-verified,
+  not a valid replacement for the host-observed index. Full target release support remains blocked.
+- [x] Document native profile/legacy compatibility, DB/report and config/manifest distinctions,
   separate tool/DB/security review, and no change to release/source/registry/socket/authority gates.
 - [ ] Run complete new verifier and existing deployment/release tests, Ruff, shell syntax and
   suitable existing mypy check; read-only review of the task diff/evidence and scoped fixes.

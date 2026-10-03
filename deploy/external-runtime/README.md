@@ -178,8 +178,26 @@ external references used by this candidate Compose file: Caddy, MinIO, and
 MinIO Client. That three-reference host set must be an exact subset of the
 canonical inventory—this does not require the other build-only inventory images
 to be installed on the candidate host. Runtime SBOMs must
-be valid CycloneDX JSON; runtime scanner reports must be JSON objects with an
-explicit scanner name and schema version. Each observed repository-digest list
+be valid CycloneDX JSON. Strict runtime scanner validation accepts the existing
+`scanner.name`/`scanner.schemaVersion` envelope or the reviewed native Grype
+`0.120.0` profile, without rewriting the original report. Native reports require
+DB status `valid: true`, DB schema `v6.1.10`, well-formed findings, and exact
+`source.target.imageID` equality with the already verified host `dockerImageId`.
+The verifier reads, hashes and parses the same bounded regular-file payload,
+rejecting duplicate/non-finite JSON, symlinks and observed file replacement.
+DB schema is not report schema, and format validation is not a vulnerability
+waiver, tool-signature/DB-authenticity proof or activation approval.
+
+**Actual target limitation:** the inspected Docker 29 containerd store returns
+an OCI index as `.Id`, while Grype reports a config digest. `--platform` inspection
+returns a platform manifest, still not the config digest. The native equality
+path therefore **blocks on this target**. Do not substitute a config ID in a
+host record observed as an index, relabel a manifest, or add fabricated scanner
+fields. Supporting this target requires a separately reviewed, cryptographically
+verified index/platform/config link; no such runtime contract is implemented.
+See [local evidence](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+
+Each observed repository-digest list
 must include the immutable release reference's canonical repository digest.
 The observed immutable Core and Dashboard Docker image IDs—not
 `ksi-external-rc-*:local` lookup tags—are exported only after this validation
