@@ -212,6 +212,55 @@ OCI-pair/revocation/trust configuration and subsequent Core policy/worker author
 supplied and verified. Static files create none of those approvals. Public inspection, preparation,
 pixel/mask comparison, analysis, actual host containment and customer acceptance remain unrun.
 
+### 2026-10-03 — source-bound local image security repair (not release)
+
+The Human then approved task-private verification tools/DB and local rootless builds, followed by
+the two images' OS-package security repair. The original images and scans remain preserved. From
+clean source `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, both Dockerfiles now use the fixed
+20261003 Debian snapshot and corrected gzip, glibc, PCRE2, SQLite, OpenSSL and Perl versions.
+Base-image/uv digests, `uv.lock`, non-root users and fixed entrypoints are unchanged. Both actual
+ARM64 builds and exports succeeded; no application container or raster parser was started.
+APT completed with normal signature checks and no bypass flags or signature errors; the quiet
+build logs do not retain verbose InRelease verification lines.
+
+| Same-tool / same-DB result per image | Before | After |
+| --- | ---: | ---: |
+| Total package/advisory matches | 253 | 185 |
+| Critical | 7 | 0 |
+| High | 87 | 60 |
+| Medium | 88 | 67 |
+| Low | 25 | 12 |
+| Negligible | 46 | 46 |
+
+These are scanner matches, not demonstrated exploitability or unique CVE counts. Syft1.54.0 and
+Grype0.120.0 official archives/checksums/licenses were retained; Sigstore bundles were not verified.
+DB v6.1.10 built2026-10-03T06:31:58Z remained byte-identical during repaired scans, and repeated
+baseline scans reproduced the original matches. Actual SBOM versions prove the nine targeted OS
+packages changed, while non-Debian package identities and package inventory were preserved.
+Real old/new evidence tests observed **4 failures -> 4 passes**; owner regressions **584 passed,
+2 generated-fixture warnings**. The earlier full suite belongs to its earlier source state.
+
+| Role | Locally observed OCI index digest (not registry publication) |
+| --- | --- |
+| Inspector | `sha256:b6017a896a9c18194116f1caceca99f088e2f5c11ddc1b48f52a5faed815499f` |
+| Measurement | `sha256:89c3a6ef6415fdc5094b3234ac558bea6a0ed81f5ac077dedf64ce65a8bccc98` |
+
+All referenced OCI blobs/configs/layers and actual SBOM/scanner image identities were compared.
+Docker-save/Syft's synthetic manifest is **not** the local OCI index digest; both are recorded
+separately. Raw Grype JSON also lacks the existing host gate's scanner envelope. No placeholder
+envelope, signed input, host binding or release approval was created from these observations.
+
+**Still blocked:** High60 per image remains, including Debian `wont-fix`/`not-fixed` entries and a
+Python3.12.14 binary advisory with a reported fix. No finding was ignored or waived. Security
+applicability/release review, compliant release/host evidence, actual protected application bundles,
+signed execution/OCI-pair/revocation/trust configuration, Core policy and worker authority remain
+required. The application sockets remain disabled/services inactive and older tags retain their
+original identities. Public inspection, crop/pixel-mask comparison and analysis remain **NOT_RUN**;
+no customer, accuracy, Terra, deployment or field acceptance follows from this repair. Evidence and
+remaining gates are recorded in the [existing preparation plan](../superpowers/plans/2026-10-03-contained-runtime-preparation.md).
+An independent read-only review found no blocking OS-repair code defect; the residual Python
+advisory and missing compliant scanner/release evidence remain activation blockers, not waivers.
+
 ## Run local checks (no network or public binaries required)
 
 ```text

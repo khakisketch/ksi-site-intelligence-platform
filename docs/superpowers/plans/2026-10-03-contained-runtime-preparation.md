@@ -72,12 +72,12 @@ staging, signing-key/policy changes, registry push, application activation, or p
 
 ### Repair checklist
 
-- [ ] S1 Observe actual baseline RED for selected OS findings and corrected-version requirements.
-- [ ] S2 Pin 20261003T000000Z in both final stages and explicitly upgrade only affected OS packages;
+- [x] S1 Observe actual baseline RED for selected OS findings and corrected-version requirements.
+- [x] S2 Pin 20261003T000000Z in both final stages and explicitly upgrade only affected OS packages;
   run existing contracts, commit source and freeze exact clean Git-tree context.
-- [ ] S3 Rebuild/export under task-specific rootless context, generate SBOM/scans using same DB,
+- [x] S3 Rebuild/export under task-specific rootless context, generate SBOM/scans using same DB,
   verify real package versions and targeted finding removal; preserve all residual matches.
-- [ ] S4 Independent read-only whole-change review; record findings/limitations, verified local
+- [x] S4 Independent read-only whole-change review; record findings/limitations, verified local
   integration and activation blockers. Keep product slice unchanged.
 
 Hypothesis: the 20260911 snapshot and selectively upgraded expat/OpenSSL leave vulnerable base OS
@@ -90,6 +90,73 @@ Pre-flight interfaces: clean Git tree -> local build revision/config/OCI layers 
 source -> unchanged Grype DB -> real scan findings. Docker-save/Syft manifest transformations and
 local repository digests are not registry publication; preserve each identity separately. Raw Grype
 JSON lacks the host gate's `scanner.name/schemaVersion` envelope; no invented envelope or host proof.
+
+### Observed security-repair evidence
+
+- Clean repair source: `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`; its build-context archive SHA-256
+  is `bc1dde84d084365f4e36f06075f5e3d7991b455ce7734070a4755e744185b0d1`.
+  Of 592 archived files only the two Dockerfiles differ from baseline `17a9e59`.
+- Both ARM64 builds succeeded on the existing dedicated rootless daemon using a fresh explicit
+  task context. APT completed without signature error or bypass flags and installed the corrected
+  packages; quiet build logs do not retain verbose InRelease/signature-verification lines.
+  distinct non-root identities and fixed entrypoints remain unchanged. No application was run.
+- Syft 1.54.0 / Grype 0.120.0, DB v6.1.10 built `2026-10-03T06:31:58Z`; actual DB SHA-256 before
+  and after repaired scans: `053403d879610c96cccd011456cd053a3311131f084557132492cf076778e224`.
+  Repeated baseline scans reproduced their exact matches on the same retained DB/provider metadata.
+- Per image: 253 -> 185 matches, Critical 7 -> 0, High 87 -> 60, Medium 88 -> 67,
+  Low 25 -> 12, Negligible 46 unchanged; distinct vulnerability IDs 133 -> 93.
+- Actual SBOM versions for all nine targeted packages corrected; non-Debian package identities
+  unchanged and no Debian packages removed. Four real evidence tests observed RED4 -> GREEN4.
+  Existing contracts 177 passed; broader owner regressions 584 passed with two generated-fixture
+  `NotGeoreferencedWarning`s. This is not a new full-suite or real raster/containment acceptance run.
+- Every referenced OCI blob in four baseline/repaired archives was hashed; selected ARM64 manifest,
+  raw config and rootfs layers bind the actual SBOM and scanner image identity. OCI index, platform
+  manifest, config ID and Syft's synthetic Docker manifest are separate recorded identities.
+- Remaining High60 includes Debian `wont-fix`/`not-fixed` records and a Python 3.12.14 binary match
+  with a reported fix. None is suppressed or accepted; Python/base-image changes are outside this
+  approved OS-pin repair. Official applicability/severity/release review remains necessary.
+- Private reports/tests/build logs are preserved in `.opencode/artifacts/contained-runtime-preparation-20261003/`
+  under `image-build-17a9e59` and `image-build-81f6988`. Tool/DB/image archives remain in the approved
+  task-private `/tmp/opencode/ksi-runtime-verification-20261003-17a9e59/` and dedicated build homes.
+  These are local evidence locations, not Git-delivered binaries or durable external release archives.
+- Older `b2c714e` and baseline local image tags retain their exact original IDs. Docker PID3090 is
+  unchanged; both application sockets disabled and services inactive; no running containers.
+  Release/scanner envelope, protected application bundles, signed execution/OCI-pair/trust inputs,
+  actual containment and Core policy/worker authority remain unsupplied/unverified.
+
+### Independent review and disposition
+
+Read-only reviewer `ses_efe89d21affe9Ch5pQ85vDUd8L` checked the committed source range, pending
+outcome docs and actual private reports/logs. No blocking code defect was found in the narrow
+OS repair. Its two Important items are **remaining activation/release risks**, not authorization
+to expand this repair: fixed-state High Python `CVE-2026-82049` and incompatible raw scanner
+envelope. Primary separately confirmed both against actual reports. Source integration is separate
+from release/data-plane integration: the latter remains blocked, and no `verify/start` was run.
+
+The documentation now says exactly what the quiet APT log proves (completed without signature
+error/bypass flags), rather than claiming independently logged signature verification. No image
+rebuild is required for this evidence-wording correction. Review minors retained: old-tag
+preservation and new-image identity appear in separate cross-referenced evidence files; some
+historical source references use short hashes while full identities are available in the receipts.
+
+Rulings on the review's declined-to-judge list:
+
+1. Residual exploitability and `wont-fix`/`not-fixed` correctness remain unverified, not waived;
+   cost if wrong: release stays blocked pending official/contextual security review.
+2. Snapshot/finding removal is verified; independent complete CVE-to-version tracker review is
+   not claimed for all pins. Cost if wrong: corrected-version evidence must be re-evaluated before release.
+3. Rootless metadata is not functional containment. Cost if wrong: no public raster execution is admitted.
+4. Retained Sigstore bundles are not verified signatures. Cost if wrong: tool authenticity needs
+   independent verification before any security release acceptance.
+5. Release/host/execution/customer acceptance remains absent. Cost if wrong: no activation or
+   quantitative/customer claim follows from local source integration or the scanner result.
+
+The verified source commit `81f69883b59f53a2a015faea8fd4caa6d8cb34e3` was locally fast-forwarded
+into clean `main` after target/source/index checks. On actual main, the broader owner regression
+command passed **584 tests, 2 generated-fixture warnings in 24.69s**; log
+`image-build-81f6988/main-owner-regressions.log` is retained in the private task evidence.
+The subsequent outcome-doc changes alter no image/build inputs. Existing task-owned worktree and
+private evidence are retained for this still-blocked runtime task. No push or cleanup occurred.
 
 ## Review focus
 
