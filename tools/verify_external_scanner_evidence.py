@@ -200,7 +200,13 @@ def verify_scanner_evidence(
         raise ScannerEvidenceError("JSON_SYNTAX") from error
     if not isinstance(value, dict):
         raise ScannerEvidenceError("JSON_ROOT")
-    native = "descriptor" in value or "source" in value
+    source = value.get("source")
+    # Legacy envelopes may carry unrelated source annotations. Grype's
+    # descriptor or structured source fields identify the native family;
+    # malformed native candidates still cannot fall back to legacy.
+    native = "descriptor" in value or (
+        isinstance(source, dict) and ("type" in source or "target" in source)
+    )
     if native:
         if "scanner" in value:
             raise ScannerEvidenceError("AMBIGUOUS_FORMAT")

@@ -156,6 +156,19 @@ def test_zero_matches_and_ignored_findings_are_preserved_without_policy(tmp_path
     assert json.loads(original)["ignoredMatches"][0]["vulnerability"]["severity"] == "High"
 
 
+def test_legacy_incidental_source_metadata_is_not_misclassified_as_native(tmp_path: Path) -> None:
+    tool = _tool()
+    report = {
+        "scanner": {"name": "legacy", "schemaVersion": "1.0"},
+        "source": {"note": "original producer metadata"},
+        "matches": [],
+    }
+    path = _write(tmp_path, report)
+    payload = path.read_bytes()
+    assert _verify(tool, path) == "legacy"
+    assert path.read_bytes() == payload
+
+
 @pytest.mark.parametrize("payload", [
     b'{"scanner":{"name":"a","name":"b","schemaVersion":"1.0"}}',
     b'{"scanner":{"name":"test","schemaVersion":"1.0"},"x":NaN}',
