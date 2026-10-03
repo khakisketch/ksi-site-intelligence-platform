@@ -153,6 +153,31 @@ Observed here: original temporary files are absent, no positive production conta
 material is available, and no public-file preparation/decoding or network experiment was
 performed. Public acceptance remains open, not inferred from generated tests.
 
+### 2026-10-03 — public original acquisition (latest availability evidence)
+
+The Human approved downloading both official public development originals (528,213,164 bytes
+total). They are now retained on this server under the canonical main checkout's ignored
+`.dev-data/public-geotiff/floreat-f4-2022-08-24/`, not in temporary worktree storage or Git.
+The DSM and ORTHO match both exact size/SHA-256 pins in the table above and pass the existing
+`original_identity` checks. Originals are read-only `0400` within an owner-private `0700`
+dataset directory. `ACQUISITION.json`, `catalogue-provenance.json`, `ATTRIBUTION.txt`,
+`LICENSE_CAPTURE.json` and `IDENTITY_VERIFICATION.json` retain source/rights/identity evidence.
+Cambridge Coastcare and catalogue author Meg Anklesaria are credited. Catalogue and official
+CC BY4 deed/legal code were checked; the optional local plain-text license copy was unavailable
+with HTTP403, so the official license link is retained, not an invented downloaded legal copy.
+
+Acquisition follows only the catalogue's exact registered DataWA S3 object delegation. Expiring
+download queries are not stored in dataset records. This is a separate public-source acquisition
+probe, **not** permission to enable redirects in the product consumer or worker.
+
+The old missing-original availability observation above is superseded, but none of its inspection
+or host gates is closed. The existing preflight now stops at `INSPECTION_UNAVAILABLE` for each
+acquired original before policy/token/HTTP transport. No TIFF/GDAL decoding, crop, resampling,
+derived output, analysis or runtime provisioning was performed. Declared capture2022-08-24,
+EPSG:7850 and Pix4D production are catalogue statements, not new measured facts. Vertical datum,
+independent accuracy, DJI Terra compatibility, accepted inspection/containment and customer
+two-cycle acceptance remain unverified. This single-epoch public pair does not supply `t0,t1,t2`.
+
 ## Run local checks (no network or public binaries required)
 
 ```text
