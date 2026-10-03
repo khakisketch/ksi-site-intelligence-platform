@@ -48,6 +48,14 @@ index/platform/config-link contract is required for full native release binding 
 and standalone consumer verification are distinct from this unresolved integration blocker.
 See [actual evidence](../../ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
 
+Independent review and one Important repair pass are complete. Actual-main full Python at
+e3c3d27 with command-localumask022:8239passed/121skipped/98warnings/zero failures772.62s.
+Intermediate0002/077 fixture and SDKdirectory failures remain disclosed in the local evidence;
+no production/SDK gate was relaxed. Python repair and narrow native parsing are locally integrated,
+not a full runtime release. The Human selected verified-linkv2 design;
+[written spec](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md) is pending Human
+review, not an implemented schema/tool or permission to generate real release/signing inputs.
+
 The preceding review follow-up changed documentation only. Its repository baseline was
 `dbbee981a73a17a5f55aa3db405f7235d312445d`; its then-inspected image source was
 `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, and installed templates remain bound to

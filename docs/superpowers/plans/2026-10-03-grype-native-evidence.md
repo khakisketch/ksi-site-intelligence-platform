@@ -9,6 +9,10 @@ artifact metadata and verified runtime config ID. Legacy scanner compatibility i
 **Spec:** [approved native-consumer design](../specs/2026-10-03-grype-native-evidence-design.md).
 **State:** spec/plan approved by Human for inline execution. G1/G2 implemented; actual target binding blocked.
 
+Narrow G3 review/regression/local integration is recorded below; the overall actual-target
+native release-binding objective remains open. Human selected a new verified-linkv2 design;
+its written spec is pending review and no v2 product code has been applied.
+
 ## Verified execution and discovered contract defect — 2026-10-04
 
 G1 source6678e3b:37RED→GREEN, Ruff/mypy clean. G2 sourcec34fc8a:2native RED→GREEN with
@@ -105,11 +109,23 @@ Generic Core/Dashboard and other artifact behavior stays unchanged.
   not a valid replacement for the host-observed index. Full target release support remains blocked.
 - [x] Document native profile/legacy compatibility, DB/report and config/manifest distinctions,
   separate tool/DB/security review, and no change to release/source/registry/socket/authority gates.
-- [ ] Run complete new verifier and existing deployment/release tests, Ruff, shell syntax and
+- [x] Run complete new verifier and existing deployment/release tests, Ruff, shell syntax and
   suitable existing mypy check; read-only review of the task diff/evidence and scoped fixes.
-- [ ] Commit docs; recheck authorized clean main target, integrate verified task commits and rerun
+- [x] Commit docs; recheck authorized clean main target, integrate verified task commits and rerun
   affected checks there. Report parser compatibility only; no activation, registry push or raw rewrite.
 
 Self-review: G1 covers native/legacy/safe-file requirements, G2 exact existing consumer integration,
 G3 actual preserved byte evidence/docs and remaining gates. Interface names/arguments agree in
 all tasks. Bundle packaging is a separate later unit, not an implied supplier/authority substitute.
+
+## Narrow technical closure evidence — 2026-10-04
+
+One independent read-only review completed; one Important fix pass preserved incidental legacy
+source annotations without fallback for Grype-shaped descriptor/source. Related242tests passed;
+Ruff/mypy/bash syntax clean. Actual-main full Python ate3c3d27 with command-localumask022:
+8239passed/121skipped/98warnings/zero failures772.62s. Both original failed environment-controlled
+full runs remain retained/disclosed; production/reference gates were not weakened.
+Four actual raw reports remain byte-identical; standaloneconfigID passes, actualindexID fails.
+Do not read these checked G3 narrow-work boxes as full target release acceptance: verifiedlink,
+actual registry/Core/Dashboard/security/authority/host inputs remain absent. New v2 spec is
+separate future work, not this plan's completed implementation or an authority supplier.

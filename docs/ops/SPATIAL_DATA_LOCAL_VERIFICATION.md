@@ -347,6 +347,23 @@ Without any product change or gate relaxation, command-local umask077 rerun of b
 files passed54tests5.37s. The original failed log is retained; a final full run is still required
 and will be reported with its actual revision/command/result, not inferred from this scoped rerun.
 
+Final actual-main verification at `e3c3d27c63c6338a95b7a19532d4b7498ee73d78` ran the complete
+`.venv/bin/python -m pytest -q` with prepared dependencies, offline/no-sync/no-download settings
+and command-local umask022: **8239passed,121skipped,98warnings,zero failures in772.62s**.
+The interim main run with umask077 had8238passed/1SDKpackagingfailure: vendored `build_dpk.sh`
+created a0700 `DEBIAN` directory, which `dpkg-deb` rejects (requires0755..0775). A separate local,
+never-installed package fixture proved0700exit2/0755exit0; C locale alone did not resolve it.
+With umask022, both authority directory gates and actual SDK package test passed (67scopedchecks),
+then the full suite above passed. No product/reference/SDK code or host permission policy changed.
+All failed/interim logs remain retained alongside `follow-up-main-full-python-umask022.log`.
+This is full local source regression evidence, not release, containment or field acceptance.
+
+The Human selected a new v2 archive/index/platform/config-link design after this actual binding
+defect was found. Its [written spec](../superpowers/specs/2026-10-04-external-runtime-oci-scanner-link-design.md)
+is pending review; no v2 schema/verifier/consumer has been implemented. Protected application bundle
+packaging remains a separate design unit. Prior source/profile identities are never relabeled as
+current release evidence, and required real authority suppliers/inputs remain unresolved.
+
 **Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
 the scan config ID. That is false on this actual containerd store: explicit platform inspection
 also gives a manifest, not a config. Four unchanged real reports (prior/new, both roles) pass the

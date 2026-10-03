@@ -7,7 +7,7 @@
 replace only the selected Python base pin and repair strict stale regression expectations.
 **Tech stack:** existing Docker, Python3.12, uv0.11.15, pinned private Syft/Grype/DB.
 **Spec:** [approved design](../specs/2026-10-03-external-runtime-python-repair-design.md).
-**State:** spec/plan approved by Human for inline execution. M1/M2 verified; M3 review/integration pending.
+**State:** M1–M3 technical work verified and locally integrated; security/release/activation acceptance remains open.
 
 ## Verified execution boundary — 2026-10-04
 
@@ -87,14 +87,26 @@ produces actual archive hashes, final configs, SBOMs, raw scans and comparison r
 ### M3 — Review, local integration and truthful handoff
 **Files:** existing contained-runtime plan/task ledger and `docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md`.
 **Interfaces:** consumes M1/M2 actual evidence; produces verified task-owned source integration only.
-- [ ] Run both packaging/security tests, runtime pins, release/deployment tests and relevant
+- [x] Run both packaging/security tests, runtime pins, release/deployment tests and relevant
   inspector/measurement owner regressions. Preserve counts/warnings and explicit unrun gates.
-- [ ] Read-only review of task diff and actual evidence; fix only scoped findings, rerun affected
+- [x] Read-only review of task diff and actual evidence; fix only scoped findings, rerun affected
   checks. No standing reviewer loop or unrelated dependency work.
-- [ ] Record source/base/image/archive/SBOM/scan identities and limitations, commit owned docs.
-- [ ] Recheck clean local main target and task diff; fast-forward authorized task commits and rerun
+- [x] Record source/base/image/archive/SBOM/scan identities and limitations, commit owned docs.
+- [x] Recheck clean local main target and task diff; fast-forward authorized task commits and rerun
   affected source contracts on actual main. Retain all workspaces/evidence; no push/cleanup.
-- [ ] Report corrected images separately from release/security/host/authority/customer acceptance.
+- [x] Report corrected images separately from release/security/host/authority/customer acceptance.
 
 Self-review: spec requirements route to M1 exact source, M2 actual bytes/scans, M3 integration
 and limitations. Every Review focus line has its named verification step; no invented authority.
+
+## Technical closure evidence — 2026-10-04
+
+Independent read-only review completed; one Important fix passc3ee4b7 promoted allten exact OS
+pin/deletion/substitution checks and corrected whitespace-token matching. Related242tests passed,
+Ruff/mypy/bash syntax clean. Actual-main complete Python suite at
+`e3c3d27c63c6338a95b7a19532d4b7498ee73d78` with command-localumask022:
+8239passed/121skipped/98warnings/zero failures772.62s. The default0002 and interim077 runs'
+fixture/SDKpermission failures are retained/disclosed, not removed or waived. No vendor/product
+permission gate was weakened. Source/images/evidence remain at their distinct exact revisions.
+Localfastforward only, no push/cleanup/deploy. Existing task ledger and local evidence docs retain
+full receipts/rulings and unverified external gates; no product-slice close or customer acceptance.

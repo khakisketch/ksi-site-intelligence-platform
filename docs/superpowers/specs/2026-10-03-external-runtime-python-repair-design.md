@@ -1,6 +1,7 @@
 # External runtime Python security repair design
 
-Status: approved spec; source and both actual images repaired/verified, review/integration pending.
+Status: source/actual-image repair independently reviewed, locally integrated and regression-verified;
+security/release/activation/customer acceptance remains open.
 Date: 2026-10-03
 
 ## Intent and authority
