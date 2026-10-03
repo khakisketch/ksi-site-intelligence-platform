@@ -18,13 +18,25 @@ restriction only for this bounded task; it does not supply missing release/signi
 
 ## Current status — 2026-10-03 review follow-up
 
+**Subsequent Human continuation:** the Human requested all follow-up development improvements,
+selected **Grype original JSON direct support** rather than a scanner envelope producer, and
+approved the detailed two-image Python/native-consumer design in chat. Written specs are now
+pending Human review: [Python repair](../specs/2026-10-03-external-runtime-python-repair-design.md)
+and [native Grype evidence](../specs/2026-10-03-grype-native-evidence-design.md).
+The earlier B2 producer recommendation below is historical investigation, not the selected
+implementation route. New implementation will preserve raw reports and extend the strict runtime
+consumer with versioned native-profile verification; no fabricated `scanner` fields. Application
+bundle tooling remains a separate design/verification unit. These design decisions supply no
+signing/credential/registry/release-security/host authority. No image repair or new consumer code
+has yet been applied under this continuation.
+
 Static installation is complete. Both local runtime images have OS repairs, SBOMs and scans;
 each repaired scan reports 185 matches, Critical0/High60. Security disposition and release-evidence
 acceptance remain incomplete. Applications have not been activated; actual containment, public
 TIFF processing and quantitative-result verification have not run. The final Result section below
 is the **earlier static-installation stage**, not the current image/scanner status.
 
-This follow-up changes documentation only. Repository baseline is
+The preceding review follow-up changed documentation only. Its repository baseline was
 `dbbee981a73a17a5f55aa3db405f7235d312445d`; inspected image source remains
 `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, and installed templates remain bound to
 `928436f68ea271eaf4045112ab2a03bb590bbbeb`. Host state above is the retained preparation
