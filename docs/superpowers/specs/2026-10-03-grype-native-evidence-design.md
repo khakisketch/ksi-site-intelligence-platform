@@ -1,6 +1,6 @@
 # Native Grype runtime scanner evidence design
 
-Status: design direction approved in chat; written-spec review pending.
+Status: written spec approved by Human on 2026-10-03; implementation not yet applied.
 Date: 2026-10-03
 
 ## Intent and selected approach

@@ -20,9 +20,12 @@ restriction only for this bounded task; it does not supply missing release/signi
 
 **Subsequent Human continuation:** the Human requested all follow-up development improvements,
 selected **Grype original JSON direct support** rather than a scanner envelope producer, and
-approved the detailed two-image Python/native-consumer design in chat. Written specs are now
-pending Human review: [Python repair](../specs/2026-10-03-external-runtime-python-repair-design.md)
+approved the detailed two-image Python/native-consumer design and both written specs:
+[Python repair](../specs/2026-10-03-external-runtime-python-repair-design.md)
 and [native Grype evidence](../specs/2026-10-03-grype-native-evidence-design.md).
+Execution plans are now ready for Human review: [image repair](2026-10-03-external-runtime-python-repair.md)
+and [native consumer](2026-10-03-grype-native-evidence.md). They preserve local implementation,
+independent verification and the actual external approval boundaries.
 The earlier B2 producer recommendation below is historical investigation, not the selected
 implementation route. New implementation will preserve raw reports and extend the strict runtime
 consumer with versioned native-profile verification; no fabricated `scanner` fields. Application
