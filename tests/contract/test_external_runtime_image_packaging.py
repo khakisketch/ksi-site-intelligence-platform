@@ -10,8 +10,8 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _PINNED_PYTHON = (
-    "python:3.12.14-slim@sha256:"
-    "09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217"
+    "python:3.12.15-slim@sha256:"
+    "29113dcae7aad06daa8e95260fa09f27d62be33b9687ea3774f771d601a02256"
 )
 _PINNED_UV = (
     "ghcr.io/astral-sh/uv:0.11.15@sha256:"
@@ -50,11 +50,15 @@ def test_independent_external_runtime_images_have_closed_fixed_entrypoints() -> 
     for relative, expected in _RUNTIMES.items():
         dockerfile = (_ROOT / relative).read_text(encoding="utf-8")
 
-        assert f"FROM {_PINNED_PYTHON}" in dockerfile
+        from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ")]
+        assert from_lines == [
+            f"FROM {_PINNED_PYTHON} AS runtime-builder",
+            f"FROM {_PINNED_PYTHON}",
+        ]
         assert f"COPY --from={_PINNED_UV}" in dockerfile
-        assert "https://snapshot.debian.org/archive/debian/20260911T000000Z" in dockerfile
+        assert "https://snapshot.debian.org/archive/debian/20261003T000000Z" in dockerfile
         assert (
-            "https://snapshot.debian.org/archive/debian-security/20260911T000000Z"
+            "https://snapshot.debian.org/archive/debian-security/20261003T000000Z"
             in dockerfile
         )
         assert "libexpat1=2.8.3-1~deb13u1" in dockerfile

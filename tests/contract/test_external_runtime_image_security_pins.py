@@ -7,8 +7,8 @@ import tomllib
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_DEBIAN_SNAPSHOT = "20260911T000000Z"
-_OPENSSL_VERSION = "3.5.7-1~deb13u2"
+_DEBIAN_SNAPSHOT = "20261003T000000Z"
+_OPENSSL_VERSION = "3.5.7-1~deb13u3"
 _CRYPTOGRAPHY_VERSION = "50.0.1"
 
 
