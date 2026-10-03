@@ -1250,8 +1250,50 @@ def test_canonical_inventory_and_candidate_host_binding_use_distinct_exact_sourc
     ).returncode != 0
 
 
+def _native_grype_report(image_id: str) -> bytes:
+    """A labeled compatibility fixture, not image/release/security evidence."""
+    return json.dumps({
+        "descriptor": {
+            "name": "grype", "version": "0.120.0", "timestamp": "2026-10-04",
+            "configuration": {}, "db": {
+                "status": {"valid": True, "schemaVersion": "v6.1.10", "built": "2026-10-03"},
+                "providers": {},
+            },
+        },
+        "source": {"type": "image", "target": {"imageID": image_id}},
+        "matches": [],
+    }).encode()
+
+
+def test_runtime_scanner_accepts_native_grype_only_with_exact_image_binding(tmp_path: Path) -> None:
+    image_id = "sha256:" + "a" * 64
+    path = tmp_path / "native.json"
+
+    def validate(payload: bytes, expected_id: str) -> subprocess.CompletedProcess[str]:
+        path.write_bytes(payload)
+        return subprocess.run([
+            "bash", "-c", 'source "$1"; verify_artifact_binding "$2" "$3" "$4" scanner-json 1 "$5"',
+            "bash", str(_STAGE), str(path), "sha256:" + hashlib.sha256(payload).hexdigest(),
+            str(len(payload)), expected_id,
+        ], capture_output=True, text=True, check=False)
+
+    original = _native_grype_report(image_id)
+    good = validate(original, image_id)
+    assert good.returncode == 0, good.stderr
+    assert path.read_bytes() == original
+    for expected_id in ["", "sha256:" + "b" * 64]:
+        assert validate(original, expected_id).returncode != 0
+    invalid_version = original.replace(b"0.120.0", b"0.121.0")
+    assert validate(invalid_version, image_id).returncode != 0
+    mixed = json.loads(original)
+    mixed["scanner"] = {"name": "test", "schemaVersion": "1.0"}
+    assert validate(json.dumps(mixed).encode(), image_id).returncode != 0
+    assert validate(b'{"scanner":{"name":"test","schemaVersion":"1.0"}}', "").returncode == 0
+
+
+@pytest.mark.parametrize("native_scanner", [False, True])
 def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact_host_binding(
-    tmp_path: Path,
+    tmp_path: Path, native_scanner: bool,
 ) -> None:
     """The v1 producer shape is not reinterpreted as host-local provenance.
 
@@ -1272,7 +1314,7 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
     canonical_images, candidate_images = _runtime_image_reference_sets()
 
     artifacts: dict[str, dict[str, object]] = {}
-    for name, contents in {
+    artifact_contents = {
         "core.sbom": b'{"bomFormat":"CycloneDX","specVersion":"1.5"}',
         "core.scanner": b'{"scanner":{"name":"test","schemaVersion":"1.0"},"results":[]}',
         "dashboard.sbom": b'{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}',
@@ -1281,7 +1323,11 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
         "inspector.scanner": b'{"scanner":{"name":"test","schemaVersion":"1.0"},"matches":[]}',
         "measurement.sbom": b'{"bomFormat":"CycloneDX","specVersion":"1.5","components":[{}]}',
         "measurement.scanner": b'{"scanner":{"name":"test","schemaVersion":"1.0"},"findings":[]}',
-    }.items():
+    }
+    if native_scanner:
+        artifact_contents["inspector.scanner"] = _native_grype_report(inspector_image_id)
+        artifact_contents["measurement.scanner"] = _native_grype_report(measurement_image_id)
+    for name, contents in artifact_contents.items():
         path = tmp_path / name
         path.write_bytes(contents)
         artifacts[name] = {
@@ -1501,6 +1547,36 @@ require_release_evidence
     )
 
     assert result.returncode == 0, result.stderr
+
+    if native_scanner:
+        # An actual store reporting an OCI index instead of the config must block,
+        # not reinterpret the report's config ID as that index or use a role alias.
+        wrong_image = _native_grype_report(measurement_image_id)
+        (tmp_path / "inspector.scanner").write_bytes(wrong_image)
+        host_binding["runtimeProducts"][0]["scanner"] = {
+            "path": str(tmp_path / "inspector.scanner"),
+            "sha256": "sha256:" + hashlib.sha256(wrong_image).hexdigest(),
+            "bytes": len(wrong_image), "type": "scanner-json",
+        }
+        binding_path.write_text(json.dumps(host_binding), encoding="utf-8")
+        different_config = subprocess.run(result.args, text=True, capture_output=True, check=False)
+        assert different_config.returncode != 0
+        assert "inspector scanner artifact differs" in different_config.stderr
+        (tmp_path / "inspector.scanner").write_bytes(artifact_contents["inspector.scanner"])
+        host_binding["runtimeProducts"][0]["scanner"] = observed_artifact(
+            "inspector.scanner", "scanner-json",
+        )
+
+    host_binding["runtimeProducts"][0]["repoDigests"] = [
+        "registry.example/ksi-inspector@sha256:" + "9" * 64,
+    ]
+    binding_path.write_text(json.dumps(host_binding), encoding="utf-8")
+    wrong_repo_digest = subprocess.run(result.args, text=True, capture_output=True, check=False)
+    assert wrong_repo_digest.returncode != 0
+    assert "inspector local image observation differs" in wrong_repo_digest.stderr
+    host_binding["runtimeProducts"][0]["repoDigests"] = [
+        "registry.example/ksi-inspector@sha256:" + "d" * 64,
+    ]
 
     host_binding["externalRuntimeImages"] = expected_external_bindings[:-1]
     binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")

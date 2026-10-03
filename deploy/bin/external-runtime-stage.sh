@@ -372,11 +372,23 @@ verify_product_image_binding() {
 
 verify_artifact_binding() {
   local path="$1" expected="$2" expected_bytes="$3" expected_type="$4" strict_scanner_identity="${5:-0}"
+  local expected_image_id="${6:-}"
   local actual actual_bytes
   [[ "$expected" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+  [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
+  if [[ "$expected_type" == scanner-json && "$strict_scanner_identity" == 1 ]]; then
+    # Read, hash and parse the same protected payload. Never equate an OCI index
+    # or platform manifest ID with Grype's config ID: unequal identities block.
+    local -a scanner_args=(
+      python3 "$repo_dir/tools/verify_external_scanner_evidence.py"
+      --path "$path" --sha256 "$expected" --bytes "$expected_bytes"
+    )
+    [[ -z "$expected_image_id" ]] || scanner_args+=(--image-id "$expected_image_id")
+    "${scanner_args[@]}" >/dev/null
+    return $?
+  fi
   actual="$(sha256_file "$path")" || return 1
   [[ "$actual" == "$expected" ]] || return 1
-  [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
   actual_bytes="$(stat --format=%s -- "$path")" || return 1
   [[ "$actual_bytes" == "$expected_bytes" ]] || return 1
   case "$expected_type" in
@@ -388,16 +400,7 @@ verify_artifact_binding() {
       ' "$path" >/dev/null
       ;;
     scanner-json)
-      if [[ "$strict_scanner_identity" == 1 ]]; then
-        jq -e '
-          type == "object"
-          and (.scanner | type == "object")
-          and (.scanner.name | type == "string" and length > 0)
-          and (.scanner.schemaVersion | type == "string" and length > 0)
-        ' "$path" >/dev/null
-      else
-        jq -e 'type == "object" and length > 0' "$path" >/dev/null
-      fi
+      jq -e 'type == "object" and length > 0' "$path" >/dev/null
       ;;
     *) return 1 ;;
   esac
@@ -620,7 +623,7 @@ require_release_evidence() {
     verify_artifact_binding "$sbom_path" "$sbom_sha256" "$sbom_bytes" "$sbom_type" || {
       echo "BLOCKED_RELEASE_EVIDENCE: $role SBOM artifact differs from host binding" >&2; return 1;
     }
-    verify_artifact_binding "$scanner_path" "$scanner_sha256" "$scanner_bytes" "$scanner_type" 1 || {
+    verify_artifact_binding "$scanner_path" "$scanner_sha256" "$scanner_bytes" "$scanner_type" 1 "$image_id" || {
       echo "BLOCKED_RELEASE_EVIDENCE: $role scanner artifact differs from host binding" >&2; return 1;
     }
   done
