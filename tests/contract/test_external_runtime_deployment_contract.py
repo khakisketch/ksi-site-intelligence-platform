@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 import yaml
 from jsonschema import Draft202012Validator
+from support.external_oci_archive_fixture import make_oci_fixture
 
 _ROOT = Path(__file__).resolve().parents[2]
 _DEPLOY = _ROOT / "deploy"
@@ -1260,7 +1261,9 @@ def _native_grype_report(image_id: str) -> bytes:
                 "providers": {},
             },
         },
-        "source": {"type": "image", "target": {"imageID": image_id}},
+        "source": {"type": "image", "target": {
+            "imageID": image_id, "os": "linux", "architecture": "arm64",
+        }},
         "matches": [],
     }).encode()
 
@@ -1292,8 +1295,9 @@ def test_runtime_scanner_accepts_native_grype_only_with_exact_image_binding(tmp_
 
 
 @pytest.mark.parametrize("native_scanner", [False, True])
+@pytest.mark.parametrize("host_version", ["v1", "v2"])
 def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact_host_binding(
-    tmp_path: Path, native_scanner: bool,
+    tmp_path: Path, native_scanner: bool, host_version: str,
 ) -> None:
     """The v1 producer shape is not reinterpreted as host-local provenance.
 
@@ -1311,6 +1315,15 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
     dashboard_image_id = "sha256:" + "2" * 64
     inspector_image_id = "sha256:" + "3" * 64
     measurement_image_id = "sha256:" + "4" * 64
+    inspector_scan_id, measurement_scan_id = inspector_image_id, measurement_image_id
+    oci_fixtures = {}
+    if host_version == "v2":
+        oci_fixtures = {role: make_oci_fixture(role, source_commit)
+                        for role in ("inspector", "measurement")}
+        inspector_image_id = oci_fixtures["inspector"].index_id
+        measurement_image_id = oci_fixtures["measurement"].index_id
+        inspector_scan_id = oci_fixtures["inspector"].config_id
+        measurement_scan_id = oci_fixtures["measurement"].config_id
     canonical_images, candidate_images = _runtime_image_reference_sets()
 
     artifacts: dict[str, dict[str, object]] = {}
@@ -1325,8 +1338,10 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
         "measurement.scanner": b'{"scanner":{"name":"test","schemaVersion":"1.0"},"findings":[]}',
     }
     if native_scanner:
-        artifact_contents["inspector.scanner"] = _native_grype_report(inspector_image_id)
-        artifact_contents["measurement.scanner"] = _native_grype_report(measurement_image_id)
+        artifact_contents["inspector.scanner"] = _native_grype_report(inspector_scan_id)
+        artifact_contents["measurement.scanner"] = _native_grype_report(measurement_scan_id)
+    for role, fixture in oci_fixtures.items():
+        artifact_contents[role + ".tar"] = fixture.payload
     for name, contents in artifact_contents.items():
         path = tmp_path / name
         path.write_bytes(contents)
@@ -1379,7 +1394,7 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
         }
 
     host_binding: dict[str, Any] = {
-        "schemaVersion": "external-runtime-host-binding.v1",
+        "schemaVersion": "external-runtime-host-binding." + host_version,
         "releaseEvidence": {"sha256": evidence_digest},
         "source": {"gitCommitSha": source_commit},
         "productImages": [
@@ -1448,6 +1463,9 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
             },
         ],
     }
+    if host_version == "v2":
+        for runtime in host_binding["runtimeProducts"]:
+            runtime["ociArchive"] = observed_artifact(runtime["role"] + ".tar", "oci-archive")
     binding_path = tmp_path / "host-binding.json"
     binding_path.write_text(json.dumps(host_binding, separators=(",", ":")), encoding="utf-8")
     binding_path.chmod(0o600)
@@ -1465,8 +1483,20 @@ core_id="$6"
 dashboard_id="$7"
 inspector_id="$8"
     measurement_id="$9"
+python3() {
+  if [[ "$1" == */verify_external_oci_archive.py && -n "${KSI_TEST_OCI_CLI:-}" ]]; then
+    printf 'sha256:%s\n' "$(printf 'f%.0s' {1..64})"
+    [[ "$KSI_TEST_OCI_CLI" != nonzero ]] || return 1
+    printf 'malformed extra output\n'
+    return 0
+  fi
+  command python3 "$@"
+}
 git() {
-  if [[ "$1" == "-C" && "$3" == "status" ]]; then return 0; fi
+  if [[ "$1" == "-C" && "$3" == "status" ]]; then
+    if [[ "${KSI_TEST_DIRTY_SOURCE:-0}" == 1 ]]; then printf ' M fixture-dirty-source\n'; fi
+    return 0
+  fi
   if [[ "$1" == "-C" && "$3" == "rev-parse" && "$4" == "HEAD" ]]; then
     printf '%s\n' "$expected_commit"
     return 0
@@ -1535,7 +1565,7 @@ require_release_evidence
             str(_ROOT),
             str(evidence_path),
             str(binding_path),
-            source_commit,
+source_commit,
             core_image_id,
             dashboard_image_id,
             inspector_image_id,
@@ -1548,10 +1578,38 @@ require_release_evidence
 
     assert result.returncode == 0, result.stderr
 
+    dirty_source = subprocess.run(
+        result.args, text=True, capture_output=True, check=False,
+        env={**os.environ, "KSI_TEST_DIRTY_SOURCE": "1"},
+    )
+    assert dirty_source.returncode != 0
+    assert "exact source checkout must be clean" in dirty_source.stderr
+
+    if host_version == "v2":
+        for failure in ("nonzero", "malformed"):
+            bad_cli = subprocess.run(
+                result.args, text=True, capture_output=True, check=False,
+                env={**os.environ, "KSI_TEST_OCI_CLI": failure},
+            )
+            assert bad_cli.returncode != 0
+            assert "OCI archive" in bad_cli.stderr
+        for role_index in (0, 1):
+            runtime = host_binding["runtimeProducts"][role_index]
+            original = dict(runtime["ociArchive"])
+            runtime["ociArchive"]["sha256"] = "sha256:" + "0" * 64
+            binding_path.write_text(json.dumps(host_binding), encoding="utf-8")
+            bad_archive = subprocess.run(result.args, text=True, capture_output=True, check=False)
+            assert bad_archive.returncode != 0
+            assert runtime["role"] + " OCI archive" in bad_archive.stderr
+            runtime["ociArchive"] = original
+        binding_path.write_text(json.dumps(host_binding), encoding="utf-8")
+        assert all((tmp_path / (role + ".tar")).read_bytes() == fixture.payload
+                   for role, fixture in oci_fixtures.items())
+
     if native_scanner:
         # An actual store reporting an OCI index instead of the config must block,
         # not reinterpret the report's config ID as that index or use a role alias.
-        wrong_image = _native_grype_report(measurement_image_id)
+        wrong_image = _native_grype_report(measurement_scan_id)
         (tmp_path / "inspector.scanner").write_bytes(wrong_image)
         host_binding["runtimeProducts"][0]["scanner"] = {
             "path": str(tmp_path / "inspector.scanner"),
@@ -1566,6 +1624,25 @@ require_release_evidence
         host_binding["runtimeProducts"][0]["scanner"] = observed_artifact(
             "inspector.scanner", "scanner-json",
         )
+        if host_version == "v2":
+            bad_platform = json.loads(artifact_contents["inspector.scanner"])
+            bad_platform["source"]["target"]["architecture"] = "amd64"
+            payload = json.dumps(bad_platform).encode()
+            (tmp_path / "inspector.scanner").write_bytes(payload)
+            host_binding["runtimeProducts"][0]["scanner"] = {
+                "path": str(tmp_path / "inspector.scanner"), "type": "scanner-json",
+                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(), "bytes": len(payload),
+            }
+            binding_path.write_text(json.dumps(host_binding), encoding="utf-8")
+            mismatched_platform = subprocess.run(
+                result.args, text=True, capture_output=True, check=False,
+            )
+            assert mismatched_platform.returncode != 0
+            assert "NATIVE_PLATFORM" in mismatched_platform.stderr
+            (tmp_path / "inspector.scanner").write_bytes(artifact_contents["inspector.scanner"])
+            host_binding["runtimeProducts"][0]["scanner"] = observed_artifact(
+                "inspector.scanner", "scanner-json",
+            )
 
     host_binding["runtimeProducts"][0]["repoDigests"] = [
         "registry.example/ksi-inspector@sha256:" + "9" * 64,
@@ -1771,6 +1848,87 @@ def test_host_binding_schema_accepts_separate_runtime_products_and_dependencies(
     Draft202012Validator.check_schema(schema)
 
     assert list(Draft202012Validator(schema).iter_errors(binding)) == []
+
+
+def test_v2_host_schema_and_stage_are_strict_without_extending_v1(tmp_path: Path) -> None:
+    """A renamed/mixed v1 envelope cannot bypass required v2 archive evidence."""
+    sha = "sha256:" + "a" * 64
+    source = "b" * 40
+    artifact = {"path": str(tmp_path / "artifact.json"), "bytes": 20,
+                "sha256": sha, "type": "cyclonedx-json"}
+
+    def image(name: str) -> dict[str, Any]:
+        return {"releaseReference": f"registry.example/ksi-{name}:2026.10.04@" + sha,
+                "dockerImageId": sha, "repoDigests": [f"registry.example/ksi-{name}@" + sha],
+                "sbom": artifact, "scanner": {**artifact, "type": "scanner-json"}}
+
+    archive = {**artifact, "type": "oci-archive", "path": str(tmp_path / "image.tar")}
+    external = [{"releaseReference": f"registry.example/dep{i}:2026.10.04@" + sha,
+                 "dockerImageId": sha, "repoDigests": [f"registry.example/dep{i}@" + sha]}
+                for i in (1, 2)]
+    binding = {
+        "schemaVersion": "external-runtime-host-binding.v2", "releaseEvidence": {"sha256": sha},
+        "source": {"gitCommitSha": source},
+        "productImages": [{**image(name), "component": name} for name in ("core", "dashboard")],
+        "runtimeProducts": [{**image(role), "role": role, "ociArchive": dict(archive)}
+                            for role in ("inspector", "measurement")],
+        "externalRuntimeImages": external,
+    }
+    schema_path = _ROOT / "contracts/schemas/external-runtime-host-binding.v2.json"
+    assert schema_path.is_file(), "v2 host contract is not implemented"
+    schema = json.loads(schema_path.read_text())
+    Draft202012Validator.check_schema(schema)
+    validator = Draft202012Validator(schema)
+    binding_path = tmp_path / "binding.json"
+
+    def stage(value: dict[str, Any]) -> subprocess.CompletedProcess[str]:
+        binding_path.write_text(json.dumps(value), encoding="utf-8")
+        return subprocess.run([
+            "bash", "-c", 'source "$1"; validate_host_binding "$2" "$3" "$4" "$5"',
+            "bash", str(_STAGE), str(binding_path), source, sha,
+            json.dumps(sorted(row["releaseReference"] for row in external)),
+        ], capture_output=True, text=True, check=False)
+
+    assert list(validator.iter_errors(binding)) == []
+    good = stage(binding)
+    assert good.returncode == 0, good.stderr
+    for field, value in [("path", "relative.tar"), ("path", "/a/../image.tar"),
+                         ("bytes", True), ("bytes", 1.5), ("bytes", 0), ("bytes", 1073741825),
+                         ("type", "scanner-json"), ("sha256", "invalid"), ("extra", "unknown")]:
+        bad = json.loads(json.dumps(binding))
+        bad["runtimeProducts"][0]["ociArchive"][field] = value
+        assert list(validator.iter_errors(bad))
+        assert stage(bad).returncode != 0
+    for change in ("missing", "unknown_version", "mixed", "declared_config", "duplicate_digest",
+                   "duplicate_product_digest", "duplicate_external_digest"):
+        bad = json.loads(json.dumps(binding))
+        if change == "missing":
+            del bad["runtimeProducts"][1]["ociArchive"]
+        elif change == "unknown_version":
+            bad["schemaVersion"] = "external-runtime-host-binding.v3"
+        elif change == "mixed":
+            bad["schemaVersion"] = "external-runtime-host-binding.v1"
+        elif change == "declared_config":
+            bad["runtimeProducts"][0]["configDigest"] = sha
+        elif change == "duplicate_digest":
+            bad["runtimeProducts"][0]["repoDigests"] *= 2
+        elif change == "duplicate_product_digest":
+            bad["productImages"][0]["repoDigests"] *= 2
+        else:
+            bad["externalRuntimeImages"][0]["repoDigests"] *= 2
+        if change != "mixed":
+            assert list(validator.iter_errors(bad))
+        assert stage(bad).returncode != 0
+    v1 = json.loads(json.dumps(binding))
+    v1["schemaVersion"] = "external-runtime-host-binding.v1"
+    for runtime in v1["runtimeProducts"]:
+        del runtime["ociArchive"]
+    assert stage(v1).returncode == 0
+    v1_validator = Draft202012Validator(json.loads(
+        (_ROOT / "contracts/schemas/external-runtime-host-binding.v1.json").read_text(),
+    ))
+    assert list(v1_validator.iter_errors(v1)) == []
+    assert list(v1_validator.iter_errors(binding))
 
 
 def test_bootstrap_binds_templates_and_markers_to_private_exact_inputs() -> None:

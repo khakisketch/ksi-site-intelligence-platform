@@ -119,7 +119,9 @@ def _text(value: object) -> bool:
     return isinstance(value, str) and len(value) > 0
 
 
-def _native_profile(value: dict[str, Any], image_id: str | None) -> str:
+def _native_profile(
+    value: dict[str, Any], image_id: str | None, require_linux_arm64: bool,
+) -> str:
     descriptor = value.get("descriptor")
     source = value.get("source")
     matches = value.get("matches")
@@ -149,6 +151,10 @@ def _native_profile(value: dict[str, Any], image_id: str | None) -> str:
         or target.get("imageID") != image_id
     ):
         raise ScannerEvidenceError("NATIVE_IMAGE")
+    if require_linux_arm64 and (
+        target.get("os") != "linux" or target.get("architecture") != "arm64"
+    ):
+        raise ScannerEvidenceError("NATIVE_PLATFORM")
     if not isinstance(matches, list):
         raise ScannerEvidenceError("NATIVE_MATCHES")
     for match in matches:
@@ -172,10 +178,12 @@ def _native_profile(value: dict[str, Any], image_id: str | None) -> str:
 
 def verify_scanner_evidence(
     path: Path, *, expected_sha256: str, expected_bytes: int, expected_image_id: str | None,
+    require_linux_arm64: bool = False,
 ) -> str:
     """Validate one raw payload; the return value is a format, not an approval."""
     if (
-        not isinstance(expected_sha256, str)
+        type(require_linux_arm64) is not bool
+        or not isinstance(expected_sha256, str)
         or _DIGEST.fullmatch(expected_sha256) is None
         or type(expected_bytes) is not int
         or not 0 < expected_bytes <= _MAX_BYTES
@@ -210,7 +218,7 @@ def verify_scanner_evidence(
     if native:
         if "scanner" in value:
             raise ScannerEvidenceError("AMBIGUOUS_FORMAT")
-        return _native_profile(value, expected_image_id)
+        return _native_profile(value, expected_image_id, require_linux_arm64)
     scanner = value.get("scanner")
     if not isinstance(scanner, dict) or not all(
         _text(scanner.get(key)) for key in ("name", "schemaVersion")
@@ -225,11 +233,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--sha256", required=True)
     parser.add_argument("--bytes", type=int, required=True)
     parser.add_argument("--image-id")
+    parser.add_argument("--require-linux-arm64", action="store_true")
     args = parser.parse_args(argv)
     try:
         profile = verify_scanner_evidence(
             args.path, expected_sha256=args.sha256, expected_bytes=args.bytes,
             expected_image_id=args.image_id,
+            require_linux_arm64=args.require_linux_arm64,
         )
     except ScannerEvidenceError as error:
         print(str(error), file=sys.stderr)

@@ -156,6 +156,45 @@ def test_zero_matches_and_ignored_findings_are_preserved_without_policy(tmp_path
     assert json.loads(original)["ignoredMatches"][0]["vulnerability"]["severity"] == "High"
 
 
+@pytest.mark.parametrize("key,value", [
+    ("os", "windows"), ("architecture", "amd64"), ("os", None), ("architecture", None),
+])
+def test_native_scanner_platform_is_required_only_when_requested(
+    tmp_path: Path, key: str, value: object,
+) -> None:
+    tool = _tool()
+    report = _native()
+    if value is None:
+        del report["source"]["target"][key]
+    else:
+        report["source"]["target"][key] = value
+    path = _write(tmp_path, report)
+    assert _verify(tool, path) == "grype-0.120.0"
+    payload = path.read_bytes()
+    with pytest.raises(tool.ScannerEvidenceError):
+        tool.verify_scanner_evidence(
+            path, expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
+            expected_bytes=len(payload), expected_image_id=_IMAGE, require_linux_arm64=True,
+        )
+
+
+@pytest.mark.parametrize("native", [False, True])
+def test_platform_flag_preserves_valid_native_and_legacy_bytes(
+    tmp_path: Path, native: bool,
+) -> None:
+    tool = _tool()
+    report = _native() if native else {
+        "scanner": {"name": "legacy", "schemaVersion": "1.0"}, "source": {"note": "metadata"},
+    }
+    path = _write(tmp_path, report)
+    payload = path.read_bytes()
+    assert tool.verify_scanner_evidence(
+        path, expected_sha256="sha256:" + hashlib.sha256(payload).hexdigest(),
+        expected_bytes=len(payload), expected_image_id=_IMAGE, require_linux_arm64=True,
+    ) == ("grype-0.120.0" if native else "legacy")
+    assert path.read_bytes() == payload
+
+
 def test_legacy_incidental_source_metadata_is_not_misclassified_as_native(tmp_path: Path) -> None:
     tool = _tool()
     report = {

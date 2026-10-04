@@ -373,9 +373,11 @@ verify_product_image_binding() {
 verify_artifact_binding() {
   local path="$1" expected="$2" expected_bytes="$3" expected_type="$4" strict_scanner_identity="${5:-0}"
   local expected_image_id="${6:-}"
+  local require_linux_arm64="${7:-0}"
   local actual actual_bytes
   [[ "$expected" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
   [[ "$expected_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
+  [[ "$require_linux_arm64" == 0 || "$require_linux_arm64" == 1 ]] || return 1
   if [[ "$expected_type" == scanner-json && "$strict_scanner_identity" == 1 ]]; then
     # Read, hash and parse the same protected payload. Never equate an OCI index
     # or platform manifest ID with Grype's config ID: unequal identities block.
@@ -384,6 +386,7 @@ verify_artifact_binding() {
       --path "$path" --sha256 "$expected" --bytes "$expected_bytes"
     )
     [[ -z "$expected_image_id" ]] || scanner_args+=(--image-id "$expected_image_id")
+    [[ "$require_linux_arm64" != 1 ]] || scanner_args+=(--require-linux-arm64)
     "${scanner_args[@]}" >/dev/null
     return $?
   fi
@@ -445,15 +448,24 @@ validate_canonical_release_evidence() {
 
 validate_host_binding() {
   local binding="$1" source_commit="$2" evidence_digest="$3" expected_external_references="$4"
-  jq -e --arg commit "$source_commit" --arg evidence_digest "$evidence_digest" --argjson expected_external_references "$expected_external_references" '
+  local host_version
+  host_version="$(jq -er '.schemaVersion' "$binding")" || return 1
+  [[ "$host_version" == external-runtime-host-binding.v1 || "$host_version" == external-runtime-host-binding.v2 ]] || return 1
+  jq -e --arg host_version "$host_version" --arg commit "$source_commit" --arg evidence_digest "$evidence_digest" --argjson expected_external_references "$expected_external_references" '
     def digest: type == "string" and test("^sha256:[0-9a-f]{64}$");
     def artifact($kind):
       type == "object"
       and (keys | sort == ["bytes", "path", "sha256", "type"])
-      and (.path | type == "string" and startswith("/") and contains("..") | not)
+      and (if $host_version == "external-runtime-host-binding.v2" then
+        (.path | type == "string" and startswith("/") and (test("(^|/)\\.\\.(/|$)") | not))
+        else (.path | type == "string" and startswith("/") and contains("..") | not) end)
       and (.sha256 | digest)
       and (.bytes | type == "number" and floor == . and . >= 1)
       and .type == $kind;
+    def unique_repos:
+      if $host_version == "external-runtime-host-binding.v2"
+      then (.repoDigests | length) == (.repoDigests | unique | length) else true end;
+    def archive: artifact("oci-archive") and .bytes <= 1073741824;
     def image_id: type == "string" and test("^sha256:[0-9a-f]{64}$");
     def repo_digest: type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$");
     def product_reference:
@@ -471,25 +483,31 @@ validate_host_binding() {
       and (.dockerImageId | image_id)
       and (.repoDigests | type == "array" and length >= 1 and ([.[] | repo_digest] | all) and (unique | length == length))
       and (.sbom | artifact("cyclonedx-json"))
-      and (.scanner | artifact("scanner-json"));
+      and (.scanner | artifact("scanner-json"))
+      and unique_repos;
     def runtime:
       type == "object"
-      and (keys | sort == ["dockerImageId", "releaseReference", "repoDigests", "role", "sbom", "scanner"])
+      and (keys | sort == (if $host_version == "external-runtime-host-binding.v2"
+        then ["dockerImageId", "ociArchive", "releaseReference", "repoDigests", "role", "sbom", "scanner"]
+        else ["dockerImageId", "releaseReference", "repoDigests", "role", "sbom", "scanner"] end))
       and (.role == "inspector" or .role == "measurement")
       and (.releaseReference | product_reference)
       and (.dockerImageId | image_id)
       and (.repoDigests | type == "array" and length >= 1 and ([.[] | repo_digest] | all) and (unique | length == length))
       and (.sbom | artifact("cyclonedx-json"))
-      and (.scanner | artifact("scanner-json"));
+      and (.scanner | artifact("scanner-json"))
+      and unique_repos
+      and (if $host_version == "external-runtime-host-binding.v2" then (.ociArchive | archive) else true end);
     def external:
       type == "object"
       and (keys | sort == ["dockerImageId", "releaseReference", "repoDigests"])
       and (.releaseReference | external_reference)
       and (.dockerImageId | image_id)
-      and (.repoDigests | type == "array" and length >= 1 and ([.[] | repo_digest] | all) and (unique | length == length));
+      and (.repoDigests | type == "array" and length >= 1 and ([.[] | repo_digest] | all) and (unique | length == length))
+      and unique_repos;
     type == "object"
     and (keys | sort == ["externalRuntimeImages", "productImages", "releaseEvidence", "runtimeProducts", "schemaVersion", "source"])
-    and .schemaVersion == "external-runtime-host-binding.v1"
+    and .schemaVersion == $host_version
     and (.releaseEvidence | type == "object" and keys == ["sha256"] and .sha256 == $evidence_digest)
     and (.source | type == "object" and keys == ["gitCommitSha"] and .gitCommitSha == $commit)
     and (.productImages | type == "array" and length == 2 and ([.[] | product] | all))
@@ -510,6 +528,7 @@ require_release_evidence() {
   local source_commit evidence_digest runtime_reference_sets canonical_runtime_references
   local candidate_runtime_references component role reference image_id repo_digests canonical_digest
   local sbom_path sbom_sha256 sbom_bytes sbom_type scanner_path scanner_sha256 scanner_bytes scanner_type
+  local binding_version scanner_expected_id require_linux_arm64 archive_path archive_sha256 archive_bytes
 
   [[ -z "$(git -C "$repo_dir" status --porcelain --untracked-files=all)" ]] || {
     echo "BLOCKED_RELEASE_EVIDENCE: exact source checkout must be clean" >&2; return 1;
@@ -547,6 +566,7 @@ require_release_evidence() {
   validate_host_binding "$binding" "$source_commit" "$evidence_digest" "$candidate_runtime_references" || {
     echo "BLOCKED_RELEASE_EVIDENCE: host image binding is incomplete or does not bind this evidence" >&2; return 1;
   }
+  binding_version="$(jq -er '.schemaVersion' "$binding")" || return 1
 
   [[ "$(jq -c '[.productImages[].reference] | sort' "$evidence")" == "$(jq -c '[.productImages[].releaseReference] | sort' "$binding")" ]] || {
     echo "BLOCKED_RELEASE_EVIDENCE: product image references differ between evidence and host binding" >&2; return 1;
@@ -623,7 +643,23 @@ require_release_evidence() {
     verify_artifact_binding "$sbom_path" "$sbom_sha256" "$sbom_bytes" "$sbom_type" || {
       echo "BLOCKED_RELEASE_EVIDENCE: $role SBOM artifact differs from host binding" >&2; return 1;
     }
-    verify_artifact_binding "$scanner_path" "$scanner_sha256" "$scanner_bytes" "$scanner_type" 1 "$image_id" || {
+    scanner_expected_id="$image_id"
+    require_linux_arm64=0
+    if [[ "$binding_version" == external-runtime-host-binding.v2 ]]; then
+      archive_path="$(jq -r --arg role "$role" '.runtimeProducts[] | select(.role == $role) | .ociArchive.path' "$binding")"
+      archive_sha256="$(jq -r --arg role "$role" '.runtimeProducts[] | select(.role == $role) | .ociArchive.sha256' "$binding")"
+      archive_bytes="$(jq -r --arg role "$role" '.runtimeProducts[] | select(.role == $role) | .ociArchive.bytes' "$binding")"
+      scanner_expected_id="$(python3 "$repo_dir/tools/verify_external_oci_archive.py" \
+        --path "$archive_path" --sha256 "$archive_sha256" --bytes "$archive_bytes" \
+        --index-id "$image_id" --source-commit "$source_commit" --role "$role")" || {
+        echo "BLOCKED_RELEASE_EVIDENCE: $role OCI archive identity link is unavailable" >&2; return 1;
+      }
+      [[ "$scanner_expected_id" =~ ^sha256:[0-9a-f]{64}$ ]] || {
+        echo "BLOCKED_RELEASE_EVIDENCE: $role OCI archive verifier output is malformed" >&2; return 1;
+      }
+      require_linux_arm64=1
+    fi
+    verify_artifact_binding "$scanner_path" "$scanner_sha256" "$scanner_bytes" "$scanner_type" 1 "$scanner_expected_id" "$require_linux_arm64" || {
       echo "BLOCKED_RELEASE_EVIDENCE: $role scanner artifact differs from host binding" >&2; return 1;
     }
   done
