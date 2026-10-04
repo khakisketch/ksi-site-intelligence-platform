@@ -1,10 +1,12 @@
 # Protected external-runtime application bundle design
 
 Date: 2026-10-04
-Status: Human selected **separately supplied Python + offline wheels** and approved the
-presented direction for writing this spec. Written-spec review is pending. No implementation,
+Status: Human selected **separately supplied Python + offline wheels**, approved the
+presented direction and the written spec (“명세 승인”). Implementation-plan review is pending. No implementation,
 actual application bundle, interpreter provisioning, host installation or activation is approved
 by the existence of this document. Preserve the previously selected inline execution method.
+
+Execution handoff: [written implementation plan](../plans/2026-10-04-external-runtime-application-bundle.md).
 
 ## 1. Purpose, responsibility and acceptance boundary
 
@@ -207,6 +209,12 @@ must use its supported locked/noneditable/no-dev/package flags; rootlock bytes a
 before/after. `uv build` has no`--locked` flag on this prepared version: the source/lock snapshot
 and no-build-isolation/prepared-backend checks enforce the builder boundary. Do not invent a flag,
 silently resolve a new lock or install a backend merely because its manifest lists one.
+Build/resolver subprocesses use an allowlisted environment and task-privateHOME/cache, not
+ambientVIRTUAL_ENV/PYTHONPATH/UVindex/auth settings. The offline resolver names the verified
+buildPython explicitly and selects deployment resolution with separate version/platform flags;
+that is not an observed deploymentruntime. Prepared uv's dryrun can create a target`.lock`, so
+its target is always new task-private scratch, never a system/oldrelease path. No packages are
+installed by the builder; actual runtime preparation remains the separate explicitly gated phase.
 
 External packages use supplied wheels only, exact lock hashes and complete offline resolution.
 No sdist, editable wheel, path dependency, extra index/network request or unpinned dependency may
