@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import copy
+import csv
 import importlib.util
+import io
 import json
 import os
+import struct
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +27,7 @@ from support.external_application_bundle_fixture import (
     canonical_wheel_name,
     digest,
     make_bundle,
+    record_digest,
     sync_file_records,
 )
 
@@ -401,3 +406,179 @@ def test_bundle_schema_matches_verifier_fixture() -> None:
     bad = copy.deepcopy(fixture.manifest)
     bad["target"]["pythonVersion"] = "3.12.14"
     assert list(validator.iter_errors(bad))
+
+
+def test_bundle_schema_kind_enum_is_exact() -> None:
+    schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+    kind = schema["properties"]["files"]["items"]["properties"]["kind"]
+    assert kind["enum"] == ["lock", "requirements", "workspace-wheel", "external-wheel"]
+
+
+def test_cumulative_read_budget_blocks_before_unbounded_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool = _tool()
+    fixture = make_bundle()
+    root, manifest_sha = _materialize(tmp_path, fixture)
+    manifest_len = (root / "manifest.json").stat().st_size
+    # Declared manifest sizes stay small while the actual lock bytes are larger.
+    with open(root / "uv.lock", "ab") as handle:
+        handle.write(b"# synthetic padding beyond the declared manifest size\n" * 64)
+    monkeypatch.setattr(tool, "_MAX_TOTAL_READ_BYTES", manifest_len + 8, raising=False)
+    with pytest.raises(tool.BundleEvidenceError) as excinfo:
+        _verify(tool, root, manifest_sha)
+    assert excinfo.value.code == "READ_TOTAL"
+
+
+def _patch_central_uncompressed_size(wheel: bytes, filename: str, lied: int) -> bytes:
+    """Rewrite one central-directory uncompressed-size field; data untouched."""
+    data = bytearray(wheel)
+    cursor = 0
+    while True:
+        index = data.find(b"PK\x01\x02", cursor)
+        assert index >= 0, "central-directory entry is not implemented"
+        name_len = struct.unpack_from("<H", data, index + 28)[0]
+        extra_len = struct.unpack_from("<H", data, index + 30)[0]
+        comment_len = struct.unpack_from("<H", data, index + 32)[0]
+        name = bytes(data[index + 46 : index + 46 + name_len]).decode("utf-8")
+        if name == filename:
+            struct.pack_into("<I", data, index + 24, lied)
+            return bytes(data)
+        cursor = index + 46 + name_len + extra_len + comment_len
+
+
+def test_metadata_decompression_does_not_trust_header_size(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool = _tool()
+    domain_tags = ("py3", "none", "any")
+    native_tags = ("cp312", "cp312", "manylinux_2_39_aarch64")
+    name = canonical_wheel_name("ksi-domain", "0.0.1", domain_tags)
+    mappings = tuple((row["name"], row["module"], row["function"]) for row in ENTRYPOINTS)
+    honest = {
+        canonical_wheel_name("ksi-processing-controller", "0.0.1", domain_tags):
+            build_wheel("ksi-processing-controller", "0.0.1", entry_points=mappings),
+        name: build_wheel("ksi-domain", "0.0.1"),
+        canonical_wheel_name("demo-native", "1.2.3", native_tags):
+            build_wheel("demo-native", "1.2.3", tags=native_tags, root_is_purelib=False),
+    }
+    padded = _pad_metadata_entry(
+        honest[name], "ksi_domain-0.0.1.dist-info/METADATA", pad_lines=64,
+    )
+    with zipfile.ZipFile(io.BytesIO(padded)) as archive:
+        actual = len(archive.read("ksi_domain-0.0.1.dist-info/METADATA"))
+    others = dict(honest)
+    others[name] = padded
+    cap = 0
+    for wheel in others.values():
+        with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+            for info in archive.infolist():
+                if wheel is padded and info.filename.endswith("/METADATA"):
+                    continue
+                cap = max(cap, info.file_size)
+    assert actual > cap >= 8
+    patched = _patch_central_uncompressed_size(
+        padded, "ksi_domain-0.0.1.dist-info/METADATA", 8,
+    )
+    monkeypatch.setattr(tool, "_MAX_METADATA_BYTES", cap)
+    fixture = make_bundle(wheel_overrides={name: patched})
+    root, manifest_sha = _materialize(tmp_path, fixture)
+    with pytest.raises(tool.BundleEvidenceError) as excinfo:
+        _verify(tool, root, manifest_sha)
+    assert excinfo.value.code == "METADATA_SIZE"
+
+
+def _pad_metadata_entry(wheel: bytes, filename: str, pad_lines: int) -> bytes:
+    """Append ignored header lines so actual bytes exceed every honest entry."""
+    with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+        saved = [(info, archive.read(info.filename)) for info in archive.infolist()]
+    payloads = {info.filename: payload for info, payload in saved}
+    text = payloads[filename].decode("utf-8")
+    text += "".join(f"X-Synthetic-Pad-{index}: {'p' * 32}\n" for index in range(pad_lines))
+    payloads[filename] = text.encode("utf-8")
+    record_name = next(name for name in payloads if name.endswith("/RECORD"))
+    buffer = io.StringIO()
+    csv.writer(buffer, lineterminator="\n").writerows(
+        [
+            (path, record_digest(payloads[path]), str(len(payloads[path])))
+            for path in sorted(payloads)
+            if path != record_name
+        ]
+        + [(record_name, "", "")]
+    )
+    payloads[record_name] = buffer.getvalue().encode("utf-8")
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info, _payload in saved:
+            node = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+            node.create_system = info.create_system
+            node.external_attr = info.external_attr
+            node.compress_type = info.compress_type
+            archive.writestr(node, payloads[info.filename])
+    return stream.getvalue()
+
+
+def test_zero_length_wheel_entry_passes_with_exact_record_binding(
+    tmp_path: Path,
+) -> None:
+    tool = _tool()
+    name = canonical_wheel_name("ksi-domain", "0.0.1", ("py3", "none", "any"))
+    wheel = build_wheel("ksi-domain", "0.0.1", extra_entries={"ksi_domain/py.typed": b""})
+    fixture = make_bundle(wheel_overrides={name: wheel})
+    root, manifest_sha = _materialize(tmp_path, fixture)
+    result = _verify(tool, root, manifest_sha)
+    assert result.source_commit == SOURCE
+
+
+def _rewrite_record_row(
+    wheel: bytes, target: str, *, new_hash: str | None, new_size: str | None,
+) -> bytes:
+    with zipfile.ZipFile(io.BytesIO(wheel)) as archive:
+        saved = [(info, archive.read(info.filename)) for info in archive.infolist()]
+    rebuilt: list[tuple[zipfile.ZipInfo, bytes]] = []
+    for info, payload in saved:
+        if info.filename.endswith("/RECORD"):
+            rows = list(csv.reader(io.StringIO(payload.decode("utf-8"))))
+            patched_rows = [
+                (new_hash or row_hash, new_size or row_size)
+                if row_path == target else (row_hash, row_size)
+                for row_path, row_hash, row_size in (row[:3] for row in rows)
+            ]
+            buffer = io.StringIO()
+            csv.writer(buffer, lineterminator="\n").writerows(
+                [(row_path, row_hash, row_size) for row_path, (row_hash, row_size) in
+                 zip([row[0] for row in rows], patched_rows, strict=True)]
+            )
+            payload = buffer.getvalue().encode("utf-8")
+        rebuilt.append((info, payload))
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as archive:
+        for info, payload in rebuilt:
+            node = zipfile.ZipInfo(info.filename, date_time=info.date_time)
+            node.create_system = info.create_system
+            node.external_attr = info.external_attr
+            node.compress_type = info.compress_type
+            archive.writestr(node, payload)
+    return stream.getvalue()
+
+
+@pytest.mark.parametrize("field", ["hash", "size"])
+def test_zero_length_wheel_entry_record_mismatch_blocks(
+    tmp_path: Path, field: str,
+) -> None:
+    tool = _tool()
+    name = canonical_wheel_name("ksi-domain", "0.0.1", ("py3", "none", "any"))
+    wheel = build_wheel("ksi-domain", "0.0.1", extra_entries={"ksi_domain/py.typed": b""})
+    if field == "hash":
+        wheel = _rewrite_record_row(
+            wheel, "ksi_domain/py.typed", new_hash="sha256=" + "A" * 43, new_size=None,
+        )
+    else:
+        wheel = _rewrite_record_row(
+            wheel, "ksi_domain/py.typed", new_hash=None, new_size="1",
+        )
+    fixture = make_bundle(wheel_overrides={name: wheel})
+    root, manifest_sha = _materialize(tmp_path, fixture)
+    with pytest.raises(tool.BundleEvidenceError) as excinfo:
+        _verify(tool, root, manifest_sha)
+    assert excinfo.value.code == ("RECORD_HASH" if field == "hash" else "RECORD_SIZE")

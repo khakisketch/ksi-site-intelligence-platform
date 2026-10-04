@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
+import copy
 import csv
 import hashlib
 import io
@@ -33,6 +35,7 @@ _MAX_BUNDLE_BYTES = 1024**3
 _MAX_WHEELS = 256
 _MAX_WHEEL_BYTES = 256 * 1024**2
 _MAX_JSON_BYTES = 1024**2
+_MAX_TOTAL_READ_BYTES = _MAX_BUNDLE_BYTES + _MAX_JSON_BYTES
 _MAX_METADATA_BYTES = 1024**2
 _MAX_ZIP_CENTRAL_BYTES = 16 * 1024**2
 _MAX_ZIP_ENTRIES = 65536
@@ -289,6 +292,9 @@ def _digest_text(payload: bytes) -> str:
 def _record_digest(payload: bytes) -> str:
     raw = base64.urlsafe_b64encode(hashlib.sha256(payload).digest()).rstrip(b"=")
     return "sha256=" + raw.decode("ascii")
+
+
+_EMPTY_RECORD_DIGEST = _record_digest(b"")
 
 
 def _normalized(name: str) -> str:
@@ -583,7 +589,7 @@ def _check_zip_entries(
         else:
             if mode not in (0, 0o100000):
                 _fail("WHEEL_ENTRY")
-            if info.file_size < 1:
+            if info.file_size < 0:
                 _fail("WHEEL_ENTRY")
         if info.file_size > _MAX_EXPANDED_BYTES:
             _fail("EXPANDED_SIZE")
@@ -600,12 +606,43 @@ def _read_metadata(
         _fail("METADATA_SIZE")
     if budgets.metadata_bytes + info.file_size > _MAX_METADATA_BYTES * _MAX_WHEELS:
         _fail("METADATA_BUDGET")
+    # Never trust the central-directory size for the actual stream: the
+    # decompressor truncates output to ZipInfo.file_size, so cap a copy of the
+    # entry one byte past the limit and count real decompressed bytes instead.
+    # CRC is disabled on the copy because the stdlib checks it against the
+    # truncated prefix; integrity is bound downstream by the RECORD digest.
+    bounded = copy.copy(info)
+    bounded.file_size = _MAX_METADATA_BYTES + 1
+    bounded.CRC = None  # type: ignore[assignment]
+    chunks: list[bytes] = []
+    total = 0
     try:
-        payload = archive.read(info.filename)
+        with archive.open(bounded) as handle:
+            while True:
+                try:
+                    chunk = handle.read(_READ_CHUNK_BYTES)
+                except (
+                    zipfile.BadZipFile,
+                    RuntimeError,
+                    OSError,
+                    struct.error,
+                    ValueError,
+                ) as error:
+                    raise BundleEvidenceError("METADATA_READ") from error
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > _MAX_METADATA_BYTES:
+                    _fail("METADATA_SIZE")
+                if budgets.metadata_bytes + total > _MAX_METADATA_BYTES * _MAX_WHEELS:
+                    _fail("METADATA_BUDGET")
+                chunks.append(chunk)
+    except BundleEvidenceError:
+        raise
     except (zipfile.BadZipFile, RuntimeError, OSError, struct.error, ValueError) as error:
         raise BundleEvidenceError("METADATA_READ") from error
-    budgets.metadata_bytes += len(payload)
-    return payload
+    budgets.metadata_bytes += total
+    return b"".join(chunks)
 
 
 def _check_metadata_text(payload: bytes, code: str) -> str:
@@ -706,6 +743,7 @@ def _check_record(
     record_name: str,
     by_name: dict[str, zipfile.ZipInfo],
     read_payloads: dict[str, bytes],
+    archive: zipfile.ZipFile,
 ) -> None:
     try:
         rows = list(csv.reader(io.StringIO(text, newline="")))
@@ -742,6 +780,42 @@ def _check_record(
                 _fail("RECORD_SIZE")
             if int(row_size) != by_name[row_path].file_size:
                 _fail("RECORD_SIZE")
+            if row_size == "0":
+                _require_empty_entry(archive, by_name[row_path], row_hash)
+            elif row_hash == _EMPTY_RECORD_DIGEST:
+                _fail("RECORD_SIZE")
+
+
+def _require_empty_entry(
+    archive: zipfile.ZipFile, info: zipfile.ZipInfo, row_hash: str
+) -> None:
+    """Prove a RECORD-claimed empty file is really empty with a 1-byte probe."""
+    if row_hash != _EMPTY_RECORD_DIGEST:
+        _fail("RECORD_HASH")
+    probe = copy.copy(info)
+    probe.file_size = 1
+    try:
+        handle = archive.open(probe)
+    except (zipfile.BadZipFile, RuntimeError, OSError, struct.error, ValueError) as error:
+        raise BundleEvidenceError("RECORD_READ") from error
+    try:
+        try:
+            chunk = handle.read(1)
+        except (
+            zipfile.BadZipFile,
+            RuntimeError,
+            OSError,
+            struct.error,
+            ValueError,
+        ) as error:
+            raise BundleEvidenceError("RECORD_READ") from error
+        if chunk:
+            _fail("RECORD_SIZE")
+    finally:
+        with contextlib.suppress(
+            zipfile.BadZipFile, RuntimeError, OSError, struct.error, ValueError
+        ):
+            handle.close()
 
 
 def _inspect_wheel(payload: bytes, distribution: _Distribution, budgets: _Budgets) -> None:
@@ -808,6 +882,7 @@ def _inspect_wheel(payload: bytes, distribution: _Distribution, budgets: _Budget
         record_name,
         by_name,
         read_payloads,
+        archive,
     )
 
 
@@ -860,7 +935,26 @@ def verify_application_bundle(
             if not stat.S_ISREG(node.st_mode):
                 _fail("INPUT_FILE")
             wheel_snapshot[name] = _identity(node)
-        manifest_payload = _read_file(
+        total_read = 0
+
+        def _read_bounded(
+            dir_fd: int, name: str, ident: tuple[int, ...], limit: int, code: str
+        ) -> bytes:
+            """Read one bundle file while enforcing the whole-request READ budget."""
+            nonlocal total_read
+            try:
+                node = os.stat(name, dir_fd=dir_fd, follow_symlinks=False)
+            except OSError as error:
+                raise BundleEvidenceError("INPUT_OPEN") from error
+            if node.st_size < 0 or total_read + node.st_size > _MAX_TOTAL_READ_BYTES:
+                _fail("READ_TOTAL")
+            data = _read_file(dir_fd, name, ident, limit, code)
+            total_read += len(data)
+            if total_read > _MAX_TOTAL_READ_BYTES:
+                _fail("READ_TOTAL")
+            return data
+
+        manifest_payload = _read_bounded(
             root_fd, "manifest.json", root_snapshot["manifest.json"], _MAX_JSON_BYTES, "JSON_SIZE"
         )
         if _digest_text(manifest_payload) != expected_manifest_sha256:
@@ -887,10 +981,10 @@ def verify_application_bundle(
         if by_path["uv.lock"].sha256 != lock_digest or by_path["uv.lock"].bytes != lock_bytes:
             _fail("SOURCE_LOCK")
         requirements_record = by_path["requirements.txt"]
-        lock_payload = _read_file(
+        lock_payload = _read_bounded(
             root_fd, "uv.lock", root_snapshot["uv.lock"], _MAX_BUNDLE_BYTES, "FILE_SIZE"
         )
-        requirements_payload = _read_file(
+        requirements_payload = _read_bounded(
             root_fd,
             "requirements.txt",
             root_snapshot["requirements.txt"],
@@ -907,7 +1001,7 @@ def verify_application_bundle(
         budgets = _Budgets()
         for distribution in distributions:
             record = by_path[distribution.wheel]
-            wheel_payload = _read_file(
+            wheel_payload = _read_bounded(
                 wheels_fd,
                 distribution.wheel[7:],
                 wheel_snapshot[distribution.wheel[7:]],

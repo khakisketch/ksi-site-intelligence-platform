@@ -210,6 +210,16 @@ class VerifiedPythonRuntime:
 
 
 @dataclass(frozen=True)
+class _RuntimeEntry:
+    """One declared runtime-root inventory row: a file or a resolved symlink."""
+
+    path: str
+    kind: str  # "file" or "symlink"
+    sha256: str  # "" for symlinks: links contribute no hash
+    size: int  # 0 for symlinks
+    target: str  # "" for files: normalized path relative to the link's parent
+
+@dataclass(frozen=True)
 class PreparationReceipt:
     bundle_sha256: str
     source_commit: str
@@ -356,6 +366,88 @@ def _exact_keys(value: Any, keys: frozenset[str], code: str) -> dict[str, Any]:
 def _inventory_hash(entries: list[tuple[str, str, int]]) -> str:
     lines = [f"{path}\x00{value}\x00{size}" for path, value, size in sorted(entries)]
     return "sha256:" + hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
+
+
+def _runtime_inventory_hash(entries: list[_RuntimeEntry]) -> str:
+    """Canonical inventory hash covering file bytes and symlink kind/target."""
+    lines: list[str] = []
+    for entry in entries:
+        if entry.kind == "file":
+            lines.append(f"{entry.path}\x00{entry.sha256}\x00{entry.size}")
+        else:
+            lines.append(f"{entry.path}\x00symlink\x00{entry.target}")
+    return "sha256:" + hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest()
+
+
+def _check_link_target_shape(target: Any) -> str:
+    """Declared symlink targets stay relative, normalized and inside the root."""
+    if not isinstance(target, str) or not target or "\0" in target:
+        _fail("LINK_TARGET")
+    assert isinstance(target, str)
+    if posixpath.isabs(target):
+        _fail("LINK_TARGET")
+    if posixpath.normpath(target) != target:
+        _fail("LINK_TARGET")
+    if ".." in target.split("/"):
+        _fail("LINK_TARGET")
+    return target
+
+
+def _resolve_link_target(link_path: str, target: str, root: str) -> str:
+    """Resolve a declared target against the link's parent; never escapes root."""
+    resolved = posixpath.normpath(posixpath.join(posixpath.dirname(link_path), target))
+    if resolved != root and not _under(resolved, root):
+        _fail("LINK_TARGET")
+    return resolved
+
+
+def _parse_runtime_entries(value: Any) -> list[_RuntimeEntry]:
+    """Parse the runtime-root inventory: files plus explicitly declared symlinks."""
+    if not isinstance(value, list) or not value:
+        _fail("INVENTORY_ENTRY")
+    entries: list[_RuntimeEntry] = []
+    seen: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            _fail("INVENTORY_ENTRY")
+        assert isinstance(item, dict)
+        keys = set(item.keys())
+        if keys == {"path", "sha256", "bytes"}:
+            path = item["path"]
+            digest_value = item["sha256"]
+            size = item["bytes"]
+            if not isinstance(path, str):
+                _fail("INVENTORY_ENTRY")
+            _canonical_absolute(path, "INVENTORY_ENTRY")
+            if not isinstance(digest_value, str) or not _DIGEST.fullmatch(digest_value):
+                _fail("INVENTORY_ENTRY")
+            if type(size) is not int or size < 0:
+                _fail("INVENTORY_ENTRY")
+            row = _RuntimeEntry(
+                path=path, kind="file", sha256=digest_value, size=size, target=""
+            )
+        elif keys == {"path", "kind", "target"}:
+            path = item["path"]
+            kind = item["kind"]
+            if not isinstance(path, str):
+                _fail("INVENTORY_ENTRY")
+            _canonical_absolute(path, "INVENTORY_ENTRY")
+            if kind != "symlink":
+                _fail("INVENTORY_ENTRY")
+            row = _RuntimeEntry(
+                path=path,
+                kind="symlink",
+                sha256="",
+                size=0,
+                target=_check_link_target_shape(item["target"]),
+            )
+        else:
+            _fail("INVENTORY_ENTRY")
+        if row.path in seen:
+            _fail("INVENTORY_DUPLICATE")
+        seen.add(row.path)
+        entries.append(row)
+    return entries
 
 
 def _hash_open_fd(fd: int, size: int, budget: _Budget) -> str:
@@ -546,26 +638,41 @@ def verify_python_binding(
         or not _DIGEST.fullmatch(record["nativeInventorySha256"])
     ):
         _fail("BINDING_SCHEMA")
-    entries = _parse_entries(record["inventory"], "INVENTORY_ENTRY")
+    entries = _parse_runtime_entries(record["inventory"])
+    file_entries = [entry for entry in entries if entry.kind == "file"]
+    link_entries = [entry for entry in entries if entry.kind == "symlink"]
     native_entries = _parse_entries(record["nativeInventory"], "NATIVE_ENTRY")
     if len(native_entries) > _MAX_NATIVE_ENTRIES:
         _fail("NATIVE_LIMIT")
-    for entry_path, _, _ in entries:
-        if not _under(entry_path, root):
+    for entry in entries:
+        if not _under(entry.path, root):
             _fail("INVENTORY_SCOPE")
-        _check_chain(entry_path, root)
-    if _inventory_hash(entries) != record["inventorySha256"]:
+        _check_chain(entry.path, root)
+    if _runtime_inventory_hash(entries) != record["inventorySha256"]:
         _fail("INVENTORY_HASH")
     if _inventory_hash(native_entries) != record["nativeInventorySha256"]:
         _fail("NATIVE_HASH")
     _check_dir_chain(root, prefix)
-    actual = _walk_runtime(root, budget)
-    if set(actual.keys()) != {entry_path for entry_path, _, _ in entries}:
+    actual, actual_links = _walk_runtime(root, budget)
+    if set(actual.keys()) != {entry.path for entry in file_entries}:
         _fail("INVENTORY_COVERAGE")
-    for entry_path, digest_value, size in entries:
-        observed_digest, observed_size = actual[entry_path]
-        if observed_digest != digest_value or observed_size != size:
+    if set(actual_links.keys()) != {entry.path for entry in link_entries}:
+        _fail("INVENTORY_COVERAGE")
+    for entry in file_entries:
+        observed_digest, observed_size = actual[entry.path]
+        if observed_digest != entry.sha256 or observed_size != entry.size:
             _fail("INVENTORY_MATCH")
+    file_paths = {entry.path for entry in file_entries}
+    for entry in link_entries:
+        declared = _resolve_link_target(entry.path, entry.target, root)
+        if declared not in file_paths:
+            _fail("LINK_TARGET")
+        raw = actual_links[entry.path]
+        if not raw or "\0" in raw or posixpath.isabs(raw):
+            _fail("LINK_TARGET")
+        observed_target = posixpath.normpath(posixpath.join(posixpath.dirname(entry.path), raw))
+        if observed_target != declared:
+            _fail("LINK_TARGET")
     for entry_path, digest_value, size in native_entries:
         observed = _hash_native_file(entry_path, root, budget)
         if observed != (digest_value, size):
@@ -620,8 +727,9 @@ def _reread_record(path: str, node: os.stat_result, budget: _Budget) -> bytes:
         os.close(fd)
 
 
-def _walk_runtime(root: str, budget: _Budget) -> dict[str, tuple[str, int]]:
+def _walk_runtime(root: str, budget: _Budget) -> tuple[dict[str, tuple[str, int]], dict[str, str]]:
     actual: dict[str, tuple[str, int]] = {}
+    links: dict[str, str] = {}
     stack: list[str] = [root]
     while stack:
         current = stack.pop()
@@ -635,13 +743,20 @@ def _walk_runtime(root: str, budget: _Budget) -> dict[str, tuple[str, int]]:
                 is_link = entry.is_symlink()
             except OSError as error:
                 raise BundleEvidenceError("RUNTIME_SCAN") from error
-            if is_link:
-                _fail("ENTRY_SYMLINK")
             try:
                 node = entry.stat(follow_symlinks=False)
             except OSError as error:
                 raise BundleEvidenceError("ENTRY_STAT") from error
             full = entry.path
+            if is_link:
+                try:
+                    raw = os.readlink(full)
+                except OSError as error:
+                    raise BundleEvidenceError("ENTRY_STAT") from error
+                if full in links:
+                    _fail("INVENTORY_DUPLICATE")
+                links[full] = raw
+                continue
             if stat.S_ISDIR(node.st_mode):
                 if node.st_uid != _REQUIRED_RUNTIME_UID:
                     _fail("ENTRY_OWNER")
@@ -658,7 +773,7 @@ def _walk_runtime(root: str, budget: _Budget) -> dict[str, tuple[str, int]]:
                 actual[full] = (digest_value, node.st_size)
             else:
                 _fail("ENTRY_TYPE")
-    return actual
+    return (actual, links)
 
 
 def _hash_native_file(path: str, root: str, budget: _Budget) -> tuple[str, int]:

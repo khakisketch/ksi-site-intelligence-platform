@@ -369,6 +369,117 @@ def test_missing_or_wrong_runtime_binding_blocks_before_any_probe(
     assert calls == []
 
 
+def _tree_and_symlink_binding(
+    tmp_path: Path,
+    name: str,
+    *,
+    link_name: str = "python3",
+    target: str = "python3.12",
+    declare: bool = True,
+    extra_links: list[tuple[str, str]] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], Path, Path, Path, Path]:
+    base = tmp_path / name
+    allowed = base / "allowed"
+    allowed.mkdir(parents=True)
+    os.chmod(allowed, 0o755)
+    tree = build_runtime_tree(allowed)
+    link = tree["root"] / "bin" / link_name
+    link.symlink_to(target)
+    declared = [(str(link), target)] if declare else []
+    declared.extend(extra_links or [])
+    record = build_binding_record(tree, symlinks=declared or None)
+    record_path = base / "binding.json"
+    write_binding_file(record_path, record)
+    return (tree, record, record_path, base, allowed, link)
+
+
+def test_declared_runtime_symlink_inside_root_passes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    jsonschema = pytest.importorskip("jsonschema")
+    tool = _verifier()
+    calls: list[str] = []
+    monkeypatch.setattr(tool, "subprocess", _make_guard(calls))
+    tree, record, record_path, _base, allowed, link = _tree_and_symlink_binding(
+        tmp_path, "sym-ok"
+    )
+    _seams(tool, monkeypatch, allowed)
+    validator = jsonschema.Draft202012Validator(
+        json.loads(BINDING_SCHEMA.read_bytes())
+    )
+    validator.validate(record)
+    expected = digest(record_path.read_bytes())
+    result = tool.verify_python_binding(
+        record_path, expected_sha256=expected, target=_target(tool)
+    )
+    assert result.interpreter == tree["interpreter"]
+    assert not tree["interpreter"].is_symlink()
+    assert link.is_symlink()
+    assert os.readlink(link) == "python3.12"
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    ("case", "code"),
+    [
+        ("undeclared", "INVENTORY_COVERAGE"),
+        ("dangling", "LINK_TARGET"),
+        ("escaping", "LINK_TARGET"),
+        ("absolute", "LINK_TARGET"),
+        ("chain", "LINK_TARGET"),
+    ],
+)
+def test_runtime_symlink_misuse_blocks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str, code: str
+) -> None:
+    tool = _verifier()
+    calls: list[str] = []
+    monkeypatch.setattr(tool, "subprocess", _make_guard(calls))
+    if case == "undeclared":
+        tree, _record, record_path, _base, allowed, _link = _tree_and_symlink_binding(
+            tmp_path, f"sym-{case}", declare=False
+        )
+    elif case == "dangling":
+        tree, _record, record_path, _base, allowed, _link = _tree_and_symlink_binding(
+            tmp_path, f"sym-{case}", link_name="dangling", target="missing.so"
+        )
+    elif case == "escaping":
+        tree, _record, record_path, _base, allowed, _link = _tree_and_symlink_binding(
+            tmp_path, f"sym-{case}", link_name="escape", target="../escape.so"
+        )
+    elif case == "absolute":
+        tree, _record, record_path, _base, allowed, _link = _tree_and_symlink_binding(
+            tmp_path, f"sym-{case}", link_name="absl", target="/etc/hostname"
+        )
+    elif case == "chain":
+        base = tmp_path / f"sym-{case}"
+        allowed = base / "allowed"
+        allowed.mkdir(parents=True)
+        os.chmod(allowed, 0o755)
+        tree = build_runtime_tree(allowed)
+        first = tree["root"] / "lib" / "link1"
+        first.symlink_to("libsynth-native.so")
+        second = tree["root"] / "lib" / "link2"
+        second.symlink_to("link1")
+        record = build_binding_record(
+            tree,
+            symlinks=[(str(first), "libsynth-native.so"), (str(second), "link1")],
+        )
+        record_path = base / "binding.json"
+        write_binding_file(record_path, record)
+    else:
+        raise AssertionError(f"unknown case {case}")
+    assert tree
+    _seams(tool, monkeypatch, allowed)
+    expected = digest(record_path.read_bytes())
+    with pytest.raises(tool.BundleEvidenceError) as excinfo:
+        tool.verify_python_binding(
+            record_path, expected_sha256=expected, target=_target(tool)
+        )
+    assert excinfo.value.code == code
+    assert calls == []
+
+
 def test_home_or_path_candidate_runtime_blocks(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

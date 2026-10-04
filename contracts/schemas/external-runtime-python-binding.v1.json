@@ -80,23 +80,45 @@
       "minItems": 1,
       "maxItems": 8192,
       "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["path", "sha256", "bytes"],
-        "properties": {
-          "path": {
-            "type": "string",
-            "minLength": 1
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "sha256", "bytes"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^sha256:[0-9a-f]{64}$"
+              },
+              "bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
           },
-          "sha256": {
-            "type": "string",
-            "pattern": "^sha256:[0-9a-f]{64}$"
-          },
-          "bytes": {
-            "type": "integer",
-            "minimum": 0
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "kind", "target"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "const": "symlink"
+              },
+              "target": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
           }
-        }
+        ]
       }
     },
     "nativeInventorySha256": {

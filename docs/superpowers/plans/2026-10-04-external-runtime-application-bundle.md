@@ -6,10 +6,9 @@
 **Architecture:** A focused shared artifact codec validates bounded wheel/manifest identities. An offline builder freezes the selected source and uses the prepared toolchain; the verifier optionally prepares a new private environment only after genuine explicit Python binding. No global installer, service, API or authority producer is introduced.
 **Tech Stack:** existing Python3.12 stdlib, prepared uv0.11.15/build backends, pytest/jsonschema/Ruff/mypy. No new dependencies/downloads or lock changes.
 **Spec:** [approved written design](../specs/2026-10-04-external-runtime-application-bundle-design.md).
-**State:** Tasks 1–3 delivered: static verifier + v1 schema (69 tests), frozen-source offline builder
-(27 tests), protected Python binding + private preparation (61 tests, 1 honest NOT_RUN skip).
-Combined 157 passed/1 skipped; Ruff/mypy clean. Task 4 (docs, test-runner fulls, one reviewer
-review, local integration) in progress. No completion, release or installation acceptance is claimed.
+**State:** Tasks 1–3 delivered plus the Task 4 review fix pass (I1–I4): combined **169 passed/1 skipped**;
+Ruff/mypy clean. Remaining Task 4: post-fix full regression, docs, local integration. No completion,
+release or installation acceptance is claimed.
 
 ## Execution log
 
@@ -44,6 +43,15 @@ review, local integration) in progress. No completion, release or installation a
   NOT_RUN skip (no protected CPython 3.12.15/wheelhouse); a real offline venv install test genuinely
   blocks at the probe version gate. Commit: `feat: verify protected Python and prepare private
   application installs`.
+- 2026-10-04 Task4 review fix pass: reviewer `ses_efa29b790ffe3GXRzFltx1kKol` found no Critical and
+  four Important (I1 whole-request read budget, I2 metadata decompression trusting a lying header,
+  I3 zero-length wheel entries, I4 runtime symlinks). Developer `ses_efa24bbd5ffeXFgrLGBzQUAzDw`
+  fixed all four plus the schema `files.kind` enum; RED 12 failed → GREEN **169 passed/1 skipped**
+  (Primary fresh re-run 9.68s); Ruff/mypy clean. Deviations: I2 caps a copied `ZipInfo`
+  (`file_size=_MAX_METADATA_BYTES+1`, CRC off) with RECORD digests as the integrity gate; I3 adds
+  the empty-digest↔`"0"` pairing plus a bounded emptiness probe; new codes `READ_TOTAL`,
+  `LINK_TARGET`, `RECORD_READ`. Commit: `fix: bound bundle reads and support declared empty files
+  and runtime symlinks`.
 
 ## Global Constraints
 

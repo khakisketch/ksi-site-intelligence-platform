@@ -57,6 +57,21 @@ def inventory_hash(entries: list[tuple[str, str, int]]) -> str:
     return "sha256:" + hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
 
 
+def runtime_inventory_hash(
+    file_entries: list[tuple[str, str, int]],
+    link_entries: list[tuple[str, str]] | None = None,
+) -> str:
+    """Canonical inventory hash covering file bytes and symlink kind/target.
+
+    File lines keep the historical ``path/sha/size`` shape; symlink entries
+    contribute no hash, only a deterministic ``path/kind/target`` line.
+    """
+    lines = [f"{path}\x00{value}\x00{size}" for path, value, size in sorted(file_entries)]
+    for path, target in sorted(link_entries or []):
+        lines.append(f"{path}\x00symlink\x00{target}")
+    return "sha256:" + hashlib.sha256("\n".join(sorted(lines)).encode("utf-8")).hexdigest()
+
+
 def write_bundle_dir(
     base: Path, *, wheel_overrides: dict[str, bytes] | None = None
 ) -> tuple[Path, str, str, str]:
@@ -163,6 +178,7 @@ def build_binding_record(
     implementation: str = "CPython",
     libc_version: str = "2.39",
     platform_tag: str = "manylinux_2_39_aarch64",
+    symlinks: list[tuple[str, str]] | None = None,
 ) -> dict[str, Any]:
     entries = []
     for path in tree["files"]:
@@ -172,7 +188,16 @@ def build_binding_record(
     for path in tree["native"]:
         payload = Path(path).read_bytes()
         native_entries.append((str(path), digest(payload), len(payload)))
+    link_rows = [
+        {"path": link, "kind": "symlink", "target": target}
+        for link, target in sorted(symlinks or [])
+    ]
     interp_payload = Path(tree["interpreter"]).read_bytes()
+    inventory_rows = [
+        {"path": path, "sha256": value, "bytes": size}
+        for path, value, size in sorted(entries)
+    ] + link_rows
+    inventory_rows.sort(key=lambda row: row["path"])
     return {
         "schemaVersion": "external-runtime-python-binding.v1",
         "interpreter": {
@@ -192,11 +217,8 @@ def build_binding_record(
             "platformTag": platform_tag,
         },
         "runtimeRoot": str(tree["root"]),
-        "inventorySha256": inventory_hash(entries),
-        "inventory": [
-            {"path": path, "sha256": value, "bytes": size}
-            for path, value, size in sorted(entries)
-        ],
+        "inventorySha256": runtime_inventory_hash(entries, symlinks),
+        "inventory": inventory_rows,
         "nativeInventorySha256": inventory_hash(native_entries),
         "nativeInventory": [
             {"path": path, "sha256": value, "bytes": size}

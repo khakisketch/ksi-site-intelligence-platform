@@ -112,7 +112,7 @@
             "minimum": 1
           },
           "kind": {
-            "enum": ["lock", "requirements", "workspace", "external", "workspace-wheel", "external-wheel"]
+            "enum": ["lock", "requirements", "workspace-wheel", "external-wheel"]
           }
         }
       }
