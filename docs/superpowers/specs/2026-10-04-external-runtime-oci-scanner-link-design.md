@@ -1,7 +1,10 @@
 # External runtime OCI-to-scanner identity link v2 design
 
-Status: Human approved the v2 design direction; written-spec review pending. No v2 code applied.
+Status: written spec approved by Human's “continue” after the written-review handoff on 2026-10-04.
+Implementation plan review pending; no v2 code applied.
 Date: 2026-10-04
+
+Execution handoff: [focused implementation plan](../plans/2026-10-04-external-runtime-oci-scanner-link.md).
 
 ## Purpose and proven need
 
