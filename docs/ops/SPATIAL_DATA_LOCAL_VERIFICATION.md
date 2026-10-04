@@ -441,13 +441,42 @@ and actualInspector areNOT_RUN. Future release fixes one deployment source/build
 and records verification code separately; currentstage source equality is unchanged and runs
 from that candidate's cleancheckout, notmovingmain. Documentation changes do not move the candidate.
 
-Human selected separate verifiedCPython3.12.15 + noneditableofflinewheels, then approved the
-[writtenbundleSpec](../superpowers/specs/2026-10-04-external-runtime-application-bundle-design.md).
-The [four-taskwrittenplan](../superpowers/plans/2026-10-04-external-runtime-application-bundle.md)
-awaits review; bundletools/runtime/privatepreparation are not implemented or claimed. After
-genuine bundle/config/signing/Core/credential/livecontainment/activation/test-use inputs exist,
-first product acceptance is one permittedDSM throughactualInspector/worker backto durableCore
-inspection result; then two-epoch analysis/query. No source/unit result substitutes for that run.
+Human selected separate verifiedCPython3.12.15 + noneditableofflinewheels, approved the
+[writtenbundleSpec](../superpowers/specs/2026-10-04-external-runtime-application-bundle-design.md)
+and the [four-taskplan](../superpowers/plans/2026-10-04-external-runtime-application-bundle.md),
+then requested automatic completion (goal mode, 40 turns/8h). The four tasks were delivered locally
+with the developer/reviewer/test-runner role split: static bundle verifier + v1 schema (`ef5b69f`),
+frozen-source offline builder (`a4fca75`), protected Python binding + private preparation (`7a04657`)
+and the review fix pass I1–I4 (`5be9578`). Genuine bundle/runtime preparation and the first
+permitted test-DSM → actual Inspector → durable Core inspection result remain **NOT_RUN** (no
+supplied wheelhouse/protected CPython 3.12.15 or release/signing/credential/containment inputs);
+no source/unit result substitutes for that run.
+
+### Protected application bundle tooling — 2026-10-04
+
+Approved 4-task plan delivered locally: static bundle verifier + v1 schema (`ef5b69f`, 69 tests),
+frozen-source offline builder + contract tests (`a4fca75`, 27 tests), protected Python binding +
+private preparation (`7a04657`, 61 tests + 1 explicit NOT_RUN skip) and the Task 4 review fix pass
+(`5be9578`, +12 tests). Combined bundle contract suites: **169 passed/1 skipped** (logs
+`bundle-analysis/task1-*`/`task2-*`/`task3-*`/`task4-fix-*`); the single skip is the genuine-input
+NOT_RUN test. One independent read-only review (`ses_efa29b790ffe3GXRzFltx1kKol`, range
+`dfea867..7a04657`) found no Critical and four Important findings — whole-request read budget,
+metadata decompression trusting a lying header, zero-length wheel entries and runtime symlinks —
+all fixed with RED→GREEN tests (`READ_TOTAL`/`METADATA_SIZE`/`RECORD_READ`/`LINK_TARGET` codes);
+nine minors are deferred in the task ledger. The fix pass caps copied-ZipInfo metadata reads
+(`_MAX_METADATA_BYTES+1`, CRC off) with RECORD digests as the integrity gate, allows empty regular
+files with exact empty-digest↔`"0"` RECORD binding, and accepts runtime symlinks only as explicitly
+declared, inside-root resolutions to listed regular files.
+
+Full regressions (test-runner role, ids/commands/results recorded in the task ledger):
+pre-fix `7a04657` **8482 passed/122 skipped/101 warnings/791.12s, zero failures**
+(`ses_efa290d88ffeRRZMq8lV70NQaI`); post-fix `5be9578` **8494 passed/122 skipped/101 warnings/
+794.22s, zero failures** (`ses_efa1aac0cffe9SALpAISPOjEQ9`). No genuine bundle/Python preparation
+ran: the local uv cache retains only unpacked wheels (zero `.whl` under `wheels-v6`), hatchling is
+absent from `.venv`, and no protected CPython 3.12.15 runtime exists — genuine
+`BUNDLE_BYTES_VERIFIED`/`RUNTIME_BINDING_VERIFIED`/`INSTALLATION_PREPARED` stay **NOT_RUN** with the
+supplier/wheelhouse blocker recorded, never substituted with synthetic fixtures. Actual activation
+and the first product execution target remain open.
 
 **Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
 the scan config ID. That is false on this actual containerd store: explicit platform inspection
@@ -456,7 +485,10 @@ standalone verifier and strict artifact function when supplied their independent
 config ID, and reject the actual Docker index, swapped IDs or wrong hash. This proves parser
 compatibility and fail-closed behavior, **not actual full release binding**. Do not supply that config
 ID as a fabricated host observation. A verified index/platform/config link requires a new reviewed
-security contract; native runtime release support on this actual target remains blocked.
+security contract; native runtime release support on this actual target remains blocked. (The
+v2 archive link above now supplies that contract for the retained historical archives; full
+current-source release binding still requires genuine current-source builds and the missing
+release/signing/host inputs.)
 
 Receipts are retained in `.opencode/artifacts/contained-runtime-preparation-20261003/`:
 `image-build-16084bf/` (source, builds, archives/OCI/SBOM/scans/comparison), and `task3-analysis/`

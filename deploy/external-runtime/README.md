@@ -215,6 +215,40 @@ canonical source must genuinely agree. Core/Dashboard/registry/security/signed
 execution/current Core/live socket and application bundle gates are unchanged.
 See [local evidence](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
 
+## Application bundle preparation
+
+The three fixed host programs are prepared from one frozen source commit as an offline wheel
+bundle; no interpreter, venv copy, checkout, credential or mutable symlink is included.
+
+```bash
+# static bundle verification only
+python3 tools/verify_external_runtime_application_bundle.py \
+  --bundle <new-private-bundle-dir> --manifest-sha256 <sha256:...> \
+  --source-commit <40-hex> --lock-sha256 <sha256:...>
+
+# add the runtime binding pair to verify the protected interpreter
+# ... --python-binding <binding.json> --python-binding-sha256 <sha256:...>
+
+# add --prepare-root <new-private-dir> to create a private noneditable preparation
+```
+
+Success stages are distinct: `BUNDLE_BYTES_VERIFIED`, `RUNTIME_BINDING_VERIFIED`,
+`INSTALLATION_PREPARED`. The builder (`tools/build_external_runtime_application_bundle.py`)
+requires the exact clean source commit, a supplied lock-pinned wheelhouse and hash-pinned
+uv/build-Python/backend inputs; it runs uv in a clean task-private environment and re-verifies the
+completed bundle before returning a receipt. Preparation never installs into `/usr/local`, never
+touches units or credentials, and its planned inventory lists future global paths under
+`/usr/local/lib/ksi-external-runtime/bin/` as plan entries only. The binding record must be an
+operator-owned `0400`/`0600` file and the runtime a root-owned prefix under
+`/usr/local/lib/ksi-external-runtime/python/` or `/opt/ksi-external-runtime/python/` with a
+complete file/symlink inventory; declared symlinks must resolve inside the root to a listed
+regular file.
+
+Status on this host: no supplied wheelhouse and no protected CPython 3.12.15 runtime exist, so
+genuine `BUNDLE_BYTES_VERIFIED` / `INSTALLATION_PREPARED` runs are **NOT_RUN**; the contract tests
+use labeled synthetic artifacts only. Activation stays blocked by the existing
+release/signing/credential/containment gates.
+
 Each observed repository-digest list
 must include the immutable release reference's canonical repository digest.
 The observed immutable Core and Dashboard Docker image IDs—not

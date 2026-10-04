@@ -107,6 +107,22 @@ artifact check at sourceb444389. Their old config revision intentionally fails a
 source assertion. This is genuine historical byte-link evidence, not a fabricated full current
 host release record. Exact commands/receipts and outstanding gates are in the local evidence.
 
+### Protected application bundle stages (offline wheels + explicit Python)
+
+`tools/build_external_runtime_application_bundle.py` builds a source-frozen offline wheel bundle
+(exactly `manifest.json`, `uv.lock`, `requirements.txt`, `wheels/`) for the three fixed host
+programs. `tools/verify_external_runtime_application_bundle.py` reports distinct stages —
+`BUNDLE_BYTES_VERIFIED`, `RUNTIME_BINDING_VERIFIED`, `INSTALLATION_PREPARED` — and never installs
+globally. The deployment source commit, the build artifact identities (source/lock/wheels/images)
+and the verification-code version (tool commit + file hashes) are recorded separately; a later
+docs/verifier revision does not move an existing candidate baseline. Bundle reads are bounded by
+per-file and whole-request counters, metadata is streamed with an actual-bytes cap, empty regular
+files are allowed with exact RECORD binding, and runtime symlinks are accepted only as explicitly
+declared, inside-root resolutions to listed regular files. A protected CPython 3.12.15 runtime and
+a supplied wheelhouse are required inputs; both are absent on this host, so genuine bundle assembly
+and `INSTALLATION_PREPARED` remain **NOT_RUN** (no synthetic substitute is recorded as release
+evidence). Signing/credential/authority/live-containment gates are unchanged.
+
 ```bash
 git status --short
 # 반드시 출력이 없어야 한다.

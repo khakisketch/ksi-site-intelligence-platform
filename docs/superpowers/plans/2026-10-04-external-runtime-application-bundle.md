@@ -6,9 +6,10 @@
 **Architecture:** A focused shared artifact codec validates bounded wheel/manifest identities. An offline builder freezes the selected source and uses the prepared toolchain; the verifier optionally prepares a new private environment only after genuine explicit Python binding. No global installer, service, API or authority producer is introduced.
 **Tech Stack:** existing Python3.12 stdlib, prepared uv0.11.15/build backends, pytest/jsonschema/Ruff/mypy. No new dependencies/downloads or lock changes.
 **Spec:** [approved written design](../specs/2026-10-04-external-runtime-application-bundle-design.md).
-**State:** Tasks 1–3 delivered plus the Task 4 review fix pass (I1–I4): combined **169 passed/1 skipped**;
-Ruff/mypy clean. Remaining Task 4: post-fix full regression, docs, local integration. No completion,
-release or installation acceptance is claimed.
+**State:** All four tasks delivered locally: bundle suites **169 passed/1 skipped**; review fix pass
+I1–I4 at `5be9578`; post-fix full regression **8494 passed/122 skipped/101 warnings/794.22s, zero
+failures** (test-runner `ses_efa1aac0cffe9SALpAISPOjEQ9`); docs updated. Local main integration
+next. No completion, release or installation acceptance is claimed.
 
 ## Execution log
 
@@ -52,6 +53,13 @@ release or installation acceptance is claimed.
   the empty-digest↔`"0"` pairing plus a bounded emptiness probe; new codes `READ_TOTAL`,
   `LINK_TARGET`, `RECORD_READ`. Commit: `fix: bound bundle reads and support declared empty files
   and runtime symlinks`.
+- 2026-10-04 Task4 closeout evidence: pre-fix full `7a04657` 8482 passed/122 skipped/101 warnings/
+  791.12s (`ses_efa290d88ffeRRZMq8lV70NQaI`); post-fix full `5be9578` **8494 passed/122 skipped/
+  101 warnings/794.22s, zero failures** (`ses_efa1aac0cffe9SALpAISPOjEQ9`). Docs updated: deployment
+  README, RELEASE_EVIDENCE and SPATIAL_DATA_LOCAL_VERIFICATION record the stages, fixed-source
+  protocol and genuine-input NOT_RUN blockers. No genuine bundle/runtime preparation ran (no
+  supplied wheelhouse / protected CPython 3.12.15). Local main fast-forward and post-merge rechecks
+  are recorded after integration.
 
 ## Global Constraints
 
