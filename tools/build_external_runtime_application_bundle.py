@@ -141,6 +141,7 @@ _NORMALIZE_RUNS = re.compile(r"[-_.]+")
 _HASH_LINE = re.compile(r"--hash=sha256:([0-9a-f]{64})\b")
 _REQUIREMENT = re.compile(r"[A-Za-z0-9_.\-]+==[^ \t\\;#]+")
 _MANYLINUX = re.compile(r"manylinux_([0-9]+)_([0-9]+)_([A-Za-z0-9]+)\Z")
+_ABI3_FLOOR = re.compile(r"cp3([0-9]+)\Z")
 _UV_VERSION_LINE = re.compile(r"^Python (3\.12\.[0-9]+)")
 
 _UV_TIMEOUT_S = 120
@@ -365,7 +366,7 @@ def _load_backend_inventory(path: Path) -> set[str]:
     return allowed
 
 
-def _parse_lock(payload: bytes) -> tuple[dict[str, _LockPackage], bytes]:
+def _parse_lock(payload: bytes) -> tuple[dict[str, tuple[_LockPackage, ...]], bytes]:
     try:
         data = tomllib.loads(payload.decode("utf-8"))
     except (ValueError, UnicodeError) as error:
@@ -373,7 +374,7 @@ def _parse_lock(payload: bytes) -> tuple[dict[str, _LockPackage], bytes]:
     raw_packages = data.get("package")
     if not isinstance(raw_packages, list) or not raw_packages:
         _fail("LOCK_PARSE")
-    packages: dict[str, _LockPackage] = {}
+    grouped: dict[str, list[_LockPackage]] = {}
     for entry in raw_packages:
         if not isinstance(entry, dict):
             _fail("LOCK_PARSE")
@@ -418,24 +419,64 @@ def _parse_lock(payload: bytes) -> tuple[dict[str, _LockPackage], bytes]:
                 _fail("LOCK_PARSE")
             wheels.append((url, digest, size))
         key = _normalized(name)
-        if key in packages:
-            _fail("LOCK_PARSE")
-        packages[key] = _LockPackage(
-            name=name,
-            version=version,
-            editable=editable,
-            deps=tuple(deps),
-            wheels=tuple(wheels),
+        # uv resolution forks (e.g. torch/torchvision with resolution-markers)
+        # legitimately repeat a normalized name. Keep every entry in document
+        # order; _closure resolves names reached by the traversal deterministically.
+        grouped.setdefault(key, []).append(
+            _LockPackage(
+                name=name,
+                version=version,
+                editable=editable,
+                deps=tuple(deps),
+                wheels=tuple(wheels),
+            )
         )
+    packages = {key: tuple(entries) for key, entries in grouped.items()}
     return (packages, payload)
 
 
-def _closure(packages: dict[str, _LockPackage]) -> tuple[dict[str, str], dict[str, _LockPackage]]:
+def _has_compatible_wheel(
+    entry: _LockPackage, target_tag: str, libc: tuple[int, ...]
+) -> bool:
+    try:
+        _select_external_wheel(entry, target_tag, libc)
+    except BundleEvidenceError:
+        return False
+    return True
+
+
+def _resolve_lock_entry(
+    candidates: tuple[_LockPackage, ...], target_tag: str, libc: tuple[int, ...]
+) -> _LockPackage:
+    if len(candidates) == 1:
+        return candidates[0]
+    editable = tuple(entry for entry in candidates if entry.editable is not None)
+    external = tuple(entry for entry in candidates if entry.editable is None)
+    if editable and external:
+        _fail("LOCK_FORK_AMBIGUOUS")
+    if editable:
+        if len(editable) != 1:
+            _fail("LOCK_FORK_AMBIGUOUS")
+        return editable[0]
+    compatible = tuple(
+        entry for entry in external if _has_compatible_wheel(entry, target_tag, libc)
+    )
+    if len(compatible) != 1:
+        _fail("LOCK_FORK_AMBIGUOUS")
+    return compatible[0]
+
+
+def _closure(
+    packages: dict[str, tuple[_LockPackage, ...]],
+    target_tag: str,
+    libc: tuple[int, ...],
+) -> tuple[dict[str, str], dict[str, _LockPackage], dict[str, _LockPackage]]:
     root = _normalized(_CONTROLLER)
-    if root not in packages or packages[root].editable is None:
+    if root not in packages:
         _fail("LOCK_CLOSURE")
     workspace: dict[str, str] = {}
     external: dict[str, _LockPackage] = {}
+    resolved: dict[str, _LockPackage] = {}
     queue: list[str] = [root]
     seen: set[str] = set()
     while queue:
@@ -443,15 +484,19 @@ def _closure(packages: dict[str, _LockPackage]) -> tuple[dict[str, str], dict[st
         if key in seen:
             continue
         seen.add(key)
-        entry = packages.get(key)
-        if entry is None:
+        candidates = packages.get(key)
+        if candidates is None:
             _fail("LOCK_CLOSURE")
+        entry = _resolve_lock_entry(candidates, target_tag, libc)
+        resolved[key] = entry
         if entry.editable is not None:
             workspace[key] = entry.editable
         else:
             external[key] = entry
         queue.extend(_normalized(dep) for dep in entry.deps)
-    return (workspace, external)
+    if resolved[root].editable is None:
+        _fail("LOCK_CLOSURE")
+    return (workspace, external, resolved)
 
 
 def _safe_repo_relative(value: str) -> Path:
@@ -651,10 +696,23 @@ def _wheel_platform_ok(platform_field: str, target_tag: str, libc: tuple[int, ..
     return False
 
 
+def _abi3_python_ok(python_tag: str) -> bool:
+    # Stable-ABI (abi3) wheels built against an older CPython 3.x floor run on
+    # the fixed 3.12 target: accept cp3<minor> with minor <= 12, reject newer
+    # floors such as cp313 whose ABI the target cannot satisfy.
+    for part in python_tag.split("."):
+        matched = _ABI3_FLOOR.fullmatch(part)
+        if matched is not None and int(matched.group(1)) <= 12:
+            return True
+    return False
+
+
 def _wheel_tags_ok(python_tag: str, abi_tag: str, code: str) -> None:
     python_parts = python_tag.split(".")
     abi_parts = abi_tag.split(".")
-    if not any(part == "py3" or part.startswith("cp312") for part in python_parts):
+    if not any(part == "py3" or part.startswith("cp312") for part in python_parts) and (
+        "abi3" not in abi_parts or not _abi3_python_ok(python_tag)
+    ):
         _fail(code)
     if not any(part in ("none", "abi3") or part.startswith("cp312") for part in abi_parts):
         _fail(code)
@@ -823,7 +881,7 @@ def build_application_bundle(
         if not isinstance(root_data.get("tool"), dict):
             _fail("LOCK_PARSE")
         packages, _raw = _parse_lock(lock_payload)
-        workspace, external = _closure(packages)
+        workspace, external, resolved = _closure(packages, platform_tag, libc)
 
         staged = work / "frozen"
         staged.mkdir(parents=True, exist_ok=False)
@@ -836,7 +894,7 @@ def build_application_bundle(
         )
         records = [root_manifest, root_lock]
         for key in sorted(workspace):
-            entry = packages[key]
+            entry = resolved[key]
             assert entry.editable is not None
             records.extend(_freeze_member(repo, staged, entry.editable, budget))
             _check_member_manifest(staged, entry.name, entry.editable, backends, entry.version)
@@ -869,7 +927,7 @@ def build_application_bundle(
         built_wheels.mkdir(parents=True, exist_ok=False)
         workspace_wheels: list[tuple[str, str, str, int, str]] = []
         for key in sorted(workspace):
-            entry = packages[key]
+            entry = resolved[key]
             out_dir = work / "out" / key
             out_dir.mkdir(parents=True, exist_ok=False)
             _run_uv(

@@ -911,3 +911,127 @@ def test_real_uv_dry_run_boundary(tmp_path: Path) -> None:
         env=builder._child_env(home, cache),
     )
     assert [p for p in scratch.iterdir() if p.is_dir()] == []
+
+
+FORK_LIBC: tuple[int, ...] = (2, 39)
+
+FORK_LOCK_TEMPLATE = """\
+version = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "ksi-processing-controller"
+version = "0.0.1"
+source = { editable = "services/ksi-processing-controller" }
+dependencies = [
+    { name = "demo-native" },
+]
+
+@ENTRIES@"""
+
+FORK_ENTRY_TEMPLATE = """\
+[[package]]
+name = "@NAME@"
+version = "@VERSION@"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://example.invalid/@FILE@", hash = "sha256:@HASH@", size = @SIZE@ },
+]
+"""
+
+
+def _fork_entry(name: str, version: str, filename: str) -> str:
+    block = FORK_ENTRY_TEMPLATE.replace("@NAME@", name)
+    block = block.replace("@VERSION@", version)
+    block = block.replace("@FILE@", filename)
+    block = block.replace("@HASH@", "a" * 64)
+    return block.replace("@SIZE@", "12345")
+
+
+def _fork_lock(entries: list[tuple[str, str, str]]) -> bytes:
+    blocks = "\n".join(
+        _fork_entry(name, version, filename) for name, version, filename in entries
+    )
+    return FORK_LOCK_TEMPLATE.replace("@ENTRIES@", blocks).encode("utf-8")
+
+
+def _aarch64_filename(version: str) -> str:
+    return f"demo_native-{version}-cp312-cp312-manylinux_2_28_aarch64.whl"
+
+
+def _x86_64_filename(version: str) -> str:
+    return f"demo_native-{version}-cp312-cp312-manylinux_2_28_x86_64.whl"
+
+
+def test_lock_fork_unused_duplicate_parses_and_closure_ignores_it() -> None:
+    builder = _builder()
+    payload = _fork_lock([
+        ("demo-native", "1.2.3", _aarch64_filename("1.2.3")),
+        ("demo-unused", "1.0.0", "demo_unused-1.0.0-py3-none-any.whl"),
+        ("demo-unused", "2.0.0", "demo_unused-2.0.0-py3-none-any.whl"),
+    ])
+    packages, _ = builder._parse_lock(payload)
+    assert len(packages[builder._normalized("demo-unused")]) == 2
+    workspace, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    assert workspace == {"ksi_processing_controller": "services/ksi-processing-controller"}
+    assert external["demo_native"].version == "1.2.3"
+    assert "demo_unused" not in external
+
+
+def test_lock_fork_needed_name_selects_unique_compatible_candidate() -> None:
+    builder = _builder()
+    payload = _fork_lock([
+        ("demo-native", "1.2.3", _x86_64_filename("1.2.3")),
+        ("demo-native", "1.2.4", _aarch64_filename("1.2.4")),
+    ])
+    packages, _ = builder._parse_lock(payload)
+    _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    assert external["demo_native"].version == "1.2.4"
+    filename, _ = builder._select_external_wheel(
+        external["demo_native"], PLATFORM_TAG, FORK_LIBC
+    )
+    assert filename == _aarch64_filename("1.2.4")
+
+
+def test_lock_fork_two_compatible_candidates_blocks() -> None:
+    builder = _builder()
+    payload = _fork_lock([
+        ("demo-native", "1.2.3", _aarch64_filename("1.2.3")),
+        ("demo-native", "1.2.4", _aarch64_filename("1.2.4")),
+    ])
+    packages, _ = builder._parse_lock(payload)
+    with pytest.raises(builder.BundleEvidenceError, match="LOCK_FORK_AMBIGUOUS"):
+        builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+
+
+def test_lock_fork_zero_compatible_candidates_blocks() -> None:
+    builder = _builder()
+    payload = _fork_lock([
+        ("demo-native", "1.2.3", _x86_64_filename("1.2.3")),
+        ("demo-native", "1.2.4", _x86_64_filename("1.2.4")),
+    ])
+    packages, _ = builder._parse_lock(payload)
+    with pytest.raises(builder.BundleEvidenceError, match="LOCK_FORK_AMBIGUOUS"):
+        builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+
+
+def test_builder_selects_cp311_abi3_wheel_for_target() -> None:
+    builder = _builder()
+    filename = "demo_native-1.2.3-cp311-abi3-manylinux_2_28_aarch64.whl"
+    payload = _fork_lock([("demo-native", "1.2.3", filename)])
+    packages, _ = builder._parse_lock(payload)
+    _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    selected, _ = builder._select_external_wheel(
+        external["demo_native"], PLATFORM_TAG, FORK_LIBC
+    )
+    assert selected == filename
+
+
+def test_builder_rejects_cp313_abi3_wheel_for_target() -> None:
+    builder = _builder()
+    filename = "demo_native-1.2.3-cp313-abi3-manylinux_2_28_aarch64.whl"
+    payload = _fork_lock([("demo-native", "1.2.3", filename)])
+    packages, _ = builder._parse_lock(payload)
+    _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    with pytest.raises(builder.BundleEvidenceError, match="WHEEL_TAG"):
+        builder._select_external_wheel(external["demo_native"], PLATFORM_TAG, FORK_LIBC)

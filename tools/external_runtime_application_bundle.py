@@ -78,6 +78,7 @@ _TOKEN = re.compile(r"[A-Za-z0-9_.+~-]+\Z")
 _NORMALIZE_RUNS = re.compile(r"[-_.]+")
 _RECORD_HASH = re.compile(r"sha256=[A-Za-z0-9_-]{43}\Z")
 _RECORD_SIZE = re.compile(r"[0-9]+\Z")
+_ABI3_FLOOR = re.compile(r"cp3([0-9]+)\Z")
 
 _ROOT_NAMES = frozenset({"manifest.json", "uv.lock", "requirements.txt", "wheels"})
 _FILE_WHEEL_KINDS = frozenset({"workspace-wheel", "external-wheel"})
@@ -443,8 +444,23 @@ def _check_files(value: Any) -> tuple[BoundBundleFile, ...]:
     return tuple(records)
 
 
+def _abi3_python_ok(python_tag: str) -> bool:
+    # Stable-ABI (abi3) wheels built against an older CPython 3.x floor run on
+    # the fixed 3.12 target: accept cp3<minor> with minor <= 12, reject newer
+    # floors such as cp313 whose ABI the target cannot satisfy.
+    for part in python_tag.split("."):
+        matched = _ABI3_FLOOR.fullmatch(part)
+        if matched is not None and int(matched.group(1)) <= 12:
+            return True
+    return False
+
+
 def _check_external_tags(python_tag: str, abi_tag: str, platform_tag: str) -> None:
-    if python_tag != "py3" and not python_tag.startswith("cp312"):
+    if (
+        python_tag != "py3"
+        and not python_tag.startswith("cp312")
+        and (abi_tag != "abi3" or not _abi3_python_ok(python_tag))
+    ):
         _fail("DISTRIBUTION_TAGS")
     if abi_tag not in ("none", "abi3") and not abi_tag.startswith("cp312"):
         _fail("DISTRIBUTION_TAGS")

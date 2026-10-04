@@ -582,3 +582,20 @@ def test_zero_length_wheel_entry_record_mismatch_blocks(
     with pytest.raises(tool.BundleEvidenceError) as excinfo:
         _verify(tool, root, manifest_sha)
     assert excinfo.value.code == ("RECORD_HASH" if field == "hash" else "RECORD_SIZE")
+
+
+def test_verifier_accepts_cp311_abi3_external_tags() -> None:
+    tool = _tool()
+    assert tool._check_external_tags("cp311", "abi3", "manylinux_2_28_aarch64") is None
+
+
+def test_verifier_rejects_cp313_abi3_external_tags() -> None:
+    tool = _tool()
+    with pytest.raises(tool.BundleEvidenceError, match="DISTRIBUTION_TAGS"):
+        tool._check_external_tags("cp313", "abi3", "manylinux_2_28_aarch64")
+
+
+def test_verifier_still_rejects_non_abi3_legacy_python_tags() -> None:
+    tool = _tool()
+    with pytest.raises(tool.BundleEvidenceError, match="DISTRIBUTION_TAGS"):
+        tool._check_external_tags("cp311", "none", "manylinux_2_28_aarch64")
