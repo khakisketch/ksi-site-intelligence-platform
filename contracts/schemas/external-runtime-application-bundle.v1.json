@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.local/schemas/external-runtime-application-bundle.v1.json",
+  "title": "External runtime application bundle manifest",
+  "description": "Static shape of manifest.json for a bounded offline application bundle. Byte and identity checks are enforced by the verifier; this schema mirrors field shapes only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "source", "target", "buildToolchain", "files", "distributions", "entrypoints"],
+  "properties": {
+    "schemaVersion": {
+      "const": "external-runtime-application-bundle.v1"
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["gitCommitSha", "uvLockSha256", "uvLockBytes", "buildInputInventorySha256"],
+      "properties": {
+        "gitCommitSha": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "uvLockSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "uvLockBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "buildInputInventorySha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "pythonVersion", "os", "architecture", "libcFamily", "libcVersion", "platformTag"],
+      "properties": {
+        "implementation": {
+          "const": "CPython"
+        },
+        "pythonVersion": {
+          "const": "3.12.15"
+        },
+        "os": {
+          "const": "linux"
+        },
+        "architecture": {
+          "const": "arm64"
+        },
+        "libcFamily": {
+          "const": "glibc"
+        },
+        "libcVersion": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.+~-]+$"
+        },
+        "platformTag": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.+~-]+$"
+        }
+      }
+    },
+    "buildToolchain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uvVersion", "uvSha256", "buildPythonVersion", "buildPythonSha256", "backendInventorySha256"],
+      "properties": {
+        "uvVersion": {
+          "const": "0.11.15"
+        },
+        "uvSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "buildPythonVersion": {
+          "type": "string",
+          "pattern": "^3\\.12"
+        },
+        "buildPythonSha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "backendInventorySha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["relativePath", "sha256", "bytes", "kind"],
+        "properties": {
+          "relativePath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "kind": {
+            "enum": ["lock", "requirements", "workspace", "external", "workspace-wheel", "external-wheel"]
+          }
+        }
+      }
+    },
+    "distributions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "version", "kind", "wheel", "pythonTag", "abiTag", "platformTag"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "enum": ["workspace", "external"]
+          },
+          "wheel": {
+            "type": "string",
+            "minLength": 1
+          },
+          "pythonTag": {
+            "type": "string",
+            "minLength": 1
+          },
+          "abiTag": {
+            "type": "string",
+            "minLength": 1
+          },
+          "platformTag": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "entrypoints": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "module", "function"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "module": {
+            "type": "string",
+            "minLength": 1
+          },
+          "function": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

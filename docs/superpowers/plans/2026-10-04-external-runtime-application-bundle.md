@@ -1,12 +1,31 @@
 # Protected Offline Application Bundle Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans for the Human's already selected inline method. Steps use checkbox (`- [ ]`) syntax for tracking. Do not reopen executor selection.
+> **For agentic workers:** Role split per updated AGENTS.md: `developer` implements bounded tasks, `reviewer` reviews, `test-runner` runs milestone verification; Primary verifies, commits and integrates. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Create and verify a frozen-source offline wheel bundle for the three existing host programs, with separately verifiedCPython3.12.15 and installation preparation only.
 **Architecture:** A focused shared artifact codec validates bounded wheel/manifest identities. An offline builder freezes the selected source and uses the prepared toolchain; the verifier optionally prepares a new private environment only after genuine explicit Python binding. No global installer, service, API or authority producer is introduced.
 **Tech Stack:** existing Python3.12 stdlib, prepared uv0.11.15/build backends, pytest/jsonschema/Ruff/mypy. No new dependencies/downloads or lock changes.
 **Spec:** [approved written design](../specs/2026-10-04-external-runtime-application-bundle-design.md).
-**State:** written spec approved by Human's “명세 승인”; this written plan awaits review. Product files not implemented. Existing inline method preserved.
+**State:** Task 1 delivered: static verifier + v1 schema, 69 GREEN, Ruff/mypy clean. Tasks 2–4
+continue under the agreed goal mode (developer/reviewer/test-runner roles). No completion, release
+or installation acceptance is claimed.
+
+## Execution log
+
+- 2026-10-04: Task1 frozen contract authored by Primary: `tests/support/external_application_bundle_fixture.py`
+  and `tests/contract/test_external_application_bundle.py` (70 cases incl. resource budgets, ZIP/entry
+  safety, fixed entrypoints, distribution/tag/RECORD negatives). RED 70 failed/0.41s retained in
+  `.opencode/artifacts/contained-runtime-preparation-20261003/bundle-analysis/task1-red.log`.
+  Developer `ses_efa7a4848ffe1i5J3jkFGUPmB0` dispatched for exactly the tool + schema; tests frozen.
+- Ruling: the updated AGENTS.md role policy supersedes this plan's earlier preserved-inline note;
+  no gate, test or evidence rule is weakened and no new product scope is added.
+- 2026-10-04 Task1 GREEN: developer `ses_efa7a4848ffe1i5J3jkFGUPmB0` implemented the tool + schema and
+  correctly STOPPED on Primary-owned fixture defects (no test edits, no commit). Primary fixes:
+  corrected the `make_bundle` wheel-membership filter, made file kinds spec-exact
+  (`workspace-wheel`/`external-wheel`, tool tightened from a union), removed one invalid
+  duplicate-bytes test parameter, and suppressed an expected duplicate-entry warning.
+  Verified: 69 passed/0.33s; Ruff 3 files clean; mypy tool clean. Commit:
+  `feat: verify bounded offline application bundle artifacts`.
 
 ## Global Constraints
 
