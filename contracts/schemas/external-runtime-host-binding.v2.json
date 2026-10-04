@@ -22,14 +22,14 @@
   },
   "$defs": {
     "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "repoDigest": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$"},
+    "repoDigest": {"type": "string", "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9._-]*(?::[0-9]{1,5})?/)?[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$"},
     "productReference": {
       "type": "string",
-      "pattern": "^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$"
+      "pattern": "^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$"
     },
     "externalReference": {
       "type": "string",
-      "pattern": "^(?:(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}|opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2)$"
+      "pattern": "^(?:(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}|opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2)$"
     },
     "artifact": {
       "type": "object", "additionalProperties": false,

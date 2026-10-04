@@ -69,7 +69,7 @@ read_candidate_env() {
 }
 
 immutable_reference() {
-  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$ ]]
+  [[ "$1" =~ ^([A-Za-z0-9][A-Za-z0-9._-]*(:[0-9]{1,5})?/)?[A-Za-z0-9][A-Za-z0-9._/-]*:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$ ]]
 }
 
 pinned_external_runtime_reference() {
@@ -422,10 +422,10 @@ validate_canonical_release_evidence() {
       and (.sha256 | digest);
     def product_reference:
       type == "string"
-      and test("^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
+      and test("^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     def external_reference:
       type == "string"
-      and (test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
+      and (test("^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
         or . == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2");
     type == "object"
     and (keys | sort == ["externalRuntimeImages", "generatedAtUtc", "productImages", "schemaVersion", "source"])
@@ -467,13 +467,13 @@ validate_host_binding() {
       then (.repoDigests | length) == (.repoDigests | unique | length) else true end;
     def archive: artifact("oci-archive") and .bytes <= 1073741824;
     def image_id: type == "string" and test("^sha256:[0-9a-f]{64}$");
-    def repo_digest: type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$");
+    def repo_digest: type == "string" and test("^(?:[A-Za-z0-9][A-Za-z0-9._-]*(?::[0-9]{1,5})?/)?[A-Za-z0-9][A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}$");
     def product_reference:
       type == "string"
-      and test("^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
+      and test("^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$");
     def external_reference:
       type == "string"
-      and (test("^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
+      and (test("^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$")
         or . == "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2");
     def product:
       type == "object"

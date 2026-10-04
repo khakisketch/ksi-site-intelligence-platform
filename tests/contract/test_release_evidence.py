@@ -683,3 +683,89 @@ def test_internal_worktree_artifact_and_existing_output_are_refused(tmp_path: Pa
     existing.mkdir()
     with pytest.raises(tool.ReleaseEvidenceError, match="already exists"):
         _build(tmp_path, output_name="existing-output")
+
+
+_PORT_PRODUCT_REFERENCE = "127.0.0.1:5000/ksi-core:037d636@sha256:" + "a" * 64
+_PORT_EXTERNAL_REFERENCE = "127.0.0.1:5000/external-dep:1.0.0@sha256:" + "b" * 64
+
+
+def test_generator_accepts_registry_port_in_product_and_external_references() -> None:
+    """A local registry host may carry exactly one :PORT after its first segment."""
+    tool = _tool()
+
+    assert (
+        tool._validate_product_image_reference(_PORT_PRODUCT_REFERENCE)
+        == _PORT_PRODUCT_REFERENCE
+    )
+    assert (
+        tool._validate_external_runtime_image_reference(_PORT_EXTERNAL_REFERENCE)
+        == _PORT_EXTERNAL_REFERENCE
+    )
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "127.0.0.1:abc/ksi-core:037d636@sha256:" + "a" * 64,
+        "127.0.0.1:/ksi-core:037d636@sha256:" + "a" * 64,
+        "127.0.0.1:123456/ksi-core:037d636@sha256:" + "a" * 64,
+        "host:1:2/ksi-core:037d636@sha256:" + "a" * 64,
+        "registry.example/sub:5000/ksi-core:037d636@sha256:" + "a" * 64,
+        "registry.example/ksi-core:5000:037d636@sha256:" + "a" * 64,
+        "127.0.0.1:5000/ksi-core:latest@sha256:" + "a" * 64,
+        "127.0.0.1:5000/not-ksi-core:037d636@sha256:" + "a" * 64,
+        "127.0.0.1:5000/ksi-core:037d636@sha256:" + "z" * 64,
+        "127.0.0.1:5000/ksi-core:037d636",
+    ],
+)
+def test_generator_rejects_malformed_registry_port_product_references(
+    reference: str,
+) -> None:
+    tool = _tool()
+
+    with pytest.raises(tool.ReleaseEvidenceError):
+        tool._validate_product_image_reference(reference)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        "127.0.0.1:abc/dep:1.0.0@sha256:" + "b" * 64,
+        "127.0.0.1:/dep:1.0.0@sha256:" + "b" * 64,
+        "127.0.0.1:123456/dep:1.0.0@sha256:" + "b" * 64,
+        "host:1:2/dep:1.0.0@sha256:" + "b" * 64,
+        "registry.example/sub:5000/dep:1.0.0@sha256:" + "b" * 64,
+        "registry.example/dep:5000:1.0.0@sha256:" + "b" * 64,
+        "127.0.0.1:5000/dep:latest@sha256:" + "b" * 64,
+    ],
+)
+def test_generator_rejects_malformed_registry_port_external_references(
+    reference: str,
+) -> None:
+    tool = _tool()
+
+    with pytest.raises(tool.ReleaseEvidenceError, match="non-floating version tag"):
+        tool._validate_external_runtime_image_reference(reference)
+
+
+def test_schema_accepts_registry_port_product_and_external_references(
+    tmp_path: Path,
+) -> None:
+    result = _build(tmp_path, output_name="port-schema-base")
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    manifest["productImages"][0]["reference"] = _PORT_PRODUCT_REFERENCE
+    manifest["externalRuntimeImages"] = [_PORT_EXTERNAL_REFERENCE, _NODEODM_DIGEST_ONLY]
+
+    assert list(_validator().iter_errors(manifest)) == []
+
+
+def test_build_release_evidence_produces_port_bearing_product_reference(
+    tmp_path: Path,
+) -> None:
+    result = _build(
+        tmp_path, output_name="port-product", reference=_PORT_PRODUCT_REFERENCE
+    )
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["productImages"][0]["reference"] == _PORT_PRODUCT_REFERENCE
+    assert list(_validator().iter_errors(manifest)) == []

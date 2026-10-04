@@ -36,12 +36,12 @@ _NODEODM_DIGEST_ONLY = (
     "opendronemap/nodeodm@sha256:cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
 )
 _PRODUCT_IMAGE_REFERENCE = re.compile(
-    r"^(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:"
+    r"^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*ksi-[a-z0-9][a-z0-9._-]*:"
     r"(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)"
     r"(?=[A-Za-z0-9._-]*[0-9])[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}\Z"
 )
 _EXTERNAL_RUNTIME_IMAGE_REFERENCE = re.compile(
-    r"^(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:"
+    r"^(?:[a-z0-9][a-z0-9._-]*(?::[0-9]{1,5})?/)?(?:[a-z0-9][a-z0-9._/-]*/)*[a-z0-9][a-z0-9._-]*:"
     r"(?!(?:latest|stable|main|master|dev|edge|nightly|local)@)"
     r"[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}\Z"
 )

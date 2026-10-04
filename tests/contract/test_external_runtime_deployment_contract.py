@@ -2187,3 +2187,297 @@ def test_production_config_mount_cannot_create_quantitative_authority(
     with pytest.raises(RuntimeError, match="must be configured together"):
         build_production_app()
     assert not list(tmp_path.rglob("*.jsonl"))
+
+
+_STEP2B1_HEX = "0123456789abcdef" * 4
+_STEP2B1_PORT_PRODUCT_CORE = f"127.0.0.1:5000/ksi-core:037d636@sha256:{_STEP2B1_HEX}"
+_STEP2B1_PORT_PRODUCT_DASHBOARD = (
+    f"127.0.0.1:5000/ksi-dashboard:037d637@sha256:{_STEP2B1_HEX}"
+)
+_STEP2B1_PORT_EXTERNAL_A = f"127.0.0.1:5000/external-dep:1.0.0@sha256:{_STEP2B1_HEX}"
+_STEP2B1_PORT_EXTERNAL_B = f"127.0.0.1:5000/other-dep:2.0@sha256:{_STEP2B1_HEX}"
+_STEP2B1_BAD_PORT_REFERENCES = [
+    f"127.0.0.1:abc/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+    f"127.0.0.1:/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+    f"127.0.0.1:123456/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+    f"host:1:2/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+    f"registry.example/sub:5000/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+    f"registry.example/ksi-core:5000:037d636@sha256:{_STEP2B1_HEX}",
+]
+
+
+def test_stage_immutable_reference_allows_single_registry_port_after_first_host_segment() -> None:
+    """Only one :PORT (1-5 digits) directly after the first host segment is valid."""
+    accepted = [
+        _STEP2B1_PORT_PRODUCT_CORE,
+        f"registry.example:5000/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+        f"registry.example/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+        f"registry.example:1/a/b/ksi-core:037d636@sha256:{_STEP2B1_HEX}",
+        _STEP2B1_PORT_EXTERNAL_A,
+    ]
+    shell = r'''source "$1"
+mode="$2"; shift 2
+if [[ "$mode" == accept ]]; then
+  for reference in "$@"; do immutable_reference "$reference" || exit 1; done
+else
+  for reference in "$@"; do
+    if immutable_reference "$reference"; then exit 1; fi
+  done
+fi
+'''
+    good = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), "accept", *accepted],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert good.returncode == 0, good.stderr
+
+    bad = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), "reject", *_STEP2B1_BAD_PORT_REFERENCES],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert bad.returncode == 0, bad.stderr
+
+
+def test_stage_canonical_repository_digest_preserves_registry_port() -> None:
+    """A tag@digest reference with a registry port keeps that port in repo@digest form."""
+    reference = _STEP2B1_PORT_PRODUCT_CORE
+    expected = f"127.0.0.1:5000/ksi-core@sha256:{_STEP2B1_HEX}"
+    shell = r'''source "$1"
+[[ "$(canonical_repository_digest "$2")" == "$3" ]]
+'''
+    result = subprocess.run(
+        ["bash", "-c", shell, "bash", str(_STAGE), reference, expected],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def _step2b1_release_artifact(name: str, kind: str) -> dict[str, object]:
+    return {
+        "name": name,
+        "type": kind,
+        "bytes": 1,
+        "sha256": "sha256:" + "b" * 64,
+    }
+
+
+def test_stage_canonical_evidence_validation_accepts_registry_port_references(
+    tmp_path: Path,
+) -> None:
+    """Port-bearing product and external references pass the canonical evidence gate."""
+    source_commit = "a" * 40
+    evidence = {
+        "schemaVersion": "1.0",
+        "generatedAtUtc": "2026-09-11T12:34:56Z",
+        "source": {"gitCommitSha": source_commit},
+        "productImages": [
+            {
+                "reference": _STEP2B1_PORT_PRODUCT_CORE,
+                "sbom": _step2b1_release_artifact("core.cdx.json", "cyclonedx-json"),
+                "scanner": _step2b1_release_artifact("core.scan.json", "scanner-json"),
+            },
+            {
+                "reference": _STEP2B1_PORT_PRODUCT_DASHBOARD,
+                "sbom": _step2b1_release_artifact("dash.cdx.json", "cyclonedx-json"),
+                "scanner": _step2b1_release_artifact("dash.scan.json", "scanner-json"),
+            },
+        ],
+        "externalRuntimeImages": [_STEP2B1_PORT_EXTERNAL_A, _STEP2B1_PORT_EXTERNAL_B],
+    }
+    path = tmp_path / "port-release-evidence.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    expected = json.dumps([_STEP2B1_PORT_EXTERNAL_A, _STEP2B1_PORT_EXTERNAL_B])
+
+    good = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; validate_canonical_release_evidence "$2" "$3" "$4"',
+            "bash",
+            str(_STAGE),
+            str(path),
+            source_commit,
+            expected,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert good.returncode == 0, good.stderr
+
+    negatives = [
+        *[
+            [_STEP2B1_PORT_EXTERNAL_A, bad.replace("ksi-core:037d636", "external-dep:1.0.0")]
+            for bad in _STEP2B1_BAD_PORT_REFERENCES
+        ],
+        ["127.0.0.1:5000/external-dep:latest@sha256:" + _STEP2B1_HEX],
+    ]
+    for external_images in negatives:
+        mutated = dict(evidence)
+        mutated["externalRuntimeImages"] = external_images
+        path.write_text(json.dumps(mutated), encoding="utf-8")
+        result = subprocess.run(
+            [
+                "bash",
+                "-c",
+                'source "$1"; validate_canonical_release_evidence "$2" "$3" "$4"',
+                "bash",
+                str(_STAGE),
+                str(path),
+                source_commit,
+                json.dumps(sorted(external_images)),
+            ],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        assert result.returncode != 0, external_images
+
+
+def _step2b1_observed_artifact(artifact_type: str) -> dict[str, object]:
+    return {
+        "path": "/var/lib/ksi-external-runtime/evidence/artifact.json",
+        "sha256": "sha256:" + "c" * 64,
+        "bytes": 20,
+        "type": artifact_type,
+    }
+
+
+def _step2b1_port_binding(host_version: str, tmp_path: Path) -> dict[str, Any]:
+    core_digest = f"127.0.0.1:5000/ksi-core@sha256:{_STEP2B1_HEX}"
+    dashboard_digest = f"127.0.0.1:5000/ksi-dashboard@sha256:{_STEP2B1_HEX}"
+    inspector_digest = f"127.0.0.1:5000/ksi-inspector@sha256:{_STEP2B1_HEX}"
+    measurement_digest = f"127.0.0.1:5000/ksi-measurement@sha256:{_STEP2B1_HEX}"
+    image_id = "sha256:" + "d" * 64
+
+    def product(component: str, reference: str, repo_digest: str) -> dict[str, Any]:
+        return {
+            "component": component,
+            "releaseReference": reference,
+            "dockerImageId": image_id,
+            "repoDigests": [repo_digest],
+            "sbom": _step2b1_observed_artifact("cyclonedx-json"),
+            "scanner": _step2b1_observed_artifact("scanner-json"),
+        }
+
+    def runtime(role: str, reference: str, repo_digest: str) -> dict[str, Any]:
+        entry: dict[str, Any] = {
+            "role": role,
+            "releaseReference": reference,
+            "dockerImageId": image_id,
+            "repoDigests": [repo_digest],
+            "sbom": _step2b1_observed_artifact("cyclonedx-json"),
+            "scanner": _step2b1_observed_artifact("scanner-json"),
+        }
+        if host_version == "v2":
+            entry["ociArchive"] = {
+                "path": str(tmp_path / f"{role}.tar"),
+                "sha256": "sha256:" + "e" * 64,
+                "bytes": 20,
+                "type": "oci-archive",
+            }
+        return entry
+
+    binding: dict[str, Any] = {
+        "schemaVersion": "external-runtime-host-binding." + host_version,
+        "releaseEvidence": {"sha256": "sha256:" + "f" * 64},
+        "source": {"gitCommitSha": "a" * 40},
+        "productImages": [
+            product("core", _STEP2B1_PORT_PRODUCT_CORE, core_digest),
+            product("dashboard", _STEP2B1_PORT_PRODUCT_DASHBOARD, dashboard_digest),
+        ],
+        "runtimeProducts": [
+            runtime(
+                "inspector",
+                f"127.0.0.1:5000/ksi-inspector:2026.09.10@sha256:{_STEP2B1_HEX}",
+                inspector_digest,
+            ),
+            runtime(
+                "measurement",
+                f"127.0.0.1:5000/ksi-measurement:2026.09.10@sha256:{_STEP2B1_HEX}",
+                measurement_digest,
+            ),
+        ],
+        "externalRuntimeImages": [
+            {
+                "releaseReference": _STEP2B1_PORT_EXTERNAL_A,
+                "dockerImageId": image_id,
+                "repoDigests": [f"127.0.0.1:5000/external-dep@sha256:{_STEP2B1_HEX}"],
+            },
+            {
+                "releaseReference": _STEP2B1_PORT_EXTERNAL_B,
+                "dockerImageId": image_id,
+                "repoDigests": [f"127.0.0.1:5000/other-dep@sha256:{_STEP2B1_HEX}"],
+            },
+        ],
+    }
+    return binding
+
+
+@pytest.mark.parametrize("host_version", ["v1", "v2"])
+def test_stage_host_binding_validation_accepts_registry_port_references(
+    tmp_path: Path, host_version: str
+) -> None:
+    """Host bindings whose references and repoDigests carry :5000 validate on v1 and v2."""
+    binding = _step2b1_port_binding(host_version, tmp_path)
+    schema = json.loads(
+        (
+            _ROOT / "contracts" / "schemas" / f"external-runtime-host-binding.{host_version}.json"
+        ).read_text(encoding="utf-8")
+    )
+    Draft202012Validator.check_schema(schema)
+    assert list(Draft202012Validator(schema).iter_errors(binding)) == []
+
+    binding_path = tmp_path / "port-host-binding.json"
+    binding_path.write_text(json.dumps(binding), encoding="utf-8")
+    expected = json.dumps(
+        sorted(image["releaseReference"] for image in binding["externalRuntimeImages"])
+    )
+
+    good = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; validate_host_binding "$2" "$3" "$4" "$5"',
+            "bash",
+            str(_STAGE),
+            str(binding_path),
+            "a" * 40,
+            "sha256:" + "f" * 64,
+            expected,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert good.returncode == 0, good.stderr
+
+    bad_binding = json.loads(json.dumps(binding))
+    bad_binding["productImages"][0]["repoDigests"] = [
+        f"127.0.0.1:abc/ksi-core@sha256:{_STEP2B1_HEX}"
+    ]
+    binding_path.write_text(json.dumps(bad_binding), encoding="utf-8")
+    assert list(Draft202012Validator(schema).iter_errors(bad_binding))
+    bad = subprocess.run(
+        [
+            "bash",
+            "-c",
+            'source "$1"; validate_host_binding "$2" "$3" "$4" "$5"',
+            "bash",
+            str(_STAGE),
+            str(binding_path),
+            "a" * 40,
+            "sha256:" + "f" * 64,
+            expected,
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert bad.returncode != 0
