@@ -2,7 +2,8 @@
 
 Status: written spec approved by Human's “continue” after the written-review handoff on 2026-10-04.
 Implementation plan approved; v2 source and genuine historical byte-link checks verified;
-whole regression/review/local integration pending. No release or activation acceptance implied.
+whole task regression and independent review verified; actual-main integration/rechecks pending.
+No release or activation acceptance implied.
 Date: 2026-10-04
 
 Execution handoff: [focused implementation plan](../plans/2026-10-04-external-runtime-oci-scanner-link.md).

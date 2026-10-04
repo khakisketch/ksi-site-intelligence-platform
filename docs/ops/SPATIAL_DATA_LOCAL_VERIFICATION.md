@@ -386,6 +386,13 @@ encode an advertised2^40-byte member, so the fixture was corrected to representa
 passes→related269passed18.88s. A missing v2 product/dependency repository-digest uniqueness check
 also had an observed RED→GREEN. Changed-file Ruff and mypy2sources, shell syntax/diff clean.
 These are scoped checks; complete source regression/review/local integration is recorded separately.
+Full prepared task Python at committed`b444389` (command-localumask022, no synchronization,
+offline/no-download) completed **8320passed,121skipped,98warnings,zero failures in774.20s**.
+The one independent read-only whole-range review (`68c4e4b..74699ef`) checked all five focus
+areas with no Critical/Important finding. Minor diagnostic/integral-number/v1-parser
+compatibility polish was retained; no runtime gate or profile was changed for review.
+Subsequent tracked changes are documentation-only. Actual-main integrated checks are recorded
+after the separately revalidated local fast-forward; no remote CI/deployment claim follows.
 
 Actual retained verification (`task3-analysis/oci-genuine-historical-link.json`): both original
 16084bf archives rehash to their recorded byte counts/SHA256, and the verifier derives the exact
