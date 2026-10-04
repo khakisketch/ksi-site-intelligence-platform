@@ -6,7 +6,7 @@
 **Architecture:** Add a bounded read-only stdlib archive verifier and a separate host-binding v2 schema. The existing lifecycle retains its independent host/source/RepoDigest checks and passes only the archive-derived config ID to the strict scanner consumer; v1 remains unchanged.
 **Tech Stack:** existing Python3.12 stdlib, Bash/jq, pytest and prepared jsonschema/Ruff/mypy; no new dependencies.
 **Spec:** [approved written v2 design](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md).
-**State:** written spec approved by Human's “continue” on 2026-10-04; this written plan awaits review. No v2 product code applied.
+**State:** spec and plan approved; Human requested all development on 2026-10-04. Inline execution active; full regression/review/integration pending.
 
 ## Global Constraints
 
@@ -143,4 +143,4 @@ with pytest.raises(tool.ScannerEvidenceError):
 - Resource constants, field names and function/CLI/shell interfaces agree; fixture hashes come from bytes. Negative graph tests rebind outerhash, so they do not merely test hashing. Each Review Focus line has named negative checks above.
 - Raw hashing vs header interpretation is explicit: bounded full-file reads are required, but no parser read/allocation may trust an extension's advertised body length. These are distinct phases, not an exception allowing PAX/GNU expansion.
 - Planning evidence: actual retained scans have `os=linux`, `architecture=arm64`; archives have oneimage root, oneARM64 plus oneunknownattestation,15runtime diffIDs/layers and26regular/dirmembers without PAX/GNU extensions. This is profile inspection, not v2 implementation evidence.
-- Human plan review pending. Preserve the already selected inline execution method after approval; do not infer implementation permission from this plan's existence.
+- Human approved this presented plan with “그렇다면 이제 개발 모두 진행해줘”; preserved inline method. Execution BASE68c4e4b, local integration target main7f56def; no publication or runtime activation permission.
