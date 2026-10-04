@@ -11,7 +11,9 @@ artifact metadata and verified runtime config ID. Legacy scanner compatibility i
 
 Narrow G3 review/regression/local integration is recorded below; the overall actual-target
 native release-binding objective remains open. Human selected a new verified-linkv2 design;
-its written spec is pending review and no v2 product code has been applied.
+its written spec was subsequently approved at the written-review handoff. The
+[v2 implementation plan](2026-10-04-external-runtime-oci-scanner-link.md) awaits review;
+no v2 product code has been applied.
 
 ## Verified execution and discovered contract defect — 2026-10-04
 

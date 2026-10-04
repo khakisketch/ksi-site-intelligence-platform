@@ -53,8 +53,10 @@ e3c3d27 with command-localumask022:8239passed/121skipped/98warnings/zero failure
 Intermediate0002/077 fixture and SDKdirectory failures remain disclosed in the local evidence;
 no production/SDK gate was relaxed. Python repair and narrow native parsing are locally integrated,
 not a full runtime release. The Human selected verified-linkv2 design;
-[written spec](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md) is pending Human
-review, not an implemented schema/tool or permission to generate real release/signing inputs.
+[written spec](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md) was approved by
+the Human's “continue” after its written-review handoff. The
+[implementation plan](2026-10-04-external-runtime-oci-scanner-link.md) awaits review; this is not
+an implemented schema/tool or permission to generate real release/signing inputs.
 
 The preceding review follow-up changed documentation only. Its repository baseline was
 `dbbee981a73a17a5f55aa3db405f7235d312445d`; its then-inspected image source was

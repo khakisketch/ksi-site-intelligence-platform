@@ -360,7 +360,9 @@ This is full local source regression evidence, not release, containment or field
 
 The Human selected a new v2 archive/index/platform/config-link design after this actual binding
 defect was found. Its [written spec](../superpowers/specs/2026-10-04-external-runtime-oci-scanner-link-design.md)
-is pending review; no v2 schema/verifier/consumer has been implemented. Protected application bundle
+was approved by the Human's “continue” after its written-review handoff. The
+[implementation plan](../superpowers/plans/2026-10-04-external-runtime-oci-scanner-link.md) now awaits review;
+no v2 schema/verifier/consumer has been implemented. Protected application bundle
 packaging remains a separate design unit. Prior source/profile identities are never relabeled as
 current release evidence, and required real authority suppliers/inputs remain unresolved.
 
