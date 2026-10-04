@@ -6,9 +6,10 @@
 **Architecture:** A focused shared artifact codec validates bounded wheel/manifest identities. An offline builder freezes the selected source and uses the prepared toolchain; the verifier optionally prepares a new private environment only after genuine explicit Python binding. No global installer, service, API or authority producer is introduced.
 **Tech Stack:** existing Python3.12 stdlib, prepared uv0.11.15/build backends, pytest/jsonschema/Ruff/mypy. No new dependencies/downloads or lock changes.
 **Spec:** [approved written design](../specs/2026-10-04-external-runtime-application-bundle-design.md).
-**State:** Task 1 delivered: static verifier + v1 schema, 69 GREEN, Ruff/mypy clean. Tasks 2–4
-continue under the agreed goal mode (developer/reviewer/test-runner roles). No completion, release
-or installation acceptance is claimed.
+**State:** Task 1 delivered (static verifier + v1 schema, 69 GREEN). Task 2 delivered (frozen-source
+offline builder + 27 contract tests; combined 96 GREEN; Ruff/mypy clean). Task 3 next under the
+agreed goal mode (developer/reviewer/test-runner roles). No completion, release or installation
+acceptance is claimed.
 
 ## Execution log
 
@@ -26,6 +27,12 @@ or installation acceptance is claimed.
   duplicate-bytes test parameter, and suppressed an expected duplicate-entry warning.
   Verified: 69 passed/0.33s; Ruff 3 files clean; mypy tool clean. Commit:
   `feat: verify bounded offline application bundle artifacts`.
+- 2026-10-04 Task2 GREEN: developer `ses_efa6ffeedffeGDnJRY7SV56QpO` delivered
+  `tools/build_external_runtime_application_bundle.py` + 27 contract tests; TDD RED 26 failed/1 passed
+  (the single pass was CLI-misuse exit-2 before the tool existed) → GREEN; Primary fresh re-run
+  **96 passed/2.57s**; Ruff + mypy clean. Accepted deviations: read-only git subprocess for freeze
+  checks, literal wheelhouse closure-set equality, backend name allowlist, documented canonical
+  inventory ordering. Commit: `feat: build source-frozen offline application wheel bundles`.
 
 ## Global Constraints
 
