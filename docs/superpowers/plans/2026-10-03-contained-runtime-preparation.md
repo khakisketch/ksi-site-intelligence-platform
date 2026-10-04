@@ -55,8 +55,11 @@ no production/SDK gate was relaxed. Python repair and narrow native parsing are 
 not a full runtime release. The Human selected verified-linkv2 design;
 [written spec](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md) was approved by
 the Human's “continue” after its written-review handoff. The
-[implementation plan](2026-10-04-external-runtime-oci-scanner-link.md) awaits review; this is not
-an implemented schema/tool or permission to generate real release/signing inputs.
+[implementation plan](2026-10-04-external-runtime-oci-scanner-link.md) was approved for inline
+development. Source3fb5094/b444389 now implements the additive read-only archive link and
+strict consumer; both genuine historical16084bf pairs pass with original bytes preserved.
+V1 still blocks index/config inequality. Full regression/review/integration is recorded in the
+new plan; no current-source full release, signer/publisher/credential/host authority was generated.
 
 The preceding review follow-up changed documentation only. Its repository baseline was
 `dbbee981a73a17a5f55aa3db405f7235d312445d`; its then-inspected image source was

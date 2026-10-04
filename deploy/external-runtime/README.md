@@ -165,6 +165,7 @@ they never target `ksi-phase2-staging`.
 current-operator-owned private `release-evidence.v1` record, and a separate
 current-operator-owned private
 [`external-runtime-host-binding.v1`](../../contracts/schemas/external-runtime-host-binding.v1.json)
+or additive [`v2`](../../contracts/schemas/external-runtime-host-binding.v2.json)
 record. The canonical record retains only its source, immutable product/runtime
 references, and product SBOM/scanner metadata. The host binding records the
 exact canonical-record hash, source commit, observed Docker image IDs and
@@ -182,19 +183,36 @@ be valid CycloneDX JSON. Strict runtime scanner validation accepts the existing
 `scanner.name`/`scanner.schemaVersion` envelope or the reviewed native Grype
 `0.120.0` profile, without rewriting the original report. Native reports require
 DB status `valid: true`, DB schema `v6.1.10`, well-formed findings, and exact
-`source.target.imageID` equality with the already verified host `dockerImageId`.
+`source.target.imageID` equality with the independently verified expected config
+identity: v1 uses the host `dockerImageId` directly; v2 derives it from the
+verified original OCI archive, without changing the actual host ID.
 The verifier reads, hashes and parses the same bounded regular-file payload,
 rejecting duplicate/non-finite JSON, symlinks and observed file replacement.
 DB schema is not report schema, and format validation is not a vulnerability
 waiver, tool-signature/DB-authenticity proof or activation approval.
 
-**Actual target limitation:** the inspected Docker 29 containerd store returns
+**V1 target limitation:** the inspected Docker 29 containerd store returns
 an OCI index as `.Id`, while Grype reports a config digest. `--platform` inspection
 returns a platform manifest, still not the config digest. The native equality
 path therefore **blocks on this target**. Do not substitute a config ID in a
 host record observed as an index, relabel a manifest, or add fabricated scanner
-fields. Supporting this target requires a separately reviewed, cryptographically
-verified index/platform/config link; no such runtime contract is implemented.
+fields. V2 supplies the separately reviewed cryptographic index/platform/config
+link. Each runtime requires an `ociArchive` with exactly absolute path, SHA256,
+positive byte length (at most1GiB) and `type: oci-archive`. The read-only stdlib
+verifier checks the original archive against the independently host-verified
+index, exactly one Linux/ARM64 manifest, all archived/referenced blob identities,
+source revision and role-specific user/fixed command. Only its successfully
+derived config ID becomes the scanner expectation; v2 native reports must also
+declare Linux/ARM64. Unknown/mixed versions and incomplete/failed links block.
+
+The archive reader checks raw regular/directory TAR headers (no extensions,
+extraction or decompression), at most4096members,1MiB JSON metadata,64descriptors
+per graph node and depth8. It hashes/reads/rechecks one protected descriptor;
+PAX/GNU/sparse/link/special payloads never reach parser expansion. Attestation
+blobs are hash-checked, **not signature-verified**. A successful historical image
+link does not make it a clean-current-source release: both config revision and
+canonical source must genuinely agree. Core/Dashboard/registry/security/signed
+execution/current Core/live socket and application bundle gates are unchanged.
 See [local evidence](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
 
 Each observed repository-digest list

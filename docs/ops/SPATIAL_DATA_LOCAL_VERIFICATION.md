@@ -361,10 +361,46 @@ This is full local source regression evidence, not release, containment or field
 The Human selected a new v2 archive/index/platform/config-link design after this actual binding
 defect was found. Its [written spec](../superpowers/specs/2026-10-04-external-runtime-oci-scanner-link-design.md)
 was approved by the Human's “continue” after its written-review handoff. The
-[implementation plan](../superpowers/plans/2026-10-04-external-runtime-oci-scanner-link.md) now awaits review;
-no v2 schema/verifier/consumer has been implemented. Protected application bundle
+[implementation plan](../superpowers/plans/2026-10-04-external-runtime-oci-scanner-link.md) was approved
+when the Human requested all development; subsequent v2 evidence is recorded below. Protected application bundle
 packaging remains a separate design unit. Prior source/profile identities are never relabeled as
 current release evidence, and required real authority suppliers/inputs remain unresolved.
+
+### Additive v2 OCI/scanner link — 2026-10-04
+
+Approved plan execution added a read-only OCI verifier at
+`3fb5094d684b549e8e1d31b1c6d9baf991834d62` and the v2 schema/strict lifecycle handoff at
+`b444389315ecd37c0ee301dd512377e058d32057`. Host IDs and raw scanner bytes are not replaced.
+V1 still uses exact direct equality; v2 derives config identity from the genuine host index,
+original archive hash/length, checked ARM64 manifest/config, source revision and runtime role.
+All archived/referenced blobs are verified, including attestations (not signature-authenticated).
+Raw TAR/type/name/offset/end-block/resource checks and safe descriptor/stability/hash checks
+prevent extension expansion, unsafe paths, partial evidence or an unverified config fallback.
+The native report's own os/architecture must be Linux/ARM64 only for v2; legacy/default v1
+compatibility remains intact. No image/base/OS/lock/package/authority input was changed.
+
+Source evidence:72expected missing-verifier failures→72OCI passes; with existing38scanner checks,
+110passed0.42s. The first implementation run had62passes/10test-fixture errors: USTAR cannot
+encode an advertised2^40-byte member, so the fixture was corrected to representable2^32bytes
+(still above1GiB) without weakening the size/type gate. Stage/platform/v2schema9RED with2v1
+passes→related269passed18.88s. A missing v2 product/dependency repository-digest uniqueness check
+also had an observed RED→GREEN. Changed-file Ruff and mypy2sources, shell syntax/diff clean.
+These are scoped checks; complete source regression/review/local integration is recorded separately.
+
+Actual retained verification (`task3-analysis/oci-genuine-historical-link.json`): both original
+16084bf archives rehash to their recorded byte counts/SHA256, and the verifier derives the exact
+independently retained config IDs from each actual recorded index. The strict scanner artifact
+function then accepts the unchanged genuine Grype report with Linux/ARM64 check. Wrong index,
+role, hash, scanner config and laterHEADsource assertions reject; original archive/report hashes
+remain unchanged. This replaces the earlier missing-link limitation **only for this narrow
+verified v2 route**; the earlier v1 mismatch result remains correct.
+
+`fullReleaseGateExecuted:false`: no complete current-source Core/Dashboard/registry/host record
+was invented. Historical image config source remains16084bf, not the later verifier HEAD.
+Current-source release evidence/builds, tool Sigstore/DB freshness, High59 disposition, signed
+execution/Core/credentials, private custodian/archive, protected application bundles and live
+containment/accepted public inspection/customer/field/accuracy inputs remain absent or unverified.
+No new image build/scan, public TIFF processing, service start, push, deployment or cleanup occurred.
 
 **Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
 the scan config ID. That is false on this actual containerd store: explicit platform inspection

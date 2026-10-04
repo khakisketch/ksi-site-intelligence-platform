@@ -57,7 +57,8 @@ host binding의 `runtimeProducts`에 들어가며, staging gate가 SBOM/scanner 
 bytes in the lifecycle. Existing nonempty `scanner.name`/`scanner.schemaVersion` envelopes
 remain supported; genuine Grype0.120.0 JSON is also parsed directly. Native validation requires the supported
 descriptor/DB profile, well-formed matches and exact `source.target.imageID` equality with
-the independently verified host `dockerImageId`. Raw bytes are not rewritten, findings/ignores
+the independently verified config expectation. V1 uses the observed host `dockerImageId`
+directly; additive v2 derives the config from original OCI evidence. Raw bytes are not rewritten, findings/ignores
 are not dropped, and DBv6.1.10 is not presented as a report schema. The16MiB regular-file
 reader hashes/parses one payload, rejects symlink traversal, changed files, duplicate keys,
 non-finite values and malformed/ambiguous/unknown profiles. Core/Dashboard generic scanner
@@ -74,11 +75,37 @@ Docker29 containerd store, `.Id` is the OCI index, `--platform` yields the platf
 and the Grype scan ID is the config digest. These distinct identities fail equality. The
 standalone consumer accepts a retained report with its archive-verified config ID, but that
 does not establish a complete actual host/release binding. A separately reviewed image-link
-contract is required before native reports can satisfy the gate on that store. Never fabricate
+contract is required before native reports can satisfy the gate on that store. That relation is
+implemented in the additive v2 profile below, not by changing v1. Never fabricate
 a host observation, reinterpret a manifest as a config, or use the report's own ID as its
 expected trusted ID. Registry promotion, tool signatures, original DB bytes/freshness, security
 disposition and live containment remain separate gates. Detailed verification is in
 [local evidence](SPATIAL_DATA_LOCAL_VERIFICATION.md#python-repair-and-native-scanner-consumer--2026-10-04).
+
+### Additive OCI archive link in host binding v2
+
+Canonical release-evidence v1 and host-binding v1 wire shapes remain unchanged. The separate
+`external-runtime-host-binding.v2` contract requires `ociArchive` metadata for both runtime
+roles (absolute path, original SHA256, positive integer length≤1GiB, `type: oci-archive`).
+It does not accept caller-declared config/manifest identities. The host-observed OCI index,
+source and role anchor the byte chain; `tools/verify_external_oci_archive.py` derives the config
+only after full raw archive/blob/descriptor checks. The consumer passes that config to the
+existing strict scanner parser with its v2 Linux/ARM64 check. Failed/nonzero/malformed output,
+wrong source/role/index, stale derived IDs, unknown/mixed versions and substituted scanner bytes
+block before acceptance. No producer, image load/export, registry publication or activation is added.
+
+Bounds: raw uncompressed regular/directory TAR only,4096members,1MiB JSON metadata,64descriptors
+per graph node, depth8; no PAX/GNU/sparse/link/special expansion, layer decompression or extraction.
+The same descriptor is hashed before/after parsing and checked against its directory entry.
+All archived content-addressed blobs and graph references, including unselected attestations,
+are checked. Attestation bytes are not a verified signature. Original scanner findings/ignores,
+tool/DB authenticity, security disposition, canonical/source/registry gates and live authority
+requirements remain separate. Legacy reports still do not gain native in-report image proof.
+
+Both retained16084bf image/archive/native-report pairs passed this standalone link and strict
+artifact check at sourceb444389. Their old config revision intentionally fails a laterHEAD
+source assertion. This is genuine historical byte-link evidence, not a fabricated full current
+host release record. Exact commands/receipts and outstanding gates are in the local evidence.
 
 ```bash
 git status --short

@@ -8,6 +8,16 @@
 **Spec:** [approved written v2 design](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md).
 **State:** spec and plan approved; Human requested all development on 2026-10-04. Inline execution active; full regression/review/integration pending.
 
+## Execution summary
+
+- [x] Task1 source deliverable:3fb5094; OCI72RED→GREEN, combinedscanner110pass0.42s, Ruff/mypy clean.
+- [x] Task2 source deliverable:b444389; v2/platform9RED→GREEN (2v1stillpass), related269pass18.88s, Ruff/mypy2/bash clean.
+- [ ] Task3 closure:2actualhistoricalpairs verified, allwrongbindings/laterHEAD reject, originalsunchanged;
+  fullsuite running atb444389, independentreview and actualmain integration/rechecks pending.
+
+Detailed step checkboxes below are the original execution recipe; the summary and existing
+task ledger record verified deliverables and remaining closure work, not inferred acceptance.
+
 ## Global Constraints
 
 - Keep canonical `release-evidence.v1` unchanged. Add separate `contracts/schemas/external-runtime-host-binding.v2.json`; do not silently extend v1.
