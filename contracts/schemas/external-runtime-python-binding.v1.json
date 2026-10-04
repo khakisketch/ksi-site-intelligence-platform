@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.local/schemas/external-runtime-python-binding.v1.json",
+  "title": "External runtime Python binding record",
+  "description": "Static shape of an independently supplied protected Python binding record. Ownership, permission, root-prefix, inventory and ABI facts are enforced by the verifier; this schema mirrors field shapes only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "interpreter", "target", "runtimeRoot", "inventorySha256", "inventory", "nativeInventorySha256", "nativeInventory"],
+  "properties": {
+    "schemaVersion": {
+      "const": "external-runtime-python-binding.v1"
+    },
+    "interpreter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "sha256", "bytes", "version", "implementation"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "implementation": {
+          "const": "CPython"
+        },
+        "version": {
+          "const": "3.12.15"
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["implementation", "pythonVersion", "os", "architecture", "libcFamily", "libcVersion", "platformTag"],
+      "properties": {
+        "implementation": {
+          "const": "CPython"
+        },
+        "pythonVersion": {
+          "const": "3.12.15"
+        },
+        "os": {
+          "const": "linux"
+        },
+        "architecture": {
+          "const": "arm64"
+        },
+        "libcFamily": {
+          "const": "glibc"
+        },
+        "libcVersion": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.+~-]+$"
+        },
+        "platformTag": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_.+~-]+$"
+        }
+      }
+    },
+    "runtimeRoot": {
+      "type": "string",
+      "minLength": 1
+    },
+    "inventorySha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "inventory": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8192,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "nativeInventorySha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "nativeInventory": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256", "bytes"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

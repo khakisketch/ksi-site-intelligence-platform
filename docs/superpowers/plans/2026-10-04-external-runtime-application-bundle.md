@@ -6,10 +6,10 @@
 **Architecture:** A focused shared artifact codec validates bounded wheel/manifest identities. An offline builder freezes the selected source and uses the prepared toolchain; the verifier optionally prepares a new private environment only after genuine explicit Python binding. No global installer, service, API or authority producer is introduced.
 **Tech Stack:** existing Python3.12 stdlib, prepared uv0.11.15/build backends, pytest/jsonschema/Ruff/mypy. No new dependencies/downloads or lock changes.
 **Spec:** [approved written design](../specs/2026-10-04-external-runtime-application-bundle-design.md).
-**State:** Task 1 delivered (static verifier + v1 schema, 69 GREEN). Task 2 delivered (frozen-source
-offline builder + 27 contract tests; combined 96 GREEN; Ruff/mypy clean). Task 3 next under the
-agreed goal mode (developer/reviewer/test-runner roles). No completion, release or installation
-acceptance is claimed.
+**State:** Tasks 1–3 delivered: static verifier + v1 schema (69 tests), frozen-source offline builder
+(27 tests), protected Python binding + private preparation (61 tests, 1 honest NOT_RUN skip).
+Combined 157 passed/1 skipped; Ruff/mypy clean. Task 4 (docs, test-runner fulls, one reviewer
+review, local integration) in progress. No completion, release or installation acceptance is claimed.
 
 ## Execution log
 
@@ -33,6 +33,17 @@ acceptance is claimed.
   **96 passed/2.57s**; Ruff + mypy clean. Accepted deviations: read-only git subprocess for freeze
   checks, literal wheelhouse closure-set equality, backend name allowlist, documented canonical
   inventory ordering. Commit: `feat: build source-frozen offline application wheel bundles`.
+- 2026-10-04 Task3 GREEN: developer `ses_efa5a2bcbffexVg27BVpca6LqQ` delivered
+  `tools/verify_external_runtime_application_bundle.py`,
+  `contracts/schemas/external-runtime-python-binding.v1.json`, 61 contract tests + support fixture.
+  TDD RED 61 failed/1 skipped (tool unavailable) → GREEN **157 passed/1 skipped/9.49s** (Primary fresh
+  re-run); Ruff + mypy clean. Accepted deviations: ancestor checks to the allowed-root prefix (not
+  `/`), uv discovered via PATH pinned to 0.11.15 (installer-tool discovery only; no `--uv` flag in
+  this CLI), interpreter single-link, native entries may live outside the runtime root with full
+  chain checks, `verification_code.commit_sha` = source commit. The genuine-input test is an explicit
+  NOT_RUN skip (no protected CPython 3.12.15/wheelhouse); a real offline venv install test genuinely
+  blocks at the probe version gate. Commit: `feat: verify protected Python and prepare private
+  application installs`.
 
 ## Global Constraints
 
