@@ -2,7 +2,7 @@
 
 Status: written spec approved by Human's “continue” after the written-review handoff on 2026-10-04.
 Implementation plan approved; v2 source and genuine historical byte-link checks verified;
-whole task regression and independent review verified; actual-main integration/rechecks pending.
+whole task regression, independent review and actual-main integration/full rechecks verified.
 No release or activation acceptance implied.
 Date: 2026-10-04
 

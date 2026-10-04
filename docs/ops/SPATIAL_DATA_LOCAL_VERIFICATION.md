@@ -391,8 +391,13 @@ offline/no-download) completed **8320passed,121skipped,98warnings,zero failures 
 The one independent read-only whole-range review (`68c4e4b..74699ef`) checked all five focus
 areas with no Critical/Important finding. Minor diagnostic/integral-number/v1-parser
 compatibility polish was retained; no runtime gate or profile was changed for review.
-Subsequent tracked changes are documentation-only. Actual-main integrated checks are recorded
-after the separately revalidated local fast-forward; no remote CI/deployment claim follows.
+Subsequent tracked changes are documentation-only. Revalidated clean localmain7f56def was
+fast-forwarded to`edbdd788070c480233c32fa0423898a36f092d9d`, preserving all four worktrees and
+original evidence. Actual-main affected269passed18.99s; Ruff6files, mypy2sources, bashsyntax/diff
+clean. Actual-main full prepared Python at`edbdd78` completed **8320passed,121skipped,98warnings,
+zero failures in784.04s** with the same command-localumask022/offline/no-sync/no-download setup.
+The subsequent completion-record change is documentation-only, not another fullsuite run.
+The v2 technical unit is locally integrated and verified; no remote CI/deployment claim follows.
 
 Actual retained verification (`task3-analysis/oci-genuine-historical-link.json`): both original
 16084bf archives rehash to their recorded byte counts/SHA256, and the verifier derives the exact

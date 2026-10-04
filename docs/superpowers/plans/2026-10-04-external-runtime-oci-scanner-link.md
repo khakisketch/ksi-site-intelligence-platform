@@ -6,15 +6,17 @@
 **Architecture:** Add a bounded read-only stdlib archive verifier and a separate host-binding v2 schema. The existing lifecycle retains its independent host/source/RepoDigest checks and passes only the archive-derived config ID to the strict scanner consumer; v1 remains unchanged.
 **Tech Stack:** existing Python3.12 stdlib, Bash/jq, pytest and prepared jsonschema/Ruff/mypy; no new dependencies.
 **Spec:** [approved written v2 design](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md).
-**State:** spec and plan approved; Human requested all development on 2026-10-04. Source/full task regression and independent review verified; actual-main local integration/rechecks pending.
+**State:** approved technical unit complete and locally integrated; task/actual-main full regressions, independent review and genuine historical links verified. Release, activation and human product acceptance remain open.
 
 ## Execution summary
 
 - [x] Task1 source deliverable:3fb5094; OCI72RED→GREEN, combinedscanner110pass0.42s, Ruff/mypy clean.
 - [x] Task2 source deliverable:b444389; v2/platform9RED→GREEN (2v1stillpass), related269pass18.88s, Ruff/mypy2/bash clean.
-- [ ] Task3 closure:2actualhistoricalpairs verified, allwrongbindings/laterHEAD reject, originalsunchanged;
+- [x] Task3 closure:2actualhistoricalpairs verified, allwrongbindings/laterHEAD reject, originalsunchanged;
   taskfullb4443898320pass/121skip/98warnings/zero failures774.20s; independentread-only whole review
-  noCritical/Important. Actualmainintegration/rechecks pending. Review disposition in existingtaskledger.
+  noCritical/Important. Cleanlocalmainfast-forwardedtoedbdd78; actualmain269pass18.99s/Ruff6/mypy2/bash
+  clean, full8320pass/121skip/98warnings/zero failures784.04s. Completionrecorddocs-only; no freshfullclaim.
+  Review disposition in existingtaskledger. Alloriginalevidence/worktrees retained, no push/activation.
 
 Detailed step checkboxes below are the original execution recipe; the summary and existing
 task ledger record verified deliverables and remaining closure work, not inferred acceptance.
