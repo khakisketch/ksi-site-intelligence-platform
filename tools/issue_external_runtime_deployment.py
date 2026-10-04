@@ -46,6 +46,121 @@ class LaneInputs:
 
 
 @dataclass(frozen=True, slots=True)
+class LayoutOverrides:
+    """Explicit final-layout path overrides; every field defaults to staging behavior."""
+
+    staging_root: str | None = None
+    inspector_artifact_dir: str | None = None
+    measurement_artifact_dir: str | None = None
+    operator_dir: str | None = None
+    inspector_map_dir: str | None = None
+    measurement_map_dir: str | None = None
+    inspector_input_root: str | None = None
+    inspector_output_root: str | None = None
+    inspector_journal_path: str | None = None
+    measurement_input_root: str | None = None
+    measurement_journal_path: str | None = None
+    inspector_cgroup_root: str | None = None
+    measurement_cgroup_root: str | None = None
+    worker_private_output_root: str | None = None
+    object_endpoint_origin: str | None = None
+    object_endpoint_addresses: str | None = None
+    defer_validation: bool = False
+
+
+def _absolute_override(raw: str | None, name: str) -> str | None:
+    if raw is None:
+        return None
+    if not raw.startswith("/") or ".." in raw.split("/") or "\0" in raw:
+        raise IssuanceError(f"{name} must be an absolute path without ..")
+    return raw
+
+
+def _parse_layout_overrides(args: Any) -> LayoutOverrides:
+    overrides = LayoutOverrides(
+        staging_root=_absolute_override(args.staging_root, "staging-root"),
+        inspector_artifact_dir=_absolute_override(
+            args.inspector_artifact_dir, "inspector-artifact-dir"
+        ),
+        measurement_artifact_dir=_absolute_override(
+            args.measurement_artifact_dir, "measurement-artifact-dir"
+        ),
+        operator_dir=_absolute_override(args.operator_dir, "operator-dir"),
+        inspector_map_dir=_absolute_override(args.inspector_map_dir, "inspector-map-dir"),
+        measurement_map_dir=_absolute_override(
+            args.measurement_map_dir, "measurement-map-dir"
+        ),
+        inspector_input_root=_absolute_override(
+            args.inspector_input_root, "inspector-input-root"
+        ),
+        inspector_output_root=_absolute_override(
+            args.inspector_output_root, "inspector-output-root"
+        ),
+        inspector_journal_path=_absolute_override(
+            args.inspector_journal_path, "inspector-journal-path"
+        ),
+        measurement_input_root=_absolute_override(
+            args.measurement_input_root, "measurement-input-root"
+        ),
+        measurement_journal_path=_absolute_override(
+            args.measurement_journal_path, "measurement-journal-path"
+        ),
+        inspector_cgroup_root=_absolute_override(
+            args.inspector_cgroup_root, "inspector-cgroup-root"
+        ),
+        measurement_cgroup_root=_absolute_override(
+            args.measurement_cgroup_root, "measurement-cgroup-root"
+        ),
+        worker_private_output_root=_absolute_override(
+            args.worker_private_output_root, "worker-private-output-root"
+        ),
+        object_endpoint_origin=args.object_endpoint_origin,
+        object_endpoint_addresses=args.object_endpoint_addresses,
+        defer_validation=args.defer_validation,
+    )
+    if args.extend_existing and any(
+        value is not None and value is not False
+        for value in (
+            overrides.staging_root,
+            overrides.inspector_artifact_dir,
+            overrides.measurement_artifact_dir,
+            overrides.operator_dir,
+            overrides.inspector_map_dir,
+            overrides.measurement_map_dir,
+            overrides.inspector_input_root,
+            overrides.inspector_output_root,
+            overrides.inspector_journal_path,
+            overrides.measurement_input_root,
+            overrides.measurement_journal_path,
+            overrides.inspector_cgroup_root,
+            overrides.measurement_cgroup_root,
+            overrides.worker_private_output_root,
+            overrides.object_endpoint_origin,
+            overrides.object_endpoint_addresses,
+            overrides.defer_validation,
+        )
+    ):
+        raise IssuanceError("layout overrides require a fresh issuance, not --extend-existing")
+    origin = overrides.object_endpoint_origin
+    if origin is not None and not origin.startswith(("http://", "https://")):
+        raise IssuanceError("object-endpoint-origin must be an http(s) origin")
+    if overrides.object_endpoint_addresses is not None:
+        import ipaddress
+
+        try:
+            parsed = [
+                str(ipaddress.ip_address(part.strip()))
+                for part in overrides.object_endpoint_addresses.split(",")
+                if part.strip()
+            ]
+        except ValueError as exc:
+            raise IssuanceError("object-endpoint-addresses must be IP literals") from exc
+        if not parsed:
+            raise IssuanceError("object-endpoint-addresses must be IP literals")
+    return overrides
+
+
+@dataclass(frozen=True, slots=True)
 class SharedInputs:
     launcher_uid: int
     launcher_gid: int
@@ -215,8 +330,15 @@ def _issue_lane(
     sbom_digest: str,
     staging_root: Path,
     private_label: str,
+    artifact_dir: str | None = None,
+    map_dir: str | None = None,
+    input_root: str | None = None,
+    output_root: str | None = None,
+    journal_path: str | None = None,
+    cgroup_root: str | None = None,
 ) -> dict[str, str]:
     _ensure_dir(lane_dir)
+    referenced = artifact_dir if artifact_dir is not None else os.fspath(lane_dir)
     manifest_wire = _build_signed_manifest(
         key_id=lane.key_id,
         private_key=private_key,
@@ -234,6 +356,7 @@ def _issue_lane(
     )
     manifest_path = lane_dir / "manifest.json"
     _write_private_json(manifest_path, manifest_wire, compact=True)
+    manifest_ref = os.path.join(referenced, "manifest.json")
 
     revocations = {
         "version": "external-inspector-revocations.v1",
@@ -241,6 +364,7 @@ def _issue_lane(
     }
     revocation_path = lane_dir / "revocations.json"
     _write_private_json(revocation_path, revocations, compact=True)
+    revocation_ref = os.path.join(referenced, "revocations.json")
 
     pairs = {
         "version": "external-inspector-oci-pairs.v1",
@@ -254,6 +378,7 @@ def _issue_lane(
     }
     pairs_path = lane_dir / "oci-pairs.json"
     _write_private_json(pairs_path, pairs, compact=True)
+    pairs_ref = os.path.join(referenced, "oci-pairs.json")
 
     trust_path = lane_dir / "trust-public-keys.json"
     _write_private_json(trust_path, {"publicKeys": {lane.key_id: public_b64}})
@@ -268,10 +393,15 @@ def _issue_lane(
             msg = f"cgroup base {cgroup_base!r} does not end with {lane.systemd_base_slice!r}"
             raise IssuanceError(msg)
 
-    input_root = staging_root / f"{private_label}-input"
-    _ensure_dir(input_root)
-    uid_map_path = staging_root / f"{private_label}-reader-uid-map"
-    gid_map_path = staging_root / f"{private_label}-reader-gid-map"
+    input_root_path = (
+        Path(input_root) if input_root is not None else staging_root / f"{private_label}-input"
+    )
+    _ensure_dir(input_root_path)
+    map_base = Path(map_dir) if map_dir is not None else staging_root
+    if map_dir is not None:
+        _ensure_dir(map_base)
+    uid_map_path = map_base / f"{private_label}-reader-uid-map"
+    gid_map_path = map_base / f"{private_label}-reader-gid-map"
     map_text = (
         f"0 {shared.worker_uid} 1\n1 {shared.subordinate_base} {shared.subordinate_count}\n"
     ).encode()
@@ -297,18 +427,20 @@ def _issue_lane(
             "expectedOwnerUid": shared.launcher_uid,
         },
         "catalog": {
-            "manifestPath": os.fspath(manifest_path),
-            "revocationPath": os.fspath(revocation_path),
+            "manifestPath": manifest_ref,
+            "revocationPath": revocation_ref,
             "expectedRevocationSha256": _sha256_file(revocation_path),
         },
         "trustRoot": {"publicKeys": {lane.key_id: public_b64}},
-        "inputRoot": os.fspath(input_root),
+        "inputRoot": os.fspath(input_root_path),
         "readerMapping": {
             "uidMapPath": os.fspath(uid_map_path),
             "gidMapPath": os.fspath(gid_map_path),
             "maximumMapBytes": 4096,
         },
-        "journalPath": os.fspath(staging_root / f"{private_label}-attempts.jsonl"),
+        "journalPath": journal_path
+        if journal_path is not None
+        else os.fspath(staging_root / f"{private_label}-attempts.jsonl"),
         "dockerSocket": {
             "socketPath": shared.docker_socket_path,
             "expectedOwnerUid": shared.launcher_uid,
@@ -316,11 +448,13 @@ def _issue_lane(
             "maximumResponseBytes": 4096,
         },
         "ociPairs": {
-            "proofPath": os.fspath(pairs_path),
+            "proofPath": pairs_ref,
             "expectedSha256": _sha256_file(pairs_path),
         },
         "cgroupRoot": {
-            "root": os.fspath(staging_root / f"{private_label}-cgroup"),
+            "root": cgroup_root
+            if cgroup_root is not None
+            else os.fspath(staging_root / f"{private_label}-cgroup"),
             "baseControlGroup": cgroup_base,
             "maximumControlBytes": 4096,
         },
@@ -355,7 +489,11 @@ def _issue_lane(
         production["frameLimits"] = {"maximumFrameBytes": 128 * 1024}
         version = "external-measurement-operator-config.v2"
     else:
-        production["outputRoot"] = os.fspath(staging_root / f"{private_label}-output")
+        production["outputRoot"] = (
+            output_root
+            if output_root is not None
+            else os.fspath(staging_root / f"{private_label}-output")
+        )
         _ensure_dir(Path(production["outputRoot"]))
         production["admissionCapacity"] = {
             "maximumRequestUnits": 1,
@@ -561,7 +699,18 @@ def _build_catalog_record(
 
 
 def _issue_step3b(
-    *, out: Path, lanes: LaneMaterial, inputs: Step3bInputs, staging_root: Path
+    *,
+    out: Path,
+    lanes: LaneMaterial,
+    inputs: Step3bInputs,
+    staging_root: Path,
+    operator_ref_dir: str | None = None,
+    worker_output_ref: str | None = None,
+    object_endpoint_origin: str | None = None,
+    object_endpoint_addresses: str | None = None,
+    measurement_manifest_read_path: str | None = None,
+    measurement_revocation_read_path: str | None = None,
+    defer_validation: bool = False,
 ) -> dict[str, Any]:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -587,8 +736,14 @@ def _issue_step3b(
         _ensure_dir(directory)
     worker_dir = out / "worker"
     _ensure_dir(worker_dir)
-    worker_output = staging_root / "worker-private-output"
-    _ensure_dir(worker_output)
+    operator_ref = operator_ref_dir if operator_ref_dir is not None else os.fspath(operator_dir)
+    worker_output_path = (
+        Path(worker_output_ref)
+        if worker_output_ref is not None
+        else staging_root / "worker-private-output"
+    )
+    _ensure_dir(worker_output_path)
+    worker_output = worker_output_path
 
     authority_private = Ed25519PrivateKey.generate()
     authority_public_pem = authority_private.public_key().public_bytes(
@@ -655,8 +810,8 @@ def _issue_step3b(
         {
             "version": "external-authority-provider-config.v1",
             "organizationId": inputs.organization_id,
-            "keyRegistryPath": os.fspath(registry_path),
-            "snapshotPath": os.fspath(snapshot_path),
+            "keyRegistryPath": os.path.join(operator_ref, "authority-key-registry.json"),
+            "snapshotPath": os.path.join(operator_ref, "authority-snapshot.json"),
             "catalogAdministrationActorId": inputs.catalog_admin_actor_id,
             "leaseTtlSeconds": 60,
             "deadlineAfterIssueSeconds": 120,
@@ -670,7 +825,7 @@ def _issue_step3b(
         {
             "version": "external-result-workflow-config.v1",
             "authorityJournalPath": FIXED_AUTHORITY_JOURNAL_PATH,
-            "catalogPath": os.fspath(catalog_path),
+            "catalogPath": os.path.join(operator_ref, "quantitative-catalog.json"),
         },
     )
 
@@ -728,11 +883,19 @@ def _issue_step3b(
         external_geotiff_profile_digest_v1,
     )
 
-    measurement_manifest_raw = Path(lanes.measurement_manifest_path).read_bytes()
+    measurement_manifest_raw = Path(
+        measurement_manifest_read_path
+        if measurement_manifest_read_path is not None
+        else lanes.measurement_manifest_path
+    ).read_bytes()
     measurement_manifest = parse_inspector_execution_manifest_wire(
         json.loads(measurement_manifest_raw.decode("utf-8"))
     )
-    measurement_revocation_raw = Path(lanes.measurement_revocation_path).read_bytes()
+    measurement_revocation_raw = Path(
+        measurement_revocation_read_path
+        if measurement_revocation_read_path is not None
+        else lanes.measurement_revocation_path
+    ).read_bytes()
 
     def _uds(socket_path: str) -> dict[str, Any]:
         return {
@@ -768,7 +931,22 @@ def _issue_step3b(
                 "failureBackoffMillis": 200,
             },
             "objectTransport": {
-                "endpoints": [{"origin": "http://127.0.0.1:8080", "addresses": ["127.0.0.1"]}],
+                "endpoints": [
+                    {
+                        "origin": object_endpoint_origin
+                        if object_endpoint_origin is not None
+                        else "http://127.0.0.1:8080",
+                        "addresses": (
+                            [
+                                part.strip()
+                                for part in str(object_endpoint_addresses).split(",")
+                                if part.strip()
+                            ]
+                            if object_endpoint_addresses is not None
+                            else ["127.0.0.1"]
+                        ),
+                    }
+                ],
                 "maxHeaderBytes": 1024,
                 "maxObjectBytes": 4096,
                 "maxChunkBytes": 256,
@@ -804,7 +982,14 @@ def _issue_step3b(
         },
     )
 
-    validation = _self_verify_step3b(out, staging_root=staging_root)
+    if defer_validation:
+        validation = {
+            "status": "DEFERRED",
+            "note": "final-layout referenced paths populate at placement; "
+            "run the real loaders post-placement before activation",
+        }
+    else:
+        validation = _self_verify_step3b(out, staging_root=staging_root)
     produced = [
         registry_path,
         operator_dir / authority_pem_name,
@@ -835,6 +1020,12 @@ def _issue_step3b(
             "organizationId": inputs.organization_id,
             "catalogAdministrationActorId": inputs.catalog_admin_actor_id,
             "coreBaseUrl": inputs.core_base_url,
+            "objectEndpointOrigin": object_endpoint_origin
+            if object_endpoint_origin is not None
+            else "http://127.0.0.1:8080",
+            "objectEndpointAddresses": (
+                object_endpoint_addresses if object_endpoint_addresses is not None else "127.0.0.1"
+            ),
             "workerPrincipalId": inputs.worker_principal_id,
             "workerInstanceId": json.loads(worker_config_path.read_text())["worker"]["instanceId"],
             "inspectorSocketPath": lanes.inspector_socket_path,
@@ -966,6 +1157,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="add Step-3b records to a directory that already holds Step-3a artifacts",
     )
+    parser.add_argument(
+        "--staging-root",
+        default=None,
+        help="write maps/staging here instead of <out>/staging",
+    )
+    parser.add_argument("--inspector-artifact-dir", default=None)
+    parser.add_argument("--measurement-artifact-dir", default=None)
+    parser.add_argument("--operator-dir", default=None)
+    parser.add_argument("--inspector-map-dir", default=None)
+    parser.add_argument("--measurement-map-dir", default=None)
+    parser.add_argument("--inspector-input-root", default=None)
+    parser.add_argument("--inspector-output-root", default=None)
+    parser.add_argument("--inspector-journal-path", default=None)
+    parser.add_argument("--measurement-input-root", default=None)
+    parser.add_argument("--measurement-journal-path", default=None)
+    parser.add_argument("--inspector-cgroup-root", default=None)
+    parser.add_argument("--measurement-cgroup-root", default=None)
+    parser.add_argument("--worker-private-output-root", default=None)
+    parser.add_argument("--object-endpoint-origin", default=None)
+    parser.add_argument("--object-endpoint-addresses", default=None)
+    parser.add_argument(
+        "--defer-validation",
+        action="store_true",
+        help="skip in-tool self-verify; referenced final paths populate at placement, "
+        "which must run the real loaders before activation",
+    )
     return parser
 
 
@@ -984,6 +1201,7 @@ def main(argv: list[str] | None = None) -> int:
     out = Path(args.out)
     if not out.is_absolute():
         raise IssuanceError("--out must be an absolute path")
+    layout = _parse_layout_overrides(args)
     inputs3b = Step3bInputs(
         organization_id=args.organization_id,
         authority_key_id=args.authority_key_id,
@@ -1051,8 +1269,26 @@ def main(argv: list[str] | None = None) -> int:
     _ensure_dir(out)
     keys_dir = out / "keys"
     _ensure_dir(keys_dir)
-    staging_root = out / "staging"
+    staging_root = Path(layout.staging_root) if layout.staging_root is not None else out / "staging"
     _ensure_dir(staging_root)
+    lane_layout = {
+        "inspector": {
+            "artifact_dir": layout.inspector_artifact_dir,
+            "map_dir": layout.inspector_map_dir,
+            "input_root": layout.inspector_input_root,
+            "output_root": layout.inspector_output_root,
+            "journal_path": layout.inspector_journal_path,
+            "cgroup_root": layout.inspector_cgroup_root,
+        },
+        "measurement": {
+            "artifact_dir": layout.measurement_artifact_dir,
+            "map_dir": layout.measurement_map_dir,
+            "input_root": layout.measurement_input_root,
+            "output_root": None,
+            "journal_path": layout.measurement_journal_path,
+            "cgroup_root": layout.measurement_cgroup_root,
+        },
+    }
 
     inspector_protocol = compiled_inner_protocol_digest_v1()
     measurement_protocol = compiled_measurement_protocol_digest_v2()
@@ -1097,6 +1333,7 @@ def main(argv: list[str] | None = None) -> int:
             sbom_digest=_marker("sbom", lane.key_id),
             staging_root=staging_root,
             private_label=label,
+            **lane_layout[label],
         )
 
     if inputs3b.authority_key_id in {
@@ -1105,6 +1342,11 @@ def main(argv: list[str] | None = None) -> int:
     }:
         raise IssuanceError("authority key ID must differ from lane key IDs")
 
+    measurement_ref_dir = (
+        layout.measurement_artifact_dir
+        if layout.measurement_artifact_dir is not None
+        else os.fspath(out / "measurement")
+    )
     lanes_material = LaneMaterial(
         launcher_uid=shared.launcher_uid,
         launcher_gid=shared.launcher_gid,
@@ -1113,14 +1355,33 @@ def main(argv: list[str] | None = None) -> int:
         measurement_socket_path=lanes["measurement"].listener_socket_path,
         measurement_key_id=lanes["measurement"].key_id,
         measurement_public_b64=lane_public["measurement"],
-        measurement_manifest_path=os.fspath(out / "measurement" / "manifest.json"),
-        measurement_revocation_path=os.fspath(out / "measurement" / "revocations.json"),
+        measurement_manifest_path=os.path.join(measurement_ref_dir, "manifest.json"),
+        measurement_revocation_path=os.path.join(measurement_ref_dir, "revocations.json"),
     )
     receipt3b = _issue_step3b(
-        out=out, lanes=lanes_material, inputs=inputs3b, staging_root=staging_root
+        out=out,
+        lanes=lanes_material,
+        inputs=inputs3b,
+        staging_root=staging_root,
+        operator_ref_dir=layout.operator_dir,
+        worker_output_ref=layout.worker_private_output_root,
+        object_endpoint_origin=layout.object_endpoint_origin,
+        object_endpoint_addresses=layout.object_endpoint_addresses,
+        measurement_manifest_read_path=os.fspath(out / "measurement" / "manifest.json"),
+        measurement_revocation_read_path=os.fspath(out / "measurement" / "revocations.json"),
+        defer_validation=layout.defer_validation,
     )
 
-    validation = _self_verify(out)
+    if layout.defer_validation:
+        validation: dict[str, Any] = {
+            "status": "DEFERRED",
+            "note": "final-layout referenced paths populate at placement; "
+            "run the real loaders post-placement before activation",
+        }
+        step3b_validation: dict[str, Any] = dict(validation)
+    else:
+        validation = _self_verify(out)
+        step3b_validation = receipt3b["validation"]
     receipt: dict[str, Any] = {
         "version": "step3a-issuance-receipt.v1",
         "scope": "test-deployment-only",
@@ -1154,6 +1415,28 @@ def main(argv: list[str] | None = None) -> int:
         },
         "syntheticMarkers": "sourceTreeDigest/buildProvenanceDigest/sbomDigest are "
         "test-deployment markers, not release evidence",
+        "layout": {
+            key: value
+            for key, value in {
+                "stagingRoot": layout.staging_root,
+                "inspectorArtifactDir": layout.inspector_artifact_dir,
+                "measurementArtifactDir": layout.measurement_artifact_dir,
+                "operatorDir": layout.operator_dir,
+                "inspectorMapDir": layout.inspector_map_dir,
+                "measurementMapDir": layout.measurement_map_dir,
+                "inspectorInputRoot": layout.inspector_input_root,
+                "inspectorOutputRoot": layout.inspector_output_root,
+                "inspectorJournalPath": layout.inspector_journal_path,
+                "measurementInputRoot": layout.measurement_input_root,
+                "measurementJournalPath": layout.measurement_journal_path,
+                "inspectorCgroupRoot": layout.inspector_cgroup_root,
+                "measurementCgroupRoot": layout.measurement_cgroup_root,
+                "workerPrivateOutputRoot": layout.worker_private_output_root,
+                "objectEndpointOrigin": layout.object_endpoint_origin,
+                "objectEndpointAddresses": layout.object_endpoint_addresses,
+            }.items()
+            if value is not None
+        },
         "validation": validation,
         "provenanceNote": args.provenance_note,
     }
@@ -1163,7 +1446,7 @@ def main(argv: list[str] | None = None) -> int:
     assert stat.S_ISREG(node.st_mode) and node.st_nlink == 1
     print(
         json.dumps(
-            {"out": os.fspath(out), "validation": validation, "step3b": receipt3b["validation"]},
+            {"out": os.fspath(out), "validation": validation, "step3b": step3b_validation},
             indent=2,
         )
     )
