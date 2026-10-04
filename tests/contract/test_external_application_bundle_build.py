@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -155,6 +157,9 @@ def _export():
     if MODE == "garbage-export":
         print("definitely not a requirements stanza")
         return 0
+    if MODE == "check-staged" and not Path("packages/ksi-extra").is_dir():
+        print("staged tree is missing the resolution-only member")
+        return 1
     for name, version, digest in _registry_rows():
         print(f"{name}=={version} \\\\")
         print(f"    --hash=sha256:{digest}")
@@ -332,8 +337,9 @@ def _lock_text(
     return text
 
 
-def _member_pyproject(name: str, deps: str = "") -> str:
-    return MEMBER_PYPROJECT.replace("@NAME@", name).replace("@DEPS@", deps)
+def _member_pyproject(name: str, deps: str = "", backend: str = "hatchling.build") -> str:
+    text = MEMBER_PYPROJECT.replace("@NAME@", name).replace("@DEPS@", deps)
+    return text.replace('build-backend = "hatchling.build"', f'build-backend = "{backend}"')
 
 
 def _make_repo(
@@ -473,7 +479,8 @@ def test_builder_freezes_named_source_without_mutating_lock_or_old_output(
     task1 = _task1()
     assert builder.BundleEvidenceError is task1.BundleEvidenceError
     demo_payload = _demo_wheel()
-    repo, commit = _make_repo(tmp_path)
+    lock_text = _lock_text(demo_payload, extra_packages=UNRELATED_PACKAGE)
+    repo, commit = _make_repo(tmp_path, lock_text=lock_text)
     lock_before = (repo / "uv.lock").read_bytes()
     pins = _toolchain(builder, tmp_path)
     house = _wheelhouse(tmp_path, {_demo_filename(): demo_payload})
@@ -513,6 +520,7 @@ def test_builder_freezes_named_source_without_mutating_lock_or_old_output(
         "external-wheel",
     }
     assert receipt.manifest_sha256 == _sha(destination / "manifest.json")
+    assert receipt.resolution_backends == {"ksi-unrelated": "hatchling.build"}
     checked = task1.verify_application_bundle(
         destination,
         expected_manifest_sha256=receipt.manifest_sha256,
@@ -536,6 +544,20 @@ source = { registry = "https://pypi.org/simple" }
 wheels = [
     { url = "TRANSITIVE_URL", hash = "sha256:TRANSITIVE_HASH", size = TRANSITIVE_SIZE },
 ]
+"""
+
+UNRELATED_PACKAGE = """
+[[package]]
+name = "ksi-unrelated"
+version = "0.0.1"
+source = { editable = "packages/ksi-unrelated" }
+"""
+
+KSI_EXTRA_PACKAGE = """
+[[package]]
+name = "ksi-extra"
+version = "0.0.1"
+source = { editable = "packages/ksi-extra" }
 """
 
 
@@ -1035,3 +1057,222 @@ def test_builder_rejects_cp313_abi3_wheel_for_target() -> None:
     _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
     with pytest.raises(builder.BundleEvidenceError, match="WHEEL_TAG"):
         builder._select_external_wheel(external["demo_native"], PLATFORM_TAG, FORK_LIBC)
+
+
+ABI3_LOCK_TEMPLATE = """\
+version = 1
+requires-python = ">=3.12"
+
+[[package]]
+name = "ksi-processing-controller"
+version = "0.0.1"
+source = { editable = "services/ksi-processing-controller" }
+dependencies = [
+    { name = "demo-native" },
+]
+
+[[package]]
+name = "demo-native"
+version = "1.2.3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+@ROWS@
+]
+"""
+
+
+def _abi3_lock(filenames: list[str]) -> bytes:
+    rows = []
+    for name in filenames:
+        rows.append(
+            f'    {{ url = "https://example.invalid/{name}",'
+            f' hash = "sha256:{"b" * 64}", size = 23456 }},'
+        )
+    return ABI3_LOCK_TEMPLATE.replace("@ROWS@", "\n".join(rows)).encode("utf-8")
+
+
+def test_resolution_only_member_frozen_before_export_and_backend_recorded(
+    tmp_path: Path,
+) -> None:
+    builder = _builder()
+    task1 = _task1()
+    demo_payload = _demo_wheel()
+    extra_member = {
+        "packages/ksi-extra/pyproject.toml": _member_pyproject(
+            "ksi-extra", backend="setuptools.build_meta"
+        ).encode(),
+        "packages/ksi-extra/src/ksi_extra/__init__.py": b"# synthetic\n",
+    }
+    lock_text = _lock_text(demo_payload, extra_packages=KSI_EXTRA_PACKAGE)
+    repo, commit = _make_repo(
+        tmp_path, name="repo-resolution", lock_text=lock_text, extra_tracked=extra_member
+    )
+    pins = _toolchain(builder, tmp_path, uv_mode="check-staged")
+    house = _wheelhouse(tmp_path / "house-resolution", {_demo_filename(): demo_payload})
+    destination = tmp_path / "bundle-resolution"
+    receipt = _build(builder, task1, repo, commit, house, pins, destination)
+    assert sorted(p.name for p in (destination / "wheels").iterdir()) == [
+        _demo_filename(),
+        "ksi_domain-0.0.1-py3-none-any.whl",
+        "ksi_processing_controller-0.0.1-py3-none-any.whl",
+    ]
+    assert receipt.resolution_backends == {"ksi-extra": "setuptools.build_meta"}
+
+
+def test_builder_prefers_highest_abi3_floor_on_same_platform_tie() -> None:
+    builder = _builder()
+    payload = _abi3_lock([
+        "demo_native-1.2.3-cp39-abi3-manylinux_2_34_aarch64.whl",
+        "demo_native-1.2.3-cp311-abi3-manylinux_2_34_aarch64.whl",
+    ])
+    packages, _ = builder._parse_lock(payload)
+    _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    selected, _ = builder._select_external_wheel(
+        external["demo_native"], PLATFORM_TAG, FORK_LIBC
+    )
+    assert selected == "demo_native-1.2.3-cp311-abi3-manylinux_2_34_aarch64.whl"
+
+
+def test_builder_exact_cp312_still_wins_over_abi3() -> None:
+    builder = _builder()
+    payload = _abi3_lock([
+        "demo_native-1.2.3-cp311-abi3-manylinux_2_34_aarch64.whl",
+        "demo_native-1.2.3-cp312-cp312-manylinux_2_34_aarch64.whl",
+    ])
+    packages, _ = builder._parse_lock(payload)
+    _, external, _ = builder._closure(packages, PLATFORM_TAG, FORK_LIBC)
+    selected, _ = builder._select_external_wheel(
+        external["demo_native"], PLATFORM_TAG, FORK_LIBC
+    )
+    assert selected == "demo_native-1.2.3-cp312-cp312-manylinux_2_34_aarch64.whl"
+
+
+def test_verifier_accepts_dotted_py3_external_tags() -> None:
+    task1 = _task1()
+    assert task1._check_external_tags("py2.py3", "none", "any") is None
+
+
+def test_verifier_ignores_description_body_after_blank_line() -> None:
+    task1 = _task1()
+    text = (
+        "Metadata-Version: 2.1\n"
+        "Name: demo-native\n"
+        "Version: 1.2.3\n"
+        "License: synthetic license text\n"
+        "    continued on the next line\n"
+        "\n"
+        "# Demo\n"
+        "body line without any colon\n"
+    )
+    distribution = task1._Distribution(
+        name="demo-native",
+        version="1.2.3",
+        kind="external",
+        wheel="wheels/demo_native-1.2.3-py3-none-any.whl",
+        python_tag="py3",
+        abi_tag="none",
+        platform_tag="any",
+    )
+    assert (
+        task1._check_dist_info_metadata(text, distribution, "demo_native") is None
+    )
+
+
+def test_verifier_rejects_continuation_of_name_or_version() -> None:
+    task1 = _task1()
+    text = (
+        "Metadata-Version: 2.1\n"
+        "Name: demo-native\n"
+        "    smuggled-suffix\n"
+        "Version: 1.2.3\n"
+    )
+    distribution = task1._Distribution(
+        name="demo-native",
+        version="1.2.3",
+        kind="external",
+        wheel="wheels/demo_native-1.2.3-py3-none-any.whl",
+        python_tag="py3",
+        abi_tag="none",
+        platform_tag="any",
+    )
+    with pytest.raises(task1.BundleEvidenceError, match="METADATA_FIELD"):
+        task1._check_dist_info_metadata(text, distribution, "demo_native")
+
+
+def test_verifier_accepts_compressed_wheel_tags() -> None:
+    task1 = _task1()
+    distribution = task1._Distribution(
+        name="demo-native",
+        version="1.2.3",
+        kind="external",
+        wheel="wheels/demo_native-1.2.3-cp312-cp312-manylinux2014_aarch64.manylinux_2_17_aarch64.whl",
+        python_tag="cp312",
+        abi_tag="cp312",
+        platform_tag="manylinux2014_aarch64.manylinux_2_17_aarch64",
+    )
+    text = (
+        "Wheel-Version: 1.0\n"
+        "Generator: synthetic\n"
+        "Root-Is-Purelib: false\n"
+        "Tag: cp312-cp312-manylinux2014_aarch64\n"
+        "Tag: cp312-cp312-manylinux_2_17_aarch64\n"
+    )
+    assert task1._check_wheel_metadata(text, distribution) is None
+
+
+def test_verifier_rejects_wheel_tag_outside_filename_tags() -> None:
+    task1 = _task1()
+    distribution = task1._Distribution(
+        name="demo-native",
+        version="1.2.3",
+        kind="external",
+        wheel="wheels/demo_native-1.2.3-cp312-cp312-manylinux_2_17_aarch64.whl",
+        python_tag="cp312",
+        abi_tag="cp312",
+        platform_tag="manylinux_2_17_aarch64",
+    )
+    text = (
+        "Wheel-Version: 1.0\n"
+        "Generator: synthetic\n"
+        "Root-Is-Purelib: false\n"
+        "Tag: cp312-cp312-manylinux_2_28_x86_64\n"
+    )
+    with pytest.raises(task1.BundleEvidenceError, match="WHEEL_TAG"):
+        task1._check_wheel_metadata(text, distribution)
+
+
+def _wheel_with_directory_entry(payload: bytes, directory: str) -> bytes:
+    source = zipfile.ZipFile(io.BytesIO(payload))
+    try:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for info in source.infolist():
+                archive.writestr(info, source.read(info.filename))
+            node = zipfile.ZipInfo(directory, date_time=(2026, 1, 1, 0, 0, 0))
+            node.create_system = 3
+            node.external_attr = 0o40755 << 16
+            archive.writestr(node, b"")
+        return buffer.getvalue()
+    finally:
+        source.close()
+
+
+def test_verifier_ignores_directory_entries_in_record_coverage() -> None:
+    task1 = _task1()
+    wheel = build_wheel(
+        "demo-native",
+        "1.2.3",
+        tags=("cp312", "cp312", "manylinux_2_28_aarch64"),
+        root_is_purelib=False,
+    )
+    payload = _wheel_with_directory_entry(wheel, "demo_native/")
+    distribution = task1._Distribution(
+        name="demo-native",
+        version="1.2.3",
+        kind="external",
+        wheel="wheels/demo_native-1.2.3-cp312-cp312-manylinux_2_28_aarch64.whl",
+        python_tag="cp312",
+        abi_tag="cp312",
+        platform_tag="manylinux_2_28_aarch64",
+    )
+    assert task1._inspect_wheel(payload, distribution, task1._Budgets()) is None

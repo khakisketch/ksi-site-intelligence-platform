@@ -90,6 +90,7 @@ class BundleCreationReceipt:
     source_commit: str
     lock_sha256: str
     verification_code: VerificationCodeSnapshot
+    resolution_backends: dict[str, str]
 
 
 @dataclass(frozen=True)
@@ -618,6 +619,37 @@ def _check_member_manifest(
     return raw_version
 
 
+def _record_resolution_backend(staged_root: Path, member_rel: str, name: str) -> str:
+    """Parse a resolution-only member manifest and return its build backend.
+
+    Resolution-only members are frozen so uv can resolve the workspace, but
+    their wheels are never built here: the backend is recorded, never gated
+    against the backend allowlist. `uv export --locked` remains the consistency
+    backstop between these manifests and the lock.
+    """
+    payload = _read_nofollow(
+        staged_root / _safe_repo_relative(member_rel) / "pyproject.toml",
+        _MAX_COPY_BYTES,
+        "MEMBER_MANIFEST",
+    )
+    try:
+        data = tomllib.loads(payload.decode("utf-8"))
+    except (ValueError, UnicodeError) as error:
+        raise BundleEvidenceError("MEMBER_MANIFEST") from error
+    project = data.get("project")
+    build_system = data.get("build-system")
+    if not isinstance(project, dict) or not isinstance(build_system, dict):
+        _fail("MEMBER_MANIFEST")
+    assert isinstance(project, dict) and isinstance(build_system, dict)
+    raw_name = project.get("name")
+    backend = build_system.get("build-backend")
+    if not isinstance(raw_name, str) or not isinstance(backend, str) or not backend:
+        _fail("MEMBER_MANIFEST")
+    if _normalized(raw_name) != _normalized(name):
+        _fail("MEMBER_MANIFEST")
+    return backend
+
+
 def _inventory_hash(records: list[tuple[str, str, int]]) -> str:
     lines = [f"{rel}\x00{digest}\x00{size}" for rel, digest, size in sorted(records)]
     return "sha256:" + hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest()
@@ -707,6 +739,21 @@ def _abi3_python_ok(python_tag: str) -> bool:
     return False
 
 
+def _exact_cp312(python_tag: str) -> int:
+    return 1 if any(part.startswith("cp312") for part in python_tag.split(".")) else 0
+
+
+def _abi3_floor(python_tag: str, abi_tag: str) -> int:
+    if "abi3" not in abi_tag.split("."):
+        return -1
+    floors = []
+    for part in python_tag.split("."):
+        matched = _ABI3_FLOOR.fullmatch(part)
+        if matched is not None:
+            floors.append(int(matched.group(1)))
+    return max(floors) if floors else -1
+
+
 def _wheel_tags_ok(python_tag: str, abi_tag: str, code: str) -> None:
     python_parts = python_tag.split(".")
     abi_parts = abi_tag.split(".")
@@ -721,7 +768,7 @@ def _wheel_tags_ok(python_tag: str, abi_tag: str, code: str) -> None:
 def _select_external_wheel(
     entry: _LockPackage, target_tag: str, libc: tuple[int, ...]
 ) -> tuple[str, str]:
-    candidates: list[tuple[tuple[int, ...], str, str]] = []
+    candidates: list[tuple[tuple[int, ...], int, int, str, str]] = []
     for url, digest, _size in entry.wheels:
         filename = url.rsplit("/", 1)[-1]
         try:
@@ -750,15 +797,26 @@ def _select_external_wheel(
                 matched = _MANYLINUX.fullmatch(component)
                 if matched is not None:
                     rank = max(rank, (2, int(matched.group(1)), int(matched.group(2))))
-        candidates.append((rank, filename, digest))
+        candidates.append((
+            rank,
+            _exact_cp312(python_tag),
+            _abi3_floor(python_tag, abi_tag),
+            filename,
+            digest,
+        ))
     if not candidates:
         _fail("WHEEL_TAG")
     assert candidates
-    best = max(candidates, key=lambda row: row[0])
-    tied = [row for row in candidates if row[0] == best[0] and row[1] != best[1]]
+    best = max(candidates, key=lambda row: (row[0], row[1], row[2]))
+    best_key = (best[0], best[1], best[2])
+    tied = [
+        row
+        for row in candidates
+        if (row[0], row[1], row[2]) == best_key and row[3] != best[3]
+    ]
     if tied:
         _fail("WHEEL_AMBIGUOUS")
-    return (best[1], best[2])
+    return (best[3], best[4])
 
 
 def _copy_wheelhouse(
@@ -893,11 +951,34 @@ def build_application_bundle(
             repo / "uv.lock", staged / "uv.lock", "uv.lock", budget
         )
         records = [root_manifest, root_lock]
+        # Freeze every lock workspace member so uv can resolve the workspace
+        # (root groups/sources may reference non-closure members); build only
+        # closure members' wheels. External-only names need no source freeze;
+        # a non-closure name with competing member sources fails closed.
+        freeze_plan: dict[str, tuple[str, str, str]] = {}
         for key in sorted(workspace):
             entry = resolved[key]
             assert entry.editable is not None
-            records.extend(_freeze_member(repo, staged, entry.editable, budget))
-            _check_member_manifest(staged, entry.name, entry.editable, backends, entry.version)
+            freeze_plan[key] = (entry.editable, "build", entry.name)
+        for key in sorted(packages):
+            if key in freeze_plan:
+                continue
+            rels = {item.editable for item in packages[key] if item.editable is not None}
+            if not rels:
+                continue
+            if len(rels) != 1:
+                _fail("LOCK_FORK_AMBIGUOUS")
+            freeze_plan[key] = (next(iter(rels)), "resolution", packages[key][0].name)
+        resolution_backends: dict[str, str] = {}
+        for key in sorted(freeze_plan):
+            member_rel, role, display_name = freeze_plan[key]
+            records.extend(_freeze_member(repo, staged, member_rel, budget))
+            if role == "build":
+                entry = resolved[key]
+                _check_member_manifest(staged, entry.name, member_rel, backends, entry.version)
+            else:
+                backend = _record_resolution_backend(staged, member_rel, display_name)
+                resolution_backends[display_name] = backend
         lock_before = _sha_file(staged / "uv.lock")
 
         env = _child_env(work / "home", work / "cache")
@@ -1118,6 +1199,7 @@ def build_application_bundle(
             verification_code=VerificationCodeSnapshot(
                 commit_sha=source_commit, files=_tool_snapshot()
             ),
+            resolution_backends=resolution_backends,
         )
         return receipt
     finally:
@@ -1175,6 +1257,7 @@ def main(argv: list[str] | None = None) -> int:
         "status": "BUNDLE_CREATED",
         "manifestSha256": receipt.manifest_sha256,
         "sourceCommit": receipt.source_commit,
+        "resolutionBackends": receipt.resolution_backends,
     }
     print(json.dumps(payload, separators=(",", ":")))
     return 0

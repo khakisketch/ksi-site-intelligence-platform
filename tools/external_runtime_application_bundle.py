@@ -456,10 +456,9 @@ def _abi3_python_ok(python_tag: str) -> bool:
 
 
 def _check_external_tags(python_tag: str, abi_tag: str, platform_tag: str) -> None:
-    if (
-        python_tag != "py3"
-        and not python_tag.startswith("cp312")
-        and (abi_tag != "abi3" or not _abi3_python_ok(python_tag))
+    python_parts = python_tag.split(".")
+    if not any(part == "py3" or part.startswith("cp312") for part in python_parts) and (
+        abi_tag != "abi3" or not _abi3_python_ok(python_tag)
     ):
         _fail("DISTRIBUTION_TAGS")
     if abi_tag not in ("none", "abi3") and not abi_tag.startswith("cp312"):
@@ -673,15 +672,19 @@ def _check_dist_info_metadata(
 ) -> None:
     name_value: str | None = None
     version_value: str | None = None
+    last_key: str | None = None
     for raw in text.split("\n"):
         line = raw.strip()
         if not line:
-            continue
+            break
         if ":" not in line:
-            _fail("METADATA_FIELD")
+            if last_key in (None, "name", "version") or raw[:1] not in (" ", "\t"):
+                _fail("METADATA_FIELD")
+            continue
         key, _, field = line.partition(":")
         key = key.strip().lower()
         field = field.strip()
+        last_key = key
         if key == "name":
             if name_value is not None:
                 _fail("METADATA_FIELD")
@@ -721,9 +724,21 @@ def _check_wheel_metadata(text: str, distribution: _Distribution) -> None:
         _fail("WHEEL_FIELD")
     if distribution.kind == "workspace" and purelib != "true":
         _fail("WHEEL_PURELIB")
-    expected = f"{distribution.python_tag}-{distribution.abi_tag}-{distribution.platform_tag}"
-    if expected not in tags:
+    if not tags:
         _fail("WHEEL_TAG")
+    python_set = set(distribution.python_tag.split("."))
+    abi_set = set(distribution.abi_tag.split("."))
+    platform_set = set(distribution.platform_tag.split("."))
+    for tag in tags:
+        parts = tag.split("-")
+        if len(parts) != 3:
+            _fail("WHEEL_TAG")
+        if (
+            not set(parts[0].split(".")) <= python_set
+            or not set(parts[1].split(".")) <= abi_set
+            or not set(parts[2].split(".")) <= platform_set
+        ):
+            _fail("WHEEL_TAG")
 
 
 def _parse_entry_points(text: str) -> dict[str, str]:
@@ -778,7 +793,8 @@ def _check_record(
     own = entries.get(record_name)
     if own is None or own != ("", ""):
         _fail("RECORD_SELF")
-    if set(entries.keys()) != set(by_name.keys()):
+    file_names = {name for name, info in by_name.items() if not info.is_dir()}
+    if set(entries.keys()) != file_names:
         _fail("RECORD_COVERAGE")
     for row_path, (row_hash, row_size) in entries.items():
         if row_path == record_name:
