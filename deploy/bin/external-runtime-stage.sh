@@ -675,10 +675,10 @@ require_release_evidence() {
       caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d)
         export KSI_EXTERNAL_RC_CADDY_IMAGE_ID="$image_id"
         ;;
-      minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727)
+      127.0.0.1:5000/ksi-minio-mc:037d636-r2@sha256:94c391a080f8011bb0572ae178c431247239990fef6c9ac8430810c260fd0297)
         export KSI_EXTERNAL_RC_MC_IMAGE_ID="$image_id"
         ;;
-      minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e)
+      127.0.0.1:5000/ksi-minio:037d636-r2@sha256:7d3932383a4eafa842067f3ff1d15cb5fdd1430d56ae9b7a916d9a4952d27d2d)
         export KSI_EXTERNAL_RC_MINIO_IMAGE_ID="$image_id"
         ;;
       *)
