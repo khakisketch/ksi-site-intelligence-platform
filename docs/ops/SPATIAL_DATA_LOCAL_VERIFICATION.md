@@ -414,6 +414,41 @@ execution/Core/credentials, private custodian/archive, protected application bun
 containment/accepted public inspection/customer/field/accuracy inputs remain absent or unverified.
 No new image build/scan, public TIFF processing, service start, push, deployment or cleanup occurred.
 
+#### Human shared-graph and fixed-release-baseline follow-up
+
+Human asked to verify digest-result reuse and total traversal work, not add a new platform feature.
+Existing memoization avoided exponential metadata reads for shared64fanout, but a shallow-first
+cached subtree let a later path reach logicaldepth9 without blocking. New tests observed2RED/
+3existingpasses before the bounded repair at`5d0bb80b1dc87916430f9ff6cb9e5bf24bd463f5`.
+Completed digest results now cache subtree height; every incoming descriptor is still checked,
+and every path must satisfydepth+height−1≤8. A whole-request270337descriptor counter fails with
+OCI_WORK_LIMIT before more work. The ceiling conservatively derives from existing4096members
+and64layer+config+subject bounds; it is not a new quantitative/business policy. Shared subtree
+metadata expands once, cache memory is member-bounded and layers remain opaque.
+
+Related274passed19.44s/Ruff2files/mypy2sources/bash/diffclean; fulltask5d0bb80**8325passed,
+121skipped,98warnings,zero failures776.15s**. Revalidatedcleanmain safelyfast-forwarded to
+`407c9ada695278ded62a8d2a6997466dbc99f5c8` (samecode pluswrittenbundleSpec only). Actualmain
+related274passed18.56s/lint/type/shellclean; full**8325passed,121skipped,98warnings,zero failures
+778.61s**. Later plan/status changes aredocs-only, notnewfullruns. No extra reviewer loop.
+The original review's noCritical/Important assessment belongs to its original range; this
+later narrow repair is proved by observed RED→GREEN, broader/full regressions and integration.
+
+Both actual16084bf originalarchives/reports reverified afterrepair with identical before/after
+hashes. `oci-shared-genuine-historical-link-5d0bb80.json` records fixedhistoricalImageSource and
+distinctverifierCodeCommit/filehash; wrongindex/role/newsource assertions block. Fullcurrentrelease
+and actualInspector areNOT_RUN. Future release fixes one deployment source/build/image baseline
+and records verification code separately; currentstage source equality is unchanged and runs
+from that candidate's cleancheckout, notmovingmain. Documentation changes do not move the candidate.
+
+Human selected separate verifiedCPython3.12.15 + noneditableofflinewheels, then approved the
+[writtenbundleSpec](../superpowers/specs/2026-10-04-external-runtime-application-bundle-design.md).
+The [four-taskwrittenplan](../superpowers/plans/2026-10-04-external-runtime-application-bundle.md)
+awaits review; bundletools/runtime/privatepreparation are not implemented or claimed. After
+genuine bundle/config/signing/Core/credential/livecontainment/activation/test-use inputs exist,
+first product acceptance is one permittedDSM throughactualInspector/worker backto durableCore
+inspection result; then two-epoch analysis/query. No source/unit result substitutes for that run.
+
 **Discovered contract blocker:** the approved design assumed the host-observed Docker ID was
 the scan config ID. That is false on this actual containerd store: explicit platform inspection
 also gives a manifest, not a config. Four unchanged real reports (prior/new, both roles) pass the

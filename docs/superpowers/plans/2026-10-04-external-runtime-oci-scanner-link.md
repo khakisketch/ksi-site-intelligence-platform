@@ -8,11 +8,13 @@
 **Spec:** [approved written v2 design](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md).
 **State:** approved technical unit complete and locally integrated; task/actual-main full regressions, independent review and genuine historical links verified. Release, activation and human product acceptance remain open.
 
-**Human execution-review follow-up:** shared-DAG throughput/depth/cache and fixed future release
-baseline inspection authorized. Existing memoization was linear but a cached deep path could evade
+**Human execution-review follow-up complete:** shared-DAG throughput/depth/cache and fixed future
+release baseline inspected. Existing memoization was linear but a cached deep path could evade
 depth8. Targeted2RED/3existing passes→related274GREEN19.44s after subtree-height and explicit
-270337descriptor budget repair. Repair full regression/historical recheck/local integration pending;
-the prior8320 results belong to the pre-repair source and are not claimed for this change.
+270337descriptor budget repair at5d0bb80. Two genuinehistoricalpairs reverified, originalsunchanged.
+Taskfull8325passed/121skipped/98warnings776.15s; actualmainsource-equivalent407c9adrelated274pass18.56s
+and full8325passed/121skipped/98warnings778.61s. Laterbundleplanning/status files aredocs-only.
+The prior8320 results belong to the pre-repair source and remain retained, not relabeled.
 
 ## Execution summary
 

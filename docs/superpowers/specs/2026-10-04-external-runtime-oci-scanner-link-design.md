@@ -116,6 +116,8 @@ Cryptographic verification:
     ceiling, not a larger per-node allowance. Exhaustion fails `OCI_WORK_LIMIT` before further
     traversal. Metadata is expanded once per verified digest; cache space is bounded by the
     existing member cap and stores only height/identity, never whole layer bytes.
+    Both mandatorynonblob files consume TARmembers, so a validarchive has≤4094blobs. Two root
+    descriptor checks plus≤66outgoing checks/blob are≤270206, below the conservative270337budget.
 5. Require actual config `os=linux`, `architecture=arm64`,
    `config.Labels["org.opencontainers.image.revision"] == supplied clean source commit`,
    and the existing exact role-specific `User`/single fixed `Cmd`:
@@ -200,6 +202,8 @@ baseline, without changing product direction or loosening the existing source ga
 shared-DAG probe showed memoized expansion already avoids exponential reads, but a shallow-first
 cached subtree could hide a later path of depth9. The subtree-height check and explicit aggregate
 budget repair enforce the existing bounded-verifier contract; they add no platform feature.
+Committed5d0bb80 repair passed related274, taskfull8325 and actualmainfull8325; exact revisions and
+times are in the plan/local evidence. Both retained historical pairs still verify without edits.
 
 Future release preparation must select one fixed deployment source commit, preserve the images
 and their config revision/build-context/lock identities from that commit, and separately record
