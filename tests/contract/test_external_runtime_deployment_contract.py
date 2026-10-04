@@ -1444,21 +1444,21 @@ def test_stage_accepts_a_canonical_release_evidence_manifest_only_with_its_exact
                 ],
             },
             {
-                "releaseReference": "minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:"
-                "a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727",
+                "releaseReference": "127.0.0.1:5000/ksi-minio-mc:037d636-r2@sha256:"
+                "94c391a080f8011bb0572ae178c431247239990fef6c9ac8430810c260fd0297",
                 "dockerImageId": "sha256:" + "6" * 64,
                 "repoDigests": [
-                    "minio/mc@sha256:"
-                    "a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+                    "127.0.0.1:5000/ksi-minio-mc@sha256:"
+                    "94c391a080f8011bb0572ae178c431247239990fef6c9ac8430810c260fd0297"
                 ],
             },
             {
-                "releaseReference": "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:"
-                "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e",
+                "releaseReference": "127.0.0.1:5000/ksi-minio:037d636-r2@sha256:"
+                "7d3932383a4eafa842067f3ff1d15cb5fdd1430d56ae9b7a916d9a4952d27d2d",
                 "dockerImageId": "sha256:" + "7" * 64,
                 "repoDigests": [
-                    "minio/minio@sha256:"
-                    "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+                    "127.0.0.1:5000/ksi-minio@sha256:"
+                    "7d3932383a4eafa842067f3ff1d15cb5fdd1430d56ae9b7a916d9a4952d27d2d"
                 ],
             },
         ],
@@ -1527,13 +1527,13 @@ docker() {
       image_id="sha256:"$(printf '5%.0s' {1..64})
       repo_digest="caddy@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d"
       ;;
-    minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:*)
+    127.0.0.1:5000/ksi-minio-mc:037d636-r2@sha256:*)
       image_id="sha256:"$(printf '6%.0s' {1..64})
-      repo_digest="minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727"
+      repo_digest="127.0.0.1:5000/ksi-minio-mc@sha256:94c391a080f8011bb0572ae178c431247239990fef6c9ac8430810c260fd0297"
       ;;
-    minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:*)
+    127.0.0.1:5000/ksi-minio:037d636-r2@sha256:*)
       image_id="sha256:"$(printf '7%.0s' {1..64})
-      repo_digest="minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+      repo_digest="127.0.0.1:5000/ksi-minio@sha256:7d3932383a4eafa842067f3ff1d15cb5fdd1430d56ae9b7a916d9a4952d27d2d"
       ;;
     *) return 98 ;;
   esac
