@@ -21,6 +21,12 @@ _SOURCE = re.compile(r"[0-9a-f]{40}\Z")
 _BLOB = re.compile(r"blobs/sha256/[0-9a-f]{64}\Z")
 _MAX_BYTES = 1024**3
 _JSON_BYTES = 1024**2
+_MAX_MEMBERS = 4096
+_MAX_NODE_DESCRIPTORS = 64
+_MAX_DEPTH = 8
+# One root binding check plus each unique blob's maximum outgoing descriptor set:
+# manifest layers64 + config1 + optional subject1. Shared incoming edges count too.
+_MAX_GRAPH_DESCRIPTORS = 1 + _MAX_MEMBERS * (_MAX_NODE_DESCRIPTORS + 2)
 _INDEX = "application/vnd.oci.image.index.v1+json"
 _MANIFEST = "application/vnd.oci.image.manifest.v1+json"
 _CONFIG = "application/vnd.oci.image.config.v1+json"
@@ -110,7 +116,8 @@ class _Archive:
         self.size = size
         self.members = self._members()
         self.seen: dict[str, tuple[str, int]] = {}
-        self.visited: set[str] = set()
+        self.verified_heights: dict[str, int] = {}
+        self.descriptor_steps = 0
 
     def _members(self) -> dict[str, tuple[int, int]]:
         offset = 0
@@ -143,7 +150,7 @@ class _Archive:
                 _fail("TAR_NAME")
             names.add(name)
             count += 1
-            if count > 4096:
+            if count > _MAX_MEMBERS:
                 _fail("TAR_LIMIT")
             size = node.size
             end = offset + 512 + ((size + 511) // 512) * 512
@@ -183,6 +190,9 @@ class _Archive:
         return value
 
     def _descriptor(self, value: Any) -> tuple[str, str, int]:
+        self.descriptor_steps += 1
+        if self.descriptor_steps > _MAX_GRAPH_DESCRIPTORS:
+            _fail("OCI_WORK_LIMIT")
         if not isinstance(value, dict) or "urls" in value:
             _fail("OCI_DESCRIPTOR")
         media, sha, size = value.get("mediaType"), value.get("digest"), value.get("size")
@@ -210,18 +220,22 @@ class _Archive:
 
     @staticmethod
     def _array(value: Any) -> list[Any]:
-        if not isinstance(value, list) or len(value) > 64:
+        if not isinstance(value, list) or len(value) > _MAX_NODE_DESCRIPTORS:
             _fail("OCI_LIMIT")
         return value
 
-    def _walk(self, descriptor: dict[str, Any], depth: int, active: set[str]) -> None:
-        if depth > 8:
+    def _walk(self, descriptor: dict[str, Any], depth: int, active: set[str]) -> int:
+        if depth > _MAX_DEPTH:
             _fail("OCI_DEPTH")
         media, sha, _ = self._descriptor(descriptor)
         if sha in active:
             _fail("OCI_CYCLE")
-        if sha in self.visited:
-            return
+        if sha in self.verified_heights:
+            height = self.verified_heights[sha]
+            if depth + height - 1 > _MAX_DEPTH:
+                _fail("OCI_DEPTH")
+            return height
+        height = 1
         if media in {_INDEX, _MANIFEST, _CONFIG}:
             value = self._json("blobs/sha256/" + sha[7:])
             if media == _INDEX:
@@ -232,23 +246,26 @@ class _Archive:
                         or child.get("mediaType") not in {_INDEX, _MANIFEST}
                     ):
                         _fail("OCI_DESCRIPTOR")
-                    self._walk(child, depth + 1, active | {sha})
+                    height = max(height, 1 + self._walk(child, depth + 1, active | {sha}))
             elif media == _MANIFEST:
                 self._schema(value, _MANIFEST)
                 config = value.get("config")
                 if not isinstance(config, dict) or config.get("mediaType") != _CONFIG:
                     _fail("OCI_DESCRIPTOR")
-                self._walk(config, depth + 1, active | {sha})
+                height = max(height, 1 + self._walk(config, depth + 1, active | {sha}))
                 for child in self._array(value.get("layers")):
                     if (
                         not isinstance(child, dict)
                         or child.get("mediaType") not in _LAYERS | {_ATTESTATION}
                     ):
                         _fail("OCI_DESCRIPTOR")
-                    self._walk(child, depth + 1, active | {sha})
+                    height = max(height, 1 + self._walk(child, depth + 1, active | {sha}))
                 if "subject" in value:
-                    self._walk(value["subject"], depth + 1, active | {sha})
-        self.visited.add(sha)
+                    height = max(
+                        height, 1 + self._walk(value["subject"], depth + 1, active | {sha}),
+                    )
+        self.verified_heights[sha] = height
+        return height
 
     def verify(self, index_id: str, source: str, role: str) -> str:
         for name, (offset, size) in self.members.items():

@@ -262,6 +262,90 @@ def test_graph_depth_and_descriptor_limits(tmp_path: Path) -> None:
             _verify(tool, path, fixture, expected_index_id=sha)
 
 
+def _shared_index_graph(
+    fixture: OciFixture, *, wrappers: int, fanout: int,
+) -> tuple[bytes, str, set[str]]:
+    """A shallow-first DAG; cached descendants still count on the later deep path."""
+    members = dict(fixture.members)
+    index = json.loads(members["blobs/sha256/" + fixture.index_id[7:]])
+    descriptor = dict(index["manifests"][1])
+    shared_names = {"blobs/sha256/" + descriptor["digest"][7:]}
+    for _ in range(wrappers):
+        raw = json.dumps({"schemaVersion": 2, "mediaType": INDEX,
+                          "manifests": [descriptor] * fanout}).encode()
+        sha = digest(raw)
+        name = "blobs/sha256/" + sha[7:]
+        members[name] = raw
+        shared_names.add(name)
+        descriptor = {"mediaType": INDEX, "digest": sha, "size": len(raw)}
+    index["manifests"].append(descriptor)
+    raw = json.dumps(index).encode()
+    sha = digest(raw)
+    members["blobs/sha256/" + sha[7:]] = raw
+    members["index.json"] = json.dumps({"schemaVersion": 2, "mediaType": INDEX,
+                                        "manifests": [{"mediaType": INDEX, "digest": sha,
+                                                       "size": len(raw)}]}).encode()
+    return tar_payload(list(members.items())), sha, shared_names
+
+
+@pytest.mark.parametrize("wrappers", [5, 6])
+def test_shared_cached_subgraph_cannot_hide_longest_path_depth(
+    tmp_path: Path, wrappers: int,
+) -> None:
+    # Root1 + wrappers + attestation manifest1 + config/layer1 = depth8 or9.
+    tool = _tool()
+    fixture = make_oci_fixture("inspector", SOURCE)
+    payload, index_id, _ = _shared_index_graph(fixture, wrappers=wrappers, fanout=2)
+    path = tmp_path / "shared.tar"
+    path.write_bytes(payload)
+    if wrappers == 5:
+        assert _verify(tool, path, fixture, expected_index_id=index_id) == fixture.config_id
+    else:
+        with pytest.raises(tool.OciArchiveEvidenceError) as caught:
+            _verify(tool, path, fixture, expected_index_id=index_id)
+        assert caught.value.code == "OCI_DEPTH"
+
+
+def test_shared_fanout_reuses_verified_subgraphs_without_exponential_reads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tool = _tool()
+    fixture = make_oci_fixture("inspector", SOURCE)
+    payload, index_id, shared_names = _shared_index_graph(fixture, wrappers=5, fanout=64)
+    path = tmp_path / "shared.tar"
+    path.write_bytes(payload)
+    reads: set[str] = set()
+    original = tool._Archive._json
+
+    def guarded_json(archive: Any, name: str) -> dict[str, Any]:
+        if name in shared_names:
+            assert name not in reads, "shared graph was parsed again for another incoming path"
+            reads.add(name)
+        return original(archive, name)
+
+    monkeypatch.setattr(tool._Archive, "_json", guarded_json)
+    assert _verify(tool, path, fixture, expected_index_id=index_id) == fixture.config_id
+    assert reads == shared_names
+
+
+@pytest.mark.parametrize("budget", [8, 7])
+def test_whole_graph_descriptor_budget_blocks_before_unbounded_work(
+    tmp_path: Path, budget: int, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Original tiny graph: root descriptor2, runtime/config/layer3, attestation/config/layer3.
+    tool = _tool()
+    fixture = make_oci_fixture("inspector", SOURCE)
+    path = tmp_path / "budget.tar"
+    path.write_bytes(fixture.payload)
+    monkeypatch.setattr(tool, "_MAX_GRAPH_DESCRIPTORS", budget, raising=False)
+    if budget == 8:
+        assert _verify(tool, path, fixture) == fixture.config_id
+    else:
+        with pytest.raises(tool.OciArchiveEvidenceError) as caught:
+            _verify(tool, path, fixture)
+        assert caught.value.code == "OCI_WORK_LIMIT"
+
+
 @pytest.mark.parametrize("kind", ["leaf_symlink", "parent_symlink", "directory", "fifo"])
 def test_special_or_symlinked_archive_blocks(tmp_path: Path, kind: str) -> None:
     tool = _tool()

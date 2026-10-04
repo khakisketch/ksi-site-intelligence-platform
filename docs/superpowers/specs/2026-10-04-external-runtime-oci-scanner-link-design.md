@@ -106,8 +106,16 @@ Cryptographic verification:
    Non-executable attestation manifests may use `application/vnd.in-toto+json` layer blobs
    and `unknown/unknown` platform as observed in both actual archives; verify their bytes,
    but never select them as the ARM64 runtime or treat their contents as a verified signature.
-   Bound index manifests and manifest layers to64entries each and graph depth to8; referenced
-   shared content blobs are permitted, duplicate conflicting descriptors are not.
+    Bound index manifests and manifest layers to64entries each and graph depth to8; referenced
+    shared content blobs are permitted, duplicate conflicting descriptors are not.
+    Reuse completed verification by digest, retaining the verified subtree height (not only
+    a visited bit). Every reused path must still satisfy `depth + height - 1 <= 8`. Validate
+    every incoming descriptor before reuse so conflicting size/media/URLs cannot hide in cache.
+    The total descriptor-check budget is270337, derived from1root-binding check plus
+    4096members×(64layers+1config+1optional subject). This is an explicit whole-traversal
+    ceiling, not a larger per-node allowance. Exhaustion fails `OCI_WORK_LIMIT` before further
+    traversal. Metadata is expanded once per verified digest; cache space is bounded by the
+    existing member cap and stores only height/identity, never whole layer bytes.
 5. Require actual config `os=linux`, `architecture=arm64`,
    `config.Labels["org.opencontainers.image.revision"] == supplied clean source commit`,
    and the existing exact role-specific `User`/single fixed `Cmd`:
@@ -184,3 +192,25 @@ No new tool/service or system package installation. Keep every original image/ar
 Rollback returns to the existing v1-only path, preserving v2 records/evidence rather than deleting
 or interpreting them as v1. Protected application packaging/configuration remains a separate
 design unit; it must not copy an editable image venv or assume an unverified host Python runtime.
+
+## Human execution-review continuation
+
+The Human requested confirmation of shared-graph/global-work bounds and a fixed future release
+baseline, without changing product direction or loosening the existing source gate. A targeted
+shared-DAG probe showed memoized expansion already avoids exponential reads, but a shallow-first
+cached subtree could hide a later path of depth9. The subtree-height check and explicit aggregate
+budget repair enforce the existing bounded-verifier contract; they add no platform feature.
+
+Future release preparation must select one fixed deployment source commit, preserve the images
+and their config revision/build-context/lock identities from that commit, and separately record
+the verification-tool commit/file hashes and execution results. The deployment lifecycle still
+runs from a clean checkout of its selected source; a later mutablemain/docs/verifier HEAD is not
+substituted for that checkout or used to relabel an image. A new executable/build input warrants
+a deliberately new candidate; a later documentation change alone does not redefine a candidate.
+No future candidate source/publisher/security/signing approval is issued by this task.
+
+After the protected application bundle/configuration/authority/live prerequisites are genuinely
+met, the first product execution probe is deliberately small: one expressly permitted test DSM
+passes through the actual Inspector/worker lane and its bound inspection result is durably
+returned to Core. Only then connect two-epoch analysis and result/evidence queries. Generated
+fixtures, archive verification and unit suites do not establish this live acceptance.

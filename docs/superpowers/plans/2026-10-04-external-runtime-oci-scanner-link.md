@@ -8,6 +8,12 @@
 **Spec:** [approved written v2 design](../specs/2026-10-04-external-runtime-oci-scanner-link-design.md).
 **State:** approved technical unit complete and locally integrated; task/actual-main full regressions, independent review and genuine historical links verified. Release, activation and human product acceptance remain open.
 
+**Human execution-review follow-up:** shared-DAG throughput/depth/cache and fixed future release
+baseline inspection authorized. Existing memoization was linear but a cached deep path could evade
+depth8. Targeted2RED/3existing passes→related274GREEN19.44s after subtree-height and explicit
+270337descriptor budget repair. Repair full regression/historical recheck/local integration pending;
+the prior8320 results belong to the pre-repair source and are not claimed for this change.
+
 ## Execution summary
 
 - [x] Task1 source deliverable:3fb5094; OCI72RED→GREEN, combinedscanner110pass0.42s, Ruff/mypy clean.
@@ -65,6 +71,8 @@ Invariants: INV-054 exact byte/source/host/config link enforced in verifier+cons
 ## Review Focus
 
 1. Resource bypass before TAR parsing: an advertised huge PAX/GNU/sparse body must reject before allocation/read, even inside a correctly hashed ≤1GiB archive (Task1 guarded-reader tests).
+   Human continuation also requires digest-result reuse, cached subtree height and an explicit
+   aggregate descriptor budget; shared fanout must not cause exponential reads or hide depth9.
 2. Valid selected runtime hides bad extra evidence: verify unselected attestation/extra blobs too; shared valid content is allowed, conflicting descriptors and missing blobs are not (Task1 graph tests).
 3. A rehashed historical or wrong-role archive is still not current release evidence: derive source/role/platform from verified config, reject mismatch; never relabel16084bf as later HEAD (Tasks1/3).
 4. Failed CLI output or a prior role's derived ID is not authority: nonzero exit with plausible stdout, role swaps, wrong host ID/RepoDigest and config/platform mismatch must still block (Task2 shell tests).

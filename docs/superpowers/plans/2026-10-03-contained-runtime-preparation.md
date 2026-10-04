@@ -61,6 +61,25 @@ strict consumer; both genuine historical16084bf pairs pass with original bytes p
 V1 still blocks index/config inequality. Full regression/review/integration is recorded in the
 new plan; no current-source full release, signer/publisher/credential/host authority was generated.
 
+### Fixed next-candidate baseline and first actual product probe
+
+Human execution review keeps the existing source gate strict. Select a deployment candidate's
+source commit once, then build and retain that commit's source/context/lock/image/config/SBOM/scan
+identities. Record verification-code commit and file hashes separately; they are not the image
+source. Execute the existing lifecycle from a clean checkout of the selected candidate commit,
+not whatever `main` becomes after later documents or standalone verifier changes. Changing actual
+runtime/build inputs creates an explicitly new candidate; ordinary record updates do not silently
+move its baseline. This procedure selects no publisher/target/source/signer or host authorization.
+
+Next: prepare the separately verifiedCPython3.12.15 + noneditableofflinewheel application bundle
+chosen by the Human, supply genuine configurations/credentials/signed/runtime/currentCore inputs,
+then obtain the separate live containment/activation authorization. Preserve all originals and
+the dedicated rootless route; no ordinary-host TIFF parser or generated test launcher fallback.
+The first product execution acceptance is **one expressly permitted test DSM → actual Inspector
+and existing worker → durable Core inspection result**, with exact byte/profile/attempt bindings,
+source read and genuine lane/peer/container evidence. It is not quantitative/customer/field
+accuracy acceptance. Only after that passes connect two epochs' analysis and result/evidence query.
+
 The preceding review follow-up changed documentation only. Its repository baseline was
 `dbbee981a73a17a5f55aa3db405f7235d312445d`; its then-inspected image source was
 `81f69883b59f53a2a015faea8fd4caa6d8cb34e3`, and installed templates remain bound to
