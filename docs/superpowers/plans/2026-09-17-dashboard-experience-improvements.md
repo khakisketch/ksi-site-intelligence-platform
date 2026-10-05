@@ -287,6 +287,12 @@ copy beyond the work-order mobile case.
   `test/dwell-bar.test.tsx` (breached vs in-progress vs settled); full dashboard
   gates green.
 - [ ] A2 [F02] observations 404 context (verify-first) — owner: —
+  2026-10-06 bounded subcase: the existing Site not-found paragraph no longer claims a scoped404
+  proves deletion/nonexistence; exact title/layout/Site-list exit retained. Real component RED→GREEN,
+  actual authenticated scoped404 at1440/390 and exit→`/sites`200, independent966tests/lint/types/build
+  verified in [consumer hardening Task4](2026-10-06-consumer-hardening.md). Seeded Site is present but
+  dev OIDC allowedSiteIds/WorkAreaIds are empty; do not close positive history-availability/context
+  acceptance as a false-positive without a properly scoped fixture. No production grants changed.
 - [ ] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
 - [x] A4 [F04] mission detail hierarchy/KMZ — owner: Claude — scoped title
   (`MISSION_TYPE_LABEL`) now leads; missionId + KMZ SHA-256 moved into a collapsed

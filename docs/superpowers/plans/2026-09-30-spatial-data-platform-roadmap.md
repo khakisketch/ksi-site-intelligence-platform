@@ -11,7 +11,29 @@
 **Level:** 단계별 제품 로드맵. 실행 가능한 API/코드 구현 계획이 아니다. 각 구현 과제는
 재개 지시 이후 현재 코드 대조 → 범위별 상세 계약 → 실행 계획으로 구체화한다.
 
-## 승인과 현재 작업
+## 최신 구현 대조 — 2026-10-06
+
+아래 2026-09-30 승인/WIP/단계 표는 **당시 문서 작업의 보존 기록**이다. 그 당시의
+미커밋·미구현·보류 문구로 다음 개발 순서를 결정하지 않는다. 활성 bounded task와 실제
+Git은 checkpoint/named task ledger로, 제품 수용은 product-state/named slice ledger로 판단한다.
+
+- 로컬 main은 `9d399c8`에서 깨끗한 상태로 연속 개선을 시작했다. 이전의 광범위한
+  미커밋 WIP는 현재 상태가 아니다. V2 고객 HTTP 흐름의 선별 통합·main 독립 검증은
+  [고객 흐름 원장](2026-10-05-v2-customer-http-flow.md)의 최신 통합 절에 있다.
+- 공간데이터 권한/grant·지속 작업·native-grid worker·guarded HTTP download 및 DSM/정사영상
+  독립 소비는 로컬 소프트웨어로 구현됐다. [데이터 제공 원장](2026-09-30-spatial-data-delivery-v1.md)
+  §2026-10-02 selective integration과 [검증 범위](../../ops/SPATIAL_DATA_LOCAL_VERIFICATION.md)를
+  따른다. 아래의 “고객 데이터 전달 경로 미구현”은 당시 상태이며, 현재 미완은 실제 고객
+  export·권리·호스트/독립 고객 수용 증거다. 공개 포맷/vendor/운영 지원 완료로 읽지 않는다.
+- Analysis MCP 여섯 도구는 기존 V2 Core 기록을 사용한다. 실제 생성 DSM 검사 후 SDK stdio
+  결과/API 일치와 세 시점의 두 주기 재사용 시험은 `test_analysis_mcp_actual_inspection.py`에
+  이미 있다. 이 SDK 시험은 실제 Codex 고객 호스트 구성·원격 transport 수용과 다르다.
+- 이번 승인된 개선의 첫 묶음과 실제 체크 결과는
+  [consumer hardening 원장](2026-10-06-consumer-hardening.md)에 기록한다. 고객 자료·비용 측정,
+  change feed/resync 상세 계약, 외부 모델 결과 레이어 provenance 계약과 데이터 MCP 확장은
+  미완으로 유지한다. EXT-VAL이나 P-AC-01..06을 이 대조로 닫지 않는다.
+
+## 2026-09-30 승인과 당시 작업 (역사적 스냅샷)
 
 - 승인된 작업: 플랫폼 방향의 문서 반영 후, 후속 사용자 지시로 소프트웨어 개발을 재개했다. 첫 구현은 기존 봉인 자산의 읽기 전용 카탈로그다.
 - commit/push/PR/merge/deploy/호스트/자격증명/고객 연락은 별도 승인 없음.

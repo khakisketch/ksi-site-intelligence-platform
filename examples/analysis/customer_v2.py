@@ -31,6 +31,7 @@ Safety properties:
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from typing import Any
@@ -39,14 +40,17 @@ import httpx
 
 
 class CustomerHttpError(RuntimeError):
-    """A Core request failed; carries the HTTP status and server detail."""
+    """Request failure; status 0 means no HTTP response, not a server status."""
 
-    def __init__(self, method: str, path: str, status: int, detail: str) -> None:
+    def __init__(
+        self, method: str, path: str, status: int, detail: str, *, artifact_id: str | None = None
+    ) -> None:
         super().__init__(f"{method} {path} -> {status}: {detail}")
         self.method = method
         self.path = path
         self.status = status
         self.detail = detail
+        self.artifact_id = artifact_id
 
 
 class CustomerV2Client:
@@ -178,31 +182,56 @@ class CustomerV2Client:
         *,
         content_type: str,
         required_headers: dict[str, str] | None = None,
+        artifact_id: str | None = None,
     ) -> None:
         """PUT bytes to a granted URL without any credential headers.
 
-        The exact ``requiredHeaders`` from the grant (e.g. the bound
-        ``x-amz-checksum-sha256``) are forwarded unchanged so the server can
-        enforce the digest/size binding. Credential headers are never
-        accepted here: ``Authorization``, ``Cookie`` and proxy credential
-        headers are rejected instead of forwarded, and this client never
-        attaches its bearer token to object uploads.
+        Only content-type, content-length and x-amz-checksum-sha256 grant
+        headers are accepted and preserved. Cookies, credentials (including
+        URL userinfo), ambiguous headers and redirects are refused. Failures
+        expose no grant URL/body; optional artifact context is a separate field.
         """
+        try:
+            url = httpx.URL(upload_url)
+        except httpx.InvalidURL:
+            raise ValueError("invalid object upload URL") from None
+        if url.scheme not in ("http", "https") or not url.host or url.userinfo:
+            raise ValueError("object upload requires HTTP(S) without URL credentials")
         headers: dict[str, str] = {}
         for name, value in (required_headers or {}).items():
+            if not isinstance(name, str):
+                raise ValueError("unsupported object upload header")
             lowered = name.lower()
-            if lowered in (
-                "authorization",
-                "cookie",
-                "proxy-authorization",
-                "proxy-authenticate",
+            if lowered not in ("content-type", "content-length", "x-amz-checksum-sha256"):
+                raise ValueError("unsupported object upload header")
+            if lowered in headers:
+                raise ValueError("duplicate object upload header")
+            if not isinstance(value, str) or not value or any(
+                ord(char) < 32 or ord(char) > 126 for char in value
             ):
-                raise ValueError(f"refusing to forward credential header {name!r}")
-            headers[name] = value
-        headers.setdefault("Content-Type", content_type)
-        response = self._objects.put(upload_url, content=data, headers=headers)
+                raise ValueError("invalid object upload header value")
+            headers[lowered] = value
+        length = headers.get("content-length")
+        if length is not None and (not length.isdecimal() or int(length) != len(data)):
+            raise ValueError("object upload content-length does not match bytes")
+        if "content-type" not in headers:
+            if not content_type or any(ord(char) < 32 or ord(char) > 126 for char in content_type):
+                raise ValueError("invalid object upload content-type")
+            headers["content-type"] = content_type
+        try:
+            request = self._objects.build_request("PUT", url, content=data, headers=headers)
+            # The reusable HTTP client can have response cookies from a prior PUT.
+            request.headers.pop("Cookie", None)
+            response = self._objects.send(request, follow_redirects=False)
+        except httpx.RequestError:
+            raise CustomerHttpError(
+                "PUT", "<granted-object-url>", 0, "object upload transport failed",
+                artifact_id=artifact_id,
+            ) from None
         if response.status_code not in (200, 201, 204):
-            raise CustomerHttpError("PUT", "<granted-object-url>", response.status_code, "")
+            raise CustomerHttpError(
+                "PUT", "<granted-object-url>", response.status_code, "", artifact_id=artifact_id
+            )
 
     def seal_revision(
         self, work_order_id: str, submission_ref: str, *, revision: int = 1
@@ -329,8 +358,17 @@ class CustomerV2Client:
     def wait_for_analysis(
         self, analysis_id: str, *, timeout_seconds: float = 120.0
     ) -> dict[str, Any]:
+        if (
+            isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("analysis wait timeout must be finite and positive")
         deadline = time.monotonic() + timeout_seconds
+        delay = 0.2
         while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"analysis {analysis_id} did not finish in time")
             view = self.get_analysis(analysis_id)
             if view.get("executionState") in ("COMPLETED", "FAILED"):
                 return view
@@ -340,9 +378,11 @@ class CustomerV2Client:
                 "REASSESSMENT_REQUIRED",
             ):
                 return view
-            if time.monotonic() > deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 raise TimeoutError(f"analysis {analysis_id} did not finish in time")
-            time.sleep(0.2)
+            time.sleep(min(delay, remaining))
+            delay = min(delay * 2, 2.0)
 
     # -- human reviews ------------------------------------------------------
     def get_review_target(self, analysis_id: str) -> dict[str, Any]:

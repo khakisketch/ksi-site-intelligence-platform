@@ -7,8 +7,9 @@ orchestration, exec-preserving wrappers and CLI stage reporting.
 All runtimes, records, wheels and programs are tiny labeled synthetics;
 tests monkeypatch the tool's ``_REQUIRED_RUNTIME_UID``/``_ALLOWED_RUNTIME_ROOTS``
 seams to the current user and synthetic prefixes. Genuine deployment
-CPython 3.12.15 does not exist here, so genuine INSTALLATION_PREPARED
-stays NOT_RUN by an explicit skip test, never a fake pass.
+CPython binding/bundle inputs for a genuine installation are not supplied
+to this suite. Genuine INSTALLATION_PREPARED stays NOT_RUN by an explicit
+skip test regardless of host folders or the suite interpreter, never a fake pass.
 """
 
 from __future__ import annotations
@@ -1109,21 +1110,11 @@ def test_binding_schema_mirrors_static_gates(tmp_path: Path) -> None:
         assert not validator.is_valid(_mutated(kind)), kind
 
 
-def test_genuine_deployment_inputs_absent_stays_not_run() -> None:
-    candidates = [
-        Path("/usr/local/lib/ksi-external-runtime/python"),
-        Path("/opt/ksi-external-runtime/python"),
-    ]
-    present = [str(p) for p in candidates if p.is_dir()]
-    version = subprocess.run(
-        [sys.executable, "-c", "import platform; print(platform.python_version())"],
-        capture_output=True,
-        text=True,
-        timeout=30,
-    ).stdout.strip()
-    if not present and version != "3.12.15":
-        pytest.skip(
-            "genuine protected CPython 3.12.15 + wheelhouse absent: "
-            "INSTALLATION_PREPARED against genuine inputs NOT_RUN"
-        )
-    assert present and version == "3.12.15"
+def test_genuine_installation_prepared_is_separate_operational_gate() -> None:
+    # A folder and the test runner's version prove neither the target interpreter's
+    # binding nor wheelhouse/source/lock pins. Only the separately supplied genuine
+    # bundle + protected binding can exercise the verifier's preparation stage.
+    pytest.skip(
+        "genuine pinned bundle/binding inputs not supplied to this synthetic suite: "
+        "INSTALLATION_PREPARED against genuine inputs NOT_RUN"
+    )

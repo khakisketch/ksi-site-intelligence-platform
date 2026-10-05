@@ -47,6 +47,7 @@ with CustomerV2Client(
             artifact_bytes[grant["artifactId"]],
             content_type="application/octet-stream",
             required_headers=grant["requiredHeaders"],  # forwarded exactly, never auth
+            artifact_id=grant["artifactId"],  # structured error context; never the grant URL
         )
     customer.seal_revision(work_order_id, submission_ref)
     customer.get_inspection(work_order_id, submission_ref)
@@ -82,27 +83,33 @@ times, producers, or vertical references.
 
 ## Safety notes
 
-* The class never prints tokens or grant URLs; failures carry status codes,
-  never credential material.
+* The class never prints tokens or grant URLs. Object PUT failures omit the
+  URL and response body, including on transport failure (`CustomerHttpError.status == 0`
+  means no HTTP response). Optional `artifact_id` is available on the error as
+  structured caller context; it is not interpolated into the message. Core errors
+  retain the server's detail, so do not log them indiscriminately.
 * Unsafe grant forwarding is rejected: object PUTs use a credential-free
-  client, the exact grant `requiredHeaders` (checksum binding) are forwarded
-  unchanged, and `Authorization`/`Cookie`/proxy credential headers are refused
-  with `ValueError`.
+  client; only `content-type`, `content-length`, and `x-amz-checksum-sha256`
+  are supported. Their values are preserved; case-duplicate names, control characters,
+  mismatched byte length, unsupported headers and URL credentials fail before I/O.
+  Storage response cookies are not resent and redirects are not followed. A new
+  required storage header needs an explicit reviewed allowlist extension, not blind forwarding.
 * WorkOrder, evidence, Analysis and review requests use caller-supplied
   `Idempotency-Key` values. Submission registration also retains its immutable
   submission/revision/digest identity.
 * `wait_for_analysis` returns actionable blocked/remediation/reassessment views,
   rather than waiting for a number that the server deliberately withholds.
+  For pending work it backs off from 0.2 to at most 2 seconds, caps waits to the
+  remaining finite positive deadline, and makes no new GET after that deadline.
+  An in-flight GET is still bounded by the client's per-request timeout; this is
+  not cancellation or a hard wall-clock timeout for that request. No mutations
+  are automatically retried.
 
 ## Isolated E2E proving this flow
 
 ```console
-$ .venv/bin/python - <<'PY'
-import os
-os.umask(0o077)
-import pytest
-raise SystemExit(pytest.main(["-q", "tests/contract/test_v2_customer_http_flow.py"]))
-PY
+$ umask 077
+$ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q tests/contract/test_v2_customer_http_flow.py
 ```
 
 Trusted setup lives in `tests/support/v2_customer_http_harness.py`; the
