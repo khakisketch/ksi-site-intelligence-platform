@@ -261,3 +261,58 @@ second-site repeated-cost/support measurements. Technical slice success is not p
   evidence above. Remote backup is not PR acceptance, release, production configuration or operational proof.
 - Next development remains unstarted. Worktree/branch retained for continued work; main and other worktrees
   untouched. No paused execution goal resumed and no deployment service started or restarted.
+
+## Local main selective integration — 2026-10-06
+- Latest Human approves only the proposed local-main selection of8082b4c anddec3c67 plus integrated
+  verification. Main push, PR, deployment and operations remain unapproved; earlier9 tool/deployment
+  commits are deliberately excluded. Prior "main untouched" statements describe the earlier backup action.
+- Actual target: /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform, branchmain;
+  clean base037d6366a4e7c496b7d6d2f045c88ce31ac2e6f2 and empty index checked before writes.
+  Native session now bound to this main checkout. No additional worktree or concurrent writer created.
+- `git cherry-pick -x 8082b4c54ca62853a2725087bafc6c2527d16dbf
+  dec3c6706742ca890ce3026ec3a2dbee1b6e1ee9` completed without conflicts:
+  source8082b4c -> mainb0e4c9f; sourcedec3c67 -> mainb291276. No branch history rewritten.
+- Requirements, owner, invariants, contracts and acceptance remain the Required task record above.
+  Scope is integration only, no new runtime/product behavior. Rollback boundary: original main037d636;
+  use task-scoped revert if necessary, never reset/discard user work. Verification must use actual main
+  source/imports and prepared main .venv; don't substitute integration branch tests for this checkout.
+- [x] M1 Select exactly the two approved commits and bind actual main checkout.
+- [x] M2 Independent actual-main customer/adjacent/static and full-suite integration verification.
+- [x] M3 Record main result, excluded history, residual known failures and local-only delivery boundary.
+- Main checkpoint read before reuse: stale idle spatial-delivery closure9edc4a18 disagreed with actual
+  Git037d636; historical evidence remains in2026-09-30-spatial-data-delivery-v1 ledger. Latest Human task
+  now governs main integration; product-state EXT-VAL still open. No native goal started/resumed/closed.
+- Actual-main verifier ses_ef31828a0ffedlV1ZjxEx1ABdn at
+  b2912769208b06a7d595491c340b238629069946 (implementationb0e4c9f29f46fb4adb5c078bef1db91e6b563153):
+  main .venv Python3.12.13; Core/event-contract imports resolve under actual main root. Same20 relevant
+  source/contract SHA256 values verified before/after; aggregate10fdbfd25ce422b6d3c2639b1032e63059c642422a5abac749aee52d06013ffd.
+- Focused actual-main command: `umask 077; PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q
+  tests/contract/test_external_analysis*.py tests/contract/test_v2_customer_http_flow.py
+  tests/contract/test_oidc_external_evidence_scope.py tests/contract/test_oidc_route_scope.py
+  tests/contract/test_oidc_auth.py tests/contract/test_external_reconstruction_api.py
+  tests/contract/test_external_evidence_api.py tests/contract/test_external_artifact_inspections_api.py
+  tests/contract/test_external_evidence_validations.py
+  tests/contract/test_external_relative_volume_analysis_contract.py tests/contract/test_core_module_migration.py`
+  (28 files) -> rc0,340 passed/0 failed/0 skipped,218.94s.
+  Log: /tmp/opencode/v2-customer-main-scoped-20261006.log.
+- Whole actual-main command: `umask 077; PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q`
+  -> rc1,8522 passed/1 failed/121 skipped/101 warnings,872.40s.
+  Log: /tmp/opencode/v2-customer-main-full-20261006.log. Failure remains
+  tests/contract/test_external_application_bundle_runtime.py::test_genuine_deployment_inputs_absent_stays_not_run:
+  protected-runtime directory present but suite sys.executable3.12.13 != asserted3.12.15. Not a new
+  integration regression or claimed all-green run; no host, test, privilege or installation workaround.
+  Excluded tooling commits mean counts differ from the source branch; don't reuse its8582 tally here.
+- Final actual-main static gates: ruff17 rc0, mypy9 rc0, diff-check clean, Core174-record boundary rc0.
+  Default private pytest temp root used, no shared /tmp/opencode authority fixtures or stdin spawn main.
+- Scope audit: main037d636..b291276 exactly2 selected commits and22 task paths; all9 earlier deployment/tool
+  commit ancestry checks false. Main deploy/scripts/image-policy and excluded tools unchanged vs037d636.
+  Git provenance kept with cherry-pick -x. Integration evidence changes only this ledger in a local docs
+  closeout commit; production source stays byte-identical to the verified implementation.
+- Delivery boundary: local-main source integration verified, user product acceptance/EXT-VAL/field/export
+  and deployment remain open. Native session now uses main; tests did not launch any retained service.
+  `git ls-remote` after verification still shows origin/main9edc4a18 and sourcebranchdec3c67; no mainpush.
+- Preserve original integration worktree and remote branch: they retain9 unique unintegrated commits and
+  an independent previous deployment workstream. Do not remove them as if fully merged. No other worktree
+  or session modified; no external deployment/restart/credentials/policy/data/permission actions performed.
+- Next candidates remain the existing actual-export/independent-checkpoint and narrowly readable authority
+  diagnostics above. This integration does not authorize starting either or resuming the paused ops goal.
