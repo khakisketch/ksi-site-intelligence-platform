@@ -854,7 +854,14 @@ def test_v2_json_schema_and_openapi_are_additive_and_bounded() -> None:
     assert "/v2/sites/{site_id}/work-areas/{work_area_id}/analyses" in paths
     assert "post" in paths["/v2/sites/{site_id}/work-areas/{work_area_id}/analyses"]
     v2_paths = [path for path in paths if path.startswith("/v2/sites/{site_id}/analyses")]
-    assert len(v2_paths) == 4
+    assert set(v2_paths) == {
+        "/v2/sites/{site_id}/analyses",
+        "/v2/sites/{site_id}/analyses/{analysis_id}",
+        "/v2/sites/{site_id}/analyses/{analysis_id}/evidence",
+        "/v2/sites/{site_id}/analyses/{analysis_id}/coverage",
+        "/v2/sites/{site_id}/analyses/{analysis_id}/review-target",
+        "/v2/sites/{site_id}/analyses/{analysis_id}/reviews",
+    }
     assert all(paths[path].get("x-status") != "planned" for path in v2_paths)
     assert next(
         parameter["schema"]["maximum"]

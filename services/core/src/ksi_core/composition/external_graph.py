@@ -62,6 +62,7 @@ class ExternalAnalysisWiring:
     calculations: Any
     capability_issuer: Any
     activation: AnalysisActivationV1 | None = None
+    reviews: Any = None
 
 
 @dataclass(frozen=True)
@@ -136,16 +137,28 @@ def build_external_analysis_wiring(
         coordinator=coordinator,
     )
     intents = AnalysisIntentStore(journal("external-analysis-intents.jsonl"))
-    return ExternalAnalysisWiring(
-        facade=ExternalAnalysisFacade(
-            intents=intents,
-            assessments=assessments,
-            calculations=calculations,
-            reconstructions=reconstruction,
-            sites=sites,
-            work_areas=work_areas,
-            work_orders=work_orders,
+    facade = ExternalAnalysisFacade(
+        intents=intents,
+        assessments=assessments,
+        calculations=calculations,
+        reconstructions=reconstruction,
+        sites=sites,
+        work_areas=work_areas,
+        work_orders=work_orders,
+    )
+    from ksi_core.domains.external.quantity.external_analysis_reviews import (
+        AnalysisReviewSource,
+        AnalysisReviewStore,
+    )
+
+    reviews = AnalysisReviewStore(
+        journal("external-analysis-reviews.jsonl"),
+        source=AnalysisReviewSource(
+            facade=facade, intents=intents, assessments=assessments, calculations=calculations
         ),
+    )
+    return ExternalAnalysisWiring(
+        facade=facade,
         intents=intents,
         assessments=assessments,
         calculations=calculations,
@@ -154,6 +167,7 @@ def build_external_analysis_wiring(
             storage=storage,
         ),
         activation=activation,
+        reviews=reviews,
     )
 
 

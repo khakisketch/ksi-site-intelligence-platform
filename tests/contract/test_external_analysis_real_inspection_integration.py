@@ -37,6 +37,7 @@ from ksi_processing_controller.external_inspector_container_protocol import (
 from ksi_processing_controller.external_inspector_protocol import (
     DeadlineBoundedBytesReader,
     DeadlineBoundedMemorySink,
+    InspectorFailureReason,
     InspectorLaunchRequestV1,
     InspectorLaunchResultV1,
     InspectorOperation,
@@ -55,10 +56,23 @@ from test_external_inspector_container_entrypoint import _decode_output
 
 
 class _RealDsmInspectorUds:
-    """Test-owned outer inspector protocol that executes the real parser entrypoint."""
+    """Test-owned outer inspector protocol that executes the real parser entrypoint.
 
-    def __init__(self, *, path: Path, manifest: Any, root: Path) -> None:
+    When ``admit`` is provided it is invoked for every launch after the sealed
+    byte binding is verified and before the parser entrypoint runs. A launch
+    whose admission raises is answered FAILED and never produces an outcome.
+    """
+
+    def __init__(
+        self,
+        *,
+        path: Path,
+        manifest: Any,
+        root: Path,
+        admit: Any | None = None,
+    ) -> None:
         self._manifest, self._root = manifest, root
+        self._admit = admit
         self._path = path
         self._listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._listener.bind(str(path))
@@ -71,6 +85,8 @@ class _RealDsmInspectorUds:
         self.measured: list[ArtifactInspectionOutcomeV1] = []
         self.source_digests: list[str] = []
         self.actual_source_digests: list[str] = []
+        self.admitted: list[str] = []
+        self.rejected: list[str] = []
 
     def __enter__(self) -> _RealDsmInspectorUds:
         self._thread.start()
@@ -108,6 +124,21 @@ class _RealDsmInspectorUds:
                     actual_digest = "sha256:" + hashlib.sha256(payload).hexdigest()
                     self.actual_source_digests.append(actual_digest)
                     assert actual_digest == request.sealed_byte_binding.observed_sha256
+                    if self._admit is not None:
+                        try:
+                            self._admit(request)
+                        except Exception:
+                            self.rejected.append(request.attempt_nonce)
+                            write_launch_result(
+                                connection,
+                                InspectorLaunchResultV1.failed(
+                                    request.attempt_nonce,
+                                    InspectorFailureReason.PROTOCOL_REJECTED,
+                                ),
+                                limits,
+                            )
+                            continue
+                        self.admitted.append(request.attempt_nonce)
                     write_launch_result(
                         connection,
                         InspectorLaunchResultV1.accepted(request.attempt_nonce),

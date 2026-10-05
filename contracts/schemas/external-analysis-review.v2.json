@@ -1,0 +1,77 @@
+{
+  "$defs": {
+    "AnalysisReviewEvaluationV2": {
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {"enum": ["BASELINE", "CURRENT"], "title": "Epoch", "type": "string"},
+        "evaluationId": {"maxLength": 255, "minLength": 1, "title": "Evaluationid", "type": "string"},
+        "revision": {"minimum": 1, "title": "Revision", "type": "integer"},
+        "evaluationDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "title": "Evaluationdigest", "type": "string"}
+      },
+      "required": ["epoch", "evaluationId", "revision", "evaluationDigest"],
+      "title": "AnalysisReviewEvaluationV2", "type": "object"
+    },
+    "AnalysisReviewListV2": {
+      "additionalProperties": false,
+      "description": "Historical receipts; no implication that a receipt reviews today's target.",
+      "properties": {
+        "items": {"items": {"$ref": "#/$defs/AnalysisReviewReceiptV2"}, "maxItems": 50, "title": "Items", "type": "array"},
+        "nextCursor": {"anyOf": [{"maxLength": 255, "minLength": 1, "type": "string"}, {"type": "null"}], "default": null, "title": "Nextcursor"}
+      },
+      "required": ["items"], "title": "AnalysisReviewListV2", "type": "object"
+    },
+    "AnalysisReviewReceiptV2": {
+      "additionalProperties": false,
+      "properties": {
+        "contractVersion": {"const": "external-analysis-review-receipt.v2", "default": "external-analysis-review-receipt.v2", "title": "Contractversion", "type": "string"},
+        "reviewRef": {"maxLength": 255, "minLength": 1, "title": "Reviewref", "type": "string"},
+        "organizationId": {"maxLength": 255, "minLength": 1, "title": "Organizationid", "type": "string"},
+        "siteId": {"maxLength": 255, "minLength": 1, "title": "Siteid", "type": "string"},
+        "workAreaId": {"maxLength": 255, "minLength": 1, "title": "Workareaid", "type": "string"},
+        "analysisId": {"maxLength": 255, "minLength": 1, "title": "Analysisid", "type": "string"},
+        "reviewerId": {"maxLength": 255, "minLength": 1, "title": "Reviewerid", "type": "string"},
+        "target": {"$ref": "#/$defs/AnalysisReviewTargetV2"},
+        "decision": {"enum": ["ACKNOWLEDGED", "NEEDS_FOLLOW_UP"], "title": "Decision", "type": "string"},
+        "comment": {"maxLength": 1000, "minLength": 1, "title": "Comment", "type": "string"},
+        "reviewedAt": {"format": "date-time", "title": "Reviewedat", "type": "string"},
+        "factualLimitations": {
+          "default": ["HUMAN_REVIEW_IS_NOT_ACCURACY_VALIDATION", "HUMAN_REVIEW_IS_NOT_FIELD_OR_FLIGHT_AUTHORIZATION", "RELATIVE_VOLUME_IS_NOT_SETTLEMENT_OR_COMPLETION_PROOF"],
+          "maxItems": 3, "minItems": 3,
+          "prefixItems": [
+            {"const": "HUMAN_REVIEW_IS_NOT_ACCURACY_VALIDATION", "type": "string"},
+            {"const": "HUMAN_REVIEW_IS_NOT_FIELD_OR_FLIGHT_AUTHORIZATION", "type": "string"},
+            {"const": "RELATIVE_VOLUME_IS_NOT_SETTLEMENT_OR_COMPLETION_PROOF", "type": "string"}
+          ],
+          "title": "Factuallimitations", "type": "array"
+        },
+        "receiptDigest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}], "default": null, "title": "Receiptdigest"}
+      },
+      "required": ["reviewRef", "organizationId", "siteId", "workAreaId", "analysisId", "reviewerId", "target", "decision", "comment", "reviewedAt"],
+      "title": "AnalysisReviewReceiptV2", "type": "object"
+    },
+    "AnalysisReviewTargetV2": {
+      "additionalProperties": false,
+      "properties": {
+        "resultId": {"maxLength": 255, "minLength": 1, "title": "Resultid", "type": "string"},
+        "resultRevision": {"maximum": 1, "minimum": 1, "title": "Resultrevision", "type": "integer"},
+        "reportDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "title": "Reportdigest", "type": "string"},
+        "numericResultIdentityDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "title": "Numericresultidentitydigest", "type": "string"},
+        "calculationIdentityDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "title": "Calculationidentitydigest", "type": "string"},
+        "admissionDigest": {"pattern": "^sha256:[0-9a-f]{64}$", "title": "Admissiondigest", "type": "string"},
+        "evaluations": {"maxItems": 2, "minItems": 2, "prefixItems": [{"$ref": "#/$defs/AnalysisReviewEvaluationV2"}, {"$ref": "#/$defs/AnalysisReviewEvaluationV2"}], "title": "Evaluations", "type": "array"}
+      },
+      "required": ["resultId", "resultRevision", "reportDigest", "numericResultIdentityDigest", "calculationIdentityDigest", "admissionDigest", "evaluations"],
+      "title": "AnalysisReviewTargetV2", "type": "object"
+    },
+    "CreateAnalysisReviewV2": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {"$ref": "#/$defs/AnalysisReviewTargetV2"},
+        "decision": {"enum": ["ACKNOWLEDGED", "NEEDS_FOLLOW_UP"], "title": "Decision", "type": "string"},
+        "comment": {"maxLength": 1000, "minLength": 1, "title": "Comment", "type": "string"}
+      },
+      "required": ["target", "decision", "comment"], "title": "CreateAnalysisReviewV2", "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}
