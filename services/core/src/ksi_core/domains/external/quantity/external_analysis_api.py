@@ -1771,8 +1771,8 @@ class ExternalAnalysisFacade:
 
     @staticmethod
     def _has_work_area_grants(principal: Principal, work_area_ids: Sequence[str]) -> bool:
-        return principal.allowed_work_area_ids is None or set(work_area_ids).issubset(
-            principal.allowed_work_area_ids
+        return principal.allowed_work_area_ids is None or (
+            bool(work_area_ids) and set(work_area_ids).issubset(principal.allowed_work_area_ids)
         )
 
     def _selectors_are_in_scope(

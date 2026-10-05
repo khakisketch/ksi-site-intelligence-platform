@@ -997,6 +997,31 @@ def _view(
     )
 
 
+def _require_scoped_work_order(
+    work_orders: ObservationWorkOrderStore, work_order_id: str, principal: Principal
+) -> Any:
+    """INV-060: derive organization/Site/WorkArea scope from the WorkOrder.
+
+    The organization comes from the authenticated principal, never the body.
+    The order's Site must be granted and every WorkArea of the order must be
+    granted. An order with no WorkArea anchor fails closed for area-restricted
+    principals — ``set() <= grants`` would otherwise pass vacuously with no
+    resource proving the scope. Mismatches fold into the same non-disclosing
+    404 as a missing order.
+    """
+    order = work_orders.get(work_order_id, organization_id=principal.organization_id)
+    if order is None:
+        raise HTTPException(404, _NOT_FOUND)
+    if principal.allowed_site_ids is not None and order.site_id not in principal.allowed_site_ids:
+        raise HTTPException(404, _NOT_FOUND)
+    areas = getattr(order, "work_area_ids", None) or ()
+    if principal.allowed_work_area_ids is not None and (
+        not areas or not set(areas).issubset(principal.allowed_work_area_ids)
+    ):
+        raise HTTPException(404, _NOT_FOUND)
+    return order
+
+
 def mount_external_evidence(
     app: FastAPI,
     store: ExternalEvidenceStore,
@@ -1017,9 +1042,7 @@ def mount_external_evidence(
     def revision_for(
         work_order_id: str, submission_ref: str, revision: int, principal: Principal
     ) -> ExternalReconstructionRevision:
-        order = work_orders.get(work_order_id, organization_id=principal.organization_id)
-        if order is None:
-            raise HTTPException(404, _NOT_FOUND)
+        order = _require_scoped_work_order(work_orders, work_order_id, principal)
         sid = reconstruction.resolve_submission_ref(
             work_order_id,
             submission_ref,

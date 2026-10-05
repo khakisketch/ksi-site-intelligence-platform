@@ -7763,6 +7763,77 @@ paths:
         '401': { description: Authentication failed }
         '403': { description: Permission denied }
         '404': { description: Analysis not found within current grants }
+  /v2/sites/{site_id}/analyses/{analysis_id}/review-target:
+    get:
+      tags: [external-analysis]
+      summary: Resolve the exact current V2 calculation and evaluation review target
+      description: Human use review only; not accuracy validation, official issuance or field/flight authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Exact immutable result revision and both evaluation identities
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisReviewTargetV2' }
+        '401': { description: Authentication failed or revoked }
+        '403': { description: Permission denied }
+        '404': { description: Analysis not found within current organization/Site/WorkArea grants }
+        '409': { description: Current review result unavailable or changed }
+  /v2/sites/{site_id}/analyses/{analysis_id}/reviews:
+    get:
+      tags: [external-analysis]
+      summary: List historical V2 human-use reviews without implying current approval
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string } }
+      - { in: query, name: limit, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 50 } }
+      - { in: query, name: cursor, required: false, schema: { type: string, maxLength: 80 } }
+      responses:
+        '200':
+          description: Immutable historical reviews, scoped cursor; no automatic inheritance
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisReviewListV2' }
+        '401': { description: Authentication failed or revoked }
+        '403': { description: Permission denied }
+        '404': { description: Analysis not found within current grants }
+        '409': { description: Cursor does not belong to this analysis }
+        '422': { description: Invalid query bounds }
+    post:
+      tags: [external-analysis]
+      summary: Record a human-use review of an exact current V2 calculation/evaluation target
+      description: >-
+        Only permissioned human operators may write. Core derives organization, reviewer, Site,
+        WorkArea and analysis from identity/path. Same scoped key/payload replays the historical
+        receipt; changed content conflicts. A new review must match the current exact target.
+        Reviews do not change calculations, accuracy evidence, official baselines or flight authority.
+      security: [{ bearerAuth: [] }]
+      parameters:
+      - { in: path, name: site_id, required: true, schema: { type: string } }
+      - { in: path, name: analysis_id, required: true, schema: { type: string } }
+      - { in: header, name: Idempotency-Key, required: true, schema: { type: string, minLength: 1, maxLength: 255 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateAnalysisReviewV2' }
+      responses:
+        '201':
+          description: Immutable exact-target human-use review receipt, or identical replay
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnalysisReviewReceiptV2' }
+        '400': { description: Missing or blank Idempotency-Key }
+        '401': { description: Authentication failed or revoked }
+        '403': { description: Human operator with write permission required }
+        '404': { description: Analysis not found within current grants }
+        '409': { description: Target/currentness/idempotency conflict }
+        '422': { description: Invalid body or header bounds }
+        '503': { description: Review journal unavailable }
   /v2/sites/{site_id}/analyses/{analysis_id}/evidence:
     get:
       tags: [external-analysis]
@@ -17842,6 +17913,87 @@ components:
       - limitationCodes
       title: AnalysisResultSummaryV2
       type: object
+    AnalysisReviewEvaluationV2:
+      type: object
+      additionalProperties: false
+      required: [epoch, evaluationId, revision, evaluationDigest]
+      properties:
+        epoch: { type: string, enum: [BASELINE, CURRENT] }
+        evaluationId: { type: string, minLength: 1, maxLength: 255 }
+        revision: { type: integer, minimum: 1 }
+        evaluationDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+    AnalysisReviewTargetV2:
+      type: object
+      additionalProperties: false
+      required: [resultId, resultRevision, reportDigest, numericResultIdentityDigest, calculationIdentityDigest, admissionDigest, evaluations]
+      properties:
+        resultId: { type: string, minLength: 1, maxLength: 255 }
+        resultRevision: { type: integer, minimum: 1, maximum: 1 }
+        reportDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        numericResultIdentityDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        calculationIdentityDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        admissionDigest: { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+        evaluations:
+          type: array
+          minItems: 2
+          maxItems: 2
+          description: Ordered BASELINE then CURRENT, exact evaluation IDs/revisions/digests
+          prefixItems:
+          - { $ref: '#/components/schemas/AnalysisReviewEvaluationV2' }
+          - { $ref: '#/components/schemas/AnalysisReviewEvaluationV2' }
+    CreateAnalysisReviewV2:
+      type: object
+      additionalProperties: false
+      required: [target, decision, comment]
+      properties:
+        target: { $ref: '#/components/schemas/AnalysisReviewTargetV2' }
+        decision: { type: string, enum: [ACKNOWLEDGED, NEEDS_FOLLOW_UP] }
+        comment: { type: string, minLength: 1, maxLength: 1000 }
+    AnalysisReviewReceiptV2:
+      type: object
+      additionalProperties: false
+      required: [reviewRef, organizationId, siteId, workAreaId, analysisId, reviewerId, target, decision, comment, reviewedAt]
+      properties:
+        contractVersion: { type: string, const: external-analysis-review-receipt.v2, default: external-analysis-review-receipt.v2 }
+        reviewRef: { type: string, minLength: 1, maxLength: 255 }
+        organizationId: { type: string, minLength: 1, maxLength: 255 }
+        siteId: { type: string, minLength: 1, maxLength: 255 }
+        workAreaId: { type: string, minLength: 1, maxLength: 255 }
+        analysisId: { type: string, minLength: 1, maxLength: 255 }
+        reviewerId: { type: string, minLength: 1, maxLength: 255 }
+        target: { $ref: '#/components/schemas/AnalysisReviewTargetV2' }
+        decision: { type: string, enum: [ACKNOWLEDGED, NEEDS_FOLLOW_UP] }
+        comment: { type: string, minLength: 1, maxLength: 1000 }
+        reviewedAt: { type: string, format: date-time }
+        factualLimitations:
+          type: array
+          minItems: 3
+          maxItems: 3
+          default: [HUMAN_REVIEW_IS_NOT_ACCURACY_VALIDATION, HUMAN_REVIEW_IS_NOT_FIELD_OR_FLIGHT_AUTHORIZATION, RELATIVE_VOLUME_IS_NOT_SETTLEMENT_OR_COMPLETION_PROOF]
+          prefixItems:
+          - { type: string, const: HUMAN_REVIEW_IS_NOT_ACCURACY_VALIDATION }
+          - { type: string, const: HUMAN_REVIEW_IS_NOT_FIELD_OR_FLIGHT_AUTHORIZATION }
+          - { type: string, const: RELATIVE_VOLUME_IS_NOT_SETTLEMENT_OR_COMPLETION_PROOF }
+        receiptDigest:
+          default: null
+          anyOf:
+          - { type: string, pattern: '^sha256:[0-9a-f]{64}$' }
+          - { type: 'null' }
+    AnalysisReviewListV2:
+      type: object
+      additionalProperties: false
+      description: Historical receipts; not current approval or automatic review inheritance
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/AnalysisReviewReceiptV2' }
+        nextCursor:
+          default: null
+          anyOf:
+          - { type: string, minLength: 1, maxLength: 255 }
+          - { type: 'null' }
     AnalysisViewV2:
       additionalProperties: false
       description: Bounded detail projection; evidence and full coverage are separate resources.

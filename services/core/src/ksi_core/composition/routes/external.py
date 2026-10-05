@@ -270,5 +270,11 @@ def mount_external_routes(
             )
         )
         app.state.external_analysis_wiring = wiring
+        if wiring.reviews is not None:
+            from ksi_core.domains.external.quantity.external_analysis_reviews import (
+                build_analysis_review_router,
+            )
+
+            app.include_router(build_analysis_review_router(wiring.reviews))
 
     return external_result_projection

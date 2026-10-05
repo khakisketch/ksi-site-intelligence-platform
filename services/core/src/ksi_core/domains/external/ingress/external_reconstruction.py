@@ -983,7 +983,10 @@ def _require_work_order(
         )
         or (
             principal.allowed_work_area_ids is not None
-            and not set(order.work_area_ids).issubset(principal.allowed_work_area_ids)
+            and (
+                not order.work_area_ids
+                or not set(order.work_area_ids).issubset(principal.allowed_work_area_ids)
+            )
         )
     ):
         raise HTTPException(status_code=404, detail=_NOT_FOUND)

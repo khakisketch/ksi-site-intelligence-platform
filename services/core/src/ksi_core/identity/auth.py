@@ -629,6 +629,36 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "POST",
             "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/seal",
         ),
+        # Customer evidence remediation: declare/list/grant/seal are human
+        # SITES_WRITE/READ routes whose handlers recheck WorkOrder scope.
+        # Worker lease/report, validation measurement, policy authority and
+        # evaluation/internals routes stay closed (no allowlist entry).
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence",
+        ),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/upload-grant",
+        ),
+        (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/seal",
+        ),
+        # Scoped read-only inspection/validation state and sanitized display
+        # download binding for the same sealed revision.
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/inspection",
+        ),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/display-artifacts/{sanitized_display_ref}/download",
+        ),
         ("GET", "/v1/work-inbox"),
         ("POST", "/v1/work-inbox/{notification_ref}/read"),
         ("POST", "/v1/external-relative-volume-reports/{report_ref}/shares"),
@@ -644,6 +674,9 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/coverage"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/review-target"),
+        ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/reviews"),
+        ("POST", "/v2/sites/{site_id}/analyses/{analysis_id}/reviews"),
     }
 )
 
