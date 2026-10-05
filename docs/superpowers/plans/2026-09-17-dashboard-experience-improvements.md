@@ -293,6 +293,13 @@ copy beyond the work-order mobile case.
   verified in [consumer hardening Task4](2026-10-06-consumer-hardening.md). Seeded Site is present but
   dev OIDC allowedSiteIds/WorkAreaIds are empty; do not close positive history-availability/context
   acceptance as a false-positive without a properly scoped fixture. No production grants changed.
+  Follow-up Task5 reproduces fully mounted Core with exact scoped FIELD_OPERATOR: Site/WorkAreas200
+  but V1 history403 (not in reviewed route allowlist). Bounded page repair preserves the exact
+  existing success header/exits on dependent failure, uses nonretryable permission guidance, and
+  resolves Site before history so a child403 cannot mask Site404 or child404 assert Site absence.
+  Page RED5/GREEN7 and actual1440/390 browser recheck recorded in the same Task5 ledger; independent
+  129files/973tests/lint/types/build passed and generated tracked config restored/type-rechecked.
+  Broader authorized history availability stays open; no route/grant expansion.
 - [ ] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
 - [x] A4 [F04] mission detail hierarchy/KMZ — owner: Claude — scoped title
   (`MISSION_TYPE_LABEL`) now leads; missionId + KMZ SHA-256 moved into a collapsed

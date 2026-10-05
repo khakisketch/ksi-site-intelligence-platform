@@ -30,35 +30,43 @@ export default async function SiteObservationHistoryPage({
       next={`/sites/${encodeURIComponent(siteId)}/observations`}
     />;
   }
+  // Establish Site access before dependent reads. Their absence/denial cannot
+  // establish Site absence, and a faster child error must not mask a scoped404.
+  let site: Awaited<ReturnType<typeof getSite>>;
+  try {
+    site = await getSite(siteId);
+  } catch (error) {
+    if (error instanceof CoreApiError && error.status === 404) notFound();
+    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="외부 관측 이력을 불러오지 못했습니다." retryable /></div>;
+  }
   let loaded: {
-    site: Awaited<ReturnType<typeof getSite>>;
     history: Awaited<ReturnType<typeof listSiteExternalVolumeHistory>>;
     areas: Awaited<ReturnType<typeof listWorkAreas>>;
   } | null = null;
+  let denied = false;
+  let retryAfterSeconds: number | undefined;
   try {
-    const [site, history, areas] = await Promise.all([
-      getSite(siteId),
+    const [history, areas] = await Promise.all([
       listSiteExternalVolumeHistory(siteId, { after, limit: 50 }),
       listWorkAreas(siteId),
     ]);
-    loaded = { site, history, areas };
+    loaded = { history, areas };
   } catch (error) {
-    if (error instanceof CoreApiError && error.status === 404) notFound();
+    denied = error instanceof CoreApiError && error.status === 403;
+    retryAfterSeconds = error instanceof CoreApiError ? error.retryAfterSeconds : undefined;
   }
-  if (loaded === null) {
-    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="외부 관측 이력을 불러오지 못했습니다." retryable /></div>;
-  }
-  const names = new Map(loaded.areas.workAreas.map((area) => [area.workAreaId, area.name]));
+  const names = new Map(loaded?.areas.workAreas.map((area) => [area.workAreaId, area.name]));
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
-        <p className="text-[12.5px] text-ink-2">{loaded.site.name}</p>
+        <p className="text-[12.5px] text-ink-2">{site.name}</p>
         <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과 이력</h1>
         <p className="mt-1 text-[13px] leading-5 text-ink-2">보관 근거가 확인된 결과만 수치와 추이를 표시합니다.</p>
       </div>
       <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/analysis`} className="btn">현장 분석</Link><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-assets`} className="btn">공간 자산</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
     </header>
-    <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} />
-    {loaded.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
+    {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
+      <ErrorState message={denied ? "외부 관측 이력을 조회할 권한이 없습니다." : "외부 관측 이력을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
+    {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
   </div>;
 }

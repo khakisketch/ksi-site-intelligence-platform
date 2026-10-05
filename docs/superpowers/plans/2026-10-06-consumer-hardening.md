@@ -123,3 +123,106 @@ Coverage and signatures checked against current client: no public endpoint chang
 - Staged inventory: exactly nine task-owned files; cached diff-check exit 0; high-confidence
   private-key/cloud-key/GitHub-token/JWT pattern scan found zero matches (not an exhaustive secret
   audit). Local commit subject: `fix: harden customer transport and clarify verification boundaries`.
+
+## Task 5 — Scoped positive-history verification (investigation only)
+- Requirement IDs: REQ-UX-101, SDP-REQ-05/06; INV-040/060. Owner: Dashboard presentation,
+  existing Core HTTP and test-only `CustomerHttpHarness` assembly. No product code change selected.
+- Acceptance: actual OIDC Authorization Code/PKCE login as a FIELD_OPERATOR, exact generated
+  Site/WorkArea allowlists, public Site/WorkArea/history responses and rendered context/exit;
+  compare unauthorized Site response without identity leakage. No ADMIN customer actions.
+- Hypothesis: the earlier 404 was scope denial, not evidence that the fully mounted history
+  surface is unavailable. Compare the mounted socket harness with the storage-less dev assembly;
+  do not widen persistent local/production mappings to make a screenshot pass.
+- Test setup: new task-owned ignored data/identity/build paths, real local issuer/JWKS verifier,
+  existing generated Core socket harness. Exact one-Site/one-WorkArea test mapping is injected
+  only into that test process, as in existing OIDC contract tests. No authorization implementation,
+  route allowlist, protected registry, policy, signed-provider inputs or customer data is modified.
+- Contracts/reference/adoption: unchanged existing public GET contracts; REUSE test harness and
+  actual Dashboard source. Scratch runner/captures below `/tmp/opencode`; no reference changes.
+- HIL/license/data: generated test-only records, no equipment/vendor/accuracy or installation claim.
+  Rollback: stop only owned processes/browser; preserve generated evidence; no product rollback.
+- [x] Inspect supported test assembly and exact route scopes.
+- [x] Run positive Site/WorkArea and negative history/Site actual browser reads; record HTTP/result/context/console evidence. Authorized history200 remains blocked, not simulated.
+- [x] Classify A2 evidence and required product/security work without claiming broad acceptance.
+
+### Task 5 observed result and bounded A2 repair
+- Fully mounted generated socket harness + real issuer/JWKS, FIELD_OPERATOR exact Site/WorkArea:
+  public Site and WorkAreas GET200, `external-volume-reports` GET403. That V1 history template is
+  intentionally not in the reviewed scoped-operator route allowlist. No allowlist was added.
+  Actual browser shows generic retryable error, missing known Site name and same-page exits.
+- Ungranted Site: independent Core Site GET404 can lose a race to history GET403; `Promise.all`
+  catches only the first error, so the page inconsistently renders a generic error instead of
+  the safe Site not-found boundary. This is a presentation ordering defect, not new read authority.
+- Initial probe setup correctly failed CONFIG_FILE because `.dev-data` has a group-writable
+  ancestor. Re-created only the disposable protected authority fixture under task-owned
+  `/tmp/ksi-scoped-history-probe-20261006` (0700 beneath sticky `/tmp`); did not chmod any shared
+  directory or disable checks. `/tmp/opencode` holds the scratch runner/sanitized evidence.
+- Bounded design route: restore this exact route's existing successful header (name, title,
+  analysis/spatial-assets/back links, same responsive classes) around existing ErrorState when
+  Site GET succeeded. No new hierarchy, navigation destination, grouping, palette or layout.
+  This follows A2's already approved state-honesty/context/exit acceptance, not a new visual direction.
+- Requirements: REQ-UX-101 / A2, INV-040/060; Owner: Dashboard only. Contracts/reference: unchanged;
+  REUSE existing page/header/ErrorState; no server authorization changes. Files: observations/page,
+  new observations-page regression, this ledger + existing Dashboard ledger/checkpoint.
+- Acceptance/tests: Site404 always uses safe not-found before dependent queries; history/areas404
+  cannot assert Site absence; known Site context/exits survive child403/404/503;403 nonretryable;
+  successful empty history and pagination unchanged. Real browser403 + unauthorized Site recheck,
+  full Dashboard tests/lint/types/build with independent closeout. No numeric data/field claims.
+- Rollback: revert task-owned page/test changes only. HIL/license/customer data: none, test-generated.
+- [x] Write/observe RED for lost context, wrong child404 and masked Site404.
+- [x] Implement site-first read and reuse exact existing header/error patterns; observe GREEN.
+- [x] Verify actual browser desktop/mobile and independent Dashboard gates; preserve the bounded repair locally. No push or full A2 closure.
+
+### Task 5 execution evidence
+- New async page/component regression: **RED 5 failed / 2 passed** → **GREEN 7 passed**;
+  logs `/tmp/opencode/observations-page-{red,green}-20261006.log`. Real page, ErrorState,
+  CoreApiError and empty-history component are exercised; external session/API functions and
+  framework navigation are controlled doubles, not network/authorization evidence.
+- Actual OIDC browser after patch at1440×1000 and390×844: Site200, WorkAreas200, history403;
+  known Site name, exact existing header and three exits remain, permission text replaces generic
+  error, no futile retry. Back link landed on exact `/sites/site-a` with real Site heading;
+  ungranted Site only GET404 (dependent reads no longer fired), safe not-found/no name leakage,
+  click Site-list exit → exact `/sites` with Site list200. Page-error output empty.
+- A navigation during the first mobile attempt redirected to login; re-authenticated through the
+  supported role-test picker as FIELD_OPERATOR and verified exact pathname plus final page content.
+  The first mobile/login capture is NOT accepted evidence. Final captures are
+  `/tmp/opencode/scoped-history-fixed-desktop-20261006.png` (SHA256 `a0590018…`) and
+  `/tmp/opencode/scoped-history-fixed-mobile-final-20261006.png` (`721f69ee…`), inspected by Primary.
+- Sanitized Core statuses: `/tmp/opencode/scoped-history-public-statuses-20261006.log` contains
+  only method/path/status and lifecycle markers, no headers/query/auth/session values.
+  Owned browser closed; probe runner stopped cleanly; no listeners at3236/9036. Its loopback
+  Core/object threads and generated fixture are task-owned; persistent services/worktrees untouched.
+- Pending source snapshot: page `78c4d9b6…`, test `e710944a…`, base `11b7b4f`.
+  Independent Dashboard verifier `ses_ef28cc95fffekOtN5bowq0BgQ5` and reviewer
+  `ses_ef28b38e3ffeMvzEczu0tRhhl9` commissioned; final results still pending.
+- Remaining acceptance boundary: V1 volume history is not a reviewed scoped OIDC route. A proper
+  read-authorization contract/gate review is needed before enabling it; do not blanket-allow GETs
+  or fall back to ADMIN/opaque tokens. Current V2 API/evidence/review workflow remains unchanged.
+- Independent reviewer `ses_ef28b38e3ffeMvzEczu0tRhhl9`: no functional blocking defect; actually
+  inspected the before/after PNGs and source header equality, confirmed approved-pattern reuse.
+  Commit-hygiene blocker: Next-generated tracked tsconfig formatting/includes must be removed
+  after build and independently type/diff checked. Primary inspected the exact generated diff;
+  no user configuration edits are present in that file.
+- Final: minor (deferred): Site-transient error lacks Retry-After passthrough; Site403 still uses
+  generic retry (normal scoped denial is404); simultaneous dependent403/503 uses first-rejection
+  precedence. All preserve known context and disclose no ungranted name; these unobserved edge
+  refinements are not added to this bounded repair or mistaken for authorized history access.
+- Independent verifier `ses_ef28cc95fffekOtN5bowq0BgQ5`: `npm test` **129 files / 973 passed**
+  (2.56s); `npm run lint`, `./node_modules/.bin/tsc --noEmit`,
+  `KSI_DASHBOARD_DIST_DIR=.next-scoped-history-build-20261006 npm run build` all exit0.
+  Logs `/tmp/opencode/observations-page-independent-{tests,lint,types,build}-20261006.log`;
+  changed dynamic observations route compiled without warnings. No Python/auth/contract changes.
+- Generated tracked tsconfig formatting/four includes precisely restored by Primary after owned
+  dev shutdown and independent build. Same independent verifier: restored `tsc --noEmit` and
+  `git diff --check` exit0, tsconfig diff empty and original SHA256 `6b1807cf…` exact, page/test
+  hashes unchanged. Log `/tmp/opencode/observations-page-restored-config-20261006.log` resolves B1.
+  The browser had already checked the patched source before shutdown, so the verifier's later
+  no-listener observation is expected; no duplicate server/browser run needed.
+- Primary re-read final logs, diff and restored hash evidence before preservation. Intended
+  inventory: page, new page regression and two task ledgers only; no checkpoint/config/build/data.
+  Local commit subject: `fix: preserve scoped site context on observation history errors`.
+- Technical outcome: this bounded presentation defect is repaired and verified; full A2 history
+  availability, platform EXT-VAL/P-AC, actual customer export, remote-client topology, operational
+  installation/containment and field/customer acceptance remain unclosed. Next material decisions:
+  reviewed scoped V1 history read semantics (including WorkArea filtering); change-feed/resync and
+  external-result provenance contracts. No permissions or contracts are invented to unblock them.
