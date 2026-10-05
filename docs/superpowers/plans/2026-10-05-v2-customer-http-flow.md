@@ -164,7 +164,8 @@ second-site repeated-cost/support measurements. Technical slice success is not p
   parity, second-site labor baseline or platform acceptance is established. EXT-VAL remains open.
 
 ## Final bounded-task outcome — 2026-10-06
-- Technical software deliverable verified, human/customer acceptance pending, external delivery not done.
+- Technical software deliverable verified, human/customer acceptance pending, deployed delivery not done.
+  Authorized Git-only branch backup is recorded in the later section below, not deployment/release acceptance.
   Product-state remains EXT-VAL open, current product slice unchanged. This bounded task is not a slice
   closure, V2 launch decision or quantitative-policy amendment. Existing PRD/constitution/ADR untouched.
 - Final independent verifier: ses_ef3549fceffegyuLXMJ4FcRSbj; final reviewer:
@@ -201,8 +202,9 @@ second-site repeated-cost/support measurements. Technical slice success is not p
   evidence validation/remediation; V2 result/conditions/evidence/coverage/options reads; exact revision-bound
   use review + history; next observation with no review inheritance. Negative signature/checksum/scope/
   revocation/VIEWER/body-authority/stale result/policy expiry/duplicate/restart/reversed epoch paths verified.
-- No commits, push, main merge, deployment, policy reissue, operational restart/data/permission changes
-  or equipment operations. Retain dirty integration worktree; task-created shadow worktree already removed.
+- Before the later Git-preservation authorization: no commits/push. Main merge, deployment, policy reissue,
+  operational restart/data/permission changes and equipment operations remain unperformed. Original
+  integration worktree retained; task-created shadow worktree already removed.
 
 ### Product binding (bounded API software test, not a deployment target)
 - Repository/workspace: .worktrees/integration-readiness-20261002; recorded branch/base above.
@@ -247,4 +249,15 @@ second-site repeated-cost/support measurements. Technical slice success is not p
   remains the actual full-run result (known unchanged host/version-dependent test, not all-green).
 - Commit includes only the20 tested source/contract/inventory files plus example README and this ledger.
   Checkpoint, caches, runtime diagnostics/keys/data/config and unrelated work stay out of the index.
-  Record actual commit/push evidence after completion; do not infer deployability from backup success.
+  Do not infer deployability from backup success.
+- Actual source commit: 8082b4c54ca62853a2725087bafc6c2527d16dbf
+  (`feat(core): complete scoped V2 customer HTTP analysis flow`),22 task files,4572 insertions/21 deletions.
+  Commit index matched actual22 file bytes; source20-file hash matches verified snapshot; limited
+  private-key/GitHub-token/AWS-key/JWT pattern scan found no matches, not a comprehensive security audit.
+- Actual push: `git push --set-upstream origin HEAD:refs/heads/integration/readiness-20261002` succeeded
+  (new branch). `git ls-remote --heads origin integration/readiness-20261002` independently returned
+  8082b4c54ca62853a2725087bafc6c2527d16dbf, exactly matching source HEAD. Local status clean.
+- This documentation-only closeout follows the source commit on the same branch; preserve source commit
+  evidence above. Remote backup is not PR acceptance, release, production configuration or operational proof.
+- Next development remains unstarted. Worktree/branch retained for continued work; main and other worktrees
+  untouched. No paused execution goal resumed and no deployment service started or restarted.
