@@ -131,6 +131,7 @@ def _sealed_source(
     source_work_order_id: str,
     work_area_id: str,
     polygon: dict[str, object],
+    baseline_work_order_id: str = "work-baseline",
 ) -> ExternalResultReviewSourceV1:
     zone = ExternalVolumeZoneSnapshotV1(
         organization_id="org-a",
@@ -153,7 +154,7 @@ def _sealed_source(
         authority_record_digest=_digest("policy-authority"),
         synthetic_test_only=True,
     ).sealed()
-    baseline = _binding("work-baseline", "baseline", 0)
+    baseline = _binding(baseline_work_order_id, "baseline", 0)
     current = _binding(source_work_order_id, "current", 2)
     evidence_digests = (_digest("evidence-baseline"), _digest("evidence-current"))
     validation_policy_digest = _digest("validation-policy")

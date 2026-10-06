@@ -575,6 +575,10 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v1/sites"),
         ("GET", "/v1/sites/{site_id}"),
         ("GET", "/v1/sites/{site_id}/work-areas"),
+        # Audited mixed retained history: the handler verifies exact current and
+        # baseline source WorkOrders/zone grants before rows, cursors and paging.
+        # Detail, family aliases and V1 review/proposal mutations remain closed.
+        ("GET", "/v1/sites/{site_id}/external-volume-reports"),
         (
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets",

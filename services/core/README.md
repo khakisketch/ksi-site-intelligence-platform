@@ -176,6 +176,33 @@ requests, reports, reviews, and WorkOrders. Local tests do not establish custome
 compatibility, authority provisioning, backup/restore, signed OCI/SBOM evidence, deployment,
 owner operation, HIL, or field acceptance.
 
+## Scoped retained volume history
+
+`GET /v1/sites/{site_id}/external-volume-reports` is the single audited retained
+history route available to scoped customer OIDC operators with `SITES_READ`.
+Each request checks the authenticated organization and Site, the exact retained
+report zone, and every WorkArea assigned to the current source WorkOrder and
+(for relative volume) the baseline source WorkOrder. Missing or unprovable source
+bindings are hidden; granting only one of a source's multiple areas is insufficient.
+An inaccessible Site or cursor returns the same generic `404`. An accessible Site
+with no readable reports returns `200` with empty `items` and no `nextCursor`.
+
+Filtering precedes pagination (`limit` 1–50, default 20). A cursor must itself
+remain readable under current grants; hidden/unavailable rows never become cursor
+or placeholder references. The reader skips entries preceding a valid cursor,
+stops at a page plus one readable lookahead, and holds the coordinator only for
+one row's local checks and joins. Retained-index enumeration and sparse invisible
+histories still need real cardinality/latency measurements before capacity claims.
+
+Archiving a WorkArea does not erase granted retained history or grant permission
+for new execution. Proposal/approval counts describe visible proposals: the
+existing durable proposal contract requires the exact report-zone target.
+This historical read does not grant artifact downloads, quantitative eligibility,
+review, approval, issuance, or flight authority; numerical policies and historical
+records are unchanged. Detail/family-alias/pending routes and V1 review/proposal
+mutations remain closed to scoped customers pending separate audits. Existing
+V2 analysis and revision-bound review contracts are separate and unchanged.
+
 ## Spatial asset metadata catalog (V1 local software)
 
 `GET /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets` lists up to 50

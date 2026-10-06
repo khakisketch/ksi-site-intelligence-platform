@@ -225,6 +225,7 @@ class ExternalResultReadProjector:
         after: str | None,
         limit: int,
         kinds: frozenset[str] | None = None,
+        principal: Principal | None = None,
     ) -> ExternalResultHistoryView:
         """Resolve a bounded retained history without falling back across rows.
 
@@ -232,9 +233,21 @@ class ExternalResultReadProjector:
         ``None`` merges every configured family in one newest-first order.
         """
 
+        if principal is not None and (
+            principal.organization_id != organization_id
+            or principal.allowed_site_ids is not None
+            and site_id not in principal.allowed_site_ids
+        ):
+            raise LookupError("현장을 찾을 수 없다")
         if self._workflow.sites.get_scoped(site_id, organization_id) is None:
             raise LookupError("현장을 찾을 수 없다")
         report_refs = self._report_index(site_id, organization_id=organization_id, kinds=kinds)
+        if principal is not None and (
+            principal.allowed_site_ids is not None or principal.allowed_work_area_ids is not None
+        ):
+            return self._scoped_history(
+                site_id, report_refs, principal=principal, after=after, limit=limit
+            )
         start = 0
         if after is not None:
             try:
@@ -266,6 +279,92 @@ class ExternalResultReadProjector:
                 )
         next_cursor = page[-1] if start + len(page) < len(report_refs) and page else None
         return ExternalResultHistoryView(items=items, next_cursor=next_cursor)
+
+    def _scoped_history(
+        self, site_id: str, refs: tuple[str, ...], *, principal: Principal,
+        after: str | None, limit: int,
+    ) -> ExternalResultHistoryView:
+        # Validate the exact cursor in the caller's visible sequence, then skip
+        # preceding entries without resolving them. Stop after one visible
+        # lookahead; a page must not preflight/project the entire site's history.
+        start = 0
+        if after is not None:
+            try:
+                start = refs.index(after) + 1
+            except ValueError:
+                raise LookupError("external relative volume report cursor was not found") from None
+            if self._scoped_history_item(site_id, after, principal) is None:
+                raise LookupError("external relative volume report cursor was not found")
+        items = []
+        for ref in refs[start:]:
+            item = self._scoped_history_item(site_id, ref, principal)
+            if item is not None:
+                items.append(item)
+                if len(items) > limit:
+                    break
+        page = items[:limit]
+        return ExternalResultHistoryView(
+            items=page, next_cursor=page[-1].report_ref if len(items) > limit else None
+        )
+
+    def _scoped_history_item(
+        self, site_id: str, ref: str, principal: Principal
+    ) -> ExternalResultHistoryItem | None:
+        # Independent authority/provider resolution must remain OUTSIDE the
+        # coordinator. Hold it only for one row's local ownership/projection.
+        store: ExternalRelativeVolumeStore | ExternalSingleVolumeStore = self._volumes
+        if self._single_volumes is not None and ref.startswith(_SINGLE_REPORT_PREFIX):
+            store = self._single_volumes
+        resolved = store.resolve_historical_report_ref(
+            ref, organization_id=principal.organization_id, now=self._clock()
+        )
+        if resolved is None:
+            return None
+        with self._workflow.coordinator.guarded_read():
+            if self._workflow.sites.get_scoped(site_id, principal.organization_id) is None:
+                raise LookupError("현장을 찾을 수 없다")
+            if not self._history_source_in_scope(site_id, resolved, principal):
+                return None
+            # Render from the EXACT witness that passed scope, never a second
+            # provider lookup whose source could differ. Joins are local reads.
+            projector = (
+                self._project_single_resolved
+                if ref.startswith(_SINGLE_REPORT_PREFIX) else self._project_relative_resolved
+            )
+            view = projector(ref, resolved, organization_id=principal.organization_id)
+            if view.state is not ExternalResultProjectionState.AVAILABLE:
+                return None
+            return ExternalResultHistoryItem(report_ref=ref, state="AVAILABLE", result=view.result)
+
+    def _history_source_in_scope(self, site_id: str, resolved: Any, principal: Principal) -> bool:
+        request, report, authority = resolved.request, resolved.report, resolved.execution_authority
+        zone = authority.zone_snapshot
+        if (
+            not self._provenance_intact(request, report, authority, principal.organization_id)
+            or authority.site_id != site_id or zone.site_id != site_id
+            or zone.organization_id != principal.organization_id
+            or principal.allowed_work_area_ids is not None
+            and zone.work_area_id not in principal.allowed_work_area_ids
+        ):
+            return False
+        subjects = [
+            request.current.subject if hasattr(request, "current") else request.target.subject
+        ]
+        if hasattr(request, "baseline"):
+            subjects.append(request.baseline.subject)
+        for subject in subjects:
+            order = self._workflow.work_orders.get(
+                subject.work_order_id, organization_id=principal.organization_id
+            )
+            if (
+                subject.organization_id != principal.organization_id or subject.site_id != site_id
+                or order is None or order.site_id != site_id or not order.work_area_ids
+                or zone.work_area_id not in order.work_area_ids
+                or principal.allowed_work_area_ids is not None
+                and not set(order.work_area_ids).issubset(principal.allowed_work_area_ids)
+            ):
+                return False
+        return True
 
     def report_for_site(
         self, site_id: str, report_ref: str, *, organization_id: str
@@ -434,6 +533,13 @@ class ExternalResultReadProjector:
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
             )
+        return self._project_relative_resolved(
+            report_ref, resolved, organization_id=organization_id
+        )
+
+    def _project_relative_resolved(
+        self, report_ref: str, resolved: Any, *, organization_id: str
+    ) -> ExternalResultProjectionView:
         request, report, authority = (
             resolved.request,
             resolved.report,
@@ -508,6 +614,11 @@ class ExternalResultReadProjector:
             return ExternalResultProjectionView(
                 state=ExternalResultProjectionState.HISTORICAL_SOURCE_UNAVAILABLE
             )
+        return self._project_single_resolved(report_ref, resolved, organization_id=organization_id)
+
+    def _project_single_resolved(
+        self, report_ref: str, resolved: Any, *, organization_id: str
+    ) -> ExternalResultProjectionView:
         request, report, authority = (
             resolved.request,
             resolved.report,
@@ -720,6 +831,7 @@ def build_external_result_workflow_router(
                 organization_id=principal.organization_id,
                 after=after,
                 limit=limit,
+                principal=principal,
             )
         except LookupError as exc:
             raise HTTPException(status_code=404, detail="EXTERNAL_VOLUME_REPORT_NOT_FOUND") from exc
