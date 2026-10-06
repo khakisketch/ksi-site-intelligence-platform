@@ -88,10 +88,14 @@ def test_signed_mixed_pages_and_closed_siblings(mixed_history) -> None:  # noqa:
             assert [r["reportRef"] for r in response.json()["items"]] == [report.report_id]
             assert response.json()["nextCursor"] == next_cursor
             cursor = next_cursor
-        # Real registered siblings must remain closed; no404 due to absent handlers.
-        for sibling in (
+        # C2's audited exact projection/details open independently of workflow intents.
+        for detail in (
             f"/v1/sites/site-a/observations/{latest.report_id}",
             f"/v1/external-single-volume-reports/{single.report_id}",
+        ):
+            assert client.get(detail, headers=headers).status_code == 200
+        # Real registered unaudited siblings stay closed; no404 due to absent handlers.
+        for sibling in (
             "/v1/external-reobservation-proposals/unknown-proposal",
             "/v1/external-result-reviews/unknown-review",
         ):

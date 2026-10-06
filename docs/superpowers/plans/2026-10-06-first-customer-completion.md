@@ -8,15 +8,26 @@
 **Spec:** PRD §1.1.1/1.1.2, ADR-KSI-036/037/038, SDP-20260930, FPC-20260928 and existing Dashboard experience ledger.
 
 ## Authorization and workspace
+- 2026-10-06 follow-up: Human explicitly requested long-term autonomous development goal and chose
+  `개발 goal로 교체 (Recommended)` after the existing paused operations-goal conflict was surfaced.
+  Native replacement archived/cancelled the old operations goal (not completed or resumed) and
+  activated development goal `42cd7bf4-6563-4bbc-877b-d0971383ee67` for this ledger's approved scope.
+  Safety rails7days/1000auto-turns/no token cap; no-progress nativepause remains authoritative.
+  Complete only with no required agent-owned work plus independent tests/static/build, actual
+  scoped browser/reload, design-owned rendered defect closure and Git/ledger evidence. Unmet only
+  for concrete required-input/contract/tool/authorization blockers with no safe independent work.
+  Report finalstatus→usablelevel/evidence→stopreason→unverifiedscope/owner→nextaction; actual
+  customer/data/field/operations acceptance remains distinct. No push/deploy/signing/liveauthority.
 - Human: “다음 모두 개발 개선 해줘 제품을 완성하기 위해 필요한 것들이잖아” authorizes pursuing the stated completion work, not merely cosmetic/client polish.
 - Existing current checkout `main`, base/integration target `6b27225ed58be569c8deea1c860185199950e3cc`; clean at start. One writer, no new worktree needed.
 - Routine local code/tests/review/commits are authorized. No main push/PR/deploy, live grant/account/policy/signature change, equipment/customer contact or implicit operations-goal resume.
-- No native goal was created: ordinary completion request is not goal-mode authorization.
+- No native goal was created at initial task intake; the explicit follow-up above now authorizes
+  goal mode. Historical operations candidate/evidence remain separate and unapproved for execution.
 - Completion must distinguish implemented, independently verified, operationally exercised and customer-accepted; EXT-VAL/P-AC stay open until their actual acceptance gates.
 
 ## Execution tracks (sequential within each shared-file owner)
 - [x] C1 Customer observation-history resource-scope contract, security review and HTTP implementation (local technical scope; full-product/customer acceptance remains open).
-- [ ] C2 Related report/detail navigation scope and actual scoped browser workflow; no ADMIN fallback.
+- [x] C2 Related report/detail navigation scope and actual scoped browser workflow; independently verified local technical work only, no ADMIN fallback or customer/operations acceptance claim.
 - [ ] C3 Remaining Dashboard items: reconcile actual defects, Local Codex source implementation and distinct rendered review, then product-browser verification. Do not mechanically redo 13 checked items.
 - [ ] C4 Reconcile exact release/runtime evidence and finish safe local verifier/recovery/tooling gaps. Host/account/deployment/signing changes require separately scoped authorization.
 - [ ] C5 Real-data compatibility and repeated-use evidence: actual permitted t0/t1/t2, coordinates/vertical/producer/rights, selected customer OIDC/MCP, resource/cost measurements. Missing inputs block acceptance, not independent engineering.
@@ -45,8 +56,8 @@
 - [x] Implement scope predicate/projection filtering while route remains closed; review actual retained-source and proposal metadata paths independently.
 - [x] After no security blockers, add the one audited GET template; observe GREEN and denial regressions.
 - [x] Run affected workflow/auth/history tests, tests-directory Python suite and static checks independently; record exact revision/hashes/logs. Bare repository pytest includes additional configured paths and remains a final combined-bundle check.
-- [ ] Verify actual scoped Dashboard history flow with real HTTP/OIDC before closing A2/C2; any visual work remains Local Codex-owned.
-- [ ] Preserve task-owned local commit; record what is technically complete versus customer/operational acceptance.
+- [x] Verify actual scoped Dashboard history flow with real HTTP/OIDC; detailed C2/C3 verification and product acceptance remain separate below.
+- [x] Preserve C1 task-owned local commit a672ea3; customer/operational acceptance remains open.
 
 ## C1 security review — contract decision gate
 - Independent read-only reviewer `ses_ef09090afffeFp3vLpuUrYIMkb` examined actual projector,
@@ -211,3 +222,162 @@
 - C3 audit Local Codex opened all3 supplied images; findings C1-V-01 hidden mobile uncertainty,
   C1-V-02 denial context/escape, C1-V-03 unclear numerical limitations. Implement within existing
   approved brand, generator frontend-dev then distinct web-design-guidelines rendered review.
+
+## C2/C3 execution checkpoint
+- C1 preserved local commit `a672ea3` (7files, task-owned only; no checkpoint/runtimeinputs).
+- C2 RED9fail on expected403 before code; scoped exact3GET + Principal + shared predicate now
+  implemented. Providers outside guard, derived-Site/allsource checks plus request/review equality,
+  decision/zone/source/review and target-grant filtering before rawinline joins. Original privileged
+  detail503/unavailable preserved; generic restricted404. No other GET/POST gate expansion.
+- C2+C1+workflow affected GREEN62pass5.41s, ruffchecked3files0. Existing C1 sibling403 assertions
+  intentionally updated only for the3 newly customer-approved exact reads; unrelated intents still403.
+  These are provisional Primary checks, not independent final verification or customer acceptance.
+- Follow-up real sealed proposal journal/cold graph experiment CORRECTS a prior reviewer hypothesis:
+  tampered self-consistent target snapshot is rejected before mount by
+  `verify_external_reobservation_organization_graph` with invalid historical lineage. The standalone
+  store replay does not alone prove a reachable graph leak. Tests cover valid full inline review+
+  proposal and this startup rejection; no bypass of graph validation to manufacture a leaking route.
+- C3 source-only execution commissioned via explicit source patch-edit/build-test scenario and
+  frontend-dev recipe, actual apps/dashboard directory. First call422 validation (missingrequired
+  repoPath/targetStack) did not start a run; supplied confirmed existingstack/path using same action
+  key after inspecting actual pluginmanifest. No framework migration/newtoken/dependency allowed.
+  UI ownership2pages+focusedtests only, no Git/backendwrites; sourceoutput awaits renderedreview.
+- No resident product-context.md found; existing approved brand/audit/ledger is standingbrief.
+  Updated design-review input rule includes keyboard/focus, axe and motion/interactions, plus
+  success/empty/error/loading at390/768/1440. Actual temporary product link must be labeled local
+  or tailnet-only as appropriate; never imply prior stopped loopback preview remains reachable.
+- C2 finalreview `ses_ef05e9898ffeDKyVVjDi3AWfGR`: no demonstrated blocking leak; provideroutside
+  guard/allsource/derivedSite/inlinefilters/3routebudget hold. Remaining negative inline/mismatch
+  status fixtures are deferred coverage, not evidence permitting forged graph lineage. Supplement
+  `test_oidc_external_detail_scope_coverage.py` proves valid-reference direct403 and history/raw
+  visible-count parity (Primary1pass); independent supplementary check pending. Final verifier
+  `ses_ef05e71b8ffebuTt30GTfqebAJ` freezes backend/tests and uses BARE configuredpytest afterscoped/static.
+- C3 generator completed ONLY2UIpages+2focusedtests, hashes recorded in its implementation report;
+  actual installed Next16.3.3 docs and all3images read. Container Vitest could NOT start (prepared
+  nativebinding absent; npmregistry refused); no dependencyinstall or fakeRED/GREEN. Host independent
+  runner `ses_ef05bde5effelnHxfCMHZflHIJ` uses preparednode_modules: sameNEWtests against originalUI
+  in taskowned detached `.worktrees/c3-history-red-20261006` basea672ea3, then currentUI/fullchecks.
+  This is baseline-reproduction + outputverification, NOT a claim innerexecuted test-firstRED.
+  Workspace needed specifically to avoid temporarily changing actual productUI; no otherworktrees
+  commandeered. Copied2testfiles and dependencylink owned by this task; preserve evidence then cleanup.
+- C3 independent runner completed: originalUI/newtests RED11failed6passed (no infrastructureerror,
+  worktreealias verified), proposedUI3failed14passed17; fullUI10failed971passed981. Lint/tsc0,
+  nextbuild0 with7existing CSSoptimizationwarnings. Exact2pages/2tests hashes unchanged throughout.
+  Blockers:2permissioncopy mismatches + duplicatedhistorylink assertion;7existing unchangedkinds
+  tests fail (baseline12/12pass): duplicate compact/tabletext + followuptrace heading lost when
+  rawdetailunverified. This is actual qualityunmet, NOT merely waiting for useracceptance.
+- Real productdev startupfailed500 CSSparser; ownedstack timedout/stopped and browserclosed.
+  Actual overlay screenshot supplied todesign. Primary diagnosis using installed OxideScanner
+  per-file extraction located corrupted arbitrary shadow candidates in historical Turbopack `.sst`
+  caches under multiple .next-* directories, NOT changed eventsource/realvalidutility. No cache
+  deletion/move or visualfallback. Context7 officialTailwindv4 docs confirm source(none)+explicit
+  @source path for actualcomponenttree avoids unrelatedartifactscan. Next generatedtsconfig includes
+  restored after ownedserverexit; no permanentbuildpathconfig accepted.
+- Concrete refinement run `2ee02454-d5d1-43f3-a88b-231a2815f1e9` action
+  `ee1614b7-691c-4308-a1ad-3df396d55269` started, frontend-dev/source-editprofile. Ownership extended
+  only to related kinds test and globals.css source-detection directives (no token/style rewrite),
+  with exact failedtestlogs/actualCSSerror render + rootcause input. Preserve unverified-flow guidance
+  while withholding rawfacts; adapt duplicate DOM assertions to realresponsiveviews, no blanket
+  weakening. Need independent repeatedfulltests + actualdev states then distinct designreview.
+- C2 reviewer dispositions: no demonstrated blockers. Added validrefclosures/countparity test;
+  negative inline/request-review mismatch in mounted verifiedgraph is deferred fixturecoverage,
+  not fabricated through bypassing startuphistorical checks. Full verifier originally returned
+  interim while its original barepytest backgroundprocess runs; continued samechildsession to
+  finish on commandnotification with actualresult, no repeatedsuite or progresspoll.
+- C2 independent supplement completed1pass0.58s/pytest0/ruff0; Primary re-read log
+  `/tmp/opencode/customer-detail-independent-supplement-20261006.log`. Added test SHA256
+  `d3c5b3757bfbd6d504078431806f5484c825f4b1507ef72617b8981e5a1d8094`, production projector
+  `76f3af895ce96b572159361e2e41a109df0d7d48bb5c57733228e9d96745c89a`, auth
+  `b315d6388da567e25224e949f22dd0959ece90bcc823cf253f34919c20812966` unchanged before/after.
+  Original bare fullrun still executing; no exit/count claim, no repeated run. C3 refinementrunning.
+
+## C3 refinement verification continuation
+- First refinement terminal, authoritative inner report confirms source edits (canonical entry untouched),
+  not generated artifact quality approval. Input screenshot correction: captured connection-refused,
+  while CSS diagnostic was separately observed in actual development output/cache tracing.
+- Independent final runner `ses_ef05bde5effelnHxfCMHZflHIJ`: scoped27pass2fail29, full979pass2fail981;
+  lint/types/build EXIT0 and build has no prior Tailwind warnings. Six file hashes unchanged; complete
+  logs `/tmp/opencode/customer-ui-independent-final-{scoped,full,static,build}-20261006.log`.
+- Remaining RED is exact404/503 copy in `ObservationDetailReadFailure`: shared default subject adds
+  `이 ` to every status, whereas original tests expect that prefix only403. Ruling: restore exact
+  nonpermission copy, not weaken tests; preserve contextual Site escape/status/retry and custom
+  Site-information subject. Cost if wrong: misleading status copy; no permission/data contract change.
+- Focused Local Codex repair `48216aa3-ab2d-4d74-9d7d-1e0df4836bf6`, action
+  `425cc292-82d6-4fe2-a771-eeb2258ce097`, frontend-dev + source-edit scenario; sole detail-page
+  writer, implementation handoff only otherwise. New RED log text input read-access verified.
+- Owned generated Core/issuer/Next browser stack restarted separately for actual development/render
+  verification; no shared server/config/grant changes. C2 original barepytest remains independent;
+  no duplicated Python suite. UI remains provisional pending repaired tests and distinct renderedreview.
+- Copy repair terminal: only detailpage and local implementation handoff changed. Page SHA
+  `bbe317fb559798572405dde09fd9c1f8d74fdd3e2db8bac671cda0bbc80b3494`.
+  Independent runner `ses_ef05bde5effelnHxfCMHZflHIJ`: scoped29/29 and full981/981 across129files,
+  lint/types/build EXIT0, no warnings/errors in build, six checked source/test hashes stable.
+  Primary read actual logs `/tmp/opencode/customer-ui-independent-copy-green-{scoped,full,static,build}-20261006.log`.
+- Actual generated FIELD_OPERATOR/PKCE browser: history→detail→history by links, detail reload
+  and history reload retain cut1/fill5/net+4m³, common valid100%10/10m² and uncertainty±5m³.
+  Scoped Site projection and exact raw relative detail GET200. Missing retained display derivatives
+  explicitly unavailable, never fabricated; supporting404s in this assembly are not real data evidence.
+- Settled history/success detail/empty/history403/history503/detail403/detail404 captured390/768/1440;
+  all21 settled axe4.12.1 checks0violations/0incomplete. No horizontal document overflow; compact
+  uncertainty accessible with vertical scroll (history height1082 at390×844), no horizontal panning.
+  2px focus-visible outline on detail link and keyboard Enter navigation observed; reduced-motion
+  preference activated. No screen-reader listening/real-device/touch target claim: device preset
+  attempt still returned pointer:coarse=false and38px buttons; capture renamed accordingly.
+- Loading captured only after visible actual aria-busy DOM during injected10s delay; resolvesempty.
+  C3-A11Y-01 OPEN: axe serious aria-prohibited-attr in two SkeletonList generic divs with aria-label
+  and no role, atall3viewports. Actual source `src/components/ui/Skeleton.tsx:3`; SkeletonBlock
+  sibling has role=status. Needs design-owned scoped repair plus regression/render verification,
+  not a Primary UI edit or an unrelated global accessibility rewrite.
+- Distinct web-design-guidelines review brief prepared at
+  `apps/dashboard/design-review-inputs/c1-20261006/rendered-review-brief.md`; all screenshots,
+  snapshots/axe JSON and final-render-source-sha256.json locally excluded. Brief read through design
+  API successfully, but file-metadata call caused MCP process EPIPE/disconnect before commissioning.
+  Native OpenCode exact-project/name connect request restored statusconnected without config edits,
+  installation, credential reads or service restart; THIS session's tool catalog still lacks design
+  tools. Review NOT STARTED, no rendered quality approval; required C1-V defects remain pending
+  review closure. Do not substitute direct UI edits, standalone engine or another design source.
+- Task-owned smoke owner PID was identity-verified before SIGTERM; completion observed and browser
+  closed. Only inspected smoke-induced tsconfig formatting/distincludes restored; tsconfig diffempty.
+  Independent post-smoke runner same session: tsc EXIT0, sixsource/test hashes unchanged and config
+  SHA `6b1807cfc5a7d27e4d7d3a9a731bd4bd5d93a10988ef7169412b817ca2f23aea` equals baseline.
+  Log `/tmp/opencode/customer-ui-independent-post-smoke-static-20261006.log`; initial wrong-cwd
+  Git path emitted a benign warning, authoritative root check appended. No full981test rerun needed.
+  C2 original bare configuredpytest still has no final report; no duplicate/progresspoll performed.
+
+## C2 definitive verification recovery and local closeout
+- During explicit goal activation, original verifier `ses_ef05e71b8ffebuTt30GTfqebAJ` recovered
+  its original completed command record, not a repeated suite. Shell `sh_10fa44109001bqYliPCxCC3DZ8`
+  completed: `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q` (pipefail/tee with exit
+  persisted) →8684passed122skipped101warnings920.47s, `PYTEST_EXIT:0`. Primary read actual final log
+  `/tmp/opencode/customer-detail-independent-full-20261006.log`, source hashes still identical.
+  This supersedes interim pending statements above and is the bare configured tests/packages/services
+  evidence, not merely tests-directory output. Existing warnings/skips remain disclosed.
+- The detail supplement created15s after bare collection is NOT included in8684; independently
+  1passed0.58s/ruff0 with stableSHA d3c5b3757bfbd6d504078431806f5484c825f4b1507ef72617b8981e5a1d8094.
+  Original scoped95pass +ruff/mypy0 remain valid frozen-snapshot evidence.
+- C2 acceptance audited against exact3GET permission budget, source/all-area/zone/request/review
+  binding, scoped404 and unrestricted semantics, signedHTTPbothfamilies, valid workflow403/count
+  parity, cold graph rejection, final security review and actual relative detail/reload/escape200.
+  Local technical C2 complete; C3 loading accessibility/rendered review and actualcustomer/field/
+  release acceptance remain open. Task-owned source/tests/README/ledger only staged for localcommit;
+  six pending UI files/checkpoint/design inputs are excluded. No push/deploy or operationscandidate change.
+
+## C4–C7 current-evidence reconciliation (read-only, no operations resume)
+
+- C4: source-frozen offline application bundle/Python binding and OCI/scanner v2 byte linking are
+  already implemented with independent repair evidence in `2026-10-04-external-runtime-application-bundle.md`
+  and `2026-10-04-external-runtime-oci-scanner-link.md`. Do not reimplement or relabel as current
+  operational acceptance. Current backend regression includes their contract tests; actual preparation
+  requires supplied protected runtime/wheelhouse/host records. Paused operations goal retains candidate
+  037d6366a4e7c496b7d6d2f045c88ce31ac2e6f2; newmaina672/C2 is NOT that candidate/release.
+  No new image/signature/installation/release selected/produced by this continuation.
+- C6/FPC-15: old roadmap row saying degraded boot unimplemented is stale historical state. Actual
+  `2026-09-29-expired-authority-degraded-boot.md` records snapshot-expired and catalog-expired
+  restart/recovery + unchanged history; later signed current-source review exists. Reuse implementation
+  and tests, no duplicatefix. Real host key/catalog recovery remains separately authorized/unverified,
+  as does representative customer backup/restore and retention.
+- C5/C6 acceptance needs owner-supplied sameSite t0/t1/t2 exports + CRS/vertical/provenance/rights,
+  selected customerOIDC/MCP and field/cost evidence, plus separately approved actualhost/runtime
+  containment/recovery stages. Generated simulations do not close these actual-evidence gates.
+- C7 has no selected detailed feed/resync/dataMCP or externalproducer/model/input/revision contract;
+  material wire/authority decision required beforeimplementation. Existing data/analysiscontracts intact.

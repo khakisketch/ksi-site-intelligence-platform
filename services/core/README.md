@@ -199,9 +199,22 @@ for new execution. Proposal/approval counts describe visible proposals: the
 existing durable proposal contract requires the exact report-zone target.
 This historical read does not grant artifact downloads, quantitative eligibility,
 review, approval, issuance, or flight authority; numerical policies and historical
-records are unchanged. Detail/family-alias/pending routes and V1 review/proposal
-mutations remain closed to scoped customers pending separate audits. Existing
-V2 analysis and revision-bound review contracts are separate and unchanged.
+records are unchanged. Existing V2 analysis and revision-bound review contracts
+are separate and unchanged.
+
+The separately audited exact detail GETs are
+`/v1/sites/{site_id}/observations/{report_ref}`,
+`/v1/external-relative-volume-reports/{report_ref}`, and
+`/v1/external-single-volume-reports/{report_ref}`. They reuse the same all-source
+scope rule, with a generic `404` for hidden/unverifiable reports. Site-less details
+derive the Site from the exact retained witness and verify its zone and real Core
+orders before returning original request/report/policy/review bodies. Inline
+proposals must match the report, decision, zone, source, and review identity and
+their complete target set must be granted. Historical review inconsistencies are
+hidden from restricted callers; unrestricted historical semantics remain intact.
+Archived grants still permit retained reads, not new execution. Family-list aliases,
+pending decisions, direct proposal/review reads, and V1 review/proposal mutations
+remain closed; no new permissions or live account mappings are created.
 
 ## Spatial asset metadata catalog (V1 local software)
 

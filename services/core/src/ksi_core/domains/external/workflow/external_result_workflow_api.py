@@ -341,6 +341,7 @@ class ExternalResultReadProjector:
         zone = authority.zone_snapshot
         if (
             not self._provenance_intact(request, report, authority, principal.organization_id)
+            or principal.allowed_site_ids is not None and site_id not in principal.allowed_site_ids
             or authority.site_id != site_id or zone.site_id != site_id
             or zone.organization_id != principal.organization_id
             or principal.allowed_work_area_ids is not None
@@ -367,15 +368,28 @@ class ExternalResultReadProjector:
         return True
 
     def report_for_site(
-        self, site_id: str, report_ref: str, *, organization_id: str
+        self, site_id: str, report_ref: str, *, organization_id: str,
+        principal: Principal | None = None,
     ) -> ExternalResultProjectionView:
         """Return an exact report only after site and retained zone ownership match."""
 
-        if self._workflow.sites.get_scoped(site_id, organization_id) is None:
+        if (
+            principal is not None and principal.organization_id != organization_id
+            or self._workflow.sites.get_scoped(site_id, organization_id) is None
+        ):
             raise LookupError("현장을 찾을 수 없다")
         refs = self._report_index(site_id, organization_id=organization_id)
         if report_ref not in refs:
             raise LookupError("external relative volume report was not found")
+        if principal is not None and (
+            principal.allowed_site_ids is not None or principal.allowed_work_area_ids is not None
+        ):
+            item = self._scoped_history_item(site_id, report_ref, principal)
+            if item is None:
+                raise LookupError("external relative volume report was not found")
+            return ExternalResultProjectionView(
+                state=ExternalResultProjectionState.AVAILABLE, result=item.result
+            )
         projection = self._for_report_ref(report_ref, organization_id=organization_id)
         if projection.state is ExternalResultProjectionState.AVAILABLE:
             result = projection.result
@@ -870,7 +884,7 @@ def build_external_result_workflow_router(
     ) -> ExternalResultProjectionView:
         try:
             return projector.report_for_site(
-                site_id, report_ref, organization_id=principal.organization_id
+                site_id, report_ref, organization_id=principal.organization_id, principal=principal
             )
         except LookupError as exc:
             raise HTTPException(
@@ -889,11 +903,17 @@ def build_external_result_workflow_router(
             principal.organization_id,
         ):
             raise LookupError(report_ref)
-        proposals = [
-            proposal_view(item.proposal_ref, principal)
-            for item in service.proposals.list_scoped(organization_id=principal.organization_id)
-            if item.report_ref == report_ref and item.report_digest == resolved.report.report_digest
-        ]
+        scoped = (
+            principal.allowed_site_ids is not None or principal.allowed_work_area_ids is not None
+        )
+        site_id = resolved.execution_authority.site_id
+        if scoped and (
+            service.sites.get_scoped(site_id, principal.organization_id) is None
+            or not projector._history_source_in_scope(  # noqa: SLF001 -- shared exact witness scope
+                site_id, resolved, principal
+            )
+        ):
+            raise LookupError(report_ref)
         review = service.reviews.get_for_report(
             report_ref, organization_id=principal.organization_id
         )
@@ -901,8 +921,29 @@ def build_external_result_workflow_router(
             not isinstance(review, review_type)
             or review.report.report_digest != resolved.report.report_digest
             or review.report != resolved.report
+            or scoped and review.request != resolved.request
         ):
+            if scoped:
+                raise LookupError(report_ref)
             raise HTTPException(status_code=503, detail="EXTERNAL_RESULT_REVIEW_INCONSISTENT")
+        proposals = []
+        for item in service.proposals.list_scoped(organization_id=principal.organization_id):
+            if item.report_ref != report_ref or item.report_digest != resolved.report.report_digest:
+                continue
+            if scoped and (
+                item.site_id != site_id
+                or item.source_work_order_id != resolved.request.current_work_order_id
+                or item.decision_digest != resolved.request.decision_digest
+                or item.zone_digest != resolved.execution_authority.zone_snapshot.definition_digest
+                or review is None or item.review_ref != review.review_ref
+                or item.review_digest != review.review_digest
+                or principal.allowed_work_area_ids is not None
+                and not {target.work_area_id for target in item.target_work_areas}.issubset(
+                    principal.allowed_work_area_ids
+                )
+            ):
+                continue
+            proposals.append(proposal_view(item.proposal_ref, principal))
         return review, proposals
 
     @router.get(
@@ -917,9 +958,10 @@ def build_external_result_workflow_router(
         try:
             if resolved is None:
                 raise LookupError(report_ref)
-            review, proposals = report_join(
-                report_ref, resolved, principal, ExternalResultReviewReceiptV1
-            )
+            with service.coordinator.guarded_read():
+                review, proposals = report_join(
+                    report_ref, resolved, principal, ExternalResultReviewReceiptV1
+                )
         except LookupError as exc:
             raise HTTPException(
                 status_code=404, detail="EXTERNAL_RELATIVE_VOLUME_REPORT_NOT_FOUND"
@@ -1035,9 +1077,10 @@ def build_external_result_workflow_router(
             try:
                 if resolved is None:
                     raise LookupError(report_ref)
-                review, proposals = report_join(
-                    report_ref, resolved, principal, ExternalSingleVolumeResultReviewReceiptV1
-                )
+                with service.coordinator.guarded_read():
+                    review, proposals = report_join(
+                        report_ref, resolved, principal, ExternalSingleVolumeResultReviewReceiptV1
+                    )
             except LookupError as exc:
                 raise HTTPException(
                     status_code=404, detail="EXTERNAL_SINGLE_VOLUME_REPORT_NOT_FOUND"

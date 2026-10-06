@@ -276,10 +276,10 @@ def test_adjacent_unaudited_reads_stay_closed(customer_http, path) -> None:
     assert client.get(path, headers=headers["granted"]).status_code == 403
 
 
-def test_v1_mutation_and_report_detail_stay_closed(customer_http) -> None:
+def test_audited_v1_detail_opens_without_mutation_permission(customer_http) -> None:
     client, headers, report = customer_http
     path = f"/v1/external-relative-volume-reports/{report.report_id}"
-    assert client.get(path, headers=headers["granted"]).status_code == 403
+    assert client.get(path, headers=headers["granted"]).status_code == 200
     assert client.post(path + "/reviews", headers=headers["granted"]).status_code == 403
 
 
