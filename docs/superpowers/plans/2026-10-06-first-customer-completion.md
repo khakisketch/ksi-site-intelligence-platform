@@ -361,6 +361,19 @@
   Local technical C2 complete; C3 loading accessibility/rendered review and actualcustomer/field/
   release acceptance remain open. Task-owned source/tests/README/ledger only staged for localcommit;
   six pending UI files/checkpoint/design inputs are excluded. No push/deploy or operationscandidate change.
+- Actual local commit `7177620866cd45a2b93493b38ef4785598b16fb6` preserved8task-owned files;
+  index/diff checked clean, six UI files remain pending, checkpoint/designinputs excluded. Git HEAD
+  changed only commit metadata; verified backend/test bytes retain their frozen hashes.
+- Required design access recovery: native actual-project MCP list connected after scoped reconnect,
+  but both Primary and fresh read-only helper `ses_ef01d1057ffeRrUfU7lENbkCs2` discover0design tools.
+  Prepared native API `location.reload` is GLOBAL/all-loaded-locations, cancels pending permissions
+  and forms, running sessions continue at nextstep; does not restart productserver/containers/host or
+  edit config. Human explicitly chose `공유 재로딩 승인 (Recommended)` after effects disclosed.
+  Authorized exactly one reload then actualproject/source/renderinput revalidation, no blindgeneration.
+- Approved reload executed through native `opencode api post /api/location/reload`, command EXIT0.
+  Current request's Code Mode catalog stillempty; recovery is NOT yet verified. Next fresh native
+  goal step must rediscover/read exactproject and requiredbrief/images before commissioning review.
+  Do not repeat globalreload, silently changepermissions or use a standalone design fallback.
 
 ## C4–C7 current-evidence reconciliation (read-only, no operations resume)
 
@@ -368,7 +381,7 @@
   already implemented with independent repair evidence in `2026-10-04-external-runtime-application-bundle.md`
   and `2026-10-04-external-runtime-oci-scanner-link.md`. Do not reimplement or relabel as current
   operational acceptance. Current backend regression includes their contract tests; actual preparation
-  requires supplied protected runtime/wheelhouse/host records. Paused operations goal retains candidate
+   requires supplied protected runtime/wheelhouse/host records. Archived/cancelled operations goal retains candidate
   037d6366a4e7c496b7d6d2f045c88ce31ac2e6f2; newmaina672/C2 is NOT that candidate/release.
   No new image/signature/installation/release selected/produced by this continuation.
 - C6/FPC-15: old roadmap row saying degraded boot unimplemented is stale historical state. Actual
@@ -381,3 +394,77 @@
   containment/recovery stages. Generated simulations do not close these actual-evidence gates.
 - C7 has no selected detailed feed/resync/dataMCP or externalproducer/model/input/revision contract;
   material wire/authority decision required beforeimplementation. Existing data/analysiscontracts intact.
+
+## Goal deliverable-to-evidence audit — 2026-10-06 continuation
+
+The objective remains the full approved repeatable customer workflow, not just passing tests or
+closing C2. Completion requires all mandatory agent-owned work, independent checks, actual scoped
+browser/reload evidence, design-owned rendered defect closure, task-owned local commits and durable
+evidence. Customer/field/operations acceptance remains separate; missing evidence is not achieved.
+
+| Goal requirement / deliverable | Concrete evidence and remaining gate | Audit disposition |
+| --- | --- | --- |
+| Resume current checkout and approved requirements | Native goal42cd7bf4 active at audit; Git main7177620866cd45a2b93493b38ef4785598b16fb6; six C3 files + ledger pending. Reread checkpoint/product-state/task ledger, authority sequence, PRD1.1.1/1.1.2, ADR036/037/038 and routing. EXT-VAL slice not closed/reprioritized. | Revalidated; objective intact |
+| C1 exact-source scoped history/cursor | Commita672ea3; signed HTTP scoped80+4pass; original tests-directory8476pass; incremental cursor/provider-outside-guard evidence and reviewer sessions above. | Local technical evidence retained, not customer/field acceptance |
+| C2 exactly3 audited detail GETs and complete visible joins | Commit7177620; named Core projector/auth/README +4scope test files; frozen hashes/scoped95/bare8684+separate1pass/static0 above; actual FIELD_OPERATOR history/detail/reload/escape and projection/raw200. | Local technical evidence retained |
+| Preserve organization/Site/every relevant source WorkArea, strict V1/V2 and historical numeric meaning | C1/C2 exact binding and denial tests/reviews; INV040/060 enforced in existing Core scope/read paths; INV051/053/054/055/061 unchanged. No journal, grants, numerical profile, reconstruction engine or review authority changed in this continuation. | Preserved source snapshot; no metrological or operational claim |
+| C3 actual UI source, independent tests/static/build and auth/API browser persistence | Six pending files; final source hash JSON, copy-green scoped29/full981/static/build0 and post-smoke tsc0; actual generated Core/JWKS/PKCE browser and390/768/1440 state evidence in locally excluded review inputs. | Technically exercised generated assembly, provisional UI only |
+| C3 distinct design-owned rendered review and required defect closure | Prepared rendered-review-brief.md and actual screenshots/axe/focus/loading evidence exist. C1-V-01/02/03 final rendered closure missing; C3-A11Y-01 loading aria-prohibited-attr remains open in SkeletonList. Review not commissioned. | NOT achieved; required design tools unavailable |
+| C4 finish safe local verifier/recovery gaps without duplicate implementation | Actual bundle/Python binding/OCI source/schema/tests and dated plan status sections already implemented; expired-authority degraded-boot source/tests/plan already present. No concrete additional approved gap demonstrated. | Reconciled only; genuine candidate bundle/host preparation not newly verified |
+| C5 actual repeated customer t0→t1→t2, rights/CRS/vertical/provenance/OIDC/MCP/cost | No selected owner-supplied actual export/rights/customer identity/client or cost evidence available to this task. Generated records cannot replace these inputs. | NOT achieved; owner-supplied inputs required |
+| C6 actual containment, backup/restore/failure drills and named customer acceptance | Existing local simulations/code are not actual deployed recovery. Host/runtime/signer/configuration/backup custodian/destination/retention and customer gates remain unapproved/unverified. | NOT achieved; operations authority/evidence required |
+| C7 selected feed/resync/data-MCP/external-result contract | ADR038 D4/D5 and roadmap GAP04..10 retain material scope/authority/transport/output decisions; no selected detailed successor wire contract. | NOT achieved; material requirements/decision required, no guessed implementation |
+| Local Git, ownership and external-effect boundaries | Only C1/C2 source commits preserved; C3 remains provisional. No push/PR/deploy/registry/signing/live-authority/equipment/customer contact; operations goal cancelled/archived, not resumed. | External delivery not performed; C3 commit remains gated |
+| Safe owned-workspace cleanup and retained evidence | c3-history-red-20261006 detacheda672ea3 has2dirty test files and node_modules symlink to main. Baseline detail test differs from current; preserve worktree unchanged. Extra patch /tmp/opencode/customer-c3-red-baseline-preserved-20261006.patch SHA25660eab4000d792a49bcc3e6e107dc0800caf8a600ea5f645d7eb2aa01a913b548. | Retained exception, not deleted or forced clean |
+
+### Required-tool investigation and independent blocked audit
+- After the approved single shared reload, fresh native step and Code Mode discovery still expose
+  zero OpenDesign tools; the fresh helper also found none. Exact-project native MCP API reports
+  connected, native service API is healthy (2.0.22), session location is the actual repository and
+  native agent is Build. Read-only resource discovery returns no resources/templates.
+- Sanitized configuration/agent inspection confirms no Build design deny and design enabled with
+  default Code Mode. Installed proxy statically defines22tools including get_project/get_file/
+  start_run/get_run and a tools-list handler. This narrows the failure to catalog exposure but does
+  NOT prove an internal root cause or a successful recovery. Default CLI mcp list reported no
+  servers in its default location; exact-project API is authoritative for this task's connection.
+- No second global reload, service/container/host restart, permission change, standalone design
+  fallback, dependency installation or UI edit was performed. Shared service restart, if selected,
+  needs its own approval and may not fix the unproven catalog defect.
+- Independent reviewer `ses_ef0063e0effergSiA5V03TYhXr` inspected all open C tracks and found no
+  concrete independent authorized engineering task executable with current tools/inputs/contracts.
+  It verified C3's actual source defect, existing C4 tool/schema/test paths and dated implementation
+  evidence, C5/C6 input/operations gaps and C7 unresolved decisions; no test or visual rerun claimed.
+  Reservation: the old ignored contained-runtime progress.md link is absent from this checkout and
+  a bounded task-worktree lookup; do not infer genuine bytes/host evidence from that unavailable
+  record. The tracked dated plan sections establish local source history only.
+- Security incident in diagnostic output: a response-shape error caused API key values to be emitted
+  in a local tool trace. No values are reproduced or persisted here; owner rotation of the affected
+  Meta/NVIDIA/Context7 keys is required. No credential changes/sharing or cleanup of session history
+  was attempted. Follow-up diagnostics print only allowlisted nonsecret state and permission fields.
+
+### Independent final-snapshot verification (not a fresh full-suite/build run)
+- Test-runner `ses_ef005f2c4ffeZM0poST5LBMkNM`, terminal audit log
+  `/tmp/opencode/customer-goal-snapshot-audit-20261006.log`, independently compared actual working
+  files and committed bytes with frozen hashes. All C2 production/tests and six C3 source/test files
+  match the original full/static/build/browser snapshot; restored tsconfig SHA6b1807cf matches.
+- Fresh `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q` on history scope/coverage,
+  detail scope/coverage and external_result_review_proposals test files →62passed5.63s EXIT0.
+  Fresh `npm run test -- test/external-observation-history.test.tsx
+  test/site-observation-detail-exact-display.test.tsx test/external-observation-history-kinds.test.tsx`
+  from apps/dashboard →29passed/3files EXIT0. git diff and cached diff --check EXIT0.
+- Actual frozen logs confirm bare8684pass122skip101warnings920.47s EXIT0 (separate supplement1pass),
+  scoped95pass/ruff+mypy0, UI full981/129files/scoped29/static/build0 and post-smoke tsc0. No repeated
+  full suites/build/browser claims. The build used Next-generated tsconfig c870274d, not the later
+  restored6b1807cf; only source/test bytes were identical, restored config subsequently tsc-verified.
+- Required brief filenames:80checked0missing. Independent JSON parsing confirms21settled axe files
+  0violations0incomplete but all3loading axe files retain serious aria-prohibited-attr on2nodes.
+  rendered-review.md absent. These checks do NOT establish design quality or C3 completion.
+- Audit conclusion: NOT complete. C3 still requires unavailable design execution/review; all other
+  open tracks require genuine supplied inputs, new operations authorization or selected detailed
+  contracts. No safe independent approved engineering task demonstrated. Preserve unfinished UI,
+  review inputs and dirty baseline worktree; report concrete blockers rather than an automatic wait
+  or silently substitute Primary UI edits, synthetic acceptance or a narrower goal.
+- Same independent test-runner then checked this final ledger against its actual audit log: text-only
+  diff, accurate counts/limitations, unchanged production/UI hashes, no secret values, diff --check0.
+  Final disposition is required-tool/input/authorization/contract blocked, not product completion.
+  Preserve this evidence in a ledger-only local commit; checkpoint remains excluded. No external delivery.
