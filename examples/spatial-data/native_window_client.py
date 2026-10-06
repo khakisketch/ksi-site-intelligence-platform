@@ -244,7 +244,10 @@ class NativeWindowClient:
             if body.get("executionState") == "COMPLETED":
                 return body
             if body.get("executionState") in {"FAILED", "CANCELED", "EXPIRED"}:
-                raise NativeWindowClientError(body.get("reason") or "PREPARATION_FAILED")
+                reason = body.get("reason")
+                if not isinstance(reason, str) or re.fullmatch(r"[A-Z_]{1,80}", reason) is None:
+                    reason = "PREPARATION_FAILED"
+                raise NativeWindowClientError(reason)
             sleep(min(poll_seconds, max(0, deadline - monotonic())))
         raise NativeWindowClientError("DEADLINE_EXCEEDED")
 

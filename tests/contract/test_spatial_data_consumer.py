@@ -115,6 +115,125 @@ def test_consumer_error_reason_cannot_reflect_untrusted_private_fields() -> None
         client.close()
 
 
+@pytest.mark.parametrize("state", ["FAILED", "CANCELED", "EXPIRED"])
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "/synthetic/private/path",
+        "generated+untrusted-value",
+        "two\nlines",
+        {"private": "synthetic-marker"},
+        ["synthetic-marker"],
+        True,
+        7,
+        "A" * 81,
+        None,
+        "",
+    ],
+)
+def test_consumer_terminal_status_never_reflects_untrusted_reason(
+    state: str, reason: object
+) -> None:
+    module = client_module()
+    job_id = "sdj-v1-00000000-0000-0000-0000-000000000001"
+    body = {"jobId": job_id, "executionState": state, "reason": reason}
+    client = module.NativeWindowClient(
+        base_url="https://core.invalid",
+        site_id="site",
+        work_area_id="area",
+        token="generated-test-only",
+        max_json_bytes=4096,
+        max_file_bytes=4096,
+        timeout_seconds=2,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, stream=httpx.ByteStream(json.dumps(body).encode()))
+        ),
+    )
+    try:
+        with pytest.raises(module.NativeWindowClientError) as failure:
+            client.wait(job_id, timeout_seconds=1)
+        assert failure.value.reason == "PREPARATION_FAILED"
+        assert str(failure.value) == "PREPARATION_FAILED"
+    finally:
+        client.close()
+
+
+@pytest.mark.parametrize("state", ["FAILED", "CANCELED", "EXPIRED"])
+def test_consumer_terminal_status_preserves_safe_machine_reason(state: str) -> None:
+    module = client_module()
+    job_id = "sdj-v1-00000000-0000-0000-0000-000000000001"
+    body = {"jobId": job_id, "executionState": state, "reason": "ACCESS_REVOKED"}
+    client = module.NativeWindowClient(
+        base_url="https://core.invalid",
+        site_id="site",
+        work_area_id="area",
+        token="generated-test-only",
+        max_json_bytes=4096,
+        max_file_bytes=4096,
+        timeout_seconds=2,
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(200, stream=httpx.ByteStream(json.dumps(body).encode()))
+        ),
+    )
+    try:
+        with pytest.raises(module.NativeWindowClientError, match="^ACCESS_REVOKED$"):
+            client.wait(job_id, timeout_seconds=1)
+    finally:
+        client.close()
+
+
+def test_consumer_cli_does_not_print_terminal_response_private_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    module = client_module()
+    job_id = "sdj-v1-00000000-0000-0000-0000-000000000001"
+    marker = "/synthetic/untrusted-terminal-field"
+    body = {"jobId": job_id, "executionState": "FAILED", "reason": marker}
+    original_client = httpx.Client
+
+    def transported_client(**kwargs: object) -> httpx.Client:
+        kwargs["transport"] = httpx.MockTransport(
+            lambda _: httpx.Response(200, stream=httpx.ByteStream(json.dumps(body).encode()))
+        )
+        return original_client(**kwargs)
+
+    monkeypatch.setattr(module.httpx, "Client", transported_client)
+    token = tmp_path / "client.token"
+    token.write_text("generated-test-only")
+    token.chmod(0o600)
+    request = tmp_path / "request.json"
+    request.write_text("{}")
+    output = tmp_path / "unused-output"
+    code = module.main(
+        [
+            "--core-url",
+            "https://core.invalid",
+            "--site-id",
+            "site",
+            "--work-area-id",
+            "area",
+            "--token-file",
+            str(token),
+            "--request-file",
+            str(request),
+            "--idempotency-key",
+            "generated-only-key",
+            "--output-dir",
+            str(output),
+            "--max-file-bytes",
+            "4096",
+            "--deadline-seconds",
+            "2",
+        ]
+    )
+    captured = capsys.readouterr()
+    assert code == 2
+    assert json.loads(captured.out) == {"status": "blocked", "reason": "PREPARATION_FAILED"}
+    assert marker not in captured.out + captured.err
+    assert "generated-test-only" not in captured.out + captured.err
+    assert not output.exists()
+
+
 def test_consumer_token_refuses_symlinked_parent_before_reading_secret(tmp_path: Path) -> None:
     module = client_module()
     private = tmp_path / "private"
