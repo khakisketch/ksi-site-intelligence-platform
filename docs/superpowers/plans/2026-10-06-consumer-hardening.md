@@ -226,3 +226,109 @@ Coverage and signatures checked against current client: no public endpoint chang
   installation/containment and field/customer acceptance remain unclosed. Next material decisions:
   reviewed scoped V1 history read semantics (including WorkArea filtering); change-feed/resync and
   external-result provenance contracts. No permissions or contracts are invented to unblock them.
+
+## Task 6/7 — Customer configuration and route-input safety continuation
+- Human continuation: “이어서 개발 개선 진행해줘”; existing local software hardening scope,
+  no push/deploy, authority changes, visual work, operations-goal action or customer contact.
+- Workspace/base/target: existing clean `main`, `33acad9c76716de768a4dfd768c1c26d76173a3e`;
+  one Primary writer, no isolation need, other linked worktrees unchanged.
+- Requirement IDs: SDP-REQ-05/06/07/08, EXT-VAL-05/08 (supporting hardening only).
+- Owner module: standalone `examples/analysis` HTTP consumer; Core remains authority.
+- Acceptance criteria: configuration rejects ambiguous credential-bearing/non-HTTP Core URLs,
+  invalid bearer inputs and nonfinite/nonpositive/non-numeric request timeouts before creating
+  clients; all path inputs remain one safe segment and revisions positive integers before HTTP;
+  valid requests, returned opaque references and optional base-path prefix preserve identity.
+- Contracts affected: no wire/schema/authorization/policy change. Reject malformed local arguments
+  with value-free ValueError; no quoting, normalization or invented reference/revision identity.
+- Reference assets/adoption: REUSE current HTTP example and generated socket harness;
+  REFERENCE_ONLY Core path-safe grammar and server-issued reference shapes; no product-package
+  import or reference repository edits. Existing standalone dependency boundary remains intact.
+- Files to change: `examples/analysis/customer_v2.py`, its README,
+  `tests/contract/test_customer_v2_client.py`, this ledger and ignored checkpoint only.
+- Tests: loopback configuration/route RED→GREEN; valid prefixed and unprefixed paths/credentials;
+  current customer socket flow; independent final scoped/full Python, ruff/mypy/diff checks.
+- HIL or real-device assumptions: none; no installation/containment/export/accuracy acceptance.
+- License/data implications: synthetic loopback identities/bytes only, no live credentials/data.
+- Invariants: supports INV-060 credential and resource-intent isolation without replacing server
+  organization/Site/WorkArea checks; preserves INV-040/051/053/054/055/061, V1/V2 semantics.
+- Rollback: task-owned local commit revert only if requested; no journals/settings/data changed.
+- Root cause evidence: real httpx request construction plus substituted external transport:
+  URL userinfo changes Authorization scheme from Bearer to Basic; `inf`/None read timeouts retained;
+  work-order `../../auth/whoami?altered=yes` becomes `/auth/whoami` with a query before send.
+  No network/credential action occurred in this probe. HTTPX current documentation confirms
+  disabled timeout semantics and base-path merging/normalization.
+- Ruling: continue the bounded input-validation repair under adopted local autonomy; retain the
+  canonical ledger/current checkout instead of new skill registries or repeated plan approval.
+  Cost if wrong: earlier malformed local arguments now fail before HTTP; valid wire contracts unchanged.
+- Task 6 [x] RED configuration regressions; [x] minimal config guard; [x] GREEN/static checks.
+- Task 7 [x] RED route/revision regressions; [x] safe path builders; [x] GREEN/socket E2E.
+- Closeout [x] independent review/final checks; [x] evidence/docs; [x] task-only local commit.
+
+### Task 6/7 execution evidence
+- Task6 RED: initial configuration tests **20 failed / 3 passed** (1.27s); final including
+  empty query/fragment, invalid port and non-string wait timeouts **25 failed / 8 passed**
+  (4.80s). Failures were missing guards or inconsistent AttributeError/TypeError/InvalidURL,
+  not collection/import errors. Logs `/tmp/opencode/customer-config-{red,final-red}-20261006.log`.
+- Task6 GREEN: **59 passed** (17.75s), `/tmp/opencode/customer-config-green-20261006.log`.
+  Finite positive numeric check shared between constructor and wait; URL/token validation before
+  either HTTP client. Constructor does not infer OIDC role or permission from token text.
+- Task7 RED: **58 failed / 2 passed** (24.66s),
+  `/tmp/opencode/customer-route-red-20261006.log`. Scope/route type, delimiter, traversal,
+  percent-encoding and every dynamic-route family exercised; positive opaque refs preserved.
+- Task7 GREEN: client and actual Core/object/UDS customer HTTP workflow **122 passed** (85.84s),
+  `/tmp/opencode/customer-input-green-20261006.log`; ruff client/test, mypy client and diff-check
+  exit0. This is Primary verification only; independent closeout still pending.
+- Path builders validate WorkOrder, revision/ref and analysis identity before interpolation;
+  evidence refs validated separately. Same Core path-safe grammar is retained locally because the
+  example must import only stdlib/httpx, not product packages. No new reference-prefix/length rule,
+  URL quoting or server authorization decision. Positive test preserves dotted/underscored ID,
+  exact server refs, revision2, caller idempotency key and optional Core path prefix.
+- Request timeout is per HTTPX network operation, not a total wall-clock response deadline.
+  Waiting still cannot cancel an in-flight request; README explicitly retains that limit.
+- Independent reviewer `ses_ef0b072a2ffeLu5HGeNXmxo6fq`: examined complete pending bundle,
+  actual Core ID emitters/path grammar and RED/GREEN logs; no blocking/important findings.
+- Final: minor (deferred): add non-string submission/evidence/analysis cases beyond current
+  WorkOrder type matrix. Shared validator already rejects them, but extra family-level coverage
+  would protect against a future bypass; current all-family traversal cases remain present.
+- Final: minor (deferred): explicit Core URL control filter stops at ASCII32. Primary checked
+  DEL127 already becomes sanitized ValueError through httpx; U+0085 in a path is accepted and
+  percent-encoded. A broader control policy needs compatibility consideration (Unicode hosts/paths
+  can be valid), not a blanket ASCII-only URL rule. No observed credential or route-scope bypass.
+- Final: Ruling: retain existing header/query/cursor/object-fragment behavior outside route-input
+  validation; keys/cursors are not interpolated path IDs, fragment does not reach HTTP transport.
+  Cost if wrong: separate malformed header/query handling remains an independent follow-up, not
+  covered as a new guarantee by this repair. No automatic retries or key synthesis introduced.
+- Final: Ruling: reviewer set aside independent final execution and operational/human/UI acceptance.
+  Independent scoped/full execution is now supplied below; UI is unchanged and installation,
+  containment, export/accuracy, human acceptance and EXT-VAL closure remain unverified/open.
+  Cost if wrong: this software evidence must not be used as release or customer acceptance.
+- Independent test-runner `ses_ef0b0727effeWfexdYybqMPJVu`, existing venv/umask077:
+  `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q
+  tests/contract/test_customer_v2_client.py tests/contract/test_v2_customer_http_flow.py`
+  → **122 passed** (86.18s), exit0;
+  `.venv/bin/ruff check` client and both test targets, `.venv/bin/mypy
+  examples/analysis/customer_v2.py`, `git diff --check` all exit0.
+- Same independent session full command `PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q`
+  → **8,641 passed / 122 skipped / 101 warnings / 0 failed**, 915.33s, exit0. Logs:
+  `/tmp/opencode/customer-input-independent-{scoped,static,full}-20261006.log`;
+  full log ends with result/`EXIT_CODE=0`. No custom test exclusions or alternate authority inputs.
+- Skips remain122 including genuine-installation NOT_RUN. Observed warnings include RefResolver
+  deprecation, raster georeference, multithreaded fork and ifcopenshell destructor unraisable;
+  warning count matches prior full run but is not operational acceptance or proof of every warning's
+  cause. No source changes to those unrelated components were made.
+- Frozen verification snapshot (checked before/after by verifier and re-read by Primary):
+  client SHA256 `b10154014001af2831390ddda6c5a0ad314dbc81a31208ad424f998e6f576377`,
+  test `24625c61d08e4dd4711d88ab5185ad3f53e5551bb6045b4c6d5bcddb50ceddfa`.
+  All88added cases (119client vs31prior +3unchanged socket flows) account for full8553→8641.
+  No executable/test changes after independent verification.
+- Local preservation inventory: exactly client, clienttest, README and this ledger; checkpoint
+  excluded. Subject `fix: validate customer configuration and route identifiers`.
+  No new worktree/merge/cleanup needed, existing unrelated worktrees and ignored outputs preserved.
+  No push/PR/deploy, persistent grant/data/policy change, operations-goal action or product closure.
+- Pre-commit index inspected: exact four-file inventory above, cached diff-check exit0.
+  High-confidence private-key/cloud-key/GitHub-token/JWT pattern scan returned0 matches (not an
+  exhaustive secret audit). Checkpoint and ignored outputs are not staged.
+- Technical completion covers Tasks6/7 only. Next material candidates remain a reviewed scoped V1
+  history read/WorkArea-filter contract (unblocks positive history without ADMIN), provenance-bound
+  feed/resync or external-result contract, and real customer export/operational acceptance inputs.
+  Neither this commit nor passing synthetic tests authorizes those missing decisions.

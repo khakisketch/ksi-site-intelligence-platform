@@ -83,6 +83,20 @@ times, producers, or vertical references.
 
 ## Safety notes
 
+* Configure an explicit HTTP(S) Core URL without userinfo, query or fragment;
+  a deployment path prefix is allowed. URL credentials can otherwise replace
+  the supplied Bearer credential. Tokens must be nonempty printable ASCII
+  without internal whitespace (surrounding whitespace is stripped).
+* Request and polling timeouts must be finite positive numbers, not booleans,
+  strings or `None`. The request timeout bounds HTTPX's individual network
+  operations, not the total response duration.
+* Site/WorkArea and route IDs must match `[A-Za-z0-9][A-Za-z0-9_.-]*`;
+  revisions must be positive integers, not booleans or numeric strings.
+  Malformed values fail locally with `ValueError` before HTTP, without echoing
+  them. The client never escapes or normalizes an ID to make it acceptable.
+  Use the returned server `submissionRef`/`evidenceRef`, not raw customer IDs.
+  This local path check does not establish existence, permission or suitability;
+  Core still validates all bindings and organization/Site/WorkArea scope.
 * The class never prints tokens or grant URLs. Object PUT failures omit the
   URL and response body, including on transport failure (`CustomerHttpError.status == 0`
   means no HTTP response). Optional `artifact_id` is available on the error as
@@ -110,6 +124,12 @@ times, producers, or vertical references.
 ```console
 $ umask 077
 $ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q tests/contract/test_v2_customer_http_flow.py
+```
+
+Configuration, path-input, object-upload and polling regressions:
+
+```console
+$ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q tests/contract/test_customer_v2_client.py
 ```
 
 Trusted setup lives in `tests/support/v2_customer_http_harness.py`; the

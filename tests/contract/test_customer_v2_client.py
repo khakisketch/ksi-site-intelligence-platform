@@ -9,6 +9,7 @@ from collections.abc import Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import httpx
 import pytest
@@ -20,7 +21,9 @@ from customer_v2 import CustomerHttpError, CustomerV2Client  # noqa: E402
 
 @pytest.fixture
 def server() -> Iterator[SimpleNamespace]:
-    state = SimpleNamespace(requests=[], status=204, views=[], cookie=False)
+    state = SimpleNamespace(
+        requests=[], status=204, views=[], cookie=False, core_status=201, core_body={}
+    )
 
     class Handler(BaseHTTPRequestHandler):
         def do_PUT(self) -> None:
@@ -42,6 +45,14 @@ def server() -> Iterator[SimpleNamespace]:
             self.send_header("Content-Type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(view).encode())
+
+        def do_POST(self) -> None:
+            data = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            state.requests.append((self.path, dict(self.headers), data))
+            self.send_response(state.core_status)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(state.core_body).encode())
 
         def log_message(self, *_args: object) -> None:
             pass
@@ -211,9 +222,9 @@ def test_poll_deadline_caps_last_sleep_and_prevents_another_request(
     assert len(server.requests) == 2
 
 
-@pytest.mark.parametrize("timeout", [0.0, -1.0, float("nan"), float("inf"), True])
+@pytest.mark.parametrize("timeout", [0.0, -1.0, float("nan"), float("inf"), True, None, "1"])
 def test_invalid_poll_timeout_fails_before_io(
-    client: CustomerV2Client, server: SimpleNamespace, timeout: float
+    client: CustomerV2Client, server: SimpleNamespace, timeout: Any
 ) -> None:
     server.views = [{"executionState": "COMPLETED"}]
     with pytest.raises(ValueError):
@@ -238,3 +249,196 @@ def test_poll_returns_terminal_or_actionable_view_without_sleep(
     assert client.wait_for_analysis("analysis-a") == view
     assert clock.sleeps == []
     assert len(server.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "http://user:synthetic-secret@core.test",
+        "https://user@core.test",
+        "http://core.test?token=synthetic-secret",
+        "http://core.test#synthetic-secret",
+        "http://core.test?",
+        "http://core.test#",
+        "http://core.test:invalid",
+        "ftp://core.test",
+        "/relative",
+        "http://",
+        "http://core.test\n",
+        None,
+        123,
+    ],
+)
+def test_invalid_core_configuration_url_is_rejected_without_echo(base_url: Any) -> None:
+    with pytest.raises(ValueError) as failure, CustomerV2Client(
+        base_url, site_id="site-a", work_area_id="wa-a", token="test-only-token"
+    ):
+        pass
+    assert "synthetic-secret" not in str(failure.value)
+
+
+@pytest.mark.parametrize("timeout", [None, "30", True, 0, -1, float("inf"), float("nan")])
+def test_invalid_request_timeout_is_rejected_at_configuration(timeout: Any) -> None:
+    with pytest.raises(ValueError), CustomerV2Client(
+        "http://core.test", site_id="site-a", work_area_id="wa-a",
+        token="test-only-token", timeout_seconds=timeout,
+    ):
+        pass
+
+
+@pytest.mark.parametrize("token", [123, True, "synthetic-secret\ninternal", "non-ascii-한글"])
+def test_invalid_bearer_input_is_rejected_without_echo(token: Any) -> None:
+    with pytest.raises(ValueError) as failure, CustomerV2Client(
+        "http://core.test", site_id="site-a", work_area_id="wa-a", token=token
+    ):
+        pass
+    assert "synthetic-secret" not in str(failure.value)
+
+
+@pytest.mark.parametrize("prefix", ["", "/core-prefix"])
+def test_valid_core_configuration_preserves_prefix_and_bearer(
+    server: SimpleNamespace, prefix: str
+) -> None:
+    server.views = [{"workOrderId": "wo-a"}]
+    with CustomerV2Client(
+        server.origin + prefix, site_id="site-a", work_area_id="wa-a",
+        token="  test-only-token  ", timeout_seconds=1,
+    ) as consumer:
+        assert consumer.get_work_order("wo-a") == {"workOrderId": "wo-a"}
+    path, headers, _ = server.requests[0]
+    assert path == prefix + "/v1/observation-work-orders/wo-a"
+    assert headers["Authorization"] == "Bearer test-only-token"
+
+
+@pytest.mark.parametrize("field", ["site_id", "work_area_id"])
+@pytest.mark.parametrize("value", ["", "../other", "bad/id", "id?x=y", "%2f", None])
+def test_invalid_scope_identifier_is_rejected_at_configuration(field: str, value: Any) -> None:
+    scope = {"site_id": "site-a", "work_area_id": "wa-a", field: value}
+    with pytest.raises(ValueError), CustomerV2Client(
+        "http://core.test", token="test-only-token", **scope
+    ):
+        pass
+
+
+@pytest.mark.parametrize(
+    "identifier",
+    ["", "..", "../../auth/whoami", "id?x=y", "id#fragment", "id%2fother", "id\\other",
+     "id\n", "id with space", "한글", None, 123],
+)
+def test_route_identifier_cannot_change_target_before_io(
+    client: CustomerV2Client, server: SimpleNamespace, identifier: Any
+) -> None:
+    server.views = [{}]
+    with pytest.raises(ValueError):
+        client.get_work_order(identifier)
+    assert server.requests == []
+
+
+@pytest.mark.parametrize(
+    "method,kwargs",
+    [
+        ("get_registration_context", {}),
+        ("register_submission_v2", {"submission": {}}),
+        ("get_revision", {"submission_ref": "submission-a"}),
+        ("request_upload_grants", {"submission_ref": "submission-a"}),
+        ("seal_revision", {"submission_ref": "submission-a"}),
+        ("get_inspection", {"submission_ref": "submission-a"}),
+        ("declare_evidence", {"submission_ref": "submission-a", "intent": {},
+                              "idempotency_key": "ev-a"}),
+        ("list_evidence", {"submission_ref": "submission-a"}),
+        ("grant_evidence_upload", {"submission_ref": "submission-a", "evidence_ref": "evidence-a",
+                                   "idempotency_key": "ev-a"}),
+        ("seal_evidence", {"submission_ref": "submission-a", "evidence_ref": "evidence-a",
+                           "idempotency_key": "ev-a"}),
+    ],
+)
+def test_all_work_order_routes_reject_target_changing_identifiers(
+    client: CustomerV2Client, server: SimpleNamespace, method: str, kwargs: dict[str, Any]
+) -> None:
+    server.views = [{"grants": [], "items": []}]
+    with pytest.raises(ValueError):
+        getattr(client, method)(work_order_id="bad/../other", **kwargs)
+    assert server.requests == []
+
+
+@pytest.mark.parametrize(
+    "method,kwargs",
+    [
+        ("get_revision", {}), ("request_upload_grants", {}), ("seal_revision", {}),
+        ("get_inspection", {}), ("list_evidence", {}),
+        ("declare_evidence", {"intent": {}, "idempotency_key": "ev-a"}),
+        ("grant_evidence_upload", {"evidence_ref": "evidence-a", "idempotency_key": "ev-a"}),
+        ("seal_evidence", {"evidence_ref": "evidence-a", "idempotency_key": "ev-a"}),
+    ],
+)
+def test_all_revision_routes_reject_target_changing_submission_refs(
+    client: CustomerV2Client, server: SimpleNamespace, method: str, kwargs: dict[str, Any]
+) -> None:
+    server.views = [{"grants": [], "items": []}]
+    with pytest.raises(ValueError):
+        getattr(client, method)(work_order_id="wo-a", submission_ref="bad/../other", **kwargs)
+    assert server.requests == []
+
+
+@pytest.mark.parametrize("method", ["grant_evidence_upload", "seal_evidence"])
+def test_evidence_routes_reject_target_changing_evidence_refs(
+    client: CustomerV2Client, server: SimpleNamespace, method: str
+) -> None:
+    with pytest.raises(ValueError):
+        getattr(client, method)("wo-a", "submission-a", "bad/../other", idempotency_key="ev-a")
+    assert server.requests == []
+
+
+@pytest.mark.parametrize(
+    "method,kwargs",
+    [
+        ("get_analysis", {}), ("get_analysis_evidence", {}),
+        ("get_coverage_range", {"start": 0, "end": 31}), ("wait_for_analysis", {}),
+        ("get_review_target", {}), ("list_reviews", {}),
+        ("post_review", {"target": {}, "decision": "ACKNOWLEDGED", "comment": "checked",
+                         "idempotency_key": "review-a"}),
+    ],
+)
+def test_all_analysis_routes_reject_target_changing_identifiers(
+    client: CustomerV2Client, server: SimpleNamespace, method: str, kwargs: dict[str, Any]
+) -> None:
+    server.views = [{"executionState": "COMPLETED"}]
+    with pytest.raises(ValueError):
+        getattr(client, method)(analysis_id="bad/../other", **kwargs)
+    assert server.requests == []
+
+
+@pytest.mark.parametrize("revision", [0, -1, True, 1.5, "1", "1/../2", None])
+def test_revision_must_be_positive_integer_before_io(
+    client: CustomerV2Client, server: SimpleNamespace, revision: Any
+) -> None:
+    server.views = [{}]
+    with pytest.raises(ValueError):
+        client.get_revision("wo-a", "submission-a", revision=revision)
+    assert server.requests == []
+
+
+def test_valid_route_preserves_server_submission_ref_and_requested_revision(
+    client: CustomerV2Client, server: SimpleNamespace
+) -> None:
+    server.views = [{"revision": 2}]
+    assert client.get_revision("wo-a_1.2", "ers-v1-" + "a" * 64, revision=2) == {"revision": 2}
+    assert server.requests[0][0] == (
+        "/v1/observation-work-orders/wo-a_1.2/external-reconstruction-submissions/"
+        "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/revisions/2"
+    )
+
+
+def test_valid_evidence_route_preserves_ref_and_idempotency_key(
+    client: CustomerV2Client, server: SimpleNamespace
+) -> None:
+    server.core_status = 200
+    client.seal_evidence("wo-a", "ers-v1-" + "a" * 64, "eev-v1-" + "b" * 64,
+                         revision=2, idempotency_key="evidence-seal-2")
+    path, headers, _ = server.requests[0]
+    assert path == (
+        "/v1/observation-work-orders/wo-a/external-reconstruction-submissions/"
+        "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/revisions/2/"
+        "evidence/eev-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb/seal"
+    )
+    assert headers["Idempotency-Key"] == "evidence-seal-2"

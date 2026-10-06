@@ -33,10 +33,30 @@ from __future__ import annotations
 
 import math
 import os
+import re
 import time
 from typing import Any
 
 import httpx
+
+
+def _identifier(value: str, field: str) -> str:
+    # Same path-safe grammar as Core; keep this example stdlib + httpx only.
+    if not isinstance(value, str) or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", value) is None:
+        raise ValueError(f"{field} must be a path-safe identifier")
+    return value
+
+
+def _positive_timeout(value: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("timeout must be finite and positive")
+    try:
+        seconds = float(value)
+    except OverflowError:
+        raise ValueError("timeout must be finite and positive") from None
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError("timeout must be finite and positive")
+    return seconds
 
 
 class CustomerHttpError(RuntimeError):
@@ -66,13 +86,27 @@ class CustomerV2Client:
         timeout_seconds: float = 30.0,
     ) -> None:
         resolved = token if token is not None else os.environ.get("KSI_CUSTOMER_TOKEN")
-        if resolved is None or not resolved.strip():
+        if not isinstance(resolved, str) or not resolved.strip() or any(
+            ord(char) < 33 or ord(char) > 126 for char in resolved.strip()
+        ):
             raise ValueError(
                 "a FIELD_OPERATOR OIDC token is required (argument or KSI_CUSTOMER_TOKEN)"
             )
+        if not isinstance(base_url, str) or any(ord(char) <= 32 for char in base_url):
+            raise ValueError("invalid Core base URL")
+        try:
+            url = httpx.URL(base_url)
+        except httpx.InvalidURL:
+            raise ValueError("invalid Core base URL") from None
+        if (
+            url.scheme not in ("http", "https") or not url.host or url.userinfo
+            or "?" in base_url or "#" in base_url
+        ):
+            raise ValueError("Core requires HTTP(S) without URL credentials, query or fragment")
+        timeout_seconds = _positive_timeout(timeout_seconds)
         self._base_url = base_url.rstrip("/")
-        self._site_id = site_id
-        self._work_area_id = work_area_id
+        self._site_id = _identifier(site_id, "site_id")
+        self._work_area_id = _identifier(work_area_id, "work_area_id")
         self._api = httpx.Client(
             base_url=self._base_url,
             headers={"Authorization": "Bearer " + resolved.strip()},
@@ -100,6 +134,20 @@ class CustomerV2Client:
         self.close()
 
     # -- internals ------------------------------------------------------
+    def _work_order_path(self, work_order_id: str) -> str:
+        return f"/v1/observation-work-orders/{_identifier(work_order_id, 'work_order_id')}"
+
+    def _revision_path(self, work_order_id: str, submission_ref: str, revision: int) -> str:
+        if type(revision) is not int or revision < 1:
+            raise ValueError("revision must be a positive integer")
+        return (
+            self._work_order_path(work_order_id) + "/external-reconstruction-submissions/"
+            f"{_identifier(submission_ref, 'submission_ref')}/revisions/{revision}"
+        )
+
+    def _analysis_path(self, analysis_id: str) -> str:
+        return f"/v2/sites/{self._site_id}/analyses/{_identifier(analysis_id, 'analysis_id')}"
+
     def _call(
         self,
         method: str,
@@ -137,12 +185,12 @@ class CustomerV2Client:
         )
 
     def get_work_order(self, work_order_id: str) -> dict[str, Any]:
-        return self._call("GET", f"/v1/observation-work-orders/{work_order_id}")
+        return self._call("GET", self._work_order_path(work_order_id))
 
     def get_registration_context(self, work_order_id: str) -> dict[str, Any]:
         return self._call(
             "GET",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-context",
+            self._work_order_path(work_order_id) + "/external-reconstruction-context",
         )
 
     # -- V2 reconstruction registration ----------------------------------
@@ -151,7 +199,7 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2",
+            self._work_order_path(work_order_id) + "/external-reconstruction-submissions-v2",
             json_body=submission,
             expected=(201,),
         )
@@ -161,8 +209,7 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "GET",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}",
+            self._revision_path(work_order_id, submission_ref, revision),
         )
 
     def request_upload_grants(
@@ -170,8 +217,7 @@ class CustomerV2Client:
     ) -> list[dict[str, Any]]:
         body = self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/upload-grants",
+            self._revision_path(work_order_id, submission_ref, revision) + "/upload-grants",
         )
         return list(body["grants"])
 
@@ -238,8 +284,7 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/seal",
+            self._revision_path(work_order_id, submission_ref, revision) + "/seal",
         )
 
     def get_inspection(
@@ -247,8 +292,7 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "GET",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/inspection",
+            self._revision_path(work_order_id, submission_ref, revision) + "/inspection",
         )
 
     # -- evidence remediation --------------------------------------------
@@ -263,8 +307,7 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/evidence",
+            self._revision_path(work_order_id, submission_ref, revision) + "/evidence",
             json_body=intent,
             idempotency_key=idempotency_key,
             expected=(201,),
@@ -275,8 +318,7 @@ class CustomerV2Client:
     ) -> list[dict[str, Any]]:
         body = self._call(
             "GET",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/evidence",
+            self._revision_path(work_order_id, submission_ref, revision) + "/evidence",
         )
         return list(body.get("items", []))
 
@@ -291,8 +333,8 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/upload-grant",
+            self._revision_path(work_order_id, submission_ref, revision)
+            + f"/evidence/{_identifier(evidence_ref, 'evidence_ref')}/upload-grant",
             idempotency_key=idempotency_key,
         )
 
@@ -307,8 +349,8 @@ class CustomerV2Client:
     ) -> dict[str, Any]:
         return self._call(
             "POST",
-            f"/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/"
-            f"{submission_ref}/revisions/{revision}/evidence/{evidence_ref}/seal",
+            self._revision_path(work_order_id, submission_ref, revision)
+            + f"/evidence/{_identifier(evidence_ref, 'evidence_ref')}/seal",
             idempotency_key=idempotency_key,
         )
 
@@ -332,10 +374,10 @@ class CustomerV2Client:
         )
 
     def get_analysis(self, analysis_id: str) -> dict[str, Any]:
-        return self._call("GET", f"/v2/sites/{self._site_id}/analyses/{analysis_id}")
+        return self._call("GET", self._analysis_path(analysis_id))
 
     def get_analysis_evidence(self, analysis_id: str) -> dict[str, Any]:
-        return self._call("GET", f"/v2/sites/{self._site_id}/analyses/{analysis_id}/evidence")
+        return self._call("GET", self._analysis_path(analysis_id) + "/evidence")
 
     def get_coverage_range(
         self, analysis_id: str, *, start: int, end: int
@@ -345,7 +387,7 @@ class CustomerV2Client:
             raise ValueError("coverage requires nonnegative inclusive integer bounds")
         if end - start + 1 > 65_536:
             raise ValueError("coverage range must be at most 65536 bytes")
-        path = f"/v2/sites/{self._site_id}/analyses/{analysis_id}/coverage"
+        path = self._analysis_path(analysis_id) + "/coverage"
         response = self._api.get(path, headers={"Range": f"bytes={start}-{end}"})
         if response.status_code != 206:
             raise CustomerHttpError("GET", path, response.status_code, "")
@@ -358,12 +400,7 @@ class CustomerV2Client:
     def wait_for_analysis(
         self, analysis_id: str, *, timeout_seconds: float = 120.0
     ) -> dict[str, Any]:
-        if (
-            isinstance(timeout_seconds, bool)
-            or not math.isfinite(timeout_seconds)
-            or timeout_seconds <= 0
-        ):
-            raise ValueError("analysis wait timeout must be finite and positive")
+        timeout_seconds = _positive_timeout(timeout_seconds)
         deadline = time.monotonic() + timeout_seconds
         delay = 0.2
         while True:
@@ -386,7 +423,7 @@ class CustomerV2Client:
 
     # -- human reviews ------------------------------------------------------
     def get_review_target(self, analysis_id: str) -> dict[str, Any]:
-        return self._call("GET", f"/v2/sites/{self._site_id}/analyses/{analysis_id}/review-target")
+        return self._call("GET", self._analysis_path(analysis_id) + "/review-target")
 
     def post_review(
         self,
@@ -401,7 +438,7 @@ class CustomerV2Client:
             raise ValueError("decision must be ACKNOWLEDGED or NEEDS_FOLLOW_UP")
         return self._call(
             "POST",
-            f"/v2/sites/{self._site_id}/analyses/{analysis_id}/reviews",
+            self._analysis_path(analysis_id) + "/reviews",
             json_body={"target": target, "decision": decision, "comment": comment},
             idempotency_key=idempotency_key,
             expected=(201,),
@@ -417,6 +454,6 @@ class CustomerV2Client:
             params["cursor"] = cursor
         return self._call(
             "GET",
-            f"/v2/sites/{self._site_id}/analyses/{analysis_id}/reviews",
+            self._analysis_path(analysis_id) + "/reviews",
             params=params,
         )
