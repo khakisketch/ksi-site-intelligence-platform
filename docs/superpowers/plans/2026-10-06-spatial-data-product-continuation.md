@@ -1,6 +1,6 @@
 # Spatial data product continuation — 2026-10-06
 
-Status: ACTIVE checkout task; existing V1 reconciliation and bounded consumer repair.
+Status: ACTIVE checkout task; CONS-01 verified/committed, approved data-MCP spec → written plan.
 Goal: native session goal ef9e2d2c (active); entire platform objective remains open.
 Base / integration target: main `579cdfa95c330dc97222537b4dcc53757ba034e8`, same checkout,
 one writer; existing worktrees/evidence retained. No push, deployment or host changes.
@@ -53,8 +53,9 @@ No actual keys, credential files, customer private data or root-protected diagno
 - [x] CONS-01: corrected RED tests → minimal terminal-reason repair → GREEN/static/integration.
 - [x] Independent reviewer and test-runner freeze/related regression/full command evidence.
 - [x] CONS-01 task-owned local commit/index/hash audit; checkpoint transition follows.
-- [ ] Present successor choices grounded in actual missing functionality; selected material
-  design → written spec review → implementation plan review/method → approved execution.
+- [x] Present successor choices; Human selected dedicated local data-MCP direction.
+- [x] Write detailed spec; Human approved exact204c90a/SHA7ef7a677 and requested planning.
+- [ ] Written implementation plan review/method → approved execution.
 - [ ] Continue remaining authorized independent work; distinguish real-data/host/client gates
   from software/design progress, with no automatic publication or fabricated support.
 
@@ -293,3 +294,59 @@ change before its approval. Safe independent local engineering continues under t
 - HUMAN DIRECTION selection is not HUMAN WRITTEN-SPEC approval. Ask to review this exact
   proposal; only after approval invoke writing-plans and prepare its implementation plan.
   No uncreated plan approval, data-MCP activation/client install/live grant/egress inferred.
+
+## Human written-spec approval and implementation planning — 2026-10-06
+
+The Human selected **“명세 승인, 구현 계획 작성”** in the rendered question naming full
+`../specs/2026-10-06-spatial-data-mcp-v1-design.md` at204c90a. Approval binds the original
+SHA2567ef7a677 proposal, not an unseen successor. Spec status/review-gate annotations now
+reflect approval; its original §1–9 contractual body is unchanged.
+
+Implementation plan: `2026-10-06-spatial-data-mcp-v1.md`. Six sequential deliverables:
+strict shared DTO/isolated identity; current AI metadata/job/byte ack boundary; grant-filtered
+native discovery; dedicated finite stdio adapter; genuine generated SDK/HTTP/worker/consumer
+parity + next-observation/restart; independent review/test-runner/owned-Git closeout.
+This is one dependency-linked contract, not unrelated subsystems needing competing specifications.
+Recommended execution is Native one-writer with independent final reviewer/test-runner; method
+and written plan review remain pending. No runtime schema/source/test/activation changed here.
+
+Evidence after compaction: Gitmain204c90a clean before these doc edits, actual worktree inventory
+unchanged; product-state still openEXT-VAL. Authority/PRD§1.1.1/1.1.2/invariants/ADR036/037/038/
+first-request/roadmap/repository/document routing, Core README/manifests and actual source/grant/
+job/ASGI-download/credential/composition/catalog paths reread. Relevant tests/fixtures inspected,
+not run again merely for a documentation stage. No delivery README or test_analysis_mcp_adapter.py
+exists; use actual Core README/test_analysis_mcp_stdio.py, no invented command handed to runner.
+
+Installed public package metadata: mcp2.2.0/httpx0.28.1/pydantic2.13.4/mypy2.3.0. Existing SDK
+constructor/schema fields match low-level v2 reference. First read-only inventory stopped at
+missing Hatchling metadata; safe follow-up confirmed builder absent, no dependency installation.
+This blocks claiming wheel/sdist readiness, not safe source/SDK/HTTP development. Plan records
+required artifact smoke/build gate and separate environment preparation if no existing backend.
+Current uv lock/check/offline preference docs consulted through Context7; no lock/source/install
+command executed in this planning phase.
+
+Self-review covered spec§1–9/acceptance1–10, five review-focus failures, type/file map and proportion.
+Corrected missing optional candidate accumulation budget seam, avoided repeated all-catalog source
+resolution, added explicit MCP success/error schema compatibility, private metadata audit sequence/
+capacity, and bootstrap config representation bounds. These are plan-level enforcement details,
+not changed crop/job/Analysis/permission semantics or actual verified runtime output.
+
+### Planning verification and review handoff
+
+- Independent test-runner `ses_eef08feb5ffeBGw90AFNDcNdc3` ran one exact foreground
+  `.venv/bin/python - <<'PY'` document-verification script (hash/HEAD/spec-body/task/source-path
+  assertions + `git diff --check`), exit0. Exact stdin/original output retained in that session.
+- Verified plan226lines SHA256 `c9efd74ea599632b59d90a2995cd2369d2a90d78b56e2a30b004ac4fc2195f30`;
+  current approved-status spec303lines SHA256
+  `09416699e5b6aa8a30cead8659e3881b3c051f3685ac874d08868262339f6c31`;
+  original spec§1–9 body unchanged against approved204c90a/SHA7ef7a677.
+  Full current spec is NOT byte-identical to the original (status/gate annotations changed).
+- All15 named existing source/contract/test references present, tasks1–6 unchecked, five review
+  focus classes, no placeholders, clean whitespace/index and no product source diff. Ledger
+  verification snapshot was SHA b84952fb before adding this result paragraph.
+- This is structural/source-reference evidence plus Primary plan/spec self-review only.
+  No new runtime tests/SDK handshake/build/customer checks; earlier8719 suite is ee12062-consumer
+  evidence, not implementation of this plan. All runtime tasks remain unfinished.
+- Preserve original long-term authorization. Next gate: Human plan review + execution method;
+  recommend Native sequential with independent end review/test-runner because authority files
+  are shared. No automatic implementation or repeated approval-question loop while gate pending.

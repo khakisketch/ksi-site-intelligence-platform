@@ -1,7 +1,10 @@
 # Spatial Data MCP V1 — scoped AI discovery and native preparation
 
 Spec ID: SDP-CLIENT-01-AI
-Status: PROPOSED detailed contract, awaiting Human written-spec review; NOT implementation authority.
+Status: HUMAN-APPROVED detailed contract; implementation plan review pending, no runtime activation.
+Approval: Human selected “명세 승인, 구현 계획 작성” for commit204c90a on2026-10-06.
+Approved proposal SHA256: `7ef7a677b20b04e5407796bd1a1266b8e31dac2d762fcddbd0e65b560e7c9c93`.
+The proposed-language body below is the reviewed contract, preserved without semantic edits.
 Date: 2026-10-06
 Human direction: selected “전용 로컬 데이터 MCP (추천)” from the rendered architecture question.
 Approved direction: dedicated local stdio adapter, explicit Core AI identity/consent boundary,
@@ -293,7 +296,8 @@ fail closed when new wiring is absent; no rewriting old events or erasing denied
 
 ## Written-spec review gate
 
-Review this complete proposal before implementation planning. Direction selection is recorded,
-but new principal/metadata-right interpretation/routes/tool names/file-reference envelope and
-resource configuration above are proposed contractual decisions, not yet Human-approved wire
-authority. Nothing in this file enables real data egress or production activation.
+Passed on2026-10-06: Human approved the exact299line proposal above at commit204c90a/SHA7ef7a677
+and requested implementation planning. New principal/metadata-right/routes/tools/reference and
+resource configuration are approved design, not implemented wire/runtime evidence. The next
+implementation-plan review and execution-method gate remains. Nothing in this file enables real
+data egress, installation, credential/grant issuance or production activation.
