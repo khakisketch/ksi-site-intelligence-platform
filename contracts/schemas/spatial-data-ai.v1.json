@@ -1,0 +1,1535 @@
+{
+  "$defs": {
+    "NodataRepresentation": {
+      "description": "JSON-safe parser observation; NAN is a token, never a non-finite JSON value.",
+      "enum": [
+        "NONE",
+        "FINITE",
+        "NAN",
+        "MASK"
+      ],
+      "title": "NodataRepresentation",
+      "type": "string"
+    },
+    "ObservedVerticalReferenceV1": {
+      "additionalProperties": false,
+      "description": "Parser-observed vertical identifier/basis, distinct from a user declaration.",
+      "properties": {
+        "identifier": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Identifier",
+          "type": "string"
+        },
+        "basis": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "identifier",
+        "basis"
+      ],
+      "title": "ObservedVerticalReferenceV1",
+      "type": "object"
+    },
+    "SpatialDataAiErrorV1": {
+      "additionalProperties": false,
+      "description": "Safe typed AI refusal; the message carries no raw Core body, path, or secret.",
+      "properties": {
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_FOUND",
+                "ACCESS_REVOKED",
+                "ACCESS_EXPIRED",
+                "RETENTION_EXPIRED",
+                "AI_EGRESS_DENIED",
+                "PROCESSING_LOCATION_DENIED",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "ACTIVATION_UNAVAILABLE",
+                "POLICY_UNAVAILABLE",
+                "SOURCE_UNSEALED",
+                "SOURCE_NOT_MEASURED",
+                "SOURCE_UNAVAILABLE",
+                "SOURCE_NOT_REGULAR_FILE",
+                "SOURCE_BYTES_MISMATCH",
+                "SOURCE_MEASUREMENTS_MISMATCH",
+                "UNSUPPORTED_ARTIFACT_KIND",
+                "UNSUPPORTED_SOURCE_PROFILE",
+                "INVALID_REQUEST_BOUNDS",
+                "INVALID_RESOURCE_LIMIT",
+                "CRS_MISMATCH",
+                "VERTICAL_REFERENCE_MISMATCH",
+                "UNSUPPORTED_GRID",
+                "UNREPRESENTABLE_GRID",
+                "INVALID_SOURCE_GEOMETRY",
+                "REQUEST_OUTSIDE_SOURCE",
+                "OUTPUT_OUTSIDE_GRANT",
+                "EMPTY_PIXEL_WINDOW",
+                "EMPTY_VALID_WINDOW",
+                "INVALID_SOURCE_SAMPLE",
+                "INVALID_SOURCE_MASK",
+                "INPUT_BYTE_LIMIT_EXCEEDED",
+                "INPUT_PIXEL_LIMIT_EXCEEDED",
+                "INPUT_BAND_LIMIT_EXCEEDED",
+                "OUTPUT_BYTE_LIMIT_EXCEEDED",
+                "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+                "WORKSPACE_LIMIT_EXCEEDED",
+                "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+                "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+                "PRIVATE_WORKSPACE_UNAVAILABLE",
+                "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+                "OUTPUT_ALREADY_EXISTS",
+                "OUTPUT_NOT_PRIVATE",
+                "RASTER_PREPARATION_FAILED",
+                "RASTER_WRITE_FAILED",
+                "OUTPUT_VERIFICATION_FAILED",
+                "EMPTY_OUTPUT",
+                "CONCURRENCY_LIMIT_EXCEEDED",
+                "IDEMPOTENCY_CONFLICT",
+                "FENCE_CONFLICT",
+                "LEASE_EXPIRED",
+                "REPORT_CONFLICT",
+                "CANCELED",
+                "CANCELLED",
+                "DEADLINE_EXCEEDED",
+                "STORAGE_UNAVAILABLE",
+                "INTEGRITY_MISMATCH",
+                "CURRENTNESS_UNAVAILABLE",
+                "AUDIT_UNAVAILABLE",
+                "RANGE_NOT_SUPPORTED",
+                "CLEANUP_FAILED",
+                "NOT_READY",
+                "UNAVAILABLE",
+                "RESOURCE_LIMIT_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "SPATIAL_DATA_CURSOR_STALE",
+              "type": "string"
+            }
+          ],
+          "title": "Reason"
+        },
+        "message": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "remediation": {
+          "items": {
+            "enum": [
+              "RETRY_REQUEST",
+              "REQUEST_NEW_GRANT",
+              "CONTACT_OPERATOR",
+              "REINSPECT_SOURCE",
+              "SUPPLY_SUPPORTED_SOURCE",
+              "REDUCE_REQUEST",
+              "REQUEST_NEW_JOB",
+              "WAIT_FOR_COMPLETION",
+              "CHECK_AUTHENTICATION",
+              "CHECK_AI_CONSENT",
+              "CHECK_PROCESSING_LOCATION"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Remediation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason",
+        "message",
+        "retryable",
+        "remediation"
+      ],
+      "title": "SpatialDataAiErrorV1",
+      "type": "object"
+    },
+    "SpatialDataAssetPageV1": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/SpatialDataAssetViewV1"
+          },
+          "maxItems": 200,
+          "title": "Items",
+          "type": "array"
+        },
+        "nextCursor": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nextcursor"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "SpatialDataAssetPageV1",
+      "type": "object"
+    },
+    "SpatialDataAssetViewV1": {
+      "additionalProperties": false,
+      "description": "Grant-filtered projection of one sealed DSM/ORTHO source for AI discovery.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "epochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Epochid",
+          "type": "string"
+        },
+        "submissionRef": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "artifactKind": {
+          "enum": [
+            "dsm",
+            "ortho"
+          ],
+          "title": "Artifactkind",
+          "type": "string"
+        },
+        "lifecycleState": {
+          "enum": [
+            "SEALED",
+            "SUPERSEDED"
+          ],
+          "title": "Lifecyclestate",
+          "type": "string"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "inspectionReportDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedCrsUnits": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsunits",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "resolution": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Resolution",
+          "type": "array"
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "enum": [
+            "float32",
+            "float64",
+            "uint8"
+          ],
+          "title": "Dtype",
+          "type": "string"
+        },
+        "permittedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Permittedbounds",
+          "type": "array"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "producerProcessedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerprocessedat"
+        },
+        "declarationRecordedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declarationrecordedat",
+          "type": "string"
+        },
+        "timestampProvenance": {
+          "const": "SUBMISSION_DECLARATION",
+          "default": "SUBMISSION_DECLARATION",
+          "title": "Timestampprovenance",
+          "type": "string"
+        },
+        "permittedOperations": {
+          "items": {
+            "enum": [
+              "READ",
+              "PREPARE"
+            ],
+            "type": "string"
+          },
+          "maxItems": 2,
+          "minItems": 1,
+          "title": "Permittedoperations",
+          "type": "array"
+        },
+        "restrictions": {
+          "default": [],
+          "items": {
+            "enum": [
+              "PERMISSION_DENIED",
+              "NOT_FOUND",
+              "ACCESS_REVOKED",
+              "ACCESS_EXPIRED",
+              "RETENTION_EXPIRED",
+              "AI_EGRESS_DENIED",
+              "PROCESSING_LOCATION_DENIED",
+              "GRANT_REQUIRED",
+              "AMBIGUOUS_GRANT",
+              "ACTIVATION_UNAVAILABLE",
+              "POLICY_UNAVAILABLE",
+              "SOURCE_UNSEALED",
+              "SOURCE_NOT_MEASURED",
+              "SOURCE_UNAVAILABLE",
+              "SOURCE_NOT_REGULAR_FILE",
+              "SOURCE_BYTES_MISMATCH",
+              "SOURCE_MEASUREMENTS_MISMATCH",
+              "UNSUPPORTED_ARTIFACT_KIND",
+              "UNSUPPORTED_SOURCE_PROFILE",
+              "INVALID_REQUEST_BOUNDS",
+              "INVALID_RESOURCE_LIMIT",
+              "CRS_MISMATCH",
+              "VERTICAL_REFERENCE_MISMATCH",
+              "UNSUPPORTED_GRID",
+              "UNREPRESENTABLE_GRID",
+              "INVALID_SOURCE_GEOMETRY",
+              "REQUEST_OUTSIDE_SOURCE",
+              "OUTPUT_OUTSIDE_GRANT",
+              "EMPTY_PIXEL_WINDOW",
+              "EMPTY_VALID_WINDOW",
+              "INVALID_SOURCE_SAMPLE",
+              "INVALID_SOURCE_MASK",
+              "INPUT_BYTE_LIMIT_EXCEEDED",
+              "INPUT_PIXEL_LIMIT_EXCEEDED",
+              "INPUT_BAND_LIMIT_EXCEEDED",
+              "OUTPUT_BYTE_LIMIT_EXCEEDED",
+              "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+              "WORKSPACE_LIMIT_EXCEEDED",
+              "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+              "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+              "PRIVATE_WORKSPACE_UNAVAILABLE",
+              "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+              "OUTPUT_ALREADY_EXISTS",
+              "OUTPUT_NOT_PRIVATE",
+              "RASTER_PREPARATION_FAILED",
+              "RASTER_WRITE_FAILED",
+              "OUTPUT_VERIFICATION_FAILED",
+              "EMPTY_OUTPUT",
+              "CONCURRENCY_LIMIT_EXCEEDED",
+              "IDEMPOTENCY_CONFLICT",
+              "FENCE_CONFLICT",
+              "LEASE_EXPIRED",
+              "REPORT_CONFLICT",
+              "CANCELED",
+              "CANCELLED",
+              "DEADLINE_EXCEEDED",
+              "STORAGE_UNAVAILABLE",
+              "INTEGRITY_MISMATCH",
+              "CURRENTNESS_UNAVAILABLE",
+              "AUDIT_UNAVAILABLE",
+              "RANGE_NOT_SUPPORTED",
+              "CLEANUP_FAILED",
+              "NOT_READY",
+              "UNAVAILABLE",
+              "RESOURCE_LIMIT_EXCEEDED"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Restrictions",
+          "type": "array"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "modificationNotice": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Modificationnotice",
+          "type": "string"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "analysisStatus": {
+          "const": "NOT_EVALUATED",
+          "default": "NOT_EVALUATED",
+          "title": "Analysisstatus",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "workOrderId",
+        "epochId",
+        "submissionRef",
+        "revision",
+        "artifactKind",
+        "lifecycleState",
+        "observedSha256",
+        "observedSizeBytes",
+        "inspectionReportDigest",
+        "inspectorBuildDigest",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "observedCrsUnits",
+        "transform",
+        "resolution",
+        "bandCount",
+        "dtype",
+        "permittedBounds",
+        "declarationRecordedAt",
+        "permittedOperations",
+        "attribution",
+        "modificationNotice",
+        "accuracyAssessed"
+      ],
+      "title": "SpatialDataAssetViewV1",
+      "type": "object"
+    },
+    "SpatialDataAvailabilityV1": {
+      "enum": [
+        "NOT_READY",
+        "AVAILABLE",
+        "ACCESS_REVOKED",
+        "ACCESS_EXPIRED",
+        "RETENTION_EXPIRED",
+        "UNAVAILABLE"
+      ],
+      "title": "SpatialDataAvailabilityV1",
+      "type": "string"
+    },
+    "SpatialDataExecutionStateV1": {
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "COMPLETED",
+        "FAILED",
+        "CANCELED",
+        "EXPIRED"
+      ],
+      "title": "SpatialDataExecutionStateV1",
+      "type": "string"
+    },
+    "SpatialDataFileReferenceV1": {
+      "additionalProperties": false,
+      "description": "Structured descriptor of the canonical Core file route, not a capability URL.",
+      "properties": {
+        "referenceVersion": {
+          "const": "spatial-data-file-reference.v1",
+          "default": "spatial-data-file-reference.v1",
+          "title": "Referenceversion",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}$",
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,254}$",
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "method": {
+          "const": "GET",
+          "default": "GET",
+          "title": "Method",
+          "type": "string"
+        },
+        "relativePath": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Relativepath",
+          "type": "string"
+        },
+        "outputSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Outputsha256",
+          "type": "string"
+        },
+        "outputSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Outputsizebytes",
+          "type": "integer"
+        },
+        "authenticationRequired": {
+          "const": true,
+          "default": true,
+          "title": "Authenticationrequired",
+          "type": "boolean"
+        },
+        "rangeSupported": {
+          "const": false,
+          "default": false,
+          "title": "Rangesupported",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "siteId",
+        "workAreaId",
+        "jobId",
+        "relativePath",
+        "outputSha256",
+        "outputSizeBytes"
+      ],
+      "title": "SpatialDataFileReferenceV1",
+      "type": "object"
+    },
+    "SpatialDataJobViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "createdAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Createdat",
+          "type": "string"
+        },
+        "executionState": {
+          "$ref": "#/$defs/SpatialDataExecutionStateV1"
+        },
+        "availability": {
+          "$ref": "#/$defs/SpatialDataAvailabilityV1"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_FOUND",
+                "ACCESS_REVOKED",
+                "ACCESS_EXPIRED",
+                "RETENTION_EXPIRED",
+                "AI_EGRESS_DENIED",
+                "PROCESSING_LOCATION_DENIED",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "ACTIVATION_UNAVAILABLE",
+                "POLICY_UNAVAILABLE",
+                "SOURCE_UNSEALED",
+                "SOURCE_NOT_MEASURED",
+                "SOURCE_UNAVAILABLE",
+                "SOURCE_NOT_REGULAR_FILE",
+                "SOURCE_BYTES_MISMATCH",
+                "SOURCE_MEASUREMENTS_MISMATCH",
+                "UNSUPPORTED_ARTIFACT_KIND",
+                "UNSUPPORTED_SOURCE_PROFILE",
+                "INVALID_REQUEST_BOUNDS",
+                "INVALID_RESOURCE_LIMIT",
+                "CRS_MISMATCH",
+                "VERTICAL_REFERENCE_MISMATCH",
+                "UNSUPPORTED_GRID",
+                "UNREPRESENTABLE_GRID",
+                "INVALID_SOURCE_GEOMETRY",
+                "REQUEST_OUTSIDE_SOURCE",
+                "OUTPUT_OUTSIDE_GRANT",
+                "EMPTY_PIXEL_WINDOW",
+                "EMPTY_VALID_WINDOW",
+                "INVALID_SOURCE_SAMPLE",
+                "INVALID_SOURCE_MASK",
+                "INPUT_BYTE_LIMIT_EXCEEDED",
+                "INPUT_PIXEL_LIMIT_EXCEEDED",
+                "INPUT_BAND_LIMIT_EXCEEDED",
+                "OUTPUT_BYTE_LIMIT_EXCEEDED",
+                "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+                "WORKSPACE_LIMIT_EXCEEDED",
+                "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+                "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+                "PRIVATE_WORKSPACE_UNAVAILABLE",
+                "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+                "OUTPUT_ALREADY_EXISTS",
+                "OUTPUT_NOT_PRIVATE",
+                "RASTER_PREPARATION_FAILED",
+                "RASTER_WRITE_FAILED",
+                "OUTPUT_VERIFICATION_FAILED",
+                "EMPTY_OUTPUT",
+                "CONCURRENCY_LIMIT_EXCEEDED",
+                "IDEMPOTENCY_CONFLICT",
+                "FENCE_CONFLICT",
+                "LEASE_EXPIRED",
+                "REPORT_CONFLICT",
+                "CANCELED",
+                "CANCELLED",
+                "DEADLINE_EXCEEDED",
+                "STORAGE_UNAVAILABLE",
+                "INTEGRITY_MISMATCH",
+                "CURRENTNESS_UNAVAILABLE",
+                "AUDIT_UNAVAILABLE",
+                "RANGE_NOT_SUPPORTED",
+                "CLEANUP_FAILED",
+                "NOT_READY",
+                "UNAVAILABLE",
+                "RESOURCE_LIMIT_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "remediation": {
+          "default": [],
+          "items": {
+            "enum": [
+              "RETRY_REQUEST",
+              "REQUEST_NEW_GRANT",
+              "CONTACT_OPERATOR",
+              "REINSPECT_SOURCE",
+              "SUPPLY_SUPPORTED_SOURCE",
+              "REDUCE_REQUEST",
+              "REQUEST_NEW_JOB",
+              "WAIT_FOR_COMPLETION",
+              "CHECK_AUTHENTICATION",
+              "CHECK_AI_CONSENT",
+              "CHECK_PROCESSING_LOCATION"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Remediation",
+          "type": "array"
+        },
+        "receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialDataReceiptV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "jobId",
+        "assetRef",
+        "siteId",
+        "workAreaId",
+        "createdAt",
+        "executionState",
+        "availability"
+      ],
+      "title": "SpatialDataJobViewV1",
+      "type": "object"
+    },
+    "SpatialDataMcpErrorV1": {
+      "additionalProperties": false,
+      "description": "Closed adapter error envelope: code plus bounded existing remediation values.",
+      "properties": {
+        "code": {
+          "anyOf": [
+            {
+              "enum": [
+                "UNKNOWN_TOOL",
+                "INVALID_TOOL_ARGUMENTS",
+                "CONFIGURATION_UNAVAILABLE",
+                "CORE_UNAVAILABLE",
+                "CORE_TIMEOUT",
+                "CORE_RESPONSE_TOO_LARGE",
+                "INVALID_CORE_RESPONSE",
+                "AI_EGRESS_UNACKNOWLEDGED",
+                "CONCURRENCY_LIMIT_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            {
+              "enum": [
+                "PERMISSION_DENIED",
+                "NOT_FOUND",
+                "ACCESS_REVOKED",
+                "ACCESS_EXPIRED",
+                "RETENTION_EXPIRED",
+                "AI_EGRESS_DENIED",
+                "PROCESSING_LOCATION_DENIED",
+                "GRANT_REQUIRED",
+                "AMBIGUOUS_GRANT",
+                "ACTIVATION_UNAVAILABLE",
+                "POLICY_UNAVAILABLE",
+                "SOURCE_UNSEALED",
+                "SOURCE_NOT_MEASURED",
+                "SOURCE_UNAVAILABLE",
+                "SOURCE_NOT_REGULAR_FILE",
+                "SOURCE_BYTES_MISMATCH",
+                "SOURCE_MEASUREMENTS_MISMATCH",
+                "UNSUPPORTED_ARTIFACT_KIND",
+                "UNSUPPORTED_SOURCE_PROFILE",
+                "INVALID_REQUEST_BOUNDS",
+                "INVALID_RESOURCE_LIMIT",
+                "CRS_MISMATCH",
+                "VERTICAL_REFERENCE_MISMATCH",
+                "UNSUPPORTED_GRID",
+                "UNREPRESENTABLE_GRID",
+                "INVALID_SOURCE_GEOMETRY",
+                "REQUEST_OUTSIDE_SOURCE",
+                "OUTPUT_OUTSIDE_GRANT",
+                "EMPTY_PIXEL_WINDOW",
+                "EMPTY_VALID_WINDOW",
+                "INVALID_SOURCE_SAMPLE",
+                "INVALID_SOURCE_MASK",
+                "INPUT_BYTE_LIMIT_EXCEEDED",
+                "INPUT_PIXEL_LIMIT_EXCEEDED",
+                "INPUT_BAND_LIMIT_EXCEEDED",
+                "OUTPUT_BYTE_LIMIT_EXCEEDED",
+                "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+                "WORKSPACE_LIMIT_EXCEEDED",
+                "SAMPLE_MEMORY_LIMIT_EXCEEDED",
+                "DECOMPRESSED_BYTE_LIMIT_EXCEEDED",
+                "PRIVATE_WORKSPACE_UNAVAILABLE",
+                "PRIVATE_WORKSPACE_CLEANUP_FAILED",
+                "OUTPUT_ALREADY_EXISTS",
+                "OUTPUT_NOT_PRIVATE",
+                "RASTER_PREPARATION_FAILED",
+                "RASTER_WRITE_FAILED",
+                "OUTPUT_VERIFICATION_FAILED",
+                "EMPTY_OUTPUT",
+                "CONCURRENCY_LIMIT_EXCEEDED",
+                "IDEMPOTENCY_CONFLICT",
+                "FENCE_CONFLICT",
+                "LEASE_EXPIRED",
+                "REPORT_CONFLICT",
+                "CANCELED",
+                "CANCELLED",
+                "DEADLINE_EXCEEDED",
+                "STORAGE_UNAVAILABLE",
+                "INTEGRITY_MISMATCH",
+                "CURRENTNESS_UNAVAILABLE",
+                "AUDIT_UNAVAILABLE",
+                "RANGE_NOT_SUPPORTED",
+                "CLEANUP_FAILED",
+                "NOT_READY",
+                "UNAVAILABLE",
+                "RESOURCE_LIMIT_EXCEEDED"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "SPATIAL_DATA_CURSOR_STALE",
+              "type": "string"
+            }
+          ],
+          "title": "Code"
+        },
+        "remediation": {
+          "items": {
+            "enum": [
+              "RETRY_REQUEST",
+              "REQUEST_NEW_GRANT",
+              "CONTACT_OPERATOR",
+              "REINSPECT_SOURCE",
+              "SUPPLY_SUPPORTED_SOURCE",
+              "REDUCE_REQUEST",
+              "REQUEST_NEW_JOB",
+              "WAIT_FOR_COMPLETION",
+              "CHECK_AUTHENTICATION",
+              "CHECK_AI_CONSENT",
+              "CHECK_PROCESSING_LOCATION"
+            ],
+            "type": "string"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Remediation",
+          "type": "array"
+        }
+      },
+      "required": [
+        "code",
+        "remediation"
+      ],
+      "title": "SpatialDataMcpErrorV1",
+      "type": "object"
+    },
+    "SpatialDataMcpJobViewV1": {
+      "additionalProperties": false,
+      "description": "Exact V1 job plus an optional file descriptor backed by its sealed receipt.",
+      "properties": {
+        "job": {
+          "$ref": "#/$defs/SpatialDataJobViewV1"
+        },
+        "fileReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SpatialDataFileReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "job"
+      ],
+      "title": "SpatialDataMcpJobViewV1",
+      "type": "object"
+    },
+    "SpatialDataReceiptV1": {
+      "additionalProperties": false,
+      "properties": {
+        "jobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Jobid",
+          "type": "string"
+        },
+        "jobDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Jobdigest",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "requestDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestdigest",
+          "type": "string"
+        },
+        "preparationProfile": {
+          "const": "ksi-native-window.v1",
+          "default": "ksi-native-window.v1",
+          "title": "Preparationprofile",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "grantDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Grantdigest",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "artifactKind": {
+          "enum": [
+            "dsm",
+            "ortho"
+          ],
+          "title": "Artifactkind",
+          "type": "string"
+        },
+        "sourceSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcesha256",
+          "type": "string"
+        },
+        "sourceSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Sourcesizebytes",
+          "type": "integer"
+        },
+        "requestedBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Requestedbounds",
+          "type": "array"
+        },
+        "requestedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Requestedcrsdigest",
+          "type": "string"
+        },
+        "actualBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Actualbounds",
+          "type": "array"
+        },
+        "pixelWindow": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "title": "Pixelwindow",
+          "type": "array"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Height",
+          "type": "integer"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "sourceTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Sourcetransform",
+          "type": "array"
+        },
+        "sourceResolution": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Sourceresolution",
+          "type": "array"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedVerticalReference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ObservedVerticalReferenceV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "bandCount": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "enum": [
+            "float32",
+            "float64",
+            "uint8"
+          ],
+          "title": "Dtype",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "$ref": "#/$defs/NodataRepresentation"
+        },
+        "nodataValue": {
+          "anyOf": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Nodatavalue"
+        },
+        "validPixelCount": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Validpixelcount",
+          "type": "integer"
+        },
+        "outputSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Outputsha256",
+          "type": "string"
+        },
+        "outputSizeBytes": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Outputsizebytes",
+          "type": "integer"
+        },
+        "accuracyAssessed": {
+          "const": false,
+          "title": "Accuracyassessed",
+          "type": "boolean"
+        },
+        "preparedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Preparedat",
+          "type": "string"
+        },
+        "declarationRecordedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Declarationrecordedat",
+          "type": "string"
+        },
+        "timestampProvenance": {
+          "const": "SUBMISSION_DECLARATION",
+          "default": "SUBMISSION_DECLARATION",
+          "title": "Timestampprovenance",
+          "type": "string"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "producerProcessedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Producerprocessedat"
+        },
+        "attribution": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Attribution",
+          "type": "string"
+        },
+        "modificationNotice": {
+          "maxLength": 4096,
+          "minLength": 1,
+          "title": "Modificationnotice",
+          "type": "string"
+        },
+        "limitations": {
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Limitations",
+          "type": "array"
+        },
+        "receiptDigest": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Receiptdigest"
+        }
+      },
+      "required": [
+        "jobId",
+        "jobDigest",
+        "sourceDigest",
+        "requestDigest",
+        "runtimeDigest",
+        "policyDigest",
+        "grantDigest",
+        "artifactId",
+        "artifactKind",
+        "sourceSha256",
+        "sourceSizeBytes",
+        "requestedBounds",
+        "requestedCrsDigest",
+        "actualBounds",
+        "pixelWindow",
+        "width",
+        "height",
+        "transform",
+        "sourceTransform",
+        "sourceResolution",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "bandCount",
+        "dtype",
+        "nodataRepresentation",
+        "validPixelCount",
+        "outputSha256",
+        "outputSizeBytes",
+        "accuracyAssessed",
+        "preparedAt",
+        "declarationRecordedAt",
+        "attribution",
+        "modificationNotice",
+        "limitations"
+      ],
+      "title": "SpatialDataReceiptV1",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

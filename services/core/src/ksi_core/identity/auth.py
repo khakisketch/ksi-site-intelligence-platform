@@ -24,6 +24,9 @@
   권한은 항상 ``{ANALYSIS_WORK}`` 고정이며 3D 재구성 권한과 분리한다.
 - ``ANALYSIS_MCP_CLIENT``(외부 Analysis MCP 클라이언트): role/device 없음,
   명시적인 Site/WorkArea grant 필수. Analysis API 전용 읽기·생성 권한만 받는다.
+- ``SPATIAL_DATA_MCP_CLIENT``(외부 Spatial Data MCP 클라이언트): role/device 없음,
+  명시적인 Site/WorkArea grant 필수. 기존 6종 data route + 2종 scoped discovery
+  GET에만 닿으며 SPATIAL_DATA_READ/REQUEST만 받는다.
 
 ## 왜 워커가 별도 종류인가 — ``EDGE_DEVICE`` 재사용 금지
 
@@ -111,6 +114,7 @@ class PrincipalKind(StrEnum):
     PROCESSING_WORKER = "PROCESSING_WORKER"
     ANALYSIS_WORKER = "ANALYSIS_WORKER"
     ANALYSIS_MCP_CLIENT = "ANALYSIS_MCP_CLIENT"
+    SPATIAL_DATA_MCP_CLIENT = "SPATIAL_DATA_MCP_CLIENT"
     SPATIAL_DATA_WORKER = "SPATIAL_DATA_WORKER"
     SPATIAL_DATA_CLIENT = "SPATIAL_DATA_CLIENT"
 
@@ -393,6 +397,32 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
             ):
                 raise AuthRegistryError(
                     f"{principal.principal_id}: ANALYSIS_MCP_CLIENT 는 명시적인 경로-안전 "
+                    f"{grant_name} 집합이 필요하다"
+                )
+
+    elif principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+        if principal.role is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: SPATIAL_DATA_MCP_CLIENT 는 role 을 가질 수 없다"
+            )
+        if principal.device_id is not None:
+            raise AuthRegistryError(
+                f"{principal.principal_id}: SPATIAL_DATA_MCP_CLIENT 는 device_id 를 가질 수 없다"
+            )
+        for grant_name, grants in (
+            ("allowed_site_ids", principal.allowed_site_ids),
+            ("allowed_work_area_ids", principal.allowed_work_area_ids),
+        ):
+            if (
+                type(grants) is not frozenset
+                or not grants
+                or any(
+                    not isinstance(grant, str) or not is_path_safe_identifier(grant)
+                    for grant in grants
+                )
+            ):
+                raise AuthRegistryError(
+                    f"{principal.principal_id}: SPATIAL_DATA_MCP_CLIENT 는 명시적인 경로-안전 "
                     f"{grant_name} 집합이 필요하다"
                 )
 
@@ -702,6 +732,19 @@ _SPATIAL_DATA_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("HEAD", _SPATIAL_DATA_BASE + "/{request_id}/file"),
     }
 )
+_SPATIAL_DATA_ASSET_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets"
+# Additive AI discovery identity: the six existing data route-method pairs plus the
+# two new scoped data-discovery GETs. Old principal allowlists stay byte-identical.
+_SPATIAL_DATA_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
+    set(_SPATIAL_DATA_ROUTE_ALLOWLIST)
+    | {
+        ("GET", _SPATIAL_DATA_ASSET_BASE),
+        ("GET", _SPATIAL_DATA_ASSET_BASE + "/{asset_ref}"),
+    }
+)
+_SPATIAL_DATA_MCP_CLIENT_PERMISSIONS: frozenset[Permission] = frozenset(
+    {Permission.SPATIAL_DATA_READ, Permission.SPATIAL_DATA_REQUEST}
+)
 
 
 def principal_permissions(principal: Principal) -> frozenset[Permission]:
@@ -722,6 +765,8 @@ def principal_permissions(principal: Principal) -> frozenset[Permission]:
         return _SPATIAL_DATA_WORKER_PERMISSIONS
     if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
         return _SPATIAL_DATA_CLIENT_PERMISSIONS
+    if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+        return _SPATIAL_DATA_MCP_CLIENT_PERMISSIONS
     if principal.role is None:
         # AuthRegistry 를 거친 Principal 은 이 분기에 도달하지 않는다(생성 시
         # role 필수를 거부) — 레지스트리 밖에서 직접 구성된 불변식 위반 객체가
@@ -843,6 +888,10 @@ async def _principal_request_scope(
     if principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT:
         route_path = getattr(request.scope.get("route"), "path", None)
         if (request.method.upper(), route_path) not in _SPATIAL_DATA_ROUTE_ALLOWLIST:
+            raise HTTPException(status_code=403, detail="권한이 부족하다")
+    elif principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+        route_path = getattr(request.scope.get("route"), "path", None)
+        if (request.method.upper(), route_path) not in _SPATIAL_DATA_MCP_ROUTE_ALLOWLIST:
             raise HTTPException(status_code=403, detail="권한이 부족하다")
     elif principal.kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
         route = request.scope.get("route")

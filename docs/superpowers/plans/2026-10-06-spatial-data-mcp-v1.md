@@ -35,7 +35,9 @@
 
 ## Declaration and ownership
 
-Status: WRITTEN PLAN awaiting Human review/execution method; unchecked steps are not runtime evidence.
+Status: HUMAN-APPROVED PLAN, subagent-driven execution selected; unchecked steps are not runtime evidence.
+Approval2026-10-06: Human selected “계획 승인·단계별 에이전트” for d0aac56/SHAc9efd74e.
+Reviewed plan body is preserved below; no new external-effect/install authorization.
 Task ID: SDP-CLIENT-01-AI; parent ledger `2026-10-06-spatial-data-product-continuation.md`.
 Base/integration target: main204c90a, one in-place writer; record actual execution base after documentation commit. No isolation needed absent a concurrent writer/user-checkout conflict.
 
@@ -106,11 +108,11 @@ code is the union of Task4's exact adapter codes and AI/Core reasons. Output-sch
 advertises object-root success-or-error alternatives, not an arbitrary JSON result. HTTP success
 response models never include the MCP error alternative; HTTP errors use SpatialDataAiErrorV1.
 
-- [ ] Step1 — Write RED tests: `test_ai_models_schema_concordance` asserts closed shapes and V1 output immutability; `test_file_reference_matches_authorized_job` rejects descriptor scope/digest/size/path mismatches and descriptor on non-AVAILABLE; `test_ai_identity_exact_routes` asserts exactly existing six data routes plus two discovery GETs, no Analysis/catalog/internal/global/flight routes; `test_ai_identity_requires_explicit_scope` rejects null/empty/mutable/bad path/role/device.
-- [ ] Step2 — Run `.venv/bin/python -m pytest tests/contract/test_spatial_data_ai_contracts.py tests/contract/test_spatial_data_mcp_identity.py -q`; expect new DTO/identity assertion failure before implementation, not malformed fixture failure. Preserve genuine RED output.
-- [ ] Step3 — Implement the six DTOs and isolated enum/validation/permission/allowlist branch. Validate reference-derived cross-field facts with the same native V1 source/receipt semantics; schema arrays/booleans/nonfinite/unknown fields match model acceptance. Add generated schema using existing `models_json_schema` pattern (schema generator can be test-local; do not hand-edit a contradictory schema).
-- [ ] Step4 — Run new tests plus `tests/contract/test_spatial_data_permissions.py tests/contract/test_analysis_mcp_identity.py tests/contract/test_spatial_data_contracts.py`; expect pass, old permissions/routes unchanged. Scope/schema cases include booleans/numeric strings, bounds reversal, traversal/controls, wrong revision/asset/job/digest and false accuracy claims.
-- [ ] Step5 — Review exact diff/index and local commit only Task1 files after scoped/static checks; record command/results in this ledger. No activation/provisioning.
+- [x] Step1 — Write RED tests: `test_ai_models_schema_concordance` asserts closed shapes and V1 output immutability; `test_file_reference_matches_authorized_job` rejects descriptor scope/digest/size/path mismatches and descriptor on non-AVAILABLE; `test_ai_identity_exact_routes` asserts exactly existing six data routes plus two discovery GETs, no Analysis/catalog/internal/global/flight routes; `test_ai_identity_requires_explicit_scope` rejects null/empty/mutable/bad path/role/device.
+- [x] Step2 — Run `.venv/bin/python -m pytest tests/contract/test_spatial_data_ai_contracts.py tests/contract/test_spatial_data_mcp_identity.py -q`; expect new DTO/identity assertion failure before implementation, not malformed fixture failure. Preserve genuine RED output.
+- [x] Step3 — Implement the six DTOs and isolated enum/validation/permission/allowlist branch. Validate reference-derived cross-field facts with the same native V1 source/receipt semantics; schema arrays/booleans/nonfinite/unknown fields match model acceptance. Add generated schema using existing `models_json_schema` pattern (schema generator can be test-local; do not hand-edit a contradictory schema).
+- [x] Step4 — Run new tests plus `tests/contract/test_spatial_data_permissions.py tests/contract/test_analysis_mcp_identity.py tests/contract/test_spatial_data_contracts.py`; expect pass, old permissions/routes unchanged. Scope/schema cases include booleans/numeric strings, bounds reversal, traversal/controls, wrong revision/asset/job/digest and false accuracy claims.
+- [x] Step5 — Review exact diff/index and local commit only Task1 files after scoped/static checks; record command/results in this ledger. No activation/provisioning.
 
 ## Task 2: Enforce current AI metadata rights at the actual response boundary
 
@@ -221,6 +223,7 @@ artifact verification boundary, not permission to narrow the requested functiona
 Recommended method: **Native** sequential execution with one independent whole-change reviewer
 and independent final test-runner. Tasks2–4 share source/grant/job/publication interfaces; one writer
 reduces authority drift and avoids redundant context cost. Independent security/result checks remain.
-Human should review this plan and confirm it captures the requested contract, then select Native
-or subagent-driven execution. Prior long-term local development mandate is preserved; this gate
-does not reopen commits/deployment decisions already scoped and does not authorize external effects.
+Human review passed: selected subagent-driven execution on2026-10-06 for the full plan atd0aac56.
+Use fresh sequential developer and task reviewer per stage, then whole-change reviewer/test-runner.
+Primary retains Git/checkpoint/integration ownership; helpers do not spawn helpers. Prior long-term
+local development mandate is preserved; this gate does not authorize external effects or installation.

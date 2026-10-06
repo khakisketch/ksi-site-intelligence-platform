@@ -55,7 +55,8 @@ No actual keys, credential files, customer private data or root-protected diagno
 - [x] CONS-01 task-owned local commit/index/hash audit; checkpoint transition follows.
 - [x] Present successor choices; Human selected dedicated local data-MCP direction.
 - [x] Write detailed spec; Human approved exact204c90a/SHA7ef7a677 and requested planning.
-- [ ] Written implementation plan review/method → approved execution.
+- [x] Human plan review passed atd0aac56/SHAc9efd74e; subagent-driven method selected.
+- [ ] Execute approved six-stage plan, per-task review and independent final verification.
 - [ ] Continue remaining authorized independent work; distinguish real-data/host/client gates
   from software/design progress, with no automatic publication or fabricated support.
 
@@ -350,3 +351,114 @@ not changed crop/job/Analysis/permission semantics or actual verified runtime ou
 - Preserve original long-term authorization. Next gate: Human plan review + execution method;
   recommend Native sequential with independent end review/test-runner because authority files
   are shared. No automatic implementation or repeated approval-question loop while gate pending.
+
+## Approved execution start — stage-by-stage agents
+
+Human chose **“계획 승인·단계별 에이전트”** for complete plan atd0aac56/SHA
+c9efd74ea599632b59d90a2995cd2369d2a90d78b56e2a30b004ac4fc2195f30.
+No remaining design/plan gate for these six tasks. Proceed sequentially without per-task approval;
+material external/security/installation effects remain excluded. Execution base d0aac56 on main.
+
+Ruling: use current checkout/main as approved in the plan and ambient workspace policy; only one
+source writer at a time — no concurrent implementation or new worktree needed. No dependency
+setup/baseline rerun solely from skill defaults: actual source freeze is unchanged since independent
+8719suite; fresh task tests will establish changed behavior. Cost if wrong: a scoped local task
+revert is available; preserve unknown user changes and all existing worktrees.
+Ruling: Primary performs Git/checkpoint/ledger, helpers source/test/report only; no helper commits
+or recursive delegation — preserves integration ownership. Harness disallows model overrides
+absent an explicit user model request; use native role defaults, not skill-generated model choices.
+Ruling: missing Hatchling remains artifact-build gate, not a reason to install or stop Task1–5.
+
+### Preflight cross-task conflict scan (spec binding, before Task1 dispatch)
+
+| Tasks | Shared file/interface | Check / ruling |
+| --- | --- | --- |
+| 1↔2 | new identity/AI DTO/error contracts; auth→source/grant/jobs | New kind must be recognized only in exact data branches; generic permissions/history unchanged |
+| 1↔3 | AssetView/Page and AI error | Strict projection/list bounds plus typed cursor conflict; no old V1 enum change |
+| 1↔4 | wrapper/error schemas and six typed tool results | New error DTO must be in advertised success-or-error schema, not arbitrary JSON |
+| 1↔5 | IDs/digests/ref validation | Generated TIFF/real HTTP/SDK must exercise contracts, not synthesize compliant result bodies |
+| 1↔6 | immutable schema/identity diff | Freeze all Task1 paths for final independent validation; not just latest commit |
+| 2↔3 | sources/grants/jobs/egress/composition | Metadata selection independent of crop geometry; discovery extends typed response gate, no geometry-based metadata shortcut |
+| 2↔4 | ack and current metadata response | Every adapter success requires distinct Core acknowledgment; error never carries protected payload |
+| 2↔5 | consent/credential/audit race | Barrier tests before headers; byte chunk currentness stays existing route, no downloaded-copy recall claim |
+| 2↔6 | audit/source/job/currentness source | Final read-only security review plus independent tests; no unconstrained loop or live grant provisioning |
+| 3↔4 | two source routes/filtered cursors | Exact path and closed projection + response scope; preserve generic cursor/metadata catalog |
+| 3↔5 | discovery pages/real HTTP query | Existing fixture MockTransport drops query; actual loopback fixture must preserve query for page evidence |
+| 3↔6 | bounded source candidate seam | Optional catalog budgets preserve old callers; dependency caps produce503, not empty success |
+| 4↔5 | package entry/config/SDK/consumer | Source-path stdio until permitted build backend; owner config/key separate; no current shared-venv sync |
+| 4↔6 | uv.lock/package/static/frame limit | Metadata-only offline lock update; no third-party drift; builder absence stays explicit |
+| 5↔6 | real parity/restart evidence and docs | Generated software checks do not establish customer/client-host/export/containment acceptance |
+| 1 self | strict models vs tests/auth | Real model/registry/schema assertions; no live token, source authority or widened original allowlist |
+| 2 self | preflight vs final send/audit | Guard checks source/current READ independently of byte availability; refreshed credential outside coordinator locks |
+| 3 self | list/detail/limits/ambiguity | Empty scoped page vs safe404/ambiguity; filtering before page, no rectangle union; finite pre-accumulation seam |
+| 4 self | config/bootstrap/transport/output | Required positive finite owner limits and fixed representation caps; output schema covers errors; no endpoint retries with new keys |
+| 5 self | source fixture vs genuine TIFF | Use actual generated parser/worker plus SDK/HTTP; synthetic-report-only fixtures cannot stand in for parity |
+| 6 self | verification vs readiness | No UI delta; independent source/API/stdio checks + separately required build, no product-state completion |
+
+Plan-scoped ignored scratch: `.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/`, marker matches
+this plan; existing two other scratch plans/.gitignore preserved. Its progress.md is a cache of
+this durable task record, not competing product/task authority. Task1 brief generated by installed
+skill script; global constraints supplied alongside it. Task1 owns only new DTO/schema/two tests
+and canonical auth.py. No other source writer until developer returns.
+
+### Task1 first implementation / review and bounded repair ruling
+
+Developer `ses_eef02487cffep60RkdP6xj1Vyq` produced exactly Task1's five owned files, no commit.
+Original reports/logs in plan scratch. RED missing-new-module collection error is genuine greenfield
+RED, not test fixture failure; GREEN71 and new+named old regressions292/4.94s; scoped Ruff/format/diff0.
+Primary checked actual logs/owned hashes; original source unchanged outside allowed auth/newfiles.
+Reviewer `ses_eeefca156ffej0cr7C7oZ9oLQt` judged spec compliant/quality accepted with four minor notes
+and five cross-task cannot-verify items. Review source package captured all new files, not only gitdiff.
+
+Primary technical dispositions before closure:
+- M1 verified: new `_ai_native_profile`/`_ai_capture_interval` duplicate V1's identical validators.
+  Ruling: eliminate copied rules by reusing those existing sibling-package validators directly
+  from spatial_data.py, with tests pinning original behavior; no V1 file/API change needed.
+  The review's blanket “do NOT import private names” is not a product boundary inside this same
+  contract family which already imports private _spatial_data types. Cost if wrong: localized
+  import refactor, not additional public geometry engine or silently divergent profile.
+- M3 verified: canonical-path equality alone allows a malicious Site segment containing slash/
+  query if it supplies a correspondingly constructed path. This contradicts spec§5's strict
+  no-arbitrary-path descriptor. Ruling: add path-safe segment constraint to NEW file-reference
+  Site/area fields and negative tests with matching crafted path; keep old V1 DTO fields unchanged.
+  Producer/transport checks remain necessary, but are not substitute for new descriptor validity.
+- M2 optional reversed capture/flight-route coverage deferred; reviewer found no present defect.
+  M4 original missing-module RED accepted; subsequent existing-module fixes use behavioral RED.
+- Cross-task items: code union T4, schema/HTTP composition T2–4, egress/rights T2–3,
+  discovery/cursor T3, full SDK/API/replay/frozen independent T5–6 are required remaining work,
+  not evidence Task1 supplied runtime consent or completed data-MCP.
+
+Fix round1 resumes original developer only, owned newDTO/newtest/schema (if constraints change).
+Regenerate schema mechanically; scoped re-review follows. Task1 not complete/committed yet.
+
+### Task1 verification closure — contracts and isolated identity only
+
+Fix round1 developer retained all owned-source scope; genuine behavioral RED10fail/2pass for
+matching hostile descriptor path→GREEN304. `_native_profile`/`_capture_interval` reuse leaves
+V1 immutable, generated schema adds only new descriptor scope patterns. Scoped reviewer
+`ses_eeefca156ffej0cr7C7oZ9oLQt` marked M1/M3 ADDRESSED with no new defects; M2 optional
+reversed-capture/flight-negative test breadth deferred for final triage, not silently closed.
+
+Independent test-runner `ses_eeef37cfdffebqpwGftl0IyoK5`: exact `.venv/bin/python -m pytest
+tests/contract/test_spatial_data_ai_contracts.py tests/contract/test_spatial_data_mcp_identity.py
+tests/contract/test_spatial_data_permissions.py tests/contract/test_analysis_mcp_identity.py
+tests/contract/test_spatial_data_contracts.py -q` →304passed/0skip/4.93s. Ruff check/format on
+newDTO/auth/two tests and gitdiffcheck all exit0. Five owned hashes and d0aac56 HEAD unchanged
+before/after. Primary read receipt argv/results and checks retained original log hashes.
+Receipt `.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-1-independent/receipt.json`;
+the directory is ignored task scratch, durable exact frozen hashes:
+
+| Task1 source | SHA256 |
+| --- | --- |
+| packages/event-contracts/src/ksi_event_contracts/spatial_data_ai.py | 802251dd58de60aba340b2a2da6afcda6c7deabc31c4297ccaa0489a149c89b6 |
+| contracts/schemas/spatial-data-ai.v1.json | bc81d67d272a8cf9b698e1d88c1217785dc794067403d2226baba195eeb7dc2c |
+| tests/contract/test_spatial_data_ai_contracts.py | d921ef8508d9cc2b4f41f4b3f05cb7ee30cb5262a6b2095a5d299b6ea1d1f8e8 |
+| tests/contract/test_spatial_data_mcp_identity.py | 2a44201d3366281ea2c675ef2b79c2b25675d024215f97412151df826f2578ae |
+| services/core/src/ksi_core/identity/auth.py | a322a2e13c3e2bc463b2bedfb319806787be138817bfb27b49590c0eb10ebeea |
+
+Task1: complete at scoped source level after Primary owned-index local commit. No running new
+adapter, discovery/egress implementation or provisioning/readiness implied. Required cross-task
+checks remain specifically assigned T2–6. Product EXT-VAL and long-term goal remain open.
+Resume revalidation: main/d0aac56/no extra productdiff; actual checkpoint/parent ledger/plan read,
+latest approval reused. Authority unchanged since approved plan, relevant product text reread;
+checkpoint's stale 'no source writes/Task1 dispatch next' corrected at this closure boundary.
