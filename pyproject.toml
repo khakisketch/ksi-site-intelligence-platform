@@ -55,6 +55,7 @@ ksi-equipment-intelligence = { workspace = true }
 ksi-defect-detection = { workspace = true }
 ksi-geo-spatial = { workspace = true }
 ksi-analysis-mcp = { workspace = true }
+ksi-spatial-data-mcp = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -87,6 +88,9 @@ dev = [
     # Local stdio adapter used only by the explicit Analysis MCP compatibility
     # tests.  It does not add an AI host configuration or a network listener.
     "ksi-analysis-mcp",
+    # Local stdio adapter used only by the explicit spatial-data MCP contract
+    # tests.  It does not add an AI host configuration or a network listener.
+    "ksi-spatial-data-mcp",
     # 같은 이유의 leaf 멤버(Phase 4 결함탐지 계약 + adapter, MODEL-P4-001). 실모델
     # 스택(torch/mmcv 등)은 [mixercseg] extra 로 격리 — 모델 보유 환경에서만 설치.
     "ksi-defect-detection",

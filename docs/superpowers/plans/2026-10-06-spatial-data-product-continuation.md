@@ -792,3 +792,164 @@ Task3 complete at scoped software sourcelevel after Primarytaskownedcommit. Task
 Task5actual SDK/HTTP/worker/independentconsumer/restart/nextobservation parity, Task6wholechange
 review/fullverification remainrequired. No nativehost/customer/realexport/operationalrelease
 acceptance/AIclientconfig/provisioning/push/deploy performed. ProductEXT-VAL and goalremainopen.
+
+### Task4 start — dedicated bounded stdio client
+
+Task3 committedf8afb011244e79586ca035473ac4d16dc5ac0a2e,14sourcepaths+plan/parentledger,
+cleanGit/main; taskbase/integrationf8afb01. Fresh sequentialdeveloper owns newadapter/tests/root
+workspace metadata only, noCore/Analysiswriter. Task1–3 not redispatched.
+FocusedContext7 currentSDKv2 constructor callbacks/explicitCallToolResult and uv offline lock/
+preferences consulted2026-10-07; installedmcp2.2.0 Server/result/tool/RPC fields inspected.
+Exactdocsummary in ownedtask4scratch, no training-only SDK syntax assumed.
+Ruling: finite configured structuredresponse limit also bounds actualserialized outgoing RPC
+frame including duplicatedtext/overhead; safe error that cannot fit closes safely, never
+truncatedJSON. SDKhandshake/tools/error output schemas must prove this, no silentSDKexception
+fallback. Input/environmentprivate credentials never scanned; generated fixturetokens only.
+Ruling: use owner-protected generatedfixture paths under thisplan's ignoredprivate scratch when
+systemtempancestors violate secureparentpolicy; never weaken productionparent checks merely
+to accommodate tmp_path. Root-owned immutable ancestry is not a non-owner tokenfile exception.
+
+### Task4 first implementation / review — required repairs, not accepted
+
+Task4 developer `ses_eeddc496affejlATAKJ3AjW6NB` source preserved after providerprotocolerror,
+same-child recovery returned19new/11oldAnalysisstdio/static9typing0; offlineuvlock additive22lines,
+thirdparties reportedlyunchanged, sourceclosure only. Originalmissing-moduleRED19 retained,
+fixture syntax/query setup fixes excluded. Current13ownedhashfreeze/reviewdiff generated;
+first package script accidentally included oldidentitytest in glob, assertioncaught14not13,
+correctedexplicit4newtest paths before actualreview; no oldsource modification.
+Reviewer `ses_eedc8192fffeBlc0BEhPg7iLar` required actualframe-byte accounting, budgetedlistTools,
+cannot-fit SDKerror path safeclosure. Overall compliance tick conflicts with these required
+findings; Task4 remains NOTcomplete/accepted. Report cites package positions notactualsource.
+
+Primary concrete source/reproductions and rulings:
+- I1/I2/I3 confirmed server frame estimator2*JSON+1024 ignores escapedtext and actualRPCids,
+  listTools/controlframes budgets absent, errorcannotfit raisedinto SDKgeneric fallback rather
+  than boundedclose. Synthetic backslash payload actualSDKJSONRPC frame60163B vsestimate41074B
+  (first setup lacked requiredjsonrpc field, correctedbeforeactualrepro). Measure actual bytes
+  at final SDKframe handoff includingnewline/id/textescaping for everyframe, boundedstderrclose
+  if safeerror itself cannotfit. No truncation/oversizedframework fallback or schema weakening.
+- P1 confirmed protectedread accepts group-writable0o770 ancestor; afteros.read syntheticfile
+  mtime changed butread accepted (no postreadfstat). Strengthen group/worldwrite checks, safe
+  ancestor descriptor walk/no symlink-swap race, pre/open/post/path stats and localfilebounds.
+  Fixed token representation4096B(+CRLF) applies regardlessownerquota; no control bytes/header
+  material accepted, safe stat/read failure. No actualcredentials read/replaced.
+- P2 HTTPS DNS origin core.example.com refused by literalIP-only implementation despite approved
+  exactHTTPSorigin allowance. Accept validated exactDNSHTTPS (nouserinfo/path/query/fragment/
+  controls, verifiedTLS/noambientproxy); only HTTP mustliteral-loopback. NoDNSnetworktestneeded.
+- P3 _file_reference refuses COMPLETED+UNAVAILABLE with retainedreceipt asINVALID_CORE_RESPONSE;
+  genuinehistory validmetadata mustreturnfileReference=null, never imply bytesavailable.
+  Queued/no-receipt/get and allvalid unavailable states require direct regression, no newjobwire.
+- P4 overall call deadline currently startsafter synchronous tokenfile/headerbudget work; move
+  budget toinvoke entry and bound asyncawait stages; expose no reservation/file/clientleaks.
+  SynchronousboundedCPU work cannot be hard-preempted; budgetcheck after parse/model/frame stages
+  required, no standingpermission from previously loaded credential. Use complete timeout/cancel
+  test proof, not fixture success counts alone.
+- P5 configuredidentifierbytes must apply idempotencykey and returnedcursor/count/scope fields;
+  digest lexicalformat shouldmatchactualsha256wire instead of loosehexdigtext. Genericbearer
+  substringban on identifiers advisory: headers/purpose/token fields closed already; don't
+  reject legitimate safely-routed identifier justbecause it contains a word.
+- P6 config RecursionError/startup/client invalidheader or nonlatin values mustsafeclosed, no
+  raw exception/traceback/input echo. Handwritten remediation map loses validatedCore meaning;
+  carry bounded recognized reason+remediation fromclosedmodel ratherthan reflection/default
+  guess. Genericunknownfailure codes stayclosed.
+
+Repairround1 scoped sameadapter/tests only, actualbehavioralRED before code forload-bearing
+defects plus all required negativeconfig/race/framing/cancel/cleanup cases. StageTask5realCore/
+TIFF/worker parity remainsseparate; adversarialTask4transport checks cannot be deferred to it.
+
+### Task4 fix1 review — actual I/O cleanup and safe refusals still required
+
+Fix1 actual17RED→39new/11oldAnalysis/83Task1/static9typing0;13originalSHAvalidated.
+Reviewer `ses_eedc8192fffeBlc0BEhPg7iLar` marked I1–3/P1–6 addressed, but found newImportant
+shortos.write ignored and only-newline outputbudget checks; close emits tail markedMinor.
+Ruling: tail emission is load-bearing no-partialJSON requirement, not optional cosmetic.
+Implement pre-growth bound and reliable shortwrite handling, discard incomplete tail onclose;
+transport interruption of already sent bytes cannot be recalled and must never claim success.
+
+Primary additional source verification:
+- SDK stdio.stdin_reader iterates unboundedlines then validate_json; current _bounded_stdio
+  passes only stdoutwrapper. Incomingframe bound absent beforeparse, CannotVerify nowconfirmed
+  gap. Reuse configuredmaxRequestBytes for the incomingprotocol frame representation (notnew
+  quota), bound reads/ids/deep malformedframes beforeSDK, safecodeclose/no rawfield reflection.
+- SDK taskgroup can surface ExceptionGroup; main only catches FrameBudgetExceeded singleton,
+  current malformed/runtime diagnostics sanitization incomplete. Add exactsafe stderr closure
+  for actual nestederror/backpressure/invalidinput, preserve cancellation, no traceback.
+- P1 postread stats compare inode/size/mtime only, don't revalidate mode/uid/nlink or ctime:
+  chmod/hardlink change while read mustnot authorize staleunsafe credential. Require full
+  observed metadata continuity and revalidate protectedmode/owner/nlink afterread/pathstat.
+- P6 table equality is not proof that any closed receivedremediation is retained; carry validated
+  reason/remediation asbounded facts from Coreerror, not rawmessage/default guess or newauthority.
+- Config opaque tokenprefix stringbearerX is not header scheme; keep no whitespace/control bytes
+  and don't reject a legitimate opaque credential solely prefixword. Noauthpermission change.
+- Fixture moved to ~/.cache duegroupwritable worktreeancestors; no securitypolicyweakened.
+  Ruling: permit ONLY new unique0700 temporarygenerated-test namespace under existingsecure
+  ownercache; no scanning realcache/credentials/hostconfig or chmodexistingfixednamed directories.
+  Preserve any previously created taskfixtures as identified; future writes isolated/per-run
+  with ownedcleanup, never overwrite unfamiliar/shared namespace. Harmlessfixturelocation is
+  not installation/securityweakening/provisioning. Existingcache path provenance is task4fixtures.
+
+Fixround2 sameadapter/tests only, genuine syscall/splitframe/SDKstderr/deadline/receivedremediation
+RED plus exactnegativecoverage. Nativebackpressure finite configuredcall budget; do not silently
+turn responsewriter into unbounded blocking thread or drop bytes on success.
+
+### Task4 fix2 recovery / scoped review and remaining budget repairs
+
+Fix2 child returned provider protocolerror after saving complete report/logs; actual54new/11old/
+83Task1/static9typing0 retained. No blind redispatch needed: current13snapshot vs priorfreeze
+proved, fullfixreport exists. Reviewer closed shortwrite/tail/stdin/stat/remediation/cachefindings,
+but called reset-on-EAGAIN timeout Minor. Ruling: total finite frame deadline is load-bearing
+agreedtransport contract; slowtrickle mustnot reset it indefinitely, fix within sameowner scope.
+Use configuredcall deadline as total plus existingpool timeout perwait (minremaining), no new
+operatorquota. Idle stdio session remains allowed; incomingpartialframe once bytesarrive is
+boundedrepresentation, not a new unattendedsessionidle policy.
+
+Reviewer pre-growth closure contradicted actual extend-before-check source. Primary generated
+instrumented pendingbytearray: 32B ownerlimit, existing1B +1024Bchunk reached1025B before refusal.
+Ruling: split into complete/current-line slices, check remaining bound BEFOREeveryextend on both
+outputwriter andinputpump, never allocate full overlimitline first. Oversize refusal before any
+framebytes emitted; complete legal multi-frame chunks still supported. One unsuccessful
+loopbackrepro setup assumed contextmanager; corrected start/close, malformedRPCmethod42 +synthetic
+marker showed noecho/noTraceback/exit0; not a securityfailure or behavioralRED. Record separately.
+
+Fixround3 samewriter: genuine preallocation and deterministic trickle-deadline RED then repair,
+existing54negative/regressions+SDKcontrols/static. Documentation mustmatch effective per-frame
+input/output configrequirements and pinned-history nullreference, not imply installation;
+sourceimports/transitive anyio requirement verified against unchangedSDKmanifest/lock.
+Mixedgroup extra safe stderr code is harmless diagnosedfailure, not rawreflection; retain scoped
+minor unless exactcontract fails. Fullpackagebuild/Hatchling gap still explicit, no installation.
+
+### Task4 scoped closure — bounded local data stdio adapter
+
+Three repairrounds closed I1–3/P1–6, syscall/partialtail/groupederror/stat/receivedremediation/
+uniquefixture namespace, then genuinepregrowth andtotaltrickle deadline RED. Finalreview
+`ses_eedc8192fffeBlc0BEhPg7iLar` fixed priorpregrowthverdict againstactualsource and marked all
+requiredfindings addressed; no newCritical/Important, harmless extra safe stderr code for mixed
+exceptiongroup remains deferredMinor forT6review. Testdelta restored3accidentallydroppedtests
+verbatim beforefinalfreeze; actual59new tests includes them. No criterion weakened to getGREEN.
+
+Independent runner `ses_eee8899d7ffeX0iTUza6tSBlem` executed once exactdriver:
+`.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-4-verify-final.py`.
+8files config/client/stdio +oldAnalysisstdio +AIcontracts/identity/egress/api_contract_sync,
+`-q -W error::RuntimeWarning`:263passed/0failed/0skip/0warnings/137.50s.9changedPythonfiles
+Ruff/format/mypy all0, offlineuvlockcheck162packages, gitdiffcheck0.13sourceSHA+HEADf8afb01
+stablebeforeafter; all144thirdpartyTOML packageversions/origins/hashes EXACTequalGitbase; new
+workspace leaf metadata/console script verified. No packagewheel/sdist/installation checked.
+Receipt `.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-4-independent-final/receipt.json`
+SHA256f0e7cf6a7d3216a48c04fe0706cf88ab03b82105ed2b73a1b9ac92bdfe8e9777. Primary checked
+actualreceipt/fullstdout/loghashes/currentfiles; reportedumask022 was stale reportcopy: actual
+driverumask077 andreceipt+all6logs0600 verified.9files count (not earlierreport's10) authoritative.
+
+Usable sourcelevel: six fixed MCP tools with officialSDK2.2.0 realstdio handshake andclosed
+arguments/results/error schemas; safe explicitconfig/private token reread, exactHTTPSorigin or
+literal-loopbackHTTP, finiteHTTP/header/body/response/deadline/concurrency/currentack checks.
+Actualserializedprotocol output+input frames bounded, late protection changesrefused, opaque
+credentialreplacement supported, completedunavailable jobmetadata hasnullfileReference; no
+adapter rasterdownload/storageauthority/automaticcreate/reconstruction/calc/listener/AIhostsetup.
+No SDK/core privateclient permission was weakened; old Analysis stdio remainsunchanged.
+
+Task4 complete at scoped software sourcelevel after Primarytaskownedcommit. Task5genuineCore/
+worker/GeoTIFF/authenticatedHTTP/independentconsumer/replay/nextobservation parity and Task6
+wholechange review/full/static/build acceptance remain. Fixedownerpolicy cannotuse insecure
+groupwritable sourcefolder for credentials; tests use unique0700temporary generatednamespace
+undersecurecaller cache with taskownedcleanup. This is testfixture setup, not liveprovisioning.
+Packagebackend absent and actualcustomer/field/operations acceptance remain open; goalactive.
