@@ -462,3 +462,182 @@ checks remain specifically assigned T2–6. Product EXT-VAL and long-term goal r
 Resume revalidation: main/d0aac56/no extra productdiff; actual checkpoint/parent ledger/plan read,
 latest approval reused. Authority unchanged since approved plan, relevant product text reread;
 checkpoint's stale 'no source writes/Task1 dispatch next' corrected at this closure boundary.
+
+### Task2 recovery and first security review — not accepted
+
+Task1 committed374849a86a063380602ca25f92440d6e067f7ee3. Task2 developer
+`ses_eeeef962effeS7teCU01Jo77xy` stopped after11owned source/test edits with provider error:
+only auto tool_choice supported. Same-session resume reproduced it, no report. No unverified
+commit/reset/installation/provider-config change. Fresh bounded recovery
+`ses_eeed879dfffeYkRttN7Rx4WmN9` inspected existingdiff (not greenfield rewrite), produced report;
+new13/old6files211pass/newsource3mypy/Ruff0. Original RED unknown; historical374849a overlay
+failed13missing-module, explicitly not originalTDD or changed-behavior proof. Source preserved.
+
+Reviewer `ses_eeed506a2ffe1uMG2tybaQZPq5` rejected Task2: C1 cancel mutates before path binding;
+I1 file-route AI handling evidence; I2 metadata selector dead/untested; I3 READ+PREPARE issuance/
+retry check; I4 hard-failure list test. Current11hash freeze and full reviewpackage in ownedSDD
+scratch. All claims remain provisional pending repair/review/independent scoped verification.
+
+Primary source checks/rulings (spec and existing V1 are binding, not report):
+- C1 confirmed: cancel API calls jobs.cancel before comparing requested path. Fix pre-mutation
+  exact job/path scope, add different permitted scope test with no journal mutation.
+- I1: approved plan says byte errors remain V1; no obligation to rewrite byte error envelope.
+  Ruling: preserve V1 byte error handling; explicitly enforce AI scope/missing-egress failclosed
+  at file route and add GET/HEAD revoked consent, missing wiring, scope + noack tests. Current
+  indirect jobs.get gate protects rights, but route-level evidence is required.
+- I2/M3 confirmed: select_metadata_current unused; job metadata instead re-plans native pixels.
+  Wire unique READ selector into actual metadata, keep exact frozen grant equality/revocation
+  semantics, test subpixel rights/duplicate/CRS/location/dependency limits without crop planning.
+  Ruling: licenseProvenanceDigest is the authoritative sealed-grant fact; no matching field exists
+  on SpatialDataSourceV1 and no license policy-service invented. Validate sealed current grant +
+  exact frozen-grant equality (license included), test tamper/replacement; discovery uses this
+  same recorded digest. This is not verification of actual license or export compatibility.
+- I3 partly misstated: existing retry calls _current, so revoked-grant retry already denies.
+  Real gap: it checks PREPARE only, no READ/unique metadata authorization. Add direct store tests
+  and enforce both on new/retry before journal, no grant resurrection or generic-history change.
+- I4 confirmed coverage gap: hard-failure list test currently only tests revocation filtering.
+  Add genuine sealed/currentness/resource failure, not unasserted name-only proof.
+- Primary P1 reproduced: metadataResponse prepares content=b'', Starlette advertises Content-Length0
+  then sends322JSONbytes; successful local ASGI framing is invalid for real HTTP. Fixture import
+  first lacked tests/support path and was corrected before genuine reproduction, no initial
+  failure counted. Fix success framing, test exact serialized bytes/contentlength on HTTP.
+- Primary P2: metadata max_json_bytes alone lacks finite auth/recheck/audit/send duration or
+  disconnect/cancellation handling; final _recheck is awaited worker-thread handoff, rather than
+  plan's synchronous local check immediately before start. Add bounded publication deadline from
+  existing explicit policy, preserve no remote credential I/O under coordinator, final local
+  immediate checks and cancellation/deadline/after-audit barriers. Disclose unavoidable transport
+  handoff window; never claim sent-data recall or global atomic authorization.
+- Reviewer M1: audit means authorized publication attempt at audit time, not client receipt;
+  late denial can keep attempt event. Document no delivered-byte metadata claim. M2 reason/status
+  mapping advisory; M4 cursor-denial audit union T3 decision, no old enum modification.
+- Unchanged source.require_current is locally bounded genuine revision/report/WorkOrder recheck;
+  credentials.resolve genuine bearer refresh outside coordinator; bytesprepared.authorize path
+  uses current credentials + guarded job output. New route/token-expiry tests strengthen this
+  evidence now, generated realSDK/HTTP receipt/bytes parity remains mandatoryT5.
+
+Fix round1 recovery developer resumes, same11owned paths only; originalTask2 child cannot return.
+Behavioral RED for actual shortcomings first; same scoped tests/static + targeted re-review.
+
+### Task2 fix1 reviewed; Primary independently found remaining load-bearing gaps
+
+Recovery developer fix1: 16behavioral failures/12controls→41newpass,211existing +783related,
+11fileRuff/format/new3mypy0. Scoped reviewer ses_eeed506a2ffe marked C1/I1–I4/P1/P2 addressed.
+Primary accepted C1/filegates/selectorwiring/framing repairs based on actualdelta but rejected
+P2 closure and new-issue uniqueness closure after direct synthetic reproductions:
+
+- P2 STILL OPEN: `_check_deadline` only checks injected wall-clock after each completed await;
+  stalled auth/audit/send is not awaited with timeout. With0.01s configured deadline, blocked
+  send still runs until outer0.1s testdriver cancels. No self-timeout or disconnect interrupt
+  during await. Passing fake-clock-advance checks do not prove finite waiting. Ruling: real
+  monotonic publication budget + remaining-time bounded await/send and disconnect racing;
+  keep injectableUTC for authority timestamps, check local CPU budget immediately after final
+  synchronous recheck; disclose no CPUhardpreemption. Validate finite deadline (infinity currently
+  accepted constructor), cleanup/cancel watcher/tasks, bound refusal sends too. Tests must stall
+  actual awaits with clockconstant, not merely advance fakeclock/threadpool-count assertions.
+- P3 OPEN: newAI issuance selects PREPAREgrant then checks membershipREAD, but never uniqueREAD
+  metadata selection before append. Primary provisioned sameasset PREPARE+READ plus READ-only
+  subpixel grant: jobs.issue appended1job, require_ai_metadata immediately denied AMBIGUOUS_GRANT.
+  Ruling: require current uniqueREAD selector equals exact PREPAREgrant before sweep/issuance,
+  new conflictingREAD cannot create unreadableAIjobs; generic issuance unaffected. No rectangle
+  union or scopes rewrite. This enforces already approved current metadata eligibility, not new
+  product direction. Regression must assert nojournalappend on read-only overlapping grant.
+
+Fixround2 resumes recoverydeveloper, same11paths. Reviewer green is advice, not acceptance;
+future re-review must compare actual stalled behavior and direct create/store denial, not claims.
+
+### Task2 fix2 independent validation — two publication defects still open
+
+Fix2 new52/old211/related783+static0; reviewer again marked P2/P3 addressed. Independent runner
+`ses_eee8899d7ffeX0iTUza6tSBlem` actually ran567scope tests +11fileRuff/format/new3mypy/diff:
+exit0, 5RuntimeWarnings, no skips; all source/HEAD stable. Complete stdout unlike developer's
+tail-only newtest log retained at task-2-independent-fix2/cmd01.log, receipt exactargv/hashes.
+Original first driver green but receipt regex failed; same argv rerun produced finalreceipt;
+neither run is finalTask2closure. No fullrepository/customer pass inferred.
+
+- P4 OPEN: five new RuntimeWarnings `SpatialDataAiMetadataResponse._refuse was never awaited`
+  at metadata_response.py315: coroutine constructed before _await_stage rejects exhaustedbudget.
+  Ruling: lazily construct awaitables only after positivebudget/disconnect precheck or explicitly
+  close unstarted coroutine, with real warnings-as-errors targeted test + fullscoped verification.
+  Do not silence runtimewarnings or hide closedbudget cleanup.
+- P5 OPEN: fix2 bounded send introduces ensure_future scheduling after local finalgate. Primary
+  scheduled rightsrevoke via call_soon from2ndrecheck: rightswere revoked before firstsend, yet
+  ASGI status200/ack/protectedjobIdJSON delivered. Initial one-off script had nonlocalsyntax
+  error, corrected before genuine reproduction; do not count setupfailure as RED. This is
+  application scheduling before transport, not uncontrollable networkbyte recall window.
+  Ruling: bounded header-send coroutine owns final synchronous authorization/digest/bytebudget
+  check immediately before its actual send call (not before scheduling that coroutine). Add
+  deterministic late-revoke barrier proving no protectedsuccess; retain finite sends/cancellation
+  and no remoteauth under coordinator. Unavoidable actual awaitsend handoff remains disclosed.
+- P2 receive-failure deviation: watcher silently stops on exception. Ruling: brokenreceive is
+  disconnect/failclosed stop, not excuse for unprotectedcontinuedsend; testfixture absence of
+  inbounddata must block on Event, not throw interpretedashealth. Same finite error/success budget.
+
+Fixround3 same recoverydeveloper, onlymetadata_response/newtests (egress signature if necessary)
+within11ownedpaths. No unverifiedstagecommit, no provider/modelchanges, no fabricatedskips.
+
+### Task2 fix3 residual byte-handoff defect — bounded fresh repair
+
+Fix3 new60RuntimeWarning-aserror0warnings/old211/related783/static0; reviewer scoped P4/P5/
+brokenreceive addressed. Primary verified actual code separates protected JSON body handoff
+after guardedheader task. Direct sendcallback revokes rights immediately after authorized
+http.response.start: subsequent bodyphase still emits jobIdJSON with rights already revoked.
+This is not recalling sentbytes — NO metadata bytes had been handed to transport at revocation.
+
+P6 OPEN: bodystage needs same synchronous rights/digest/size/deadline recheck inside its bounded
+sendcoroutine immediately before actualprotectedbody handoff. On afterheader refusal, no newJSON
+error, no successful EOF; raise/terminate according to existing response semantics. Header can
+already have an ack valid when sent — must not claim it means laterbodydelivered/rightsremain.
+Add authentic late grant/consent/lane-revocation bodybarriers and brokenreceive test (reviewminorT1).
+Ruling: fresh bounded developer round4 from current source/snapshots, modelnative defaults per
+higher harness rule (no arbitrary override), same11pathownership; no greenfield redo or extra
+Task2publiccontract. Preserve all earliercorrections/TDD/evidence. NoTask2closureyet.
+
+### Task2 fix4 bodyrights repaired; bearer refresh final gap
+
+Fresh developer `ses_eee663f40ffear68c6B44LBF9I`: P6RED3fail61controls→new64pass0RuntimeWarnings/
+old211/Task1net304/static0. Onlymetadata_response/ai_egresstest changed,9pathsunchanged.
+Body now rechecks current localrights/digest/time just beforehandingbytes, no errorJSON/EOF on
+afterheaderdenial. Developer disclosed body still uses late_principal capturedbeforeheaders.
+Primary tested genuine AuthRegistry revocation in actualsendcallback afterauthorizedheaders:
+registry emptied but protectedjobIdJSONstillhanded. Earlierheaderackcannotauthorize laterbytes.
+
+P7 OPEN: genuine requestcredential refresh offlocalcoordinator before bodyfinal localgate;
+late identity/scopes/expiry/revoke must be reflected. Ruling: bounded asyncbodycredentialrefresh
+then synchronous localbodygate with newprincipal immediately before actualsend, same existing
+time/byte limits, no production/authcontract expansion; add tokenrevocation/expiry/scopechange
+barriers. Afterheaders refusal ends transport withoutJSONerror or successfulEOF. No tokenlogs.
+Fresh boundedround5 developer, same2fileownership +11snapshot, no arbitrarymodeloverride,
+no stagecommit before scopedreview/independentverification. No broadredo or repeats of783suite.
+
+### Task2 scoped closure — Core AI metadata boundary verified
+
+Fix5 freshdeveloper `ses_eee5f4892ffetwKrHc2438h7vs`: P7behavioralRED4fail66controls→new70pass,
+211existing/Task1304/static0. Finalscoped reviewer `ses_eeed506a2ffe1uMG2tybaQZPq5` fixes4+5
+P6/P7/brokenreceiveT1 ADDRESSED, no newImportantbreakage. Reviewed sequence includes permissions/
+uniqueREAD/frozengrant, auditattempt, boundedlazyawaits, guardedheader+body, freshbodycredential.
+
+Fresh finalrunner `ses_eee593e99ffe7fv5Up2GCJnO2M` looked onlyCodeModecatalog, claimed no native
+shell, ranZEROchecks: no pass/evidence. Original successful independentrunner
+`ses_eee8899d7ffeX0iTUza6tSBlem` resumed with exactnative-shell script, no search/credentials:
+`.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-2-verify-final.py` once.
+Driver actual argv: pytest ai_egress/jobs/api/current_grants/real_credential_audit/asgi_stream/
+assembly/ai_contracts/mcp_identity/permissions/analysis_mcp_identity/contracts (12exactpaths)
+`-q -W error::RuntimeWarning` →585passed/0skip/0warnings/37.99s. Runner summary called13files,
+but actualreceipt/scriptnames12files; actualargv/results govern. Ruffcheck+format11sourcefiles,
+mypynew3, gitdiffcheck all0. No source/HEADdrift beforeafter against fix5freeze.
+
+Primary read receipt/original loghashes/currentSHA, not just childsuccess. Receipt:
+`.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-2-independent-final/receipt.json`
+SHA256d899b74b29c63a8e8d40c693a90584a2447cfb33d44e059d23118e722b1fa6ad;
+fullpytestlogSHAe0ac94aa0691af608c6c06945ed27972d5d6143a4ce169c7c669d201343f7ca8.
+No initial5RuntimeWarnings remain; failedchecks were repaired ratherthan suppressed/deferred.
+OriginalTask2TDD gap remains disclosed, subsequentfivefixrounds carry actualbehavioralRED.
+
+Task2: complete at scopedCore sourceboundary after Primary ownedcommit; no stdioadapter/discovery
+or actualSDK/HTTPderivedbytesparityyet. GenericV1/Analysis regressions included; defaultclosed
+sourcegraph unchangedunlessexplicitlocalgraphsupplied. Local source/core checks are not remote
+hosting/customer/export/license/containment acceptance; fullrepository/fullMCP checks requiredT6.
+Audit is authorizedpublicationattempt, not receipt; canceledthreadwork may finish its audit;
+unavoidable remotecredential/CPU/actualtransport handoff window is not globalatomicity/recall.
+Next Task3 will use tested uniqueREADmetadata selector + exact identity and current response
+gate for filtered assetprojection/cursors, never cropgeometryasmetadataauthorization.

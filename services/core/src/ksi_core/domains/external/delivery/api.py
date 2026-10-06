@@ -8,7 +8,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any, Protocol
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from ksi_event_contracts.spatial_data import (
     SpatialDataErrorV1,
     SpatialDataJobViewV1,
@@ -19,14 +19,19 @@ from pydantic import BaseModel, ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.responses import JSONResponse, Response
 
+from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
 from ksi_core.domains.external.delivery.credential_currentness import (
     SpatialDataCredentialCurrentness,
 )
-from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.domains.external.delivery.errors import (
+    SpatialDataAiDomainError,
+    SpatialDataDomainError,
+)
 from ksi_core.domains.external.delivery.grants import SpatialDataGrantAuthorizer
 from ksi_core.domains.external.delivery.jobs import SpatialDataJobStore
+from ksi_core.domains.external.delivery.metadata_response import ai_error_response
 from ksi_core.domains.external.delivery.source import SpatialDataSourceResolver
-from ksi_core.identity.auth import Permission, Principal, require_permission
+from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
 PUBLIC_BASE = "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-requests"
 
@@ -165,9 +170,14 @@ def build_spatial_data_router(
     sources: SpatialDataSourceResolver,
     downloads: SpatialDataDownloadPort | None,
     clock: Callable[[], datetime],
+    egress: SpatialDataAiEgress | None = None,
 ) -> APIRouter:
     if not jobs.uses_exact_participants(grants=grants, sources=sources) or not callable(clock):
         raise ValueError("public data routes require the exact authority participants and clock")
+    if egress is not None and not egress.uses_exact_participants(
+        jobs=jobs, sources=sources, grants=grants, audit=egress.audit
+    ):
+        raise ValueError("AI egress must bind the same mounted Core participants")
     router = APIRouter(
         tags=["spatial-data"],
         responses={
@@ -185,6 +195,12 @@ def build_spatial_data_router(
             raise SpatialDataDomainError("NOT_FOUND", 404)
         return view
 
+    def ai_only() -> Response | None:
+        """Fail closed when AI egress wiring is absent; never a generic fallback."""
+        if egress is None:
+            return ai_error_response(SpatialDataAiDomainError("AUDIT_UNAVAILABLE", 503))
+        return None
+
     @router.post(
         PUBLIC_BASE,
         response_model=SpatialDataJobViewV1,
@@ -196,8 +212,15 @@ def build_spatial_data_router(
         request: Request,
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_REQUEST)),  # noqa: B008
     ) -> Response:
+        ai = principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
         try:
-            sources.require_history_scope(site_id, work_area_id, principal)
+            if ai:
+                missing = ai_only()
+                if missing is not None:
+                    return missing
+                sources.require_ai_scope(site_id, work_area_id, principal)
+            else:
+                sources.require_history_scope(site_id, work_area_id, principal)
             body = await read_model(request, SpatialDataRequestV1, jobs=jobs)
             principal = await run_in_threadpool(
                 request_credentials(request, principal).resolve, now=clock()
@@ -211,19 +234,59 @@ def build_spatial_data_router(
                 idempotency_key=request.headers.get("idempotency-key", ""),
                 now=clock(),
             )
+            if ai:
+                assert egress is not None
+                return egress.prepare_job_response(
+                    credentials=request_credentials(request, principal),
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    view=view,
+                    status=201 if created else 200,
+                    operation="CREATE_JOB",
+                )
             return model_response(view, status=201 if created else 200)
-        except SpatialDataDomainError as exc:
-            return error_response(exc)
+        except (SpatialDataDomainError, SpatialDataAiDomainError) as exc:
+            if isinstance(exc, SpatialDataAiDomainError):
+                return ai_error_response(exc)
+            return ai_error_response(exc) if ai else error_response(exc)
+        except HTTPException as exc:
+            if ai:
+                return ai_error_response(exc)
+            raise
 
     @router.get(PUBLIC_BASE, response_model=SpatialDataPageV1)
     def list_requests(
         site_id: str,
         work_area_id: str,
+        request: Request,
         cursor: str | None = None,
         limit: int = 1,
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_READ)),  # noqa: B008
     ) -> Response:
+        ai = principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
         try:
+            if ai:
+                missing = ai_only()
+                if missing is not None:
+                    return missing
+                sources.require_ai_scope(site_id, work_area_id, principal)
+                page = jobs.list(
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    principal=principal,
+                    cursor=cursor,
+                    limit=limit,
+                    now=clock(),
+                )
+                assert egress is not None
+                return egress.prepare_job_page_response(
+                    credentials=request_credentials(request, principal),
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    page=page,
+                    cursor=cursor,
+                    limit=limit,
+                )
             return model_response(
                 jobs.list(
                     site_id=site_id,
@@ -234,20 +297,51 @@ def build_spatial_data_router(
                     now=clock(),
                 )
             )
-        except SpatialDataDomainError as exc:
-            return error_response(exc)
+        except (SpatialDataDomainError, SpatialDataAiDomainError) as exc:
+            if isinstance(exc, SpatialDataAiDomainError):
+                return ai_error_response(exc)
+            return ai_error_response(exc) if ai else error_response(exc)
+        except HTTPException as exc:
+            if ai:
+                return ai_error_response(exc)
+            raise
 
     @router.get(PUBLIC_BASE + "/{request_id}", response_model=SpatialDataJobViewV1)
     def get_request(
         site_id: str,
         work_area_id: str,
         request_id: str,
+        request: Request,
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_READ)),  # noqa: B008
     ) -> Response:
+        ai = principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
         try:
+            if ai:
+                missing = ai_only()
+                if missing is not None:
+                    return missing
+                sources.require_ai_scope(site_id, work_area_id, principal)
+                view = jobs.require_ai_metadata(job_id=request_id, principal=principal, now=clock())
+                if (view.site_id, view.work_area_id) != (site_id, work_area_id):
+                    raise SpatialDataDomainError("NOT_FOUND", 404)
+                assert egress is not None
+                return egress.prepare_job_response(
+                    credentials=request_credentials(request, principal),
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    view=view,
+                    status=200,
+                    operation="GET_JOB",
+                )
             return model_response(scoped(request_id, site_id, work_area_id, principal))
-        except SpatialDataDomainError as exc:
-            return error_response(exc)
+        except (SpatialDataDomainError, SpatialDataAiDomainError) as exc:
+            if isinstance(exc, SpatialDataAiDomainError):
+                return ai_error_response(exc)
+            return ai_error_response(exc) if ai else error_response(exc)
+        except HTTPException as exc:
+            if ai:
+                return ai_error_response(exc)
+            raise
 
     @router.post(
         PUBLIC_BASE + "/{request_id}/cancel",
@@ -270,8 +364,20 @@ def build_spatial_data_router(
         request: Request,
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_REQUEST)),  # noqa: B008
     ) -> Response:
+        ai = principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
         try:
-            await run_in_threadpool(scoped, request_id, site_id, work_area_id, principal)
+            if ai:
+                missing = ai_only()
+                if missing is not None:
+                    return missing
+                sources.require_ai_scope(site_id, work_area_id, principal)
+                pre = await run_in_threadpool(
+                    jobs.require_ai_metadata, job_id=request_id, principal=principal, now=clock()
+                )
+                if (pre.site_id, pre.work_area_id) != (site_id, work_area_id):
+                    raise SpatialDataDomainError("NOT_FOUND", 404)
+            else:
+                await run_in_threadpool(scoped, request_id, site_id, work_area_id, principal)
             policy = jobs.policy
             value = await bounded_json(
                 request,
@@ -284,13 +390,30 @@ def build_spatial_data_router(
             principal = await run_in_threadpool(
                 request_credentials(request, principal).resolve, now=clock()
             )
-            return model_response(
-                await run_in_threadpool(
-                    jobs.cancel, job_id=request_id, principal=principal, now=clock()
-                )
+            view = await run_in_threadpool(
+                jobs.cancel, job_id=request_id, principal=principal, now=clock()
             )
-        except SpatialDataDomainError as exc:
-            return error_response(exc)
+            if ai:
+                assert egress is not None
+                if (view.site_id, view.work_area_id) != (site_id, work_area_id):
+                    raise SpatialDataDomainError("NOT_FOUND", 404)
+                return egress.prepare_job_response(
+                    credentials=request_credentials(request, principal),
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    view=view,
+                    status=200,
+                    operation="CANCEL_JOB",
+                )
+            return model_response(view)
+        except (SpatialDataDomainError, SpatialDataAiDomainError) as exc:
+            if isinstance(exc, SpatialDataAiDomainError):
+                return ai_error_response(exc)
+            return ai_error_response(exc) if ai else error_response(exc)
+        except HTTPException as exc:
+            if ai:
+                return ai_error_response(exc)
+            raise
 
     @router.get(
         PUBLIC_BASE + "/{request_id}/file",
@@ -310,8 +433,20 @@ def build_spatial_data_router(
         request: Request,
         principal: Principal = Depends(require_permission(Permission.SPATIAL_DATA_READ)),  # noqa: B008
     ) -> Response:
+        ai = principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
         try:
-            scoped(request_id, site_id, work_area_id, principal)
+            if ai:
+                # Byte errors stay V1, but AI scope and egress wiring fail
+                # closed here, before any job lookup or byte preparation.
+                missing = ai_only()
+                if missing is not None:
+                    return missing
+                sources.require_ai_scope(site_id, work_area_id, principal)
+                view = jobs.get(job_id=request_id, principal=principal, now=clock())
+                if (view.site_id, view.work_area_id) != (site_id, work_area_id):
+                    raise SpatialDataDomainError("NOT_FOUND", 404)
+            else:
+                scoped(request_id, site_id, work_area_id, principal)
             if request.headers.get("range") is not None:
                 raise SpatialDataDomainError("RANGE_NOT_SUPPORTED", 416)
             if downloads is None:

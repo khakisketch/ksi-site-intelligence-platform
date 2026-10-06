@@ -231,14 +231,22 @@ class SpatialDataGrantAuthorizer:
             (principal.allowed_site_ids, source.site_id),
             (principal.allowed_work_area_ids, source.work_area_id),
         ):
-            if (principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT and scopes is None) or (
-                scopes is not None and (type(scopes) is not frozenset or identity not in scopes)
-            ):
+            if (
+                principal.kind
+                in (PrincipalKind.SPATIAL_DATA_CLIENT, PrincipalKind.SPATIAL_DATA_MCP_CLIENT)
+                and scopes is None
+            ) or (scopes is not None and (type(scopes) is not frozenset or identity not in scopes)):
                 raise SpatialDataDomainError("NOT_FOUND", 404)
-        if principal.kind not in (PrincipalKind.OPERATOR, PrincipalKind.SPATIAL_DATA_CLIENT):
+        if principal.kind not in (
+            PrincipalKind.OPERATOR,
+            PrincipalKind.SPATIAL_DATA_CLIENT,
+            PrincipalKind.SPATIAL_DATA_MCP_CLIENT,
+        ):
             raise SpatialDataDomainError("PERMISSION_DENIED", 403)
         if principal.device_id is not None or (
-            principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT and principal.role is not None
+            principal.kind
+            in (PrincipalKind.SPATIAL_DATA_CLIENT, PrincipalKind.SPATIAL_DATA_MCP_CLIENT)
+            and principal.role is not None
         ):
             raise SpatialDataDomainError("PERMISSION_DENIED", 403)
         permission = {
@@ -414,3 +422,115 @@ class SpatialDataGrantAuthorizer:
             if not applicable:
                 raise SpatialDataDomainError("GRANT_REQUIRED", 403)
             return applicable[0]
+
+    def select_metadata_current(
+        self,
+        *,
+        source: SpatialDataSourceV1,
+        principal: Principal,
+        policy: SpatialDataPolicyV1,
+        now: datetime,
+    ) -> SpatialDataGrantV1:
+        """One current EXTERNAL_AI+READ grant for AI metadata; no crop planning.
+
+        Metadata authorization never expands pixels: this selector performs no
+        native-window planning and no bounds check. It binds exactly one current
+        beneficiary/source grant by policy, processing location and observed
+        CRS digest; the sealed grant's license-provenance digest is bound by
+        exact frozen-grant equality at the job boundary. Ambiguous or absent
+        rights fail closed; dependency and representation failures are never
+        empty success.
+        """
+        require_utc(now)
+        if (
+            principal.kind is not PrincipalKind.SPATIAL_DATA_MCP_CLIENT
+            or principal.device_id is not None
+            or principal.role is not None
+            or Permission.SPATIAL_DATA_READ not in principal_permissions(principal)
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        try:
+            validated_source = SpatialDataSourceV1.model_validate(source)
+            if validated_source.source_digest != validated_source.canonical_digest():
+                raise ValueError("unsealed source")
+        except (ValidationError, ValueError) as exc:
+            raise SpatialDataDomainError("SOURCE_UNAVAILABLE", 503) from exc
+        try:
+            validated_policy = SpatialDataPolicyV1.model_validate(policy)
+            if validated_policy.policy_digest != validated_policy.canonical_digest():
+                raise ValueError("unsealed policy")
+        except (ValidationError, ValueError) as exc:
+            raise SpatialDataDomainError("POLICY_UNAVAILABLE", 503) from exc
+        with self.coordinator.guarded_read(), self._grants._lock:
+            if principal.organization_id != validated_source.sealed_subject.organization_id:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            for scopes, identity in (
+                (principal.allowed_site_ids, validated_source.site_id),
+                (principal.allowed_work_area_ids, validated_source.work_area_id),
+            ):
+                if scopes is None or type(scopes) is not frozenset or identity not in scopes:
+                    raise SpatialDataDomainError("NOT_FOUND", 404)
+            if (
+                self._sites.sealed_reason is not None
+                or self._grants._journal.sealed_reason is not None
+            ):
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+            site = self._sites.get_scoped(validated_source.site_id, principal.organization_id)
+            if site is None:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            if site.ai_egress_allowed is not True:
+                raise SpatialDataDomainError("AI_EGRESS_DENIED", 403)
+            measurements = validated_source.inspection.measurements
+            if measurements is None:
+                raise SpatialDataDomainError("SOURCE_NOT_MEASURED", 403)
+            keys = self._grants._by_beneficiary_asset.get(
+                self._asset_key(validated_source, principal), ()
+            )
+            if len(keys) > validated_policy.max_list_records:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+            applicable = []
+            for key in keys:
+                grant = self._grants._grants[key]
+                if self._grants._key(grant) in self._grants._revocations:
+                    continue
+                if not grant.is_current_at(now):
+                    continue
+                if grant.policy_digest != validated_policy.policy_digest:
+                    continue
+                if "EXTERNAL_AI" not in grant.purposes or "READ" not in grant.operations:
+                    continue
+                if grant.processing_location is not self._processing_location:
+                    continue
+                if grant.observed_crs_digest != measurements.observed_crs_digest:
+                    continue
+                # The sealed grant model already requires an explicit
+                # license-provenance digest; selection binds that recorded
+                # digest by exact grant equality at the job boundary rather
+                # than inventing a second license comparison here.
+                applicable.append(grant)
+                if len(applicable) > 1:
+                    raise SpatialDataDomainError("AMBIGUOUS_GRANT", 403)
+            if not applicable:
+                raise SpatialDataDomainError("GRANT_REQUIRED", 403)
+            return applicable[0]
+
+    def frozen_grant_state(
+        self, *, grant: SpatialDataGrantV1, now: datetime
+    ) -> Literal["CURRENT", "REVOKED", "EXPIRED", "ABSENT"]:
+        """Durable state of one sealed grant revision; inspection only, never access.
+
+        Reports the exact frozen-grant denial (revoked vs expired vs absent)
+        when no current unique READ grant covers a job. Unknown keys and
+        tampered copies are both ABSENT: neither can authorize anything.
+        """
+        require_utc(now)
+        key = (grant.organization_id, grant.grant_id, grant.revision)
+        with self._grants._lock:
+            if key in self._grants._revocations:
+                return "REVOKED"
+            stored = self._grants._grants.get(key)
+            if stored is None or stored != grant:
+                return "ABSENT"
+            if not stored.is_current_at(now):
+                return "EXPIRED"
+            return "CURRENT"

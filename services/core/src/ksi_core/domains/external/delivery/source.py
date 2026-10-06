@@ -129,22 +129,58 @@ class SpatialDataSourceResolver:
             (principal.allowed_site_ids, site_id),
             (principal.allowed_work_area_ids, work_area_id),
         ):
-            if (principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT and scopes is None) or (
-                scopes is not None and (type(scopes) is not frozenset or identity not in scopes)
-            ):
+            if (
+                principal.kind
+                in (PrincipalKind.SPATIAL_DATA_CLIENT, PrincipalKind.SPATIAL_DATA_MCP_CLIENT)
+                and scopes is None
+            ) or (scopes is not None and (type(scopes) is not frozenset or identity not in scopes)):
                 raise SpatialDataDomainError("NOT_FOUND", 404)
         site = self._sites.get_scoped(site_id, principal.organization_id)
         area = self._work_areas.get(work_area_id)
         if site is None or area is None or area.site_id != site_id:
             raise SpatialDataDomainError("NOT_FOUND", 404)
         if (
-            principal.kind not in (PrincipalKind.OPERATOR, PrincipalKind.SPATIAL_DATA_CLIENT)
+            principal.kind
+            not in (
+                PrincipalKind.OPERATOR,
+                PrincipalKind.SPATIAL_DATA_CLIENT,
+                PrincipalKind.SPATIAL_DATA_MCP_CLIENT,
+            )
             or principal.device_id is not None
             or Permission.SPATIAL_DATA_READ not in principal_permissions(principal)
         ):
             raise SpatialDataDomainError("PERMISSION_DENIED", 403)
         if self._sites.sealed_reason is not None or self._work_areas.sealed_reason is not None:
             raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+        return area.model_copy(deep=True)
+
+    def require_ai_scope(self, site_id: str, work_area_id: str, principal: Principal) -> WorkArea:
+        """AI enumeration gate: genuine scope plus current consent, no source payload.
+
+        Only the AI identity may enumerate. Missing scope stays a non-disclosing
+        404; revoked consent is an explicit AI refusal before any enumeration.
+        """
+        if (
+            principal.kind is not PrincipalKind.SPATIAL_DATA_MCP_CLIENT
+            or principal.device_id is not None
+            or principal.role is not None
+            or Permission.SPATIAL_DATA_READ not in principal_permissions(principal)
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        for scopes, identity in (
+            (principal.allowed_site_ids, site_id),
+            (principal.allowed_work_area_ids, work_area_id),
+        ):
+            if scopes is None or type(scopes) is not frozenset or identity not in scopes:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+        if self._sites.sealed_reason is not None or self._work_areas.sealed_reason is not None:
+            raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+        site = self._sites.get_scoped(site_id, principal.organization_id)
+        area = self._work_areas.get(work_area_id)
+        if site is None or area is None or area.site_id != site_id:
+            raise SpatialDataDomainError("NOT_FOUND", 404)
+        if site.ai_egress_allowed is not True:
+            raise SpatialDataDomainError("AI_EGRESS_DENIED", 403)
         return area.model_copy(deep=True)
 
     def _scope(self, site_id: str, work_area_id: str, principal: Principal) -> WorkArea:

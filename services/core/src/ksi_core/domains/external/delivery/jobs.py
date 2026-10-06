@@ -21,6 +21,7 @@ from ksi_event_contracts.spatial_data import (
     SpatialDataFrozenJobV1,
     SpatialDataJobViewV1,
     SpatialDataPageV1,
+    SpatialDataPurposeV1,
     SpatialDataReasonV1,
     SpatialDataReceiptV1,
     SpatialDataRequestV1,
@@ -258,12 +259,19 @@ class SpatialDataJobStore:
             (principal.allowed_site_ids, site_id),
             (principal.allowed_work_area_ids, work_area_id),
         ):
-            if (principal.kind is PrincipalKind.SPATIAL_DATA_CLIENT and scopes is None) or (
-                scopes is not None and (type(scopes) is not frozenset or identity not in scopes)
-            ):
+            if (
+                principal.kind
+                in (PrincipalKind.SPATIAL_DATA_CLIENT, PrincipalKind.SPATIAL_DATA_MCP_CLIENT)
+                and scopes is None
+            ) or (scopes is not None and (type(scopes) is not frozenset or identity not in scopes)):
                 raise SpatialDataDomainError("NOT_FOUND", 404)
         if (
-            principal.kind not in (PrincipalKind.OPERATOR, PrincipalKind.SPATIAL_DATA_CLIENT)
+            principal.kind
+            not in (
+                PrincipalKind.OPERATOR,
+                PrincipalKind.SPATIAL_DATA_CLIENT,
+                PrincipalKind.SPATIAL_DATA_MCP_CLIENT,
+            )
             or principal.device_id is not None
             or permission not in principal_permissions(principal)
         ):
@@ -289,6 +297,136 @@ class SpatialDataJobStore:
         # requiring a grant/report (otherwise revoked jobs would disappear from history).
         self._sources.require_history_scope(job.site_id, job.work_area_id, principal)
         return record
+
+    @staticmethod
+    def _assert_ai_reader(principal: Principal, job: SpatialDataFrozenJobV1) -> None:
+        """AI metadata readers: exact identity, owner scope and AI purpose only.
+
+        Generic jobs are non-disclosing 404s for the AI identity; metadata can
+        never be moved into AI use by a request header or a supplied job ID.
+        """
+        if (
+            principal.kind is not PrincipalKind.SPATIAL_DATA_MCP_CLIENT
+            or principal.device_id is not None
+            or principal.role is not None
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        permissions = principal_permissions(principal)
+        if (
+            Permission.SPATIAL_DATA_READ not in permissions
+            or Permission.SPATIAL_DATA_REQUEST not in permissions
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        for scopes, identity in (
+            (principal.allowed_site_ids, job.site_id),
+            (principal.allowed_work_area_ids, job.work_area_id),
+        ):
+            if scopes is None or type(scopes) is not frozenset or identity not in scopes:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+        if job.request.purpose != SpatialDataPurposeV1.EXTERNAL_AI:
+            raise SpatialDataDomainError("NOT_FOUND", 404)
+        if (job.requester_principal_id, job.organization_id) != (
+            principal.principal_id,
+            principal.organization_id,
+        ):
+            raise SpatialDataDomainError("NOT_FOUND", 404)
+
+    def require_ai_metadata(
+        self, *, job_id: str, principal: Principal, now: datetime
+    ) -> SpatialDataJobViewV1:
+        """Current AI metadata for one job; denial appends nothing.
+
+        The caller must be the scoped owner AI principal and the job must carry
+        EXTERNAL_AI purpose. Fresh requester authority, scopes, locally current
+        source and the exact frozen READ grant are re-evaluated here — never by
+        ID equality alone — and the frozen grant cannot be resurrected by a
+        replacement. Retention and byte availability never deny AI metadata.
+        """
+        require_utc(now)
+        with self._guard(now):
+            record = self._records.get(job_id)
+            if record is None or record.job.organization_id != principal.organization_id:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            job = record.job
+            self._assert_ai_reader(principal, job)
+            self._lane(now, job=job)
+            try:
+                requester = self._currentness.resolve_requester(
+                    principal_id=job.requester_principal_id,
+                    organization_id=job.organization_id,
+                    now=now,
+                )
+            except Exception as exc:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+            if not isinstance(requester, Principal) or (
+                requester.principal_id,
+                requester.organization_id,
+            ) != (job.requester_principal_id, job.organization_id):
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+            # Re-evaluate the fresh authority's scopes rather than trusting the
+            # caller-supplied principal object alone.
+            self._scope(
+                requester, job.site_id, job.work_area_id, permission=Permission.SPATIAL_DATA_READ
+            )
+            self._assert_ai_reader(requester, job)
+            source = self._sources.require_current(source=job.source, principal=requester, now=now)
+            # Metadata authorization binds the exact current unique READ
+            # grant with no native-window planning: pixel rights stay on
+            # preparation and download, never on metadata reads.
+            try:
+                selected = self._grants.select_metadata_current(
+                    source=source, principal=requester, policy=job.policy, now=now
+                )
+            except SpatialDataDomainError as exc:
+                if exc.reason != "GRANT_REQUIRED":
+                    raise
+                state = self._grants.frozen_grant_state(grant=job.grant, now=now)
+                if state == "REVOKED":
+                    raise SpatialDataDomainError("ACCESS_REVOKED", 403) from exc
+                if state == "EXPIRED":
+                    raise SpatialDataDomainError("ACCESS_EXPIRED", 403) from exc
+                raise
+            if selected != job.grant:
+                # A replacement, tampered or forged grant — including one that
+                # differs only in license_provenance_digest — can never
+                # resurrect the exact frozen job grant.
+                raise SpatialDataDomainError("ACCESS_REVOKED", 403)
+            return self._view(record, now)
+
+    #: Candidate denials suppressed from AI listing; dependency, authority and
+    #: representation failures propagate instead of becoming empty success.
+    _AI_LIST_SUPPRESSED = frozenset(
+        {
+            "NOT_FOUND",
+            "PERMISSION_DENIED",
+            "AI_EGRESS_DENIED",
+            "GRANT_REQUIRED",
+            "AMBIGUOUS_GRANT",
+            "ACCESS_REVOKED",
+            "ACCESS_EXPIRED",
+            "OUTPUT_OUTSIDE_GRANT",
+            "PROCESSING_LOCATION_DENIED",
+            "SOURCE_NOT_MEASURED",
+            "SOURCE_UNSEALED",
+            "CRS_MISMATCH",
+        }
+    )
+
+    def _ai_visible_ids(self, ids: list[str], principal: Principal, now: datetime) -> list[str]:
+        """Filter AI-exportable jobs before pagination; never hide hard failures."""
+        visible = []
+        for job_id in ids:
+            record = self._records[job_id]
+            if record.job.request.purpose != SpatialDataPurposeV1.EXTERNAL_AI:
+                continue
+            try:
+                self.require_ai_metadata(job_id=job_id, principal=principal, now=now)
+            except SpatialDataDomainError as exc:
+                if exc.reason in self._AI_LIST_SUPPRESSED:
+                    continue
+                raise
+            visible.append(job_id)
+        return visible
 
     def _lane(self, now: datetime, *, job: SpatialDataFrozenJobV1 | None = None) -> None:
         self._ensure_open()
@@ -437,6 +575,17 @@ class SpatialDataJobStore:
         require_utc(now)
         self._scope(principal, site_id, work_area_id, permission=Permission.SPATIAL_DATA_REQUEST)
         request = SpatialDataRequestV1.model_validate(request.model_dump())
+        if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+            # The AI identity infers EXTERNAL_AI; a GENERAL purpose is refused
+            # rather than rewritten, and issuance needs READ plus PREPARE.
+            permissions = principal_permissions(principal)
+            if (
+                Permission.SPATIAL_DATA_READ not in permissions
+                or Permission.SPATIAL_DATA_REQUEST not in permissions
+            ):
+                raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+            if request.purpose != SpatialDataPurposeV1.EXTERNAL_AI:
+                raise SpatialDataDomainError("PERMISSION_DENIED", 403)
         if (
             type(idempotency_key) is not str
             or not idempotency_key
@@ -456,6 +605,14 @@ class SpatialDataJobStore:
                 self._current(record, now)
                 if record.job.request_fingerprint != fingerprint:
                     raise SpatialDataDomainError("IDEMPOTENCY_CONFLICT", 409)
+                if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                    # Same-key AI retry re-proves current unique AI metadata
+                    # rights at the store; the outer send-time gate is never
+                    # the only enforcement.
+                    return (
+                        self.require_ai_metadata(job_id=existing, principal=principal, now=now),
+                        False,
+                    )
                 return self._view(self._expire(record, now), now), False
             self._lane(now)
         # Remote policy authority is only consulted outside the guarded commit.
@@ -487,6 +644,14 @@ class SpatialDataJobStore:
                 self._current(record, now)
                 if record.job.request_fingerprint != fingerprint:
                     raise SpatialDataDomainError("IDEMPOTENCY_CONFLICT", 409)
+                if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                    # Same-key AI retry re-proves current unique AI metadata
+                    # rights at the store; the outer send-time gate is never
+                    # the only enforcement.
+                    return (
+                        self.require_ai_metadata(job_id=existing, principal=principal, now=now),
+                        False,
+                    )
                 return self._view(self._expire(record, now), now), False
             self._lane(now)
             if self._activation.organization_id != principal.organization_id:
@@ -502,6 +667,24 @@ class SpatialDataJobStore:
                 policy=self._policy,
                 now=now,
             )
+            if (
+                principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
+                and "READ" not in grant.operations
+            ):
+                # AI jobs must stay readable under the same grant that
+                # prepares them; PREPARE-only rights cannot append an AI job.
+                raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+            if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                # New AI jobs must already satisfy current unique metadata
+                # readability: the unique READ grant must equal the exact
+                # PREPARE grant, before any sweep or append. A conflicting
+                # READ-only grant refuses creation instead of an unreadable
+                # job. The selector plans no native windows here.
+                selected = self._grants.select_metadata_current(
+                    source=source, principal=principal, policy=self._policy, now=now
+                )
+                if selected != grant:
+                    raise SpatialDataDomainError("PERMISSION_DENIED", 403)
             self._sweep(principal.organization_id, now)
             if (
                 len(self._active.get(principal.organization_id, {}))
@@ -535,6 +718,8 @@ class SpatialDataJobStore:
             return self._view(record, now), True
 
     def get(self, *, job_id: str, principal: Principal, now: datetime) -> SpatialDataJobViewV1:
+        if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+            return self.require_ai_metadata(job_id=job_id, principal=principal, now=now)
         with self._guard(now):
             return self._view(self._expire(self._history(job_id, principal), now), now)
 
@@ -563,6 +748,10 @@ class SpatialDataJobStore:
                 or principal.kind is PrincipalKind.OPERATOR
                 and principal.role is Role.ADMIN
             )
+            if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                # AI filtering precedes pagination: denied candidates are
+                # suppressed, while dependency/authority failures propagate.
+                ids = self._ai_visible_ids(ids, principal, now)
             scope = _hash(
                 canonical_json_bytes(
                     {
@@ -609,6 +798,9 @@ class SpatialDataJobStore:
 
     def cancel(self, *, job_id: str, principal: Principal, now: datetime) -> SpatialDataJobViewV1:
         with self._guard(now):
+            if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                # Current AI metadata permission precedes any cancel append.
+                self.require_ai_metadata(job_id=job_id, principal=principal, now=now)
             record = self._expire(
                 self._history(job_id, principal, permission=Permission.SPATIAL_DATA_REQUEST), now
             )

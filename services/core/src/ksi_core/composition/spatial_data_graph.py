@@ -34,6 +34,7 @@ from ksi_event_contracts.spatial_data_worker import (
     SpatialDataWorkerPendingPageV1,
 )
 
+from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
 from ksi_core.domains.external.delivery.audit import SpatialDataAuditStore
 from ksi_core.domains.external.delivery.downloads import SpatialDataDownloadService
 from ksi_core.domains.external.delivery.grants import (
@@ -44,6 +45,7 @@ from ksi_core.domains.external.delivery.jobs import (
     SpatialDataJobCurrentnessPort,
     SpatialDataJobStore,
 )
+from ksi_core.domains.external.delivery.metadata_audit import SpatialDataMetadataAuditStore
 from ksi_core.domains.external.delivery.source import SpatialDataSourceResolver
 from ksi_core.domains.external.delivery.storage import SpatialDataStoragePort
 from ksi_core.domains.external.ingress.external_artifact_inspections import (
@@ -119,6 +121,8 @@ class SpatialDataWiring:
     storage: SpatialDataStoragePort
     currentness: SpatialDataJobCurrentnessPort
     downloads: SpatialDataDownloadService | None = None
+    metadata_audit: SpatialDataMetadataAuditStore | None = None
+    ai_egress: SpatialDataAiEgress | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -131,6 +135,10 @@ class SpatialDataWiring:
             or not _storage_ready(self.storage)
             or self.downloads is not None
             and not isinstance(self.downloads, SpatialDataDownloadService)
+            or self.metadata_audit is not None
+            and not isinstance(self.metadata_audit, SpatialDataMetadataAuditStore)
+            or self.ai_egress is not None
+            and not isinstance(self.ai_egress, SpatialDataAiEgress)
         ):
             raise ValueError("complete exact data wiring required")
 
@@ -164,6 +172,18 @@ class SpatialDataWiring:
                 or self.downloads.storage is not self.storage
                 or self.downloads.policy != self.config.policy
                 or self.downloads.audit_store.policy != self.config.policy
+            )
+            or self.metadata_audit is not None
+            and self.metadata_audit.policy != self.config.policy
+            or self.ai_egress is not None
+            and (
+                self.metadata_audit is None
+                or not self.ai_egress.uses_exact_participants(
+                    jobs=self.jobs,
+                    sources=self.sources,
+                    grants=self.authorizer,
+                    audit=self.metadata_audit,
+                )
             )
         ):
             raise ValueError("spatial data must bind exact mounted Core participants and authority")
@@ -231,8 +251,21 @@ def build_spatial_data_wiring(
             spool_root=spool_root,
             clock=config.clock,
         )
+    metadata_audit = SpatialDataMetadataAuditStore(
+        journal("spatial-data-metadata-audit.jsonl"), policy=config.policy
+    )
+    ai_egress = SpatialDataAiEgress(jobs, sources, authorizer, metadata_audit, clock=config.clock)
     lane = SpatialDataWiring(
-        config, grants, authorizer, sources, jobs, storage, currentness, downloads
+        config,
+        grants,
+        authorizer,
+        sources,
+        jobs,
+        storage,
+        currentness,
+        downloads,
+        metadata_audit,
+        ai_egress,
     )
     lane.verify_participants(
         reconstruction=reconstruction,

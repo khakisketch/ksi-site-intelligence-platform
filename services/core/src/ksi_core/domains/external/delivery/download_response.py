@@ -14,6 +14,7 @@ from starlette.types import Message, Receive, Scope, Send
 from ksi_core.domains.external.delivery.api import error_response
 from ksi_core.domains.external.delivery.downloads import SpatialDataPreparedDownload
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.identity.auth import Principal, PrincipalKind
 
 
 class SpatialDataDownloadResponse(Response):
@@ -53,7 +54,7 @@ class SpatialDataDownloadResponse(Response):
         watcher = asyncio.create_task(watch_disconnect())
         waiting_disconnect = asyncio.create_task(disconnected.wait())
 
-        async def bounded_wait(task: asyncio.Task[None]) -> None:
+        async def bounded_wait[Result](task: asyncio.Task[Result]) -> Result:
             budget = prepared.policy.stream_deadline_seconds - (monotonic() - prepared.started)
             try:
                 done, _ = await asyncio.wait(
@@ -62,8 +63,7 @@ class SpatialDataDownloadResponse(Response):
                     return_when=asyncio.FIRST_COMPLETED,
                 )
                 if task in done:
-                    await task
-                    return
+                    return await task
                 if disconnected.is_set():
                     raise SpatialDataDomainError("CANCELED", 499)
                 raise SpatialDataDomainError("DEADLINE_EXCEEDED", 503)
@@ -73,19 +73,20 @@ class SpatialDataDownloadResponse(Response):
                     with suppress(asyncio.CancelledError):
                         await task
 
-        async def authorize() -> None:
+        async def authorize() -> Principal:
             if disconnected.is_set():
                 raise SpatialDataDomainError("CANCELED", 499)
             prepared.check_deadline()
 
-            async def refresh() -> None:
+            async def refresh() -> Principal:
                 # Late auth is read-only: it owns no spool, audit append or byte send.
-                await run_in_threadpool(prepared.authorize, prepared.service.clock())
+                return await run_in_threadpool(prepared.authorize, prepared.service.clock())
 
-            await bounded_wait(asyncio.create_task(refresh()))
+            principal = await bounded_wait(asyncio.create_task(refresh()))
             prepared.check_deadline()
             if disconnected.is_set():
                 raise SpatialDataDomainError("CANCELED", 499)
+            return principal
 
         async def guarded_send(message: Message) -> None:
             await authorize()
@@ -96,14 +97,20 @@ class SpatialDataDownloadResponse(Response):
             await bounded_wait(asyncio.create_task(handoff()))
 
         try:
-            await authorize()
+            pre_principal = await authorize()
             await run_in_threadpool(
                 prepared.audit, "HEAD_STARTED" if self.head_only else "STREAM_STARTED"
             )
             started = True
+            start_headers = list(self.raw_headers)
+            if pre_principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
+                # Attestation of this response's authorization only: the ack is
+                # added after prepared.authorize succeeded, never preflight and
+                # never on error responses below.
+                start_headers.append((b"x-ksi-spatial-data-ai-egress", b"ALLOWED"))
             # Last authorization occurs after durable audit, immediately before headers.
             await guarded_send(
-                {"type": "http.response.start", "status": 200, "headers": self.raw_headers}
+                {"type": "http.response.start", "status": 200, "headers": start_headers}
             )
             headers_sent = True
             if not self.head_only:
