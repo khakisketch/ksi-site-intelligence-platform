@@ -499,3 +499,222 @@ evidence. Customer/field/operations acceptance remains separate; missing evidenc
   unproven. Save this ledger locally, then invoke approved `opencode service restart` exactly once.
   If its tool result disconnects, reconcile native service identity/catalog at next boundary;
   lack of a completion result is NOT authorization to replay the restart.
+- Approved `opencode service restart` executed once, EXIT0; after restart native PID494960
+  replaced1228482 at the same service URL. CodeMode catalog was briefly empty during startup,
+  then exposed22OpenDesign tools; exactproject metadata and prepared review brief/source Skeleton
+  reads succeeded. Metadata still resolves the actual Dashboard folder with explicit code-migration
+  scenario. Catalog later fluctuated again; successful reads are evidence of restored access, not
+  sustained health or a design review. Do not repeat the shared restart.
+
+## C3-A11Y-01 regression declaration / design-owned repair boundary
+- Requirement IDs: REQ-UX-101, C3-A11Y-01; owner Dashboard shared Skeleton loading presentation.
+  Acceptance: actual list/block loading has named busy status semantics; actual loading axe's
+  aria-prohibited-attr closes at390/768/1440; original rows/style/motion and numerical states intact.
+- Contracts affected: no API/data/auth/schema/profile changes. Invariants: preserve INV040/060
+  honest loading/scope; no numerical or authority mutation. Reuse actual components/test tools and
+  existing status pattern, no reference import, dependency or newbrand. Read Dashboard AGENTS,
+  README/package and installed Next16 loading.md before new test code.
+- Files: Primary owns new test/skeleton-loading-accessibility.test.tsx and evidence records ONLY;
+  OpenDesign owns any src/components/ui/Skeleton.tsx UI change after actual rendered review.
+  Test named regression: removing meaningful loading role makes named status unavailable (the
+  observed current list defect); real component rendering, not source-text/mock assertions.
+- Tests: failing named busy-status regression, host full/static/build after repair and actual
+  loading DOM/axe/render recapture; distinct web-design-guidelines review against prepared inputs.
+  No HIL/customer/screen-reader listening claim, no private data/license change. Rollback task-owned
+  source commit only if requested; preserve existing six-file UI snapshot and RED evidence.
+- Primary observed intended RED: `npm run test -- test/skeleton-loading-accessibility.test.tsx`
+  →1failed(list namedstatusmissing)/1passed(block),307ms EXIT1. Log
+  `/tmp/opencode/customer-c3-loading-status-red-20261006.log`; no production UI changed.
+  Skeleton SHA df67827a243e0aeb7b9f9dbfb87820aa2a3af51b7b9b51bb80eb4864fb60000d;
+  newtest94b0483f9592d87a92100101c3fa0b3cdfb123175119278fb52726e72518ed5f;
+  preparedbrief7eb20c7df8027f7cba94d5ac9714d46737f48c1e219666ede936c214e27ea285.
+- Prepared distinct read-only review action requestId `8bd60420-5a50-446f-afe2-c3b1eaffd6a0`:
+  web-design-guidelines, existing actual Dashboard project; write ONLY rendered-review.md. Primary
+  has NOT called start_run for this action. Catalog still fluctuates after successful reads;
+  a bounded coordinator helper may use supported native OpenDesign tools to verify exact inputs and
+  commission this ONE action, never design or edit UI itself. Same requestId after any lost response;
+  no new request, fallback CLI/HTTP runner, new project, permissions, service restart or recursive run.
+- Coordinator helper `ses_eeff1530bffe30yeZDKAr8USAR` found no callable OpenDesign namespace;
+  no review run was started. Parent also reconfirmed absent start_run after the successful actual
+  project/brief/Skeleton reads. This is unstable tool exposure, not a completed design review.
+- Human chose `프로젝트 한정 변경 승인 (Recommended)` for a reversible, project-only native
+  tool-exposure experiment: `.opencode/opencode.jsonc` (absent before, task-owned, ignored) repeats
+  the existing nonsecret OpenDesign server command/flags/timeouts, adding only codemode:false.
+  No permissions/authentication/sandbox/engine/cloud/credential change; all other global servers
+  and agent rules remain inherited. Native scoped debug.location.evict for this actual repository
+  is authorized to load the config (same-project sessions can be affected, other projects untouched).
+  Hypothesis: avoiding Code Mode exposure may restore stable native tools; internal cause unproven.
+  If ineffective remove only this task-created file and refresh only this project, no global restart.
+- Project-scoped eviction completed; sanitized config summary confirms codemode:false applied.
+  Native direct get_project/get_run/get_file now succeeds with unchanged actual Dashboard root;
+  old48216aa3 was terminal and NOT replayed. Direct source-hash manifest and review brief were read.
+  Exposed tools recovered sufficiently to commission the previously prepared action, not a proven
+  internal root-cause fix. Retain the approved local exposure setting while it is effective.
+- Distinct read-only review started once: request8bd60420-5a50-446f-afe2-c3b1eaffd6a0,
+  run47cfff0e-52c5-44e7-9e5e-9beb455fde7d, skillweb-design-guidelines;
+  explicit existingcode-migration scenario retained, LOCAL configured engine. Await actual opened
+  image inventory and report, not run success/canonical-entry alone. No UI source repair yet.
+- After interruption native get_run confirms this SAME review running with folder-backed,
+  user-local/in-place workspace and explicit strategy off; no successor/recursive action.
+  An inadvertent different-payload start with the same requestId returned IDEMPOTENCY_CONFLICT409;
+  no second run was created. Follow original47cfff0e only; never reinterpret conflict as restart.
+  Host check: all5 final-render-source-sha256 manifest entries unchanged, Skeleton stilldf67827a,
+  52PNG inputs present, report not yet written. No review finding/closure inferred from these counts.
+- Prepared distinct AFTER-only loading closure harness at
+  `/tmp/opencode/customer-c3-loading-closure-20261006.py` (syntaxchecked, not exercised yet);
+  before PNG/axe files retained. Existing authorized generated Core/OIDC/Dashboard smoke script
+  re-launched only on verified free3237/9037 for this loading-repair acceptance. Owner638648
+  cmdlineverified, sessioncustomer-c3-closure-20261006. Real UI role-test selector chose FIELD_OPERATOR
+  and existing history showed unchanged1/5/+4m³/100%10/10m²/±5m³. Initial default development admin
+  lacked mapped subject in this fixture and was NOT granted/fallbacked; explicit operator selection
+  used normal PKCE. No tokens/cookies echoed. Private smoke log withheld. Save only owned generated
+  outputs; stop exact owner at task end and restore only its proven tsconfig-generated changes.
+  BaselineconfigSHA6b1807cfc5a7d27e4d7d3a9a731bd4bd5d93a10988ef7169412b817ca2f23aea.
+- Distinct design-owned review47cfff0e terminal; actual `rendered-review.md` exists and was read
+  through native project API. SHA504ecd862e562e4c27edc6552b94cbc6500ec719433f7e4fe15180c038db1f37;
+  51opened PNG inventory entries independently match on-disk hashes. C1-V-01/02/03 fixed in that
+  actual rendered snapshot; C3-A11Y-01 remains OPEN/serious at390/768/1440. No new settled defect.
+  Entry no_artifact is expected for report-only output and does not supersede the actual report.
+- Next concrete refinement action request32ae87df-4173-4e27-8171-8eb7c8af21c4:
+  generatorfrontend-dev, actual-source/in-place, source ownership ONLYsrc/components/ui/Skeleton.tsx;
+  preserve layout/classes/rows/motion and SkeletonBlock semantics. Apply valid named busy status to
+  list; no changed numerical/API/auth behavior. Existing RED test observed, actual source read
+  verified unchanged. Follow by host independent GREEN/full/static/build + newloading browseraxe
+  captures, then distinctweb-design-guidelines closure against AFTER evidence; no premature closure.
+- Minimal repair startedrun48bea7ac-1475-470d-a484-846f86c22254 with original request32ae87df;
+  workspace again verified folder-backed/user-local/in-place. Watch bound; no other source writer.
+  A differing-payload replay was rejected409; original run alone remains active, no duplicate.
+- Repair48bea7ac terminal, verified actualoneattribute diff ONLYSkeletonList role=status;
+  SHA7e98133493066e3711ed6d08bdb7ad32f36bb84d9101f0949eafd728a0978b3f;
+  repairnoteSHAd88ceef3bf4863d60788460ebbdcba471e0fd1ca04066061d784bd5e77b9c23d.
+  Inner Vitest WASI blocker unchanged, no falseinnerGREEN/install. Host scoped4files31passed EXIT0
+  (newlist/block2plusprior29), logcustomer-c3-loading-green-20261006.log.
+- First AFTER capture attempt stopped before loading on expired login; actualsnapshot says expired,
+  no CoreSite-loading call. Reauthenticated via normalFIELD_OPERATORUI/PKCE, then actualinflight3
+  viewport after-loading PNG/snapshot/axe allgenerated; named visiblebusy statuses>=2, eachaxe4.12.1
+  0violations/0incomplete and resolvesempty. Preserve final-loading BEFOREfiles. No sessionfix inferred.
+  Read-only authrefresh investigation helpers were accidentally dispatched twice with overlapping
+  read scope; no writers/models override. Track terminalreports without further duplicate dispatch.
+- Closure action requestb052a524-3ae8-4e19-aef6-6f1ee17cd244 prepared against actual AFTERinputs:
+  distinctweb-design-guidelines READONLY loading-closure-brief.md → loading-closure-review.md only.
+- Distinct AFTERreview started07c8cc77-19a8-4ee9-9f8f-278ac3ba224d, requestb052a524;
+  same actualsourceproject, report-only/no writer. Await exactopenedbefore/afterimages and closure.
+- Authtrace helpersses_eefd866afffeGbBGlmv0aDLe5l andses_eefd85150ffemVye7kltdR6N11 bothterminal:
+  code proves accessTTL300s, refresh/session8hours, one-use rotation, coalesced5s reuse and RSCfanout;
+  proxy doesn't stripcookies. Possible late stalecookie replay/persistence/HMR NOTPROVEN; sanitized
+  ownedlog shows healthy200s, not expiredflowmetadata. No authpolicy/source change from speculation.
+  Eligible next safecheck: naturalpost-expiry navigation + sanitized issuerstatus/SetCookiepresence,
+  no tokens/cookies/JWTclaims. This is a newly observed repeat-use investigation, not fieldreadiness.
+- Independent verifier ses_eefd57d89ffeR1tcuIe37BQpfV confirms scoped31/4files and full983/130files,
+  lint0/no diagnostics, tsc0/no diagnostics, eightfilehashes/HEAD16b8304 stable. Types used temporary
+  generatedtsconfigSHA c870274d887189c8ea70858efdafe758ddab81e1626bb53320cb87fe9b77108c;
+  baseline restoration/build+tsc still pending. Logs customer-c3-independent-{scoped,full,lint,types}
+  under/tmp/opencode. Duplicate verifier ses_eefd5448bffeXl5ZnMRWssZqpn was interrupted via native
+  ownedsession endpoint, cancelled; no use of partial/duplicate results. Code reviewer
+  ses_eefd58e5dffeUQsOwQhKG3TyKZ stillpending, read-only and no visualapproval substitution.
+- Natural-expiry probe started onceownedPID727291/shellsh_1102b54530016h6ZjuWGAWBfu6; waits365s,
+  then single realhistorynavigation, prints only UIexpired/empty flags and allowlisted issuer/Core
+  HTTPstatuscounts. No cookies/claims/body values. Accidentally duplicatedownedPID728064 stopped
+  before navigation after exactcmdlinevalidation; originalprobe alone owns browseruntil completion.
+
+## Human MCP diagnosis / observation-only steering
+- Human2026-10-06: codex MCP crash loop identified and disabled; first observe whether tool-list
+  flapping recurs, revisit Code Mode hypothesis ONLY if it recurs. This supersedes active pursuit of
+  the earlier unproven Code Mode cause. No new config/service/reconnect/reload/restart action.
+- Native exact-project status confirms codex=disabled, four remaining MCPs connected. Service
+  PID494960 unchanged. Samples07:47:10/07:47:22/07:48:37UTC (plus07:49:09 sample) show same statuses.
+  CodeMode catalogs repeated: context7=2, mobbin=3, opencode=5, playwright=30. DirectOpenDesign
+  project/source/brief/report/run reads succeeded; no observed list disappearance/EPIPE in this
+  bounded window. Not proof of long-term stability or isolated causality. Existing approved local
+  codemode:false retained unchanged; do not treat the intentionally absent CodeModeOD namespace as
+  flapping, and do not re-enable codex MCP or alter Code Mode without the requested recurrence gate.
+  Sanitized observationmetadata `/tmp/opencode/customer-mcp-disabled-observation-20261006.jsonl`.
+- Delayed notification for oldreview47cfff0e matches alreadyverified report, not a new generation
+  request. NewAFTERreview07c8cc77 terminal with real `loading-closure-review.md` SHA12e38c58:
+  semanticrepair evidenced but visualclosure OPEN: after390 PNG actually768×1024, after768 actually
+  1440×1000. Exactviewport binding therefore invalid; previous three-width claim is provisional.
+  This is a capture-evidence defect, NOT a demonstrated tool-list recurrence/UIregression. No UI
+  source repair needed; after naturalprobe ends, use ONE browserdriver and assert DOM+PNGdimensions
+  before accepting freshviewportcaptures, then design-owned closure against corrected evidence.
+- Finalcode reviewer ses_eefd58e5dffeUQsOwQhKG3TyKZ terminal: no demonstrated runtimeCritical or
+  Important; I-1 generatedtsconfig churn alreadyassigned for ownedrestorationbeforecommit. Deferred
+  M-1 unknown-error tone mismatch, M-2 deadunavailablePair branch, M-3 missing single-detail error
+  cases, M-4 Site403/404 testgaps, M-5 possible uncertaintydd ATreading; no newscope/polishchanges.
+
+## Corrected capture and refresh-persistence investigation
+- Original naturalexpiryprobe completed:375s idle, normalbrowserhistorynavigation, retainedempty,
+  noexpired/login banner, issuer/token200x1/Core200x3. Cookiepersistence NOTinspected; not authfix.
+- Next normalSite navigation >5s later reproduces expiredUI/token400 with no corresponding Core
+  ingress. This is repeated-use failure, not contradicted by first-navigation success. Authsources
+  unchanged; no TTL/grace/rotation/securitypolicy change. Original recapture stopped on expiredUI.
+- NormalFIELD_OPERATOR selector/PKCE reauthentication, same ownedbrowser only; correctedcapture
+  `/tmp/opencode/customer-c3-corrected-loading-20261006.py` completed all3widths. LiveDOM before/after
+  and intrinsicPNG synchronously bound:390x844/768x1024/1440x1000, DPR1, nohorizontaloverflow,
+  visiblebusy status nodes, axe4.12.1 zero violations/incomplete, resolvesempty. Original images kept.
+  Source sevenhashmanifest stillmatches. CorrectedPNG SHA:f49252a2/5f670cfc/fc4e053f; state d6cdf7fa.
+  New `corrected-loading-closure-brief.md`/state/source inputs verified through projecttools.
+- Coordinator error: TWO report-only correctedreview runs started with different requestIds:
+  aa2ac238-13cc-4b9b-9115-694b3d6fa942→dd59baba-4f61-4d9c-8b85-cbd187d3e0f7;
+  21443850-9e7b-4e4d-a2e6-6e8604e1e710→6a1c222a-069c-45db-85ba-d0ba60fc022d.
+  Both distinctweb-design-guidelines/explicitcode-migration, readonlysource, outputonly same
+  corrected-loading-closure-review.md. Later identical21443850payload reused6a1c222a, no thirdrun.
+  Additional runs stopped; no cancellationwithoutHumanrequest. Preserve terminalreports/hashes
+  and compare consistency/provenance after BOTH finish; do not infer approval from mutablefile/run.
+  No UI source writers or security/config/service mutations. Duplicate coordination failure disclosed.
+- Existing authhelper ses_eefd866afffeGbBGlmv0aDLe5l codeproof: RSC bareauth() returns parsedJSON
+  without SetCookie propagation; actualproxy checkscookieexistence only; installednext-auth RSC
+  parseSessionResponse dropsresponseheaders unlike wrappedrequest handler. Issuer rotates singleuse.
+  This fits first200/later400, but outgoingresponse runtime confirmation is stillrequired.
+  A later samehelper continuation errored expiredreasoning, no newevidence; no blind redispatch.
+- Existing browser network metadata has normalnavigation200 and noSetCookie header, but callback
+  redirect records lackstatus/allresponseheaders, so positivecontrol notestablished. Missingincoming
+  Cookie metadata likewise NOTproof of absentbrowsercookie. Save only safeheader-presence/status/
+  path metadata under/tmp/opencode/customer-c3-session-response-metadata-20261006.json; no values.
+  Next: exact ownedbrowser passiveCDP responseExtraInfo observer/booleanonly, then normalnavigation
+  to distinguish response-cookie drop from browserpersistence/race; not secondbrowserdriver.
+
+## C3 final evidence and owned smoke lifecycle
+- Correctedreview6a1c222a terminal: actualreport SHA89ef5bef984db72f6735f010157e7d0b5fe0da92580370eb18f1da810327076f;
+  six openedbefore/correctedafter images intrinsicdimensions/hashes recorded. C3-A11Y-01 FIXED,
+  viewportevidence defect FIXED, no new boundedloadingdefect. C1-V-01/02/03 remainpriorreviewfixed,
+  not freshly reauditsettledscreens. Source sevenhashmanifest unchanged. Snapshot preserved at
+  `/tmp/opencode/customer-c3-corrected-review-6a1c222a-20261006.md` before any late overwrite.
+- Duplicate dd59baba stillreportsrunning with engine activewritererror; no UI/sourcewriting, no
+  new generation/cancellation/restart. Do not mistake activewritererror for MCPcatalogflapping.
+  Reconcile terminal explanation/reporthash before using mutablefile as finaldelivery.
+- Owned smoke638648/shellsh_1101d01bc001xJ2866zUTzNWeU completed normally at1800s timeout;
+  lifecycleREADY+STOPPED, no traceback. ExactPIDabsent,3237/9037 closed; no impliedrestart.
+  Browserowner639634/child639656 and41525 remainowned; passiveobserver script was prepared only,
+  NOTexecuted before shutdown. No runtimeExtraInfo confirmation yet; preserve authcodeunchanged.
+- Restored only proven smoke-generated tsconfig changes with patch; SHA6b1807cf exactlymatches
+  presmoke/HEADbaseline, incidentalcustomdist paths/formatting excluded. Existingtest-runner57d8
+  continues final npmrunbuild then baseline tsc only; already983/31/fullPython evidence notrepeated.
+- MCPobservation through07:59:59UTC: samePID494960, codexdisabled/fourMCPconnected; catalogs2/3/5/30
+  stable at07:59:48. No newconfig/reconnect/serviceaction. Separate providermodelstream1006 and
+  expiredreasoning errors are NOT established MCP listflapping; don't reopenCodeMode withoutrecurrence.
+
+## C3 independently verified local UI bundle milestone (not full-product acceptance)
+- Original independenttest-runner ses_eefd57d89ffeR1tcuIe37BQpfV terminal: fresh `npm run build`
+  in apps/dashboard EXIT0, Next16.3.3/Turbopack compiled/TypeScript/static27of27,115route-lines.
+  BUILD_ID TBr1c2d0HAVQ2kL_OiSOd; original and frozen customer-c3-independent-build-20261006 logs,
+  frozenSHA eacd168d2361c0ce6e8ba7d9e44c557ce289024b9c6f7e0be34645e7ef46447d.
+- Fresh `npm exec -- tsc --noEmit` EXIT0/no diagnostics; localexistingTypeScript/noinstall,
+  baseline-types frozenlogSHA adb3afd42f92ab51feb3c3ae88aa60d2384bbffeb6a5692b8b31391695987d29.
+  tsconfig6b1807cf stable before/afterbothcommands, equalsHEAD; next-env.d.ts clean. ProductionCSS
+  3vccfwkve82lf.css emits lg:hidden/lg:table/sm:grid-cols-2 exactlyonceeach. All8taskfilehashes/HEAD
+  stable; originalfull983/31scoped/lint0 evidence retained, no fullPython/UI suite repeat needed.
+- Verifier disclosed duplicated initial build invocation: Next guard rejected overlapping duplicate;
+  one subsequent cleanbuild is authoritative and no duplicate nowrunning. This is coordination
+  error, not evidence of productbuild failure/tool-list flapping. No source/config overwritten.
+- Independently checked inventory (not aestheticapproval): correctedreview89ef5bef matches current
+  bytes, all7source entries/6openedPNG dimensions+hashes/3snapshot+3axe+statehashes agree; before
+  serious2nodes→corrected0violations0incomplete, exact3widths verified. Designreview owns fixed finding.
+- Ownedbrowsercustomer-c3-closure-20261006 closed normally after smokeexit; no otherbrowser/server
+  touched. No currently reachable productpreview at3237; preserved screenshots and current-daemon
+  designStudio remain reviewevidence, not public/client delivery. Realcustomer/device/44px/listening
+  and operationalacceptance remain unverified. DuplicateODdd59baba not replayed/cancelled implicitly.
+- Ruling: commit ONLY8verifiedUI source/tests +thisledger to localmain as coherent technicalbundle;
+  tsconfig/checkpoint/generatedprivateevidence excluded, no push/PR/deploy/worktreecleanup. Authissue
+  remains independent approved recovery work, C3overall/repeat-use/product acceptance remains OPEN.
+  Aftercommit, one generated-only authdiagnostic smoke with passive completeHTTPheader metadata is
+  the nextcausalcheck; no authpolicy/source change until evidence distinguishes cookie-drop/race.

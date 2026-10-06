@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -14,6 +14,15 @@ const mocked = vi.hoisted(() => ({
 }));
 
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
+vi.mock("@/lib/core-api/client", () => ({
+  CoreApiError: class extends Error {
+    constructor(readonly status: number, _body: unknown, readonly retryAfterSeconds?: number) { super(`Core API ${status}`); }
+  },
+}));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({
@@ -36,6 +45,7 @@ vi.mock("@/app/sites/[siteId]/observations/[reportRef]/ExternalReportFollowupTra
 }));
 
 import SiteObservationDetailPage from "@/app/sites/[siteId]/observations/[reportRef]/page";
+import { CoreApiError } from "@/lib/core-api/client";
 
 const reportRef = `external-relative-volume-report-${"a".repeat(32)}`;
 const digest = (character: string) => `sha256:${character.repeat(64)}`;
@@ -79,6 +89,70 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("exact site report detail", () => {
+  it("loads the Site before dependent report and WorkArea reads", async () => {
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    expect(mocked.site.mock.invocationCallOrder[0]).toBeLessThan(mocked.projection.mock.invocationCallOrder[0]);
+    expect(mocked.site.mock.invocationCallOrder[0]).toBeLessThan(mocked.areas.mock.invocationCallOrder[0]);
+  });
+
+  it.each([
+    ["report", "projection"],
+    ["WorkArea", "areas"],
+  ] as const)("preserves Site context and provides a non-retryable history exit after a %s 403", async (_label, target) => {
+    mocked[target].mockRejectedValue(new CoreApiError(403, {}));
+
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    expect(screen.getByText("현장 1")).toBeTruthy();
+    expect(screen.getByText("이 관측 결과를 확인할 권한이 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "관측 이력" }).getAttribute("href")).toBe("/sites/site-1/observations");
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(mocked.share).not.toHaveBeenCalled();
+    expect(mocked.pair).not.toHaveBeenCalled();
+    expect(mocked.operations).not.toHaveBeenCalled();
+  });
+
+  it("keeps a dependent 404 in the Site-scoped unavailable state rather than declaring the Site missing", async () => {
+    mocked.projection.mockRejectedValue(new CoreApiError(404, {}));
+
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    expect(screen.getByText("현장 1")).toBeTruthy();
+    expect(screen.getByText("관측 결과를 확인할 수 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
+  });
+
+  it("preserves Site context on exact-detail 403 without rendering unverified derived or successor views", async () => {
+    mocked.detail.mockRejectedValue(new CoreApiError(403, {}));
+
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    expect(screen.getByText("현장 1")).toBeTruthy();
+    expect(screen.getByText("상세 근거를 확인할 권한이 없습니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(screen.queryByTestId("display-pair")).toBeNull();
+    expect(screen.queryByTestId("successor-state")).toBeNull();
+    const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
+    expect(trace.textContent).toContain("상세 근거를 확인할 수 없어 검토·재관측 상태를 표시하지 않습니다.");
+    expect(within(trace).queryByRole("link", { name: "승인된 후속 작업 보기" })).toBeNull();
+    expect(mocked.pair).not.toHaveBeenCalled();
+    expect(mocked.share).not.toHaveBeenCalled();
+    expect(mocked.operations).not.toHaveBeenCalled();
+  });
+
+  it("allows retry for transient server failures while preserving the Site and history exit", async () => {
+    mocked.areas.mockRejectedValue(new CoreApiError(503, {}, 12));
+
+    render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
+
+    expect(screen.getByText("현장 1")).toBeTruthy();
+    expect(screen.getByText("관측 결과를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "관측 이력" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "12초 후 다시 시도" })).toBeTruthy();
+  });
+
   it("uses the exact verified report for a safe display pair and retained successor operation state", async () => {
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
     expect(screen.getByTestId("display-pair").textContent).toBe("READY");
@@ -88,13 +162,13 @@ describe("exact site report detail", () => {
     expect(mocked.share).toHaveBeenCalledWith({ reportRef, siteId: "site-1", organizationId: "org-1", principalId: "operator-1", canWrite: true });
   });
 
-  it("fails closed and leaves successor state unverified when the full report digest diverges from the site projection", async () => {
+  it("fails closed and hides derived or successor views when the full report digest diverges from the site projection", async () => {
     mocked.detail.mockResolvedValue(fullReport(digest("0")));
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
-    expect(screen.getByTestId("display-pair").textContent).toBe("UNAVAILABLE");
+    expect(screen.queryByTestId("display-pair")).toBeNull();
     expect(mocked.pair).not.toHaveBeenCalled();
     expect(mocked.operations).not.toHaveBeenCalled();
-    expect(screen.getByTestId("successor-state").textContent).toBe("none");
+    expect(screen.queryByTestId("successor-state")).toBeNull();
     expect(mocked.share).not.toHaveBeenCalled();
   });
 
@@ -106,10 +180,10 @@ describe("exact site report detail", () => {
       },
     });
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
-    expect(screen.getByTestId("display-pair").textContent).toBe("UNAVAILABLE");
+    expect(screen.queryByTestId("display-pair")).toBeNull();
     expect(mocked.pair).not.toHaveBeenCalled();
     expect(mocked.operations).not.toHaveBeenCalled();
-    expect(screen.getByTestId("successor-state").textContent).toBe("none");
+    expect(screen.queryByTestId("successor-state")).toBeNull();
     expect(mocked.share).not.toHaveBeenCalled();
   });
 
@@ -119,10 +193,10 @@ describe("exact site report detail", () => {
     foreignDetail.request.current.subject.organizationId = "foreign-org";
     mocked.detail.mockResolvedValue(foreignDetail);
     render(await SiteObservationDetailPage({ params: Promise.resolve({ siteId: "site-1", reportRef }) }));
-    expect(screen.getByTestId("display-pair").textContent).toBe("UNAVAILABLE");
+    expect(screen.queryByTestId("display-pair")).toBeNull();
     expect(mocked.pair).not.toHaveBeenCalled();
     expect(mocked.operations).not.toHaveBeenCalled();
-    expect(screen.getByTestId("successor-state").textContent).toBe("none");
+    expect(screen.queryByTestId("successor-state")).toBeNull();
     expect(mocked.share).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,6 @@
 export function SkeletonList({ rows = 4 }: { rows?: number }) {
   return (
-    <div className="flex flex-col gap-2" aria-busy="true" aria-label="불러오는 중">
+    <div role="status" className="flex flex-col gap-2" aria-busy="true" aria-label="불러오는 중">
       {Array.from({ length: rows }).map((_, i) => (
         <div key={i} className="h-16 animate-pulse rounded-lg bg-sunk" />
       ))}

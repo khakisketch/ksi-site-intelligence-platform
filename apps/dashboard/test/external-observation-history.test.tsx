@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalObservationHistory } from "@/app/sites/[siteId]/observations/ExternalObservationHistory";
@@ -62,6 +62,52 @@ afterEach(() => {
 });
 
 describe("외부 관측 이력 상세", () => {
+  it("shows every relative metric, its common coverage, and its limitation as labeled compact facts", () => {
+    render(<ExternalObservationHistory
+      siteId="site-1"
+      items={[{ reportRef, state: "AVAILABLE", result: summary }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+
+    expect(screen.getByTestId("relative-metric-cards")).toBeTruthy();
+    expect(screen.getByTestId("relative-metric-cards").className).toContain("lg:hidden");
+    expect(screen.getByTestId("relative-metric-table").className).toContain("lg:table");
+    const compactFacts = within(screen.getByTestId("relative-metric-cards"));
+    expect(compactFacts.getByText("공통 유효 영역")).toBeTruthy();
+    expect(compactFacts.getByText("90% · 90 / 100 m²")).toBeTruthy();
+    expect(compactFacts.getByText("불확실성")).toBeTruthy();
+    expect(compactFacts.getByText("±1.2 m³")).toBeTruthy();
+    expect(compactFacts.getByText("표본 기반 불확실성")).toBeTruthy();
+    expect(screen.getByText(/측량·정산 정확도를 입증하거나 작업·비행 권한을 부여하지 않습니다/)).toBeTruthy();
+  });
+
+  it("keeps the comparison table available for desktop and omits relative-only claims for a single-epoch result", () => {
+    const { container, rerender } = render(<ExternalObservationHistory
+      siteId="site-1"
+      items={[{ reportRef, state: "AVAILABLE", result: summary }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+    expect(screen.getByTestId("relative-metric-table")).toBeTruthy();
+
+    const singleVolumeRef = `external-single-volume-report-${"b".repeat(32)}`;
+    const single: ExternalResultSummaryView = {
+      ...summary,
+      kind: "EXTERNAL_SINGLE_VOLUME",
+      reportRef: singleVolumeRef,
+      baselineWorkOrderId: null,
+      baselineCapturedFrom: null,
+      baselineCapturedTo: null,
+    };
+    rerender(<ExternalObservationHistory
+      detailMode
+      siteId="site-1"
+      items={[{ reportRef: singleVolumeRef, state: "AVAILABLE", result: single }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+    expect(container.querySelector("[data-testid='relative-metric-cards']")).toBeNull();
+    expect(screen.queryByText(/측량·정산 정확도를 입증하거나 작업·비행 권한을 부여하지 않습니다/)).toBeNull();
+  });
+
   it("does not link an exact detail view to itself and keeps its work-management action", () => {
     render(<ExternalObservationHistory
       detailMode
@@ -75,8 +121,8 @@ describe("외부 관측 이력 상세", () => {
       `/sites/site-1/observations/new?repeatReportRef=${reportRef}`,
     );
     expect(screen.queryByRole("link", { name: "상세 보기" })).toBeNull();
-    expect(screen.getByText("절토")).toBeTruthy();
-    expect(screen.getByText("성토")).toBeTruthy();
+    expect(screen.getAllByText("절토")).toHaveLength(2);
+    expect(screen.getAllByText("성토")).toHaveLength(2);
   });
 
   it("renders the baseline date range for a relative-volume result (unchanged behavior)", () => {

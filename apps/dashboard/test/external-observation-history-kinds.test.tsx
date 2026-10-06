@@ -145,7 +145,14 @@ describe("merged external volume history rows", () => {
 
     const relativeScope = within(relativeRow!);
     expect(relativeScope.getByText("상대 물량")).toBeTruthy();
-    expect(relativeScope.getByText("순변화")).toBeTruthy();
+    const compactFacts = within(relativeScope.getByTestId("relative-metric-cards"));
+    expect(compactFacts.getByText("절토")).toBeTruthy();
+    expect(compactFacts.getByText("성토")).toBeTruthy();
+    expect(compactFacts.getByText("순변화")).toBeTruthy();
+    expect(compactFacts.getByText("공통 유효 영역")).toBeTruthy();
+    expect(compactFacts.getByText("불확실성")).toBeTruthy();
+    expect(compactFacts.getByText("±1.2 m³")).toBeTruthy();
+    expect(relativeScope.getByTestId("relative-metric-table").textContent).toContain("공통 유효 영역");
     expect(relativeScope.getByRole("link", { name: "이 범위로 새 관측" })).toBeTruthy();
 
     expect(unavailableRow!.textContent).toContain("보관 근거 확인 필요");
@@ -266,6 +273,7 @@ describe("site observation pages", () => {
     expect(mocked.operations).not.toHaveBeenCalled();
     const trace = screen.getByRole("heading", { name: "검토·재관측 흐름" }).closest("section")!;
     expect(within(trace).queryByRole("link", { name: "승인된 후속 작업 보기" })).toBeNull();
+    expect(trace.textContent).toContain("상세 근거를 확인할 수 없어 검토·재관측 상태를 표시하지 않습니다.");
   });
 
   function boundSingleDetail(overrides: {

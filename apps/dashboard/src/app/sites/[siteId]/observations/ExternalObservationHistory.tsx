@@ -19,6 +19,8 @@ function signed(value: number) {
   return `${value > 0 ? "+" : ""}${number(value)} m³`;
 }
 
+const RELATIVE_RESULT_LIMITATION = "이 수치는 두 관측 간 상대 변화와 그 불확실성을 나타내며, 측량·정산 정확도를 입증하거나 작업·비행 권한을 부여하지 않습니다.";
+
 function compatibilityKey(item: ExternalVolumeHistoryItem): string | null {
   const result = item.result;
   if (item.state !== "AVAILABLE" || result?.measurementStatus !== "SUCCEEDED" || !result.metrics) return null;
@@ -86,7 +88,18 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
           <div className="px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p><SingleVolumeResult fillM3={metrics.fillM3} uncertaintyM3={metrics.uncertaintyM3} uncertaintyNote={metrics.uncertaintyNote} baseRoughnessM={metrics.baseRoughnessM} boundaryValidFraction={metrics.boundaryValidFraction} /></div>
         ) : <p className="px-4 py-3 text-[13px] leading-5 text-ink-2">체적 결과 수치를 표시할 수 없습니다.</p>
       ) : metrics ? (
-        <div className="overflow-x-auto px-4 py-3"><p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p><table className="w-full min-w-[40rem] text-left text-[12.5px]"><thead className="text-ink-muted"><tr><th className="pb-2 pr-4 font-semibold">절토</th><th className="pb-2 pr-4 font-semibold">성토</th><th className="pb-2 pr-4 font-semibold">순변화</th><th className="pb-2 pr-4 font-semibold">공통 유효 영역</th><th className="pb-2 font-semibold">불확실성</th></tr></thead><tbody><tr className="border-t border-line"><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.cutM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.fillM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{signed(metrics.netM3)}</td><td className="py-2 pr-4">{number(metrics.commonValidFraction * 100)}%<span className="block text-[11px] text-ink-muted">{number(metrics.measuredAreaM2)} / {number(metrics.zoneAreaM2)} m²</span></td><td className="py-2">{metrics.uncertaintyM3 === null ? "미산정" : `±${number(metrics.uncertaintyM3)} m³`}<span className="block text-[11px] leading-4 text-ink-muted">{metrics.uncertaintyNote}</span></td></tr></tbody></table></div>
+        <div className="px-4 py-3">
+          <p className="mb-2 text-[12px] text-ink-muted">{result.reviewedAt ? `결과 검토 ${formatKoreanDateTime(result.reviewedAt, { dateStyle: "short", timeStyle: "short" })}` : "검토 기록 없음"}</p>
+          <p className="mb-3 text-[12.5px] leading-5 text-ink-2">{RELATIVE_RESULT_LIMITATION}</p>
+          <dl data-testid="relative-metric-cards" className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2 lg:hidden">
+            <div><dt className="text-[12px] text-ink-muted">절토</dt><dd className="num mt-0.5 text-[16px] font-bold">{number(metrics.cutM3)} m³</dd></div>
+            <div><dt className="text-[12px] text-ink-muted">성토</dt><dd className="num mt-0.5 text-[16px] font-bold">{number(metrics.fillM3)} m³</dd></div>
+            <div><dt className="text-[12px] text-ink-muted">순변화</dt><dd className="num mt-0.5 text-[16px] font-bold">{signed(metrics.netM3)}</dd></div>
+            <div><dt className="text-[12px] text-ink-muted">공통 유효 영역</dt><dd className="mt-0.5 text-[13px]">{number(metrics.commonValidFraction * 100)}% · {number(metrics.measuredAreaM2)} / {number(metrics.zoneAreaM2)} m²</dd></div>
+            <div className="sm:col-span-2"><dt className="text-[12px] text-ink-muted">불확실성</dt><dd className="num mt-0.5 text-[16px] font-bold">{metrics.uncertaintyM3 === null ? "미산정" : `±${number(metrics.uncertaintyM3)} m³`}</dd><dd className="mt-0.5 break-keep text-[12px] leading-5 text-ink-2">{metrics.uncertaintyNote}</dd></div>
+          </dl>
+          <table data-testid="relative-metric-table" className="hidden w-full text-left text-[12.5px] lg:table"><thead className="text-ink-muted"><tr><th className="pb-2 pr-4 font-semibold">절토</th><th className="pb-2 pr-4 font-semibold">성토</th><th className="pb-2 pr-4 font-semibold">순변화</th><th className="pb-2 pr-4 font-semibold">공통 유효 영역</th><th className="pb-2 font-semibold">불확실성</th></tr></thead><tbody><tr className="border-t border-line"><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.cutM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{number(metrics.fillM3)} m³</td><td className="num py-2 pr-4 text-[17px] font-bold">{signed(metrics.netM3)}</td><td className="py-2 pr-4">{number(metrics.commonValidFraction * 100)}%<span className="block text-[11px] text-ink-muted">{number(metrics.measuredAreaM2)} / {number(metrics.zoneAreaM2)} m²</span></td><td className="py-2">{metrics.uncertaintyM3 === null ? "미산정" : `±${number(metrics.uncertaintyM3)} m³`}<span className="block text-[11px] leading-4 text-ink-muted">{metrics.uncertaintyNote}</span></td></tr></tbody></table>
+        </div>
       ) : <p className="px-4 py-3 text-[13px] leading-5 text-ink-2">비교 결과 수치를 표시할 수 없습니다.</p>}
     </article>
   );

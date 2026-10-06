@@ -98,6 +98,42 @@ async function resolveSuccessorTrace(
   }));
 }
 
+function ObservationDetailReadFailure({
+  siteId,
+  siteName,
+  error,
+  subject = "관측 결과",
+}: {
+  siteId: string;
+  siteName?: string;
+  error: unknown;
+  subject?: string;
+}) {
+  const apiError = error instanceof CoreApiError ? error : null;
+  const denied = apiError?.status === 403;
+  const retryable = apiError ? apiError.status >= 500 : true;
+  const deniedSubject = subject === "관측 결과" ? `이 ${subject}` : subject;
+  const message = denied
+    ? `${deniedSubject}를 확인할 권한이 없습니다.`
+    : retryable
+      ? `${subject}를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.`
+      : `${subject}를 확인할 수 없습니다.`;
+
+  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
+    <header className="border-b border-line pb-3">
+      {siteName && <p className="text-[12.5px] text-ink-2">{siteName}</p>}
+      <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과</h1>
+    </header>
+    <ErrorState
+      message={message}
+      tone={denied ? "high" : retryable ? "crit" : "idle"}
+      retryable={retryable}
+      retryAfterSeconds={apiError?.retryAfterSeconds}
+      action={{ label: "관측 이력", href: `/sites/${encodeURIComponent(siteId)}/observations` }}
+    />
+  </div>;
+}
+
 export default async function SiteObservationDetailPage({
   params,
 }: {
@@ -111,45 +147,55 @@ export default async function SiteObservationDetailPage({
       next={`/sites/${encodeURIComponent(siteId)}/observations/${encodeURIComponent(reportRef)}`}
     />;
   }
-  let loaded: {
-    site: Awaited<ReturnType<typeof getSite>>;
-    projection: Awaited<ReturnType<typeof getSiteExternalRelativeVolumeReport>>;
-    areas: Awaited<ReturnType<typeof listWorkAreas>>;
-  } | null = null;
+  let site: Awaited<ReturnType<typeof getSite>>;
   try {
-    const [site, projection, areas] = await Promise.all([
-      getSite(siteId),
+    site = await getSite(siteId);
+  } catch (error) {
+    if (error instanceof CoreApiError && error.status === 404) notFound();
+    return <ObservationDetailReadFailure siteId={siteId} error={error} subject="현장 정보" />;
+  }
+
+  let projection: Awaited<ReturnType<typeof getSiteExternalRelativeVolumeReport>>;
+  let areas: Awaited<ReturnType<typeof listWorkAreas>>;
+  try {
+    [projection, areas] = await Promise.all([
       getSiteExternalRelativeVolumeReport(siteId, reportRef),
       listWorkAreas(siteId),
     ]);
-    loaded = { site, projection, areas };
   } catch (error) {
-    if (error instanceof CoreApiError && error.status === 404) notFound();
+    return <ObservationDetailReadFailure siteId={siteId} siteName={site.name} error={error} />;
   }
-  if (loaded === null) {
-    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="외부 관측 결과를 불러오지 못했습니다." retryable /></div>;
-  }
-  const names = new Map(loaded.areas.workAreas.map((area) => [area.workAreaId, area.name]));
-  const projection = loaded.projection.state === "AVAILABLE" ? loaded.projection.result ?? null : null;
+  const names = new Map(areas.workAreas.map((area) => [area.workAreaId, area.name]));
+  const resultProjection = projection.state === "AVAILABLE" ? projection.result ?? null : null;
   // A SINGLE_VOLUME result has no baseline pair or relative report detail; its exact
   // single report is re-verified below before it feeds share or successor facts.
-  const single = isSingleVolumeResult(projection);
-  const detail = projection === null || single
-    ? null
-    : await getExternalRelativeVolumeReport(reportRef).catch(() => null);
-  const singleDetail = projection === null || !single
-    ? null
-    : await getExternalSingleVolumeReport(reportRef).catch(() => null);
+  const single = isSingleVolumeResult(resultProjection);
+  let detail: ExternalRelativeVolumeReportView | null = null;
+  let singleDetail: ExternalSingleVolumeReportView | null = null;
+  let detailReadError: unknown = null;
+  if (resultProjection !== null && !single) {
+    try {
+      detail = await getExternalRelativeVolumeReport(reportRef);
+    } catch (error) {
+      detailReadError = error;
+    }
+  } else if (resultProjection !== null && single) {
+    try {
+      singleDetail = await getExternalSingleVolumeReport(reportRef);
+    } catch (error) {
+      detailReadError = error;
+    }
+  }
   const organizationId = session.principal.organizationId;
-  const exactDetail = detail !== null && projection !== null && isExactReportDetail(detail, projection, siteId, reportRef, organizationId)
+  const exactDetail = detail !== null && resultProjection !== null && isExactReportDetail(detail, resultProjection, siteId, reportRef, organizationId)
     ? detail
     : null;
   // The single exact view is trusted only when it re-verifies against the projection:
   // the same report id, the same retained report digest, and the same exact scope
   // binding as the relative path (current work order, source work order, and the
   // target subject's work order, site, and organization). No weaker binding is shown.
-  const exactSingleDetail = singleDetail !== null && projection !== null
-    && isExactSingleReportDetail(singleDetail, projection, siteId, reportRef, organizationId)
+  const exactSingleDetail = singleDetail !== null && resultProjection !== null
+    && isExactSingleReportDetail(singleDetail, resultProjection, siteId, reportRef, organizationId)
     ? singleDetail
     : null;
   const displayPair = exactDetail === null
@@ -157,18 +203,18 @@ export default async function SiteObservationDetailPage({
     : await resolveExactReportSafeDerivativePair(exactDetail, {
       organizationId,
       siteId,
-    });
+  });
   const verifiedDetail = exactDetail ?? exactSingleDetail;
-  const successors = verifiedDetail === null || projection === null
+  const successors = verifiedDetail === null || resultProjection === null
     ? null
-    : await resolveSuccessorTrace(verifiedDetail, reportRef, projection.reportDigest, {
+    : await resolveSuccessorTrace(verifiedDetail, reportRef, resultProjection.reportDigest, {
       organizationId,
       siteId,
     });
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
-        <p className="text-[12.5px] text-ink-2">{loaded.site.name}</p>
+        <p className="text-[12.5px] text-ink-2">{site.name}</p>
         {single ? <>
           <h1 className="mt-1 text-[22px] font-bold tracking-tight">단일 시점 체적 결과</h1>
           <p className="mt-1 text-[13px] leading-5 text-ink-2">한 시점 관측으로 측정한 보관 체적 결과입니다.</p>
@@ -179,8 +225,18 @@ export default async function SiteObservationDetailPage({
       </div>
       <div className="flex flex-wrap gap-2"><PrintReportButton /><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">관측 이력</Link></div>
     </header>
-    <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: loaded.projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: loaded.projection.result ?? null }]} workAreaNames={names} />
-    {!single && <ExternalReportSafeDerivativeComparison pair={displayPair} />}
+    <ExternalObservationHistory siteId={siteId} detailMode items={[{ reportRef, state: projection.state === "AVAILABLE" ? "AVAILABLE" : "HISTORICAL_SOURCE_UNAVAILABLE", result: projection.result ?? null }]} workAreaNames={names} />
+    {detailReadError !== null && <ErrorState
+      message={detailReadError instanceof CoreApiError && detailReadError.status === 403
+        ? "상세 근거를 확인할 권한이 없습니다."
+        : detailReadError instanceof CoreApiError && detailReadError.status >= 500
+          ? "상세 근거를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+          : "상세 근거를 확인할 수 없습니다."}
+      tone={detailReadError instanceof CoreApiError && detailReadError.status === 403 ? "high" : detailReadError instanceof CoreApiError && detailReadError.status >= 500 ? "crit" : "idle"}
+      retryable={!(detailReadError instanceof CoreApiError) || detailReadError.status >= 500}
+      retryAfterSeconds={detailReadError instanceof CoreApiError ? detailReadError.retryAfterSeconds : undefined}
+    />}
+    {exactDetail !== null && !single && <ExternalReportSafeDerivativeComparison pair={displayPair} />}
     {verifiedDetail !== null && <TeamReportShare
       key={`${organizationId}:${session.principal.principalId}:${reportRef}`}
       reportRef={reportRef}
@@ -189,13 +245,17 @@ export default async function SiteObservationDetailPage({
       principalId={session.principal.principalId}
       canWrite={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
     />}
-    {projection !== null && <ExternalReportFollowupTrace
+    {verifiedDetail !== null && resultProjection !== null && <ExternalReportFollowupTrace
       reportRef={reportRef}
       // Core's report_for_site merges both external volume families; a SINGLE_VOLUME
       // result has baselineWorkOrderId null and the trace shows no baseline link for it.
-      baselineWorkOrderId={projection.baselineWorkOrderId}
-      currentWorkOrderId={projection.currentWorkOrderId}
+      baselineWorkOrderId={resultProjection.baselineWorkOrderId}
+      currentWorkOrderId={resultProjection.currentWorkOrderId}
       successors={successors}
     />}
+    {verifiedDetail === null && resultProjection !== null && <section className="rounded-xl border border-line bg-surface p-4">
+      <h2 className="text-[16px] font-bold tracking-tight">검토·재관측 흐름</h2>
+      <p className="mt-1 text-[13px] leading-5 text-ink-2">상세 근거를 확인할 수 없어 검토·재관측 상태를 표시하지 않습니다. 관측 이력에서 보관 결과를 확인할 수 있습니다.</p>
+    </section>}
   </div>;
 }
