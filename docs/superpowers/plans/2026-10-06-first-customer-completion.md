@@ -468,3 +468,34 @@ evidence. Customer/field/operations acceptance remains separate; missing evidenc
   diff, accurate counts/limitations, unchanged production/UI hashes, no secret values, diff --check0.
   Final disposition is required-tool/input/authorization/contract blocked, not product completion.
   Preserve this evidence in a ledger-only local commit; checkpoint remains excluded. No external delivery.
+
+## Human continuation and bounded recovery authorization
+- Human follow-up2026-10-06: "그렇게 해줘 멈추지 말고 제품 개발 개선 계속 완성할 때까지 해줘".
+  Native prior goal42cd7bf4 stays unmet; it was not revived or silently narrowed. New explicit goal
+  `8fe5db9c-0f38-4f49-bfd2-1a1985b0ec0e` is active for the same full development objective plus
+  required-tool recovery. Safety rails7days/1000auto-turns/no token cap; completion/blocker/stop
+  evidence and no-progress rules unchanged. Existing C1/C2, numerical/resource/authority contracts,
+  six provisional C3 files and baseline worktree remain preserved; no new product slice/direction.
+- Key-management capability discovery found no available vendor key-management tool. A provider API
+  credential is not an authenticated account-admin session. Meta/NVIDIA/Context7 key revocation and
+  replacement require the account administrator; no values requested in chat or reproduced, no
+  credential read/write or unsupported account-management request. This does not block independent
+  safe design recovery/development; do not claim key rotation completed.
+- Native service identity verified: opencode api info2.0.22/PID1228482/loopback49374 matches native
+  opencode service status. Exact session/currentrepo and source HEAD1bc6fa4 unchanged; no server
+  substitution. Design catalog still absent on this new user turn; no unverified UI source writes.
+- Human chose `공유 서비스 재시작 승인 (Recommended)` after explicit disclosure: ONE OpenCode
+  shared-service restart may temporarily disconnect other sessions and interrupt running requests;
+  it does NOT restart the product server, OpenDesign container or host. Save all task/evidence state
+  and finish owned diagnostics before performing it; no guaranteed catalog fix. This does not
+  authorize further global reloads, installs, container security changes or a design fallback.
+- Read-only explore helper failed before execution (upstream model unavailable); no evidence came
+  from that failed dispatch. A bounded general helper now investigates supported catalog recovery
+  without mutations, protected config/credential/raw-log reads or source writes. No model override.
+  Service restart is approved but NOT yet performed; checkpoint records the exact once-only boundary.
+- General helper `ses_eeff77d5fffe6I8y3pRLwve90Q` confirmed native service executable/identity,
+  static proxy tools-list22definition mechanism, absent current Code Mode namespace and working
+  notifier/history. No narrower supported recovery demonstrated; internal transport cause remains
+  unproven. Save this ledger locally, then invoke approved `opencode service restart` exactly once.
+  If its tool result disconnects, reconcile native service identity/catalog at next boundary;
+  lack of a completion result is NOT authorization to replay the restart.
