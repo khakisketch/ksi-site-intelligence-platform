@@ -52,7 +52,7 @@ No actual keys, credential files, customer private data or root-protected diagno
 - [x] Find concrete bounded consumer gap and reproduce without private data.
 - [x] CONS-01: corrected RED tests → minimal terminal-reason repair → GREEN/static/integration.
 - [x] Independent reviewer and test-runner freeze/related regression/full command evidence.
-- [ ] Task-owned local commit/index/hash audit; update checkpoint at stable milestones.
+- [x] CONS-01 task-owned local commit/index/hash audit; checkpoint transition follows.
 - [ ] Present successor choices grounded in actual missing functionality; selected material
   design → written spec review → implementation plan review/method → approved execution.
 - [ ] Continue remaining authorized independent work; distinguish real-data/host/client gates
@@ -270,3 +270,26 @@ NOT yet the particular new route/tool/schema names or uncreated implementation p
 Next architectural work is a written contract for review, with explicit acceptance/negative
 tests, discovery/metadata egress and exact result-reference semantics; no runtime privilege
 change before its approval. Safe independent local engineering continues under the full goal.
+
+## CONS-01 committed / client specification prepared
+
+- CONS-01 local commit `ee12062b6d780c5c4f5b9b92eaa3c8056beb1e83` includes exactly example,
+  existing consumer test and this ledger; index/source hashes bound to the independent receipt.
+  Postcommit tree was clean; no push or retained-worktree cleanup. Scoped fixture imports the
+  actual main example via Path(__file__).resolve().parents[2], not a managed/candidate copy.
+- Selected direction's written proposal:
+  `../specs/2026-10-06-spatial-data-mcp-v1-design.md`, SDP-CLIENT-01-AI,
+  SHA256 `7ef7a677b20b04e5407796bd1a1266b8e31dac2d762fcddbd0e65b560e7c9c93`.
+  Proposed299line contract: dedicated AI principal, grant-filtered discovery, Core-enforced
+  current metadata egress, six fixed stdio tools and no-byte authenticated HTTP reference.
+  Existing data/Analysis/grant-worker/history semantics preserved. No new runtime code yet.
+- Current official SDKv2 stdio/schema/structured-output/error behavior consulted through
+  Context7 (`/websites/py_sdk_modelcontextprotocol_io_v2`, official whats-new/migration docs).
+  API reference is advisory, not installed2.2.0/client/host verification; no dependency upgrade.
+- Inline spec self-review corrected ambiguous-grant rectangle union, Core-vs-adapter reference
+  ownership and explicit typed get-wrapper; added exact frozen job-grant and response-scope
+  substitution rules. No placeholders; each material proposed decision and acceptance/negative
+  gate is explicit. Complete source/prose linkage verified; no product source diff afteree12062.
+- HUMAN DIRECTION selection is not HUMAN WRITTEN-SPEC approval. Ask to review this exact
+  proposal; only after approval invoke writing-plans and prepare its implementation plan.
+  No uncreated plan approval, data-MCP activation/client install/live grant/egress inferred.
