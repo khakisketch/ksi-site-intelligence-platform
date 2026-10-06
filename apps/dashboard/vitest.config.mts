@@ -19,6 +19,9 @@ export default defineConfig({
     },
   },
   test: {
+    // Auth.js ships extensionless Next imports for the framework bundler.
+    // Resolve them through Vite so boundary tests use the real auth wrapper.
+    server: { deps: { inline: ["next-auth"] } },
     environment: "node",
     include: ["test/**/*.test.{ts,tsx}"],
   },

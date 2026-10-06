@@ -28,7 +28,7 @@
 ## Execution tracks (sequential within each shared-file owner)
 - [x] C1 Customer observation-history resource-scope contract, security review and HTTP implementation (local technical scope; full-product/customer acceptance remains open).
 - [x] C2 Related report/detail navigation scope and actual scoped browser workflow; independently verified local technical work only, no ADMIN fallback or customer/operations acceptance claim.
-- [ ] C3 Remaining Dashboard items: reconcile actual defects, Local Codex source implementation and distinct rendered review, then product-browser verification. Do not mechanically redo 13 checked items.
+- [x] C3 bounded Dashboard technical work: actual UI/loading fixes, distinct rendered review and repeated-use auth repair independently verified, including final compiled-artifact OIDC/API/navigation/reload. Customer/field/operational acceptance stays open under C5/C6; do not mechanically redo 13 checked items.
 - [ ] C4 Reconcile exact release/runtime evidence and finish safe local verifier/recovery/tooling gaps. Host/account/deployment/signing changes require separately scoped authorization.
 - [ ] C5 Real-data compatibility and repeated-use evidence: actual permitted t0/t1/t2, coordinates/vertical/producer/rights, selected customer OIDC/MCP, resource/cost measurements. Missing inputs block acceptance, not independent engineering.
 - [ ] C6 Backup/restore and operational failure drills, independent customer use and named acceptance. Simulated drills do not establish deployed recovery.
@@ -718,3 +718,308 @@ evidence. Customer/field/operations acceptance remains separate; missing evidenc
   remains independent approved recovery work, C3overall/repeat-use/product acceptance remains OPEN.
   Aftercommit, one generated-only authdiagnostic smoke with passive completeHTTPheader metadata is
   the nextcausalcheck; no authpolicy/source change until evidence distinguishes cookie-drop/race.
+
+## C3 UI bundle committed / refresh-persistence causal probe
+- Local main commit57ae74a4a1b9465189f30ba53cbc30fc97995488 contains exactly8verifiedUI source/tests
+  and thisledger. Parent16b8304, sourcehashes unchanged, indexchecks clean, postcommitGit clean.
+  No push/PR/deploy/product-sliceclose; overall C3/repeat-use acceptance stillOPEN due authfailure.
+- Both correctedreview runs nowterminal:6a1c222a succeeded report89ef5bef; duplicate dd59baba failed
+  inactivity_watchdog600s after activewriterguard, zero observed toolcalls/output. No blindretry,
+  cancellation or sourcechange. Successful frozenreview/source+openedimage evidence governsUIclosure.
+- Duplicate verifier's later stray"mobbin" reply grants no newdesignscope; no Mobbin search needed.
+  Original independent build/types/inventory report remains authoritative; no more verificationjobs.
+- One new authorizedgenerated-only causal smoke afterC3commit, protected by task-owned flock+start
+  marker. Owner scriptcustomer-c3-auth-diagnostic-owner-20261006.py, shellsh_1103f906e001rCmyJa4MI2vecw;
+  private logcustomer-c3-auth-diagnostic-smoke-private-20261006.log, exactownership JSON under/tmp.
+  Same loopback3237/9037; no sharedservices/accounts/livegrants/config/security mutation/install.
+- Sole browsercustomer-c3-auth-diagnostic-20261006 owner849900/child849923; nativeCDP43967 verified
+  from that childonly. Observercustomer-c3-auth-http-metadata-20261006.py shellsh_11040f492001tr0Yg0L8FywAvn
+  PASSIVE (no navigation/cookievalues), Network.responseReceivedExtraInfo queues bound across
+  redirectrequestIDs. NormalFIELD_OPERATOR UI/PKCE initialcontrol: callback302 SetCookiePRESENT;
+  actual initialhistory200 SetCookieabsent. Thus exactresponseheader presence can be observed,
+  unlike earlier summary-only redirectmetadata. No values/claims/headersraw saved or printed.
+- One idempotent sole-driver naturalprobe customer-c3-auth-causal-probe-20261006.py launched as
+  shellsh_11042850e001L5UptCUfzaqVrS:305s idle, normalhistory then settledempty/expired (real10s loading),
+  subsequentnormalSite nav beyond5s coalescing; snapshots flags + statussequence + observerboolean
+  metadata only. Observer stops via task-owned sentinel when probe finishes; no duplicatebrowserdriver.
+
+### Conditional nonvisual repair declaration — implementation remains gated on causal evidence
+- Requirement IDs: REQ-SEC-101/REQ-UX-101, C3-AUTH-01 repeated-use refresh-persistence defect.
+- Owner module: Dashboard authentication request/response boundary, NOT Core authority/visualUI.
+- Acceptance: natural accessexpiry300s followed by normalnavigation refreshes once and persists
+  encrypted HttpOnly session to browser; same response's upstream RSC uses refreshed session before
+  callingCore; nextnavigation after5s reuse keeps existing identity and exactgrants, no stale replay.
+  Invalid/revoked sessions remain failclosed; publiclogin/API401/HIL404/sessionendpoint404 preserved.
+- Contracts affected: internal request/response cookie propagation only if proved; existingPKCE,
+  secure/profile/sameSite, accessTTL300/session8h/rotation/coalesced5s and all Core resource scopes
+  remain unchanged. No newidentitystore, tokenJS/body/traces, authfallback or broadGETpermissions.
+- Reference assets/adoption: REUSE actual Auth.js5beta32/Next16 requestwrapper cookie persistence,
+  existingauthConfig/authJsCookies/Core session consumer; source refs REFERENCE_ONLY, no imports.
+- Potential files: src/proxy.ts, one small internalcookiepropagation helper onlyifneeded, behavioral
+  test for real auth boundary; thisledger/checkpoint. NO visualcomponents/styles, TTL/coalescingfix.
+- Tests: regression RED→GREEN against actual response/upstream behavior, same-request freshcookie
+  and laternavigation afterreuse; chunked/auth-vs-othercookie preservation, invalidcookie/public/API
+  failclosed regressions. Mock only generatedexternaltoken exchange/time where unavoidable, not
+  authwrapper/cookie effect. Independent scoped+UI suite/static/build, actualOIDC browser+reload.
+- Invariants touched: INV-040 no productionplaceholder/failopen; INV-060 serverPrincipal/allsource
+  grants remain Core-enforced; no body/header grantingauthority or client-provided override.
+- HIL/real-device assumptions: none; generatedlocalissuer software evidence only, no customerOIDC.
+- License/data implications: existingdeps only; no customer/privateexports or credentials copied.
+- Rollback: task-owned subsequentauthcommit onlyifrequested; never journals/keys/grants/policies.
+- Ruling: noauthsource/behavior change during305s causalprobe; exact completeHTTPmetadata distinguishes
+  browserpersistence from RSCcookie-drop before selecting the minimum compatible nonvisual repair.
+
+### C3-AUTH-01 causal evidence / behavioral RED
+- Original sole probe and passive observer completed without duplicate driving. Preserved generated-only
+  `/tmp/opencode/customer-c3-auth-causal-probe-20261006.json`: first expiry navigation token200,
+  Core200x3, empty history; complete HTTP ExtraInfo shows document200 WITHOUT Set-Cookie.
+  Callback302 WITH Set-Cookie is the positive control. Subsequent normal Site navigation after10s
+  gets token400 and expired-session UI, with no new Core ingress. No cookie values/claims inspected.
+- Installed Auth.js bare RSC auth() parses session JSON without propagating response cookies;
+  request wrapper propagates Set-Cookie. Current proxy only tests cookie existence. Thus rotation
+  consumes the single-use refresh token but leaves the stale browser and same-request cookie.
+- The conditional declaration above is now activated for this proven nonvisual boundary defect.
+  Preserve public login, auth route ownership (especially callback/refresh/closed session), HIL404,
+  API JSON errors, opaque legacy path, Core authority and all existing TTL/coalescing parameters.
+- Regression `test/proxy-session-persistence.test.ts`: real NextRequest/NextResponse, encrypted JWT
+  and decoder; only external issuer/runtime fixture is synthetic. Missing response persistence,
+  same-request stale/chunk cookies and invalid-cookie cleanup are the named breaks.
+  `npm test -- test/proxy-session-persistence.test.ts`: expected RED 4failed/5passed; original log
+  `/tmp/opencode/customer-c3-auth-red-20261006.log`. No production source written before RED.
+- Next implementation: use existing Auth.js request handling for KSI session-bearing protected
+  requests, transport its cookie deltas upstream and downstream; do not expose token JSON or trust
+  request-supplied authority headers. Then actual generated OIDC idle/navigation/reload verification
+  plus independent suite/static/build. Existing visual artifacts need no regeneration for this repair.
+- Boundary implementation keeps real Auth.js response cookies and forwards only KSI session deltas
+  in upstream request cookie headers; unrelated cookies/route ownership preserved. Installed Next
+  cookie parser drops falsy empty value/Max-Age=0, so empty session values are treated as deletion,
+  not literal upstream `undefined`. Regression now9pass with actual Auth.js wrapper/encryption.
+- Vitest initially could not resolve Auth.js's extensionless Next imports in native Node ESM;
+  verified installed Vitest/current docs support `server.deps.inline: ["next-auth"]`. This test-only
+  configuration runs real wrapper mechanics instead of mocking the persistence under test; no dep
+  install/version or product configuration change. Expected malformed-JWE test logging is muted
+  only inside that synthetic invalid-cookie case, not production logging.
+- Independent test-runner `ses_eefb2deceffejEA35wrhvLa31y`: scoped27/3files, full992/131files and
+  lint0, EXIT0 each, once each. Logs `/tmp/opencode/customer-c3-auth-independent-{scoped,full,lint}-20261006.log`.
+  Before/after source/test/Vitest hashes stable: cd779d300476c32cfc168f0f4d187a4d6ad35e9073f0eab8a65ac445e9af8a25,
+  0a11685a906079d855103e7deda781071596b128181844521d55718b78e22468,
+  c443feadfb15936d969373af8124ff389988db81ca9d498e3b62446235b53603. Build/typecheck
+  deliberately held until owned smoke stops and its generated tsconfig changes are restored.
+- Actual AFTER run reuses same owned smoke/browser. Default generated-admin login returned Core401
+  because generated TEST assembly maps FIELD_OPERATOR only; expected fixture boundary, not repair
+  failure/authority fallback. Normal role-test UI then selects generated field account via PKCE,
+  history empty succeeds. No mappings/grants/auth/TTL mutated. Snapshot confirms field-session UI.
+- Distinct passive AFTER observer `sh_1104d4537001hFO5jLq6iJEylJ` records header-presence only;
+  sole AFTER driver `sh_1104fb4220017Xk83h53vcdxzi` waits natural305s then history/Site/history reload/
+  Site reload, asserts authenticated state+HTTP Set-Cookie+one token200/no replay400. No concurrent
+  driver or background-completion polling. Original causal BEFORE files remain immutable.
+- Read-only final bounded reviewer `ses_eefb00484ffemj2StRxLAU75Ai` examines these3 task files and
+  installed Auth.js/cookie boundaries; findings pending. No aesthetic/UI source changes in this work.
+- Installed Auth.js runtime accepts direct request/event calls but its public TypeScript auth API
+  exposes the middleware-wrapper overload instead. Use `auth(() => NextResponse.next())` with a
+  missing-response failclosed guard rather than an unsafe cast/unsupported typed direct call.
+  This preserves the tested response behavior; proxy hash changed after the first independent run,
+  so scoped/full/lint/build/type verification must bind to the final wrapper source before commit.
+
+### C3-AUTH-01 review disposition and actual AFTER persistence
+- Read-only review ses_eefb00484ffemj2StRxLAU75Ai found3 Important COVERAGE gaps, not demonstrated
+  production defects. Test-only supplement now12pass: raw downstream deletion entries for both stale
+  chunks, concurrent same-stale-refresh requests yield1issuer exchange and2fresh upstreams, actual
+  `/api/auth/session` GET returns empty404. Added actual missing-session refreshPOST JSON401/noLocation
+  to close the API-ownership coverage caveat. These protect already implemented behavior; no new
+  production fix or claim of new RED made for this coverage supplement.
+- Reviewer read earlier runtime-direct-call snapshot; final source72b5e7ca changes only supported
+  typed wrapper and failclosed missing-response guard. TestSHA034620470fd44254893ed7a6f26682a81219803cc491255fa8623767ffb9d943;
+  Vitest c443fead unchanged. Final independent rerun binds these final bytes before commit.
+- Review minor(deferred): exact `/api/auth` (no trailing slash) is not excluded; nonexistent404 route
+  can cause unnecessary rotation when carrying an expiring session. No authority leakage/current
+  callback/session/refresh regression; no route or behavior expansion in this repair.
+- Review Ruling: do not accept the unrelated-cookie-corruption claim — installed NextRequest parser
+  and serializer preserve semantic values for synthetic plus/percent/unrelated cookies after
+  reparse (actual Node probe true); raw encoding differs but no current raw-cookie consumer defect
+  demonstrated. Cost if wrong: a future consumer requiring original raw encoding needs its own test.
+- Review Ruling: preserve Auth.js raw Set-Cookie output rather than add speculative downstream filter.
+  Current session response emits only KSI session-cookie changes; callback/transient handling is
+  explicitly bypassed. Filtering future framework cookie deltas without a selected contract could
+  break persistence. Cost if wrong: future session cookie-scope change requires targeted review.
+- Review Ruling: do not catch unexpected Auth.js throws and pass the stale request through — a500
+  is failclosed availability failure, not successful authentication. Silent pass-through could repeat
+  the original single-use rotation loss. Normal invalid-session handling remains tested JSON401;
+  unexpected-failure UX/typed error contract is not altered from a hypothetical. Cost if wrong:
+  unexpected framework exception yields unavailable request instead of the normal expired response.
+- Review note: harmless maxAge0 check retained alongside actual empty-value/expiry deletion logic;
+  installed parser drops0, current deletion behavior is covered by raw response + upstream tests.
+- Original sole AFTER driver completed EXIT0: after natural305sidle, history after real10s loading,
+  subsequentSite beyond5s reuse, history reload and Site reload all authenticated/no expired escape.
+  Exactly1issuer token200 and10relevant Core200 statuses; completeExtraInfo confirms document200
+  Set-CookiePRESENT at first refresh and each subsequent navigation. Original BEFORE token200→400
+  and missingSetCookie preserved. No cookie values/claims inspected; generated software-only.
+  Evidence `/tmp/opencode/customer-c3-auth-after-probe-20261006.json` and distinct after-http metadata.
+  Final proxy72b5e7ca was in place before first expiry navigation; no production-source changes after.
+- Postprobe actual browser: closed session API404; bound history BFF GET200 JSON/no redirect.
+  `/api/sites` GET405 is its existing POST-only route, not a200 claim. Normal logout returns/login,
+  same bound history BFF GET then401application/json/no redirect. Browser JS error listing empty.
+  Screenshot `/tmp/opencode/customer-c3-auth-after-site-20261006.png` retains actual authenticated state.
+- Owned diagnostic terminated gracefully via exact owner/smokePID identity+pidfd; original owner
+  sh_1103f906e001rCmyJa4MI2vecw completed EXIT0. Named browserclosed,3237/9037closed; no shared service
+  stopped. Product loopback preview no longer reachable; preserved screenshots/metadata remain evidence.
+- Restored only proven smoke-generated tsconfig formatting/customdist additions; SHA6b1807cf equals
+  saved baseline/HEAD. No tsconfig pendingdiff. Original test-runner2deceff now runs final scoped/full/
+  lint/build/baseline-types once per command with distinct closure logs; output pending.
+- Final closure checker returned scoped30/full995/lint0 but build1/types2: Auth.js overload inferred
+  zero-arg callback as AppRouteHandler (event needsparams), parsed cookie expiry is Date|number,
+  synthetic refreshPOST response is void|Response. Vitest does not typecheck, so GREEN tests did
+  not close production gate. Original failed closure logs preserved; no commit/BUILD_ID claimed.
+- Minimal type-safe correction (no auth policy/flow redesign): callback explicitly typed public
+  NextMiddleware before wrapping; Date|number normalized by new Date; test missing-response guard
+  narrows void. Final proxy23ca4a3c51450daa8a2a2189a63b9b153e1749bd8a5ea2afc73e6a768334e4e6;
+  testcbc212674b4887c68f4d1e35bf18df0034ccdb3cde93a8daab13313dfcb98a9b.
+- Verifier discovered another idle development server3210 sharing default.next; failed build cleared
+  its artifacts. No server/service stopped or restarted. Primary read public/login once and all15
+  same-origin scriptassets:200 each, development artifacts regenerated normally. No auth/cookies/
+  responsebodies saved. Do not perform another default.next build while this devserver exists.
+- Recovery uses existing next.config KSI_DASHBOARD_DIST_DIR/KSI_DASHBOARD_TSCONFIG_PATH rather than
+  new product configuration: ignored nested isolateddist `.next-e2e/auth-closure-20261006-23ca4a3c`
+  and task-owned ignored compilercopy `.tsconfig-analysis-<proxySHA>.json`; baseline config and
+  saved generated next-env are guarded. Original runner2deceff executes isolated scoped/full/lint/
+  build/baseline-type once each; no global.next overwrite or dependency install.
+- Final production-artifact browser smoke is prepared, NOT started before successful independent
+  isolated build. It reuses the approved generated Core/issuer graph, pins final source/artifact,
+  runs Next start on distinct3237/9037 with fresh owned markers/logs; no shared3210 service, real
+  accounts/customer data or reconstruction/authority changes. Repeat natural expiry/persistence
+  against final artifact is required because source snapshot changed after the earlier browser run.
+- Final isolated runner2deceff succeeded: scoped30/3files, full995/131files, lint0, isolatedbuild0
+  (27/27pages, Proxy Middleware), baseline-tsc0, no diagnostics/warnings. All3source and roottsconfig
+  hashes before=after. Build log SHA8f0a0bb12e47dcad0b6218004d7fdd5e383f98b81e9697b9421f9a644dd3183f;
+  logs `/tmp/opencode/customer-c3-auth-isolated-independent-{scoped,full,lint,build,types}-20261006.log`.
+  BUILD_ID0f2yQyJ2NCPvzv9jQsVT_ exists only in task-owned nested isolateddist; no default.next build.
+- Ignored generated compilercopy unchanged by build; generated next-env changed only customdist
+  references and was restored exactly to prior1862ac4b before baseline-tsc. Baseline tsconfig6b1807cf
+  untouched, shared3210 server not stopped/restarted. Generated tsbuildinfo is not committed.
+- Existing config uses output standalone, so final software probe runs generated standalone/server.js
+  rather than unsupported nextstart. Mechanically copied unchanged public5SVGs and build/static into
+  that task-owned artifact; source files/brand/assets not adapted. Ownerpins proxySHA23ca4a3c plus
+  actual BUILD_ID before starting. Fresh generated TEST Core/JWKS/issuer retains exact granted field
+  identity; this is not Core production assembly/customer/host-release evidence.
+- Final standalone smoke sh_1105dd541001OkYkfpkIwEEf1p and named browser
+  customer-c3-auth-production-20261006 owner1058971/Chrome1058993 are the only new verification owners.
+  Normal role-test UI selects generated FIELD_OPERATOR, realPKCE callback succeeds, emptyhistory loads.
+  Passive final ExtraInfo observer sh_1105ef8fc001r1Lj7uiSZenGwv +sole natural305s production probe
+  sh_1105fb9f50010fvgfPv0ai4sI9 nowpending; no duplicate navigation/checks/cookievalues or bodytokens.
+- Design-reviewed8UI source/tests exactly equal committed57ae74a; auth.ts/coalesced-refresh.ts/
+  auth-cookie.ts/Core session consumer also equalHEAD. Safe12file hash snapshot
+  `/tmp/opencode/customer-c3-auth-final-invariants-snapshot-20261006.json` confirms no TTL/grants/policy/
+  UI/numerical changes. C4 tools/detailed implementation plans and FPC15A/B source history reconciled
+  again without duplicateimplementation; C5/C6/C7 actual input/operations/contract gates still missing.
+
+## Full-objective audit refresh — final-source verification, no acceptance substitution
+
+Deliverables remain the complete authorized registration→inspection→evidence→V2 analysis→query→
+revision-bound review→next-observation workflow, incident/tool recovery and required software evidence.
+The local auth repair is necessary progress, not a replacement for this full objective.
+
+| Explicit goal requirement | Concrete artifact/evidence | Current disposition |
+| --- | --- | --- |
+| Current Git/requirements/checkpoint; preserve C1/C2/C3 | main57ae74a, C1a672ea3/C27177620 ancestors; active named ledger + authority/routing revalidated; design-reviewed8files byte-equal57ae74a | Preserved; final artifact browser/lifecycle verified below, receipt and local commit follow |
+| Scoped history/detail, all relevant source grants; strict V1/V2 and historical numbers | C1/C2 mounted signed-OIDC scope/cursor/detail tests and independent bare8684/122skip evidence above; Core/numerical files have no pendingdiff | Software evidence retained, not real-data/field accuracy |
+| Design-tools recovery without unsupported bypass/restarts | Approved single shared restart/config recovery, actual in-place Dashboard source/read/render runs and canonical-source manifests; current tools available, no recurrent flapping observed | Resolved local capability; no extra restart/Cloud/standalone-designer fallback |
+| C3 required actual-source loading/UI fixes and distinct rendered review | local57ae74a; review47cfff0e plus corrected6a1c222a/frozen89ef5bef closes C1-V-01/02/03/C3-A11Y-01 and viewport mismatch with opened-image hashes | Design-owned closure verified; UI unchanged by auth repair |
+| C3 repeated-use auth response/upstream persistence | proxy23ca4a3c; real boundary RED4fail→GREEN12; final source BUILD_ID0f2yQyJ2NCPvzv9jQsVT_ standalone natural305s/4nav+reloads/token200x1/Core200x16/SetCookiepresent | Final-source software runtime verified; no customer/field claim |
+| Independent related/full/static/build, real auth/API/reload | runner2deceff scoped30/full995/lint/build/baseline-types0; failed first build and cause-specific isolated recovery preserved; final artifact numeric history/detail/reload and actual logout boundAPI401/session404 verified below | Tests cover cookie transport/rotation/chunks/invalid/closed session, not customer data or field gates |
+| C4 safe local verifier/recovery gaps, no duplicate bundle/OCI/degraded boot | Existing tools/external_runtime_application_bundle.py + builder/verifier; application-bundle/OCI plans and FPC15A/B reviewed above, no concrete additional approved software gap found | Local reconciliation done; protected runtime/wheelhouse/actual-host preparation remains unavailable/unapproved |
+| Exposed Meta/NVIDIA/Context7 key replacement | Incident record, no secret values in this ledger/tool inputs; available prepared tools provide no authenticated account-admin rotation capability or confirmed account scope | NOT achieved; account owner must revoke/replace through authorized account session, without posting keys |
+| C5 actual same-Site/WorkArea t0/t1/t2, rights/CRS/vertical/provenance/selected customer OIDC/MCP/cost | No owner-supplied selected exports/rights/customer identity/client/cost baseline; generated Core/issuer/DSM records explicitly labeled software-only | NOT achieved; required external input, not a new engineering failure |
+| C6 actual contained host, signing/recovery/representative backup+restore/retention, independent customer/named acceptance | Local source/drill history exists; no approved actual host/runtime/signer/customer acceptance or representative recovery inputs | NOT achieved; separately authorized operations/customer evidence required |
+| C7 selected feed/resync/data-MCP/external producer/model/input/revision contracts | ADR038/roadmap GAP04..09 remain material detailed-contract/client/operations/customer decisions | NOT achieved; no fabricated wire contract/client support/vendor claim |
+| No external delivery/security weakening; preserve evidence/workspaces | No push/PR/deploy/registry/signing/live grants/policies/config activation/install/equipment/customer contact; operations goal/candidate remain cancelled/archived; dirty task-owned RED worktree preserved | Boundary maintained; retained worktree exception, no forced cleanup |
+
+Blocking audit is finalized only after original final-artifact runtime/owned lifecycle evidence
+and verified local auth commit. Runtime/lifecycle are recorded below; receipt/local commit still
+remain meaningful agent-owned work. Do not close the goal for a temporary wait or recovered failure.
+
+## C3-AUTH-01 final compiled-artifact runtime closure
+- Original final production probe sh_1105fb9f50010fvgfPv0ai4sI9 completed EXIT0 with actual pinned
+  BUILD_ID0f2yQyJ2NCPvzv9jQsVT_/proxy23ca4a3c, natural305s idle, first history after real10s loading,
+  subsequentSite beyond5s reuse, history reload and Site reload. All4states retain context/no expired
+  escape; exactly1token200,16relevant Core200 statuses; completeExtraInfo callback302 positive control
+  and all4normaldocument200 responses Set-CookiePRESENT. Distinct observer completed normally.
+  `/tmp/opencode/customer-c3-auth-production-probe-20261006.json` + production-http metadata preserve
+  actual records, not just a success toast. Generated software-only, not customer/field acceptance.
+- Postprobe actual operator changed flow on same compiled artifact: history/site-a shows cut1m3,
+  fill5m3, net+4m3, uncertainty±5m3; actual detail link then exact URL/document reload then history
+  link retain those same values and limitation copy. No display-derivative bytes invented; unsupported
+  display remains unavailable. Browser JS error list empty. Bound history BFF200 JSON/no redirect;
+  closed `/api/auth/session` GET404 with no client-token body. No private token/cookie values read.
+- Normal logout button returns/login; same bound history BFF then401application/json/no redirect,
+  closed session API remains404. This exercises real UI/logout/cookie clearing and authenticated
+  route enforcement, not a page API shortcut in place of interaction. No mutation/grant bypass.
+- Actual settled detail/history PNGs retained at `/tmp/opencode/customer-c3-auth-production-{detail,history}-20261006.png`.
+  Initial click screenshot preceded confirmed detail settlement and is explicitly preserved as
+  `...-early-click-preserved-20261006.png`; only post-confirmed URL/title capture is detail evidence.
+  These nonvisual-repair runtime captures do not replace the previous design-owned viewport review.
+- Final owned standalone smoke owner1054950/smoke1054952 exited0 after exactidentity+pidfd graceful
+  termination; named browserclosed;3237/9037closed. Shared3210 not stopped/restarted. Root config,
+  next-env and3taskfiles retain independent snapshot hashes. Product loopback preview now stopped;
+  frozen build/screenshots/metadata remain evidence, not external/public delivery.
+- Original independent runner2deceff is binding receipt JSON fields/timestamps/artifact/source/PNG
+  dimensions and owned lifecycle without duplicate full tests/build/browser driving. Separate remaining
+  C4–C7/external-blocker audit by existing reviewer ses_ef0063e0effergSiA5V03TYhXr is pending; it must
+  identify any concrete safe approved engineering work before this goal can be reported blocked.
+- Local technical C3 closure does not close/reprioritize product EXT-VAL slice or full customer
+  repeat-use/field/operational acceptance. Authcommit is task-owned3source/test/configfiles +thisledger,
+  excludes ignored checkpoint/compiler/build/evidence and existing dirty RED worktree. No push/PR/deploy.
+- Remaining-work audit ses_ef0063e0effergSiA5V03TYhXr inspected current3taskfile hashes (match final
+  snapshot), actual C4 tools/dated plans, C5 data directory (only geoid), empty Core/policy diffs,
+  missing C7 selected contracts and preserved dirty RED worktree. Found no concrete safe independently
+  executable approved engineering candidate beyond Primary receipt/local commit. Keys/C5/C6/C7
+  require external account/input/operations/material-contract evidence, not duplicate local tooling.
+- Audit read the earlier938line ledger while Primary was recording completion. Its summary-vs-ledger
+  discrepancy refers to that earlier snapshot's pending rows, not a failed/missing runtime result.
+  Final section and refreshed table now record original probe artifact/exit0, source/build pins,
+ 4states/token/Core/header metadata, actual postprobe flow and exact owned shutdown. Do NOT replay
+  the completed probe because of this read/write timing difference; independent receipt reads the
+  preserved original actual files. Auditor correctly declined to attest execution it did not perform.
+- Final receipt runner ses_eefb2deceffejEA35wrhvLa31y verified actual original JSON fields/timestamps,
+  not summary booleans: build/source match,4states correct/noexpired/loginEscapeFALSE, token['200']
+  exactly,16Core statuses all200; post-expiry document records2..5 all200/SetCookie/completeExtraInfo,
+  record2 timestamp >=firstnavigation. Callback302 is separate pre-expiry positivecontrol, not the
+  persistence witness. Shorthand `noexpired/login` in the request means neither expired nor login
+  escape; no positive-login assertion was intended. ActualFalse is the required authenticated state.
+- Receipt JSON `/tmp/opencode/customer-c3-auth-final-receipt-independent-20261006.json` SHA
+  15075e5547d078f9efce9c137198c4a68b2181bea166b09b29a622333f76327a;
+  original production probe SHA52786a24cbcc9614b3bd25cf36237d8ceab12f703b51d7b47131e83904b704ea,
+  HTTP metadata SHAd27463dad9826ede1b29b84a71b84cb6e48563267edaa8966f6a20be48dd2793.
+  Owned4PIDs inactive/3237+9037+CDP39285closed, git diff-check0, source/config hashes unchanged.
+  New history/detail/early PNGs intrinsically1280x633; no claim they are390/768/1440 design captures.
+  Independent runner DID NOT drive Primary's manual numerical/detail/logout follow-ups; those are
+  actual Primary tooltrace evidence. No aesthetic/customer/field/operations attestation inferred.
+
+## Agent-owned closeout and genuine remaining blockers
+- Full authorized objective is unchanged. C1/C2 scoped reads and bounded C3 UI/loading/auth repairs
+  are locally implemented/design-reviewed where visual, independently tested/static/built, and
+  exercised through actual generated OIDC/Core/compiled Dashboard navigation/reload/logout.
+  All required files are complete/untruncated, with actual-source hashes/artifact/runtime receipts.
+  This local auth milestone is committed only after these checks as `fix(dashboard): persist rotated
+  OIDC sessions across requests`; actual resulting revision is recorded in native goal report and
+  ignored checkout checkpoint. No push/PR/deploy/registry/release/operationscandidate change.
+- Independent remaining-work audit found no executable approved software task beyond that commit;
+  its previously pending runtime/receipt/lifecycle gate is now concretely closed above. C4 existing
+  verifier/OCI/degradedboot code needs no duplicatefix. Deferred minor `/api/auth` bare-path refresh
+  is nonblocking follow-up; no new product contract/route needed for current acceptance.
+- Genuine required external blockers, not temporary waits/recoverable errors/effort limits:
+  1. Account owner: exposed Meta/NVIDIA/Context7 keys require authorized account-admin revocation/
+     replacement and confirmed account scope. No prepared admin capability; never send key values.
+  2. Customer/data owner: selected actual sameSite/WorkArea t0/t1/t2 derived exports plus usage rights,
+     CRS/vertical/provenance and required compatibility evidence, selected customer OIDC/MCP and
+     cost baseline. No permitted actual input supplied; synthetic bytes cannot replace this gate.
+  3. Operations owner: separately scoped actual host/runtime/containment/signer/recovery/representative
+     backup+restore/retention authorization and evidence. Cancelled operations goal is not resumed.
+  4. Product/integration owner: selected detailed feed/resync/data-MCP and external producer/model/
+     input/revision contract; unresolved material requirements cannot be safely guessed.
+- Actual customer/field/device/operational/named acceptance remains open; optional physical coarse-
+  pointer44px and real screen-reader listening were not established by software emulation. Local
+  tests/build/design reviews are not numerical accuracy, formal issuance or flight approval.
+- Stop-report contract after local commit: report goal blocked/unmet with exact local revision and
+  evidence above; do not shrink objective, claim full-product completion or continue a meaningless
+  poll/retry loop. Next executable work is binding authorized real inputs/account completion and
+  selected contracts/operations scope; only then can the remaining workflow/evidence be advanced.
