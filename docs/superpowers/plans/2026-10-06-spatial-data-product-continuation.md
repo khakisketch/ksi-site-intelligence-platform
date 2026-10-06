@@ -641,3 +641,154 @@ Audit is authorizedpublicationattempt, not receipt; canceledthreadwork may finis
 unavoidable remotecredential/CPU/actualtransport handoff window is not globalatomicity/recall.
 Next Task3 will use tested uniqueREADmetadata selector + exact identity and current response
 gate for filtered assetprojection/cursors, never cropgeometryasmetadataauthorization.
+
+### Task3 start — committed boundary handoff
+
+Task2 committedbed4d9ce5b38bfcebdb86954627246571583bb5b, source/plan/ledgeronly13files;
+Gitclean, checkpoint keptignored. Task3base/integrationmainbed4d9c, soledeveloperwriter.
+Ruling: add delivery/jobs.py to Task3 exactfileownership because approved Task3Step5 requires
+AI-only strict snapshot pagination for jobs, while its Files paragraph omitted that existing
+owner. No new route/policy/publicschema scope; preserve generic cursor semantics. Costifwrong
+localizedAIcursorimplementation can be reverted, never missing approvedcurrentness test.
+Ruling: reuse Task2 ai_egress typedresponse final credential/header/body gate + exactmetadata
+selector, extend by typedasset/page methods ratherthan copyanother guard/byte engine.
+Task3 uses authentic syntheticreports for catalog/sourceauthority contracts, not SDK/TIFF
+parity/hostacceptance; genuine generatedinspection/worker/consumer requiredTask5 stillpending.
+Originalprovider/securityfixloops are complete history, not permission to repeatTasks1/2.
+
+### Task3 partial execution recovery — 2026-10-07
+
+Revalidated main/bed4d9c/worktree inventory/checkpoint/taskcache/productstate and current approved
+authority. Task3 child `ses_eee51a5b0ffeYWV0ZJTDEQ3919` wrote source.py/newasset_discovery/newtest
+then returned provider tool_choice protocol failure. Same-child recovery once reproduced that
+environment error; no report/pass/commit. task-3-red.log remains, source writes preserved.
+Ruling: fresh bounded recovery developer completes actual unfinished Task3 from current diff,
+not greenfield rewrite or completed-stage redispatch — provider failure blocks original child,
+not product requirements — cost if wrong is a scoped reversible repair; no provider/model/config
+changes, installation or unsafe state reset authorized. Primary retains Git/checkpoint/ledger.
+
+### Task3 first report/review and repair ruling
+
+Recovery developer `ses_eee39259effeVnIJuQEuI1kxBH` found preserved original implementation
+complete (10sourcepaths, parentledger is Primary's change); no own source edits. New10/sixfiles93/
+egress+Task1subset153 passed, scopedstatic0. OriginalRED10missingmodule/wiring retained, not
+misrepresented as complete negative coverage. Current task3freeze hashes all10sourcepaths.
+Reviewer `ses_eee35557fffeUm44fQZ4OzE607` required stale API sync-count repair and one consistent
+`now` per list. Source locations in report use package line numbers, not actual file lines.
+Ruling: add test_api_contract_sync.py to bounded Task3 ownership; verify actual failingcount
+then assert complete13opt-in operations + newroute/schema concordance ratherthan merely hide
+failure — approved two GETs require this existing conformance change, reversible test-only.
+Ruling: pass list(now) into _resolve_for_list grant check; egress supplies fresh now per stage,
+one projection evaluates one authority-time, not differenttimes per candidate.
+
+Primary targeted current code checks found three additional load-bearing gaps:
+- P1: _list_ai lacks require_ai_scope independently of entries. Genuine empty jobpage prepared,
+  consent withdrawn before finalsend still gave200/ALLOWED. Fix common fresh AI scope/consent
+  before enumeration even empty/all-filtered pages, directstore+egress barrier tests; generic
+  history unchanged. This is already explicit Task3 empty-page snapshot/currentness acceptance.
+- P2: catalog.items invokes _project_revision returning complete tuple before max_items/max_bytes
+  checks; append then checksbytes. Required accumulation bounds must apply within per-revision
+  projection before result growth, singleton bytescount included; omit optional limits preserves
+  existing callers. New projection-specific failure cannot masquerade as denied/emptysuccess.
+- P3: final newasset recheck lambdas call discovery.get/list, then resolve_candidate→
+  public_snapshot_bounded→policyregistry._select→authority_port.resolve. This is externalport
+  resolution inside synchronous lastheader/body checks, not boundedlocal currentness. Ruling:
+  separate bounded detached remote preflight from typed final local source/grant/lifecycle/page
+  re-projection; finalgate uses genuine local owner/report currentness, no externalport. No fake
+  Principal/authority or stalebodyacceptance; callbackauth outside coordinator/async boundedstage,
+  no unsafe generic publication callback. Test externalport resolver forbidden at final local
+  gate + revocation/report/lifecycle change still refuses protectedbytes. Existing current source
+  localreport method explicitly owns final recheck, no new publicwire/policy authority allowed.
+
+Reviewer CannotVerify dispositions: select_metadata_current sealeduniquegrant/indexbudget and
+source.require_ai_scope internals read at Task2, unchanged; final guardedresponse/header/body
+auth/audit boundedness verified Task2 sourcefreeze, require same inputs for new typed assetpath.
+Exact new schema/model/OpenAPI and actual logs must pass independentTask3conformance, not inferred
+from refs. Customer load/performance and actualSDK/TIFF parity deferred explicitT5/customergates.
+Fixround1 same recoverydeveloper, genuine behavioralRED then scopedtests/static and re-review.
+
+### Task3 fix1 review and final snapshot/conformance check
+
+Fix1 recovery resumed after provider interruption without reset: RED6/4controls→327scopedpass,
+Ruff/format/diff0 +7filemypy0, fullstdout retained. Reviewer marked I1/I2/P1/P2/P3 addressed.
+Primary confirmed count/time/emptyconsent/generator/localremote split in actual source; initial
+10hashsnapshot validated, current12freeze includes metadataresponse/synctest. ReviewminorM1
+port tests only upper-bound total resolvercalls; strengthen phase-attributed zero finalcalls
+including historical resolution in this stage, not claim wholehost containment.
+
+P4 conformance: asset_api responses use old SpatialDataErrorV1 while newroute runtime ai_error_response
+and OpenAPI refs use SpatialDataAiErrorV1 (stale reason absent oldenum). Ruling: same newroutes'
+declared error model must match actualtypedfamily; test mounted router error-schema aliases/reasons
+against committed newAI schema, not only2xx/count. Genericerror/runtimecontracts unchanged.
+P5 snapshot verification: fix1 skips unresolvable preflightcandidates without noticing local
+report/seal readiness changes. Reviewer accepted disclosed under-admission, but approved current
+permitted-snapshot contract needs evidence when a granted candidate changes readiness before
+handoff. Ruling: prove samecandidate locally arrives report/seal with relevant currentgrant after
+preflight causes stale/refusal (not incompletecursor); if reproduction shows omission, bind bounded
+local candidate/report state for that classification and recheck changes before headers/body.
+Keep no externalport in finalgate and no deniedcounts in wire, no invented policyservice.
+Purely ungranted unrelated source drift need not become data-sharing permission or payload.
+Fixround2 targeted to actualrefusedcase/conformance; no broadredo/currentpublicwire changes.
+
+### Task3 fix2 returned; bounded local inspection fingerprint still required
+
+Fix2 developer RED2/4controls (fixture setup failures excluded)→331scopedpass/static8typing0;
+newrouterAIerror family +phase-attributed zero externalport gates +grantedseal-readiness409.
+Developer explicitly left pure report-arrival for already sealed unmeasured source undetected:
+catalog readiness class has no report-state identity. This was requested P5, not an optional
+feature, so no Task3completion accepted. No need for external port in final local gate.
+Ruling: extend Task3 ownership by one canonical owner file ingress/external_artifact_inspections.py
+for a bounded local exact-subject retained-state fingerprint (not authority/metadata API).
+Source resolver re-establishes real scoped subject before using it; fingerprint merely detects
+local mutation of inspection records/report/seal, never authorizes source/READ or replaces genuine
+local currentness. Finite max_pending_records, dependency fail-closed, no new runtime/config or
+publicwire. Cost if wrong localized read-only helper reversible; no provenance meaning change.
+Fixround3 close actual pure-report readiness barrier with genuine owner mutation and zeroport
+final gates; scopes/typed projection/shared authority unchanged. Schema/conformance gates must
+stay strict. One sourcewriter, Primary Git/ledger, no packageinstall or broader code reshuffle.
+
+### Task3 final review returned; cursor evidence before closure
+
+Fix3 RED sealed-unmeasured/report-arrival200 omission→409,333scope/static9mypy0; finalscoped
+review `ses_eee35557fffeUm44fQZ4OzE607` marked P4/P5/M1 addressed, no newfindings. Primary
+inspected coverage: sharedstrictcursor rawJSON cases and AIjobsnapshot transitions lackdirect
+Task3 tests; decode accepts arbitrary nonempty snapshot strings and emits409 ratherthan malformed
+hashshape422. Ruling: complete Task3Step5 negative matrix now, exact SHA256hash shapes required;
+lexical cursor validation and directAIjobfilter/currentprojection/revocation/mutation-free tests
+within existingdiscovery testfile, no newjobwire/enum or genericV1behavior. This is explicitly
+approved strictcursor/currentness scope, not a newpubliccontract. Minimal parserrepair only if
+behavioralRED confirms gap; validate future Task4 inputlimits independently then.
+
+### Task3 scoped closure — current granted discovery and pagination
+
+Task3 developer recovery `ses_eee39259effeVnIJuQEuI1kxBH` completed fourboundedfixes; genuine
+missingmodule/synccount/clock/emptyconsent/remoteport/errorfamily/grantedseal/reportreadiness/
+malformedhash RED retained separately from fixture/setup errors and already passingcontrols.
+Finalscoped reviewer `ses_eee35557fffeUm44fQZ4OzE607`: I1/I2/P1–5/M1 and strictcursor proof
+addressed, no open task findings; genuineAI2job/genericfilter/cancel/revocation/replacement/
+noresurrection/nojournalmutation evidence added. Generic V1 history/cursor remains unchanged.
+
+Independent runner `ses_eee8899d7ffeX0iTUza6tSBlem` ran once:
+`.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-3-verify-final.py`.
+Actualpytestargv17files: asset_discovery/source/catalog_adoption/catalog_prerequisites/api/jobs/
+assembly/current_grants/real_credential_audit/asgi_stream/ai_egress/ai_contracts/mcp_identity/
+permissions/analysis_mcp_identity/contracts/api_contract_sync, all test_ prefix and .py under
+tests/contract, `-q -W error::RuntimeWarning` →699passed/0skip/0warnings/101.39s. Ruffcheck+
+format13changedPythonfiles, mypy9owner/gatefiles, gitdiffcheck all exit0.14sourceSHA256+HEAD
+bed4d9c unchangedbeforeafter. Primary checked actualreceipt/fullstdout/allloghash/currentfiles.
+Receipt `.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-3-independent-final/receipt.json`,
+SHA2568d5450684e81a3d5604deeaebeb59de8b28244a5a75e60658169d0b847da3b33. Exactsourcefreeze
+task-3-fix4-freeze.json in ownedignoredscratch; committedTask3source revision recordsdurably.
+
+Observable Task3level: opt-in local Core graph exposes the two authenticatedAI discovery GETs,
+exactnativeDSM/ORTHO permission-restrictedfacts/actions and strict currentasset/AIjobpage cursors;
+newassets/page metadata use bounded remote preflight then local owner fingerprint/currentrights/
+freshcredentials before guardedheaders/body. Emptyjobpage/lateconsent failclosed, no authority
+resolution in finalgate, no deniedcounts, no pretending recordidentity provesrights/accuracy.
+Coreoptionalcatalogaccumulation limits refuse beforegrowth; no measuredcustomer-load/SLAclaim.
+OpenAPI errorfamilies/aliases/runtime paths agree in actual conformancechecks.
+
+Task3 complete at scoped software sourcelevel after Primarytaskownedcommit. Task4stdio adapter,
+Task5actual SDK/HTTP/worker/independentconsumer/restart/nextobservation parity, Task6wholechange
+review/fullverification remainrequired. No nativehost/customer/realexport/operationalrelease
+acceptance/AIclientconfig/provisioning/push/deploy performed. ProductEXT-VAL and goalremainopen.

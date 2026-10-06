@@ -111,7 +111,11 @@ class SpatialDataAiMetadataResponse(Response):
     runs synchronously after the audit, immediately before headers, and the
     bearer is refreshed a third time with its own synchronous recheck
     immediately before the body — the header ack never authorizes later
-    bytes. Every awaited stage — credential refreshes, rechecks, audit, header/body sends and
+    bytes. An optional ``preflight`` runs once, bounded, after the first
+    credential refresh and before the audit: it may perform bounded remote
+    inspection-authority resolution outside coordinator locks, while every
+    later ``recheck`` stays genuinely local. Every awaited stage —
+    credential refreshes, rechecks, audit, header/body sends and
     the refusal send — runs inside the remaining monotonic publication budget
     while racing client disconnect; a stalled stage ends in a bounded denial
     with no ack, never a hang and never a late success. The audit records the
@@ -135,6 +139,7 @@ class SpatialDataAiMetadataResponse(Response):
         mono_started: float,
         recheck: Callable[[Principal], bytes],
         audit: Callable[[Principal, bytes], None],
+        preflight: Callable[[Principal], bytes] | None = None,
     ) -> None:
         if type(body) is not bytes or not body:
             raise ValueError("guarded AI response requires prepared canonical bytes")
@@ -142,6 +147,8 @@ class SpatialDataAiMetadataResponse(Response):
             raise ValueError("AI metadata responses are 200 or 201 only")
         if not callable(clock) or not callable(recheck) or not callable(audit):
             raise ValueError("guarded AI response requires clock/recheck/audit closures")
+        if preflight is not None and not callable(preflight):
+            raise ValueError("guarded AI preflight must be a callable or null")
         if type(max_json_bytes) is not int or max_json_bytes <= 0:
             raise ValueError("guarded AI response requires a positive JSON bound")
         if len(body) > max_json_bytes:
@@ -176,6 +183,7 @@ class SpatialDataAiMetadataResponse(Response):
         self._mono_start = float(mono_started)
         self._recheck = recheck
         self._audit = audit
+        self._preflight = preflight
 
     def _remaining(self) -> float:
         """Monotonic publication budget left; the injected clock stays authority time."""
@@ -330,9 +338,19 @@ class SpatialDataAiMetadataResponse(Response):
             self._check_budget()
             if disconnected.is_set():
                 return
-            fresh = await self._await_stage(
-                lambda: run_in_threadpool(self._recheck, principal), disconnected
-            )
+            preflight = self._preflight
+            if preflight is None:
+                fresh = await self._await_stage(
+                    lambda: run_in_threadpool(self._recheck, principal), disconnected
+                )
+            else:
+                # Bounded remote inspection preflight runs once, outside
+                # coordinator locks, before the audit; every later recheck
+                # stays genuinely local. Drift between prepare and preflight
+                # is a typed stale conflict, never stale bytes.
+                fresh = await self._await_stage(
+                    lambda: run_in_threadpool(preflight, principal), disconnected
+                )
             self._check_bounded(fresh)
             if _digest(fresh) != self._prepared_digest:
                 raise SpatialDataAiDomainError("REPORT_CONFLICT", 409)

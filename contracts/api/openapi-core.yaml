@@ -8238,6 +8238,47 @@ paths:
         '409': {description: Output not ready}
         '416': {description: Range unsupported}
         '503': {description: Download authority audit or storage unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets:
+    x-assembly: explicit-local-spatial-data-wiring
+    description: >-
+      AI-identity grant-filtered discovery of permitted DSM/ORTHO assets in one
+      supplied Site/WorkArea. Filter precedes pagination; the opaque cursor binds
+      the current projection snapshot and requires restarting listing when stale.
+    parameters: *spatialDataScope
+    get:
+      summary: List current grant-filtered asset projections without denied counts
+      security: [{bearerAuth: []}]
+      parameters:
+        - {name: limit, in: query, schema: {type: integer, minimum: 1}}
+        - {name: cursor, in: query, schema: {type: string}}
+      responses:
+        '200':
+          description: Grant-filtered asset projections in stable assetRef order
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataAssetPageV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: AI consent or current grant denied}
+        '404': {description: Scope unavailable or foreign}
+        '409': {description: Cursor snapshot stale, restart listing}
+        '422': {description: Invalid bounded query or cursor}
+        '503': {description: Authority unavailable}
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-data-assets/{asset_ref}:
+    x-assembly: explicit-local-spatial-data-wiring
+    parameters:
+      - {name: site_id, in: path, required: true, schema: {type: string}}
+      - {name: work_area_id, in: path, required: true, schema: {type: string}}
+      - {name: asset_ref, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Read one exact granted asset projection under current rights
+      security: [{bearerAuth: []}]
+      responses:
+        '200':
+          description: Exact permitted projection of the requested asset revision
+          content: {application/json: {schema: {$ref: '#/components/schemas/SpatialDataAssetViewV1'}}}
+        '401': {description: Authentication required}
+        '403': {description: Ambiguous grants or current grant denied}
+        '404': {description: Scope, asset or grant unavailable or foreign}
+        '422': {description: Invalid bounded query}
+        '503': {description: Authority unavailable}
   /v1/internal/spatial-data-jobs:
     x-assembly: explicit-local-spatial-data-wiring
     parameters: &spatialDataWorkerIdentity
@@ -19151,6 +19192,10 @@ components:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataJobViewV1'
     SpatialDataErrorV1:
       $ref: '../schemas/spatial-data.v1.json#/$defs/SpatialDataErrorV1'
+    SpatialDataAssetViewV1:
+      $ref: '../schemas/spatial-data-ai.v1.json#/$defs/SpatialDataAssetViewV1'
+    SpatialDataAssetPageV1:
+      $ref: '../schemas/spatial-data-ai.v1.json#/$defs/SpatialDataAssetPageV1'
     SpatialDataWorkerPendingPageV1:
       $ref: '../schemas/spatial-data-worker.v1.json#/$defs/SpatialDataWorkerPendingPageV1'
     SpatialDataLeaseRequestV1:

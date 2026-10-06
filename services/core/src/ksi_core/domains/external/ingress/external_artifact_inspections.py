@@ -738,6 +738,54 @@ class ExternalArtifactInspectionStore:
                     return record.report.model_copy(deep=True)
         return None
 
+    def locally_retained_state_digest_bounded(
+        self, subject: SealedExternalSubjectV1, *, max_records: int
+    ) -> str | None:
+        """Bounded exact-subject retained inspection state fingerprint.
+
+        Deterministic digest over the bounded retained request/report/state
+        bindings for one exact sealed subject: a newly added report or request
+        changes the fingerprint. Read-only under the owner lock; no worker,
+        storage, remote authority, or policy-port resolution, and no payload
+        or denied counts exposed. Returns None when this store or its policy
+        registry is sealed (fail closed); budget overage raises.
+        The fingerprint detects local mutation only: it is not authority, not
+        an eligibility guarantee, and never a substitute for the genuine
+        currentness recheck before any handoff.
+        """
+        if type(max_records) is not int or max_records < 1:
+            raise ValueError("max_records must be a positive integer")
+        with self._lock:
+            if self.sealed_reason is not None or self._policy_registry.sealed_reason is not None:
+                return None
+            ids = self._record_ids_by_subject_digest.get(subject.canonical_digest(), ())
+            if len(ids) > max_records:
+                raise ExternalArtifactInspectionSnapshotBudgetExceeded(
+                    "inspection record source budget exceeded"
+                )
+            bindings: list[list[str | None]] = []
+            for request_id in sorted(ids):
+                record = self._records[request_id]
+                report = record.report
+                bindings.append(
+                    [
+                        request_id,
+                        record.request.inspection_policy_digest,
+                        report.report_digest if report is not None else None,
+                        report.inspection_policy_digest if report is not None else None,
+                        record.state,
+                        record.terminal_reason,
+                    ]
+                )
+            return (
+                "sha256:"
+                + hashlib.sha256(
+                    canonical_json_bytes(
+                        {"subject": subject.canonical_digest(), "records": bindings}
+                    )
+                ).hexdigest()
+            )
+
     def data_report_for_locally_current_use(
         self,
         subject: SealedExternalSubjectV1,

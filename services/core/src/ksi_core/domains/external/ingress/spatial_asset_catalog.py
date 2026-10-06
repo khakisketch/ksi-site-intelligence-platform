@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import re
+from collections.abc import Iterator
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -177,14 +178,20 @@ class SpatialAssetCatalog:
             ),
         )
 
-    def _project_revision(
+    def _iter_revision_items(
         self,
         *,
         site_id: str,
         work_area_id: str,
         record: ExternalReconstructionRevision,
         latest_revision: int,
-    ) -> tuple[SpatialAssetCatalogItemV1, ...]:
+    ) -> Iterator[SpatialAssetCatalogItemV1]:
+        """Yield one projected catalog item at a time; budgets bind before accumulation.
+
+        The caller checks its remaining item/byte budgets before appending each
+        yielded item, so an over-budget revision never materializes a full
+        tuple first. Callers omitting budgets consume the identical sequence.
+        """
         submission = record.submission
         submission_ref = self._submission_ref(record)
         lifecycle = (
@@ -199,7 +206,6 @@ class SpatialAssetCatalog:
             if record.manifest is not None
             else {}
         )
-        result: list[SpatialAssetCatalogItemV1] = []
         if record.manifest is not None:
             assert record.manifest.manifest_digest is not None
         manifest_digest = record.manifest.manifest_digest if record.manifest is not None else None
@@ -216,43 +222,56 @@ class SpatialAssetCatalog:
                 if record.manifest is not None and entry is not None and manifest_digest is not None
                 else None
             )
-            result.append(
-                SpatialAssetCatalogItemV1(
-                    asset_ref=self._asset_ref(
-                        submission_ref, submission.revision, declared.artifact_id
-                    ),
-                    site_id=site_id,
-                    work_area_id=work_area_id,
-                    work_order_id=record.work_order_id,
-                    observation_epoch_id=record.observation_epoch_id,
-                    submission_ref=submission_ref,
-                    revision=submission.revision,
-                    artifact_id=declared.artifact_id,
-                    kind=declared.kind,
-                    lifecycle_state=lifecycle,
-                    declared=SpatialAssetDeclaredFactsV1(
-                        file_name=declared.file_name,
-                        format=declared.format,
-                        content_type=declared.content_type,
-                        sha256=declared.declared_sha256,
-                        size_bytes=declared.declared_size_bytes,
-                        crs=declared.declared_crs,
-                        vertical_reference=declared.declared_vertical_reference,
-                        gsd_m=declared.declared_gsd_m,
-                        submitted_at=submission.submitted_at,
-                        producer_completed_at=(submission.producer_declaration.completed_at),
-                        capture_started_at=submission.input_declaration.capture_started_at,
-                        capture_ended_at=submission.input_declaration.capture_ended_at,
-                    ),
-                    observed=observed_facts,
-                    inspection=SpatialAssetInspectionV1(state="INSPECTION_NOT_QUERIED"),
-                )
+            yield SpatialAssetCatalogItemV1(
+                asset_ref=self._asset_ref(
+                    submission_ref, submission.revision, declared.artifact_id
+                ),
+                site_id=site_id,
+                work_area_id=work_area_id,
+                work_order_id=record.work_order_id,
+                observation_epoch_id=record.observation_epoch_id,
+                submission_ref=submission_ref,
+                revision=submission.revision,
+                artifact_id=declared.artifact_id,
+                kind=declared.kind,
+                lifecycle_state=lifecycle,
+                declared=SpatialAssetDeclaredFactsV1(
+                    file_name=declared.file_name,
+                    format=declared.format,
+                    content_type=declared.content_type,
+                    sha256=declared.declared_sha256,
+                    size_bytes=declared.declared_size_bytes,
+                    crs=declared.declared_crs,
+                    vertical_reference=declared.declared_vertical_reference,
+                    gsd_m=declared.declared_gsd_m,
+                    submitted_at=submission.submitted_at,
+                    producer_completed_at=(submission.producer_declaration.completed_at),
+                    capture_started_at=submission.input_declaration.capture_started_at,
+                    capture_ended_at=submission.input_declaration.capture_ended_at,
+                ),
+                observed=observed_facts,
+                inspection=SpatialAssetInspectionV1(state="INSPECTION_NOT_QUERIED"),
             )
-        return tuple(result)
 
     def items(
-        self, site_id: str, work_area_id: str, principal: Principal
+        self,
+        site_id: str,
+        work_area_id: str,
+        principal: Principal,
+        *,
+        max_items: int | None = None,
+        max_bytes: int | None = None,
     ) -> tuple[SpatialAssetCatalogItemV1, ...]:
+        """Scoped catalog candidates; optional budgets refuse overage, never truncate.
+
+        Callers omitting the new optional budgets retain existing behavior.
+        The AI discovery lane passes its explicit data-policy budgets so
+        candidate work stays finite before materialization.
+        """
+        if max_items is not None and (type(max_items) is not int or max_items < 0):
+            raise ValueError("catalog item budget must be a nonnegative integer or null")
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes < 0):
+            raise ValueError("catalog byte budget must be a nonnegative integer or null")
         self._require_scope(site_id, work_area_id, principal)
         try:
             orders = self._work_orders.list_for_site_bounded(
@@ -269,6 +288,8 @@ class SpatialAssetCatalog:
 
         all_items: list[SpatialAssetCatalogItemV1] = []
         remaining_revisions = _MAX_SITE_REVISIONS
+        remaining_items = max_items
+        remaining_bytes = max_bytes
         for order in orders:
             # There is no per-artifact footprint in the ingress contract. A multi-area
             # WorkOrder cannot safely bind its exports to one WorkArea.
@@ -295,14 +316,33 @@ class SpatialAssetCatalog:
                 )
             for record in records:
                 ref = self._submission_ref(record)
-                all_items.extend(
-                    self._project_revision(
-                        site_id=site_id,
-                        work_area_id=work_area_id,
-                        record=record,
-                        latest_revision=latest_by_submission[ref],
-                    )
-                )
+                for item in self._iter_revision_items(
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    record=record,
+                    latest_revision=latest_by_submission[ref],
+                ):
+                    # Remaining optional budgets bind per item before any
+                    # accumulation: overage is an explicit refusal, never a
+                    # truncated success. Omitted budgets keep existing callers.
+                    if remaining_items is not None:
+                        if remaining_items <= 0:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="SPATIAL_ASSET_SOURCE_BUDGET_EXCEEDED",
+                            )
+                        remaining_items -= 1
+                    if remaining_bytes is not None:
+                        item_bytes = len(
+                            canonical_json_bytes(item.model_dump(by_alias=True, mode="json"))
+                        )
+                        if item_bytes > remaining_bytes:
+                            raise HTTPException(
+                                status_code=503,
+                                detail="SPATIAL_ASSET_SOURCE_BUDGET_EXCEEDED",
+                            )
+                        remaining_bytes -= item_bytes
+                    all_items.append(item)
         return tuple(sorted(all_items, key=lambda item: item.asset_ref))
 
     def with_inspection(

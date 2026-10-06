@@ -16,6 +16,10 @@ from ksi_event_contracts.spatial_data import (
     SpatialDataPageV1,
     SpatialDataRequestV1,
 )
+from ksi_event_contracts.spatial_data_ai import (
+    SpatialDataAssetPageV1,
+    SpatialDataAssetViewV1,
+)
 from ksi_event_contracts.spatial_data_authority import (
     SpatialDataActivationV1,
     SpatialDataPolicyV1,
@@ -35,6 +39,7 @@ from ksi_event_contracts.spatial_data_worker import (
 )
 
 from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
+from ksi_core.domains.external.delivery.asset_discovery import SpatialDataAssetDiscovery
 from ksi_core.domains.external.delivery.audit import SpatialDataAuditStore
 from ksi_core.domains.external.delivery.downloads import SpatialDataDownloadService
 from ksi_core.domains.external.delivery.grants import (
@@ -123,6 +128,7 @@ class SpatialDataWiring:
     downloads: SpatialDataDownloadService | None = None
     metadata_audit: SpatialDataMetadataAuditStore | None = None
     ai_egress: SpatialDataAiEgress | None = None
+    discovery: SpatialDataAssetDiscovery | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -139,6 +145,8 @@ class SpatialDataWiring:
             and not isinstance(self.metadata_audit, SpatialDataMetadataAuditStore)
             or self.ai_egress is not None
             and not isinstance(self.ai_egress, SpatialDataAiEgress)
+            or self.discovery is not None
+            and not isinstance(self.discovery, SpatialDataAssetDiscovery)
         ):
             raise ValueError("complete exact data wiring required")
 
@@ -184,6 +192,16 @@ class SpatialDataWiring:
                     grants=self.authorizer,
                     audit=self.metadata_audit,
                 )
+            )
+            or self.discovery is not None
+            and (
+                not self.discovery.uses_exact_participants(
+                    sources=self.sources,
+                    grants=self.authorizer,
+                    jobs=self.jobs,
+                )
+                or self.ai_egress is None
+                or self.ai_egress.discovery is not self.discovery
             )
         ):
             raise ValueError("spatial data must bind exact mounted Core participants and authority")
@@ -254,7 +272,15 @@ def build_spatial_data_wiring(
     metadata_audit = SpatialDataMetadataAuditStore(
         journal("spatial-data-metadata-audit.jsonl"), policy=config.policy
     )
-    ai_egress = SpatialDataAiEgress(jobs, sources, authorizer, metadata_audit, clock=config.clock)
+    discovery = SpatialDataAssetDiscovery(
+        sources=sources,
+        grants=authorizer,
+        jobs=jobs,
+        clock=config.clock,
+    )
+    ai_egress = SpatialDataAiEgress(
+        jobs, sources, authorizer, metadata_audit, clock=config.clock, discovery=discovery
+    )
     lane = SpatialDataWiring(
         config,
         grants,
@@ -266,6 +292,7 @@ def build_spatial_data_wiring(
         downloads,
         metadata_audit,
         ai_egress,
+        discovery,
     )
     lane.verify_participants(
         reconstruction=reconstruction,
@@ -330,6 +357,8 @@ def bind_spatial_data_openapi(app: FastAPI) -> None:
         SpatialDataJobViewV1,
         SpatialDataPageV1,
         SpatialDataRequestV1,
+        SpatialDataAssetViewV1,
+        SpatialDataAssetPageV1,
         SpatialDataCompleteRequestV1,
         SpatialDataFailureRequestV1,
         SpatialDataLeaseRequestV1,

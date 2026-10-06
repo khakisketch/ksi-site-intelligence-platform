@@ -14,6 +14,7 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
+from ksi_event_contracts.spatial_asset_catalog import SpatialAssetCatalogItemV1
 from ksi_event_contracts.spatial_data import SpatialDataSourceV1
 from ksi_event_contracts.spatial_data_authority import SpatialDataPolicyV1
 from ksi_event_contracts.work_area import WorkArea
@@ -314,6 +315,225 @@ class SpatialDataSourceResolver:
         except ValidationError as exc:
             raise SpatialDataDomainError("UNSUPPORTED_SOURCE_PROFILE", 422) from exc
 
+    def candidates(
+        self, *, site_id: str, work_area_id: str, principal: Principal
+    ) -> tuple[SpatialAssetCatalogItemV1, ...]:
+        """Bounded authentic catalog candidates for AI discovery.
+
+        Data scope only, never SITES_READ and never an ADMIN stand-in: the
+        caller re-resolves each hint through genuine owner stores via
+        ``resolve_candidate``. The candidate is never source authority.
+        """
+        with self._coordinator.guarded_read():
+            self.require_history_scope(site_id, work_area_id, principal)
+            try:
+                return self._catalog.items(
+                    site_id,
+                    work_area_id,
+                    principal,
+                    max_items=self._policy.max_list_records,
+                    max_bytes=self._policy.max_snapshot_bytes,
+                )
+            except HTTPException as exc:
+                raise SpatialDataDomainError(
+                    "NOT_FOUND" if exc.status_code == 404 else "RESOURCE_LIMIT_EXCEEDED",
+                    exc.status_code,
+                ) from exc
+
+    def _materialize_current(
+        self,
+        *,
+        record: ExternalReconstructionRevision,
+        area: WorkArea,
+        artifact_id: str,
+        principal: Principal,
+    ) -> SpatialDataSourceV1:
+        """Snapshot, build and currentness recheck for one exactly bound record.
+
+        The inspection snapshot (remote authority preflight) stays outside the
+        guarded publication section, mirroring ``resolve``.
+        """
+        subject = self._subject(record)
+        try:
+            snapshot = self._inspections.public_snapshot_bounded(
+                subject,
+                max_records=self._policy.max_pending_records,
+                max_retained_policies=self._policy.max_pending_records,
+            )
+        except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
+            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+        except Exception as exc:
+            raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+        if snapshot.report is None:
+            raise SpatialDataDomainError("SOURCE_NOT_MEASURED", 403)
+        source = self._build(record, area, artifact_id, snapshot.report)
+        if (
+            len(canonical_json_bytes(source.model_dump(by_alias=True, mode="json")))
+            > self._policy.max_snapshot_bytes
+        ):
+            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+        return self.require_current(source=source, principal=principal, now=self._clock())
+
+    def resolve_candidate(
+        self, *, candidate: SpatialAssetCatalogItemV1, principal: Principal
+    ) -> SpatialDataSourceV1:
+        """Re-resolve one candidate hint to its exact scoped source without rescanning.
+
+        The candidate only names the revision/manifest/report; genuine stores
+        re-establish scope, seal and measurements. No whole-catalog scan per
+        asset and no unbounded tenant enumeration.
+        """
+        if not isinstance(candidate, SpatialAssetCatalogItemV1):
+            raise ValueError("candidate resolution requires a genuine catalog item")
+        with self._coordinator.guarded_read():
+            area = self._scope(candidate.site_id, candidate.work_area_id, principal)
+            submission_id = self._reconstruction.resolve_submission_ref(
+                candidate.work_order_id,
+                candidate.submission_ref,
+                organization_id=principal.organization_id,
+                site_id=candidate.site_id,
+            )
+            record = (
+                self._reconstruction.get(
+                    candidate.work_order_id,
+                    submission_id,
+                    candidate.revision,
+                    organization_id=principal.organization_id,
+                    site_id=candidate.site_id,
+                )
+                if submission_id
+                else None
+            )
+            if record is None or record.submission.revision != candidate.revision:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+        return self._materialize_current(
+            record=record, area=area, artifact_id=candidate.artifact_id, principal=principal
+        )
+
+    def resolve_local_current(
+        self,
+        *,
+        candidate: SpatialAssetCatalogItemV1,
+        principal: Principal,
+        report_digest: str,
+        now: datetime,
+    ) -> SpatialDataSourceV1:
+        """Re-establish one candidate hint from local owner currentness only.
+
+        Final-gate re-projection: no inspection policy-port resolution and no
+        detached preflight snapshot. The caller supplies the exact retained
+        report digest bound to its prepared view as a hint; genuine stores
+        re-establish scope, seal, retained report and local currentness, and
+        the rebuilt source must still match before any byte is authorized.
+        """
+        if not isinstance(candidate, SpatialAssetCatalogItemV1):
+            raise ValueError("candidate resolution requires a genuine catalog item")
+        if type(report_digest) is not str or not report_digest:
+            raise ValueError("local currentness requires an explicit retained report digest")
+        if now.tzinfo is None or now.utcoffset() != UTC.utcoffset(now):
+            raise ValueError("source currentness time must be UTC-aware")
+        with self._coordinator.guarded_read():
+            area = self._scope(candidate.site_id, candidate.work_area_id, principal)
+            submission_id = self._reconstruction.resolve_submission_ref(
+                candidate.work_order_id,
+                candidate.submission_ref,
+                organization_id=principal.organization_id,
+                site_id=candidate.site_id,
+            )
+            record = (
+                self._reconstruction.get(
+                    candidate.work_order_id,
+                    submission_id,
+                    candidate.revision,
+                    organization_id=principal.organization_id,
+                    site_id=candidate.site_id,
+                )
+                if submission_id
+                else None
+            )
+            if record is None or record.submission.revision != candidate.revision:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            if record.manifest is None:
+                raise SpatialDataDomainError("SOURCE_UNSEALED", 403)
+            subject = self._subject(record)
+            try:
+                expected = self._inspections.retained_report_bounded(
+                    subject,
+                    report_digest=report_digest,
+                    max_records=self._policy.max_pending_records,
+                )
+            except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+            except Exception as exc:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+            if expected is None:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+            try:
+                report = self._inspections.data_report_for_locally_current_use(
+                    subject, expected, now=now
+                )
+            except Exception as exc:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+            if report is None:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+            source = self._build(record, area, candidate.artifact_id, report)
+            if (
+                len(canonical_json_bytes(source.model_dump(by_alias=True, mode="json")))
+                > self._policy.max_snapshot_bytes
+            ):
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+            return source
+
+    def local_retained_state(
+        self, *, candidate: SpatialAssetCatalogItemV1, principal: Principal
+    ) -> str | None:
+        """Bounded local retained-inspection state fingerprint for one candidate.
+
+        Re-resolves the exact scoped revision/subject from genuine stores
+        (the candidate hint is never authority), then fingerprints the
+        retained inspection state bound to that subject. Returns None while
+        the exact record is unsealed (no subject to bind); a sealed record
+        whose inspection dependency is unavailable raises instead of a stale
+        success. No policy-port resolution.
+        """
+        if not isinstance(candidate, SpatialAssetCatalogItemV1):
+            raise ValueError("candidate resolution requires a genuine catalog item")
+        with self._coordinator.guarded_read():
+            self._scope(candidate.site_id, candidate.work_area_id, principal)
+            submission_id = self._reconstruction.resolve_submission_ref(
+                candidate.work_order_id,
+                candidate.submission_ref,
+                organization_id=principal.organization_id,
+                site_id=candidate.site_id,
+            )
+            record = (
+                self._reconstruction.get(
+                    candidate.work_order_id,
+                    submission_id,
+                    candidate.revision,
+                    organization_id=principal.organization_id,
+                    site_id=candidate.site_id,
+                )
+                if submission_id
+                else None
+            )
+            if record is None or record.submission.revision != candidate.revision:
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            if record.manifest is None:
+                return None
+            subject = self._subject(record)
+            try:
+                state = self._inspections.locally_retained_state_digest_bounded(
+                    subject, max_records=self._policy.max_pending_records
+                )
+            except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+            except Exception as exc:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+            if state is None:
+                raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+            return state
+
     def resolve(
         self, *, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
     ) -> SpatialDataSourceV1:
@@ -323,7 +543,13 @@ class SpatialDataSourceResolver:
             try:
                 matches = [
                     item
-                    for item in self._catalog.items(site_id, work_area_id, principal)
+                    for item in self._catalog.items(
+                        site_id,
+                        work_area_id,
+                        principal,
+                        max_items=self._policy.max_list_records,
+                        max_bytes=self._policy.max_snapshot_bytes,
+                    )
                     if item.asset_ref == asset_ref
                 ]
             except HTTPException as exc:
@@ -353,26 +579,9 @@ class SpatialDataSourceResolver:
             )
             if record is None:
                 raise SpatialDataDomainError("NOT_FOUND", 404)
-            subject = self._subject(record)
-        try:
-            snapshot = self._inspections.public_snapshot_bounded(
-                subject,
-                max_records=self._policy.max_pending_records,
-                max_retained_policies=self._policy.max_pending_records,
-            )
-        except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
-            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
-        except Exception as exc:
-            raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
-        if snapshot.report is None:
-            raise SpatialDataDomainError("SOURCE_NOT_MEASURED", 403)
-        source = self._build(record, area, item.artifact_id, snapshot.report)
-        if (
-            len(canonical_json_bytes(source.model_dump(by_alias=True, mode="json")))
-            > self._policy.max_snapshot_bytes
-        ):
-            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
-        return self.require_current(source=source, principal=principal, now=self._clock())
+        return self._materialize_current(
+            record=record, area=area, artifact_id=item.artifact_id, principal=principal
+        )
 
     def require_current(
         self, *, source: SpatialDataSourceV1, principal: Principal, now: datetime

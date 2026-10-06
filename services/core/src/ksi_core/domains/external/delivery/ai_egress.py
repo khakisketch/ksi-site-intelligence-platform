@@ -16,12 +16,20 @@ from time import monotonic
 
 from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_event_contracts.spatial_data import SpatialDataJobViewV1, SpatialDataPageV1
+from ksi_event_contracts.spatial_data_ai import (
+    SpatialDataAssetPageV1,
+    SpatialDataAssetViewV1,
+)
 from pydantic import BaseModel
 
+from ksi_core.domains.external.delivery.asset_discovery import SpatialDataAssetDiscovery
 from ksi_core.domains.external.delivery.credential_currentness import (
     SpatialDataCredentialCurrentness,
 )
-from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.domains.external.delivery.errors import (
+    SpatialDataAiDomainError,
+    SpatialDataDomainError,
+)
 from ksi_core.domains.external.delivery.grants import SpatialDataGrantAuthorizer
 from ksi_core.domains.external.delivery.jobs import SpatialDataJobStore
 from ksi_core.domains.external.delivery.metadata_audit import (
@@ -44,6 +52,7 @@ class SpatialDataAiEgress:
         grants: SpatialDataGrantAuthorizer,
         audit: SpatialDataMetadataAuditStore,
         clock: Callable[[], datetime],
+        discovery: SpatialDataAssetDiscovery | None = None,
     ) -> None:
         if (
             not isinstance(jobs, SpatialDataJobStore)
@@ -58,6 +67,11 @@ class SpatialDataAiEgress:
             raise ValueError("AI egress requires the same mounted Core participants")
         if audit.policy != jobs.policy:
             raise ValueError("AI egress audit must bind the exact data policy")
+        if discovery is not None and (
+            not isinstance(discovery, SpatialDataAssetDiscovery)
+            or not discovery.uses_exact_participants(sources=sources, grants=grants, jobs=jobs)
+        ):
+            raise ValueError("AI egress discovery must bind the same mounted Core participants")
         if not callable(clock):
             raise ValueError("AI egress requires a clock")
         self._jobs = jobs
@@ -65,6 +79,7 @@ class SpatialDataAiEgress:
         self._grants = grants
         self._audit = audit
         self._clock = clock
+        self._discovery = discovery
 
     @property
     def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
@@ -73,6 +88,10 @@ class SpatialDataAiEgress:
     @property
     def audit(self) -> SpatialDataMetadataAuditStore:
         return self._audit
+
+    @property
+    def discovery(self) -> SpatialDataAssetDiscovery | None:
+        return self._discovery
 
     def uses_exact_participants(
         self,
@@ -184,6 +203,115 @@ class SpatialDataAiEgress:
             ),
         )
 
+    def prepare_asset_response(
+        self,
+        *,
+        credentials: SpatialDataCredentialCurrentness,
+        site_id: str,
+        work_area_id: str,
+        view: SpatialDataAssetViewV1,
+        operation: MetadataAuditOperationV1 = "GET_ASSET",
+    ) -> SpatialDataAiMetadataResponse:
+        """Guarded single-asset response; rechecks current grant-filtered projection at send."""
+        self._check_scope(credentials=credentials, site_id=site_id, work_area_id=work_area_id)
+        if not isinstance(view, SpatialDataAssetViewV1):
+            raise ValueError("AI asset responses publish typed asset views only")
+        if (view.site_id, view.work_area_id) != (site_id, work_area_id):
+            raise ValueError("AI asset scope must match the authorized view")
+        if operation != "GET_ASSET":
+            raise ValueError(f"single-asset AI operation not permitted: {operation!r}")
+        discovery = self._discovery
+        if discovery is None:
+            raise ValueError("AI asset responses require bound discovery participants")
+        return self._prepare(
+            credentials=credentials,
+            site_id=site_id,
+            work_area_id=work_area_id,
+            model=view,
+            status=200,
+            operation=operation,
+            preflight=lambda principal: self._canonical(
+                discovery.get(
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    asset_ref=view.asset_ref,
+                    principal=principal,
+                    now=self._clock(),
+                )
+            ),
+            recheck=lambda principal: discovery.recheck_view(
+                view=view, principal=principal, now=self._clock()
+            ),
+        )
+
+    def prepare_asset_page_response(
+        self,
+        *,
+        credentials: SpatialDataCredentialCurrentness,
+        site_id: str,
+        work_area_id: str,
+        page: SpatialDataAssetPageV1,
+        cursor: str | None,
+        limit: int,
+        operation: MetadataAuditOperationV1 = "LIST_ASSETS",
+    ) -> SpatialDataAiMetadataResponse:
+        """Guarded asset-page response under the strict snapshot cursor."""
+        self._check_scope(credentials=credentials, site_id=site_id, work_area_id=work_area_id)
+        if not isinstance(page, SpatialDataAssetPageV1):
+            raise ValueError("AI asset page responses publish typed asset pages only")
+        if operation != "LIST_ASSETS":
+            raise ValueError(f"page AI operation not permitted: {operation!r}")
+        if cursor is not None and type(cursor) is not str:
+            raise ValueError("AI page cursor must be an opaque string or null")
+        if type(limit) is not int:
+            raise ValueError("AI page limit must be an integer")
+        discovery = self._discovery
+        if discovery is None:
+            raise ValueError("AI asset responses require bound discovery participants")
+        # The send-time preflight publishes the gate context for its own
+        # projection; the later header/body gates re-project locally from
+        # that context and never resolve the remote authority again. The cell
+        # is filled by the ordered preflight stage before any gate runs; an
+        # empty cell fails closed, never stale.
+        gate: dict[str, dict[str, object] | None] = {"context": None}
+
+        def preflight(principal: Principal) -> bytes:
+            page, gate_context = discovery.list_projection(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                principal=principal,
+                limit=limit,
+                cursor=cursor,
+                now=self._clock(),
+            )
+            gate["context"] = gate_context
+            return self._canonical(page)
+
+        def gate_recheck(principal: Principal) -> bytes:
+            context = gate["context"]
+            if context is None:
+                raise SpatialDataAiDomainError("REPORT_CONFLICT", 409)
+            return discovery.recheck_page(
+                site_id=site_id,
+                work_area_id=work_area_id,
+                principal=principal,
+                limit=limit,
+                cursor=cursor,
+                gate=context,
+                now=self._clock(),
+            )
+
+        return self._prepare(
+            credentials=credentials,
+            site_id=site_id,
+            work_area_id=work_area_id,
+            model=page,
+            status=200,
+            operation=operation,
+            preflight=preflight,
+            recheck=gate_recheck,
+        )
+
     def _prepare(
         self,
         *,
@@ -194,6 +322,7 @@ class SpatialDataAiEgress:
         status: int,
         operation: MetadataAuditOperationV1,
         recheck: Callable[[Principal], bytes],
+        preflight: Callable[[Principal], bytes] | None = None,
     ) -> SpatialDataAiMetadataResponse:
         body = self._canonical(model)
         policy = self._jobs.policy
@@ -222,4 +351,5 @@ class SpatialDataAiEgress:
             mono_started=mono_started,
             recheck=recheck,
             audit=audit,
+            preflight=preflight,
         )

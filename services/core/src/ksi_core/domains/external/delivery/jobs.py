@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from threading import RLock
@@ -38,7 +38,16 @@ from ksi_geo_spatial.external_native_window_geometry import (
 )
 from pydantic import ValidationError
 
-from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.domains.external.delivery.asset_discovery import (
+    decode_snapshot_cursor,
+    encode_snapshot_cursor,
+    scope_hash,
+    snapshot_digest,
+)
+from ksi_core.domains.external.delivery.errors import (
+    SpatialDataAiDomainError,
+    SpatialDataDomainError,
+)
 from ksi_core.domains.external.delivery.grants import SpatialDataGrantAuthorizer
 from ksi_core.domains.external.delivery.job_events import (
     JOB_EVENT,
@@ -412,21 +421,71 @@ class SpatialDataJobStore:
         }
     )
 
-    def _ai_visible_ids(self, ids: list[str], principal: Principal, now: datetime) -> list[str]:
-        """Filter AI-exportable jobs before pagination; never hide hard failures."""
-        visible = []
+    def _ai_visible_entries(
+        self, ids: Sequence[str], principal: Principal, now: datetime
+    ) -> list[tuple[str, SpatialDataJobViewV1, SpatialDataFrozenJobV1]]:
+        """Filter AI-exportable jobs before pagination; never hide hard failures.
+
+        Returns the visible sorted entries with their current views and frozen
+        jobs so the snapshot cursor binds the exact projection without a
+        second authorization pass. Read-only: never mutates journals.
+        """
+        entries = []
         for job_id in ids:
             record = self._records[job_id]
             if record.job.request.purpose != SpatialDataPurposeV1.EXTERNAL_AI:
                 continue
             try:
-                self.require_ai_metadata(job_id=job_id, principal=principal, now=now)
+                view = self.require_ai_metadata(job_id=job_id, principal=principal, now=now)
             except SpatialDataDomainError as exc:
                 if exc.reason in self._AI_LIST_SUPPRESSED:
                     continue
                 raise
-            visible.append(job_id)
-        return visible
+            entries.append((job_id, view, record.job))
+        return entries
+
+    def _ai_job_snapshot(
+        self, entries: list[tuple[str, SpatialDataJobViewV1, SpatialDataFrozenJobV1]]
+    ) -> str:
+        """Bind the current AI job projection plus relevant grant/consent bindings.
+
+        Even an empty authorized page binds policy/activation digests, so a
+        newly visible job stales outstanding cursors. No denied-job counts.
+        """
+        views: list[list[str]] = []
+        size = 0
+        for job_id, view, job in entries:
+            body = canonical_json_bytes(view.model_dump(by_alias=True, mode="json"))
+            if len(body) > self._policy.max_json_bytes:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+            size += len(body)
+            views.append(
+                [
+                    job_id,
+                    "sha256:" + hashlib.sha256(body).hexdigest(),
+                    job.job_digest or "",
+                    job.source.source_digest or "",
+                    job.grant.grant_digest or "",
+                ]
+            )
+        if size > self._policy.max_snapshot_bytes:
+            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+        return snapshot_digest(
+            {
+                "jobs": sorted(views),
+                "policy": self._policy.policy_digest,
+                "activation": self._activation.activation_digest,
+            }
+        )
+
+    def check_ai_prepare_lane(self, *, now: datetime) -> None:
+        """Fresh lane/policy/runtime for AI PREPARE advertisement; stale lane raises.
+
+        Read-only: no journal append. A stale lane surfaces here instead of a
+        fake preparable crop.
+        """
+        with self._guard(now):
+            self._lane(now)
 
     def _lane(self, now: datetime, *, job: SpatialDataFrozenJobV1 | None = None) -> None:
         self._ensure_open()
@@ -751,7 +810,17 @@ class SpatialDataJobStore:
             if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
                 # AI filtering precedes pagination: denied candidates are
                 # suppressed, while dependency/authority failures propagate.
-                ids = self._ai_visible_ids(ids, principal, now)
+                # The AI page additionally binds a strict projection snapshot;
+                # generic V1 cursor semantics below are unchanged.
+                return self._list_ai(
+                    site_id=site_id,
+                    work_area_id=work_area_id,
+                    principal=principal,
+                    cursor=cursor,
+                    limit=limit,
+                    now=now,
+                    ids=ids,
+                )
             scope = _hash(
                 canonical_json_bytes(
                     {
@@ -795,6 +864,63 @@ class SpatialDataJobStore:
                 ),
                 next_cursor=next_cursor,
             )
+
+    def _list_ai(
+        self,
+        *,
+        site_id: str,
+        work_area_id: str,
+        principal: Principal,
+        cursor: str | None,
+        limit: int,
+        now: datetime,
+        ids: Sequence[str],
+    ) -> SpatialDataPageV1:
+        """AI job page under a strict projection snapshot cursor.
+
+        Caller holds the store guard through this read-only projection; no
+        journal is mutated (expiry appends stay on the mutating paths). The
+        cursor binds scope plus the current permitted projection and relevant
+        grant bindings; a changed snapshot is a typed stale conflict, never a
+        bypass. Generic cursor semantics are untouched.
+        """
+        # Common fresh AI scope/consent precedes enumeration: an empty or
+        # fully filtered page never bypasses withdrawn consent into a
+        # successful publication, while generic V1 history stays untouched.
+        self._sources.require_ai_scope(site_id, work_area_id, principal)
+        if cursor is not None and type(cursor) is not str:
+            raise SpatialDataDomainError("INVALID_REQUEST_BOUNDS", 422)
+        entries = self._ai_visible_entries(ids, principal, now)
+        snapshot = self._ai_job_snapshot(entries)
+        scope = scope_hash(
+            organization_id=principal.organization_id,
+            principal_id=principal.principal_id,
+            site_id=site_id,
+            work_area_id=work_area_id,
+        )
+        visible = [job_id for job_id, _, _ in entries]
+        views = {job_id: view for job_id, view, _ in entries}
+        if cursor is None:
+            start = 0
+        else:
+            presented, last = decode_snapshot_cursor(cursor, scope=scope)
+            if presented != snapshot:
+                raise SpatialDataAiDomainError("SPATIAL_DATA_CURSOR_STALE", 409)
+            try:
+                start = visible.index(last) + 1
+            except ValueError as exc:
+                raise SpatialDataDomainError("INVALID_REQUEST_BOUNDS", 422) from exc
+        selected = visible[start : start + limit]
+        more = start + len(selected) < len(visible)
+        next_cursor = (
+            encode_snapshot_cursor(scope=scope, snapshot=snapshot, last=selected[-1])
+            if more
+            else None
+        )
+        return SpatialDataPageV1(
+            items=tuple(views[job_id] for job_id in selected),
+            next_cursor=next_cursor,
+        )
 
     def cancel(self, *, job_id: str, principal: Principal, now: datetime) -> SpatialDataJobViewV1:
         with self._guard(now):

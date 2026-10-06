@@ -514,6 +514,42 @@ class SpatialDataGrantAuthorizer:
                 raise SpatialDataDomainError("GRANT_REQUIRED", 403)
             return applicable[0]
 
+    def has_beneficiary_grants(
+        self, *, site_id: str, work_area_id: str, asset_ref: str, principal: Principal
+    ) -> bool:
+        """Local index probe: any grant ever indexed for this beneficiary asset.
+
+        Read-only classification helper for send-time gates: a candidate with
+        grant history stays tracked across readiness changes (fail closed on
+        drift), while a never-granted candidate stays invisible without
+        admission or payload. It authorizes nothing; currentness, uniqueness
+        and operations are still decided by the selectors per projection.
+        """
+        if (
+            type(site_id) is not str
+            or type(work_area_id) is not str
+            or type(asset_ref) is not str
+            or not site_id
+            or not work_area_id
+            or not asset_ref
+        ):
+            raise ValueError("grant index probe requires explicit scope identifiers")
+        if not isinstance(principal, Principal):
+            raise ValueError("grant index probe requires a genuine principal")
+        with self.coordinator.guarded_read(), self._grants._lock:
+            return bool(
+                self._grants._by_beneficiary_asset.get(
+                    (
+                        principal.organization_id,
+                        principal.principal_id,
+                        site_id,
+                        work_area_id,
+                        asset_ref,
+                    ),
+                    (),
+                )
+            )
+
     def frozen_grant_state(
         self, *, grant: SpatialDataGrantV1, now: datetime
     ) -> Literal["CURRENT", "REVOKED", "EXPIRED", "ABSENT"]:

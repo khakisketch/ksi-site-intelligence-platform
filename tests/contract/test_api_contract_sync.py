@@ -900,7 +900,7 @@ def test_spatial_data_contract_has_every_opt_in_operation_and_exact_models(tmp_p
     selected = {
         path: operations for path, operations in impl["paths"].items() if "spatial-data" in path
     }
-    assert len(selected) == 11  # Four public paths, seven internal paths.
+    assert len(selected) == 13  # Six public paths, seven internal paths.
     for path, operations in selected.items():
         assert path in doc["paths"], path
         for method, operation in operations.items():

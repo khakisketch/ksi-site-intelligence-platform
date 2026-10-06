@@ -64,6 +64,20 @@ def mount_external_routes(
                 clock=spatial_data.config.clock,
             )
         )
+        if spatial_data.discovery is not None or spatial_data.ai_egress is not None:
+            from ksi_core.domains.external.delivery.asset_api import (
+                build_spatial_data_asset_router,
+            )
+
+            if spatial_data.discovery is None or spatial_data.ai_egress is None:
+                raise ValueError("spatial data discovery requires complete AI participants")
+            app.include_router(
+                build_spatial_data_asset_router(
+                    discovery=spatial_data.discovery,
+                    egress=spatial_data.ai_egress,
+                    clock=spatial_data.config.clock,
+                )
+            )
         app.state.spatial_data = spatial_data
         bind_spatial_data_openapi(app)
     external_result_projection = external_result_read_projector
