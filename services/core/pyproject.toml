@@ -8,6 +8,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "ksi-domain",
     "ksi-event-contracts",
+    "ksi-geo-core",
     "ksi-mission-contracts",
     "ksi-mission-planning",
     # Phase 3 장비 운동상태·CPA/TTC·재관찰 권고 — equipment_states.py 가 소비한다.
@@ -43,6 +44,7 @@ packages = ["src/ksi_core"]
 [tool.uv.sources]
 ksi-domain = { workspace = true }
 ksi-event-contracts = { workspace = true }
+ksi-geo-core = { workspace = true }
 ksi-mission-contracts = { workspace = true }
 ksi-mission-planning = { workspace = true }
 ksi-equipment-intelligence = { workspace = true }

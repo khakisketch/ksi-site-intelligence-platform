@@ -3,7 +3,7 @@ name = "ksi-mission-contracts"
 version = "0.0.1"
 description = "Mission Contract 계약 모델·서명 검증 (contracts/schemas SSOT 준수)"
 requires-python = ">=3.12,<3.13"
-dependencies = ["pydantic>=2.7", "cryptography>=42", "ksi-domain"]
+dependencies = ["pydantic>=2.7", "cryptography>=42", "ksi-domain", "ksi-event-contracts"]
 
 [project.scripts]
 ksi-mission-contract-consumer = "ksi_mission_contracts.consumer:main"
@@ -19,3 +19,4 @@ packages = ["src/ksi_mission_contracts"]
 
 [tool.uv.sources]
 ksi-domain = { workspace = true }
+ksi-event-contracts = { workspace = true }

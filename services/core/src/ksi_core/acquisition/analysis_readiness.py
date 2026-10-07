@@ -8,7 +8,6 @@ The result is an additive read model for REQ-INT-102/103 and INV-017/018.
 
 from __future__ import annotations
 
-import hashlib
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -19,6 +18,7 @@ from ksi_core.acquisition.models import (
     AnalysisReadinessView,
     ObservationEpochView,
 )
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 
 if TYPE_CHECKING:
     from ksi_core.acquisition.capture_quality_reports import CaptureQualityReportStore
@@ -27,13 +27,9 @@ if TYPE_CHECKING:
     from ksi_core.domains.processing.processing_jobs import ProcessingJobStore
 
 
-def observation_epoch_id(work_order: ObservationWorkOrder) -> str:
-    """A deterministic v1 epoch identity; no mutable Epoch journal is introduced."""
-
-    raw = (
-        f"{work_order.organization_id}\0{work_order.work_order_id}\0{work_order.cycle_number}"
-    ).encode()
-    return f"obs-epoch-{hashlib.sha256(raw).hexdigest()[:24]}"
+# observation_epoch_id 의 정식 소유자는
+# ksi_core.domains.observations.epoch_identity 이다 — 위 import 는 같은 함수에
+# 대한 레거시 re-export 다(구현이 아니다).
 
 
 class AnalysisReadinessProjector:

@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any, Literal
 
 from ksi_domain.enums import MissionType
+from ksi_event_contracts.site_frame import SiteFrame
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -50,13 +51,8 @@ class Validity(_CamelModel):
         return value
 
 
-class SiteFrame(_CamelModel):
-    """INV-020 — 모든 세계좌표는 CRS·수직기준·unit·transformVersion을 갖는다."""
-
-    crs: str
-    vertical_datum: str
-    unit: Literal["meter"]
-    transform_version: str
+# SiteFrame 의 정식 소유자는 ksi_event_contracts.site_frame 이다 — 위 import 는
+# 같은 클래스에 대한 레거시 re-export 다(직접 정의가 아니다).
 
 
 # 서버 고정 안전상수 — 요청으로 바꿀 수 없다(INV 계열 원칙). 값은 항공안전법의

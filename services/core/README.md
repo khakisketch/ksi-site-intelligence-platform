@@ -39,7 +39,12 @@ artifacts, processing, analytics, design, observations and workspace); capture q
 under the retained acquisition package. T3 external modules live under
 `ksi_core.domains.external.{ingress,quantity,workflow,authority}`. Legacy root imports
 remain exact module aliases. Provider helpers do not own lifecycle locks or publication.
-Acquisition/capability packages remain in place. `ksi_core.composition` now owns app creation,
+Acquisition/capability packages remain in place. Task 3 detaches neutral
+primitives: `ksi_core.domains.observations.epoch_identity.observation_epoch_id`
+canonically owns the deterministic external epoch identity (unchanged recipe, no
+new journal; `ksi_core.acquisition.analysis_readiness` re-exports the same
+function), and the Site/external-ingress consumers import neutral
+`ksi_event_contracts.site_frame` / `ksi_geo_core.aoi` types. `ksi_core.composition` now owns app creation,
 ordered validation and route groups, domain graph assembly, runtime surfaces and production
 configuration. Root app, common assembly and production entrypoints remain exact aliases;
 API, JSONL and authority semantics are unchanged, including lazy workspace loading.

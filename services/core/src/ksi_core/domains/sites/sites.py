@@ -81,8 +81,8 @@ from ksi_domain.enums import (
     requires_autonomy_approval,
 )
 from ksi_event_contracts.processing_job import DataResidency
-from ksi_mission_contracts.models import SiteFrame
-from ksi_mission_planning import AreaOfInterest
+from ksi_event_contracts.site_frame import SiteFrame
+from ksi_geo_core.aoi import AreaOfInterest
 from pydantic import Field
 
 from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc

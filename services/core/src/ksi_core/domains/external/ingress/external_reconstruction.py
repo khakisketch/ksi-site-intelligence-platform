@@ -36,7 +36,6 @@ from ksi_event_contracts.observation_work_order import (
 )
 from pydantic import Field
 
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.domains.artifacts.evidence import (
     ALLOWED_CONTENT_TYPES,
     DEFAULT_UPLOAD_TTL,
@@ -48,6 +47,7 @@ from ksi_core.domains.external.workflow.external_result_projection_models import
     ExternalResultProjectionState,
     ExternalResultProjectionView,
 )
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.foundation.api_base import CamelModel, iso_utc
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator

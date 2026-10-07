@@ -2,6 +2,14 @@
 
 Mission Contract and policy contracts.
 
+## Neutral site frame compatibility (Task 3)
+
+`SiteFrame` is no longer defined here: the canonical owner is
+`ksi_event_contracts.site_frame.SiteFrame` and this package re-exports the same
+class, so existing `ksi_mission_contracts.models.SiteFrame` imports keep working
+with identical wire/schema/validation. This adds a `ksi-event-contracts`
+workspace dependency to this package.
+
 ## Execution consumer
 
 `ksi-mission-contract-consumer` is the fail-closed execution boundary for Mission
