@@ -629,3 +629,18 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   Task2 “Analysis/data happy-path untested” closed by Task4 worker+region-receipt coverage.
   Integrated full-suite/static/artifact results pending from independent runner
   `ses_ee8ac5874ffeI1uEwO3U0xUveU`; do not poll.
+
+### P3 planning discovery (2026-10-08)
+
+- Next stage per spec§8-3 and P2-deferred successor: worker/build/CI/tooling archive separation.
+  Read-only discovery completed at main4c57996; measured facts and the open-decision list are in
+  `.superpowers/sdd/2026-10-08-worker-archive-p3/notes.md` (planning inputs, not decisions).
+- Key facts:194ARCHIVE_CANDIDATEs in8groups (edge124, dji-gateway28, packages42 — mission-contracts13/
+  mission-planning9/perception13/equipment-intelligence7). All package/gateway groups have live
+  consumer blockers (12Core import sites incl. missions/capability/edge_transport/equipment;
+  pc ksi_perception only runner.py:83; change-detection retained by named use incl. active region
+  extraction). CI edge jobs, legacy Dockerfile CMD (`ksi_core.production:build_production_app`),
+  `ruff check .` whole-repo target and Docker contexts (`COPY . .`, `.dockerignore` without archive)
+  are the build-side items to separate.
+- Drafting the P3 written plan next; no source change, move or approval exists yet. Human
+  written-plan review remains the execution gate for P3.
