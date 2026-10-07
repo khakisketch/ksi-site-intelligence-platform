@@ -1550,3 +1550,35 @@ The independent remaining-goal audit above found no further executable mandatory
 repair outside the now-closed package obligation. Next product progress requires the actual
 permitted customer inputs/rights or a selected and explicitly authorized host/operations stage;
 new feed/resync/external-result contracts remain material decisions, not assumed implementation.
+
+### Committed evidence and actual external-input impasse
+
+Four documentation changes were committed locally as `e7020f6d3cb8bc3d4e3321fe5ca8bd588b57f46d`.
+Independent runner ses_eea7d86e8ffeHmJ00clvsU9KPH confirmed clean main, exact four-document commit,
+51/51 working-file/committed-blob equality, 47/47 unchanged non-document freeze entries and all
+68 package modules. Current README equals the new sdist; installed/source/sdist wheel bytes match.
+Its first postcommit proof mistakenly reported no prior log-hash keys. Primary inspected actual
+`commands[]` entries (`log`, `sha256`) and the same runner corrected that lookup: nine prior full/
+static command logs plus the reused scoped log all rehash exactly, recorded exits0. Actual log
+tails confirm full9028/122skip/102warnings, scoped1349/54warnings and the recorded static results.
+Original interpretation remains preserved, superseded by
+`/tmp/opencode/task6-package-final-verify/docs-final/commit-proof-correction.json`, SHA256
+`c4537121e9e62a707a321069a17d329eecb9ce85caabacbb3972171ba1bf95a6`;
+prior-log integrity receipt SHA256 `02c8d95f2c03ca111f86b922d511a65040192137ffa9868a7274d7f395da8ccb`.
+
+At the next required-input gate the Human explicitly answered **“자료와 환경이 아직 없음”**.
+The independently audited remaining requirements therefore cannot advance: permitted actual
+same-Site t0/t1/t2 DSM/ortho/boundary/provenance/coordinate/vertical/rights input and selected actual
+host/OIDC/MCP/operations/cost/containment/recovery evidence are absent. Safe mandatory approved
+agent-owned engineering work is exhausted; no new expansion contract or external execution is
+authorized by that answer. Repeated generated tests or invented features cannot meet those criteria.
+Native full-objective goal ef9e2d2c-989e-411a-99ee-1da204f8dd6f was recorded **unmet, stopReason blocked**,
+not complete, paused, cancelled, narrowed or replaced. Objective/history are preserved; no automatic
+continuation or revival of closed/cancelled goals. Product-state EXT-VAL/P-AC and customer/field/
+operations acceptance remain unchanged and open. Account-owner key rotation remains separate.
+
+Next prerequisite owners: customer/field owner provides accessible permitted export/rights evidence
+as described in `docs/acceptance/SPATIAL_PLATFORM_CUSTOMER_SAMPLE.md`; operations owner selects the
+actual target and authorizes its scoped verification. Then resume product work under a new explicit
+task/eligible goal contract, not by treating this closed unmet goal as active. No secret values,
+full raw-photo transfer, new hardware, publication or deployment are implied by this handoff.
