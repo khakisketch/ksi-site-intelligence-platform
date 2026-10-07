@@ -1,7 +1,7 @@
 # Agent-first platform rebaseline — discovery ledger
 
 Date: 2026-10-07
-Status: foundation approved; Task1 technically verified; Task2 inventory tooling next
+Status: foundation approved; Tasks1–2 technically verified; Task3 neutral extraction next
 Base / proposed local target: main b27e5d94b04d11e155e41d8df94c70519808a976
 Workspace: current checkout, one writer; other worktrees retained unchanged.
 Prior unmet goal remains closed; Human-approved new goal b13320f7 is active.
@@ -192,6 +192,12 @@ Rollback: reviewed inverse of task-owned commits only; no journal/schema migrati
 - Task1: started at738b4a9. Baseline `.venv/bin/python -m pytest tests/contract/test_repository_normalization.py -q`:17passed, exit0.
 - Tasks2–4: pending; plan approval remains valid without per-task confirmation.
 
+Current execution checklist (supersedes the dated start line above):
+- [x] Task1 authority alignment — reviewed and independently verified at085144f.
+- [x] Task2 frozen disposition — reviewed and independently verified at99bf45d.
+- [ ] Task3 neutral primitives/epoch identity.
+- [ ] Task4 integrated foundation verification/successor planning (whole goal remains open).
+
 ### Task1 review/fix round1
 
 - Developer `ses_eea043ab5ffe8W2QLJVJrLesFn`, commit37efe3b:18docs/test files; author RED4failed,
@@ -233,3 +239,44 @@ Rollback: reviewed inverse of task-owned commits only; no journal/schema migrati
   governance-section digest (may be narrowed to next top-level section if future authorized PRD edits).
 - Next Task2 owns only frozen-inventory validator/tests/companion report. It consumes ADR039 and
   unchanged baseline72c526b CSV; neither current authority nor Task1 tests are its edit targets.
+
+### Task2 review/fix round1
+
+- Developer `ses_ee9e6c75effeJumGp4R6KL7idx` commit0285448:3new files. Author tests7passed,
+  normalization-adjacent24passed; real CLI exit0, hostile digest CLI exit1; Ruff/format/whitespace clean.
+- Reviewer `ses_ee9dad85cffe8XUxw0e5hL8VES`: safe no-move/protected-metadata-only structure;
+  Important malformed UTF8/CSV error paths escape promised list-of-findings interface. Add controlled
+  failure mapping and tests; batch failures/uninitialized gitlinks/symlink/header coverage noted.
+- Primary confirmed CI integration blocker at test145–149: real CSV test requires old Git objects,
+  but `.github/workflows/ci.yml` gates checkout has default depth1. Author shallow-CI claim was too broad.
+- Ruling: keep the fail-closed CLI's full-history prerequisite and independently run its real2378-row
+  verification locally; make always-running pytest coverage use immutable real-CSV hash/structure pins
+  plus real local Git fixtures for validator binding semantics. No CI fetch/install/config changes or
+  silent skip; prove the pytest file works in a minimal shallow local clone with no old baseline object.
+  If wrong, a fixture/CSV regression could require a stronger CI maintenance gate; standalone real-object
+  verification remains mandatory for this slice and is not relabelled as shallow-CI object verification.
+
+### Task2 technical closure / Task3 handoff
+
+- Fix99bf45d and scoped re-review `ses_ee9dad85cffe8XUxw0e5hL8VES`: all required findings
+  addressed, no new Critical/Important issue; controlled malformed CSV/UTF8/Git error findings,
+  trusted protection boundaries, symlink linktext and absent foreign gitlink coverage. CLI still
+  verifies full frozen objects without executing moves; pytest never skips for absent old history.
+- Independent runner `ses_ee9c83fb8ffeS6oza1KzEMmaIV` at99bf45d1a0c7d50b63ce8be6ee69d58503f8e17b:
+  `.venv/bin/python -m pytest tests/contract/test_physical_site_disposition.py tests/contract/test_repository_normalization.py -q`
+  →29passed/0failed/0skipped/0warnings (12+17). Both disposition CLI on actual CSV and normalization
+  validator exit0; Ruff check/format and tracked/index whitespace checks exit0.
+- CSV SHA89a9baf3 unchanged;2378unique rows exactly match baseline72c526b tree metadata,
+  194candidate destinations/conditions and82protected pointer rows. Real CLI validates all
+  nonprotected frozen blob digests; no protected content or symlink targets traversed. Spec/plan unchanged.
+- Minimal prepared shallow checkout, required3file hashes equal99bf45d and72c526b absent:
+  absolute existing `.venv/bin/python -m pytest .../test_physical_site_disposition.py -q`
+  →12passed/0skip. Hostile digest copy CLI exit1; real CSV unchanged and no archive created.
+  Receipts/exact commands/files: `/tmp/opencode/physical-site-foundation-task2-verify/` files00–18.
+- Reviewer Minor arithmetic ruled resolved from independent result: old24included7old+17normalization,
+  final29is12new+17. Missing combined author log is superseded by fresh independent run, not inferred PASS.
+- Task2 technically complete at0c12b2b..99bf45d (3owned new files). Per-file consumer/move closure
+  remains explicit successor work; candidates/RECONCILE are not move or delete approval.
+- Task3 consumes unchanged authority/CSV. It owns plan-listed neutral SiteFrame/AOI/epoch extraction,
+  direct dependency/lock/module-inventory and README changes. Preserve old aliases and literal wire,
+  schema, geometry and epoch vectors; no app-factory redesign, journal migration or archive move.
