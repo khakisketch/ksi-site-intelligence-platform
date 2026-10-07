@@ -60,6 +60,12 @@ EXTERNAL_RECONSTRUCTION_REQUIRED`; legacy defaults are unchanged.
 profile from environment configuration with only a data directory, S3 endpoint/bucket
 and principal digest/OIDC inputs — no Mission signing key directory or device
 attestation file — validating every required fact before opening journals or clients.
+Platform-profile verification runs the real generated flow against that factory:
+`tests/contract/test_platform_core_http_integration.py` drives generated-TIFF
+inspection, the Analysis worker, and region-data receipt end to end, and
+`tests/replay/test_platform_core_replay.py` proves restart/replay with retained
+managed rows and revocation distinctions. No new result schema, identity, grant,
+calculation, or producer adapter is introduced for either file.
 The shared pure env helpers live neutrally in `ksi_core.composition.runtime_config`
 and `ksi_core.foundation.config_values`; the legacy `production_config`/`assembly`
 paths re-export the same function objects.
