@@ -12,7 +12,6 @@ UTF-8·key 정렬·최소 구분자(``,``/``:``)·``ensure_ascii=False``로 직�
 from __future__ import annotations
 
 import base64
-import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,32 +23,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from ksi_domain.canonical_json import canonical_json_bytes
-
-
-def canonical_payload_bytes(contract: Mapping[str, Any]) -> bytes:
-    """계약 dict의 서명대상 정규화 바이트열 (``signature`` 블록 제외, ADR-KSI-002 §2).
-
-    정규화 규약 자체(key 정렬·최소 구분자·``allow_nan=False`` 등, 감사 #10 근거)는
-    ``ksi_domain.canonical_json_bytes`` 가 소유한다 — event-contracts 의
-    ``offline_sync.payload_digest`` 와 같은 규약을 공유해야 하기 때문이다(같은
-    "정규화"의 정의가 두 패키지에서 갈리면 안 된다). 이 함수는 그 위에 "signature
-    블록은 서명 대상에서 뺀다"는 이 도메인 고유 규칙만 얹는다.
-
-    Raises:
-        ValueError: NaN/Infinity 또는 JSON 도메인 밖 타입 포함 — 발행(sign) 시점의
-            typed 실패다. verify 경로에서는 외곽 가드가 MALFORMED_CONTRACT 로 강등.
-    """
-    payload = {key: value for key, value in contract.items() if key != "signature"}
-    try:
-        return canonical_json_bytes(payload)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"계약을 정규 JSON 으로 표현할 수 없다: {exc}") from exc
-
-
-def sha256_digest(payload: bytes) -> str:
-    """정규화 바이트열의 SHA-256 digest, ``sha256:<hex>`` 형식 (ADR-KSI-002 §3)."""
-    return f"sha256:{hashlib.sha256(payload).hexdigest()}"
+from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
 
 
 def build_signature_block(

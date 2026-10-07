@@ -143,6 +143,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
 from ksi_event_contracts.processing_artifact import (
     ArtifactAccuracy,
     ArtifactLineage,
@@ -167,7 +168,6 @@ from ksi_event_contracts.processing_resource_policy import (
     processing_resource_policy_wire_dict,
 )
 from ksi_event_contracts.vertical_reference import VerticalReference
-from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field
 
 from ksi_core.domains.artifacts.artifact_manifest import (

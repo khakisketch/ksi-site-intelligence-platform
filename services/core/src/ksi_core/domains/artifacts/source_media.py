@@ -90,8 +90,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
 from ksi_geo_spatial.crs import SUPPORTED_PROJECT_CRS, UnsupportedCrsError, normalise_crs
-from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 from pydantic import Field, model_validator
 
 from ksi_core.domains.artifacts.evidence import (

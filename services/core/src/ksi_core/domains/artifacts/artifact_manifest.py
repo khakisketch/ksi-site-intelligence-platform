@@ -15,11 +15,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
 from ksi_event_contracts.processing_artifact import (
     ProcessingArtifact,
     processing_artifact_wire_dict,
 )
-from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
 
 
 class ArtifactManifestError(ValueError):

@@ -23,7 +23,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from ksi_mission_contracts.signing import canonical_payload_bytes, sha256_digest
+from ksi_domain.signed_payload import canonical_payload_bytes, sha256_digest
 from pydantic import Field, model_validator
 
 from ksi_core.domains.design.design_progress import derive_progress
