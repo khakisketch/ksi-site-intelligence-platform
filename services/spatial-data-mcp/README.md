@@ -3,9 +3,12 @@
 Bounded local stdio MCP adapter for the KSI spatial-data AI boundary. It
 exposes six fixed tools over one configured Core origin and projects only
 Core-evidenced, acknowledged responses. It owns no device authority, no
-raster bytes, no grant/credential issuance, and no listener. This package is
-source-only: it is exercised from its source tree in contract tests and is
-not installed into any host or AI configuration by this repository.
+raster bytes, no grant/credential issuance, and no listener. Checkout contract
+tests use the source tree by default. Wheel/sdist builds and the installed
+console/SDK flow have also been verified in a separately authorized, isolated
+test environment. This repository does not install the adapter into a shared
+environment or AI-host configuration, or publish/deploy it. See
+`docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md` for the exact verification scope.
 
 ## Configuration
 

@@ -26,7 +26,7 @@ hashes the selected bytes attempted for publication, not a client-receipt claim.
 
 ## Entrypoint / config / tool workflow
 
-- Adapter entrypoint (source tree, never installed):
+- Adapter entrypoint (default source-tree test workflow):
   `python -m ksi_spatial_data_mcp.server --config=/absolute/protected.json`
   with `PYTHONPATH=services/spatial-data-mcp/src`. Console script:
   `ksi-spatial-data-mcp --config=/absolute/protected.json`.
@@ -84,11 +84,54 @@ third-party entries. Manifest/console source closure and source import passed.
 Skipped tests are unverified, not acceptance evidence. See the durable ledger
 for exact frozen hashes, commands, receipts and the initially failing full run.
 
-**Package distribution is not verified:** neither the project nor system Python
-has Hatchling. Wheel/sdist builds and SDK smoke from an installed built artifact
-were not run. No backend installation, dependency sync, host configuration,
-publication or deployment was performed. Source-tree execution evidence must not
-be presented as package-installation, host/client or customer acceptance.
+### Isolated package verification — 2026-10-07
+
+After explicit permission for a task-owned isolated build/test environment,
+Hatchling 1.32.4 and its build closure were prepared separately under
+`/tmp/opencode/ksi-spatial-mcp-build-20261007-a1`. The shared `.venv`, root lock,
+production configuration and external AI-host configuration were unchanged.
+
+Independent runner `ses_eea7d86e8ffeHmJ00clvsU9KPH` verified the runtime source
+at `d68b0fb5907df7ad0c5b3025d61e339e6a529ffe`:
+
+- Offline, config-free wheel/sdist builds for `ksi-domain`,
+  `ksi-event-contracts`, and `ksi-spatial-data-mcp`, plus an MCP wheel rebuilt
+  from its exact sdist. All four commands exited 0; 68 source modules matched
+  the archives and installed modules. The MCP wheel SHA256 was
+  `c16a656d80f90cdb0978d763c3e02cc08532ed4ba2cdc221aa65b7577287e288`.
+- Fresh isolated, non-editable installed package/SDK origins and exact locked
+  dependency closure: `mcp==2.2.0`, `httpx==0.28.1`, `pydantic==2.13.4`;
+  `uv pip check` passed for 34 installed distributions. No source `PYTHONPATH`
+  or system-site-packages fallback in the installed client/server children.
+- Installed SDK client and installed console, three genuine generated
+  DSM/RGB/RGBA flows: six child exits 0, same-key restart preserves one issued
+  job and one output upload per lane. SDK-returned hash/size equal the HTTP
+  receipt and actual downloaded bytes; the independent native pixel, mask,
+  affine, bounds and CRS oracle passes. Metadata publication audit may grow;
+  it is not an extra job issuance.
+- Unchanged `test_spatial_data_mcp_http_integration.py` through the installed
+  console: **14 passed, 0 skipped, 0 warnings**, 13 observed console spawns.
+  Parent fixtures still use the project Core and mounted worker control; this
+  is not an installed/deployed Core or network-worker claim.
+
+The original private smoke harness had a closed-session lifetime error and
+read the wrong SDK response field. Copied harness repairs and negative
+assertion controls were reviewed; no product runtime repair or retry policy
+was needed. Incorrect manually copied RGB/RGBA hashes in an author receipt
+were preserved and superseded by the raw results and independent receipt;
+they do not establish nondeterministic runtime bytes.
+
+Exact commands, fresh command witnesses, archive/installed origins and before/
+after snapshots: `/tmp/opencode/task6-package-final-verify/receipt.json`, SHA256
+`db1258a1577dd7246fb273768f56f81c3211d24bad17da5b04e7ae763565e7ef`;
+durable summary and closeout evidence are in the continuation ledger linked
+above. These temporary local artifacts are not a published release. Earlier
+full-suite/static results are reused for unchanged runtime bytes, not rerun
+or relabelled as fresh package-era full-suite execution.
+
+This verifies local built-package execution only. Publication, deployment,
+installation/configuration in an external AI host, permitted customer exports,
+rights/accuracy/cost/containment and customer acceptance remain unverified.
 
 What each proves:
 

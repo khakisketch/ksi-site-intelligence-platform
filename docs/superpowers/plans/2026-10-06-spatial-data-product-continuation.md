@@ -1337,3 +1337,216 @@ operational recovery, real customer/field acceptance, product EXT-VAL close or f
 Keep deferred safe-stderr/optional negative cases as backlog, not silently-open acceptance defects.
 Next: commit the verified inventory/docs locally, then return the bounded build-environment
 approval gate while retaining the active long-term goal and all remaining customer/operations gates.
+
+### Explicit isolated build-environment approval — Task6 distribution check resumes
+
+On continuation, Git main d68b0fb revalidated clean. Generic auto-continuation was NOT taken as
+installation permission. Native question explicitly requested only a task-owned isolated build/
+test environment under /tmp/opencode, build dependencies, local wheel/sdist and installed SDK
+verification; shared .venv, production configuration and deployment unchanged. Human selected
+the affirmative recommended option (“允许隔离构建 (Recommended)”). This is the scoped permission
+for environment preparation, not publication, deployment, live credentials or customer acceptance.
+
+Ruling: use existing Python/uv; no interpreter download or shared environment sync. Build the
+dedicated MCP package and its local ksi-event-contracts/ksi-domain closure from exact recorded
+source. Download only required build/runtime dependencies into owned isolated environments,
+pin runtime dependencies from current uv.lock, capture exact versions/artifact hashes; no
+ambient auth/keyring/proxy profiles or credential copying. Verify wheels and sdist source closure
+and actual installed entrypoint/modules from the built artifacts, not source-PYTHONPATH success.
+Actual Core/SDK/native-byte smoke may reuse generated Task5 fixtures with the server command
+redirected only to the installed wheel console entrypoint; real auth/jobs/worker/HTTP unchanged.
+Keep protected generated config/token in existing approved unique0700 fixture cache namespaces,
+not world-writable /tmp ancestry; build/test environments/artifacts alone live under /tmp/opencode.
+Independent reviewer/test-runner required for resulting package evidence; any packaging defect
+needs exact RED and owner-scoped source repair, never silently change product/dependency contracts.
+
+### Task6 isolated package progress and harness-failure diagnosis (not closeout)
+
+Main d68b0fb revalidated; only this Primary-owned ledger is modified. No product source,
+root lock, shared environment, host configuration, live authority, publication or deployment
+changed. StageA Developer ses_eeaa12f94ffevuW0X3aTwDeyrr built wheel/sdist for domain,
+event-contracts and spatial-data-mcp into owned `/tmp/opencode/ksi-spatial-mcp-build-20261007-a1`.
+The MCP source-wheel and sdist-rebuilt wheel both hash
+`c16a656d80f90cdb0978d763c3e02cc08532ed4ba2cdc221aa65b7577287e288`; 68 source modules match.
+Fresh isolated runtime imports, installed RECORD and 34-distribution pip-check passed.
+These are packaging evidence, not an installed external AI-host claim.
+
+StageB Developer ses_eea9b1521ffeDsfkDt6Q3S8hxM ran 14 unchanged genuine HTTP/SDK tests via
+the installed console: 14 passed/0 skipped/0 warnings. Its additional fresh installed SDK-client
+leg failed. The developer's initial transport/timing hypothesis was unsupported and withdrawn:
+the frozen private client calls tools after exiting its stdio/ClientSession context, introduced
+by its diagnostic indentation edit. A tracking-double regression proves that harness lifecycle
+defect, not a transport/product fault. A separate private-harness mistake expected a top-level
+receipt instead of the real SDK `fileReference`. The earlier lost-error recover failure's
+association with this shape mistake is an inference; the missing original trace stays unknown.
+No runtime repair or retry policy change was justified by those harness defects.
+
+Ruling: preserve all original attempts, fix only a copied private harness, and compare the
+issuance invariant rather than all journals (legitimate metadata publication audit grows).
+Recovery full DSM/RGB/RGBA run passed with 6 installed-client children; controlled DSM passed
+separately. Author evidence is provisional pending independent review and test-runner execution.
+Scratch: `.superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task6-package-{build,smoke,smoke-recovery}/`.
+
+Reviewer ses_eea8f356bffepJiLRG346mN9WN confirmed archive/source closure but found missing raw
+command provenance. StageA addendum recovers exact commands from the same Developer session's
+executed-call context; it honestly labels missing full install logs/historical fingerprint files.
+Original receipt/logs preserved. Independent offline rebuild into new output plus current
+environment/lock/source inspection will provide directly observed command/evidence closure;
+do not turn a recovered command list into an originally captured transcript.
+
+Next: close actual package-smoke coverage findings, independent offline build/artifact-origin/
+genuine SDK/native-byte verification, then reconcile Task6 evidence and local documentation.
+The full product goal, real input/export/rights/accuracy, external-host, customer and operations
+acceptance gates remain open; no new UI work or product slice closure.
+
+### Package-smoke review rulings and independent execution handoff
+
+Reviewer ses_eea8f356bffepJiLRG346mN9WN found two material harness-coverage gaps: SDK-returned
+digest/size were never compared to the actual HTTP receipt, and target-job-only issuance counts
+could miss an extra job under another ID. Primary verified both in the actual private driver.
+Ruling: add those exact assertions with failing sensitivity controls, not alter product code,
+worker control, grant policy, native byte oracle, deadlines or existing tests. The same Developer
+repaired only `task6-package-smoke-recovery/fix1/`; SHA/size mismatch and extra other-ID issuance
+controls now reject, and the full three genuine flows passed once. Reviewer re-review marked
+G1/G2 addressed. An empty stdout file alone proves no command exit: independent execution must
+record exact argv/cwd/exit, full pytest output and the generated result JSON, rather than use
+author wall-time/exit claims as final proof. Minor note-only audit control is not a unit assert;
+actual audit growth and total/target issuance remain observable in the genuine journals.
+
+Independent runner ses_eea7d86e8ffeHmJ00clvsU9KPH now owns new verification scratch only:
+offline three-package wheel/sdist + MCP-from-sdist rebuild, archive/source/installed RECORD/
+origin/lock checks, lifecycle and assertion controls, full installed-SDK DSM/RGB/RGBA flow and
+unchanged installed-console T14. Original author artifacts/receipts are retained. Parent Core
+fixtures use the existing secure `/home/ksi/.cache` namespace via explicit parent HOME; temporary
+build HOME is not appropriate for those fixture processes. This environment clarification is a
+test-command boundary, not permission to weaken secure-file checks or inspect credential profiles.
+No fresh bare full-suite claim is required for unchanged product runtime: previous full/static
+evidence may be reused only after matching the original source freeze and log hashes.
+
+### Full-goal acceptance audit — remaining gates after package verification
+
+This table audits the requested product outcome, not a new implementation mandate. Requirements
+come from PRD §1.1.1/1.1.2, ADR036/037/038 and the approved MCP spec; old roadmap WIP rows do not
+override later verified implementation. Independent read-only reviewer
+ses_eea7b9c48ffeCPLrRKezIvRrai inspected the current checkpoint/task ledger, C4–C7 reconciliation,
+roadmap SDP/P-AC/GAP rows, product-state and the actual customer sample guide. It found no additional
+concrete mandatory engineering task executable without external inputs or a new material contract;
+package reconciliation/docs/local commit is still agent-owned work. This is conditional on the
+pending independent package result, not a premature whole-goal completion or blocked declaration.
+
+| Requested outcome | Concrete implementation/evidence | Remaining required evidence / owner |
+| --- | --- | --- |
+| Customer-owned registration, inspection, source/revision evidence | Existing ingress/inspection + C1/C2 history/detail local verified through 579cdfa; no KSI reconstruction engine/raw-upload substitution | Permitted actual exports and provenance/rights, customer owner; registration alone is not compatibility/accuracy acceptance |
+| V2 analysis, revision-bound review, next-observation reuse | Existing V2 customer HTTP/browser/reload and C1–C3 closure in first-customer ledger; unchanged strict V1/V2/history semantics | Real same-Site/WorkArea t0→t1 and t1→t2 use and customer acceptance, customer/field owner |
+| DSM/ortho region delivery with coordinates/native pixels/NoData/limits | Approved Spatial Data V1 + T5 generated DSM/RGB/RGBA Core/worker/HTTP/SDK hand-oracle parity, replay/rights/next-source tests | Actual supported customer files and independent consumer use, customer/integration owner; no format/accuracy guarantee |
+| Dedicated local data MCP/common API/external workflow | T1–T5 commits 374849a/bed4d9c/f8afb01/bcca3c3/fc14059; six tools, consent/rights/ack, finite protected example; package runner pending | Installed external AI/client environment and actual owner use still separate; no universal host support |
+| Required independent scoped/full/static/build/API checks and local Git | Prior scoped1349/full9028/122skip/102warnings, Ruff39/format39/mypy35, offline lock and 51-file freeze; Task6 package execution pending | Current package closure and final docs reconciliation, agent-owned; skipped tests remain unverified |
+| Design-owned rendered review and actual UI auth/reload/persistence | C3 design review and production compiled-artifact OIDC/navigation/reload closure through579cdfa; no UI delta in MCP work | Human customer acceptance, not another redundant visual rewrite; any new visual delta requires design ownership |
+| Actual host, runtime identity, rights/OIDC, cost/containment and recovery | Existing application bundle/OCI binding/degraded-boot are implemented local evidence, not deployed-host proof | Selected host/candidate/configuration/identity/backup custodian and scoped operations authorization, operations owner |
+| Full product P-AC01..06 and EXT-VAL acceptance | Product-state current EXT-VAL slice retained; generated simulations and SDK conformance are explicitly local software only | Independent external developer/customer repeated use, permitted real sample, rights/cost/retention and owner acceptance |
+| Feed/resync/PC/Mesh/external producer and result layer successors | Unselected future contracts under ADR038/SDP09, excluded from this accepted MCP spec | Material consumer/format/authority decision and approved spec/plan before implementation, product owner |
+| Key incident/external effects/other workspaces | No secret reproduction, credential change, push/deploy/publication/signing/live grants/device/customer contact; unrelated/dirty worktrees retained | Affected-key rotation by account owner separately; it does not block safe independent development |
+
+Recommended next product action is real-input first-platform validation, not duplicate C1–C3,
+bundle/OCI/degraded-boot or another synthetic success run. Minimum supplied input is the sample
+guide's same-Site t0/t1/t2 DSM, one ortho, requested boundary, CRS/vertical/unit/time/provenance and
+processing/transfer/AI rights, in an explicitly permitted accessible location. No raw photos or
+secret values need to be pasted into chat. Actual-host/client/cost/recovery verification requires
+its own selected target and authorization; new expansion contracts remain optional decisions,
+not guessed requirements or substitutes for this first-platform acceptance.
+
+### Task6 independent built-package closure — 2026-10-07
+
+Independent runner ses_eea7d86e8ffeHmJ00clvsU9KPH directly executed and captured command
+argv/cwd/exit/stdout/stderr/timestamps in `/tmp/opencode/task6-package-final-verify/logs/`.
+Its first execution reached the helper step limit after A/B; original work was retained and
+the same runner finished only C/after/receipt, without repeating successful build/three-lane work.
+This was a bounded helper execution limit, not a product failure or missing installation permission.
+
+All four offline builds exited0, using existing authorized isolated Hatchling1.32.4:
+
+```sh
+B=/tmp/opencode/ksi-spatial-mcp-build-20261007-a1/buildvenv/bin/python
+O=/tmp/opencode/task6-package-final-verify/out-a
+uv build packages/domain --python "$B" --no-python-downloads --no-build-isolation --no-sources --no-config --offline --out-dir "$O/domain" --sdist --wheel
+uv build packages/event-contracts --python "$B" --no-python-downloads --no-build-isolation --no-sources --no-config --offline --out-dir "$O/event-contracts" --sdist --wheel
+uv build services/spatial-data-mcp --python "$B" --no-python-downloads --no-build-isolation --no-sources --no-config --offline --out-dir "$O/mcp" --sdist --wheel
+uv build "$O/mcp/ksi_spatial_data_mcp-0.0.1.tar.gz" --python "$B" --no-python-downloads --no-build-isolation --no-sources --no-config --offline --out-dir "$O/mcp-from-sdist" --wheel
+```
+
+Actual build env was allowlisted/config-free, no interpreter download, install or external network;
+only pre-existing task build/runtime environments were used. All seven artifacts matched StageA
+hashes, and 68 modules matched source/wheels/installed bytes. MCP source/sdist wheel hash c16a656d
+above is exact, not a broad cross-platform reproducibility guarantee. Archive traversal/path safety,
+entrypoint/metadata, sdist required files, non-editable fresh runtime imports and installed lock
+closure were checked. Fresh `uv export --package ksi-spatial-data-mcp --frozen --offline
+--no-emit-workspace --no-emit-project --no-config -o <owned-closure>` matched prior requirements
+apart from command-header comments. `uv pip check --python <runtimevenv/bin/python> --no-config
+--offline` exited0,34 distributions;31 marker-applicable third-party requirements match the lock.
+
+Copied frozen private harness `b-ns/fix1/` under the runner namespace proves
+the missing SHA/size and extra-other-job issuance assertions via controlled RED exit3 / GREEN
+exit0, not product correctness. Actual genuine `.venv/bin/python <runner b-ns/fix1/recovery_flows_fix1.py>`
+then exited0: DSM/RGB/RGBA all completed, six child exits0, SDK and console from isolated installed
+artifacts (`python -I`, no source PYTHONPATH), same-key second stdio process uses the same job,
+total/target issued counts1→1 and upload1 per lane, no workspace leftovers, SDK hash/size equals
+HTTP receipt and byte/native pixel/mask/affine/bounds/CRS oracle. Worker control remains genuine
+in-process HTTPS-mounted Core + raster child, not deployed network-worker evidence.
+
+The original author's `fix1/receipt.json` contains wrong/short manually transcribed RGB/RGBA
+hash strings; its raw `fix1/fix1_flows.json` matches the independently observed full hashes for
+all three kinds. Original receipt SHA513fe54298d75f3dd0ade21dfe69cbbff67519f96cc0d86c4db3a0ea5cc21b12
+is retained as inaccurate historical evidence, NOT the canonical byte receipt. Runner raw-result
+comparison is programmatic; there is no demonstrated nondeterministic writer or transport fault.
+
+Final C command from repository cwd, only parent plugin PYTHONPATH, HOME=/home/ksi:
+
+```sh
+.venv/bin/python -m pytest tests/contract/test_spatial_data_mcp_http_integration.py -p task6_smoke_plugin -q -rf
+```
+
+Exit0: **14 passed,0skipped,0warnings**,29.04s;13 console spawns plus a separate origin proof,
+all absolute installed console, own empty cwd, child PYTHONPATH/VIRTUAL_ENV absent. Existing
+Core/worker/grant/rights/oracle assertions were not mocked or changed. AFTER source68/HEAD/root
+lock/shared `.venv` cfg and distribution metadata unchanged; `git diff --check`0. The continuation
+ledger was the only product-checkout delta. No fresh bare-full/static claim: earlier final
+full9028/122skip/102warn/static evidence remains at its recorded unchanged runtime snapshot.
+
+Canonical package receipt SHA256
+`db1258a1577dd7246fb273768f56f81c3211d24bad17da5b04e7ae763565e7ef`;
+report SHA256 `231bebd51e3ed48f84a40a096d481deceaa578a9d7f2a80c0abb1f318fcdc446`.
+Both0600 and nonempty. Exact witness hashes and raw results are retained in that owned namespace.
+Task6 distribution verification obligation is now achieved for local built-package execution,
+not public distribution, AI-host/customer installation, deployed worker/Core or product acceptance.
+
+Final closeout delta is documentation only: this ledger, the MCP plan checkbox, software-evidence
+document and service README. README updates the stale source-only description; its changed sdist
+documentation needs an offline packaging/unchanged-module validation before the closeout commit.
+The installed runtime test bytes remain the exact d68b0fb package snapshot. No UI changes.
+
+### Final documentation/package snapshot and local closeout
+
+Scoped docs reviewer ses_eea8f356bffepJiLRG346mN9WN verified the four-path diff against the
+canonical independent receipts and required the current README sdist rebuild before commit.
+Independent runner ses_eea7d86e8ffeHmJ00clvsU9KPH completed that exact docs-only check:
+47/47 non-document entries of the prior 51-file final freeze match; all 68 package modules,
+root lock and shared environment fingerprints unchanged. Earlier full/scoped/static receipt
+snapshots differ only at the four intended documents; no runtime/test/contract delta or fresh
+bare-full-suite claim. `git diff --check` exited 0.
+
+Two fresh offline MCP build commands (current source wheel/sdist, then its sdist wheel) exited 0.
+The current README is in the fresh sdist; pyproject/module bytes/entrypoint/metadata are unchanged.
+Current MCP wheel and from-sdist wheel remain the exact tested c16a656d hash. Current MCP sdist:
+`d96076bc24196851b7f394a31dc27d9b60aa7922126d2b59bc855918da2fa664`.
+Final docs/package receipt `/tmp/opencode/task6-package-final-verify/docs-final/receipt.json` SHA256:
+`6fa66bb42be7cef6c4e6d884cad56071c7b67b39eedb5c0ca5825c75eb14fc38`;
+report SHA256 `21db6c60367b2cff3d04ceb80e5ecc836902fe65bdccd6b51050080fc62958aa`.
+Raw artifacts and original failed attempts remain retained; no unrelated worktree was cleaned.
+
+Task6 and SDP-CLIENT-01-AI are now complete **only as local software/built-package verification**.
+Primary will commit exactly the four task-owned documents on the existing authorized local main;
+no branch merge, push, PR, publication, deployment, AI-host setup or customer acceptance is implied.
+The independent remaining-goal audit above found no further executable mandatory engineering
+repair outside the now-closed package obligation. Next product progress requires the actual
+permitted customer inputs/rights or a selected and explicitly authorized host/operations stage;
+new feed/resync/external-result contracts remain material decisions, not assumed implementation.
