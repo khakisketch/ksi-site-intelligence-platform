@@ -620,3 +620,12 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   `ses_ee8ac5874ffeI1uEwO3U0xUveU` (full configured suite/static/gates/offline artifact closure;
   scratch`/tmp/opencode/physical-site-p2-final-verify/`) run in parallel. Milestone closure awaits
   their receipts; no product acceptance/customer/runtime-independence inference from task tests.
+- Final whole-P2 review `ses_ee8ac5871ffetB3IcpErhDzXHp`: specPASS/qualityApprove-with-Minors,
+  noCritical/Important; report`final-review.md` read. Rulings: Q1 V1 submission ingress to
+  retained managed rows accepted as-is (registration ingress≠execution; oracle restricted set
+  exactly implemented; a new mode gate would exceed approved scope → P5 follow-up candidate);
+  Q2 `allow_expired=True`/`allow_historical_catalog_binding=True` parity directly verified
+  (platform_production.py:134,150,156 == production.py:206,231,237). MinorsM1–M4 backlog;
+  Task2 “Analysis/data happy-path untested” closed by Task4 worker+region-receipt coverage.
+  Integrated full-suite/static/artifact results pending from independent runner
+  `ses_ee8ac5874ffeI1uEwO3U0xUveU`; do not poll.
