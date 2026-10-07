@@ -56,6 +56,13 @@ with no Mission key, device, acquisition, flight or managed-processing state. Th
 observation router gains only the opt-in `external_only` flag, which omits the four managed
 mutation routes and rejects omitted/managed execution modes with `422
 EXTERNAL_RECONSTRUCTION_REQUIRED`; legacy defaults are unchanged.
+`ksi_core.composition.platform_production.build_platform_production_app` boots that
+profile from environment configuration with only a data directory, S3 endpoint/bucket
+and principal digest/OIDC inputs — no Mission signing key directory or device
+attestation file — validating every required fact before opening journals or clients.
+The shared pure env helpers live neutrally in `ksi_core.composition.runtime_config`
+and `ksi_core.foundation.config_values`; the legacy `production_config`/`assembly`
+paths re-export the same function objects.
 
 Core는 장비별 SDK 코드를 소유하지 않는다. 장비 배치·연결 정책은
 `ksi_core/acquisition/`의 profile/readiness store와 `coordination` 원장·API로

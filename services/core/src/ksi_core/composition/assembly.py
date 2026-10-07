@@ -62,6 +62,9 @@ from ksi_core.equipment_states import EquipmentStateStore
 from ksi_core.equipment_support import EquipmentSupportStore
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
+from ksi_core.foundation.config_values import (
+    cli_optional_positive as cli_optional_positive,
+)
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.organization_work_roster import OrganizationWorkRosterStore
 from ksi_core.volume_reports import VolumeChangeStore
@@ -75,21 +78,6 @@ if TYPE_CHECKING:
     from ksi_core.copilot_openai import CopilotRuntimeConfig
     from ksi_core.device_attestation import DeviceAttestationRegistry
     from ksi_core.evidence import EvidenceStorage
-
-
-def cli_optional_positive(value: int, *, name: str) -> int | None:
-    """CLI 의 "0 = 없음" 규약을 생성자의 ``None`` 으로 옮긴다.
-
-    생성자들은 0·음수를 거부하고 "없음"은 ``None`` 으로만 표현한다(조용히
-    0 으로 뭉개지 않기 위해서다). CLI 쪽에서 0 을 그 뜻으로 받는 규약은 여기
-    한 곳에만 둔다 — dev·production 두 조립 지점이 공유한다.
-
-    음수는 argparse/환경변수를 통과하므로 여기서 typed 로 막는다 — 생성자까지
-    흘려보내면 실패 메시지가 인자 이름을 잃는다.
-    """
-    if value < 0:
-        raise ValueError(f"{name} 는 0(없음) 이거나 양수여야 한다: {value}")
-    return value or None
 
 
 def assemble_app(
