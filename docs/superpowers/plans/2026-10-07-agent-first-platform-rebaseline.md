@@ -644,3 +644,9 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   are the build-side items to separate.
 - Drafting the P3 written plan next; no source change, move or approval exists yet. Human
   written-plan review remains the execution gate for P3.
+- P3 draft written: [Acquisition separation, worker split and source archive](2026-10-08-acquisition-separation-and-archive.md)
+  (DRAFT FOR WRITTEN REVIEW;7tasks: current-revision move decisions → historical readers →
+  worker split → platform boot/CI switch → Core dependency closure → physical moves/CI/lock/docs →
+  independent closure). Independent plan verification and Human review pending; no P3 execution
+  started. Plan covers the194candidates + the evidence-gated Core/worker closure sets; Console
+  cleanup stays P4.
