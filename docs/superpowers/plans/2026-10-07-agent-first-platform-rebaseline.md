@@ -585,3 +585,15 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   deferred (consumer docstring still cites legacy path; one `.encode()` default-arg inconsistency).
   Full suite/static remain Task4; commit`15ed73e..f7779e9` is task-owned. Dispatch cache:
   `.superpowers/sdd/2026-10-07-platform-core-assembly/`. Next Task2 base`f7779e9`.
+- Task2 complete: developer `ses_ee8e71a34ffe10wtYNYRg7ihF7` committed `1bc76b5`
+  (`feat: assemble explicit external-only platform Core`;7owned files: restricted router flag+
+  gating, new platform_graph/app/assembly,11test contract file, additive inventory/README).
+  First attempt stopped at harness step limit with mid-edit tree; bounded continuation preserved/
+  finished it without reset. Author evidence:newtest11pass; scoped10-filematrix204pass; Ruff/format+
+  scopedmypy clean; core module boundariesOK183records. Task reviewer
+  `ses_ee8d5187effeSWKUYHVCrX3D3I`: specPASS/qualityApproved,noCritical/Important;4Minors deferred
+  to final review (storage field typedAny; create_platform_app auth optional vs brief required;
+  operations-rejection test covers2/5 surfaces; Analysis/data happy-path wiring untested).
+  Ruling: accept pre-existing `EXTERNAL_OPERATIONS_ONLY`→409 store semantics (verified
+  observation_work_orders.py:1108,:2232) and optional `processing_job_store=None` mount argument
+  (sites.py:1202-1207). Next Task3 base`1bc76b5`.
