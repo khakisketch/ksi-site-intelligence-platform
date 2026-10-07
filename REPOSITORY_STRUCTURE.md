@@ -159,6 +159,7 @@ their owner until an explicit cleanup task removes them.
 | `services/core/` | Core — identity, site, Mission, policy, evidence and durable journals | Yes | Owns authority/state; imports reusable packages, never DJI SDK | RETAIN |
 | `services/dji-gateway/` | Gateway — exact capability ports, route selection and receipts | Yes | Owns transport adapters, not product intelligence or flight control | RETAIN |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
+| `services/spatial-data-mcp/` | Bounded local stdio MCP adapter — six fixed tools over one configured Core origin | No (source-run adapter; no listener/deployment) | Reads Core AI delivery only; owns no bytes, grants, credentials, or device authority | RETAIN |
 
 A new `services/` child must have its own independently managed listener, daemon/polling loop,
 health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import

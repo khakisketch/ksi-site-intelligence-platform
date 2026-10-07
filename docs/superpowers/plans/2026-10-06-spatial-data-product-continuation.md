@@ -953,3 +953,321 @@ wholechange review/full/static/build acceptance remain. Fixedownerpolicy cannotu
 groupwritable sourcefolder for credentials; tests use unique0700temporary generatednamespace
 undersecurecaller cache with taskownedcleanup. This is testfixture setup, not liveprovisioning.
 Packagebackend absent and actualcustomer/field/operations acceptance remain open; goalactive.
+
+### Task5 start — actual generated end-to-end software evidence
+
+Task4committedbcca3c324f54ce7efd76d2be4519aa3d5787ff65, cleanmain,15ownedfiles+parent/plan.
+Task5base/integrationbcca3c3; freshsequentialdeveloper owns newSDKHTTPintegration/replay/example
+andboundedfixture/docs only. NoCore/adapterruntime change silently authorized; if actualfailure
+demands ownerrepair, preserveRED andreport specificscope before Primaryruling. ExistingTask4
+fixturefile nowexists: compose/extend it minimally (no overwritingconfig/client/stdiofixtures),
+leave oldsource/objectworker/publicbyteengine helpers unchangedunlessexplicitinput needed.
+Ownedgeneratedloopbacklistener+objectserver+worker/MCPsubprocess permissible; closeonlyowned
+ports/processes, noinstall/production/customerstartup/hostconfig/securityoverride. ActualSDK
+uses explicitnewsource PYTHONPATH sinceadapteruninstalled; claimsremain generatedsoftwareonly.
+
+### Task5 partial recovery — genuine RGBA worker defect, no scope weakening
+
+Task5child `ses_eed68c9f9ffesu2jIbj6bfEIYR` providerprotocolerror afterfixture/integrationwrites;
+samechildretry failedagain butearlyreport preserved. Actualfixture+integrationpartialsource/
+report not discarded. Report labels invalidsingleDSMsubmission/alpha128/undefinedcolorinterp
+as genuineRED; these are setup/profilefaults, not missingproductbehavior/TDD evidence. Genuine
+reportedfailingbehavior: inspectedcanonicalRGBA withbinaryalpha isMEASURED, butnativewindowworker
+refuses SOURCE_MEASUREMENTS_MISMATCH because `MaskFlags.per_dataset` is mistaken for separate
+internalmask even alongside `MaskFlags.alpha`. Primary traced exactsourcebranch589–596 vsowner
+inspector `_has_internal_mask` structural maskIFD rule. No previousruntimewrite occurred.
+
+Ruling: required DSM/RGB/RGBA full byteparity cannot be reduced to RGBAmetadata-only. Newbounded
+recovery developer preserves actualpartialwork and completes remainingTask5; no blindtaskredo.
+Authorize minimal ownerrepair in packages/geo-spatial/src/ksi_geo_spatial/external_native_window.py
++ tests/contract/test_external_native_window.py ONLY after genuinealpha-only vsinternalmask/
+NoData/invalidalpha diagnostic confirms rule. GDAL per_dataset+alpha is an alpha mask, not proof
+of separateinternalmask; genuine internalmask must stillrefuse unsupported RGBAcomposition.
+Prefer correct existingmaskflag semantics without newparser/workerAPI/contract/inspectionimport
+fromservices; if structural boundedparser trulyneeded report exactpath/scopebeforeimplementation.
+Nativeprofile/sha/finitebounds/currentrights/fullinspection unchanged, no newband/profile support.
+Cost if wrong localized primitive rollback with negativecontrols; approvedprofile alreadyRGBA.
+Task5oracle must independently handderive row/col/affine fromknown fixture grid beforeworker,
+not compute expectedpixelwindow with same productiongeometryhelper under test. Genuinereplay/
+lostresponse/nextobservation/negativeMatrix/examples/docs remainrequired. Distinct worker process
+and any in-process securetransport limitation must be reported, not described asallHTTPendtoend.
+
+### Task5 recovery progress — preserve tests, finish report/static then review
+
+Recoverychild `ses_eed4bdcc4ffeMP7pIMtc1DF7T5` providerfault after ownactualRGBA primitiveRED/
+GREEN/6parity then after remainingmatrix/replay/example/docs work. Actual8integration/3replay/
+2example logs retained; fullTask5regression/static/independentreview stillunrun asobserved.
+Minimalnativewindowownerrepair +negativeinternalmask/nodata/nonbinaryalpha retained, no skippedRGBA.
+Ruling: test_spatial_data_mcp_workflow_example.py is boundedTask5ownership addition necessary to
+prove alreadyapproved externalexample behavior; no newproductfeature ordeletionofoldtests.
+Ruling: freshbounded recovery finishes actualunfinished coveringchecks/report only, not another
+greenfield implementation or blindlyretryerroredproviderchild. Diagnoseactualcheck failures
+within existingownership; consequentialownerneedsreportedbeforewriting. Fullstdout/hashes freeze
+and review remainrequired, never count implementationreport as independentverification.
+
+### Task5 first scoped review — required evidence / external example repairs
+
+Recoverychecker `ses_eeb9e60a3ffeFK8uCIHMZA1DxX` ran124coveringtests/staticRuff7/diff0, but
+mypy support.* importerrors unresolved. It called missingRGBAhelperbody/IndentationError a
+genuineRED: correction this is fixture/setup repair, genuineRGBAbehaviorRED logs remain separate.
+Reviewer `ses_eeb978974ffeoUcopl6F0EHOMT` requires actualHTTP/SDKcursor traversal+stale409,
+guarded examplecredentialreads, WorkOrder source-binding negatives, typegate resolution.
+Ruling: mypy's support fixtures require tests in MYPYPATH, correct invocation noteditunrelated
+source or waive gate. WorkOrder absence fromroutepath doesnot remove genuine sourceworkorder/
+allsourceareas authorization; add actual owner-record mismatch negatives no publicwire change.
+
+Primary confirmed additional missingchecks: 6SDK calls sweep GRANTrevocation only, not current
+consent; no headerdowngrade ormissingack negative inTask5file. Report claim allStep4passed is
+incorrect. Ruling: testcurrentconsent for each6tools withprotectedbyteabsence/nomutation,
+realCore-origin response ack stripping fixture (not forgedsuccess) and purpose/header attempts;
+keep originalgrantnegative control. Allrequiredcases tracked separately passed/open.
+
+Externalexample has finitepoll loop but unboundedinitialize/create/callawait; floatinf passes
+parsercomparisons, rawValueError reflected via_fail(str(exc)); config.read_bytes unbounded and
+token.read_text unguarded onoptionaldownload. Ruling: reuse existing AdapterConfig protectedread/
+read_token validatedfiniteownerlimits foroptionalconsumer, overallasync deadline aroundSDK
+initialize/create/poll cleanup +finitepositiveCLI budget/interval, safeclosederror allowlist.
+No secretargs, hostconfig/installation, freshcreate retry or newwire; same-keycaller recovery
+preserved. Boundactualreceived typedjob/reference/source scopes beforepersist/download andatomic
+no-overwrite receipt publishing withownedcleanup, no partialreceipt oninterruption. Tests genuine
+unsafeconfig/token/callstall/nonfinite/rawexception/startup/latefile protection; sourceonly same
+example/fixture/test ownership. Reviewminorcomment actualruntime line56-60 notRGBAbranch, no
+requirement toaddhandoraclecomment onproductionreceipt dataclass; currentaccuracy nonclaims stand.
+Repairfix1 recoverychecker ownsremaining scopedfixes; no fulltaskredo, noCore/adapterchanges.
+
+### Task5 fix1 bounded handoff (step limit, not product blocker)
+
+Checker `ses_eeb9e60a3ffeFK8uCIHMZA1DxX` reached childstep limit after read-only genuine probes;
+current11sourcehashes reportedlyunchanged, 11/11originalsnapshot exists. CorrectMYPYPATH resolved
+7ownedfilesclean (tests:tests/contract:adapter source) without unrelatededits. Probeconsent6tools/
+pagination/ackstrip/workorder-byteconfusion are scratchcontrols, not committedtests; conversion
+andexample security/deadline repairs remainunfinished. Reviewer returnedconcretefindings but
+didnotpersist promised task-5-review.md; actualreceivedverdict recordedinpreviousledger section,
+no claim of an existent reviewfile. Requiredre-review mustwriteits actualreport beforecompletion.
+Ruling: splitremainingfix1 into two sequentialboundedwriters: integrationmatrix+fixture helper,
+then example+coveringtests/doc/update. Not concurrent/sharedfilewrites, no greenfieldtaskredo or
+modelchange. Keep existingRED/probes/fullstdout andapprovedsame11file scope. Finishfullcovering
+regression/static afterboth, thenfrozen-diff review andindependentrunner. No productscopechange.
+
+### Task5 fix1 A/B re-review and file-byte ceiling disposition
+
+Sequential A ses_eeb8d388bffeCVecRrieHU1LQf added6genuineintegrationtests/currentconsentSDK6/
+pagination/crossWorkOrder/downgrade/realackstripping;14integration+23stdio/static0. Sequential B
+ses_eeb729acbffeYSKpyCSuUtcJJR exampleprotectedconfig/token/typedviews/deadline/closederrors/
+atomicreceipt genuine6RED/1control→9exampletests/static0, old2realSDKcases retained. Correct
+MYPYPATH7typingcleanwithoutsourcewaivers. Bothscopedchecks only, finalfullregressionpending.
+Re-review `ses_eeb978974ffeoUcopl6F0EHOMT` nowpersisted task-5-fix1-review.md: originalI1–4/P1/P2
+addressed, newImportant optionalfiledownload ceiling conflates structuredmetadata quota with
+rasterbytes. Ruling: add optional positive finite caller --max-download-bytes for HTTP-only
+consumer; absent defaults conservatively to currentownerresponse ceiling, document thisexactly.
+This is externalexample's existingdownload budget, not newCore/MCP config/authority/wire/profile.
+Large authorizedraster neednot force oversized MCP JSON budget. CLI invalid/nonfinite rejected
+no rawreflection, suppliedsize honor beforebytepublish; preserve existingCLI compatibility.
+Minimal Bfollowup example/test+README/opsevidence, thenscopedre-review+independentrunner.
+MinorSDKcleanup relies onofficialSDK closing/real2e2e+mockedstall, not universalhostcompatibility;
+receiptparentcaller-ownedpath requirement documented, failureatomic temp/link publication
+verified; publicstdout caller receiptpath notcredential. Retain disclosednonclaims forT6.
+
+### Task5 fix2 externalexample capacity and flaky-flow diagnosis gate
+
+Bfollowup positivecallerdownloadbudget/unchangedJSONquota3RED→12examplepass/static0,4source/
+docchanges only. It also observed3examplee2e ADAPTER_UNAVAILABLE failures before2greenreruns and
+called it pre-existing timingrace without rootcause. Ruling: failuresnotwaived by repeatedgreen
+or assumingearlieruntouchedtest means earlierbug; preserveactualfailedlogs anddiagnose current
+SDK/Core/worker overlap beforefinalverification. No automaticnewrequest/key, callerpollbudget
+mustremainfinite; any sourceowner defect beyondcurrentexample/test/fixture scope requires exact
+RED+permission ruling. Test guards shouldn'tsleep/increasebudget justhidefailure. Concrete
+typedtransient status handling onlyafterverifiedcause, no genericexcept-and-retrygreen fallback.
+Record generated managementrun_once transport in-process +sandbox rasterlauncherchild accurately;
+do not call exampleprocess namedworker a distinctproductiondata-worker networkdeployment.
+
+### Task5 flake investigation — instrumentation permitted in generated-test wrapper only
+
+Diagnostician ses_eeb663b40ffegUIcAhxiwYPMnV couldnot reproducewithin3boundedruns (2targetedgreen,
+12full-examplegreen), no Bfailedlogs retained so exactcause undetermined, no runtimefixmade.
+No acceptancefrom repeatedgreen; original3failures remain recordedunexplained, not silently
+calledpreexisting/nonblocking. Ruling: test-only Pythonwrapper around example subprocess may
+capture exceptionCLASS +repo/library sourcefile:line into0600taskowneddiagnostic artifact,
+never rawexceptionmessages/locals/arguments/headers/config/token/outputJSON and never public
+stderr diagnostic escape. Normalexampleclosederror contract unchanged; wrapper scopedexact
+generatedtest command and no realcustomerinvocation. Record finalfailures classlines if they
+occur, not retry-until-green. No need for usersecurityapproval for safe generated-test tracing,
+no productionhook/hostconfig/newdependency. Finalindependentcoveringsuite stillrequired; any
+failuregenuinecausebeforefix, unresolved historicalflake disclosedandkeptopen untilrealproof.
+
+### Task5 independent functional failure — not closed
+
+Independentrunner ses_eee8899d7ffeX0iTUza6tSBlem executed task-5-verify-final.py ONCE:139passed/
+1failed/0skip/1NodataShadowWarning/127.99s; scriptstoppedbeforestaticchecks. Failureactualexample
+ADAPTER_UNAVAILABLE reoccurred, diagnosticbounded8eventring retained mostlybenignStopIteration
+thenExceptionGroup beforeexample mapsunknownfailure atline326. Actual11SHA+HEAD stable, failed
+receipt+fullstdout retained task-5-independent-final. No Task5acceptance/commit/goalclosure.
+Ruling: refine test-onlydiagnostic toskipbenignStopIteration and recursivelyrecord exceptiongroup
+leaves +suppressed __context__ class/fileline; exactlyrecognizedclosed ValueError code may be
+recorded (allowlist not reflection). Real SDKCallToolResult error may be recorded ONLYafter
+strict SpatialDataMcpErrorV1 validation ascode/remediation facts, never payload/messages/header/
+args/token/locals. No productiondiagnostic orcatchall retry exemption. Boundrecords/artifacts.
+Tracecurrentknownfailure oncewithrealworker/status overlap, identifycausalCore/SDK/model phase;
+fixonlyprovenreason withinauthorizedowner orreport exactadditionalownerneed beforewrite.
+
+### Task5 deterministic exception-group mapping defect
+
+Diagnostician ses_eeb663b40ffegUIcAhxiwYPMnV proved trueREQUEST_DENIED ValueError iswrapped by
+SDK/anyio session teardown ExceptionGroup; exampleexceptValueError missesgroup and mapsit to
+ADAPTER_UNAVAILABLE. Genuine strengthened denied-test RED retained, no productionwriteyet.
+Oneexact9filebatch140green isdiagnosticcontrol, notindependentclosure ofhistorical139/1failure:
+samegroupsignature but originalinnerflake leaf stillundetermined. Refinedtrace nowrecords16
+meaningfulevents/skipsStopIteration/closedCallToolResult codes, privacyguard intact.
+Ruling: authorize minimal example/test groupederror normalization withinalreadyapprovedscope;
+preserve exactknownclosed leafcode when unambiguous, unknown/mixed errorsfailclosed, cancellation/
+timeout remainactualabort and finitebudget. Do not normalize into success or automaticcreate,
+and no GETretry until exacttransientCorecode/phase actuallyproven. This repairs deterministic
+misclassification and improves realfault visibility; not a claim of historicalSDKflake rootcause.
+ScopedRED→GREEN, thenreviewdelta+independentfunctionalrerunonce. Missing actualmatrix/behavior
+or true transientfailure remainsunfinished, not dismissed as onlyhumanacceptance.
+
+### Task5 controlled publication-race evidence (Primary functional probe)
+
+Reviewerdiagnostic ses_eeb470bb8ffesRgFiO6FVNOKJ7 reached step limit beforeexperiment, no cause
+report written; codeplausibility notcountedproof. Primarybuilt private generatedprobe
+task5-publication-race/probe.py: actualSDKstdio/create, genuineCoreHTTP/audit, realnativewindow
+sandboxlauncher/worker, barrier afteractualCREATE_JOBaudit append (no coordinatorheld), only1
+issuance/samecallerkey eachcase. Twoinitialsetupfaults (tests/support importpath, insecure/tmp
+spoolancestor) corrected, no securitypolicy weakened; uniqueowned0700cache root used.
+No-workermutation control returns is_errorfalse/QUEUED. Advance realworker whilecreatepublication
+paused returns is_errortrue REPORT_CONFLICT/CONTACT_OPERATOR, QUEUED→COMPLETED,1durablejob,
+unchangedgrant/consent/source/currentrights. This proves legitimateworkerprogress conflicts
+with single-job whole-view equality in Coremetadata_response/ai_egress, NOTidempotencyconflict.
+Originalhistoricalpostheader tracephase stillnotdirectcaptured; causalrace nowdeterministic.
+
+Interpretation for boundedrepair review: approvedspec§3 currentness is actualidentity/consent/
+exactfrozengrant/source rights, §5 adopts existingV1worker/jobs; genericV1 acknowledgement is
+an authoritativepoint-in-time jobrecord. No permission tostopworker/callerautomaticnewcreate or
+freezehistoricalquantity. Investigate private OWNER-produced single-job publicationsnapshot
+boundtoimmutableissued-job/source/frozengrant identity, protectedpayload fromownerselectedview,
+then freshauthorization atheader/body evenifexecutionState advances. List/discovery cursors
+still strictcurrentprojection/stale409; file bytes stillfullcurrentavailability/chunkguards.
+This is a candidate technicalrepair, not yet sourcewriteapproval: independentfocused review
+must confirm it preserves intendedcurrentness/no forgedpayload/cross-source/expiredrights and
+identify any material product ambiguity beforeimplementation. No newpublicwire orauthidentity.
+
+### Task5 single-job publication repair ruling after focused contract review
+
+Focusedreview ses_eeb3fb430ffeFBtyxFAevgXukB: permissible-with-conditions; wholeviewdigest equality
+is implementation, notspec§3/5requirement. Freshidentity/consent/exactfrozengrant/source+allscopes
+remainmandatory, list/discovery snapshot409 andfilecurrentavailability/chunks unchanged.
+Ruling: capture genuineowner-selected authoritativeV1jobview/canonicalbytes atprepare; allow
+normalexecution/availability/receipt/reason progressaftercapture, never staleauthorization.
+Audit digest equals ACTUALselectedcanonicalbytesattemptedforemission, notlatestviewneveremitted.
+No claim latestatomicstate, filedescriptor remainsan authenticatedreference notbytecapability.
+Handler-suppliedtypedview MUST NOT be accepted asproof ofbody: ownerreselects exactjob/current
+authorizedpayload; privateperresponse witness tiedto immutableissuedjob/source/frozengrant/
+scope/requester/purpose andowner, bodytampering/wrongstore/forgedwitness refused, finiteJSONlimits.
+Ephemeral integrity/provenance object only, no newpublictoken/authidentity/policy/service/cache.
+
+Authorize boundedownerrepair services/core/src/ksi_core/domains/external/delivery/jobs.py and
+ai_egress.py +new tests/contract/test_spatial_data_ai_job_snapshot.py, extendexistingTask5barrier
+tests/fixture onlyasneeded. Prefer reuseunchangedmetadata_response guard: typedfrozenbody recheck
+returns selectedbytes onlyaftergenuinefreshcurrentrights+immutablebinding witness verification,
+so header/body equality/audit/deadline machinery remains. If extraowner trulyneeded reportfirst.
+Requirement SDP-CLIENT-01-AI§3/5/6; ownerCorejobs/egress; acceptance deterministicCREATE/GET/CANCEL
+worker-progress barriers no falseconflict, revocation/expiry/source/forgery stillfailbeforebytes,
+AIlist statuschange still409/genericV1unchanged; existing source/native/identity invariants
+enforced viaoriginalownerrequireAI gates. No publicschema/descriptor/layout changes, generated
+fixturesonly/noHIL/noaccuracyclaim. Rollback localizedCorehunks/newregressions; runtimechange
+invalidates earlierTask2/3frozen evidence andrequires allcurrentmetadata+nativeflowchecks/T6.
+
+### Task5 provisional owner repair review — provenance and boundedness defects
+
+Developer ses_eeb3cca6cffey9hpV7QsW6mcTH hit step limit afternew16+370/146test evidence,
+nofinalstatic/report. It editedT2test hook2→3 outsideexplicitownership beforePrimaryruling:
+preserveactualdiff, recordprocessdeviation, notdiscardtests; freshresolve movedhookstage but
+thatnewinline resolve is itself a defect. Review ses_eeb2de625ffeDY18zcyR4vu4lB foundCritical
+self-consistent forgedsnapshot passesverify; computedbindingdiscarded/noowner/storeseal.
+Important synchronousmay-OIDC credentialresolve beforeboundedresponse, splitguard TOCTOU.
+No Task5sourceacceptance; passingnewtests lacked self-consistentforgery/identicalwrong-store cases.
+
+Ruling: private per-store EPHEMERAL integrity authenticator over exact bodydigest+allimmutable
+job/source/grant/scope/requester/purpose fields, store-specific torejectsamebinding fromanother
+store; genuineowner-producedselectedbodyonly, no newpublictoken/capability/credentialprovisioning/
+operationalsigning/loggedsecret/unboundedregistry. Integrity doesNOT replacefresh authorization.
+Capture+verify eachwrapgenuinecurrentrequireAI+record binding in one sharedreentrantcoordinator
+guard, no gap. AvoidinlineOIDC entirely: expectedrequestidentity is onlya routinghint obtainable
+from credentialcontext; genuine job currentness port already provides trusted LOCAL requester
+lookup. Privateowner bodycapture useslocalcurrentowner actor, notcallerfrozenPrincipal or new
+identityauthority. Existingboundedmetadata_response first/header/body OIDC refresh stays sole
+actualrequestcredential authorization; no protectedbytes untilallfreshgates. If localactor
+unavailable/mismatch failclosed; explicitExpectedId mustmatch actualsealedjob/requester and later
+freshOIDC identity checks. No change frozen-source or permission/caller-scope meaning.
+Authorize credential_currentness.py read-only expectedidentity accessor (notprincipal/token,
+notauthority) ifneeded; noapi.py/metadata_response orpublicwire change. RestoreT2hookindices
+whenremovinginlinefreshresolve, preserveallcurrentprivacy assertions; explicitT2testfile now
+ownedforstage-alignedexistingtest adjustment only. Newself-consistent body+view+digest forgery/
+same-frozen-job otherstore/seal tamper +slowOIDC no prepareblock/deadline/source/grantchange
+barriers requiredRED→GREEN. Any alternative needingnewnetwork/authidentity mustreportbeforewrite.
+
+### Task5 owner snapshot FIX1 disposition
+
+Developer ses_eeb259298ffelfb48i2R9MfMry: 21 snapshot +70 egress tests passed; five new
+controls recorded before repair. Per-store ephemeral HMAC now binds body digest and immutable
+owner facts; capture/verify share the local coordinator; prepare does not invoke OIDC.
+Review ses_eeb2de625ffeDY18zcyR4vu4lB closed provenance, store identity, split observation,
+and unbounded synchronous credential-refresh findings. Source remains provisional until final
+independent integrated checks. Original new test file still has 17 mypy errors: its earlier
+untracked version is not an unrelated baseline and does not excuse the new deliverable.
+Ruling: repair typing in that owned new test without import/error suppression; include job_id
+explicitly in private seal binding rather than rely only on job_digest; correct stale snapshot
+docstring. No public schema, permission, credential, or policy change. Re-review only this delta,
+then independent integrated egress/discovery/native/SDK checks. Existing Task1–4 evidence belongs
+to its revisions; current Core runtime changes require current covering verification.
+
+### Task5 integrated verification — runtime green, imported test typing remains open
+
+Independent ses_eee8899d7ffeX0iTUza6tSBlem ran task-5-verify-integrated.py once:
+872 passed/0 failed/0 skipped, one intentional NodataShadowWarning; Ruff/format12 passed.
+Mypy11 targets traversed the new snapshot test's imported T2 test helpers and found 52 errors
+in test_spatial_data_ai_egress.py, so full verification failed and diff check was not reached.
+16 required-file hashes and main bcca3c3 stayed stable; actual receipt/logs retained.
+Ruling: repair annotations/types in that existing owned T2 test (and snapshot test only if
+needed) without changing runtime assertions, fixtures, rights, hook stages or expected results.
+This is the necessary dependency of the new typed test, not authority to waive errors or use
+follow_imports/error suppression. No Core runtime changes. Focused 92-test author check and
+review of annotation-only diff, then independent integrated checks on the resulting snapshot.
+
+### Task5 scoped software closure — current evidence, not product acceptance
+
+Imported-helper typing repair ses_eeb1353f8ffe9WG2DeOznACo4S and scoped review
+ses_eeb2de625ffeDY18zcyR4vu4lB preserved privacy assertions and response hook timing.
+Independent runner ses_eee8899d7ffeX0iTUza6tSBlem executed
+`.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-5-verify-integrated.py`:
+**872 passed, 0 failed, 0 skipped**, one intentional NodataShadowWarning; Ruff/format12,
+mypy11 (including imported helpers), diff check all exit0. Main bcca3c3 and 16 required hashes
+were stable before/after. Receipt SHA256
+`bc41edfe2025b6ca898c3a59481b515fa8ec6a093e04987e248b01cef8dabd6e`;
+full original logs: scratch `task-5-independent-integrated-typed/cmd-00.log` through `cmd-04.log`.
+Earlier 139/1 runtime failure and 872-pass/52-type-error receipts retained; neither counts as pass.
+
+Primary updated only ops evidence disclosure after that run: actual worker management is
+in-process with HTTPS-mounted transport, raster preparation is an isolated genuine child;
+SDK/client/file consumption uses real loopback HTTP. It is not deployed-worker network evidence.
+Independent final docs check verified all 15 non-doc hashes unchanged, all 16 final hashes,
+five original log hashes, six runnable test paths, scope disclosures and diff check. Its first
+phrase-based checker falsely required invented wording; corrected harness checks actual wording
+and exit status, retaining the failed harness receipt. No source weakening to satisfy that check.
+
+| Task5 acceptance | Current evidence |
+| --- | --- |
+| DSM/RGB/RGBA exact native bytes/affine/mask/CRS/hash/size | 3 genuine SDK/Core/worker/HTTP parity cases, independent hand-derived grid oracle |
+| Durable restart/lost response/next observation | queued/completed/canceled journal replay, actual socket lost response, one issued job, exact new asset/source/result |
+| Consent/rights/mismatch matrix | 8 HTTP pairs, 6 SDK tools, grant expiry/revoke/replacement/ambiguity/READ-only, org/Site/area/WorkOrder, purpose/header/no-ack, source bytes and midstream revoke |
+| Finite safe external workflow | actual SDK subprocess, explicit protected config/token, closed typed scopes/errors, finite caller budget, atomic no-overwrite receipt and guarded raster download |
+| Publication race/owner integrity | controlled real worker progress, owner-selected point-in-time payload, per-store private seal, fresh header/body authorization, tamper/cross-store/source/grant refusals |
+| Software scope/documentation | exact source entrypoint/config and generated commands; no install, customer/host/export/accuracy/cost/containment claims |
+
+Ruling: Task5 can close at this demonstrated local software scope and commit its owned files.
+Spec acceptance10, Task6 full-change/full-repository/package closeout remain OPEN. Current run
+closes the deterministic worker-publication race and exact grouped-error classification defect;
+does not claim universal absence of transport failures or reconstruct the lost original trace.
+No generic V1 history, quantitative values, Analysis MCP authority, visual UI or product slice
+changed. No external delivery. Next: Task6 whole-change review and independent full/static/
+offline-lock/package-closure checks; unavailable build backend stays an explicit readiness gate.

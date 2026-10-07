@@ -101,9 +101,7 @@ def _inspection(
     with rasterio.open(path) as dataset:
         epsg = CRS.from_user_input(dataset.crs).to_epsg()
         assert epsg is not None
-        wkt = CRS.from_epsg(epsg).to_wkt(
-            version="WKT2_2019", pretty=False, output_axis_rule=True
-        )
+        wkt = CRS.from_epsg(epsg).to_wkt(version="WKT2_2019", pretty=False, output_axis_rule=True)
         crs_digest = _digest_bytes(wkt.encode("utf-8"))
         transform = dataset.transform
         measurements = RasterMeasurementsV1(
@@ -154,7 +152,9 @@ def _prepare(
 ) -> Any:
     from ksi_geo_spatial.external_native_window import prepare_external_native_window
 
-    inspection = kwargs.pop("inspection", _inspection(path, artifact_kind=artifact_kind))
+    inspection = kwargs.pop("inspection", None)
+    if inspection is None:
+        inspection = _inspection(path, artifact_kind=artifact_kind)
     with rasterio.open(path) as dataset:
         epsg = CRS.from_user_input(dataset.crs).to_epsg()
         assert epsg is not None
@@ -594,4 +594,165 @@ def test_native_window_requires_measured_raster_and_nonempty_valid_window(tmp_pa
     with pytest.raises(NativeWindowError) as raised:
         _prepare(source, output, bounds=(108.1, 190.1, 108.2, 190.2))
     assert raised.value.reason == "EMPTY_VALID_WINDOW"
+    assert not output.exists()
+
+
+def _write_rgba(
+    path: Path,
+    *,
+    alpha_value: int | None = None,
+    with_internal_mask: bool = False,
+    nodata: float | None = None,
+) -> np.ndarray:
+    """Canonical 4-band RGBA on the shared 10x10 grid (cf. Task5 lane writer)."""
+    from rasterio.enums import ColorInterp
+
+    values = np.zeros((4, 10, 10), dtype=np.uint8)
+    values[0] = 200
+    values[1] = (np.indices((10, 10))[0] * 20).astype(np.uint8)
+    values[2] = (np.indices((10, 10))[1] * 20).astype(np.uint8)
+    values[3] = 255
+    values[3, 2, 2] = 0
+    if alpha_value is not None:
+        # Inside the (cols 0:4, rows 0:5) probe window used below so the
+        # worker's windowed binary-alpha check must observe it.
+        values[3, 1, 1] = alpha_value
+    creation = dict(
+        driver="GTiff",
+        width=10,
+        height=10,
+        count=4,
+        dtype="uint8",
+        crs="EPSG:3857",
+        transform=from_origin(100.0, 200.0, 2.0, 2.0),
+        tiled=True,
+        blockxsize=16,
+        blockysize=16,
+        compress="DEFLATE",
+        predictor=2,
+        interleave="pixel",
+        photometric="RGB",
+        ALPHA="YES",
+    )
+    if nodata is not None:
+        creation["nodata"] = nodata
+    with (
+        rasterio.Env(GDAL_TIFF_INTERNAL_MASK=True),
+        rasterio.open(path, "w", **creation) as dataset,
+    ):
+        dataset.write(values)
+        dataset.colorinterp = (
+            ColorInterp.red,
+            ColorInterp.green,
+            ColorInterp.blue,
+            ColorInterp.alpha,
+        )
+        if with_internal_mask:
+            dataset.write_mask(np.full((10, 10), 255, dtype=np.uint8))
+    return values
+
+
+def test_native_window_accepts_rgba_shared_alpha_mask_and_preserves_pixels(
+    tmp_path: Path,
+) -> None:
+    """GDAL reports per_dataset ALONGSIDE alpha for a shared alpha mask.
+
+    That shared-alpha per_dataset flag is not a separate internal mask, so
+    the worker must accept the file the inspector measured (MEASURED/MASK)
+    and deliver exact window bytes.
+    """
+    source = tmp_path / "rgba.tif"
+    output = tmp_path / "window.tif"
+    values = _write_rgba(source)
+    with rasterio.open(source) as dataset:
+        assert dataset.mask_flag_enums[0] == dataset.mask_flag_enums[0]
+        flag_names = [flag.name for flag in dataset.mask_flag_enums[0]]
+    assert sorted(flag_names) == ["alpha", "per_dataset"]
+
+    result = _prepare(
+        source,
+        output,
+        bounds=(100.0, 190.0, 108.0, 200.0),
+        artifact_kind=ProcessingArtifactKind.ORTHO,
+    )
+
+    assert result.receipt.artifact_kind is ProcessingArtifactKind.ORTHO
+    assert result.receipt.pixel_window == (0, 4, 0, 5)
+    assert result.receipt.valid_pixel_count == 19
+    with rasterio.open(output) as dataset:
+        np.testing.assert_array_equal(dataset.read(), values[:, 0:5, 0:4])
+        assert dataset.read_masks(1)[2, 2] == 0
+        assert "PRODUCER_NOTE" not in dataset.tags()
+
+
+def test_native_window_refuses_rgba_with_true_internal_mask(tmp_path: Path) -> None:
+    """A true internal mask supersedes alpha (per_dataset WITHOUT alpha).
+
+    That composition is unsupported and must stay refused even though the
+    shared-alpha case above is now accepted.
+    """
+    source = tmp_path / "rgba-masked.tif"
+    output = tmp_path / "window.tif"
+    _write_rgba(source, with_internal_mask=True)
+    with rasterio.open(source) as dataset:
+        flag_names = [flag.name for flag in dataset.mask_flag_enums[0]]
+    assert flag_names == ["per_dataset"]
+
+    with pytest.raises(NativeWindowError) as raised:
+        _prepare(
+            source,
+            output,
+            bounds=(100.0, 190.0, 108.0, 200.0),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+        )
+    assert raised.value.reason == "SOURCE_MEASUREMENTS_MISMATCH"
+    assert not output.exists()
+
+
+def test_native_window_refuses_rgba_with_nodata(tmp_path: Path) -> None:
+    # The genuine inspector measures an RGBA+NoData file as MASK with no
+    # nodata value (alpha defines validity); the worker must still refuse it
+    # at the NoData cross-check. Measurements below mirror that genuine form:
+    # same-grid canonical fields, but this file's sha and valid count.
+    canonical = tmp_path / "rgba-canonical.tif"
+    _write_rgba(canonical)
+    base = _inspection(canonical, artifact_kind=ProcessingArtifactKind.ORTHO)
+    source = tmp_path / "rgba-nodata.tif"
+    output = tmp_path / "window.tif"
+    _write_rgba(source, nodata=0)
+    with rasterio.open(source) as dataset:
+        valid = int(np.count_nonzero(dataset.dataset_mask() == 255))
+    assert base.measurements is not None
+    inspection = ArtifactInspectionOutcomeV1(
+        artifact_id="rgba-nodata",
+        observed_sha256=_digest_bytes(source.read_bytes()),
+        outcome=ArtifactOutcome.MEASURED,
+        measurements=base.measurements.model_copy(update={"valid_pixel_count": valid}),
+    )
+
+    with pytest.raises(NativeWindowError) as raised:
+        _prepare(
+            source,
+            output,
+            bounds=(100.0, 190.0, 108.0, 200.0),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+            inspection=inspection,
+        )
+    assert raised.value.reason == "SOURCE_MEASUREMENTS_MISMATCH"
+    assert not output.exists()
+
+
+def test_native_window_refuses_rgba_with_nonbinary_alpha(tmp_path: Path) -> None:
+    source = tmp_path / "rgba-gray-alpha.tif"
+    output = tmp_path / "window.tif"
+    _write_rgba(source, alpha_value=128)
+
+    with pytest.raises(NativeWindowError) as raised:
+        _prepare(
+            source,
+            output,
+            bounds=(100.0, 190.0, 108.0, 200.0),
+            artifact_kind=ProcessingArtifactKind.ORTHO,
+        )
+    assert raised.value.reason == "INVALID_SOURCE_MASK"
     assert not output.exists()

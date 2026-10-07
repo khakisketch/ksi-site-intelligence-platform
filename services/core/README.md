@@ -15,6 +15,9 @@ exact owned derivative versions after capability/lease/retention expiry, keeping
 
 See [local verification and external-consumer instructions](../../docs/ops/SPATIAL_DATA_LOCAL_VERIFICATION.md)
 for generated-parser/worker/HTTP/replay evidence and open public/host/customer gates.
+Generated MCP end-to-end parity, restart, replay, and rights-matrix evidence (local
+software only) is recorded in
+[SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE](../../docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md).
 
 ## Core R1 module routing (partial)
 

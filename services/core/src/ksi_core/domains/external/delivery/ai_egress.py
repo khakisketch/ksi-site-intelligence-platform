@@ -137,7 +137,22 @@ class SpatialDataAiEgress:
         status: int,
         operation: MetadataAuditOperationV1,
     ) -> SpatialDataAiMetadataResponse:
-        """Guarded single-view response; rechecks before headers, never stale."""
+        """Guarded single-view response; rechecks before headers, never stale.
+
+        The caller view routes job identity and scope only. The published
+        bytes are reselected here from the genuine owner store through the
+        locally current owner actor (expected ids only — no remote credential
+        refresh in prepare) and frozen as a private snapshot bound to the
+        immutable issued-job identity plus this store's ephemeral seal, so a
+        forged caller view publishes the real owner projection or refuses —
+        never fake fields. The bounded metadata-response stages keep sole
+        ownership of the genuine request-credential refresh. Every
+        header/body refresh re-proves current rights plus that binding and
+        returns the SELECTED bytes to the unchanged guarded-send machinery;
+        legitimate worker progress after capture therefore publishes the
+        truthful point-in-time instead of a false whole-view conflict, and the
+        audit hashes exactly the bytes attempted for emission.
+        """
         self._check_scope(credentials=credentials, site_id=site_id, work_area_id=work_area_id)
         if not isinstance(view, SpatialDataJobViewV1):
             raise ValueError("AI job responses publish typed job views only")
@@ -145,17 +160,22 @@ class SpatialDataAiEgress:
             raise ValueError("AI job scope must match the authorized view")
         if operation not in ("CREATE_JOB", "GET_JOB", "CANCEL_JOB"):
             raise ValueError(f"single-view AI operation not permitted: {operation!r}")
+        expected_principal_id, expected_organization_id = credentials.expected_identity()
+        snapshot = self._jobs.seal_ai_job_snapshot(
+            job_id=view.job_id,
+            expected_principal_id=expected_principal_id,
+            expected_organization_id=expected_organization_id,
+            now=self._clock(),
+        )
         return self._prepare(
             credentials=credentials,
             site_id=site_id,
             work_area_id=work_area_id,
-            model=view,
+            model=snapshot.view,
             status=status,
             operation=operation,
-            recheck=lambda principal: self._canonical(
-                self._jobs.require_ai_metadata(
-                    job_id=view.job_id, principal=principal, now=self._clock()
-                )
+            recheck=lambda principal: self._jobs.verify_ai_job_snapshot(
+                snapshot=snapshot, principal=principal, now=self._clock()
             ),
         )
 

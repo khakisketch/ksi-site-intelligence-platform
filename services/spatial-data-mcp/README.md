@@ -66,3 +66,34 @@ closes the session with a safe stderr code instead of partial JSON.
 Runtime imports are the pinned workspace closure (`httpx`,
 `ksi-event-contracts`, `mcp==2.2.0`, `pydantic`; `anyio`/`threading` arrive
 via the pinned MCP dependency, no new dependency is added).
+
+## Generated end-to-end workflow (Task5 local software evidence)
+
+`examples/spatial-data/mcp_native_window_workflow.py` drives this adapter over
+stdio from its source tree (no install): it requests once with a
+caller-supplied scope and idempotency key, polls a finite caller budget,
+persists only safe IDs/receipt/reference (`0600`, no-overwrite), and
+optionally downloads bytes through the existing guarded consumer.
+
+```sh
+python examples/spatial-data/mcp_native_window_workflow.py \
+  --config /absolute/protected.json \
+  --site-id site-1 --work-area-id area-1 --asset-ref <assetRef> \
+  --bounds 102.1 183.9 108.1 193.9 --crs-digest <sha256:...> \
+  --idempotency-key local-run-1 \
+  --poll-budget-seconds 60 \
+  --receipt-out /absolute/local/receipt.json \
+  [--download-dir /absolute/local/bytes] [--max-download-bytes 1048576]
+```
+
+The script takes no token argument (the adapter reads its separate owner
+token file), addresses no remote origin beyond the configured Core origin,
+and never overwrites a partial file. `--max-download-bytes` is an optional
+finite caller quota for raster bytes only; absent, it defaults conservatively
+to the configured `maxStructuredResponseBytes` (an example fallback, not a
+Core/MCP file maximum — a large authorized raster need not force an oversized
+MCP JSON budget). Receipt/download targets must be caller-owned local paths;
+SDK child cleanup relies on the official SDK close, with no host-compat claim. Full parity, restart, replay, and
+rights-matrix evidence is recorded in
+`docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md`. Host, customer, accuracy,
+cost, and containment acceptance remain open.

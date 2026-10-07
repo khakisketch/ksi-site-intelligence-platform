@@ -587,9 +587,16 @@ def _verify_source_measurements(
                 "SOURCE_MEASUREMENTS_MISMATCH", "DSM mask/NoData facts differ from inspection"
             )
     elif dataset.count == 4:
+        # GDAL reports per_dataset ALONGSIDE alpha when the base bands share
+        # the alpha band as their mask; that shared-alpha per_dataset flag is
+        # not a separate internal mask. A true internal mask supersedes alpha
+        # (base bands report per_dataset WITHOUT alpha) and stays refused by
+        # the missing-alpha check below, matching the inspector's structural
+        # mask-IFD rule that keeps the two compositions mutually exclusive.
+        has_separate_internal_mask = has_internal_mask and not has_alpha_mask
         if (
             not has_alpha_mask
-            or has_internal_mask
+            or has_separate_internal_mask
             or measurements.nodata_representation is not NodataRepresentation.MASK
         ):
             raise NativeWindowError(

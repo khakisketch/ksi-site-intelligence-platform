@@ -4,6 +4,8 @@ New AI identity reads are denied when current grant/consent/credential lapse,
 while generic V1 history survives. Unknown/foreign reads stay identical 404s.
 """
 
+from __future__ import annotations
+
 import asyncio
 import hashlib
 from dataclasses import replace
@@ -11,6 +13,7 @@ from datetime import timedelta
 from pathlib import Path
 from time import monotonic
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from fastapi import FastAPI, Request
@@ -29,6 +32,20 @@ from spatial_data_fixture import make_grant
 from spatial_data_job_fixture import NOW, issue, job_graph, job_store
 from spatial_data_source_fixture import source_identity
 from starlette.types import Message
+
+if TYPE_CHECKING:
+    import threading
+    from collections.abc import Callable, Coroutine, Iterator
+    from contextlib import AbstractContextManager
+    from datetime import datetime
+
+    from ksi_core.domains.external.delivery.credential_currentness import (
+        SpatialDataCredentialCurrentness,
+    )
+    from ksi_core.domains.external.delivery.metadata_response import (
+        SpatialDataAiMetadataResponse,
+    )
+    from starlette.responses import Response
 
 
 def ai_principal(area_id: str) -> Principal:
@@ -55,11 +72,11 @@ class AiAuthority:
         self.enabled = True
 
     def resolve_requester(
-        self, *, principal_id: str, organization_id: str, now=NOW
+        self, *, principal_id: str, organization_id: str, now: datetime
     ) -> Principal | None:
         return self._principals.get((principal_id, organization_id))
 
-    def is_current(self, *, policy, runtime, activation, now) -> bool:
+    def is_current(self, *, policy: Any, runtime: Any, activation: Any, now: datetime) -> bool:
         return self.enabled and activation.is_current_at(now)
 
 
@@ -138,7 +155,9 @@ def ai_lane(tmp_path: Path, *, consent: bool = True, issue_job: bool = True) -> 
     return graph
 
 
-def ai_credentials(graph: SimpleNamespace, token: str = "ai-token"):
+def ai_credentials(
+    graph: SimpleNamespace, token: str = "ai-token"
+) -> SpatialDataCredentialCurrentness:
     from ksi_core.domains.external.delivery.credential_currentness import (
         SpatialDataCredentialCurrentness,
     )
@@ -167,7 +186,9 @@ def revoke(graph: SimpleNamespace) -> None:
     )
 
 
-def send_metadata(response) -> tuple[list[Message], int, dict[bytes, bytes]]:
+def send_metadata(
+    response: SpatialDataAiMetadataResponse,
+) -> tuple[list[Message], int, dict[bytes, bytes]]:
     messages: list[Message] = []
 
     async def send(message: Message) -> None:
@@ -569,14 +590,14 @@ def test_ai_download_ack_follows_authorize_and_never_marks_errors(tmp_path: Path
     graph = ai_lane(tmp_path)
     data_policy = graph.data_policy
 
-    def prepared_for(kind: PrincipalKind, *, fail: str | None = None):
+    def prepared_for(kind: PrincipalKind, *, fail: str | None = None) -> Any:
         principal = graph.ai if kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT else graph.principal
 
         class StubOutput:
             job = graph.ai_store._records[graph.ai_view.job_id].job  # noqa: SLF001
 
         class StubService:
-            def clock(self):
+            def clock(self) -> datetime:
                 return NOW
 
         class StubPrepared:
@@ -586,30 +607,30 @@ def test_ai_download_ack_follows_authorize_and_never_marks_errors(tmp_path: Path
             size_bytes = 0
             sha256 = "sha256:" + "0" * 64
             output = StubOutput()
-            spool = None
+            spool: Any = None
 
-            def authorize(self, now):
+            def authorize(self, now: datetime) -> Principal:
                 if fail is not None:
                     raise SpatialDataDomainError(fail, 403)
                 return principal
 
-            def check_deadline(self):
+            def check_deadline(self) -> None:
                 return None
 
-            def audit(self, *args, **kwargs):
+            def audit(self, *args: Any, **kwargs: Any) -> None:
                 return None
 
-            def read_spool_chunk(self):
+            def read_spool_chunk(self) -> bytes:
                 return b""
 
-            def close(self):
+            def close(self) -> None:
                 return None
 
         stub = StubPrepared()
         stub.spool = SimpleNamespace(seek=lambda _: None)
         return stub
 
-    async def run(prepared) -> tuple[int, dict[bytes, bytes]]:
+    async def run(prepared: Any) -> tuple[int, dict[bytes, bytes]]:
         messages: list[Message] = []
 
         async def send(message: Message) -> None:
@@ -644,7 +665,7 @@ def test_ai_download_ack_follows_authorize_and_never_marks_errors(tmp_path: Path
 # a fixture/import error. Tests that already hold document locked semantics.
 
 
-def _second_area(graph):
+def _second_area(graph: SimpleNamespace) -> Any:
     return graph.work_areas.register(
         "site-1",
         name="area-2",
@@ -656,7 +677,7 @@ def _second_area(graph):
     ).work_area
 
 
-def _remount_ai_registry(graph, ai):
+def _remount_ai_registry(graph: SimpleNamespace, ai: Principal) -> None:
     graph.ai_app.state.auth_registry = AuthRegistry(
         [
             PrincipalTokenRecord(
@@ -670,7 +691,7 @@ def _remount_ai_registry(graph, ai):
     )
 
 
-def _ai_issue_request(graph):
+def _ai_issue_request(graph: SimpleNamespace) -> SpatialDataRequestV1:
     from ksi_event_contracts.spatial_data import SpatialDataPurposeV1, SpatialDataRequestV1
 
     measurements = graph.source.inspection.measurements
@@ -711,14 +732,24 @@ class _StubDownloads:
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def response(self, *, job_id, principal, credentials, now, head_only):
+    def response(
+        self,
+        *,
+        job_id: str,
+        principal: Principal,
+        credentials: SpatialDataCredentialCurrentness,
+        now: datetime,
+        head_only: bool,
+    ) -> Response:
         from starlette.responses import Response as _Response
 
         self.calls.append({"job_id": job_id, "head_only": head_only})
         return _Response(content=b"FAKETIFFBYTES", media_type="image/tiff")
 
 
-def _ai_file_client(graph, *, downloads, egress: str = "present"):
+def _ai_file_client(
+    graph: SimpleNamespace, *, downloads: _StubDownloads | None, egress: str = "present"
+) -> TestClient:
     from ksi_core.domains.external.delivery.api import build_spatial_data_router
 
     app = FastAPI()
@@ -839,7 +870,7 @@ def test_fix1_ai_metadata_authorization_plans_no_window(
     calls: list[int] = []
     real = jobs_module.plan_external_native_window
 
-    def spy(**kwargs):
+    def spy(**kwargs: Any) -> Any:
         calls.append(1)
         return real(**kwargs)
 
@@ -895,7 +926,7 @@ def test_fix1_metadata_selector_permits_subpixel_grant_pixel_path_denies(
 def test_fix1_metadata_selector_denial_matrix(tmp_path: Path) -> None:
     from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
 
-    def fresh_lane(name: str):
+    def fresh_lane(name: str) -> SimpleNamespace:
         return ai_lane(tmp_path / name, issue_job=False)
 
     # CRS mismatch and processing-location mismatch close with GRANT_REQUIRED.
@@ -1179,7 +1210,7 @@ def test_fix1_ai_cancel_unknown_job_denied_without_mutation(tmp_path: Path) -> N
     assert list(graph.ai_store._journal.replay()) == before  # noqa: SLF001
 
 
-def _framing_of(response) -> tuple[int, dict[bytes, bytes], bytes]:
+def _framing_of(response: SpatialDataAiMetadataResponse) -> tuple[int, dict[bytes, bytes], bytes]:
     messages: list[Message] = []
 
     async def send(message: Message) -> None:
@@ -1217,7 +1248,7 @@ def test_fix1_ai_metadata_framing_matches_body(tmp_path: Path) -> None:
     assert body == canonical_json_bytes(view.model_dump(by_alias=True, mode="json"))
 
 
-def _assert_framed(expected: bytes, response) -> None:
+def _assert_framed(expected: bytes, response: SpatialDataAiMetadataResponse) -> None:
     status, headers, body = _framing_of(response)
     assert status in (200, 201)
     assert headers[b"content-length"] == str(len(body)).encode()
@@ -1408,7 +1439,7 @@ def test_fix1_ai_metadata_final_recheck_runs_without_extra_handoff(
     graph = ai_lane(tmp_path)
     calls: list[str] = []
 
-    async def counting(func, *args, **kwargs):
+    async def counting(func: Any, *args: Any, **kwargs: Any) -> Any:
         calls.append(getattr(func, "__name__", type(func).__name__))
         return await real_pool(func, *args, **kwargs)
 
@@ -1442,10 +1473,14 @@ def test_fix1_ai_metadata_late_revocation_refused_but_attempt_audited(
 
     class _Revoking(SpatialDataCredentialCurrentness):
         __slots__ = ("_invocations",)
+        _invocations: int
 
-        def resolve(self, *, now):
+        def resolve(self, *, now: datetime) -> Principal:
             principal = super().resolve(now=now)
             self._invocations += 1
+            # Prepare seals from the local expected identity without a
+            # credential refresh, so the post-audit header refresh is the 2nd
+            # resolve.
             if self._invocations == 2:
                 revoke(graph)
             return principal
@@ -1489,7 +1524,7 @@ def test_fix1_ai_error_reason_matches_status() -> None:
     ):
         response = ai_error_response(HTTPException(status_code=status_code))
         assert response.status_code == status_code
-        assert json.loads(response.body)["reason"] == reason
+        assert json.loads(bytes(response.body))["reason"] == reason
 
 
 # ---- Fix round 2 (P2 real bounded awaits, P3 uniqueness before creation) ----
@@ -1541,12 +1576,12 @@ def test_fix2_ai_issue_overlapping_read_only_grant_refused_without_append(
 def _fix2_direct_response(
     *,
     deadline: float,
-    credentials=None,
-    recheck=None,
-    audit=None,
+    credentials: SpatialDataCredentialCurrentness | SimpleNamespace | None = None,
+    recheck: Callable[[Principal], bytes] | None = None,
+    audit: Callable[[Principal, bytes], None] | None = None,
     body: bytes = b'{"ok":true}',
     mono_past_seconds: float = 0.0,
-):
+) -> SpatialDataAiMetadataResponse:
     from time import monotonic
 
     from ksi_core.domains.external.delivery.metadata_response import (
@@ -1555,10 +1590,10 @@ def _fix2_direct_response(
 
     # Sync closures: run_in_threadpool executes (never awaits) them, so an
     # async def here would silently never run.
-    def _stable_recheck(principal):
+    def _stable_recheck(principal: Principal) -> bytes:
         return body
 
-    def _audit(principal, fresh):
+    def _audit(principal: Principal, fresh: bytes) -> None:
         if audit is not None:
             audit(principal, fresh)
 
@@ -1585,7 +1620,7 @@ def _fix2_direct_response(
         return SpatialDataAiMetadataResponse(**options)
 
 
-def _fix2_never_receive():
+def _fix2_never_receive() -> Callable[[], Coroutine[Any, Any, Message]]:
     async def receive() -> Message:
         await asyncio.Event().wait()
         raise AssertionError("receive unexpectedly returned")
@@ -1593,7 +1628,12 @@ def _fix2_never_receive():
     return receive
 
 
-def _fix2_run(response, *, receive, outer_timeout: float = 10.0) -> tuple[list, float]:
+def _fix2_run(
+    response: SpatialDataAiMetadataResponse,
+    *,
+    receive: Callable[[], Coroutine[Any, Any, Message]],
+    outer_timeout: float = 10.0,
+) -> tuple[list, float]:
     from time import monotonic
 
     messages: list[Message] = []
@@ -1619,7 +1659,7 @@ def test_fix2_stalled_credential_resolve_bounded(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def blocked_resolve(*, now):
+        def blocked_resolve(*, now: datetime) -> Principal:
             gate.wait(30)
             return graph.ai
 
@@ -1649,7 +1689,7 @@ def test_fix2_stalled_recheck_bounded(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def blocked_recheck(principal):
+        def blocked_recheck(principal: Principal) -> bytes:
             gate.wait(30)
             return b'{"ok":true}'
 
@@ -1678,7 +1718,7 @@ def test_fix2_denial_with_remaining_budget_sends_refusal(tmp_path: Path) -> None
 
     graph = ai_lane(tmp_path)
 
-    def denied_recheck(principal):
+    def denied_recheck(principal: Principal) -> bytes:
         raise SpatialDataDomainError("ACCESS_REVOKED", 403)
 
     response = _fix2_direct_response(
@@ -1702,7 +1742,7 @@ def test_fix2_stalled_audit_bounded(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def blocked_audit(principal, fresh):
+        def blocked_audit(principal: Principal, fresh: bytes) -> None:
             gate.wait(30)
 
         response = _fix2_direct_response(
@@ -1805,7 +1845,7 @@ def test_fix2_stalled_refusal_send_bounded(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def denied_recheck(principal):
+        def denied_recheck(principal: Principal) -> bytes:
             raise SpatialDataDomainError("ACCESS_REVOKED", 403)
 
         response = _fix2_direct_response(
@@ -1848,7 +1888,7 @@ def test_fix2_disconnect_while_blocked_stops(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def blocked_recheck(principal):
+        def blocked_recheck(principal: Principal) -> bytes:
             gate.wait(30)
             return b'{"ok":true}'
 
@@ -1877,7 +1917,7 @@ def test_fix2_no_task_leak_after_bounded_stages(tmp_path: Path) -> None:
     try:
         graph = ai_lane(tmp_path)
 
-        def blocked_recheck(principal):
+        def blocked_recheck(principal: Principal) -> bytes:
             gate.wait(30)
             return b'{"ok":true}'
 
@@ -1891,7 +1931,7 @@ def test_fix2_no_task_leak_after_bounded_stages(tmp_path: Path) -> None:
             await asyncio.Event().wait()
             raise AssertionError("receive unexpectedly returned")
 
-        async def main() -> None:
+        async def main() -> list[Message]:
             messages: list[Message] = []
 
             async def send(message: Message) -> None:
@@ -1916,15 +1956,26 @@ def test_fix2_no_task_leak_after_bounded_stages(tmp_path: Path) -> None:
 
 
 def test_fix2_infinite_deadline_rejected() -> None:
+    from ksi_core.domains.external.delivery.credential_currentness import (
+        SpatialDataCredentialCurrentness,
+    )
     from ksi_core.domains.external.delivery.metadata_response import (
         SpatialDataAiMetadataResponse,
     )
+    from starlette.requests import Request
 
     with pytest.raises(ValueError, match="finite positive deadline"):
         SpatialDataAiMetadataResponse(
             body=b'{"ok":true}',
             status_code=200,
-            credentials=SimpleNamespace(resolve=lambda *, now: None),
+            # Genuine credential object (never resolved: the deadline check raises
+            # first); the SimpleNamespace doubles stay in the dict-built path below.
+            credentials=SpatialDataCredentialCurrentness(
+                Request({"type": "http"}),
+                "ai-token",
+                expected_principal_id="ai-client-1",
+                expected_organization_id="organization-1",
+            ),
             clock=lambda: NOW,
             max_json_bytes=65536,
             started=NOW,
@@ -1957,12 +2008,12 @@ def _mono_started_option() -> dict:
 # hook directly: any "never awaited" coroutine is a genuine failure.
 
 
-def _fix3_capture_unraisable():
+def _fix3_capture_unraisable() -> AbstractContextManager[list[Any]]:
     import contextlib
     import sys
 
     @contextlib.contextmanager
-    def capture():
+    def capture() -> Iterator[list[Any]]:
         captured: list = []
         prev = sys.unraisablehook
         sys.unraisablehook = captured.append
@@ -1991,12 +2042,12 @@ def _fix3_assert_no_unawaited(captured: list) -> None:
     assert leaks == [], f"unawaited coroutines leaked: {leaks!r}"
 
 
-def _fix3_blocking_stage(gate):
+def _fix3_blocking_stage(gate: threading.Event) -> Callable[..., None]:
     import threading
 
     assert isinstance(gate, threading.Event)
 
-    def blocked(*args, **kwargs):
+    def blocked(*args: Any, **kwargs: Any) -> None:
         gate.wait(30)
 
     return blocked
@@ -2038,7 +2089,7 @@ def _fix3_stalled_variant(tmp_path: Path, *, stage: str) -> None:
             base = ai_credentials(graph)
             real_resolve = base.resolve
 
-            def late_blocking_resolve(*, now):
+            def late_blocking_resolve(*, now: datetime) -> Principal:
                 state["calls"] += 1
                 if state["calls"] == 2:
                     blocked()
@@ -2121,7 +2172,7 @@ def test_fix3_revoke_queued_during_final_check_cannot_precede_send(
     loop_box: dict = {}
     real_recheck = response._recheck  # noqa: SLF001
 
-    def ordered_recheck(principal):
+    def ordered_recheck(principal: Principal) -> bytes:
         calls["n"] += 1
         result = real_recheck(principal)
         if calls["n"] == 2:
@@ -2179,9 +2230,12 @@ def test_fix3_effective_revoke_before_final_send_denied(tmp_path: Path) -> None:
     class _RevokingLate(SpatialDataCredentialCurrentness):
         __slots__ = ()
 
-        def resolve(self, *, now):
+        def resolve(self, *, now: datetime) -> Principal:
             principal = super().resolve(now=now)
             state["calls"] += 1
+            # Prepare seals from the local expected identity without a
+            # credential refresh, so the late header refresh is the 2nd
+            # resolve.
             if state["calls"] == 2:
                 loop_box["loop"].call_soon_threadsafe(lambda: revoke(graph))
             return principal
@@ -2238,7 +2292,7 @@ def test_fix3_effective_revoke_before_final_send_denied(tmp_path: Path) -> None:
 # immediately before its handoff, with no scheduling gap in between.
 
 
-def _fix4_prepare(graph):
+def _fix4_prepare(graph: SimpleNamespace) -> SpatialDataAiMetadataResponse:
     view = graph.ai_store.require_ai_metadata(
         job_id=graph.ai_view.job_id, principal=graph.ai, now=NOW
     )
@@ -2252,7 +2306,9 @@ def _fix4_prepare(graph):
     )
 
 
-def _fix4_start_revoking_run(graph, response, revoke_now) -> tuple[list, list[str]]:
+def _fix4_start_revoking_run(
+    graph: SimpleNamespace, response: SpatialDataAiMetadataResponse, revoke_now: Callable[[], None]
+) -> tuple[list[Message], list[str]]:
     """Drive one publication; revoke synchronously on http.response.start.
 
     The revocation runs inside the actual transport send callback, so rights
@@ -2284,7 +2340,9 @@ def _fix4_start_revoking_run(graph, response, revoke_now) -> tuple[list, list[st
     return messages, events
 
 
-def _fix4_assert_no_protected_body_after_headers(graph, messages, events) -> None:
+def _fix4_assert_no_protected_body_after_headers(
+    graph: SimpleNamespace, messages: list[Message], events: list[str]
+) -> None:
     assert "start" in events and "revoke" in events
     start = next(m for m in messages if m["type"] == "http.response.start")
     # The header ack was earned while rights were valid; it promises

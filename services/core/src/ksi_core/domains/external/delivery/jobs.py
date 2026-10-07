@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
+import secrets
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import Protocol
@@ -106,6 +109,51 @@ class SpatialDataJobRecoveryError(RuntimeError):
     """Corrupt history cannot yield a partial usable job projection."""
 
 
+@dataclass(frozen=True, slots=True)
+class SpatialDataAiJobSnapshot:
+    """Private owner-selected single-job publication snapshot.
+
+    Captured by :meth:`SpatialDataJobStore.seal_ai_job_snapshot` from the
+    genuine owner store under the locally current owner actor resolved from
+    the credential's expected identity — never from caller-supplied bytes — and re-proved by
+    :meth:`SpatialDataJobStore.verify_ai_job_snapshot` at every header/body
+    refresh. It binds the exact canonical body emitted for this response to
+    the immutable issued-job identity (job, source, frozen grant, requester,
+    scope, purpose, policy). Only legal mutable drift (execution state,
+    availability, receipt, reason, remediation) is tolerated between capture
+    and emission; the snapshot stays a truthful point-in-time, never a claim
+    of the latest atomic state. Ephemeral per-response provenance only: job
+    and grant digests plus identifiers, finite JSON bytes, no tokens,
+    capabilities, caches or public wire exposure.
+    """
+
+    job_id: str
+    view: SpatialDataJobViewV1
+    body: bytes
+    body_digest: str
+    job_digest: str | None
+    asset_ref: str
+    organization_id: str
+    requester_principal_id: str
+    site_id: str
+    work_area_id: str
+    purpose: SpatialDataPurposeV1
+    source_digest: str | None
+    grant_id: str
+    grant_revision: int
+    grant_digest: str | None
+    policy_digest: str | None
+    request_fingerprint: str | None
+    seal: str
+    """Per-store ephemeral integrity tag over the binding below.
+
+    Computed with the store's private per-process key (never logged, wired
+    or provisioned) so a self-consistent caller forgery or the same frozen
+    job bytes sealed by another store cannot verify here. Supplements — never
+    replaces — the fresh current-rights check on every use.
+    """
+
+
 def _hash(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
@@ -148,6 +196,7 @@ class SpatialDataJobStore:
         self._activation = activation.model_copy(deep=True)
         self._coordinator = coordinator
         self._currentness = currentness
+        self._snapshot_key = secrets.token_bytes(32)
         self._lock = RLock()
         self._records: dict[str, JobRecord] = {}
         self._idempotency: dict[tuple[str, str, str, str, str], str] = {}
@@ -340,6 +389,65 @@ class SpatialDataJobStore:
         ):
             raise SpatialDataDomainError("NOT_FOUND", 404)
 
+    def _require_ai_metadata_locked(
+        self, *, job_id: str, principal: Principal, now: datetime
+    ) -> SpatialDataJobViewV1:
+        """Current AI metadata; caller holds the shared coordinator guard.
+
+        Single-observation core shared by the public read, the snapshot seal
+        and the snapshot verify, so authorization and the binding record read
+        never separate across a guard release where a grant/source mutation
+        could slip between them. Read-only: appends no journal events.
+        """
+        record = self._records.get(job_id)
+        if record is None or record.job.organization_id != principal.organization_id:
+            raise SpatialDataDomainError("NOT_FOUND", 404)
+        job = record.job
+        self._assert_ai_reader(principal, job)
+        self._lane(now, job=job)
+        try:
+            requester = self._currentness.resolve_requester(
+                principal_id=job.requester_principal_id,
+                organization_id=job.organization_id,
+                now=now,
+            )
+        except Exception as exc:
+            raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
+        if not isinstance(requester, Principal) or (
+            requester.principal_id,
+            requester.organization_id,
+        ) != (job.requester_principal_id, job.organization_id):
+            raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
+        # Re-evaluate the fresh authority's scopes rather than trusting the
+        # caller-supplied principal object alone.
+        self._scope(
+            requester, job.site_id, job.work_area_id, permission=Permission.SPATIAL_DATA_READ
+        )
+        self._assert_ai_reader(requester, job)
+        source = self._sources.require_current(source=job.source, principal=requester, now=now)
+        # Metadata authorization binds the exact current unique READ
+        # grant with no native-window planning: pixel rights stay on
+        # preparation and download, never on metadata reads.
+        try:
+            selected = self._grants.select_metadata_current(
+                source=source, principal=requester, policy=job.policy, now=now
+            )
+        except SpatialDataDomainError as exc:
+            if exc.reason != "GRANT_REQUIRED":
+                raise
+            state = self._grants.frozen_grant_state(grant=job.grant, now=now)
+            if state == "REVOKED":
+                raise SpatialDataDomainError("ACCESS_REVOKED", 403) from exc
+            if state == "EXPIRED":
+                raise SpatialDataDomainError("ACCESS_EXPIRED", 403) from exc
+            raise
+        if selected != job.grant:
+            # A replacement, tampered or forged grant — including one that
+            # differs only in license_provenance_digest — can never
+            # resurrect the exact frozen job grant.
+            raise SpatialDataDomainError("ACCESS_REVOKED", 403)
+        return self._view(record, now)
+
     def require_ai_metadata(
         self, *, job_id: str, principal: Principal, now: datetime
     ) -> SpatialDataJobViewV1:
@@ -353,54 +461,242 @@ class SpatialDataJobStore:
         """
         require_utc(now)
         with self._guard(now):
-            record = self._records.get(job_id)
-            if record is None or record.job.organization_id != principal.organization_id:
-                raise SpatialDataDomainError("NOT_FOUND", 404)
-            job = record.job
-            self._assert_ai_reader(principal, job)
-            self._lane(now, job=job)
+            return self._require_ai_metadata_locked(job_id=job_id, principal=principal, now=now)
+
+    @staticmethod
+    def _snapshot_binding_bytes(
+        *,
+        job_id: str,
+        job_digest: str | None,
+        source_digest: str | None,
+        grant_id: str,
+        grant_revision: int,
+        grant_digest: str | None,
+        organization_id: str,
+        requester_principal_id: str,
+        site_id: str,
+        work_area_id: str,
+        asset_ref: str,
+        purpose: SpatialDataPurposeV1,
+        policy_digest: str | None,
+        request_fingerprint: str | None,
+        body_digest: str,
+    ) -> bytes:
+        return canonical_json_bytes(
+            {
+                "job_id": job_id,
+                "job_digest": job_digest,
+                "source_digest": source_digest,
+                "grant_id": grant_id,
+                "grant_revision": grant_revision,
+                "grant_digest": grant_digest,
+                "organization_id": organization_id,
+                "requester_principal_id": requester_principal_id,
+                "site_id": site_id,
+                "work_area_id": work_area_id,
+                "asset_ref": asset_ref,
+                "purpose": purpose.value,
+                "policy_digest": policy_digest,
+                "request_fingerprint": request_fingerprint,
+                "body_digest": body_digest,
+            }
+        )
+
+    def _snapshot_seal(self, binding: bytes) -> str:
+        return "hmac-sha256:" + hmac.new(self._snapshot_key, binding, hashlib.sha256).hexdigest()
+
+    def seal_ai_job_snapshot(
+        self,
+        *,
+        job_id: str,
+        now: datetime,
+        principal: Principal | None = None,
+        expected_principal_id: str | None = None,
+        expected_organization_id: str | None = None,
+    ) -> SpatialDataAiJobSnapshot:
+        """Capture the owner-selected canonical publication snapshot for one AI job.
+
+        The expected identity contributes ids only (a routing hint); the
+        locally current owner actor is resolved through the trusted local
+        currentness port inside the same shared coordinator guard that spans
+        authorization and the binding record read, so no grant/source
+        mutation slips between them and no remote credential refresh runs
+        here. The caller view that routed this call contributes no bytes.
+        Read-only: appends no journal events. A GENERAL-purpose, revoked,
+        expired, replaced-grant, new-source, out-of-scope or
+        identity-mismatched job refuses here, before any protected bytes,
+        with the same closed reason the read itself carries.
+        """
+        require_utc(now)
+        if expected_principal_id is None or expected_organization_id is None:
+            if principal is None:
+                raise ValueError("owner snapshot capture requires an expected identity")
+            expected_principal_id = principal.principal_id
+            expected_organization_id = principal.organization_id
+        if (
+            type(expected_principal_id) is not str
+            or type(expected_organization_id) is not str
+            or not expected_principal_id
+            or not expected_organization_id
+        ):
+            raise ValueError("owner snapshot capture requires an expected identity")
+        with self._guard(now):
             try:
-                requester = self._currentness.resolve_requester(
-                    principal_id=job.requester_principal_id,
-                    organization_id=job.organization_id,
+                local_actor = self._currentness.resolve_requester(
+                    principal_id=expected_principal_id,
+                    organization_id=expected_organization_id,
                     now=now,
                 )
             except Exception as exc:
                 raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
-            if not isinstance(requester, Principal) or (
-                requester.principal_id,
-                requester.organization_id,
-            ) != (job.requester_principal_id, job.organization_id):
+            if not isinstance(local_actor, Principal) or (
+                local_actor.principal_id,
+                local_actor.organization_id,
+            ) != (expected_principal_id, expected_organization_id):
                 raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503)
-            # Re-evaluate the fresh authority's scopes rather than trusting the
-            # caller-supplied principal object alone.
-            self._scope(
-                requester, job.site_id, job.work_area_id, permission=Permission.SPATIAL_DATA_READ
+            view = self._require_ai_metadata_locked(job_id=job_id, principal=local_actor, now=now)
+            record = self._records.get(job_id)
+            if record is None:  # Cannot follow a successful read; fail closed.
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            job = record.job
+            if (expected_principal_id, expected_organization_id) != (
+                job.requester_principal_id,
+                job.organization_id,
+            ):
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            body = canonical_json_bytes(view.model_dump(by_alias=True, mode="json"))
+            if len(body) > self._policy.max_json_bytes:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+            body_digest = _hash(body)
+            binding = self._snapshot_binding_bytes(
+                job_id=job.job_id,
+                job_digest=job.job_digest,
+                source_digest=job.source.source_digest,
+                grant_id=job.grant.grant_id,
+                grant_revision=job.grant.revision,
+                grant_digest=job.grant.grant_digest,
+                organization_id=job.organization_id,
+                requester_principal_id=job.requester_principal_id,
+                site_id=job.site_id,
+                work_area_id=job.work_area_id,
+                asset_ref=job.source.asset_ref,
+                purpose=job.request.purpose,
+                policy_digest=job.policy.policy_digest,
+                request_fingerprint=job.request_fingerprint,
+                body_digest=body_digest,
             )
-            self._assert_ai_reader(requester, job)
-            source = self._sources.require_current(source=job.source, principal=requester, now=now)
-            # Metadata authorization binds the exact current unique READ
-            # grant with no native-window planning: pixel rights stay on
-            # preparation and download, never on metadata reads.
-            try:
-                selected = self._grants.select_metadata_current(
-                    source=source, principal=requester, policy=job.policy, now=now
-                )
-            except SpatialDataDomainError as exc:
-                if exc.reason != "GRANT_REQUIRED":
-                    raise
-                state = self._grants.frozen_grant_state(grant=job.grant, now=now)
-                if state == "REVOKED":
-                    raise SpatialDataDomainError("ACCESS_REVOKED", 403) from exc
-                if state == "EXPIRED":
-                    raise SpatialDataDomainError("ACCESS_EXPIRED", 403) from exc
-                raise
-            if selected != job.grant:
-                # A replacement, tampered or forged grant — including one that
-                # differs only in license_provenance_digest — can never
-                # resurrect the exact frozen job grant.
-                raise SpatialDataDomainError("ACCESS_REVOKED", 403)
-            return self._view(record, now)
+            if len(binding) > self._policy.max_json_bytes:
+                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+            return SpatialDataAiJobSnapshot(
+                job_id=job.job_id,
+                view=view,
+                body=body,
+                body_digest=body_digest,
+                job_digest=job.job_digest,
+                asset_ref=job.source.asset_ref,
+                organization_id=job.organization_id,
+                requester_principal_id=job.requester_principal_id,
+                site_id=job.site_id,
+                work_area_id=job.work_area_id,
+                purpose=job.request.purpose,
+                source_digest=job.source.source_digest,
+                grant_id=job.grant.grant_id,
+                grant_revision=job.grant.revision,
+                grant_digest=job.grant.grant_digest,
+                policy_digest=job.policy.policy_digest,
+                request_fingerprint=job.request_fingerprint,
+                seal=self._snapshot_seal(binding),
+            )
+
+    def verify_ai_job_snapshot(
+        self, *, snapshot: SpatialDataAiJobSnapshot, principal: Principal, now: datetime
+    ) -> bytes:
+        """Re-prove a sealed snapshot and return its SELECTED bytes for emission.
+
+        Every header/body refresh repeats the genuine current authorization
+        first (locked current-rights check over the freshly resolved
+        principal, under the same shared guard as the binding record read),
+        then compares the snapshot's per-store seal and immutable issued-job
+        binding against the current frozen job. The seal proves the bytes
+        were captured by this store's owner — a self-consistent caller
+        forgery, a tampered seal, or the same frozen job sealed by another
+        store refuses even when body, view and digest agree. Only legal
+        mutable drift — execution state, availability, receipt, reason,
+        remediation — is ignored for body equality, so legitimate worker
+        progress after capture publishes the truthful point-in-time instead
+        of a false conflict. A changed immutable binding or lapsed rights
+        refuses with a closed denial before protected bytes. Read-only:
+        appends no journal events.
+        """
+        require_utc(now)
+        if type(snapshot) is not SpatialDataAiJobSnapshot:
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        if (
+            type(snapshot.body) is not bytes
+            or not snapshot.body
+            or len(snapshot.body) > self._policy.max_json_bytes
+            or _hash(snapshot.body) != snapshot.body_digest
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        if (
+            not isinstance(snapshot.view, SpatialDataJobViewV1)
+            or canonical_json_bytes(snapshot.view.model_dump(by_alias=True, mode="json"))
+            != snapshot.body
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        if (
+            type(snapshot.seal) is not str
+            or len(snapshot.seal) != len("hmac-sha256:") + 64
+            or not snapshot.seal.startswith("hmac-sha256:")
+        ):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        expected_seal = self._snapshot_seal(
+            self._snapshot_binding_bytes(
+                job_id=snapshot.job_id,
+                job_digest=snapshot.job_digest,
+                source_digest=snapshot.source_digest,
+                grant_id=snapshot.grant_id,
+                grant_revision=snapshot.grant_revision,
+                grant_digest=snapshot.grant_digest,
+                organization_id=snapshot.organization_id,
+                requester_principal_id=snapshot.requester_principal_id,
+                site_id=snapshot.site_id,
+                work_area_id=snapshot.work_area_id,
+                asset_ref=snapshot.asset_ref,
+                purpose=snapshot.purpose,
+                policy_digest=snapshot.policy_digest,
+                request_fingerprint=snapshot.request_fingerprint,
+                body_digest=snapshot.body_digest,
+            )
+        )
+        if not hmac.compare_digest(snapshot.seal, expected_seal):
+            raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+        # Fresh rights before binding, under one guard with the record read:
+        # revoked/expired/replaced grants, new sources, GENERAL purpose and
+        # unknown scopes refuse here.
+        with self._guard(now):
+            self._require_ai_metadata_locked(job_id=snapshot.job_id, principal=principal, now=now)
+            record = self._records.get(snapshot.job_id)
+            if record is None:  # Cannot follow a successful read; fail closed.
+                raise SpatialDataDomainError("NOT_FOUND", 404)
+            job = record.job
+            if (
+                (snapshot.job_digest or "") != (job.job_digest or "")
+                or snapshot.asset_ref != job.source.asset_ref
+                or snapshot.organization_id != job.organization_id
+                or snapshot.requester_principal_id != job.requester_principal_id
+                or snapshot.site_id != job.site_id
+                or snapshot.work_area_id != job.work_area_id
+                or snapshot.purpose != job.request.purpose
+                or (snapshot.source_digest or "") != (job.source.source_digest or "")
+                or snapshot.grant_id != job.grant.grant_id
+                or snapshot.grant_revision != job.grant.revision
+                or (snapshot.grant_digest or "") != (job.grant.grant_digest or "")
+                or (snapshot.policy_digest or "") != (job.policy.policy_digest or "")
+                or (snapshot.request_fingerprint or "") != (job.request_fingerprint or "")
+            ):
+                raise SpatialDataDomainError("PERMISSION_DENIED", 403)
+            return snapshot.body
 
     #: Candidate denials suppressed from AI listing; dependency, authority and
     #: representation failures propagate instead of becoming empty success.
