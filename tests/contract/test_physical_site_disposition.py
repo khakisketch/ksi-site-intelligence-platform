@@ -12,18 +12,33 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import importlib.util
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
 
-from tools.check_physical_site_disposition import (  # noqa: E402
-    EXPECTED_BASELINE,
-    EXPECTED_COLUMNS,
-    validate_disposition_manifest,
-)
+
+def _load_validator() -> Any:
+    """Load the real validator tool by file location (repository dynamic-loader
+    pattern): no static ``tools.`` import for checkers to double-count, and no
+    lingering ``sys.path`` mutation."""
+    tool_path = ROOT / "tools" / "check_physical_site_disposition.py"
+    spec = importlib.util.spec_from_file_location("check_physical_site_disposition", tool_path)
+    assert spec is not None and spec.loader is not None, tool_path
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_tool = _load_validator()
+EXPECTED_BASELINE = _tool.EXPECTED_BASELINE
+EXPECTED_COLUMNS = _tool.EXPECTED_COLUMNS
+validate_disposition_manifest = _tool.validate_disposition_manifest
 
 REAL_MANIFEST = ROOT / "docs/audit/PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv"
 REAL_CSV_SHA256 = "89a9baf3b1f1a593bf65af02810595cea0f677a740ceb0fdf9f2e789071639e3"
@@ -482,7 +497,9 @@ def test_malformed_bytes_quotes_and_oversize_fields_are_controlled_findings(
     assert "no moves authorized" in completed.stdout, completed.stdout
 
 
-def test_unavailable_git_and_truncated_plumbing_fail_clearly(tmp_path: Path, monkeypatch) -> None:
+def test_unavailable_git_and_truncated_plumbing_fail_clearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Missing git and corrupt plumbing output yield findings, never a false
     pass, an exception, or leaked content. Faults are injected around the real
     subprocess transport; validator parsing/handling stays real."""
@@ -501,7 +518,7 @@ def test_unavailable_git_and_truncated_plumbing_fail_clearly(tmp_path: Path, mon
     monkeypatch.undo()
     real_run = subprocess.run
 
-    def _truncate_batch(*args, **kwargs):
+    def _truncate_batch(*args: Any, **kwargs: Any) -> Any:
         completed = real_run(*args, **kwargs)
         if args[0][:3] == ["git", "cat-file", "--batch"]:
             completed.stdout = completed.stdout[:5]
@@ -513,7 +530,9 @@ def test_unavailable_git_and_truncated_plumbing_fail_clearly(tmp_path: Path, mon
     assert "CANARY-ZK7Q" not in "\n".join(findings), findings
 
 
-def test_unmaterialized_gitlink_and_symlink_are_metadata_only(tmp_path: Path, monkeypatch) -> None:
+def test_unmaterialized_gitlink_and_symlink_are_metadata_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A foreign gitlink commit absent locally passes by Git metadata only,
     and a symlink binds its link text while its (absent, outside) target is
     never read. Content-object requests are observed on the real helper."""
@@ -526,7 +545,7 @@ def test_unmaterialized_gitlink_and_symlink_are_metadata_only(tmp_path: Path, mo
     requested: list[str] = []
     real_run = subprocess.run
 
-    def _observe(*args, **kwargs):
+    def _observe(*args: Any, **kwargs: Any) -> Any:
         if args[0][:3] == ["git", "cat-file", "--batch"] and kwargs.get("input"):
             requested.append(kwargs["input"].decode("ascii", errors="replace"))
         return real_run(*args, **kwargs)
@@ -584,3 +603,29 @@ def test_duplicate_and_malformed_headers_are_refused(tmp_path: Path) -> None:
             writer.writerow([row.get(column, "x") for column in extended])
     findings = _check(repo, path)
     assert any("header" in finding for finding in findings), findings
+
+
+def test_loader_leaves_sys_path_unchanged() -> None:
+    """Fresh-process guard: importing this test module must not mutate
+    ``sys.path`` (no lingering insertion that would re-create a dual
+    ``tools.``/standalone module identity for static checkers)."""
+    probe_path = repr(str(Path(__file__).resolve()))
+    probe = (
+        "import sys, importlib.util; "
+        "before = list(sys.path); "
+        f"spec = importlib.util.spec_from_file_location('probe_target', {probe_path}); "
+        "module = importlib.util.module_from_spec(spec); "
+        "spec.loader.exec_module(module); "
+        "added = [p for p in sys.path if p not in before]; "
+        "assert not added, added; "
+        "print('PATH_CLEAN')"
+    )
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert "PATH_CLEAN" in completed.stdout, completed.stdout
