@@ -554,7 +554,9 @@ def test_external_history_review_followup_survive_platform_restart(tmp_path: Pat
             # Managed row survived byte-identical: its journal line is
             # still present verbatim and the row stays non-executable.
             reread = work_order_journal.read_bytes()
-            before_lines = journals_before["observation-work-orders.jsonl"].decode().splitlines()
+            before_raw = journals_before["observation-work-orders.jsonl"]
+            assert before_raw is not None
+            before_lines = before_raw.decode().splitlines()
             managed_lines = [line for line in before_lines if managed.work_order_id in line]
             assert len(managed_lines) == 1
             assert managed_lines[0] in reread.decode()

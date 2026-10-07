@@ -16,9 +16,10 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from ksi_core.auth import (
     AuthRegistry,
@@ -169,7 +170,7 @@ def _assemble(
     auth_registry: AuthRegistry | None = None,
     storage: Any = None,
     **kwargs: Any,
-):
+) -> FastAPI:
     from ksi_core.composition.platform_assembly import assemble_platform_app
 
     if auth_registry is None:
@@ -492,7 +493,7 @@ def test_platform_requires_auth_registry_and_storage(tmp_path: Path) -> None:
             evidence_storage=_Storage(),
         )
         with pytest.raises(ValueError, match="auth_registry"):
-            create_platform_app(graph=graph, auth_registry=None)  # type: ignore[arg-type]
+            create_platform_app(graph=graph, auth_registry=None)
     finally:
         for item in opened:
             item.close()
@@ -500,6 +501,7 @@ def test_platform_requires_auth_registry_and_storage(tmp_path: Path) -> None:
 
 def test_restricted_router_omits_only_managed_mutation_routes(tmp_path: Path) -> None:
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
+    from starlette.routing import Route
 
     store_journal = DurableJournal(tmp_path / "observation-work-orders.jsonl")
     store = ObservationWorkOrderStore(
@@ -511,13 +513,13 @@ def test_restricted_router_omits_only_managed_mutation_routes(tmp_path: Path) ->
         legacy_paths = {
             (route.path, next(iter(route.methods)))
             for route in legacy.routes
-            if getattr(route, "path", None) is not None
+            if isinstance(route, Route) and route.methods is not None
         }
         restricted = build_observation_work_order_router(store, external_only=True)
         restricted_paths = {
             (route.path, next(iter(route.methods)))
             for route in restricted.routes
-            if getattr(route, "path", None) is not None
+            if isinstance(route, Route) and route.methods is not None
         }
     finally:
         store_journal.close()
@@ -977,7 +979,7 @@ def test_incomplete_analysis_or_data_participants_raise_before_routes(tmp_path: 
                 journal=journal,
                 opened=opened,
                 evidence_storage=_Storage(),
-                spatial_data=object(),
+                spatial_data=cast(Any, object()),
             )
     finally:
         _close_all(opened)
@@ -990,7 +992,7 @@ def test_incomplete_analysis_or_data_participants_raise_before_routes(tmp_path: 
                 journal=journal,
                 opened=opened,
                 evidence_storage=_Storage(),
-                analysis_activation=object(),
+                analysis_activation=cast(Any, object()),
             )
     finally:
         _close_all(opened)
