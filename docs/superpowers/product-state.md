@@ -20,6 +20,11 @@ primitives have local foundation evidence atf12857c (full Python9093passed; broa
 unpassed). The [Core assembly successor](plans/2026-10-07-platform-core-assembly.md) is a written
 proposal awaiting review, not runtime/archive/UI implementation authority. This link does not close,
 reprioritize or replace the Current slice, EXT-VAL/customer acceptance or historical milestones below.
+2026-10-08 P2 platform Core assembly technical closure is recorded in the same ledger
+(f7779e9/1bc76b5/6b6fc08/26b3c5d/8aaba33; full Python9145passed with one environment-induced
+failure adjudicated by a pre-P2 control; broad mypy109/14 pre-existing open). The
+[worker/archive successor](plans/2026-10-08-acquisition-separation-and-archive.md) is a written
+proposal awaiting review, not execution authority. No slice/acceptance/milestone change.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.
