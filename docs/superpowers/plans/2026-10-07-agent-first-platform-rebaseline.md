@@ -629,6 +629,35 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   Task2 “Analysis/data happy-path untested” closed by Task4 worker+region-receipt coverage.
   Integrated full-suite/static/artifact results pending from independent runner
   `ses_ee8ac5874ffeI1uEwO3U0xUveU`; do not poll.
+- P2 integrated suite at26b3c5d (runner scratch `/tmp/opencode/physical-site-p2-final-verify/`):
+  scoped1023passed; full configured run9145passed/122skipped/102warnings/1failed (24m34s under
+  machine load). The single failure
+  `test_external_analysis_worker_loop.py::test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_call`
+  is ENVIRONMENT-INDUCED, not a P2 regression: P2 touched neither the test nor its import chain
+  (`git log f12857c..HEAD` empty for those paths); Primary control experiment ran the same test from
+  an extracted f12857c tree with the same venv under the same machine conditions → 3/3 identical
+  failures (direct26b3c5d run:4/4). Machine load avg≈21.5 since00:03KST from18 orphaned
+  `node -e while(true){...}` processes (ppid1, user tmux-spawn scope, ~48GB RSS; cgroup
+  `cpu.max=max`, `nr_throttled=0` → plain contention, not quota). Both revisions passed the same
+  test under earlier low-load full runs. Backlog: timing-sensitive test hardening; one clean
+  full-suite pass under normal machine load remains a bounded open check, not a P2 defect.
+- Runner final message was provider-corrupted and stopped before receipt/static/gates/artifact
+  batches; bounded continuation dispatched on the same session. No P2 completion claim until the
+  receipt and remaining batches land.
+- P2 closure batches completed at26b3c5d (receipt`/tmp/opencode/physical-site-p2-final-verify/receipt.md`
+  read): scoped1023passed; static: broad mypy118errors/16files → +9 diagnostics exactly in the2new
+  P2 test files, scoped15modules clean, Ruff clean; gates7/7 exit0 (lock162, disposition,
+  normalization, boundaries186, whitespace); offline artifact closure: domain/mission-contracts/Core
+  built offline and all15changed modules byte-identical source↔sdist↔wheel with valid RECORDs.
+  No product-source error, no new dependency. Full-suite environmental failure adjudicated (above).
+- P2 typing fix round: developer `ses_ee8c3f712ffeJtC6M2nDy5R0AX` committed `8aaba33`
+  (`test: tidy platform Core test typing`;2test files,+12/−8) closing the +9 broad-mypy diagnostics;
+  annotation/narrowing/guard only, net−1 `type: ignore`, no assertion/skip changes. Scoped re-review
+  `ses_ee8880181ffe6PkTxzlzI30LtD`: all findings ADDRESSED, no new Critical/Important;3Minor
+  observations (route-inventory narrowing excludes non-Route entries—intent preserved; assert
+  rewording AttributeError→AssertionError on unexpected-missing; tool-run counts not diff-verifiable
+  → assigned to the independent re-run). Independent re-verification at8aaba33 dispatched as a
+  fresh bounded runner session (ses_ee8880176ffeTu9wzA9CFhIAnE); P2 closure awaits its receipt.
 
 ### P3 planning discovery (2026-10-08)
 
