@@ -1,15 +1,17 @@
 """Contract regression for the frozen physical-site disposition inventory (Task 2).
 
-The validator under test is ``tools/check_physical_site_disposition.py``. The
-real baseline CSV is planning-only inventory: these tests assert it binds every
-frozen Git entry exactly once and refuse hostile/malformed variants exercised
-through disposable local synthetic Git fixtures (no edits to the real CSV, no
-network, runnable without the full baseline history).
+The validator under test is ``tools/check_physical_site_disposition.py``.
+History-free guarantees (frozen-CSV pins, malformed-input handling) run
+without any baseline Git history; complete Git-object binding is exercised on
+disposable local synthetic Git fixtures (no edits to the real CSV, no
+network). The real default CLI on the full checkout remains the authoritative
+full-history check and is re-run independently (Task 4).
 """
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
@@ -24,6 +26,8 @@ from tools.check_physical_site_disposition import (  # noqa: E402
 )
 
 REAL_MANIFEST = ROOT / "docs/audit/PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv"
+REAL_CSV_SHA256 = "89a9baf3b1f1a593bf65af02810595cea0f677a740ceb0fdf9f2e789071639e3"
+TOOL = ROOT / "tools/check_physical_site_disposition.py"
 
 
 def _git(root: Path, *args: str) -> str:
@@ -36,23 +40,30 @@ def _git(root: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def _make_fixture_repo(tmp_path: Path) -> Path:
-    """Disposable synthetic Git fixture: one normal file, one protected-path
-    file (``.ai/`` boundary) and one gitlink, committed once."""
-    repo = tmp_path / "fixture-repo"
+def _make_full_fixture_repo(tmp_path: Path, *, materialize_gitlink: bool = True) -> Path:
+    """Full-coverage synthetic repo: normal + executable files, an archive
+    candidate, a symlink to an absent/outside canary target, a protected
+    ``.ai/`` file, and a foreign gitlink (materialized only on request)."""
+    import os
+
+    repo = tmp_path / "full-fixture-repo"
     repo.mkdir()
     _git(repo, "init", "-q")
     _git(repo, "config", "user.email", "fixture@example.invalid")
     _git(repo, "config", "user.name", "fixture")
     (repo / "keep.md").write_text("platform content\n", encoding="utf-8")
+    runner = repo / "run.sh"
+    runner.write_text("#!/bin/sh\necho hi\n", encoding="utf-8")
+    os.chmod(runner, 0o755)
+    (repo / "archive-me.md").write_text("to archive\n", encoding="utf-8")
     (repo / ".ai").mkdir()
     (repo / ".ai" / "PRIVATE-CANARY-ZK7Q").write_text(
         "DO-NOT-DELIVER-CANARY-ZK7Q\n", encoding="utf-8"
     )
+    os.symlink("../CANARY-OUTSIDE-ZK7Q-target", repo / "link-to-absent")
     _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "fixture baseline")
     nested = tmp_path / "nested-repo"
-    nested.mkdir()
+    nested.mkdir(exist_ok=True)
     _git(nested, "init", "-q")
     _git(nested, "config", "user.email", "fixture@example.invalid")
     _git(nested, "config", "user.name", "fixture")
@@ -60,12 +71,18 @@ def _make_fixture_repo(tmp_path: Path) -> Path:
     _git(nested, "add", ".")
     _git(nested, "commit", "-qm", "nested")
     nested_sha = _git(nested, "rev-parse", "HEAD")
-    # Local-path fetch only (no network): materialize the foreign commit object
-    # so the fixture gitlink resolves its Git type like an initialized submodule.
-    _git(repo, "fetch", "-q", str(nested), "HEAD")
+    if materialize_gitlink:
+        # Local-path fetch only (no network).
+        _git(repo, "fetch", "-q", str(nested), "HEAD")
     _git(repo, "update-index", "--add", "--cacheinfo", "160000", nested_sha, "refs/ext")
-    _git(repo, "commit", "-qm", "fixture baseline with gitlink")
+    _git(repo, "commit", "-qm", "full fixture baseline")
     return repo
+
+
+def _make_fixture_repo(tmp_path: Path) -> Path:
+    """Standard synthetic fixture with a materialized gitlink (covers keep.md,
+    the protected ``.ai/`` boundary and ``refs/ext``)."""
+    return _make_full_fixture_repo(tmp_path, materialize_gitlink=True)
 
 
 def _baseline_rows(root: Path) -> dict[str, tuple[str, str]]:
@@ -103,7 +120,11 @@ def _write_manifest(path: Path, rows: list[dict[str, str]]) -> Path:
     return path
 
 
-def _valid_fixture_rows(root: Path) -> list[dict[str, str]]:
+def _valid_fixture_rows(
+    root: Path, overrides: dict[str, tuple[str, str, str]] | None = None
+) -> list[dict[str, str]]:
+    """Manifest rows binding every fixture baseline entry. ``overrides`` maps
+    path -> (disposition, destination, condition) for non-protected rows."""
     baseline = _git(root, "rev-parse", "HEAD")
     trusted = _baseline_rows(root)
     rows: list[dict[str, str]] = []
@@ -122,6 +143,9 @@ def _valid_fixture_rows(root: Path) -> list[dict[str, str]]:
                 }
             )
         else:
+            disposition, destination, condition = (overrides or {}).get(
+                path, ("RETAIN", path, "Preserve verified consumer")
+            )
             rows.append(
                 {
                     "path": path,
@@ -129,9 +153,9 @@ def _valid_fixture_rows(root: Path) -> list[dict[str, str]]:
                     "gitMode": mode,
                     "gitObject": obj,
                     "sha256": _blob_sha256(root, obj),
-                    "proposedDisposition": "RETAIN",
-                    "proposedDestination": path,
-                    "requiredBeforeAction": "Preserve verified consumer",
+                    "proposedDisposition": disposition,
+                    "proposedDestination": destination,
+                    "requiredBeforeAction": condition,
                 }
             )
     return rows
@@ -142,26 +166,81 @@ def _check(repo: Path, manifest: Path) -> list[str]:
     return validate_disposition_manifest(repo, manifest, baseline=_git(repo, "rev-parse", "HEAD"))
 
 
-def test_exact_baseline_coverage_and_hashes() -> None:
-    """Every frozen baseline Git entry appears exactly once; normal files bind
-    Git object and SHA256; protected rows carry no content hash."""
-    findings = validate_disposition_manifest(ROOT, REAL_MANIFEST)
-    assert findings == [], "\n".join(findings[:10])
+def test_frozen_csv_static_integrity() -> None:
+    """History-free pins on the frozen planning CSV: SHA256, exact columns,
+    2378 unique rows, baseline refs, mode/object/digest formats, 82 PROTECT
+    rows without hashes, 194 candidates with exact archive destinations."""
+    assert hashlib.sha256(REAL_MANIFEST.read_bytes()).hexdigest() == REAL_CSV_SHA256, (
+        "frozen CSV bytes changed"
+    )
 
     with REAL_MANIFEST.open(newline="", encoding="utf-8") as stream:
-        rows = list(csv.DictReader(stream))
+        reader = csv.reader(stream)
+        assert next(reader) == EXPECTED_COLUMNS
+        rows = list(reader)
     assert len(rows) == 2378
-    assert len({row["path"] for row in rows}) == 2378
+    assert len({row[0] for row in rows}) == 2378
 
-    protected = [row for row in rows if row["proposedDisposition"] == "PROTECT"]
-    assert len(protected) == 82
-    assert all(row["sha256"] == "" for row in protected)
+    import re
 
-    candidates = [row for row in rows if row["proposedDisposition"] == "ARCHIVE_CANDIDATE"]
-    assert len(candidates) == 194
-    # A candidate row is planning-only inventory, never execution approval:
-    # no candidate destination may equal its current path.
-    assert all(row["proposedDestination"] != row["path"] for row in candidates)
+    hex40 = re.compile(r"[0-9a-f]{40}").fullmatch
+    hex64 = re.compile(r"[0-9a-f]{64}").fullmatch
+    protected = candidates = 0
+    for fields in rows:
+        assert len(fields) == 8, fields[0]
+        path, commit, mode, obj, digest, disp, dest, cond = fields
+        assert commit == EXPECTED_BASELINE and hex40(commit), path
+        assert mode in ("100644", "100755", "120000", "160000"), path
+        assert hex40(obj), path
+        assert cond, path
+        if disp == "PROTECT":
+            protected += 1
+            assert digest == "", path
+            assert dest == path, path
+        elif disp == "ARCHIVE_CANDIDATE":
+            candidates += 1
+            assert hex64(digest), path
+            assert dest == f"archive/acquisition-2026/{path}", path
+        elif disp in ("RECONCILE", "RETAIN", "RECONCILE_DOCUMENT"):
+            assert hex64(digest), path
+            assert dest == path, path
+        else:
+            raise AssertionError(f"unknown disposition {disp} at {path}")
+    assert protected == 82
+    assert candidates == 194
+
+
+def test_synthetic_baseline_full_coverage_and_hashes(tmp_path: Path) -> None:
+    """Complete Git-object binding on a valid local synthetic repo: every
+    baseline entry (regular, executable, symlink link-text, candidate,
+    protected file, gitlink) appears exactly once and validates clean."""
+    repo = _make_full_fixture_repo(tmp_path)
+    trusted = _baseline_rows(repo)
+    assert trusted["run.sh"][0] == "100755"
+    assert trusted["link-to-absent"][0] == "120000"
+    assert trusted["refs/ext"][0] == "160000"
+
+    rows = _valid_fixture_rows(
+        repo,
+        {
+            "archive-me.md": (
+                "ARCHIVE_CANDIDATE",
+                "archive/acquisition-2026/archive-me.md",
+                "Extract platform consumers first",
+            )
+        },
+    )
+    assert len(rows) == len(trusted)
+    findings = _check(repo, _write_manifest(tmp_path / "full.csv", rows))
+    assert findings == [], "\n".join(findings[:10])
+
+    # Hostile mutations of the valid synthetic manifest are each refused.
+    mutated = [dict(row) for row in rows]
+    for row in mutated:
+        if row["path"] == "archive-me.md":
+            row["proposedDestination"] = "archive-me.md"
+    findings = _check(repo, _write_manifest(tmp_path / "full-bad-dest.csv", mutated))
+    assert any("archive-me.md" in finding for finding in findings), findings
 
 
 def test_duplicate_missing_and_unknown_rows_are_refused(tmp_path: Path) -> None:
@@ -346,3 +425,162 @@ def test_missing_baseline_history_fails_clearly(tmp_path: Path) -> None:
     findings = validate_disposition_manifest(tmp_path, manifest)
     assert findings, "absent baseline history must fail, not pass or skip"
     assert any(EXPECTED_BASELINE in finding for finding in findings), findings
+
+
+def test_malformed_bytes_quotes_and_oversize_fields_are_controlled_findings(
+    tmp_path: Path,
+) -> None:
+    """Binary/quote/oversize manifests return ``list[str]`` findings — never a
+    traceback — and the real CLI exits 1 in finding format."""
+    binary = tmp_path / "binary.csv"
+    binary.write_bytes(b"path,baselineCommit\n\xff\xfe\x00binary\n")
+    findings = validate_disposition_manifest(tmp_path, binary)
+    assert isinstance(findings, list) and findings, findings
+    assert any("UTF-8" in finding for finding in findings), findings
+
+    quoted = tmp_path / "quoted.csv"
+    quoted.write_text(
+        ",".join(EXPECTED_COLUMNS)
+        + '\nkeep.md,"unclosed quote,100644,'
+        + "0" * 40
+        + ","
+        + "0" * 64
+        + ",RETAIN,keep.md,x\n",
+        encoding="utf-8",
+    )
+    findings = validate_disposition_manifest(tmp_path, quoted)
+    assert isinstance(findings, list) and findings, findings
+    assert any("CSV parse" in finding for finding in findings), findings
+
+    oversize = tmp_path / "oversize.csv"
+    big = "x" * (csv.field_size_limit() + 1024)
+    oversize.write_text(
+        ",".join(EXPECTED_COLUMNS)
+        + f"\nkeep.md,{EXPECTED_BASELINE},100644,"
+        + "0" * 40
+        + ","
+        + "0" * 64
+        + ",RETAIN,keep.md,"
+        + big
+        + "\n",
+        encoding="utf-8",
+    )
+    findings = validate_disposition_manifest(tmp_path, oversize)
+    assert isinstance(findings, list) and findings, findings
+    assert any("CSV parse" in finding for finding in findings), findings
+
+    # Real CLI on the binary manifest: exit 1, finding format, no traceback.
+    completed = subprocess.run(
+        [sys.executable, str(TOOL), "--manifest", str(binary)],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 1, completed.stdout
+    assert "Traceback" not in completed.stderr, completed.stderr
+    assert "no moves authorized" in completed.stdout, completed.stdout
+
+
+def test_unavailable_git_and_truncated_plumbing_fail_clearly(tmp_path: Path, monkeypatch) -> None:
+    """Missing git and corrupt plumbing output yield findings, never a false
+    pass, an exception, or leaked content. Faults are injected around the real
+    subprocess transport; validator parsing/handling stays real."""
+    repo = _make_fixture_repo(tmp_path)
+    rows = _valid_fixture_rows(repo)
+    manifest = _write_manifest(tmp_path / "ok.csv", rows)
+    baseline = _git(repo, "rev-parse", "HEAD")
+
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+    findings = validate_disposition_manifest(repo, manifest, baseline=baseline)
+    assert isinstance(findings, list) and findings, findings
+    assert any("git" in finding.lower() for finding in findings), findings
+
+    monkeypatch.undo()
+    real_run = subprocess.run
+
+    def _truncate_batch(*args, **kwargs):
+        completed = real_run(*args, **kwargs)
+        if args[0][:3] == ["git", "cat-file", "--batch"]:
+            completed.stdout = completed.stdout[:5]
+        return completed
+
+    monkeypatch.setattr(subprocess, "run", _truncate_batch)
+    findings = validate_disposition_manifest(repo, manifest, baseline=baseline)
+    assert isinstance(findings, list) and findings, findings
+    assert "CANARY-ZK7Q" not in "\n".join(findings), findings
+
+
+def test_unmaterialized_gitlink_and_symlink_are_metadata_only(tmp_path: Path, monkeypatch) -> None:
+    """A foreign gitlink commit absent locally passes by Git metadata only,
+    and a symlink binds its link text while its (absent, outside) target is
+    never read. Content-object requests are observed on the real helper."""
+    repo = _make_full_fixture_repo(tmp_path, materialize_gitlink=False)
+    trusted = _baseline_rows(repo)
+    assert trusted["refs/ext"][0] == "160000"
+    assert trusted["link-to-absent"][0] == "120000"
+    assert not (repo / "../CANARY-OUTSIDE-ZK7Q-target").exists()
+
+    requested: list[str] = []
+    real_run = subprocess.run
+
+    def _observe(*args, **kwargs):
+        if args[0][:3] == ["git", "cat-file", "--batch"] and kwargs.get("input"):
+            requested.append(kwargs["input"].decode("ascii", errors="replace"))
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", _observe)
+    rows = _valid_fixture_rows(
+        repo,
+        {
+            "archive-me.md": (
+                "ARCHIVE_CANDIDATE",
+                "archive/acquisition-2026/archive-me.md",
+                "Extract platform consumers first",
+            )
+        },
+    )
+    findings = _check(repo, _write_manifest(tmp_path / "meta-only.csv", rows))
+    assert findings == [], "\n".join(findings[:10])
+
+    content_objects = " ".join(requested)
+    gitlink_obj = trusted["refs/ext"][1]
+    assert gitlink_obj not in content_objects, "gitlink content was requested"
+    protected_obj = trusted[".ai/PRIVATE-CANARY-ZK7Q"][1]
+    assert protected_obj not in content_objects, "protected content was requested"
+    assert "CANARY-ZK7Q" not in "\n".join(findings), findings
+
+
+def test_duplicate_and_malformed_headers_are_refused(tmp_path: Path) -> None:
+    """Duplicate, reordered, or extended headers are refused as findings."""
+    repo = _make_fixture_repo(tmp_path)
+    rows = _valid_fixture_rows(repo)
+
+    def _with_header(header: list[str]) -> Path:
+        path = tmp_path / "header.csv"
+        with path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(header)
+            for row in rows:
+                writer.writerow([row[column] for column in header if column in row])
+        return path
+
+    duplicated = EXPECTED_COLUMNS + ["path"]
+    findings = _check(repo, _with_header(duplicated))
+    assert any("header" in finding for finding in findings), findings
+
+    reordered = list(reversed(EXPECTED_COLUMNS))
+    findings = _check(repo, _with_header(reordered))
+    assert any("header" in finding for finding in findings), findings
+
+    extended = EXPECTED_COLUMNS + ["extra"]
+    path = tmp_path / "extended.csv"
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(extended)
+        for row in rows:
+            writer.writerow([row.get(column, "x") for column in extended])
+    findings = _check(repo, path)
+    assert any("header" in finding for finding in findings), findings

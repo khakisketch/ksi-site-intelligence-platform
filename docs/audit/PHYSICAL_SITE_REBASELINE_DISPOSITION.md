@@ -325,15 +325,24 @@ Paths: `packages/equipment-intelligence/pyproject.toml`,
 - Unresolved: same mixed-consumer situation as §3.5 — live Core dependency
   must be extracted or replaced before any archive move.
 
-## 4. Verification evidence
+## 4. Verification evidence (two distinct layers)
 
-- `.venv/bin/python -m pytest tests/contract/test_physical_site_disposition.py -q` → 7 passed.
-- `python tools/check_physical_site_disposition.py --manifest
-  docs/audit/PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv` → exit 0
-  (2378 unique rows bound to frozen objects).
+- **pytest (history-free, always runs, including shallow CI):**
+  `tests/contract/test_physical_site_disposition.py` pins the frozen CSV
+  bytes (SHA256 `89a9baf3…`), exact columns, 2378 unique rows, baseline refs,
+  mode/object/digest formats, 82 PROTECT rows without hashes, and 194
+  candidates with exact `archive/acquisition-2026/<path>` destinations — plus
+  complete Git-object binding and hostile mutations on disposable local
+  synthetic repos. No skips; no baseline history required.
+- **Real default CLI (full history required, independently re-run at Task 4):**
+  `python tools/check_physical_site_disposition.py --manifest
+  docs/audit/PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv` → exit 0,
+  binding all 2378 rows to frozen objects at
+  `72c526ba7b6d423443d9733d1189fccd8b47ada6`. On a shallow checkout it fails
+  explicitly (baseline absent, no fetch) instead of passing.
 - Hostile copy exercise (single digest mutated in a `/tmp` copy, real CSV
   untouched): exit 1 with a safe path/reason finding, no moves.
 - `git diff --check` clean; `ruff check` and `ruff format --check` clean on
-  both new Python files.
+  both Python files.
 - Frozen CSV SHA256 unchanged:
   `89a9baf3b1f1a593bf65af02810595cea0f677a740ceb0fdf9f2e789071639e3`.

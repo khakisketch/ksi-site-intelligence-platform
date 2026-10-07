@@ -46,6 +46,11 @@ _HEX64_RE = re.compile(r"[0-9a-f]{64}")
 _MISSING_EXAMPLE_LIMIT = 10
 
 
+class _PlumbingError(RuntimeError):
+    """Controlled Git/manifest-plumbing failure. Carries path/reason text only —
+    never file content bytes — so it converts to a safe finding, not a crash."""
+
+
 def _trusted_protected(path: str, mode: str) -> bool:
     """Protection derived from trusted baseline path/type boundaries only.
 
@@ -80,6 +85,22 @@ def _canonical_repo_path(value: str) -> str | None:
     return None
 
 
+def _run_git(root: Path, args: list[str], stdin: bytes | None = None) -> bytes:
+    """Run one read-only git plumbing command; map transport faults to
+    controlled findings instead of escaping exceptions."""
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            input=stdin,
+            cwd=root,
+            check=False,
+            capture_output=True,
+        )
+    except OSError as exc:
+        raise _PlumbingError(f"git is unavailable or failed to start: {exc}") from exc
+    return completed.stdout
+
+
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
     try:
         return subprocess.run(
@@ -89,7 +110,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
             capture_output=True,
         )
     except OSError as exc:
-        raise RuntimeError(f"git execution failed: {exc}") from exc
+        raise _PlumbingError(f"git is unavailable or failed to start: {exc}") from exc
 
 
 def _trusted_baseline_map(
@@ -98,8 +119,12 @@ def _trusted_baseline_map(
     """Frozen {path: (mode, object)} map from ``git ls-tree`` at ``baseline``.
 
     Returns None when the baseline history is unavailable; the caller must fail
-    clearly in that case — no automatic fetch, no silent skip.
+    clearly in that case — no automatic fetch, no silent skip. The ``baseline``
+    ref itself is validated before any Git invocation.
     """
+    if not _HEX40_RE.fullmatch(baseline):
+        failures.append(f"malformed baseline ref {baseline!r}; Git was not invoked")
+        return None
     probe = _git(root, "cat-file", "-e", baseline)
     if probe.returncode != 0:
         failures.append(
@@ -111,13 +136,20 @@ def _trusted_baseline_map(
     if result.returncode != 0:
         failures.append(f"git ls-tree of baseline {baseline} failed; cannot verify inventory")
         return None
+    try:
+        text = result.stdout.decode("utf-8", errors="strict")
+    except UnicodeError as exc:
+        raise _PlumbingError(f"git ls-tree output is not decodable: {exc}") from exc
     trusted: dict[str, tuple[str, str]] = {}
-    for entry in result.stdout.decode("utf-8", errors="strict").split("\0"):
-        if not entry:
-            continue
-        meta, path = entry.split("\t")
-        mode, _kind, obj = meta.split(" ")
-        trusted[path] = (mode, obj)
+    try:
+        for entry in text.split("\0"):
+            if not entry:
+                continue
+            meta, path = entry.split("\t")
+            mode, _kind, obj = meta.split(" ")
+            trusted[path] = (mode, obj)
+    except ValueError as exc:
+        raise _PlumbingError(f"git ls-tree output is truncated or malformed: {exc}") from exc
     return trusted
 
 
@@ -126,15 +158,13 @@ def _batch_object_types(root: Path, objects: set[str]) -> dict[str, str]:
     if not objects:
         return {}
     blob_input = "".join(f"{obj}\n" for obj in sorted(objects))
-    completed = subprocess.run(
-        ["git", "cat-file", "--batch-check"],
-        input=blob_input.encode("ascii"),
-        cwd=root,
-        check=False,
-        capture_output=True,
-    )
+    stdout = _run_git(root, ["cat-file", "--batch-check"], stdin=blob_input.encode("ascii"))
     types: dict[str, str] = {}
-    for line in completed.stdout.decode("ascii", errors="strict").splitlines():
+    try:
+        text = stdout.decode("ascii", errors="strict")
+    except UnicodeError as exc:
+        raise _PlumbingError(f"git batch-check output is not decodable: {exc}") from exc
+    for line in text.splitlines():
         parts = line.split(" ")
         if len(parts) >= 2 and parts[1] != "missing":
             types[parts[0]] = parts[1]
@@ -149,29 +179,30 @@ def _batch_blob_bytes(root: Path, objects: set[str]) -> dict[str, bytes]:
     """
     if not objects:
         return {}
-    blob_input = "".join(f"{obj}\n" for obj in sorted(objects))
-    completed = subprocess.run(
-        ["git", "cat-file", "--batch"],
-        input=blob_input.encode("ascii"),
-        cwd=root,
-        check=False,
-        capture_output=True,
-    )
-    raw = completed.stdout
+    ordered = sorted(objects)
+    blob_input = "".join(f"{obj}\n" for obj in ordered)
+    raw = _run_git(root, ["cat-file", "--batch"], stdin=blob_input.encode("ascii"))
     blobs: dict[str, bytes] = {}
     pos = 0
-    for _ in sorted(objects):
-        header_end = raw.index(b"\n", pos)
-        header = raw[pos:header_end].decode("ascii", errors="strict")
-        parts = header.split(" ")
-        if parts[-1] == "missing":
-            continue
-        if len(parts) < 3 or parts[1] != "blob":
-            break
-        size = int(parts[2])
-        start = header_end + 1
-        blobs[parts[0]] = raw[start : start + size]
-        pos = start + size + 1
+    try:
+        for _ in ordered:
+            header_end = raw.index(b"\n", pos)
+            header = raw[pos:header_end].decode("ascii", errors="strict")
+            parts = header.split(" ")
+            if parts[-1] == "missing":
+                continue
+            if len(parts) < 3 or parts[1] != "blob":
+                raise _PlumbingError(
+                    "git batch output is truncated or malformed; cannot verify content bindings"
+                )
+            size = int(parts[2])
+            start = header_end + 1
+            blobs[parts[0]] = raw[start : start + size]
+            pos = start + size + 1
+    except (ValueError, UnicodeError) as exc:
+        raise _PlumbingError(
+            "git batch output is truncated or undecodable; cannot verify content bindings"
+        ) from exc
     return blobs
 
 
@@ -189,15 +220,24 @@ def validate_disposition_manifest(
     failures: list[str] = []
 
     try:
-        text = manifest.read_text(encoding="utf-8")
+        raw_manifest = manifest.read_bytes()
     except OSError as exc:
         return [f"manifest unreadable: {manifest}: {exc}"]
-
-    reader = csv.reader(text.splitlines())
     try:
+        text = raw_manifest.decode("utf-8", errors="strict")
+    except UnicodeError:
+        return [
+            f"manifest is not UTF-8 decodable: {manifest}; "
+            "binary or malformed bytes refused without inspection"
+        ]
+
+    try:
+        reader = csv.reader(text.splitlines(), strict=True)
         header = next(reader)
     except StopIteration:
         return ["manifest is empty; expected header: " + ",".join(EXPECTED_COLUMNS)]
+    except csv.Error as exc:
+        return [f"manifest CSV parse error in header: {exc}; strict parsing, no repair"]
     if header != EXPECTED_COLUMNS:
         return [
             "manifest header must be exactly "
@@ -207,27 +247,46 @@ def validate_disposition_manifest(
 
     rows: list[dict[str, str]] = []
     seen_paths: dict[str, int] = {}
-    for lineno, fields in enumerate(reader, start=2):
-        if fields == []:
-            continue
-        if len(fields) != len(EXPECTED_COLUMNS):
-            failures.append(f"row {lineno}: malformed field count {len(fields)}; row refused")
-            continue
-        row = dict(zip(EXPECTED_COLUMNS, (field.strip() for field in fields), strict=True))
-        rows.append(row)
-        if row["path"] in seen_paths:
-            failures.append(f"duplicate manifest row for path: {row['path']}; rows refused")
-        else:
-            seen_paths[row["path"]] = lineno
+    try:
+        for lineno, fields in enumerate(reader, start=2):
+            if fields == []:
+                continue
+            if len(fields) != len(EXPECTED_COLUMNS):
+                failures.append(f"row {lineno}: malformed field count {len(fields)}; row refused")
+                continue
+            row = dict(zip(EXPECTED_COLUMNS, (field.strip() for field in fields), strict=True))
+            rows.append(row)
+            if row["path"] in seen_paths:
+                failures.append(f"duplicate manifest row for path: {row['path']}; rows refused")
+            else:
+                seen_paths[row["path"]] = lineno
+    except csv.Error as exc:
+        return failures + [f"manifest CSV parse error mid-file: {exc}; strict parsing, no repair"]
 
-    trusted = _trusted_baseline_map(root, failures, baseline)
+    # Baseline refs are validated before any Git invocation so malformed refs
+    # can never reach the plumbing layer; rejected rows are skipped below.
+    ref_rejected: set[int] = set()
+    for index, row in enumerate(rows):
+        if row["baselineCommit"] != baseline or not _HEX40_RE.fullmatch(row["baselineCommit"]):
+            failures.append(
+                f"row {seen_paths[row['path']]} ({row['path']}): wrong baseline ref "
+                f"{row['baselineCommit']!r}; row refused"
+            )
+            ref_rejected.add(index)
+
+    try:
+        trusted = _trusted_baseline_map(root, failures, baseline)
+    except _PlumbingError as exc:
+        return failures + [f"{exc}; no moves authorized"]
     if trusted is None:
         return failures
 
     # Content bindings are resolved only after path/mode/label pre-checks pass
     # for a row, so hostile metadata cannot trigger a content lookup.
     pending_hashes: dict[str, str] = {}
-    for row in rows:
+    for index, row in enumerate(rows):
+        if index in ref_rejected:
+            continue
         lineno = seen_paths[row["path"]]
         path, commit = row["path"], row["baselineCommit"]
         mode, obj = row["gitMode"], row["gitObject"]
@@ -328,8 +387,11 @@ def validate_disposition_manifest(
 
     # All structural/binding pre-checks passed: verify Git object types
     # (metadata only) and content digests of non-protected rows.
-    needed_types = {obj for _mode, obj in trusted.values()}
-    object_types = _batch_object_types(root, needed_types)
+    try:
+        needed_types = {obj for _mode, obj in trusted.values()}
+        object_types = _batch_object_types(root, needed_types)
+    except _PlumbingError as exc:
+        return failures + [f"{exc}; no moves authorized"]
     for row in rows:
         path = row["path"]
         trusted_mode, trusted_obj = trusted[path]
@@ -348,7 +410,10 @@ def validate_disposition_manifest(
     if failures:
         return failures
 
-    blobs = _batch_blob_bytes(root, set(pending_hashes.values()))
+    try:
+        blobs = _batch_blob_bytes(root, set(pending_hashes.values()))
+    except _PlumbingError as exc:
+        return failures + [f"{exc}; no moves authorized"]
     for row in rows:
         path = row["path"]
         if path not in pending_hashes:
