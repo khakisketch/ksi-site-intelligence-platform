@@ -557,3 +557,31 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   opt-in runtime/profile behavior, using the already-approved sequential execution method.
   No automatic P2 source changes, repeated probes, goal closure or inferred archive/UI/deployment
   authorization. Real customer data/rights/operations and broad type diagnostics remain open.
+
+### P2 written approval and execution start (2026-10-08)
+
+- Human approved the Core assembly plan at its committed SHA
+  `7b9c470b0651ba44e8e09e95c53d6a0d00e9eef8364f5fdfae69e5dda1f8974d` (main15ed73e) with the
+  already-selected sequential developer/reviewer/independent-runner method
+  (rendered decision “계획 승인·기존 방식 실행”). Approved scope/behavior is the plan as written:
+  neutral digest helpers; opt-in external-only platform graph/routes; omitted or managed
+  WorkOrder mode rejected422`EXTERNAL_RECONSTRUCTION_REQUIRED`; separate fail-closed production
+  entrypoint without Mission key/device prerequisites; generated HTTP/worker/restart evidence.
+  Excluded: physical archive/removal, UI/Console, deployment, credentials, new dependencies.
+  Broad mypy109errors/14unchangedfiles remains open and is not a P2 gate.
+- Execution workspace: current checkout/main, one writer (foundation workspace ruling extended;
+  no new worktree, per spec §8 “Local target remains current main”). SDD workspace
+  `.superpowers/sdd/2026-10-07-platform-core-assembly/` holds the preflight scan table and
+  per-task dispatch ledger; durable decisions stay in this ledger.
+- Task1 “Exact neutral serialization helpers” dispatched after plan approval; base15ed73e.
+  Tasks2–4 remain pending; no source change occurred before this approval entry.
+- Task1 complete: developer `ses_ee91b7661ffefnxY64lz9z3c35` committed `f7779e9`
+  (`refactor: share exact payload digest helpers outside flight`;8owned files). Byte-exact
+  relocation to`ksi_domain.signed_payload`; legacy`ksi_mission_contracts.signing` re-exports the
+  same function objects;4Core consumers swapped only after confirming real use; oracle/Unicode/
+  error-type vectors, fresh-process deny-hook and identity tests. Author evidence: RED10missing-
+  module→GREEN scopedmatrix343pass; Ruff/mypy scoped clean; no lock change. Task reviewer
+  `ses_ee8e9cc8affeVoEzHecYaKj1Ed`: specPASS/qualityApproved, noCritical/Important;2Minors
+  deferred (consumer docstring still cites legacy path; one `.encode()` default-arg inconsistency).
+  Full suite/static remain Task4; commit`15ed73e..f7779e9` is task-owned. Dispatch cache:
+  `.superpowers/sdd/2026-10-07-platform-core-assembly/`. Next Task2 base`f7779e9`.
