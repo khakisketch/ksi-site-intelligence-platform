@@ -131,10 +131,10 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - Plan ledger: docs/superpowers/plans/2026-09-07-external-artifact-validation.md
 ## Next slices
 - phase-3: Phase 3 (PRD §25)
-- phase-4: Phase 4 (PRD §25)
-- phase-5: Phase 5 (PRD §25)
-- track-a: Track A: DJI Hardware Capability Spike
-- track-b: Track B: Perception Vertical Slice (실기 입력 전환)
+- phase-4: Phase 4 (PRD §25) — acquisition-only pieces out-of-product per ADR-KSI-039; spatial/inspection reuse scope retained (not a completion claim)
+- phase-5: Phase 5 (PRD §25) — acquisition-only pieces out-of-product per ADR-KSI-039; industry reuse scope retained (not a completion claim)
+- track-a: Track A: DJI Hardware Capability Spike — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
+- track-b: Track B: Perception Vertical Slice (실기 입력 전환) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
 - autonomous-acquisition-closed-loop: Autonomous Acquisition Closed Loop — 실제 M4D 기준 종단 폐루프 1회 완주 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
 - aol-1-spatial-model-lifecycle: AOL-1 G1: 공간모델 생애주기 — 현장이 '공간모델 없음/있음/오래됨'을 서버가 판단한다
 - aol-1-capture-auto-ingest: AOL-1 G4: 촬영 → 서버 자동 ingest — 사람 손 사진 업로드 제거 (ADR-KSI-018 P1) — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
@@ -154,7 +154,7 @@ legacy /tmp/... evidence pointers below are transient and non-durable.
 - field-1-ground-control: FIELD-1 조사에 한국 좌표계 기준점(GCP) 부착 — 두 시점 비교의 전제 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
 - terrain-aware-planning-software: 지형 인지 정사 계획·다운로드·사후 증거 소프트웨어 흐름 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
 - terrain-aware-planning-field-acceptance: M4D·Pilot 실제 계획 운용과 관측 품질 수용 — **out-of-product** per ADR-KSI-039 (planning reference only; never a completion candidate)
-- pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성
+- pilot-default-external-reconstruction-release: 고객 원본 보관·외부 재구성 기반 KSI Pilot-default 첫 출시 완성 — open as KSI external derived-result registration, inspection and customer/ops acceptance only; capture/customer engine execution excluded per ADR-KSI-039
 ## Backlog
 - [2026-09-30] 승인된 플랫폼 방향의 데이터 제공·외부 재사용·후속 PC/Mesh/레이어·연동 패키지:
   SDP-01..10과 GAP-01..10은 [단일 계획 원장](plans/2026-09-30-spatial-data-platform-roadmap.md)에서 추적.

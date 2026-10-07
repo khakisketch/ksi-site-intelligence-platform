@@ -150,6 +150,8 @@
 
 ## 하드웨어·자율성 (현장 검증·장기 취득 roadmap)
 
+> 적용 범위(ADR-KSI-039): 아래 장비·자율성 서술은 역사적·transitional 기록이며 장기 제품 책임 밖이다. DJI Flight Controller의 저수준 안전 권위는 그대로 둔다.
+
 - 초기 field-validation equipment: RTK-equipped Matrice 4D + RC Plus 2 + Manifold 3.
   이는 API-first MVP의 자동 비행·로봇 실행 약속이 아니다.
 - RC Plus 2가 Pilot 2 이착륙·수동인계와 지상 인터넷 gateway를 담당한다
@@ -162,6 +164,8 @@
 - 반개방 공간은 사전 매핑된 안전회랑만
 
 ## 안전·완료
+
+> 적용 범위(ADR-KSI-039): 아래 안전·완료 수치는 역사적 취득 운용 의무의 기록이며 현재 플랫폼 수용 기준이 아니다.
 
 - 위험구역 100%, 필수자산·표면 100%, 일반 접근영역 95%
 - 서버통신 단절: 유효계약과 안전조건이 유지되면 계속
