@@ -597,3 +597,14 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   Ruling: accept pre-existing `EXTERNAL_OPERATIONS_ONLY`→409 store semantics (verified
   observation_work_orders.py:1108,:2232) and optional `processing_job_store=None` mount argument
   (sites.py:1202-1207). Next Task3 base`1bc76b5`.
+- Task3 complete: developer `ses_ee8d307d5ffeVTYbG7BBmaVrFF` committed `6b6fc08`
+  (`feat: add fail-closed platform Core production entrypoint`;8owned files: new
+  foundation/config_values,composition/runtime_config,composition/platform_production,23test file;
+  re-export-only edits to assembly/production_config; additive inventory/README). Step-limit stop
+  recovered by bounded continuation; formatting ruling applied (new files formatted; pre-existing
+  legacy format-uncleanliness untouched). Author evidence: REDmissing-module→GREEN23; matrix253+
+  profile49pass; Ruff/scopedmypy clean; boundariesOK186records. Task reviewer
+  `ses_ee8c5473effetd7Kt9QEjlznEv`: specPASS/qualityApproved, noCritical/Important/Minor;
+  structural same-object re-exports, validation-before-side-effects order, no-Mission/device
+  requirement, non-vacuous deny-boot test and complete journal close-on-failure all verified
+  in-diff. `production.py`/Docker/Compose confirmed absent from the diff. Next Task4 base`6b6fc08`.
