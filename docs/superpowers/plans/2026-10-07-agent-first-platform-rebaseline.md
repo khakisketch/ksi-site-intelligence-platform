@@ -1,7 +1,7 @@
 # Agent-first platform rebaseline — discovery ledger
 
 Date: 2026-10-07
-Status: written spec approved; foundation implementation plan prepared for Human review; execution NOT approved
+Status: foundation approved; Task1 technically verified; Task2 inventory tooling next
 Base / proposed local target: main b27e5d94b04d11e155e41d8df94c70519808a976
 Workspace: current checkout, one writer; other worktrees retained unchanged.
 Prior unmet goal remains closed; Human-approved new goal b13320f7 is active.
@@ -32,7 +32,7 @@ Prior unmet goal remains closed; Human-approved new goal b13320f7 is active.
 - [x] Write/self-review focused spec with exact scope/supersession; local delivery recorded in checkpoint.
 - [x] Human reviews written spec before implementation planning.
 - [x] Use writing-plans; self-review and independently verify the first foundation plan/inventory.
-- [ ] Human reviews written foundation plan and selects execution method.
+- [x] Human reviews written foundation plan and selects execution method.
 - [ ] Execute approved stages and independently verify integrated outputs.
 
 Visual companion is not currently needed: this is a responsibility decision, not UI.
@@ -145,3 +145,91 @@ is open, not cleared by a rewrite. No code/schema/config/dependency change, remo
   same temporary evidence directory. Prior receipt is retained with this explicit correction.
 - This correction changes neither approved spec nor foundation plan, and authorizes no implementation.
   Written-plan approval and method selection remain the next Human decision; no product completion.
+
+## 2026-10-07 foundation execution approval (supersedes pending gate above)
+
+- Rendered Human decision: “승인·분리 실행 (Recommended)” for the foundation plan at738b4a9.
+  Plan SHA256`fdfe035d5109aa86d26c8fc44c58d210f4c5e11c46ca4d0d9fe92a50d5c4794b`.
+  Sequential developer per task, fresh task reviewer, Primary integration/Git, independent final
+  test-runner. Scope remains Tasks1–4 only; no physical archive/removal or visual implementation.
+- Workspace/base/local target: existing current checkout/main738b4a950e6b202a3a65982cea570e3a2ba4c8b7;
+  one writer at a time. Other worktrees untouched. Native goal b13320f7 remains active/full-scope.
+- Applicable stages: subagent-driven-development, TDD, using-git-worktrees safety checks,
+  verification-before-completion; independent reviewer/test-runner. No new model choice or installation.
+- Ruling: use the approved current checkout, not a new worktree — adopted single-writer workspace
+  policy and written spec explicitly choose current main; no concurrent implementation or checkout
+  protection need. If wrong, task-owned local commits can be reversed through a reviewed inverse change.
+
+### Preflight task/interface scan
+
+| Tasks | Producer/consumer or internal check | Finding / handling |
+| --- | --- | --- |
+| 1 | Authority routing tests vs ADR039/docs; unchanged historical evidence vs new responsibility | Coherent; distinguish historical applicability from current runtime removal |
+| 2 | Frozen CSV vs validator and hostile fixtures | Coherent; baseline is72c526b even after new commits; validate Git blobs, not changing checkout bytes |
+| 3 | Neutral types/epoch helper vs exact aliases and wire/replay tests | Coherent; new module ownership must enter existing module inventory; old dependencies remain until successor |
+| 4 | Task1–3 integrated evidence vs whole-cleanup acceptance | Foundation-only technical evidence; no RB-03..09/customer closure claim |
+| 1 → 2 | Current responsibility vs candidate group explanations | No blanket archive authority; frozen inventory is an input, not a move list |
+| 1 → 3 | Approved platform boundary vs shared primitives in historical flight packages | Preserve class/module identity, serialized fields and exact epoch bytes |
+| 2 → 3 | Baseline hashes vs legitimate extraction edits | No stale-working-tree comparison; future move manifest needs a fresh revision/hash |
+| 1/2/3 → 4 | Durable task evidence, current revision and affected tests/builds | Shared ledger/checkpoint only Primary writes; final independent checks target integrated state |
+
+### Implementation contract before source changes
+
+Requirement IDs: RB-01 and inventory part of RB-02; preserve SDP-REQ-01/02/04/06 and INV-020/024/040/050/051/053/054/055/060/061.
+Owner module: product/governance docs; tools/tests; event-contracts/geo-core/Core observations.
+Acceptance criteria: approved foundation plan Tasks1–4; target responsibility aligned, baseline inventory fail-closed, neutral primitives exact and independently verified.
+Contracts affected: no new public wire contract; unchanged SiteFrame/AOI serialization and ObservationEpoch identity; invariant applicability annotations only.
+Reference assets: current KSI-owned source/tests and frozen CSV; reference submodules remain read-only and untraversed.
+Adoption decisions: RETAIN existing verified platform behavior; EXTRACT shared primitives; label acquisition historical/out-of-product without moving sources.
+Files to change: exact Task1/2/3 file lists in approved foundation plan; Primary-only ledger/checkpoint/cache.
+Tests: scoped red/green + normalization gates, geometry/Site/external epoch/replay, static/lock/package checks; independent integrated final suite.
+HIL or real-device assumptions: none; no device/vendor/field support claim.
+License/data implications: existing owned code only, no new dependency versions or customer samples; protect private state and original rights.
+Rollback: reviewed inverse of task-owned commits only; no journal/schema migration, reset, broad cleanup or source moves.
+
+### Execution progress
+
+- Task1: started at738b4a9. Baseline `.venv/bin/python -m pytest tests/contract/test_repository_normalization.py -q`:17passed, exit0.
+- Tasks2–4: pending; plan approval remains valid without per-task confirmation.
+
+### Task1 review/fix round1
+
+- Developer `ses_eea043ab5ffe8W2QLJVJrLesFn`, commit37efe3b:18docs/test files; author RED4failed,
+  GREEN4passed; boundary+normalization21passed, validatorPASS, Ruff clean; phase2 journey1passed.
+- Reviewer `ses_ee9fbc1d8ffeRi2mFB6qZ6qAM4`: routing/preservation safe; fix required for16/18
+  excluded IDs and checking historical Milestones rather than each current Next-slice marker.
+  Current report is not integrated verification. Primary records commands here; final independent
+  runner will check the actual revised source. Author red receipts need retention in scratch evidence.
+- Primary confirmed additional load-bearing gaps in actual authority: Constitution still defines
+  only external reconstruction data; PRD§23.1 still says autonomous patrol is this product's duty,
+  §3/§25/§26 leave flight goals/long-term completion active. Correct within approved RB-01/Task1 scope.
+- Primary confirmed shallow-CI risk: checkout uses default fetch depth while new tests call
+  `git show 738b4a9`. Freeze baseline section/status digests in the test instead; no history/network
+  prerequisite and no permissive skip. This preserves baseline comparison without copying old data.
+- Ruling: keep external reconstruction release open as KSI derived-result ingress/inspection/customer
+  acceptance only, not customer reconstruction execution — ADR036/approved spec preserve these gates.
+  Acquisition-only TrackA/B must be explicitly out-of-product in Next slices despite BLOCKED history;
+  blocked alone does not remove a future product obligation. If wrong, only task-owned applicability
+  notes/tests need inverse correction; historical status/acceptance and runtime remain untouched.
+
+### Task1 technical closure / Task2 handoff
+
+- Fix commit085144f followed scoped re-review by `ses_ee9fbc1d8ffeRi2mFB6qZ6qAM4`: all important
+  findings addressed, no new Critical/Important issues. Native Git-history dependency removed from
+  tests;20excluded future items checked per Next-slice line; Physical Site definition shared by
+  Constitution/PRD; current acquisition-only responsibilities/completion marked historical.
+- Independent test-runner `ses_ee9ef4120ffeFcMTR2E9994ctv` at085144fdab3c813daa201bff64ba2e140696fc2f:
+  `.venv/bin/python -m pytest tests/contract/test_physical_site_product_boundary.py tests/contract/test_repository_normalization.py tests/contract/test_phase2_unified_journey.py -q`
+  →46passed/0failed/0skipped/0warnings. Normalization validatorPASS, changed-test RuffPASS,
+  `git diff --check`exit0, no introduced broken links. Independent baseline738b4a9 check confirms
+  original milestone/current-slice digests and all34registry status/state entries match.
+- Required original spec/plan bytes unchanged. No runtime/schema/lock/UI edits or path moves.
+  Receipt and exact files/commands: `/tmp/opencode/physical-site-foundation-task1-verify/receipt.json`.
+- Task1: complete technically (commits738b4a9..085144f, reviewed and independently checked).
+  Whole RB-01..09 cleanup, customer acceptance and external delivery remain open; final Task4
+  still checks integrated foundation revision. No claim that archive/assembly/Console is complete.
+- Nonblocking review observations retained for final review: author fix1 witness labels base37efe3b,
+  resolved by actual independent head085144f receipt; END-OF-PRD fallback over-binds the preserved
+  governance-section digest (may be narrowed to next top-level section if future authorized PRD edits).
+- Next Task2 owns only frozen-inventory validator/tests/companion report. It consumes ADR039 and
+  unchanged baseline72c526b CSV; neither current authority nor Task1 tests are its edit targets.
