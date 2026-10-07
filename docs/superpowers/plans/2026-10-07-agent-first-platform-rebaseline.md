@@ -670,6 +670,12 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   pre-existing;MinorsM1–M4 + timing-test hardening in backlog; P4 Console; real customer/operational
   acceptance. P3 written plan drafted (SHA545d04a8); independent verification running; Human
   written review remains the P3 execution gate.
+- P3 verifier scratch incident (2026-10-08 02:47): the verifier created
+  `/tmp/opencode/physical-site-p3-plan-verify/` mode0600 with no traverse bit (the prompt's "0600"
+  instruction was ambiguous for a directory); Primary chmod`700`, verifier remained alive and
+  active. Any pre-repair write attempts would have failed with EACCES; its receipt governs its
+  actual results. Verifier also caught a grounding miscount (Core import files are11, not12 as the
+  draft/notes/ledger say) — corrections applied after its completion, before Human review.
 
 ### P3 planning discovery (2026-10-08)
 
