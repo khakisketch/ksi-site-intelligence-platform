@@ -1271,3 +1271,69 @@ does not claim universal absence of transport failures or reconstruct the lost o
 No generic V1 history, quantitative values, Analysis MCP authority, visual UI or product slice
 changed. No external delivery. Next: Task6 whole-change review and independent full/static/
 offline-lock/package-closure checks; unavailable build backend stays an explicit readiness gate.
+
+### Task6 whole review and first full-suite failure
+
+Task5 committed fc14059205ac30812814d09f654c260678d35767, clean main. Whole-change reviewer
+ses_eeb00f05affe0sENsboc2LMPXZ audited d0aac56..fc14059. It initially cited the superseded
+52-error log; corrected report uses current typed872 receipt, no waiver. Quota fallback clarity
+was already addressed; no open Critical/Important. Deferred minors: safe extra mixed-group
+stderr code and optional negative-test cases. Spec acceptance10 remained explicitly unverified.
+
+Independent runner ses_eee8899d7ffeX0iTUza6tSBlem executed task-6-verify-final.py once:
+**scoped 1349 passed, 54 warnings**; then exact bare `.venv/bin/python -m pytest -q`
+with child umask022: **6 failed, 9022 passed, 122 skipped, 102 warnings** in1039.34s.
+Full original stdout/argv/hashes preserved in task-6-independent-final receipt/logs; source50
+hashes and HEAD stable. Statics/lock/source-import/backend probes not reached. Runner's first
+summary mislabeled the full-suite counts as scoped; actual command logs establish both above.
+
+Root cause: tools/check_core_module_boundaries.py:273–286 requires an inventory record for every
+Core source. The five new delivery modules ai_egress/asset_api/asset_discovery/metadata_audit/
+metadata_response were omitted from docs/audit/CORE_R1_MODULE_MIGRATION.json. Six existing
+migration negative controls fail because this incomplete baseline masks their intended checks.
+Ruling: add exactly those five canonical delivery T3_NEW_MODULE records, following existing
+jobs/credential/api entries, with no checker/test weakening, exclusions, module moves, runtime
+or product authority change. Existing full-suite failures are genuine RED; scoped migration
+checks must pass after the metadata repair. Run remaining final statics before another long
+full run to surface fast faults early; preserve original failed receipt, no retry-until-green.
+
+### Task6 current local-software verification and unresolved distribution gate
+
+Developer ses_eeae49c82ffe157oxYHPhuOlKZ added exactly five inventory records;
+all 174 existing records/metadata retained. Checker179 records and 38 migration tests passed.
+Scoped final review ses_eeb00f05affe0sENsboc2LMPXZ closed that omission without checker/test
+exclusions or runtime changes. Final source snapshot: fc14059 plus inventory correction,
+51 required files, original 50-path runtime unchanged apart from durable documentation.
+
+Independent runner ses_eee8899d7ffeX0iTUza6tSBlem, exact commands:
+1. `.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-6-verify-final.py --checks-only`
+   — exit0; Ruff/format39, scoped mypy35 production/test targets, diff0,
+   `uv lock --check --offline`162 workspace packages, exact144 third-party entries unchanged,
+   manifest/AST console closure and uninstalled source-console import passed.
+2. `.venv/bin/python .superpowers/sdd/2026-10-06-spatial-data-mcp-v1/task-6-verify-final.py --full-only`
+   — exit0; actual bare `.venv/bin/python -m pytest -q`, child umask022:
+   **9028 passed, 122 skipped, 102 warnings, 0 failures**,1046.70s.
+   Reused scoped1349-pass/54-warning receipt only after its log digest and unchanged non-doc
+   source were verified; no redundant scoped run for an inventory-only correction.
+Both checked the same51 frozen hashes and fc14059 before/after; parent receipts/logs0600.
+Static receipt SHA256 `bf3211433f5d028a60574d5ef01c2a0df3feb099420ffea0bfa47ba5ff012c61`;
+full receipt SHA256 `c21c5681995c73d9aa142aa1e71d82be9b70f1287bff25689399161c54326468`.
+Original full failure, scoped result and fast/final full stdout remain in owned scratch.
+All skipped tests remain unverified; passing software tests are not field/customer/host proof.
+
+Backend probes verified Hatchling unavailable in BOTH project and system Python. Manifest
+and source import passed, but wheel/sdist build and SDK smoke from exact installed artifact
+are UNRUN. Task6 package obligation/spec acceptance10 distribution portion stays OPEN; do not
+mark the entire six-stage plan complete. No installation/sync/private account lookup attempted.
+Recommendation for the material environment gate: approve a task-owned isolated build/test
+environment under /tmp/opencode, only build-backend preparation and local artifact install/smoke,
+without touching shared .venv, production grants/config, external publication or deployment.
+Approval is pending; this does not authorize the preparation itself.
+
+Current usable scope: source-tree dedicated local stdio MCP and finite external HTTP workflow
+with generated DSM/RGB/RGBA parity, real current rights, replay and next-observation semantics.
+No package distribution, installed AI host, customer export/license/accuracy/cost/containment,
+operational recovery, real customer/field acceptance, product EXT-VAL close or full goal completion.
+Keep deferred safe-stderr/optional negative cases as backlog, not silently-open acceptance defects.
+Next: commit the verified inventory/docs locally, then return the bounded build-environment
+approval gate while retaining the active long-term goal and all remaining customer/operations gates.

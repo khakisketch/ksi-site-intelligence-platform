@@ -74,6 +74,22 @@ imported test helpers); all passed. Durable revision/hash and verification
 records are in `docs/superpowers/plans/2026-10-06-spatial-data-product-continuation.md`.
 These counts are not a full-repository, package-build, or host acceptance claim.
 
+Final independent whole-change verification at base `fc14059` plus the five-entry
+Core inventory correction: scoped **1,349 passed** (54 warnings), bare full
+`.venv/bin/python -m pytest -q` **9,028 passed, 122 skipped, 102 warnings**,
+no failures. The full command used child-process umask `022`; private verification
+logs used `077`. Changed Python Ruff/format checked 39 files, scoped mypy checked
+35 production/test targets, and offline lock verification preserved all 144
+third-party entries. Manifest/console source closure and source import passed.
+Skipped tests are unverified, not acceptance evidence. See the durable ledger
+for exact frozen hashes, commands, receipts and the initially failing full run.
+
+**Package distribution is not verified:** neither the project nor system Python
+has Hatchling. Wheel/sdist builds and SDK smoke from an installed built artifact
+were not run. No backend installation, dependency sync, host configuration,
+publication or deployment was performed. Source-tree execution evidence must not
+be presented as package-installation, host/client or customer acceptance.
+
 What each proves:
 
 - Parity (`test_sdk_discovery_prepare_receipt_http_consumer_parity[dsm|rgb|rgba]`):
