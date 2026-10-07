@@ -608,3 +608,15 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   structural same-object re-exports, validation-before-side-effects order, no-Mission/device
   requirement, non-vacuous deny-boot test and complete journal close-on-failure all verified
   in-diff. `production.py`/Docker/Compose confirmed absent from the diff. Next Task4 base`6b6fc08`.
+- Task4 complete: developer `ses_ee8c3f712ffeJtC6M2nDy5R0AX` committed `26b3c5d`
+  (`test: add platform Core generated-flow and replay coverage`;3files:+1947). Two harness
+  step-limit stops recovered by bounded continuations; uncommitted work preserved, no reset.
+  Author evidence: platform-factory integration7/7 (HTTP external order→two sealed V2 DSM
+  revisions→real byte inspection→analysis worker transport→region receipt→same-area follow-up;
+  negatives wrong-profile422/stale-digest422/changed-bytes422; extra-journal trace; route
+  inventory without flight/managed mutation); replay2/2 (restart history under exact grants;
+  corrupt/unknown journal fail-closed); scoped267passed; Ruff clean; no source changes.
+- Final whole-P2 review `ses_ee8ac5871ffetB3IcpErhDzXHp` and independent closure runner
+  `ses_ee8ac5874ffeI1uEwO3U0xUveU` (full configured suite/static/gates/offline artifact closure;
+  scratch`/tmp/opencode/physical-site-p2-final-verify/`) run in parallel. Milestone closure awaits
+  their receipts; no product acceptance/customer/runtime-independence inference from task tests.
