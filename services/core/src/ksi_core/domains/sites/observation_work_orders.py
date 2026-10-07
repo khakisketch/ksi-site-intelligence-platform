@@ -2248,7 +2248,15 @@ def build_observation_work_order_router(
     store: ObservationWorkOrderStore,
     *,
     on_approved: Callable[[ObservationWorkOrder, str, datetime], None] | None = None,
+    external_only: bool = False,
 ) -> APIRouter:
+    """관측 작업 라우터를 만든다.
+
+    ``external_only`` 가 ``True`` 이면 외부 전용 프로파일용으로 관리형 변이
+    네 경로(일정 생성, 일반 승인, 재관측 초안 생성·승인)를 장착하지 않는다 —
+    조회·운영·과거 이력은 그대로 둔다. 생성 요청의 실행 모드 검사는
+    ``create_work_order`` 본문이 맡는다(범위 검사 뒤에 422).
+    """
     router = APIRouter(tags=["observation-work-orders"])
 
     def site_granted(principal: Principal, site_id: str) -> bool:
@@ -2283,31 +2291,33 @@ def build_observation_work_order_router(
             and work_areas_granted(principal, order.work_area_ids)
         )
 
-    @router.post(
-        "/v1/sites/{site_id}/observation-schedules",
-        response_model=ObservationSchedule,
-        status_code=201,
-    )
-    def create_schedule(
-        site_id: str,
-        request: ScheduleCreateRequest,
-        principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
-    ) -> ObservationSchedule:
-        try:
-            require_resource_scope(principal, site_id, request.work_area_ids)
-            return store.create_schedule(
-                organization_id=principal.organization_id,
-                site_id=site_id,
-                name=request.name,
-                work_area_ids=request.work_area_ids,
-                interval_days=request.interval_days,
-                timezone=request.timezone,
-                approved_policy_version=request.approved_policy_version,
-                actor=principal.principal_id,
-                now=datetime.now(UTC),
-            )
-        except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
-            raise _http_error(exc) from exc
+    if not external_only:
+
+        @router.post(
+            "/v1/sites/{site_id}/observation-schedules",
+            response_model=ObservationSchedule,
+            status_code=201,
+        )
+        def create_schedule(
+            site_id: str,
+            request: ScheduleCreateRequest,
+            principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
+        ) -> ObservationSchedule:
+            try:
+                require_resource_scope(principal, site_id, request.work_area_ids)
+                return store.create_schedule(
+                    organization_id=principal.organization_id,
+                    site_id=site_id,
+                    name=request.name,
+                    work_area_ids=request.work_area_ids,
+                    interval_days=request.interval_days,
+                    timezone=request.timezone,
+                    approved_policy_version=request.approved_policy_version,
+                    actor=principal.principal_id,
+                    now=datetime.now(UTC),
+                )
+            except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
+                raise _http_error(exc) from exc
 
     @router.get("/v1/sites/{site_id}/observation-schedules", response_model=ScheduleListResponse)
     def list_schedules(
@@ -2342,6 +2352,12 @@ def build_observation_work_order_router(
     ) -> ObservationWorkOrder:
         try:
             require_resource_scope(principal, site_id, request.work_area_ids)
+            if (
+                external_only
+                and request.execution_mode
+                is not ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION
+            ):
+                raise HTTPException(status_code=422, detail="EXTERNAL_RECONSTRUCTION_REQUIRED")
             if (
                 request.schedule_id is not None
                 and request.execution_mode
@@ -2585,65 +2601,70 @@ def build_observation_work_order_router(
         except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
             raise _http_error(exc) from exc
 
-    @router.post(
-        "/v1/observation-work-orders/{work_order_id}/approve", response_model=ObservationWorkOrder
-    )
-    def approve_work_order(
-        work_order_id: str,
-        request: VersionedApprovalRequest,
-        principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
-    ) -> ObservationWorkOrder:
-        now = datetime.now(UTC)
-        try:
-            require_work_order_scope(principal, work_order_id)
-            approved = store.approve(
-                work_order_id,
-                organization_id=principal.organization_id,
-                expected_version=request.expected_version,
-                actor=principal.principal_id,
-                now=now,
-            )
-        except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
-            raise _http_error(exc) from exc
-        if on_approved is not None:
-            try:
-                on_approved(approved, principal.principal_id, now)
-            except Exception:
-                # The approval was already durably recorded. Coordinator recovery
-                # happens on acquisition-progress GET; never ask a person to
-                # repeat a completed approval because a secondary journal failed.
-                logger.exception(
-                    "WorkOrder approval succeeded but AcquisitionRun creation failed: %s",
-                    approved.work_order_id,
-                )
-        return approved
+    if not external_only:
 
-    @router.post(
-        "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
-        response_model=ReobservationDraft,
-        status_code=201,
-    )
-    def create_reobservation_draft(
-        work_order_id: str,
-        request: ReobservationDraftCreateRequest,
-        principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
-    ) -> ReobservationDraft:
-        try:
-            require_work_order_scope(principal, work_order_id)
-            return store.create_reobservation_draft(
-                work_order_id,
-                organization_id=principal.organization_id,
-                reason_refs=request.reason_refs,
-                target_region_refs=request.target_region_refs,
-                proposed_effort=request.proposed_effort,
-                planner_version=request.planner_version,
-                policy_version=request.policy_version,
-                expires_at=request.expires_at,
-                actor=principal.principal_id,
-                now=datetime.now(UTC),
-            )
-        except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
-            raise _http_error(exc) from exc
+        @router.post(
+            "/v1/observation-work-orders/{work_order_id}/approve",
+            response_model=ObservationWorkOrder,
+        )
+        def approve_work_order(
+            work_order_id: str,
+            request: VersionedApprovalRequest,
+            principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
+        ) -> ObservationWorkOrder:
+            now = datetime.now(UTC)
+            try:
+                require_work_order_scope(principal, work_order_id)
+                approved = store.approve(
+                    work_order_id,
+                    organization_id=principal.organization_id,
+                    expected_version=request.expected_version,
+                    actor=principal.principal_id,
+                    now=now,
+                )
+            except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
+                raise _http_error(exc) from exc
+            if on_approved is not None:
+                try:
+                    on_approved(approved, principal.principal_id, now)
+                except Exception:
+                    # The approval was already durably recorded. Coordinator recovery
+                    # happens on acquisition-progress GET; never ask a person to
+                    # repeat a completed approval because a secondary journal failed.
+                    logger.exception(
+                        "WorkOrder approval succeeded but AcquisitionRun creation failed: %s",
+                        approved.work_order_id,
+                    )
+            return approved
+
+    if not external_only:
+
+        @router.post(
+            "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
+            response_model=ReobservationDraft,
+            status_code=201,
+        )
+        def create_reobservation_draft(
+            work_order_id: str,
+            request: ReobservationDraftCreateRequest,
+            principal: Principal = Depends(require_permission(Permission.WORK_ORDERS_WRITE)),  # noqa: B008,E501
+        ) -> ReobservationDraft:
+            try:
+                require_work_order_scope(principal, work_order_id)
+                return store.create_reobservation_draft(
+                    work_order_id,
+                    organization_id=principal.organization_id,
+                    reason_refs=request.reason_refs,
+                    target_region_refs=request.target_region_refs,
+                    proposed_effort=request.proposed_effort,
+                    planner_version=request.planner_version,
+                    policy_version=request.policy_version,
+                    expires_at=request.expires_at,
+                    actor=principal.principal_id,
+                    now=datetime.now(UTC),
+                )
+            except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
+                raise _http_error(exc) from exc
 
     @router.get(
         "/v1/observation-work-orders/{work_order_id}/reobservation-drafts",
@@ -2663,41 +2684,45 @@ def build_observation_work_order_router(
         except LookupError as exc:
             raise _http_error(exc) from exc
 
-    @router.post("/v1/reobservation-drafts/{draft_id}/approve", response_model=ReobservationDraft)
-    def approve_reobservation(
-        draft_id: str,
-        request: VersionedApprovalRequest,
-        principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
-    ) -> ReobservationDraft:
-        now = datetime.now(UTC)
-        try:
-            draft = store.get_reobservation_draft(
-                draft_id, organization_id=principal.organization_id
-            )
-            if draft is None:
-                raise HTTPException(status_code=404, detail="재관측 초안을 찾을 수 없다")
-            require_work_order_scope(principal, draft.work_order_id)
-            approved_draft = store.approve_reobservation(
-                draft_id,
-                organization_id=principal.organization_id,
-                expected_version=request.expected_version,
-                actor=principal.principal_id,
-                now=now,
-            )
-        except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
-            raise _http_error(exc) from exc
-        reopened = store.get(
-            approved_draft.work_order_id, organization_id=principal.organization_id
+    if not external_only:
+
+        @router.post(
+            "/v1/reobservation-drafts/{draft_id}/approve", response_model=ReobservationDraft
         )
-        if on_approved is not None and reopened is not None:
+        def approve_reobservation(
+            draft_id: str,
+            request: VersionedApprovalRequest,
+            principal: Principal = Depends(require_permission(Permission.REOBSERVATION_APPROVE)),  # noqa: B008,E501
+        ) -> ReobservationDraft:
+            now = datetime.now(UTC)
             try:
-                on_approved(reopened, principal.principal_id, now)
-            except Exception:
-                logger.exception(
-                    "Reobservation approval succeeded but AcquisitionRun creation failed: %s",
-                    reopened.work_order_id,
+                draft = store.get_reobservation_draft(
+                    draft_id, organization_id=principal.organization_id
                 )
-        return approved_draft
+                if draft is None:
+                    raise HTTPException(status_code=404, detail="재관측 초안을 찾을 수 없다")
+                require_work_order_scope(principal, draft.work_order_id)
+                approved_draft = store.approve_reobservation(
+                    draft_id,
+                    organization_id=principal.organization_id,
+                    expected_version=request.expected_version,
+                    actor=principal.principal_id,
+                    now=now,
+                )
+            except (JournalSealedError, LookupError, RuntimeError, ValueError) as exc:
+                raise _http_error(exc) from exc
+            reopened = store.get(
+                approved_draft.work_order_id, organization_id=principal.organization_id
+            )
+            if on_approved is not None and reopened is not None:
+                try:
+                    on_approved(reopened, principal.principal_id, now)
+                except Exception:
+                    logger.exception(
+                        "Reobservation approval succeeded but AcquisitionRun creation failed: %s",
+                        reopened.work_order_id,
+                    )
+            return approved_draft
 
     return router
 

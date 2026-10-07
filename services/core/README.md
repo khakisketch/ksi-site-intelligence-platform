@@ -49,6 +49,14 @@ ordered validation and route groups, domain graph assembly, runtime surfaces and
 configuration. Root app, common assembly and production entrypoints remain exact aliases;
 API, JSONL and authority semantics are unchanged, including lazy workspace loading.
 
+Alongside the retained managed assembly, `ksi_core.composition.{platform_graph,platform_app,
+platform_assembly}` provides the explicit external-only profile: only Site/WorkArea/roster/
+WorkOrder stores plus the existing external graphs, mounted through `assemble_platform_app`
+with no Mission key, device, acquisition, flight or managed-processing state. The existing
+observation router gains only the opt-in `external_only` flag, which omits the four managed
+mutation routes and rejects omitted/managed execution modes with `422
+EXTERNAL_RECONSTRUCTION_REQUIRED`; legacy defaults are unchanged.
+
 Core는 장비별 SDK 코드를 소유하지 않는다. 장비 배치·연결 정책은
 `ksi_core/acquisition/`의 profile/readiness store와 `coordination` 원장·API로
 분리하고, 실제 연결 선택과
