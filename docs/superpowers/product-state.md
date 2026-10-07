@@ -1,5 +1,5 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-09-30 (Human resumed software development; slice/evidence unchanged)
+Updated: 2026-10-07 (bounded rebaseline linkage only; slice/acceptance unchanged)
 ## Goal
 외부 재구성 산출물을 등록·검사·구조화하고 공간데이터와 재현 가능한 분석을 API·MCP로
 제공하여 외부 에이전트·산업용 소프트웨어가 재사용하는 Site Intelligence 기반(ADR-KSI-038).
@@ -14,6 +14,12 @@ milestone/next-slice 목록의 상태·순서는 변경하지 않았다. 이 개
 비행·자율 취득·전술 인지/제어·고객 production 재구성은 장기 제품 책임 밖이며 관련 출처는
 유지되는 transitional implementation이다. 아래 Next slices의 취득 전용 항목을 out-of-product로
 표기한다. 이 Goal/계획 연결은 slice close·수용·milestone 변경이 아니다.
+2026-10-07 Human-assigned bounded cleanup work is recorded in the
+[rebaseline ledger](plans/2026-10-07-agent-first-platform-rebaseline.md): authority/inventory/neutral
+primitives have local foundation evidence atf12857c (full Python9093passed; broad type gate still
+unpassed). The [Core assembly successor](plans/2026-10-07-platform-core-assembly.md) is a written
+proposal awaiting review, not runtime/archive/UI implementation authority. This link does not close,
+reprioritize or replace the Current slice, EXT-VAL/customer acceptance or historical milestones below.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

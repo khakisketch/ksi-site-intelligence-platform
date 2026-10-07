@@ -346,3 +346,24 @@ Paths: `packages/equipment-intelligence/pyproject.toml`,
   both Python files.
 - Frozen CSV SHA256 unchanged:
   `89a9baf3b1f1a593bf65af02810595cea0f677a740ceb0fdf9f2e789071639e3`.
+
+## 5. Foundation source checkpoint (2026-10-07)
+
+The foundation implementation is recorded at `f12857c7f178967017458057d4fd59538ff091bd`.
+Its neutral owners are `ksi_event_contracts.site_frame`, `ksi_geo_core.aoi` and
+`ksi_core.domains.observations.epoch_identity`; legacy imports remain aliases.
+This is an extraction checkpoint, not acquisition archive or runtime independence.
+
+The CSV remains the immutable **72c526b baseline** (2,378 entries, 194 candidates,
+82 protected pointers), not a hash snapshot of the new checkout. Independent real
+CLI binding and the 9,093-pass configured Python run are recorded in the
+[active rebaseline ledger](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
+The full type-check gate remains non-zero; the 12 changed Python files pass the
+scoped type check. Offline package artifacts preserve source/wire contracts,
+but Core still declares acquisition/managed dependencies.
+
+The [proposed Core assembly plan](../superpowers/plans/2026-10-07-platform-core-assembly.md)
+requires Human written-plan review before execution. Worker/history/build/archive
+and Console plans remain dependent successors. Unresolved consumer/move conditions
+above still apply; an actionable move needs fresh source hashes and consumer/
+replay/build/CI closure. No path has been moved or removed.
