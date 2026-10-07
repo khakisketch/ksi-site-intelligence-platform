@@ -43,6 +43,12 @@ API-first 토공 분석·통합 작업은 [ADR-KSI-037](architecture/ADR-KSI-037
 장기 작업과 보완 결정을 연결한다. 현재 지시는 문서·계획 반영만이며 개발은 보류다.
 이번 명시적 방향 개정에 따른 product-state Goal/계획 연결은 slice close나 완료 판정이 아니다.
 
+2026-10-07의 [ADR-KSI-039](architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)은
+장기 제품 책임 경계다: 비행·자율 취득·전술 인지/제어·고객 production 재구성은 Site Intelligence의
+장기 책임 밖이며, 취득·Edge 출처는 검증된 후속 이동 전까지 유지되는 transitional implementation이다.
+Constitution·Decision Ledger·PRD와 ADR-KSI-037 D6/ADR-KSI-038 취득 조항의 책임 라우팅은 039가
+supersede하고, 수치·원본·불변식·EXT-VAL·역사적 milestone 증거는 바꾸지 않는다.
+
 `KSI Safety`는 별도 제품 구상이다. 드론 밖 센서까지 포함하는 다중센서 실시간 안전
 운영 제품이며, 이 저장소의 Site Intelligence의 안전순찰 Mission을 흡수하거나 대체하지
 않는다. 겹치는 현장 관측이 있다는 이유만으로 제품 책임이나 코드 모듈을 합치지 않는다.

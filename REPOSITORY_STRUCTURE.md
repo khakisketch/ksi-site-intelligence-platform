@@ -68,8 +68,10 @@ Core: signed Mission Contract and workflow; never low-level flight control
 ```
 
 ADR-KSI-037 places the API-first Site/WorkArea/Epoch/result/evidence record at the product core.
-The displayed acquisition topology remains a future-compatible observation path, not an automatic
-flight or robot-execution prerequisite for the weekly two-epoch MVP; no runtime ownership changes.
+The displayed acquisition topology is retained transitional implementation under
+[`ADR-KSI-039`](docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md),
+not long-term product responsibility and not an automatic flight or robot-execution prerequisite
+for the weekly two-epoch MVP; no runtime ownership changes.
 
 PSDK Liveview stays on the Manifold acquisition/perception path. `EDGE_UPLINK` carries bounded
 observations/telemetry/events. For the ADR-KSI-036 D6 external first-release route, a customer field
@@ -109,6 +111,7 @@ contracts, establish Pilot/device support, or change the `NOT_VERIFIED` HIL/fiel
 | Target automated source-media ingress | separately gated `MEDIA_PULL` → `MEDIA_UPLOAD` adapter | Target runtime | RETAIN gated; do not activate |
 | Local acquisition video | PSDK Liveview inside Manifold acquisition/perception | Edge runtime input | RETAIN |
 | Continuous central video | not a core product path | No | REMOVE from product assumptions |
+| Long-term product boundary | `docs/architecture/ADR-KSI-039-*` | No | RETAIN; flight/autonomous acquisition/tactical perception/customer production reconstruction are out-of-product; acquisition sources are retained transitional implementation until a verified successor move |
 
 ## Top-level directories
 
@@ -186,8 +189,8 @@ services, packages, acquisition, capability, Dashboard, worker, Edge, or DJI bou
 
 | Path | Owner/purpose | Runtime | Current status boundary | Decision |
 |---|---|---:|---|---|
-| `edge/psdk-app/` | Native `ksi_psdk_app`, PSDK acquisition and separately gated companions | Yes | Production Edge entry; capability remains evidence-gated | RETAIN |
-| `edge/manifold-runtime/` | Native bounded queues, perception/risk/store-forward/control-plane library | Yes | Linked by approved Edge builds; no direct DJI flight command | RETAIN; no merge in R0-R2 |
+| `edge/psdk-app/` | Native `ksi_psdk_app`, PSDK acquisition and separately gated companions | Yes | Production Edge entry; capability remains evidence-gated | RETAIN as transitional implementation (ADR-KSI-039) |
+| `edge/manifold-runtime/` | Native bounded queues, perception/risk/store-forward/control-plane library | Yes | Linked by approved Edge builds; no direct DJI flight command | RETAIN as transitional implementation (ADR-KSI-039); no merge in R0-R2 |
 | `edge/psdk-tap/` | Raw Liveview/telemetry HIL capture probe | Diagnostic only | Not product authority or production support | RETAIN |
 | `edge/msdk-field-bridge/` | Conditional pre/postflight bridge candidate | Candidate | No SDK artifact/HIL support; flight actions forbidden | RETAIN gated |
 | `edge/psdk-platform/` | PSDK build/platform integration | Build | Supports native Edge compilation | RETAIN |

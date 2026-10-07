@@ -1,6 +1,11 @@
 # KSI Site Intelligence Product Constitution
 
 > **개정 이력**
+> - 2026-10-07 — ADR-KSI-039: 비행·자율 취득·전술 인지/제어·고객 production 재구성을
+>   장기 Site Intelligence 책임 밖으로 확정한다. 취득·Edge 출처는 검증된 후속 이동
+>   전까지 유지되는 transitional implementation이다. INV-020/024/040/050/051/053/054/
+>   055/060/061은 적용 영역에서 계속 유효하며, device/Mission 불변식은 역사적 범위를
+>   유지한다. EXT-VAL 수용·역사적 milestone 증거는 바꾸지 않는다.
 > - 2026-09-30 — ADR-KSI-038: 제품 정체성을 외부 에이전트·산업용 소프트웨어가 사용하는
 >   공간데이터·분석 기반으로 명확화한다. 데이터 제공과 분석을 두 제품 경로로 두고,
 >   주간 토공 파일럿은 첫 분석 사례로 유지한다. 문서·장기 계획 반영만 승인됐으며 개발은 보류다.
@@ -97,8 +102,8 @@ KSI Site Intelligence Platform은 **외부 재구성 엔진이 생성한 현장 
 RTK-equipped Matrice 4D는 초기 현장 검증 장비이자 관측 입력 참조다. 장비는 제품 정의의
 중심이 아니며, 고객 통제 현장 PC/DJI Terra 재구성 흐름도 입력 참조일 뿐 KSI의 API·계산
 엔진·license/export 지원 약속이 아니다. 건설과 토공 운영이 첫 Vertical이고,
-디지털·스마트건설 소프트웨어 파트너는 통합 고객이다.
-
+디지털·스마트건설 소프트웨어 파트너는 통합 고객이다. 장기 취득 장비의 제품 책임
+경계는 [ADR-KSI-039](../architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)를 따른다.
 장기 취득·현장 검증 profile에서는 RC Plus 2/Pilot 2가 사람의 비행 운영과 인터넷 gateway를,
 Manifold 3가 인터넷과 독립된 현장 지능을 맡는다. 이 profile은 API-first MVP의 입력
 admission·계산·결과 조회 전제가 아니다. RC 인터넷은 새 임무 발급 전에 필요하지만
@@ -190,9 +195,11 @@ policy로 판정한 뒤에만 발급한다. 클라이언트가 상한이나 over
 
 ## 장기 관측·취득 축
 
-Site Intelligence Core와 Autonomous Acquisition은 장기 관측·취득 roadmap의 두 책임 축이다.
+Site Intelligence Core와 Autonomous Acquisition은 장기 관측·취득 roadmap의 두 책임 축이었다.
 API-first 공간데이터 제공과 첫 주간 2시점 분석 사례는 Acquisition 자동 실행 없이
-검증하는 플랫폼 범위다. 아래의 Mission/Edge 내용은 그 범위를 보존하는 미래 호환 경계이며, 자동
+검증하는 플랫폼 범위다. 2026-10-07 [ADR-KSI-039](../architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)로
+장기 비행·자율 취득 실행은 Site Intelligence의 장기 제품 책임 밖이며, 아래의
+Mission/Edge 내용은 역사적·transitional 범위를 보존하는 미래 호환 경계다. 자동
 로봇·비행 실행을 현재 제품 약속으로 만들지 않는다.
 
 ```text

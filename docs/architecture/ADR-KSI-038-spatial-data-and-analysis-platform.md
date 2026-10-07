@@ -117,3 +117,8 @@ COG는 GeoTIFF의 부분 접근을 지원하지만 KSI의 권한·적합성·근
 운영 비용·보관·지원 및 과금은 계획 원장의 보완 항목에서 추적한다. 가격·SLA·모든
 벤더/포맷 지원은 이번 결정으로 확정하지 않는다. 장기 Acquisition/Edge 설계와 과거
 구현 증거는 보존하되 이 플랫폼 검증의 자동 실행 선행조건으로 만들지 않는다.
+
+> 2026-10-07 routing note (dated evidence above is preserved): the preserved-acquisition
+> clause routes to [ADR-KSI-039](ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md) —
+> long-term acquisition is out-of-product and preserved only as historical evidence,
+> never as an automatic-execution precondition.

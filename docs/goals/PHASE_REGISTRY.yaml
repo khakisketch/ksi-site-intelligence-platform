@@ -9,6 +9,7 @@ updated: "2026-09-17"
 
 spatial_data_platform:
   direction_updated: "2026-09-30"
+  product_boundary: docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md
   authority: docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md
   planning_ledger: docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md
   status: PLANNED
@@ -96,6 +97,10 @@ repository_normalization:
     Other similarly named runtime modules remain deferred. Full-local, remote CI, deployment, physical
     HIL, and field acceptance gates remain open and are not claimed by this local repository status.
 
+# 2026-10-07 ADR-KSI-039: 비행·자율 취득·전술 인지/제어·고객 production 재구성은 장기 제품
+# 책임 밖이며 관련 출처는 유지되는 transitional implementation이다. 취득 전용 미래 작업은
+# out-of-product(계획 참조용; 완료 후보가 아님)로 읽고, 어떤 status 값도 바꾸지 않는다.
+# 새 status enum을 만들지 않는다 — 아래 상태값 집합만 사용한다.
 # 2026-08-24부터의 delivery 순서는 ADR-KSI-027이 정한다. 아래의 기존 phase는 도메인
 # capability 원장이고, Console UX가 HIL/Field가 되었다는 뜻이 아니다.
 operations_console_delivery:
@@ -451,6 +456,8 @@ axes:
   autonomous_acquisition:
     title: "Autonomous Acquisition — Manifold Runtime, Perception, Local World Model, Viewpoint/Path, Mission Execution"
     state: BLOCKED
+    # 2026-10-07 ADR-KSI-039: 이 취득 축은 장기 제품 책임 밖(out-of-product)이며,
+    # BLOCKED 상태와 아래 기록은 역사적/transitional 참조로 유지한다.
     note: >-
       **우선순위가 낮아서가 아니라 차단돼 있다.** [2026-08-17 갱신] 이전 서술
       ("H1~H4 가 전부 장비 조달·PSDK 개발자 승인 대기")은 낡았다 — 2026-08-13

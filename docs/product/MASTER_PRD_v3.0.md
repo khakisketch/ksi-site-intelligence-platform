@@ -106,7 +106,7 @@
 > 헌법을 먼저 고치고 여기를 동기화한다 — 반대 방향으로 갈리면(2026-08-11 실제로
 > 발생했던 상태) 이 문서를 읽는 사람이 폐기된 옛 범위를 정본으로 오인한다.
 
-**KSI Site Intelligence Platform은 외부 재구성 엔진이 생성한 현장 공간데이터를 등록·검사·구조화하고, 필요한 공간데이터와 재현 가능한 분석 결과를 API·MCP로 제공하여 고객의 에이전트와 산업용 소프트웨어가 재사용하게 하는 데이터·분석 기반이다.** Core의 자산·권한·작업·계산·근거 기록을 공통 계약으로 사용한다. 건설·토공이 첫 활용 분야이며 M4D/RC Plus 2/Manifold 3는 현장 검증과 장기 취득 roadmap의 장비다. 이 정의는 자동 실행이나 모든 산출물·AI client 지원을 뜻하지 않는다.
+**KSI Site Intelligence Platform은 외부 재구성 엔진이 생성한 현장 공간데이터를 등록·검사·구조화하고, 필요한 공간데이터와 재현 가능한 분석 결과를 API·MCP로 제공하여 고객의 에이전트와 산업용 소프트웨어가 재사용하게 하는 데이터·분석 기반이다.** Core의 자산·권한·작업·계산·근거 기록을 공통 계약으로 사용한다. 건설·토공이 첫 활용 분야이며 M4D/RC Plus 2/Manifold 3는 현장 검증 장비와 역사적 장기 취득 roadmap의 참조다(장기 취득 roadmap의 제품 책임은 ADR-KSI-039로 종료). 이 정의는 자동 실행이나 모든 산출물·AI client 지원을 뜻하지 않는다.
 
 ### 1.1.1 API-first MVP와 첫 출시 재구성 입력 경계
 
@@ -135,7 +135,7 @@ KSI는 사진을 포인트클라우드·3D 지도로 만드는 proprietary photo
 RTK FIX는 캡처 상태의 근거이지 최종 지도 정확도, 정량 사용 가능, 측량 수용 또는 계약
 정산의 보증이 아니다. 별도 evidence/compatibility policy, 독립 checkpoint와 현장 수용
 근거가 필요한 주장은 그 증거가 없을 때 제한한다. 이 경계는 KSI가 단순 viewer가 된다는
-뜻도, Acquisition/Edge의 승인된 자율 roadmap을 없앤다는 뜻도 아니다.
+뜻도 아니다. Acquisition/Edge의 장기 자율 roadmap은 제품 책임 밖이며(ADR-KSI-039), 역사적·transitional 범위로 보존된다.
 
 ### 1.1.2 공간데이터·분석 기반의 제품 요구사항 (ADR-KSI-038)
 
@@ -186,6 +186,8 @@ Next.js 기반 공통 프론트엔드다.
   Operations Console의 기본 기능이나 제품 전제로 두지 않음
 
 ### B. KSI Edge Autonomy
+
+> ADR-KSI-039: 이 절은 유지되는 transitional implementation을 설명하며 장기 제품 책임이 아니다.
 
 물리 구성은 **DJI Matrice 4D + Manifold 3 + KSI Edge Runtime**이다.
 
@@ -249,7 +251,7 @@ KSI Site Intelligence Platform
 
 # 2. 핵심 제품 결정
 
-> **ADR-KSI-037 적용:** 이 절의 Autonomous Acquisition/Mission/Edge 결정을 보존하되,
+> **ADR-KSI-037 적용:** 이 절의 Autonomous Acquisition/Mission/Edge 결정을 역사적 기록으로 보존하되(장기 제품 책임은 ADR-KSI-039로 out-of-product),
 > API-first 주간 2시점 분석 MVP의 구현 우선순위나 자동 실행 약속으로 읽지 않는다. 현재
 > slice·개발 순서·수용 상태는 `docs/superpowers/product-state.md`와 named ledger만 결정한다.
 
@@ -271,15 +273,14 @@ KSI가 초기 설정한 뒤 고객은 매주 bespoke script 없이 같은 WorkAr
 공정·변화·물량 > 자산점검`은 플랫폼 기술·분석 기능·임무 유형을 한 줄에 세운
 분류 오류였다. 자율 안전순찰·구조물 점검은 Acquisition 축의 **임무 유형**이고
 (정본 `ksi_domain.enums.MissionType`), 서로 순위를 두지 않는다. 제품 구조의
-SSOT는 `docs/product/PRODUCT_CONSTITUTION.md` §장기 관측·취득 축이다. **개발 순서·
+SSOT는 `docs/product/PRODUCT_CONSTITUTION.md` §장기 관측·취득 축이다. 장기 취득 축의 제품 책임은 ADR-KSI-039로 out-of-product이며, Acquisition 축 임무 유형 서술은 역사적·transitional 기록이다. **개발 순서·
 차단 상태는 `docs/superpowers/product-state.md`와 그 named ledger가 소유한다.**
 `docs/goals/PHASE_REGISTRY.yaml`은 capability-track index이며 task/priority를 선택하지 않는다.
 
 **DEC-006 — 일반 사용자는 통합 자동모드, 전문가는 제한된 전문가 모드를 사용한다.**  
 사용성과 전문성의 균형을 유지한다.
 
-> **DEC-007–026 적용 범위:** 다음 Acquisition/Mission/Edge 결정은 보존된 장기 취득·안전
-> roadmap이다. ADR-KSI-037의 API-first MVP에는 자동 비행·로봇 실행을 요구하거나 약속하지
+> **DEC-007–026 적용 범위:** 다음 Acquisition/Mission/Edge 결정은 보존된 역사적 결정이며 장기 제품 책임은 ADR-KSI-039로 out-of-product다. ADR-KSI-037의 API-first MVP에는 자동 비행·로봇 실행을 요구하거나 약속하지
 > 않으며, 현재 runtime/physical support는 별도 evidence가 필요하다.
 
 **DEC-007 — 비행 중 저지연 판단과 자율 임무 제어는 Manifold가 책임진다.**  

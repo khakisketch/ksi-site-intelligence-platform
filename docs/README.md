@@ -20,7 +20,10 @@ The current platform direction is [ADR-KSI-038](architecture/ADR-KSI-038-spatial
 spatial-data delivery and analysis for external applications. [SDP-20260930](superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)
 is the selected long-term planning and documentation ledger, with staged deliverables and open
 decisions. [ADR-KSI-037](architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md)
-retains the first earthwork analysis case's semantics and acceptance. The 2026-09-30 user request
+retains the first earthwork analysis case's semantics and acceptance.
+[ADR-KSI-039](architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)
+bounds long-term product responsibility: acquisition/flight/autonomous execution are out-of-product
+and their sources are retained transitional implementation until a verified successor move. The 2026-09-30 user request
 authorizes documentation/planning only; it does not resume implementation or close `EXT-VAL`.
 
 | Client | Intended repository entry | Evidence limit |

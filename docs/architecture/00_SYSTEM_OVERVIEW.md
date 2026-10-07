@@ -25,7 +25,9 @@
 2026-09-30 [ADR-KSI-038](ADR-KSI-038-spatial-data-and-analysis-platform.md)의 목표 구조는
 다음과 같다. 주간 토공 분석은 분석 경로의 첫 사례이며, 첫 플랫폼 검증에는 DSM·정사영상의
 외부 구역 데이터 활용도 포함한다. 이 그림은 데이터 서빙·포맷·클라이언트 구현 완료를
-뜻하지 않는다. 아래 장비 구성도는 기존 장기 Acquisition 범위로 읽는다.
+뜻하지 않는다. 아래 장비 구성도와 runtime 표는 유지되는 transitional implementation이며 장기 제품
+책임은 [ADR-KSI-039](ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)로
+out-of-product다.
 
 ```text
 고객 재구성 산출물 -> Core: 자산·시점·구역·버전·권한·용도별 적합성
@@ -163,7 +165,7 @@ raw ingress는 managed/test 또는 별도 승인 source-media scope다.
 | 구성 | 책임 |
 |---|---|
 | Matrice 4D | 움직이고 촬영 (저수준 비행·회피·RTH는 DJI FC 소유) |
-| Manifold 3 | 현장에서 보고 판단 (빠른 폐루프) |
+| Manifold 3 | 현장에서 보고 판단 (빠른 폐루프; 유지되는 transitional implementation, 장기 제품 책임 밖) |
 | RC Plus 2 + Pilot 2 | 비행 운용과 Cloud gateway (이륙 승인은 항상 사람, KSI 업무 UI 없음) |
 | KSI Operations Console | 현장 노트북·컴퓨터에서 업무·검토·승인·분석·Copilot 제공 |
 | KSI Core | 현장·임무·서명 계약·권한·감사 |

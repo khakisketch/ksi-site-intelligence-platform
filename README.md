@@ -14,7 +14,9 @@ KSI는 **외부에서 생성한 현장 공간데이터를 등록·검사·구조
 목표를 정의하며, 전체 기능의 구현·지원 완료를 뜻하지 않는다.
 
 첫 출시에서 KSI는 사진을 3D 지도로 재구성하는 자체 엔진이나 고객용 재구성 서비스를
-운영하지 않는다. 고객이 통제하는 현장 PC의 재구성 도구가 만든 결과를 등록·검증·분석해,
+운영하지 않는다. 장기적으로 비행·자율 취득·전술 인지/제어·고객 production 재구성은 제품 책임 밖이며
+관련 출처는 유지되는 transitional implementation이다
+([ADR-KSI-039](docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)). 고객이 통제하는 현장 PC의 재구성 도구가 만든 결과를 등록·검증·분석해,
 외부 시스템과 사람이 재사용할 수 있는 근거형 분석 기록을 제공한다.
 
 ```text
@@ -40,7 +42,7 @@ RTK-equipped M4D와 고객 PC/DJI Terra는 초기 현장 검증·재구성 **입
 | KSI Site Intelligence Core | `services/core/` | Site/Mission/정책/증거와 durable authority |
 | DJI Capability Gateway | `services/dji-gateway/` | 장비·provider별 capability/transport adapter와 receipt |
 | Artifact Processing Worker | `services/processing-controller/` | 제출 산출물 검사·계측과 managed/test processing orchestration |
-| Manifold Edge | `edge/psdk-app/`, `edge/manifold-runtime/` | 로컬 수집·인지·world model·위험·전술 판단 |
+| Manifold Edge (transitional implementation; 장기 제품 책임 밖 — ADR-KSI-039) | `edge/psdk-app/`, `edge/manifold-runtime/` | 로컬 수집·인지·world model·위험·전술 판단 |
 | Shared product libraries | `packages/` | domain, contract binding, planning, geo, perception, change/BIM/defect 알고리즘 |
 
 DJI Flight Controller는 안정화·모터·검증된 reactive avoidance·RTH를 계속 소유한다. Core나

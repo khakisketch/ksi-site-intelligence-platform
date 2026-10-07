@@ -212,7 +212,13 @@ numerical truth or replace the recorded computation.
 ### D6 — Acquisition and safety scope
 
 KSI retains site observation and the approved Acquisition/Edge/autonomous roadmap, but automatic
-robot or flight execution is outside this MVP. This direction does not revoke Mission Contract,
+robot or flight execution is outside this MVP.
+
+> 2026-10-07 routing note (dated evidence above is preserved): the roadmap-retention
+> clause is superseded as product responsibility by
+> [ADR-KSI-039](ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md) —
+> long-term acquisition is out-of-product. D1–D5 calculation, authority, evidence,
+> and repeated-use requirements remain fully effective. This direction does not revoke Mission Contract,
 Flight Controller, Manifold, or tactical-safety authority; it changes product priority and must not
 be read as device support, execution authorization, or field acceptance.
 

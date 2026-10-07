@@ -172,6 +172,8 @@ SDP-EXT-01은 SDP-02의 공통 관계 계약 검토 입력이고, SDP-EXT-02..06
   방향·장기 의존 관계와 현재 문서 작업을 소유한다. 새 SDP 작업을 current slice로 자동 선택하지 않는다.
 - 기존 Acquisition/Edge/terrain planning·Safety 관련 범위는 기존 권위와 HIL 조건을 따른다.
   이 결정으로 무효화하거나 범위를 합치지 않는다. 플랫폼 파일럿의 선행 자동 비행 작업으로도 만들지 않는다.
+  2026-10-07 [ADR-KSI-039](../../architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md):
+  취득 전용 미래 작업은 out-of-product(계획 참조용; 완료 후보가 아님)이며, 미완 고객/운영 게이트는 유지한다.
 - 2026-09-30 후속 사용자 지시로 개발이 재개됐다. SDP-03의 봉인 자산 카탈로그부터
   독립 검증하고, SDP-04의 [native-grid 준비 단위](2026-09-30-spatial-native-window-preparation.md)는
   자료 반출 권한/작업 API와 분리해 검증한다. 실제 자료 제공은 표본/계약/권리 관문을 구분해 진행한다.

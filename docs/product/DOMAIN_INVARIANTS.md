@@ -7,6 +7,17 @@
 각 불변식은 `강제 지점`(코드·게이트에서 어디가 막는가)을 가진다. 강제 지점이 "미구현"이면
 해당 기능 구현 시 테스트가 함께 생겨야 한다.
 
+## 적용 범위 (ADR-KSI-039)
+
+INV-020/024/040/050/051/053/054/055/060/061은 플랫폼·외부 ingress·분석의 적용
+영역에서 계속 유효하다. Device·Mission Contract·비행 envelope·coverage·전술
+안전 불변식(INV-001/002/010–019/025/030/031/041–043/052 포함)은 명시적
+역사적/managed 범위를 유지한다: 현재 책임에서 제외됐다고 그 규칙을 완화할 수
+없으며, 어떤 software 검증도 `NOT_VERIFIED` 장비 동작을 승격하지 않는다.
+경계 정본은
+[ADR-KSI-039](../architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)이다.
+아래 불변식 본문·ID는 바꾸지 않는다.
+
 ## 제어 경계
 
 - **INV-001** 서버(Core/Dashboard)는 프레임별(10Hz 이상) 위치·속도·자세 명령을 전송하지 않는다.

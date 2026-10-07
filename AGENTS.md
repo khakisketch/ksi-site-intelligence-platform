@@ -51,6 +51,15 @@ and `docs/design/API_FIRST_EARTHWORK_FIRST_REQUEST_CONTRACT.md`. They set produc
 target requirements only; they create no endpoint, MCP server, client topology, vendor support,
 runtime authorization, or product-state transition.
 
+For the long-term product boundary, read
+`docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md`:
+flight, autonomous acquisition, tactical perception/control, and customer production
+reconstruction are outside long-term Site Intelligence responsibility, and their sources are
+retained transitional implementation until a verified successor move. It supersedes acquisition
+product-responsibility routing in the Constitution/Ledger/PRD and ADR-KSI-037 D6/ADR-KSI-038
+acquisition clauses without changing quantitative semantics, originals, invariants, EXT-VAL,
+or milestone history.
+
 For platform identity, spatial-data delivery, external application reuse, or long-term scope, also
 read `docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md` and its selected roadmap
 `docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md`. ADR-KSI-038 places data access
