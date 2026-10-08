@@ -7,11 +7,13 @@ INV-040 은 "Production 에서 mock/placeholder/static always-go 금지"를 요�
 **이 저장소에 "production profile" 이라는 설정값은 없다.** ``KSI_ENV``·``KSI_PROFILE``
 류 환경변수가 아예 없고(grep 0건), 프로파일은 오직 **어느 진입점을 실행하는가**로만
 정의된다 — Core 는 ``Dockerfile`` CMD → :func:`ksi_core.production.build_production_app`.
-(P3 Task 3 에서 처리 워커 진입점(``Dockerfile.worker`` CMD →
+(P3 Task 3 에서 managed 처리 워커 진입점(``Dockerfile.worker`` CMD →
 ``ksi_processing_controller.runner:main``)은 ``archive/acquisition-2026/`` 으로
-분리됐다 — 워커 closure 검사는 그 분리 자체를 고정하는
-``tests/contract/test_acquisition_archive_boundary.py`` 로 옮겼다.)
-그래서 이 게이트도 설정을 읽지 않고 **Core 진입점을 실제로 실행해 sys.modules 를 본다**.
+분리됐다 — 분리 자체의 존재 고정은
+``tests/contract/test_acquisition_archive_boundary.py`` 가 맡고, 이 파일은 Core
+진입점과 surviving platform lane 전체의 closure 를 검사한다.)
+그래서 이 게이트도 설정을 읽지 않고 **Core 진입점과 lane 모듈들을 실제로 실행해
+sys.modules 를 본다**.
 
 ``tests/contract/test_production_assembly.py`` 가 이미 dev 토큰 리터럴과
 ``run_core_dev`` import 를 막지만 **``production.py`` 파일 한 개의 텍스트만** 읽는다 —
@@ -40,6 +42,7 @@ mock 을 쓰는 테스트를 하나 추가하는 순간 무관한 이유로 깨�
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import subprocess
 import sys
@@ -102,9 +105,39 @@ from ksi_core.production import build_production_app
 build_production_app()
 """
 
-# 처리 워커 진입점의 closure 검사는 P3 Task 3 분리 이후 archive 경계 테스트
-# (tests/contract/test_acquisition_archive_boundary.py)가 맡는다 — runner 모듈이
-# archive 로 이동해 이 파일에서 import 할 수 없다.
+# 처리 워커 진입점 자체는 P3 Task 3 에서 archive 로 분리됐다(runner 모듈이
+# archive 로 이동해 이 파일에서 import 할 수 없다) — 분리 자체의 존재 고정은
+# ``tests/contract/test_acquisition_archive_boundary.py`` 가 맡고, surviving
+# platform lane 의 closure 검사는 아래 ``_LANE_BODY`` 가 이어받는다.
+
+
+def _lane_module_lists() -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """경계 파일의 surviving 모듈 목록을 파일 위치로 읽는다 — sys.path 변경 없이.
+
+    목록 SSOT 는 ``tests/contract/test_acquisition_archive_boundary.py`` 이다.
+    그 파일을 직접 실행해 ``(_SURVIVING_ENTRYPOINT_MODULES,
+    _SURVIVING_LANE_MODULES)`` 를 가져오므로 두 파일의 목록이 드리프트할 수
+    없다(모듈 수준 코드는 상수 정의뿐이라 실행해도 부작용이 없다).
+    """
+    path = _REPO_ROOT / "tests" / "contract" / "test_acquisition_archive_boundary.py"
+    spec = importlib.util.spec_from_file_location("test_acquisition_archive_boundary", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    entrypoints: tuple[str, ...] = module._SURVIVING_ENTRYPOINT_MODULES
+    lanes: tuple[str, ...] = module._SURVIVING_LANE_MODULES
+    return entrypoints, lanes
+
+
+_LANE_ENTRYPOINT_MODULES, _LANE_MODULES = _lane_module_lists()
+_LANE_BODY = "".join(f"import {name}\n" for name in (*_LANE_ENTRYPOINT_MODULES, *_LANE_MODULES))
+
+# 레인 closure 공허 방지 앵커 — surviving lane 에서만 나오는 모듈이라야 의미가 있다.
+_LANE_ANCHOR_MODULE = "ksi_processing_controller.external_analysis_runner"
 
 
 def forbidden_modules(loaded: Iterable[str]) -> tuple[str, ...]:
@@ -234,17 +267,40 @@ def test_core_production_closure_loads_no_mock_or_dev_module(tmp_path: Path) -> 
     assert hits == (), f"운영 closure 에 금지 모듈이 실렸다: {hits}"
 
 
+def test_lane_closure_loads_no_mock_or_dev_module(tmp_path: Path) -> None:
+    """surviving platform lane 진입점+공유 모듈의 import closure 도 같은 기준으로 깨끗하다.
+
+    분리 전 ``test_worker_closure_loads_no_mock_or_dev_module`` 이 보던 자리를
+    잇는다 — managed 데몬 대신 7개 platform 진입점과 공유 lane 모듈 전체를
+    실제로 import 한 뒤의 closure 를 본다.
+    """
+    loaded = _dump_closure(_LANE_BODY, tmp_path)
+
+    # 공허 방지 — 레인 모듈이 실제로 로드됐는지부터 확인한다.
+    assert _LANE_ANCHOR_MODULE in loaded
+
+    hits = forbidden_modules(loaded)
+    assert hits == (), f"레인 closure 에 금지 모듈이 실렸다: {hits}"
+
+
+@pytest.mark.parametrize("closure", ["core", "lane"])
 def test_no_production_closure_module_lives_under_references_or_scripts_or_tests(
-    tmp_path: Path,
+    closure: str, tmp_path: Path
 ) -> None:
     """운영 closure 의 어떤 모듈도 references/·scripts/·tests/ 아래에서 오지 않는다.
 
     CLAUDE.md 의 "Never import runtime code directly from ``references/``" 를 기계로
-    검사하는 첫 지점이다. 처리 워커 closure 는 archive 로 분리돼
-    ``tests/contract/test_acquisition_archive_boundary.py`` 가 그 존재 자체를
-    고정한다 — 여기서는 Core 진입점만 검사한다.
+    검사하는 첫 지점이다. Core 진입점과 platform lane closure **둘 다** 검사한다 —
+    Core 만 보면 lane 모듈 상당수가 영원히 사각지대로 남는다. 분리된 managed
+    데몬 closure 의 존재 자체는
+    ``tests/contract/test_acquisition_archive_boundary.py`` 가 고정한다.
     """
-    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+    if closure == "core":
+        loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+        anchor = _ANCHOR_MODULE
+    else:
+        loaded = _dump_closure(_LANE_BODY, tmp_path)
+        anchor = _LANE_ANCHOR_MODULE
 
     offenders = []
     in_repo = 0
@@ -261,18 +317,26 @@ def test_no_production_closure_module_lives_under_references_or_scripts_or_tests
 
     assert in_repo > 0, "저장소 안 모듈이 0건이면 이 테스트는 공허하다"
     # 이름 앵커 — in_repo 는 .venv 안 패키지로도 채워질 수 있어 개수만으로는 약하다.
-    assert _ANCHOR_MODULE in loaded
+    assert anchor in loaded
     assert offenders == [], f"운영 closure 가 금지 경로의 모듈을 끌고 있다: {offenders}"
 
 
-def test_no_dev_token_literal_in_any_production_closure_source(tmp_path: Path) -> None:
+@pytest.mark.parametrize("closure", ["core", "lane"])
+def test_no_dev_token_literal_in_any_production_closure_source(
+    closure: str, tmp_path: Path
+) -> None:
     """closure 전체 소스에 dev 토큰 리터럴이 없다 — 기존 파일 1개 검사를 확대한다.
 
-    Core 진입점만 스캔한다. platform lane 소스(``ksi_processing_controller`` 의
-    surviving 모듈 등)는 Core closure 에 실리지 않아 이 스캔 밖에 있다 —
-    surviving lane 소스의 dev 리터럴 검사는 후속 작업에서 경계 테스트로 옮긴다.
+    Core 진입점과 platform lane closure **둘 다** 스캔한다. lane 쪽에는 워커의
+    Bearer 토큰을 세팅하던 ``core_client`` 등 surviving 모듈이 들어간다 — 거기
+    dev 토큰 기본값이 들어가도 Core-only 스캔은 통과하므로 둘 다 본다.
     """
-    loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+    if closure == "core":
+        loaded = _dump_closure(_CORE_BODY, tmp_path, env=_valid_env(tmp_path))
+        anchor = _ANCHOR_MODULE
+    else:
+        loaded = _dump_closure(_LANE_BODY, tmp_path)
+        anchor = _LANE_ANCHOR_MODULE
 
     scanned = 0
     scanned_names = set()
@@ -292,7 +356,7 @@ def test_no_dev_token_literal_in_any_production_closure_source(tmp_path: Path) -
 
     assert scanned > 0, "스캔한 파일이 0건이면 이 테스트는 공허하다"
     # 원래 사각지대였던 파일이 실제로 스캔 목록에 들어왔는지 못박는다.
-    assert _ANCHOR_MODULE in scanned_names
+    assert anchor in scanned_names
 
 
 # ── 빌드 컨텍스트: 실행 가능한 dev 조립이 운영 이미지에 실리지 않는다 ──────────
