@@ -749,3 +749,16 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   Minors backlog. Ruling correction (a′): the194-row manifest governs T6 candidate moves; T3/T5
   sets are governed by their classification tables (blob-hash-bound records+inverse notes), T6
   verifies-completes. Next Task3 base`abd026f`.
+- Task3 complete: developer `ses_ee64c7745ffe7sTNc20v6lxDS3` committed `6a00443`+`e12d697`
+  (`refactor: split managed reconstruction out of the platform worker`/`test: restore lane closure
+  gate coverage`). Reviewer `ses_ee6419125ffe39AmTAkXoR0X3T` round1 Approved+1Important →
+  fix → scoped re-review ADDRESSED. 17 blob-identical renames (8pc src modules+8managed tests+
+  Dockerfile.worker) to `archive/acquisition-2026/**`; pc pyproject drops the managed script+
+  `ksi-perception` (lock2-line pc-only diff); `deploy/compose.yaml` worker service/volume removed;
+  boundary tests3 (`test_acquisition_archive_boundary.py` with `find_spec` denier+positive control);
+  pins baseline closed for the retired Dockerfile; `archive/**` ruff exclude + `.dockerignore`
+  archive exclusion applied in-task (controller ruling; T4 verifies); INV-040 lane closure gate
+  restored (e12d697). Counts: boundary3/keep-lane232/platform+replay56/entrypoint166/production-
+  gate9/comparison19/pins+evidence+packaging18+90+11; scopedmypy clean; `ruff check .` clean; lock
+  green. Deferred: compose.vm worker overlay stub (VM owner), pre-existing format-unclean test,
+  boundary-file collection-time dependency note. Next Task4 base`e12d697`.
