@@ -42,9 +42,9 @@ LINKED_NORMALIZATION_DOCS = (
     "apps/README.md",
     "services/README.md",
     "packages/README.md",
-    # P3 Task 6: edge/README.md moved blob-identical to
-    # archive/acquisition-2026/edge/README.md — dropped from the active-docs
-    # link gate (the archived copy is historical, not a live routing doc).
+    # P3 Task 6: the edge top-level README moved blob-identical to its archive
+    # mirror — dropped from the active-docs link gate (the archived copy is
+    # historical, not a live routing doc).
     "design/README.md",
     "design-system/README.md",
     "scripts/README.md",
@@ -73,10 +73,10 @@ REQUIRED_STRUCTURE_PATHS = (
     "packages/change-detection/",
     "packages/bim-integration/",
     "packages/defect-detection/",
-    # P3 Task 6: services/dji-gateway/, edge/psdk-app/, edge/manifold-runtime/
-    # moved blob-identical to archive/acquisition-2026/ — the required
-    # canonical path is now the archive root itself (historical, not runtime
-    # or build input; REPOSITORY_STRUCTURE.md records the relocation).
+    # P3 Task 6: the gateway service and the three native edge groups moved
+    # blob-identical to their archive mirrors — the required canonical path
+    # is now the archive root itself (historical, not runtime or build
+    # input; REPOSITORY_STRUCTURE.md records the relocation).
     "archive/acquisition-2026/",
     "contracts/",
     "packages/",

@@ -189,7 +189,25 @@ def _resolve_consumer(consumer: str, head: dict[str, tuple[str, str, str]]) -> s
 
 def test_real_csv_consumers_are_real_references() -> None:
     """Every recorded consumer file exists at HEAD (active or archived) and
-    really references the group it gates (import, COPY, job, or routing mention)."""
+    really references the group it gates (import, COPY, job, or routing mention)
+    — EXCEPT the consumers Task 6 intentionally closed: their references were
+    removed by the same-batch closure edits (edge CI jobs retired to the
+    historical route; perception COPY dropped from the retained images), so
+    the recorded reference now resolves but no longer matches. That closed set
+    is explicit here (never silent) and bound to the Task 6 closure commits."""
+    # P3 Task 6 closure record: (consumer, groups whose token it no longer
+    # carries). Commits ad220a9 (test/tooling archival) and 4148cb7 (consumer
+    # closures) own the removals; the executor's live-reference scan enforces
+    # the other direction (no live file may still name a moving path).
+    task6_closed = {
+        ".github/workflows/ci.yml": {
+            "edge/manifold-runtime",
+            "edge/psdk-app",
+            "edge/psdk-tap",
+        },
+        "Dockerfile.external-inspector": {"packages/perception"},
+        "Dockerfile.external-measurement": {"packages/perception"},
+    }
     decisions = build_move_decisions(REAL_FROZEN, ROOT)
     head = _git_head_map()
     group_tokens = {
@@ -208,6 +226,7 @@ def test_real_csv_consumers_are_real_references() -> None:
         "edge/root": ("edge/", "PSDK_LOCK", "psdk_platform", "manifold3-build"),
     }
     seen_consumers = 0
+    seen_closed = 0
     for decision in decisions:
         tokens = group_tokens[decision.group]
         for consumer in decision.consumers:
@@ -218,9 +237,16 @@ def test_real_csv_consumers_are_real_references() -> None:
                 check=True,
                 capture_output=True,
             ).stdout.decode("utf-8", errors="replace")
-            assert any(token in raw for token in tokens), (decision.path, consumer)
-            seen_consumers += 1
+            if any(token in raw for token in tokens):
+                seen_consumers += 1
+                continue
+            assert decision.group in task6_closed.get(consumer, set()), (
+                decision.path,
+                consumer,
+            )
+            seen_closed += 1
     assert seen_consumers > 0, "expected recorded consumer evidence"
+    assert seen_closed > 0, "expected the recorded Task 6 closures"
 
 
 def test_decision_row_invariants_unit() -> None:
@@ -954,3 +980,22 @@ def test_executor_machinery_and_console_exemptions_are_explicit(tmp_path: Path) 
         "tests/contract/test_physical_site_move_tooling.py",
     }
     assert _exec._TRANSITIONAL_PREFIXES == ("apps/dashboard/",)
+
+
+def test_executor_destination_reference_is_not_a_live_reference(tmp_path: Path) -> None:
+    """Naming the archived destination (``archive/acquisition-2026/<path>``)
+    is the correct post-move spelling — it must not block the batch."""
+    repo = _exec_repo(
+        tmp_path,
+        {
+            "victim.txt": "move me\n",
+            "route.py": "DEST = 'archive/acquisition-2026/victim.txt'\n",
+        },
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:victim.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 0, completed.stdout + completed.stderr

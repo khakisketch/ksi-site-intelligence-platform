@@ -341,11 +341,14 @@ def _live_reference_tokens(row: PlanRow) -> tuple[str, ...]:
 
 def _grep_files(repo: Path, tokens: list[str], scope: list[str]) -> list[str]:
     """Fixed-string ``git grep -l`` over HEAD; returns plain repo paths (the
-    ``HEAD:`` rev prefix git prepends is stripped). Raises on git failure;
-    empty list means no match (git exit 1)."""
+    ``HEAD:`` rev prefix git prepends is stripped). A token occurrence
+    immediately prefixed by ``archive/acquisition-2026/`` names the move
+    DESTINATION, not a live reference, and is excluded via a PCRE lookbehind.
+    Raises on git failure; empty list means no match (git exit 1)."""
+    patterns = [f"(?<!{re.escape(ARCHIVE_PREFIX)}){re.escape(token)}" for token in tokens]
     proc = _run_git(
-        repo, "grep", "-l", "-I", "-F",
-        *sum((["-e", tok] for tok in tokens), []),
+        repo, "grep", "-l", "-I", "-P",
+        *sum((["-e", pattern] for pattern in patterns), []),
         "HEAD", "--", *scope,
     )
     if proc.returncode == 1:
