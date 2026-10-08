@@ -803,3 +803,16 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   `2c5f380` (`fix: guard the retired capability projector param`;2lines). Scoped re-reviews: all
   findings ADDRESSED, no new breakage. Final full suite **6692passed/113skipped/100warnings/exit0**.
   Task5 commits:2e85391+997f3c1+3dc3541+2c5f380. Next Task6 base`2c5f380`.
+- Task6 implemented+committed: developer `ses_ee5b4dcf8ffevic1IKB7qHeWYA` committed the executor
+  (`27c0599`) + 54 extra closures (`ad220a9`) + consumer closures (`4148cb7`,`581b402`,`2f42628`,
+  `13feb20`) + group moves a–g (`dce5ee4`+`e6e740a`,`1553c3f`,`42ff431`,`d23f020`,`ebac3ac`,
+  `5d47471`,`c5763af`) + pyproject/lock (`89d644b`;162→157) + boundary Part C (`676f237`) + T1
+  post-exec verification (`790471b`) + field-kit extras (`8160ca8`,`dc9d681`,`a5b3e95`).
+  194/194 manifest moves + 57 extra closures blob-identical with inverse records
+  (`docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_v1.json`;`task-6-evidence/extra-moves-54.json`);
+  CI edge jobs removed + `historical-archive.yml` (workflow_dispatch only); deploy/docs closures;
+  FULL bare suite **5995passed/30skipped/0failed**; gates green (frozen bytes unchanged,
+  normalization trio, boundaries, pins/evidence/disposition, ruff check ., collect-only, mypy15,
+  diff-check). Cache-limited offline re-resolution finding recorded with pristine-worktree proof;
+  Task7 needs a fresh `uv sync`/online lock in its own environment. Report task-6-report.md.
+  Task reviewer dispatching; Task7 after adjudication.
