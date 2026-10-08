@@ -668,17 +668,15 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   bytes identical; typing fix reviewed+re-verified. Open/bounded: one clean full-suite pass under
   normal machine load (18 non-task node spinners since00:03, not ours); broad mypy109/14
   pre-existing;MinorsM1–M4 + timing-test hardening in backlog; P4 Console; real customer/operational
-  acceptance. P3 written plan drafted; before Human review its import-site count was corrected12→11;
-  current SHA256`aee5f26f6dff3bd1ae4b4eecd2870e7b4366d9ce0c4d291140711a5b79b6d3cb` (per the updated
+  acceptance. P3 written plan drafted; its two verifier-found coupling discrepancies were applied;
+  current SHA256`671b16c25b1342d1d148893fa50b5bda9f2e0875847d45b357f29b25cef7664f` (per the updated
   entry below); Human written review remains the P3 execution gate.
 - P3 verifier scratch incident (2026-10-08 02:47): the verifier created
   `/tmp/opencode/physical-site-p3-plan-verify/` mode0600 with no traverse bit (the prompt's "0600"
   instruction was ambiguous for a directory); Primary chmod`700`, verifier remained alive and
-  active. Any pre-repair write attempts would have failed with EACCES; its receipt governs its
-  actual results. Verifier also caught the grounding miscount (Core import files are11, not12 as
-  the draft/notes/ledger said); the correction was applied by Primary on2026-10-08 before Human
-  review, while the verifier's final receipt remained delayed by provider retries — its receipt,
-  if it lands, is supplementary evidence.
+  completed with its full per-check result in the session record. Any pre-repair write attempts
+  would have failed with EACCES; the receipt path was later observed absent (external cleanup) —
+  the verifier's completed result above is the evidence.
 
 ### P3 planning discovery (2026-10-08)
 
@@ -688,8 +686,9 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
 - Key facts:194ARCHIVE_CANDIDATEs in8groups (edge124, dji-gateway28, packages42 — mission-contracts13/
   mission-planning9/perception13/equipment-intelligence7). All package/gateway groups have live
   consumer blockers (11Core import files incl. missions/capability/edge_transport/equipment — an
-  earlier `grep -l` list of14 included docstring-only citations; pc ksi_perception only
-  runner.py:83; change-detection retained by named use incl. active region extraction). CI edge jobs,
+  earlier `grep -l` list of14 included docstring-only citations; pc ksi_perception in
+  runner.py:83+odm_masking.py:75, both managed-only; change-detection retained by named use incl.
+  active region extraction). CI edge jobs,
   legacy Dockerfile CMD (`ksi_core.production:build_production_app`), `ruff check .` whole-repo
   target and Docker contexts (`COPY . .`, `.dockerignore` without archive) are the build-side items
   to separate.
@@ -698,9 +697,12 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
 - P3 draft written: [Acquisition separation, worker split and source archive](2026-10-08-acquisition-separation-and-archive.md)
   (DRAFT FOR WRITTEN REVIEW;7tasks: current-revision move decisions → historical readers →
   worker split → platform boot/CI switch → Core dependency closure → physical moves/CI/lock/docs →
-  independent closure). Before Human review the draft's import-site count was corrected12→11 per the
-  verifier's finding; current SHA256`aee5f26f6dff3bd1ae4b4eecd2870e7b4366d9ce0c4d291140711a5b79b6d3cb`.
-  The independent verifier completed its substantive checks in-session (factories/placeholder/RB/CI/
-  import census) but its final receipt is delayed by provider retries on the preview model; its
-  receipt, if it lands, is supplementary. Human review remains the P3 execution gate; no P3
-  execution started.
+  independent closure). Independent verifier `ses_ee8990618ffeZ92sq5rKNCt2pH` completed PARTIAL
+  (receipt reported at`/tmp/opencode/physical-site-p3-plan-verify/receipt.md`; the scratch dir was
+  later observed absent — result preserved in the session record): header/links/SHA/CSV counts,
+  placeholder scan, internal consistency and scope checks PASS; exactly two coupling discrepancies
+  — (1) Core import files are11 not12, (2) `ksi_perception` is imported by`runner.py:83` and
+  `odm_masking.py:75`. Both were applied by Primary on2026-10-08 (all locations incl. notes/ledger),
+  and the corrected file differs from the verified bytes only by these fixes. Current
+  SHA256`671b16c25b1342d1d148893fa50b5bda9f2e0875847d45b357f29b25cef7664f`. Human review remains
+  the P3 execution gate; no P3 execution started.
