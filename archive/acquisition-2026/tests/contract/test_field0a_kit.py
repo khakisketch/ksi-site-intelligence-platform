@@ -4,13 +4,21 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import sys
 import zipfile
 from pathlib import Path
 from types import ModuleType
 from xml.etree import ElementTree as ET
 
-_ROOT = Path(__file__).resolve().parents[2]
-_TOOL = _ROOT / "tools" / "build_field0a_kit.py"
+_ROOT = Path(__file__).resolve().parents[4]
+# P3 Task 6: this test and its tool moved blob-identical with the archived
+# mission-planning subject. The archived package roots join sys.path here so
+# the historical regeneration procedure stays runnable standalone
+# (archive/ is never on the product path; see task-6-report).
+_ARCHIVED_SRC = _ROOT / "archive" / "acquisition-2026"
+sys.path.insert(0, str(_ARCHIVED_SRC / "packages/mission-contracts/src"))
+sys.path.insert(0, str(_ARCHIVED_SRC / "packages/mission-planning/src"))
+_TOOL = _ARCHIVED_SRC / "tools" / "build_field0a_kit.py"
 _MEMBERS = ("wpmz/template.kml", "wpmz/waylines.wpml")
 
 

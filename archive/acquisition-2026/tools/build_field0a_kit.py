@@ -39,7 +39,7 @@ from ksi_mission_planning.wpml import (
     build_kmz,
 )
 
-KIT_DIR = Path(__file__).resolve().parent.parent / "docs" / "hil" / "field0a-kit"
+KIT_DIR = Path(__file__).resolve().parents[3] / "docs" / "hil" / "field0a-kit"
 SOURCE = KIT_DIR / "KSI-FIELD0A-B-droneEnum-99-payload-65534.kmz"
 CHECKSUM_MANIFEST = KIT_DIR / "SHA256SUMS"
 
