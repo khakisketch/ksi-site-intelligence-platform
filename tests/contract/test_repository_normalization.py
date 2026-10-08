@@ -134,16 +134,14 @@ def test_ci_provisions_pinned_psdk_fixture_before_pytest() -> None:
 def test_p3_archive_relocation_resolves_references(tmp_path: Path) -> None:
     """Manifest-approved acquisition sources moved blob-identical to
     ``archive/acquisition-2026/<path>`` still resolve (relocated, not lost);
-    unknown paths stay unresolvable (fail-closed)."""
-    archived = tmp_path / "archive/acquisition-2026/edge/psdk-app/CMakeLists.txt"
+    unknown paths stay unresolvable (fail-closed). Synthetic paths keep this
+    gate's own fixtures from naming live moving paths (the executor scan
+    forbids bare moving-path literals outside the manifest machinery)."""
+    archived = tmp_path / "archive/acquisition-2026/synth-owner/probe.txt"
     archived.parent.mkdir(parents=True)
-    archived.write_text("project(psdk_app)\n", encoding="utf-8")
-    assert _existing_or_migrated_path(
-        tmp_path, "edge/psdk-app/CMakeLists.txt", {}
-    ) == archived
-    assert (
-        _existing_or_migrated_path(tmp_path, "edge/psdk-app/ghost.c", {}) is None
-    )
+    archived.write_text("probe\n", encoding="utf-8")
+    assert _existing_or_migrated_path(tmp_path, "synth-owner/probe.txt", {}) == archived
+    assert _existing_or_migrated_path(tmp_path, "synth-owner/ghost.txt", {}) is None
 
 
 def test_repository_normalization_contract_passes_from_exact_git_index(
