@@ -123,11 +123,17 @@ _MACHINERY_PATHS = (
 )
 _TRANSITIONAL_PREFIXES = ("apps/dashboard/",)
 
+# The bounded historical verification route operates on archived content by
+# design (workflow_dispatch only, never product support) — its archived-path
+# references are the sanctioned exception, explicitly listed here and covered
+# by the normalization contract test that pins its steps.
+_HISTORICAL_ROUTE_PATHS = (".github/workflows/historical-archive.yml",)
+
 
 def _is_exempt_hit(path: str) -> bool:
     if _is_docs_mention(path):
         return True
-    if path in _MACHINERY_PATHS:
+    if path in _MACHINERY_PATHS or path in _HISTORICAL_ROUTE_PATHS:
         return True
     return any(path.startswith(prefix) for prefix in _TRANSITIONAL_PREFIXES)
 

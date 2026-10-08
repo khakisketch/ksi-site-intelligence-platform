@@ -207,6 +207,11 @@ def test_real_csv_consumers_are_real_references() -> None:
         },
         "Dockerfile.external-inspector": {"packages/perception"},
         "Dockerfile.external-measurement": {"packages/perception"},
+        # The normalization validator no longer names any edge/root token:
+        # the moved dirs left REQUIRED_STRUCTURE_PATHS (now the archive root)
+        # and the edge README left the linked-docs gate. Manifest references
+        # still resolve through the validator's archive fallback at runtime.
+        "tools/validate_repository_normalization.py": {"edge/root"},
     }
     decisions = build_move_decisions(REAL_FROZEN, ROOT)
     head = _git_head_map()
@@ -999,3 +1004,23 @@ def test_executor_destination_reference_is_not_a_live_reference(tmp_path: Path) 
     )
     completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_executor_historical_route_exemption_is_explicit(tmp_path: Path) -> None:
+    """The bounded historical workflow operates on archived content by design
+    — its references are the sanctioned, explicitly listed exception."""
+    repo = _exec_repo(
+        tmp_path,
+        {
+            "victim.txt": "move me\n",
+            ".github/workflows/historical-archive.yml": "uses 'victim.txt'\n",
+        },
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:victim.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert _exec._HISTORICAL_ROUTE_PATHS == (".github/workflows/historical-archive.yml",)
