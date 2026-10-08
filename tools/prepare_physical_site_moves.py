@@ -93,7 +93,6 @@ _HEX40 = re.compile(r"[0-9a-f]{40}").fullmatch
 _BLOB_MODES = frozenset({"100644", "100755", "120000"})
 
 _CORE = "services/core/src/ksi_core"
-_CORE_PYPROJECT = "services/core/pyproject.toml"
 
 _CORE_CONTRACTS_CONSUMERS = (
     f"{_CORE}/capability/runtime_api.py",
@@ -119,23 +118,28 @@ _CORE_EQUIPMENT_CONSUMERS = (
 # Consumers are active-tree files with verified references (imports, COPY,
 # CI jobs, pin scripts, routing mentions); per-path overrides below cover
 # the edge/root files whose references differ file by file.
+# P3 Task 5 note: services/core/pyproject.toml was a recorded consumer of the
+# three package groups at the Task 1 base, but Task 5 dropped those exact
+# dependencies (commit 2e85391) — the reference is gone by design (closure,
+# not relocation), so it no longer gates here. The T5:core-dep-drop blocker
+# ids stay as the closure record.
 _GROUP_TABLE: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
     (
         "packages/mission-contracts/",
         "packages/mission-contracts",
-        (*_CORE_CONTRACTS_CONSUMERS, _CORE_PYPROJECT),
+        (*_CORE_CONTRACTS_CONSUMERS,),
         ("T5:core-dep-drop",),
     ),
     (
         "packages/mission-planning/",
         "packages/mission-planning",
-        (*_CORE_PLANNING_CONSUMERS, _CORE_PYPROJECT),
+        (*_CORE_PLANNING_CONSUMERS,),
         ("T5:core-dep-drop",),
     ),
     (
         "packages/equipment-intelligence/",
         "packages/equipment-intelligence",
-        (*_CORE_EQUIPMENT_CONSUMERS, _CORE_PYPROJECT),
+        (*_CORE_EQUIPMENT_CONSUMERS,),
         ("T5:core-dep-drop",),
     ),
     (
