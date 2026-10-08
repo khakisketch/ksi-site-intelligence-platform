@@ -865,3 +865,11 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   verification (tsc/eslint/vitest/build + Playwright 390/768/1440) → design-owned rendered review →
   independent closure. T1 dispatching; the design run starts only after T1's scope contract lands.
   No app edits before T1.
+- T1 complete: `cedeb27` (`docs: add P4 console cleanup decisions`;128-route platform inventory +
+  KEEP/RETIRE/REPOINT tables + flag resolutions); reviewer ses_ee542ccc7ffekbr4QQOIIA5dQy Approved
+  (3 Minors backlog; one becomes a T2 re-grep).
+- T2 design run STARTED: runId `be0e572f-c436-4789-a5ba-9db322b99cd5` (project6edb22d8, plugin
+  od-code-migration, snapshot d21bad9c, agent codex, workspace folder-backed in-place
+  writeback). Polling get_run; no cancel/substitute; first start attempt was a 422 plugin-input
+  validation error (requestId 4eafaf95 not consumed); successful requestId 9000fd20.
+  Studio: http://127.0.0.1:7456/projects/6edb22d8-bd56-43df-9e13-521a30700925/conversations/19f0ddcd-7561-4aa4-a9ca-e8c2c0af1f3b
