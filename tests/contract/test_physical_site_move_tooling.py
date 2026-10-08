@@ -698,7 +698,7 @@ def _write_decision_manifest(
     specs: list[tuple[str, tuple[str, ...], tuple[str, ...]]],
     *,
     decision: str = "MOVE",
-    tamper: dict[str, str] | None = None,
+    tamper: dict[str, dict[str, str]] | None = None,
 ) -> Path:
     """Write an executor decision CSV for ``specs`` of
     (path, blockers, consumers) bound to the fixture HEAD."""
