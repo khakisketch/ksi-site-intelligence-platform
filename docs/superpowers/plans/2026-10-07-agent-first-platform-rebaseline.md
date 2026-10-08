@@ -737,3 +737,15 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   5Minors deferred to final review (joint CSV+MD atomicity; frozen out-path guard; edge/root
   consumer-token weakness; baseline refs unvalidated-by-design; MD arithmetic wording). ⚠️resolved:
   `manifold.env` is ignored and `manifold.env.example` is tracked+referenced. Next Task2 base3f61cf9.
+- Task2 complete: developer `ses_ee655ad55ffeUTnobvLF0pByRQ` committed `86e2ef6`+`abd026f`
+  (`test: pin historical managed-result readers…`/`test: harden…`;new720line test file, no wiring).
+  Reviewer `ses_ee650b44dffeDl05k00IqjHXV8` round1 Needs-fixes → fix → scoped re-review ALL
+  ADDRESSED. Accepted posture: managed job/artifact HTTP reads stay unwired — controller verified
+  the runtime chain is mission-free TODAY (`import ksi_core.processing_jobs` →0 `ksi_mission*`), the
+  author's original reason was false and is corrected, and the real end-state constraint is that
+  managed reads depend on the T5-archived mission/managed domain with no active platform consumer.
+  Hardened: `find_spec` denier+positive control, runtime-chain proof, managed-row409/no-500 pin,
+  exact identifier bytes; store-level replay byte-identical. 403passed combined; ruff/mypy clean;
+  Minors backlog. Ruling correction (a′): the194-row manifest governs T6 candidate moves; T3/T5
+  sets are governed by their classification tables (blob-hash-bound records+inverse notes), T6
+  verifies-completes. Next Task3 base`abd026f`.
