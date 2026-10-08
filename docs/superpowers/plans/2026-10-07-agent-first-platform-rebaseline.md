@@ -706,3 +706,24 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   and the corrected file differs from the verified bytes only by these fixes. Current
   SHA256`671b16c25b1342d1d148893fa50b5bda9f2e0875847d45b357f29b25cef7664f`. Human review remains
   the P3 execution gate; no P3 execution started.
+
+### P3 written approval and execution start (2026-10-08)
+
+- Human approved the P3 acquisition-separation plan at SHA`671b16c25b1342d1d148893fa50b5bda9f2e087
+  5847d45b357f29b25cef7664f` (main576536d) with the retained sequential developer/reviewer/
+  independent-runner method (rendered decision “계획 승인·기존 방식 실행”). Approved scope is the
+  plan as written: move decisions → readers → worker split → boot/CI switch → Core dependency
+  closure → physical moves/CI/lock/docs → independent closure. Excluded: deletion (moves only),
+  Console/UI (P4), deployment, credentials, new dependencies.
+- Independent plan verification completed before approval (PARTIAL with exactly the two coupling
+  discrepancies — Core imports11 and ksi_perception in2sites — both applied verbatim; the corrected
+  file differs from the verified bytes only by those fixes).
+- Workspace: current checkout/main, one writer; SDD workspace
+  `.superpowers/sdd/2026-10-08-acquisition-separation-and-archive/`.
+- Rulings before dispatch: (a) move ownership — T3 executes the worker managed-module moves, T5 the
+  Core managed-module moves (with their import swaps), T6 executes the194candidate-group moves and
+  verifies/completes every manifest row; the T1 manifest is the single move authority. (b) T3/T4
+  share `deploy/compose.yaml` and `.github/workflows/ci.yml` sequentially — T4 preserves T3's worker
+  edits and T6 preserves both when restructuring CI. (c) T2 read-path wiring (if any) precedes T5
+  and is preserved by it. (d) The plan file keeps its reviewed bytes; this ledger governs approval.
+- Task1 dispatched after this entry; Tasks2–7 to follow in order.
