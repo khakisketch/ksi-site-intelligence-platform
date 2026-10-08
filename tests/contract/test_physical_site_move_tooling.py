@@ -585,3 +585,372 @@ def test_loader_leaves_sys_path_unchanged() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     assert "PATH_CLEAN" in completed.stdout, completed.stdout
+
+
+# --- Executor: tools/execute_physical_site_moves.py (P3 Task 6) ---
+#
+# Refined Task 6 rule under test: ``is_executable(row)`` holds when every
+# blocker is a known vocabulary id, every T3/T5 id verifies as closed at HEAD
+# against its recorded evidence, every T6 id is closed by the same-batch
+# edits (machine-checked via consumer resolution + live-reference scan), and
+# every consumer resolves active-or-archive. The executor refuses the WHOLE
+# batch — never partial moves — on hash mismatch, unknown blocker,
+# unverified foreign closure, stale consumer, live reference, destination
+# collision, or a hostile manifest. Dry-run is the default.
+
+
+def _load_executor() -> Any:
+    """Load the real batch executor by file location (same dynamic-loader
+    pattern as the decision tool: no static ``tools.`` import)."""
+    tool_path = ROOT / "tools" / "execute_physical_site_moves.py"
+    spec = importlib.util.spec_from_file_location("execute_physical_site_moves", tool_path)
+    assert spec is not None and spec.loader is not None, tool_path
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_exec = _load_executor()
+EXEC_TOOL = ROOT / "tools" / "execute_physical_site_moves.py"
+
+
+def _exec_repo(tmp_path: Path, files: dict[str, str], name: str = "exec-repo") -> Path:
+    repo = tmp_path / name
+    repo.mkdir(exist_ok=False)
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "fixture@example.invalid")
+    _git(repo, "config", "user.name", "fixture")
+    for relative, content in files.items():
+        target = repo / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "executor fixture baseline")
+    return repo
+
+
+def _head_binding(repo: Path, path: str) -> tuple[str, str]:
+    """(git object, blob SHA256) for ``path`` at the fixture HEAD."""
+    entry = _git(repo, "ls-tree", "HEAD", path)
+    mode, kind, obj = entry.split("\t")[0].split(" ")
+    assert kind == "blob", entry
+    raw = subprocess.run(
+        ["git", "cat-file", "blob", obj], cwd=repo, check=True, capture_output=True
+    ).stdout
+    import hashlib as _hashlib
+
+    return obj, _hashlib.sha256(raw).hexdigest()
+
+
+def _write_decision_manifest(
+    path: Path,
+    repo: Path,
+    specs: list[tuple[str, tuple[str, ...], tuple[str, ...]]],
+    *,
+    decision: str = "MOVE",
+    tamper: dict[str, str] | None = None,
+) -> Path:
+    """Write an executor decision CSV for ``specs`` of
+    (path, blockers, consumers) bound to the fixture HEAD."""
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(_exec.DECISION_COLUMNS))
+        writer.writeheader()
+        for rel, blockers, consumers in specs:
+            obj, digest = _head_binding(repo, rel)
+            row = {
+                "path": rel,
+                "git_object": obj,
+                "blob_sha256": digest,
+                "baseline_git_object": obj,
+                "baseline_sha256": digest,
+                "group": "edge/root",
+                "decision": decision,
+                "destination": f"{ARCHIVE_PREFIX}{rel}",
+                "blockers": ";".join(blockers),
+                "consumers": ";".join(consumers),
+            }
+            if tamper and rel in tamper:
+                row.update(tamper[rel])
+            writer.writerow(row)
+    return path
+
+
+def _run_executor(
+    manifest: Path, repo: Path, inverse: Path, *, apply: bool = False
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            sys.executable,
+            str(EXEC_TOOL),
+            "--manifest",
+            str(manifest),
+            "--root",
+            str(repo),
+            "--inverse",
+            str(inverse),
+            *(["--apply"] if apply else []),
+        ],
+        cwd=ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _tree_unchanged(repo: Path) -> None:
+    assert _git(repo, "status", "--porcelain") == "", "tree must be unchanged"
+    assert not (repo / "archive").exists(), "no archive side-effects on refusal"
+
+
+def test_executor_dry_run_performs_no_change(tmp_path: Path) -> None:
+    """Dry-run (default, no ``--apply``) validates but moves nothing and
+    writes no inverse record."""
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n", "other.txt": "stay\n"})
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", (), ())]
+    )
+    inverse = tmp_path / "inverse.json"
+    completed = _run_executor(manifest, repo, inverse)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "Traceback" not in completed.stderr
+    assert "dry-run, tree unchanged" in completed.stdout
+    _tree_unchanged(repo)
+    assert (repo / "victim.txt").read_text(encoding="utf-8") == "move me\n"
+    assert not inverse.exists()
+
+
+def test_executor_hash_mismatch_refuses_the_whole_batch(tmp_path: Path) -> None:
+    """One tampered blob hash refuses every row — the valid row is not moved
+    either (never partial moves)."""
+    repo = _exec_repo(tmp_path, {"a.txt": "aaa\n", "b.txt": "bbb\n"})
+    obj_b, _digest_b = _head_binding(repo, "b.txt")
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("a.txt", (), ()), ("b.txt", (), ())],
+        tamper={"a.txt": {"blob_sha256": "0" * 64}},
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "Traceback" not in completed.stderr
+    assert "a.txt" in completed.stdout
+    _tree_unchanged(repo)
+    assert (repo / "b.txt").read_text(encoding="utf-8") == "bbb\n"
+
+
+def test_executor_unknown_blocker_refuses(tmp_path: Path) -> None:
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", ("T9:someday",), ())]
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "unknown blocker" in completed.stdout
+    _tree_unchanged(repo)
+
+
+def test_executor_unverified_foreign_blocker_refuses(tmp_path: Path) -> None:
+    """A T5 dep-drop claim with no verifiable evidence (no Core pyproject at
+    HEAD) is an unverified foreign closure — the batch is refused."""
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", ("T5:core-dep-drop",), ())]
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "T5:core-dep-drop" in completed.stdout
+    _tree_unchanged(repo)
+
+
+def test_executor_verified_foreign_closure_allows(tmp_path: Path) -> None:
+    """The same T5 dep-drop id passes once its closure evidence holds at HEAD
+    (Core pyproject names none of the closed dependencies)."""
+    repo = _exec_repo(
+        tmp_path,
+        {
+            "victim.txt": "move me\n",
+            "services/core/pyproject.toml": "[project]\nname = 'ksi-core'\n",
+        },
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", ("T5:core-dep-drop",), ())]
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    _tree_unchanged(repo)
+
+
+def test_executor_live_reference_refuses(tmp_path: Path) -> None:
+    """An active non-docs file still naming the moving path keeps the T6
+    consumer-review blocker open — the whole batch is refused."""
+    repo = _exec_repo(
+        tmp_path, {"victim.txt": "move me\n", "live.py": "REF = 'victim.txt'\n"}
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:victim.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "live.py" in completed.stdout
+    _tree_unchanged(repo)
+
+
+def test_executor_docs_mention_is_tolerated(tmp_path: Path) -> None:
+    """Docs/``*.md`` hits are intentional historical mentions, not live
+    references — they do not block the batch."""
+    repo = _exec_repo(
+        tmp_path, {"victim.txt": "move me\n", "notes.md": "moved victim.txt here\n"}
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:victim.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    _tree_unchanged(repo)
+
+
+def test_executor_stale_consumer_refuses(tmp_path: Path) -> None:
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", (), ("ghost/consumer.py",))]
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "stale consumer" in completed.stdout
+    _tree_unchanged(repo)
+
+
+def test_executor_misnamed_consumer_review_refuses(tmp_path: Path) -> None:
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:other.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    _tree_unchanged(repo)
+
+
+def test_executor_destination_collision_refuses(tmp_path: Path) -> None:
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    target = repo / "archive" / "acquisition-2026" / "victim.txt"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("already here\n", encoding="utf-8")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "pre-existing destination")
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv", repo, [("victim.txt", (), ())]
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    assert "already exists" in completed.stdout
+    assert (repo / "victim.txt").read_text(encoding="utf-8") == "move me\n"
+
+
+def test_executor_hostile_manifest_refuses(tmp_path: Path) -> None:
+    """A traversal path in a hostile manifest leaves the tree unchanged."""
+    repo = _exec_repo(tmp_path, {"victim.txt": "move me\n"})
+    manifest = tmp_path / "hostile.csv"
+    with manifest.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.DictWriter(stream, fieldnames=list(_exec.DECISION_COLUMNS))
+        writer.writeheader()
+        writer.writerow(
+            {
+                "path": "../evil.txt",
+                "git_object": "0" * 40,
+                "blob_sha256": "f" * 64,
+                "baseline_git_object": "0" * 40,
+                "baseline_sha256": "f" * 64,
+                "group": "edge/root",
+                "decision": "MOVE",
+                "destination": f"{ARCHIVE_PREFIX}../evil.txt",
+                "blockers": "",
+                "consumers": "",
+            }
+        )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 1, completed.stdout
+    _tree_unchanged(repo)
+    assert not (tmp_path / "evil.txt").exists()
+
+
+def test_executor_apply_moves_and_inverse_round_trips(tmp_path: Path) -> None:
+    """``--apply`` moves every row blob-identical, writes the durable inverse
+    record, and the recorded inverses restore the exact pre-move bytes."""
+    repo = _exec_repo(tmp_path, {"a.txt": "aaa\n", "sub/b.txt": "bbb\n"})
+    before = {
+        rel: (repo / rel).read_bytes() for rel in ("a.txt", "sub/b.txt")
+    }
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("a.txt", (), ()), ("sub/b.txt", (), ())],
+    )
+    inverse = tmp_path / "inverse.json"
+    completed = _run_executor(manifest, repo, inverse, apply=True)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "inverse record" in completed.stdout
+    for rel in ("a.txt", "sub/b.txt"):
+        assert not (repo / rel).exists(), rel
+        moved = repo / ARCHIVE_PREFIX / rel
+        assert moved.read_bytes() == before[rel], rel
+    import json as _json
+
+    record = _json.loads(inverse.read_text(encoding="utf-8"))
+    assert record["manifest_sha256"] == (
+        __import__("hashlib").sha256(manifest.read_bytes()).hexdigest()
+    )
+    assert len(record["moves"]) == 2
+    for entry in record["moves"]:
+        assert set(entry) == {
+            "path",
+            "destination",
+            "git_object",
+            "blob_sha256",
+            "inverse",
+        }
+        assert entry["destination"] == f"{ARCHIVE_PREFIX}{entry['path']}"
+    for entry in record["moves"]:
+        done = subprocess.run(
+            ["git", "mv", entry["destination"], entry["path"]],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert done.returncode == 0
+    for rel, content in before.items():
+        assert (repo / rel).read_bytes() == content, rel
+
+
+def test_executor_machinery_and_console_exemptions_are_explicit(tmp_path: Path) -> None:
+    """Manifest machinery paths and P4-owned Console paths are explicitly
+    exempt from the live-reference scan (documented in the tool, never
+    silent) — their mentions do not block the batch."""
+    repo = _exec_repo(
+        tmp_path,
+        {
+            "victim.txt": "move me\n",
+            "tools/prepare_physical_site_moves.py": "DATA = 'victim.txt'\n",
+            "apps/dashboard/src/view.ts": "REF = 'victim.txt'\n",
+        },
+    )
+    manifest = _write_decision_manifest(
+        tmp_path / "moves.csv",
+        repo,
+        [("victim.txt", ("T6:consumer-review:victim.txt",), ())],
+    )
+    completed = _run_executor(manifest, repo, tmp_path / "inverse.json")
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert set(_exec._MACHINERY_PATHS) == {
+        "tools/prepare_physical_site_moves.py",
+        "tools/execute_physical_site_moves.py",
+        "tests/contract/test_physical_site_move_tooling.py",
+    }
+    assert _exec._TRANSITIONAL_PREFIXES == ("apps/dashboard/",)

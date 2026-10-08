@@ -38,9 +38,9 @@ The frozen inventory `PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv` (SHA256 `8
 - `T6:docs-routing` — closed by Task 6 (routing notes in `REPOSITORY_STRUCTURE.md`/`DOCUMENT_STATUS.md` updated for the move).
 T3–T5 blockers are emptied by those tasks and recorded in their commits; T6 blockers are emptied by the Task 6 pre-move verification before the executor runs.
 
-## Executor contract (Task 6)
+## Executor contract (Task 6 — refined rule, Task 6 report)
 
-The executor (`tools/execute_physical_site_moves.py`) refuses any row with a non-empty `blockers` tuple, re-verifies each row's `git_object`/`blob_sha256` against the then-current HEAD, performs git-tracked moves to the exact `destination` only, and records the inverse per move. A candidate missing at HEAD is a controlled finding (fail-closed with a clear reason) — rows are never silently skipped, and `DEFER` (file stays, no closure path) or `RETAIN` (evidence shows platform use) apply only with recorded evidence.
+The executor (`tools/execute_physical_site_moves.py`) applies the refined Task 6 rule: `is_executable(row)` holds when every blocker is a known vocabulary id, every T3/T5 id verifies as closed at the then-current HEAD against its recorded evidence (dep-drop absence, import-closure absence-or-clean, managed-split absence), every T6 id is closed by the Task 6 same-batch consumer/CI/deploy/docs edits (machine-checked by consumer resolution active-or-archive plus a live-reference scan over non-exempt HEAD files), and every consumer resolves active-or-archive. It re-verifies each row's `git_object`/`blob_sha256` against the then-current HEAD, performs git-tracked moves to the exact `destination` only after ALL rows validate (never partial moves), and records the inverse per move. Explicit scan exemptions (never silent): the manifest machinery files (decision/fixture data, never a build input), the P4-owned `apps/dashboard/` transitional paths, and docs/`*.md` historical mentions. A candidate missing at HEAD is a controlled finding (fail-closed with a clear reason) — rows are never silently skipped, and `DEFER` (file stays, no closure path) or `RETAIN` (evidence shows platform use) apply only with recorded evidence.
 
 ## Consumer evidence (verified at this base)
 

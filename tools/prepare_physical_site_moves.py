@@ -21,9 +21,17 @@ partial artifacts behind. No file is moved here.
 Decision semantics: ``MOVE`` means a closure path exists in this plan (the
 row's ``blockers`` list the exact ids later tasks must empty); ``DEFER``
 means no closure path and the file stays; ``RETAIN`` means evidence shows
-platform use. The executor refuses any row with a non-empty blockers tuple.
-At this base every candidate is ``MOVE``; the vocabulary (and its
-row-level invariants) is enforced for later tasks that may defer or retain.
+platform use. The Task 6 executor applies the refined rule (see the companion
+``Executor contract`` section): ``is_executable(row)`` holds when every
+blocker is a known vocabulary id, every T3/T5 id verifies as closed at the
+then-current HEAD against its recorded evidence, every T6 id is closed by the
+Task 6 same-batch consumer/CI/deploy/docs edits (machine-checked via
+consumer resolution plus a live-reference scan), and every consumer resolves
+active-or-archive. The executor refuses the WHOLE batch on any hash mismatch,
+unknown blocker, unverified foreign closure, unresolvable consumer, live
+reference, or destination collision. At this base every candidate is ``MOVE``;
+the vocabulary (and its row-level invariants) is enforced for later tasks
+that may defer or retain.
 
 Consumer-resolution rule (P3 Task 5): a recorded consumer reference is
 satisfied when the path exists either active or at
@@ -620,13 +628,21 @@ def render_md(
         "before the executor runs."
     )
     out.append("")
-    out.append("## Executor contract (Task 6)")
+    out.append("## Executor contract (Task 6 — refined rule)")
     out.append("")
     out.append(
-        "The executor (`tools/execute_physical_site_moves.py`) refuses any "
-        "row with a non-empty `blockers` tuple, re-verifies each row's "
+        "The executor (`tools/execute_physical_site_moves.py`) applies the "
+        "refined Task 6 rule: `is_executable(row)` holds when every blocker "
+        "is a known vocabulary id, every T3/T5 id verifies as closed at the "
+        "then-current HEAD against its recorded evidence (dep-drop absence, "
+        "import-closure absence-or-clean, managed-split absence), every T6 "
+        "id is closed by the Task 6 same-batch consumer/CI/deploy/docs edits "
+        "(machine-checked by consumer resolution active-or-archive plus a "
+        "live-reference scan over non-docs HEAD files), and every consumer "
+        "resolves active-or-archive. It re-verifies each row's "
         "`git_object`/`blob_sha256` against the then-current HEAD, performs "
-        "git-tracked moves to the exact `destination` only, and records the "
+        "git-tracked moves to the exact `destination` only after ALL rows "
+        "validate (never partial moves), and records the "
         "inverse per move. A candidate missing at HEAD is a controlled "
         "finding (fail-closed with a clear reason) — rows are never silently "
         "skipped, and `DEFER` (file stays, no closure path) or `RETAIN` "
