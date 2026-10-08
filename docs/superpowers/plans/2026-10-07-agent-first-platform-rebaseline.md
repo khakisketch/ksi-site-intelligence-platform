@@ -843,3 +843,11 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   customer t0/t1/t2/rights/operational acceptance; backlog Minors + environment notes (offline
   lock cache limitation; venv dangling editables; env-flaky worker-loop test under load;
   DEPLOYMENT.md masking prose; orphaned T3 worker lanes → P5). P3 does not close the product.
+- P4 written plan drafted: [Operations Console cleanup](2026-10-08-operations-console-cleanup-p4.md)
+  (DRAFT FOR WRITTEN REVIEW; base89d4187). Discovery: nav7items/screens/API-proxies17/lib-references48
+  inventoried; design path = existing OpenDesign project “KSI Operations Console” bound to the real
+  `apps/dashboard` folder (scenario`od-code-migration`; stale snapshot + failed status noted; no
+  active context — use the explicit project id). Tasks: decision inventory → design-run cleanup →
+  functional verification (tsc/eslint/vitest/build + Playwright 390/768/1440 with the platform
+  server) → design-owned rendered review → independent closure (RB-07). No app edits yet;
+  independent plan verification + Human review pending.
