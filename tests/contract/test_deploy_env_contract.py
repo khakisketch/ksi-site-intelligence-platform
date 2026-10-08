@@ -117,6 +117,43 @@ def test_deploy_does_not_claim_an_unverified_gateway_runtime() -> None:
     assert "capability는 모두 NOT_VERIFIED" in _COMPOSE
 
 
+def test_no_compose_file_defines_an_archived_service_or_build_input() -> None:
+    """P3 Task 6 compose closure proof: the brief listed deploy/compose*.yaml
+    and the close record is a verified no-op — the default compose never
+    included a gateway service (T5 removed the managed worker service), so no
+    compose hunk exists. This test pins the absence across the whole compose
+    set: no gateway/managed-worker/manifold service defs and no archived
+    image, entrypoint, or mount string in any compose file."""
+    compose_files = [
+        "compose.yaml",
+        "compose.vm.yaml",
+        "compose.external-reconstruction.yaml",
+        "compose.copilot.yaml",
+    ]
+    forbidden_service_defs = ("dji-gateway:", "worker:", "manifold:")
+    forbidden_build_inputs = (
+        "Dockerfile.gateway",
+        "Dockerfile.worker",
+        "edge/",
+        "packages/perception",
+        "packages/mission-contracts",
+        "packages/mission-planning",
+        "packages/equipment-intelligence",
+        "ksi_dji_gateway",
+        "ksi-mission-contracts",
+        "ksi-mission-planning",
+        "ksi-perception",
+        "ksi-equipment-intelligence",
+        "ksi-dji-gateway",
+    )
+    for name in compose_files:
+        text = (_ROOT / "deploy" / name).read_text(encoding="utf-8")
+        for service in forbidden_service_defs:
+            assert service not in text, (name, service)
+        for token in forbidden_build_inputs:
+            assert token not in text, (name, token)
+
+
 def test_gateway_example_uses_a_distinct_edge_route_observer_credential() -> None:
     # P3 Task 6: the gateway runner example moved blob-identical to
     # archive/acquisition-2026/deploy/gateway.config.example.json with its

@@ -49,3 +49,10 @@ The executor (`tools/execute_physical_site_moves.py`) applies the refined Task 6
 - CI `edge-control-plane`/`edge-psdk-app-host`/`edge-psdk-tap`/`edge-manifold-target` jobs build the edge groups; `check_third_party_pins.sh` + `tools/edge/fetch_psdk.py` pin `PSDK_LOCK.yaml`.
 - Build images: `Dockerfile.external-inspector` and `Dockerfile.external-measurement` COPY `packages/perception`; `Dockerfile.gateway` runs the gateway entrypoint; `edge/docker/manifold3-build.Dockerfile` is the CI build image referenced by the manifold-target job and `manifoldctl`.
 - No active-tree Python module outside `services/dji-gateway` imports `ksi_dji_gateway`; `deploy/compose.yaml` names no gateway service.
+- Deploy compose close record (P3 Task 6, verified no-op): the brief listed
+  `deploy/compose*.yaml` but no compose hunk exists — the default compose
+  never included a gateway service and Task 5 removed the managed worker
+  service, so there was nothing to retire. Pinned by
+  `test_no_compose_file_defines_an_archived_service_or_build_input`, which
+  sweeps all four compose files for gateway/managed-worker/manifold service
+  defs and archived image/entrypoint/mount strings.

@@ -144,11 +144,13 @@ def test_platform_lanes_import_no_managed_or_acquisition_module() -> None:
         import importlib.util
         import sys
 
-        _DENIED = %r
+        _DENIED = ("ksi_synthetic_probe_denied_9f3",) + %r
 
         # P3 Task 6: the acquisition packages are archived, not installed —
         # the probe asserts their absence (archive-boundary expectation)
-        # while the hook below stays as a reintroduction guard.
+        # while the hook below stays as a reintroduction guard. The
+        # synthetic first entry keeps a positive control that names no live
+        # moving path (see below).
         assert (
             importlib.util.find_spec("ksi_mission_contracts") is None
         ), "ksi_mission_contracts must stay unimportable after archival"
@@ -179,6 +181,15 @@ def test_platform_lanes_import_no_managed_or_acquisition_module() -> None:
             pass
         else:
             raise AssertionError("archived ksi_mission_contracts became importable")
+        # Synthetic positive control: this name exists on no path, so only
+        # the hook's denial message proves the probe fires (never a live
+        # moving path, never package absence).
+        try:
+            import ksi_synthetic_probe_denied_9f3  # noqa: F401
+        except ImportError as exc:
+            assert "platform isolation probe denies" in str(exc), exc
+        else:
+            raise AssertionError("deny-hook did not fire on the synthetic probe")
 
         for _name in %r:
             importlib.import_module(_name)
@@ -556,11 +567,13 @@ def test_platform_app_imports_no_acquisition_package() -> None:
         import tempfile
         from pathlib import Path
 
-        _DENIED = %r
+        _DENIED = ("ksi_synthetic_probe_denied_9f3",) + %r
 
         # P3 Task 6: the acquisition packages are archived, not installed —
         # the probe asserts their absence (archive-boundary expectation)
-        # while the hook below stays as a reintroduction guard.
+        # while the hook below stays as a reintroduction guard. The
+        # synthetic first entry keeps a positive control that names no live
+        # moving path (see below).
         assert (
             importlib.util.find_spec("ksi_mission_contracts") is None
         ), "ksi_mission_contracts must stay unimportable after archival"
@@ -588,6 +601,15 @@ def test_platform_app_imports_no_acquisition_package() -> None:
             pass
         else:
             raise AssertionError("archived ksi_mission_contracts became importable")
+        # Synthetic positive control: this name exists on no path, so only
+        # the hook's denial message proves the probe fires (never a live
+        # moving path, never package absence).
+        try:
+            import ksi_synthetic_probe_denied_9f3  # noqa: F401
+        except ImportError as exc:
+            assert "platform isolation probe denies" in str(exc), exc
+        else:
+            raise AssertionError("deny-hook did not fire on the synthetic probe")
 
         # Archive control: no archive package exists on the path, so a bare
         # import fails with ModuleNotFoundError — only the hook's denial

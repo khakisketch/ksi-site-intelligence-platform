@@ -1,0 +1,401 @@
+[
+  {
+    "path": "tests/contract/test_action_intent_conformance.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_action_intent_conformance.py",
+    "git_object": "aeff5d5243f5e3f571519e4b69db65de40952267",
+    "blob_sha256": "297832bda00441f952373ae931d47fa2e88bdaf37c65ff7ae98ecd676934db33",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_action_intent_conformance.py tests/contract/test_action_intent_conformance.py"
+  },
+  {
+    "path": "tests/contract/test_camera_grid.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_camera_grid.py",
+    "git_object": "4d7723f4cb8448bc232e2608db8af4be378427b0",
+    "blob_sha256": "0ded916aa4512c74f5b4b02f6a1971b39452bc74630c3da5e02fc3f7fa38983e",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_camera_grid.py tests/contract/test_camera_grid.py"
+  },
+  {
+    "path": "tests/contract/test_contract_signing.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_contract_signing.py",
+    "git_object": "b232b5d4c12b23d394fd0939c4285218edb87eb7",
+    "blob_sha256": "37b8c157cd8107efddd6dfb517e1574266fef2216522a432443333896c1e424b",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_contract_signing.py tests/contract/test_contract_signing.py"
+  },
+  {
+    "path": "tests/contract/test_cpa_ttc.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_cpa_ttc.py",
+    "git_object": "be3377f1d717a5f9cbd62466d1199c22705bc53d",
+    "blob_sha256": "647f3014bf88098ca926783b909115a85fc235ed1f5a3b5798c9b0269e86f768",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_cpa_ttc.py tests/contract/test_cpa_ttc.py"
+  },
+  {
+    "path": "tests/contract/test_dfine_detector.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_dfine_detector.py",
+    "git_object": "47de84722a19a82fbc8466910f9326eee1164f3b",
+    "blob_sha256": "a4ae0c134f2f766736953fbd38e185e186e60fe442d80fb7db1273ccfcb09546",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_dfine_detector.py tests/contract/test_dfine_detector.py"
+  },
+  {
+    "path": "tests/contract/test_dynamic_object_mask.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_dynamic_object_mask.py",
+    "git_object": "0ff493de93378e2960bd23823b508e4d47462434",
+    "blob_sha256": "86d076b5ca08374042c0d26d877d565cf8df0ab616ab8ceff125405f6403262a",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_dynamic_object_mask.py tests/contract/test_dynamic_object_mask.py"
+  },
+  {
+    "path": "tests/contract/test_edge_dispatch_contracts.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_edge_dispatch_contracts.py",
+    "git_object": "5cd460036810872a7ebcde5dfeef03c6e6f75f40",
+    "blob_sha256": "15d85a07144c4d38fe8463c54e3a03192a5fe576494284b923176acfa84b0889",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_edge_dispatch_contracts.py tests/contract/test_edge_dispatch_contracts.py"
+  },
+  {
+    "path": "tests/contract/test_edge_riskfield_production_wiring.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_edge_riskfield_production_wiring.py",
+    "git_object": "15ae76007dee69bb8aa25f2bc3d69c23d9c90e28",
+    "blob_sha256": "584d48e342e5abdb8ba2a77f6bef33d54a3042ea03525582bbed49c35f0e71e0",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_edge_riskfield_production_wiring.py tests/contract/test_edge_riskfield_production_wiring.py"
+  },
+  {
+    "path": "tests/contract/test_kinematic_state.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_kinematic_state.py",
+    "git_object": "abd0ce42bf36db93ba1ae80a9f613d282f71ea75",
+    "blob_sha256": "dd0292205b443de1f95572a1b429c14c6149dae95fe99eb7ef6f2e1146e9c210",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_kinematic_state.py tests/contract/test_kinematic_state.py"
+  },
+  {
+    "path": "tests/contract/test_kmz_official_sample_fidelity.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_kmz_official_sample_fidelity.py",
+    "git_object": "a48d28fb993d5a5ac01948f03e0dd929df4ff81c",
+    "blob_sha256": "7095f6237534d08c8c0afceebb39779f5fd918d89033ffb7c3dadd5eb165a85f",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_kmz_official_sample_fidelity.py tests/contract/test_kmz_official_sample_fidelity.py"
+  },
+  {
+    "path": "tests/contract/test_live_view_frame_detector_typed.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_live_view_frame_detector_typed.py",
+    "git_object": "58d5381575cb17b2de78c372f10b0c37d716b55f",
+    "blob_sha256": "da2d021555a3acb00514d7ff9de6d78a8dfacd20fe7389bfc8b2dec5ec277551",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_live_view_frame_detector_typed.py tests/contract/test_live_view_frame_detector_typed.py"
+  },
+  {
+    "path": "tests/contract/test_manifoldctl_package.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_manifoldctl_package.py",
+    "git_object": "9f8bd1724826becb5b15e1f1e278b43cfa42b340",
+    "blob_sha256": "98f80ec0266924d01bb35b13bc8c97c42a482dd639b1db7f2e61b7b31e6333cb",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_manifoldctl_package.py tests/contract/test_manifoldctl_package.py"
+  },
+  {
+    "path": "tests/contract/test_mission_contract_consumer.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_mission_contract_consumer.py",
+    "git_object": "c8d087dcd4c4d76e46e44f9333e5765f767aafba",
+    "blob_sha256": "b688be2e68ea3b794e8760ea2e14948ffd6fb794bd360a41dde79fcfc84af962",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_mission_contract_consumer.py tests/contract/test_mission_contract_consumer.py"
+  },
+  {
+    "path": "tests/contract/test_mission_contract_roundtrip.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_mission_contract_roundtrip.py",
+    "git_object": "3276024f5190cbea8331e7f0212d51539dbc17e7",
+    "blob_sha256": "0915c16abb27cf97ad1aef13a1efa50d29e2afeeb5c6aeaecc6d50dfb87aeb80",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_mission_contract_roundtrip.py tests/contract/test_mission_contract_roundtrip.py"
+  },
+  {
+    "path": "tests/contract/test_mission_planning.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_mission_planning.py",
+    "git_object": "6ce41e3e18609965f844c5d29e81e8c7bc529ca7",
+    "blob_sha256": "284f89509fbcd6ae54766d4c2fafb51212d8a4727403ef5da2052881c9c624d1",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_mission_planning.py tests/contract/test_mission_planning.py"
+  },
+  {
+    "path": "tests/contract/test_model_registry.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_model_registry.py",
+    "git_object": "82117386486eada963f87ab5f21e74dda59ba5e4",
+    "blob_sha256": "54a4dd538e6f44ff0da30708dbf52680a7ccd2354b13fd6801bd06e0f16f468d",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_model_registry.py tests/contract/test_model_registry.py"
+  },
+  {
+    "path": "tests/contract/test_msdk_bridge_boundary.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_msdk_bridge_boundary.py",
+    "git_object": "56d3f99bfdffc3fce6c9d7ca45d3b849acf9ddb4",
+    "blob_sha256": "bd1552e73c3052e5d972c648ca867d3d460fadc11a1cc5aec942cfef11e8fd90",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_msdk_bridge_boundary.py tests/contract/test_msdk_bridge_boundary.py"
+  },
+  {
+    "path": "tests/contract/test_native_edge_artifact_oracle.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_native_edge_artifact_oracle.py",
+    "git_object": "7a8a21031522e6d3ffc92be4908715185a60cea3",
+    "blob_sha256": "4acdda8766ff592cbbe7c9b3aa4a45887c44e3be87a31a0e5dbdf36f78605ec7",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_native_edge_artifact_oracle.py tests/contract/test_native_edge_artifact_oracle.py"
+  },
+  {
+    "path": "tests/contract/test_onnx_conformance.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_onnx_conformance.py",
+    "git_object": "1facd5bfc92e2bd5d771dcfc9f4a97f4593067ee",
+    "blob_sha256": "1f824e7bc2f797177e4c95b9a4016de2e4a0435db4fe081aec072b4ad2bf3d3d",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_onnx_conformance.py tests/contract/test_onnx_conformance.py"
+  },
+  {
+    "path": "tests/contract/test_psdk_media_offload_production_gate.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_psdk_media_offload_production_gate.py",
+    "git_object": "ec9f92c1b58c95fa145cb852b2c67b9538584331",
+    "blob_sha256": "5ad43d64c5196797592605d488344dfd036d7d7de45df7605079db7fa74ec5bc",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_psdk_media_offload_production_gate.py tests/contract/test_psdk_media_offload_production_gate.py"
+  },
+  {
+    "path": "tests/contract/test_psdk_route_companion_boundary.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_psdk_route_companion_boundary.py",
+    "git_object": "042b207c1ea5b75f86945d390fbf2f6ecce32080",
+    "blob_sha256": "02c0b38dcc944d8192fdaa2ab8a62d99f808014c144edabd2098f41563e90366",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_psdk_route_companion_boundary.py tests/contract/test_psdk_route_companion_boundary.py"
+  },
+  {
+    "path": "tests/contract/test_psdk_waypoint_archive_gate.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_psdk_waypoint_archive_gate.py",
+    "git_object": "ed6660c6d16978a28b0d2e09d35c24b651edf24a",
+    "blob_sha256": "3f6f6c3a19f8a4971f8f056bc8df042736854a4a890dc4192ae3c8613b1e1aff",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_psdk_waypoint_archive_gate.py tests/contract/test_psdk_waypoint_archive_gate.py"
+  },
+  {
+    "path": "tests/contract/test_recorded_frame_detector_typed.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_recorded_frame_detector_typed.py",
+    "git_object": "a23e281a38e83d15182f3ed328ead48a2e1b3752",
+    "blob_sha256": "e95b903cd85ed0a810365eff269a8940140552e33aef671d55a78a6cd1c8806d",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_recorded_frame_detector_typed.py tests/contract/test_recorded_frame_detector_typed.py"
+  },
+  {
+    "path": "tests/contract/test_recorded_pipeline.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_recorded_pipeline.py",
+    "git_object": "09d2db52e7d1fb415c0976036f05464ea935d5ef",
+    "blob_sha256": "34b65bbeab04cca45c99eb489c79af5da5da40caf23a08fa6cf72d26735c523a",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_recorded_pipeline.py tests/contract/test_recorded_pipeline.py"
+  },
+  {
+    "path": "tests/contract/test_reobservation_capture.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_reobservation_capture.py",
+    "git_object": "c0834fa0028c0ef249e8c364915a7ea22a95cf44",
+    "blob_sha256": "0e9f3d6165452d3085a9296b9fabcdfad337cd5c59c7d7a1870b7cdd11330fff",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_reobservation_capture.py tests/contract/test_reobservation_capture.py"
+  },
+  {
+    "path": "tests/contract/test_reobservation_signal.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_reobservation_signal.py",
+    "git_object": "4374926912594e62e6633b0a4bdd82d008344287",
+    "blob_sha256": "a91447ea71c17be0e38f1862fa580ccb751808d01693cc69abe293677c113fc3",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_reobservation_signal.py tests/contract/test_reobservation_signal.py"
+  },
+  {
+    "path": "tests/contract/test_risk_field.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_risk_field.py",
+    "git_object": "393c7b1a2c4f7758f734ca4a0cac7c196d201142",
+    "blob_sha256": "5269b2ece11e927daeacc6f418bff577ab122eead2e85dea34d0ee9fd925bf55",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_risk_field.py tests/contract/test_risk_field.py"
+  },
+  {
+    "path": "tests/contract/test_shadow_flight_boundary_gate.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_shadow_flight_boundary_gate.py",
+    "git_object": "feecbf9c8c767f8f356a8f9e7f16fd9b6ac88e3a",
+    "blob_sha256": "a8fc3f6cb6a3a64b8faf930b06d3c8a099739b752ab549bece82845852792281",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_shadow_flight_boundary_gate.py tests/contract/test_shadow_flight_boundary_gate.py"
+  },
+  {
+    "path": "tests/contract/test_tensorrt_differential_gate.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_tensorrt_differential_gate.py",
+    "git_object": "7ea8d38570996375575c12eb985f9a2965bc58a6",
+    "blob_sha256": "bd6a041b0cd910cf4b03c796ac98accbadf6c5e9862a87463f8adeca4340a647",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_tensorrt_differential_gate.py tests/contract/test_tensorrt_differential_gate.py"
+  },
+  {
+    "path": "tests/contract/test_target_abi_gate.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_target_abi_gate.py",
+    "git_object": "2fd29adaee955651d9d0e483a9eb94a7fd7837e4",
+    "blob_sha256": "869587f0075ed0354076fe57fd7443803d15cc05c566d38d4a90102212023731",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_target_abi_gate.py tests/contract/test_target_abi_gate.py"
+  },
+  {
+    "path": "tests/contract/test_terrain_altitude_planner.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_terrain_altitude_planner.py",
+    "git_object": "e70954f0fe34932eb8476da1a070efce68dde864",
+    "blob_sha256": "2ce709a9cc43347798db0a8ffceb5f1bc5203c6bf2e0549edc5954094a0fd696",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_terrain_altitude_planner.py tests/contract/test_terrain_altitude_planner.py"
+  },
+  {
+    "path": "tests/replay/test_recorded_slice.py",
+    "destination": "archive/acquisition-2026/tests/replay/test_recorded_slice.py",
+    "git_object": "15dcd52cc149d26f8203cec76300887be4a8a734",
+    "blob_sha256": "13de4e90c30162fd64587a615e1ca3402056e6e3397780e2effd1905de2d3458",
+    "inverse": "git mv archive/acquisition-2026/tests/replay/test_recorded_slice.py tests/replay/test_recorded_slice.py"
+  },
+  {
+    "path": "tests/replay/test_vertical_slice.py",
+    "destination": "archive/acquisition-2026/tests/replay/test_vertical_slice.py",
+    "git_object": "e12a5c93d6b6cb73ebec7049dda330c5f1518fff",
+    "blob_sha256": "1c3441b75fcfb6f0f829aa490707011983ca03e204530f8945214afde1b391bc",
+    "inverse": "git mv archive/acquisition-2026/tests/replay/test_vertical_slice.py tests/replay/test_vertical_slice.py"
+  },
+  {
+    "path": "tests/replay/vertical_slice.py",
+    "destination": "archive/acquisition-2026/tests/replay/vertical_slice.py",
+    "git_object": "fc3921d47fe18fcf2c16959d16ceaa372572f0a2",
+    "blob_sha256": "ce55174435c043340820b43a4a45003b326c49f879032c328a85e4edef20a5e7",
+    "inverse": "git mv archive/acquisition-2026/tests/replay/vertical_slice.py tests/replay/vertical_slice.py"
+  },
+  {
+    "path": "tests/tools/test_fetch_psdk.py",
+    "destination": "archive/acquisition-2026/tests/tools/test_fetch_psdk.py",
+    "git_object": "6e22e45312ccc446f72b407622ef281412c7bf5c",
+    "blob_sha256": "a72f7b7fc3d01e74bcb64d3a6f95c561ec3b7c3c7be295e30e1d29df30cd8dfe",
+    "inverse": "git mv archive/acquisition-2026/tests/tools/test_fetch_psdk.py tests/tools/test_fetch_psdk.py"
+  },
+  {
+    "path": "tests/_real_model_gate.py",
+    "destination": "archive/acquisition-2026/tests/_real_model_gate.py",
+    "git_object": "363459cf51cc941b3f64b9d8a58099419799f0dd",
+    "blob_sha256": "6fc11afa71247bf52c96c7ad0a7d6b85532a8c7ed1afa5b68a622f7d0c6b706e",
+    "inverse": "git mv archive/acquisition-2026/tests/_real_model_gate.py tests/_real_model_gate.py"
+  },
+  {
+    "path": "tools/edge/check_msdk_bridge_boundary.py",
+    "destination": "archive/acquisition-2026/tools/edge/check_msdk_bridge_boundary.py",
+    "git_object": "2c021e9414a927e118cb88fca7dd54f630c1b1d1",
+    "blob_sha256": "b66f5965f99196a824beea27179ec00c58ff1b82052eebec85a6bb5a0bee9f29",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/check_msdk_bridge_boundary.py tools/edge/check_msdk_bridge_boundary.py"
+  },
+  {
+    "path": "tools/edge/check_psdk_waypoint_archive.py",
+    "destination": "archive/acquisition-2026/tools/edge/check_psdk_waypoint_archive.py",
+    "git_object": "c08bce979c8a979878ce5ee3ef84b7aefacc6eb7",
+    "blob_sha256": "2f9adb04d97427fa0f4d6c4edca8281f02dc85dfa03b94ca70820053c17b1409",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/check_psdk_waypoint_archive.py tools/edge/check_psdk_waypoint_archive.py"
+  },
+  {
+    "path": "tools/edge/check_shadow_flight_boundary.py",
+    "destination": "archive/acquisition-2026/tools/edge/check_shadow_flight_boundary.py",
+    "git_object": "2d8f56e03b8e4210b73030dd51c88f0cb640bc8b",
+    "blob_sha256": "350a668cbcb0ec5bf43782a865df5dcb24c1a2c9e81295102444c1c5bc9f672f",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/check_shadow_flight_boundary.py tools/edge/check_shadow_flight_boundary.py"
+  },
+  {
+    "path": "tools/edge/check_target_abi.py",
+    "destination": "archive/acquisition-2026/tools/edge/check_target_abi.py",
+    "git_object": "6a4bae44d4e9f2ef1356f897bcad71d968f929de",
+    "blob_sha256": "6f22dfd941dd2c427321a4122f61c53e5475182eafc0d597e636a4b55441636a",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/check_target_abi.py tools/edge/check_target_abi.py"
+  },
+  {
+    "path": "tools/edge/fetch_psdk.py",
+    "destination": "archive/acquisition-2026/tools/edge/fetch_psdk.py",
+    "git_object": "172f6e9a91e1350ca0b80416072acc0952ad2375",
+    "blob_sha256": "16609a554c98a61de32e1ac98efbbf8f8d600468dd79e4d65225e428040a2db1",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/fetch_psdk.py tools/edge/fetch_psdk.py"
+  },
+  {
+    "path": "tools/edge/verify_flight_boundary_on_built_target.sh",
+    "destination": "archive/acquisition-2026/tools/edge/verify_flight_boundary_on_built_target.sh",
+    "git_object": "2d9f0b59e7798d95767333e8988a9e01db9a5f6d",
+    "blob_sha256": "c719eed7af345056be10a5b3386bcd84130b80e7d735ca8cb25fcb1c6b09f06d",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/verify_flight_boundary_on_built_target.sh tools/edge/verify_flight_boundary_on_built_target.sh"
+  },
+  {
+    "path": "tools/edge/verify_native_activation_bridge.py",
+    "destination": "archive/acquisition-2026/tools/edge/verify_native_activation_bridge.py",
+    "git_object": "7270f9c4bd7ca409ad9c0fafd2a5804fcb4ebdab",
+    "blob_sha256": "f1569a4900e4ac3254f501d19a603fd2de28a7621e61a2a3975d317b89a283d7",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/verify_native_activation_bridge.py tools/edge/verify_native_activation_bridge.py"
+  },
+  {
+    "path": "tools/edge/verify_native_artifact_oracle.py",
+    "destination": "archive/acquisition-2026/tools/edge/verify_native_artifact_oracle.py",
+    "git_object": "01560b27bc0692b459857a212503e15578a93488",
+    "blob_sha256": "62b7cb4f6f9829f2b6c0c28db662631a6fad4f87cf79d84c6e020f125038c4d2",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/verify_native_artifact_oracle.py tools/edge/verify_native_artifact_oracle.py"
+  },
+  {
+    "path": "tools/edge/verify_sqlite_store_forward.sh",
+    "destination": "archive/acquisition-2026/tools/edge/verify_sqlite_store_forward.sh",
+    "git_object": "6a9b9b302effe2ee70e04266f6279f15f67544ab",
+    "blob_sha256": "cb580e6bd03f7e4c425df335231a82e473424e2bf5304aa0a0f9eb82d2f0b1c2",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/verify_sqlite_store_forward.sh tools/edge/verify_sqlite_store_forward.sh"
+  },
+  {
+    "path": "tools/edge/verify_tensorrt_differential.py",
+    "destination": "archive/acquisition-2026/tools/edge/verify_tensorrt_differential.py",
+    "git_object": "1fb979b55d2eb62bc37540d4a6029b15ec0a20af",
+    "blob_sha256": "07f3df9227ba20233e3bd2fbe2df9752db214505558f677e16615fdce0829f0e",
+    "inverse": "git mv archive/acquisition-2026/tools/edge/verify_tensorrt_differential.py tools/edge/verify_tensorrt_differential.py"
+  },
+  {
+    "path": "scripts/manifold/lib.sh",
+    "destination": "archive/acquisition-2026/scripts/manifold/lib.sh",
+    "git_object": "5a9d33b06fe86b898c14fde219dcc681a7aaa1ab",
+    "blob_sha256": "a746a9eea9fbad1a1f327a18379b348adf67f2f2623bbf143178f408637f6dc5",
+    "inverse": "git mv archive/acquisition-2026/scripts/manifold/lib.sh scripts/manifold/lib.sh"
+  },
+  {
+    "path": "scripts/manifold/manifold.env.example",
+    "destination": "archive/acquisition-2026/scripts/manifold/manifold.env.example",
+    "git_object": "af33aae091ad76de7e2a9bdf3161fca88c40aba4",
+    "blob_sha256": "1cd0c7338aafcdab186c05f52e8ff56b770e34a4cfdfd99a62ec0829020bd259",
+    "inverse": "git mv archive/acquisition-2026/scripts/manifold/manifold.env.example scripts/manifold/manifold.env.example"
+  },
+  {
+    "path": "scripts/manifold/manifoldctl",
+    "destination": "archive/acquisition-2026/scripts/manifold/manifoldctl",
+    "git_object": "d458478015c3377ce95468ddf997d114d64d8040",
+    "blob_sha256": "c206b2dfbfaf67b63255b997b34c3fb9b4d3745c4757ea28e892f192a06d5ebf",
+    "inverse": "git mv archive/acquisition-2026/scripts/manifold/manifoldctl scripts/manifold/manifoldctl"
+  },
+  {
+    "path": "scripts/manifold/probe_usb_bulk.sh",
+    "destination": "archive/acquisition-2026/scripts/manifold/probe_usb_bulk.sh",
+    "git_object": "fc234408172256fd63b496af0678d7c1932e9911",
+    "blob_sha256": "eabc320baebc2002bb2172bd00e5e60edb5aab4817f41fde6758501684ece8ad",
+    "inverse": "git mv archive/acquisition-2026/scripts/manifold/probe_usb_bulk.sh scripts/manifold/probe_usb_bulk.sh"
+  },
+  {
+    "path": "scripts/check_third_party_pins.sh",
+    "destination": "archive/acquisition-2026/scripts/check_third_party_pins.sh",
+    "git_object": "b6725201f89467cc8ee1bddf4df98faf1d699d84",
+    "blob_sha256": "929ee99c5fa59943599a415155a79f774c88ee95072db265ac1f77726b7d5298",
+    "inverse": "git mv archive/acquisition-2026/scripts/check_third_party_pins.sh scripts/check_third_party_pins.sh"
+  },
+  {
+    "path": "cmake/toolchain-manifold3.cmake",
+    "destination": "archive/acquisition-2026/cmake/toolchain-manifold3.cmake",
+    "git_object": "8457efd0386ba8dd7eb2d6cd730790e3d406f0f7",
+    "blob_sha256": "24683b95d215f04a5248f5ab080849925991f3df14dc7335b37ead7588775aa2",
+    "inverse": "git mv archive/acquisition-2026/cmake/toolchain-manifold3.cmake cmake/toolchain-manifold3.cmake"
+  },
+  {
+    "path": "Dockerfile.gateway",
+    "destination": "archive/acquisition-2026/Dockerfile.gateway",
+    "git_object": "ffb505368834cf86b1e36265d155683ff077606a",
+    "blob_sha256": "1c58a46a77c6bc2de3defdf42ad52d4a84483de5b2352f3826a37a6a1fd3c6a9",
+    "inverse": "git mv archive/acquisition-2026/Dockerfile.gateway Dockerfile.gateway"
+  },
+  {
+    "path": "deploy/gateway.config.example.json",
+    "destination": "archive/acquisition-2026/deploy/gateway.config.example.json",
+    "git_object": "ab31d6454a87df86c9c5220970dd008ca4ea4827",
+    "blob_sha256": "f80ae0f845a78c244c2d9412696d7d54106cdde458498a7aef087cf6eaca5c58",
+    "inverse": "git mv archive/acquisition-2026/deploy/gateway.config.example.json deploy/gateway.config.example.json"
+  },
+  {
+    "path": "tools/fetch_model.py",
+    "destination": "archive/acquisition-2026/tools/fetch_model.py",
+    "git_object": "1e65e7785f129ba1c216292a5c8f12a20545d7e4",
+    "blob_sha256": "d3edc39726af2b4ca67fc17c96f8738e950c90a037bfff18042b095241142df5",
+    "inverse": "git mv archive/acquisition-2026/tools/fetch_model.py tools/fetch_model.py"
+  },
+  {
+    "path": "tools/build_field0a_kit.py",
+    "destination": "archive/acquisition-2026/tools/build_field0a_kit.py",
+    "git_object": "78940f4663359eded3bce4b3f49ecfcc920f4dbf",
+    "blob_sha256": "abc3d8b606a23c3e636366726a0faf872ae763c41000bd01e7e19f46a9be156a",
+    "inverse": "git mv archive/acquisition-2026/tools/build_field0a_kit.py tools/build_field0a_kit.py"
+  },
+  {
+    "path": "tests/contract/test_field0a_kit.py",
+    "destination": "archive/acquisition-2026/tests/contract/test_field0a_kit.py",
+    "git_object": "015db511f10399db3add57c8d537648ea4bb40ef",
+    "blob_sha256": "65a1efc2b47ca44f5dcc1e6aef498cd4f6c582f4e3a4df97e07180f28f8318e9",
+    "inverse": "git mv archive/acquisition-2026/tests/contract/test_field0a_kit.py tests/contract/test_field0a_kit.py"
+  }
+]

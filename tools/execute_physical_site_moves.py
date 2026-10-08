@@ -33,11 +33,14 @@ T6 ids (closed by this task's batch, machine-checked here):
   (non-batch, non-archive, non-docs) HEAD file references the row path or
   its group directory.
 * ``T6:ci-docker-refs`` / ``T6:docs-routing`` — covered by the same
-  live-reference check over the row path plus its group directory prefix
-  (docs/``*.md`` hits are tolerated as intentional historical mentions; the
-  manifest machinery files and the P4-owned ``apps/dashboard/`` transitional
-  paths are explicitly exempt — never silent; the routing-note edits
-  themselves are human-reviewed in the same commit batch).
+  live-reference check over the row path plus its group directory prefix.
+  The scan is path-literal: it sees filesystem-path strings, not module
+  names, so ``import ksi_mission_contracts``-style references rely on the
+  archive boundary tests, not this scan. Docs/``*.md`` hits are tolerated
+  as intentional historical mentions; the manifest machinery files and the
+  P4-owned ``apps/dashboard/`` transitional paths are explicitly exempt —
+  never silent; the routing-note edits themselves are human-reviewed in the
+  same commit batch).
 
 Atomicity: ALL rows are validated before ANY move. ``--apply`` then performs
 every ``git mv`` and writes a durable inverse record

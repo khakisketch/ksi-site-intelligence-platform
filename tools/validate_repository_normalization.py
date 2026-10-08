@@ -282,11 +282,13 @@ def _existing_or_migrated_path(
         if candidate.exists():
             return candidate
 
-    # P3 acquisition separation: manifest-approved acquisition sources moved
-    # blob-identical to archive/acquisition-2026/<path> (move-decision manifest
-    # docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv). A reference that
-    # resolves there is relocated, not lost — the historical R0-R2 manifest
-    # stays byte-stable while this gate keeps proving nothing silently vanished.
+    # P3 acquisition separation: a reference that is gone from the active
+    # tree but present under the archive mirror (archive/acquisition-2026/)
+    # resolves there — relocated, not lost. This fallback asserts existence
+    # under the mirror only; manifest approval lives in the move-decision
+    # manifest (docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv) and the
+    # Task 6 executor, not here. The historical R0-R2 manifest stays
+    # byte-stable while this gate keeps proving nothing silently vanished.
     archived = _repo_path(root, f"archive/acquisition-2026/{normalized}")
     if archived.exists():
         return archived
