@@ -333,6 +333,136 @@ def test_core_managed_modules_are_absent_from_the_active_tree() -> None:
         raise AssertionError(f"{name} still imports from the active tree")
 
 
+# Roots whose *active* (non-archived) Python files must never reach into
+# ``archive/**`` — not via import, not via a dynamic load, not via a
+# filesystem path handed to a loader. ``archive/`` itself is excluded by
+# definition (it is the record, not a runtime input).
+_ARCHIVE_SCAN_ROOTS = ("services", "packages", "tools", "deploy", "tests")
+
+# Call names treated as filesystem/dynamic loaders for the path-based rule.
+# Log/error/message calls are deliberately absent: mentioning the archive in
+# prose is not reaching into it.
+_ARCHIVE_LOAD_CALLS = frozenset(
+    {
+        "open",
+        "Path",
+        "spec_from_file_location",
+        "SourceFileLoader",
+        "exec_module",
+        "read_text",
+        "read_bytes",
+        "write_text",
+        "write_bytes",
+        "mkdir",
+        "exists",
+        "is_file",
+        "is_dir",
+        "glob",
+        "rglob",
+        "iterdir",
+        "unlink",
+        "rename",
+        "replace",
+        "symlink_to",
+        "readlink",
+        "resolve",
+        "stat",
+        "chmod",
+        "chown",
+        "remove",
+        "removedirs",
+        "makedirs",
+        "listdir",
+        "scandir",
+        "walk",
+        "copy",
+        "copy2",
+        "copytree",
+        "move",
+        "__import__",
+        "import_module",
+        "exec",
+        "eval",
+    }
+)
+
+
+def _is_archive_reference(value: str) -> bool:
+    return (
+        value == "archive"
+        or value.startswith("archive.")
+        or value.startswith("archive/")
+        or "/archive/" in value
+    )
+
+
+def _archive_violations_in_source(source: str, fname: str) -> list[str]:
+    """All ``archive/**`` reaches in one source unit (import/dynamic/path-load)."""
+    import ast
+
+    out: list[str] = []
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == "archive" or alias.name.startswith("archive."):
+                    out.append(f"{fname}:{node.lineno}: import {alias.name}")
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module == "archive" or module.startswith("archive."):
+                out.append(f"{fname}:{node.lineno}: from {module} import ...")
+        elif isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name):
+                call_name = func.id
+            elif isinstance(func, ast.Attribute):
+                call_name = func.attr
+            else:
+                continue
+            if call_name not in _ARCHIVE_LOAD_CALLS:
+                continue
+            for arg in (*node.args, *(kw.value for kw in node.keywords)):
+                if (
+                    isinstance(arg, ast.Constant)
+                    and isinstance(arg.value, str)
+                    and _is_archive_reference(arg.value)
+                ):
+                    out.append(f"{fname}:{node.lineno}: {call_name}({arg.value[:70]!r})")
+    return out
+
+
+def test_active_tree_has_no_archive_imports_or_loads() -> None:
+    """No active file reaches into ``archive/**`` in any form."""
+    violations: list[str] = []
+    for root in _ARCHIVE_SCAN_ROOTS:
+        for path in sorted((REPOSITORY_ROOT / root).rglob("*.py")):
+            if "__pycache__" in str(path):
+                continue
+            violations.extend(
+                _archive_violations_in_source(
+                    path.read_text(encoding="utf-8"), str(path.relative_to(REPOSITORY_ROOT))
+                )
+            )
+    assert not violations, "active tree reaches into archive/**:\n" + "\n".join(violations)
+
+
+def test_archive_scanner_fires_on_a_violating_snippet() -> None:
+    """Non-vacuous gate: the scanner above must catch every banned form."""
+    snippet = (
+        "import archive.acquisition_2026.x\n"
+        "from archive.acquisition_2026.y import z\n"
+        "from pathlib import Path\n"
+        'p = Path("archive/acquisition-2026/tests/contract/test_x.py")\n'
+        'exec(open("archive/acquisition-2026/w.py").read())\n'
+    )
+    found = _archive_violations_in_source(snippet, "<synthetic>")
+    assert len(found) == 4, found
+    assert any(": import archive." in item for item in found), found
+    assert any(": from archive." in item for item in found), found
+    assert any("Path(" in item for item in found), found
+    assert any("open(" in item for item in found), found
+
+
 def test_core_source_tree_has_no_acquisition_package_imports() -> None:
     """No active Core file imports an acquisition package (AST gate, all levels)."""
     import ast
@@ -377,7 +507,7 @@ def _run_core_python(script: str) -> subprocess.CompletedProcess[str]:
 
 def test_platform_app_imports_no_acquisition_package() -> None:
     """Fresh-process deny-hook: platform boot pulls no acquisition package."""
-    denied = _DENIED_CORE_ACQUISITION_PREFIXES
+    denied = (*_DENIED_CORE_ACQUISITION_PREFIXES, "archive")
     script = dedent(
         """
         import importlib.util
@@ -415,6 +545,16 @@ def test_platform_app_imports_no_acquisition_package() -> None:
             assert "platform isolation probe denies" in str(exc), exc
         else:
             raise AssertionError("deny-hook did not block ksi_mission_contracts")
+
+        # Archive control: no archive package exists on the path, so a bare
+        # import fails with ModuleNotFoundError — only the hook's denial
+        # message proves the probe covers the archive prefix too.
+        try:
+            import archive.acquisition_2026  # noqa: F401
+        except ImportError as exc:
+            assert "platform isolation probe denies" in str(exc), exc
+        else:
+            raise AssertionError("deny-hook did not block archive")
 
         for _name in %r:
             importlib.import_module(_name)

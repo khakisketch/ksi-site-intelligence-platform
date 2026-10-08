@@ -284,6 +284,55 @@ def create_app(
     # omitted rather than fabricated.
     capability_registry = registry
 
+    # P3 Task 5 fail-closed guards: every param below is backed by a module
+    # retired to archive/acquisition-2026/ (or a mount retired with it). The
+    # factory accepts them for signature stability but must never silently
+    # drop them — a non-None value is a caller defect. Staying stores
+    # (design_surface_store, processing_job_store, checkpoint_validation_store,
+    # change_detection_store, volume_change_store, comparison_request_store,
+    # design_conformance_*, region_extraction_request_store, work_area_store,
+    # site_store, evidence_storage, source_media_store, external_*, auth) keep
+    # their exact behavior.
+    _retired = {
+        "mission_store": mission_store,
+        "mission_signing_key": mission_signing_key,
+        "mission_signing_key_id": mission_signing_key_id,
+        "mission_sequence_store": mission_sequence_store,
+        "flight_artifact_store": flight_artifact_store,
+        "coverage_report_store": coverage_report_store,
+        "mission_execution_store": mission_execution_store,
+        "event_store": event_store,
+        "edge_sync_store": edge_sync_store,
+        "edge_dispatch_store": edge_dispatch_store,
+        "defect_candidate_store": defect_candidate_store,
+        "report_export_store": report_export_store,
+        "region_extraction_report_store": region_extraction_report_store,
+        "equipment_state_store": equipment_state_store,
+        "equipment_support_store": equipment_support_store,
+        "acquisition_connectivity_store": acquisition_connectivity_store,
+        "acquisition_coordination_store": acquisition_coordination_store,
+        "capture_quality_report_store": capture_quality_report_store,
+        "copilot_service": copilot_service,
+        "copilot_conversation_service": copilot_conversation_service,
+        "site_workspace_projector": site_workspace_projector,
+        "site_briefing_service": site_briefing_service,
+        "site_briefing_store": site_briefing_store,
+        "civil_readiness_projector": civil_readiness_projector,
+        "device_attestation_registry": device_attestation_registry,
+    }
+    for _name, _value in _retired.items():
+        if _value is not None:
+            raise ValueError(
+                f"create_app got {_name}: its backing module retired to "
+                "archive/acquisition-2026/ in P3 Task 5 — the managed surface "
+                "it fed no longer mounts"
+            )
+    if acquisition_issue_gate_enabled:
+        raise ValueError(
+            "create_app got acquisition_issue_gate_enabled=True: the acquisition "
+            "issue gate retired to archive/acquisition-2026/ in P3 Task 5"
+        )
+
     app = FastAPI(
         title="KSI Core",
         version="0.0.1",

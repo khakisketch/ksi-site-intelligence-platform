@@ -390,6 +390,9 @@ def test_analysis_mcp_client_is_denied_auth_only_and_unrelated_generic_routes(
         paths = ("/v1/auth/whoami", "/v1/organization-work-roster", "/v1/sites")
         responses = [client.get(path, headers=headers) for path in paths]
         assert [response.status_code for response in responses] == [403, 403, 403]
+        # The retired managed route is absent entirely (404), not merely denied.
+        retired = client.get("/v1/processing-resource-policies", headers=headers)
+        assert retired.status_code == 404
         assert all("X-KSI-External-AI-Egress" not in response.headers for response in responses)
     finally:
         fixture.close()

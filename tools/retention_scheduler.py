@@ -49,10 +49,10 @@ from ksi_core.durable_journal import DurableJournal
 from ksi_core.observability import configure_structured_logging
 from ksi_core.retention import RetentionPolicy, load_policy, plan_expiry
 
-try:
-    from ksi_core.events import EventStore  # type: ignore[import-not-found]
-except ModuleNotFoundError:  # P3 Task 5: managed events retired to the archive boundary
-    EventStore = None
+# P3 Task 5: ksi_core.events retired to archive/acquisition-2026/ — no import
+# attempt here, not even guarded (an import attempt is still a reference to
+# the archive). Explicit absence; the events-journal path below fails closed.
+EventStore = None
 
 logger = logging.getLogger("ksi_core.retention_scheduler")
 
