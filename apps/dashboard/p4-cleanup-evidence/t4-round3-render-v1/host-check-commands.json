@@ -1,0 +1,35 @@
+[
+  {
+    "name": "tsc",
+    "command": [
+      "./node_modules/.bin/tsc",
+      "--noEmit"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "eslint",
+    "command": [
+      "./node_modules/.bin/eslint",
+      "."
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "vitest",
+    "command": [
+      "npm",
+      "test"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "build",
+    "command": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "exitCode": 0
+  }
+]

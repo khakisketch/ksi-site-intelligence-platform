@@ -253,7 +253,7 @@ in §4). Inline browser fetches hit Console `/api/*` proxies, never the platform
 | `sites/[siteId]/design/` + `DesignSurfacePanel` | RETIRE | `design.ts` paths (§1 absent) + `lib/design-conformance.ts` |
 | `sites/[siteId]/changes/` + `ChangeRegionExplorer` | REPOINT | Managed-era change/region calls (`phase34` change-detection, `region-extraction`, `comparison` — §1 absent) → repoint to mounted analysis (`/v2/.../analyses*`) + external-result reads, else typed empty state; no KEEP screen may call unmounted routes |
 | `sites/[siteId]/progress/` | REPOINT | `getSiteWorkspace` (§1 absent) + `phase34` calls → repoint to mounted `GET sites/work-areas/spatial-assets` + `site-progress.ts` (pure, KEEP); typed empty where no replacement |
-| `sites/[siteId]/report/` | REPOINT | `design` (:5), `phase34` (:6), `site-workspace` (:13), `missions` coverage (:24) — §1 absent — strip; keep `ExternalSiteResultSummary` + `OrthophotoOverlay` (mounted external-result/display-artifact reads) |
+| `sites/[siteId]/report/` | REPOINT | `design` (:5), `phase34` (:6), `site-workspace` (:13), `missions` coverage (:24) — §1 absent — strip; keep access to external result summaries and authorized external display-artifact reads. `OrthophotoOverlay` itself is managed-download-bound and retires (§8 correction). |
 | `sites/[siteId]/surveys/new/` + `SurveyWizard` | RETIRE | Mission-planning era (`missionSiteGate`, `app/missions/format`, `KmzDownloadButton` → retired `/api/missions` proxy); no platform mission-planning surface (§1) |
 | `field/`, `field/page.tsx` | REPOINT | `AcquisitionReadinessCard` + `getAcquisitionReadiness` (`acquisition-connectivity`, §1 absent), `AcquisitionProgressCard` + `getAcquisitionProgress` (`acquisition-coordination`, §1 absent), `CopilotPanel` (`/v1/copilot*` absent), `getSiteWorkspace`/`getLatestSiteBriefing` (§1 absent) → remove; keep `WorkQueueOperationsNotices`, external-workflow panels (mounted) |
 | `field/new/` | KEEP | Site picker only (`listSitesCached` mounted; links to KEEP `observations/new`) |
@@ -307,7 +307,8 @@ in §4). Inline browser fetches hit Console `/api/*` proxies, never the platform
 | Component | Disposition | Evidence / replacement |
 |---|---|---|
 | `design/DesignConformancePanel.tsx`, `missions/ComparisonSubmitPanel.tsx`, `missions/SourceUploadPanel.tsx`, `missions/KmzDownloadButton.tsx`, `missions/CoverageReportSection.tsx`, `reports/ReportExportControls.tsx`, `reports/VolumeChangeSummary.tsx`, `map/DiffHeatmapOverlay*.tsx`, `map/ChangeRegionMapInner.tsx` (only if unused after) | RETIRE | Backed by retired proxies/modules (§3c/§3d); `CoverageReportSection` consumes `missions.getCoverageReport` (§1 absent) |
-| `map/OrthophotoOverlay.tsx`, `map/AoiPolygonMap.tsx`, `site/SiteAreaPicker.tsx`, `site/SiteProgressBar.tsx`, `external-results/*`, `wizard/*`, `ui/*`, `responsive/*`, `console/CommandPalette.tsx` + `palette-source.ts` + `palette-items.ts`, `auth/*` | KEEP | Mounted reads / pure / palette inherits nav |
+| `map/AoiPolygonMap.tsx`, `site/SiteAreaPicker.tsx`, `site/SiteProgressBar.tsx`, `external-results/*`, `wizard/*`, `ui/*`, `responsive/*`, `console/CommandPalette.tsx` + `palette-source.ts` + `palette-items.ts`, `auth/*` | KEEP | Mounted reads / pure / palette inherits nav |
+| `map/OrthophotoOverlay.tsx`, `map/OrthophotoOverlayInner.tsx` | RETIRE | Source-confirmed managed `processing-jobs` download proxy dependency; external sanitized orthophoto and report safe-derivative display are KEEP (§8). |
 | `site/ReobsSuggestions.tsx`, `site/ZoneVolumeBars.tsx` | REPOINT | `phase34` formatting/imports only (`phase34-labels` is pure KEEP) → re-feed from mounted `GET .../reobservation-drafts` + `POST .../external-reobservation-proposals` / external-result reads, else typed empty |
 | `field/AcquisitionProgressCard.tsx`, `field/AcquisitionReadinessCard.tsx`, `field/CopilotPanel.tsx`, `field/PilotBridgeProbe.tsx`, `field/copilot-citation.ts`, `field/acquisition-*.ts`, `field/resolve-session.ts` (only if acquisition-bound) | RETIRE | `acquisition-*`/`copilot*` paths §1 absent |
 | `field/WorkOrderActionPanel.tsx`, `field/WorkOrderOperationsPanel.tsx`, `field/OperationsWorkHeader.tsx`, `field/work-queue.ts`, `field/work-order-stage.ts`, `field/external-work-order-stage.ts` | REPOINT (KEEP shell) | Strip acquisition/site-workspace calls (§3b); operations/drafts/external calls mounted |
@@ -369,3 +370,40 @@ Proxies never call the platform directly — each `app/api/**/route.ts` imports 
    `apps/dashboard/e2e/fixtures/seed_operations_console.py` (imports archived modules) is P4-owned — update with the cleanup.
 4. Open questions for the run (not decisions): exact redirect targets for retired URLs; `progress/` typed-empty copy;
    `surveyEntryPreset.ts`/`siteAutonomyGate.ts` retention if unimported after cleanup.
+
+## 7. Verification consumer closure (2026-10-08)
+
+P4 removed the Event/Mission Console targets, so their five Python-to-TS mirror checks
+are obsolete consumers, not broken domain contracts. They are retired without skips or
+archive imports. Original files remain exactly recoverable from baseline `9a3bab1`:
+
+| Test consumer | Disposition / recovery SHA256 | Preserved verification |
+|---|---|---|
+| `tests/contract/test_event_actions_gate_dashboard_sync.py` (3 cases) | RETIRE; `c850916b6351faf44a8b0dd91f317e4290bed639dba90ef20f543996cb0aa822` | Canonical domain enums/graphs unchanged; real platform HTTP read/transition paths remain absent, tested in `test_core_dev_platform.py`; actual Console `/events` and proxy retirement covered by P4 E2E. |
+| `tests/contract/test_mission_site_status_gate_dashboard_sync.py` (2 cases) | RETIRE; `bae937ebd59954659af1c52a256e6b22c5d05c4613db4cd5d60e81850978221e` | Historical Mission gating/domain contracts unchanged; real platform issuance/execution routes remain absent, tested in `test_core_dev_platform.py`; actual Console retired URLs covered by P4 E2E. |
+
+Rollback of a consumer: read `git show 9a3bab1:<exact-test-path>` and restore only with
+its original target surface and approved scope. Reintroducing an old Console action alone
+does not grant platform acquisition authority. Surviving `test_domain_enums_dashboard_sync.py`,
+`test_site_autonomy_gate_dashboard_sync.py`, contract/replay/schema checks stay active.
+
+Unrelated directory-safety failures in two test fixtures are corrected by explicit0700
+temporary directories, not by relaxing deploy/Core checks or changing host permissions.
+The fixture control now tests group-writable admission failure directly. No runtime,
+deployment, data rights, external effect or new product behavior is authorized here.
+
+## 8. Orthophoto component inventory correction (2026-10-08)
+
+The original KEEP label in §3b/§3e incorrectly attributed external display-artifact
+reads to `map/OrthophotoOverlay`. The baseline `fb3310a` wrapper's docstring explicitly
+names `/api/processing-jobs/{jobId}/artifacts/{artifactId}/download`, and its inner
+component fetches that retired proxy. Restoring it would reintroduce a dead managed
+download dependency, contrary to the governing mounted-route rule. Retiring these two
+managed wrappers is therefore consistent cleanup, not removal of all orthophoto viewing.
+
+Preserved external-display path: `field/ExternalReconstructionPanel` →
+`field/ExternalSanitizedOrthophoto` + `ExternalSanitizedOrthophotoInner`;
+`sites/[siteId]/observations/[reportRef]/ExternalReportSafeDerivativeComparison` uses
+the same authorized sanitized display. `lib/geo/geotiff-overlay.ts` remains shared.
+This correction does not prove real-byte display in the unconfigured local storage
+fixture, nor authorize a mock image, new data grant, or changed derivative consent.

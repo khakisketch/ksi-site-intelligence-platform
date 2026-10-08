@@ -1,0 +1,12 @@
+{
+  "01-tsc.log": "b80c89f0da934a6cc38aabb4945bf867b93d4f6bed8a988d8f148b9b66fcdd50",
+  "02-eslint.log": "2897c1f63653a60d6ac65dadf1fb870b48bf863d5de1a796985f7ee548642038",
+  "03-vitest.log": "ad9fba74efc6a005ee4449ab582b2327180f9d81833f34caab9a56767bbac1b3",
+  "04-build.log": "f4afa86e6186baaaf860fbac40d08077629b7a6ca1f728fade8c4eaa9bae9f32",
+  "05-e2e.log": "cbbbe8676a0a621b388a93d1edbfcda8fbc599399a32c51e767e42441fb23527",
+  "checks-summary.json": "752c108faca28d89a2054154926dbc5d85ff67755696dfe7984ddf23f86bbe6e",
+  "engineering-final-review.md": "2180a202b17e92e5c5c1632355e9a1cfd7955f437b91768f6b83734fd64743d3",
+  "engineering-first-review.md": "01295fc819f74d8d470886c89612f2d4ca63815824c94172ac7d82436c10924f",
+  "independent-python-receipt.md": "95fc9e45206fd844cc4545c5ce5b20044cea003c2f2848d159849ad5b57f31ff",
+  "receipt.md": "e6267cebe7e6d49eb4b6c9a70d7a2241460b0c9e46e859f3141869f52596718d"
+}

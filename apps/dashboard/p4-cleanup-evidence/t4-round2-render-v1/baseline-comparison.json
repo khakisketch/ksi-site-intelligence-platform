@@ -1,0 +1,34 @@
+[
+  {
+    "project": "desktop-1024",
+    "candidate": "baseline-candidates/home-desktop-1024.png",
+    "prior": "retained-baselines/home-desktop-1024.png",
+    "exactPlaywrightActual": true,
+    "newMask": false,
+    "thresholdChanged": false
+  },
+  {
+    "project": "desktop-1440",
+    "candidate": "baseline-candidates/home-desktop-1440.png",
+    "prior": "retained-baselines/home-desktop-1440.png",
+    "exactPlaywrightActual": true,
+    "newMask": false,
+    "thresholdChanged": false
+  },
+  {
+    "project": "mobile-390",
+    "candidate": "baseline-candidates/home-mobile-390.png",
+    "prior": "retained-baselines/home-mobile-390.png",
+    "exactPlaywrightActual": true,
+    "newMask": false,
+    "thresholdChanged": false
+  },
+  {
+    "project": "tablet-768",
+    "candidate": "baseline-candidates/home-tablet-768.png",
+    "prior": "retained-baselines/home-tablet-768.png",
+    "exactPlaywrightActual": true,
+    "newMask": false,
+    "thresholdChanged": false
+  }
+]

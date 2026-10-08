@@ -5,20 +5,18 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
-import { SiteThumbnail, type SiteThumbnailImage } from "@/components/site/SiteThumbnail";
+import { SiteThumbnail } from "@/components/site/SiteThumbnail";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
-import { listAllEventsCached, listMissionsCached, listSitesCached } from "@/lib/core-api/cached";
+import { listSitesCached } from "@/lib/core-api/cached";
 import {
   SITE_GROUPS,
   normalizeSiteGroup,
   siteGroupStatuses,
   siteNextAction,
 } from "@/lib/core-api/site-progress";
-import { isUnattended } from "@/lib/core-api/triage";
 import { formatKoreanDate } from "@/lib/datetime";
-import { getHomeEventEvidencePreview } from "@/lib/home-evidence";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { SITE_STATUSES, type SiteStatus, type SiteView } from "@/lib/core-api/types";
 
@@ -41,10 +39,9 @@ const ATTENTION_ORDER: Record<SiteStatus, number> = {
   PATROL_ACTIVE: 9,
 };
 
-// 고정폭 합(688) + 간격(70) + 좌우 여백(32) + 현장 열 최소폭(200) = 990.
-const COLUMNS =
-  "minmax(200px,1.5fr) 112px 92px 62px 104px 88px 112px 118px";
-const MIN_WIDTH = 990;
+// 고정폭 합(438) + 간격(50) + 좌우 여백(32) + 현장 열 최소폭(200) = 720.
+const COLUMNS = "minmax(200px,1.5fr) 112px 92px 104px 112px 118px";
+const MIN_WIDTH = 720;
 
 function isSiteStatus(value: string | undefined): value is SiteStatus {
   return value !== undefined && (SITE_STATUSES as readonly string[]).includes(value);
@@ -140,32 +137,12 @@ export default async function SitesPage({
         : "요청을 처리하지 못했습니다.";
   }
 
-  // 현장별로 개별 조회하면 N+1 이 된다 — 전체를 한 번만 받아 siteId 로 묶는다
-  // (홈이 이미 이 패턴을 쓴다. *Cached 라 셸 배지와 같은 스냅샷을 본다).
-  const [missionsResult, eventsResult, canRegisterSiteResult] = await Promise.allSettled([
-    listMissionsCached(undefined),
-    listAllEventsCached(),
+  const [canRegisterSiteResult, canCreateWorkOrderResult] = await Promise.allSettled([
     hasAllPermissions("SITES_WRITE"),
+    hasAllPermissions("WORK_ORDERS_WRITE"),
   ]);
-  // rejected 를 빈 배열로 삼키면 "0건"과 "모름"이 같은 화면이 된다 — 조회가 죽었는데
-  // 행마다 0 이 찍히면 그건 관측 실패를 사실로 렌더하는 것이다. null 로 남겨 '—' 로 가른다.
-  const missions = missionsResult.status === "fulfilled" ? missionsResult.value : null;
-  const events = eventsResult.status === "fulfilled" ? eventsResult.value.events : null;
   const canRegisterSite = canRegisterSiteResult.status === "fulfilled" && canRegisterSiteResult.value;
-  const canPlanSurvey = await hasAllPermissions("MISSIONS_ISSUE");
-
-  const lastMissionBySite = new Map<string, string>();
-  for (const mission of missions ?? []) {
-    const previous = lastMissionBySite.get(mission.siteId);
-    if (!previous || new Date(mission.issuedAt).getTime() > new Date(previous).getTime()) {
-      lastMissionBySite.set(mission.siteId, mission.issuedAt);
-    }
-  }
-
-  const unattendedBySite = new Map<string, number>();
-  for (const event of (events ?? []).filter(isUnattended)) {
-    unattendedBySite.set(event.siteId, (unattendedBySite.get(event.siteId) ?? 0) + 1);
-  }
+  const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
 
   const visibleSites = sites
     ? sortSites(
@@ -181,43 +158,14 @@ export default async function SitesPage({
       )
     : [];
 
-  // Site 자체에는 아직 대표 이미지 계약이 없다. 대신 각 현장의 가장 최근 확인 항목에
-  // 실제 image evidence가 있을 때만 목록 썸네일로 낮춰 쓴다. 열람 실패나 근거 부재를
-  // 임의 이미지로 채우지 않는다(INV-040). 현장당 최대 1건만 조회한다.
-  const latestEventBySite = new Map<string, { eventKey: string; occurredAt: string }>();
-  for (const event of events ?? []) {
-    const previous = latestEventBySite.get(event.siteId);
-    if (!previous || event.occurredAt > previous.occurredAt) {
-      latestEventBySite.set(event.siteId, { eventKey: event.eventKey, occurredAt: event.occurredAt });
-    }
-  }
-  const thumbnailEntries = await Promise.all(
-    visibleSites.map(async (site): Promise<readonly [string, SiteThumbnailImage | null]> => {
-      const event = latestEventBySite.get(site.siteId);
-      if (!event) return [site.siteId, null] as const;
-      try {
-        const preview = await getHomeEventEvidencePreview(event.eventKey);
-        return [
-          site.siteId,
-          preview
-            ? { src: preview.src, alt: `${site.name} 최근 확인 항목의 등록 근거` }
-            : null,
-        ] as const;
-      } catch {
-        return [site.siteId, null] as const;
-      }
-    }),
-  );
-  const thumbnailBySite = new Map(thumbnailEntries);
   const hasFilter = query.length > 0 || status !== undefined || group !== "all" || sort !== "attention";
   const siteRows = visibleSites.map((site) => {
     const next = siteNextAction(site.status);
     const primaryAction = resolveSiteOperatorNextAction(
       site,
       {
-        canRegisterSite,
         canEditSite: canRegisterSite,
-        canIssueMission: canPlanSurvey,
+        canCreateWorkOrder,
       },
       { includeRoutineSurvey: next.survey },
     );
@@ -225,8 +173,6 @@ export default async function SitesPage({
       site,
       next,
       primaryAction,
-      unattended: events === null ? null : (unattendedBySite.get(site.siteId) ?? 0),
-      lastMission: lastMissionBySite.get(site.siteId) ?? null,
     };
   });
 
@@ -341,9 +287,11 @@ export default async function SitesPage({
             </div>
           </>
         )}
-        <span className="ml-auto hidden items-center gap-2 lg:flex">
-          <RegisterSiteAction canRegisterSite={canRegisterSite} />
-        </span>
+        {(sites === null || sites.length > 0) && (
+          <span className="ml-auto hidden items-center gap-2 lg:flex">
+            <RegisterSiteAction canRegisterSite={canRegisterSite} />
+          </span>
+        )}
       </div>
 
       {errorMessage !== null ? (
@@ -366,7 +314,7 @@ export default async function SitesPage({
               </span>
             </div>
             <ul className="overflow-hidden rounded-lg border border-line bg-surface divide-y divide-line lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent lg:divide-y-0">
-              {siteRows.map(({ site, next, primaryAction, unattended, lastMission }) => {
+              {siteRows.map(({ site, next, primaryAction }) => {
                 const statusLabel = SITE_STATUS_LABEL[site.status];
                 const nextLabel = primaryAction?.label ?? next.label;
                 return (
@@ -379,7 +327,7 @@ export default async function SitesPage({
                       <SiteThumbnail
                         siteId={site.siteId}
                         siteName={site.name}
-                        image={thumbnailBySite.get(site.siteId) ?? null}
+                        image={null}
                         className="h-full min-h-24 w-full lg:min-h-0"
                       />
                     </Link>
@@ -394,17 +342,14 @@ export default async function SitesPage({
                           </Link>
                           <p className="mt-1 text-[12px] break-keep text-ink-2">
                             최근 갱신 {formatKoreanDate(site.updatedAt)}
-                            {lastMission && ` · 최근 비행 임무 ${formatKoreanDate(lastMission)}`}
                           </p>
                         </div>
                         <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
                       </div>
                       <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
                         <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
-                        <span
-                          className={`shrink-0 num text-[11.5px] font-bold ${(unattended ?? 0) > 0 ? "text-crit" : "text-ink-muted"}`}
-                        >
-                          확인 {unattended ?? "—"}건
+                        <span className={`shrink-0 text-[11.5px] font-bold ${next.actionable ? "text-accent" : "text-ink-muted"}`}>
+                          {next.actionable ? "조치 필요" : "상태 확인"}
                         </span>
                       </div>
                       {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
@@ -435,14 +380,12 @@ export default async function SitesPage({
                 <span>현장</span>
                 <span>상태</span>
                 <span>진행 단계</span>
-                <span className="text-right">미조치</span>
-                <span>마지막 임무 발급</span>
                 <span>갱신</span>
                 <span>다음 할 일</span>
                 <span className="text-right">바로가기</span>
               </TableRow>
 
-              {siteRows.map(({ site, next, primaryAction, unattended, lastMission }) => {
+              {siteRows.map(({ site, next, primaryAction }) => {
                 const statusLabel = SITE_STATUS_LABEL[site.status];
                 return (
                   <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
@@ -455,7 +398,7 @@ export default async function SitesPage({
                     <SiteThumbnail
                       siteId={site.siteId}
                       siteName={site.name}
-                      image={thumbnailBySite.get(site.siteId) ?? null}
+                      image={null}
                       compact
                       className="size-full"
                     />
@@ -475,26 +418,6 @@ export default async function SitesPage({
                 </span>
 
                 <SiteProgressBar status={site.status} />
-
-                <span
-                  className={`num text-right text-[12px] font-bold ${
-                    (unattended ?? 0) > 0 ? "text-crit" : "text-ink-2"
-                  }`}
-                >
-                  {unattended ?? "—"}
-                </span>
-
-                {/* "마지막 조사"가 아니라 **발급**이다 — 이 목록만으로는 그 비행이 실제로
-                    끝났는지 알 수 없다(홈 포트폴리오와 같은 규칙). */}
-                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
-                  {lastMission ? (
-                    formatKoreanDate(lastMission)
-                  ) : missions === null ? (
-                    <span className="text-ink-muted">—</span>
-                  ) : (
-                    <span className="text-ink-muted">발급 없음</span>
-                  )}
-                </span>
 
                 <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
                   {formatKoreanDate(site.updatedAt)}

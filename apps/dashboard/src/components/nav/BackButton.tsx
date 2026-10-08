@@ -16,12 +16,6 @@ const TOP_LEVEL = new Set([
   "/",
   "/sites",
   "/field",
-  "/missions",
-  "/events",
-  "/assets",
-  "/world",
-  "/reports",
-  "/settings",
   "/more",
 ]);
 
@@ -33,7 +27,7 @@ export interface ParentNavigation {
 export function resolveParentNavigation(pathname: string | null): ParentNavigation | null {
   if (!pathname || isChromelessPath(pathname) || TOP_LEVEL.has(pathname)) return null;
 
-  if (pathname === "/sites/new" || /^\/sites\/[^/]+\/surveys\/new\/?$/.test(pathname)) {
+  if (pathname === "/sites/new") {
     // 등록·조사 Wizard는 자체 step back/unsaved draft 흐름을 소유한다. 상단 링크가
     // 작업 중인 입력을 아무 경고 없이 버리게 만들면 안 된다.
     return null;
@@ -41,11 +35,7 @@ export function resolveParentNavigation(pathname: string | null): ParentNavigati
 
   const siteMatch = pathname.match(/^\/sites\/([^/]+)(?:\/.*)?\/?$/);
   if (siteMatch) return { href: `/sites/${siteMatch[1]}`, label: "현장" };
-  if (/^\/events\/[^/]+\/?$/.test(pathname)) return { href: "/events", label: "확인 항목" };
-  if (/^\/missions\/[^/]+\/?$/.test(pathname)) {
-    return { href: "/missions", label: "비행 임무 이력" };
-  }
-  if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname) || /^\/field\/[^/]+\/?$/.test(pathname)) {
+  if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) {
     return { href: "/field", label: "작업" };
   }
   if (pathname.startsWith("/coming-soon/")) return { href: "/more", label: "더보기" };

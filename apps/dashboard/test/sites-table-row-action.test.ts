@@ -23,4 +23,10 @@ describe("sites table row action column (F08)", () => {
     expect(actionCell).not.toContain("ResponsiveActionBoundary");
     expect((actionCell.match(/<TableAction/g) ?? []).length).toBe(1);
   });
+
+  it("keeps the desktop comparison table while dropping retired event and mission cells", () => {
+    expect(PAGE).toContain("<TableShell");
+    expect(PAGE).toContain("현장 상태");
+    expect(PAGE).not.toMatch(/listAllEventsCached|listMissionsCached|getHomeEventEvidencePreview|미조치|마지막 임무 발급/);
+  });
 });

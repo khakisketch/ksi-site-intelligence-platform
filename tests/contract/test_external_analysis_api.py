@@ -1841,8 +1841,8 @@ def test_external_ai_identity_is_site_scoped_and_acknowledged_before_analysis_ac
 
     disabled_path = tmp_path / "disabled"
     allowed_path = tmp_path / "allowed"
-    disabled_path.mkdir()
-    allowed_path.mkdir()
+    disabled_path.mkdir(mode=0o700)
+    allowed_path.mkdir(mode=0o700)
     disabled = build_local_analysis_api_fixture(
         disabled_path,
         analysis_activation=_active_analysis_activation(disabled_path),

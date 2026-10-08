@@ -1,0 +1,12 @@
+[
+  {
+    "test": "denied_assets_retains_one_heading",
+    "status": "RED",
+    "reason": "actual rendered state violates preserved cleanup criterion before next design edit"
+  },
+  {
+    "test": "more_does_not_teach_retired_operations",
+    "status": "RED",
+    "reason": "actual rendered state violates preserved cleanup criterion before next design edit"
+  }
+]

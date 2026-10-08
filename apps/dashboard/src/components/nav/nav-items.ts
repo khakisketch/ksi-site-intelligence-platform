@@ -15,25 +15,6 @@ export const NAV_ITEMS: NavItem[] = [
   { key: "home", label: "홈", href: "/", implemented: true, icon: "home", mobile: true },
   { key: "sites", label: "현장", href: "/sites", implemented: true, icon: "sites", mobile: true },
   { key: "work", label: "작업", href: "/field", implemented: true, icon: "work", mobile: true },
-  { key: "review", label: "확인 항목", href: "/events", implemented: true, icon: "review", mobile: true },
-  {
-    key: "missions",
-    label: "비행 임무 이력",
-    href: "/missions",
-    implemented: true,
-    icon: "flight",
-    mobile: false,
-    description: "발급·전달·복구 이력을 확인합니다.",
-  },
-  {
-    key: "settings",
-    label: "장비 연결·지원 상태",
-    href: "/settings",
-    implemented: true,
-    icon: "connection",
-    mobile: false,
-    description: "Gateway와 Edge의 검증 상태를 확인합니다.",
-  },
   {
     key: "fleet",
     label: "Dock·Edge 지원 범위",
@@ -53,7 +34,7 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-const PRIMARY_KEYS = new Set(["home", "sites", "work", "review"]);
+const PRIMARY_KEYS = new Set(["home", "sites", "work"]);
 
 export const DESKTOP_NAV_GROUPS: NavGroup[] = [
   {
@@ -69,9 +50,7 @@ export const DESKTOP_NAV_GROUPS: NavGroup[] = [
 ].filter((group) => group.items.length > 0);
 
 export const MOBILE_TAB_ITEMS: NavItem[] = [
-  ...NAV_ITEMS.filter((item) => item.mobile).map((item) =>
-    item.key === "review" ? { ...item, label: "확인" } : item,
-  ),
+  ...NAV_ITEMS.filter((item) => item.mobile),
   {
     key: "more",
     label: "더보기",

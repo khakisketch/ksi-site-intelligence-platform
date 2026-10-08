@@ -82,15 +82,14 @@ export default async function RootLayout({
         }
       >
         <ShellLayoutMode />
-        {!chromeless && (
-          <ShellOnly>
-            <a href="#main-content" className="skip-link">
-              본문으로 건너뛰기
-            </a>
-          </ShellOnly>
-        )}
-        <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />
-        <div className="flex min-h-full flex-col lg:min-h-0 lg:overflow-hidden">
+        <div className="flex min-h-full flex-col lg:col-start-2 lg:row-start-1 lg:min-h-0 lg:overflow-hidden">
+          {!chromeless && (
+            <ShellOnly>
+              <a href="#main-content" className="skip-link">
+                본문으로 건너뛰기
+              </a>
+            </ShellOnly>
+          )}
           {!chromeless && (
             <ShellOnly>
               <TopBar />
@@ -105,6 +104,7 @@ export default async function RootLayout({
             {children}
           </main>
         </div>
+        <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />
         <MobileBottomNav />
         {!chromeless && <RouteFocusManager />}
         {!chromeless && <CommandPalette items={paletteItems} />}

@@ -30,7 +30,6 @@ describe("Operations Console 접근성 셸", () => {
     expect(source("src/app/page.tsx")).toContain('title: "홈 · KSI"');
     expect(source("src/app/sites/page.tsx")).toContain('title: "현장 · KSI"');
     expect(source("src/app/field/page.tsx")).toContain('title: "작업 · KSI"');
-    expect(source("src/app/events/page.tsx")).toContain('title: "확인 항목 · KSI"');
   });
 
   it("touch 프로젝트는 실제 coarse-pointer CSS를 실행한다", () => {

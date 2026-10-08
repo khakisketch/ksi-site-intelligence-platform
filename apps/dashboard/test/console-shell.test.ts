@@ -25,7 +25,7 @@ import { commandModifierLabel } from "../src/components/console/command-modifier
 
 const ITEMS: PaletteItem[] = [
   { key: "screen:sites", label: "현장", group: "화면", href: "/sites" },
-  { key: "screen:missions", label: "임무", group: "화면", href: "/missions" },
+  { key: "screen:work", label: "작업", group: "화면", href: "/field" },
   { key: "screen:fleet", label: "Fleet·Edge", group: "화면", href: "/coming-soon/fleet", pending: true },
   {
     key: "site:S-1",
@@ -178,27 +178,27 @@ describe("뒤로가기 노출 규칙", () => {
     expect(isBackVisible("/")).toBe(false);
     expect(isBackVisible("/sites")).toBe(false);
     expect(isBackVisible("/field")).toBe(false);
-    expect(isBackVisible("/missions")).toBe(false);
+    expect(isBackVisible("/events")).toBe(false);
   });
 
   it("하위 화면은 브라우저 이력이 아닌 결정적인 부모 화면으로 이동한다", () => {
     expect(isBackVisible("/sites/S-1")).toBe(true);
-    expect(isBackVisible("/missions/M-1")).toBe(true);
+    expect(isBackVisible("/field/work-orders/WO-1")).toBe(true);
     expect(isBackVisible("/coming-soon/fleet")).toBe(true);
     expect(resolveParentNavigation("/sites/S-1")).toEqual({ href: "/sites/S-1", label: "현장" });
-    expect(resolveParentNavigation("/events/E-1")).toEqual({ href: "/events", label: "확인 항목" });
     expect(resolveParentNavigation("/field/work-orders/WO-1")).toEqual({ href: "/field", label: "작업" });
-    expect(resolveParentNavigation("/missions/M-1")).toEqual({ href: "/missions", label: "비행 임무 이력" });
+    expect(resolveParentNavigation("/sites/S-1/design")).toEqual({ href: "/sites/S-1", label: "현장" });
   });
 
-  it("로그인 화면에는 없고 Operations Console의 /field 상세에는 있다", () => {
+  it("로그인과 retired /field/M-1 경로에는 뒤로가기가 없고 work-order 상세에는 있다", () => {
     expect(isBackVisible("/login")).toBe(false);
-    expect(isBackVisible("/field/M-1")).toBe(true);
+    expect(isBackVisible("/field/M-1")).toBe(false);
+    expect(isBackVisible("/field/work-orders/WO-1")).toBe(true);
   });
 
   it("경로를 모르면 그리지 않는다", () => {
     expect(isBackVisible(null)).toBe(false);
     expect(resolveParentNavigation("/sites/new")).toBeNull();
-    expect(resolveParentNavigation("/sites/S-1/surveys/new")).toBeNull();
+    expect(resolveParentNavigation("/sites/S-1/observations/new")).toEqual({ href: "/sites/S-1", label: "현장" });
   });
 });

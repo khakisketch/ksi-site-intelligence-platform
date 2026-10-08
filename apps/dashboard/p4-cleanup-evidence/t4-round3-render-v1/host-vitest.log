@@ -1,0 +1,13 @@
+
+> dashboard@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard
+
+
+ Test Files  100 passed (100)
+      Tests  761 passed (761)
+   Start at  00:06:27
+   Duration  2.80s (transform 11.68s, setup 0ms, import 19.25s, tests 9.99s, environment 8.95s)
+

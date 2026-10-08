@@ -43,10 +43,10 @@ describe("ExternalObservationCreateForm", () => {
     expect(push).toHaveBeenCalledWith("/field/work-orders/work-order-1");
   });
 
-  it("keeps flight planning separate and gives a recovery link when no work area is available", () => {
+  it("keeps external-result creation separate and gives a recovery link when no work area is available", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[]} />);
     expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: /비행 계획 만들기/ }).getAttribute("href")).toBe("/sites/site-1/surveys/new");
+    expect(screen.getByRole("link", { name: /관측 이력 보기/ }).getAttribute("href")).toBe("/sites/site-1/observations");
     expect(screen.queryByRole("button", { name: "산출물 등록 시작" })).toBeNull();
   });
 

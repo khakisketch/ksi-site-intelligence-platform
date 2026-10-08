@@ -1,0 +1,4 @@
+$ ./node_modules/.bin/tsc --noEmit
+# cwd=/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard
+# started 2026-10-09T00:51:52+0900
+

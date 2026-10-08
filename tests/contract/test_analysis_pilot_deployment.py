@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -18,11 +19,13 @@ spec.loader.exec_module(preflight)
 
 
 def _candidate(tmp_path: Path) -> tuple[dict[str, str], str]:
+    tmp_path.mkdir(mode=0o700, parents=True, exist_ok=True)
     authority = tmp_path / "authority"
-    (authority / "analysis").mkdir(parents=True)
-    (authority / "external").mkdir()
+    authority.mkdir(mode=0o700)
+    (authority / "analysis").mkdir(mode=0o700)
+    (authority / "external").mkdir(mode=0o700)
     signing_dir = authority / "signing-keys"
-    signing_dir.mkdir()
+    signing_dir.mkdir(mode=0o700)
     (signing_dir / "keys.json").write_text(
         json.dumps({"active": "pilot-key", "keys": [{"keyId": "pilot-key"}]}),
         encoding="utf-8",
@@ -33,7 +36,7 @@ def _candidate(tmp_path: Path) -> tuple[dict[str, str], str]:
         key_path.write_text("synthetic-key-material", encoding="utf-8")
         key_path.chmod(0o600)
     secret_dir = tmp_path / "dashboard-secrets"
-    secret_dir.mkdir()
+    secret_dir.mkdir(mode=0o700)
     for relative, content in {
         "device-attestation-keys.json": "{}",
         "oidc-subject-registry.json": json.dumps(
@@ -126,6 +129,32 @@ def test_valid_customer_tailnet_and_oidc_candidate_passes_without_echoing_secret
     assert "PASS" in output
     assert env["KSI_ANALYSIS_PILOT_MINIO_ROOT_PASSWORD"] not in output
     assert "synthetic-oidc-client-secret-value-1234" not in output
+
+
+def test_owned_candidate_is_private_under_a_group_writable_host_umask(tmp_path: Path) -> None:
+    """Fixture setup must not accidentally violate the real directory admission policy."""
+    previous = os.umask(0o002)
+    try:
+        env, compose = _candidate(tmp_path)
+        preflight.validate_candidate(env, compose_text=compose, expected_uid=os.geteuid())
+    finally:
+        os.umask(previous)
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "KSI_ANALYSIS_PILOT_AUTHORITY_DIR",
+        "KSI_ANALYSIS_PILOT_SECRET_DIR",
+        "KSI_ANALYSIS_PILOT_STATE_DIR",
+    ],
+)
+def test_group_writable_candidate_directory_is_still_rejected(tmp_path: Path, key: str) -> None:
+    """Making fixtures safe must never relax production admission for an unsafe directory."""
+    env, compose = _candidate(tmp_path)
+    Path(env[key]).chmod(0o770)
+    with pytest.raises(preflight.PreflightBlocked, match="UNSAFE_DIRECTORY"):
+        preflight.validate_candidate(env, compose_text=compose, expected_uid=os.geteuid())
 
 
 @pytest.mark.parametrize("name", ["dashboard-session.secret", "oidc-client.secret"])

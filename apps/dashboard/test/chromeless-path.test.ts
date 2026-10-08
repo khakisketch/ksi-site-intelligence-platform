@@ -20,7 +20,7 @@ describe("셸을 벗는 경로", () => {
 });
 
 describe("셸을 유지하는 경로", () => {
-  it.each(["/", "/field", "/field/mission-1", "/missions", "/missions/mission-1", "/sites", "/events"])(
+  it.each(["/", "/field", "/sites"])(
     "%s 는 앱 셸을 그대로 쓴다",
     (pathname) => {
       expect(isChromelessPath(pathname)).toBe(false);
@@ -80,7 +80,6 @@ describe("셸 벗기 판정이 실제로 배선돼 있다", () => {
 describe("/field 는 일반 Operations Console 화면이다", () => {
   it.each([
     "src/app/field/page.tsx",
-    "src/app/field/[missionId]/page.tsx",
     "src/app/field/work-orders/[workOrderId]/page.tsx",
   ])(
     "%s 에 RC 전용 로그인·헤더·Bridge가 없다",
@@ -94,13 +93,6 @@ describe("/field 는 일반 Operations Console 화면이다", () => {
   it("proxy는 /field를 공개 경로로 예외 처리하지 않는다", () => {
     const source = readSource("src/proxy.ts");
     expect(source).toContain('const PUBLIC_PATHS = ["/login"]');
-  });
-
-  it("Pilot Bridge 진단은 비-production 명시 flag에서만 열린다", () => {
-    const source = readSource("src/app/hil/pilot-bridge/page.tsx");
-    expect(source).toContain('process.env.NODE_ENV === "production"');
-    expect(source).toContain('KSI_DASHBOARD_HIL_TOOLS_ENABLED !== "1"');
-    expect(source).toContain("notFound()");
   });
 
   it("비활성 HIL 경로는 로그인 redirect가 아니라 실제 404 route로 보낸다", () => {

@@ -60,7 +60,7 @@ export default async function SiteObservationHistoryPage({
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
         <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과 이력</h1>
+        <h2 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과 이력</h2>
         <p className="mt-1 text-[13px] leading-5 text-ink-2">보관 근거가 확인된 결과만 수치와 추이를 표시합니다.</p>
       </div>
       <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/analysis`} className="btn">현장 분석</Link><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-assets`} className="btn">공간 자산</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>

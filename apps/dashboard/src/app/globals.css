@@ -294,6 +294,10 @@ body {
   transition: transform 0.12s ease;
 }
 .skip-link:focus {
+  position: static;
+  display: block;
+  width: max-content;
+  margin: 8px 16px 0;
   transform: translateY(0);
 }
 

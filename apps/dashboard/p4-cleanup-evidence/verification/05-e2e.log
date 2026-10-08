@@ -1,0 +1,102 @@
+$ ./node_modules/.bin/playwright test --config=/tmp/opencode/p4-resume-20261008/p4-live.playwright.config.mts --output=/tmp/opencode/p4-final-dashboard-verify-v2/e2e-results --reporter=list,json
+# cwd=/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard
+# started 2026-10-09T00:52:05+0900
+
+
+Running 92 tests using 10 workers
+
+  -   1 [mobile-390] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -   2 [mobile-390] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -   3 [mobile-390] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  -   4 [tablet-768] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -   5 [tablet-768] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -   6 [tablet-768] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓   7 [tablet-768] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (1.9s)
+  ✓  15 [desktop-1024] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (2.4s)
+  ✓  11 [desktop-1024] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (2.6s)
+  ✓   8 [mobile-390] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (2.9s)
+  ✓  16 [mobile-390] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (2.9s)
+  ✓  10 [tablet-768] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (3.0s)
+  ✓  17 [tablet-768] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.3s)
+  ✓  18 [desktop-1024] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (994ms)
+  -  23 [desktop-1024] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport
+  -  24 [desktop-1024] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -  25 [desktop-1024] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -  26 [desktop-1024] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓  21 [mobile-390] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (819ms)
+  ✓  19 [desktop-1024] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.5s)
+  ✓  20 [mobile-390] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.4s)
+  ✓  22 [tablet-768] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.6s)
+  ✓  28 [desktop-1440] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (1.2s)
+  ✓  29 [desktop-1440] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (1.2s)
+  ✓  33 [desktop-1440] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.2s)
+  ✓  30 [desktop-1024] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (2.5s)
+  ✓  31 [mobile-390] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (2.5s)
+  ✓  32 [tablet-768] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (3.0s)
+  ✓  34 [desktop-1440] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (2.4s)
+  ✓  12 [mobile-390] › e2e/operations-console.spec.ts:84:5 › 더보기는 현재 운영 지원 범위를 정확히 안내한다 (7.9s)
+  ✓  14 [tablet-768] › e2e/operations-console.spec.ts:84:5 › 더보기는 현재 운영 지원 범위를 정확히 안내한다 (8.2s)
+  ✓  36 [desktop-1024] › e2e/empty-organization.spec.ts:70:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (3.8s)
+  ✓  37 [mobile-390] › e2e/empty-organization.spec.ts:70:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (3.7s)
+  -  42 [desktop-1440] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -  43 [desktop-1440] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -  44 [desktop-1440] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓  27 [desktop-1024] › e2e/operations-console.spec.ts:84:5 › 더보기는 현재 운영 지원 범위를 정확히 안내한다 (7.1s)
+  ✓  38 [tablet-768] › e2e/empty-organization.spec.ts:70:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (3.4s)
+  ✓  39 [desktop-1440] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (4.1s)
+  ✓  35 [desktop-1440] › e2e/operations-console.spec.ts:84:5 › 더보기는 현재 운영 지원 범위를 정확히 안내한다 (6.7s)
+  ✓  47 [desktop-1440] › e2e/empty-organization.spec.ts:70:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (2.1s)
+  ✓  40 [mobile-390] › e2e/operations-console.spec.ts:94:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (7.1s)
+  ✓  41 [tablet-768] › e2e/operations-console.spec.ts:94:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (7.0s)
+  ✓   9 [mobile-390] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (15.5s)
+  ✓  13 [tablet-768] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (15.5s)
+  ✓  45 [desktop-1024] › e2e/operations-console.spec.ts:94:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (6.1s)
+  ✓  48 [desktop-1440] › e2e/operations-console.spec.ts:94:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (5.9s)
+  ✓  49 [mobile-390] › e2e/operations-console.spec.ts:140:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (5.8s)
+  ✓  50 [tablet-768] › e2e/operations-console.spec.ts:140:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (6.0s)
+  ✓  46 [desktop-1440] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (10.8s)
+  ✓  51 [desktop-1024] › e2e/operations-console.spec.ts:140:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (5.8s)
+  ✓  52 [desktop-1440] › e2e/operations-console.spec.ts:140:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (5.9s)
+  ✓  53 [mobile-390] › e2e/operations-console.spec.ts:157:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.0s)
+  ✓  54 [tablet-768] › e2e/operations-console.spec.ts:157:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.3s)
+  ✓  55 [desktop-1024] › e2e/operations-console.spec.ts:157:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.1s)
+  ✓  56 [desktop-1440] › e2e/operations-console.spec.ts:157:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.0s)
+  ✓  57 [mobile-390] › e2e/operations-console.spec.ts:165:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (6.7s)
+  ✓  58 [tablet-768] › e2e/operations-console.spec.ts:165:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (7.2s)
+  ✓  59 [desktop-1024] › e2e/operations-console.spec.ts:165:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (7.3s)
+  ✓  60 [desktop-1440] › e2e/operations-console.spec.ts:165:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (7.3s)
+  ✓  61 [mobile-390] › e2e/operations-console.spec.ts:196:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (5.8s)
+  ✓  62 [tablet-768] › e2e/operations-console.spec.ts:196:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (6.0s)
+  ✓  63 [desktop-1024] › e2e/operations-console.spec.ts:196:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (5.9s)
+  ✓  64 [desktop-1440] › e2e/operations-console.spec.ts:196:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (5.9s)
+  ✓  65 [mobile-390] › e2e/operations-console.spec.ts:220:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다 (6.1s)
+  ✓  66 [tablet-768] › e2e/operations-console.spec.ts:220:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다 (6.2s)
+  -  67 [desktop-1024] › e2e/operations-console.spec.ts:220:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다
+  -  68 [desktop-1440] › e2e/operations-console.spec.ts:220:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다
+  ✓  69 [mobile-390] › e2e/operations-console.spec.ts:229:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.9s)
+  ✓  70 [tablet-768] › e2e/operations-console.spec.ts:229:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.8s)
+  ✓  71 [desktop-1024] › e2e/operations-console.spec.ts:229:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.8s)
+  ✓  72 [desktop-1440] › e2e/operations-console.spec.ts:229:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.8s)
+  ✓  73 [mobile-390] › e2e/operations-console.spec.ts:258:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (8.7s)
+  ✓  74 [tablet-768] › e2e/operations-console.spec.ts:258:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (8.8s)
+  ✓  75 [desktop-1024] › e2e/operations-console.spec.ts:258:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (8.8s)
+  ✓  76 [desktop-1440] › e2e/operations-console.spec.ts:258:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (8.9s)
+  ✓  77 [mobile-390] › e2e/operations-console.spec.ts:340:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (6.2s)
+  ✓  78 [tablet-768] › e2e/operations-console.spec.ts:340:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (5.9s)
+  ✓  79 [desktop-1024] › e2e/operations-console.spec.ts:340:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (6.3s)
+  ✓  80 [desktop-1440] › e2e/operations-console.spec.ts:340:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (6.1s)
+  ✓  81 [mobile-390] › e2e/operations-console.spec.ts:356:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.5s)
+  ✓  82 [tablet-768] › e2e/operations-console.spec.ts:356:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.4s)
+  ✓  83 [desktop-1024] › e2e/operations-console.spec.ts:356:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.6s)
+  ✓  84 [desktop-1440] › e2e/operations-console.spec.ts:356:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.3s)
+  ✓  85 [mobile-390] › e2e/operations-console.spec.ts:391:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.7s)
+  ✓  86 [tablet-768] › e2e/operations-console.spec.ts:391:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.4s)
+  ✓  87 [desktop-1024] › e2e/operations-console.spec.ts:391:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.9s)
+  ✓  88 [desktop-1440] › e2e/operations-console.spec.ts:391:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (8.1s)
+  ✓  89 [mobile-390] › e2e/operations-console.spec.ts:423:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (7.2s)
+  ✓  90 [tablet-768] › e2e/operations-console.spec.ts:423:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (7.1s)
+  ✓  91 [desktop-1024] › e2e/operations-console.spec.ts:423:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (6.9s)
+  ✓  92 [desktop-1440] › e2e/operations-console.spec.ts:423:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (7.0s)
+
+  15 skipped
+  77 passed (1.5m)

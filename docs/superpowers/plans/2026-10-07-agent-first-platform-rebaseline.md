@@ -873,3 +873,542 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   writeback). Polling get_run; no cancel/substitute; first start attempt was a 422 plugin-input
   validation error (requestId 4eafaf95 not consumed); successful requestId 9000fd20.
   Studio: http://127.0.0.1:7456/projects/6edb22d8-bd56-43df-9e13-521a30700925/conversations/19f0ddcd-7561-4aa4-a9ca-e8c2c0af1f3b
+
+### P4 resume / functional integration findings (2026-10-08)
+
+- Git revalidated: current checkout `main` at `9a3bab1ba710d0c8925cf3ae8bd8e301e425a9cf`,
+  empty index, 198 pending paths (197 Dashboard + local Core runner); no foreign worktree changed.
+  Task-owned patch and source snapshot preserved at `/tmp/opencode/p4-resume-20261008/`.
+- T2 initial run terminated `succeeded/no_artifact`; direct-source output is provisional, not a
+  completed visual deliverable. It exceeded KEEP/REPOINT on Home/sites/site detail. Refinement
+  `27219b21-5f69-4ead-b7fd-f6e124ed7264` restored ADR-025 hierarchy/carousel, F08 table and surviving
+  workspace tabs. Host tsc/eslint/build passed; Vitest 758/100 passed before later E2E/runner edits.
+  Separate design-owned rendered review and final independent verification remain required.
+- T3 last whole E2E run: 27 failed / 26 passed / 19 skipped (`/tmp/p4-e2e3.log`). Actual Home and Work
+  rendered zero rows, so these failures are not ruled stale assertions. No screenshot baseline accepted.
+- Root-cause proof: seeded platform assembled with an unrestricted generated opaque ADMIN returns
+  5 sites/4 WorkOrders. The same seeded bytes, copied to an isolated probe directory (not reopened
+  under a running journal writer), with the actual local OIDC mapping return 0/0 and site-detail404.
+  Mapping resolves `local-admin` → `org-local-pilot`, but both explicit resource allowlists are empty.
+  `sites.py:1018` and corresponding WorkOrder scope filtering correctly enforce that denial.
+- T3 Ruling: repair only the local test harness with an opt-in, exact synthetic fixture scope;
+  preserve default empty grants, production subject registry, tenant filtering and scope checks.
+  No wildcard, grants inferred from arbitrary ledgers, live customer grant or Core endpoint added.
+  Cost if wrong: fixture scope may drift; real assembly tests bind the literal resource IDs and
+  ensure the empty-organization account and unrelated resources remain undisclosed.
+- Implementation contract (bounded harness repair): Requirement IDs RB-07 / REQ-SEC-101;
+  owner `scripts/run_core_dev.py` + contract tests, with design-owned Dashboard fixture/stack/test
+  wiring handed off sequentially. Acceptance: explicit fixture-enabled OIDC sees 5 sites, four
+  non-executable historical WorkOrders and one explicit external-ingress WorkOrder; no-flag and
+  empty-organization scopes stay empty; retired endpoints remain absent;
+  unconfigured evidence storage issues no usable upload/read capability. Contracts affected: none.
+  References: local issuer accounts, current platform assembly and scope contracts (ADOPT, not copy
+  acquisition authority). Files: runner + `tests/contract/test_core_dev_platform.py`; Dashboard
+  seed/stack/E2E repairs by the design workspace. Tests: scoped pytest + actual OIDC/browser flows.
+  Invariants: INV-040 (no production mock), INV-060 (evidence capability fails closed); tenant/scope
+  nondisclosure enforced by unchanged Core with negative controls. HIL/device: not applicable.
+  Rights: owned synthetic fixtures only. Rollback: inverse task-owned source diff; no real data move.
+- Product binding rechecked: existing representative project `6edb22d8-bd56-43df-9e13-521a30700925`
+  / KSI Operations Console; actual source `apps/dashboard` (metadata.baseDir/resolvedDir match).
+  Temporary actual-product server `http://localhost:3241/` on this host, Core8041/issuer9041,
+  tailnet disabled; reuse this runtime, not an artifact preview. Design Studio URL above is separate.
+  Brand/token source remains `src/app/globals.css` and approved components; no new visual direction.
+- Other open findings: seed currently defaults to managed mode; external-decision endpoint404;
+  site title regression; empty-state assertion drift; blank-body capture path unidentified;
+  dead S3 placeholder is not proven fail-closed. Diagnose each separately; do not weaken tests.
+- Developer dispatch provider/privacy errors produced no implementation. Build owns the bounded
+  nonvisual recovery; design retains Console source/rendered review ownership. P5 written-plan
+  gate, customer rights/operational acceptance and external delivery remain open, not reprioritized.
+- Runner RED→GREEN: `tests/contract/test_core_dev_platform.py` first 9failed/1passed (missing opt-in
+  and unavailable-storage port) → 10passed/1.45s after bounded runner changes. Exact fixture grants
+  cover the five literal `e2e-site-*` IDs and first `wa-{site}-0001` only; loopback/OIDC-only flag.
+  Missing S3 now raises EvidenceStorageError before network/signing, rather than pointing at9000.
+- Fixture correction ruling: retain the existing four synthetic managed-era WorkOrders only as
+  non-executable historical read fixtures; add one EXTERNAL_RECONSTRUCTION WorkOrder through the
+  real store with an idempotency key, APPROVED/OPEN and no Mission/ProcessingJob. External work
+  cannot be fabricated with managed status transitions (`record_status` correctly denies them).
+  This preserves history coverage while adding the normal ingress state, not new runtime behavior.
+  New test expects5orders/oneexternal/context200 and currently fails on4orders (fixture-red.log).
+- Blank capture diagnosed independently: `/hil/pilot-bridge` deliberately returns bodyless404 via
+  unchanged `proxy.ts:94` (curl404/0bytes and real-browser response-code failure). Capture must
+  assert this negative transport contract instead of insisting it is a visible product screen;
+  do not enable HIL, add a fake page or weaken real surviving-screen render assertions.
+- T2c bounded nonvisual Console recovery is commissioned next under the same representative design
+  project/scenario. RequestId `3bf86c8f-957d-4a1b-bcda-97d1e631ec0b`; owned paths = seed/stack/E2E,
+  named metadata (no layout restyle), run report. Build owns runner/tests/ledgers, no concurrent writer.
+  Existing product runtime stays3241 until a deliberate same-target restart applies the new flag.
+  Separate T4 rendered review remains pending; this recovery is not a substitute for that review.
+- T2c RUN STARTED `dfaccd15-ebed-4846-8bc8-c51f6ff7f609` (request3bf86c8f, snapshot77cf51e2,
+  same representative project, folder-backed/in-place writeback verified in run metadata). In flight;
+  no cancellation/replacement. Stage skills: bounded code-migration pipeline; Build systematic-debugging,
+  test-driven-development, executing-plans, playwright-cli. T4 review skill remains a later distinct stage.
+- Additional host evidence before T2c writes land: OIDC auth/route/history/detail/evidence scope
+  regressions69passed/7.29s; runner negatives10passed/1deselected (the one positive deliberately
+  awaits the extra external fixture); scoped mypy2files clean after explicit EvidenceStorage port
+  annotation; Ruff and diff-check clean. Added boot check rejects opening S3 client/credential chain
+  while `/ready` remains200. None of these replace T3 integrated browser or T5 independent final checks.
+- Resume limitation: no pre-P4 live capture folder exists. Four retained Home regression baselines
+  are available under `apps/dashboard/e2e/__screenshots__`; label them as retained baselines, not
+  newly captured before views. Existing `p4-cleanup-evidence/after` shots were captured under the
+  defective empty scopes and must not be passed off as corrected populated-state evidence.
+- Preserved security gap for the successor: current scoped OIDC allowlist permits reads/normal
+  external WorkOrder ingress but not Site create/update or pending-external-decisions/team endpoints.
+  This harness fix must NOT open those routes or substitute unrestricted authority. Report and test
+  denied/unavailable states; P5 first-flow gap analysis must distinguish mounted routes from actual
+  principal reachability before any approved security extension. No endpoint/permission expansion here.
+
+### P4 T3 corrected-scope verification (2026-10-08)
+
+- T2c `dfaccd15` terminal succeeded/source-direct (`no_artifact`); actual Dashboard fixture/wrapper/
+  E2E/report diff inspected. No new managed artifact or visually accepted deliverable is inferred.
+  Same real folder; narrow flag only when seed option is present; four clearly labeled historical
+  records plus one real store-created EXTERNAL_RECONSTRUCTION APPROVED/OPEN row. Host signed-JWT
+  assembly check `uv run --no-sync pytest -q tests/contract/test_core_dev_platform.py` now **11passed**.
+- Host same-target test stack was gracefully restarted (exact task-owned PID), reusing issuer state,
+  ports3241/8041/9041 and Dashboard dist `.next-p4-resume`, with fresh owned generated Core data at
+  `/tmp/opencode/p4-resume-20261008/live-corrected/core`. No tailnet/security change; no second writer.
+- Actual browser `p4-resume` reads Home5sites and the restored carousel, Sites5, named Site title,
+  site work-order tab and explicit external work detail via UI links. Self-assignment POST200 showed
+  `담당 · 내 작업` and persisted after reload. Cleared through the UI and reloaded to `미배정` after
+  the test; no arbitrary journal reset. An initial assertion used the wrong label, not a product error.
+- Optional external measurement request lists returned404 under this unconfigured workflow. The UI
+  retained its unavailable error rather than inventing success/empty results. No endpoint added.
+- After T2c host checks: tsc/eslint/Next build exit0; Vitest **758passed/100files** (logs under
+  `/tmp/opencode/p4-resume-20261008/*-post-recovery.log`). Not independent final-P4 receipts.
+- Actual corrected captures: `apps/dashboard/p4-cleanup-evidence/corrected-scope/` contains24views
+  (8screens ×390/768/1440). `source-snapshot.json` binds HEAD9a3bab1 +240required-file SHA256;
+  `render-checks.json` and `render-sha256.json` bind captures. No horizontal overflow; all24 axe
+  runs returned0violations; no uncaught page JavaScript errors. Work details have two H1s (shell+
+  work name), which axe does not flag; send to the design reviewer, not silently call it compliant.
+  The captures do not yet cover empty/loading/focus or inner-container scroll depth.
+- Independent bounded harness verifier dispatched `ses_ee453090affe182AvSPWygYfVk`; owns no files,
+  no live stack, no dependencies, tests synthetic temporary state. Required-file hashes + actual
+  commands/results + full active Python suite requested. Receipt remains pending until returned.
+- Current full Dashboard E2E rerun uses `/tmp/opencode/p4-resume-20261008/p4-live.playwright.config.mts`,
+  importing the repo config but reusing the owned3241 runtime (no duplicate server). It intentionally
+  leaves the external/staging flag unset, so meaningful fixture checks remain enabled. No baseline
+  refresh; expected retained baseline differences are reported, not masked. Log `e2e-live.log`.
+- Design review routing discovery: `design-review` is only a catalog/upstream-install descriptor,
+  not a bundled executable full workflow. Use the actually bundled `web-design-guidelines` pinned
+  rules in the separate rendered-review stage, with actual captures/behavior inputs; no upstream
+  installation or source-only acceptance. Review must confirm reading the input images.
+- E2E runner correction: the first temporary ESM import exposed the repository config under
+  `.default`; without unwrapping it the19-test run used an unnamed1280viewport (8failed/7passed).
+  These are NOT the target-viewport receipt. Corrected wrapper guards4projects and `--list` confirms
+  76tests/5files at390/768/1024/1440. Real rerun: **16failed/45passed/15skipped**, exit1, 1.4min.
+  Remaining families (4each): empty title queried as heading although shared EmptyState emits<p>;
+  site `다음 행동` assertion despite the displayed platform next-action link; known MANAGED historical
+  context queried as UNVERIFIED; retained Home baseline differences. Touch/focus/axe/captures/external
+  registration UI passed at their applicable widths. Failures are not hidden or globally skipped.
+- T4 frozen input bundle `apps/dashboard/p4-cleanup-evidence/t4-inputs-v1/`:36screenshots
+  (12screens ×390/768/1440), keyboard focus3, actual loading under client CDP throttle3, external
+  detail bottom-scroll3, empty home/sites/work9, foreign-site denied3, keyboard carousel-next with
+  normal/reduced motion6, retained Home baselines4. Total67PNGs;88input hashes in `input-sha256.json`.
+  All actual states use the same source snapshot (240required files unchanged). Generated fixtures
+  only; no auth trace/cookie/session data included. Empty-org login→denied URL and default fixture
+  login restored through the actual issuer UI. No fabricated server-success response. Logs redact
+  transient auth query. Review limitations: baselines are historical, other before views unavailable.
+- Project-level commissioning conditions VERIFIED for representative project6edb22d8: (1) latest
+  T2c real-folder write/read/remove probe, real-source path and in-place writeback; (2) same-session
+  notifier binding verified after resume, plus actual terminal retrieval by explicit poll fallback;
+  (3) actual source diff +240SHA snapshot, host build/tests + actual-product rendered/functional
+  verification above. These are evidence for this target/session, not inferred from its name.
+  Build owns commissioning/polling/validation/reporting; Human need not operate the design workspace.
+- T4 next request `69da03fd-3c69-4a6b-9890-14d2dc841299`: existing code-migration scenario + bundled
+  `web-design-guidelines` (distinct review stage), real-source/image preflight mandatory. Design owns
+  analyze→bounded refinement→render-review loop and fixed/open defect handoff. Build validates
+  the actual revision/render/evidence and engineering contracts, not a duplicate aesthetic review.
+  E2E corrections may target only the observed three stale families with exact approved behaviors;
+  no baseline refresh until design-rendered review resolves the actual differences.
+- Independent harness receipt received `ses_ee453090affe182AvSPWygYfVk`, path
+  `/tmp/opencode/p4-harness-independent-verify/receipt.md` (archive SHA256a9a0c9fe). Bounded11passed,
+  OIDC74passed (same69 +5coverage), rootRuff clean, scopedmypy2clean; full active Python
+  **10failed/5998passed/30skipped**, exit1. Four required-file hashes identical before/after; main9a3bab1,
+  pending202paths, no stack/data/code mutation. Not final P4/UI closure.
+- Full-suite findings are acceptance work, not waived:5P4 stale sync assertions read the retired
+  EventActions.tsx/missionSiteGate.ts (3+2), so their current target no longer exists; decide a
+  nonvacuous replacement boundary gate while preserving domain/replay history. Other5 reject unsafe
+  group-writable temporary dirs under hostumask0002 in unchanged deployment/API tests; safe-umask
+  control and durable fixture fix needed, with production security checks unchanged. The earlier
+  timing-sensitive worker-renewal test PASSED this receipt. No all-green full-suite claim.
+- T4 RUNNING `27425391-48df-4cdf-a823-68939ee69836` (request69da03fd, snapshote35b2205,
+  same folder-backed/in-place representative project). Poll/notification handoff active; no replay.
+- T3 Ruling / test-consumer closure: retire only the two now-orphaned Python→TS EventActions/
+  MissionSiteGate mirrors (5cases), with exact baseline9a3bab1/SHA recovery in decision doc§7.
+  Replace obsolete UI-mirror obligations with actual platform HTTP read/mutation absence tests
+  and retained browser route checks. Domain enums/graphs, Site-autonomy mirror, historical replay
+  and schema sync remain active; no archive edit/import, production semantics or skip introduced.
+  Cost if wrong: a legitimate retained reader could lose its mirror check; the absent UI targets,
+  mounted-route authority and named retained checks demonstrate these two consumers retired.
+- Bounded test-repair contract: RB-07/RB-09; owner root contract tests, no app writer conflict.
+  Files: the two retired mirrors; `test_core_dev_platform.py` negative read/mutation paths;
+  `test_analysis_pilot_deployment.py` safe generated candidate directories+unsafe controls;
+  `test_external_analysis_api.py` two0700owned fixture roots. API/contracts/runtime/archive untouched.
+  Invariants: INV-040/060 and tenant/currentness/consent preserved by real component tests; no HIL.
+  Verification: selected regressions underumask0002, surviving sync/domain checks, rootRuff,
+  independent full Python on integrated state. Rights=owned synthetic; rollback exact inverse diff.
+- Safe-fixture RED→GREEN: new group-writable-umask candidate test failed UNSAFE_DIRECTORY (1failed,
+  3negative controls passed); the existing external-AI identity test also failed under explicit0002.
+  Candidate/AI fixture roots now explicitly0700; production deploy/Core security code unchanged.
+  First rerun found a helper nested-parent regression (second/authority missing), corrected by
+  creating the owned candidate base0700. Complete two-file rerun under0002 exited0 (log
+  `private-fixture-green.log`); root suite and independent final receipt remain to run.
+- Python closure independent rerun assigned to existing Test Runner
+  `ses_ee453090affe182AvSPWygYfVk`, receipt target `/tmp/opencode/p4-python-consumer-verify/`.
+  It binds the actual modified Python sources, preserves ambient umask, reruns scoped82/OIDC74,
+  rootRuff/scopedmypy/fullPython; no live stack or source mutation, disjoint from T4 app writer.
+- Resume evidence: main9a3bab1, empty index,211pending paths; T4 still in-flight. Prepared provisional
+  whole-P4 recovery/diff snapshot under `/tmp/opencode/p4-resume-20261008/review-package/`:
+  208source/contract paths,158deleted, original SHA256 atfb3310a. Not a final reviewer snapshot
+  while the design writer is active; final sources must be rebound before dispatch/verification.
+- Ruling: correct T1's OrthophotoOverlay KEEP classification rather than restore a dead managed
+  component — baseline source explicitly fetches retired `/api/processing-jobs/*/download`, not
+  the external-display routes asserted by the inventory. Decision doc§8 records RETIRE for the
+  two wrappers and KEEP for ExternalSanitizedOrthophoto/report-safe derivative/shared raster code.
+  External authorized viewing and its consent/byte boundaries are preserved; local unconfigured
+  storage remains unverified for real-byte image display. Cost if wrong: losing a legitimate reader;
+  actual callers/endpoints above establish which historical wrapper and current reader differ.
+- Independent Python consumer closure receipt received and read: session
+  `ses_ee453090affe182AvSPWygYfVk`, `/tmp/opencode/p4-python-consumer-verify/receipt.md`, archive
+  SHA256`fa724eaec8d09e96f3e545d79f02b68e4874647ac1937f492fbd91e641bb05e6`.
+  Actual main9a3bab1 + pending output, ambientumask0002; scoped82/OIDC74/rootRuff/scopedmypy2
+  clean; **full active Python6013passed/30skipped/0failed**, exit0,738.57s. Timing worker19passed.
+  Six bound sources unchanged: runner`ed8168c7`, Coredevtest`5ae49f87`, deploytest`fee10d1d`,
+  APItest`79a7a432`, seed`61343806`, stack`9260020b`. No production admission relaxation.
+  Delta +5collected = retire5orphaned mirror cases +6real retired-route controls +4private-fixture
+  controls. This is independent nonvisual closure, not final UI/design/product acceptance.
+- T4 run27425391 terminal succeeded/source-direct,17.5min. Actual report
+  `apps/dashboard/p4-cleanup-render-review.md` confirms all67PNGs visually opened,88input+240source
+  hashes matched, pinned guidelines read, real-folder probe. Eight changed source/test hashes
+  matched on host. Bounded fixes: emptySites single registration CTA/current truthful copy,
+  skip-link geometry, work detailH1→H2 and deniedSiteH2→H1; stale E2E families corrected without
+  baseline refresh. Inner renderer could not reach host; edited screens explicitly PROVISIONAL.
+- Evidence correction: prior24-view corrected-scope capture had0axe findings, but extended36-view
+  T4 inputs actually contain3moderate `page-has-heading-one` findings on direct analysis404 state.
+  Previous ledger/commission summary claiming all36zero was wrong; report followed actual JSON.
+  No test threshold/baseline/security relaxation is used to hide that discrepancy.
+- Post-T4 host tsc/eslint/Vitest/build all exit0 (`post-t4-checks/commands.json`); actual source
+  capture bundle `apps/dashboard/p4-cleanup-evidence/t4-post-v1/` binds237current UI/E2Efiles +
+  **59actual settled states**,63input hashes. Includes all36primaryviews,3externalbottom views,
+  8keyboard(firstTab vs explicit-focus geometry) views and12empty/denied views. All59axes return0,
+  uncaught pageerrors0, foreignSite name not leaked. This does NOT close the following defects.
+- T4-SKIP-01 regression found in actual browser: firstTab now reaches desktop sidebar Search at
+ 1024/1440 because the skip link moved after that navigation in DOM. Mobile/tablet still firstTab
+  skip. Existing E2E `키보드는...` reproduced RED atdesktop1440 (`t4-keyboard-red.log`,1failed).
+  Desired: first keyboard action skips navigation AND focused geometry does not overlap sidebar;
+  do not replace Tab with `.focus()` or weaken either assertion. Route repair back to design.
+- T4-ANALYSIS-ROUTE-02 root cause: same authenticated fixture gets work-areas200 and both
+  analysis-observations/analyses404; real Site workspace access succeeds. Local runner has no
+  analysis graph configuration (`external_analysis_local_graph=None`), so platform_graph§183–199
+  and routes/external§254–275 intentionally mount no Analysis routes. Analysis page groups
+  getSite+child reads in Promise.all and turns ANY child404 into Site notFound. This confuses
+  optional configuration unavailability with denied Site; no grant/policy/activation change needed.
+  Desired: establish Site access first; preserve genuine Site404 nondisclosure; child errors show
+  typed unavailable/error, not empty analyses or a false Site denial. Existing observation-history
+  page demonstrates this separation. Repair stays in Console source/tests, not Core/config.
+- All previously loading-required captures now settled: observation-history displays its actual
+  error state; external-work lower reads show comparison-list unavailable + single-volume not
+  configured. Two expected request-list404s remain recorded, not invented empty/success states.
+- Next bounded refinement request `660d6b56-a914-435c-b8b7-eb921f93d599`: real-source237SHA+
+ 59postT4PNGs63inputSHA + prior review report/focusRED/root-cause evidence. Design owns keyboard
+  contract repair, analysis error boundary and rendered re-review; no new direction/permissions/
+  backend or baseline refresh. Build supplies post-edit actual renders before design closure.
+- Bounded refinement commissioned as run`7d2ade64-85b0-4e28-971c-9637b0adf847`,
+  request`660d6b56-a914-435c-b8b7-eb921f93d599`, existing source-bound project6edb22d8,
+  scenario`od-code-migration` + bundled`web-design-guidelines`; source-direct actual app folder.
+  Notifier tracking confirmed for this session, wake permission unpaused. At resume main9a3bab1,
+  empty index,214pending paths, approved spec/plan hashes unchanged. P5 drafting only while
+  refinement owns app sources; no successor execution, direction/baseline/security change.
+- P5 written proposal prepared (planning ONLY):
+  [integrated rebaseline verification](2026-10-08-physical-site-rebaseline-integrated-verification-p5.md),
+  SHA256`4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`;
+  5tasks/31unchecked steps, self-reviewed against unchanged approved spec/RB matrix. Exact-path/
+  whitespace checks clean. No P5 implementation/approval: needs final P4 technical closure and
+  Human written-plan review. Proposal distinguishes current Analysis SDK platform factory from
+  Spatial Data SDK router-only fixture, all251archive-record verification from8sampled rows,
+  prepared local checks from unverified fresh environment/image/CI/customer acceptance.
+- T4 refinement7d2ade64 terminal/source-direct,14.5min; report Round2 confirms real-folder probe,
+  237prior source+63input hashes matched and all59PNGs read. Narrow edits: shell firstTab order,
+  access-first Analysis child error boundary, observation visibleH1→H2, page/E2E regression checks.
+  All5reported current file hashes match host. Inner Vitest lacked its sandbox native binding;
+  host post-refinement tsc/eslint/Vitest/build all exit0, **761tests/100files** (100 is unchanged).
+- Host four-width E2E post-refinement: **63passed/10failed/15skipped**, log
+  `/tmp/opencode/p4-resume-20261008/post-refinement-e2e.log`. Keyboard real firstTab+Enter+route
+  focus checks PASS at all4widths; analysis Site context/unavailable body works, but its new E2E
+  fails before reaching later assertions because no H1 exists. Desktop Site-action query resolves
+  2legitimate same-destination links (header + observation section). Remaining4Home screenshot
+  mismatches still use untouched historical baselines. No hidden skip, threshold/mask change.
+- Frozen Round2 render bundle `apps/dashboard/p4-cleanup-evidence/t4-round2-render-v1/`:
+  **353required source hashes**, **68settled actual states**, **80PNGs/84input entries**. Source
+  manifest`a81dd1fb…`; input manifest`47c37799…`; required sources unchanged through capture.
+  Includes actual gateway-click analysis arrival, all primary views, lower-scroll focused-skip,
+  four-width real firstTab/Enter, both motion settings, empty/foreignSite+foreignAnalysis states;
+  copies of4exactPlaywright Home actual+diff images and4retained references (no auth trace).
+  UncaughtJS0/overflow0. Three moderate heading-one findings remain on actualanalysis; foreign
+  Site names remain undisclosed. Current denialSite has2H1s (not an axe violation), recorded.
+- Defect root causes from actual source/browser: `resolvePageTitle` omits `/sites/{id}/analysis`,
+  so client-aware MainPageTitle returnsnull; page visible title isH2. The earlier generic denied
+  H1 now duplicates the known Site shellH1 on `/sites/{id}`. Require coherent one-H1 normal/error/
+  denied states without restoring foreignnames, fake headings or weakening count assertions.
+  The Site CTA test should distinguish actual header/section intent or a design-adjudicated
+  duplicate; `.first()` or relaxed count alone is not acceptance. No new visual direction.
+- Next bounded Round3 action request`57673c0b-679a-4608-86a4-52255d033edf`: design reads all actual
+  Round2 images/diffs, closes measured firstTab/access/observation-heading findings, repairs
+  missing analysis heading/denied heading consistency and meaningful CTA selector. Explicit
+  source/image-bound Home baseline adjudication requested; do not refresh before that decision.
+- Round3 commissioned as run`a3547beb-4890-47cf-9d68-df365964a40c`, existing same-source project/
+  code-edit scenario+bundled review skill, no alternative runtime. Notifier tracking+wake verified.
+- Whole-P4 read-only engineering Reviewer `ses_ee4028f40ffem3gKb3OgmH4DBp` assigned immutable
+  `/tmp/opencode/p4-resume-20261008/whole-p4-review-v1/`: base89d4187, actual9a3bab1+pending,
+  520current/deleted-baseline records (restored only to package, not real checkout); actual diff,
+  new files, scoped receipts and concrete known-open design findings. Reviewer does not replace
+  design aesthetic/render review. Final source changes from Round3 must be supplied as a narrow
+  delta to the same reviewer before engineering closure. Source ownership remains one writer.
+- Whole-P4 frozen engineering review received/read: Reviewer`ses_ee4028f40ffem3gKb3OgmH4DBp`,
+  `whole-p4-review-v1/reviewer-report.md`. No newly discovered wrong consumer retirement, dead
+  runtime call, auth/tenant/security regression, fabricated result/storage bypass or fixture
+  concealment in the frozen revision. Four Important closure findings match the known Round3
+  list (analysis heading, CTA ambiguity, Home baseline, denied heading); final delta/render/runner
+  still required. Four Minor groups are recorded, not blanket authority to extend cleanup.
+- Ruling: Home baseline adoption is a source/render-bound design adjudication + mechanical
+  transfer within the already approved no-restyle P4 path, NOT a new mandatory Human gate as
+  suggested in the reviewer report. Human acceptance stays separate/open; new direction or
+  unapproved layout changes still require a decision. Cost if wrong: adopting a visual drift;
+  mitigate by exact four-width candidates/source hashes/approved hierarchy, no threshold/mask
+  relaxation and design-owned review. Report neither reviewer advice nor technical closure as
+  Human acceptance.
+- Ruling: reviewer§Important-1's absent-analysis-H1 finding stands; absent title-map entries alone
+  do not prove missing H1 on spatial assets/redirects (actual-assets captures have1H1/noaxe).
+  Its§Important-3 denied-analysis explanation is corrected: generic segment not-found supplies
+  the existing H1, not an invented alternative shell branch. Preserve measured evidence; do not
+  add generic unknown-path titles or broaden fixes from route names alone.
+- Reviewer Minor-1 split by actual impact: unreachable coming-soon `data` config is harmless
+  backlog; visible `/more` copy still teaching retired flight/connection/recovery scope violates
+  P4 truthful surviving-menu guidance and is regraded as a bounded required copy fix (design-
+  owned). It will be added at the next rendered-review stage after Round3 terminates; no concurrent
+  run/Build-side UI edit. Cost if misgraded: minor rework, not a new product feature. Capture/review
+  actual More before/after, preserve only real fleet/support destination and no new capability claim.
+- Deferred nonblocking minors: dead managed-era epoch helper exports, unused retired-route type/
+  comments, invisible progress-redirect metadata title. Keep in backlog/next-baseline gap map;
+  no opportunistic source/type sweep. Declined checks: supply actual Vitest log761/100 to final
+  delta; pixels remain design-owned; post-package drift/independent final runner remain pending;
+  P5 scope/config/rights limitations remain explicit, not P4 defects or new execution authority.
+
+### P4 Round3 verification and bounded closure refinement — 2026-10-09 resume
+
+- Git revalidated: main`9a3bab1ba710d0c8925cf3ae8bd8e301e425a9cf`,216pending paths/empty index;
+  same current checkout, foreign worktrees untouched, approved spec/P4-plan/P5-proposal hashes
+  unchanged. Goal b13320f7 active; P5 proposal remains unapproved. No new product authority.
+- Run`a3547beb` terminal source-direct: exactly7reported SHA match current files and other346
+  required source hashes unchanged; seven-record set digest`3add6b6e…`. Actual80image reads and
+ 84input checks reported; narrow known-route title, generic denialH2 and default-tab redundant
+  header action repairs confirmed against actual diff. No Core/grants/policy/brand/token edits.
+- Design Round3 explicitly adjudicated all4exact Home candidate/diff/prior PNGs and unchanged
+  Home required-source hashes. Mechanically adopted only those4candidate bytes into their existing
+  `e2e/__screenshots__/home-{project}.png` paths, with preimage and adopted SHA checked and inverse
+  references preserved in frozen Round2 bundle; no thresholds/masks changed. Exact adoption record:
+  `apps/dashboard/p4-cleanup-evidence/t4-round3-render-v1/baseline-adoption.json`.
+- Host postRound3 typecheck/eslint/Vitest/build all exit0; **761tests/100files**. Four-project
+  authenticated E2E **69passed/4failed/15skipped** (`post-round3-e2e.log`). All4Home comparisons and
+  default Site action tests now pass. Four analysis tests progress past headings/context and fail
+  on an ambiguous global alert locator, not absent error: actual error alert inside main plus
+  Next route announcer outside main. Actual browser confirms mainAlerts1/allAlerts2. Scope the
+  assertion to the meaningful main error region and retain exact error/nofakezero/noretry/heading
+  assertions; do not remove the route announcer, use `.first()` or weaken the count/content check.
+- New frozen changed-source renders `t4-round3-render-v1`: **353required hashes,28settled PNGs,
+  35input entries**, sourceSHA`31411b52…`, final inputSHA`13665187…`; all sources unchanged during
+  capture. Analysis mainH1/context/error and Site/analysis/observation denial now correct; default
+  Site action is uniquely visible at all4widths with exact unchanged destination. UncaughtJS0,
+  overflow0; genuine foreign Site names absent. Access-side data/permissions are unchanged.
+- Two remaining browser REDs captured before any next source edit: denied-assets has0H1 and3
+  moderate heading-one findings at390/768/1440; More still explicitly teaches retired flight/
+  connection/recovery at those3widths. The shared not-found H2 correction exposes spatial-assets'
+  previously mixed ownership (page-owned H1, no recognized shell title); not a Core denial defect.
+  Require one coherent H1 in accessible and denied asset states, exact recognized route only,
+  generic non-disclosing denialH2 and unchanged page visual classes/data. More requires truthful
+  surviving support guidance only, no new capability/help/runtime behavior. Browser RED record:
+  `rendered-regression-red.json`; no unit-test success inferred from the inner unavailable binding.
+- Next concrete review/refinement action request`3361c134-1ed2-4664-86d9-90e0dfc14537`:
+  review actual28images/current353source; close prior heading/CTA findings with changed renders;
+  fix asset heading ownership + More copy + main-scoped alert query only, add meaningful regression
+  assertions and report exact changed hashes. Design owns all app edits and visual review; Build
+  supplies new changed-source captures afterwards. No arbitrary cap, no new design direction,
+  no P5 work or unapproved dependency/runtime operation.
+- Round4 started as`241aceb5-fa71-42de-96d6-57c800f5f36f`; same-source code-edit scenario+bundled
+  review skill, notifier tracking/wake unpaused confirmed. Source authority and one writer unchanged.
+  Six Python/seed/launcher SHA rechecked against independent ses_ee453090 receipt: all6identical;
+  both retired consumers/tests still absent. Reuse only that unchanged nonvisual verification scope;
+  the pending final Dashboard/E2E checks remain independent and cannot inherit Python closure.
+- Late notifier for historical`dfaccd15` was resolved via authoritative status/message; it is
+  the already-consumed fixture recovery, not the current refinement. Its metadata reports
+  `od-owned/baseDir:null` despite the inner absolute-folder edit report; do not call that metadata
+  proof of source-direct binding. Actual fixture/launcher bytes and six independent receipt SHAs
+  remain verified; current`241aceb5` is explicitly folder-backed/in-place. No replay, rebind,
+  copy substitution, cancellation or new execution was inferred from the late notification.
+- Late historical`27425391` notification likewise resolved: message/report is the already-read
+  Round1 review, superseded by Round2/3 actual-source render evidence. Its generic `od-owned`
+  metadata is not source-link proof; original actual image/file checks and required-file hashes
+  remain the evidence. Current Round4 writer still running/tracked; no old-stage replay or
+  second writer, no baseline decision reversal from this historical message.
+
+### P4 Round4 source verification and final-render handoff — 2026-10-09
+
+- Run`241aceb5` authoritative terminal succeeded, explicitly folder-backed/user-local/in-place at
+  actual Dashboard folder. Final message/report read: no new entry artifact (source-direct), six
+  source/test edits, rendered status provisional. Inner typecheck/targeted ESLint pass; inner Vitest
+  unavailable binding remains honestly unrun, not substituted by source inference.
+- Actual six-file SHA verified against report; set digest`87ababc8428515c90686388a61ef536c964d0c5cceb7310b34c6e08964bad35f`.
+  Previous353source snapshot differs only in those six,347others unchanged. Approved spec/P4/P5
+  hashes unchanged. Current main9a3bab1,222pending paths/empty index, foreign worktrees untouched.
+- Changes inspected: exact spatial-assets title-map entry + page-owned title H1→H2 retaining all
+  classes/text/data; More introductory sentence only; main-scoped unique analysis alert query;
+  literal route-title and accessible/denied asset + truthful support E2E assertions. No policy,
+  endpoint, Site-access, permission/grant, catalog, storage, tokens or backend edit in this round.
+- New `t4-round4-render-v1/source-snapshot.json` SHA`4a66cec660015bd20262cbf6513ba7f136d6ddb7fc17cf5540deea615c1fa3bd`
+  binds353required files before/after actual host capture. **18settled states/18PNG** at390/768/1440:
+  accessible assets (directURL+reload), More, analysis (actual gateway click), denied assets/Site/
+  analysis. All18 exactly1H1; denied states generic/no foreign Site name; More old promise absent,
+  exact fleet-support link/limitation retained; main analysis alert1. UncaughtJS/API/console0,
+  overflow0, allaxe violations0. Capture script/check JSON retained, no credentials/session traces.
+  This is engineering evidence, not design-rendered closure; design must read matching images.
+- T5 independent Test Runner assignment: final353source-bound Dashboard tsc/eslint/fullVitest/build
+  and actual-platform four-project E2E on existing localhost3241/Core8041/issuer9041 only; no second
+  stack or policy activation, no baseline refresh/threshold/mask changes. Verify six unchanged Python/
+  seed/launcher receipt SHA and keep prior6013/30/0 scope distinct. Actual skip reasons and final
+  source/revision/command/result receipt required. Source is frozen during verification; Primary
+  handles durable records/Git, design may only write its rendered-review report at this stage.
+- Independent Dashboard seat`ses_ee3df17b2ffeY4zF1AdKMuolcq` launched on that frozen source.
+  Final design review request`f2554be5-58d7-4881-aeca-4ca56f7f0452` uses the same exact353files,
+  `t4-round4-render-v1/input-sha256.json` SHA`f67e28d2f236dcbf296358467e637ff3318d578b230a5ab19cb8ec3c95ac30e3`
+  (22entries/18PNGs plus captures/script/source and copied prior report). Report-only ownership:
+  design may create `apps/dashboard/p4-cleanup-final-render-review.md`; no source/test/config edit
+  while Test Runner verifies. New defects are reported with exact state/impact/desired result, not
+  silently repaired concurrently. Functional test closure and human acceptance remain separate.
+- Final report-only design run`75d5f901-c555-47e9-a754-2d69bb1b03de` started with those inputs.
+  Independent Runner's first return was malformed closing markup; actual task logs showed
+  tsc/eslint exit0, Vitest762tests/100files exit0 and build exit0 plus353pre-SHA PASS, but no E2E/
+  post-source/receipt. Resumed the same seat only for unfinished verification, not rerunning
+  completed checks or changing model/install/runtime. Completion remains unclaimed pending receipt.
+
+### P4 final visual review passed; independent E2E uncovered test-flow defects — 2026-10-09
+
+- Report-only design`75d5f901` terminal; actual new report
+  `apps/dashboard/p4-cleanup-final-render-review.md` SHA`5635f47bc2979adfd38358bb0a2f7a708be5709fc78b9c33c1aa8c14260ecc19`
+  read in full. It confirms image-capable reads of all18named PNGs +22input/353source SHA matches,
+  no remaining design-owned defect in requested scope; stable findings06/07 fixed with exact
+  renders,03/04 reconfirmed,05/01/02/Home reuse documented against unchanged-source evidence.
+  Independent functional verification explicitly pending, not conflated with design or Human
+  acceptance. Outer independently rechecked all353source/22input hashes; no source/report mutation.
+  Daemon artifact list contains51rolling capture outputs with an entry-missing verdict, not a
+  new UI generation; task output is the actual report and its source-bound rendered findings.
+- Independent seat`ses_ee3df17b2` reached tool step limit after actual commands and post-SHA checks;
+  no receipt.md written. Read its actual logs/results: tsc0/eslint0 (one no-unused expression
+  warning on evidence capture script,0errors), Vitest**762/100**0, build0; authenticated4-project
+  E2E **69passed/8failed/15skipped**, exit1/flaky0. Pre/post353SHA and six-file set digest match,
+  HEAD constant;223status paths differ only by final design report. This is a real failed check,
+  not a pass inferred from partial agent output; structured summary/logs are durable below.
+- Root causes independently confirmed against spec/source/error traces, two cases ×all4widths:
+  `T5-OBS-ALERT-QUERY-09`: line189 unscoped observation alert sees main error + Next announcer;
+  previously hidden behind failing analysis assertion. `T5-WORKSPACE-RETURN-10`: new asset-route
+  heading assertions at294–298 change the URL, then five-tab workspace assertions run on asset
+  detail which intentionally has no SiteHeader. Actual asset-heading/context assertions passed.
+  Neither grants a product-layout fix or assertion removal. Repair main-scoped single visible
+  observation error and exercise the real asset-return link before all unchanged workspace checks.
+- E2E skip names/reasons read from actual JSON: two desktop coarse-pointer cases; one1024capture
+  case (approved390/768/1440 only); twelve Phase2-staging cases (flag off). No blanket fixture skip,
+  baseline refresh or weakened masks/counts. Keep15explicit skips distinct from requiredP4green.
+- Durable RED bundle `apps/dashboard/p4-cleanup-evidence/t5-e2e-red-v1` has7bound inputs,
+  manifestSHA`5c9420b47ad44bfb9fa32dea1fe596b238a48966a40dc4fefaa4b5b13095e8a6`, actual E2E log,
+  full762Vitest/build/type/lint logs + source/findings binding. No auth traces/result JSON copied.
+- Next bounded test-only correction request`3d354dc7-d6a5-4bb0-8a6b-a1c3b0d18af7`:
+  only `e2e/operations-console.spec.ts` + its repair report, no UI/source/style/backend/data edit.
+  Existing design disposition stays valid for unchanged UI; final verification rebinds the changed
+  test file. Step-limited TestRunner is not blindly continued; use a fresh compact independent
+  verification seat after the concrete test repair. No new scope/installation or P5 execution.
+- Test-only code-edit run`fca2bf41-e2b8-407d-bf25-96e925b535b9` started; no active independent
+  tester/source writer. One spec + repair report only; UI/layout/rendered findings remain unchanged.
+- Test-only`fca2bf41` terminal, actual report/diff inspected: operations spec SHA
+  `20d8a4f4390a68de3bc9125e0e1a745adc28f7db1a47dfd57e8eec6474b4fda9`, only9added/1replaced
+  assertion lines. Main observation error count1/visible/typedcopy retained; real unique
+  `현장으로 돌아가기` link exacthref+click+workspaceURL now precedes unchanged5tab checks.
+  Same-class scan finds no unscoped alert in that spec; no assertion/skip/threshold removal.
+  Other352required files byte-identical; design report/input/UI source unchanged. Lint scoped0
+  is not final E2E evidence. Report `apps/dashboard/p4-cleanup-e2e-repair.md` preserves RED/limits.
+- Final verification snapshot `t5-final-source-v1/source-snapshot.json` SHA
+  `8256911ce314281e04e2b3b57852033d54d1e07333bfc46106a8fafa66701a1c` binds353current files and
+  explicitly bridges the one nonvisual E2E delta to the unchanged Round4 visual snapshot/report.
+  Fresh independent Runner assignment repeats full5commands with one compact receipt driver;
+  no previous pass is silently promoted to post-repair evidence. Final engineering review follows
+  this exact delta and actual receipt; closure/source commit still pending.
+- Evidence-label reconciliation: full E2E capture spec line7 defaults `P4_CAPTURE_PHASE` to
+  `before` and writes51current-source PNGs in that rolling folder; its name is not a chronological
+  pre-P4 proof. Added `p4-cleanup-evidence/README.md` routing to immutable Round2/3/4 inputs and
+  exact before/after defect states. No capture source/config change during final verification,
+  no false fresh-preP4 claim or Home oracle change. Rolling files may change during E2E; neither
+  required353source nor frozen rendered-input manifests include them.
+- Fresh final seat`ses_ee3cff067ffenNG7tq5WksJSvI` assigned the new353snapshot, all5actual commands,
+  exact4projects and final receipt/skip reasons; logs under `/tmp/opencode/p4-final-dashboard-verify-v2`.
+  One serial local driver recommended to avoid step-limit overhead; no forced role/model change,
+  no overlapping source writer. Primary prepares the frozen narrow engineering delta only.
+- Existing whole-P4 Reviewer`ses_ee4028f40ffem3gKb3OgmH4DBp` received final narrow immutable delta
+  `/tmp/opencode/p4-resume-20261008/whole-p4-final-delta-v1`,87files/inputSHA
+  `822a00610c5eee9cf2ec2337c41e353f44f590f6cf32d909a3b9424305bf8ace`:14changed original records
+  (9source/test,4HomePNG,1round report),2newreport-onlyfiles;505other prior records unchanged/
+  still deleted, mutable ledger excluded. No unreviewed new code;328line text delta, not whole
+  1.2MiB replay. Final Runner receipt is independent/in-flight; Reviewer may return code findings
+  with that evidence gap rather than poll/duplicate tests. Primary must bind actual receipt before
+  technical closure. No source writer and no second design-generation stage.
+- Defect origin tags (tracking, not quota): `T4-SKIP-01`, `T4-ANALYSIS-ROUTE-02`,
+  `T4-ANALYSIS-H1-03`, `T4-DENIED-H1-04`, `T4-ASSET-DENIAL-H1-06` originate from self actual-browser
+  verification, confirmed/refined by design review; `T4-SITE-CTA-QUERY-05` and
+  `T4-ANALYSIS-ALERT-QUERY-08` originate from self host E2E/error diagnosis; `T4-MORE-COPY-07`
+  originates from Reviewer (regraded by self); `T5-OBS-ALERT-QUERY-09` and
+  `T5-WORKSPACE-RETURN-10` originate from independent Test Runner. Design owns visual disposition,
+  not these contribution labels. Prior reports/evidence preserve actual findings and uncertainty.
+
+### P4 final technical verification — 2026-10-09 (local commit pending)
+
+- Fresh independent Test Runner`ses_ee3cff067ffenNG7tq5WksJSvI` actual final receipt consumed,
+  then its descriptive attestation corrected by the same seat without rerunning/changing results.
+  Tested main`9a3bab1ba710d0c8925cf3ae8bd8e301e425a9cf` + pending task-owned P4; all353pre/post
+  hashes match final snapshot`8256911c…`,352unchanged from design-reviewed UI (one E2E-only delta).
+  HEAD constant,0source mutation. Actual E2E JSON/log independently inspected by Primary.
+- Five commands, actual exit0: `tsc --noEmit`, `eslint .`, `npm test`, `npm run build`,
+  `playwright test --config=/tmp/opencode/p4-resume-20261008/p4-live.playwright.config.mts
+  --output=/tmp/opencode/p4-final-dashboard-verify-v2/e2e-results --reporter=list,json`.
+  **Vitest762tests/100files; E2E92collected =77passed/0failed/15skipped/0flaky**,23cases per named
+ 390/768/1024/1440 project. Existing15conditional skip reasons fully preserved in the receipt.
+  ESLint0errors/1warning on immutable capture evidence JS (not production, nonblocking).
+- Defect09/10 GREEN on all4projects after observed independent RED8failures, with unchanged
+  headings/error/CTA/five-tab assertions and no new skips/masks/thresholds. Real UI return click,
+  auth/direct URL/reload, populated/empty-org/history/external-work/retired404/keyboard flows pass.
+  Relevant actual views contain no fabricated success/zero/currentness/accuracy assertion.
+- Final whole-P4 Reviewer`ses_ee4028f40ffem3gKb3OgmH4DBp` report SHA
+  `2180a202b17e92e5c5c1632355e9a1cfd7955f437b91768f6b83734fd64743d3` consumed: all4original
+  Important findings closed, no new findings; accepted scope rulings applied. Its sole remaining
+  functional-receipt gap is now closed by the actual fresh receipt on matching source. Design
+  report`5635f47b…` remains independent/passed; Human acceptance remains OPEN, not inferred.
+- Durable verification bundle `apps/dashboard/p4-cleanup-evidence/verification/` contains actual
+  final receipt SHA`e6267cebe7e6d49eb4b6c9a70d7a2241460b0c9e46e859f3141869f52596718d`,5commandlogs,
+  actual case/skip summary, prior Python receipt and first/final engineering reports; manifestSHA
+  `8b67f1f3696ea6380e0b49b2ac5ff02b0327dbdebed4ddd760749caf6f2b5b53`.
+  Reused six-SHA-identical Python6013/30/0 +scoped82/OIDC74/Ruff/mypy is explicit, not a rerun.
+  No trace, session storage, cookie or credential files copied. Test artifact writes to rolling
+  capture folder disclosed; existing3241 accessed by E2E, never started/stopped/duplicated here.
+- Plan execution evidence: T1inventory/disposition cedeb27; T2actualsource cleanup + bounded
+  refinements; T3actualplatform/auth/reload/responsive checks; T4design-owned actual-render review
+  with stable fixed/open list (required residual0); T5whole-P4 engineering review + fresh independent
+  checks above. P4 technical verification achieved; task-owned local Git commit/reconciliation next.
+  Approved plan/spec hashes remain frozen (checkbox/status history not silently rewritten).
+- Boundary judgment: P4's goal-serving cleanup is met locally; further dead-helper/type/metadata
+  polish is not needed for this outcome and stays backlog. Recommended next authorized decision is
+  the existing focused P5 written proposal (SHA4119e5d1…), not more UI iteration or new runtime
+  contracts. P5 execution is still unapproved. No claim of wholeRB-01..09/firstcustomerflow/release,
+  real external byte display/measurement accuracy/operational acceptance; data/rights gates remain.
+- Ruling (origin self, index audit): preserve immutable evidence bytes instead of trimming generated
+  stdout/context snapshots or intentional Markdown hard breaks to manufacture a clean full-index
+  whitespace result. Full `git diff --cached --check` returns2 on29evidence/report files only;
+  production/test/config +task-doc scoped check returns0. No Git setting, lint/test configuration,
+  threshold or source changed. Cost if wrong: poorer text diffs; mitigate with exact path-bounded
+  audit and retained hashes, never claiming the full-index check passed. Task-owned699paths staged;
+  proposal/checkpoint/auth/trace/foreign files excluded. Local commit next, P5 still unapproved.

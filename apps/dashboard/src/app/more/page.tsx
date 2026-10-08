@@ -13,7 +13,7 @@ export default function MorePage() {
       <div>
         <h2 className="text-[17px] font-bold tracking-tight">운영 지원</h2>
         <p className="mt-1 text-[12.5px] break-keep text-ink-2">
-          비행 임무·장비 연결·복구처럼 기술 운영에 필요한 화면입니다.
+          운영 지원 범위와 아직 실장비 검증 전인 기능을 안내합니다.
         </p>
       </div>
       <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">

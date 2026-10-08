@@ -141,9 +141,9 @@ export function ExternalObservationCreateForm({
           <span className="block text-[15px] font-bold">외부 산출물 등록</span>
           <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">이미 만든 정사영상과 DSM을 등록해 비교 결과를 확인합니다.</span>
         </button>
-        <Link href={`/sites/${encodeURIComponent(siteId)}/surveys/new`} className="rounded-xl border border-line bg-surface p-4 hover:bg-sunk">
-          <span className="block text-[15px] font-bold">비행 계획 만들기</span>
-          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">현장에서 새 촬영이 필요하면 비행 계획을 만듭니다.</span>
+        <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="rounded-xl border border-line bg-surface p-4 hover:bg-sunk">
+          <span className="block text-[15px] font-bold">관측 이력 보기</span>
+          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">등록된 외부 관측 결과와 검토 상태를 확인합니다.</span>
         </Link>
       </div>
 

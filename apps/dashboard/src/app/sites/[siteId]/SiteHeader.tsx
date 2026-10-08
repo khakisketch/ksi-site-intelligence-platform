@@ -19,7 +19,7 @@ function hrefWith(
 ): string {
   const merged = { ...current, ...patch };
   const params = new URLSearchParams();
-  if (merged.section && merged.section !== "briefing") params.set("section", merged.section);
+  if (merged.section && merged.section !== "observations") params.set("section", merged.section);
   if (merged.epoch) params.set("epoch", merged.epoch);
   const search = params.toString();
   const base = `/sites/${encodeURIComponent(siteId)}`;
@@ -39,7 +39,7 @@ export function SiteHeader({
   tab,
   latestObservationAt,
   latestObservationKnown,
-  canStartSurvey,
+  canCreateWorkOrder,
   canEditAoi,
 }: {
   site: SiteView;
@@ -47,17 +47,18 @@ export function SiteHeader({
   tab: SiteTabKey;
   latestObservationAt: string | null;
   latestObservationKnown: boolean;
-  canStartSurvey: boolean;
+  canCreateWorkOrder: boolean;
   canEditAoi: boolean;
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { section: tab, epoch: selectedEpochId ?? undefined };
   const preparationAction = resolveSiteOperatorNextAction(site, {
-    canRegisterSite: false,
     canEditSite: canEditAoi,
-    canIssueMission: canStartSurvey,
+    canCreateWorkOrder,
   }, { includeRoutineSurvey: true });
-  const primaryAction = preparationAction;
+  // The observations panel owns this same action on its default tab; keep one
+  // entry point there while the mobile panel remains the direct action surface.
+  const primaryAction = tab === "observations" ? null : preparationAction;
   return (
     <header className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 sm:px-5">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">

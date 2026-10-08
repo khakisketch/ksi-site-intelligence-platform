@@ -1,0 +1,1059 @@
+{
+  "origin": "http://localhost:3241",
+  "phase": "post-T4-round2-source",
+  "generatedDataOnly": true,
+  "normalFixtureLoginRestored": true,
+  "rows": [
+    {
+      "name": "home",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "sites",
+      "width": 390,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n필터·정렬\n전체\n현장\n5 / 5곳 표시\n대표 이미지 없음\nE2E 승인 검토 현장\n\n최근 갱신 2026. 8. 25.\n\n미매핑\n\n새 관측 시작\n\n조치 필요\n현장 열기\n대표 이미지 없음\nE2E 관측 완료 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 결과 검토 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 관측 진행 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 현장 작업공간\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-workspace",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 관측\n열기\n외부 관측 이력\n\n현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다.\n\n외부 관측 이력 열기새 관측 시작",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation",
+      "newObservationLinks": [
+        {
+          "href": "/sites/e2e-site-workspace/observations/new",
+          "class": "btn mt-3 ml-2 w-fit",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "site-analysis",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace?section=analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 분석\n열기\n현장 분석\n\n현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다.\n\n현장 분석 열기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-assets",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace?section=spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 공간 자산\n열기\n작업구역\nE2E 작업구역 1wa-e2e-site-workspace-0001\n작업구역 관리\n공간 자산",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-analysis",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 0,
+      "mainText": "E2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "nodes": 1
+        }
+      ],
+      "arrival": "actual gateway link"
+    },
+    {
+      "name": "actual-assets",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "E2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-observations",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/observations",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "외부 관측 이력\n\nE2E 현장 작업공간\n\n외부 관측 결과 이력\n\n보관 근거가 확인된 결과만 수치와 추이를 표시합니다.\n\n현장 분석\n공간 자산\n현장으로 돌아가기\n\n외부 관측 이력을 불러오지 못했습니다.\n\n다시 시도",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-external-error",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace?section=external-results",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 외부 결과\n열기\n외부 결과\n\n외부 관측 결과를 불러오지 못했습니다.\n\n다시 시도\n외부 관측 이력 열기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "field",
+      "width": 390,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n결정 필요\n\n2\n\n진행 중\n\n2\n\n완료\n\n1\n\n결정 필요\n2\n\n범위 검토와 결과 확인이 필요한 작업\n\nE2E 과거 읽기 전용 · 결과 검토 기록\ne2e-site-result · obs-work-00000003\n결과 준비\nE2E 과거 읽기 전용 · 작업 범위 승인\ne2e-site-review · obs-work-00000001\n승인 대기\n진행 중\n2\n\n수집·전송·처리 중인 작업\n\nE2E 외부 산출물 등록\ne2e-site-workspace · obs-work-00000005\n산출물 등록 준비\nE2E 과거 읽기 전용 · 승인 기록\ne2e-site-progress · obs-work-00000002\n비행 계획 준비\n운영 상태 확인 필요\n0\n\n담당·기한 상태를 확인할 작업\n\n이 구분에 표시할 작업이 없습니다.\n\n완료\n1\n\n완료되거나 종료된 작업\n\nE2E 과거 읽기 전용 · 완료 기록\ne2e-site-completed · obs-work-00000004\n완료",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work",
+      "width": 390,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n노트북에서 계속\n\n노트북 필요\n\n담당·기한·업무 종료는 노트북 이상의 화면에서 변경합니다.\n\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n노트북에서 계속\n\n노트북 필요\n\n외부 산출물 등록은 노트북 이상의 화면에서만 진행합니다.\n\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work-bottom-skip-focused",
+      "width": 390,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n노트북에서 계속\n\n노트북 필요\n\n담당·기한·업무 종료는 노트북 이상의 화면에서 변경합니다.\n\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n노트북에서 계속\n\n노트북 필요\n\n외부 산출물 등록은 노트북 이상의 화면에서만 진행합니다.\n\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "scroll": {
+        "scrollTop": 626,
+        "clientHeight": 844,
+        "scrollHeight": 1470
+      },
+      "focusMethod": "explicit focus after lower scroll; not first-Tab evidence"
+    },
+    {
+      "name": "historical-work",
+      "width": 390,
+      "path": "/field/work-orders/obs-work-00000001",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\nE2E 승인 검토 현장 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n승인 대기\n승인 대기\n\n범위와 작업 목적을 확인하면 자동 전달 준비가 시작됩니다.\n\n이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "home",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "sites",
+      "width": 768,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n필터·정렬\n전체\n현장\n5 / 5곳 표시\n대표 이미지 없음\nE2E 승인 검토 현장\n\n최근 갱신 2026. 8. 25.\n\n미매핑\n\n새 관측 시작\n\n조치 필요\n현장 열기\n대표 이미지 없음\nE2E 관측 완료 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 결과 검토 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 관측 진행 현장\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기\n대표 이미지 없음\nE2E 현장 작업공간\n\n최근 갱신 2026. 8. 25.\n\n초기 매핑 중\n\n촬영·업로드 대기\n\n상태 확인\n현장 열기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-workspace",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 관측\n열기\n외부 관측 이력\n\n현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다.\n\n외부 관측 이력 열기새 관측 시작",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation",
+      "newObservationLinks": [
+        {
+          "href": "/sites/e2e-site-workspace/observations/new",
+          "class": "btn mt-3 ml-2 w-fit",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "site-analysis",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace?section=analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 분석\n열기\n현장 분석\n\n현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다.\n\n현장 분석 열기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-assets",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace?section=spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 공간 자산\n열기\n작업구역\nE2E 작업구역 1wa-e2e-site-workspace-0001\n작업구역 관리\n공간 자산",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-analysis",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 0,
+      "mainText": "E2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "nodes": 1
+        }
+      ],
+      "arrival": "actual gateway link"
+    },
+    {
+      "name": "actual-assets",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "E2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-observations",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/observations",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "외부 관측 이력\n\nE2E 현장 작업공간\n\n외부 관측 결과 이력\n\n보관 근거가 확인된 결과만 수치와 추이를 표시합니다.\n\n현장 분석\n공간 자산\n현장으로 돌아가기\n\n외부 관측 이력을 불러오지 못했습니다.\n\n다시 시도",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-external-error",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace?section=external-results",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n현장 메뉴 · 외부 결과\n열기\n외부 결과\n\n외부 관측 결과를 불러오지 못했습니다.\n\n다시 시도\n외부 관측 이력 열기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "field",
+      "width": 768,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n결정 필요\n\n2\n\n진행 중\n\n2\n\n완료\n\n1\n\n결정 필요\n2\n\n범위 검토와 결과 확인이 필요한 작업\n\nE2E 과거 읽기 전용 · 결과 검토 기록\ne2e-site-result · obs-work-00000003\n결과 준비\nE2E 과거 읽기 전용 · 작업 범위 승인\ne2e-site-review · obs-work-00000001\n승인 대기\n진행 중\n2\n\n수집·전송·처리 중인 작업\n\nE2E 외부 산출물 등록\ne2e-site-workspace · obs-work-00000005\n산출물 등록 준비\nE2E 과거 읽기 전용 · 승인 기록\ne2e-site-progress · obs-work-00000002\n비행 계획 준비\n운영 상태 확인 필요\n0\n\n담당·기한 상태를 확인할 작업\n\n이 구분에 표시할 작업이 없습니다.\n\n완료\n1\n\n완료되거나 종료된 작업\n\nE2E 과거 읽기 전용 · 완료 기록\ne2e-site-completed · obs-work-00000004\n완료",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work",
+      "width": 768,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n노트북에서 계속\n\n노트북 필요\n\n담당·기한·업무 종료는 노트북 이상의 화면에서 변경합니다.\n\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n노트북에서 계속\n\n노트북 필요\n\n외부 산출물 등록은 노트북 이상의 화면에서만 진행합니다.\n\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work-bottom-skip-focused",
+      "width": 768,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n노트북에서 계속\n\n노트북 필요\n\n담당·기한·업무 종료는 노트북 이상의 화면에서 변경합니다.\n\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n노트북에서 계속\n\n노트북 필요\n\n외부 산출물 등록은 노트북 이상의 화면에서만 진행합니다.\n\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "scroll": {
+        "scrollTop": 270,
+        "clientHeight": 1024,
+        "scrollHeight": 1294
+      },
+      "focusMethod": "explicit focus after lower scroll; not first-Tab evidence"
+    },
+    {
+      "name": "historical-work",
+      "width": 768,
+      "path": "/field/work-orders/obs-work-00000001",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\nE2E 승인 검토 현장 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n승인 대기\n승인 대기\n\n범위와 작업 목적을 확인하면 자동 전달 준비가 시작됩니다.\n\n이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "home",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "sites",
+      "width": 1440,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n전체\n5\n조사 필요\n1\n준비 중\n4\n조사 필요 순\n최근 갱신 순\n이름 순\n적용\n현장 등록\n현장 상태\n5 / 5곳 표시\n현장\n상태\n진행 단계\n갱신\n다음 할 일\n바로가기\nE2E 승인 검토 현장\n미매핑\n2026. 8. 25.\n새 관측 시작\n현장 열기\nE2E 관측 완료 현장\n초기 매핑 중\n2026. 8. 25.\n촬영·업로드 대기\n현장 열기\nE2E 결과 검토 현장\n초기 매핑 중\n2026. 8. 25.\n촬영·업로드 대기\n현장 열기\nE2E 관측 진행 현장\n초기 매핑 중\n2026. 8. 25.\n촬영·업로드 대기\n현장 열기\nE2E 현장 작업공간\n초기 매핑 중\n2026. 8. 25.\n촬영·업로드 대기\n현장 열기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-workspace",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n새 관측 시작\n관측\n분석\n공간 자산\n작업\n외부 결과\n외부 관측 이력\n\n현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다.\n\n외부 관측 이력 열기새 관측 시작",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation",
+      "newObservationLinks": [
+        {
+          "href": "/sites/e2e-site-workspace/observations/new",
+          "class": "btn btn-primary tap-target",
+          "visible": true
+        },
+        {
+          "href": "/sites/e2e-site-workspace/observations/new",
+          "class": "btn mt-3 ml-2 w-fit",
+          "visible": true
+        }
+      ]
+    },
+    {
+      "name": "site-analysis",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace?section=analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n새 관측 시작\n관측\n분석\n공간 자산\n작업\n외부 결과\n현장 분석\n\n현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다.\n\n현장 분석 열기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-assets",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace?section=spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n새 관측 시작\n관측\n분석\n공간 자산\n작업\n외부 결과\n작업구역\nE2E 작업구역 1wa-e2e-site-workspace-0001\n작업구역 관리\n공간 자산",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-analysis",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 0,
+      "mainText": "E2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [
+        {
+          "id": "page-has-heading-one",
+          "impact": "moderate",
+          "nodes": 1
+        }
+      ],
+      "arrival": "actual gateway link"
+    },
+    {
+      "name": "actual-assets",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "E2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "actual-observations",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/observations",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "외부 관측 이력\n\nE2E 현장 작업공간\n\n외부 관측 결과 이력\n\n보관 근거가 확인된 결과만 수치와 추이를 표시합니다.\n\n현장 분석\n공간 자산\n현장으로 돌아가기\n\n외부 관측 이력을 불러오지 못했습니다.\n\n다시 시도",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "site-external-error",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace?section=external-results",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 상세\nE2E 현장 작업공간\n초기 매핑 중\n최신 관측 알 수 없음\n새 관측 시작\n관측\n분석\n공간 자산\n작업\n외부 결과\n외부 결과\n\n외부 관측 결과를 불러오지 못했습니다.\n\n다시 시도\n외부 관측 이력 열기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "field",
+      "width": 1440,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n결정 필요\n\n2\n\n진행 중\n\n2\n\n완료\n\n1\n\n결정 필요\n2\n\n범위 검토와 결과 확인이 필요한 작업\n\nE2E 과거 읽기 전용 · 결과 검토 기록\ne2e-site-result · obs-work-00000003\n결과 준비\nE2E 과거 읽기 전용 · 작업 범위 승인\ne2e-site-review · obs-work-00000001\n승인 대기\n진행 중\n2\n\n수집·전송·처리 중인 작업\n\nE2E 외부 산출물 등록\ne2e-site-workspace · obs-work-00000005\n산출물 등록 준비\nE2E 과거 읽기 전용 · 승인 기록\ne2e-site-progress · obs-work-00000002\n비행 계획 준비\n운영 상태 확인 필요\n0\n\n담당·기한 상태를 확인할 작업\n\n이 구분에 표시할 작업이 없습니다.\n\n완료\n1\n\n완료되거나 종료된 작업\n\nE2E 과거 읽기 전용 · 완료 기록\ne2e-site-completed · obs-work-00000004\n완료",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work",
+      "width": 1440,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n내게 배정\n팀원에게 배정\n담당 해제\n마감 시각 (한국 표준시)\n마감 저장\n마감 지우기\n종료 메모\n(선택)\n업무 종료\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n재구성 소프트웨어 이름\n재구성 소프트웨어 버전\n촬영 시각 (한국 표준시)\n\n이 외부 등록에는 시작과 종료 시각이 필요합니다.\n\n시작\n종료\n정사영상 (필수)\nDSM (선택)\n\n정사영상을 선택하세요.\n\n산출물 등록하기\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "external-work-bottom-skip-focused",
+      "width": 1440,
+      "path": "/field/work-orders/obs-work-00000005",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 외부 산출물 등록\n\nE2E 현장 작업공간 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n외부 산출물 등록 준비\n외부 산출물 등록 준비\n\n촬영 시각과 재구성 정보를 확인한 뒤 산출물을 등록하세요. 비행이나 장비 실행은 이 작업에서 시작하지 않습니다.\n\n작업 운영\n\n담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.\n\n운영 중\n\n담당 · 미배정\n\n마감 · 설정 안 함\n\n내게 배정\n팀원에게 배정\n담당 해제\n마감 시각 (한국 표준시)\n마감 저장\n마감 지우기\n종료 메모\n(선택)\n업무 종료\n재구성 산출물 등록\n\n파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.\n\n재구성 소프트웨어 이름\n재구성 소프트웨어 버전\n촬영 시각 (한국 표준시)\n\n이 외부 등록에는 시작과 종료 시각이 필요합니다.\n\n시작\n종료\n정사영상 (필수)\nDSM (선택)\n\n정사영상을 선택하세요.\n\n산출물 등록하기\n등록된 외부 산출물이 없습니다.\n독립 검사점 증거와 사용 결정\n외부 상대 물량과 재관측 검토\n\n등록된 상대 물량 요청·결과·검토·재관측 제안만 표시합니다. 이 화면만으로 현장 실행 여부를 판단할 수 없습니다.\n\n현재 선택에서 상대 물량 비교를 요청하세요.\n\n비교 요청 목록\n목록 새로고침\n\n비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.\n\n단일 시점 체적 측정\n\n이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "scroll": {
+        "scrollTop": 1018,
+        "clientHeight": 843,
+        "scrollHeight": 1861
+      },
+      "focusMethod": "explicit focus after lower scroll; not first-Tab evidence"
+    },
+    {
+      "name": "historical-work",
+      "width": 1440,
+      "path": "/field/work-orders/obs-work-00000001",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장 작업\n\nKSI OPERATIONS CONSOLE\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\nE2E 승인 검토 현장 · 1개 구역 · 1회차\n\n플랫폼 작업 상태\n승인 대기\n승인 대기\n\n범위와 작업 목적을 확인하면 자동 전달 준비가 시작됩니다.\n\n이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.\n\n현장으로\n작업 큐",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "arrival": "navigation"
+    },
+    {
+      "name": "keyboard-first-tab",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "firstTab": {
+        "tag": "A",
+        "text": "본문으로 건너뛰기",
+        "href": "#main-content"
+      },
+      "skipIsFirst": true,
+      "skipBounds": {
+        "x": 16,
+        "y": 8,
+        "width": 122.65625,
+        "height": 35.5
+      },
+      "mainBounds": {
+        "x": 0,
+        "y": 90,
+        "width": 390,
+        "height": 1682.375
+      }
+    },
+    {
+      "name": "keyboard-enter-main",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "enterFocus": {
+        "tag": "MAIN",
+        "id": "main-content"
+      },
+      "enteredMain": true
+    },
+    {
+      "name": "keyboard-first-tab",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "firstTab": {
+        "tag": "A",
+        "text": "본문으로 건너뛰기",
+        "href": "#main-content"
+      },
+      "skipIsFirst": true,
+      "skipBounds": {
+        "x": 16,
+        "y": -48.79999923706055,
+        "width": 122.65625,
+        "height": 35.5
+      },
+      "mainBounds": {
+        "x": 0,
+        "y": 90,
+        "width": 768,
+        "height": 1496.375
+      }
+    },
+    {
+      "name": "keyboard-enter-main",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "enterFocus": {
+        "tag": "MAIN",
+        "id": "main-content"
+      },
+      "enteredMain": true
+    },
+    {
+      "name": "keyboard-first-tab",
+      "width": 1024,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1024,
+      "documentWidth": 1024,
+      "a11y": [],
+      "firstTab": {
+        "tag": "A",
+        "text": "본문으로 건너뛰기",
+        "href": "#main-content"
+      },
+      "skipIsFirst": true,
+      "skipBounds": {
+        "x": 192,
+        "y": -48.79999923706055,
+        "width": 122.65625,
+        "height": 35.5
+      },
+      "mainBounds": {
+        "x": 176,
+        "y": 90,
+        "width": 848,
+        "height": 810
+      }
+    },
+    {
+      "name": "keyboard-enter-main",
+      "width": 1024,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1024,
+      "documentWidth": 1024,
+      "a11y": [],
+      "enterFocus": {
+        "tag": "MAIN",
+        "id": "main-content"
+      },
+      "enteredMain": true
+    },
+    {
+      "name": "keyboard-first-tab",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1000,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "firstTab": {
+        "tag": "A",
+        "text": "본문으로 건너뛰기",
+        "href": "#main-content"
+      },
+      "skipIsFirst": true,
+      "skipBounds": {
+        "x": 248,
+        "y": 8,
+        "width": 122.65625,
+        "height": 35.5
+      },
+      "mainBounds": {
+        "x": 232,
+        "y": 90,
+        "width": 1208,
+        "height": 910
+      }
+    },
+    {
+      "name": "keyboard-enter-main",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 승인 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1000,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "enterFocus": {
+        "tag": "MAIN",
+        "id": "main-content"
+      },
+      "enteredMain": true
+    },
+    {
+      "name": "carousel-next-no-preference",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "motion": "no-preference",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "name": "carousel-next-reduce",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "motion": "reduce",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    },
+    {
+      "name": "carousel-next-no-preference",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "motion": "no-preference",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "name": "carousel-next-reduce",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "motion": "reduce",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    },
+    {
+      "name": "carousel-next-no-preference",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "motion": "no-preference",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "name": "carousel-next-reduce",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 5곳·확인 필요 —\n\n받은 업무\n현장 전체\n\n일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.\n\n외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.\n\n현장 인텔리전스\n\n확인이 필요한 현장\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 승인 검토 현장\n2026. 8. 25. 09:10\n\n승인 대기\n\nE2E 과거 읽기 전용 · 작업 범위 승인\n\n조사 범위 1개 구역과 목적을 검토해야 합니다.\n\n작업 맥락 보기\n연결된 이미지 없음\n\n현장 원장에 등록된 관측 이미지가 없습니다.\n\nE2E 결과 검토 현장\n2026. 8. 25. 09:12\n\n결과 준비\n\nE2E 과거 읽기 전용 · 결과 검토 기록\n\n합성 E2E 상태 전이이며 운영·장비 증거가 아님\n\n결과와 근거 보기\n\nE2E 결과 검토 현장\n\n현장 준비\n\n초기 설정이 필요한 현장\n\n첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다.\n\n현장 전체\nE2E 승인 검토 현장\n미매핑\n01\n\n첫 기준 관측을 준비하세요.\n\n현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다.\n\n새 관측 시작\n→\n최근 업데이트\n\n결과와 사람이 정리한 안건만 표시합니다.\n\n현장 전체\n\n최근 조사 · E2E 관측 완료 현장\n\n연결된 미리보기 없음\n2026. 8. 25. 09:13\nE2E 과거 읽기 전용 · 완료 기록\n\n조사 결과가 작업 원장에 기록되었습니다.\n\n내용 보기\n\n현재 원장 · E2E 관측 진행 현장\n\n연결된 미리보기 없음\n현장 갱신 2026. 8. 25. 09:02\n등록된 대기 작업 없음\n\n현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.\n\n내용 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "motion": "reduce",
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    },
+    {
+      "name": "empty-home",
+      "width": 390,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 0곳·확인 필요 0곳\n\n받은 업무\n\n아직 등록된 현장이 없습니다\n\n첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다.\n\n현장 등록",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": []
+    },
+    {
+      "name": "empty-sites",
+      "width": 390,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n\n첫 실행 · 등록된 현장 0곳\n\n현장을 등록하면 여기서 시작합니다\n\n현장 이름과 외곽 경계를 등록한 뒤, 현장 화면에서 작업구역과 등록된 플랫폼 기록을 확인할 수 있습니다.\n\n첫 현장 등록하기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": []
+    },
+    {
+      "name": "empty-field",
+      "width": 390,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n등록된 관측 작업이 없습니다\n\n현장 화면에서 작업구역을 확인하고 새 관측 작업을 시작할 수 있습니다.\n\n현장 보기",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": []
+    },
+    {
+      "name": "denied-site",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 2,
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": []
+    },
+    {
+      "name": "denied-analysis",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 844,
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": []
+    },
+    {
+      "name": "empty-home",
+      "width": 768,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 0곳·확인 필요 0곳\n\n받은 업무\n현장 전체\n\n아직 등록된 현장이 없습니다\n\n첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다.\n\n현장 등록",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": []
+    },
+    {
+      "name": "empty-sites",
+      "width": 768,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n\n첫 실행 · 등록된 현장 0곳\n\n현장을 등록하면 여기서 시작합니다\n\n현장 이름과 외곽 경계를 등록한 뒤, 현장 화면에서 작업구역과 등록된 플랫폼 기록을 확인할 수 있습니다.\n\n첫 현장 등록하기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": []
+    },
+    {
+      "name": "empty-field",
+      "width": 768,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n등록된 관측 작업이 없습니다\n\n현장 화면에서 작업구역을 확인하고 새 관측 작업을 시작할 수 있습니다.\n\n현장 보기",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": []
+    },
+    {
+      "name": "denied-site",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 2,
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": []
+    },
+    {
+      "name": "denied-analysis",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 1024,
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": []
+    },
+    {
+      "name": "empty-home",
+      "width": 1440,
+      "path": "/",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "홈\n\n전체 0곳·확인 필요 0곳\n\n받은 업무\n현장 전체\n\n아직 등록된 현장이 없습니다\n\n첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다.\n\n현장 등록",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": []
+    },
+    {
+      "name": "empty-sites",
+      "width": 1440,
+      "path": "/sites",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장\n\n첫 실행 · 등록된 현장 0곳\n\n현장을 등록하면 여기서 시작합니다\n\n현장 이름과 외곽 경계를 등록한 뒤, 현장 화면에서 작업구역과 등록된 플랫폼 기록을 확인할 수 있습니다.\n\n첫 현장 등록하기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": []
+    },
+    {
+      "name": "empty-field",
+      "width": 1440,
+      "path": "/field",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "작업\n\n플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.\n\n받은 업무\n팀 관리\n새 관측 시작\n\n등록된 관측 작업이 없습니다\n\n현장 화면에서 작업구역을 확인하고 새 관측 작업을 시작할 수 있습니다.\n\n현장 보기",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": []
+    },
+    {
+      "name": "denied-site",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 2,
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": []
+    },
+    {
+      "name": "denied-analysis",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "mainText": "현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportHeight": 900,
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": []
+    }
+  ],
+  "pageErrors": [],
+  "apiFailures": [
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/single-volume-requests",
+      "status": 404
+    },
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/relative-volume-requests",
+      "status": 404
+    },
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/single-volume-requests",
+      "status": 404
+    },
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/relative-volume-requests",
+      "status": 404
+    },
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/relative-volume-requests",
+      "status": 404
+    },
+    {
+      "path": "/api/observation-work-orders/obs-work-00000005/single-volume-requests",
+      "status": 404
+    }
+  ]
+}

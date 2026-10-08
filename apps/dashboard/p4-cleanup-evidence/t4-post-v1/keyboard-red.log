@@ -1,0 +1,47 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (10.8s)
+
+
+  1) [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 ─
+
+    Error: expect(locator).toBeFocused() failed
+
+    Locator:  getByRole('link', { name: '본문으로 건너뛰기' })
+    Expected: focused
+    Received: inactive
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toBeFocused" with timeout 5000ms
+      - waiting for getByRole('link', { name: '본문으로 건너뛰기' })
+        14 × locator resolved to <a class="skip-link" href="#main-content">본문으로 건너뛰기</a>
+           - unexpected value "inactive"
+
+
+      157 |   await page.keyboard.press("Tab");
+      158 |   const skipLink = page.getByRole("link", { name: "본문으로 건너뛰기" });
+    > 159 |   await expect(skipLink).toBeFocused();
+          |                          ^
+      160 |   const [skipBounds, mainBounds] = await Promise.all([
+      161 |     skipLink.boundingBox(),
+      162 |     page.locator("#main-content").boundingBox(),
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:159:26
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/t4-keyboard-red-results/operations-console-키보드는-내비게이션을-건너뛰고-화면-전환-뒤-본문-맥락을-이어-간다-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/t4-keyboard-red-results/operations-console-키보드는-내비게이션을-건너뛰고-화면-전환-뒤-본문-맥락을-이어-간다-desktop-1440/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/t4-keyboard-red-results/operations-console-키보드는-내비게이션을-건너뛰고-화면-전환-뒤-본문-맥락을-이어-간다-desktop-1440/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/t4-keyboard-red-results/operations-console-키보드는-내비게이션을-건너뛰고-화면-전환-뒤-본문-맥락을-이어-간다-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 ──

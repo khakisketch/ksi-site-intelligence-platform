@@ -1,0 +1,38 @@
+[
+  {
+    "project": "mobile-390",
+    "from": "apps/dashboard/p4-cleanup-evidence/t4-round2-render-v1/baseline-candidates/home-mobile-390.png",
+    "target": "apps/dashboard/e2e/__screenshots__/home-mobile-390.png",
+    "adoptedSha256": "04b064bc2dd902208d23f9aaca24b486fb3f874f67e7294c562ccd13f967da0b",
+    "retainedSha256": "3df02e0dd0bdf83c8478027a97a4d126ad389a00b8cca107585907ce1ecd13dd",
+    "mechanicalOnly": true,
+    "reviewRun": "a3547beb-4890-47cf-9d68-df365964a40c"
+  },
+  {
+    "project": "tablet-768",
+    "from": "apps/dashboard/p4-cleanup-evidence/t4-round2-render-v1/baseline-candidates/home-tablet-768.png",
+    "target": "apps/dashboard/e2e/__screenshots__/home-tablet-768.png",
+    "adoptedSha256": "f970995af32880c86f18d84d41f635541baa2e7f9596c016e861dbb81aafc8e9",
+    "retainedSha256": "2818ec4c614ca4974303ed5cee864a2744bf9567cd7f5ad2823dfb05f1acf846",
+    "mechanicalOnly": true,
+    "reviewRun": "a3547beb-4890-47cf-9d68-df365964a40c"
+  },
+  {
+    "project": "desktop-1024",
+    "from": "apps/dashboard/p4-cleanup-evidence/t4-round2-render-v1/baseline-candidates/home-desktop-1024.png",
+    "target": "apps/dashboard/e2e/__screenshots__/home-desktop-1024.png",
+    "adoptedSha256": "988b4cfb0cb3104b57df395f51ee3a9a7d077a7f4f0788cf1f9044a3d7b006a1",
+    "retainedSha256": "901998b372882453be521107052864e8612828ba03b50504a1c7c46a51139d59",
+    "mechanicalOnly": true,
+    "reviewRun": "a3547beb-4890-47cf-9d68-df365964a40c"
+  },
+  {
+    "project": "desktop-1440",
+    "from": "apps/dashboard/p4-cleanup-evidence/t4-round2-render-v1/baseline-candidates/home-desktop-1440.png",
+    "target": "apps/dashboard/e2e/__screenshots__/home-desktop-1440.png",
+    "adoptedSha256": "d7eb77d41b425b808ce0b23fe8b748cec2d5ff9b903c811f5a5312936ab91630",
+    "retainedSha256": "6610663fa5a47c6cfa56e1fb83939a65ed9b3530feb2000ef5fa44607015d665",
+    "mechanicalOnly": true,
+    "reviewRun": "a3547beb-4890-47cf-9d68-df365964a40c"
+  }
+]

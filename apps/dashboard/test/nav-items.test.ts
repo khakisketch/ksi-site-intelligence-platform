@@ -39,9 +39,6 @@ describe("DESKTOP_NAV_GROUPS", () => {
       "home",
       "sites",
       "work",
-      "review",
-      "missions",
-      "settings",
       "fleet",
     ]);
   });
@@ -72,7 +69,6 @@ describe("MOBILE_TAB_ITEMS", () => {
       "홈",
       "현장",
       "작업",
-      "확인",
       "더보기",
     ]);
   });

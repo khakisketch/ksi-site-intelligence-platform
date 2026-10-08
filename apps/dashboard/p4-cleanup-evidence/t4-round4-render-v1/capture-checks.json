@@ -1,0 +1,446 @@
+{
+  "origin": "http://localhost:3241",
+  "phase": "post-T4-round4-source",
+  "generatedDataOnly": true,
+  "normalFixtureLoginRestored": true,
+  "rows": [
+    {
+      "name": "actual-assets",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 공간 자산"
+        }
+      ],
+      "mainText": "현장 공간 자산\n\nE2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "direct URL followed by reload"
+    },
+    {
+      "name": "more-after",
+      "width": 390,
+      "path": "/more",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "더보기"
+        },
+        {
+          "tag": "H2",
+          "text": "운영 지원"
+        }
+      ],
+      "mainText": "더보기\n운영 지원\n\n운영 지원 범위와 아직 실장비 검증 전인 기능을 안내합니다.\n\nDock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "retiredCopyPresent": false,
+      "supportLink": [
+        {
+          "href": "/coming-soon/fleet",
+          "text": "Dock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전"
+        }
+      ]
+    },
+    {
+      "name": "actual-analysis",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 분석"
+        }
+      ],
+      "mainText": "현장 분석\n\nE2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "actual gateway click",
+      "mainAlerts": 1
+    },
+    {
+      "name": "actual-assets",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 공간 자산"
+        }
+      ],
+      "mainText": "현장 공간 자산\n\nE2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "direct URL followed by reload"
+    },
+    {
+      "name": "more-after",
+      "width": 768,
+      "path": "/more",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "더보기"
+        },
+        {
+          "tag": "H2",
+          "text": "운영 지원"
+        }
+      ],
+      "mainText": "더보기\n운영 지원\n\n운영 지원 범위와 아직 실장비 검증 전인 기능을 안내합니다.\n\nDock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "retiredCopyPresent": false,
+      "supportLink": [
+        {
+          "href": "/coming-soon/fleet",
+          "text": "Dock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전"
+        }
+      ]
+    },
+    {
+      "name": "actual-analysis",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 분석"
+        }
+      ],
+      "mainText": "현장 분석\n\nE2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "actual gateway click",
+      "mainAlerts": 1
+    },
+    {
+      "name": "actual-assets",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 공간 자산"
+        }
+      ],
+      "mainText": "현장 공간 자산\n\nE2E 현장 작업공간\n\n현장 공간 자산\n\nCore에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.\n\n외부 관측 이력\n현장으로 돌아가기\n작업구역 선택\n작업구역을 선택하세요\nE2E 작업구역 1\n자산 불러오기\n\n현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "direct URL followed by reload"
+    },
+    {
+      "name": "more-after",
+      "width": 1440,
+      "path": "/more",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "더보기"
+        },
+        {
+          "tag": "H2",
+          "text": "운영 지원"
+        }
+      ],
+      "mainText": "더보기\n운영 지원\n\n운영 지원 범위와 아직 실장비 검증 전인 기능을 안내합니다.\n\nDock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "retiredCopyPresent": false,
+      "supportLink": [
+        {
+          "href": "/coming-soon/fleet",
+          "text": "Dock·Edge 지원 범위\n실장비 검증 전 기능은 사용할 수 없습니다.\n실장비 검증 전"
+        }
+      ]
+    },
+    {
+      "name": "actual-analysis",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장 분석"
+        }
+      ],
+      "mainText": "현장 분석\n\nE2E 현장 작업공간\n\n현장 분석\n\n같은 작업구역의 두 외부 관측을 선택해 Core의 분석 기록과 근거를 확인합니다.\n\n외부 관측 이력\n\n이 환경에서는 현장 분석 기능을 사용할 수 없습니다.",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "arrival": "actual gateway click",
+      "mainAlerts": 1
+    },
+    {
+      "name": "denied-assets",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 공간 자산\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-site",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 상세"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-analysis",
+      "width": 390,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 분석\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 390,
+      "documentWidth": 390,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-assets",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 공간 자산\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-site",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 상세"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-analysis",
+      "width": 768,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 분석\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 768,
+      "documentWidth": 768,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-assets",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/spatial-assets",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 공간 자산"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 공간 자산\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-site",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 상세"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 상세\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    },
+    {
+      "name": "denied-analysis",
+      "width": 1440,
+      "path": "/sites/e2e-site-workspace/analysis",
+      "settled": true,
+      "h1Count": 1,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "현장 분석"
+        },
+        {
+          "tag": "H2",
+          "text": "현장을 찾을 수 없습니다"
+        }
+      ],
+      "mainText": "현장 분석\n현장을 찾을 수 없습니다\n\n요청한 현장에 접근할 수 없습니다. 현장 목록에서 접근 가능한 현장을 확인하세요.\n\n현장 목록으로",
+      "viewportWidth": 1440,
+      "documentWidth": 1440,
+      "a11y": [],
+      "reducedMotion": true,
+      "account": "owned empty organization fixture"
+    }
+  ],
+  "pageErrors": [],
+  "apiFailures": [],
+  "consoleErrors": []
+}

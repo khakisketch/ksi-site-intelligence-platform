@@ -12,8 +12,6 @@ describe("정적 경로", () => {
     ["/", "홈"],
     ["/sites", "현장"],
     ["/sites/new", "현장 등록"],
-    ["/events", "확인 항목"],
-    ["/missions", "비행 임무 이력"],
     ["/field", "작업"],
     ["/field/new", "새 관측"],
     ["/field/inbox", "받은 업무"],
@@ -27,26 +25,15 @@ describe("정적 경로", () => {
 describe("동적 경로", () => {
   it("상세 화면은 대상 이름이 아니라 종류를 적는다 — 이름은 본문 h1 이 갖는다", () => {
     expect(resolvePageTitle("/sites/SITE-1")).toBe("현장 상세");
-    expect(resolvePageTitle("/events/dev-1::evt-1")).toBe("확인 항목 상세");
-    expect(resolvePageTitle("/missions/mission-1")).toBe("비행 임무 상세");
     expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("현장 작업");
     expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("새 관측");
     expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 관측 이력");
     expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 관측 결과");
-    expect(resolvePageTitle("/field/M-1")).toBe("임무 복구");
-  });
-
-  it("현장 AI는 현장 작업공간 하위 화면이다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("KSI AI");
-  });
-
-  it("조사 계획은 현장 상세보다 먼저 매칭된다 — 순서가 뒤집히면 하위 화면이 상위 제목을 쓴다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("조사 계획");
-  });
-
-  it("설계 기준면도 현장 상세보다 먼저 매칭된다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/design")).toBe("설계 기준면");
-    expect(resolvePageTitle("/sites/SITE-1/design/")).toBe("설계 기준면");
+    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("현장 분석");
+    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("현장 분석");
+    expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("");
+    expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("");
+    expect(resolvePageTitle("/sites/SITE-1/design")).toBe("");
   });
 
   it("작업구역(M4-C)도 마찬가지다 — 패턴이 없으면 topbar 가 제목을 잃는다", () => {
@@ -54,9 +41,14 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/sites/SITE-1/work-areas/")).toBe("작업구역");
   });
 
+  it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("현장 공간 자산");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("현장 공간 자산");
+  });
+
   it("후행 슬래시가 있어도 같은 제목이다", () => {
     expect(resolvePageTitle("/sites/SITE-1/")).toBe("현장 상세");
-    expect(resolvePageTitle("/sites/SITE-1/surveys/new/")).toBe("조사 계획");
+    expect(resolvePageTitle("/sites/SITE-1/surveys/new/")).toBe("");
   });
 
   it("준비 중 섹션은 사이드바 라벨을 그대로 쓴다", () => {
@@ -73,12 +65,9 @@ describe("모르는 경로", () => {
 });
 
 describe("운영 지원 섹션", () => {
-  it("운영 지원 라벨과 topbar 제목이 같은 말을 쓴다", () => {
-    for (const key of ["missions", "settings"] as const) {
-      const item = NAV_ITEMS.find((i) => i.key === key);
-      expect(item, `${key} 항목이 없다`).toBeDefined();
-      expect(item!.implemented).toBe(true);
-      expect(resolvePageTitle(item!.href)).toBe(item!.label);
+  it("retired top-level routes have no stale title mapping", () => {
+    for (const path of ["/events", "/missions", "/settings", "/reports", "/assets", "/world"]) {
+      expect(resolvePageTitle(path)).toBe("");
     }
   });
 

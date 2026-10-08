@@ -1,0 +1,10 @@
+$ ./node_modules/.bin/eslint .
+# cwd=/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard
+# started 2026-10-09T00:51:53+0900
+
+
+/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/p4-cleanup-evidence/t4-round4-render-v1/capture-script.js
+  1:1  warning  Expected an assignment or function call and instead saw an expression  @typescript-eslint/no-unused-expressions
+
+✖ 1 problem (0 errors, 1 warning)
+

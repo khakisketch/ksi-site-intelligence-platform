@@ -1,0 +1,60 @@
+{
+  "origin": "http://localhost:3241",
+  "generatedDataOnly": true,
+  "rows": [
+    {
+      "width": 390,
+      "motion": "no-preference",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 357,
+      "trackWidth": 358,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "width": 390,
+      "motion": "reduce",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 358,
+      "trackWidth": 358,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    },
+    {
+      "width": 768,
+      "motion": "no-preference",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 727,
+      "trackWidth": 728,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "width": 768,
+      "motion": "reduce",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 728,
+      "trackWidth": 728,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    },
+    {
+      "width": 1440,
+      "motion": "no-preference",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 1159,
+      "trackWidth": 1160,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": false
+    },
+    {
+      "width": 1440,
+      "motion": "reduce",
+      "keyboardEnterMovedToSecondCard": true,
+      "scrollLeft": 1160,
+      "trackWidth": 1160,
+      "activeCard": "2번째 현장: E2E 결과 검토 현장",
+      "reducedMotion": true
+    }
+  ]
+}

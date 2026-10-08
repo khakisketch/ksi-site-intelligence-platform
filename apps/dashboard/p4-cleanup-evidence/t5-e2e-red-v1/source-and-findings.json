@@ -1,0 +1,24 @@
+{
+  "head": "9a3bab1ba710d0c8925cf3ae8bd8e301e425a9cf",
+  "pending": true,
+  "operationsSpecSha256": "641d5a27d3f428345d992d78a18a2e5f60fbf783fe967682dcd0262dbbc94153",
+  "designReviewSha256": "5635f47bc2979adfd38358bb0a2f7a708be5709fc78b9c33c1aa8c14260ecc19",
+  "independentRunnerSession": "ses_ee3df17b2ffeY4zF1AdKMuolcq",
+  "e2e": {
+    "passed": 69,
+    "failed": 8,
+    "skipped": 15
+  },
+  "defects": [
+    {
+      "id": "T5-OBS-ALERT-QUERY-09",
+      "root": "Unscoped observation alert plus Next route announcer after earlier analysis check now passes",
+      "desired": "Exactly one visible typed observation error in main; retain full heading/error/no-overflow criteria"
+    },
+    {
+      "id": "T5-WORKSPACE-RETURN-10",
+      "root": "New accessible-asset assertion changes URL; subsequent five-tab workspace checks run against separate asset detail",
+      "desired": "Assert actual asset return link/href and navigate to workspace before unchanged five-tab navigation checks"
+    }
+  ]
+}

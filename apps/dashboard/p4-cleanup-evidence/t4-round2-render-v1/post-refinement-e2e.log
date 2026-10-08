@@ -1,0 +1,572 @@
+
+Running 88 tests using 10 workers
+
+  -   1 [mobile-390] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -   2 [mobile-390] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -   3 [mobile-390] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  -   4 [tablet-768] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -   5 [tablet-768] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -   6 [tablet-768] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓   7 [mobile-390] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (2.2s)
+  ✓   9 [tablet-768] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (2.3s)
+  ✓  10 [tablet-768] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (3.0s)
+  ✓   8 [desktop-1024] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (3.0s)
+  ✓  12 [desktop-1024] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (3.0s)
+  ✓  15 [mobile-390] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (3.0s)
+  ✓  17 [mobile-390] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.5s)
+  ✓  19 [tablet-768] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.1s)
+  ✓  20 [desktop-1024] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.0s)
+  -  24 [desktop-1024] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -  25 [desktop-1024] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -  26 [desktop-1024] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓  18 [tablet-768] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.8s)
+  ✓  22 [mobile-390] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.5s)
+  ✓  21 [desktop-1024] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (1.6s)
+  -  28 [desktop-1024] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport
+  ✓  27 [tablet-768] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (1.4s)
+  ✓  29 [desktop-1440] › e2e/auth-cookie-isolation.spec.ts:14:5 › 같은 host의 다른 Auth.js state cookie가 KSI OIDC callback을 망가뜨리지 않는다 (1.4s)
+  ✓  30 [mobile-390] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (1.6s)
+  ✓  31 [desktop-1024] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (1.6s)
+  ✓  32 [desktop-1440] › e2e/empty-organization.spec.ts:22:5 › 빈 조직은 Home에서 거짓 운영 안건 없이 현장 등록 다음 행동을 보여 준다 (1.4s)
+  ✓  34 [desktop-1440] › e2e/auth-cookie-isolation.spec.ts:37:5 › KSI callback 검증 실패는 generic server error 대신 로그인 복구 화면으로 돌아온다 (1.5s)
+  ✘  16 [mobile-390] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (8.8s)
+  ✓  33 [tablet-768] › e2e/empty-organization.spec.ts:56:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (3.7s)
+  ✘  13 [tablet-768] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (9.6s)
+  ✓  35 [mobile-390] › e2e/empty-organization.spec.ts:56:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (4.1s)
+  -  42 [desktop-1440] › e2e/phase2-staging.spec.ts:46:5 › TLS·OIDC·합성 운영 원장이 네 핵심 화면에서 유지된다
+  -  43 [desktop-1440] › e2e/phase2-staging.spec.ts:59:5 › S3 실바이트를 presigned URL로 열고 근거 검증된 AI 답변을 표시한다
+  -  44 [desktop-1440] › e2e/phase2-staging.spec.ts:75:5 › AI 미동의·provider 오류·허위 citation을 모두 fail-closed 처리한다
+  ✓  37 [desktop-1440] › e2e/empty-organization.spec.ts:32:5 › 빈 조직의 현장 등록은 단일 실제 행동으로 제공한다 (4.0s)
+  ✓  36 [desktop-1024] › e2e/empty-organization.spec.ts:56:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (4.4s)
+  ✘  23 [desktop-1024] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (7.2s)
+  ✓  45 [desktop-1440] › e2e/empty-organization.spec.ts:45:5 › 권한 없는 현장 상세는 식별 정보를 노출하지 않는 제목 있는 거부 상태를 보인다 (2.5s)
+  ✘  38 [desktop-1440] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 (7.3s)
+  ✓  47 [desktop-1440] › e2e/empty-organization.spec.ts:56:5 › 빈 조직의 Work는 typed empty와 다음 행동을 보이고 Events는 의도적으로 404다 (2.0s)
+  ✓  39 [mobile-390] › e2e/operations-console.spec.ts:130:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (6.9s)
+  ✓  41 [tablet-768] › e2e/operations-console.spec.ts:130:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (6.6s)
+  ✓  11 [tablet-768] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (17.5s)
+  ✓  14 [mobile-390] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (17.6s)
+  ✓  46 [desktop-1024] › e2e/operations-console.spec.ts:130:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (6.7s)
+  ✓  48 [desktop-1440] › e2e/operations-console.spec.ts:130:5 › Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다 (6.2s)
+  ✓  40 [desktop-1440] › e2e/p4-cleanup-capture.spec.ts:21:5 › P4 surfaces render at the target viewport (12.3s)
+  ✓  49 [mobile-390] › e2e/operations-console.spec.ts:147:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.2s)
+  ✓  50 [tablet-768] › e2e/operations-console.spec.ts:147:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.2s)
+  ✓  51 [desktop-1024] › e2e/operations-console.spec.ts:147:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.2s)
+  ✓  52 [desktop-1440] › e2e/operations-console.spec.ts:147:5 › 핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다 (6.0s)
+  ✘  53 [mobile-390] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (11.5s)
+  ✘  54 [tablet-768] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (11.7s)
+  ✘  55 [desktop-1024] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (11.2s)
+  ✘  56 [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 (11.3s)
+  ✓  57 [mobile-390] › e2e/operations-console.spec.ts:180:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (5.8s)
+  ✓  58 [tablet-768] › e2e/operations-console.spec.ts:180:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (5.9s)
+  ✓  59 [desktop-1024] › e2e/operations-console.spec.ts:180:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (6.1s)
+  ✓  60 [desktop-1440] › e2e/operations-console.spec.ts:180:5 › 키보드는 내비게이션을 건너뛰고 화면 전환 뒤 본문 맥락을 이어 간다 (6.0s)
+  ✓  61 [mobile-390] › e2e/operations-console.spec.ts:204:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다 (6.3s)
+  ✓  62 [tablet-768] › e2e/operations-console.spec.ts:204:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다 (6.1s)
+  -  63 [desktop-1024] › e2e/operations-console.spec.ts:204:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다
+  -  64 [desktop-1440] › e2e/operations-console.spec.ts:204:5 › 모바일·태블릿의 공용 행동 표면은 44px 터치 기준을 지킨다
+  ✓  65 [mobile-390] › e2e/operations-console.spec.ts:213:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (6.0s)
+  ✓  66 [tablet-768] › e2e/operations-console.spec.ts:213:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.9s)
+  ✓  67 [desktop-1024] › e2e/operations-console.spec.ts:213:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.9s)
+  ✓  68 [desktop-1440] › e2e/operations-console.spec.ts:213:5 › 현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한다 (5.8s)
+  ✘  71 [desktop-1024] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (5.9s)
+  ✓  69 [mobile-390] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (7.3s)
+  ✓  70 [tablet-768] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (7.9s)
+  ✘  72 [desktop-1440] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 (5.9s)
+  ✓  73 [desktop-1024] › e2e/operations-console.spec.ts:309:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (5.9s)
+  ✓  74 [mobile-390] › e2e/operations-console.spec.ts:309:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (6.2s)
+  ✓  75 [tablet-768] › e2e/operations-console.spec.ts:309:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (5.9s)
+  ✓  76 [desktop-1440] › e2e/operations-console.spec.ts:309:5 › 전역 작업 화면은 결정·진행·완료 원장을 구분하고 모호한 뒤로가기를 두지 않는다 (6.1s)
+  ✓  77 [desktop-1024] › e2e/operations-console.spec.ts:325:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.7s)
+  ✓  78 [mobile-390] › e2e/operations-console.spec.ts:325:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.7s)
+  ✓  79 [tablet-768] › e2e/operations-console.spec.ts:325:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.7s)
+  ✓  80 [desktop-1440] › e2e/operations-console.spec.ts:325:5 › 작업 상세는 실행 근거가 없으면 관리형 실행을 fail-closed로 숨긴다 (6.3s)
+  ✓  81 [desktop-1024] › e2e/operations-console.spec.ts:360:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.9s)
+  ✓  82 [mobile-390] › e2e/operations-console.spec.ts:360:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.7s)
+  ✓  83 [tablet-768] › e2e/operations-console.spec.ts:360:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (8.3s)
+  ✓  84 [desktop-1440] › e2e/operations-console.spec.ts:360:5 › 외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제공한다 (7.8s)
+  ✓  86 [mobile-390] › e2e/operations-console.spec.ts:392:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (6.7s)
+  ✓  85 [desktop-1024] › e2e/operations-console.spec.ts:392:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (7.9s)
+  ✓  87 [tablet-768] › e2e/operations-console.spec.ts:392:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (6.9s)
+  ✓  88 [desktop-1440] › e2e/operations-console.spec.ts:392:5 › 핵심 화면에 중대 접근성 위반이 없고 reduced-motion 설정을 존중한다 (7.0s)
+
+
+  1) [mobile-390] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ────────────────
+
+    Error: expect(page).toHaveScreenshot(expected) failed
+
+      Expected an image 390px by 1618px, received 390px by 1729px. 88269 pixels (ratio 0.14 of all image pixels) are different.
+
+      Snapshot: home.png
+
+    Call log:
+      - Expect "toHaveScreenshot(home.png)" with timeout 5000ms
+        - verifying given screenshot expectation
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - Expected an image 390px by 1618px, received 390px by 1741px. 88269 pixels (ratio 0.14 of all image pixels) are different.
+      - waiting 100ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - Expected an image 390px by 1741px, received 390px by 1729px.
+      - waiting 250ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - captured a stable screenshot
+      - Expected an image 390px by 1618px, received 390px by 1729px. 88269 pixels (ratio 0.14 of all image pixels) are different.
+
+
+      108 |   // 실제 원장 값이 계속 바뀌므로 레이아웃·overflow·접근성만 검증한다.
+      109 |   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    > 110 |     await expect(page).toHaveScreenshot("home.png", {
+          |                        ^
+      111 |       animations: "disabled",
+      112 |       // `mask` uses Playwright's fluorescent magenta by default. The observed
+      113 |       // timestamp is intentionally volatile, but the baseline itself is also
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:110:24
+
+    attachment #1: home (image/png) ────────────────────────────────────────────────────────────────
+    Expected: e2e/__screenshots__/home-mobile-390.png
+    Received: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/home-actual.png
+    Diff:     ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/home-diff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-mobile-390/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [mobile-390] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('main').getByRole('heading', { level: 1 })
+    Expected: 1
+    Received: 0
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 5000ms
+      - waiting for getByRole('main').getByRole('heading', { level: 1 })
+        14 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      162 |
+      163 |   await expect(page).toHaveURL(`${siteHref}/analysis`);
+    > 164 |   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
+          |                                                                           ^
+      165 |   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 분석" })).toBeVisible();
+      166 |   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
+      167 |   await expect(page.getByRole("alert")).toContainText("이 환경에서는 현장 분석 기능을 사용할 수 없습니다.");
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:164:75
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-mobile-390/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-mobile-390/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-mobile-390/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-mobile-390/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [tablet-768] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ────────────────
+
+    Error: expect(page).toHaveScreenshot(expected) failed
+
+      Expected an image 768px by 1431px, received 768px by 1543px. 121644 pixels (ratio 0.11 of all image pixels) are different.
+
+      Snapshot: home.png
+
+    Call log:
+      - Expect "toHaveScreenshot(home.png)" with timeout 5000ms
+        - verifying given screenshot expectation
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - Expected an image 768px by 1431px, received 768px by 1555px. 121644 pixels (ratio 0.11 of all image pixels) are different.
+      - waiting 100ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - Expected an image 768px by 1555px, received 768px by 1543px.
+      - waiting 250ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - captured a stable screenshot
+      - Expected an image 768px by 1431px, received 768px by 1543px. 121644 pixels (ratio 0.11 of all image pixels) are different.
+
+
+      108 |   // 실제 원장 값이 계속 바뀌므로 레이아웃·overflow·접근성만 검증한다.
+      109 |   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    > 110 |     await expect(page).toHaveScreenshot("home.png", {
+          |                        ^
+      111 |       animations: "disabled",
+      112 |       // `mask` uses Playwright's fluorescent magenta by default. The observed
+      113 |       // timestamp is intentionally volatile, but the baseline itself is also
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:110:24
+
+    attachment #1: home (image/png) ────────────────────────────────────────────────────────────────
+    Expected: e2e/__screenshots__/home-tablet-768.png
+    Received: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/home-actual.png
+    Diff:     ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/home-diff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-tablet-768/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [tablet-768] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('main').getByRole('heading', { level: 1 })
+    Expected: 1
+    Received: 0
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 5000ms
+      - waiting for getByRole('main').getByRole('heading', { level: 1 })
+        14 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      162 |
+      163 |   await expect(page).toHaveURL(`${siteHref}/analysis`);
+    > 164 |   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
+          |                                                                           ^
+      165 |   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 분석" })).toBeVisible();
+      166 |   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
+      167 |   await expect(page.getByRole("alert")).toContainText("이 환경에서는 현장 분석 기능을 사용할 수 없습니다.");
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:164:75
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-tablet-768/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-tablet-768/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-tablet-768/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-tablet-768/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [desktop-1024] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ──────────────
+
+    Error: expect(page).toHaveScreenshot(expected) failed
+
+      86533 pixels (ratio 0.10 of all image pixels) are different.
+
+      Snapshot: home.png
+
+    Call log:
+      - Expect "toHaveScreenshot(home.png)" with timeout 5000ms
+        - verifying given screenshot expectation
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - 45387 pixels (ratio 0.05 of all image pixels) are different.
+      - waiting 100ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - 41944 pixels (ratio 0.05 of all image pixels) are different.
+      - waiting 250ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - captured a stable screenshot
+      - 86533 pixels (ratio 0.10 of all image pixels) are different.
+
+
+      108 |   // 실제 원장 값이 계속 바뀌므로 레이아웃·overflow·접근성만 검증한다.
+      109 |   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    > 110 |     await expect(page).toHaveScreenshot("home.png", {
+          |                        ^
+      111 |       animations: "disabled",
+      112 |       // `mask` uses Playwright's fluorescent magenta by default. The observed
+      113 |       // timestamp is intentionally volatile, but the baseline itself is also
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:110:24
+
+    attachment #1: home (image/png) ────────────────────────────────────────────────────────────────
+    Expected: e2e/__screenshots__/home-desktop-1024.png
+    Received: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/home-actual.png
+    Diff:     ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/home-diff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1024/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) [desktop-1024] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('main').getByRole('heading', { level: 1 })
+    Expected: 1
+    Received: 0
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 5000ms
+      - waiting for getByRole('main').getByRole('heading', { level: 1 })
+        14 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      162 |
+      163 |   await expect(page).toHaveURL(`${siteHref}/analysis`);
+    > 164 |   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
+          |                                                                           ^
+      165 |   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 분석" })).toBeVisible();
+      166 |   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
+      167 |   await expect(page.getByRole("alert")).toContainText("이 환경에서는 현장 분석 기능을 사용할 수 없습니다.");
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:164:75
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1024/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1024/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1024/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1024/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) [desktop-1024] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 ────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('link', { name: '새 관측 시작', exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('link', { name: '새 관측 시작', exact: true }) resolved to 2 elements:
+        1) <a class="btn btn-primary tap-target" href="/sites/e2e-site-workspace/observations/new">새 관측 시작</a> aka locator('span').filter({ hasText: '새 관측 시작' }).getByRole('link')
+        2) <a class="btn mt-3 ml-2 w-fit" href="/sites/e2e-site-workspace/observations/new">새 관측 시작</a> aka locator('section').getByRole('link', { name: '새 관측 시작' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for getByRole('link', { name: '새 관측 시작', exact: true })
+
+
+      273 |   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
+      274 |   const nextAction = page.getByRole("link", { name: "새 관측 시작", exact: true });
+    > 275 |   await expect(nextAction).toBeVisible();
+          |                            ^
+      276 |   await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new`);
+      277 |
+      278 |   const labels = ["관측", "분석", "공간 자산", "작업", "외부 결과"];
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:275:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1024/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1024/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1024/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1024/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) [desktop-1440] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ──────────────
+
+    Error: expect(page).toHaveScreenshot(expected) failed
+
+      113137 pixels (ratio 0.08 of all image pixels) are different.
+
+      Snapshot: home.png
+
+    Call log:
+      - Expect "toHaveScreenshot(home.png)" with timeout 5000ms
+        - verifying given screenshot expectation
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - 113137 pixels (ratio 0.08 of all image pixels) are different.
+      - waiting 100ms before taking screenshot
+      - taking page screenshot
+        - disabled all CSS animations
+      - waiting for fonts to load...
+      - fonts loaded
+      - captured a stable screenshot
+      - 113137 pixels (ratio 0.08 of all image pixels) are different.
+
+
+      108 |   // 실제 원장 값이 계속 바뀌므로 레이아웃·overflow·접근성만 검증한다.
+      109 |   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    > 110 |     await expect(page).toHaveScreenshot("home.png", {
+          |                        ^
+      111 |       animations: "disabled",
+      112 |       // `mask` uses Playwright's fluorescent magenta by default. The observed
+      113 |       // timestamp is intentionally volatile, but the baseline itself is also
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:110:24
+
+    attachment #1: home (image/png) ────────────────────────────────────────────────────────────────
+    Expected: e2e/__screenshots__/home-desktop-1440.png
+    Received: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/home-actual.png
+    Diff:     ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/home-diff.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-역할에-맞는-전역-메뉴와-반응형-셸을-유지한다-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  9) [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+
+    Error: expect(locator).toHaveCount(expected) failed
+
+    Locator:  getByRole('main').getByRole('heading', { level: 1 })
+    Expected: 1
+    Received: 0
+    Timeout:  5000ms
+
+    Call log:
+      - Expect "toHaveCount" with timeout 5000ms
+      - waiting for getByRole('main').getByRole('heading', { level: 1 })
+        14 × locator resolved to 0 elements
+           - unexpected value "0"
+
+
+      162 |
+      163 |   await expect(page).toHaveURL(`${siteHref}/analysis`);
+    > 164 |   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
+          |                                                                           ^
+      165 |   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 분석" })).toBeVisible();
+      166 |   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
+      167 |   await expect(page.getByRole("alert")).toContainText("이 환경에서는 현장 분석 기능을 사용할 수 없습니다.");
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:164:75
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1440/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1440/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-분석-목-b45db-지하고-미구성-분석-API를-가용-오류로-표시한다-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10) [desktop-1440] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 ───────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByRole('link', { name: '새 관측 시작', exact: true })
+    Expected: visible
+    Error: strict mode violation: getByRole('link', { name: '새 관측 시작', exact: true }) resolved to 2 elements:
+        1) <a class="btn btn-primary tap-target" href="/sites/e2e-site-workspace/observations/new">새 관측 시작</a> aka locator('span').filter({ hasText: '새 관측 시작' }).getByRole('link')
+        2) <a class="btn mt-3 ml-2 w-fit" href="/sites/e2e-site-workspace/observations/new">새 관측 시작</a> aka locator('section').getByRole('link', { name: '새 관측 시작' })
+
+    Call log:
+      - Expect "toBeVisible" with timeout 5000ms
+      - waiting for getByRole('link', { name: '새 관측 시작', exact: true })
+
+
+      273 |   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
+      274 |   const nextAction = page.getByRole("link", { name: "새 관측 시작", exact: true });
+    > 275 |   await expect(nextAction).toBeVisible();
+          |                            ^
+      276 |   await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new`);
+      277 |
+      278 |   const labels = ["관측", "분석", "공간 자산", "작업", "외부 결과"];
+        at /home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform/apps/dashboard/e2e/operations-console.spec.ts:275:28
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1440/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1440/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1440/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../../../../../tmp/opencode/p4-resume-20261008/post-refinement-e2e-results/operations-console-현장-작업공간은-대상-맥락과-다섯-업무-영역을-유지한다-desktop-1440/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10 failed
+    [mobile-390] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ─────────────────
+    [mobile-390] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+    [tablet-768] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ─────────────────
+    [tablet-768] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+    [desktop-1024] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ───────────────
+    [desktop-1024] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+    [desktop-1024] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 ─────────
+    [desktop-1440] › e2e/operations-console.spec.ts:84:5 › 역할에 맞는 전역 메뉴와 반응형 셸을 유지한다 ───────────────
+    [desktop-1440] › e2e/operations-console.spec.ts:155:5 › 현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다 
+    [desktop-1440] › e2e/operations-console.spec.ts:242:5 › 현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다 ─────────
+  15 skipped
+  63 passed (1.5m)

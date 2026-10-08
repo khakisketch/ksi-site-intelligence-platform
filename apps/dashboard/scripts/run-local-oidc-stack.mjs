@@ -297,6 +297,7 @@ try {
       "ksi-core",
       "--oidc-jwks-url",
       `http://${bindHost}:${issuerPort}/jwks.json`,
+      ...(seedOperationsConsoleE2e ? ["--oidc-operations-console-e2e"] : []),
       ...(localAnalysisConfig ? [
         "--s3-endpoint",
         localAnalysisS3Endpoint,

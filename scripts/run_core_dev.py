@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """KSI Core 로컬 개발 서버 — apps/dashboard 연동용.
 
-프로덕션 조립이 아니다. durable 저장소를 로컬 디스크(--data-dir)에 열고, 고정
-장비·워커 opaque 자격을 구성해 uvicorn으로 기동한다. 사람 인증은 기본 OPAQUE
-legacy 경로 또는 명시한 OIDC issuer를 쓸 수 있다. 일반 Dashboard 개발은
+프로덕션 조립이 아니다. P4 이후 이 러너는 **플랫폼 프로필**(외부 등록/검사/
+데이터 제공/Analysis 표면)을 로컬 디스크(--data-dir)에 열어 uvicorn으로
+기동한다 — Mission 서명키·취득/Edge 원장은 장착되지 않는다. 사람 인증은 기본
+OPAQUE legacy 경로 또는 명시한 OIDC issuer를 쓸 수 있다. 일반 Dashboard 개발은
 ``npm run dev``가 OIDC 모드를 선택한다. 데이터는 재기동해도 보존된다(--reset으로
-초기화). 서명키는 최초 기동 시 생성해 data-dir에 저장하고 이후 재사용한다.
+초기화).
 
 Usage:
     uv run python scripts/run_core_dev.py [--host 127.0.0.1] [--port 8000] [--reset]
@@ -16,17 +17,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import ipaddress
-import json
 import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import uvicorn
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from ksi_core.app_assembly import assemble_app, cli_optional_positive  # noqa: F401 -- re-export
 from ksi_core.auth import (
     AuthRegistry,
     HumanAuthMode,
@@ -35,12 +32,14 @@ from ksi_core.auth import (
     PrincipalTokenRecord,
     Role,
 )
+from ksi_core.composition.platform_assembly import assemble_platform_app
 from ksi_core.durable_journal import DurableJournal
+from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
+from ksi_core.foundation.config_values import cli_optional_positive
 from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 from ksi_core.observability import configure_structured_logging
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
-from ksi_core.signing_keys import SigningKeySet, load_signing_keys
 
 _DEV_TOKENS: dict[Role, str] = {
     Role.ADMIN: "dev-admin-token",
@@ -61,8 +60,23 @@ def _digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _dev_oidc_subject_registry(issuer: str) -> OidcSubjectRegistry:
+def _dev_oidc_subject_registry(
+    issuer: str, *, enable_operations_console_e2e: bool = False
+) -> OidcSubjectRegistry:
     """KSI-owned mappings for the local-only issuer; production never imports this."""
+    # Owned browser-regression fixtures ONLY. No wildcard or inferred grants.
+    fixture_site_ids = (
+        (
+            "e2e-site-workspace",
+            "e2e-site-review",
+            "e2e-site-progress",
+            "e2e-site-result",
+            "e2e-site-completed",
+        )
+        if enable_operations_console_e2e
+        else ()
+    )
+    fixture_area_ids = tuple(f"wa-{site_id}-0001" for site_id in fixture_site_ids)
     accounts = (
         ("local-admin", "org-local-pilot", Role.ADMIN.value),
         ("local-field-operator", "org-local-pilot", Role.FIELD_OPERATOR.value),
@@ -80,14 +94,41 @@ def _dev_oidc_subject_registry(issuer: str) -> OidcSubjectRegistry:
                     "organizationId": organization_id,
                     "role": role,
                     "status": "ACTIVE",
-                    "allowedSiteIds": [],
-                    "allowedWorkAreaIds": [],
+                    "allowedSiteIds": (
+                        list(fixture_site_ids) if organization_id == "org-local-pilot" else []
+                    ),
+                    "allowedWorkAreaIds": (
+                        list(fixture_area_ids) if organization_id == "org-local-pilot" else []
+                    ),
                 }
                 for subject, organization_id, role in accounts
             ],
         },
         expected_issuer=issuer,
     )
+
+
+class _UnavailableEvidenceStorage:
+    """Unconfigured local storage: fail before network, credentials or signing.
+
+    No bytes or presigned capabilities exist until --s3-* is configured.
+    This is not a mock store or a dummy endpoint.
+    """
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: timedelta) -> str:
+        raise EvidenceStorageError("Local evidence storage is not configured (--s3-*)")
+
+    def presigned_get(self, object_key: str, *, ttl: timedelta) -> str:
+        raise EvidenceStorageError("Local evidence storage is not configured (--s3-*)")
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        raise EvidenceStorageError("Local evidence storage is not configured (--s3-*)")
+
+    def get_bytes(self, object_key: str) -> bytes:
+        raise EvidenceStorageError("Local evidence storage is not configured (--s3-*)")
+
+    def delete(self, object_key: str) -> None:
+        raise EvidenceStorageError("Local evidence storage is not configured (--s3-*)")
 
 
 def _auth_registry() -> AuthRegistry:
@@ -139,44 +180,6 @@ def _auth_registry() -> AuthRegistry:
     return AuthRegistry(records)
 
 
-def _bootstrap_key_set(signing_dir: Path) -> SigningKeySet:
-    """dev 키 세트를 준비한다 — 없으면 만들고, 있으면 **검증해서** 읽는다.
-
-    부트스트랩만 dev 편의이고 로드는 운영과 같은 경로(:func:`load_signing_keys`)를
-    탄다 — 개인키 권한·공개키 불일치·활성 키 REVOKED 를 여기서도 똑같이 거부한다.
-    dev 조립이 느슨한 경로를 따로 가지면 그 검사들이 운영에서 처음 실행된다.
-
-    회전은 이 함수가 하지 않는다(docs/security/SIGNING_KEY_LIFECYCLE.md 절차) —
-    keys.json 이 이미 있으면 손대지 않는다.
-    """
-    manifest = signing_dir / "keys.json"
-    if not manifest.exists():
-        signing_dir.mkdir(parents=True, exist_ok=True)
-        key_id = "core-dev-key-1"
-        key = Ed25519PrivateKey.generate()
-        private_path = signing_dir / f"{key_id}.private.pem"
-        private_path.write_bytes(
-            key.private_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PrivateFormat.PKCS8,
-                encryption_algorithm=serialization.NoEncryption(),
-            )
-        )
-        # 0600 — load_signing_keys 가 이 권한을 강제한다(운영과 같은 규칙).
-        private_path.chmod(0o600)
-        (signing_dir / f"{key_id}.public.pem").write_bytes(
-            key.public_key().public_bytes(
-                encoding=serialization.Encoding.PEM,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-        )
-        manifest.write_text(
-            json.dumps({"active": key_id, "keys": [{"keyId": key_id, "status": "ACTIVE"}]}),
-            encoding="utf-8",
-        )
-    return load_signing_keys(signing_dir)
-
-
 @dataclass(frozen=True, slots=True)
 class DevAssembly:
     """조립된 앱 + 종료 시 닫아야 할 원장들.
@@ -201,7 +204,6 @@ def build_dev_app(
     data_dir: Path,
     *,
     segment_bytes: int | None,
-    edge_sync_snapshot_every: int | None,
     s3_endpoint: str | None = None,
     s3_bucket: str | None = None,
     human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
@@ -236,7 +238,6 @@ def build_dev_app(
             data_dir,
             journal=_journal,
             opened=opened,
-            edge_sync_snapshot_every=edge_sync_snapshot_every,
             s3_endpoint=s3_endpoint,
             s3_bucket=s3_bucket,
             human_auth_mode=human_auth_mode,
@@ -256,7 +257,6 @@ def _build_dev_app_locked(
     *,
     journal: Any,
     opened: list[Any],
-    edge_sync_snapshot_every: int | None,
     s3_endpoint: str | None,
     s3_bucket: str | None,
     human_auth_mode: HumanAuthMode,
@@ -267,9 +267,10 @@ def _build_dev_app_locked(
 ) -> DevAssembly:
     """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
-    store 조립 본문은 ``ksi_core.app_assembly.assemble_app`` 으로 옮겼다
-    (dev·production 두 조립 지점의 공용부, 모듈 docstring 참조). 여기 남는 것은
-    dev 만의 관심사(키 부트스트랩, CLI 의 --s3-* 조건부 evidence storage)뿐이다.
+    P4 이후 이 러너는 **플랫폼 프로필**(``assemble_platform_app``)을 기동한다 —
+    Mission 서명키·취득/Edge 원장이 없고, 외부 등록/검사/데이터/Analysis 표면만
+    장착된다. 여기 남는 것은 dev 만의 관심사(CLI 의 --s3-* 조건부 evidence
+    storage와 provider 부착)뿐이다.
     """
     _validate_dev_opt_in_graph(
         s3_endpoint=s3_endpoint,
@@ -278,32 +279,35 @@ def _build_dev_app_locked(
         external_analysis_local_graph=external_analysis_local_graph,
         external_authority_provider=external_authority_provider,
     )
-    key_set = _bootstrap_key_set(data_dir / "signing")
 
-    evidence_storage = None
+    # 플랫폼 조립은 EvidenceStorage 를 필수로 요구한다(fail-closed). --s3-* 가 있으면
+    # 실제 어댑터를, 없으면 죽은 dev placeholder 엔드포인트를 쓴다 — 업로드/presign 은
+    # 그 엔드포인트가 없으면 실패한다(mock-success 없음). 프로덕션 기본값이 아니다.
+    from ksi_core.evidence_s3 import S3EvidenceStorage
+
+    evidence_storage: EvidenceStorage
     if s3_endpoint is not None and s3_bucket is not None:
-        # 둘 다 있을 때만 만든다 — CLI 는 이미 "함께 주어야 한다"를 강제하지만,
-        # 이 함수는 CLI 밖(테스트·다른 조립)에서도 불리므로 여기서 다시 본다.
-        from ksi_core.evidence_s3 import S3EvidenceStorage
-
         evidence_storage = S3EvidenceStorage(bucket=s3_bucket, endpoint_url=s3_endpoint)
+    else:
+        evidence_storage = _UnavailableEvidenceStorage()
+        print(
+            "warning: --s3-endpoint/--s3-bucket 미지정 — evidence storage is not configured; "
+            "명시적 S3 설정 전까지 바이트·업로드·열람 기능은 fail-closed다."
+        )
 
     if external_authority_provider is not None:
         external_authority_provider.bind_receipt_journal(
             journal("external-authority-provider-receipts.jsonl")
         )
 
-    app = assemble_app(
+    app = assemble_platform_app(
         data_dir,
         journal=journal,
         opened=opened,
-        edge_sync_snapshot_every=edge_sync_snapshot_every,
         auth_registry=_auth_registry(),
         human_auth_mode=human_auth_mode,
         oidc_verifier=oidc_verifier,
         evidence_storage=evidence_storage,
-        mission_signing_key=key_set.active_private_key,
-        mission_signing_key_id=key_set.active_key_id,
         external_result_workflow=external_result_workflow,
         external_analysis_local_graph=external_analysis_local_graph,
     )
@@ -365,9 +369,7 @@ def _load_dev_external_authority(
     )
     from ksi_core.external_result_workflow_config import load_external_result_workflow_config
 
-    provider = load_external_authority_provider(
-        provider_path, clock=lambda: datetime.now(UTC)
-    )
+    provider = load_external_authority_provider(provider_path, clock=lambda: datetime.now(UTC))
     workflow = load_external_result_workflow_config(
         workflow_path,
         participants=provider.participants,
@@ -392,17 +394,8 @@ def main() -> None:
         default=64 * 1024 * 1024,
         help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
     )
-    parser.add_argument(
-        "--edge-sync-snapshot-every",
-        type=int,
-        default=500,
-        help=(
-            "edge-sync 원장 스냅샷 주기(수락 건수, 기본 500). 0 이면 스냅샷을 쓰지 않는다 "
-            "— 재기동이 전 항목의 본문 정규화·digest 재계산을 다시 치른다."
-        ),
-    )
-    # Evidence 스토리지(ADR-KSI-010 §1) — **주지 않으면 증거 경로가 장착되지 않는다**(404).
-    # 조립되지 않은 기능이 2xx 로 보이는 것보다 없는 편이 정직하다.
+    # Evidence 스토리지(ADR-KSI-010 §1) — 플랫폼 조립은 storage 를 필수로 요구한다.
+    # --s3-* 를 주면 실제 어댑터를, 없으면 네트워크/서명 전에 명시적으로 실패한다.
     parser.add_argument(
         "--s3-endpoint",
         default=None,
@@ -446,13 +439,16 @@ def main() -> None:
         default=60,
         help="개발 OIDC JWKS cache TTL(초, 기본 60)",
     )
+    parser.add_argument(
+        "--oidc-operations-console-e2e",
+        action="store_true",
+        help="Opt in to exact owned Console E2E Site/WorkArea grants (loopback only).",
+    )
     args = parser.parse_args()
 
     if bool(args.s3_endpoint) != bool(args.s3_bucket):
         parser.error("--s3-endpoint 와 --s3-bucket 은 함께 주어야 한다")
-    if bool(args.external_result_workflow_config) != bool(
-        args.external_authority_provider_config
-    ):
+    if bool(args.external_result_workflow_config) != bool(args.external_authority_provider_config):
         parser.error(
             "--external-result-workflow-config 와 "
             "--external-authority-provider-config 는 함께 주어야 한다"
@@ -460,10 +456,7 @@ def main() -> None:
     if args.local_analysis_config is not None:
         if not (args.s3_endpoint and args.s3_bucket):
             parser.error("--local-analysis-config 는 --s3-endpoint/--s3-bucket 을 요구한다")
-        if not (
-            args.external_result_workflow_config
-            and args.external_authority_provider_config
-        ):
+        if not (args.external_result_workflow_config and args.external_authority_provider_config):
             parser.error(
                 "--local-analysis-config 는 workflow/provider configuration pair를 요구한다"
             )
@@ -499,6 +492,11 @@ def main() -> None:
     )
 
     human_auth_mode = HumanAuthMode(args.human_auth_mode)
+    if args.oidc_operations_console_e2e:
+        if not _literal_loopback_host(args.host):
+            parser.error("--oidc-operations-console-e2e requires a loopback bind")
+        if human_auth_mode is HumanAuthMode.OPAQUE:
+            parser.error("--oidc-operations-console-e2e requires OIDC/DUAL authentication")
     oidc_values = (args.oidc_issuer, args.oidc_audience, args.oidc_jwks_url)
     if human_auth_mode is HumanAuthMode.OPAQUE:
         if any(value is not None for value in oidc_values):
@@ -518,7 +516,10 @@ def main() -> None:
                 jwks_url=args.oidc_jwks_url,
                 jwks_ttl_seconds=args.oidc_jwks_ttl_seconds,
             ),
-            subject_registry=_dev_oidc_subject_registry(args.oidc_issuer),
+            subject_registry=_dev_oidc_subject_registry(
+                args.oidc_issuer,
+                enable_operations_console_e2e=args.oidc_operations_console_e2e,
+            ),
         )
 
     # Validate/load all optional trusted material before --reset can remove
@@ -556,9 +557,6 @@ def main() -> None:
         data_dir,
         segment_bytes=cli_optional_positive(
             args.journal_segment_bytes, name="--journal-segment-bytes"
-        ),
-        edge_sync_snapshot_every=cli_optional_positive(
-            args.edge_sync_snapshot_every, name="--edge-sync-snapshot-every"
         ),
         s3_endpoint=args.s3_endpoint,
         s3_bucket=args.s3_bucket,

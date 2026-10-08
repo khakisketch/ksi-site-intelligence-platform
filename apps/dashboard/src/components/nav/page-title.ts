@@ -9,13 +9,6 @@ const STATIC_TITLES: Record<string, string> = {
   "/": "홈",
   "/sites": "현장",
   "/sites/new": "현장 등록",
-  "/events": "확인 항목",
-  "/missions": "비행 임무 이력",
-  // Phase 3/4 섹션(2026-08-08) — 사이드바 라벨과 같은 말을 쓴다(NAV_ITEMS 참고).
-  "/assets": "결함 후보",
-  "/world": "2D·3D World",
-  "/reports": "보고서",
-  "/settings": "장비 연결·지원 상태",
   "/more": "더보기",
   "/field": "작업",
   "/field/new": "새 관측",
@@ -34,22 +27,14 @@ export function resolvePageTitle(pathname: string | null): string {
     return NAV_ITEMS.find((item) => item.href === `/coming-soon/${section}`)?.label ?? "준비 중";
   }
 
-  // /sites/{id}/surveys/new · /sites/{id}/design · /sites/{id}/work-areas 가
-  // /sites/{id} 보다 먼저 걸려야 한다.
-  if (/^\/sites\/[^/]+\/surveys\/new\/?$/.test(pathname)) return "조사 계획";
   if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "새 관측";
   if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 관측 결과";
   if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 관측 이력";
-  if (/^\/sites\/[^/]+\/design\/?$/.test(pathname)) return "설계 기준면";
+  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "현장 분석";
+  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "현장 공간 자산";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
-  if (/^\/sites\/[^/]+\/progress\/?$/.test(pathname)) return "계획 대비 진척";
-  if (/^\/sites\/[^/]+\/report\/?$/.test(pathname)) return "현장 보고서";
-  if (/^\/sites\/[^/]+\/ai\/?$/.test(pathname)) return "KSI AI";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
-  if (/^\/events\/[^/]+\/?$/.test(pathname)) return "확인 항목 상세";
-  if (/^\/missions\/[^/]+\/?$/.test(pathname)) return "비행 임무 상세";
   if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "현장 작업";
-  if (/^\/field\/[^/]+\/?$/.test(pathname)) return "임무 복구";
 
   return "";
 }

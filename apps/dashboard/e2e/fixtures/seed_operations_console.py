@@ -1,38 +1,36 @@
 #!/usr/bin/env python3
-"""Seed deterministic Operations Console E2E ledgers through domain stores.
+"""Seed deterministic platform Site/WorkArea/WorkOrder fixtures for the Console e2e.
 
-The records below are browser-regression fixtures only. One synthetic,
-contract-only Mission exists solely to render post-processing panels; it has
-no executable route or KMZ. The fixture does not create a dispatch receipt,
-processing result, spatial model, or DJI/device capability evidence. In
-particular, no fixture is valid HIL or field evidence.
+Browser-regression fixtures only: five synthetic sites and work areas cover the
+surviving platform surfaces. Four explicitly historical managed-mode records
+remain read-only fixtures for fail-closed detail coverage; one external
+reconstruction work order covers the mounted registration and operations UI.
+Nothing here is valid HIL, field, accuracy, settlement or operations evidence.
+
+P4 cleanup: ``SiteFrame``/``AreaOfInterest`` come from the neutral owners and no
+archived module is imported.
 """
 
 from __future__ import annotations
 
 import argparse
-import base64
-import hashlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.events import EventStore, EventVerdict, make_event_key
-from ksi_core.evidence import EvidenceVerdict
-from ksi_core.mission_records import MissionRecord, MissionRecordVerdict, MissionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore, SiteVerdict
 from ksi_core.work_areas import WorkAreaStore, WorkAreaVerdict
 from ksi_domain.enums import SiteStatus
-from ksi_event_contracts.observation_work_order import ObservationWorkOrderStatus
-from ksi_mission_contracts.models import SiteFrame
-from ksi_mission_planning import AreaOfInterest
+from ksi_event_contracts.observation_work_order import (
+    ObservationWorkOrderExecutionMode,
+    ObservationWorkOrderStatus,
+)
+from ksi_event_contracts.site_frame import SiteFrame
+from ksi_geo_core.aoi import AreaOfInterest
 
 ORGANIZATION_ID = "org-local-pilot"
 ACTOR = "operations-console-e2e-fixture"
-EDGE_DEVICE_ID = "e2e-edge-fixture"
-EVENT_ID = "event-open-with-evidence"
-MISSION_ID = "e2e-civil-postprocessing-fixture"
 SITE_IDS = (
     "e2e-site-workspace",
     "e2e-site-review",
@@ -49,46 +47,6 @@ SITE_NAMES = {
     "e2e-site-completed": "E2E 관측 완료 현장",
 }
 
-SYNTHETIC_EVIDENCE_BYTES = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
-)
-
-
-def _event_bundle(*, status: str) -> dict[str, object]:
-    fingerprint = "a" * 64
-    return {
-        "schemaVersion": "1.2",
-        "eventId": EVENT_ID,
-        "missionId": "e2e-nonflight-observation-fixture",
-        "siteId": "e2e-site-workspace",
-        "eventType": "PERSON_PRESENT",
-        "occurredAt": "2026-08-25T00:40:00Z",
-        "status": status,
-        "severity": "MEDIUM",
-        "entities": ["ent-e2e-001"],
-        "spatialContext": {"zone": "E2E 작업구역 1"},
-        "reasoning": {"fixture": "browser-regression-only"},
-        "evidence": {},
-        "lineage": {
-            "edgeVersion": "e2e-fixture-1.0",
-            "modelVersions": {"detector": "synthetic-not-verified"},
-            "policyVersion": "e2e-fixture-policy-1",
-            "calibrationProfileId": "e2e-fixture-calibration-1",
-            "classification": {
-                "ent-e2e-001": {
-                    "entityClass": "Person",
-                    "ontologyVersion": "ksi-ontology-v1",
-                    "source": {
-                        "taxonomy": "COCO-2017",
-                        "sourceClassIds": [0],
-                        "sourceClassNames": ["person"],
-                    },
-                    "entityFingerprint": fingerprint,
-                }
-            },
-        },
-    }
-
 
 def seed(
     data_dir: Path,
@@ -99,13 +57,14 @@ def seed(
 ) -> None:
     if (s3_endpoint is None) != (s3_bucket is None):
         raise ValueError("s3_endpoint and s3_bucket must be configured together")
+    # S3 staging existed only for the retired event-evidence fixture; keep the
+    # flags accepted so the local OIDC stack invocation stays compatible.
+    del s3_endpoint, s3_bucket
     data_dir.mkdir(parents=True, exist_ok=True)
     journal_paths = {
         "sites": data_dir / "sites.jsonl",
         "work_areas": data_dir / "work-areas.jsonl",
         "work_orders": data_dir / "observation-work-orders.jsonl",
-        "events": data_dir / "events.jsonl",
-        "missions": data_dir / "missions.jsonl",
     }
     occupied = [
         str(path)
@@ -134,8 +93,6 @@ def seed(
                 for area_id in area_ids
             ),
         )
-        event_store = EventStore(journals["events"])
-        mission_store = MissionStore(journals["missions"])
 
         started_at = datetime(2026, 8, 25, 0, 0, tzinfo=UTC)
         frame = SiteFrame(
@@ -206,34 +163,11 @@ def seed(
                 )
                 assert transition.verdict is SiteVerdict.TRANSITIONED
 
-        # UI-only post-processing fixture. It deliberately has no route, KMZ,
-        # dispatch, or device assignment and therefore cannot be executed.
-        assert (
-            mission_store.record_issuance(
-                MissionRecord(
-                    mission_id=MISSION_ID,
-                    site_id="e2e-site-workspace",
-                    mission_type="BASELINE_MAPPING",
-                    artifact_kind="contract",
-                    contract={"schemaVersion": "1.2", "missionId": MISSION_ID},
-                    kmz_sha256=None,
-                    route_pattern=None,
-                    waypoint_count=None,
-                    planned_coverage_ratio=None,
-                    issued_at=started_at + timedelta(minutes=9),
-                    issued_by=ACTOR,
-                    organization_id=ORGANIZATION_ID,
-                    assigned_device_id=None,
-                )
-            )
-            is MissionRecordVerdict.RECORDED
-        )
-
         order_statuses = (
-            ("e2e-site-review", "E2E 작업 범위 승인", ObservationWorkOrderStatus.AWAITING_APPROVAL),
-            ("e2e-site-progress", "E2E 승인된 관측 작업", ObservationWorkOrderStatus.APPROVED),
-            ("e2e-site-result", "E2E 결과와 근거 검토", ObservationWorkOrderStatus.REVIEW_READY),
-            ("e2e-site-completed", "E2E 완료된 관측 작업", ObservationWorkOrderStatus.COMPLETED),
+            ("e2e-site-review", "E2E 과거 읽기 전용 · 작업 범위 승인", ObservationWorkOrderStatus.AWAITING_APPROVAL),
+            ("e2e-site-progress", "E2E 과거 읽기 전용 · 승인 기록", ObservationWorkOrderStatus.APPROVED),
+            ("e2e-site-result", "E2E 과거 읽기 전용 · 결과 검토 기록", ObservationWorkOrderStatus.REVIEW_READY),
+            ("e2e-site-completed", "E2E 과거 읽기 전용 · 완료 기록", ObservationWorkOrderStatus.COMPLETED),
         )
         monotonic_path = (
             ObservationWorkOrderStatus.DISPATCHED,
@@ -281,54 +215,20 @@ def seed(
                     break
             assert order.status is target
 
-        received_at = started_at + timedelta(minutes=40)
-        for expected, status in (
-            (EventVerdict.PROJECTED, "CANDIDATE"),
-            (EventVerdict.EVENT_UPDATED, "EVIDENCE_COLLECTION"),
-            (EventVerdict.EVENT_UPDATED, "FINDING"),
-        ):
-            assert (
-                event_store.project_bundle(
-                    _event_bundle(status=status),
-                    edge_device_id=EDGE_DEVICE_ID,
-                    received_at=received_at,
-                    organization_id=ORGANIZATION_ID,
-                )
-                is expected
-            )
-            received_at += timedelta(seconds=1)
-
-        evidence_digest = (
-            f"sha256:{hashlib.sha256(SYNTHETIC_EVIDENCE_BYTES).hexdigest()}"
-            if s3_endpoint is not None
-            else None
-        )
-        evidence = event_store.register_evidence(
-            event_key=make_event_key(EDGE_DEVICE_ID, EVENT_ID),
-            artifact_id="e2e-evidence-image-001",
-            content_type="image/png",
-            registered_by=ACTOR,
-            now=received_at,
-            content_digest=evidence_digest,
+        # This is the only executable platform-flow fixture: the store creates an
+        # APPROVED external order and its OPEN operations record atomically.
+        # Do not call managed approve/record_status or fabricate a result.
+        work_order_store.create_work_order(
             organization_id=ORGANIZATION_ID,
+            site_id="e2e-site-workspace",
+            name="E2E 외부 산출물 등록",
+            work_area_ids=[work_area_ids["e2e-site-workspace"]],
+            schedule_id=None,
+            execution_mode=ObservationWorkOrderExecutionMode.EXTERNAL_RECONSTRUCTION,
+            idempotency_key="operations-console-e2e-external-work-order-v1",
+            actor=ACTOR,
+            now=started_at + timedelta(minutes=20),
         )
-        assert evidence.verdict is EvidenceVerdict.REGISTERED
-        assert evidence.artifact is not None
-        if s3_endpoint is not None and s3_bucket is not None:
-            import boto3  # noqa: PLC0415 -- only the S3-backed staging fixture needs it
-            from botocore.config import Config  # noqa: PLC0415 -- same boundary as above
-
-            client = boto3.client(
-                "s3",
-                endpoint_url=s3_endpoint,
-                config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-            )
-            client.put_object(
-                Bucket=s3_bucket,
-                Key=evidence.artifact.object_key,
-                Body=SYNTHETIC_EVIDENCE_BYTES,
-                ContentType="image/png",
-            )
     finally:
         for journal in journals.values():
             journal.close()
@@ -336,13 +236,13 @@ def seed(
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument("--data-dir", required=True, type=Path)
     parser.add_argument("--enable-synthetic-ai-egress", action="store_true")
-    parser.add_argument("--s3-endpoint")
-    parser.add_argument("--s3-bucket")
+    parser.add_argument("--s3-endpoint", default=None)
+    parser.add_argument("--s3-bucket", default=None)
     args = parser.parse_args()
     seed(
-        args.data_dir.resolve(),
+        args.data_dir,
         enable_synthetic_ai_egress=args.enable_synthetic_ai_egress,
         s3_endpoint=args.s3_endpoint,
         s3_bucket=args.s3_bucket,

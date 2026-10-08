@@ -2,8 +2,6 @@ import "server-only";
 
 import { cache } from "react";
 
-import { listAllEvents } from "./events";
-import { listMissions } from "./missions";
 import { listSites } from "./sites";
 
 // client.ts 는 `cache: "no-store"` 로 나간다 — 실시간성이 필요한 안전 화면에서 옳은 기본값이다.
@@ -14,8 +12,3 @@ import { listSites } from "./sites";
 // no-store 의 의미를 훼손하지 않고 중복 왕복만 없앤다. 셸과 본문은 같은 스냅샷을 보게 되는데,
 // 한 화면 안에서 사이드바 배지와 목록 건수가 어긋나지 않는다는 뜻이라 오히려 이쪽이 맞다.
 export const listSitesCached = cache(listSites);
-export const listMissionsCached = cache(listMissions);
-
-// 확인 항목 수를 말하는 Home·현장·작업·셸은 Core의 500건 요청 상한을 제품 상한으로
-// 오해하면 안 된다. 요청 하나에서 전체 pagination 결과를 공유한다.
-export const listAllEventsCached = cache(listAllEvents);

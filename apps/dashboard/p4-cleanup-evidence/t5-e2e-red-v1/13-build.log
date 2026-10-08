@@ -1,0 +1,103 @@
+
+> dashboard@0.1.0 build
+> next build
+
+▲ Next.js 16.3.3 (Turbopack)
+- Environments: .env.local
+✓ Running next.config.ts took 12ms
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 339ms
+  Running TypeScript ...
+  Finished TypeScript in 1429ms ...
+  Collecting page data using 19 workers ...
+  Generating static pages using 19 workers (0/19) ...
+  Generating static pages using 19 workers (4/19) 
+  Generating static pages using 19 workers (9/19) 
+  Generating static pages using 19 workers (14/19) 
+✓ Generating static pages using 19 workers (19/19) in 128ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ƒ /
+├ ƒ /_not-found
+├ ƒ /api/auth/[...nextauth]
+├ ƒ /api/auth/refresh
+├ ƒ /api/external-relative-volume-reports/[reportRef]
+├ ƒ /api/external-relative-volume-reports/[reportRef]/reviews
+├ ƒ /api/external-relative-volume-reports/[reportRef]/shares
+├ ƒ /api/external-reobservation-proposals
+├ ƒ /api/external-reobservation-proposals/[proposalRef]
+├ ƒ /api/external-reobservation-proposals/approve
+├ ƒ /api/external-result-reviews/[reviewRef]
+├ ƒ /api/external-single-volume-reports/[reportRef]
+├ ƒ /api/external-single-volume-reports/[reportRef]/reviews
+├ ƒ /api/external-single-volume-reports/[reportRef]/shares
+├ ƒ /api/health
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/display-artifacts/[sanitizedDisplayRef]/download
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence/[evidenceRef]/seal
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/evidence/[evidenceRef]/upload-grant
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/inspection
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/seal
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/upload-grants
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/[decisionId]
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/pair
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/single
+├ ƒ /api/observation-work-orders/[workOrderId]/external-reconstruction-submissions/[submissionRef]/revisions/[revision]/use-decisions/single-volume
+├ ƒ /api/observation-work-orders/[workOrderId]/operations
+├ ƒ /api/observation-work-orders/[workOrderId]/operations/assignment
+├ ƒ /api/observation-work-orders/[workOrderId]/operations/close
+├ ƒ /api/observation-work-orders/[workOrderId]/operations/due-date
+├ ƒ /api/observation-work-orders/[workOrderId]/operations/reopen
+├ ƒ /api/observation-work-orders/[workOrderId]/relative-volume-requests
+├ ƒ /api/observation-work-orders/[workOrderId]/relative-volume-requests/[requestRef]
+├ ƒ /api/observation-work-orders/[workOrderId]/single-volume-requests
+├ ƒ /api/observation-work-orders/[workOrderId]/single-volume-requests/[requestRef]
+├ ƒ /api/organization-work-roster
+├ ƒ /api/organization-work-roster/[principalId]
+├ ƒ /api/sites
+├ ƒ /api/sites/[siteId]/analyses
+├ ƒ /api/sites/[siteId]/analyses/[analysisId]
+├ ƒ /api/sites/[siteId]/analyses/[analysisId]/evidence
+├ ƒ /api/sites/[siteId]/analyses/[analysisId]/result
+├ ƒ /api/sites/[siteId]/analysis-observations
+├ ƒ /api/sites/[siteId]/aoi
+├ ƒ /api/sites/[siteId]/external-relative-volume-reports
+├ ƒ /api/sites/[siteId]/external-volume-reports
+├ ƒ /api/sites/[siteId]/observation-work-orders
+├ ƒ /api/sites/[siteId]/observations/[reportRef]
+├ ƒ /api/sites/[siteId]/transitions
+├ ƒ /api/sites/[siteId]/work-areas
+├ ƒ /api/sites/[siteId]/work-areas/[workAreaId]/analyses
+├ ƒ /api/sites/[siteId]/work-areas/[workAreaId]/archive
+├ ƒ /api/work-inbox
+├ ƒ /api/work-inbox/[notificationRef]/read
+├ ƒ /coming-soon/[section]
+├ ƒ /field
+├ ƒ /field/inbox
+├ ƒ /field/new
+├ ƒ /field/team
+├ ƒ /field/work-orders/[workOrderId]
+├ ƒ /login
+├ ƒ /more
+├ ƒ /sites
+├ ƒ /sites/[siteId]
+├ ƒ /sites/[siteId]/analysis
+├ ƒ /sites/[siteId]/changes
+├ ƒ /sites/[siteId]/observations
+├ ƒ /sites/[siteId]/observations/[reportRef]
+├ ƒ /sites/[siteId]/observations/new
+├ ƒ /sites/[siteId]/progress
+├ ƒ /sites/[siteId]/report
+├ ƒ /sites/[siteId]/spatial-assets
+├ ƒ /sites/[siteId]/work-areas
+└ ƒ /sites/new
+
+
+ƒ Proxy (Middleware)
+
+ƒ  (Dynamic)  server-rendered on demand
+
+BUILD_EXIT=0
