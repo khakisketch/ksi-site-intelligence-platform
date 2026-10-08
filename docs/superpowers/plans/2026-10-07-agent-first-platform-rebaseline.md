@@ -859,3 +859,9 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   indicative 45–50 file count noted. Corrected plan SHA
   `c7fd91dfa78dea4069824237cba7fff84b2895a347e9210054188b6785d29070`. Human written review
   requested; no app edits yet.
+- P4 written approval and execution start (2026-10-08): Human approved the P4 plan at SHA
+  `c7fd91df…` (rendered decision “계획 승인·기존 방식 실행”). Method retained: decision inventory →
+  design-workspace cleanup run (OpenDesign “KSI Operations Console”, real folder) → Build functional
+  verification (tsc/eslint/vitest/build + Playwright 390/768/1440) → design-owned rendered review →
+  independent closure. T1 dispatching; the design run starts only after T1's scope contract lands.
+  No app edits before T1.
