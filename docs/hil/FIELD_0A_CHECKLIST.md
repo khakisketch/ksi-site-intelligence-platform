@@ -43,7 +43,9 @@
 거부됐을 때 **무엇을 바꿔야 하는지**를 현장에서 바로 알기 위한 배치다. 한 파일만
 가져가면 거부의 이유를 모른 채 세션을 다시 잡아야 한다.
 
-재생성은 `uv run python tools/build_field0a_kit.py`(재현 가능 — 같은 입력이면 바이트 동일).
+재생성은 `uv run python archive/acquisition-2026/tools/build_field0a_kit.py`(P3 Task 6
+historical — 생성기가 archived mission-planning을 쓰므로 제품 경로가 아니다.
+재현 가능 — 같은 입력이면 바이트 동일).
 생성 직후 `field0a-kit/SHA256SUMS`에 세 파일의 SHA-256이 기록된다. 조종기로 옮기기
 전에 `cd docs/hil/field0a-kit && sha256sum -c SHA256SUMS`로 전송 대상이 이
 체크리스트의 정확한 실험 파일인지 확인한다.

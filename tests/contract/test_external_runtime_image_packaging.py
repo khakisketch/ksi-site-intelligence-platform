@@ -40,7 +40,8 @@ _RUNTIME_COPY_LINES = {
     "COPY --from=runtime-builder /app/packages/event-contracts /app/packages/event-contracts",
     "COPY --from=runtime-builder /app/packages/geo-core /app/packages/geo-core",
     "COPY --from=runtime-builder /app/packages/geo-spatial /app/packages/geo-spatial",
-    "COPY --from=runtime-builder /app/packages/perception /app/packages/perception",
+    # P3 Task 6: packages/perception archived with its consumers — the retained
+    # images copy surviving paths only (RB-08 explicit record).
     "COPY --from=runtime-builder /app/services/processing-controller "
     "/app/services/processing-controller",
 }
