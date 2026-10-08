@@ -775,3 +775,24 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   intact; compose core drops only Mission key/device mounts; `test_platform_boot_switch.py`
   config-as-data fail-closed; env docs/tests aligned to actual factory requirements; touch-check
   recorded; Docker daemon unavailable locally (CI-only) disclosed. Next Task5 base`93bf8b5`.
+- Task5 implemented+committed: developer `ses_ee6361cafffecA9p3eo5kJNX2R` committed `2e85391`
+  (`refactor: close Core acquisition dependencies onto the archive boundary`;237files:158
+  blob-identical renames=71product+87tests,73adapted,6new archive records) + `997f3c1`
+  (`fix: resolve move-tooling consumers against the post-closure tree`). Five bounded continuations
+  across a harness/server restart preserved staged work throughout (no reset). Full bare suite
+  **6690passed/113skipped/100warnings/exit0**; gates green (`ruff check .`, lock exact6-line drop,
+  scoped mypy, normalization trio, boundaries140records, pins/evidence/disposition). The11recorded
+  Core import sites are closed; Core drops the3candidate package deps; platform imports zero
+  acquisition code (boundary AST scan + deny-hook with positive control); readers stay active.
+  Root-cause fixes recorded: app_factory archived-import removal (no archive import even guarded),
+  identity_work capability branch removal, routes/{missions,operations} archival, phase3 audit tool
+  archival, move-tool consumer active-or-archive rule. Consequences recorded: orphaned T3 worker
+  lanes→T6, Console seed fixture→P4/P6, `create_app` retired-in-place, retention events path
+  fail-closed. Task reviewer `ses_ee5e2a49fffekWZFa3VS5ydz25` verdict **Needs fixes** — Important:
+  (1) the archived HIL tool was edited inside its rename (95% similarity; the blob-identical claim
+  is false for it); (2) boundary gates do not enforce the `archive/**` import prohibition
+  (AST/deny scope = the3acquisition packages only); (3) `create_app` does not fail loudly — archived
+  params are accepted and silently dropped; (4) retention tools keep guarded
+  `from ksi_core.events import EventStore` instead of explicit absence. Minors: mcp-identity
+  retired-route absence assert; production-test identity narrowing; checker COMPOSITION_MODULES
+  comment. Fix round1 dispatched on the same developer session; Task6 dispatch after adjudication.
