@@ -319,6 +319,7 @@ def create_app(
         "site_briefing_store": site_briefing_store,
         "civil_readiness_projector": civil_readiness_projector,
         "device_attestation_registry": device_attestation_registry,
+        "runtime_capability_projector": runtime_capability_projector,
     }
     for _name, _value in _retired.items():
         if _value is not None:

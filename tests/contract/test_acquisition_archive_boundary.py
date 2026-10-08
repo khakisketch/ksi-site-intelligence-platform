@@ -381,6 +381,7 @@ _ARCHIVE_LOAD_CALLS = frozenset(
         "move",
         "__import__",
         "import_module",
+        "find_spec",
         "exec",
         "eval",
     }
