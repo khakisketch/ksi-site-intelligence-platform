@@ -1,0 +1,1365 @@
+{
+  "manifest": "docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv",
+  "manifest_sha256": "afc52747e78c13d124c7cabb22e0a58331a09c04d25add824ffacf27976baefc",
+  "head_before": "13feb202822a4377da0b2541759bb8ad05223cd4",
+  "moves": [
+    {
+      "path": "edge/README.md",
+      "destination": "archive/acquisition-2026/edge/README.md",
+      "git_object": "bb3109a7761b4a2df34af79bf1ad57048db30844",
+      "blob_sha256": "307d0f2d04d4132449306edfc0fbb7c72cf63d6c36b0976e234571ddf72c673a",
+      "inverse": "git mv archive/acquisition-2026/edge/README.md edge/README.md"
+    },
+    {
+      "path": "edge/docker/manifold3-build.Dockerfile",
+      "destination": "archive/acquisition-2026/edge/docker/manifold3-build.Dockerfile",
+      "git_object": "b6099a4e5e062e6703465a2e52cef409ff8e3ff4",
+      "blob_sha256": "f1e0beaafdbb585d499d88e8d585fbc7b2f9418ddc07afe3deeef1e87d943c11",
+      "inverse": "git mv archive/acquisition-2026/edge/docker/manifold3-build.Dockerfile edge/docker/manifold3-build.Dockerfile"
+    },
+    {
+      "path": "edge/flight-execution-upload-only-allowlist.v1.json",
+      "destination": "archive/acquisition-2026/edge/flight-execution-upload-only-allowlist.v1.json",
+      "git_object": "143622349f1002696bcedee08ef2fed8b63f28f0",
+      "blob_sha256": "8a04ea2afbc05f199e4197d3ec74d7770d8cb14e2f2962448a79dc69fcb59414",
+      "inverse": "git mv archive/acquisition-2026/edge/flight-execution-upload-only-allowlist.v1.json edge/flight-execution-upload-only-allowlist.v1.json"
+    },
+    {
+      "path": "edge/manifold-runtime/CMakeLists.txt",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/CMakeLists.txt",
+      "git_object": "9fc58f1236b2cc119f988c054d57eb90aa39affc",
+      "blob_sha256": "9c17f191499108673445bdcdd38ffd4f5d190be1a23a359bc3f5bfd8322d5010",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/CMakeLists.txt edge/manifold-runtime/CMakeLists.txt"
+    },
+    {
+      "path": "edge/manifold-runtime/README.md",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/README.md",
+      "git_object": "2ef39b229abd95adacd205df6e3629c98942266a",
+      "blob_sha256": "84a649ed67ebf0d701d1c52e07e37a857678436af6eb373b7b15caffee8d86da",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/README.md edge/manifold-runtime/README.md"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/control_plane/command.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/control_plane/command.hpp",
+      "git_object": "a0216921201812da3f5d0e9917bc6f265bf66271",
+      "blob_sha256": "38a48817651834785bb273fbf2f57af90d23db2c49459054d6d7ed0c908157c8",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/control_plane/command.hpp edge/manifold-runtime/include/ksi/control_plane/command.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/control_plane/supervisor.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/control_plane/supervisor.hpp",
+      "git_object": "f04581858aedd99f068a3e70ff9fa59ae8c382ec",
+      "blob_sha256": "446b28f740d2b9a44eedae8e4c2f3f5ff3d15aa3eda38e0fa250ab1a925fd1fb",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/control_plane/supervisor.hpp edge/manifold-runtime/include/ksi/control_plane/supervisor.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/activation.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/activation.hpp",
+      "git_object": "65addccc2285b83a2b2701928f699266adc1155f",
+      "blob_sha256": "cdf3938f63540c8abecf44378d0dd5c1df6721a458549af66e5824ac81fd6811",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/activation.hpp edge/manifold-runtime/include/ksi/edge/activation.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/artifact_vault.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/artifact_vault.hpp",
+      "git_object": "a561acb6a146816307592d3adbf51dfe48c6a5f7",
+      "blob_sha256": "9d2cbd5e190081ed91fbb1e79a7414b5ff7d69000a9eb3c1f6c640f3f92e16f0",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/artifact_vault.hpp edge/manifold-runtime/include/ksi/edge/artifact_vault.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/calibrated_projector.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/calibrated_projector.hpp",
+      "git_object": "162c84c1e577a4ec5d942b0a6aa924eff7a8affd",
+      "blob_sha256": "0f439b5ec3f4a789e3008d4f1fd827b66b8e4f32a8f3d179e7d533b299591fc8",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/calibrated_projector.hpp edge/manifold-runtime/include/ksi/edge/calibrated_projector.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/capture_quality_policy.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/capture_quality_policy.hpp",
+      "git_object": "28d3f2f9aae5bf5883f9196a601cf7f64faf2693",
+      "blob_sha256": "1c435e2204c15437e33f0c4856fb177d07e086245ebb5c8496387da47d97decf",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/capture_quality_policy.hpp edge/manifold-runtime/include/ksi/edge/capture_quality_policy.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/core_sync_http.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/core_sync_http.hpp",
+      "git_object": "1c864624b28fa129357529bbf0f7ebfe32f4a97d",
+      "blob_sha256": "cb4ea6727b36fd9efed4de74c8c08872b47e26a44d3dbeb05db2810c2d8a5c9d",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/core_sync_http.hpp edge/manifold-runtime/include/ksi/edge/core_sync_http.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/crypto.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/crypto.hpp",
+      "git_object": "c43826369a7eeb813bd2efad5f470f747391e60d",
+      "blob_sha256": "14a5e246d68abb2db0f41b627a1bb45bebe1d309306520331d928170922d793d",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/crypto.hpp edge/manifold-runtime/include/ksi/edge/crypto.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/curl_https_executor.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/curl_https_executor.hpp",
+      "git_object": "fd81665fa04e2f24ba4a421437afe8241e1c2110",
+      "blob_sha256": "da87d2f4eea91796b8d127089eb27416a7b55f6cb59f4d786180b5ab99673303",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/curl_https_executor.hpp edge/manifold-runtime/include/ksi/edge/curl_https_executor.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/dfine.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/dfine.hpp",
+      "git_object": "c653a763514bb60cba45e8b07853cbf4cb7ff3cd",
+      "blob_sha256": "f6fd82a8daf1832544f34abf3624c849cc4e589f4d886fdf6cca5ffba70cbb5f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/dfine.hpp edge/manifold-runtime/include/ksi/edge/dfine.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/event_timing.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/event_timing.hpp",
+      "git_object": "7f2e0fbfd4f63f3f64879d771a73826bb1fc4de0",
+      "blob_sha256": "b9ec698587b52f032f24698f27442a59a1408aa24c9e5e1ac73f54d40d296f04",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/event_timing.hpp edge/manifold-runtime/include/ksi/edge/event_timing.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/evidence_attestation.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/evidence_attestation.hpp",
+      "git_object": "0601322abbbf1c02ed3661e7a08cffb9a2734630",
+      "blob_sha256": "391a7fcebcfaffa9f8e0f45970f6016868fb6c0a80928ff2a50cefe8592a9b1c",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/evidence_attestation.hpp edge/manifold-runtime/include/ksi/edge/evidence_attestation.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/evidence_builder.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/evidence_builder.hpp",
+      "git_object": "28e3e780da58f022d266201e33c0c9ec01234d15",
+      "blob_sha256": "4a33d660562d5f86f1b246c6e3f69d221538a773a73c26c9fed48e640a6e1fd7",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/evidence_builder.hpp edge/manifold-runtime/include/ksi/edge/evidence_builder.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/flight_execution.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/flight_execution.hpp",
+      "git_object": "d68da2a702820680a4a1fd2a468e21fc1b87323b",
+      "blob_sha256": "718ae6a7065138ab4c97b16691d9f3769e1a80df1f473c6f1bb28371e6afc207",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/flight_execution.hpp edge/manifold-runtime/include/ksi/edge/flight_execution.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/frame_queue.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/frame_queue.hpp",
+      "git_object": "619255690a9854c2a794b3f2baf42d7286e0ad65",
+      "blob_sha256": "33b8904031c4379d03a6a14e920e817d584d0d863ba45cb3010e835e89fbc702",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/frame_queue.hpp edge/manifold-runtime/include/ksi/edge/frame_queue.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/jpeg_dimensions.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/jpeg_dimensions.hpp",
+      "git_object": "e01926b9520a48d18690cdc605b88e61d454f423",
+      "blob_sha256": "cc9c8644f43771bddac51f0abe806a60781035fc877caaeef0f0ddbf99e8d3e5",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/jpeg_dimensions.hpp edge/manifold-runtime/include/ksi/edge/jpeg_dimensions.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/media_control.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/media_control.hpp",
+      "git_object": "2cdc79d32c382ff24f3b4cee1977d14b8c19a525",
+      "blob_sha256": "809b89c115489fc8bbfda1c6f225c0ecb118bd85252e765aee982b85c5eda60f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/media_control.hpp edge/manifold-runtime/include/ksi/edge/media_control.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/media_offload.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/media_offload.hpp",
+      "git_object": "526c58ed37edae02f2718e9e4f139e12c2d28bf3",
+      "blob_sha256": "0810583f5f46760b1384b546838bb6ff452dd305dc2ccb5340b56f2f4014e2d9",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/media_offload.hpp edge/manifold-runtime/include/ksi/edge/media_offload.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/mission_kmz.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/mission_kmz.hpp",
+      "git_object": "73e84acfd67faa3b626510cbdbac084936f3a89c",
+      "blob_sha256": "8aaffd64cfbf284afe3c305cedc18a7d120f86ab65246c8877233dcd3a2c018a",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/mission_kmz.hpp edge/manifold-runtime/include/ksi/edge/mission_kmz.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/pipeline.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/pipeline.hpp",
+      "git_object": "cc1a3aceffccce9b19da3dc3f9b7395262f04d40",
+      "blob_sha256": "5d4ac5909e26c7700ecdf6b396c883e419e62a822afe3e8736fb94d8374a2944",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/pipeline.hpp edge/manifold-runtime/include/ksi/edge/pipeline.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/risk.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/risk.hpp",
+      "git_object": "a7ff1b915719c5ee91c2bbb91dc27885e70d7011",
+      "blob_sha256": "d8df451b78f7eb3de22b8c146f70025dc655cf2240981166b5fa309420d4d6f3",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/risk.hpp edge/manifold-runtime/include/ksi/edge/risk.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/runtime_profile.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/runtime_profile.hpp",
+      "git_object": "7d454eb16008c6c941fd49d91d7d2d739f91d81a",
+      "blob_sha256": "e982573f46e8c94fddf8119ad49e028cb0de711111b32a29b4f3deef520142c4",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/runtime_profile.hpp edge/manifold-runtime/include/ksi/edge/runtime_profile.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/shadow.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/shadow.hpp",
+      "git_object": "7c389813c6e3119ffaa231c8229fa6a9080a91cc",
+      "blob_sha256": "8ee9ee5354a96bbd17c3b64e3591a3012200ca68f1142b74daa92676b1183e5f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/shadow.hpp edge/manifold-runtime/include/ksi/edge/shadow.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/store_forward.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/store_forward.hpp",
+      "git_object": "4b1eced1b8c35098b111928eaaadb1d684b4b3d5",
+      "blob_sha256": "37c34fbf59f570e0041a48ff9ce9a989abb7136e474968027d4ccf6c01bed7c9",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/store_forward.hpp edge/manifold-runtime/include/ksi/edge/store_forward.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/sync.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/sync.hpp",
+      "git_object": "36d5ab89f1b6eb4d7f34c8fad5cb900cb15938a6",
+      "blob_sha256": "efaffc146d96b4db355c57810125b532d8641b5e046c53986c55f601822cd54e",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/sync.hpp edge/manifold-runtime/include/ksi/edge/sync.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/telemetry.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/telemetry.hpp",
+      "git_object": "15820a91eecc5034fd99954e9d4a400eb796a752",
+      "blob_sha256": "19cda1e4afa2ca23aa00d3fe44d6952140c3b635c9fead16842e4c5ae9ceed89",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/telemetry.hpp edge/manifold-runtime/include/ksi/edge/telemetry.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/tensorrt.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/tensorrt.hpp",
+      "git_object": "426fbd1b8858ada3e62e6374abda7e723640f841",
+      "blob_sha256": "4e5339ea4fc0d4d4fd82f08af5e24ea66534381d26e3da1de2e9225e3aef8177",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/tensorrt.hpp edge/manifold-runtime/include/ksi/edge/tensorrt.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/include/ksi/edge/world_entity.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/world_entity.hpp",
+      "git_object": "9ea77d77d9cd8312776f7cd9da7cfa6704001cbc",
+      "blob_sha256": "dced5b18825d6f3482dc36be97e01882e6fe87a629ca681378b7746e0408eb14",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/include/ksi/edge/world_entity.hpp edge/manifold-runtime/include/ksi/edge/world_entity.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/activation.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/activation.cpp",
+      "git_object": "b33b5860298c5c006d2d733686b43a36df000081",
+      "blob_sha256": "ec96b540f0a5dfc6e22f48c6994959748bd490891e1e19ac31846645b9d9e4a1",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/activation.cpp edge/manifold-runtime/src/activation.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/artifact_vault.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/artifact_vault.cpp",
+      "git_object": "df778a1f6e973024035066d517561168bd9a29da",
+      "blob_sha256": "c5192a48e423fc7734b57c49bc5f22f2e976f77b6ac8506536817c86b58fb3fb",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/artifact_vault.cpp edge/manifold-runtime/src/artifact_vault.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/calibrated_projector.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/calibrated_projector.cpp",
+      "git_object": "77e44cda60054d389d314a3fa5bee4396f82f6ec",
+      "blob_sha256": "5875a45194760434b359b6f25c43f9cc7fa123f6a2cc9c04c59fc5c81d0bd04c",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/calibrated_projector.cpp edge/manifold-runtime/src/calibrated_projector.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/capture_quality_policy.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/capture_quality_policy.cpp",
+      "git_object": "c19d729b6e61057eea5a68e44c026a947fa02f69",
+      "blob_sha256": "afe0715644bebf5821dc6a4be3cb3ffe6161bdb5191dfe755b4374f5b588ea8f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/capture_quality_policy.cpp edge/manifold-runtime/src/capture_quality_policy.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/command.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/command.cpp",
+      "git_object": "7a1cbbc5fabc02039f5a44bb677a1af56d259726",
+      "blob_sha256": "3da11120ce9b5a331c774ea900f1e8f03bea6cef9c8a73919380efe103c7f445",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/command.cpp edge/manifold-runtime/src/command.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/core_sync_http.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/core_sync_http.cpp",
+      "git_object": "13e251ee3dcf8041bfdd6c953258e44ae1d62532",
+      "blob_sha256": "68347d24f5c093343d348bf39a8e24974a022cf8c2a92e7c566fc6f1acc8ac54",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/core_sync_http.cpp edge/manifold-runtime/src/core_sync_http.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/crypto.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/crypto.cpp",
+      "git_object": "3efdedf2b88ca1d0447ecc49da62b141537c4cd8",
+      "blob_sha256": "0f0c1e49681808350cfd29e564c141546593aeaffda56fd92a0049dfe172ea04",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/crypto.cpp edge/manifold-runtime/src/crypto.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/curl_https_executor.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/curl_https_executor.cpp",
+      "git_object": "571282c9be35b64a508c14799a807c06850bbcff",
+      "blob_sha256": "64f286e34fe4d51065a8fbf1d98c0f881721f45203e6fe72f57706fafc67e1ea",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/curl_https_executor.cpp edge/manifold-runtime/src/curl_https_executor.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/dfine.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/dfine.cpp",
+      "git_object": "371134ee21173d733b560479017882ef2e026ede",
+      "blob_sha256": "4747afe69b5e7095d7caccf618128bc3acf0249650f607245de42a9590cc3a33",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/dfine.cpp edge/manifold-runtime/src/dfine.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/event_timing.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/event_timing.cpp",
+      "git_object": "4bed13adadb7ae1cfeca4ad09b4f50af6dcd7d50",
+      "blob_sha256": "3cb5200dc7015923d229ea1f6e4c1d4288f188675afd9a32e89bf959e0b36340",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/event_timing.cpp edge/manifold-runtime/src/event_timing.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/evidence_attestation.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/evidence_attestation.cpp",
+      "git_object": "7ad8c5675dfddb3ca69e93f8d392db0608562ec4",
+      "blob_sha256": "43e2371268ea517665783f0231eb2e3ee55139465c6fd4245c6c211ef2a581ad",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/evidence_attestation.cpp edge/manifold-runtime/src/evidence_attestation.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/evidence_builder.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/evidence_builder.cpp",
+      "git_object": "d7c0afdd13999f7978a6863431545a5195f0aa46",
+      "blob_sha256": "9e9bffce99af7b5d4c81a76f0607cb3f31f70eab746fb36d7416c69ecc70515b",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/evidence_builder.cpp edge/manifold-runtime/src/evidence_builder.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/flight_execution.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/flight_execution.cpp",
+      "git_object": "685df6d4cc565863487a1a94995c53ded7980d61",
+      "blob_sha256": "c2dbb3caacade6b861af6c1bc9bb0bb39ce1f01c4b101b2ef5f30fbb50bb0b46",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/flight_execution.cpp edge/manifold-runtime/src/flight_execution.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/frame_queue.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/frame_queue.cpp",
+      "git_object": "0774a269fa0de5563693395c8400767ce4c907d2",
+      "blob_sha256": "9dfc678268bdf2986f57df7091dba09a30f5f608edfa3b5f66e174801456ccd9",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/frame_queue.cpp edge/manifold-runtime/src/frame_queue.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/jpeg_dimensions.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/jpeg_dimensions.cpp",
+      "git_object": "06e98ca7f9e8f4086145822d6baa3501705340f1",
+      "blob_sha256": "7aba2648a3ad93c756dd768a8398b0138c19be5a228981904ec7599d27a7f231",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/jpeg_dimensions.cpp edge/manifold-runtime/src/jpeg_dimensions.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/media_control.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/media_control.cpp",
+      "git_object": "c6b3c5128096a5971b53446c556f2e83123a890d",
+      "blob_sha256": "55d09534ca0685b2077472e2179fd6c54799d796e500e6d38e70398899357872",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/media_control.cpp edge/manifold-runtime/src/media_control.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/media_offload.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/media_offload.cpp",
+      "git_object": "f778876749f3072ebb683b2fdb4d148645bd5545",
+      "blob_sha256": "cfa4099b0bd42c7c3ed0077755865437db407912d620791e2e26be851a73e5f5",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/media_offload.cpp edge/manifold-runtime/src/media_offload.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/mission_kmz.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/mission_kmz.cpp",
+      "git_object": "205def848fc64c32e9bad8563dbd7216a520b5f4",
+      "blob_sha256": "915cd3e927d5567d2d60462932e2024744e088b6feb3593de5ca55deb2e5f0c1",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/mission_kmz.cpp edge/manifold-runtime/src/mission_kmz.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/pipeline.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/pipeline.cpp",
+      "git_object": "79a3ea44ccb5f9b79782edffef66f5815f9270bf",
+      "blob_sha256": "f8cb56202e9e8f94c7a263feb3877cac0e11a14a705a3caaec807e45d1c63c2b",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/pipeline.cpp edge/manifold-runtime/src/pipeline.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/risk.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/risk.cpp",
+      "git_object": "0aa5f00f2e32c2b23f83cbcfc41660e407871ae0",
+      "blob_sha256": "2f04ed72ff28e2a2b7d6852a0553ad66717a3a093ae39189077c4446bb51e329",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/risk.cpp edge/manifold-runtime/src/risk.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/runtime_profile.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/runtime_profile.cpp",
+      "git_object": "0f853e6333d0112862aba9ade456eca869c2ac84",
+      "blob_sha256": "e2fb9dc16cd107bd0daee0e19f22ad62ffe8f84d3a0153e389fda734f30cda02",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/runtime_profile.cpp edge/manifold-runtime/src/runtime_profile.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/shadow.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/shadow.cpp",
+      "git_object": "405676885701b786326f8511bfa889461c330d59",
+      "blob_sha256": "7fb3a707728682bd0eb2f158f3816b226fd98a1840745cc1fd1324ac75557e9d",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/shadow.cpp edge/manifold-runtime/src/shadow.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/store_forward.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/store_forward.cpp",
+      "git_object": "57abb7d1bbe2978fb4a1ce72b4f0de590973b041",
+      "blob_sha256": "e781f51b18fb0f781e60bc73eb9f77e0d9c10e94b3992c6410feb69f9de71acd",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/store_forward.cpp edge/manifold-runtime/src/store_forward.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/supervisor.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/supervisor.cpp",
+      "git_object": "be8af9a5de488a849a9d4cfceb32e99d56968b5d",
+      "blob_sha256": "b3fb0c7ec1129d4ff7b5228f3f4efa5a3890cd8cceb1f48e8c4380040f8bb5d7",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/supervisor.cpp edge/manifold-runtime/src/supervisor.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/sync.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/sync.cpp",
+      "git_object": "58d14a1fcd52d85bfcf28a484cd3be514ed095b1",
+      "blob_sha256": "887451925fc067b7b74edb4d4e110789d3b31b372dc456a4fdd61ef9fca18c87",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/sync.cpp edge/manifold-runtime/src/sync.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/telemetry.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/telemetry.cpp",
+      "git_object": "440f76b10e20e9e62dfe8b2aa2e2a8a6493341d9",
+      "blob_sha256": "37323b99b3bffbc60d453b45ee20a447f8a9219c739956c8c7a92e7057c6d084",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/telemetry.cpp edge/manifold-runtime/src/telemetry.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/tensorrt.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/tensorrt.cpp",
+      "git_object": "0b2fd2f644525536ce59425e08e36161dde42d85",
+      "blob_sha256": "a0be96082dc97d186ce8744833f929ea02508277487617ba8ff7cd475547b1d5",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/tensorrt.cpp edge/manifold-runtime/src/tensorrt.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/src/world_entity.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/src/world_entity.cpp",
+      "git_object": "675a46c3c0e00818e391455376c825cb7bd30bb7",
+      "blob_sha256": "dd1e2882cfd0a770f7fc2527905ba8ec53422dadb62da298cbfa52cccef03274",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/src/world_entity.cpp edge/manifold-runtime/src/world_entity.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/capture_quality_policy_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/capture_quality_policy_tests.cpp",
+      "git_object": "513f1a21bf4921475f58a9cda846240e0f852290",
+      "blob_sha256": "f26fc026f01bea14a913e898d8abba06ff7733f78558b1a7fb5c9bfe62268111",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/capture_quality_policy_tests.cpp edge/manifold-runtime/tests/capture_quality_policy_tests.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/conformance_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/conformance_tests.cpp",
+      "git_object": "7730044a70c89ab06703c70bef4c0047a85cd2eb",
+      "blob_sha256": "4935bffdf36e62d541512dafcd4b3ddbd91cf8edd09cf959c81231a3f2c7b8ef",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/conformance_tests.cpp edge/manifold-runtime/tests/conformance_tests.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/control_plane_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/control_plane_tests.cpp",
+      "git_object": "f5bb1789e3b858353c8d14561ec0b18af1d0cc93",
+      "blob_sha256": "49ee812825302c68675aecd8dc07e719d02939bd02d8d2856670637d7fff3a8a",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/control_plane_tests.cpp edge/manifold-runtime/tests/control_plane_tests.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/edge_runtime_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/edge_runtime_tests.cpp",
+      "git_object": "15f9e1d3dbbb5bb31ec7c27828ed1efda1bf3759",
+      "blob_sha256": "4d391269095832e09272c51d860075cea462c9c990875260dc38f040a987ff4c",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/edge_runtime_tests.cpp edge/manifold-runtime/tests/edge_runtime_tests.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/generated/action_intent_vectors.hpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/generated/action_intent_vectors.hpp",
+      "git_object": "5301569c44e47dc33bbb1386f298b178e34340bb",
+      "blob_sha256": "fc907c3f6e179d27039c6f75ec57431271e307f5a91ba4455b2e8b6ffc7b3607",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/generated/action_intent_vectors.hpp edge/manifold-runtime/tests/generated/action_intent_vectors.hpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/media_control_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/media_control_tests.cpp",
+      "git_object": "20f915de0a18ad772acfad81434e7d4ad9f45095",
+      "blob_sha256": "153ed217acf87ff678d38de659a4938a89576b2f8538fc867bcb92568be02a0f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/media_control_tests.cpp edge/manifold-runtime/tests/media_control_tests.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tests/source_media_schema_migration_test.py",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tests/source_media_schema_migration_test.py",
+      "git_object": "52814bbded7ba4365a0d66be08ba4538146b44fd",
+      "blob_sha256": "621d4326833004ac41887e2854aca4c6188f56e9df9291229607df5b23284ce7",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tests/source_media_schema_migration_test.py edge/manifold-runtime/tests/source_media_schema_migration_test.py"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/ksi_edge_flight_abort.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_flight_abort.cpp",
+      "git_object": "519f9b60ab347971b2cbca96374f391855d4ae14",
+      "blob_sha256": "ae1de5df450fb23e459de5dbd6c1d0d086c3a4febbf0ae03ec7ad5523084f449",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_flight_abort.cpp edge/manifold-runtime/tools/ksi_edge_flight_abort.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/ksi_edge_flight_arm.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_flight_arm.cpp",
+      "git_object": "7365db3818eaaeb7af4b3de87ef0980b40f24fd0",
+      "blob_sha256": "5e915f8666c5c751b236f6ec3e4ff7fb1148c49cfed10722e7c5acccf787bc33",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_flight_arm.cpp edge/manifold-runtime/tools/ksi_edge_flight_arm.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/ksi_edge_media_prepare.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_media_prepare.cpp",
+      "git_object": "6da245c3f28843a907223ef34b14e46b08db09f1",
+      "blob_sha256": "864cffe32a69398db35ee3131f6282a1fbb82cb257db4b644555bfbb8592c816",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_media_prepare.cpp edge/manifold-runtime/tools/ksi_edge_media_prepare.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/ksi_edge_media_trigger.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_media_trigger.cpp",
+      "git_object": "b801ea1fd3926ed5e2be4d5d33d57ea0f0c6e100",
+      "blob_sha256": "e8b71ae9c4bb8e6f372ab1c31975a7e90350940987da8644a35ef71863a9af2c",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/ksi_edge_media_trigger.cpp edge/manifold-runtime/tools/ksi_edge_media_trigger.cpp"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/mutation_check.py",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/mutation_check.py",
+      "git_object": "1a17e1b64ed13c6aa1272c69f506473bd2295ff5",
+      "blob_sha256": "e267ab72490d088b0568eadaa2e9f58e3f2a02bc33d3249334e698a528fcb125",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/mutation_check.py edge/manifold-runtime/tools/mutation_check.py"
+    },
+    {
+      "path": "edge/manifold-runtime/tools/tensorrt_differential_runner.cpp",
+      "destination": "archive/acquisition-2026/edge/manifold-runtime/tools/tensorrt_differential_runner.cpp",
+      "git_object": "faf361f61588dfd3e66141aa6dcd3efbd301ca74",
+      "blob_sha256": "cfbaa864e085ad339f2b6aeeb40d18c47596ffbda64eaa457e4bec269523a58f",
+      "inverse": "git mv archive/acquisition-2026/edge/manifold-runtime/tools/tensorrt_differential_runner.cpp edge/manifold-runtime/tools/tensorrt_differential_runner.cpp"
+    },
+    {
+      "path": "edge/msdk-field-bridge/README.md",
+      "destination": "archive/acquisition-2026/edge/msdk-field-bridge/README.md",
+      "git_object": "a74e3dd12facff2624ea26734bc52ee3f5b75f63",
+      "blob_sha256": "276ee0076d912c2dd9892dcf9c23a903c06ba234a72419db5d681a3dd735c20a",
+      "inverse": "git mv archive/acquisition-2026/edge/msdk-field-bridge/README.md edge/msdk-field-bridge/README.md"
+    },
+    {
+      "path": "edge/msdk-field-bridge/app/src/main/java/com/ksi/fieldbridge/FieldBridgeContract.kt",
+      "destination": "archive/acquisition-2026/edge/msdk-field-bridge/app/src/main/java/com/ksi/fieldbridge/FieldBridgeContract.kt",
+      "git_object": "bcd94d14ba17d4af67b6eb0c92700d514025d536",
+      "blob_sha256": "068307ee1f02120b10cf281d516fd731a94c3af82b38bd49ddc5ecd84610a30c",
+      "inverse": "git mv archive/acquisition-2026/edge/msdk-field-bridge/app/src/main/java/com/ksi/fieldbridge/FieldBridgeContract.kt edge/msdk-field-bridge/app/src/main/java/com/ksi/fieldbridge/FieldBridgeContract.kt"
+    },
+    {
+      "path": "edge/psdk-app/CMakeLists.txt",
+      "destination": "archive/acquisition-2026/edge/psdk-app/CMakeLists.txt",
+      "git_object": "1af385ca7cc1c99e964bd19e3446f74d4f3fb67e",
+      "blob_sha256": "22a4d8c9daa40a6591f40a86c43dc87289aeb0ac07b5f4339f681919190ae618",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/CMakeLists.txt edge/psdk-app/CMakeLists.txt"
+    },
+    {
+      "path": "edge/psdk-app/README.md",
+      "destination": "archive/acquisition-2026/edge/psdk-app/README.md",
+      "git_object": "0725aced7ce76ad95544bb7bc139831322d0617f",
+      "blob_sha256": "e1ed764fd15724a4af4c9849fe5ec34b74680269914d8ee6b01dcbf2ce7d50f6",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/README.md edge/psdk-app/README.md"
+    },
+    {
+      "path": "edge/psdk-app/config/app.json.in",
+      "destination": "archive/acquisition-2026/edge/psdk-app/config/app.json.in",
+      "git_object": "86e0cdb8d40477fae31d4b3fc37491c7450bc306",
+      "blob_sha256": "97024ec5cdf60ee3a4d496640d5468d9897c9eac3833338530fc8b280c4e5e2b",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/config/app.json.in edge/psdk-app/config/app.json.in"
+    },
+    {
+      "path": "edge/psdk-app/config/dji_sdk_app_info.h.example",
+      "destination": "archive/acquisition-2026/edge/psdk-app/config/dji_sdk_app_info.h.example",
+      "git_object": "fabeb679e496b560339d25a759a052819d26ed6d",
+      "blob_sha256": "f3085f154885b887548ef527b4237a418daef4404149caae66b03765c46aa92d",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/config/dji_sdk_app_info.h.example edge/psdk-app/config/dji_sdk_app_info.h.example"
+    },
+    {
+      "path": "edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp",
+      "git_object": "86f0f0572a53153583aa2ed9991871b095d6b08d",
+      "blob_sha256": "7d04098a5c27a25e2919ab3f7e0ffa0d8d862978e699bd313b0dc8774a2a2665",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.cpp"
+    },
+    {
+      "path": "edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.hpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.hpp",
+      "git_object": "40c6efe77fc59c9d5b9fae770422cef410721d85",
+      "blob_sha256": "a8dcc48c71033f62b02619ca8e7aae2c1e6c539983b6be50b8f39c1cf2e053fa",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.hpp edge/psdk-app/src/flight_execution/waypoint_v3_upload_only.hpp"
+    },
+    {
+      "path": "edge/psdk-app/src/main.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/main.cpp",
+      "git_object": "beb34b4e2dddc49c84d0975f4ed3d2b4ddd02be2",
+      "blob_sha256": "dfcdb81e90cb87fabd8fb683d08362072deb7a5ea2f021ec640cc21676e95d1e",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/main.cpp edge/psdk-app/src/main.cpp"
+    },
+    {
+      "path": "edge/psdk-app/src/media/dji_camera_media_source.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/media/dji_camera_media_source.cpp",
+      "git_object": "c4b7de8daf719682ff4cd90b3cfd55caa7135d6f",
+      "blob_sha256": "9e1c493d0928472a135f869b6296f7f234a247a03c330f160c8352a3e9d90735",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/media/dji_camera_media_source.cpp edge/psdk-app/src/media/dji_camera_media_source.cpp"
+    },
+    {
+      "path": "edge/psdk-app/src/media/dji_camera_media_source.hpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/media/dji_camera_media_source.hpp",
+      "git_object": "840db4ced3f0dc931e66f4e0610071366b680282",
+      "blob_sha256": "b5b09bae047b3cdff98b85acaa7fa3fe70cdd547c8a4f658687c3fadb336b88b",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/media/dji_camera_media_source.hpp edge/psdk-app/src/media/dji_camera_media_source.hpp"
+    },
+    {
+      "path": "edge/psdk-app/src/runtime/psdk_mop_peer_receiver.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_mop_peer_receiver.cpp",
+      "git_object": "dbbb99521a5249c0e036c7133dd6286babbf0097",
+      "blob_sha256": "5425b30f5fc5c2582c828935930890d8574bd97684f9dbdf5e641e4a5979cd46",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_mop_peer_receiver.cpp edge/psdk-app/src/runtime/psdk_mop_peer_receiver.cpp"
+    },
+    {
+      "path": "edge/psdk-app/src/runtime/psdk_mop_peer_receiver.hpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_mop_peer_receiver.hpp",
+      "git_object": "4279db23c6e5ab1bbc7d955c76c2f88eb17d3ca5",
+      "blob_sha256": "9aded89a607c9656b193799e9a448cb7e4e5d425a3991273d2245d8702b0e379",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_mop_peer_receiver.hpp edge/psdk-app/src/runtime/psdk_mop_peer_receiver.hpp"
+    },
+    {
+      "path": "edge/psdk-app/src/runtime/psdk_route_companion.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_route_companion.cpp",
+      "git_object": "7f838f4024144bbe9b651a159236d38e5159093d",
+      "blob_sha256": "4747c901eb66866a2b2ae41da331ec4bde04ea970074190907ac7fd7ac0f1f43",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_route_companion.cpp edge/psdk-app/src/runtime/psdk_route_companion.cpp"
+    },
+    {
+      "path": "edge/psdk-app/src/runtime/psdk_route_companion.hpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_route_companion.hpp",
+      "git_object": "1e17524740f724f00990a448a803b58d73a558e5",
+      "blob_sha256": "c78f4f872f8047d47eab8cd9a3cffe6fef6a35d85b4d42ffcfcb500d2f7fc2c1",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/src/runtime/psdk_route_companion.hpp edge/psdk-app/src/runtime/psdk_route_companion.hpp"
+    },
+    {
+      "path": "edge/psdk-app/tests/dji_camera_media_source_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/tests/dji_camera_media_source_tests.cpp",
+      "git_object": "b282df3240a019d745a60d6c19c55987fa38b6c0",
+      "blob_sha256": "54ddd70e52612e075bc4ebb20f027818249e1bbaff50dd4b88130b5b06ac2dde",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/tests/dji_camera_media_source_tests.cpp edge/psdk-app/tests/dji_camera_media_source_tests.cpp"
+    },
+    {
+      "path": "edge/psdk-app/tests/gateway_psdk_companion_interop.py",
+      "destination": "archive/acquisition-2026/edge/psdk-app/tests/gateway_psdk_companion_interop.py",
+      "git_object": "24a5d49b22d2d7e4ba750f0fc8c0d6dbbc310c0e",
+      "blob_sha256": "39dad22590ea178f0249f23f394404776a5f392496286ba8f16f67d7e7506053",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/tests/gateway_psdk_companion_interop.py edge/psdk-app/tests/gateway_psdk_companion_interop.py"
+    },
+    {
+      "path": "edge/psdk-app/tests/psdk_mop_peer_receiver_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/tests/psdk_mop_peer_receiver_tests.cpp",
+      "git_object": "c7c3a2f754b64f50448c643056d5ee6a9391396e",
+      "blob_sha256": "a64a4de0e045ff693498b369ff5384e0e6dc535dd7459c0dc68e3458cfa24169",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/tests/psdk_mop_peer_receiver_tests.cpp edge/psdk-app/tests/psdk_mop_peer_receiver_tests.cpp"
+    },
+    {
+      "path": "edge/psdk-app/tests/psdk_route_companion_tests.cpp",
+      "destination": "archive/acquisition-2026/edge/psdk-app/tests/psdk_route_companion_tests.cpp",
+      "git_object": "7b992e9baa69fc0f6abe7edcaccf393025d93485",
+      "blob_sha256": "0ad211d5ca62980946d89392d9c7021df0b346a8705919280f894e5b75a1339f",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-app/tests/psdk_route_companion_tests.cpp edge/psdk-app/tests/psdk_route_companion_tests.cpp"
+    },
+    {
+      "path": "edge/psdk-platform/psdk_platform.cmake",
+      "destination": "archive/acquisition-2026/edge/psdk-platform/psdk_platform.cmake",
+      "git_object": "7f59c4b0e11ea5b4d9ecb4179323f2df701b82c3",
+      "blob_sha256": "7604092a3fc7e8f6fb43d347fdce970b0e732bf5db021587d4308b1901419999",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-platform/psdk_platform.cmake edge/psdk-platform/psdk_platform.cmake"
+    },
+    {
+      "path": "edge/psdk-tap/CMakeLists.txt",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/CMakeLists.txt",
+      "git_object": "339a64cfc4ce08343291edf14140c9448cdbbbfc",
+      "blob_sha256": "e62eed2c37cc2cef0744bd5723a36cd6d7b635b0c883b63893f503fcff7af8e7",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/CMakeLists.txt edge/psdk-tap/CMakeLists.txt"
+    },
+    {
+      "path": "edge/psdk-tap/README.md",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/README.md",
+      "git_object": "387cc6a23ad943c8f723baa439786ea8bafdc219",
+      "blob_sha256": "b519a8efed4f0d36afbac485e3b0fc14adc6afa4c897a1a8c31b800bdb30c1d7",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/README.md edge/psdk-tap/README.md"
+    },
+    {
+      "path": "edge/psdk-tap/config/app.json.in",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/config/app.json.in",
+      "git_object": "0249800791fd5fa3e4833a54f0bc6650f081f47f",
+      "blob_sha256": "45a95316c3ae6d86e36c3d867e6c3083592a7a0f640d540ddb066b6c939da9ea",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/config/app.json.in edge/psdk-tap/config/app.json.in"
+    },
+    {
+      "path": "edge/psdk-tap/config/dji_sdk_app_info.h.example",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/config/dji_sdk_app_info.h.example",
+      "git_object": "101a21e31b0152e23e08da5f706d5fb50e3f2099",
+      "blob_sha256": "17522bd3c1a8e28f116240d54adc70b67f8ea9585f3de9895878b768085d1108",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/config/dji_sdk_app_info.h.example edge/psdk-tap/config/dji_sdk_app_info.h.example"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/clock_util.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/clock_util.h",
+      "git_object": "50bd9e81ecc802bc8cd1f7e5a0d7ee5a715c1f78",
+      "blob_sha256": "e8df6a8122158e91bc52be9a9b1e08c35a6a4e7a1d2a8a83a739f7c3f719e186",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/clock_util.h edge/psdk-tap/include/psdk_tap/clock_util.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/liveview_tap.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/liveview_tap.h",
+      "git_object": "73aee93a6927f3bcd35f17d8675438fd66915b85",
+      "blob_sha256": "64e5148f3e5ac3ddd350039911f6c239b4bb83e37d05d25127ccfb80d5e6660d",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/liveview_tap.h edge/psdk-tap/include/psdk_tap/liveview_tap.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/ndjson_writer.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/ndjson_writer.h",
+      "git_object": "2eb42bbb4b481b13f27781ddd53c24ec6b64c5cd",
+      "blob_sha256": "9d86a02c587fef1b15a066869ee16ca69ddf248c0620da7bc8c025766d5ab6f1",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/ndjson_writer.h edge/psdk-tap/include/psdk_tap/ndjson_writer.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/pairing.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/pairing.h",
+      "git_object": "6603c71d4b61c7513379da17e7a419e8b359c052",
+      "blob_sha256": "c33bf4eb2010f8767b45edd638693ed0cf9319dd2a1002cd10605507d0ce910c",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/pairing.h edge/psdk-tap/include/psdk_tap/pairing.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/perception_tap.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/perception_tap.h",
+      "git_object": "7e9e338f97b3863311cd5f88d79bb5792dcfc8e6",
+      "blob_sha256": "dadc3238909d56621bd39cb3cd8e21db0d207231aea1056c3dbed757aacf87eb",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/perception_tap.h edge/psdk-tap/include/psdk_tap/perception_tap.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/shared_state.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/shared_state.h",
+      "git_object": "9b0edadad419d5f010e1f9e5dac9c499764dc81a",
+      "blob_sha256": "4fae39bfe74536fd04e17bc1800089ef52788a84ad61b89217c826f2262bece9",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/shared_state.h edge/psdk-tap/include/psdk_tap/shared_state.h"
+    },
+    {
+      "path": "edge/psdk-tap/include/psdk_tap/telemetry_tap.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/telemetry_tap.h",
+      "git_object": "c822d2c8b4199db970f0e66682a97df47d017112",
+      "blob_sha256": "93712a84f10d22133bf560f0847873dacbc9e831667e65085d25213c5b426a49",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/include/psdk_tap/telemetry_tap.h edge/psdk-tap/include/psdk_tap/telemetry_tap.h"
+    },
+    {
+      "path": "edge/psdk-tap/src/clock_util.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/clock_util.c",
+      "git_object": "493896d893f4fd2739a14507b71c4f58d35b8f5a",
+      "blob_sha256": "9a87eeca70c7b3f851c487f49b8d001e7c53648af962a54cd94a593e72919997",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/clock_util.c edge/psdk-tap/src/clock_util.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/liveview_tap.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/liveview_tap.c",
+      "git_object": "8e0c2ebec10f4b63b0fac6055584989f7b358374",
+      "blob_sha256": "634e232185f4499f940fa6221f3087d539d9d6dcd825c695c382ff94e3d824c7",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/liveview_tap.c edge/psdk-tap/src/liveview_tap.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/main.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/main.c",
+      "git_object": "70ba1de78f10da3af6f45924456b0499c40013fe",
+      "blob_sha256": "ce21f445fb8024b246130220835f03fa4346bd74ea06714ae253ac723b0aaaed",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/main.c edge/psdk-tap/src/main.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/ndjson_writer.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/ndjson_writer.c",
+      "git_object": "ce9258ba3397b13a974f94363c8b994313f73207",
+      "blob_sha256": "077530e2893297f9f09492ecfc5f20bac5c7f6ef4db741680f8a052983cf5782",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/ndjson_writer.c edge/psdk-tap/src/ndjson_writer.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/pairing.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/pairing.c",
+      "git_object": "4719ea64a8233a077266e055aca87f1d5f6064e8",
+      "blob_sha256": "7fc4edc6139bc9b05b3df4ef395ed164bc31f24fdda5a49bf844d2da69a2a3b9",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/pairing.c edge/psdk-tap/src/pairing.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/perception_tap.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/perception_tap.c",
+      "git_object": "9d642f60b023324838fa40a3fafb9a1086379b9a",
+      "blob_sha256": "819f7852c3f48d8206b4300a7478ff3b2c9ca46ddaa955fc87985c9bdbea3a61",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/perception_tap.c edge/psdk-tap/src/perception_tap.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/logger_console_glue.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/logger_console_glue.c",
+      "git_object": "3afaac9f2df4727a8f499820e63891ba527c967e",
+      "blob_sha256": "56f2945a7f0d6f651aafaa71ac32db632d65021125a32e2a602210c2ddc4c9a8",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/logger_console_glue.c edge/psdk-tap/src/platform/logger_console_glue.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/logger_console_glue.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/logger_console_glue.h",
+      "git_object": "010a33d4cacac9f2a6c4789bae324394de20f2aa",
+      "blob_sha256": "ad60b36f6454a9acd3861c70e6d159b86c19c445c97883965513a65c61010184",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/logger_console_glue.h edge/psdk-tap/src/platform/logger_console_glue.h"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/osal_glue.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/osal_glue.c",
+      "git_object": "5eda80916655e925829c5baefa5a930ad502b4fe",
+      "blob_sha256": "a662e44a4981155f33e5dc2f2c8f370c0bf108115fb42424473c781b35bb4db7",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/osal_glue.c edge/psdk-tap/src/platform/osal_glue.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/osal_glue.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/osal_glue.h",
+      "git_object": "cef5645280bef13ed77661fdf5b1c37b412631e2",
+      "blob_sha256": "3ffc3ccb27ae958f3fb7a2748aa3a5abe65ea18b317ff7e45274e9cd98144433",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/osal_glue.h edge/psdk-tap/src/platform/osal_glue.h"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/socket_glue.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/socket_glue.c",
+      "git_object": "352af8a5c054a3fa4e366f9f6cccd19c219e5670",
+      "blob_sha256": "11544c928d33ab28385a2696fdbe0e7349093b7e70f96dbcb1a3bdb66e1c94cb",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/socket_glue.c edge/psdk-tap/src/platform/socket_glue.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/socket_glue.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/socket_glue.h",
+      "git_object": "9405a90e0c1d82165d1b7f52c1711bd42eef0583",
+      "blob_sha256": "8f388db0582f2d2fd83d6f94382dbb45931e8eed068313da2a0c1fb8366299d9",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/socket_glue.h edge/psdk-tap/src/platform/socket_glue.h"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/usb_bulk_glue.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/usb_bulk_glue.c",
+      "git_object": "aad735182bea5d0588c4ee78d10814703e003802",
+      "blob_sha256": "61bb7d5dada66a3608deca4def68ae9c58c61697e379f0ed228032bbf87ec65a",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/usb_bulk_glue.c edge/psdk-tap/src/platform/usb_bulk_glue.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/platform/usb_bulk_glue.h",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/platform/usb_bulk_glue.h",
+      "git_object": "3a2276e3174a57b85d2cd5f1194e9572be5ee97a",
+      "blob_sha256": "dbb9159cabdda8799ae93e1174b4054bcf8c58361424a87f4217c9275bb203b9",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/platform/usb_bulk_glue.h edge/psdk-tap/src/platform/usb_bulk_glue.h"
+    },
+    {
+      "path": "edge/psdk-tap/src/shared_state.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/shared_state.c",
+      "git_object": "9ad43b94b20eac33e189e9faa7808b09349dfe11",
+      "blob_sha256": "032a14071a6fbb765ac9a3d56c50da3ff48a17c69281232e7c3e16d73e95a982",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/shared_state.c edge/psdk-tap/src/shared_state.c"
+    },
+    {
+      "path": "edge/psdk-tap/src/telemetry_tap.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/src/telemetry_tap.c",
+      "git_object": "aa69114ce484dae88940f7f292f76c6186d57d3b",
+      "blob_sha256": "51241a389a37b104d9037146eeae53854ea01f4eaed0a2ec95d251f2a7cc06ec",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/src/telemetry_tap.c edge/psdk-tap/src/telemetry_tap.c"
+    },
+    {
+      "path": "edge/psdk-tap/tests/ndjson_writer_tests.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/tests/ndjson_writer_tests.c",
+      "git_object": "946c2a2c05cb26e98f4007cb1ff317604d4e4480",
+      "blob_sha256": "82116d5d26c37d6a641aa7758f4ad7a4ed7ca5ed6552fd5b93a0ebfb0e893ac9",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/tests/ndjson_writer_tests.c edge/psdk-tap/tests/ndjson_writer_tests.c"
+    },
+    {
+      "path": "edge/psdk-tap/tests/pairing_tests.c",
+      "destination": "archive/acquisition-2026/edge/psdk-tap/tests/pairing_tests.c",
+      "git_object": "1a3db24617fa68706b4e77894ff1b4b4d062e15a",
+      "blob_sha256": "3ae758279ab44f28612a61ec69311af92da74844d035d009f763e51918f17959",
+      "inverse": "git mv archive/acquisition-2026/edge/psdk-tap/tests/pairing_tests.c edge/psdk-tap/tests/pairing_tests.c"
+    },
+    {
+      "path": "edge/third_party/PSDK_LOCK.yaml",
+      "destination": "archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml",
+      "git_object": "91c44085c640149d148f6e613b6c01926c9bd243",
+      "blob_sha256": "9c900d4330a7ca4410219619fe3b31f4bbd0ee1413bf2830d1c119313952ff59",
+      "inverse": "git mv archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml edge/third_party/PSDK_LOCK.yaml"
+    },
+    {
+      "path": "packages/equipment-intelligence/pyproject.toml",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/pyproject.toml",
+      "git_object": "c0c1e0af0ce56fc43326535ccb9aa05a6a5acc0a",
+      "blob_sha256": "201fefdaeaea6bf5e29116c8a6aecfe264aa8b776793f2fed0e06bd470396a16",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/pyproject.toml packages/equipment-intelligence/pyproject.toml"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/__init__.py",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/__init__.py",
+      "git_object": "f2c3f7376bc6692014aef164547646fc66178cda",
+      "blob_sha256": "30a35150c731c0e1d6ad4f27cc0b2e47907ef40d5fa18956adffc86e10f8f51a",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/__init__.py packages/equipment-intelligence/src/ksi_equipment_intelligence/__init__.py"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/cpa_ttc.py",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/cpa_ttc.py",
+      "git_object": "2b5cd718d56d71f360ce8d6238c94656b9da784f",
+      "blob_sha256": "3491aa488bdef7361ca6e82b0ed54b6ecd239a89d694c3ebd765e732f2e86358",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/cpa_ttc.py packages/equipment-intelligence/src/ksi_equipment_intelligence/cpa_ttc.py"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/kinematic_state.py",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/kinematic_state.py",
+      "git_object": "b7e796549eeaffce536fcfa12cf0af1f0fd20072",
+      "blob_sha256": "88ebf6ccb505cf8fbd49e8003812aae19b4fce631d164ed5c3103b223abf577a",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/kinematic_state.py packages/equipment-intelligence/src/ksi_equipment_intelligence/kinematic_state.py"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/py.typed",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/py.typed",
+      "git_object": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/py.typed packages/equipment-intelligence/src/ksi_equipment_intelligence/py.typed"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/reobservation_signal.py",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/reobservation_signal.py",
+      "git_object": "6235249aa44f093da4db25c939654f12eaab5106",
+      "blob_sha256": "6016b0a6a4877db2f1a1878bf3c3fc1b8a06b63270b61fb5ed00eb43d9946185",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/reobservation_signal.py packages/equipment-intelligence/src/ksi_equipment_intelligence/reobservation_signal.py"
+    },
+    {
+      "path": "packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py",
+      "destination": "archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py",
+      "git_object": "88b66a7eb760543add19f134c4701b16ed7460ce",
+      "blob_sha256": "f285dd5168c00c65212b93eb1d4da78c958a021210da3917e6592d4293ddf9c4",
+      "inverse": "git mv archive/acquisition-2026/packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py packages/equipment-intelligence/src/ksi_equipment_intelligence/risk_field.py"
+    },
+    {
+      "path": "packages/mission-contracts/README.md",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/README.md",
+      "git_object": "85ffb641c44b77a0eee21021a18ffd7b9ec0ad7d",
+      "blob_sha256": "b45b8306ed09c1f002fe8a1ba7ed9c7ca2a15722254074ca8362e2d0c3f11043",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/README.md packages/mission-contracts/README.md"
+    },
+    {
+      "path": "packages/mission-contracts/pyproject.toml",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/pyproject.toml",
+      "git_object": "003d87aea0e493a2b988873c5462126fd998ef58",
+      "blob_sha256": "ea88b129be31154aac25941a62bb3ac48a72f8c24e48c751e4c7e1d107d30c54",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/pyproject.toml packages/mission-contracts/pyproject.toml"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/__init__.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/__init__.py",
+      "git_object": "59c574d674035225d071ffcbdd8e7c410a0a54d0",
+      "blob_sha256": "6d88d60df9d1ecb0170ac37de6e9df5c76e6bec67441588f90216eba55f3b62e",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/__init__.py packages/mission-contracts/src/ksi_mission_contracts/__init__.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/action_intent.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/action_intent.py",
+      "git_object": "8071a739f75259c8f6b8ebdab8024e48988211b4",
+      "blob_sha256": "c18c3c46a33705fc92f55fff05e333532c0d45259e60cabfb72e7b7c5dc2968c",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/action_intent.py packages/mission-contracts/src/ksi_mission_contracts/action_intent.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/consumer.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/consumer.py",
+      "git_object": "72ec502f57895b029dbc41c43a753474ce5d531e",
+      "blob_sha256": "9bfd1b6ec5fbb568e8b1900307c84f9b941d8aa1dc5df2b573f8dd5694a3f756",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/consumer.py packages/mission-contracts/src/ksi_mission_contracts/consumer.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/dispatch.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/dispatch.py",
+      "git_object": "b06b32bdd817dffda1c6a5de13aac8e06cef8f03",
+      "blob_sha256": "b326e63d7d1adab73a2c4aaeb397933e42187de59c6e4392428a39342680ec94",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/dispatch.py packages/mission-contracts/src/ksi_mission_contracts/dispatch.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/edge_activation.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/edge_activation.py",
+      "git_object": "97959d2b1e57bda656db57c219fa8db0d9ce4e77",
+      "blob_sha256": "5676974ec8a55f2529af7e6a84e67a0431dcef7348f71472d84221019aab82d2",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/edge_activation.py packages/mission-contracts/src/ksi_mission_contracts/edge_activation.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/edge_dispatch_sync.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/edge_dispatch_sync.py",
+      "git_object": "0e29127fb953103f791746a10fe46270314f4a4a",
+      "blob_sha256": "d1316d6da93468381daf678b9fb1c8f40dcc3ed6001ba8b8198981757b95c5d1",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/edge_dispatch_sync.py packages/mission-contracts/src/ksi_mission_contracts/edge_dispatch_sync.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/models.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/models.py",
+      "git_object": "c152900133f8b59d11625e6a61a7d17b5db57e92",
+      "blob_sha256": "5d34505d661a3e43d734339a6790882f4051fca917733489f9b62a4f8e335408",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/models.py packages/mission-contracts/src/ksi_mission_contracts/models.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/py.typed",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/py.typed",
+      "git_object": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/py.typed packages/mission-contracts/src/ksi_mission_contracts/py.typed"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/risk_policy.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/risk_policy.py",
+      "git_object": "c40d8dcf293fdf582ad36fa942d4547d6c9839f2",
+      "blob_sha256": "7c9a09a3ce6bd3355811e86c04b3b92d7a9a8bb8f96d9847ffe760215fa87456",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/risk_policy.py packages/mission-contracts/src/ksi_mission_contracts/risk_policy.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/runtime_profile.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/runtime_profile.py",
+      "git_object": "c5d0bf117e32364da53509b4efc3576acdb0f2ed",
+      "blob_sha256": "af6a60fe3c5c36e6498658d64dea7042cbd2e86d21f709cb649b90c2cdc37655",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/runtime_profile.py packages/mission-contracts/src/ksi_mission_contracts/runtime_profile.py"
+    },
+    {
+      "path": "packages/mission-contracts/src/ksi_mission_contracts/signing.py",
+      "destination": "archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/signing.py",
+      "git_object": "f753598c316f234845946d4569242d3cf440ae2a",
+      "blob_sha256": "0b1c49d9f1e83a6864a0ab2c35338ced70989f5371eee3eebfbace864741f87c",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-contracts/src/ksi_mission_contracts/signing.py packages/mission-contracts/src/ksi_mission_contracts/signing.py"
+    },
+    {
+      "path": "packages/mission-planning/pyproject.toml",
+      "destination": "archive/acquisition-2026/packages/mission-planning/pyproject.toml",
+      "git_object": "a3fb21349ed41129ae2cde287144fa8e97a29698",
+      "blob_sha256": "2659c10d7702cf23cfa2365320e2905ea5e7bdcfa66653405ea0eb33b6568046",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/pyproject.toml packages/mission-planning/pyproject.toml"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/__init__.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/__init__.py",
+      "git_object": "d6fe1a4ca73e0eda22b4929b103945f7182c3a3d",
+      "blob_sha256": "007c372e05b41fc80e1a9393fd879de33192e89ede40f4fa43b22a5f8c9173ff",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/__init__.py packages/mission-planning/src/ksi_mission_planning/__init__.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/camera.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/camera.py",
+      "git_object": "d79fa0c81d56a5b2ba56a5235e1905b0a6a50ae2",
+      "blob_sha256": "6aadc7805be4771b4cacd2a105b033630020f7fc028e7613813bfe89ac847f8e",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/camera.py packages/mission-planning/src/ksi_mission_planning/camera.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/coverage.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/coverage.py",
+      "git_object": "674145c5fe2b22b208b7697201868acd2d7daf76",
+      "blob_sha256": "2b9cf7faeb080d2ef8b2ebf44cfa137a32df81e45ab9b7fb30e5caac22149304",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/coverage.py packages/mission-planning/src/ksi_mission_planning/coverage.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/geometry.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/geometry.py",
+      "git_object": "0fa3ecca50e4e1ec6be3edadb7860554d7a1571c",
+      "blob_sha256": "dab200680a760e7573ff9408e9438960d001c4540d53f0efda88fc74f1042298",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/geometry.py packages/mission-planning/src/ksi_mission_planning/geometry.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/py.typed",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/py.typed",
+      "git_object": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/py.typed packages/mission-planning/src/ksi_mission_planning/py.typed"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/reobservation.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/reobservation.py",
+      "git_object": "16343acda77d08d656c08597b0b5063677d27c0b",
+      "blob_sha256": "1d6800a1208be2adab2b7d78dbac7cbe474f56e2ac906a82186b0baebc587d58",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/reobservation.py packages/mission-planning/src/ksi_mission_planning/reobservation.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/terrain.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/terrain.py",
+      "git_object": "07010dc6a261dbc038b7daaa59b0bd8338b12bdc",
+      "blob_sha256": "f8b43dbb1319f84557758c9b728c6f4f48cf9a7735e482875b8fd3ad4dbae47f",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/terrain.py packages/mission-planning/src/ksi_mission_planning/terrain.py"
+    },
+    {
+      "path": "packages/mission-planning/src/ksi_mission_planning/wpml.py",
+      "destination": "archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/wpml.py",
+      "git_object": "a50f00e09870e3294ee80f244ad8aa3d8f77cee4",
+      "blob_sha256": "3c4368588128262845087518d4bee1d5c5a01a3720691efe16811304f19ec549",
+      "inverse": "git mv archive/acquisition-2026/packages/mission-planning/src/ksi_mission_planning/wpml.py packages/mission-planning/src/ksi_mission_planning/wpml.py"
+    },
+    {
+      "path": "packages/perception/pyproject.toml",
+      "destination": "archive/acquisition-2026/packages/perception/pyproject.toml",
+      "git_object": "e37d2a267cfeb72e773375e5ebf24cd779218d72",
+      "blob_sha256": "6ff0e8b238f1a12e33aad7772609b01cce655335bba2cf7737695073843bf8c0",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/pyproject.toml packages/perception/pyproject.toml"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/__init__.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/__init__.py",
+      "git_object": "77711363025937fec0046fb5ea46d5595696c5fd",
+      "blob_sha256": "41c166f2b0ea5991adbaf87c1d0f2a279a055d80fc0cf9bb75121648f0b5dffb",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/__init__.py packages/perception/src/ksi_perception/__init__.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/dfine.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/dfine.py",
+      "git_object": "a1d0d1c39d15bfa649da9fa16ee8efa165f4bd4d",
+      "blob_sha256": "a49e3078072bb81f94d0644dacc5b26ccdbd49b4de8c1ddd57c7bb12b8bff2e2",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/dfine.py packages/perception/src/ksi_perception/dfine.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/dynamic_object_mask.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/dynamic_object_mask.py",
+      "git_object": "52e29b8d63c8e3df4c7522b763d8f00efc7684ae",
+      "blob_sha256": "13bec237ab568428aa5391e45b5b0be007849e0b04e72f1065f7f43b7ab61ffd",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/dynamic_object_mask.py packages/perception/src/ksi_perception/dynamic_object_mask.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/live_view.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/live_view.py",
+      "git_object": "31f608319b4cc64039eb90c1b99e6bdb109d0284",
+      "blob_sha256": "f25b9f9eb6d1a24be9fcd1b20b0d3fd02c3dffa31b38489fd85e19df409d0a42",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/live_view.py packages/perception/src/ksi_perception/live_view.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/onnx_export.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_export.py",
+      "git_object": "1146aac3f2769319dd59c508efb753f1b93eaf00",
+      "blob_sha256": "a2cefafa112f83b6084e5cc76c9dba00e62a52a2968401a18a3731102b462e84",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_export.py packages/perception/src/ksi_perception/onnx_export.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/onnx_manifest.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_manifest.py",
+      "git_object": "703c4cc29b215207c8cab8265baf0028001aa752",
+      "blob_sha256": "c053d8466af072b4843c4b335445c39c11442d3cc7d1e496d86bcdbfa53eb551",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_manifest.py packages/perception/src/ksi_perception/onnx_manifest.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/onnx_runtime.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_runtime.py",
+      "git_object": "8ba128743e40a4c314e9289bb95def24091e2810",
+      "blob_sha256": "9163a456a4b3884a3fc0057630bba146854644243edf212551273832996d9f8b",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/onnx_runtime.py packages/perception/src/ksi_perception/onnx_runtime.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/pipeline.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/pipeline.py",
+      "git_object": "f046fdbbd464db71bdfbff57e3696d4366bf4ae9",
+      "blob_sha256": "e9ac399ad99340ea6363077e9d4fd4a859e10fb5fcd02405ec2abe741c1e6486",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/pipeline.py packages/perception/src/ksi_perception/pipeline.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/py.typed",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/py.typed",
+      "git_object": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/py.typed packages/perception/src/ksi_perception/py.typed"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/recorded.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/recorded.py",
+      "git_object": "ef18b93c68b514ee522d1cd5c91269a325b44022",
+      "blob_sha256": "6e1bff40ddc413ede50f2f746ba155b51e3400931f1eb026709859af1b362dbc",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/recorded.py packages/perception/src/ksi_perception/recorded.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/recorded_pipeline.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/recorded_pipeline.py",
+      "git_object": "20ce32aa565b0309ae3af62f82d199130feaa75f",
+      "blob_sha256": "5991c4ad48aaecb81493ea6349768c4317fd6d392346e3d625e5bf73cb9dab74",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/recorded_pipeline.py packages/perception/src/ksi_perception/recorded_pipeline.py"
+    },
+    {
+      "path": "packages/perception/src/ksi_perception/registry.py",
+      "destination": "archive/acquisition-2026/packages/perception/src/ksi_perception/registry.py",
+      "git_object": "5d617f96741f8e5fcc0d716b3ab5f32e2364d2f3",
+      "blob_sha256": "e763c9eb950d4ffe4e72b83bace45a19a3843b0db570e575c390cee5489da70f",
+      "inverse": "git mv archive/acquisition-2026/packages/perception/src/ksi_perception/registry.py packages/perception/src/ksi_perception/registry.py"
+    },
+    {
+      "path": "services/dji-gateway/README.md",
+      "destination": "archive/acquisition-2026/services/dji-gateway/README.md",
+      "git_object": "757608e4f15a13fedc24b6a0851fdd3996f779da",
+      "blob_sha256": "da20e76fc185935dec2881d0ee608ed7a69969ab507439e9b1d6ba5d5b790800",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/README.md services/dji-gateway/README.md"
+    },
+    {
+      "path": "services/dji-gateway/pyproject.toml",
+      "destination": "archive/acquisition-2026/services/dji-gateway/pyproject.toml",
+      "git_object": "544a04040f84b7a954efaf38615dcc0358098c4e",
+      "blob_sha256": "9c89435a5bef34ff772642141c24c600f3f40d182ba29c919c21c562658956c5",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/pyproject.toml services/dji-gateway/pyproject.toml"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/__init__.py",
+      "git_object": "9e1766f134a634721a6298d82b8b1a74bdaf6d09",
+      "blob_sha256": "f2556945fdbbfbdeca5c3dd9f6c4c70b0b99347540338390470a22b31a934e2f",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/__init__.py services/dji-gateway/src/ksi_dji_gateway/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/adapters/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/__init__.py",
+      "git_object": "3ef5dcadfd25d0d2c360aa019ff4a6d008786f5b",
+      "blob_sha256": "cce6504b894448d76278f8bf1f05bce6148ba4972a040e6340a94fe7b2b2cb52",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/__init__.py services/dji-gateway/src/ksi_dji_gateway/adapters/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/adapters/catalog.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/catalog.py",
+      "git_object": "d7e5aed327f7e060f7ca419a10b6b92e502665bd",
+      "blob_sha256": "cb3fb68cbfd921c8bb661274c9d0d8ffd8639f92fc5b5249b24678a9b79e12e5",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/catalog.py services/dji-gateway/src/ksi_dji_gateway/adapters/catalog.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/adapters/ports.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/ports.py",
+      "git_object": "851c2d03543534614d735473f9571b17c341db8b",
+      "blob_sha256": "7b969763213b82c6a794d51b460c43e848e49e529cffd745ec17c7f6422bc505",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/ports.py services/dji-gateway/src/ksi_dji_gateway/adapters/ports.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/adapters/transport.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/transport.py",
+      "git_object": "64be06e335b5764bba17325f9113ac9474660ed5",
+      "blob_sha256": "1d42311c92387bc076c4a9977be0c15469dd15f8f1d94e2448734326f5f7e7ee",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/adapters/transport.py services/dji-gateway/src/ksi_dji_gateway/adapters/transport.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/coordinator.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/coordinator.py",
+      "git_object": "dbb6e1a6e3f3501e5e3e24eec293bdfdd4eba61d",
+      "blob_sha256": "f8eb26adf016b6bccd66a5e38337d1714bfacf721e69cd799c9d0d88195aa2b6",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/coordinator.py services/dji-gateway/src/ksi_dji_gateway/coordinator.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/core_runtime.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/core_runtime.py",
+      "git_object": "d75f0404c449a72bf8490cf7e2f67f53d1b5aa49",
+      "blob_sha256": "f609104e308c455b281ee4835adb73b03bbd4db5c547eb84c6a4ad184c954998",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/core_runtime.py services/dji-gateway/src/ksi_dji_gateway/core_runtime.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/domain/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/__init__.py",
+      "git_object": "6632755dcecaa6f53d209c77b5ab96ff2146f8d4",
+      "blob_sha256": "59c074560e75a46c20c4236a5ff3eafa16b4e67015bcab2885da0c16cf217489",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/__init__.py services/dji-gateway/src/ksi_dji_gateway/domain/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/domain/capabilities.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/capabilities.py",
+      "git_object": "b7246bb43778a0e5e9f440dcad927a492b622ae1",
+      "blob_sha256": "acc9f4ea10fe917f1c4fb159f53403b20c90dddfe1dde3225727f52611b5abc5",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/capabilities.py services/dji-gateway/src/ksi_dji_gateway/domain/capabilities.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/domain/models.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/models.py",
+      "git_object": "1fcd2cc0e31077fd84a36027fb50c11e0264bf39",
+      "blob_sha256": "9e4dfe6bdf6f3a7e1755987626da4fa56922ab6fc569aedcb80c2e5a33d6a2ab",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/models.py services/dji-gateway/src/ksi_dji_gateway/domain/models.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/domain/validation.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/validation.py",
+      "git_object": "a3ae3594ce43d701e53110339d59f4afe36bf371",
+      "blob_sha256": "4e1c7fa4405d57d5992e7d7832f6817d57fc6cc6c9b81c3a2f108acf10ddbb18",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/domain/validation.py services/dji-gateway/src/ksi_dji_gateway/domain/validation.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/errors.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/errors.py",
+      "git_object": "44166700d9d0e3c49676463fb6655554075251ee",
+      "blob_sha256": "283f0b5a9d5ee95dc4c1060a59c42a4fafcbb075a6d9d624b361bd6a1b190a85",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/errors.py services/dji-gateway/src/ksi_dji_gateway/errors.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/gateway.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/gateway.py",
+      "git_object": "11d22b133191e6b9a2d9d845097096537f4d9dfe",
+      "blob_sha256": "98e8121e90248454f9b24d6c0cc65ba72897cff147a4894b85739c6434d79732",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/gateway.py services/dji-gateway/src/ksi_dji_gateway/gateway.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/open_platform_probe.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/open_platform_probe.py",
+      "git_object": "0e3a838cdb600c5645447a9a7b7db0e8acc13df2",
+      "blob_sha256": "ad58ed08c8e105d6d63cddb5ef1bb578f0a1fd984979d29b84a874a6c01bbab3",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/open_platform_probe.py services/dji-gateway/src/ksi_dji_gateway/open_platform_probe.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/persistence/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/persistence/__init__.py",
+      "git_object": "3878c6ade73cb13c5452e10bc29f7edab59c7997",
+      "blob_sha256": "75e9e3a25277f636de5b6fd571cfa1e6f037c1660ad518f8d3b0a33814b0b30e",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/persistence/__init__.py services/dji-gateway/src/ksi_dji_gateway/persistence/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/persistence/journal.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/persistence/journal.py",
+      "git_object": "f401d807814a284c20f4753a5dda9e342b6d337e",
+      "blob_sha256": "e96c51ce08be4a375240fa40e8d5194983738978a4cfac20564cbaf3dfe695ae",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/persistence/journal.py services/dji-gateway/src/ksi_dji_gateway/persistence/journal.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/ports/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/ports/__init__.py",
+      "git_object": "475606b661960f6e9fd6c1a821a2ea4cc8d6a730",
+      "blob_sha256": "114da4583dcfbd8f8cfaee1144680ab753e3366181ea4c9d73c9701f18dff7d3",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/ports/__init__.py services/dji-gateway/src/ksi_dji_gateway/ports/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/py.typed",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/py.typed",
+      "git_object": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "blob_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/py.typed services/dji-gateway/src/ksi_dji_gateway/py.typed"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/routing/__init__.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/routing/__init__.py",
+      "git_object": "a83a82f06f94918392b640d2a444a8a72c99057d",
+      "blob_sha256": "0b46f3387be22b7cdf6f018c0f81d455bb058a2fbfcce5f721f402ffb502969b",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/routing/__init__.py services/dji-gateway/src/ksi_dji_gateway/routing/__init__.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/routing/capability_router.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/routing/capability_router.py",
+      "git_object": "8c039445aa5ba3bbe7efe5743ab690abbe617803",
+      "blob_sha256": "f07d75ff3b4045638c6b5d634da5688f442ef2b3442f8eb428c1b2949d20aa78",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/routing/capability_router.py services/dji-gateway/src/ksi_dji_gateway/routing/capability_router.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/runner.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/runner.py",
+      "git_object": "1ac6cb2006176d0f01ab0eda936b08a027b6c91e",
+      "blob_sha256": "ffe3aa82a19b935b212588befa30901f6bcb27b98df8cb95368f96571f12ca78",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/runner.py services/dji-gateway/src/ksi_dji_gateway/runner.py"
+    },
+    {
+      "path": "services/dji-gateway/src/ksi_dji_gateway/runtime_observation.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/runtime_observation.py",
+      "git_object": "eb58cf705389b7071f8acfc2764d081085f1d328",
+      "blob_sha256": "77853f94db9f278afa92b49b73b72a5ca6cc3cafa593dca4703b139329c138b0",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/src/ksi_dji_gateway/runtime_observation.py services/dji-gateway/src/ksi_dji_gateway/runtime_observation.py"
+    },
+    {
+      "path": "services/dji-gateway/tests/test_candidate_adapters.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/tests/test_candidate_adapters.py",
+      "git_object": "1fce510a4c41a6b855b2da141ce220e96defb29b",
+      "blob_sha256": "78fe1ca1392fc4a3a8a461f20829376af657c94548b32840648d64289c865882",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/tests/test_candidate_adapters.py services/dji-gateway/tests/test_candidate_adapters.py"
+    },
+    {
+      "path": "services/dji-gateway/tests/test_gateway.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/tests/test_gateway.py",
+      "git_object": "00ecf34d276071f50004fd34d5c2faa88a0c3d73",
+      "blob_sha256": "c08663c1f3d5a9db23bfa9923d978476d09de7d2e645afd472e82aa1fa4ca2d4",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/tests/test_gateway.py services/dji-gateway/tests/test_gateway.py"
+    },
+    {
+      "path": "services/dji-gateway/tests/test_open_platform_probe.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/tests/test_open_platform_probe.py",
+      "git_object": "fb03d3d5d9adcbc06b4c2b8bb47590b73204dd7f",
+      "blob_sha256": "72c98b826d8a74432f68b6d738bcd715a259cd200363602e602ab16739c1d863",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/tests/test_open_platform_probe.py services/dji-gateway/tests/test_open_platform_probe.py"
+    },
+    {
+      "path": "services/dji-gateway/tests/test_runtime_transport.py",
+      "destination": "archive/acquisition-2026/services/dji-gateway/tests/test_runtime_transport.py",
+      "git_object": "455281340de92b3884a235a406c4d8121202e6da",
+      "blob_sha256": "c7bbd8fe8b3720b6b2f82521b435d5941b017f1822105aa54f2c3e56c3bd81aa",
+      "inverse": "git mv archive/acquisition-2026/services/dji-gateway/tests/test_runtime_transport.py services/dji-gateway/tests/test_runtime_transport.py"
+    }
+  ]
+}
