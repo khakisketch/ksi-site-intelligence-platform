@@ -823,3 +823,13 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   narrowed). Scoped re-review: all findings ADDRESSED, no new breakage. Task6 commits end at
   `621dc91`; full suite5995passed/30skipped/0failed at`a5b3e95`. Next: Task7 whole-P3 review +
   independent runner closure.
+- Task7a whole-P3 review `ses_ee57c45e5ffe9QL9Es0NmWQOi9` COMPLETE (report final-p3-review.md):
+  SPEC-ALIGNED/APPROVED-WITH-FOLLOW-UPS, no Critical. I-1 (boundary scanner blind spot on the
+  archived-config read at `tests/contract/test_deploy_env_contract.py:165`) → fix `545f5a0`
+  (`test: make the archive-load exemption explicit`;1file,+33/−4, pinned exemption + exact-set pin
+  + truthful wording) → scoped re-review ADDRESSED, no new breakage. I-2 resolved: inventory
+  186→140 in`2e85391` (46 pruned; the T5 report's "44/142" was an arithmetic error) — report-only
+  correction, no code change. 7Minors backlog; residual triage: orphaned lanes→P5, Console→P4,
+  prose→backlog, venv/cache-limited lock→T7 environmental note.
+- Task7b independent runner `ses_ee57c45e3ffeek4zyRQXFQ6KRr` RUNNING (full suite in progress;
+  scratch `/tmp/opencode/physical-site-p3-final-verify/`); P3 close awaits its receipt.
