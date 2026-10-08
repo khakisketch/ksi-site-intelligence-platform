@@ -796,3 +796,10 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   `from ksi_core.events import EventStore` instead of explicit absence. Minors: mcp-identity
   retired-route absence assert; production-test identity narrowing; checker COMPOSITION_MODULES
   comment. Fix round1 dispatched on the same developer session; Task6 dispatch after adjudication.
+- Task5 COMPLETE (all review findings closed): fix round1 `3dc3541` (`test: enforce the archive
+  boundary and fail-closed retired params`;7files,+258/−33: HIL tool restored blob-identical +
+  separate fail-loud shim; committed archive AST+deny-hook gate with positive controls; 25+1
+  create_app retired-param guards proven firing; retention tools explicit absence) and fix round2
+  `2c5f380` (`fix: guard the retired capability projector param`;2lines). Scoped re-reviews: all
+  findings ADDRESSED, no new breakage. Final full suite **6692passed/113skipped/100warnings/exit0**.
+  Task5 commits:2e85391+997f3c1+3dc3541+2c5f380. Next Task6 base`2c5f380`.
