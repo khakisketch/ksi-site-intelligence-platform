@@ -9,12 +9,15 @@ tool-generated decision companion is not hand-edited):
   source-media, comparison, design-conformance, region-extraction,
   report-export, checkpoint-validation or spatial-model routes. Verified by
   the RED probe (route inventory + direct GETs all 404).
-* Restoring those reads through the REAL store constructors would drag an
-  acquisition import into the platform read path: ``ProcessingJobStore``
-  requires ``SourceMediaStore``, which requires ``MissionStore``, which
-  imports ``ksi_mission_contracts.signing`` at module level. No concrete
-  active consumer needs the managed routes (no platform route or store
-  consumes ``ProcessingJobStore``), so no read-only wiring is added.
+* Restoring those reads is declined for the end-state reason: the managed
+  job/artifact routes would require the transitional managed/mission domain
+  chain (``MissionStore`` and related modules — among the Core import files
+  Task 5 moves to archive), so wiring them now would create new active
+  consumers of soon-archived modules. No concrete active consumer needs them
+  (no platform route or store consumes ``ProcessingJobStore``). The managed
+  store modules themselves import no ``ksi_mission*`` package at runtime
+  today (proven by ``test_managed_store_chain_pulls_no_mission_package``) —
+  the blocker is the archive end state, not a current import edge.
 * What remains readable on the platform profile, pinned below:
   1. managed work-order rows via the observation-work-order GET/list
      (``ObservationWorkOrderStore`` imports no acquisition package);
@@ -46,6 +49,7 @@ from ksi_core.auth import (
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
+from ksi_core.foundation.api_base import iso_utc
 from ksi_core.mission_records import MissionRecord, MissionStore
 from ksi_core.processing_jobs import (
     ArtifactSpec,
@@ -319,7 +323,14 @@ def test_site_detail_stays_honest_without_reconstruction_ledger(tmp_path: Path) 
 def test_managed_work_order_rows_stay_readable_with_tenant_isolation(
     tmp_path: Path,
 ) -> None:
-    """Retained managed rows keep exact bytes on the platform list/read path."""
+    """Retained managed rows keep exact bytes on the platform list/read path.
+
+    Scope: the readable HTTP body carries the row's identifier/lineage bytes
+    (ids, version, timestamps, actor, lineage lists). Byte-grant bindings
+    (artifact digests) have no HTTP surface for managed rows on this profile —
+    they are pinned at journal level in
+    ``test_retained_managed_journals_replay_byte_identical``.
+    """
     opened: list[Any] = []
     app = _assemble(tmp_path, opened)
     try:
@@ -332,9 +343,27 @@ def test_managed_work_order_rows_stay_readable_with_tenant_isolation(
             assert detail.status_code == 200, detail.text
             body = detail.json()
             assert body["workOrderId"] == managed_id
-            assert body["name"] == "Retained managed row"
+            assert body["workOrderId"] == "obs-work-00000001"
+            assert body["schemaVersion"] == "1.0"
+            assert body["organizationId"] == "org-a"
             assert body["siteId"] == "site-a"
+            assert body["purpose"] == "PROGRESS_QUANTITY"
+            assert body["name"] == "Retained managed row"
+            assert body["workAreaIds"] == [area_id]
+            assert body["scheduleId"] is None
+            assert body["temporalPolicy"] is None
             assert body["executionMode"] == "MANAGED_ACQUISITION"
+            assert body["cycleNumber"] == 1
+            assert body["status"] == "AWAITING_APPROVAL"
+            assert body["missionIds"] == []
+            assert body["processingJobIds"] == []
+            assert body["reportRefs"] == []
+            assert body["version"] == 1
+            assert body["createdAt"] == iso_utc(_NOW)
+            assert body["updatedAt"] == iso_utc(_NOW)
+            assert body["createdBy"] == "fixture"
+            assert body["approvedAt"] is None
+            assert body["approvedBy"] is None
             listed = client.get(
                 "/v1/sites/site-a/observation-work-orders", headers=_headers(_TOKEN_A)
             )
@@ -344,6 +373,31 @@ def test_managed_work_order_rows_stay_readable_with_tenant_isolation(
                 f"/v1/observation-work-orders/{managed_id}", headers=_headers(_TOKEN_B)
             )
             assert foreign.status_code == 404, foreign.text
+    finally:
+        for item in opened:
+            item.close()
+
+
+def test_managed_row_operations_stay_closed_on_platform_profile(
+    tmp_path: Path,
+) -> None:
+    """Existing routes over retained managed records behave: no 500s, exact gates.
+
+    The managed row stays readable (200, pinned above) but the operations
+    surface rejects it with the established ``409 EXTERNAL_OPERATIONS_ONLY``.
+    """
+    opened: list[Any] = []
+    app = _assemble(tmp_path, opened)
+    try:
+        area_id = _seed_site_and_area(app)
+        managed_id = _seed_managed_row(app, area_id)
+        with TestClient(app) as client:
+            operations = client.get(
+                f"/v1/observation-work-orders/{managed_id}/operations",
+                headers=_headers(_TOKEN_A),
+            )
+            assert operations.status_code == 409, operations.text
+            assert operations.json()["detail"] == "EXTERNAL_OPERATIONS_ONLY"
     finally:
         for item in opened:
             item.close()
@@ -533,6 +587,34 @@ def test_retained_managed_journals_replay_byte_identical(tmp_path: Path) -> None
             handle.close()
 
 
+def test_managed_store_chain_pulls_no_mission_package() -> None:
+    """Current runtime fact: the managed store chain imports no ``ksi_mission*``.
+
+    ``source_media``'s ``MissionStore`` import is ``TYPE_CHECKING``-only and
+    ``processing_jobs`` builds on ``ksi_domain.signed_payload`` — so importing
+    the chain (plus the platform site/work-order readers) must leave zero
+    ``ksi_mission*`` modules behind. A subprocess keeps the parent's own
+    ``SiteFrame`` import from polluting the observation.
+    """
+    script = dedent(
+        """
+        import sys
+
+        import ksi_core.domains.artifacts.source_media  # noqa: F401
+        import ksi_core.domains.processing.processing_jobs  # noqa: F401
+        import ksi_core.domains.sites.observation_work_orders  # noqa: F401
+        import ksi_core.domains.sites.sites  # noqa: F401
+        import ksi_core.processing_jobs  # noqa: F401
+        import ksi_core.source_media  # noqa: F401
+
+        leaked = sorted(m for m in sys.modules if m.startswith("ksi_mission"))
+        assert leaked == [], leaked
+        """
+    )
+    completed = _run_python(script)
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
 def _run_python(script: str) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     existing = environment.get("PYTHONPATH")
@@ -553,12 +635,22 @@ def _run_python(script: str) -> subprocess.CompletedProcess[str]:
 def _blocker_prelude(denied: tuple[str, ...]) -> str:
     return dedent(
         """
+            import importlib.util
             import sys
 
             _DENIED_PREFIXES = %r
 
+            # Sanity first: the control module is installed, so blocking it
+            # below proves the hook fires (not that the package is missing).
+            assert (
+                importlib.util.find_spec("ksi_mission_contracts") is not None
+            ), "ksi_mission_contracts must be installed for this probe"
+
             class _DenyPrefixes:
-                def find_module(self, name, path=None):
+                # Python 3.12 no longer calls find_module — find_spec is the
+                # supported blocker entry point. Raising here fails the import
+                # loudly instead of silently skipping the module.
+                def find_spec(self, name, path=None, target=None):
                     if name in _DENIED_PREFIXES or any(
                         name.startswith(prefix + ".") for prefix in _DENIED_PREFIXES
                     ):
@@ -570,6 +662,13 @@ def _blocker_prelude(denied: tuple[str, ...]) -> str:
                 assert _module not in _DENIED_PREFIXES and not any(
                     _module.startswith(prefix + ".") for prefix in _DENIED_PREFIXES
                 ), _module
+            # Positive control: the hook must actually fire.
+            try:
+                import ksi_mission_contracts  # noqa: F401
+            except ImportError as exc:
+                assert "platform isolation probe denies" in str(exc), exc
+            else:
+                raise AssertionError("deny-hook did not block ksi_mission_contracts")
             """
     ) % (denied,)
 
