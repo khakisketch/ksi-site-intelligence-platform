@@ -33,15 +33,24 @@ from ksi_processing_controller.comparison_worker import (
     run_comparison_request,
 )
 from ksi_processing_controller.core_client import (
+    ArtifactSubmission,
+    ArtifactUploadTarget,
     ComparisonInput,
     CoreClientError,
+    JobInput,
+    LeaseHandle,
+    MeasuredImage,
     PendingComparisonRequest,
+    PendingJob,
 )
 from pyproj import CRS
 from rasterio.transform import from_origin
 
-# test_worker.py 와 같은 관용구(모듈 docstring 3항) — FakeCoreClient 를 그대로 확장한다.
-from test_worker import FakeCoreClient
+# P3 Task 3: ``test_worker.py`` moved to ``archive/acquisition-2026/`` with the
+# managed reconstruction set, so this platform test no longer borrows its
+# ``FakeCoreClient``. The comparison lane only ever used the inherited
+# ``calls`` journal — it is declared locally instead of duplicating the
+# managed fake.
 
 _ORIGIN_X = 200_000.0
 _ORIGIN_Y = 550_000.0
@@ -102,9 +111,10 @@ def _storage_transport(files: dict[str, Path]) -> httpx.MockTransport:
 
 
 @dataclass
-class FakeComparisonCoreClient(FakeCoreClient):
-    """``FakeCoreClient`` + 비교 요청 표면 — worker.py 시험의 확장 관용구를 따른다."""
+class FakeComparisonCoreClient:
+    """비교 요청 표면 가짜 Core — 호출 순서를 ``calls`` 에 그대로 기록한다."""
 
+    calls: list = field(default_factory=list)
     comparison_input: ComparisonInput | None = None
     comparison_status: str = "QUEUED"
     lease_conflict: bool = False
@@ -118,10 +128,48 @@ class FakeComparisonCoreClient(FakeCoreClient):
     )
     volume_change_reports: list[tuple[str, VolumeChangeReport]] = field(default_factory=list)
 
+    # ── CoreClient protocol conformance ──
+    # 비교 흐름은 아래 managed 재구성 표면을 호출하지 않는다(실측상 0건) —
+    # ``test_worker.py`` 가 archive 로 분리된 뒤에도 이 fake 가 공유
+    # ``CoreClient`` 프로토콜을 만족하도록 자리만 둔다. 호출되면 테스트 버그이므로
+    # 크게 실패한다.
+    def list_pending(self, *, limit: int = 50) -> list[PendingJob]:
+        del limit
+        raise NotImplementedError("comparison flow never lists reconstruction jobs")
+
+    def acquire_lease(self, job_id: str) -> LeaseHandle | None:
+        raise NotImplementedError(f"comparison flow never leases a job: {job_id}")
+
+    def get_input(self, job_id: str) -> JobInput:
+        raise NotImplementedError(f"comparison flow never reads a job input: {job_id}")
+
+    def transition(self, job_id: str, target: str, *, detail: str | None = None) -> None:
+        raise NotImplementedError(f"comparison flow never transitions a job: {job_id}")
+
+    def verify_source_media(self, job_id: str, measurements: list[MeasuredImage]) -> None:
+        del job_id, measurements
+        raise NotImplementedError("comparison flow never verifies source media")
+
+    def presign_artifact_upload(
+        self,
+        job_id: str,
+        *,
+        artifact_id: str,
+        content_type: str,
+        filename: str | None = None,
+        sha256: str | None = None,
+        size_bytes: int | None = None,
+    ) -> ArtifactUploadTarget:
+        del job_id, artifact_id, content_type, filename, sha256, size_bytes
+        raise NotImplementedError("comparison flow never presigns artifact upload")
+
+    def register_artifact(self, job_id: str, submission: ArtifactSubmission) -> None:
+        del job_id, submission
+        raise NotImplementedError("comparison flow never registers artifacts")
+
     def list_pending_comparisons(self, *, limit: int = 50) -> list[PendingComparisonRequest]:
         """이 파일의 시험 대상은 ``run_comparison_request(request_id, ...)`` 직접
-        호출이라 대기 목록을 쓰지 않는다(``FakeCoreClient.list_pending`` 과 동일
-        관용구 — 대기 목록 자체를 시험하는 것은 test_runner.py 의 몫)."""
+        호출이라 대기 목록을 쓰지 않는다 — 대기 목록 자체를 시험하지 않는다."""
         del limit
         return []
 

@@ -146,3 +146,51 @@ containment, immutable-provider/Terra compatibility, quantitative accuracy, cust
 acceptance or release readiness. Core HTTP phase timeouts and bounded filesystem reads
 do not prove a hard deadline for arbitrary blocked host I/O. Guarded public downloads
 and operational retention cleanup are separate Core delivery responsibilities.
+
+## Platform/managed split (P3 Task 3)
+
+This package now carries only the platform lanes. The managed reconstruction
+set — its modules, its tests, the `ksi-processing-worker` daemon entrypoint,
+`Dockerfile.worker`, and the `worker` service in `deploy/compose.yaml` —
+moved with unchanged blobs to `archive/acquisition-2026/<original path>`
+(record: `.superpowers/sdd/2026-10-08-acquisition-separation-and-archive/task-3-report.md`).
+The archive is move-only, never a runtime import path.
+
+Surviving entrypoints (names and behavior unchanged):
+`ksi-external-inspector-daemon`, `ksi-external-inspector-entrypoint`,
+`ksi-external-measurement-entrypoint`, `ksi-external-measurement-daemon`,
+`ksi-external-validation-worker`, `ksi-external-analysis-worker`,
+`ksi-spatial-data-worker`.
+
+Shared lane modules kept per import evidence (no managed-only consumer, no
+managed import): `comparison_worker`, `design_conformance_worker`,
+`design_surface_verifier`, `region_extraction_worker`, `checkpoint_validator`
+(the last is imported by the platform `external_measurement_algorithms` lane),
+`workspace`, `capture_time` (imported by the kept `core_client`),
+`landxml` (imported by the kept `design_surface_verifier`), `core_client`,
+`observability`, plus every `external_*`/`spatial_data_*` module.
+
+Classification summary (full evidence table in the task report):
+
+| Module | Decision | Decisive evidence |
+|---|---|---|
+| `runner` | MOVE | No src consumer; entrypoint `ksi-processing-worker` + `Dockerfile.worker` CMD |
+| `worker` | MOVE | Only consumer is `runner`; managed tests only |
+| `odm`, `odm_assets`, `http_node_odm`, `odm_masking` | MOVE | Only consumers are `runner`/`worker` (plus each other); managed tests only |
+| `measure` | MOVE | Only consumer is `worker` ("워커가 ... 유일한 지점" per docstring) |
+| `gsd` | MOVE | Only consumer is `worker`; itself imports managed `odm_assets` |
+| `comparison_worker`, `design_conformance_worker`, `design_surface_verifier`, `region_extraction_worker` | KEEP | Imported by kept lanes/tests; import no managed module (ambiguous stays) |
+| `checkpoint_validator` | KEEP | Imported by platform `external_measurement_algorithms` |
+| `workspace`, `capture_time`, `landxml`, `core_client`, `observability` | KEEP | Imported by kept lanes (`core_client`←4 lanes, `workspace`←5 lanes) |
+
+Dependency consequence: `ksi-perception` dropped (its only importers,
+`runner.py` and `odm_masking.py`, moved). `laspy` stays: the surviving
+comparison-lane tests use it directly for LAZ I/O. Everything else the
+surviving lanes import (`rasterio`, `pillow`, `cryptography`, `httpx`,
+`numpy`, `pyproj`, `ksi-change-detection`, `ksi-domain`, `ksi-geo-spatial`,
+`ksi-event-contracts`) is kept with unchanged versions.
+
+Boundary: `tests/contract/test_acquisition_archive_boundary.py` proves in a
+fresh process that the surviving lanes import no managed module and no
+acquisition package, and that `[project.scripts]` still registers exactly the
+seven platform entrypoints.

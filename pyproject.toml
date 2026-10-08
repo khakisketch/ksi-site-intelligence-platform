@@ -113,7 +113,7 @@ line-length = 100
 # 대상에서 통째로 빠져 있던 것을 2026-08-04 감사에서 실측 확인(명시 경로 지정 시에만
 # 검사돼 "All checks passed"가 검사 미수행을 가렸다 — 이 저장소가 경계하는 조용한 no-op).
 # 선행 슬래시("/edge")는 절대경로로 해석돼 제외가 아예 풀리므로 쓰지 않는다(실측).
-extend-exclude = ["references/**", "edge/**", "apps/**", "packages/defect-detection/src/ksi_defect_detection/_vendor/**"]
+extend-exclude = ["references/**", "edge/**", "apps/**", "archive/**", "packages/defect-detection/src/ksi_defect_detection/_vendor/**"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]

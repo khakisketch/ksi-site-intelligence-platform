@@ -15,7 +15,6 @@ _ROOT = Path(__file__).resolve().parents[2]
 _TOOL = _ROOT / "tools" / "check_runtime_image_pins.py"
 _SUPPLY_CHAIN_FILES = (
     Path("Dockerfile"),
-    Path("Dockerfile.worker"),
     Path("Dockerfile.external-inspector"),
     Path("Dockerfile.external-inspector.dockerignore"),
     Path("Dockerfile.external-measurement"),

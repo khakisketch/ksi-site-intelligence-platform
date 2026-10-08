@@ -7,13 +7,14 @@
 |---|---|---|
 | 사람용 앱 | `apps/` | Dashboard, Field Web, 운영 승인 |
 | 서버 런타임 | `services/` | Core, Processing, DJI integration gateway |
-| 배포 조립 | `deploy/` | 환경변수, 영속 볼륨, Core/worker/스토리지 조립 |
+| 배포 조립 | `deploy/` | 환경변수, 영속 볼륨, Core/스토리지 조립 |
 
 공통 wire 계약과 라이브러리는 `contracts/`·`packages/`, 현장 장비 런타임은
 `edge/`에 남는다. 따라서 KSI Cloud 기능을 추가할 때도 소스를 `cloud/` 아래로
 복제하거나 이동하지 않는다.
 
-`compose.yaml`은 Core·Processing Worker·MinIO·NodeODM 로컬 최소 조합이다. 외부 VM
+`compose.yaml`은 Core·MinIO·NodeODM 로컬 최소 조합이다. (P3 Task 3: managed
+Processing Worker 서비스는 `archive/acquisition-2026/` 으로 분리됐다.) 외부 VM
 준비에는 additive `compose.vm.yaml`을 함께 사용해 Dashboard production image와 Caddy TLS
 ingress를 더한다. DJI Gateway는 RC 기본형 HIL에서 실제 adapter가 선택된 뒤에만
 runner/Dockerfile/service를 추가한다. HIL 전 빈 Gateway 컨테이너나 가짜 장비 상태는

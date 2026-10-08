@@ -20,7 +20,13 @@ from pathlib import Path
 
 _REQUIRED_BASELINE_FILES = (
     Path("Dockerfile"),
-    Path("Dockerfile.worker"),
+    # P3 Task 3 retired the managed reconstruction worker image — its
+    # Dockerfile moved blob-identical to
+    # ``archive/acquisition-2026/Dockerfile.worker`` (historical binding kept
+    # there; nothing builds it: no compose service, no CI image job). A retired
+    # image leaves this baseline explicitly by removal here, never by silent
+    # absence — re-adding a live ``Dockerfile.worker`` without restoring this
+    # entry fails the gate below as an undiscovered ``Dockerfile*`` input.
     Path("Dockerfile.external-inspector"),
     Path("Dockerfile.external-inspector.dockerignore"),
     Path("Dockerfile.external-measurement"),

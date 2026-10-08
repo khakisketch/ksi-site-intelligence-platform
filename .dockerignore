@@ -16,6 +16,10 @@
 # 않는다"와 대칭으로, 애초에 이미지에 넣을 이유가 없다(45M).
 references/
 
+# P3 acquisition archive — move-only historical record, never a runtime import
+# path or image input (Task 3 moves managed reconstruction here blob-identical).
+archive/
+
 # Manifold / PSDK 네이티브 개발 트리 — 서버 workspace 와 분리 운용(edge 는
 # 별도 pyproject, 대표자 반영사항 1). third_party 실물만 493M.
 edge/
