@@ -25,6 +25,12 @@ reprioritize or replace the Current slice, EXT-VAL/customer acceptance or histor
 failure adjudicated by a pre-P2 control; broad mypy109/14 pre-existing open). The
 [worker/archive successor](plans/2026-10-08-acquisition-separation-and-archive.md) is a written
 proposal awaiting review, not execution authority. No slice/acceptance/milestone change.
+2026-10-08 P3 acquisition separation / worker split / source archive technical closure is recorded
+in the same ledger: 194+57 blob-identical moves with inverse records (archive/acquisition-2026),
+Core/worker acquisition deps dropped, platform imports zero acquisition code (committed boundary
+gates), CI historical route (dispatch-only), lock162→157, full suite5996passed/0failed, whole-P3
+review + independent runner receipt green. P4 Console (design-owned) and P5 whole verification
+remain; real customer/operational acceptance stays external. No slice/acceptance/milestone change.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.
