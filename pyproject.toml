@@ -47,11 +47,12 @@ mmcv = ["setuptools<81"]
 [tool.uv.sources]
 torch = { index = "pytorch-cpu" }
 torchvision = { index = "pytorch-cpu" }
-ksi-perception = { workspace = true }
+# P3 Task 6: ksi-perception / ksi-equipment-intelligence workspace sources
+# removed with the archived members (never silent: uv lock --offline refresh
+# drops them from the lock; absence re-verified by uv lock --check --offline).
 ksi-processing-controller = { workspace = true }
 ksi-change-detection = { workspace = true }
 ksi-bim-integration = { workspace = true }
-ksi-equipment-intelligence = { workspace = true }
 ksi-defect-detection = { workspace = true }
 ksi-geo-spatial = { workspace = true }
 ksi-analysis-mcp = { workspace = true }
@@ -70,19 +71,16 @@ dev = [
     # apps/dashboard 로컬 개발 시 scripts/run_core_dev.py 가 실제 ASGI 서버를 띄우는 데만
     # 쓴다 — 프로덕션 조립·CI 게이트는 TestClient 만 사용.
     "uvicorn[standard]>=0.30",
-    # leaf workspace 멤버 — 아무 패키지도 의존하지 않아 기본 sync 에서 빠지므로 dev 로
-    # 명시한다(base 의존만 — torch 계열 [dfine] extra 는 모델 보유 환경에서만 설치).
-    "ksi-perception",
     # 같은 이유의 leaf 멤버 — 이 워커 코드를 Core 가 의존하지 않아(서버 조립 그래프
     # 밖이다) 기본 sync 에서 빠진다. CI 는 --all-packages 라 무관하지만, 맨
     # `uv sync` 로 붙은 개발자가 ODM 어댑터 테스트에서 ImportError 를 보게 된다.
+    # (P3 Task 6: 아카이브된 ksi-perception leaf 항목은 여기서 함께 제거 —
+    # 아래 ksi-equipment-intelligence 항목과 동일 사유.)
     "ksi-processing-controller",
     # 같은 이유의 leaf 멤버(Phase 4 change-detection, scipy 기반 point cloud C2C).
     "ksi-change-detection",
     # 같은 이유의 leaf 멤버(Phase 4 BIM 연계, ifcopenshell 기반 IFC 지오메트리 추출).
     "ksi-bim-integration",
-    # 같은 이유의 leaf 멤버(Phase 3 Kinematic State/CPA-TTC/RiskField).
-    "ksi-equipment-intelligence",
     # 같은 이유의 leaf 멤버(M1 측지 기반 — EPSG:5186 재투영·KNGeoid 수직기준).
     "ksi-geo-spatial",
     # Local stdio adapter used only by the explicit Analysis MCP compatibility

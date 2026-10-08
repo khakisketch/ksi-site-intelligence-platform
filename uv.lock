@@ -13,15 +13,10 @@ members = [
     "ksi-change-detection",
     "ksi-core",
     "ksi-defect-detection",
-    "ksi-dji-gateway",
     "ksi-domain",
-    "ksi-equipment-intelligence",
     "ksi-event-contracts",
     "ksi-geo-core",
     "ksi-geo-spatial",
-    "ksi-mission-contracts",
-    "ksi-mission-planning",
-    "ksi-perception",
     "ksi-processing-controller",
     "ksi-site-intelligence-platform",
     "ksi-spatial-data-mcp",
@@ -830,25 +825,9 @@ requires-dist = [
 provides-extras = ["mixercseg"]
 
 [[package]]
-name = "ksi-dji-gateway"
-version = "0.0.1"
-source = { editable = "services/dji-gateway" }
-
-[[package]]
 name = "ksi-domain"
 version = "0.0.1"
 source = { editable = "packages/domain" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.7" }]
-
-[[package]]
-name = "ksi-equipment-intelligence"
-version = "0.0.1"
-source = { editable = "packages/equipment-intelligence" }
 dependencies = [
     { name = "pydantic" },
 ]
@@ -908,86 +887,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "ksi-mission-contracts"
-version = "0.0.1"
-source = { editable = "packages/mission-contracts" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "ksi-domain" },
-    { name = "ksi-event-contracts" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=42" },
-    { name = "ksi-domain", editable = "packages/domain" },
-    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "ksi-mission-planning"
-version = "0.0.1"
-source = { editable = "packages/mission-planning" }
-dependencies = [
-    { name = "ksi-geo-core" },
-    { name = "ksi-mission-contracts" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ksi-geo-core", editable = "packages/geo-core" },
-    { name = "ksi-mission-contracts", editable = "packages/mission-contracts" },
-    { name = "pydantic", specifier = ">=2.7" },
-]
-
-[[package]]
-name = "ksi-perception"
-version = "0.0.1"
-source = { editable = "packages/perception" }
-dependencies = [
-    { name = "ksi-domain" },
-    { name = "ksi-event-contracts" },
-    { name = "ksi-geo-core" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "pydantic" },
-    { name = "pyyaml" },
-]
-
-[package.optional-dependencies]
-dfine = [
-    { name = "onnx" },
-    { name = "onnxruntime" },
-    { name = "onnxscript" },
-    { name = "torch", version = "2.13.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
-    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
-    { name = "torchvision", version = "0.28.0", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'darwin'" },
-    { name = "torchvision", version = "0.28.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform != 'darwin'" },
-    { name = "transformers" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ksi-domain", editable = "packages/domain" },
-    { name = "ksi-event-contracts", editable = "packages/event-contracts" },
-    { name = "ksi-geo-core", editable = "packages/geo-core" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "onnx", marker = "extra == 'dfine'", specifier = ">=1.16" },
-    { name = "onnxruntime", marker = "extra == 'dfine'", specifier = ">=1.18" },
-    { name = "onnxscript", marker = "extra == 'dfine'", specifier = ">=0.1" },
-    { name = "pillow", specifier = ">=12.3" },
-    { name = "pydantic", specifier = ">=2.7" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "torch", marker = "extra == 'dfine'", specifier = ">=2.4", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "torchvision", marker = "extra == 'dfine'", specifier = ">=0.19", index = "https://download.pytorch.org/whl/cpu" },
-    { name = "transformers", marker = "extra == 'dfine'", specifier = ">=4.52" },
-]
-provides-extras = ["dfine"]
-
-[[package]]
 name = "ksi-processing-controller"
 version = "0.0.1"
 source = { editable = "services/processing-controller" }
@@ -1036,9 +935,7 @@ dev = [
     { name = "ksi-bim-integration" },
     { name = "ksi-change-detection" },
     { name = "ksi-defect-detection" },
-    { name = "ksi-equipment-intelligence" },
     { name = "ksi-geo-spatial" },
-    { name = "ksi-perception" },
     { name = "ksi-processing-controller" },
     { name = "ksi-spatial-data-mcp" },
     { name = "mypy" },
@@ -1063,9 +960,7 @@ dev = [
     { name = "ksi-bim-integration", editable = "packages/bim-integration" },
     { name = "ksi-change-detection", editable = "packages/change-detection" },
     { name = "ksi-defect-detection", editable = "packages/defect-detection" },
-    { name = "ksi-equipment-intelligence", editable = "packages/equipment-intelligence" },
     { name = "ksi-geo-spatial", editable = "packages/geo-spatial" },
-    { name = "ksi-perception", editable = "packages/perception" },
     { name = "ksi-processing-controller", editable = "services/processing-controller" },
     { name = "ksi-spatial-data-mcp", editable = "services/spatial-data-mcp" },
     { name = "mypy", specifier = ">=1.11" },
