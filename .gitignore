@@ -56,7 +56,10 @@ deploy/signing-keys/
 deploy/secrets/*.secret
 
 # Manifold 3 / PSDK 개발 — ADR-KSI-009. 비밀·산출물·서드파티 실물은 커밋하지 않는다.
-# 계보는 edge/third_party/PSDK_LOCK.yaml(커밋)이 SSOT, 실물은 tools/edge/fetch_psdk.py로 fetch.
+# P3 Task 6: 계보 SSOT는 archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml
+# (커밋, historical)로 이동했고 실물은 historical route가
+# archive/acquisition-2026/tools/edge/fetch_psdk.py로 fetch한다(main CI는
+# PSDK에 의존하지 않는다). 아래 무시 규칙은 historical fetch 목적지를 유지한다.
 /.secrets/
 /dist/
 edge/third_party/psdk/

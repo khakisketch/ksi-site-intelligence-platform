@@ -25,13 +25,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# P3 Task 6: archived mission-package roots dropped from the probe path.
 SOURCE_ROOTS = (
     REPOSITORY_ROOT / "services/core/src",
     REPOSITORY_ROOT / "packages/event-contracts/src",
     REPOSITORY_ROOT / "packages/domain/src",
     REPOSITORY_ROOT / "packages/geo-core/src",
-    REPOSITORY_ROOT / "packages/mission-contracts/src",
-    REPOSITORY_ROOT / "packages/mission-planning/src",
 )
 
 _DENIED_PREFIXES = (

@@ -40,7 +40,6 @@ COPY --from=runtime-builder /app/packages/domain /app/packages/domain
 COPY --from=runtime-builder /app/packages/event-contracts /app/packages/event-contracts
 COPY --from=runtime-builder /app/packages/geo-core /app/packages/geo-core
 COPY --from=runtime-builder /app/packages/geo-spatial /app/packages/geo-spatial
-COPY --from=runtime-builder /app/packages/perception /app/packages/perception
 COPY --from=runtime-builder /app/services/processing-controller /app/services/processing-controller
 
 # Production execution may replace this distinct non-root default only with

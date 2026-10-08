@@ -1,0 +1,267 @@
+name: historical-archive
+# ============================================================================
+# HISTORICAL VERIFICATION ROUTE — NOT PRODUCT SUPPORT.
+#
+# This workflow rebuilds and reverifies the archived acquisition-only C++/PSDK
+# sources that P3 Task 6 moved blob-identical to archive/acquisition-2026/.
+# It runs ONLY on explicit workflow_dispatch (no push/PR/schedule triggers),
+# never gates a product change, and its green says nothing about any
+# supported runtime, image, deployment, or device capability. The archive is
+# never a runtime import path, workspace member, production build context, or
+# pytest/mypy/ruff target — this workflow is the single bounded exception,
+# and it builds into ephemeral runner temp dirs (never inside archive/).
+#
+# PSDK provisioning: the pinned vendor fixture is fetched with the archived
+# fetch_psdk.py (--lock/--dest point at archived/ephemeral paths). The
+# archived check_third_party_pins.sh hardcodes repo-relative edge/ paths, so
+# this workflow stages an EPHEMERAL workspace copy of the archived
+# PSDK_LOCK.yaml at edge/third_party/ (untracked, never committed — edge/
+# holds no tracked files after Task 6) before invoking the archived script
+# byte-identical. Nothing here edits the archive.
+# ============================================================================
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: historical-archive-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  historical-edge-control-plane:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: configure (C++17, -Werror, archived sources)
+        run: cmake -S archive/acquisition-2026/edge/manifold-runtime -B "${RUNNER_TEMP}/hist-control-plane"
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKSI_REQUIRE_SQLITE=ON
+
+      - name: build
+        run: cmake --build "${RUNNER_TEMP}/hist-control-plane" -j
+
+      - name: ctest
+        run: ctest --test-dir "${RUNNER_TEMP}/hist-control-plane" --output-on-failure
+
+      - name: configure (ASan+UBSan)
+        run: cmake -S archive/acquisition-2026/edge/manifold-runtime -B "${RUNNER_TEMP}/hist-control-plane-asan"
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo -DKSI_ENABLE_SANITIZERS=ON -DKSI_REQUIRE_SQLITE=ON
+
+      - name: build (ASan+UBSan)
+        run: cmake --build "${RUNNER_TEMP}/hist-control-plane-asan" -j
+
+      - name: ctest (ASan+UBSan)
+        run: ctest --test-dir "${RUNNER_TEMP}/hist-control-plane-asan" --output-on-failure
+
+  historical-edge-psdk-app-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: PSDK 3.16 pin 확보 (archived lock, ephemeral tree)
+        run: |
+          mkdir -p edge/third_party
+          cp archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml edge/third_party/PSDK_LOCK.yaml
+          uv run --locked python archive/acquisition-2026/tools/edge/fetch_psdk.py \
+            --lock archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml \
+            --dest edge/third_party/psdk
+          uv run --locked bash archive/acquisition-2026/scripts/check_third_party_pins.sh
+          cp archive/acquisition-2026/edge/psdk-app/config/dji_sdk_app_info.h.example "${RUNNER_TEMP}/dji_sdk_app_info.h"
+
+      - name: configure (host HIL-1 tests, archived sources)
+        run: |
+          cmake -S archive/acquisition-2026/edge/psdk-app -B "${RUNNER_TEMP}/hist-hil1-host" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DKSI_PSDK_APP_INFO_HEADER="${RUNNER_TEMP}/dji_sdk_app_info.h" \
+            -DKSI_PSDK_APP_BUILD_TESTS=ON
+
+      - name: build companion and peer host tests
+        run: |
+          cmake --build "${RUNNER_TEMP}/hist-hil1-host" -j \
+            --target ksi_psdk_route_companion_tests ksi_psdk_mop_peer_receiver_tests
+
+      - name: CTest companion and peer
+        run: |
+          ctest --test-dir "${RUNNER_TEMP}/hist-hil1-host" --output-on-failure \
+            -R 'ksi_psdk_route_companion_contract|ksi_psdk_mop_peer_receiver_contract|ksi_gateway_psdk_companion_unix_interop'
+
+      - name: configure and build (ASan+UBSan diagnostic)
+        run: |
+          cmake -S archive/acquisition-2026/edge/psdk-app -B "${RUNNER_TEMP}/hist-hil1-asan" \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DKSI_PSDK_APP_INFO_HEADER="${RUNNER_TEMP}/dji_sdk_app_info.h" \
+            -DKSI_PSDK_APP_BUILD_TESTS=ON \
+            -DKSI_PSDK_APP_ENABLE_SANITIZERS=ON
+          cmake --build "${RUNNER_TEMP}/hist-hil1-asan" -j \
+            --target ksi_psdk_route_companion_tests ksi_psdk_mop_peer_receiver_tests
+
+      - name: CTest (ASan+UBSan HIL-1 diagnostic)
+        run: |
+          ctest --test-dir "${RUNNER_TEMP}/hist-hil1-asan" --output-on-failure \
+            -R 'ksi_psdk_route_companion_contract|ksi_psdk_mop_peer_receiver_contract|ksi_gateway_psdk_companion_unix_interop'
+
+  historical-edge-psdk-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: configure (순수 로직 전용, -Werror, archived sources)
+        run: cmake -S archive/acquisition-2026/edge/psdk-tap -B "${RUNNER_TEMP}/hist-tap"
+          -DKSI_PSDK_TAP_LOGIC_TESTS_ONLY=ON
+
+      - name: build
+        run: cmake --build "${RUNNER_TEMP}/hist-tap" -j
+
+      - name: ctest
+        run: ctest --test-dir "${RUNNER_TEMP}/hist-tap" --output-on-failure
+
+      - name: 기본 모드는 여전히 fail-closed 인가
+        run: |
+          if cmake -S archive/acquisition-2026/edge/psdk-tap -B "${RUNNER_TEMP}/psdk-default" \
+               -DKSI_PSDK_ROOT="${RUNNER_TEMP}/no-such-psdk" >/dev/null 2>&1; then
+            echo "::error::PSDK 없이 기본 configure 가 통과했다 — 조용한 스텁 폴백이 생겼는지 확인하라"
+            exit 1
+          fi
+          echo "기본 모드 fail-closed 확인 — PSDK 부재 시 configure 실패"
+
+  historical-edge-manifold-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: PSDK 3.16 source, version header and libpayloadsdk.a digest gate
+        run: |
+          mkdir -p edge/third_party
+          cp archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml edge/third_party/PSDK_LOCK.yaml
+          uv run --locked python archive/acquisition-2026/tools/edge/fetch_psdk.py \
+            --lock archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml \
+            --dest edge/third_party/psdk
+          uv run --locked bash archive/acquisition-2026/scripts/check_third_party_pins.sh
+          cp archive/acquisition-2026/edge/psdk-app/config/dji_sdk_app_info.h.example "${RUNNER_TEMP}/dji_sdk_app_info.h"
+
+      - name: QEMU 등록 (arm64 에뮬레이션)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: buildx builder 준비 (cache export 전제)
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker-container
+
+      - name: 빌드 이미지 준비 (archived Dockerfile)
+        uses: docker/build-push-action@v6
+        with:
+          context: archive/acquisition-2026/edge/docker
+          file: archive/acquisition-2026/edge/docker/manifold3-build.Dockerfile
+          platforms: linux/arm64
+          tags: ksi-manifold3-build:hist
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 타깃 빌드 + ctest (arm64, archived sources, ephemeral build dirs)
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hist-m3-build"
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}/archive/acquisition-2026/edge/manifold-runtime:/workspace/src:ro" \
+            -v "${{ github.workspace }}/archive/acquisition-2026/cmake:/workspace/cmake:ro" \
+            -v "${RUNNER_TEMP}/hist-m3-build:/workspace/build" \
+            -w /workspace \
+            ksi-manifold3-build:hist bash -c '
+              set -e
+              cmake -S src -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+                -DCMAKE_TOOLCHAIN_FILE=/workspace/cmake/toolchain-manifold3.cmake \
+                -DKSI_TARGET_MANIFOLD3=ON
+              cmake --build build -j
+              cd build && ctest --output-on-failure
+            '
+
+      - name: HIL-1 companion + peer ARM64 build and mutual-exclusion gate
+        run: |
+          mkdir -p "${RUNNER_TEMP}/hist-companion" "${RUNNER_TEMP}/hist-peer" "${RUNNER_TEMP}/hist-invalid"
+          docker run --rm --platform linux/arm64 \
+            -v "${{ github.workspace }}:/workspace/src:ro" \
+            -v "${{ runner.temp }}/dji_sdk_app_info.h:/workspace/ci-input/dji_sdk_app_info.h:ro" \
+            -v "${RUNNER_TEMP}/hist-companion:/workspace/build-companion" \
+            -v "${RUNNER_TEMP}/hist-peer:/workspace/build-peer" \
+            -v "${RUNNER_TEMP}/hist-invalid:/workspace/build-invalid" \
+            -w /workspace \
+            ksi-manifold3-build:hist bash -c '
+              set -e
+              archive=/workspace/src/archive/acquisition-2026
+              common="-DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_TOOLCHAIN_FILE=$archive/cmake/toolchain-manifold3.cmake -DKSI_TARGET_MANIFOLD3=ON -DKSI_PSDK_ROOT=/workspace/src/edge/third_party/psdk -DKSI_PSDK_APP_INFO_HEADER=/workspace/ci-input/dji_sdk_app_info.h"
+              cmake -S $archive/edge/psdk-app -B build-companion $common \
+                -DKSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON \
+                -DKSI_PSDK_APP_EDGE_UPLINK_ORGANIZATION_ID=ci-org \
+                -DKSI_PSDK_APP_EDGE_UPLINK_SITE_ID=ci-site \
+                -DKSI_PSDK_APP_EDGE_DEVICE_ID=ci-edge \
+                -DKSI_PSDK_APP_EDGE_UPLINK_SUBJECT_PORT_ID=ci.edge_uplink \
+                -DKSI_PSDK_APP_EDGE_UPLINK_MOP_CHANNEL_ID=49152
+              cmake --build build-companion --target ksi_psdk_app -j
+              cmake -S $archive/edge/psdk-app -B build-peer $common \
+                -DKSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON \
+                -DKSI_PSDK_APP_MOP_PEER_ORGANIZATION_ID=ci-org \
+                -DKSI_PSDK_APP_MOP_PEER_SITE_ID=ci-site \
+                -DKSI_PSDK_APP_MOP_PEER_EDGE_DEVICE_ID=ci-edge \
+                -DKSI_PSDK_APP_MOP_PEER_SUBJECT_PORT_ID=ci.edge_uplink \
+                -DKSI_PSDK_APP_MOP_PEER_CHANNEL_ID=49152 \
+                -DKSI_PSDK_APP_MOP_PEER_ADDRESS=PAYLOAD_PORT_NO1
+              cmake --build build-peer --target ksi_psdk_app -j
+              if cmake -S $archive/edge/psdk-app -B build-invalid $common \
+                   -DKSI_PSDK_APP_ENABLE_EDGE_UPLINK_COMPANION=ON \
+                   -DKSI_PSDK_APP_ENABLE_MOP_PEER_RECEIVER=ON >/tmp/mutual-exclusion.log 2>&1; then
+                echo "both HIL-1 PSDK roles configured in one binary"
+                exit 1
+              fi
+              grep -F "mutually exclusive" /tmp/mutual-exclusion.log
+            '
+
+      - name: HIL-1 ARM64 ABI and required MOP symbol resolution
+        run: |
+          companion="${RUNNER_TEMP}/hist-companion/ksi_psdk_app"
+          peer="${RUNNER_TEMP}/hist-peer/ksi_psdk_app"
+          uv run --no-project python archive/acquisition-2026/tools/edge/check_target_abi.py "$companion" "$peer"
+          nm --defined-only "$companion" > "${RUNNER_TEMP}/hil1-companion.nm"
+          nm --defined-only "$peer" > "${RUNNER_TEMP}/hil1-peer.nm"
+          nm -u "$companion" > "${RUNNER_TEMP}/hil1-companion-undefined.nm"
+          nm -u "$peer" > "${RUNNER_TEMP}/hil1-peer-undefined.nm"
+          if grep -Eq 'DjiMopChannel_' "${RUNNER_TEMP}/hil1-companion-undefined.nm" "${RUNNER_TEMP}/hil1-peer-undefined.nm"; then
+            echo "::error::unresolved DjiMopChannel symbol remains"
+            exit 1
+          fi
+          for symbol in Init Create Bind Accept SendData RecvData Close Destroy; do
+            grep -Eq "[[:space:]]DjiMopChannel_${symbol}$" "${RUNNER_TEMP}/hil1-companion.nm"
+          done
+          for symbol in Init Create Connect RecvData Close Destroy; do
+            grep -Eq "[[:space:]]DjiMopChannel_${symbol}$" "${RUNNER_TEMP}/hil1-peer.nm"
+          done
+
+      - name: 컨테이너 툴체인 드리프트 검사 (실기 실측값 대조)
+        run: |
+          docker run --rm --platform linux/arm64 ksi-manifold3-build:hist bash -c '
+            set -e
+            gcc_major=$(gcc -dumpversion | cut -d. -f1)
+            cmake_mm=$(cmake --version | head -1 | awk "{print \$3}" | cut -d. -f1,2)
+            glibc=$(ldd --version | head -1 | awk "{print \$NF}")
+            echo "container: gcc=$gcc_major cmake=$cmake_mm glibc=$glibc"
+            [ "$gcc_major" = "9" ]      || { echo "gcc major 드리프트: $gcc_major != 9"; exit 1; }
+            [ "$cmake_mm" = "3.16" ]    || { echo "cmake 드리프트: $cmake_mm != 3.16"; exit 1; }
+            [ "$glibc" = "2.31" ]       || { echo "glibc 드리프트: $glibc != 2.31"; exit 1; }
+          '
+
+      - name: ABI 게이트 (정적 링크·glibc 상한·RPATH)
+        run: |
+          uv run --no-project python archive/acquisition-2026/tools/edge/check_target_abi.py \
+            "${RUNNER_TEMP}/hist-m3-build/control_plane_tests" \
+            "${RUNNER_TEMP}/hist-m3-build/conformance_tests"

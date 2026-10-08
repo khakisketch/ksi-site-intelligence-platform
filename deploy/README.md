@@ -83,15 +83,13 @@ registry `{}`와 trusted route
 configuration `[]`가 기본이라 fail-OFF다. CAP-4 activation, exact current observation,
 Mission policy가 모두 충족되기 전에는 신규 route invocation을 허용하지 않는다.
 
-HIL-0은 `Dockerfile.gateway`와 owner-only JSON 설정을 요구하는
-`ksi-dji-gateway --config ...` runner를 추가했지만 기본 Compose에는 Gateway를
-넣지 않는다. HIL-1P runner 설정 예시는 `gateway.config.example.json`이며 observation과
-preflight token은 경로뿐 아니라 secret도 서로 달라야 한다. 실제 설정과
-세 token file은 모두 owner-only여야 한다. runner는 loopback command ingress,
-pinned-HTTPS Core preflight/observation publication, 단일 PSDK Unix client와 bounded
-observation loop만 허용한다. 예시의 feature flag와 evidence는 의도적으로 OFF/BLOCKED다.
-이미지/runner/소프트웨어 관측 성공은 물리 HIL evidence, feature enablement, CAP-4
-activation 또는 배포 승인이 아니다.
+HIL-0의 Gateway runner(`ksi-dji-gateway --config ...`)와 그 빌드 입력
+(`Dockerfile.gateway`)·설정 예시(`gateway.config.example.json`)는 P3 Task 6에서
+`archive/acquisition-2026/` 으로 blob-identical 이동했다(historical, 제품 지원
+아님). 기본 Compose에는 Gateway가 없으며(아래 deploy contract가 단정한다),
+`EDGE_ROUTE_OBSERVER` journal 호환성(다음 절)은 Core reader의 플랫폼 계약으로
+유지된다. 아카이브된 runner 예시의 credential 분리 형태는
+`archive/acquisition-2026/deploy/gateway.config.example.json` 원본을 보라.
 
 ### EDGE_ROUTE_OBSERVER journal compatibility and rollback
 

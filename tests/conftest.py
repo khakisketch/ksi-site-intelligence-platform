@@ -1,15 +1,10 @@
-"""pytest 세션 공통 훅 + 실모델 게이트 skip 정직성 anchor (감사 #19).
+"""pytest 세션 공통 훅 (감사 #19의 skip 정직성 anchor는 P3 Task 6에서 퇴역).
 
-## 무음 전량 skip 문제 (2026-07-29 실측)
-
-실모델 게이트 3파일(dfine detector · onnx conformance · recorded slice, 82건)은
-[dfine] extra 와 모델 파일이 있을 때만 돈다 — 의도된 분리 게이트다. 문제는 그
-skip 이 **무음**이라는 것: `uv sync --all-packages` 가 torch 를 지운 상태에서
-전체 pytest 를 돌리면 82건이 전부 skip 인 채 "green" 으로 읽힌다(실측 재현).
-
-해법: 로컬 완전 게이트는 ``KSI_REQUIRE_REAL_MODEL=1`` 로 실행한다 — 이 모드에서
-실모델 게이트 테스트가 1건이라도 skip 되면 세션이 실패한다. CI(모델 없음)는
-이 변수를 설정하지 않으므로 기존 분리 게이트 의미는 유지된다.
+실모델 게이트 4파일(dfine detector · onnx conformance · recorded slice ·
+recorded_pipeline)은 P3 Task 6에서 그 subject(``ksi_perception``)와 함께
+``archive/acquisition-2026/`` 으로 blob-identical 이동했다 — 무음 skip을
+재던 anchor도 함께 퇴역한다(RB-08: 명시적 분리, task-6-report 기록). 남은
+``KSI_REQUIRE_REAL_MODEL`` 분기는 검증할 대상이 없으므로 항상 통과한다.
 """
 
 from __future__ import annotations
@@ -27,14 +22,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # directory even when running a replay file alone, not only after contract collection.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "contract"))
 
-REAL_MODEL_GATE_FILES = (
-    "test_dfine_detector.py",
-    "test_onnx_conformance.py",
-    "test_recorded_slice.py",
-    # entry point(python -m ksi_perception.recorded_pipeline)의 Registry→모델→프레임
-    # 실경로 e2e — 재검토 G: 이 경로가 어떤 자동 게이트에서도 안 돌던 구멍의 anchor.
-    "test_recorded_pipeline.py",
-)
+# P3 Task 6: 실모델 게이트 파일이 아카이브로 이동해 anchor가 퇴역했다.
+# 이름은 과거 nodeid 와의 혼동을 막기 위해 남기지 않고 비운다.
+REAL_MODEL_GATE_FILES: tuple[str, ...] = ()
 
 _gate_skips: list[str] = []
 
@@ -53,32 +43,13 @@ def pytest_cmdline_main(config):  # type: ignore[no-untyped-def]
     """세션 종료코드 강제 — sessionfinish 의 session.exitstatus 대입은 최종
     종료코드에 반영되지 않음을 실측(2026-07-29)으로 확인해 wrapper 로 감싼다."""
     result = yield
-    if os.environ.get("KSI_REQUIRE_REAL_MODEL") == "1":
-        # anchor 는 skip 을 재지 부재를 재지 못한다(재검토 P2-D2) — 게이트 파일이
-        # rename/삭제되면 수집조차 안 돼 "완전 게이트 통과"를 참칭하므로 존재를
-        # 함께 단정한다.
-        here = Path(__file__).resolve().parent
-        expected = (
-            here / "contract" / "test_dfine_detector.py",
-            here / "contract" / "test_onnx_conformance.py",
-            here / "replay" / "test_recorded_slice.py",
-            # entry point e2e 게이트(REAL_MODEL_GATE_FILES 에도 등록돼 있다) —
-            # 이 파일이 rename/삭제되면 skip 조차 감지되지 않으므로 부재 자체를
-            # 여기서 함께 단정한다(재검증 V3 P2 — 앵커 반쪽 구멍 폐쇄).
-            here / "contract" / "test_recorded_pipeline.py",
-        )
-        missing = [str(path) for path in expected if not path.is_file()]
-        if missing:
-            sys.stderr.write(
-                f"\nKSI_REQUIRE_REAL_MODEL=1: 실모델 게이트 파일 부재 {missing} — "
-                "완전 게이트가 아니다\n"
-            )
-            return 1
     if os.environ.get("KSI_REQUIRE_REAL_MODEL") == "1" and _gate_skips:
+        # P3 Task 6: anchor 대상 파일이 전부 아카이브로 이동했다. 존재 단언은
+        # 퇴역한다 — 검증할 실모델 게이트가 active tree에 없다. (부재 자체가
+        # 분리 증거이며 task-6-report에 기록된다.)
         sys.stderr.write(
-            f"\nKSI_REQUIRE_REAL_MODEL=1: 실모델 게이트 {len(_gate_skips)}건이 skip 됐다 — "
-            "이 실행은 완전 게이트가 아니다. 복구: uv sync --all-packages --all-extras "
-            "+ 모델 파일(tools/fetch_model.py) 확인\n"
+            f"\nKSI_REQUIRE_REAL_MODEL=1: {len(_gate_skips)}건이 skip 됐다 — "
+            "이 실행은 완전 게이트가 아니다.\n"
         )
         return 1
     return result

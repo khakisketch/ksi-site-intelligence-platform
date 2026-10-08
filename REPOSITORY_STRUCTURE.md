@@ -127,6 +127,7 @@ trash.
 | `.codex/` | Local agent tooling | Local Codex configuration | No | RETAIN local |
 | `.dev-data/` | Development operator | Ignored local Core/OIDC state and keys | Local runtime state | RETAIN; never archive to Git |
 | `.github/` | Platform/CI | CI workflows | Build/verification | RETAIN |
+| `archive/acquisition-2026/` | P3 acquisition separation archive | Acquisition-only sources moved blob-identical per `docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv` | No — historical, never runtime/build/test input | ARCHIVED; the single bounded exception is the `workflow_dispatch`-only historical verification route |
 | `.ksi/` | Legacy goal governance | Retired helper-era goal/risk state | No | RETAIN as archive/evidence; product slice is `docs/superpowers/product-state.md` + named slice ledger, while an active checkout task uses its checkpoint + named task ledger |
 | `.venv/` | Python toolchain | Reproducible local environment from `uv.lock` | No | RETAIN local; regenerated only by operator choice |
 | `apps/` | Dashboard | User-facing applications | Yes | RETAIN |
@@ -138,7 +139,7 @@ trash.
 | `design-system/` | Dashboard/Product design | Durable adopted UI constraints | No | CONSOLIDATE design guardrails here |
 | `docs/` | Product/architecture/operations owners | Authority, ADR, acceptance, HIL, audit and archive documents | No | CONSOLIDATE documents by subject |
 | `download/` | Field evidence owner | Ignored raw device/media intake | Private evidence | RETAIN in place; do not inspect/move/delete |
-| `edge/` | Manifold/Edge | Native acquisition, perception, local mission and transport seams | Yes | RETAIN; R3 audit only |
+| `edge/` | Manifold/Edge (P3 Task 6: tracked sources archived) | Native acquisition, perception, local mission and transport seams | No — historical | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/`, historical; R3 audit record stands) |
 | `hil_raw_logs/` | HIL evidence owner | Ignored raw HIL originals | Private evidence | RETAIN in place; immutable for R0-R2 |
 | `models/` | Model operator | Ignored fetched model/runtime artifacts | Runtime input | RETAIN local; registry stays in `docs/models/` |
 | `packages/` | Domain/library owners | Reusable typed domain, geometry, contracts and algorithms | Yes | RETAIN; R3 package boundary current |
@@ -160,7 +161,7 @@ their owner until an explicit cleanup task removes them.
 |---|---|---:|---|---|
 | `apps/dashboard/` | Dashboard — KSI Operations Console | Yes | Core HTTP/API contracts; no device authority | RETAIN |
 | `services/core/` | Core — identity, site, Mission, policy, evidence and durable journals | Yes | Owns authority/state; imports reusable packages, never DJI SDK | RETAIN |
-| `services/dji-gateway/` | Gateway — exact capability ports, route selection and receipts | Yes | Owns transport adapters, not product intelligence or flight control | RETAIN |
+| `services/dji-gateway/` | Gateway — exact capability ports, route selection and receipts | Yes | Owns transport adapters, not product intelligence or flight control | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/services/dji-gateway/`, historical) |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
 | `services/spatial-data-mcp/` | Bounded local stdio MCP adapter — six fixed tools over one configured Core origin | No (source-run adapter; no listener/deployment) | Reads Core AI delivery only; owns no bytes, grants, credentials, or device authority | RETAIN |
 
@@ -189,13 +190,13 @@ services, packages, acquisition, capability, Dashboard, worker, Edge, or DJI bou
 
 | Path | Owner/purpose | Runtime | Current status boundary | Decision |
 |---|---|---:|---|---|
-| `edge/psdk-app/` | Native `ksi_psdk_app`, PSDK acquisition and separately gated companions | Yes | Production Edge entry; capability remains evidence-gated | RETAIN as transitional implementation (ADR-KSI-039) |
-| `edge/manifold-runtime/` | Native bounded queues, perception/risk/store-forward/control-plane library | Yes | Linked by approved Edge builds; no direct DJI flight command | RETAIN as transitional implementation (ADR-KSI-039); no merge in R0-R2 |
-| `edge/psdk-tap/` | Raw Liveview/telemetry HIL capture probe | Diagnostic only | Not product authority or production support | RETAIN |
-| `edge/msdk-field-bridge/` | Conditional pre/postflight bridge candidate | Candidate | No SDK artifact/HIL support; flight actions forbidden | RETAIN gated |
-| `edge/psdk-platform/` | PSDK build/platform integration | Build | Supports native Edge compilation | RETAIN |
-| `edge/third_party/` | Pinned vendor provenance plus ignored fetched SDK | Build input | Lock file tracked; vendor tree ignored/read-only | RETAIN |
-| `edge/docker/` | Manifold cross-build image definitions | Build | CI/toolchain only | RETAIN |
+| `edge/psdk-app/` | Native `ksi_psdk_app`, PSDK acquisition and separately gated companions | No — historical | Production Edge entry; capability remains evidence-gated | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/psdk-app/`) |
+| `edge/manifold-runtime/` | Native bounded queues, perception/risk/store-forward/control-plane library | No — historical | Linked by approved Edge builds; no direct DJI flight command | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/manifold-runtime/`) |
+| `edge/psdk-tap/` | Raw Liveview/telemetry HIL capture probe | No — historical | Not product authority or production support | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/psdk-tap/`) |
+| `edge/msdk-field-bridge/` | Conditional pre/postflight bridge candidate | No — historical | No SDK artifact/HIL support; flight actions forbidden | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/msdk-field-bridge/`) |
+| `edge/psdk-platform/` | PSDK build/platform integration | No — historical | Supports native Edge compilation | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/psdk-platform/psdk_platform.cmake`) |
+| `edge/third_party/` | Pinned vendor provenance plus ignored fetched SDK | No — historical | Lock file tracked; vendor tree ignored/read-only | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/third_party/PSDK_LOCK.yaml`) |
+| `edge/docker/` | Manifold cross-build image definitions | No — historical | CI/toolchain only | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/edge/docker/manifold3-build.Dockerfile`) |
 
 ## Packages
 
@@ -203,12 +204,12 @@ services, packages, acquisition, capability, Dashboard, worker, Edge, or DJI bou
 |---|---|---:|---|---|
 | `packages/domain/` | Stable domain enums/value objects and mission/capability gating | Yes | Core, contracts, planning, processing | RETAIN |
 | `packages/event-contracts/` | Observation/Event/Processing typed contracts | Yes | Core, processing and analysis services | RETAIN |
-| `packages/mission-contracts/` | Signed Mission/dispatch/activation verification | Yes | Core and Edge activation companions | RETAIN |
-| `packages/mission-planning/` | Deterministic coverage/geometry/WPML planning | Yes | Core Mission planning | RETAIN |
+| `packages/mission-contracts/` | Signed Mission/dispatch/activation verification | No — historical | Core and Edge activation companions | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/packages/mission-contracts/`) |
+| `packages/mission-planning/` | Deterministic coverage/geometry/WPML planning | No — historical | Core Mission planning | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/packages/mission-planning/`) |
 | `packages/geo-core/` | Sensor-time projection, uncertainty and local geometry | Yes | Mission planning/perception | RETAIN |
 | `packages/geo-spatial/` | CRS, raster and vertical-reference operations | Yes | Core/change/processing | RETAIN; not merged with geo-core in R0-R2 |
-| `packages/perception/` | Recorded/offline model evaluation and reusable perception logic | Evaluation/worker | Processing tests/workers; not production Edge runtime | RETAIN isolated |
-| `packages/equipment-intelligence/` | Kinematic state, CPA/TTC and RiskField algorithms | Yes | Core evaluation | RETAIN |
+| `packages/perception/` | Recorded/offline model evaluation and reusable perception logic | No — historical | Processing tests/workers; not production Edge runtime | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/packages/perception/`) |
+| `packages/equipment-intelligence/` | Kinematic state, CPA/TTC and RiskField algorithms | No — historical | Core evaluation | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/packages/equipment-intelligence/`) |
 | `packages/change-detection/` | Raster/point-cloud change, conformance, region and volume algorithms | Import-only | Processing worker and tests | RETAIN; moved by R3 |
 | `packages/bim-integration/` | IFC georeferencing and reference-model geometry | Import-only | Conversion tool and tests | RETAIN; moved by R3 |
 | `packages/defect-detection/` | Extra-gated model adapter and deterministic defect post-processing | Import-only/optional model | Model tool, optional CI and tests | RETAIN; moved by R3 |

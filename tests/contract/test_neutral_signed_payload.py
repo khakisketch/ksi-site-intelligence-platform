@@ -18,13 +18,12 @@ from textwrap import dedent
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# P3 Task 6: archived mission-package roots dropped from the probe path.
 SOURCE_ROOTS = (
     REPOSITORY_ROOT / "services/core/src",
     REPOSITORY_ROOT / "packages/event-contracts/src",
     REPOSITORY_ROOT / "packages/geo-core/src",
     REPOSITORY_ROOT / "packages/domain/src",
-    REPOSITORY_ROOT / "packages/mission-contracts/src",
-    REPOSITORY_ROOT / "packages/mission-planning/src",
 )
 
 WRAPPER_PREFIX = "계약을 정규 JSON 으로 표현할 수 없다: "
@@ -201,12 +200,16 @@ def test_neutral_module_imports_without_mission_or_acquisition() -> None:
     )
 
 
-# ── Legacy identity (outside the deny hook) ───────────────────────────
+# ── Neutral identity (post-archive; legacy alias retired) ─────────────────
 
 
-def test_legacy_signer_reexports_the_same_function_objects() -> None:
-    import ksi_domain.signed_payload as neutral
-    import ksi_mission_contracts.signing as signing
+def test_neutral_signer_function_objects_are_stable() -> None:
+    # P3 Task 6: test_legacy_signer_reexports_the_same_function_objects retired
+    # with the archived ksi_mission_contracts package — the neutral module's
+    # own import identity and pinned byte-vectors (above) carry the contract.
+    import ksi_domain.signed_payload as first
+    import ksi_domain.signed_payload as second
 
-    assert signing.canonical_payload_bytes is neutral.canonical_payload_bytes
-    assert signing.sha256_digest is neutral.sha256_digest
+    assert first is second
+    assert first.canonical_payload_bytes is second.canonical_payload_bytes
+    assert first.sha256_digest is second.sha256_digest

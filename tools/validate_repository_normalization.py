@@ -42,7 +42,9 @@ LINKED_NORMALIZATION_DOCS = (
     "apps/README.md",
     "services/README.md",
     "packages/README.md",
-    "edge/README.md",
+    # P3 Task 6: edge/README.md moved blob-identical to
+    # archive/acquisition-2026/edge/README.md — dropped from the active-docs
+    # link gate (the archived copy is historical, not a live routing doc).
     "design/README.md",
     "design-system/README.md",
     "scripts/README.md",
@@ -67,13 +69,15 @@ LINKED_NORMALIZATION_DOCS = (
 REQUIRED_STRUCTURE_PATHS = (
     "apps/dashboard/",
     "services/core/",
-    "services/dji-gateway/",
     "services/processing-controller/",
     "packages/change-detection/",
     "packages/bim-integration/",
     "packages/defect-detection/",
-    "edge/psdk-app/",
-    "edge/manifold-runtime/",
+    # P3 Task 6: services/dji-gateway/, edge/psdk-app/, edge/manifold-runtime/
+    # moved blob-identical to archive/acquisition-2026/ — the required
+    # canonical path is now the archive root itself (historical, not runtime
+    # or build input; REPOSITORY_STRUCTURE.md records the relocation).
+    "archive/acquisition-2026/",
     "contracts/",
     "packages/",
     "tests/contract/",
@@ -277,6 +281,15 @@ def _existing_or_migrated_path(
             continue
         if candidate.exists():
             return candidate
+
+    # P3 acquisition separation: manifest-approved acquisition sources moved
+    # blob-identical to archive/acquisition-2026/<path> (move-decision manifest
+    # docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv). A reference that
+    # resolves there is relocated, not lost — the historical R0-R2 manifest
+    # stays byte-stable while this gate keeps proving nothing silently vanished.
+    archived = _repo_path(root, f"archive/acquisition-2026/{normalized}")
+    if archived.exists():
+        return archived
     return None
 
 

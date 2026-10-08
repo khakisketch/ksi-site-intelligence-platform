@@ -57,13 +57,12 @@ from ksi_core.foundation.api_base import iso_utc
 from ksi_event_contracts.site_frame import SiteFrame
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# P3 Task 6: archived mission-package roots dropped from the probe path.
 SOURCE_ROOTS = (
     REPOSITORY_ROOT / "services/core/src",
     REPOSITORY_ROOT / "packages/event-contracts/src",
     REPOSITORY_ROOT / "packages/domain/src",
     REPOSITORY_ROOT / "packages/geo-core/src",
-    REPOSITORY_ROOT / "packages/mission-contracts/src",
-    REPOSITORY_ROOT / "packages/mission-planning/src",
 )
 
 # Task brief deny-hook: the platform read path must import none of these.
@@ -436,11 +435,12 @@ def _blocker_prelude(denied: tuple[str, ...]) -> str:
 
             _DENIED_PREFIXES = %r
 
-            # Sanity first: the control module is installed, so blocking it
-            # below proves the hook fires (not that the package is missing).
+            # P3 Task 6: the acquisition packages are archived, not installed —
+            # the probe asserts their absence (archive-boundary expectation)
+            # while the hook below stays as a reintroduction guard.
             assert (
-                importlib.util.find_spec("ksi_mission_contracts") is not None
-            ), "ksi_mission_contracts must be installed for this probe"
+                importlib.util.find_spec("ksi_mission_contracts") is None
+            ), "ksi_mission_contracts must stay unimportable after archival"
 
             class _DenyPrefixes:
                 # Python 3.12 no longer calls find_module — find_spec is the
@@ -458,13 +458,14 @@ def _blocker_prelude(denied: tuple[str, ...]) -> str:
                 assert _module not in _DENIED_PREFIXES and not any(
                     _module.startswith(prefix + ".") for prefix in _DENIED_PREFIXES
                 ), _module
-            # Positive control: the hook must actually fire.
+            # Negative control: the archived package must stay unimportable
+            # (absence first, hook as the reintroduction backstop).
             try:
                 import ksi_mission_contracts  # noqa: F401
-            except ImportError as exc:
-                assert "platform isolation probe denies" in str(exc), exc
+            except ImportError:
+                pass
             else:
-                raise AssertionError("deny-hook did not block ksi_mission_contracts")
+                raise AssertionError("archived ksi_mission_contracts became importable")
             """
     ) % (denied,)
 

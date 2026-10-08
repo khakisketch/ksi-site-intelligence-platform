@@ -29,16 +29,16 @@ from pydantic import ValidationError
 if TYPE_CHECKING:
     from ksi_event_contracts.observation_work_order import ObservationWorkOrder
     from ksi_geo_core.aoi import AreaOfInterest as NeutralAreaOfInterest
-    from ksi_mission_planning.geometry import AreaOfInterest as LegacyAreaOfInterest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# P3 Task 6: the mission packages moved to archive/acquisition-2026/ — only
+# surviving source roots stay on the probe path. Captured literals below keep
+# proving post-move outputs equal the pre-extraction baselines byte-for-byte.
 SOURCE_ROOTS = (
     REPOSITORY_ROOT / "services/core/src",
     REPOSITORY_ROOT / "packages/event-contracts/src",
     REPOSITORY_ROOT / "packages/geo-core/src",
     REPOSITORY_ROOT / "packages/domain/src",
-    REPOSITORY_ROOT / "packages/mission-contracts/src",
-    REPOSITORY_ROOT / "packages/mission-planning/src",
 )
 
 # Captured pre-extraction from ksi_mission_contracts.models.SiteFrame.
@@ -161,16 +161,8 @@ def _valid_triangle() -> NeutralAreaOfInterest:
     )
 
 
-def _legacy_triangle() -> LegacyAreaOfInterest:
-    from ksi_mission_planning.geometry import AreaOfInterest, GeoPoint
-
-    return AreaOfInterest(
-        vertices=[
-            GeoPoint(lat_deg=37.5, lon_deg=127.0),
-            GeoPoint(lat_deg=37.5009, lon_deg=127.0),
-            GeoPoint(lat_deg=37.5, lon_deg=127.0012),
-        ]
-    )
+# P3 Task 6: _legacy_triangle removed with the archived ksi_mission_planning
+# package (RB-08 explicit record).
 
 
 def _vectors() -> dict[str, list[dict[str, float]]]:
@@ -224,12 +216,17 @@ def test_neutral_siteframe_matches_captured_wire_schema_and_json() -> None:
     assert SiteFrame.model_validate(SITEFRAME_WIRE) == frame
 
 
-def test_legacy_siteframe_is_the_neutral_class() -> None:
-    from ksi_event_contracts.site_frame import SiteFrame as NeutralSiteFrame
-    from ksi_mission_contracts.models import SiteFrame as LegacySiteFrame
+def test_neutral_siteframe_identity_is_stable() -> None:
+    # P3 Task 6: the legacy alias (ksi_mission_contracts.models.SiteFrame, an
+    # archived acquisition package) is gone — the neutral class keeps proving
+    # the captured wire on its own identity. Legacy absence is pinned by
+    # tests/contract/test_acquisition_archive_boundary.py.
+    import sys
 
-    assert LegacySiteFrame is NeutralSiteFrame
-    assert LegacySiteFrame(**SITEFRAME_SAMPLE).model_dump(by_alias=True) == SITEFRAME_WIRE
+    from ksi_event_contracts.site_frame import SiteFrame as NeutralSiteFrame
+
+    assert sys.modules["ksi_event_contracts.site_frame"].SiteFrame is NeutralSiteFrame
+    assert NeutralSiteFrame(**SITEFRAME_SAMPLE).model_dump(by_alias=True) == SITEFRAME_WIRE
 
 
 def test_siteframe_validation_semantics_are_preserved() -> None:
@@ -285,75 +282,35 @@ def test_neutral_aoi_matches_captured_wire_and_area() -> None:
     triangle = _valid_triangle()
     assert triangle.model_dump(by_alias=True, mode="json") == AOI_TRIANGLE_WIRE
     assert triangle.area_m2() == AOI_TRIANGLE_AREA_M2
-    assert _legacy_triangle().model_dump(by_alias=True, mode="json") == AOI_TRIANGLE_WIRE
-    assert _legacy_triangle().area_m2() == AOI_TRIANGLE_AREA_M2
 
 
 def test_neutral_aoi_and_geopoint_schemas_match_captured_baseline() -> None:
+    # P3 Task 6: legacy geometry-module assertions retired with the archived
+    # ksi_mission_planning package — the neutral schemas still match the
+    # captured pre-extraction baselines key for key.
     from ksi_geo_core.aoi import AreaOfInterest, GeoPoint
-    from ksi_mission_planning.geometry import (
-        AreaOfInterest as LegacyAOI,
-    )
-    from ksi_mission_planning.geometry import (
-        GeoPoint as LegacyPoint,
-    )
 
     assert GeoPoint.model_json_schema() == GEOPOINT_SCHEMA
     assert AreaOfInterest.model_json_schema() == AOI_FULL_SCHEMA
-    assert LegacyPoint.model_json_schema() == GEOPOINT_SCHEMA
-    assert LegacyAOI.model_json_schema() == AOI_FULL_SCHEMA
     assert json.loads(json.dumps(AOI_FULL_SCHEMA)) == AOI_FULL_SCHEMA
 
 
-def test_legacy_geometry_module_is_the_neutral_module_object() -> None:
+def test_neutral_geometry_module_identity_and_limits() -> None:
+    # P3 Task 6: the legacy↔neutral module-alias assertions retired with the
+    # archived package; the neutral module's own identity and pinned limits
+    # stay (absence of the legacy module is pinned by the archive boundary).
     import sys
 
     import ksi_geo_core.aoi as neutral
-    import ksi_mission_planning.geometry as legacy
 
-    assert legacy is neutral
-    assert sys.modules["ksi_mission_planning.geometry"] is neutral
     assert sys.modules["ksi_geo_core.aoi"] is neutral
-    assert legacy.AreaOfInterest is neutral.AreaOfInterest
-    assert legacy.GeoPoint is neutral.GeoPoint
-    assert legacy._segments_intersect is neutral._segments_intersect
-    assert legacy._MAX_VERTICES == neutral._MAX_VERTICES == 256
-    assert legacy._MAX_EXTENT_M == neutral._MAX_EXTENT_M == 10_000.0
-    assert legacy._MAX_ABS_LATITUDE_DEG == neutral._MAX_ABS_LATITUDE_DEG == 80.0
-    assert legacy._EPSILON_M == neutral._EPSILON_M == 1e-6
-    assert legacy._EPSILON_M2 == neutral._EPSILON_M2 == 1e-6
-
-
-def test_geometry_module_alias_shares_state_both_import_orders() -> None:
-    _assert_subprocess_ok(
-        dedent(
-            """
-            import importlib
-
-            canonical = importlib.import_module("ksi_geo_core.aoi")
-            legacy = importlib.import_module("ksi_mission_planning.geometry")
-            assert legacy is canonical
-
-            marker = object()
-            legacy._TASK3_ALIAS_PROBE = marker
-            assert canonical._TASK3_ALIAS_PROBE is marker
-            del canonical._TASK3_ALIAS_PROBE
-            assert not hasattr(legacy, "_TASK3_ALIAS_PROBE")
-            """
-        )
-    )
-    _assert_subprocess_ok(
-        dedent(
-            """
-            import importlib
-
-            legacy = importlib.import_module("ksi_mission_planning.geometry")
-            canonical = importlib.import_module("ksi_geo_core.aoi")
-            assert legacy is canonical
-            assert legacy.AreaOfInterest is canonical.AreaOfInterest
-            """
-        )
-    )
+    assert neutral.AreaOfInterest is neutral.AreaOfInterest
+    assert neutral.GeoPoint is neutral.GeoPoint
+    assert neutral._MAX_VERTICES == 256
+    assert neutral._MAX_EXTENT_M == 10_000.0
+    assert neutral._MAX_ABS_LATITUDE_DEG == 80.0
+    assert neutral._EPSILON_M == 1e-6
+    assert neutral._EPSILON_M2 == 1e-6
 
 
 @pytest.mark.parametrize("name", sorted(_vectors()))
@@ -365,17 +322,10 @@ def test_invalid_geometry_vectors_stay_rejected(name: str) -> None:
         AreaOfInterest(vertices=vertices)
 
 
-def test_invalid_geometry_vectors_match_legacy_rejections() -> None:
-    from ksi_geo_core.aoi import AreaOfInterest as NeutralAOI
-    from ksi_geo_core.aoi import GeoPoint as NeutralPoint
-    from ksi_mission_planning.geometry import AreaOfInterest as LegacyAOI
-    from ksi_mission_planning.geometry import GeoPoint as LegacyPoint
-
-    for points in _vectors().values():
-        with pytest.raises(ValidationError):
-            NeutralAOI(vertices=[NeutralPoint(**point) for point in points])
-        with pytest.raises(ValidationError):
-            LegacyAOI(vertices=[LegacyPoint(**point) for point in points])
+# P3 Task 6: test_invalid_geometry_vectors_match_legacy_rejections removed —
+# its legacy side (ksi_mission_planning.geometry) archived. Neutral
+# rejections stay pinned by test_invalid_geometry_vectors_stay_rejected;
+# legacy absence by the archive boundary test. (RB-08 explicit record.)
 
 
 def test_vertex_count_and_finite_bounds_are_preserved() -> None:

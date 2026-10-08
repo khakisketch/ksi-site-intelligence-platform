@@ -114,3 +114,14 @@ not a proprietary photogrammetry engine or a customer production reconstruction 
 The earlier SD/PC/raw-upload and KSI-managed NodeODM description remains existing managed/test
 implementation and historical evidence, not the approved customer-workstation first-release
 target. Preserve managed source-authority and ProcessingJob rules; do not infer their removal.
+
+## P3 acquisition separation (Task 6, 2026-10-08)
+
+Acquisition-only sources (edge native trees, `services/dji-gateway`, the
+mission/perception/equipment packages, their tests and edge tooling) moved
+blob-identical to `archive/acquisition-2026/` per
+`docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv`. The archive is historical
+evidence only — never a runtime import path, workspace member, production
+build context, or pytest/mypy/ruff target. The `apps/dashboard/` acquisition
+screens still reference retired routes until the design-owned P4 Console
+cleanup (recorded transitional state, not silent support).

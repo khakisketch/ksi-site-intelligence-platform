@@ -19,6 +19,9 @@ _check_manifest_paths = import_module(
 _check_r3_migration_paths = import_module(
     "tools.validate_repository_normalization"
 )._check_r3_migration_paths
+_existing_or_migrated_path = import_module(
+    "tools.validate_repository_normalization"
+)._existing_or_migrated_path
 
 R3_IMPORT_ONLY_PACKAGE_MOVES = {
     "services/change-detection": "packages/change-detection",
@@ -88,7 +91,11 @@ def test_ci_normalization_step_uses_portable_default_contract() -> None:
 
 
 def test_ci_provisions_pinned_psdk_fixture_before_pytest() -> None:
-    """Make the public pinned KMZ fixture available to the full test gate."""
+    """The PSDK fixture provisioning retired from the main gates with its
+    last consumers (P3 Task 6): the archived edge/PSDK tests moved to
+    ``archive/acquisition-2026/`` and no retained test reads the vendored
+    PSDK tree. Provisioning now lives only in the bounded historical
+    workflow — the main gates must not depend on archived content."""
 
     workflow = yaml.safe_load(
         (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -99,20 +106,44 @@ def test_ci_provisions_pinned_psdk_fixture_before_pytest() -> None:
         for step in steps
         if step.get("name") == "PSDK fixture provisioning and pin verification"
     ]
-    assert len(provisioning_steps) == 1
+    assert provisioning_steps == []
 
-    assert [
-        shlex.split(line)
-        for line in provisioning_steps[0]["run"].splitlines()
-        if line.strip()
-    ] == [
-        ["uv", "run", "--locked", "python", "tools/edge/fetch_psdk.py"],
-        ["uv", "run", "--locked", "bash", "scripts/check_third_party_pins.sh"],
+    historical = yaml.safe_load(
+        (ROOT / ".github/workflows/historical-archive.yml").read_text(
+            encoding="utf-8"
+        )
+    )
+    historical_runs = [
+        step.get("run", "")
+        for job in historical["jobs"].values()
+        for step in job.get("steps", [])
     ]
+    assert any(
+        "archive/acquisition-2026/tools/edge/fetch_psdk.py" in run
+        for run in historical_runs
+    ), "historical route must provision the pinned PSDK fixture itself"
+    assert any(
+        "archive/acquisition-2026/scripts/check_third_party_pins.sh" in run
+        for run in historical_runs
+    ), "historical route must verify pins against the archived lock"
 
     pytest_steps = [step for step in steps if step.get("name") == "pytest"]
     assert len(pytest_steps) == 1
-    assert steps.index(provisioning_steps[0]) < steps.index(pytest_steps[0])
+
+
+def test_p3_archive_relocation_resolves_references(tmp_path: Path) -> None:
+    """Manifest-approved acquisition sources moved blob-identical to
+    ``archive/acquisition-2026/<path>`` still resolve (relocated, not lost);
+    unknown paths stay unresolvable (fail-closed)."""
+    archived = tmp_path / "archive/acquisition-2026/edge/psdk-app/CMakeLists.txt"
+    archived.parent.mkdir(parents=True)
+    archived.write_text("project(psdk_app)\n", encoding="utf-8")
+    assert _existing_or_migrated_path(
+        tmp_path, "edge/psdk-app/CMakeLists.txt", {}
+    ) == archived
+    assert (
+        _existing_or_migrated_path(tmp_path, "edge/psdk-app/ghost.c", {}) is None
+    )
 
 
 def test_repository_normalization_contract_passes_from_exact_git_index(

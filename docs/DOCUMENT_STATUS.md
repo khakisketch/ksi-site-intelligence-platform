@@ -41,6 +41,7 @@ it does not change product decisions or current capability state.
 | `docs/superpowers/plans/*`, `docs/superpowers/specs/*` | DATED IMPLEMENTATION HISTORY by default | A plan/spec is active only when current authority, the active checkout task ledger, or `product-state.md`'s named slice ledger explicitly names it; approved design documents remain active design only and never runtime/field proof |
 | `references/**` | REFERENCE ONLY | Adoption matrix and KSI-owned code/contracts control product behavior |
 | `docs/archive/**` | ARCHIVED | May be used only as provenance/evidence; never canonical |
+| `archive/acquisition-2026/**` | ARCHIVED (P3 Task 6) | Acquisition-only sources moved blob-identical per `audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv`; historical evidence only — never a runtime import path, workspace member, production build context, or pytest/mypy/ruff target. The single bounded exception is the `workflow_dispatch`-only `.github/workflows/historical-archive.yml` verification route (not product support). |
 
 The current repository naming/ownership assessment is
 [`audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md`](audit/REPOSITORY_NAMING_AND_OWNERSHIP_AUDIT_R0_R2.md).

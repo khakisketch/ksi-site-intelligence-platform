@@ -20,7 +20,9 @@ _SUPPLY_CHAIN_FILES = (
     Path("Dockerfile.external-measurement"),
     Path("Dockerfile.external-measurement.dockerignore"),
     Path("apps/dashboard/Dockerfile"),
-    Path("edge/docker/manifold3-build.Dockerfile"),
+    # P3 Task 6: edge/docker/manifold3-build.Dockerfile moved blob-identical
+    # to archive/acquisition-2026/ with its consumer (historical route only) —
+    # removed from the live supply chain here (RB-08 explicit record).
     Path("deploy/compose.yaml"),
     Path("deploy/compose.vm.yaml"),
     Path("deploy/compose.synthetic-staging.yaml"),

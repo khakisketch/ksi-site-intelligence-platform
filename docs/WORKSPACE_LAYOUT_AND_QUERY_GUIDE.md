@@ -16,8 +16,8 @@
 | 제품 책임 | 시작 경로 |
 |---|---|
 | KSI Operations Console | `apps/dashboard/README.md` |
-| KSI Site Intelligence Core / Gateway / Processing | `services/README.md` |
-| Manifold Edge / PSDK | `edge/README.md` |
+| KSI Site Intelligence Core / Processing | `services/README.md` |
+| Manifold Edge / PSDK (P3 Task 6 historical) | `archive/acquisition-2026/edge/README.md` |
 | 재사용 domain/contract/algorithm | `packages/README.md` |
 | wire/API/HIL schema | `contracts/` |
 | 문서 authority/status | `docs/00_READ_FIRST.md`, `docs/DOCUMENT_STATUS.md` |

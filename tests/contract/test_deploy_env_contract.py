@@ -118,7 +118,15 @@ def test_deploy_does_not_claim_an_unverified_gateway_runtime() -> None:
 
 
 def test_gateway_example_uses_a_distinct_edge_route_observer_credential() -> None:
-    config = json.loads(_GATEWAY_CONFIG_EXAMPLE.read_text(encoding="utf-8"))
+    # P3 Task 6: the gateway runner example moved blob-identical to
+    # archive/acquisition-2026/deploy/gateway.config.example.json with its
+    # subject (the archived dji-gateway service). The credential-separation
+    # shape stays pinned against the archived copy — an active-tree test
+    # reading a historical example only to prove the archived bytes did not
+    # rot (RB-08 explicit record; the live deploy contract no longer covers
+    # any gateway runtime).
+    archived = _ROOT / "archive" / "acquisition-2026" / "deploy" / "gateway.config.example.json"
+    config = json.loads(archived.read_text(encoding="utf-8"))
     core = config["core"]
     assert core["observationTokenFile"] == "/run/secrets/ksi-edge-route-observer-token"
     assert core["observationTokenFile"] != core["preflightTokenFile"]
