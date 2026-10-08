@@ -93,6 +93,20 @@ def _frozen_candidates() -> list[dict[str, str]]:
         return [row for row in reader if row["proposedDisposition"] == "ARCHIVE_CANDIDATE"]
 
 
+REAL_DECISIONS = ROOT / "docs/audit" / "PHYSICAL_SITE_MOVE_DECISIONS_v1.csv"
+
+
+def _committed_decisions() -> list[dict[str, str]]:
+    """Rows of the committed move-decision manifest. Post-execution (P3 Task
+    6) the manifest is read as the historical record — rebuilding it requires
+    the pre-move tree, so these tests verify the EXECUTED state (archive
+    bindings) instead of re-deriving decisions."""
+    with REAL_DECISIONS.open(newline="", encoding="utf-8") as stream:
+        reader = csv.DictReader(stream)
+        assert reader.fieldnames == list(_tool.DECISION_COLUMNS)
+        return list(reader)
+
+
 def test_frozen_csv_bytes_unchanged() -> None:
     """The frozen inventory remains the byte-identical historical record."""
     assert hashlib.sha256(REAL_FROZEN.read_bytes()).hexdigest() == REAL_FROZEN_SHA256
@@ -100,77 +114,83 @@ def test_frozen_csv_bytes_unchanged() -> None:
 
 def test_real_csv_candidate_count_and_exact_destinations() -> None:
     """194 candidates, every destination exactly ``archive/acquisition-2026/<path>``."""
-    decisions = build_move_decisions(REAL_FROZEN, ROOT)
-    assert len(decisions) == 194
-    assert len({decision.path for decision in decisions}) == 194
+    rows = _committed_decisions()
+    assert len(rows) == 194
+    assert len({row["path"] for row in rows}) == 194
     frozen = {row["path"]: row for row in _frozen_candidates()}
     assert len(frozen) == 194
-    for decision in decisions:
-        assert decision.path in frozen, decision.path
-        assert decision.decision == "MOVE", decision.path
-        assert decision.destination == f"{ARCHIVE_PREFIX}{decision.path}", decision.path
-        assert frozen[decision.path]["proposedDestination"] == decision.destination
+    for row in rows:
+        assert row["path"] in frozen, row["path"]
+        assert row["decision"] == "MOVE", row["path"]
+        assert row["destination"] == f"{ARCHIVE_PREFIX}{row['path']}", row["path"]
+        assert frozen[row["path"]]["proposedDestination"] == row["destination"]
 
 
 def test_real_csv_group_counts() -> None:
     """Per-group row counts are pinned: any inventory drift is a loud failure."""
-    decisions = build_move_decisions(REAL_FROZEN, ROOT)
+    rows = _committed_decisions()
     counts: dict[str, int] = {}
-    for decision in decisions:
-        counts[decision.group] = counts.get(decision.group, 0) + 1
+    for row in rows:
+        counts[row["group"]] = counts.get(row["group"], 0) + 1
     assert counts == EXPECTED_GROUP_COUNTS
     assert sum(counts.values()) == 194
 
 
 def test_real_csv_current_revision_binding() -> None:
-    """Every decision binds the CURRENT HEAD object and blob SHA256 — never a
-    stale baseline hash, never working-tree bytes."""
-    decisions = build_move_decisions(REAL_FROZEN, ROOT)
+    """Post-execution archive binding: every active source path is gone from
+    HEAD and its exact destination blob carries the recorded git object and
+    blob SHA256 — blob-identical execution, never working-tree bytes."""
+    rows = _committed_decisions()
     head = _git_head_map()
-    by_path = {decision.path: decision for decision in decisions}
-    assert len(by_path) == 194
-    for path, decision in by_path.items():
-        assert path in head, f"candidate missing at HEAD: {path}"
-        mode, kind, obj = head[path]
-        assert kind == "blob", path
-        assert mode in ("100644", "100755", "120000"), path
-        assert decision.git_object == obj, path
-        assert _HEX40(decision.git_object), path
-        assert decision.blob_sha256 == _blob_sha256(obj), path
-        assert _HEX64(decision.blob_sha256), path
+    assert len({row["path"] for row in rows}) == 194
+    for row in rows:
+        path = row["path"]
+        assert path not in head, f"candidate still active at HEAD: {path}"
+        destination = row["destination"]
+        assert destination in head, f"destination missing at HEAD: {destination}"
+        mode, kind, obj = head[destination]
+        assert kind == "blob", destination
+        assert mode in ("100644", "100755", "120000"), destination
+        assert row["git_object"] == obj, path
+        assert _HEX40(row["git_object"]), path
+        assert row["blob_sha256"] == _blob_sha256(obj), path
+        assert _HEX64(row["blob_sha256"]), path
 
 
 def test_real_csv_decision_vocabulary_and_blockers() -> None:
     """Decision vocabulary enforced; every MOVE carries its exact closure
-    blockers including its own per-path consumer-review id."""
-    decisions = build_move_decisions(REAL_FROZEN, ROOT)
-    for decision in decisions:
-        assert decision.decision in ("MOVE", "DEFER", "RETAIN"), decision.path
-        for blocker in decision.blockers:
-            assert BLOCKER_PATTERN.fullmatch(blocker), (decision.path, blocker)
-        if decision.decision == "MOVE":
-            assert decision.destination == f"{ARCHIVE_PREFIX}{decision.path}"
-            assert f"T6:consumer-review:{decision.path}" in decision.blockers
-            assert len(decision.blockers) > 1, decision.path
+    blockers including its own per-path consumer-review id (historical record
+    of the closure this task executed)."""
+    rows = _committed_decisions()
+    for row in rows:
+        assert row["decision"] in ("MOVE", "DEFER", "RETAIN"), row["path"]
+        blockers = [b for b in row["blockers"].split(";") if b]
+        for blocker in blockers:
+            assert BLOCKER_PATTERN.fullmatch(blocker), (row["path"], blocker)
+        if row["decision"] == "MOVE":
+            assert row["destination"] == f"{ARCHIVE_PREFIX}{row['path']}"
+            assert f"T6:consumer-review:{row['path']}" in blockers
+            assert len(blockers) > 1, row["path"]
         else:
-            assert decision.destination is None, decision.path
+            assert not row["destination"], row["path"]
     package_groups = {
         "packages/mission-contracts",
         "packages/mission-planning",
         "packages/equipment-intelligence",
         "packages/perception",
     }
-    for decision in decisions:
-        if decision.group in package_groups:
-            assert "T5:core-dep-drop" in decision.blockers or (
-                "T3:worker-managed-split" in decision.blockers
-            ), decision.path
-    contracts_rows = [d for d in decisions if d.group == "packages/mission-contracts"]
+    for row in rows:
+        if row["group"] in package_groups:
+            blockers = [b for b in row["blockers"].split(";") if b]
+            assert "T5:core-dep-drop" in blockers or (
+                "T3:worker-managed-split" in blockers
+            ), row["path"]
+    contracts_rows = [r for r in rows if r["group"] == "packages/mission-contracts"]
     assert contracts_rows, "expected mission-contracts MOVE rows"
     assert any(
         b.startswith("T5:core-import-closure:services/core/src/ksi_core/")
-        for d in contracts_rows
-        for b in d.blockers
+        for r in contracts_rows
+        for b in [b for b in r["blockers"].split(";") if b]
     )
 
 
@@ -213,7 +233,21 @@ def test_real_csv_consumers_are_real_references() -> None:
         # still resolve through the validator's archive fallback at runtime.
         "tools/validate_repository_normalization.py": {"edge/root"},
     }
-    decisions = build_move_decisions(REAL_FROZEN, ROOT)
+    # Prior-task closures (references removed by design in Tasks 3/5, not
+    # relocated): the three package dependencies left services/core/
+    # pyproject.toml (Task 5 commit 2e85391) and ksi-perception left the
+    # worker pyproject (Task 3 commit 6a00443). The committed manifest keeps
+    # them as the historical consumer record; the T5/T3 blocker ids are the
+    # closure evidence.
+    prior_closed = {
+        "services/core/pyproject.toml": {
+            "packages/equipment-intelligence",
+            "packages/mission-contracts",
+            "packages/mission-planning",
+        },
+        "services/processing-controller/pyproject.toml": {"packages/perception"},
+    }
+    decisions = _committed_decisions()
     head = _git_head_map()
     group_tokens = {
         "packages/mission-contracts": ("ksi_mission_contracts", "ksi-mission-contracts"),
@@ -233,8 +267,9 @@ def test_real_csv_consumers_are_real_references() -> None:
     seen_consumers = 0
     seen_closed = 0
     for decision in decisions:
-        tokens = group_tokens[decision.group]
-        for consumer in decision.consumers:
+        tokens = group_tokens[decision["group"]]
+        consumers = [c for c in decision["consumers"].split(";") if c]
+        for consumer in consumers:
             resolved = _resolve_consumer(consumer, head)
             raw = subprocess.run(
                 ["git", "cat-file", "blob", head[resolved][2]],
@@ -245,8 +280,10 @@ def test_real_csv_consumers_are_real_references() -> None:
             if any(token in raw for token in tokens):
                 seen_consumers += 1
                 continue
-            assert decision.group in task6_closed.get(consumer, set()), (
-                decision.path,
+            assert decision["group"] in task6_closed.get(
+                consumer, set()
+            ) | prior_closed.get(consumer, set()), (
+                decision["path"],
                 consumer,
             )
             seen_closed += 1
@@ -505,9 +542,11 @@ def test_synthetic_bad_destination_is_controlled(tmp_path: Path) -> None:
     assert any("app.c" in finding for finding in excinfo.value.findings)
 
 
-def test_cli_writes_csv_and_md_on_real_checkout(tmp_path: Path) -> None:
-    """The real CLI binds all 194 rows and writes both artifacts with the
-    required companion sections."""
+def test_cli_refuses_rebuild_after_execution(tmp_path: Path) -> None:
+    """Post-execution the decision tool fail-closes on the real checkout: the
+    candidates are gone from HEAD, so rebuilding refuses with controlled
+    findings (never a partial manifest, never a traceback). The committed
+    manifest stays the historical record."""
     out_csv = tmp_path / "decisions.csv"
     out_md = tmp_path / "decisions.md"
     completed = subprocess.run(
@@ -526,32 +565,11 @@ def test_cli_writes_csv_and_md_on_real_checkout(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
     )
-    assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "Traceback" not in completed.stderr
-    with out_csv.open(newline="", encoding="utf-8") as stream:
-        reader = csv.DictReader(stream)
-        assert reader.fieldnames == list(_tool.DECISION_COLUMNS)
-        rows = list(reader)
-    assert len(rows) == 194
-    for row in rows:
-        assert row["destination"] == f"{ARCHIVE_PREFIX}{row['path']}", row["path"]
-        assert _HEX40(row["git_object"]), row["path"]
-        assert _HEX64(row["blob_sha256"]), row["path"]
-        assert _HEX40(row["baseline_git_object"]), row["path"]
-        assert _HEX64(row["baseline_sha256"]), row["path"]
-    text = out_md.read_text(encoding="utf-8")
-    for required in (
-        "current-revision",
-        REAL_FROZEN_BASELINE,
-        REAL_FROZEN_SHA256,
-        "blocker",
-        "executor",
-        "T6:consumer-review",
-        "edge/manifold-runtime",
-        "packages/mission-contracts",
-        "services/dji-gateway",
-    ):
-        assert required in text, required
+    assert completed.returncode == 1, completed.stdout + completed.stderr
+    assert "Traceback" not in completed.stderr, completed.stderr
+    assert "missing at HEAD" in completed.stdout, completed.stdout
+    assert not out_csv.exists()
+    assert not out_md.exists()
 
 
 def test_cli_failure_writes_nothing(tmp_path: Path) -> None:
