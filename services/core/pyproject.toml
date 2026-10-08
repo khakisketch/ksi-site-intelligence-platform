@@ -3,16 +3,14 @@ name = "ksi-core"
 version = "0.0.1"
 description = "KSI Core Server — 인증·현장·임무·정책·이벤트·PostGIS control plane (ADR-KSI-001)"
 requires-python = ">=3.12,<3.13"
-# edge_sync(EventBundle 멱등 수신)가 offline_sync·EventBundle 계약을 소비하고,
-# mission_issuance/mission_plans 가 계약 서명·경로 생성을 소비한다.
+# P3 Task 5: managed acquisition 결합이 아카이브 경계 너머로 옮겨 Core 는 세
+# 패키지를 더 이상 import 하지 않는다(경계 테스트
+# tests/contract/test_acquisition_archive_boundary.py 가 증명). 패키지 자체는
+# T6 까지 워크스페이스 멤버로 남는다.
 dependencies = [
     "ksi-domain",
     "ksi-event-contracts",
     "ksi-geo-core",
-    "ksi-mission-contracts",
-    "ksi-mission-planning",
-    # Phase 3 장비 운동상태·CPA/TTC·재관찰 권고 — equipment_states.py 가 소비한다.
-    "ksi-equipment-intelligence",
     # 설계 기준면 검증(design_surfaces.py)이 **계산 엔진과 같은** 좌표계 판정을
     # 써야 하기 때문이다(normalise_crs·SUPPORTED_PROJECT_CRS). Core 가 자기
     # 규칙을 따로 들면 "Core 는 받았는데 align_and_diff 는 거부하는" 설계면이
@@ -45,7 +43,4 @@ packages = ["src/ksi_core"]
 ksi-domain = { workspace = true }
 ksi-event-contracts = { workspace = true }
 ksi-geo-core = { workspace = true }
-ksi-mission-contracts = { workspace = true }
-ksi-mission-planning = { workspace = true }
-ksi-equipment-intelligence = { workspace = true }
 ksi-geo-spatial = { workspace = true }

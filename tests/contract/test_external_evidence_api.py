@@ -14,9 +14,9 @@ from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.external_evidence import (
@@ -34,7 +34,7 @@ from ksi_event_contracts.external_evidence import (
     external_evidence_declaration_wire_dict,
 )
 from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _NOW = datetime(2026, 9, 8, tzinfo=UTC)
 _TOKEN = "external-evidence-owner"  # noqa: S105 -- deterministic test credential

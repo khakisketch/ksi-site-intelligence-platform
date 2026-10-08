@@ -22,8 +22,9 @@ DEFAULT_MODULE_ROOT = REPOSITORY_ROOT / "services/core/src"
 COMPOSITION_MODULES = frozenset(
     {
         "ksi_core.app",
-        "ksi_core.app_assembly",
-        "ksi_core.production",
+        # P3 Task 5: app_assembly/production retired to archive/acquisition-2026/
+        # with their canonical composition modules; the staying shared factory
+        # shim is the only composition entrypoint domains may reference.
     }
 )
 MIGRATION_STATUSES = frozenset(

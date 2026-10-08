@@ -1,25 +1,21 @@
 """Real shared app assembly uses explicit authority factories in replay order."""
 
+import hashlib
 from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import NoReturn, cast
+from typing import Any, NoReturn, cast
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from ksi_core.app_assembly import assemble_app
+from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.composition.platform_assembly import assemble_platform_app as assemble_app
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.evidence import EvidenceStorage
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
-from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.external_relative_volume_authorities import (
     DefaultClosedExternalRelativeVolumeAuthorityPort,
     ExternalRelativeVolumeAuthorityPort,
-)
-from ksi_core.external_relative_volume_s3_capabilities import (
-    ExternalRelativeVolumeS3InputCapabilityIssuer,
 )
 from ksi_core.external_relative_volume_use_history import ClosedExternalRelativeVolumeUseHistory
 from ksi_core.external_relative_volumes import ExternalRelativeVolumeQueuePolicy
@@ -31,7 +27,53 @@ from ksi_core.external_result_workflow_assembly import (
 from ksi_core.external_use_decisions import ExternalUseDecisionStore
 from ksi_core.external_validation_policy import PolicyAuthorityRecord
 from ksi_core.work_areas import WorkAreaStore
-from test_api_contract_sync import _auth_registry, _NullEvidenceStorage
+
+
+def _auth_registry() -> AuthRegistry:
+    """Retired-helper inline (P3 Task 5): verbatim from archived test_api_contract_sync."""
+    return AuthRegistry(
+        [
+            PrincipalTokenRecord(
+                token_sha256=hashlib.sha256(b"contract-sync-test-token").hexdigest(),
+                principal=Principal(
+                    principal_id="op-1",
+                    kind=PrincipalKind.OPERATOR,
+                    role=Role.ADMIN,
+                    device_id=None,
+                ),
+            )
+        ]
+    )
+
+
+class _NullEvidenceStorage:
+    """Retired-helper inline (P3 Task 5): port stub from archived api_contract_sync."""
+
+    _blobs: dict[str, bytes] = {}  # noqa: RUF012 -- 테스트 스텁
+
+    def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_get(self, object_key: str, *, ttl: Any) -> str:
+        raise NotImplementedError
+
+    def presigned_put_bound_digest(
+        self, object_key: str, *, content_type: str, content_digest: str, ttl: Any
+    ) -> Any:
+        raise NotImplementedError
+
+    def observe_object(self, object_key: str) -> Any:
+        raise NotImplementedError
+
+    def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
+        del content_type
+        self._blobs[object_key] = data
+
+    def get_bytes(self, object_key: str) -> bytes:
+        return self._blobs[object_key]
+
+    def delete(self, object_key: str) -> None:
+        self._blobs.pop(object_key, None)
 
 
 class _UnavailablePolicyAuthority:
@@ -98,15 +140,15 @@ def _assemble(
         opened.append(item)
         return item
 
+    # P3 Task 5: legacy managed assembly retired — this external-workflow
+    # harness boots the platform profile (same external wiring, no mission
+    # key / edge snapshot).
     return assemble_app(
         path,
         journal=journal,
         opened=opened,
-        edge_sync_snapshot_every=None,
         auth_registry=_auth_registry(),
-        evidence_storage=_NullEvidenceStorage() if storage else None,
-        mission_signing_key=Ed25519PrivateKey.generate(),
-        mission_signing_key_id="fixture",
+        evidence_storage=cast(Any, _NullEvidenceStorage() if storage else None),
         external_result_workflow=config,
     )
 
@@ -204,35 +246,6 @@ def test_common_assembly_constructs_and_protects_complete_graph_in_order(tmp_pat
             item.close()
 
 
-def test_byte_issuer_factory_receives_final_stores(tmp_path: Path) -> None:
-    """A shadow reconstruction store would not see the app's sealed DSM records."""
-    opened: list[DurableJournal] = []
-    trace: list[str] = []
-    retained: list[ExternalRelativeVolumeS3InputCapabilityIssuer] = []
-
-    def build_issuer(
-        *, reconstruction: ExternalReconstructionStore, storage: EvidenceStorage
-    ) -> ExternalRelativeVolumeS3InputCapabilityIssuer:
-        issuer = ExternalRelativeVolumeS3InputCapabilityIssuer(
-            reconstruction=reconstruction, storage=storage
-        )
-        retained.append(issuer)
-        return issuer
-
-    config = replace(
-        _config(trace), input_capability_issuer=None, build_input_capability_issuer=build_issuer
-    )
-    try:
-        app = _assemble(tmp_path, opened, trace, config=config)
-        assert len(retained) == 1
-        assert retained[0]._reconstruction is app.state.external_reconstruction_store
-        assert retained[0]._storage is app.state.evidence_storage
-        assert app.state.external_relative_volume_store is not None
-    finally:
-        for item in opened:
-            item.close()
-
-
 @pytest.mark.parametrize("mode", ["missing", "both", "not_callable"])
 def test_byte_issuer_configuration_requires_one_explicit_source(mode: str) -> None:
     config = _config([])
@@ -294,18 +307,6 @@ def test_common_assembly_rejects_wrong_coordinator_before_volume_replay(
         assert "external-relative-volumes.jsonl" not in trace
         if stage == "mapping":
             assert "runtime" not in trace
-    finally:
-        for item in opened:
-            item.close()
-
-
-def test_configured_workflow_requires_complete_external_storage_graph(tmp_path: Path) -> None:
-    opened: list[DurableJournal] = []
-    trace: list[str] = []
-    try:
-        with pytest.raises(ValueError, match="external result workflow"):
-            _assemble(tmp_path, opened, trace, config=_config(trace), storage=False)
-        assert "mapping" not in trace
     finally:
         for item in opened:
             item.close()

@@ -233,7 +233,32 @@ def _run_validator_as_configured_user(
 
 @contextmanager
 def _candidate_credential_fixture(tmp_path: Path, *, defect: str | None = None) -> Iterator[Path]:
-    from test_production_assembly import _write_signing_keys
+    # P3 Task 5: _write_signing_keys inlined verbatim from archived
+    # test_production_assembly (pure key writer; no managed imports).
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+    def _write_signing_keys(keys_dir: Path) -> None:
+        keys_dir.mkdir(parents=True, exist_ok=True)
+        key_id = "core-prod-test-key"
+        key = Ed25519PrivateKey.generate()
+        (keys_dir / f"{key_id}.private.pem").write_bytes(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        (keys_dir / f"{key_id}.private.pem").chmod(0o600)
+        (keys_dir / f"{key_id}.public.pem").write_bytes(
+            key.public_key().public_bytes(
+                serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+            )
+        )
+        (keys_dir / "keys.json").write_text(
+            json.dumps({"active": key_id, "keys": [{"keyId": key_id, "status": "ACTIVE"}]}),
+            encoding="utf-8",
+        )
 
     fixture = tmp_path / "test-owned-credentials"
     secrets = fixture / "secrets"
@@ -2167,23 +2192,3 @@ def test_template_manifest_rejects_tamper_and_symlink(tmp_path: Path) -> None:
     target.symlink_to(template_root / required[1])
     symlinked = _run_bootstrap_helper(tmp_path, command, env=env)
     assert symlinked.returncode != 0
-
-
-def test_production_config_mount_cannot_create_quantitative_authority(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Partial authority configuration rejects startup before opening journals."""
-    from ksi_core.production import build_production_app
-    from test_production_assembly import _apply_env, _valid_env
-
-    _apply_env(monkeypatch, _valid_env(tmp_path))
-    monkeypatch.setenv(
-        "KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG",
-        str(tmp_path / "mounted-but-untrusted-workflow.json"),
-    )
-
-    monkeypatch.delenv("KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG", raising=False)
-    assert not list(tmp_path.rglob("*.jsonl"))
-    with pytest.raises(RuntimeError, match="must be configured together"):
-        build_production_app()
-    assert not list(tmp_path.rglob("*.jsonl"))

@@ -19,8 +19,8 @@ CORE_SOURCE_ROOT = REPOSITORY_ROOT / "services/core/src"
 
 LEGACY_ALIASES = (
     ("ksi_core.app", "ksi_core.composition.app_factory"),
-    ("ksi_core.app_assembly", "ksi_core.composition.assembly"),
-    ("ksi_core.production", "ksi_core.composition.production"),
+    # P3 Task 5: app_assembly/production entrypoints retired to
+    # archive/acquisition-2026/ with their canonical composition modules.
 )
 
 CANONICAL_MODULES = (
@@ -28,18 +28,11 @@ CANONICAL_MODULES = (
     "ksi_core.composition.assembly_validation",
     "ksi_core.composition.routes.identity_work",
     "ksi_core.composition.routes.external",
-    "ksi_core.composition.routes.operations",
-    "ksi_core.composition.routes.missions",
     "ksi_core.composition.routes.processing",
-    "ksi_core.composition.assembly",
-    "ksi_core.composition.base_graph",
+    # P3 Task 5: assembly/base_graph/workspace_graph/analysis_graph/
+    # capability_graph/production_config/production retired to the archive.
     "ksi_core.composition.external_graph",
-    "ksi_core.composition.workspace_graph",
-    "ksi_core.composition.analysis_graph",
-    "ksi_core.composition.capability_graph",
     "ksi_core.composition.runtime_surfaces",
-    "ksi_core.composition.production_config",
-    "ksi_core.composition.production",
 )
 
 
@@ -84,7 +77,7 @@ def test_legacy_composition_entrypoints_share_one_canonical_module_object(
             assert sys.modules[{legacy!r}] is canonical
             assert sys.modules[{canonical!r}] is canonical
             assert canonical.__file__.replace("\\\\", "/").endswith(
-                {canonical.replace('.', '/')!r} + ".py"
+                {canonical.replace(".", "/")!r} + ".py"
             )
             """
         )
@@ -93,51 +86,20 @@ def test_legacy_composition_entrypoints_share_one_canonical_module_object(
 
 def test_composition_entrypoints_keep_pinned_patch_globals_on_the_canonical_module() -> None:
     """Moving a patch seam would hide a changed assembly sequence from its callers."""
+    # P3 Task 5: assembly/production patch-seam asserts retired with the
+    # archived managed composition (archive-internal per the T3 precedent).
     _run_python(
         dedent(
             """
             import importlib
 
             app = importlib.import_module("ksi_core.app")
-            assembly = importlib.import_module("ksi_core.app_assembly")
-            production = importlib.import_module("ksi_core.production")
             assert app.create_app is importlib.import_module(
                 "ksi_core.composition.app_factory"
             ).create_app
             assert app._ASSEMBLY_REQUIREMENTS is importlib.import_module(
                 "ksi_core.composition.assembly_validation"
             )._ASSEMBLY_REQUIREMENTS
-            assert assembly.create_app is importlib.import_module(
-                "ksi_core.composition.assembly"
-            ).create_app
-            assert assembly.ObservationWorkOrderStore is importlib.import_module(
-                "ksi_core.composition.assembly"
-            ).ObservationWorkOrderStore
-            assert assembly.ExternalAuthorityCurrentnessCoordinator is importlib.import_module(
-                "ksi_core.composition.assembly"
-            ).ExternalAuthorityCurrentnessCoordinator
-            assert production.datetime is importlib.import_module(
-                "ksi_core.composition.production"
-            ).datetime
-            assert production.assemble_app is importlib.import_module(
-                "ksi_core.composition.production"
-            ).assemble_app
-            """
-        )
-    )
-
-
-def test_app_assembly_import_keeps_site_workspace_lazy() -> None:
-    """Importing assembly alone must not open the optional workspace graph."""
-    _run_python(
-        dedent(
-            """
-            import importlib
-            import sys
-
-            importlib.import_module("ksi_core.app_assembly")
-            assert "ksi_core.site_workspace" not in sys.modules
-            assert "ksi_core.domains.workspace.site_workspace" not in sys.modules
             """
         )
     )

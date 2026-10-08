@@ -356,10 +356,10 @@
     },
     {
       "id": "mission-planning-boundary",
-      "paths": ["services/core/src/ksi_core/mission_plans.py", "packages/mission-planning/"],
+      "paths": ["archive/acquisition-2026/services/core/src/ksi_core/mission_plans.py", "packages/mission-planning/"],
       "dependencyEvidence": ["services/core/pyproject.toml", "services/core/src/ksi_core/sites.py", "packages/mission-planning/pyproject.toml"],
       "buildEvidence": ["services/core/pyproject.toml", "packages/mission-planning/pyproject.toml", "pyproject.toml"],
-      "ciEvidence": ["tests/contract/test_mission_plans.py", "tests/contract/test_mission_planning.py", "tests/contract/test_anti_circularity_gate.py"],
+      "ciEvidence": ["archive/acquisition-2026/tests/contract/test_mission_plans.py", "tests/contract/test_mission_planning.py", "archive/acquisition-2026/tests/contract/test_anti_circularity_gate.py"],
       "before": "Core owns durable Mission-plan lifecycle while the package owns deterministic coverage, geometry, terrain, and WPML algorithms.",
       "after": "UNCHANGED_R0_R2: authority and algorithm boundaries remain separate and tested.",
       "decision": "RETAIN_DEFER_TO_R3"

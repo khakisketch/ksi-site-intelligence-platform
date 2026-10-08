@@ -763,12 +763,9 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "ksi-domain" },
-    { name = "ksi-equipment-intelligence" },
     { name = "ksi-event-contracts" },
     { name = "ksi-geo-core" },
     { name = "ksi-geo-spatial" },
-    { name = "ksi-mission-contracts" },
-    { name = "ksi-mission-planning" },
     { name = "pyjwt" },
 ]
 
@@ -784,12 +781,9 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "ksi-domain", editable = "packages/domain" },
-    { name = "ksi-equipment-intelligence", editable = "packages/equipment-intelligence" },
     { name = "ksi-event-contracts", editable = "packages/event-contracts" },
     { name = "ksi-geo-core", editable = "packages/geo-core" },
     { name = "ksi-geo-spatial", editable = "packages/geo-spatial" },
-    { name = "ksi-mission-contracts", editable = "packages/mission-contracts" },
-    { name = "ksi-mission-planning", editable = "packages/mission-planning" },
     { name = "pyjwt", specifier = ">=2.10,<3" },
 ]
 provides-extras = ["s3"]

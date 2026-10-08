@@ -384,7 +384,10 @@ def test_analysis_mcp_client_is_denied_auth_only_and_unrelated_generic_routes(
     try:
         client = TestClient(fixture.app)
         headers = fixture.mcp_client_headers()
-        paths = ("/v1/auth/whoami", "/v1/processing-resource-policies", "/v1/sites")
+        # P3 Task 5: /v1/processing-resource-policies retired with the managed
+        # assembly (platform mounts no processing routes) — the roster route is
+        # the staying generic surface the MCP client must still be denied.
+        paths = ("/v1/auth/whoami", "/v1/organization-work-roster", "/v1/sites")
         responses = [client.get(path, headers=headers) for path in paths]
         assert [response.status_code for response in responses] == [403, 403, 403]
         assert all("X-KSI-External-AI-Egress" not in response.headers for response in responses)

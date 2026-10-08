@@ -28,14 +28,17 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ksi_domain.enums import EventStatus
 
 from ksi_core.evidence import EvidenceStorageError, EvidenceVerdict
 
 if TYPE_CHECKING:
-    from ksi_core.events import EventRecord, EventStore
+    # P3 Task 5: ksi_core.events retired to archive/acquisition-2026/
+    # — no active import, not even typing-only. Aliases stay opaque Any.
+    EventRecord = Any
+    EventStore = Any
     from ksi_core.evidence import EvidenceStorage
 
 logger = logging.getLogger("ksi_core.retention")

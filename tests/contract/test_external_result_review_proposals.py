@@ -68,7 +68,7 @@ from ksi_event_contracts.external_result_review import (
     external_result_review_receipt_wire_dict,
 )
 from ksi_event_contracts.observation_work_order import TemporalCoherencePolicy
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _NOW = datetime(2026, 9, 9, 12, tzinfo=UTC)
 _TOKEN = "external-proposal-admin"  # noqa: S105 -- deterministic test credential

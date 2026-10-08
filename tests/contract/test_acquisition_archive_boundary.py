@@ -194,3 +194,266 @@ def test_platform_lanes_import_no_managed_or_acquisition_module() -> None:
     ) % (denied, (*_SURVIVING_ENTRYPOINT_MODULES, *_SURVIVING_LANE_MODULES))
     completed = _run_python(script)
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+# ── Part B — Core managed-module closure (P3 Task 5) ─────────────────────────
+# Decision-table authority: task-5-report.md phase (a). Every Core module that
+# carried a runtime `ksi_mission_*` / `ksi_equipment_*` import, or top-level
+# imported such a module, or solely wired the legacy managed assembly, lives
+# under ``archive/acquisition-2026/`` after Task 5 and must be unimportable
+# from the active tree. The platform profile (assembly + built app + staying
+# shared factory/route helpers) must import no acquisition package.
+
+_CORE_SRC = REPOSITORY_ROOT / "services/core/src"
+_CORE_MANAGED_ABSENT = (
+    # 11 recorded import sites (canonical + flat shims).
+    "ksi_core.composition.production_config",
+    "ksi_core.capability.runtime_api",
+    "ksi_core.identity.signing_keys",
+    "ksi_core.signing_keys",
+    "ksi_core.domains.observations.events",
+    "ksi_core.events",
+    "ksi_core.domains.observations.equipment_states",
+    "ksi_core.equipment_states",
+    "ksi_core.domains.edge_transport.edge_dispatch",
+    "ksi_core.edge_dispatch",
+    "ksi_core.domains.design.region_extraction_reports",
+    "ksi_core.region_extraction_reports",
+    "ksi_core.domains.missions.mission_issuance",
+    "ksi_core.mission_issuance",
+    "ksi_core.domains.missions.mission_plans",
+    "ksi_core.mission_plans",
+    "ksi_core.domains.missions.mission_records",
+    "ksi_core.mission_records",
+    "ksi_core.domains.missions.mission_atomicity",
+    "ksi_core.mission_atomicity",
+    # Forced moves: top-level import of a moved module, or same managed set.
+    "ksi_core.domains.missions.coverage_reports",
+    "ksi_core.coverage_reports",
+    "ksi_core.domains.missions.flight_artifacts",
+    "ksi_core.flight_artifacts",
+    "ksi_core.domains.missions.mission_execution",
+    "ksi_core.mission_execution",
+    "ksi_core.domains.missions",
+    "ksi_core.domains.edge_transport.edge_sync",
+    "ksi_core.edge_sync",
+    "ksi_core.domains.edge_transport",
+    "ksi_core.domains.analytics.defect_candidates",
+    "ksi_core.defect_candidates",
+    "ksi_core.domains.design.report_exports",
+    "ksi_core.report_exports",
+    "ksi_core.domains.observations.equipment_support",
+    "ksi_core.equipment_support",
+    "ksi_core.identity.device_attestation",
+    "ksi_core.device_attestation",
+    "ksi_core.capability",
+    "ksi_core.capability.authority_store",
+    "ksi_core.capability.registry",
+    "ksi_core.capability.runtime_projection",
+    "ksi_core.acquisition",
+    "ksi_core.acquisition.analysis_readiness",
+    "ksi_core.acquisition.api",
+    "ksi_core.acquisition.capture_quality_reports",
+    "ksi_core.capture_quality_reports",
+    "ksi_core.acquisition.coordination",
+    "ksi_core.acquisition.coordination_api",
+    "ksi_core.acquisition.models",
+    "ksi_core.acquisition.store",
+    "ksi_core.domains.workspace",
+    "ksi_core.domains.workspace.copilot",
+    "ksi_core.copilot",
+    "ksi_core.domains.workspace.copilot_conversations",
+    "ksi_core.copilot_conversations",
+    "ksi_core.domains.workspace.copilot_openai",
+    "ksi_core.copilot_openai",
+    "ksi_core.domains.workspace.site_workspace",
+    "ksi_core.site_workspace",
+    "ksi_core.composition.assembly",
+    "ksi_core.composition.base_graph",
+    "ksi_core.composition.workspace_graph",
+    "ksi_core.composition.analysis_graph",
+    "ksi_core.composition.capability_graph",
+    "ksi_core.composition.production",
+    "ksi_core.production",
+    "ksi_core.app_assembly",
+    # Managed-only route modules (sole runtime caller: legacy app_factory).
+    "ksi_core.composition.routes.missions",
+    "ksi_core.composition.routes.operations",
+)
+
+# Staying shared surfaces the platform profile exercises without managed state.
+_PLATFORM_IMPORT_SURFACE = (
+    "ksi_core.composition.platform_assembly",
+    "ksi_core.composition.platform_production",
+    "ksi_core.composition.app_factory",
+    "ksi_core.composition.assembly_validation",
+    "ksi_core.composition.local_analysis_runtime_config",
+    "ksi_core.composition.routes.external",
+    "ksi_core.composition.routes.identity_work",
+    "ksi_core.composition.routes.processing",
+)
+
+_DENIED_CORE_ACQUISITION_PREFIXES = (
+    "ksi_mission_contracts",
+    "ksi_mission_planning",
+    "ksi_equipment_intelligence",
+)
+
+_CORE_SOURCE_ROOTS = (
+    _CORE_SRC,
+    REPOSITORY_ROOT / "packages/event-contracts/src",
+    REPOSITORY_ROOT / "packages/domain/src",
+    REPOSITORY_ROOT / "packages/geo-core/src",
+    REPOSITORY_ROOT / "packages/geo-spatial/src",
+    REPOSITORY_ROOT / "packages/change-detection/src",
+)
+
+
+def _active_spec(name: str) -> bool:
+    """True when `name` resolves in the active tree.
+
+    `find_spec` raises ModuleNotFoundError (instead of returning None) when a
+    parent package is gone entirely — that is absence too, and the loudest kind.
+    """
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        return False
+
+
+def test_core_managed_modules_are_absent_from_the_active_tree() -> None:
+    """Every moved Core managed module fails loudly — never silently skipped."""
+    for name in _CORE_MANAGED_ABSENT:
+        assert not _active_spec(name), name
+    for name in _CORE_MANAGED_ABSENT:
+        try:
+            importlib.import_module(name)
+        except ModuleNotFoundError:
+            continue
+        raise AssertionError(f"{name} still imports from the active tree")
+
+
+def test_core_source_tree_has_no_acquisition_package_imports() -> None:
+    """No active Core file imports an acquisition package (AST gate, all levels)."""
+    import ast
+
+    violations: list[str] = []
+    for path in sorted((_CORE_SRC / "ksi_core").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = [alias.name for alias in node.names]
+            elif isinstance(node, ast.ImportFrom):
+                names = [node.module or ""]
+            else:
+                continue
+            for name in names:
+                if any(
+                    name == prefix or name.startswith(prefix + ".")
+                    for prefix in _DENIED_CORE_ACQUISITION_PREFIXES
+                ):
+                    violations.append(f"{path.relative_to(REPOSITORY_ROOT)}:{node.lineno}: {name}")
+    assert not violations, "active Core still imports acquisition packages:\n" + "\n".join(
+        violations
+    )
+
+
+def _run_core_python(script: str) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    existing = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        [str(root) for root in _CORE_SOURCE_ROOTS] + ([existing] if existing else [])
+    )
+    return subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=REPOSITORY_ROOT,
+        capture_output=True,
+        check=False,
+        env=environment,
+        text=True,
+        timeout=180,
+    )
+
+
+def test_platform_app_imports_no_acquisition_package() -> None:
+    """Fresh-process deny-hook: platform boot pulls no acquisition package."""
+    denied = _DENIED_CORE_ACQUISITION_PREFIXES
+    script = dedent(
+        """
+        import importlib.util
+        import sys
+        import tempfile
+        from pathlib import Path
+
+        _DENIED = %r
+
+        # Sanity first: the control package is installed, so blocking it
+        # below proves the hook fires (not that the package is missing).
+        assert (
+            importlib.util.find_spec("ksi_mission_contracts") is not None
+        ), "ksi_mission_contracts must be installed for this probe"
+
+        class _DenyModules:
+            def find_spec(self, name, path=None, target=None):
+                if name in _DENIED or any(
+                    name == prefix or name.startswith(prefix + ".")
+                    for prefix in _DENIED
+                ):
+                    raise ImportError(f"platform isolation probe denies {name}")
+                return None
+
+        sys.meta_path.insert(0, _DenyModules())
+        for _module in list(sys.modules):
+            assert not any(
+                _module == prefix or _module.startswith(prefix + ".")
+                for prefix in _DENIED
+            ), _module
+        # Positive control: the hook must actually fire.
+        try:
+            import ksi_mission_contracts  # noqa: F401
+        except ImportError as exc:
+            assert "platform isolation probe denies" in str(exc), exc
+        else:
+            raise AssertionError("deny-hook did not block ksi_mission_contracts")
+
+        for _name in %r:
+            importlib.import_module(_name)
+
+        # Build the platform app: lazy route mounts must not pull acquisition.
+        from ksi_core.composition.platform_assembly import assemble_platform_app
+        from ksi_core.foundation.durable_journal import DurableJournal
+        from ksi_core.identity.auth import AuthRegistry
+
+        _tmp = Path(tempfile.mkdtemp())
+        _opened = []
+
+        def _journal(name):
+            _item = DurableJournal(_tmp / name)
+            _opened.append(_item)
+            return _item
+
+        class _Storage:
+            pass
+
+        _app = assemble_platform_app(
+            _tmp,
+            journal=_journal,
+            opened=_opened,
+            auth_registry=AuthRegistry([]),
+            evidence_storage=_Storage(),
+        )
+        assert _app is not None
+
+        leaked = sorted(
+            module
+            for module in sys.modules
+            if any(
+                module == prefix or module.startswith(prefix + ".")
+                for prefix in _DENIED
+            )
+        )
+        assert leaked == [], leaked
+        """
+    ) % (denied, _PLATFORM_IMPORT_SURFACE)
+    completed = _run_core_python(script)
+    assert completed.returncode == 0, completed.stdout + completed.stderr

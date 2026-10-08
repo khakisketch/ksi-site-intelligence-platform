@@ -14,8 +14,8 @@ from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordina
 from ksi_core.foundation.durable_journal import DurableJournal
 from ksi_core.identity.auth import PrincipalKind, Role
 from ksi_event_contracts.processing_job import DataResidency, ExecutionLocus
+from ksi_event_contracts.site_frame import SiteFrame
 from ksi_geo_spatial.external_native_window_geometry import plan_external_native_window
-from ksi_mission_contracts.models import SiteFrame
 from spatial_data_fixture import (
     NOW,
     make_grant,

@@ -29,6 +29,8 @@ def mount_processing_routes(
     region_extraction_report_store: Any,
     equipment_state_store: Any,
     equipment_support_store: Any,
+    design_surface_store: Any = None,
+    landxml_ingress_enabled: bool = False,
 ) -> None:
     if processing_job_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 원본을 받아갈
@@ -78,10 +80,8 @@ def mount_processing_routes(
             lifecycle=site_lifecycle,
         )
 
-    if defect_candidate_store is not None:
-        from ksi_core.defect_candidates import mount_defect_candidates
-
-        mount_defect_candidates(app, defect_candidate_store)
+    # P3 Task 5: defect_candidates retired to archive/acquisition-2026/ — branch
+    # removed (no active module may import from the archive, not even lazily).
 
     if change_detection_store is not None:
         from ksi_core.change_detection import mount_change_detection
@@ -134,10 +134,8 @@ def mount_processing_routes(
 
         mount_design_progress(app, design_conformance_report_store, work_area_store)
 
-    if report_export_store is not None:
-        from ksi_core.report_exports import mount_report_exports
-
-        mount_report_exports(app, report_export_store)
+    # P3 Task 5: report_exports retired to archive/acquisition-2026/ — branch
+    # removed (no active module may import from the archive, not even lazily).
 
     if region_extraction_request_store is not None:
         # evidence_storage 는 위 결합 검증이 이미 보장한다(워커가 diffRaster 를
@@ -150,22 +148,29 @@ def mount_processing_routes(
             app, region_extraction_request_store, design_conformance_report_store, evidence_storage
         )
 
-    if region_extraction_report_store is not None:
-        from ksi_core.region_extraction_reports import mount_region_extraction
-
-        mount_region_extraction(app, region_extraction_report_store)
+    # P3 Task 5: region_extraction_reports retired to archive/acquisition-2026/
+    # — branch removed (no active module may import from the archive).
 
     if work_area_store is not None:
         from ksi_core.work_areas import mount_work_areas
 
         mount_work_areas(app, work_area_store, site_store=site_store)
 
-    if equipment_state_store is not None:
-        from ksi_core.equipment_states import mount_equipment_states
+    # P3 Task 5: equipment_states/equipment_support retired to
+    # archive/acquisition-2026/ — branches removed (no active module may
+    # import from the archive, not even lazily).
 
-        mount_equipment_states(app, equipment_state_store)
+    # P3 Task 5: re-homed verbatim from retired mount_mission_routes — the
+    # design-surface HTTP surface rides on staying stores only.
+    if design_surface_store is not None and evidence_storage is not None:
+        # source_media 와 같은 관습 — presigned URL 을 낼 스토리지가 없으면 이
+        # 표면 자체가 존재하지 않는다(등록만 받고 올릴 곳이 없는 구성을 만들지
+        # 않는다). store 자체는 evidence_storage 없이도 구성될 수 있다.
+        from ksi_core.design_surfaces import mount_design_surfaces
 
-    if equipment_support_store is not None:
-        from ksi_core.equipment_support import mount_equipment_support
-
-        mount_equipment_support(app, equipment_support_store)
+        mount_design_surfaces(
+            app,
+            design_surface_store,
+            evidence_storage,
+            landxml_ingress_enabled=landxml_ingress_enabled,
+        )

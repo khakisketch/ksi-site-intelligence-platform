@@ -34,7 +34,17 @@ from typing import Any
 
 import numpy as np
 import pytest
-from analysis_api_local_fixture import LoopbackObjectStorage, _register_and_seal_v2_dsm
+from analysis_api_local_fixture import (
+    _ORIGIN_X,
+    _ORIGIN_Y,
+    LoopbackObjectStorage,
+    _digest,
+    _geotiff_bytes,
+    _register_and_seal_v2_dsm,
+    _RetainedEvidenceContextAuthority,
+    _RetainedPolicyAuthority,
+    _workflow,
+)
 from fastapi.testclient import TestClient
 from ksi_core.auth import (
     AuthRegistry,
@@ -51,24 +61,13 @@ from ksi_event_contracts.external_artifact_validation import (
     PolicyStatus,
     SealedExternalSubjectV1,
 )
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 from rasterio.transform import from_origin
-from test_external_analysis_execution_integration import (
-    _ORIGIN_X,
-    _ORIGIN_Y,
-    _geotiff_bytes,
-)
 from test_external_analysis_http_integration import _local_graph_config
 from test_external_analysis_real_inspection_lane_integration import (
     _CoreAndObjectServers,
     _drive_two_epochs_through_lane,
     _post_analysis,
-)
-from test_external_quantitative_production_flow import (
-    _digest,
-    _RetainedEvidenceContextAuthority,
-    _RetainedPolicyAuthority,
-    _workflow,
 )
 
 _OP_TOKEN = "platform-flow-operator"  # noqa: S105 -- deterministic test credential

@@ -94,7 +94,9 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.domains.design.design_conformance_requests import DesignConformanceRequestStore
-    from ksi_core.domains.missions.mission_records import MissionStore
+    # P3 Task 5: retired to archive/acquisition-2026/ — no active
+    # import, not even typing-only. Alias stays opaque Any.
+    MissionStore = Any
     from ksi_core.domains.processing.processing_jobs import ProcessingJobStore
 
 logger = logging.getLogger("ksi_core.design_conformance_reports")

@@ -467,23 +467,6 @@ def test_epoch_recipe_bytes_are_unchanged() -> None:
     assert f"obs-epoch-{hashlib.sha256(raw).hexdigest()[:24]}" == EPOCH_CYCLE_1
 
 
-def test_legacy_readiness_reexports_the_neutral_epoch_function() -> None:
-    from ksi_core.acquisition.analysis_readiness import (
-        observation_epoch_id as legacy_epoch_id,
-    )
-    from ksi_core.domains.observations.epoch_identity import (
-        observation_epoch_id as neutral_epoch_id,
-    )
-
-    assert legacy_epoch_id is neutral_epoch_id
-    assert (
-        legacy_epoch_id(
-            _work_order(organization_id=EPOCH_ORG, work_order_id=EPOCH_WORK_ORDER, cycle_number=1)
-        )
-        == EPOCH_CYCLE_1
-    )
-
-
 def test_external_reconstruction_replay_keeps_fixed_epoch() -> None:
     from ksi_core.domains.external.ingress.external_reconstruction import (
         ExternalReconstructionStore,

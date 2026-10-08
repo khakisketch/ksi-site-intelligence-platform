@@ -2,6 +2,31 @@
 
 KSI Core: identity, site, Mission Contract, event workflow, map/model registry and audit.
 
+## P3 Task 5 — Core acquisition closure (archive boundary)
+
+The managed acquisition set retired to `archive/acquisition-2026/` (git-tracked,
+blob-identical moves; the archive is not a runtime import path, workspace member,
+or test target): `domains/missions/**`, `capability/**`, `domains/edge_transport/**`,
+`domains/observations/{events,equipment_states,equipment_support}.py`,
+`identity/{signing_keys,device_attestation}.py`, `acquisition/**`,
+`domains/workspace/**` (copilot + site workspace), the mission-coupled
+`domains/{analytics/defect_candidates,design/{region_extraction_reports,report_exports}}.py`,
+legacy composition (`assembly`, `base_graph`, `workspace_graph`, `analysis_graph`,
+`capability_graph`, `production`, `production_config`) and their flat shims.
+`composition/app_factory.py` stays as the shared factory (its managed
+`capability.registry` import is lazy; calling it with managed stores fails
+loudly). `composition/routes/*` stay importable (top-level-clean, lazy mounts
+only). Core no longer depends on `ksi-mission-contracts`,
+`ksi-mission-planning` or `ksi-equipment-intelligence` (dropped from
+`services/core/pyproject.toml`; proven by
+`tests/contract/test_acquisition_archive_boundary.py`). The normal boot is the
+platform profile (`assemble_platform_app` / `build_platform_production_app`);
+managed Core endpoints (`/v1/missions/*`, edge, events, equipment,
+comparison/design-conformance/region-extraction, report-exports, copilot,
+workspace) retire with the legacy assembly. Historical managed results stay
+readable through the retained readers (`processing_jobs`, `artifact_manifest`,
+`source_media`, `evidence`), pinned by `test_historical_managed_readers.py`.
+
 ## Spatial data delivery (explicit local lane)
 
 `ksi_core.domains.external.delivery` owns distinct scoped grants, exact inspected

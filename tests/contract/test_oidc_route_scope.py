@@ -16,7 +16,7 @@ from ksi_core.auth import HumanAuthMode, Principal, require_principal
 from ksi_core.identity.auth import _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
 from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _ISSUER = "https://pilot-oidc.example.test"
 _AUDIENCE = "ksi-core-pilot"
@@ -92,7 +92,8 @@ def _install_oidc(fixture: Any) -> tuple[str, RSAPrivateKey]:
 
     @fixture.app.get("/v1/sites/{site_id}/analyses/result/export")
     def unreviewed_analysis_export(
-        site_id: str, principal: Principal = Depends(require_principal())  # noqa: B008
+        site_id: str,
+        principal: Principal = Depends(require_principal()),  # noqa: B008
     ) -> dict[str, str]:
         return {"siteId": site_id, "principalId": principal.principal_id}
 
@@ -153,38 +154,33 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
         assert reviewed_fixture_routes <= mounted_routes
         assert reviewed_fixture_routes <= _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
         assert spatial_catalog_routes <= _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
-        site = fixture.app.state.site_store.get_scoped(
-            fixture.site_id, fixture.organization_id
-        )
+        site = fixture.app.state.site_store.get_scoped(fixture.site_id, fixture.organization_id)
         assert site is not None
         site_frame = SiteFrame.model_validate(site.site_frame)
         second_site_id = "pilot-same-org-ungranted-site"
-        assert fixture.app.state.site_store.register(
-            second_site_id,
-            "Same organization, ungranted site",
-            site_frame,
-            organization_id=fixture.organization_id,
-            actor="test-setup",
-            now=datetime.now(UTC),
-        ).record is not None
+        assert (
+            fixture.app.state.site_store.register(
+                second_site_id,
+                "Same organization, ungranted site",
+                site_frame,
+                organization_id=fixture.organization_id,
+                actor="test-setup",
+                now=datetime.now(UTC),
+            ).record
+            is not None
+        )
 
         # These endpoints have their own Site/WorkArea grant enforcement.
         allowed = [
             client.get("/v1/auth/whoami", headers=headers).status_code,
             client.get("/v1/sites", headers=headers).status_code,
             client.get(f"/v1/sites/{fixture.site_id}", headers=headers).status_code,
-            client.get(
-                f"/v1/sites/{fixture.site_id}/work-areas", headers=headers
-            ).status_code,
+            client.get(f"/v1/sites/{fixture.site_id}/work-areas", headers=headers).status_code,
             client.get(
                 f"/v1/sites/{fixture.site_id}/analysis-observations", headers=headers
             ).status_code,
-            client.get(
-                f"/v1/sites/{fixture.site_id}/analyses", headers=headers
-            ).status_code,
-            client.get(
-                f"/v2/sites/{fixture.site_id}/analyses", headers=headers
-            ).status_code,
+            client.get(f"/v1/sites/{fixture.site_id}/analyses", headers=headers).status_code,
+            client.get(f"/v2/sites/{fixture.site_id}/analyses", headers=headers).status_code,
             client.get(
                 f"/v2/sites/{fixture.site_id}/analyses/{analysis_id}", headers=headers
             ).status_code,
@@ -216,14 +212,17 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
 
         # Site visibility remains resource-scoped within the same organization.
         assert client.get(f"/v1/sites/{second_site_id}", headers=headers).status_code == 404
-        assert client.get(
-            f"/v1/sites/{second_site_id}/work-areas", headers=headers
-        ).status_code == 404
+        assert (
+            client.get(f"/v1/sites/{second_site_id}/work-areas", headers=headers).status_code == 404
+        )
 
         # Unscoped authenticated reads, Site writes, and lookalike templates fail
         # at the principal request boundary before their handlers run.
+        # P3 Task 5: /v1/processing-resource-policies retired with the managed
+        # assembly (platform mounts no processing routes) — the roster route is
+        # the staying generic surface an unscoped principal must be denied.
         denied = [
-            client.get("/v1/processing-resource-policies", headers=headers).status_code,
+            client.get("/v1/organization-work-roster", headers=headers).status_code,
             client.get(
                 f"/v1/sites/{fixture.site_id}/analyses/result/export", headers=headers
             ).status_code,
@@ -241,9 +240,7 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
                 headers=headers,
                 json={"targetStatus": "SUSPENDED", "evidence": "x", "reason": "x"},
             ).status_code,
-            client.put(
-                f"/v1/sites/{fixture.site_id}/aoi", headers=headers, json={}
-            ).status_code,
+            client.put(f"/v1/sites/{fixture.site_id}/aoi", headers=headers, json={}).status_code,
             client.put(
                 f"/v1/sites/{fixture.site_id}/model-age-policy",
                 headers=headers,
@@ -252,10 +249,12 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
         ]
         assert denied == [403] * len(denied)
 
-        # Legacy opaque operators keep their existing authenticated Core access.
+        # Legacy opaque operators keep their existing authenticated Core access
+        # (P3 Task 5: the processing policy route retired with the managed
+        # assembly; the sites list is the staying generic authenticated read).
         fixture.app.state.human_auth_mode = HumanAuthMode.OPAQUE
         opaque_headers = fixture.operator_headers()
-        opaque_policy_read = client.get("/v1/processing-resource-policies", headers=opaque_headers)
-        assert opaque_policy_read.status_code == 200
+        opaque_sites_read = client.get("/v1/sites", headers=opaque_headers)
+        assert opaque_sites_read.status_code == 200
     finally:
         fixture.close()

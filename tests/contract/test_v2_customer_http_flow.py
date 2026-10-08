@@ -35,14 +35,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "examples" / "analysis"))
 
 import numpy as np  # noqa: E402
-from customer_v2 import CustomerHttpError, CustomerV2Client  # noqa: E402
-from rasterio.transform import from_origin  # noqa: E402
-from support.v2_customer_http_harness import CustomerHttpHarness  # noqa: E402
-from test_external_analysis_execution_integration import (  # noqa: E402
+from analysis_api_local_fixture import (  # noqa: E402
     _ORIGIN_X,
     _ORIGIN_Y,
     _geotiff_bytes,
 )
+from customer_v2 import CustomerHttpError, CustomerV2Client  # noqa: E402
+from rasterio.transform import from_origin  # noqa: E402
+from support.v2_customer_http_harness import CustomerHttpHarness  # noqa: E402
 
 _CAPTURES = {
     "baseline": (
@@ -522,7 +522,7 @@ def _complete_pair(
 def test_customer_http_negative_duplicate_restart_next_pair(tmp_path: Path) -> None:
     """C4: scope denials, idempotent retries, restart replay, next-pair isolation."""
     from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderExecutionMode
-    from ksi_mission_contracts.models import SiteFrame
+    from ksi_event_contracts.site_frame import SiteFrame
 
     harness = CustomerHttpHarness(tmp_path)
     try:

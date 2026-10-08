@@ -117,7 +117,9 @@ from ksi_core.identity.auth import (
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from ksi_core.domains.missions.mission_records import MissionStore
+    # P3 Task 5: retired to archive/acquisition-2026/ — no active
+    # import, not even typing-only. Alias stays opaque Any.
+    MissionStore = Any
 
 logger = logging.getLogger("ksi_core.source_media")
 

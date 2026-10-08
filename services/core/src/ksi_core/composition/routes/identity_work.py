@@ -35,14 +35,14 @@ def mount_identity_work_routes(
             oidc_verifier=oidc_verifier,
         )
 
+    # P3 Task 5: the runtime-capability branch retired with the managed set
+    # (archived ksi_core.capability.runtime_api; no active module may import
+    # from the archive, not even lazily). The platform mounts no capability
+    # surface; a non-None projector is a caller error.
     if runtime_capability_projector is not None:
-        from ksi_core.capability.runtime_api import mount_runtime_capability
-
-        mount_runtime_capability(
-            app,
-            runtime_capability_projector,
-            mission_store=mission_store,
-            mission_execution_store=mission_execution_store,
+        raise ValueError(
+            "runtime capability mounting retired in P3 Task 5 — "
+            "the managed capability set lives in archive/acquisition-2026/"
         )
 
     if site_store is not None:

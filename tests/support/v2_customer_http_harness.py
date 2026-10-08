@@ -79,9 +79,7 @@ class CustomerLoopbackObjectStorage:
         return self._inner.presigned_get(object_key, ttl=ttl)
 
     def presigned_put(self, object_key: str, *, content_type: str, ttl: Any) -> str:
-        return self._inner.presigned_put(
-            object_key, content_type=content_type, ttl=ttl
-        )
+        return self._inner.presigned_put(object_key, content_type=content_type, ttl=ttl)
 
     def put_bytes(self, object_key: str, data: bytes, *, content_type: str) -> None:
         self._inner.put_bytes(object_key, data, content_type=content_type)
@@ -277,15 +275,15 @@ class CustomerHttpHarness:
     """Assemble, serve, and operate a real Core app for one customer E2E."""
 
     def __init__(self, tmp_path: Path) -> None:
+        from analysis_api_local_fixture import (
+            _RetainedEvidenceContextAuthority,
+            _RetainedPolicyAuthority,
+            _workflow,
+        )
         from test_external_analysis_api import _active_analysis_activation
         from test_external_analysis_http_integration import (
             _assemble_local_analysis_app,
             _local_graph_config,
-        )
-        from test_external_quantitative_production_flow import (
-            _RetainedEvidenceContextAuthority,
-            _RetainedPolicyAuthority,
-            _workflow,
         )
 
         self._path = tmp_path
@@ -380,9 +378,7 @@ class CustomerHttpHarness:
                 principal=worker,
             ),
             PrincipalTokenRecord(
-                token_sha256=hashlib.sha256(
-                    self._validation_worker_token.encode()
-                ).hexdigest(),
+                token_sha256=hashlib.sha256(self._validation_worker_token.encode()).hexdigest(),
                 principal=validation_worker,
             ),
         ]
@@ -409,8 +405,8 @@ class CustomerHttpHarness:
         return "org-a"
 
     def _register_site_and_area(self) -> None:
-        from ksi_mission_contracts.models import SiteFrame
-        from test_external_analysis_execution_integration import _ORIGIN_X, _ORIGIN_Y
+        from analysis_api_local_fixture import _ORIGIN_X, _ORIGIN_Y
+        from ksi_event_contracts.site_frame import SiteFrame
 
         now = self._now - timedelta(minutes=30)
         registered = self._app.state.site_store.register(
@@ -466,6 +462,7 @@ class CustomerHttpHarness:
         token, _key = _install_oidc(namespace)
         self._oidc_issuer = _ISSUER
         return token
+
     def remember_order(self, label: str, work_order_id: str, name: str) -> None:
         self._orders[label] = (work_order_id, name)
 
@@ -530,11 +527,12 @@ class CustomerHttpHarness:
             }
         )
         self._measurement_manifest = _sign(measurement_body)
-        public_bytes = key.public_key().public_bytes_raw() if hasattr(
-            key.public_key(), "public_bytes_raw"
-        ) else None
+        public_bytes = (
+            key.public_key().public_bytes_raw()
+            if hasattr(key.public_key(), "public_bytes_raw")
+            else None
+        )
         if public_bytes is None:  # pragma: no cover - cryptography API shape guard
-
             raise AssertionError("Ed25519 raw public bytes unavailable")
         self._manifest_verifier = Ed25519InspectorManifestVerifier(
             InspectorTrustRootV1(public_keys={"c3-test-key-1": public_bytes})
@@ -552,9 +550,7 @@ class CustomerHttpHarness:
         from ksi_processing_controller.external_inspector_protocol import ProtocolViolation
 
         active = manifest if manifest is not None else self._inspector_manifest
-        if not verify_inspector_execution_manifest_signature(
-            active, self._manifest_verifier
-        ):
+        if not verify_inspector_execution_manifest_signature(active, self._manifest_verifier):
             raise ProtocolViolation("inspector manifest signature invalid")
         try:
             validate_inspector_execution_binding(request.policy, active)
@@ -694,9 +690,7 @@ class CustomerHttpHarness:
         listen_socket.bind(("127.0.0.1", 0))
         listen_socket.listen(128)
         self.core_origin = f"http://127.0.0.1:{listen_socket.getsockname()[1]}"
-        server = uvicorn.Server(
-            uvicorn.Config(self._app, log_level="warning", access_log=False)
-        )
+        server = uvicorn.Server(uvicorn.Config(self._app, log_level="warning", access_log=False))
         core_thread = Thread(target=lambda: server.run(sockets=[listen_socket]), daemon=True)
         core_thread.start()
         for _ in range(150):
@@ -723,16 +717,16 @@ class CustomerHttpHarness:
 
     def restart(self) -> None:
         """Close journals/servers and reassemble on the same path (restart proof)."""
-        from test_external_analysis_http_integration import _close
-        from test_external_quantitative_production_flow import (
+        from analysis_api_local_fixture import (
             _restarted_policy_authority,
             _workflow,
         )
+        from test_external_analysis_http_integration import _close
 
         self.stop_servers()
         _close(self._opened)
         self._policy_authority = _restarted_policy_authority(self._policy_authority)
-        from test_external_quantitative_production_flow import (
+        from analysis_api_local_fixture import (
             _RetainedEvidenceContextAuthority,
         )
 
@@ -802,6 +796,7 @@ class CustomerHttpHarness:
         geotiff grammar digest through the production admission registry; no
         always-go provider is involved.
         """
+        from analysis_api_local_fixture import _digest
         from ksi_core.external_quantitative_authority import CompatibilityRuleDescriptorV1
         from ksi_core.external_validation_policy import (
             PolicyAuthorityRecord,
@@ -814,7 +809,6 @@ class CustomerHttpHarness:
         from ksi_processing_controller.external_geotiff_profile import (
             external_geotiff_profile_digest_v1,
         )
-        from test_external_quantitative_production_flow import _digest
 
         assert self._envelope.resource_envelope_digest is not None
         template = ExternalValidationPolicyV1(
@@ -963,6 +957,7 @@ class CustomerHttpHarness:
         CSV bytes over HTTP and measures them with the real entrypoint behind
         production ``admit_measurement_manifest`` on every launch.
         """
+        from analysis_api_local_fixture import _observed_vertical_reference
         from ksi_event_contracts.external_evidence_context import (
             ExternalEvidenceMeasurementContextV1,
             ExternalIndependenceAttestationV1,
@@ -977,14 +972,11 @@ class CustomerHttpHarness:
             ExternalLane,
             TurnOutcome,
         )
-        from test_external_quantitative_production_flow import _observed_vertical_reference
         from test_external_validation_real_bytes_integration import _measurement_lane
 
         store = self._app.state.external_evidence_store
         items = store.list(pair.revision)
-        item = next(
-            (entry for entry in items if entry.evidence_ref == evidence_ref), None
-        )
+        item = next((entry for entry in items if entry.evidence_ref == evidence_ref), None)
         assert item is not None and item.manifest is not None
         assert self._policy is not None
         assert self._policy.policy_digest is not None

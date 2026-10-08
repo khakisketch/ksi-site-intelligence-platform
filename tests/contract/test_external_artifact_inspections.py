@@ -51,7 +51,7 @@ from ksi_event_contracts.external_reconstruction import (
     ExternalReconstructionManifestV1,
     ExternalReconstructionSubmissionV1,
 )
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 from support.external_artifact_inspection_fixtures import (
     ACQUISITION,
     ACQUISITION_B,
@@ -487,9 +487,7 @@ def test_bounded_public_snapshot_fails_closed_when_policy_selection_budget_is_ex
             "policy selection source budget exceeded"
         )
 
-    monkeypatch.setattr(
-        store._policy_registry, "select_for_inspection_bounded", over_budget
-    )
+    monkeypatch.setattr(store._policy_registry, "select_for_inspection_bounded", over_budget)
 
     with pytest.raises(ExternalArtifactInspectionSnapshotBudgetExceeded):
         store.public_snapshot_bounded(subject(), max_records=1, max_policy_records=7)

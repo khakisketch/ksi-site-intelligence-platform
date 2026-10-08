@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from ksi_core.acquisition import observation_epoch_id
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore

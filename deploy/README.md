@@ -67,9 +67,11 @@ build_platform_production_app` 이다(Docker 이미지 CMD·CI 스모크 동일)
 플랫폼 부팅은 Mission 서명키 디렉터리(`KSI_CORE_SIGNING_KEYS_DIR`)와 장비 증명
 파일(`KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE`)을 요구하지도 읽지도 않으므로
 `compose.yaml` core 서비스는 그 둘을 마운트하지 않는다. 레거시 팩토리
-(`ksi_core.production:build_production_app`)가 Task 5 까지 import 가능하므로
-`.env.example` 의 서명키·증명 관련 주석과 `device-attestation-keys.example.json`
-은 레거시 기록으로 유지된다.
+(`ksi_core.production:build_production_app`)는 P3 Task 5에서
+`archive/acquisition-2026/` 으로 은퇴했으므로(플랫폼 팩토리
+`ksi_core.composition.platform_production:build_platform_production_app` 가
+정상 부팅 경로) `.env.example` 의 서명키·증명 관련 주석과
+`device-attestation-keys.example.json` 은 레거시 기록으로 유지된다.
 
 Acquisition coordinator는 `KSI_CORE_ACQUISITION_COORDINATION_ENABLED=true`가 기본이며,
 문제가 생기면 이 flag만 내려 기존 Mission/KMZ와 수동 ingest 경로를 보존할 수 있다.

@@ -355,9 +355,7 @@ class _JobsStub:
     def __init__(self, records: list[ProcessingJobRecord]) -> None:
         self._records = records
 
-    def list_for_site(
-        self, site_id: str, *, limit: int | None = None
-    ) -> list[ProcessingJobRecord]:
+    def list_for_site(self, site_id: str, *, limit: int | None = None) -> list[ProcessingJobRecord]:
         matched = [r for r in self._records if r.site_id == site_id]
         return matched if limit is None else matched[:limit]
 
@@ -378,7 +376,7 @@ def _spatial_model_client(
     from ksi_core.durable_journal import DurableJournal
     from ksi_core.sites import SiteStore, mount_sites
     from ksi_core.spatial_model import mount_spatial_model
-    from ksi_mission_contracts.models import SiteFrame
+    from ksi_event_contracts.site_frame import SiteFrame
 
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     site_store.register(
@@ -426,9 +424,7 @@ def _spatial_model_client(
     mount_auth(app, registry)
     jobs = _JobsStub(records or [])
     mount_sites(app, site_store, jobs)
-    mount_spatial_model(
-        app, site_store=site_store, processing_job_store=jobs
-    )
+    mount_spatial_model(app, site_store=site_store, processing_job_store=jobs)
     client = TestClient(app)
     client.headers.update({"Authorization": "Bearer sm-operator"})
     return client, site_store
@@ -478,9 +474,7 @@ def test_site_detail_nests_the_capture_time_spatial_summary(tmp_path: Any) -> No
             _record(
                 site_id="site-a",
                 with_source=True,
-                capture_window=CaptureWindow(
-                    CaptureWindowStatus.COMPLETE, captured, captured
-                ),
+                capture_window=CaptureWindow(CaptureWindowStatus.COMPLETE, captured, captured),
             )
         ],
     )
@@ -510,9 +504,7 @@ def test_spatial_model_endpoint_flags_status_model_mismatch(tmp_path: Any) -> No
         SiteStatus.PROVISIONAL_AUTONOMY,
         SiteStatus.PATROL_READY,
     ):
-        site_store.transition(
-            "site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW
-        )
+        site_store.transition("site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW)
 
     body = client.get("/v1/sites/site-a/spatial-model").json()
 
@@ -538,9 +530,7 @@ def test_stale_model_on_a_patrol_ready_site_is_not_a_mismatch(tmp_path: Any) -> 
         SiteStatus.PROVISIONAL_AUTONOMY,
         SiteStatus.PATROL_READY,
     ):
-        site_store.transition(
-            "site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW
-        )
+        site_store.transition("site-a", target, evidence="e", reason="r", actor="op-1", now=_NOW)
     site_store.set_model_age_policy("site-a", max_age_days=30, actor="op-1", now=_NOW)
 
     body = client.get("/v1/sites/site-a/spatial-model").json()
@@ -573,7 +563,7 @@ def _lifecycle_pair(tmp_path: Any, *, records: list[ProcessingJobRecord] | None 
     from ksi_core.durable_journal import DurableJournal
     from ksi_core.sites import SiteStore
     from ksi_core.spatial_model import SpatialModelLifecycle
-    from ksi_mission_contracts.models import SiteFrame
+    from ksi_event_contracts.site_frame import SiteFrame
 
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     site_store.register(
@@ -706,9 +696,7 @@ def test_advance_from_wrong_status_is_reported_not_raised(tmp_path: Any) -> None
     assert site_store.get("site-a").status is SiteStatus.UNMAPPED
 
 
-@pytest.mark.parametrize(
-    "status", [ProcessingJobStatus.FAILED, ProcessingJobStatus.CANCELLED]
-)
+@pytest.mark.parametrize("status", [ProcessingJobStatus.FAILED, ProcessingJobStatus.CANCELLED])
 def test_failed_and_cancelled_jobs_do_not_move_the_site(
     tmp_path: Any, status: ProcessingJobStatus
 ) -> None:
@@ -958,7 +946,7 @@ def _sweep_client(tmp_path: Any, *, records: list[ProcessingJobRecord] | None = 
     from ksi_core.durable_journal import DurableJournal
     from ksi_core.sites import SiteStore, mount_sites
     from ksi_core.spatial_model import SpatialModelLifecycle, mount_spatial_model
-    from ksi_mission_contracts.models import SiteFrame
+    from ksi_event_contracts.site_frame import SiteFrame
 
     site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"))
     site_store.register(
@@ -1063,9 +1051,7 @@ def test_sweep_endpoint_requires_sites_write(tmp_path: Any) -> None:
 def test_sweep_endpoint_is_404_for_unknown_site(tmp_path: Any) -> None:
     client, _ = _sweep_client(tmp_path)
 
-    assert (
-        client.post("/v1/sites/nope/spatial-model/staleness-sweep").status_code == 404
-    )
+    assert client.post("/v1/sites/nope/spatial-model/staleness-sweep").status_code == 404
 
 
 def test_sweep_surface_is_absent_without_a_lifecycle(tmp_path: Any) -> None:

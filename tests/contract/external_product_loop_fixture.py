@@ -31,7 +31,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_core.work_areas import WorkAreaStore
 from ksi_event_contracts.external_relative_volume import ExternalRelativeVolumeReportV1
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 from test_external_relative_volumes import _AuthorityPort, _fence, _payload
 from test_external_result_review_proposals import _NOW, _principal, _sealed_source
 from test_external_use_decisions import _SyntheticHistoryVerifier

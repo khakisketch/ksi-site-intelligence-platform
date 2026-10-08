@@ -34,8 +34,8 @@ MODULE_ALIASES = (
     ("ksi_core.external_authority_currentness", "ksi_core.foundation.currentness"),
     ("ksi_core.auth", "ksi_core.identity.auth"),
     ("ksi_core.oidc", "ksi_core.identity.oidc"),
-    ("ksi_core.signing_keys", "ksi_core.identity.signing_keys"),
-    ("ksi_core.device_attestation", "ksi_core.identity.device_attestation"),
+    # P3 Task 5: signing_keys/device_attestation retired to
+    # archive/acquisition-2026/ with their canonical identity modules.
 )
 
 

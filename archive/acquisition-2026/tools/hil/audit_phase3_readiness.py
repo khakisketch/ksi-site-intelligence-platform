@@ -24,7 +24,20 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 from xml.etree import ElementTree as ET
 
-from ksi_core.flight_artifacts import inspect_pilot_export_kmz as inspect_pilot_export_candidate
+try:
+    from ksi_core.flight_artifacts import (  # type: ignore[import-not-found]
+        inspect_pilot_export_kmz as inspect_pilot_export_candidate,
+    )
+except ModuleNotFoundError:  # P3 Task 5: flight artifacts retired to archive/acquisition-2026/
+
+    def inspect_pilot_export_candidate(*args: object, **kwargs: object) -> object:
+        raise RuntimeError(
+            "pilot-export KMZ inspection retired to archive/acquisition-2026/ "
+            "in P3 Task 5 — field readiness audit of managed flight artifacts "
+            "is archive-internal"
+        )
+
+
 from ksi_processing_controller.capture_time import (
     CaptureTimeStatus,
     extract_capture_time,
@@ -151,9 +164,7 @@ def inspect_kmz(path: Path) -> dict[str, Any]:
         if node.text
     ]
     heights = {
-        node.text
-        for node in waylines.findall(f".//{{{wpml_namespace}}}executeHeight")
-        if node.text
+        node.text for node in waylines.findall(f".//{{{wpml_namespace}}}executeHeight") if node.text
     }
     lens_values = sorted(
         {
@@ -169,15 +180,9 @@ def inspect_kmz(path: Path) -> dict[str, Any]:
             "take_photo_action_count": actions.count("takePhoto"),
             "execute_heights_m": sorted(heights),
             "drone_enum_value": _one_text(waylines, wpml_namespace, "droneEnumValue"),
-            "drone_sub_enum_value": _one_text(
-                waylines, wpml_namespace, "droneSubEnumValue"
-            ),
-            "payload_enum_value": _one_text(
-                waylines, wpml_namespace, "payloadEnumValue"
-            ),
-            "payload_sub_enum_value": _one_text(
-                waylines, wpml_namespace, "payloadSubEnumValue"
-            ),
+            "drone_sub_enum_value": _one_text(waylines, wpml_namespace, "droneSubEnumValue"),
+            "payload_enum_value": _one_text(waylines, wpml_namespace, "payloadEnumValue"),
+            "payload_sub_enum_value": _one_text(waylines, wpml_namespace, "payloadSubEnumValue"),
             "waypoint_heading_path_mode": _one_text(
                 waylines, wpml_namespace, "waypointHeadingPathMode"
             ),
@@ -539,9 +544,7 @@ def _attested_artifact(
         )
     digest = _required_text(record, "sha256")
     if not re.fullmatch(r"[0-9a-f]{64}", digest) or digest != _sha256(supplied_path):
-        _attestation_error(
-            "FIELD0A_ATTESTATION_DIGEST_MISMATCH", f"{field} SHA-256 does not match"
-        )
+        _attestation_error("FIELD0A_ATTESTATION_DIGEST_MISMATCH", f"{field} SHA-256 does not match")
     return {
         "raw_evidence_path": relative_path,
         "sha256": digest,
@@ -727,9 +730,7 @@ def build_report(
     kit = audit_kit(kit_dir)
     import_evidence = [inspect_image(path) for path in pilot_import_evidence]
     m4d = inspect_m4d_jpeg(m4d_jpeg) if m4d_jpeg is not None else None
-    exported = (
-        inspect_pilot_export_kmz(pilot_export_kmz) if pilot_export_kmz is not None else None
-    )
+    exported = inspect_pilot_export_kmz(pilot_export_kmz) if pilot_export_kmz is not None else None
 
     blockers: list[str] = []
     if not import_evidence:
@@ -761,13 +762,8 @@ def build_report(
     import_status = (
         "PASS"
         if attestation.get("status") == "PASS"
-        and any(
-            item["result"] == "IMPORTED_AND_MAPPED"
-            for item in attestation["pilot_imports"]
-        )
-        else (
-            "OBSERVED_REQUIRES_HUMAN_ATTESTATION" if import_evidence else "NOT_VERIFIED"
-        )
+        and any(item["result"] == "IMPORTED_AND_MAPPED" for item in attestation["pilot_imports"])
+        else ("OBSERVED_REQUIRES_HUMAN_ATTESTATION" if import_evidence else "NOT_VERIFIED")
     )
     if attestation.get("status") == "PASS" and import_status != "PASS":
         blockers.append("PILOT_IMPORT_SUCCESS_REQUIRED")
@@ -807,9 +803,7 @@ def build_report(
                 "status": import_status,
                 "evidence": import_evidence,
             },
-            "m4d_original": m4d
-            if m4d is not None
-            else {"status": "NOT_VERIFIED"},
+            "m4d_original": m4d if m4d is not None else {"status": "NOT_VERIFIED"},
             "pilot_export": exported
             if exported is not None
             else {
@@ -848,9 +842,7 @@ def build_parser() -> argparse.ArgumentParser:
     root = Path(__file__).resolve().parents[2]
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repository-root", type=Path, default=root)
-    parser.add_argument(
-        "--kit-dir", type=Path, default=root / "docs" / "hil" / "field0a-kit"
-    )
+    parser.add_argument("--kit-dir", type=Path, default=root / "docs" / "hil" / "field0a-kit")
     parser.add_argument("--pilot-import-evidence", type=Path, action="append", default=[])
     parser.add_argument("--m4d-jpeg", type=Path)
     parser.add_argument("--pilot-export-kmz", type=Path)

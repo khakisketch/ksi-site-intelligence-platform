@@ -1038,13 +1038,13 @@ class Task5AiCoreLane:
         """Register, seal, genuinely inspect and grant a new-epoch observation."""
         import hashlib as _hashlib
 
-        from ksi_core.acquisition import observation_epoch_id as _epoch_id
         from ksi_core.domains.external.ingress.external_reconstruction import (
             ExternalReconstructionVerdict as _Verdict,
         )
         from ksi_core.domains.external.ingress.spatial_asset_catalog import (
             SpatialAssetCatalog as _Catalog,
         )
+        from ksi_core.domains.observations.epoch_identity import observation_epoch_id as _epoch_id
         from ksi_core.evidence import ObjectStorageObservation as _Observation
         from ksi_core.leasing import LeaseFence as _Fence
         from ksi_event_contracts.external_artifact_validation import (
@@ -1283,7 +1283,7 @@ class Task5AiCoreLane:
         return {"asset_ref": asset_ref, "grant": grant}
 
     def _first_epoch_id(self) -> str:
-        from ksi_core.acquisition import observation_epoch_id as _epoch_id
+        from ksi_core.domains.observations.epoch_identity import observation_epoch_id as _epoch_id
 
         return _epoch_id(self.graph.order)
 

@@ -16,12 +16,18 @@ from typing import Any, Protocol
 from urllib.parse import unquote
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from analysis_api_local_fixture import (
+    _digest,
+    _LocalObjectStorage,
+    _RetainedEvidenceContextAuthority,
+    _RetainedPolicyAuthority,
+    _workflow,
+)
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry
 from ksi_core.composition.external_graph import ExternalAnalysisLocalGraphConfig
+from ksi_core.composition.platform_assembly import assemble_platform_app as assemble_app
 from ksi_core.domains.external.ingress.external_evidence_validations import (
     AnalysisEvidenceFactSnapshot,
 )
@@ -37,13 +43,6 @@ from ksi_event_contracts.external_artifact_validation import (
 )
 from ksi_event_contracts.external_evidence_context import ExternalEvidenceMeasurementContextV1
 from ksi_event_contracts.external_relative_volume_analysis import AnalysisPolicyV2
-from test_external_quantitative_production_flow import (
-    _digest,
-    _LocalObjectStorage,
-    _RetainedEvidenceContextAuthority,
-    _RetainedPolicyAuthority,
-    _workflow,
-)
 
 
 def _policy() -> AnalysisPolicyV2:
@@ -114,15 +113,15 @@ def _assemble_local_analysis_app(
         opened.append(item)
         return item
 
+    # P3 Task 5: legacy managed assembly retired to the archive boundary —
+    # the analysis lane is platform, so this harness boots the platform
+    # profile (same external wiring, no mission key / edge snapshot).
     app = assemble_app(
         path,
         journal=journal,
         opened=opened,
-        edge_sync_snapshot_every=None,
         auth_registry=auth_registry or AuthRegistry([]),
         evidence_storage=storage,
-        mission_signing_key=Ed25519PrivateKey.generate(),
-        mission_signing_key_id="analysis-http-test-key",
         external_result_workflow=workflow,
         external_analysis_local_graph=config,
         analysis_activation=analysis_activation,

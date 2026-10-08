@@ -11,16 +11,16 @@ from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app import create_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.external_reconstruction import ExternalReconstructionStore
 from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_event_contracts.observation_work_order import ObservationWorkOrderExecutionMode
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _NOW = datetime(2026, 9, 6, tzinfo=UTC)
 _TOKEN = "external-reconstruction-owner"  # noqa: S105 -- deterministic test credential

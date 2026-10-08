@@ -71,9 +71,16 @@ def test_compose_core_mounts_no_mission_or_attestation_inputs() -> None:
 
 
 def test_platform_factory_exists_and_legacy_stays_importable() -> None:
+    """P3 Task 5: the legacy managed factory retired to the archive boundary."""
+    import importlib.util
+
     from ksi_core.composition import platform_production
 
     assert callable(platform_production.build_platform_production_app)
-    import ksi_core.production as legacy
-
-    assert callable(legacy.build_production_app)
+    assert importlib.util.find_spec("ksi_core.production") is None
+    try:
+        importlib.import_module("ksi_core.production")
+    except ModuleNotFoundError:
+        pass
+    else:
+        raise AssertionError("ksi_core.production still imports from the active tree")

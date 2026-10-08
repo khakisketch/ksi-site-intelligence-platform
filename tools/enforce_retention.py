@@ -28,8 +28,12 @@ from pathlib import Path
 from typing import Any
 
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.events import EventStore
 from ksi_core.retention import ExpiryAction, execute_expiry, load_policy, plan_expiry
+
+try:
+    from ksi_core.events import EventStore  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # P3 Task 5: managed events retired to the archive boundary
+    EventStore = None
 
 
 def _s3_storage(*, endpoint_url: str, bucket: str) -> Any:
@@ -72,6 +76,16 @@ def main() -> int:
     if not journal_path.exists():
         print(f"{journal_path}: 이벤트 원장이 없다", file=sys.stderr)
         return 1
+    if EventStore is None:
+        # P3 Task 5: events 저널은 관리형(managed)이라 아카이브 경계 너머로
+        # 옮겼다 — 플랫폼 프로파일에서는 처리하지 않는다(fail-closed).
+        print(
+            f"{journal_path}: 이벤트 원장은 관리형 저널이라 "
+            "archive/acquisition-2026/ 으로 옮겼다 — 플랫폼 프로파일에서는 "
+            "처리하지 않는다",
+            file=sys.stderr,
+        )
+        return 2
 
     # dry-run 은 **잠금 없이** 읽는다 — 서버가 도는 중에도 확인할 수 있어야 한다.
     # --execute 는 단일 writer 를 잡는다(집행 중 동시 쓰기를 막아야 하므로 Core 정지 필요).
@@ -121,8 +135,7 @@ def main() -> int:
                 {"objectKey": a.object_key, "error": err} for a, err in report.storage_failures
             ],
             "skipped": [
-                {"artifactId": a.artifact_id, "verdict": verdict}
-                for a, verdict in report.skipped
+                {"artifactId": a.artifact_id, "verdict": verdict} for a, verdict in report.skipped
             ],
         }
         print(json.dumps(result, ensure_ascii=False, indent=2))

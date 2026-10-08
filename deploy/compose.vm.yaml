@@ -16,9 +16,6 @@ services:
       KSI_CORE_S3_PUBLIC_ENDPOINT: https://objects.${KSI_CLOUD_DOMAIN:?set KSI_CLOUD_DOMAIN}
     networks: [ksi-private]
 
-  worker:
-    networks: [ksi-private]
-
   minio:
     ports: !reset []
     networks: [ksi-private]

@@ -31,7 +31,7 @@ from ksi_core.auth import (
 from ksi_core.domains.sites.observation_work_orders import build_observation_work_order_router
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOTS = (

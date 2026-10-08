@@ -38,7 +38,7 @@ from ksi_core.work_areas import WorkAreaStore
 from ksi_event_contracts.external_artifact_validation import ArtifactOutcome
 from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
 from ksi_event_contracts.observation_work_order import ObservationWorkOrderExecutionMode
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _NOW = datetime(2026, 9, 30, tzinfo=UTC)
 _TOKEN = "spatial-catalog-owner"  # noqa: S105 -- fixed test credential
@@ -88,7 +88,11 @@ class _InspectionSpy(ExternalArtifactInspectionStore):
         self.measured = measured
 
     def public_snapshot_bounded(
-        self, subject: Any, *, max_records: int, max_policy_records: int | None = None,
+        self,
+        subject: Any,
+        *,
+        max_records: int,
+        max_policy_records: int | None = None,
         max_retained_policies: int | None = None,
     ) -> Any:
         del subject
@@ -200,7 +204,7 @@ def _submission(
 
 
 def order_epoch(order: Any) -> str:
-    from ksi_core.acquisition import observation_epoch_id
+    from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 
     return observation_epoch_id(order)
 
@@ -604,9 +608,7 @@ def test_catalog_only_inspects_selected_page_and_projects_measured_raster_proven
 ) -> None:
     inspections = _InspectionSpy(measured=True)
     _client, order, storage, reconstruction, area_a, _, work_orders, sites, areas = _setup(tmp_path)
-    _register_and_seal(
-        order, storage, reconstruction, sealed=True, submission_id="inspection-one"
-    )
+    _register_and_seal(order, storage, reconstruction, sealed=True, submission_id="inspection-one")
 
     from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
 

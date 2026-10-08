@@ -16,7 +16,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
 from typing import Any
@@ -132,27 +132,23 @@ def _blocker_prelude(denied: tuple[str, ...]) -> str:
     ) % (denied,)
 
 
-# ── 1. Exact helper relocation preserves function identity ───────────────────
+# ── 1. Staying helper relocation preserves function identity ──────────────────
 
 
 def test_moved_helpers_keep_exact_function_identity() -> None:
-    """Old import paths still resolve to the very same function objects."""
-    from ksi_core.composition import assembly as assembly_module
-    from ksi_core.composition import production_config as production_config_module
+    """The staying platform config still resolves to the very same function objects."""
+    # P3 Task 5: the legacy production_config/assembly half of this comparison
+    # retired to archive/acquisition-2026/ (archive-internal per the T3
+    # precedent). The platform half keeps proving exact identity against the
+    # neutral foundation owner.
     from ksi_core.composition import runtime_config as runtime_config_module
     from ksi_core.foundation import config_values as config_values_module
 
-    for name in _MOVED_HELPERS:
-        relocated = getattr(runtime_config_module, name)
-        legacy = getattr(production_config_module, name)
-        assert legacy is relocated, name
-    assert assembly_module.cli_optional_positive is config_values_module.cli_optional_positive
-    assert production_config_module._JOURNAL_SEGMENT_BYTES_DEFAULT == (
-        runtime_config_module._JOURNAL_SEGMENT_BYTES_DEFAULT
+    assert runtime_config_module.cli_optional_positive is (
+        config_values_module.cli_optional_positive
     )
-    assert production_config_module._EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT == (
-        runtime_config_module._EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT
-    )
+    assert runtime_config_module._JOURNAL_SEGMENT_BYTES_DEFAULT == 64 * 1024 * 1024
+    assert runtime_config_module._EDGE_SYNC_SNAPSHOT_EVERY_DEFAULT == 500
 
 
 def test_cli_optional_positive_keeps_exact_contract() -> None:
@@ -401,11 +397,13 @@ def test_expired_authority_snapshot_stays_blocked_not_activated(
     """The platform factory's ``allow_expired`` reuse never becomes fail-open:
     an expired snapshot loads for historical reads but reports BLOCKED."""
     from ksi_core.external_authority_provider import load_external_authority_provider
-    from test_external_authority_provider_contract import NOW, _provider_config
 
+    # P3 Task 5: inlined from test_external_authority_provider_contract
+    # (archived with the legacy assembly it is built on). Produces the exact
+    # default snapshot/config files that helper wrote.
     expired = load_external_authority_provider(
-        _provider_config(tmp_path),
-        clock=lambda: NOW + timedelta(hours=2),
+        _expired_snapshot_config(tmp_path),
+        clock=lambda: _EXPIRED_NOW + timedelta(hours=2),
         allow_expired=True,
     )
     status = expired.status()
@@ -420,7 +418,6 @@ def test_platform_expired_activation_keeps_history_but_denies_new_use(
     from datetime import UTC, datetime, timedelta
 
     from ksi_core.composition.platform_production import build_platform_production_app
-    from test_production_assembly import _enable_analysis_activation
 
     env = _platform_env(tmp_path)
     _enable_analysis_activation(
@@ -465,6 +462,177 @@ def test_platform_expired_activation_keeps_history_but_denies_new_use(
     assert read.status_code == 404  # The historical read route remains available.
     assert create.status_code == 503
     assert create.json()["detail"] == "ANALYSIS_ACTIVATION_EXPIRED"
+
+
+# ── 4b. Retired-helper inlines (P3 Task 5 ownership) ─────────────────────────
+# The two tests below previously imported helpers from test files that retired
+# to archive/acquisition-2026/ with the legacy assembly they are built on
+# (test_external_authority_provider_contract,
+# test_production_assembly::_enable_analysis_activation). The helpers are
+# inlined here verbatim against staying modules so the platform-factory gates
+# keep proving the same behavior with no archived dependency.
+
+_EXPIRED_NOW = datetime(2026, 9, 11, 0, 0, tzinfo=UTC)
+
+
+def _write_provider_file(path: Path, payload: object) -> None:
+    path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    os.chmod(path, 0o600)
+
+
+def _expired_snapshot_config(tmp_path: Path) -> Path:
+    """Default authority snapshot/config files (verbatim retired-helper behavior)."""
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from ksi_domain.canonical_json import canonical_json_bytes
+
+    signer = Ed25519PrivateKey.generate()
+    public_key = tmp_path / "authority-bundle.pem"
+    public_key.write_bytes(
+        signer.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+    )
+    os.chmod(public_key, 0o600)
+    _write_provider_file(
+        tmp_path / "authority-keys.json",
+        {
+            "version": "external-authority-key-registry.v1",
+            "keys": [
+                {
+                    "keyId": "authority-key-1",
+                    "role": "AUTHORITY_BUNDLE",
+                    "algorithm": "Ed25519",
+                    "status": "ACTIVE",
+                    "publicKeyFile": public_key.name,
+                    "notBefore": "2026-09-10T00:00:00Z",
+                    "notAfter": "2026-09-12T00:00:00Z",
+                }
+            ],
+        },
+    )
+    unsigned = {
+        "version": "external-authority-provider-snapshot.v1",
+        "organizationId": "org-a",
+        "sequence": 1,
+        "previousSnapshotDigest": None,
+        "issuedAt": "2026-09-11T00:00:00Z",
+        "validUntil": "2026-09-11T01:00:00Z",
+        "keyId": "authority-key-1",
+        "catalogAuthorities": {"records": [], "currentDigests": []},
+        "policyAuthorities": {"records": [], "currentDigests": []},
+        "evidenceContexts": {"records": [], "currentDigests": []},
+        "quantitativeAdministration": {"actions": []},
+    }
+    signature = signer.sign(
+        canonical_json_bytes(
+            {
+                "domain": "ksi.external-authority-provider-snapshot.v1",
+                "snapshot": unsigned,
+            }
+        )
+    )
+    _write_provider_file(
+        tmp_path / "authority-snapshot.json",
+        {**unsigned, "signature": base64.b64encode(signature).decode("ascii")},
+    )
+    config = tmp_path / "external-authority-provider.json"
+    _write_provider_file(
+        config,
+        {
+            "version": "external-authority-provider-config.v1",
+            "organizationId": "org-a",
+            "keyRegistryPath": str(tmp_path / "authority-keys.json"),
+            "snapshotPath": str(tmp_path / "authority-snapshot.json"),
+            "catalogAdministrationActorId": "catalog-admin",
+            "leaseTtlSeconds": 60,
+            "deadlineAfterIssueSeconds": 120,
+            "maxAttempts": 3,
+            "maxActiveRequestsPerOrganization": 2,
+        },
+    )
+    return config
+
+
+def _enable_analysis_activation(
+    tmp_path: Path,
+    env: dict[str, str],
+    *,
+    activation_fields: dict[str, object] | None = None,
+    add_ambiguous_worker: bool = False,
+) -> tuple[Any, Any]:
+    """Retired-helper inline (verbatim behavior, staying modules only)."""
+    from datetime import UTC, datetime, timedelta
+
+    from test_external_analysis_activation import _bindings, _write_activation
+
+    bindings = _bindings()
+    tokens = json.loads(env["KSI_CORE_PRINCIPAL_TOKENS_JSON"])
+    tokens.append(
+        {
+            "tokenSha256": hashlib.sha256(b"analysis-worker-test-token").hexdigest(),
+            "principalId": bindings["worker_principal"].principal_id,
+            "kind": "ANALYSIS_WORKER",
+            "role": None,
+            "deviceId": None,
+            "organizationId": bindings["organization_id"],
+        }
+    )
+    if add_ambiguous_worker:
+        tokens.append(
+            {
+                "tokenSha256": hashlib.sha256(b"analysis-worker-test-token-b").hexdigest(),
+                "principalId": "analysis-worker-b",
+                "kind": "ANALYSIS_WORKER",
+                "role": None,
+                "deviceId": None,
+                "organizationId": bindings["organization_id"],
+            }
+        )
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(tokens)
+
+    runtime = bindings["runtime"]
+    policy = bindings["policy"]
+    envelope = bindings["resource_envelope"]
+    runtime_config = tmp_path / "local-analysis-runtime.json"
+    runtime_config.write_text(
+        json.dumps(
+            {
+                "version": "local-analysis-runtime.v1",
+                "policy": policy.model_dump(by_alias=True, mode="json"),
+                "runtime": {
+                    "workerExecutableDigest": runtime.worker_executable_digest,
+                    "workerBuildDigest": runtime.worker_build_digest,
+                    "runtimeImageVersion": runtime.runtime_image_version,
+                    "runtimeImageOciDigest": runtime.runtime_image_oci_digest,
+                    "dependencyLockDigest": runtime.dependency_lock_digest,
+                },
+                "resourceEnvelope": envelope.model_dump(by_alias=True, mode="json"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    runtime_config.chmod(0o600)
+    activation_dir = tmp_path / "activation"
+    activation_dir.mkdir(mode=0o700)
+    fields = activation_fields or {
+        "issuedAt": (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace(
+            "+00:00", "Z"
+        ),
+        "validUntil": (datetime.now(UTC) + timedelta(hours=1)).isoformat().replace(
+            "+00:00", "Z"
+        ),
+    }
+    activation_path, keys_path, activation = _write_activation(
+        activation_dir, bindings=bindings, activation_fields=fields
+    )
+    env["KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE"] = str(runtime_config)
+    env["KSI_CORE_ANALYSIS_ACTIVATION_FILE"] = str(activation_path)
+    env["KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE"] = str(keys_path)
+    return activation, bindings
 
 
 # ── 5. Failure paths release every opened journal ────────────────────────────

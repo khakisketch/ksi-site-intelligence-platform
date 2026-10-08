@@ -74,7 +74,8 @@ services:
     healthcheck:
       # /health 가 아니라 /ready 를 본다 — /health 는 프로세스 생존만 보므로,
       # 원장이 봉인돼 모든 쓰기가 503 인 서버를 건강하다고 오판한다
-      # (app_assembly.py 의 ready() docstring).
+      # (runtime_surfaces.py 의 ready() docstring; P3 Task 5 전에는
+      # app_assembly.py 가 같은 문구를 소유했다).
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3).status == 200 else 1)"]
       interval: 30s
       timeout: 5s

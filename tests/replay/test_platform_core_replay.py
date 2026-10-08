@@ -29,7 +29,23 @@ from uuid import uuid4
 
 import numpy as np
 import pytest
-from analysis_api_local_fixture import LoopbackObjectStorage, _register_and_seal_v2_dsm
+from analysis_api_local_fixture import (
+    _EPOCH_RSS_UNCERTAINTY_M3,
+    _KNOWN_UNCERTAINTY_NOTE,
+    LoopbackObjectStorage,
+    _admit_policy,
+    _geotiff_bytes,
+    _inspect,
+    _mapping,
+    _principal,
+    _register_and_seal_v2_dsm,
+    _restarted_policy_authority,
+    _RetainedEvidenceContextAuthority,
+    _RetainedPolicyAuthority,
+    _sealed_revision,
+    _validate_evidence,
+    _workflow,
+)
 from fastapi.testclient import TestClient
 from ksi_core.auth import (
     AuthRegistry,
@@ -50,23 +66,8 @@ from ksi_event_contracts.external_relative_volume import (
     ExternalRelativeVolumeMeasurementPayloadV1,
     ExternalVolumeMetricsV1,
 )
-from ksi_mission_contracts.models import SiteFrame
-from test_external_analysis_execution_integration import _geotiff_bytes
+from ksi_event_contracts.site_frame import SiteFrame
 from test_external_analysis_http_integration import _local_graph_config
-from test_external_quantitative_production_flow import (
-    _EPOCH_RSS_UNCERTAINTY_M3,
-    _KNOWN_UNCERTAINTY_NOTE,
-    _admit_policy,
-    _inspect,
-    _mapping,
-    _principal,
-    _restarted_policy_authority,
-    _RetainedEvidenceContextAuthority,
-    _RetainedPolicyAuthority,
-    _sealed_revision,
-    _validate_evidence,
-    _workflow,
-)
 from test_platform_core_http_integration import _TRANSFORM
 
 
@@ -208,7 +209,7 @@ class _ReplayBoot:
 
 
 def _seed_site(app: Any, site_id: str, name: str, *, ai_egress_allowed: bool, now: datetime) -> str:
-    from test_external_analysis_execution_integration import _ORIGIN_X, _ORIGIN_Y
+    from analysis_api_local_fixture import _ORIGIN_X, _ORIGIN_Y
 
     registered = app.state.site_store.register(
         site_id,

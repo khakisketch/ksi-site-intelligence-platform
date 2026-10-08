@@ -10,7 +10,7 @@ import pytest
 from analysis_api_local_fixture import LocalAnalysisApiFixture, build_local_analysis_api_fixture
 from fastapi.testclient import TestClient
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _MAPPED_TOKEN = "analysis-resource-scope-mapped"
 _OTHER_AREA_TOKEN = "analysis-resource-scope-other-area"
@@ -101,21 +101,22 @@ def test_analysis_routes_apply_explicit_site_and_work_area_grants(tmp_path: Path
     try:
         _install_test_identities(fixture)
         client = TestClient(fixture.app)
-        site = fixture.app.state.site_store.get_scoped(
-            fixture.site_id, fixture.organization_id
-        )
+        site = fixture.app.state.site_store.get_scoped(fixture.site_id, fixture.organization_id)
         assert site is not None
         frame = SiteFrame.model_validate(site.site_frame)
         other_site_id = "site-b"
-        assert fixture.app.state.site_store.register(
-            other_site_id,
-            "Other site",
-            frame,
-            organization_id=fixture.organization_id,
-            ai_egress_allowed=True,
-            actor="opaque-legacy",
-            now=_NOW,
-        ).record is not None
+        assert (
+            fixture.app.state.site_store.register(
+                other_site_id,
+                "Other site",
+                frame,
+                organization_id=fixture.organization_id,
+                ai_egress_allowed=True,
+                actor="opaque-legacy",
+                now=_NOW,
+            ).record
+            is not None
+        )
 
         area = fixture.app.state.work_area_store.get(fixture.work_area_id)
         assert area is not None
@@ -129,14 +130,17 @@ def test_analysis_routes_apply_explicit_site_and_work_area_grants(tmp_path: Path
             actor="opaque-legacy",
         )
         assert other_area.work_area is not None
-        assert fixture.app.state.site_store.register(
-            _FOREIGN_SITE_ID,
-            "Foreign organization site",
-            frame,
-            organization_id="org-unrelated",
-            actor="foreign-admin",
-            now=_NOW,
-        ).record is not None
+        assert (
+            fixture.app.state.site_store.register(
+                _FOREIGN_SITE_ID,
+                "Foreign organization site",
+                frame,
+                organization_id="org-unrelated",
+                actor="foreign-admin",
+                now=_NOW,
+            ).record
+            is not None
+        )
         foreign_area = fixture.app.state.work_area_store.register(
             _FOREIGN_SITE_ID,
             name="Foreign organization area",
@@ -216,19 +220,24 @@ def test_analysis_routes_apply_explicit_site_and_work_area_grants(tmp_path: Path
             calculations.get_history(hidden_analysis_id, organization_id=fixture.organization_id),
         ) == (404, [], [404, 404, 404], None)
 
-        assert client.get(
-            f"/v1/sites/{other_site_id}/analysis-observations", headers=mapped
-        ).status_code == 404
-        assert client.get(
-            f"/v1/sites/{other_site_id}/analyses", headers=mapped
-        ).status_code == 404
-        assert client.get(
-            f"/v1/sites/{other_site_id}/analyses",
-            headers={**mapped, "X-KSI-Access-Purpose": "EXTERNAL_AI"},
-        ).status_code == 404
-        assert client.get(f"/v1/sites/{fixture.site_id}/analyses", headers=mapped).json()[
-            "items"
-        ] == []
+        assert (
+            client.get(
+                f"/v1/sites/{other_site_id}/analysis-observations", headers=mapped
+            ).status_code
+            == 404
+        )
+        assert client.get(f"/v1/sites/{other_site_id}/analyses", headers=mapped).status_code == 404
+        assert (
+            client.get(
+                f"/v1/sites/{other_site_id}/analyses",
+                headers={**mapped, "X-KSI-Access-Purpose": "EXTERNAL_AI"},
+            ).status_code
+            == 404
+        )
+        assert (
+            client.get(f"/v1/sites/{fixture.site_id}/analyses", headers=mapped).json()["items"]
+            == []
+        )
         for suffix in ("", "/result", "/evidence"):
             response = client.get(
                 f"/v1/sites/{fixture.site_id}/analyses/{hidden_analysis_id}{suffix}",
@@ -266,19 +275,20 @@ def test_analysis_routes_apply_explicit_site_and_work_area_grants(tmp_path: Path
         empty = _headers(_EMPTY_TOKEN)
         assert client.get("/v1/sites", headers=empty).json()["sites"] == []
         assert client.get(f"/v1/sites/{fixture.site_id}", headers=empty).status_code == 404
-        assert client.get(
-            f"/v1/sites/{fixture.site_id}/work-areas", headers=empty
-        ).status_code == 404
-        assert client.get(
-            f"/v1/sites/{fixture.site_id}/analyses", headers=empty
-        ).status_code == 404
+        assert (
+            client.get(f"/v1/sites/{fixture.site_id}/work-areas", headers=empty).status_code == 404
+        )
+        assert client.get(f"/v1/sites/{fixture.site_id}/analyses", headers=empty).status_code == 404
         assert [
             item["siteId"] for item in client.get("/v1/sites", headers=mapped).json()["sites"]
         ] == [fixture.site_id]
         assert client.get(f"/v1/sites/{other_site_id}", headers=mapped).status_code == 404
-        assert client.get(
-            f"/v1/sites/{_FOREIGN_SITE_ID}/work-areas", headers=_headers(_CROSS_ORG_TOKEN)
-        ).status_code == 404
+        assert (
+            client.get(
+                f"/v1/sites/{_FOREIGN_SITE_ID}/work-areas", headers=_headers(_CROSS_ORG_TOKEN)
+            ).status_code
+            == 404
+        )
     finally:
         fixture.close()
 
@@ -290,20 +300,21 @@ def test_site_and_work_area_lists_filter_explicit_grants_but_keep_opaque_behavio
     try:
         _install_test_identities(fixture)
         client = TestClient(fixture.app)
-        site = fixture.app.state.site_store.get_scoped(
-            fixture.site_id, fixture.organization_id
-        )
+        site = fixture.app.state.site_store.get_scoped(fixture.site_id, fixture.organization_id)
         assert site is not None
         frame = SiteFrame.model_validate(site.site_frame)
         other_site_id = "site-b"
-        assert fixture.app.state.site_store.register(
-            other_site_id,
-            "Other site",
-            frame,
-            organization_id=fixture.organization_id,
-            actor="opaque-legacy",
-            now=_NOW,
-        ).record is not None
+        assert (
+            fixture.app.state.site_store.register(
+                other_site_id,
+                "Other site",
+                frame,
+                organization_id=fixture.organization_id,
+                actor="opaque-legacy",
+                now=_NOW,
+            ).record
+            is not None
+        )
         area = fixture.app.state.work_area_store.get(fixture.work_area_id)
         assert area is not None
         other_area = fixture.app.state.work_area_store.register(
@@ -327,9 +338,12 @@ def test_site_and_work_area_lists_filter_explicit_grants_but_keep_opaque_behavio
         assert [item["workAreaId"] for item in mapped_areas.json()["workAreas"]] == [
             fixture.work_area_id
         ]
-        assert client.get(
-            f"/v1/sites/{other_site_id}/work-areas", headers=_headers(_MAPPED_TOKEN)
-        ).status_code == 404
+        assert (
+            client.get(
+                f"/v1/sites/{other_site_id}/work-areas", headers=_headers(_MAPPED_TOKEN)
+            ).status_code
+            == 404
+        )
         opaque_sites = client.get("/v1/sites", headers=_headers(_OPAQUE_TOKEN))
         assert [item["siteId"] for item in opaque_sites.json()["sites"]] == [
             fixture.site_id,

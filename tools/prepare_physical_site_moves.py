@@ -24,6 +24,12 @@ means no closure path and the file stays; ``RETAIN`` means evidence shows
 platform use. The executor refuses any row with a non-empty blockers tuple.
 At this base every candidate is ``MOVE``; the vocabulary (and its
 row-level invariants) is enforced for later tasks that may defer or retain.
+
+Consumer-resolution rule (P3 Task 5): a recorded consumer reference is
+satisfied when the path exists either active or at
+``archive/acquisition-2026/<path>`` — Tasks 3/5 relocate consumers
+blob-identical, so the reference bytes are unchanged. Fail-closed when the
+path exists in neither place (stale manifest entry).
 """
 
 from __future__ import annotations
@@ -136,9 +142,13 @@ _GROUP_TABLE: tuple[tuple[str, str, tuple[str, ...], tuple[str, ...]], ...] = (
         "packages/perception/",
         "packages/perception",
         (
+            # P3 Task 5 note: services/processing-controller/pyproject.toml was
+            # a recorded consumer at the Task 1 base, but Task 3 dropped the
+            # ksi-perception dependency when the managed worker split closed
+            # that edge (commit 6a00443) — the reference is gone by design,
+            # not relocated, so it no longer gates here.
             "services/processing-controller/src/ksi_processing_controller/runner.py",
             "services/processing-controller/src/ksi_processing_controller/odm_masking.py",
-            "services/processing-controller/pyproject.toml",
             "Dockerfile.external-inspector",
             "Dockerfile.external-measurement",
         ),

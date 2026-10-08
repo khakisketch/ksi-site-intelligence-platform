@@ -19,7 +19,7 @@ from ksi_event_contracts.observation_work_order import (
     ObservationWorkOrderExecutionMode,
     ObservationWorkOrderStatus,
 )
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _TOKEN_A = "observation-org-a-token"  # noqa: S105
 _TOKEN_B = "observation-org-b-token"  # noqa: S105
@@ -697,9 +697,9 @@ def test_initial_external_work_order_replay_keeps_execution_guard_and_legacy_is_
     assert restored is not None
     assert restored.execution_mode is not None
     assert restored.execution_mode.value == "EXTERNAL_RECONSTRUCTION"
-    assert replayed.list_for_site_bounded(
-        "site-a", organization_id="org-a", max_records=1
-    ) == [restored]
+    assert replayed.list_for_site_bounded("site-a", organization_id="org-a", max_records=1) == [
+        restored
+    ]
     replayed._journal.close()  # noqa: SLF001 -- fixture closes its durable handle
 
     legacy = ObservationWorkOrder.model_validate(

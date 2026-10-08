@@ -547,9 +547,7 @@ def test_mcp_preserves_expected_core_conflict_codes_for_restart(tmp_path: Path) 
                 ),
                 "/v2/sites/site-snapshot/analyses/analysis-a": "ANALYSIS_SNAPSHOT_CHANGED",
                 "/v2/sites/site-unknown/analyses?limit=50": "SECRET_INTERNAL_CONFLICT_DETAIL",
-                "/v2/sites/site-idempotency/analyses?limit=50": (
-                    "ANALYSIS_IDEMPOTENCY_CONFLICT"
-                ),
+                "/v2/sites/site-idempotency/analyses?limit=50": ("ANALYSIS_IDEMPOTENCY_CONFLICT"),
                 "/v1/sites/site-v1-stale/analysis-observations": "ANALYSIS_CURSOR_STALE",
             }
             detail = detail_by_path.get(self.path, "NOT_FOUND")
@@ -925,13 +923,16 @@ def test_mcp_create_reuses_the_real_core_result_and_evidence_after_worker_comple
             )
         )
         assert denied_create == {"code": "CORE_EGRESS_ACKNOWLEDGMENT_MISSING"}
-        assert len(
-            fixture.app.state.external_analysis_wiring.intents.list_for_organization(
-                organization_id="org-a"
+        assert (
+            len(
+                fixture.app.state.external_analysis_wiring.intents.list_for_organization(
+                    organization_id="org-a"
+                )
             )
-        ) == intent_count_before_viewer_write
+            == intent_count_before_viewer_write
+        )
 
-        from ksi_mission_contracts.models import SiteFrame
+        from ksi_event_contracts.site_frame import SiteFrame
 
         foreign_site = fixture.app.state.site_store.register(
             "site-org-b",

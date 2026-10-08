@@ -18,7 +18,6 @@ import jwt
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, generate_private_key
 from fastapi import Depends
 from fastapi.testclient import TestClient
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.app import create_app
 from ksi_core.auth import (
     AuthRegistry,
@@ -29,6 +28,7 @@ from ksi_core.auth import (
     Role,
     require_principal,
 )
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
@@ -43,7 +43,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 from ksi_core.sites import SiteStore
 from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _ISSUER = "https://customer-oidc.example.test"
 _AUDIENCE = "ksi-core-customer"

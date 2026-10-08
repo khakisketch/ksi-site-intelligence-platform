@@ -34,41 +34,28 @@ from fastapi import FastAPI
 
 from ksi_core.api_base import mount_validation_error_handler
 from ksi_core.auth import HumanAuthMode
-from ksi_core.capability.registry import CapabilityRegistry, seed_prd_spikes
 from ksi_core.composition.assembly_validation import (
     _ASSEMBLY_REQUIREMENTS,  # noqa: F401 -- legacy app module re-exports exact tuple identity
     validate_assembly_requirements,
 )
 from ksi_core.composition.routes.external import mount_external_routes
 from ksi_core.composition.routes.identity_work import mount_identity_work_routes
-from ksi_core.composition.routes.missions import mount_mission_routes
-from ksi_core.composition.routes.operations import mount_operations_routes
 from ksi_core.composition.routes.processing import mount_processing_routes
 
+# P3 Task 5: managed store/projector types retired to archive/acquisition-2026/
+# with their modules — the corresponding create_app params below stay accepted
+# but are typed Any (pass-through to the archived route mounts).
 if TYPE_CHECKING:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-    from ksi_core.acquisition import AcquisitionConnectivityStore, AcquisitionCoordinationStore
     from ksi_core.auth import AuthRegistry, OidcVerifier
-    from ksi_core.capability.runtime_projection import RuntimeCapabilityProjector
-    from ksi_core.capture_quality_reports import CaptureQualityReportStore
     from ksi_core.change_detection import ChangeDetectionStore
     from ksi_core.checkpoint_validations import CheckpointValidationStore
     from ksi_core.civil_readiness import CivilReadinessProjector
     from ksi_core.comparison_requests import ComparisonRequestStore
-    from ksi_core.copilot import CopilotService
-    from ksi_core.copilot_conversations import CopilotConversationService
-    from ksi_core.coverage_reports import CoverageReportStore
-    from ksi_core.defect_candidates import DefectCandidateStore
     from ksi_core.design_conformance_reports import DesignConformanceStore
     from ksi_core.design_conformance_requests import DesignConformanceRequestStore
     from ksi_core.design_surfaces import DesignSurfaceStore
-    from ksi_core.device_attestation import DeviceAttestationRegistry
-    from ksi_core.edge_dispatch import EdgeDispatchStore
-    from ksi_core.edge_sync import EdgeSyncStore
-    from ksi_core.equipment_states import EquipmentStateStore
-    from ksi_core.equipment_support import EquipmentSupportStore
-    from ksi_core.events import EventStore
     from ksi_core.evidence import EvidenceStorage
     from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
     from ksi_core.external_display_artifacts import ExternalDisplayArtifactStore
@@ -83,20 +70,10 @@ if TYPE_CHECKING:
     from ksi_core.external_reobservation_proposals import ExternalReobservationProposalService
     from ksi_core.external_result_workflow_api import ExternalResultReadProjector
     from ksi_core.external_use_evaluator import ExternalUseEvaluator
-    from ksi_core.flight_artifacts import FlightArtifactStore
-    from ksi_core.mission_execution import MissionExecutionStore
-    from ksi_core.mission_records import MissionIssuanceSequenceStore, MissionStore
     from ksi_core.observation_work_orders import ObservationWorkOrderStore
     from ksi_core.organization_work_roster import OrganizationWorkRosterStore
     from ksi_core.processing_jobs import ProcessingJobStore
-    from ksi_core.region_extraction_reports import RegionExtractionStore
     from ksi_core.region_extraction_requests import RegionExtractionRequestStore
-    from ksi_core.report_exports import ReportExportStore
-    from ksi_core.site_workspace import (
-        SiteBriefingService,
-        SiteBriefingStore,
-        SiteWorkspaceProjector,
-    )
     from ksi_core.sites import SiteStore
     from ksi_core.source_media import SourceMediaStore
     from ksi_core.volume_reports import VolumeChangeStore
@@ -106,37 +83,37 @@ if TYPE_CHECKING:
 
 def create_app(
     *,
-    registry: CapabilityRegistry | None = None,
+    registry: Any | None = None,
     auth_registry: AuthRegistry | None = None,
     human_auth_mode: HumanAuthMode = HumanAuthMode.OPAQUE,
     oidc_verifier: OidcVerifier | None = None,
-    edge_sync_store: EdgeSyncStore | None = None,
-    edge_dispatch_store: EdgeDispatchStore | None = None,
-    event_store: EventStore | None = None,
+    edge_sync_store: Any | None = None,
+    edge_dispatch_store: Any | None = None,
+    event_store: Any | None = None,
     site_store: SiteStore | None = None,
-    mission_store: MissionStore | None = None,
+    mission_store: Any | None = None,
     mission_signing_key: Ed25519PrivateKey | None = None,
     mission_signing_key_id: str | None = None,
     mission_contract_writer_version: Literal["1.2", "1.3"] = "1.2",
     mission_contract_issuer_id: str | None = None,
-    mission_sequence_store: MissionIssuanceSequenceStore | None = None,
+    mission_sequence_store: Any | None = None,
     evidence_storage: EvidenceStorage | None = None,
-    flight_artifact_store: FlightArtifactStore | None = None,
-    coverage_report_store: CoverageReportStore | None = None,
-    mission_execution_store: MissionExecutionStore | None = None,
+    flight_artifact_store: Any | None = None,
+    coverage_report_store: Any | None = None,
+    mission_execution_store: Any | None = None,
     source_media_store: SourceMediaStore | None = None,
     design_surface_store: DesignSurfaceStore | None = None,
     processing_job_store: ProcessingJobStore | None = None,
     checkpoint_validation_store: CheckpointValidationStore | None = None,
-    defect_candidate_store: DefectCandidateStore | None = None,
+    defect_candidate_store: Any | None = None,
     change_detection_store: ChangeDetectionStore | None = None,
     volume_change_store: VolumeChangeStore | None = None,
     comparison_request_store: ComparisonRequestStore | None = None,
     design_conformance_request_store: DesignConformanceRequestStore | None = None,
     design_conformance_report_store: DesignConformanceStore | None = None,
-    report_export_store: ReportExportStore | None = None,
+    report_export_store: Any | None = None,
     region_extraction_request_store: RegionExtractionRequestStore | None = None,
-    region_extraction_report_store: RegionExtractionStore | None = None,
+    region_extraction_report_store: Any | None = None,
     work_area_store: WorkAreaStore | None = None,
     observation_work_order_store: ObservationWorkOrderStore | None = None,
     organization_work_roster_store: OrganizationWorkRosterStore | None = None,
@@ -156,30 +133,31 @@ def create_app(
     external_display_artifact_store: ExternalDisplayArtifactStore | None = None,
     external_artifact_inspection_store: ExternalArtifactInspectionStore | None = None,
     external_analysis_wiring: Any | None = None,
-    acquisition_connectivity_store: AcquisitionConnectivityStore | None = None,
-    acquisition_coordination_store: AcquisitionCoordinationStore | None = None,
-    capture_quality_report_store: CaptureQualityReportStore | None = None,
+    acquisition_connectivity_store: Any | None = None,
+    acquisition_coordination_store: Any | None = None,
+    capture_quality_report_store: Any | None = None,
     acquisition_issue_gate_enabled: bool = False,
     landxml_ingress_enabled: bool = False,
     checkpoint_validation_registration_enabled: bool = False,
-    copilot_service: CopilotService | None = None,
-    copilot_conversation_service: CopilotConversationService | None = None,
-    site_workspace_projector: SiteWorkspaceProjector | None = None,
-    site_briefing_service: SiteBriefingService | None = None,
-    site_briefing_store: SiteBriefingStore | None = None,
+    copilot_service: Any | None = None,
+    copilot_conversation_service: Any | None = None,
+    site_workspace_projector: Any | None = None,
+    site_briefing_service: Any | None = None,
+    site_briefing_store: Any | None = None,
     civil_readiness_projector: CivilReadinessProjector | None = None,
-    equipment_state_store: EquipmentStateStore | None = None,
-    equipment_support_store: EquipmentSupportStore | None = None,
-    runtime_capability_projector: RuntimeCapabilityProjector | None = None,
-    device_attestation_registry: DeviceAttestationRegistry | None = None,
+    equipment_state_store: Any | None = None,
+    equipment_support_store: Any | None = None,
+    runtime_capability_projector: Any | None = None,
+    device_attestation_registry: Any | None = None,
     expose_docs: bool = True,
 ) -> FastAPI:
     """Core 앱을 만든다.
 
     Args:
-        registry: 주입할 Capability Registry. ``None``이면 PRD §20.3 SPIKE 9종을
-            시드한 새 레지스트리를 만든다 — 시드 직후 노출 가능한 capability는
-            0건이다(실기 검증 증거가 없으므로, INV-041).
+        registry: 주입할 Capability Registry 객체. P3 Task 5에서 관리형
+            capability 세트가 아카이브로 은퇴하면서 자동 생성·시드가 함께
+            은퇴했다 — ``None``이면 ``/capabilities`` 표면 자체가 장착되지
+            않는다(없는 catalog를 지어내지 않는다).
         expose_docs: ``True``(기본)면 FastAPI 기본 문서 라우트(``/openapi.json``·
             ``/docs``·``/docs/oauth2-redirect``·``/redoc``)가 무인증으로 열린다 —
             이 **넷**은 ``/health``·``/capabilities`` 와 함께 공개 allowlist 다
@@ -299,9 +277,12 @@ def create_app(
             대조할 상대가 없다. 주어지면 ``/v1/equipment-support`` 표면이 장착되고,
             그때 비로소 ``assert_support_level_transition`` 이 런타임에서 강제된다.
     """
-    capability_registry = registry if registry is not None else CapabilityRegistry()
-    if registry is None:
-        seed_prd_spikes(capability_registry)
+    # P3 Task 5: CapabilityRegistry retired to archive/acquisition-2026/ with
+    # the managed set — no import here, not even lazy (archive references are
+    # forbidden). The auto-seed retired with it. The catalog surface mounts
+    # only when a registry object is explicitly injected; otherwise it is
+    # omitted rather than fabricated.
+    capability_registry = registry
 
     app = FastAPI(
         title="KSI Core",
@@ -324,29 +305,8 @@ def create_app(
         """liveness — 의존 서비스 상태를 확인하지 않는 순수 프로세스 생존 신호."""
         return {"status": "ok"}
 
-    @app.get("/capabilities")
-    def list_capabilities() -> dict[str, Any]:
-        """Product catalog에서 승인된 VERIFIED compatibility 항목만 반환한다.
-
-        SPIKE_REQUIRED/BLOCKED 항목은 이 응답에 절대 포함되지 않는다 — 미검증 기능이
-        제품 catalog에 노출되는 것을 막는 게이트다. 다만 scope 없는 public 응답이므로
-        CurrentRuntimeReady, Mission permission 또는 OperationallyUsable을 뜻하지 않는다.
-        감사용 전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
-        """
-        catalog_visible = capability_registry.list_operational()
-        # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK 버전은 배치 기체의
-        # 취약점 표적화에 쓰이는 정보라 인증된 내부·감사 경로에서만 제공한다.
-        return {
-            "capabilities": [
-                {
-                    "capabilityId": record.capability_id,
-                    "title": record.title,
-                    "state": record.state.value,
-                }
-                for record in catalog_visible
-            ],
-            "count": len(catalog_visible),
-        }
+    if capability_registry is not None:
+        _mount_capability_catalog(app, capability_registry)
 
     # ── fail-closed 결합 검증(장착 전에 전부 확인 — 절반 조립으로 기동하지 않는다) ──
 
@@ -459,53 +419,19 @@ def create_app(
         external_display_artifact_store=external_display_artifact_store,
         external_analysis_wiring=external_analysis_wiring,
     )
-    site_lifecycle = mount_operations_routes(
-        app,
-        acquisition_connectivity_store=acquisition_connectivity_store,
-        acquisition_coordination_store=acquisition_coordination_store,
-        observation_work_order_store=observation_work_order_store,
-        mission_store=mission_store,
-        coverage_report_store=coverage_report_store,
-        capture_quality_report_store=capture_quality_report_store,
-        source_media_store=source_media_store,
-        processing_job_store=processing_job_store,
-        mission_execution_store=mission_execution_store,
-        copilot_service=copilot_service,
-        copilot_conversation_service=copilot_conversation_service,
-        site_workspace_projector=site_workspace_projector,
-        site_briefing_service=site_briefing_service,
-        site_briefing_store=site_briefing_store,
-        civil_readiness_projector=civil_readiness_projector,
-        site_store=site_store,
-        edge_sync_store=edge_sync_store,
-        event_store=event_store,
-        edge_dispatch_store=edge_dispatch_store,
-        evidence_storage=evidence_storage,
-        device_attestation_registry=device_attestation_registry,
-    )
-    mount_mission_routes(
-        app,
-        event_store=event_store,
-        evidence_storage=evidence_storage,
-        mission_signing_key=mission_signing_key,
-        mission_signing_key_id=mission_signing_key_id,
-        mission_store=mission_store,
-        site_store=site_store,
-        observation_work_order_store=observation_work_order_store,
-        acquisition_connectivity_store=acquisition_connectivity_store,
-        acquisition_issue_gate_enabled=acquisition_issue_gate_enabled,
-        mission_contract_writer_version=mission_contract_writer_version,
-        mission_contract_issuer_id=mission_contract_issuer_id,
-        mission_sequence_store=mission_sequence_store,
-        acquisition_coordination_store=acquisition_coordination_store,
-        flight_artifact_store=flight_artifact_store,
-        coverage_report_store=coverage_report_store,
-        mission_execution_store=mission_execution_store,
-        site_lifecycle=site_lifecycle,
-        source_media_store=source_media_store,
-        design_surface_store=design_surface_store,
-        landxml_ingress_enabled=landxml_ingress_enabled,
-    )
+    # P3 Task 5: mount_operations_routes / mount_mission_routes retired to
+    # archive/acquisition-2026/ with the managed set. The only live behavior
+    # those mounts had for staying stores was the site_lifecycle construction
+    # (SpatialModelLifecycle over staying site/processing-job stores); it is
+    # inlined here verbatim so mount_processing_routes keeps its exact input.
+    # Every other operations/missions branch mounted archived stores only.
+    site_lifecycle = None
+    if site_store is not None:
+        from ksi_core.spatial_model import SpatialModelLifecycle
+
+        site_lifecycle = SpatialModelLifecycle(
+            site_store=site_store, processing_job_store=processing_job_store
+        )
     mount_processing_routes(
         app,
         processing_job_store=processing_job_store,
@@ -527,6 +453,37 @@ def create_app(
         region_extraction_report_store=region_extraction_report_store,
         equipment_state_store=equipment_state_store,
         equipment_support_store=equipment_support_store,
+        design_surface_store=design_surface_store,
+        landxml_ingress_enabled=landxml_ingress_enabled,
     )
 
     return app
+
+
+def _mount_capability_catalog(app: FastAPI, capability_registry: Any) -> None:
+    """Product catalog에서 승인된 VERIFIED compatibility 항목만 반환한다.
+
+    SPIKE_REQUIRED/BLOCKED 항목은 이 응답에 절대 포함되지 않는다 — 미검증 기능이
+    제품 catalog에 노출되는 것을 막는 게이트다. 다만 scope 없는 public 응답이므로
+    CurrentRuntimeReady, Mission permission 또는 OperationallyUsable을 뜻하지 않는다.
+    감사용 전체 목록은 이 공개 API가 아니라 내부 경로로 제공한다.
+    (P3 Task 5: registry가 archived managed package라 없을 때는 이 표면을
+    장착하지 않는다 — 없는 catalog를 지어내지 않는다.)
+    """
+
+    @app.get("/capabilities")
+    def list_capabilities() -> dict[str, Any]:
+        catalog_visible = capability_registry.list_operational()
+        # 공개 응답은 식별·상태만(감사 #49) — firmware/PSDK 버전은 배치 기체의
+        # 취약점 표적화에 쓰이는 정보라 인증된 내부·감사 경로에서만 제공한다.
+        return {
+            "capabilities": [
+                {
+                    "capabilityId": record.capability_id,
+                    "title": record.title,
+                    "state": record.state.value,
+                }
+                for record in catalog_visible
+            ],
+            "count": len(catalog_visible),
+        }

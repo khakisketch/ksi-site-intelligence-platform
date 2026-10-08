@@ -1305,7 +1305,7 @@ def _grant_for_ref(graph: SimpleNamespace, asset_ref: str, grant_id: str):
 
 def _register_second_submission(graph: SimpleNamespace, submission_id: str):
     """Register a genuinely unsealed second submission via the owner API."""
-    from ksi_core.acquisition import observation_epoch_id
+    from ksi_core.domains.observations.epoch_identity import observation_epoch_id
     from support.external_artifact_inspection_fixtures import sealed_submission
 
     submission = (

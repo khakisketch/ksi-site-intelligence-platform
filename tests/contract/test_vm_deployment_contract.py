@@ -49,7 +49,9 @@ def test_vm_compose_resolves_with_only_caddy_80_443_published() -> None:
         if service.get("ports")
     }
     assert published == {"caddy": ["80", "443"]}
-    for name in ("core", "dashboard", "worker", "minio", "nodeodm", "caddy"):
+    # P3 Task 5: the managed worker service retired to archive/acquisition-2026/
+    # (T3 split); no worker service exists to attach to the private network.
+    for name in ("core", "dashboard", "minio", "nodeodm", "caddy"):
         assert "ksi-private" in config["services"][name]["networks"]
 
 

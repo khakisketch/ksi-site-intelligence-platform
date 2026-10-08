@@ -27,7 +27,7 @@ from ksi_core.auth import (
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.sites import SiteStore, SiteStoreRecoveryError, mount_sites
 from ksi_domain.enums import SiteStatus
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 
 _FIELD_OPERATOR_TOKEN = "fo-plaintext-token"
 _VIEWER_TOKEN = "viewer-plaintext-token"
@@ -242,16 +242,19 @@ def test_put_aoi_replaces_existing_aoi_while_unmapped(tmp_path: Path) -> None:
     original = _aoi_payload(delta=0.001)
     replacement = _aoi_payload(delta=0.002)
 
-    assert client.post(
-        "/v1/sites",
-        json={
-            "siteId": "site-replace-aoi",
-            "name": "교체 현장",
-            "siteFrame": _site_frame_payload(),
-            "aoi": original,
-        },
-        headers=_auth(_FIELD_OPERATOR_TOKEN),
-    ).status_code == 201
+    assert (
+        client.post(
+            "/v1/sites",
+            json={
+                "siteId": "site-replace-aoi",
+                "name": "교체 현장",
+                "siteFrame": _site_frame_payload(),
+                "aoi": original,
+            },
+            headers=_auth(_FIELD_OPERATOR_TOKEN),
+        ).status_code
+        == 201
+    )
 
     response = _put_aoi(client, "site-replace-aoi", aoi=replacement)
 
@@ -539,9 +542,7 @@ def test_actor_cannot_be_forged_via_body(tmp_path: Path) -> None:
 
     assert _register(client, site_id).status_code == 201
 
-    response = _transition(
-        client, site_id, "BASELINE_MAPPING", extra={"actor": "someone-else"}
-    )
+    response = _transition(client, site_id, "BASELINE_MAPPING", extra={"actor": "someone-else"})
 
     assert response.status_code == 422  # extra="forbid" 가 위조 필드를 거부한다
 
@@ -580,7 +581,11 @@ def test_register_rejects_naive_datetime(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="tz-aware"):
         store.register(
-            "site-naive", "Naive 현장", _site_frame_model(), actor="tester", now=datetime.now()  # noqa: DTZ005
+            "site-naive",
+            "Naive 현장",
+            _site_frame_model(),
+            actor="tester",
+            now=datetime.now(),  # noqa: DTZ005
         )
 
 
@@ -699,8 +704,7 @@ def test_field_operator_forbidden_provisional_autonomy_to_patrol_ready(tmp_path:
         client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
     )
     assert (
-        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
-        == 200
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code == 200
     )
 
     response = _transition(client, site_id, "PATROL_READY", token=_FIELD_OPERATOR_TOKEN)
@@ -717,8 +721,7 @@ def test_admin_allowed_provisional_autonomy_to_patrol_ready(tmp_path: Path) -> N
         client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
     )
     assert (
-        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
-        == 200
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code == 200
     )
 
     response = _transition(client, site_id, "PATROL_READY", token=_ADMIN_TOKEN)
@@ -787,8 +790,7 @@ def test_field_operator_allowed_patrol_active_to_patrol_ready(tmp_path: Path) ->
         client, site_id, "BASELINE_MAPPING", "MODEL_PROCESSING", "MODEL_VALIDATION"
     )
     assert (
-        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code
-        == 200
+        _transition(client, site_id, "PROVISIONAL_AUTONOMY", token=_ADMIN_TOKEN).status_code == 200
     )
     assert _transition(client, site_id, "PATROL_READY", token=_ADMIN_TOKEN).status_code == 200
     assert (
@@ -977,9 +979,7 @@ def test_replay_refuses_startup_on_blank_evidence(tmp_path: Path) -> None:
     seed = DurableJournal(journal_path)
     seed.append(_registered_raw("site-blank-evidence"))
     seed.append(
-        _transitioned_raw(
-            "site-blank-evidence", "UNMAPPED", "BASELINE_MAPPING", evidence="   "
-        )
+        _transitioned_raw("site-blank-evidence", "UNMAPPED", "BASELINE_MAPPING", evidence="   ")
     )
     seed.close()
 
@@ -1009,9 +1009,7 @@ def test_register_normalizes_non_utc_offset_to_utc(tmp_path: Path) -> None:
     kst = timezone(timedelta(hours=9))
     now_kst = datetime(2026, 1, 1, 9, 0, 0, tzinfo=kst)  # == 2026-01-01T00:00:00Z
 
-    result = store.register(
-        "site-tz", "TZ 현장", _site_frame_model(), actor="tester", now=now_kst
-    )
+    result = store.register("site-tz", "TZ 현장", _site_frame_model(), actor="tester", now=now_kst)
 
     assert result.record is not None
     assert result.record.registered_at.utcoffset() == timedelta(0)

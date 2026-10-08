@@ -174,9 +174,22 @@ def test_real_csv_decision_vocabulary_and_blockers() -> None:
     )
 
 
+def _resolve_consumer(consumer: str, head: dict[str, tuple[str, str, str]]) -> str:
+    """P3 Task 5 consumer-resolution rule: a recorded consumer reference is
+    satisfied when the path exists either active or at
+    ``archive/acquisition-2026/<path>`` (Tasks 3/5 relocate consumers
+    blob-identical, so the reference bytes are unchanged). Fail-closed on
+    neither: a consumer missing in both places is a stale manifest entry."""
+    if consumer in head:
+        return consumer
+    archived = ARCHIVE_PREFIX + consumer
+    assert archived in head, f"stale consumer reference: {consumer}"
+    return archived
+
+
 def test_real_csv_consumers_are_real_references() -> None:
-    """Every recorded consumer file exists at HEAD and really references the
-    group it gates (import, COPY, job, or routing mention)."""
+    """Every recorded consumer file exists at HEAD (active or archived) and
+    really references the group it gates (import, COPY, job, or routing mention)."""
     decisions = build_move_decisions(REAL_FROZEN, ROOT)
     head = _git_head_map()
     group_tokens = {
@@ -198,9 +211,9 @@ def test_real_csv_consumers_are_real_references() -> None:
     for decision in decisions:
         tokens = group_tokens[decision.group]
         for consumer in decision.consumers:
-            assert consumer in head, (decision.path, consumer)
+            resolved = _resolve_consumer(consumer, head)
             raw = subprocess.run(
-                ["git", "cat-file", "blob", head[consumer][2]],
+                ["git", "cat-file", "blob", head[resolved][2]],
                 cwd=ROOT,
                 check=True,
                 capture_output=True,

@@ -15,8 +15,8 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.auth import Principal, PrincipalKind
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorageError, ObjectStorageObservation
 from ksi_core.external_reconstruction import (

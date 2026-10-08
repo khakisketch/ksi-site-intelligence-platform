@@ -3,7 +3,11 @@
 from pathlib import Path
 
 import pytest
-from ksi_core import production
+
+# P3 Task 5: helper owner moved from legacy production.py to composition.runtime_config.
+from ksi_core.composition.runtime_config import (
+    _external_authority_paths_env as production_paths_env,
+)
 
 _WORKFLOW = "KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG"
 _PROVIDER = "KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"
@@ -12,7 +16,7 @@ _PROVIDER = "KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"
 def test_absent_external_configuration_remains_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(_WORKFLOW, raising=False)
     monkeypatch.delenv(_PROVIDER, raising=False)
-    assert production._external_authority_paths_env() is None
+    assert production_paths_env() is None
 
 
 @pytest.mark.parametrize("key", [_WORKFLOW, _PROVIDER])
@@ -23,7 +27,7 @@ def test_partial_external_configuration_fails_before_storage(
     monkeypatch.delenv(_PROVIDER, raising=False)
     monkeypatch.setenv(key, "/operator/supplied.json")
     with pytest.raises(RuntimeError, match="together"):
-        production._external_authority_paths_env()
+        production_paths_env()
 
 
 @pytest.mark.parametrize("value", ["", "relative.json", " /operator/file.json", "/a/../file"])
@@ -33,12 +37,12 @@ def test_invalid_explicit_external_path_is_not_treated_as_disabled(
     monkeypatch.setenv(_WORKFLOW, value)
     monkeypatch.setenv(_PROVIDER, "/operator/provider.json")
     with pytest.raises(RuntimeError):
-        production._external_authority_paths_env()
+        production_paths_env()
 
 
 def test_exact_paths_are_retained_without_opening_files(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv(_WORKFLOW, "/operator/workflow.json")
     monkeypatch.setenv(_PROVIDER, "/operator/provider.json")
-    assert production._external_authority_paths_env() == (
+    assert production_paths_env() == (
         Path("/operator/workflow.json"), Path("/operator/provider.json")
     )

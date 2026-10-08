@@ -19,10 +19,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
-from ksi_core.app_assembly import assemble_app
 from ksi_core.auth import AuthRegistry, Principal, PrincipalKind, PrincipalTokenRecord, Role
+from ksi_core.composition.platform_assembly import assemble_platform_app as assemble_app
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import DigestBoundUploadCapability, ObjectStorageObservation
 from ksi_core.metrics import PROCESSING_JOB_ADMISSIONS, record_processing_job_admission
@@ -87,15 +86,14 @@ def _assembled_client(tmp_path: Path) -> TestClient:
         opened.append(journal)
         return journal
 
+    # P3 Task 5: legacy managed assembly retired — observability surfaces
+    # (metrics/correlation middleware) are platform, so boot the platform app.
     app = assemble_app(
         tmp_path,
         journal=_journal,
         opened=opened,
-        edge_sync_snapshot_every=None,
         auth_registry=_auth_registry(),
         evidence_storage=_NullEvidenceStorage(),
-        mission_signing_key=Ed25519PrivateKey.generate(),
-        mission_signing_key_id="obs-test-key",
     )
     return TestClient(app)
 

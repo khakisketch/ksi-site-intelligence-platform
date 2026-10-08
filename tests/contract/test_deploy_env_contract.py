@@ -7,9 +7,8 @@ import re
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
-_PRODUCTION = (_ROOT / "services" / "core" / "src" / "ksi_core" / "production.py").read_text(
-    encoding="utf-8"
-)
+# P3 Task 5: the legacy managed factory retired to archive/acquisition-2026/ —
+# deploy env is now contracted against the platform factory sources only.
 _PLATFORM = (
     _ROOT / "services" / "core" / "src" / "ksi_core" / "composition" / "platform_production.py"
 ).read_text(encoding="utf-8")
@@ -59,17 +58,6 @@ _PLATFORM_DENIED = {
 
 def _core_env_names(text: str) -> set[str]:
     return set(re.findall(r"KSI_CORE_[A-Z0-9_]+", text))
-
-
-def test_every_production_core_env_is_documented_in_deploy_example() -> None:
-    # Legacy factory note (retires in Task 5): production.py stays importable,
-    # so its env must stay documented in deploy/.env.example until then.
-    production_names = _core_env_names(_PRODUCTION)
-    example_names = _core_env_names(_ENV_EXAMPLE)
-    assert production_names <= example_names, (
-        "production.py에만 있고 deploy/.env.example에 없는 변수: "
-        + ", ".join(sorted(production_names - example_names))
-    )
 
 
 def test_platform_required_env_is_documented_in_deploy_example() -> None:

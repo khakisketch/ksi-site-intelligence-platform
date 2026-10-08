@@ -10,9 +10,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.domains.external.delivery.source import SpatialDataSourceResolver
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import ObjectStorageObservation
 from ksi_core.external_artifact_inspections import ExternalArtifactInspectionStore
@@ -28,7 +28,7 @@ from ksi_core.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.sites import SiteStore
 from ksi_core.work_areas import WorkAreaStore
 from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
-from ksi_mission_contracts.models import SiteFrame
+from ksi_event_contracts.site_frame import SiteFrame
 from pyproj import CRS
 from spatial_data_fixture import make_policy
 from support.external_artifact_inspection_fixtures import (

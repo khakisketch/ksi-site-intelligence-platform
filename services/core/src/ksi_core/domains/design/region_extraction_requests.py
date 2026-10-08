@@ -88,7 +88,9 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from ksi_core.domains.design.design_conformance_reports import DesignConformanceStore
-    from ksi_core.domains.missions.mission_records import MissionStore
+    # P3 Task 5: retired to archive/acquisition-2026/ — no active
+    # import, not even typing-only. Alias stays opaque Any.
+    MissionStore = Any
 
 _NOT_FOUND_DETAIL = "해당 변화 영역 추출 요청을 찾을 수 없다"
 

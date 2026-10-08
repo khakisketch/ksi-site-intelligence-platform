@@ -12,8 +12,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
-from ksi_core.acquisition import observation_epoch_id
 from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
+from ksi_core.domains.observations.epoch_identity import observation_epoch_id
 from ksi_core.durable_journal import DurableJournal, JournalSealedError
 from ksi_core.evidence import (
     DigestBoundUploadCapability,

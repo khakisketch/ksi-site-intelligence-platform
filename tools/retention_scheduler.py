@@ -46,9 +46,13 @@ from pathlib import Path
 from types import FrameType
 
 from ksi_core.durable_journal import DurableJournal
-from ksi_core.events import EventStore
 from ksi_core.observability import configure_structured_logging
 from ksi_core.retention import RetentionPolicy, load_policy, plan_expiry
+
+try:
+    from ksi_core.events import EventStore  # type: ignore[import-not-found]
+except ModuleNotFoundError:  # P3 Task 5: managed events retired to the archive boundary
+    EventStore = None
 
 logger = logging.getLogger("ksi_core.retention_scheduler")
 
@@ -71,6 +75,15 @@ def _scan_once(*, data_dir: Path, policy: RetentionPolicy) -> None:
     journal_path = data_dir / "events.jsonl"
     if not journal_path.exists():
         logger.warning("이벤트 원장이 없다(%s) — 이번 주기는 건너뛴다", journal_path)
+        return
+    if EventStore is None:
+        # P3 Task 5: events 저널은 관리형(managed)이라 아카이브 경계 너머로
+        # 옮겼다 — 플랫폼 프로파일에서는 처리하지 않고 건너뛴다(fail-closed skip).
+        logger.warning(
+            "이벤트 원장(%s)은 관리형 저널이라 archive/acquisition-2026/ 으로 "
+            "옮겼다 — 이번 주기는 건너뛴다",
+            journal_path,
+        )
         return
     journal = DurableJournal.open_read_only(journal_path)
     try:

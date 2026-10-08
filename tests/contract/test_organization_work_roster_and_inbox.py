@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -1750,8 +1750,7 @@ def test_relative_share_route_stays_unavailable_without_a_relative_store(tmp_pat
     store configured (the exact shape
     ``tests/contract/test_hostile_input_route_coverage.py``'s
     ``_mounted_write_routes`` uses — no ``external_result_workflow``)."""
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from ksi_core.app_assembly import assemble_app
+    from ksi_core.composition.platform_assembly import assemble_platform_app as assemble_app
 
     opened: list[Any] = []
 
@@ -1761,15 +1760,17 @@ def test_relative_share_route_stays_unavailable_without_a_relative_store(tmp_pat
         return item
 
     try:
+        # P3 Task 5: legacy assemble_app retired — the platform profile boots
+        # the same external-only shape (no workflow config → no relative store).
         app = assemble_app(
             tmp_path,
             journal=journal,
             opened=opened,
-            edge_sync_snapshot_every=100,
             auth_registry=AuthRegistry([_token("operator", "operator-a", Role.FIELD_OPERATOR)]),
-            evidence_storage=None,
-            mission_signing_key=Ed25519PrivateKey.generate(),
-            mission_signing_key_id="regression-key",
+            # P3 Task 5: shares route 503s before touching storage (no relative
+            # store configured) — an opaque handle suffices and keeps the
+            # platform assembly's non-None gate satisfied.
+            evidence_storage=cast(Any, object()),
         )
         app.state.organization_work_roster_store.put_member(
             organization_id="org-a",
@@ -1795,87 +1796,3 @@ def test_relative_share_route_stays_unavailable_without_a_relative_store(tmp_pat
     finally:
         for item in opened:
             item.close()
-
-
-def _minimal_workspace_graph_dependencies(tmp_path: Path) -> dict[str, Any]:
-    """Real, minimally-wired dependencies for ``build_workspace_graph`` — enough
-    to exercise its ``external_relative_volume_store``/``external_single_volume_store``
-    conditional wiring without needing the full ``assemble_app`` surface."""
-    from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
-    from ksi_core.mission_plans import MissionStore
-    from ksi_core.sites import SiteStore
-    from ksi_core.source_media import SourceMediaStore
-
-    coordinator = ExternalAuthorityCurrentnessCoordinator()
-    site_store = SiteStore(DurableJournal(tmp_path / "sites.jsonl"), coordinator=coordinator)
-    mission_store = MissionStore(DurableJournal(tmp_path / "missions.jsonl"))
-    source_media_store = SourceMediaStore(
-        DurableJournal(tmp_path / "source-media.jsonl"), mission_store=mission_store
-    )
-    roster = OrganizationWorkRosterStore(
-        DurableJournal(tmp_path / "roster.jsonl"), coordinator=coordinator
-    )
-    work_orders = ObservationWorkOrderStore(
-        DurableJournal(tmp_path / "orders.jsonl"),
-        site_exists=lambda site_id, organization_id: (
-            site_store.get_scoped(site_id, organization_id) is not None
-        ),
-        operations_coordinator=coordinator,
-        assignment_member_is_active=roster.is_assignable_member,
-    )
-    return {
-        "journal": lambda name: DurableJournal(tmp_path / name),
-        "coordinator": coordinator,
-        "observation_work_order_store": work_orders,
-        "organization_work_roster_store": roster,
-        "site_store": site_store,
-        "mission_store": mission_store,
-        "coverage_report_store": None,
-        "source_media_store": source_media_store,
-        "processing_job_store": None,
-        "design_surface_store": None,
-        "external_result_read_projector": None,
-        "acquisition_coordination_enabled": False,
-        "copilot_runtime_config": None,
-        "event_journal": DurableJournal(tmp_path / "events.jsonl"),
-    }
-
-
-def test_workspace_graph_report_resolver_wiring_matches_configured_stores(tmp_path: Path) -> None:
-    """Fix round 1 (Critical): pin ``build_workspace_graph``'s exact resolver
-    shape for every relative/single configuration, directly (not through the
-    heavier full-app assembly above)."""
-    from ksi_core.composition.workspace_graph import build_workspace_graph
-    from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
-
-    relative_store = object()
-    single_store = object()
-
-    none_dir = tmp_path / "none"
-    none_dir.mkdir()
-    none_workspace = build_workspace_graph(
-        **_minimal_workspace_graph_dependencies(none_dir),
-        external_relative_volume_store=None,
-    )
-    assert none_workspace.work_inbox_store._report_resolver is None  # noqa: SLF001
-
-    relative_only_dir = tmp_path / "relative-only"
-    relative_only_dir.mkdir()
-    relative_only_workspace = build_workspace_graph(
-        **_minimal_workspace_graph_dependencies(relative_only_dir),
-        external_relative_volume_store=relative_store,
-    )
-    relative_only_resolver = relative_only_workspace.work_inbox_store._report_resolver  # noqa: SLF001
-    assert isinstance(relative_only_resolver, ExternalVolumeReportResolver)
-    assert relative_only_resolver.uses(relative_store, None)
-
-    composite_dir = tmp_path / "composite"
-    composite_dir.mkdir()
-    composite_workspace = build_workspace_graph(
-        **_minimal_workspace_graph_dependencies(composite_dir),
-        external_relative_volume_store=relative_store,
-        external_single_volume_store=single_store,
-    )
-    composite_resolver = composite_workspace.work_inbox_store._report_resolver  # noqa: SLF001
-    assert isinstance(composite_resolver, ExternalVolumeReportResolver)
-    assert composite_resolver.uses(relative_store, single_store)

@@ -14,7 +14,10 @@ import re
 import stat
 from pathlib import Path
 
-from ksi_core.signing_keys import SigningKeyError, load_signing_keys
+# P3 Task 5: Mission signing retired to archive/acquisition-2026/ — the platform
+# profile never reads signing keys, so this validator keeps only the manifest
+# shape/file checks below; cryptographic key verification retired with the
+# archived ksi_core.signing_keys module (T6 dispositions this tool).
 
 RUNTIME_UID = 10001
 RUNTIME_GID = 10001
@@ -125,11 +128,13 @@ def _signing_key_set(path: Path) -> None:
             if key_id == active:
                 private_name = f"{key_id}.private.pem"
                 snapshot[private_name] = _supplied_file(path / private_name, private=True)
-        load_signing_keys(path, verified_files=snapshot)
+        # P3 Task 5: cryptographic key verification retired with archived
+        # ksi_core.signing_keys (platform never reads signing keys) — manifest
+        # shape/file checks above stay; the non-mutation re-read below stays.
         for name, raw in snapshot.items():
             if _supplied_file(path / name, private=name.endswith(".private.pem")) != raw:
                 raise ValueError("credential changed during semantic validation")
-    except (KeyError, TypeError, ValueError, SigningKeyError) as exc:
+    except (KeyError, TypeError, ValueError) as exc:
         raise RuntimeError(
             "candidate signing key set is missing or invalid; refusing bootstrap"
         ) from exc
