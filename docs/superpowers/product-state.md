@@ -1,5 +1,5 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-10-07 (bounded rebaseline linkage only; slice/acceptance unchanged)
+Updated: 2026-10-09 (bounded rebaseline linkage only; slice/acceptance unchanged)
 ## Goal
 외부 재구성 산출물을 등록·검사·구조화하고 공간데이터와 재현 가능한 분석을 API·MCP로
 제공하여 외부 에이전트·산업용 소프트웨어가 재사용하는 Site Intelligence 기반(ADR-KSI-038).
@@ -31,6 +31,15 @@ Core/worker acquisition deps dropped, platform imports zero acquisition code (co
 gates), CI historical route (dispatch-only), lock162→157, full suite5996passed/0failed, whole-P3
 review + independent runner receipt green. P4 Console (design-owned) and P5 whole verification
 remain; real customer/operational acceptance stays external. No slice/acceptance/milestone change.
+2026-10-09 P4 Console cleanup is technically closed locally at `7f44d11967e9b31524e7f2bbe0ef466c98ad5aec`:
+retired acquisition routes/actions removed, approved Home/Sites/five-tab workspace preserved;
+actual auth/reload/denial/error/mobile flows and design-owned rendered review verified. Independent
+Dashboard typecheck/lint/build exit0, Vitest762/100 and four-viewport E2E77passed/0failed/15explicit
+conditional skips; six unchanged Python/fixture hashes reuse the prior independent6013/30/0 receipt.
+Exact evidence/limits and deferred minor cleanup are in the [rebaseline ledger](plans/2026-10-07-agent-first-platform-rebaseline.md)
+and `apps/dashboard/p4-cleanup-evidence/verification/`. The [P5 integrated-verification proposal](plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
+awaits written Human review; no P5 execution, slice closure, customer/operational acceptance or
+release is implied. Optional local analysis/storage capability remains honestly unavailable.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

@@ -1412,3 +1412,59 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   threshold or source changed. Cost if wrong: poorer text diffs; mitigate with exact path-bounded
   audit and retained hashes, never claiming the full-index check passed. Task-owned699paths staged;
   proposal/checkpoint/auth/trace/foreign files excluded. Local commit next, P5 still unapproved.
+
+### P4 technical closure and P5 written-review handoff — 2026-10-09
+
+- Task-owned source/evidence committed locally on agreed main as
+  `7f44d11967e9b31524e7f2bbe0ef466c98ad5aec` (`refactor(dashboard): retire acquisition console
+  surfaces and verify platform flows`):699paths,17059insertions/24054deletions including explicit
+  evidence. Actual699index paths inspected; no checkpoint, credentials/trace, foreign worktree,
+  P5 proposal, package install or unrelated work included. Commit exit0; only untracked P5 draft
+  remained afterwards. No branch/worktree transfer, push, deployment or history rewrite.
+- **P4 Tasks1–5 technically CLOSED locally** at that source commit: mounted-route disposition,
+  surviving platform Console + provenance/denial/error behavior, real login/reload/four-viewport
+  flow, design-owned source-bound render review and whole-P4 engineering + independent final
+  verification. Tested9a3bab1+pending content equals the352committed members of snapshot8256911c
+  (the353rd entry is ignored local bytecode, clarified below); commit changes revision identity,
+  not reviewed/tested source bytes. Required P4 defects01–10
+  fixed/closed with origin and RED/revision/render/check evidence above; deferred minors stay open.
+- Usable level: actual local login → populated Sites → five-tab workspace → work orders/external
+  registration and history/support surfaces, with deliberate retired-route404/redirect and truthful
+  unavailable optional analysis/result/storage states. It is not a configured measurement/customer
+  pipeline; no real-byte display or customer-data/accuracy/operational acceptance is claimed.
+- Product-state records only this bounded technical result and successor link; current EXT-VAL
+  slice, milestone history and Human/customer acceptance remain unchanged. Protected/foreign
+  worktrees retained, current checkout kept; there is no task-created worktree to delete.
+- [P5 written proposal](2026-10-08-physical-site-rebaseline-integrated-verification-p5.md) remains
+  SHA`4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`,5tasks/31unchecked
+  steps, **unapproved/unexecuted**. Commit as proposal/documentation only; written Human review is
+  the next execution gate. P4 closure grants no archive/MCP/policy/runtime activation or new data
+  rights. Goal remains incomplete pending that approval and eventual permitted t0/t1/t2 data/
+  operational inputs; do not invent more cleanup or silently start P5 to avoid a genuine gate.
+- Closeout resume check: actual main7f44d11/index empty;353required source SHA match final tested
+  snapshot; receipt e6267ceb/approved P4 c7fd91df/P5 proposal4119e5d1 unchanged. Only ledger and
+  product-state doc edits plus the untracked exact P5 proposal remain; checkpoint replaced to
+  remove stale in-flight/uncommitted-source claims. Approval-waiting is the next task state, not a
+  new execution mandate. Original frozen P4/P5 headers/checkboxes retain their drafting snapshot;
+  approval and technical closure authority is this ledger, not their historical base prose.
+- Independent doc-only closeout check by the same final Test Runner`ses_ee3cff067` at7f44d11:
+  exact3doc diff/empty index, doc whitespace0, ledger7/product-state10 relative links resolve;
+  P5 exact4119e5d1 has5task headings/31unchecked/0checked steps. Product-state's historical
+  milestones/current slice/next/backlog suffix is byte-identical and prior Goal lines preserved.
+  Receipt `/tmp/opencode/p4-record-closeout-20261009/receipt.md`; no Dashboard rerun or source edit.
+- Finding(origin Test Runner), independently reproduced by Primary: the frozen353-entry source
+  manifest accidentally includes `apps/dashboard/e2e/fixtures/__pycache__/seed_operations_console.cpython-312.pyc`
+  SHA`0128b0f0c5482c45748945c98619defc59ffc90a65b343886aa5ff1cd24c6d6e`, ignored by
+  `.gitignore:21:__pycache__/`. Actual workspace353/353 match; Git7f44d11 contains352/352matching
+  required source/asset blobs and omits that cache intentionally. This is manifest over-inclusion,
+  not lost implementation or changed tested bytes. Correct the current closure claim; do not claim
+  all353entries are committed or that a fresh checkout contains the cache. No pyc force-add,
+  deletion, regeneration, frozen-manifest rewrite or test weakening. Future portable binding must
+  separate generated artifacts; preserved hashes retain what the local design/test seats read.
+  Ruling: disclose the one local-artifact exception and retain exact immutable review evidence —
+  keeps tested source identity without treating cache as a deliverable; cost if wrong is an
+  overbroad completeness claim, mitigated by explicit352Git/353workspace counts and exact path.
+- Current-session design-notifier recovery check: final review75d5f901 and test-only repairfca2bf41
+  are terminal/delivered, not active writers. One old requested record has no run ID because its
+  pre-generation request failed422 for missing plugin inputs (before corrected initial P4 run);
+  it is not an in-flight run and was not replayed. Other sessions/projects were not changed.
