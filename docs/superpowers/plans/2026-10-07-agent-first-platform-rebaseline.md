@@ -727,3 +727,13 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   edits and T6 preserves both when restructuring CI. (c) T2 read-path wiring (if any) precedes T5
   and is preserved by it. (d) The plan file keeps its reviewed bytes; this ledger governs approval.
 - Task1 dispatched after this entry; Tasks2–7 to follow in order.
+- Task1 complete: developer `ses_ee65f0632ffek07tOTmBp4Qy5W` committed `3f61cf9`
+  (`feat: add current-revision acquisition move decisions`;4files:+1533). The194-row manifest binds
+  the current revision (current git object/blob SHA + baseline refs), exact destinations, MOVE/DEFER/
+  RETAIN vocabulary with task-referenced blocker ids, fail-closed CLI with atomic writes, protected
+  rows metadata-only; primitives reused via the file-location loader. Author evidence:45passed
+  incl15new; frozen-CSV CLI control unchanged; ruff/format/scopedmypy clean;10/10cross-group
+  spot-check. Reviewer `ses_ee6575535ffefI0h6I6d4CZpWX`: spec✅/qualityApproved, noCritical/Important;
+  5Minors deferred to final review (joint CSV+MD atomicity; frozen out-path guard; edge/root
+  consumer-token weakness; baseline refs unvalidated-by-design; MD arithmetic wording). ⚠️resolved:
+  `manifold.env` is ignored and `manifold.env.example` is tracked+referenced. Next Task2 base3f61cf9.
