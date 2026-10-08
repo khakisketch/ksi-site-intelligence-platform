@@ -762,3 +762,16 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   gate9/comparison19/pins+evidence+packaging18+90+11; scopedmypy clean; `ruff check .` clean; lock
   green. Deferred: compose.vm worker overlay stub (VM owner), pre-existing format-unclean test,
   boundary-file collection-time dependency note. Next Task4 base`e12d697`.
+- Task3 closure correction: T3's matrix missed `test_repository_normalization`; its manifest
+  `processing-leaf-boundaries.dependencyEvidence` still pointed at the moved files, so the gate was
+  RED after`6a00443`. Discovered in T4 and fixed in`93bf8b5` (R0_R2 2-path swap to archive
+  destinations; validator PASS both modes;17/17). Lesson recorded: moves that touch
+  manifest-referenced paths must run the normalization gate in-task.
+- Task4 complete: developer `ses_ee63d7ccdffejY2a0B1JM7dZ0q` committed `2a2cbe6`+`93bf8b5`
+  (`build: boot the platform profile and separate archive inputs`/`chore: sync R0-R2 manifest…`).
+  Reviewer `ses_ee6371b90ffeGVNH1wJ6DW0pyX` Approved noCritical/Important;3Minors backlog (env
+  denied-check pattern hardening; one-directional SSOT check; deploy README OIDC shorthand).
+  Dockerfile CMD = platform factory (exact); ci.yml smoke single-token switch with locked flags
+  intact; compose core drops only Mission key/device mounts; `test_platform_boot_switch.py`
+  config-as-data fail-closed; env docs/tests aligned to actual factory requirements; touch-check
+  recorded; Docker daemon unavailable locally (CI-only) disclosed. Next Task5 base`93bf8b5`.
