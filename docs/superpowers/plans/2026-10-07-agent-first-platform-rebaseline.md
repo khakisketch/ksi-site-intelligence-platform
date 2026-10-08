@@ -849,5 +849,13 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   `apps/dashboard` folder (scenario`od-code-migration`; stale snapshot + failed status noted; no
   active context — use the explicit project id). Tasks: decision inventory → design-run cleanup →
   functional verification (tsc/eslint/vitest/build + Playwright 390/768/1440 with the platform
-  server) → design-owned rendered review → independent closure (RB-07). No app edits yet;
-  independent plan verification + Human review pending.
+  server) → design-owned rendered review → independent closure (RB-07). No app edits yet.
+- P4 plan verification (ses_ee5622eb1ffelywuiA62IyXOjR) PARTIAL → corrections applied: authority
+  for RETIRE/KEEP is the PLATFORM PROFILE's mounted route set (adjudicated the three cross-check
+  flags against actual code — `event_store` retired-guarded→Console `/events` retires;
+  `checkpoint-validations` platform-unmounted→Console retire with note; `/v1/missions/*` also
+  carries source-media routes and `phase34.ts` uses managed-era endpoints→Task 1 per-endpoint
+  resolution/repoint); minor inventory fixes (`portfolio.ts` file, `assets/**`, `field/**` subdirs);
+  indicative 45–50 file count noted. Corrected plan SHA
+  `c7fd91dfa78dea4069824237cba7fff84b2895a347e9210054188b6785d29070`. Human written review
+  requested; no app edits yet.
