@@ -1,4 +1,4 @@
-"""Production parser and deploy example must describe the same Core boundary."""
+"""Platform factory env and deploy example must describe the same Core boundary."""
 
 from __future__ import annotations
 
@@ -10,9 +10,51 @@ _ROOT = Path(__file__).resolve().parents[2]
 _PRODUCTION = (_ROOT / "services" / "core" / "src" / "ksi_core" / "production.py").read_text(
     encoding="utf-8"
 )
+_PLATFORM = (
+    _ROOT / "services" / "core" / "src" / "ksi_core" / "composition" / "platform_production.py"
+).read_text(encoding="utf-8")
+_RUNTIME_CONFIG = (
+    _ROOT / "services" / "core" / "src" / "ksi_core" / "composition" / "runtime_config.py"
+).read_text(encoding="utf-8")
 _ENV_EXAMPLE = (_ROOT / "deploy" / ".env.example").read_text(encoding="utf-8")
 _COMPOSE = (_ROOT / "deploy" / "compose.yaml").read_text(encoding="utf-8")
 _GATEWAY_CONFIG_EXAMPLE = _ROOT / "deploy" / "gateway.config.example.json"
+
+# P3 Task 4: the normal boot profile's ACTUAL env (platform_production.py +
+# runtime_config.py). Required always: data dir, S3 endpoint/bucket, principal
+# digest list. Conditional: OIDC set (DUAL/OIDC mode). Optional: signed-Analysis
+# trio (all-or-none), external-authority pair (both-or-none), plus defaulted
+# knobs. NO Mission key dir / device-attestation — those are legacy-only.
+_PLATFORM_REQUIRED = {
+    "KSI_CORE_DATA_DIR",
+    "KSI_CORE_S3_ENDPOINT",
+    "KSI_CORE_S3_BUCKET",
+    "KSI_CORE_PRINCIPAL_TOKENS_JSON",
+}
+_PLATFORM_OIDC = {
+    "KSI_CORE_HUMAN_AUTH_MODE",
+    "KSI_CORE_OIDC_ISSUER",
+    "KSI_CORE_OIDC_AUDIENCE",
+    "KSI_CORE_OIDC_JWKS_URL",
+    "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE",
+    "KSI_CORE_OIDC_ALLOWED_ALGORITHMS",
+    "KSI_CORE_OIDC_JWKS_TTL_SECONDS",
+}
+_PLATFORM_OPTIONAL = {
+    "KSI_CORE_LOG_LEVEL",
+    "KSI_CORE_S3_PUBLIC_ENDPOINT",
+    "KSI_CORE_JOURNAL_SEGMENT_BYTES",
+    "KSI_CORE_EXPOSE_DOCS",
+    "KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE",
+    "KSI_CORE_ANALYSIS_ACTIVATION_FILE",
+    "KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE",
+    "KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG",
+    "KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG",
+}
+_PLATFORM_DENIED = {
+    "KSI_CORE_SIGNING_KEYS_DIR",
+    "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE",
+}
 
 
 def _core_env_names(text: str) -> set[str]:
@@ -20,12 +62,37 @@ def _core_env_names(text: str) -> set[str]:
 
 
 def test_every_production_core_env_is_documented_in_deploy_example() -> None:
+    # Legacy factory note (retires in Task 5): production.py stays importable,
+    # so its env must stay documented in deploy/.env.example until then.
     production_names = _core_env_names(_PRODUCTION)
     example_names = _core_env_names(_ENV_EXAMPLE)
     assert production_names <= example_names, (
         "production.py에만 있고 deploy/.env.example에 없는 변수: "
         + ", ".join(sorted(production_names - example_names))
     )
+
+
+def test_platform_required_env_is_documented_in_deploy_example() -> None:
+    example_names = _core_env_names(_ENV_EXAMPLE)
+    assert example_names >= _PLATFORM_REQUIRED, (
+        "platform 필수 변수인데 deploy/.env.example에 없는 변수: "
+        + ", ".join(sorted(_PLATFORM_REQUIRED - example_names))
+    )
+
+
+def test_platform_optional_env_sets_are_code_ssot() -> None:
+    # Fail-closed on factory env drift: every platform env name must be read
+    # from exactly one of the two platform sources.
+    platform_names = _core_env_names(_PLATFORM) | _core_env_names(_RUNTIME_CONFIG)
+    for name in _PLATFORM_REQUIRED | _PLATFORM_OIDC | _PLATFORM_OPTIONAL:
+        assert name in platform_names, f"{name} 를 읽는 플랫폼 팩토리 코드가 없다"
+
+
+def test_platform_never_requires_signing_or_attestation_inputs() -> None:
+    for name in _PLATFORM_DENIED:
+        assert f'_require_env("{name}")' not in _PLATFORM
+        assert f'_require_dir("{name}")' not in _PLATFORM
+        assert name not in _RUNTIME_CONFIG, f"platform runtime_config 가 {name} 를 읽는다"
 
 
 def test_rc_first_safe_defaults_and_principal_kinds_are_explicit() -> None:
@@ -43,12 +110,16 @@ def test_rc_first_safe_defaults_and_principal_kinds_are_explicit() -> None:
         assert f'"kind":"{kind}"' in _ENV_EXAMPLE
 
 
-def test_attestation_manifest_is_required_and_mounted_read_only() -> None:
+def test_platform_compose_mounts_no_signing_or_attestation_inputs() -> None:
+    assert "./signing-keys:/var/lib/ksi/signing-keys:ro" not in _COMPOSE
     assert (
-        "KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE=/var/lib/ksi/device-attestation-keys.json"
-        in _ENV_EXAMPLE
+        "./device-attestation-keys.json:/var/lib/ksi/device-attestation-keys.json:ro"
+        not in _COMPOSE
     )
-    assert "./device-attestation-keys.json:/var/lib/ksi/device-attestation-keys.json:ro" in _COMPOSE
+    assert "ksi-data:/var/lib/ksi/data" in _COMPOSE
+    # Legacy factory note (retires in Task 5): the attestation example file
+    # stays until the legacy factory is removed; the platform boot just does
+    # not mount it.
     example = _ROOT / "deploy" / "device-attestation-keys.example.json"
     assert example.read_text(encoding="utf-8").strip() == '{\n  "keys": []\n}'
 

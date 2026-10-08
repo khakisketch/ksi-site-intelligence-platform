@@ -23,9 +23,10 @@
 #   존재하지만 실제 PSDK/MOP 장치 evidence가 아직 없다. 따라서 이 기본 조합에는
 #   서비스를 추가하지 않고 빈 컨테이너나 가짜 AVAILABLE 상태도 만들지 않는다.
 #   capability는 모두 NOT_VERIFIED 상태다.
-# - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)와
-#   **호스트 디렉터리 `deploy/signing-keys/`**(서명키) 둘이다. 서명키는 명명 볼륨이
-#   아니다(아래 core 의 volumes 주석 참조). 자세한 것은 docs/ops/DEPLOYMENT.md §8.
+# - 백업: 백업 대상이 무엇인지만 밝힌다 — 명명 볼륨 `ksi-data`(원장)다.
+#   (레거시 Mission 서명키 호스트 디렉터리 `deploy/signing-keys/` 는 플랫폼
+#   부팅이 마운트하지 않는다 — 레거시 팩토리 정리 Task 5 참조.)
+#   자세한 것은 docs/ops/DEPLOYMENT.md §8.
 
 name: ksi
 
@@ -57,24 +58,12 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
-    # 필수 환경변수가 하나라도 없으면 production.py 가 RuntimeError 로 즉시 죽는다.
+    # 필수 환경변수가 하나라도 없으면 platform_production.py 가 RuntimeError 로 즉시 죽는다.
     # 조용히 뜨지 않는 것이 의도된 동작이다 — 로그에 어느 변수가 왜 문제인지 나온다.
     env_file: ${KSI_DEPLOY_ENV_FILE:-.env}
     volumes:
       # 원장. 이게 사라지면 현장·임무·산출물 이력이 사라진다.
       - ksi-data:/var/lib/ksi/data
-      # 서명키. **컨테이너 재생성과 무관하게 살아남아야 한다** — 재생성마다 새 키가
-      # 생기면 이미 현장에 발급된 Mission Contract 가 전부 검증 실패한다.
-      #
-      # 명명 볼륨이 아니라 **호스트 디렉터리 바인드**다. 키는 사람이 openssl 로
-      # 만들어 넣는 것이고(DEPLOYMENT.md §2), 명명 볼륨이면 그 파일을 볼륨 안으로
-      # 넣을 문서화된 수단이 없어 빈 볼륨으로 뜬 Core 가 SigningKeyError 로
-      # 죽는다(2026-08-13 독립 검토 지적 — 그 전까지 명명 볼륨이었다).
-      # "키는 컨테이너 밖에 살고 Core 는 읽기만 한다"는 이 파일의 원래 의도를
-      # 바인드가 그대로 실현한다.
-      - ./signing-keys:/var/lib/ksi/signing-keys:ro
-      # Edge 장비 공개키만 담는다. 개인키나 Core 비밀은 이 파일에 넣지 않는다.
-      - ./device-attestation-keys.json:/var/lib/ksi/device-attestation-keys.json:ro
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -128,8 +117,7 @@ services:
 
 volumes:
   # 백업 대상 ─ 사라지면 복구할 수 없다.
-  # (서명키는 여기 없다 ─ 호스트의 deploy/signing-keys/ 디렉터리이며 그 경로를
-  #  통째로 백업한다. DEPLOYMENT.md §8.)
+  # (플랫폼 부팅은 Mission 서명키를 마운트하지 않는다 — 레거시 팩토리 정리 Task 5 참조.)
   ksi-data:
   # 재생성 가능 ─ 객체는 원본이므로 백업 대상이지만, 아래 볼륨은 작업 캐시다.
   ksi-objects:

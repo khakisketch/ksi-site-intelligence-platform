@@ -46,6 +46,31 @@ cp device-attestation-keys.example.json device-attestation-keys.json
 digest만 두며, `device-attestation-keys.json`에는 Manifold 공개키만 둔다. 실제 장비
 개인키, 토큰 원문, Core 서명 개인키를 이 두 예제에 기록하지 않는다.
 
+### Platform Core boot (normal profile)
+
+정상 부팅 프로파일은 `ksi_core.composition.platform_production:
+build_platform_production_app` 이다(Docker 이미지 CMD·CI 스모크 동일). 필수
+입력은 데이터 디렉터리, S3 endpoint/bucket, principal digest/OIDC 설정뿐이다.
+
+| 필수 | 설명 |
+|---|---|
+| `KSI_CORE_DATA_DIR` | 원장(append-only journal) 영속 디렉터리 |
+| `KSI_CORE_S3_ENDPOINT` / `KSI_CORE_S3_BUCKET` | 증거·산출물 객체 저장소 |
+| `KSI_CORE_PRINCIPAL_TOKENS_JSON` | digest 전용 접근 토큰 목록 |
+| OIDC 일식 (`KSI_CORE_HUMAN_AUTH_MODE` + `KSI_CORE_OIDC_*`) | 사람 인증이 DUAL/OIDC 일 때 |
+
+선택 입력은 서명된 Analysis 3종
+(`KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE`·`KSI_CORE_ANALYSIS_ACTIVATION_FILE`·
+`KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE`, 전부 아니면 전무)과 외부 권한 쌍
+(`KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG`·
+`KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG`, 함께 아니면 전무)뿐이다.
+플랫폼 부팅은 Mission 서명키 디렉터리(`KSI_CORE_SIGNING_KEYS_DIR`)와 장비 증명
+파일(`KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE`)을 요구하지도 읽지도 않으므로
+`compose.yaml` core 서비스는 그 둘을 마운트하지 않는다. 레거시 팩토리
+(`ksi_core.production:build_production_app`)가 Task 5 까지 import 가능하므로
+`.env.example` 의 서명키·증명 관련 주석과 `device-attestation-keys.example.json`
+은 레거시 기록으로 유지된다.
+
 Acquisition coordinator는 `KSI_CORE_ACQUISITION_COORDINATION_ENABLED=true`가 기본이며,
 문제가 생기면 이 flag만 내려 기존 Mission/KMZ와 수동 ingest 경로를 보존할 수 있다.
 새 Mission 발급 gate의 안전한 기본값은

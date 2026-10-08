@@ -60,4 +60,4 @@ EXPOSE 8000
 # 모듈 docstring 참조) 없이는 build_production_app() 이 RuntimeError 로 즉시
 # 죽는다 — 그것이 의도된 fail-closed 동작이다. 실행에는 배포자가 env var 를
 # 채워야 한다.
-CMD ["/app/.venv/bin/uvicorn", "ksi_core.production:build_production_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["/app/.venv/bin/uvicorn", "ksi_core.composition.platform_production:build_platform_production_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

@@ -48,7 +48,7 @@ jobs:
           docker build --tag "ksi-core-ci:${GITHUB_SHA}" .
           docker run --rm --network none --read-only --cap-drop ALL \
             --security-opt no-new-privileges "ksi-core-ci:${GITHUB_SHA}" \
-            /app/.venv/bin/python -c "import ksi_core.production"
+            /app/.venv/bin/python -c "import ksi_core.composition.platform_production"
 
       - name: repository normalization contract
         run: uv run --locked python tools/validate_repository_normalization.py
