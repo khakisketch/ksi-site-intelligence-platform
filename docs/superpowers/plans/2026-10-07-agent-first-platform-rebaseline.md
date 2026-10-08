@@ -816,3 +816,10 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   diff-check). Cache-limited offline re-resolution finding recorded with pristine-worktree proof;
   Task7 needs a fresh `uv sync`/online lock in its own environment. Report task-6-report.md.
   Task reviewer dispatching; Task7 after adjudication.
+- Task6 COMPLETE (all review findings closed): fix `621dc91` (`docs: track the extras inverse record
+  and close the compose note`;6files,+486/−14: tracked
+  `docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_EXTRAS_v1.json` with57 records; compose-sweep test across
+  the four compose files; synthetic boundary positive controls; executor/normalization notes
+  narrowed). Scoped re-review: all findings ADDRESSED, no new breakage. Task6 commits end at
+  `621dc91`; full suite5995passed/30skipped/0failed at`a5b3e95`. Next: Task7 whole-P3 review +
+  independent runner closure.
