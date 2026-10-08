@@ -146,11 +146,12 @@ def test_platform_lanes_import_no_managed_or_acquisition_module() -> None:
 
         _DENIED = %r
 
-        # Sanity first: the control module is installed, so blocking it
-        # below proves the hook fires (not that the package is missing).
+        # P3 Task 6: the acquisition packages are archived, not installed —
+        # the probe asserts their absence (archive-boundary expectation)
+        # while the hook below stays as a reintroduction guard.
         assert (
-            importlib.util.find_spec("ksi_mission_contracts") is not None
-        ), "ksi_mission_contracts must be installed for this probe"
+            importlib.util.find_spec("ksi_mission_contracts") is None
+        ), "ksi_mission_contracts must stay unimportable after archival"
 
         class _DenyModules:
             # Python 3.12 no longer calls find_module — find_spec is the
@@ -170,13 +171,14 @@ def test_platform_lanes_import_no_managed_or_acquisition_module() -> None:
                 _module == prefix or _module.startswith(prefix + ".")
                 for prefix in _DENIED
             ), _module
-        # Positive control: the hook must actually fire.
+        # Negative control: the archived package must stay unimportable
+        # (absence first, hook as the reintroduction backstop).
         try:
             import ksi_mission_contracts  # noqa: F401
-        except ImportError as exc:
-            assert "platform isolation probe denies" in str(exc), exc
+        except ImportError:
+            pass
         else:
-            raise AssertionError("deny-hook did not block ksi_mission_contracts")
+            raise AssertionError("archived ksi_mission_contracts became importable")
 
         for _name in %r:
             importlib.import_module(_name)
@@ -326,6 +328,44 @@ def test_core_managed_modules_are_absent_from_the_active_tree() -> None:
     for name in _CORE_MANAGED_ABSENT:
         assert not _active_spec(name), name
     for name in _CORE_MANAGED_ABSENT:
+        try:
+            importlib.import_module(name)
+        except ModuleNotFoundError:
+            continue
+        raise AssertionError(f"{name} still imports from the active tree")
+
+
+# ── Part C — Task 6 archived acquisition package roots ─────────────────────
+# Decision authority: docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv groups
+# packages/{mission-contracts,mission-planning,perception,
+# equipment-intelligence} + services/dji-gateway (194 MOVE rows, all
+# executed). Every root below — plus representative deep paths, which fail
+# through the missing parent — must be unimportable from the active tree.
+_TASK6_ARCHIVED_MODULE_ROOTS = (
+    "ksi_mission_contracts",
+    "ksi_mission_contracts.models",
+    "ksi_mission_contracts.signing",
+    "ksi_mission_planning",
+    "ksi_mission_planning.geometry",
+    "ksi_mission_planning.coverage",
+    "ksi_equipment_intelligence",
+    "ksi_equipment_intelligence.risk_field",
+    "ksi_equipment_intelligence.kinematic_state",
+    "ksi_perception",
+    "ksi_perception.pipeline",
+    "ksi_perception.recorded_pipeline",
+    "ksi_dji_gateway",
+    "ksi_dji_gateway.gateway",
+    "ksi_dji_gateway.runner",
+)
+
+
+def test_task6_archived_package_roots_are_absent_from_the_active_tree() -> None:
+    """Every archived acquisition package root fails loudly — never silently
+    skipped (RB-08 explicit separation)."""
+    for name in _TASK6_ARCHIVED_MODULE_ROOTS:
+        assert not _active_spec(name), name
+    for name in _TASK6_ARCHIVED_MODULE_ROOTS:
         try:
             importlib.import_module(name)
         except ModuleNotFoundError:
@@ -518,11 +558,12 @@ def test_platform_app_imports_no_acquisition_package() -> None:
 
         _DENIED = %r
 
-        # Sanity first: the control package is installed, so blocking it
-        # below proves the hook fires (not that the package is missing).
+        # P3 Task 6: the acquisition packages are archived, not installed —
+        # the probe asserts their absence (archive-boundary expectation)
+        # while the hook below stays as a reintroduction guard.
         assert (
-            importlib.util.find_spec("ksi_mission_contracts") is not None
-        ), "ksi_mission_contracts must be installed for this probe"
+            importlib.util.find_spec("ksi_mission_contracts") is None
+        ), "ksi_mission_contracts must stay unimportable after archival"
 
         class _DenyModules:
             def find_spec(self, name, path=None, target=None):
@@ -539,13 +580,14 @@ def test_platform_app_imports_no_acquisition_package() -> None:
                 _module == prefix or _module.startswith(prefix + ".")
                 for prefix in _DENIED
             ), _module
-        # Positive control: the hook must actually fire.
+        # Negative control: the archived package must stay unimportable
+        # (absence first, hook as the reintroduction backstop).
         try:
             import ksi_mission_contracts  # noqa: F401
-        except ImportError as exc:
-            assert "platform isolation probe denies" in str(exc), exc
+        except ImportError:
+            pass
         else:
-            raise AssertionError("deny-hook did not block ksi_mission_contracts")
+            raise AssertionError("archived ksi_mission_contracts became importable")
 
         # Archive control: no archive package exists on the path, so a bare
         # import fails with ModuleNotFoundError — only the hook's denial
