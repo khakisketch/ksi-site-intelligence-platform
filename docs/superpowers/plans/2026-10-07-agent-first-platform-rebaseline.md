@@ -1698,3 +1698,62 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
 - Fresh Task4 routing4-file matrix **69passed/exit0**,4.17s; R3 validator0;145localMarkdown+2YAML
   paths resolve. P4 sources unchanged353/353, frozen spec/plan/move manifests unchanged;
   milestone/Currentslice/registry-status pin tests pass. Receiptc476d7e6; whitespace check0.
+
+### P5 Task5 independent-check assignment — 2026-10-09
+
+- Task4 doc-only commit`efae2af` (16named paths); post-commit routing69pass/exit0,4.25s.
+  Task5 base`efae2af197b9b68107111ce720882cfb2d70fe91`; whole-P5 range1dac44a..efae2af.
+- Authorized final seats: one read-only whole-P5 Reviewer and independent Test Runner in parallel;
+  disjoint output-only scratch directories, no product/checkpoint/index/Git/runtime writes, installs,
+  accounts, browser-login changes or further agents. Existing source/toolchain only. Primary owns
+  common documents and any separately justified in-scope repair; no shared source writers.
+- Freeze all whole-P5 changed source/docs plus pending assignment-ledger hash. Reviewer examines
+  actual diff/contracts/five named review-focus cases and evidence gaps, not an aesthetic re-review.
+  Runner tests full active Python under ambient umask, Task1/2/routing gates, archive CLI and
+  scoped/broad/pre-P5 type comparison. Expected failures (strict2archive/109type) remain failures,
+  not implicit waiver. P4 evidence reuse requires353matching source and actual capture/report hashes;
+  current product server is offline, no new Dashboardsource/runtime change or restart is authorized.
+- During seats, no product/test/source/approved docs change. Safe successor preparation may read
+  scope/constraints or draft in owned scratch only. Final RB matrix and durable receipt reconciliation
+  follow actual returned evidence; mandatory output/access failures are not complete/green.
+
+### P5 Task5 independent failure / bounded routing repair — 2026-10-09
+
+- Whole-P5 Reviewer `ses_ee156b61dffeI89kzc3v8ZTeRl` reviewed actual1dac44a..efae2af and all20
+  frozen hashes; no Critical/Important source finding, two evidence-hygiene minors. Report SHA256
+  `7bcb406a7ce74ff8e8d4af724b24f4790a96e1207c42985cb88b71f22f13dd08`. This source review did
+  not execute the full suite and is not whole-P5 completion or acceptance.
+- Independent Runner `ses_ee156b5ceffehSDBcByFl6bqRv` reached its tool-step limit after actual
+  full Python **1failed/6044passed/30skipped/98warnings/exit1**,750.60s, ambientumask0002/Python3.12.13.
+  Log SHA256 `3b892cad9b81687989dfc2232903b704577244d721bf5749dab6f68cc568d730` under
+  `/tmp/opencode/p5-independent-test-20261009/10-full-pytest.log`. This supersedes any suggestion
+  that the Task2 author6045pass run proves final Task4 integration. Prepared static6commands0,
+  checker29pass/routing69pass/SDK49pass remain separately valid; outstanding type/archive/P4/link
+  checks were not run. Primary rehashed all20files and inspected actual Git status after the seat:
+  no mismatch or source mutation; only the existing Task5 assignment ledger was pending.
+- **P5-ROUTE-01 (origin independent Test Runner, Important, repair in progress):** Task4efae2af
+  removed the historical Edge provenance link from `docs/WORKSPACE_LAYOUT_AND_QUERY_GUIDE.md`.
+  Immutable move-decision CSV row2 still names this document as `edge/README.md`'s consumer;
+  `test_real_csv_consumers_are_real_references` reads committed HEAD and fails at line283.
+  Primary independently reproduced exactly this assertion RED. No runtime/API regression is implied,
+  but this is a real preserved-consumer/evidence closure regression, not an environmental skip.
+- Repair binding: RB-02/09, docs owner; restore one explicit **historical provenance-only** link in
+  the query guide, retaining root AGENTS/active-ledger authority and the current-owner table. No test,
+  allowlist, CSV/inverse manifest, archive source, identity, API, UI or invariant change. INV-040's
+  truthful evidence and all preserved invariants remain enforced by unchanged gates. No HIL/data/
+  license/external effect. Rollback reviewed inverse of the task-owned doc commit only.
+- Ruling: retain the useful archived-document provenance reference rather than add a new exception
+  to the test's closed-consumer map or rewrite historical manifest evidence — preserves traceability
+  without authoritative archive delegation. Cost if wrong: readers may mistake history for instructions;
+  explicit historical-only label/root authority and existing boundary tests mitigate. The HEAD-aware
+  witness must be checked against the actual committed repair, not an uncommitted file-only pass.
+- The step limit is a verification-seat resource limit, not a product failure/permission grant.
+  Preserve actual partial logs; after the concrete repair, assign a compact independent completion
+  driver for the affected full suite plus only unfinished checks. Reuse unchanged SDK/static/source
+  results instead of blindly repeating all completed commands. P6 stays proposal-only in owned scratch.
+- Precommit witness used isolated candidateGit tree`8acc23ec` (realHEAD/index unchanged): the exact
+  unchanged test passed1/1 with only query-guide tree delta, SHA256
+  `412441630ea6c1861355be93b2ecd607a4e172f50d0fd2639b0fbb866921dd1a`. Three incomplete fixture-setup
+  attempts (missing dynamic tool files/CSV) are separately retained and excluded from product RED/
+  GREEN evidence. Their resolved cause was copied input closure, not another product fix. Actual
+  committed-HEAD/full-suite checks still follow; no archive/manifest/test bytes changed.

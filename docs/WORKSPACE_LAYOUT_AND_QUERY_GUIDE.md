@@ -24,6 +24,10 @@
 | 검증 계층 | `REPOSITORY_STRUCTURE.md`의 Verification ownership |
 | 참고 구현 | `references/README.md` |
 
+역사적 이동 원장이 기록한 Edge 문서 참조는
+[보존된 Edge README](../archive/acquisition-2026/edge/README.md)에서 **과거 출처만** 확인한다.
+이 링크는 현행 구현·실행·지시 입구가 아니며, 현재 과업은 루트 `AGENTS.md`와 활성 원장을 따른다.
+
 `services/`에는 독립적으로 시작·감시·배포하는 process만 둔다. 다른 KSI process가
 import하며 독립 lifecycle이 없는 계산·geometry·model adapter는 `packages/`에서 찾는다.
 경로 이름만으로 판단하지 말고 해당 README, `pyproject.toml`, 실제 entrypoint/consumer와

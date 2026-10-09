@@ -294,5 +294,13 @@ minimal written successor scope with its approval/external-effect gates; no P6 w
 
 ## 7. RB-01..09 and independent closeout
 
-Task5 pending. RB-02's strict archive gate and RB-08's type/fresh-runtime gates are explicitly open.
-No whole-cleanup/goal, customer/EXT-VAL, vendor, accuracy or operational acceptance is claimed.
+Task5 remains in progress. Independent source review found no Critical/Important code finding, but
+the independent integrated Python run at `efae2af` returned **1failed/6044passed/30skipped/98warnings**.
+`P5-ROUTE-01` (origin Test Runner) is the Task4 query guide's removed historical Edge provenance
+reference still recorded in the immutable consumer CSV. The focused test reproduced RED; a narrow
+provenance-only documentation repair is being verified without changing tests/manifests/authority.
+Source review is not a substitute for this failed test. Author6045pass belongs to Task2, not final
+Task4 source. Full-suite log SHA256 `3b892cad9b81687989dfc2232903b704577244d721bf5749dab6f68cc568d730`.
+The step-limited Runner completed checker29/routing69/SDK49 and prepared static6commands, but final
+type/archive/P4/link checks remain unfinished. RB-02's strict archive gate and RB-08's type/fresh-runtime
+gates are explicitly open. No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance.
