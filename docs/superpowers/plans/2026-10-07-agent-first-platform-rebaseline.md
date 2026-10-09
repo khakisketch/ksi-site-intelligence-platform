@@ -2417,3 +2417,18 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   (platform_production.py:83,173). 코드·route·registry·grant는 변경하지 않았다(실행 아님).
 - Human 결정 후 상세 구현 계획(파일/테스트/작업 분해)을 작성해 실행한다. P7-A2/rail,
   F-02..04, customer/EXT-VAL 게이트는 그대로 OPEN이다.
+
+### F-01 승인 반영과 계약 개선(v2) — 2026-10-09 (resume)
+
+- Human 승인: "2안 + B안 승인. D3 완료 증거도 제안 그대로 진행하면 됩니다."
+  같은 메시지에서 GPT가 제시한 조건 2건(① site-level grant는 동일 Site 내부 WorkArea에만 상속,
+  다른 Site·Org로 비전파 ② org-admin capability 최초 발급은 KSI가 통제·감사)의 검토를 지시했다.
+- 검토·지시: 두 조건은 타당했다. 보강 5건(C1 same-Site 상속·scope-only, C2 capability 수명주기
+  (발급·변경·회수) KSI 통제, C3 신규 Site 생성자 접근 확정, C4 D3 부정 테스트, C5 ADMIN 서술
+  정정)을 제안했고 Human이 "그래요 권장되는방향으로 개선해주세요"로 채택을 지시했다.
+- 반영: [F-01 제안 v2](2026-10-09-f01-site-bootstrap-and-grant-ownership.md)를 ff3a5d0으로
+  커밋했다(product-state 동반 갱신; v1은 159e7c5). C3 확정 요지: `allowedSiteIds: null`(자기 org
+  전체)은 capability와 분리된 KSI 발급 결정이고, 생성 행위 자체는 scope를 확대하지 않는다
+  (per-site grant 레코드 없음). 회수는 registry 재발급/REVOKED, 반영은 재시작 절차, org 전체
+  모드의 개별 site 제외 불가(잔여 한계 → C안 후속).
+- 이 기록은 코드·route·registry·grant 변경이 아니다. 다음: 상세 구현 계획 작성 → Human 승인 → 실행.
