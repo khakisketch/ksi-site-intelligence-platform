@@ -2247,3 +2247,93 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   real installation/import/test assertions rather than an artificial TDD failure — approved plan explicitly
   states that distinction — cost if wrong: a source change would require its own scoped RED/GREEN repair
   authorization and new source binding, not be hidden in this trial. No product code repair is authorized.
+
+### P7 Task1 independent RED reception / P7-A1 environment proposal — 2026-10-09
+
+- Owned detached source4a0a08e and original main6f37758 remained tracked/index clean during Runner
+  `ses_ee03ac8ecffeiQiwqe5B9bZN9f`;2751source blobs/3uninitialized gitlinks/18original environment
+  metadata matched. FreezeSHA `bbfa47ae62063c3ac57137f254bee10506783a8f1c635c9c6143054445ce60dc`;
+  independent receiptSHA `3ec8f175cd88b006dec6276e5e63e41642840e9aa26d6acb21ebd231bdfedfdc`,
+  Primary receptionSHA `50bf94f1f471046c256a09358625d7b592624ee6f74fe292052135ff61fcf5b2`.
+- Fresh lock157/exit0; sync101installed/6.55s/exit0; metadata101dists/12new editables/7workers/
+  3Core-MCP imports/18old witnesses/exit0. First ambient offline compatibility check is excluded;
+  controlled minimal-env lock with empty cache is the qualifying proof. Original5dangling editable
+  roots remain untouched; the freshly installed environment has none.
+- All seven independent commands ran once (exact argv in immutable receipt/driver). Actual full:
+  **59failed/5999passed/30skipped/98warnings/707.87s**, rawlogSHA
+  `ebdd443924ee66d89c888a52c358833d50c8da26793997e3ba97ead8e1038e5e`. **NOT complete/passing**.
+  Boundaries/R3/pins/wholeRuff/scoped3mypy exit0. Broad mypy exit1,109errors/14files and exact
+  0added/0removed `(file,message)` Counter versus prior control546479e8;754checked source files vs753
+  is recorded, not used to waive a diagnostic. Raw skip coverage is unchanged and not accepted work.
+- Every failed traceback is FileNotFoundError at isolated `HOME/.cache`; affected modules:
+  spatial-data MCP client15/config15/stdio12/HTTP9/workflow5, platform HTTP2, AI job snapshot1.
+  `spatial_data_mcp_fixture._caller_cache` deliberately requires an existing owned non-writable cache.
+  P7 setup did not create it. Warning98 is not a test: actual JUnit6088cases=5999+59+30; Runner's initial
+  report line68 “6186” accidentally sums warnings too. Original receipt/report/log/XML stay immutable;
+  this correction is canonical and the next receipt must use actual test cases.
+- Actual protected-reader cause probe refused a0700directory/0600synthetic file below the approved
+  `/tmp/opencode/...` root: `AdapterConfigurationError: protected ancestry is group- or world-writable`.
+  It checks **every ancestor**, so merely creating `HOME/.cache` below `/tmp` would not solve it.
+  Cause probeSHA `d8c7addcaf2bcdb4d68c3598ca288e00c7bf63ec37251d69da733b6d53090246`;
+  directory-metadata-only inspection confirms `/home/ksi/.cache` ancestry real/root-or-user-owned/
+  non-group-world-writable. No original directory mode/content or product guard has been changed.
+- **P7-A1 proposal — approval pending:** create exactly
+  `/home/ksi/.cache/ksi-p7-home-34cc796826d6` mode0700 and its own `.cache` mode0700; use it as
+  isolated HOME for the repaired Task1 runs. No copied profile/token/config, no existing home/cache
+  permission/content changes, no original `.venv` use. Other environment/cache/log/image paths stay
+  under the original P7 scratch root; source/lock/pins/API/security rules stay fixed. Only task-generated
+  synthetic fixture files may use the new private HOME; retain proof and remove only that proven-owned
+  new namespace at scoped cleanup. This is a bounded new write location outside the original approved
+  scratch root, so Human approval is required rather than silently changing the plan.
+- Recommended after P7-A1 approval: one named failed test RED under the old environment; create
+  only that new protected HOME; verify the same case GREEN plus all seven affected modules; independent
+  Runner rechecks full active suite **once after this real environment repair**, preserving first failed
+  log/receipt and unaffected static/type outputs. This is defect→repair→reverification, not blind replay
+  or a source/permission waiver. Task1 remains unfinished until actual repaired evidence arrives.
+- Task2 Ruling: Dockerfile-specific ignores override root ignores and whitelist `src/**`;226new host
+  bytecode files would enter external image contexts after imports/tests. Build from an additional
+  **tracked-only mechanical export of the same4a0a08e** under approved scratch `build-context` rather
+  than dirty-by-cache live checkout;2751blob/mode checks match,3gitlinks remain uninitialized, no bytecode/
+  Git/private state in export. Archive tarSHA `a7a33248f4c95efdd6c648ae6440e5ce9d3d2306877f2e02b4e7410482cef246`,
+  clean-lane argv manifestSHA `05d858da3c5048330192188aa822103fdff39640057d3ec862fac745dbc04c33`.
+  Dockerfiles/ignores/source are unchanged — why: prevent local cache contamination without deleting
+  runner artifacts or editing products — cost if wrong: identity proof rejects candidate input/output.
+- Task2 source/install identity is independently usable; a failed Task1 suite is not waived by images.
+  Buildx0.35.0 is prepared; three unique candidate tags did not pre-exist. No build/probe/boot/temporary
+  runtime credential effect has occurred yet. P7-A1 is the current material decision; safe independent
+  image preparation may continue, and all customer/production/strictarchive/broadtype gates remain OPEN.
+
+### P7-A1 approved secure synthetic HOME — 2026-10-09
+
+- Human answered **“P7-A1 승인 (Recommended)”** to the exact new-path/effect question: create only
+  `/home/ksi/.cache/ksi-p7-home-34cc796826d6` and its `.cache`, both0700, and use that fresh namespace
+  as HOME for affected tests and one independent full-suite revalidation. This supplements approved
+  planSHAfba7776e; the frozen plan/spec/first failed logs/receipt remain unchanged.
+- No original home/cache directory permission or existing file content changes; no copied profiles,
+  credentials or environment; no product/test/guard/lock/pin modifications. Keep all other P7 scratch
+  locations. Revalidate the real non-symlink/root-or-caller-owned/non-writable ancestry before creation;
+  unknown/pre-existing target is a blocker, not permission to reuse/chmod it.
+- Source-bound named old-environment RED → fresh secure HOME only → same GREEN and seven affected
+  modules → independent full active suite once. Reuse same-revision static/type outputs; Task1 remains
+  unfinished until actual GREEN receipt, broad109/14 remains FAILED. Approved independent Task2 builds
+  may proceed on exact tracked-only source; never equate them with Task1/customer/production acceptance.
+- A1 named test `test_spatial_data_mcp_config.py::test_from_file_accepts_private_loopback_config_and_rereads_rotated_token`
+  actually reproduced RED1failed/0.08s (logSHA `b778470065608afcca32fc6f113fcce6f4a864991a83e019d542883da2b21687`),
+  then new HOME0700/own.cache0700 alone yielded GREEN1passed/0.05s (logSHA
+  `5b19689a97d618d5cdfce632de67285a8efa3c57100a80350a5bb7ca9e05ae34`). Actual unchanged
+  protected reader accepts the new ancestry and synthetic0600bytes (logSHA
+  `383e37cbdab1713c92ca364c3c96cbbb9903336ed205d364bca44eb0ce6025a8`); original guard untouched.
+  Supplementary profileSHA `81e57815debc440ee78e42bd0877053f6e2ee5093fd9ab60468b8e51a084b62d`
+  binds new directory inode/uid/ancestry and full minimal environment; initial freeze remains immutable.
+- A1 affected-seven-module command was interrupted by Primary's too-short120s foreground tool timeout.
+  Partial log has129progress dots, no terminal result/XML/remaining process; **not a passed or failed
+  product gate**. Exact command was the new-env Python `-m pytest -q -p no:cacheprovider -rs
+  --junitxml=$RUN/a1-affected.xml` and the seven modules listed above in that order. Preserve partial
+  logSHA `d1f0ac31ea5acf0cfcddf7c97d4ce0e383ffd2ea5dd5766e3e42ea540e94cf98` and single interruption
+  diagnostic; source/checks/environment were not repaired further in response to the tool timeout.
+- Task1 Ruling: do not replay this incomplete affected command just for a receipt; the already approved
+  independent **full once after A1 repair** includes all seven modules. Require the Runner to assert
+  every first-failed node and every affected module is collected and green in its final full/JUnit report.
+  Why: terminal revision-bound full coverage is stronger than duplicating129unreported assertions;
+  cost if wrong: missing node/module coverage leaves Task1 unfinished. Use background/long command
+  timeout and completion notification, never poll/replay. Unaffected static/type outputs remain reused.
