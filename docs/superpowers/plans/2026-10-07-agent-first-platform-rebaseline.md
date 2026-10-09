@@ -2174,3 +2174,58 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   runtime configuration (Human/customer/ops). Fresh build/run is the next recommended evidence gate;
   an exact isolated-environment plan and explicit effect approval are required before running it.
   No successor implementation, runtime setup, blanket grant or product-state reprioritization is inferred.
+
+### P6 committed receipt / P7 isolated-verification written proposal — 2026-10-09
+
+- P6 record closeout is committed locally at `4a0a08ed1f47b5e66b2b0a42d7f3f2ea0936c9bb`:
+  exactly parent-ledger/integrated-audit/product-state, tracked/index clean; source remains1254747.
+  Committed record check `/tmp/opencode/p6-final-committed-record-check.json`, SHA256
+  `e4c502c3608de34ec09113f31a4c6fa37e1fa3ee7b5caebedbfb7708dd248e2d`:42stable inputs/11logs/
+  38links0broken, spec/plans/history/milestones/slice/backlog unchanged. Actual five-file record-consumer
+  command from the preceding closeout ran at committed4a0a08e: **99passed/exit0/6.36s**;
+  rawlogSHA `4a506f277a8d6b8fc20b97849b42979a330c6058929e46072e45ae2c8043529b`, receiptSHA
+  `b1d97ed714ad609a03d3699b5d9651e376ad3fca72156d70d15f719c4c0e1aae`. These point-in-time
+  receipts do not claim future record HEADs or a fresh runtime/full-suite rerun.
+- `writing-plans` produced the [P7 isolated fresh-verification proposal](2026-10-09-isolated-fresh-platform-verification.md),
+  SHA256 `fba7776eb022ffb3e87f7c062f25cfb4f98a18bbb5311d786a48aff568f18909`.
+  **Approval waiting; NOT approved/executed.** Preserve the already selected sequential inline method
+  and independent final Reviewer/Test Runner. No goal continuation or P6 closure grants these effects.
+- Frozen intended source:4a0a08e, same product files as1254747; new report/status commits do not change
+  that source binding. Three tasks: fresh locked Python environment/full/static evidence; three unchanged
+  Core/inspector/measurement candidate images; isolated three-service Core/MinIO boot plus real TCP
+  auth/tenant/idempotency/journal/storage restart evidence. Inspector/measurement checks are import/
+  packaging only, not signed production workers, numerical execution or host-containment acceptance.
+- Required separate effect approval is exact/bounded: one clean task-owned detached worktree,
+  new scratch environment/cache, public fixed-source package/image/apt downloads, three local builds,
+  synthetic TTL24h credentials and new project-owned volumes/network/containers, loopback-only dynamic
+  ports, controlled restart and owned-container/network teardown. No host/CLI/Python install, old `.venv`
+  mutation, private credential copying, existing state/grant change, daemon restart, registry/CI/push/
+  production deployment, image/volume prune or customer/device operation. Cold estimate1–3h,60GiB
+  storage headroom/32GiB RAM prerequisite;4h safety rail. Shared-daemon base blobs/cache are disclosed,
+  not a pristine-host claim. No scratch/worktree/image/runtime has been created for P7 while drafting.
+- Self-review against spec14ded50b §§2–4/6/8–10: five contamination/private-input/ownership/persistence/
+  readiness failure classes have task assertions; explicit source/receipt/image/resource interfaces;
+  three tasks and28required sections/boundaries,17actual input files unchanged,2plan links valid.
+  uv configuration research identified that `--no-config` would drop project rules: proposed explicit
+  config preserves filesystem settings and unchanged workspace/source metadata; native flag/config
+  acceptance remains a preflight, not an assumed successful sync. Docker CLI metadata is prepared
+  aarch64/uv0.11.15/Compose5.2.0/local socket; daemon/build reachability remains UNVERIFIED.
+- P7 can add RB03boot/RB08fresh-install-build/RB09 evidence only; activation/data/Analysis paths,
+  broad109type/strict2archive failures, F01OIDC bootstrap/grants and F02–04permitted same-Site epochs/
+  rights/consumer+host/configuration/repeat customer acceptance stay OPEN. One synthetic Site/object
+  restart is not the full first experience or a substitute for customer `t0/t1`→`t1/t2`. No milestone,
+  current slice, backlog priority, product/EXT-VAL acceptance or native goal closure is inferred.
+- Next decision: Human written review of planSHAfba7776e plus its listed download/install/build/boot/
+  temporary-credential effects. Recommendation: approve this bounded verification plan, preserving
+  the selected execution method; do not broaden it to production setup or resolve unrelated rights/
+  bootstrap/lineage decisions implicitly. Before approval, no successor implementation or meaningful
+  runtime trial is authorized; do not repeat old fixture suites merely to manufacture progress.
+- Proposal reception at4a0a08e + only the new plan/three status records:42frozen nonrecord inputs
+  match; prior ledger/audit and milestone/slice/backlog bytes preserved;37local links0broken.
+  `/tmp/opencode/p7-proposal-check-before-commit.json`, SHA256
+  `950dcf1e53302a3824cd886e368153ea0b5506af38eca405e2c2570571884d16`.
+  Same five-file record-consumer argv recorded above → **99passed/exit0/6.37s**,
+  `/tmp/opencode/p7-proposal-record-consumers.log`, SHA256
+  `de25cad15987f1566092d6fe7d26a133606008838c00e1a7b2f979f15a940289`.
+  This verifies planning records, not any proposed install/build/runtime command; the full suite
+  remains the received source-bound P6 evidence and is not repeated for a documentation proposal.

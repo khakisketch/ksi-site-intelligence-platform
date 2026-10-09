@@ -501,3 +501,18 @@ frozen proposal header. Basea0daa32, Task1source`12547470e5c1abfa2a5b232995429a6
   remain failed. F01bootstrap/grants and F02–04protected runtime/permittedt0/t1/t2/rights/consumer+host/
   actual repeat acceptance remain OPEN. P6 approval excludes installation/image lifecycle/CI dispatch/
   live activation/deployment and cannot reduce the full objective or close customer/EXT-VAL acceptance.
+
+## 11. Fresh-environment successor — written proposal, approval waiting
+
+P6's three-record closeout is4a0a08e; committed record consumers99passed/6.36s and38links0broken,
+with unchanged product source1254747. Final receipts/hashes are recorded in the parent ledger.
+
+The [P7 isolated-verification plan](../superpowers/plans/2026-10-09-isolated-fresh-platform-verification.md)
+(SHA256 `fba7776eb022ffb3e87f7c062f25cfb4f98a18bbb5311d786a48aff568f18909`) proposes fresh locked
+dependency evidence, three unchanged candidate-image builds and a unique loopback-only Core/storage
+auth/persistence trial. **NOT approved or executed**: downloads, scratch installs, image builds,
+temporary test credentials and runtime effects require Human approval of that bounded plan.
+Existing environments/volumes/grants remain untouched; no host install, publication or deployment.
+All P6 evidence/failed/unverified gates above remain unchanged. Even successful P7 execution would
+not establish activated Analysis/SpatialData, real-byte Console, OIDC onboarding, customer epochs/
+rights/consumer/host/repeat acceptance, signed worker containment, CI/production or whole-goal closure.

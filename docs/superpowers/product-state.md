@@ -77,6 +77,13 @@ closed after source/evidence/record reception and affected99consumer checks; thi
 RB03/08fresh execution, the native whole objective or human/product acceptance.
 Final record commit is separately checkpointed; no push,
 deployment, installation, volume/data deletion or live credential/grant change.
+2026-10-09 P6 record closeout4a0a08e is locally committed; unchanged product source1254747,
+actual committed record consumers99passed/6.36s. The
+[P7 fresh-environment verification proposal](plans/2026-10-09-isolated-fresh-platform-verification.md)
+(planSHAfba7776e; exact binding in the rebaseline ledger) is **awaiting Human written approval**,
+not executed. It requests only new isolated locked installs/candidate builds/synthetic Core-storage
+auth/restart evidence. No existing environment/data/grant mutation or production activation is
+authorized; F01–04, strict archive/broad type, customer/EXT-VAL/native whole-goal gates stay OPEN.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.
