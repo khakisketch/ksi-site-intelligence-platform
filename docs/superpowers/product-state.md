@@ -1,5 +1,5 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-10-09 (P5 bounded verification/routing only; slice/acceptance unchanged)
+Updated: 2026-10-09 (P5 final local evidence/handoff; slice/acceptance unchanged)
 ## Goal
 물리적 현장 관측을 근거형 Site State/Change로 연결하는 Site Intelligence 기반이다.
 외부 산출물 등록·검사와 공간데이터·고정 분석의 API·MCP 제공은 현재의 두 재사용 경로다
@@ -50,6 +50,19 @@ goal, product slice/EXT-VAL/customer/operational acceptance or release implied. 
 [P5 integrated audit](../audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md).
 Optional local analysis/storage remains unavailable. Former P4 loopback3241/8041/9041 is now offline;
 matching source-bound P4 evidence is reused, not a claim of a live fresh login/result flow.
+2026-10-09 final P5 independent source evidence is received at `a8f6e93`:
+full active Python6047passed/30skipped/98warnings/0failed, Ruff0, explicit workflow/example scoped
+mypy2clean; broad109errors/14files remains FAILED with no added/removed error diagnostics against
+pre-P5 control. Whole-P5+repair-delta source reviews have no required residuals; both earlier failed
+runs and their RED→GREEN repairs remain in the [rebaseline ledger](plans/2026-10-07-agent-first-platform-rebaseline.md).
+The [integrated audit](../audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md) records RB-01..09
+and the full objective checklist: strict2archive gate, mixed NodeODM default, fresh sync/image/CI/host,
+F01bootstrap/grants and F02–04permitted data/rights/configuration/realconsumer+host/two-cycle acceptance
+are OPEN. This closes only the local verification-report work after its recorded closeout checks,
+not whole cleanup/goal/product slice/EXT-VAL/customer/operational acceptance. The
+[P6 default-template proposal](plans/2026-10-09-platform-only-default-deployment-template.md) is saved
+for Human written review, not executed. Existing volumes/configuration are preserved; no install,
+activation, push/deploy or external delivery occurred.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

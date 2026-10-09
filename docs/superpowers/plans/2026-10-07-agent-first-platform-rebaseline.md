@@ -1838,3 +1838,104 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   revision before freezing and assigning the affected independent full suite. Do not rerun unchanged
   archive/type controls or P4/browser work unnecessarily; verify reused-input hashes. No source writer
   overlaps that final run. Preserve both genuine independent failed-suite logs and their causes.
+
+- Observer repair/evidence committed locally as`a8f6e93` (three task-owned paths, staged whitelist/
+  whitespace checked). Final independent assignment is only the affected full active Python suite,
+  whole Ruff and broad-type delta against the already-matched control, plus pre/post frozen-source/
+  Git/receipt hashes. Required source is this actual commit plus assignment-only ledger prose;
+  freeze21whole-P5 paths. Earlier archive/recovery/path/P4/static/SDK evidence may be reused only on
+  unchanged inputs; do not duplicate the completed twelve-minute suite merely to sample timing.
+  Test Runner remains read-only with one compact driver/receipt, no further agents or product/docs/
+  checkpoint/index/HEAD writes, installs, runtime/browser/Docker/CI/credentials/grant/policy/external
+  changes. If any test fails, return exact test, assertion and safe reason/trace; no waiver or fix.
+
+### P5 final independent receipt recovery and full-objective adjudication — 2026-10-09
+
+- Resumed actual checkout: `main` `a8f6e938c8a8c633983f12792973dcdb24aaecd6`, only the10-line
+  final-assignment prose pending, clean index; four foreign worktrees unchanged/untouched. Native
+  goal `b13320f7` verified active with its full objective; prior unmet goal is not resumed.
+- One-shot interrupted-handoff recovery found the existing final Runner's **finished** receipt,
+  timestamp2026-10-09T05:06:35Z, SHA256
+  `124a13d45083eec069ffa245253497fc2bbaae433ec89712d54f36df30a577de` at
+  `/tmp/opencode/p5-observer-independent-final-20261009/receipt.json`. No progress polling, duplicate
+  test or new Runner was started. Earlier waiting summaries are superseded by the actual completed
+  artifact; the missing completion notification is not evidence that the suite still runs.
+- Runner `ses_ee103b8c0ffeHhl4qT8rAFSozC` actually ran
+  `uv run --no-sync pytest -q -p no:cacheprovider`: **6047passed/30skipped/98warnings/0failed/exit0**,
+  754.96s (driver wall756.39s), ambientumask0002/Python3.12.13. Raw log SHA256
+  `6bccdbc2e3ad9da4b3cb49476ecc411e4598d04bc791f9cc4e8347572c2b8fc9`. Both routing and deterministic
+  observer/AI409 controls are included; previous `efae2af` and `eeea71c` failed runs remain RED
+  historical evidence. Configured30skips are still omitted coverage, not successful tests.
+- Final wholeRuff exit0, log82b3e6a6; explicit workflow+native-window example scoped mypy2files
+  clean/exit0, logf9b031e5. Broad`uv run --no-sync mypy packages services tests tools` still
+  **FAILED109errors/14files/753checked**, log546479e8; independent pre-P5 error `(file,message)`
+  multiset added0/removed0. Two extra note-hint lines are not new errors or a broad pass. Final receipt
+  pre/post21frozen inputs, HEAD, sole pending assignment bytes and19reused inputs match unchanged.
+- Primary reception `/tmp/opencode/p5-final-evidence-reception.json` SHA256
+  `6d4fc44d1a0e8aa6a12645ea17b34f58d01bcb7f24232f3d9699bfdd99ddeb18` verifies actual final/prior/
+  repair/control/report hashes, all21+19inputs,251destinations/originalGitblobs and12recovered scratch
+  blobs. Strict archive remains251original/249destination,2adaptations/4findings/exit1, not waived.
+  P4source353workspace/352Git,22render inputs/18PNGs and10verification inputs match; reuse prior
+  design5635f47b/receipt e6267ceb/77E2E/15explicit skips, not fresh/live browser evidence. One reception
+  adapter label/path mismatch was corrected against the JSON schema; no product/source mutation.
+- Whole-P5 source report7bcb406a and finaldeltaf08feaa8 received; no required residual findings.
+  Adjudication: review-declined execution is now owned by the actual independent final receipt;
+  archive/recovery hashes are independently received; aesthetic judgment stays with the P4 design
+  report; missing fresh dependency/image/CI/TLS/host/customer/rights/first-flow inputs stay OPEN.
+  Deferred MIN-1 review-diff context options and MIN-2 quiet SDK per-test output remain hygiene-only.
+- Self-origin evidence-hygiene limit: Task3 seven static logs match reception33bb1ff5, actual
+  entrypoint264/2warnings and utility79/2warnings tails rehashed, and the seven registered worker
+  entries are source-bound. Quiet artifacts do not preserve complete17/6-file argv; no historical
+  command is invented or repeated to manufacture proof. Final configured6047suite is separate.
+- Full-objective checklist and all RB-01..09 dispositions are durable in
+  [integrated audit](../../audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md) §§7–9. Local
+  authority/parity/history/security/unchanged-Console evidence is distinguished from strict archive
+  failure, mixed defaultNodeODM, broad types and fresh runtime/CI/host gaps. The real first experience
+  remains Site/WorkArea→permittedt0/t1→compatible pair→evidence-bound change/blocker→same-area t1/t2
+  with one selected actual consumer. F01bootstrap/grant ownership and F02–04permitted data/rights/
+  protectedstorage/graph/workers/host/customer acceptance are not replaced with generated fixtures.
+- P5 Task5 record-closeout binding: only this ledger, the integrated audit, product-state summary and
+  the written successor proposal; ignored checkpoint/skill progress never committed. No source,
+  template, tests, dependencies, contracts, state, credentials, permissions, UI or archive writer.
+  Preserve spec14ded50b/P5plan4119e5d1, milestones/Current slice/registry status and originals. Run
+  affected69routing+30move-tooling consumer checks and link/whitespace/hash/scope checks; inspect
+  actual index and locally commit only those4records before claiming the report deliverable closed.
+
+### P6 canonical written proposal — approval waiting, not implementation
+
+- [Two-task P6 proposal](2026-10-09-platform-only-default-deployment-template.md), SHA256
+  `ccee1d92c440e342d0d504902ad06ef782148d66455db321a54bade3d0707425`, transferred from the source-bound
+  scratch proposalfa8b0362 after actual P5 receipt recovery/reception. The transfer updates final
+  evidence/status and explicitly names the VM interpolation test; scope/preservation values unchanged.
+  Proposed changes only: remove unused NodeODM from base/VM, preserve historicalksi-odm and all other
+  service/executableDockerfile settings, reconcile active docs/VM/image assertions, independent local
+  checks. No optional managed runtime, new API/format/policy/auth or operational assembly.
+- Canonical self-review38read-only checks/0failures/13exactinputs/sevenservice semantic hashes,
+  original volume maps/executableDockerfile/spec/snapshot/existing test targets and written gates.
+  Receipt `/tmp/opencode/p6-canonical-source-review.json` SHA256
+  `eaa99e4a305cd445ccbb95fed7d2824d7e7f6e31750a43d891b88f8e078ffbd4` (latest reconciliation after
+  the product-state summary was added). Initial scratch adapter's Git status-prefix parser was
+  corrected; actual scope is the4named pending records/proposal, not foreign work.
+  No proposed P6 test, Compose CLI, container, sync/install/runtime action was run.
+- Self-review against approved spec: §§2/6/8/9 default-runtime subset→Task1; revision/independent/
+  truthful handoff→Task2; all other RB/customer gates excluded explicitly, not claimed satisfied.
+  Shared Task1→Task2 service/volume/source snapshot interfaces agree. Existing VM Dashboard/Caddy
+  additions, four long-running network checks, safe!resetloader and historicaldigest controls retained.
+- **Human written review is required** for this exact plan before implementation; preserve the already
+  chosen sequential execution method, do not reopen its selection. Recommended next authorized
+  engineering slice only after that review. P6 approval does not authorize fresh sync/image/boot/CI,
+  live grant/policy activation, deployment/customer transfer/contact or close archive/first-flow gates.
+- Full-goal remaining owners: Human/build/ops for exact isolated fresh environment effects; Human/
+  lineageowner for adaptation-lineage decision; Human/security/product for F01bootstrap/grants;
+  Human/customer/ops for F02–04permittedt0/t1/t2/rights/protected configuration/selectedconsumer+host
+  and actual two-cycle acceptance. Technical P5 report closure is not whole-goal success, product
+  slice/EXT-VAL acceptance or external delivery. No successor execution inferred from continuation.
+
+- Closeout preparation checks on `a8f6e93`+these record-only changes: exact five-file
+  product-boundary/disposition/normalization/archive-boundary/move-tooling command
+  `uv run --no-sync pytest -q -p no:cacheprovider tests/contract/test_physical_site_product_boundary.py tests/contract/test_physical_site_disposition.py tests/contract/test_repository_normalization.py tests/contract/test_acquisition_archive_boundary.py tests/contract/test_physical_site_move_tooling.py`
+  **99passed/exit0**,6.35s; whitespace exit0. Read-only record-check receipt1a998939 verifies154local
+  Markdown links/0broken,18non-record frozen inputs, immutable spec/P5plan, preserved product-state
+  Milestones/Current slice/Backlog and exact4record-only scope; no P6implementation exists. That
+  receipt is a precommit record snapshot, not the later postcommit state. Commit only those4paths;
+  verify the actual committed HEAD's affected consumer checks and final record snapshot afterward.

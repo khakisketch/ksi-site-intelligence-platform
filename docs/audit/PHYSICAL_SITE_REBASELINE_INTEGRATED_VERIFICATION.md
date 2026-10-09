@@ -1,6 +1,6 @@
 # Physical Site rebaseline — integrated local verification (P5)
 
-Updated: 2026-10-09. **IN PROGRESS; not whole-product/goal completion or acceptance.**
+Updated: 2026-10-09. **Final P5 local evidence received; cleanup/whole-product/goal acceptance remains OPEN.**
 Authority and actual approval: [rebaseline ledger](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
 Approved [P5 plan](../superpowers/plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
 SHA256 `4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`;
@@ -18,7 +18,13 @@ The frozen proposal header is drafting history, not current approval state.
   `tests/contract/test_platform_core_http_integration.py`.
   Their tested SHA256 values are respectively
   `d8c06899f07dfcf3f3472083c6bfbc7fc75a8a683a628f3aa5f3e2747fe85c86` and
-  `c731f2619edd35461d8482c032813844b45eb3a4dd4fcb035d9e9dc6583be854`.
+   `c731f2619edd35461d8482c032813844b45eb3a4dd4fcb035d9e9dc6583be854`.
+- Integrated tested source is `a8f6e938c8a8c633983f12792973dcdb24aaecd6` plus the
+  assignment-only parent-ledger prose; final independent pre/post 21-file snapshot SHA256
+  `8ef5ab5a0c64bbdf46ed195338c5543753790f6ee10ddbeff9fbe65065fb0e76` matches.
+  Task4 routing is `efae2af`, preserved-consumer repair `eeea71c`, test-only observer repair
+  `a8f6e93`. Final closeout changes are records/proposal only; affected checks and the local
+  record commit are linked from the parent ledger, not inferred from the earlier source run.
 - Prepared Linux/aarch64 Python3.12.13 environment, uv0.11.15. All Python runs use
   `--no-sync`; the lock check is offline. No dependency installation, fresh resolution,
   image build/pull/start, CI dispatch, live credentials/activation/grants, device action,
@@ -123,11 +129,11 @@ These checks ran against the source in §1; they do not constitute fresh image o
 | `uv run --no-sync python tools/check_physical_site_disposition.py --manifest docs/audit/PHYSICAL_SITE_REBASELINE_DISPOSITION_DRAFT.csv` | PASSED | exit0; frozen baseline72c526b, no moves |
 | `uv run --no-sync mypy packages services tests tools` | FAILED, pre-existing | exit1;109errors/14files,753checked; **not green** |
 | Scoped mypy/Ruff on both Task2 files | PASSED | exit0;2source files clean; Task1's2files separately clean |
-| Entrypoint/config/recovery/boundary matrix | PASSED |264passed/2warnings/exit0,85.04s;17actual test files |
-| Retained utility tests | PASSED |79passed/2warnings/exit0,1.89s;6actual test files |
+| Entrypoint/config/recovery/boundary matrix | Historical aggregate PASS; selection evidence limited |264passed/2warnings/exit0,85.04s; reported17-file selection, full original argv not preserved |
+| Retained utility tests | Historical aggregate PASS; selection evidence limited |79passed/2warnings/exit0,1.89s; reported6-file selection, full original argv not preserved |
 | Task1 full active Python | PASSED at Task1 revision |6042passed/30skipped/98warnings/exit0,741.87s; not final Task2/P5 |
 | Task2 full active Python | PASSED at Task2 source |6045passed/30skipped/98warnings/exit0,751.23s; actual committed source hashes match §1 |
-| Independent whole-P5 Reviewer/Test Runner | PENDING | Task5; no self-review substituted |
+| Independent whole-P5 Reviewer/Test Runner | RECEIVED; scope separated in §7 | No required source findings; fresh full6047passed/30skipped/98warnings/0failed; broad types still FAIL |
 
 Broad-type control: immutable pre-P5`1dac44a` source was extracted into owned scratch and parsed
 with the same prepared mypy, no sync/install. It fails with109errors/14files/751checked. Current vs
@@ -140,13 +146,37 @@ Task2 full-suite log SHA256
 `0e8885760d74fe25a6b6c9d39aec6f8a3e64df07765c45d07e18a30c10abf695`;
 post-commit skill Task2 matrix rerun49passed/exit0,87.66s. Warnings are disclosed, not fixed or hidden.
 
-The17-file matrix covers archive deny-hooks and allowed supported imports, platform boot switches,
+The recorded17-file selection describes archive deny-hooks and allowed supported imports, platform boot switches,
 validation worker/config/runner/integration, Analysis config/loop/recovery, inspector entrypoint/
 systemd/runtime controls, measurement entrypoint/daemon, Spatial Data config/worker/sandbox.
 No production listener/config is supplied. First selection used a nonexistent Analysis-runner test
 filename (exit4/no tests); corrected from actual runner imports. That no-op is not counted as a pass.
 The Core boot-switch test's legacy-import naming is historical: actual acquisition-closure tests
 prove the retired legacy assembly/module aliases are absent.
+
+Task3 evidence reception SHA256 `33bb1ff5fecfa98540d8882167c2d2254693cf698367434a72082c2786583dc8`
+rehashed all seven original static logs. Entrypoint aggregate log SHA256
+`daea787c1b8152ddd33f723578ee27221fe345fa886023c3539f54d22cdd5f38` and utility log SHA256
+`9dce1beabca91ea12e551ddb997d809799109eccf4dd2d4068b6e7cc7cb19643` have the actual264/79
+tails above, but neither artifact preserves its complete17/6-file argv. That historical selection
+cannot be reconstructed from a count or retroactively made exact by the final full-suite result.
+This is a self-origin evidence-hygiene limit, not a new product failure or a reason to repeat a
+completed suite. Final configured active-suite evidence is independently specified in §7.
+
+Actual `services/processing-controller/pyproject.toml` SHA256
+`49f6be1ef0cc32bb0fc1e6a02e43dd00f4a0e70d2eff43a4fce87a1a9fe77c4a` registers:
+
+| Script | Source entry in `ksi_processing_controller` |
+| --- | --- |
+| `ksi-external-inspector-daemon` | `external_inspector_daemon:main` |
+| `ksi-external-inspector-entrypoint` | `external_inspector_container_entrypoint:main` |
+| `ksi-external-measurement-entrypoint` | `external_measurement_container_entrypoint:main` |
+| `ksi-external-measurement-daemon` | `external_measurement_daemon:main` |
+| `ksi-external-validation-worker` | `external_validation_worker:main` |
+| `ksi-external-analysis-worker` | `external_analysis_runner:main` |
+| `ksi-spatial-data-worker` | `spatial_data_runner:main` |
+
+This is the registered source map, not proof that any production daemon/configuration was launched.
 
 ### Installed environment is not fresh
 
@@ -289,19 +319,25 @@ append-only adaptation-lineage decision, never edited original inverse hashes.
 The first-flow follow-on should then connect the **existing** UI/API/SDK and configured storage/
 workers, not rewrite the supported engines. F-01 is a material auth/bootstrap decision; F-02..04
 require named rights/environment inputs. Until those are available, do not claim full first-flow
-acceptance or run a new feature plan. Task5 will reconcile independent findings and present the
-minimal written successor scope with its approval/external-effect gates; no P6 work starts here.
+acceptance or run a new feature plan. The [P6 written proposal](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md)
+addresses only the template gap, with the same historical-volume/configuration preservation and
+approval/external-effect gates. It is not approved implementation or a full-goal replacement.
 
 ## 7. RB-01..09 and independent closeout
 
-Task5 remains in progress. Whole-P5 source Reviewer found no Critical/Important code finding and
-two deferred evidence-hygiene minors. Source review does not replace independent execution.
+Whole-P5 source Reviewer `ses_ee156b61dffeI89kzc3v8ZTeRl` reviewed `1dac44a..efae2af`:
+no Critical/Important findings, two deferred evidence-hygiene minors, report SHA256
+`7bcb406a7ce74ff8e8d4af724b24f4790a96e1207c42985cb88b71f22f13dd08`.
+Its repair-delta review `efae2af..a8f6e93` found no required/new minor findings, report SHA256
+`f08feaa8f1187498af2eb96c7418ec6d08741461f3c7b37b1f34a59062127ef8`.
+Source review does not replace independent execution or design-owned rendered review.
 
 | Independent state | Actual result | Disposition |
 | --- | --- | --- |
 | `efae2af` first Runner | 1failed/6044passed/30skipped/98warnings; logSHA `3b892cad9b81687989dfc2232903b704577244d721bf5749dab6f68cc568d730` | P5-ROUTE-01: lost historical Edge consumer reference. RED→provenance-only `eeea71c` repair; actual committed-HEAD gates99passed |
 | `eeea71c` completion Runner | 1failed/6044passed/30skipped/98warnings; logSHA `e3a2a5ddd7a6eb29d05b8e33ad7368f213ba3ece82778d5c31c39a6da0bd1ded` | Repaired routing witness passes. P5-OBS-01: private worker observer incorrectly requires concurrent AI-list projection to stay stable; no waiver |
-| Narrow observer repair, pending integrated run | Deterministic original409/200 RED; preservedAI409/noack controlPASS; final affected matrix122passed/exit0 | Test-only authenticated worker-queue observation, not changed permissions/SDK/metadata guard. Full independent suite still required |
+| Narrow observer repair `a8f6e93` | Deterministic original409/200 RED; preservedAI409/noack controlPASS; affected matrix122passed/exit0 | Test-only authenticated worker-queue observation, not changed permissions/SDK/metadata guard |
+| Final Runner at `a8f6e93` | **6047passed/30skipped/98warnings/0failed/exit0**,754.96s; logSHA `6bccdbc2e3ad9da4b3cb49476ecc411e4598d04bc791f9cc4e8347572c2b8fc9` | Both required repair witnesses included; previous failed suites remain historical evidence, not relabeled green |
 
 Completion receipt SHA256`8a72834e56dedf7ddc917bea8ea9659ab3ccd6915222a79835ef58ce0d1500ce`
 confirms unchanged HEAD/pre/post20inputs and supplies all unfinished required checks: strict archive
@@ -318,5 +354,95 @@ ADMIN impersonation, sleep extension or consumer downgrade. Two deterministic te
 dispatch and the unchanged AI refusal; original example SDK/result/bytes assertions remain strict.
 Repair receipt SHA256`64c92c94e7e8742906d2f159f981bd5eb3bf1475f48afba1ed0138715d60104a`
 binds testSHA525b754e/RED/GREEN logs. Full-suite failures remain historical evidence, not green.
-RB-02's strict archive gate and RB-08's type/fresh-runtime gates remain open; author6045pass belongs
-to Task2 before Task4. No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance.
+
+### Final execution receipt and reception
+
+Final Runner `ses_ee103b8c0ffeHhl4qT8rAFSozC` finished at2026-10-09T05:06:35Z.
+The completed artifact was recovered after the outer session interruption; prior waiting summaries
+are superseded by the actual finished receipt, not evidence of a new test run. Receipt SHA256
+`124a13d45083eec069ffa245253497fc2bbaae433ec89712d54f36df30a577de`, local location
+`/tmp/opencode/p5-observer-independent-final-20261009/receipt.json`.
+
+| Exact final command | Exit / observed output | Log SHA256 |
+| --- | --- | --- |
+| `uv run --no-sync pytest -q -p no:cacheprovider` |0;6047passed/30skipped/98warnings/0failed,754.96s | `6bccdbc2e3ad9da4b3cb49476ecc411e4598d04bc791f9cc4e8347572c2b8fc9` |
+| `uv run --no-sync ruff check .` |0;All checks passed | `82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18` |
+| `uv run --no-sync mypy packages services tests tools` |1;109errors/14files,753checked; pre-P5 control added0/removed0 | `546479e8501427592ac20d842058ad7c424a76171e0b7f72898052cf5d4378ef` |
+| `uv run --no-sync mypy --follow-imports=silent tests/contract/test_spatial_data_mcp_workflow_example.py examples/spatial-data/native_window_client.py` |0;2files clean | `f9b031e5c45aa702cd4fef028d465551cb20a2c4698e0913c7b00766b20ac4d8` |
+
+The final receipt binds pre/post HEAD, sole pending assignment-ledger bytes, ambientumask0002,
+Python3.12.13, approved spec/plan, all21frozen inputs and19unchanged reused inputs. It reuses the
+completed archive/recovery/SDK/static/P4 results only where their inputs match. Broad comparison
+uses the error `(file,message)` multiset, not equal counts alone:109/14 unchanged; two additional
+mypy note-hint lines are not new errors or a broad pass. Thirty configured Python skips remain
+unexercised coverage; this final `-q` log does not enumerate their reasons. They are not counted as
+successful cases or proof of optional/host readiness. The archive is excluded, not silently green.
+
+Primary reception `/tmp/opencode/p5-final-evidence-reception.json` SHA256
+`6d4fc44d1a0e8aa6a12645ea17b34f58d01bcb7f24232f3d9699bfdd99ddeb18` independently rehashed
+the actual receipt/four logs/control/review reports, all21+19inputs,251recorded destinations and
+original Git blobs,12recovered scratch blobs,353P4workspace/352Git source hashes,22render inputs
+(18PNGs) and10P4verification inputs. No suite, daemon or browser was restarted. One initial
+reception-script label/path mismatch was corrected against the report schema; it did not mutate
+source or count as a product failure. The now-completed source run permits doc-only closeout;
+its affected consumer/link checks and local record commit are recorded separately in the ledger.
+
+### RB adjudication — local evidence is not full acceptance
+
+| ID | Evidence and current disposition | Remaining condition |
+| --- | --- | --- |
+| RB-01 | Local authority/routing verified: ADR039, product documents and preserved-status checks agree | No new product obligation inferred from history |
+| RB-02 | Disposition/link/instruction boundary locally verified;251originals recoverable; **strict destination gate FAILED** on2adaptations | Separate reviewed adaptation-lineage decision; do not rewrite inverses or claim249means251 |
+| RB-03 | Genuine platform factory/byte flow, registered workers and acquisition deny-hooks verified locally; **PARTIAL overall** | P5-COMP-01 default NodeODM plus fresh isolated boot not resolved |
+| RB-04 | Local generated actual-platform SDK/API result/receipt/source parity and typed negatives verified | Selected real consumer/customer acceptance and production transport remain open |
+| RB-05 | Local retained historical reader/replay and strictV1/provisionalV2/profile/numeric semantics verified | No universal managed HTTP access or quantitative/settlement certification |
+| RB-06 | Controlled restart/idempotency/tenant/rights/consent/currentness/cancel/cleanup negatives verified | Production TLS/UDS/ACL/kernel/configuration unverified |
+| RB-07 | Changed P4 cleanup's auth/reload/mobile/error and design-owned actual rendered review reused under matching hashes | Old target offline; configured real-byte/repeated first-customer flow unverified |
+| RB-08 | Active offline lock/pins/inventory/package/archive exclusions verified; **PARTIAL overall** | Broad109/14FAILED,5dangling editables, fresh sync/images/CI/host unverified; P6 only a proposal |
+| RB-09 | Independent integrated source checks received; task-owned record reconciliation is the final P5 closeout step | Parent ledger binds affected record checks/local commit; human acceptance/external delivery remain separate |
+
+No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance is established.
+The P5 deliverable is a verified local preservation/repair and discrepancy report, not a waiver of
+RB-02/03/08 or the first experience. Author6045pass belongs to Task2 before Task4; it is not final evidence.
+
+## 8. Full objective to artifact / gate checklist
+
+The objective remains: industry-neutral evidence-bound Site State/Change; independently built/run
+platform excluding acquisition/reconstruction; preserved existing data/Analysis/MCP/history; and
+the actual reusable first experience with permitted customer inputs and one selected external consumer.
+P5 reporting or P6 template cleanup does not substitute a smaller objective.
+
+| Explicit requirement / deliverable | Concrete artifact and evidence | Achieved boundary / open gate |
+| --- | --- | --- |
+| Written design, plan review, goal and chosen sequential method | Approvedspec14ded50b, frozenP5plan4119e5d1, parent-ledger approvals, native goalb13320f7 | P5 authorized; no P6 execution inferred from goal continuation |
+| Physical Site identity, long-term exclusions, unchanged milestones | ADR039, Constitution/Ledger/PRD, current routing, status pin tests | Local RB01; original acquisition history/status retained |
+| File-level dependencies/moves/recovery, no folder-name deletion | Frozen disposition/decision/main+extras manifests,251row checker29controls,12original recovery | Strict2adaptation gate failed; manifests cover251rows, not all432archivefiles |
+| No runtime/build/import/instruction delegation to archive | Active Core/worker inventory and deny-hook positive controls, exclusions/currentAGENTS | Local boundary checks; P5-ROUTE-01 restored provenance only at `eeea71c`/99checks |
+| Registration/inspection/catalog/data/Analysis/API-MCP same authority | §3 genuine seven-file49matrix, exactIDs/revisions/digests/receipt and independent pixels/CRS/NoData/hash | Local generated software; one-line P5-SDK-01 fix `c5cca2a`; no second backend or fake bytes |
+| History/replay, rights/consent/currentness, strictV1/provisionalV2 meanings | Existing historical/replay/negative matrices and §3 numerical oracles | Local RB05/06; preserve422external-required, non-executable managed history and legitimateAI409/noack |
+| Narrow demonstrated repair, independent final evidence | `eeea71c` routing and `a8f6e93` observer RED→GREEN; Reviewer+delta reports; final6047/30/98/0 | Product/auth/numeric contracts unchanged; no blind retries or test waiver |
+| Console/design ownership and actual changed states | P4source353/352,22inputs/18PNGs, report5635f47b, independentreceipt e6267ceb;77E2E/15explicit skips | Unchanged-source reuse only, not live or configured full-result/customer verification |
+| Independent build/package/CI structure | §4 lock157/static140/pins/normalization/disposition, source-owned seven scripts | BroadtypesFAILED; fresh dependency/image/CI/host unverified; NodeODM default OPEN |
+| Site/WorkArea creation then t0/t1/result then t1/t2 reuse | §6 step matrix; actual unscoped SitePOST, scoped denial, audited WorkAreaPOST and non-automatic grants | F01material bootstrap/grant decision; target not downgraded to precreatedSites |
+| Actual permitted bytes, storage/worker/graph and one real consumer | Existing byte ports, protected production configuration and localSpatialData assembly distinction | F02–04data/rights/config/host missing; productionfactory does not injectspatial_data; no invented env switch |
+| Private data/keys/state/HIL/foreign workspaces protected | Scope-bound diff/index/commands and four preserved foreign worktrees | No install, activation, live grants, push/publish/deploy/registry/device/customer-contact action |
+| Durable evidence/Git/checkpoint/stop report and next plan | This audit, parentledger/product-state/checkpoint, [P6 proposal](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md) | Local record closure separate from product acceptance/external delivery; pending approvals stated |
+
+All named P5 tasks/commands map to §§2–7 and the approved plan. Quiet264/79selection argv is
+explicitly unavailable, not filled by inference. Generated fixtures, review advice and green pytest
+do not cover required customer rights, operating environment, accuracy or unrun build/host gates.
+
+## 9. Remaining decisions and responsible owners
+
+1. **Human written review:** [P6 two-task local template/test/docs proposal](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md).
+   Recommended next engineering step; no successor source change before approval.
+2. **Human/build/operations:** separately scoped isolated dependency sync/image/boot/CI authorization
+   and prepared capability. P6 approval is not this authorization and cannot close RB08 by itself.
+3. **Human/lineage owner:** append-only adaptation-lineage decision for the2historical files;
+   keep original inverse hashes and strict checker unchanged until separately reviewed.
+4. **Human/security/product:** F01scoped Site bootstrap and newly-created WorkArea grant ownership;
+   do not silently widen allowlists or automatic grants.
+5. **Human/customer/operations:** permitted same-Site t0/t1/t2exports/rights, protected storage/
+   Analysis/worker configuration, selected real external consumer/host and two-cycle acceptance.
+   A Spatial Data production assembly/activation interface, if needed, is a separate material contract,
+   not an omitted existing environment switch. No generated-data substitute or automatic live activation.
