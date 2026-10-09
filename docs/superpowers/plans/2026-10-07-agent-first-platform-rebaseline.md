@@ -1468,3 +1468,198 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   are terminal/delivered, not active writers. One old requested record has no run ID because its
   pre-generation request failed422 for missing plugin inputs (before corrected initial P4 run);
   it is not an in-flight run and was not replayed. Other sessions/projects were not changed.
+
+### P5 written approval and execution binding — 2026-10-09
+
+- Human answered the written P5 review question **“P5 실행 승인 (Recommended)”** for
+  [the exact five-task plan](2026-10-08-physical-site-rebaseline-integrated-verification-p5.md),
+  SHA256 `4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`.
+  This is actual approval, not inferred from goal continuation. Existing sequential/local execution,
+  independent final Reviewer/Test Runner and task-owned local commits remain selected. New contracts,
+  installs, policy/grant activation, push/deploy and customer-data transfer remain excluded.
+- Actual execution base/target: current checkout on `main`,
+  `1dac44aeca503221f924687ea1631e10d7cdcc86`; tracked/untracked status and index were clean.
+  P4 source/evidence closure is `7f44d11967e9b31524e7f2bbe0ef466c98ad5aec`. No new worktree
+  needed for one sequential writer; four foreign worktrees remain untouched. Prior goal stays unmet;
+  current goal `b13320f7` is verified active. The frozen P5 proposal header/checkboxes preserve the
+  drafting snapshot; approval/execution status is owned here and in the scoped skill ledger.
+- Task binding: RB-02/08/09 first; tools/tests owner; read-only full-record Git/blob/destination/inverse
+  verification with disposable generated Git fixtures. Only new checker/tests plus these execution
+  records are written. No wire contract, historical manifest, archive source, live journal or dependency
+  changes. Rollback is a reviewed task-owned inverse commit, never reset/clean or recorded shell execution.
+- Invariant binding: Task1 enforces truthful evidence/non-placeholder conclusions (INV-040) and protects
+  private/foreign paths; it changes no runtime invariant. Tasks2–3 verify INV-020/024/050/051/053/054/055/
+  060/061 through existing spatial/provenance/numerical/resource/image/authorization/consent contracts.
+  Tasks4–5 preserve those meanings and customer/EXT-VAL acceptance while recording exact verification limits.
+- Pre-flight: Task1 JSON/count/hash output feeds Task3; Task2 actual-platform IDs/digests/receipts feed
+  Tasks3–4; P4 frozen source/render/runner receipts and Task4 gap map feed Task5. Interfaces agree.
+  Ruling: retain frozen plan bytes and apply actual approved base/P4 closure from this ledger rather
+  than its pre-closure drafting prose — avoids replaying completed P4; cost if wrong is stale status
+  routing, mitigated by explicit source SHA and this approval record.
+- Skill progress/briefs: `.superpowers/sdd/2026-10-08-physical-site-rebaseline-integrated-verification-p5/`.
+  Task1 is IN PROGRESS; Tasks2–5 pending. No P5 completion, customer acceptance or external delivery claimed.
+
+### P5 Task1 full-record audit and recovery findings — 2026-10-09
+
+- New read-only checker `tools/verify_physical_site_archive.py` and disposable-Git controls
+  `tests/contract/test_physical_site_archive_verification.py`: missing-tool **23failed** (intended
+  assertion RED, not collection error) → **23passed**; final suite with added completeness/link/input
+  controls **29passed/exit0**. A separate self-found evidence bug hid the baseline hash when HEAD
+  diverged: `test_committed_destination_edit_retains_independent_baseline_hash` failed `None` versus
+  original SHA (RED) → baseline-bound object is independently hashed (GREEN). No archive imports,
+  recorded inverse execution, source moves, writes by the checker or network access.
+- Real report at base1dac44a: **251checked/251expected**, **251original Git blob hashes match**,
+  **249current destination hashes match**, exit1 with four explicit findings on exactly two rows.
+  Report SHA256 `4f84e25292dee0418ce812b95c61e1775df1fc88b409d7b804dbbb4ac2e364dc`, scoped skill
+  `task-1-real-archive.json`. Original main/extras manifests remain SHA7fa85601/a1867fad; no omissions,
+  duplicates, unsafe path/inverse, source reintroduction or lost baseline blob reported.
+- Finding(origin self, **P5-ARCH-01 OPEN as strict current-destination hash gate**): P3 commit
+  `dc9d681` explicitly adapted two field-kit archive paths after the blob-identical move8160ca8:
+  `tools/build_field0a_kit.py` (`KIT_DIR` parents[3]) and `tests/contract/test_field0a_kit.py`
+  (root parents[4], archive-only package/tool roots). Both current destination Git object/hash differ
+  from the immutable inverse record. This is recorded historical adaptation, not missing originals.
+  The blanket P3 “57extras blob-identical” phrase is accurate at move time, not for final destinations;
+  its later adaptation was not covered by the prior sampled audit. Preserve that dated statement and
+  correct the current completeness claim here, not the frozen record.
+  - Tool: original blob78940f46/SHA`abc3d8b606a23c3e636366726a0faf872ae763c41000bd01e7e19f46a9be156a`;
+    current blob5546e57a/SHA`5cfaac4fdac7019258f5eebf9b180f77ccefe33cb40d48be1621218504f22459`.
+  - Test: original blob015db511/SHA`65a1efc2b47ca44f5dcc1e6aef498cd4f6c582f4e3a4df97e07180f28f8318e9`;
+    current bloba9c3893c/SHA`03d522ef54408fe1228f7b5a60c5c7344e63b50e8aec5dfe5223fe178a70c2f8`.
+- Ruling: keep strict failure and disclose both historical adaptations; do not normalize current
+  destinations, rewrite frozen inverse hashes or silently allowlist exceptions — the approved plan
+  says report actual discrepancies without rewriting evidence. Cost if wrong: RB-02's strict hash gate
+  remains open unnecessarily; final review can distinguish retained/recoverable history from a new
+  archive-repair decision, without claiming the checker passed.
+- Independent recovery primitive (not checker-derived): `git cat-file blob` materialized **12original
+  blobs** into owned disposable `/tmp/opencode/p5-archive-recovery-e70p86tb/original-blobs/`: one for
+  each of10actual decision groups plus both adapted fields. All12SHA256 match the recorded original;
+  no real path restored, no live journal opened, no archived code/import/inverse executed. Receipt
+  SHA256 `cef1ffb919ff2f327d7d529ce48043e7415357ef8662e5b72f2a401dd6554338`.
+- Existing disposition/move-tooling/archive-boundary/normalization set **71passed/exit0**; frozen
+  disposition CLI exit0; new2files Ruff exit0 and scoped mypy **2files clean/exit0** (unused test-only
+  ignore removed, no configuration change). Full active Python is running once under ambient umask
+  (`uv run --no-sync pytest -q -p no:cacheprovider`); no Task1 completion yet. Task2 preparation only
+  while waiting, no replay of P4 and no approved-scope expansion.
+
+### P5 Task1 tooling commit / Task2 execution binding — 2026-10-09
+
+- Checker and controls only committed as `268678921286f42203fe4410eb8d8edeb89f4028`
+  (2new files,634lines); manifests/spec/plan and archive sources unchanged. Fresh combined
+  tooling/boundary run **100passed/exit0**; skill Task1 completion rerun **29passed/exit0**.
+  This closes the verification-tool deliverable using the plan's explicit discrepancy-report branch,
+  not RB-02's strict destination gate or the whole P5/goal. Full Python author run remains pending;
+  Task5's independent integrated run is still required.
+- Task2 base `2686789`; initial existing seven-file platform/history/SDK/replay set
+  **46passed/exit0** (`task-2-baseline.log`,74.04s). Actual `analysis_api_local_fixture.py`
+  uses the platform factory; `Task5AiCoreLane.mount` in spatial-data MCP fixtures constructs a
+  router-only `FastAPI`. Preserve both evidence levels, add the missing platform SDK/storage seam
+  rather than replace lower-level coverage.
+- Test contract: full platform app, exact generated SDK Site/WorkArea scopes and opt-in consent,
+  unchanged default fixture auth, real inspected DSMs and bounded worker byte transport. No production
+  source/grants/activation changes; no customer data. A missing platform SDK principal/AI grant,
+  missing full-byte download participant or different Core result/receipt must fail the new tests.
+
+### P5 Task2 reproduced SDK seam findings — 2026-10-09
+
+- Author full Python result received: **6042passed/30skipped/98warnings/0failed**,741.87s,
+  `uv run --no-sync pytest -q -p no:cacheprovider`; source state was1dac44a + exact committed Task1
+  checker/tests1bfa9351/f8ab90ec (now2686789), not final Task2 integration. Log SHA256
+  `be3e79adc9e82b31c51e5802d9b68cf80701a7980ec7aacb38260bbbd8c25ae7`. No P5 final/full-build claim.
+- New named SDK tests first failed at the actual missing harness seams: Analysis returned
+  `CORE_AUTHENTICATION_FAILED`; Spatial Data had no download participant. Added only opt-in
+  generated exact-site/area principals, consent at Site registration, signed test activation,
+  exact current-asset AI grant, connected byte storage and owned private worker/spool. Default
+  fixture scopes/consent stay unchanged. Setup typo (nonexistent consent setter) was diagnosed
+  against SiteStore's actual registration API and corrected in test wiring, not production.
+- **P5-SDK-01 (origin self, reproduced, repair pending):** after harness wiring the Analysis
+  parity test passes; Spatial Data SDK CREATE returns503 `AUDIT_UNAVAILABLE`. Independent probe
+  confirmed open/unsealed journals, real discovery200 and direct jobs.issue success. Actual
+  `composition/routes/external.py:51` passes jobs/grants/sources/downloads/clock but omits
+  `egress=spatial_data.ai_egress`; asset routes correctly bind it. Public issue's `ai_only()` therefore
+  closes the path despite complete verified mounted AI wiring. This is a preserved-contract routing
+  regression that router-only tests cannot expose, not missing rights or a new endpoint.
+- Narrow repair binding: RB-03/04/06; Core composition owner; add only that existing verified egress
+  participant to the existing builder call. Existing SDK test is RED at CREATE, no assertion weakened;
+  affected SDK negatives/full assembly checks must pass. INV-040/060/061 are enforced by the existing
+  Core AI gate; grants/permissions/consent/default activation/wire models remain unchanged. Required
+  source addition is `services/core/src/ksi_core/composition/routes/external.py`; rollback task-owned
+  inverse commit. No HIL, vendor, customer, install or external-effect implication.
+- Task2 Ruling: Spatial Data's worker client is HTTPS-only. Keep that production boundary; a
+  test-only HTTPX forwarding transport invokes the same real loopback platform HTTP server and real
+  source/output byte endpoints, never generated success responses. The parser launcher is the
+  existing generated local sandbox seam, not production containment proof. Cost if wrong: TLS/host
+  containment may remain broken; those gates stay explicitly UNVERIFIED and require scoped host checks.
+
+### P5 Task2 scoped verification snapshot — 2026-10-09
+
+- **P5-SDK-01 fixed in pending source**, one existing-participant argument only. Positive SDK tests
+  now pass through `assemble_platform_app`: Analysis SDK/HTTP use the same result/evidence/analysis ID,
+  epochs bind observed source/report hashes; Data SDK/HTTP use the same job/receipt and a separate HTTP
+  consumer verifies the downloaded hash/size, 2×2 pixels `[[101,99],[100,100]]`, EPSG:5186+5773,
+  transform `[0.1,0,200000,0,-0.1,550000]`, mask255/NoDataNone and empty worker workspace. SDK
+  results contain no forbidden byte/link/key fields. Cut/fill0.01/net0/uncertaintyNone stay provisional;
+  the separate existing cut1/fill5/net+4/uncertainty±5m³ oracle remains untouched.
+- Additional causal negative: `test_platform_spatial_ai_routes_refuse_missing_site_consent`, with
+  only our egress argument removed, failed503/AUDIT_UNAVAILABLE rather than403/AI_EGRESS_DENIED.
+  Restoring the one argument makes asset/list/create/get/cancel deny typed403 without acknowledgement,
+  metadata publication or PUT; default Site consent remains false. This is regression evidence, not
+  a production consent setter or grant change.
+- Harness diagnostics, not product defects: the metadata-only fixture's1MiB cap failed real decoder
+  import (isolated probe `MemoryError`); after using the existing finite1GiB SDK budget the native
+  parser refused the4KiB output cap below its64KiB overhead reservation. Existing generated SDK lane
+  memory/output/workspace budgets now reused, source/pixel bounds unchanged. LocalVersionProvider's
+  PUT seam requires its genuine job store to prove durable reservation; the actual assembled store
+  is bound after assembly, not a fabricated record. No production memory/policy/storage changes.
+- Fresh seven-file matrix **49passed/0failed/exit0** (85.65s), including original negative rights,
+  grant expiry/replacement/ambiguity/READ-only, revoked bytes midstream/no partial success, cancellation,
+  history/currentness and replay controls. `task-2-final-matrix.log` SHA256
+  `b9c433d079165d3f8390cd3d77bfbf9758460463da8888f29e416bcd2406c7c5`.
+  Ruff exit0; scoped mypy2files clean/exit0. No endpoint, schema, permission or live activation changed.
+- Tested pending source on main2686789: test SHA256
+  `c731f2619edd35461d8482c032813844b45eb3a4dd4fcb035d9e9dc6583be854`; route SHA256
+  `d8c06899f07dfcf3f3472083c6bfbc7fc75a8a683a628f3aa5f3e2747fe85c86`.
+  Full author Python started as background `sh_11e840a30001kLnLSkdapZ2s4o`; wait notification,
+  no polling. Task2 remains uncommitted/in progress until full result; Task3 preparation only meanwhile.
+
+### P5 Task3 evidence work alongside full author run — 2026-10-09
+
+- Ruling: collect/read-only static/type/entrypoint/classification evidence and draft the Task3 audit
+  while Task2's full author run finishes — one writer, stable tested Task2 source and independent
+  checks; no Task2 completion or changed contracts inferred. Cost if wrong: stale verification;
+  bind every receipt to the two source hashes and recheck affected evidence after any code change.
+  Task3 base2686789 + pending Task2; only its named audit output is added, close/commit follows Task2.
+- Prepared gate set7commands all exit0: offline lock157packages, Ruff, boundaries140records,
+  static image pins, normalization×2, frozen disposition. Broad mypy fails109errors/14files;
+  immutable pre-P5 source control1dac44a under the same prepared toolchain fails identically
+  (`file,message` multiset,0added/0removed). Scoped changed2files clean. Count alone was not used
+  to prove the older pre-P3 diagnostics:3of14diagnostic-producing files differ since8aaba33.
+- Entrypoint/config/recovery/boundary17-file matrix264pass/2warnings/exit0; retained6utility
+  files79pass/2warnings/exit0. Initial wrong test filename produced exit4/no tests and is excluded
+  from coverage; corrected from actual registered-entrypoint imports. Supported imports and
+  deny-hook controls run; no live credentials/config/listener identity/image/installation.
+- Read-only installed metadata:17KSI distributions,5dangling retired editable roots. Actual old
+  source/.pth targets are absent and deny-hook tests remain closed; this is not a fresh environment.
+- AST/literal/entrypoint trace: checkpoint aggregate helper is active via external_measurement_algorithms;
+  comparison/design/region/verifier/LandXML wrappers are retained import-only historical/unwired
+  utilities with named tests/helper consumers, not active current external jobs. No additional move,
+  deletion or producer revival. Audit `docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md`
+  records exact uses, commands, hashes and separate failed/unverified gates.
+- P5-COMP-01 (origin self, OPEN): base deploy/compose.yaml still has unprofiled NodeODM and historical
+  ksi-odm volume; vm override also references it. No platform worker consumer. It is a retained mixed
+  template, not acquisition-free default deployment; external candidate Compose is separate/no NodeODM.
+  Leave template/volume untouched and propose a bounded default-template/volume-preservation decision,
+  not a new reconstruction service or implicit Docker execution.
+
+### P5 Tasks2–3 stable local evidence boundary — 2026-10-09
+
+- Full author Python notification consumed: **6045passed/30skipped/98warnings/0failed/exit0**,
+  751.23s; log SHA256`0e8885760d74fe25a6b6c9d39aec6f8a3e64df07765c45d07e18a30c10abf695`.
+  Both final source hashes remained c731f261/d8c06899; only those2source paths were staged,
+  staged diff/whitespace verified, committed locally as`c5cca2a` (no push/deploy).
+  Post-commit required seven-file Task2 matrix **49passed/exit0**,87.66s; skill marks Task2 complete.
+  This closes the local preservation/repair deliverable, not customer exports/host/TLS/accuracy.
+- Task3 evidence uses that exact unchanged source state. Seven prepared/static commands0,
+  entrypoint264pass/retained79pass, scoped4changed Python files clean. Broad mypy109/14FAIL remains
+  identical to the immutable pre-P5 source control; fresh dependency/image/CI/host gates remain
+  UNVERIFIED. Audit currently IN PROGRESS only because routing and final independent closeout
+  follow in Tasks4–5; Task3's evidence deliverable is ready for local commit, not RB08 closure.
