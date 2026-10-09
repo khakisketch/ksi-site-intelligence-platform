@@ -2405,3 +2405,15 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
 - Task3 재개는 별도 rail + P7-A2 결정이 필요하다. 하네스 기록 매핑(1회) 결과는
   docs/superpowers/plans/2026-10-09-site-harness-mapping.md에 있다. 기존 계획·Spec·PRD 문구는
   재작성하지 않았고 Goal `active`는 inert로만 표기한다.
+
+### F-01 결정 제안 — 2026-10-09
+
+- 첫-flow 온보딩을 막는 F-01(Site bootstrap·WorkArea grant 소유권) 결정 제안서를 작성했다:
+  docs/superpowers/plans/2026-10-09-f01-site-bootstrap-and-grant-ownership.md
+  (D1 Site 생성 권한, D2 WorkArea grant level, D3 완료 증거; 권장 2안+B안).
+- 근거는 실제 코드/계약 pin이다: auth.py:901-910 검토된 route matrix(`POST /v1/sites` 부재),
+  test_oidc_route_scope.py:224-250 403 pin, registry v1 명시 배열(oidc_subject_registry.py:20-29,
+  104-107), work_areas.py:554-559/605-610 creator lockout, boot-time registry 로드
+  (platform_production.py:83,173). 코드·route·registry·grant는 변경하지 않았다(실행 아님).
+- Human 결정 후 상세 구현 계획(파일/테스트/작업 분해)을 작성해 실행한다. P7-A2/rail,
+  F-02..04, customer/EXT-VAL 게이트는 그대로 OPEN이다.
