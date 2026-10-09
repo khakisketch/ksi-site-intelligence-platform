@@ -1,5 +1,5 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-10-09 (P5 final local evidence/handoff; slice/acceptance unchanged)
+Updated: 2026-10-09 (P6 local template/verification technically closed; slice/acceptance unchanged)
 ## Goal
 물리적 현장 관측을 근거형 Site State/Change로 연결하는 Site Intelligence 기반이다.
 외부 산출물 등록·검사와 공간데이터·고정 분석의 API·MCP 제공은 현재의 두 재사용 경로다
@@ -63,6 +63,20 @@ not whole cleanup/goal/product slice/EXT-VAL/customer/operational acceptance. Th
 [P6 default-template proposal](plans/2026-10-09-platform-only-default-deployment-template.md) is saved
 for Human written review, not executed. Existing volumes/configuration are preserved; no install,
 activation, push/deploy or external delivery occurred.
+2026-10-09 Human subsequently approved the exact P6 plan (SHA256ccee1d92; approval in the rebaseline
+ledger), preserving the sequential method. Task1 source1254747 removes default/VM NodeODM only,
+preserving named volumes/other service maps/executableDockerfile; actual committed127contract checks
+and pinCLI pass. Task2 independent source review0required/3deferredMinor and full6058passed/30skipped/
+98warnings/0failed are received for1254747 (receipt58a17d1f; exact source/log/approval binding in the
+rebaseline ledger). WholeRuff/scoped3mypy/static gates pass; broad109/14 and strict2archive gate still
+FAIL without waiver. Existing service dictionaries/executableDockerfile/volume names preserved;
+P4evidence is unchanged-input REUSED only. This is a declarative template/local verification output,
+not fresh images/boot/CI/host/production activation or first-customer acceptance; all remaining
+full-goal and current-slice gates stay OPEN. P6 local template/verification deliverable is technically
+closed after source/evidence/record reception and affected99consumer checks; this does not close
+RB03/08fresh execution, the native whole objective or human/product acceptance.
+Final record commit is separately checkpointed; no push,
+deployment, installation, volume/data deletion or live credential/grant change.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

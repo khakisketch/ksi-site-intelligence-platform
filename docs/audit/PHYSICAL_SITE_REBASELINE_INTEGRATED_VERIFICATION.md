@@ -1,12 +1,14 @@
 # Physical Site rebaseline — integrated local verification (P5)
 
-Updated: 2026-10-09. **P5 local verification-report deliverable CLOSED; cleanup/whole-product/goal acceptance remains OPEN.**
+Updated: 2026-10-09. **P5 report and P6 local template/verification deliverable CLOSED; cleanup/whole-product/goal acceptance remains OPEN.**
 Authority and actual approval: [rebaseline ledger](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
 Approved [P5 plan](../superpowers/plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
 SHA256 `4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`;
 [spec](../superpowers/specs/2026-10-07-physical-site-platform-rebaseline-design.md)
 SHA256 `14ded50b47f2cb363f0ddf1c8edb00d85b147b3de358a38a266a5d63b388a97c`.
 The frozen proposal header is drafting history, not current approval state.
+P6 was subsequently approved by Human; its source/status update is in §10. The P5 findings below
+remain point-in-time evidence, not an instruction to undo the newer template-only repair.
 
 ## 1. Scope, source and environment
 
@@ -387,7 +389,7 @@ reception-script label/path mismatch was corrected against the report schema; it
 source or count as a product failure. The now-completed source run permits doc-only closeout;
 its affected consumer/link checks and local record commit are recorded separately in the ledger.
 
-### RB adjudication — local evidence is not full acceptance
+### RB adjudication at final P5 source — local evidence is not full acceptance
 
 | ID | Evidence and current disposition | Remaining condition |
 | --- | --- | --- |
@@ -434,8 +436,8 @@ do not cover required customer rights, operating environment, accuracy or unrun 
 
 ## 9. Remaining decisions and responsible owners
 
-1. **Human written review:** [P6 two-task local template/test/docs proposal](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md).
-   Recommended next engineering step; no successor source change before approval.
+1. **P6 written review resolved:** Human approved the [two-task template/test/docs plan](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md);
+   §10 records the template-only repair and independent receipt. No additional runtime effect follows.
 2. **Human/build/operations:** separately scoped isolated dependency sync/image/boot/CI authorization
    and prepared capability. P6 approval is not this authorization and cannot close RB08 by itself.
 3. **Human/lineage owner:** append-only adaptation-lineage decision for the2historical files;
@@ -446,3 +448,56 @@ do not cover required customer rights, operating environment, accuracy or unrun 
    Analysis/worker configuration, selected real external consumer/host and two-cycle acceptance.
    A Spatial Data production assembly/activation interface, if needed, is a separate material contract,
    not an omitted existing environment switch. No generated-data substitute or automatic live activation.
+
+## 10. Approved P6 template-only successor — local technical deliverable CLOSED
+
+Human approved the exact [two-task P6 plan](../superpowers/plans/2026-10-09-platform-only-default-deployment-template.md),
+SHA256`ccee1d92c440e342d0d504902ad06ef782148d66455db321a54bade3d0707425`, through
+“P6 실행 승인 (Recommended)”; actual approval/base/rulings live in the parent ledger, not the
+frozen proposal header. Basea0daa32, Task1source`12547470e5c1abfa2a5b232995429a6c0bf4bb25`.
+
+- Default services now `init-volumes/core/minio`; merged VM adds only Dashboard/Caddy. NodeODM
+  removed from both graphs, without a managed-profile replacement. P5-COMP-01's **declarative
+  template gap** is repaired and independently verified locally; actual fresh boot remains distinct.
+- Current docs bind protected OIDC registry and existing trusted Analysis/external configuration,
+  distinguish local SpatialData assembly, and label old acquisition/key/Copilot/backup/staging
+  instructions historical. No production configuration/credential/mount/worker was provisioned.
+- Existing named volumes, all seven remaining service dictionaries and executableDockerfile stay
+  unchanged. Historicalksi-odm declaration remains unused, with explicit no deletion/rename authority.
+- RED service/mount/config/pin4fail/9pass→GREEN13; actual committed exact nine-target matrix
+  **127passed/exit0/7.70s**, pins0. A precommit release evidence mismatch1fail/126pass is preserved:
+  generator used immutable oldHEAD inventory10 while stage scanned working9, only NodeODM differed.
+  Actual committed revision passes the unchanged producer/consumer guard; no release-schema/tool waiver.
+- Independent whole-P6 source review has0Critical/0Important/3nonblocking Minor findings, each
+  deferred/adjudicated in the parent ledger: historical cache-line qualifier, historical imperative
+  recovery wording and a test-only hypothetical diagnostic line. No Reviewer test/pixel run claimed.
+- Independent Runner finalized `2026-10-09T07:02:30Z` at1254747,45unchanged pre/post inputs;
+  all11commands terminal. ReceiptSHA
+  `58a17d1f2c001df8bee1532389b07808df7ae50236a8ffab95dddfcd12ca5510`, source-reviewSHA
+  `d5aaa400e21d76e00cca6b9daeeb50650fa7ef45527e03bf917b44fdfb9f3fa4`, Primary receptionSHA
+  `1f5bfc9ec0b8cd9a2c9c0887583d74814bea81f7c3ad4ca94dfc80cd4a42d189`. Exact commands/raw-log
+  hashes and snapshot identity are in the parent ledger. Step-limit recovery finalized evidence only;
+  it did not repeat tests or overwrite the finished driver's outputs.
+
+| P6 gate at1254747 | Actual outcome | Boundary |
+| --- | --- | --- |
+| Full active Python | **6058passed/30skipped/98warnings/0failed**,753.84s; rawlogSHA `f233165ce1fa2d9998af679ccdde7cee074a8eebdff32b394a5b2cc8588b717c` | Prepared local software, not fresh runtime/customer acceptance |
+| Exact Task1 matrix / normalization-pins | 127passed/7.71s;37passed/0.76s; no Compose skip | Example-only actual config merge; no image/container/volume operation |
+| Offline lock / boundaries / R3 / pins / whole Ruff / scoped mypy | All exit0;157packages/140inventory/3typechecked files | No dependency sync/install, image build or CI dispatch |
+| Broad mypy | **FAILED**,109errors/14files;0added/0removed exact error multiset | No broad type pass or hygiene waiver |
+| Strict archive | **FAILED**,251original/249destination matches;2same adaptations/4findings | Original inverse hashes and strict checker unchanged |
+| Preserved source/state / links | Seven service hashes, named-volume maps and executableDockerfile match base/plan;38links/0broken | No provisioned auth/config/worker or live state change |
+| P4 source/render/functional evidence | Matching353workspace/352Git/22render inputs(18PNGs)/10verification inputs/report | **REUSED**, not fresh browser/design/real-byte/customer verification |
+
+- Raw `-rs` gives28skip events weighted to30tests: S3-live10, optionalmodel12, historical geo-golden5,
+  genuinebundle1, realstream1, root-onlyACL1. The receipt's bucket values count events, not weighted
+  tests (S3=8events/10tests); Primary reception derives the latter from actual log. No skipped test is
+  a success or coverage of missing production conditions.
+- Task2 record scope/links/frozen acceptance and affected99consumer checks are verified in the
+  parent-ledger closeout. This closes only the local template/verification deliverable. No task-owned
+  source remains unfinished; the next fresh build/run evidence requires an exact isolated-environment
+  plan and separately explicit effect approval. Existing runtime/host/customer/lineage gates stay OPEN.
+- RB03/08 still require applicable fresh build/run evidence; broad109/14 and strictarchive2gates
+  remain failed. F01bootstrap/grants and F02–04protected runtime/permittedt0/t1/t2/rights/consumer+host/
+  actual repeat acceptance remain OPEN. P6 approval excludes installation/image lifecycle/CI dispatch/
+  live activation/deployment and cannot reduce the full objective or close customer/EXT-VAL acceptance.

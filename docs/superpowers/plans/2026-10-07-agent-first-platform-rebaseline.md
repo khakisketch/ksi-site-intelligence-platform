@@ -2028,3 +2028,149 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   17local Markdown links/0broken and whitespace0; eight read-only contract/tool/env/lock inputs match
   HEAD. No sync/install/image lifecycle/CI/credentials/volume or service operation. Commit candidate,
   then immediately run unchanged full Task1 matrix/pins against that real revision before Task2 freeze.
+
+### P6 Task1 committed checks / Task2 independent freeze
+
+- Candidate commit `12547470e5c1abfa2a5b232995429a6c0bf4bb25` contains exactly the10whitelisted
+  paths; staged bytes/index/whitespace inspected. Same exact nine-target Task1 matrix at actual HEAD
+  **127passed/exit0/7.70s**, including unchanged canonical release producer/consumer and committed
+  move-tooling. Runtime pin CLI exit0. The release/source mismatch closes by correct revision binding,
+  not a schema/script/test change, stashed source or false-clean Git override by Primary.
+- Task1 local template/test/doc output is complete; full independent P6 verification/review is still
+  required. Actual example-only Compose config proves the five-service merged graph, private VM
+  networks and Caddy-only80/443 publication; no live image/container/volume operation. Existing
+  service maps, executableDockerfile and historical-volume names pass frozen preservation controls.
+- Task2 assignment: one read-only source Reviewer over a0daa32..1254747 and approved spec/plan;
+  independent Test Runner at1254747 plus only these record-status/assignment changes. Freeze current
+  required-file hashes before dispatch; no product/doc/index/HEAD writer while checks run. Test Runner
+  owns actual commands/results/ambientumask and pre/post hashes, not an author summary. Fullpytest,
+  exactTask1matrix/normalization/pins, offline lock/boundaries/R3, Ruff, scoped3/broad-control mypy,
+  strictarchive251/249 and P4matching-input reuse are required; no duplicate full run or live browser.
+- Security/material/external gates unchanged: no install/sync/pull/build/up/run/deploy/CI/grant/
+  credentials/equipment/customer action. Failed109type/2archive and unverified fresh runtime/host/
+  first-customer gates remain explicit. Reviewer findings are advice; actual affected checks and Primary
+  receipt audit decide scoped technical closure. Native full goal and EXT-VAL acceptance remain OPEN.
+
+### P6 independent receipt reception and local adjudication — 2026-10-09
+
+- Test Runner `ses_ee09b654effe528h8QkONWb2F0` completed all11commands at source
+  `12547470e5c1abfa2a5b232995429a6c0bf4bb25`. Its initial return exhausted its step budget after
+  execution, before the final receipt. Same-seat continuation finished only hashes/links/source-state/
+  evidence finalization; no test/tool/full-suite replay. Receipt finalized `2026-10-09T07:02:30Z`:
+  `/tmp/opencode/p6-independent-verification-20261009/receipt.json`, SHA256
+  `58a17d1f2c001df8bee1532389b07808df7ae50236a8ffab95dddfcd12ca5510`.
+- Pre/post HEAD1254747, empty index, ambientumask0002 and exactly3record-status paths matched;
+  pendingdiffSHA `92b52945cdda19384ed22df8ea41a9915f4347f467d3fe8ac05245341cf77bb2` and
+  all45snapshot inputs matched pre/post. SnapshotSHA
+  `b8574812b191d3c08ab75e9110f33299f8938824d5ad45fe08f6e474ab08ef42`. No source/doc writer
+  overlapped execution/finalization. The receipt is point-in-time evidence, not a future-HEAD claim.
+
+Exact independent commands/results (raw logs in the same narrow directory as the receipt):
+
+| ID / actual command | Actual exit/result | Raw log SHA256 |
+| --- | --- | --- |
+| 01 `uv run --no-sync pytest -q -p no:cacheprovider -rs` | 0; **6058passed/30skipped/98warnings/0failed**,753.84s pytest/755.46s driver | `f233165ce1fa2d9998af679ccdde7cee074a8eebdff32b394a5b2cc8588b717c` |
+| 02 `uv run --no-sync pytest -q tests/contract/test_platform_deployment_template.py tests/contract/test_vm_deployment_contract.py tests/contract/test_deploy_env_contract.py tests/contract/test_runtime_image_pins.py tests/contract/test_release_evidence.py tests/contract/test_external_runtime_deployment_contract.py::test_release_image_binding_accepts_the_canonical_nodeodm_digest_only_exception tests/contract/test_acquisition_archive_boundary.py tests/contract/test_platform_boot_switch.py tests/contract/test_physical_site_move_tooling.py` | 0;127passed/7.71s | `84ea953d2fc6f4e7fb2298feaeec882038aca2ed5e27794d0d07adb7734a0e58` |
+| 03 `uv run --no-sync pytest -q tests/contract/test_repository_normalization.py tests/contract/test_runtime_image_pins.py` | 0;37passed/0.76s | `58f961c52e25edfb35a65a3466333aa09b155d2d633179c681d427450ed160f3` |
+| 04 `uv lock --offline --check` | 0;157packages | `2b0b79c2a879b42cb8b3d1713d265d83991e20075b94451232bc8bf6d1fa3acc` |
+| 05 `uv run --no-sync python tools/check_core_module_boundaries.py` | 0;140inventory records | `0483fb03a7ccab5e3bc6c01600e182cda5866ac03a3d9b6e4697d5d2fe870634` |
+| 06 `uv run --no-sync python tools/validate_repository_normalization.py --check-r3-migration` | 0;R0–R3contract | `3e23f59a39681d7997bc7a7c45a275c3fe433e7a2ec6cb92ec928de88621c052` |
+| 07 `uv run --no-sync python tools/check_runtime_image_pins.py` | 0 | `56faa80feaa8d7183e05394773ae966a87f0499f59e26bab13339e17393d5db3` |
+| 08 `uv run --no-sync ruff check .` | 0 | `fe9902ddda7cef3ceeb61d97ca27dd2152aab325a6f6c7397267e2bcb4e49123` |
+| 09 `uv run --no-sync mypy --follow-imports=silent tests/contract/test_platform_deployment_template.py tests/contract/test_vm_deployment_contract.py tests/contract/test_runtime_image_pins.py` | 0;3files clean | `546b16bf1a4c12f0e5d38bfec54284d7d3928dff359c1a905039f504e1b412ed` |
+| 10 `uv run --no-sync mypy packages services tests tools` | **1/FAILED**;109errors/14files;0added/0removed error multiset | `8f38d6ac3be4f58538076fe33a7c09767f2d1937e13bf5ae56b84ef5715edf65` |
+| 11 `uv run --no-sync python tools/verify_physical_site_archive.py --root . --execution docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_v1.json --extras docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_EXTRAS_v1.json` | **1/FAILED**;251original/249destination matches;2adaptation rows/4findings | `e85b106b60949c8fcd93648a716681d7c9fb063c53a6a3c402ebd907f8885c22` |
+
+- Thirty skips are coverage not exercised, not passes. Raw `-rs` records28events/30tests: S3-live10
+  (one aggregated3case event), optionalmodel12, historical geo-golden5, genuinebundle1, realstream1,
+  root-onlyACL1. Receipt `skip_buckets` counts events (S3=8), not weighted tests; Primary's raw-log
+  reception records the weighted count10. No Docker/Compose skip: the example-only merge test ran.
+- Same broad controlSHA `546479e8501427592ac20d842058ad7c424a76171e0b7f72898052cf5d4378ef`:
+  exact `(file,message)` error Counter identical, not just109count equality. Archive extras55/56 retain
+  both `GIT_OBJECT_MISMATCH` and `DESTINATION_HASH_MISMATCH`; original manifests/strict tool unchanged.
+- Seven service semantic hashes, all named-volume maps and executableDockerfile hash match plan/base.
+  Relative-links38/0broken. P4matching353workspace/352Git/22render inputs(18PNGs)/10verification inputs
+  and report5635f47b are **REUSED**, not fresh browser/design/build evidence or real-customer flow.
+- Whole-P6 Reviewer `ses_ee09cd9e1ffenXB2pcw4yOVJOD` read the actual ten-path diff/factory/contract
+  bindings and five review focuses;0Critical/0Important/3Minor. Report
+  `/tmp/opencode/p6-independent-review-20261009/P6-REVIEW-20261009.md`, SHA256
+  `d5aaa400e21d76e00cca6b9daeeb50650fa7ef45527e03bf917b44fdfb9f3fa4`. No test/Compose/pixel execution
+  claimed by Reviewer. It recomputed key snapshot entries only; Runner/Primary matched all45.
+- Primary reception `/tmp/opencode/p6-primary-evidence-reception.json`, SHA256
+  `1f5bfc9ec0b8cd9a2c9c0887583d74814bea81f7c3ad4ca94dfc80cd4a42d189`, verified actual receipt/report/
+  all11logs/all45inputs/pendingdiff, broad Counter and strict findings. This is reception, no replay.
+
+#### Final source-review disposition and set-aside rulings
+
+After actual prose/source inspection, all three findings remain nonblocking Minor; no product/source
+repair is inferred from optional advice. Historical no-execution/no-delete warnings already apply.
+
+- Final: minor (deferred), **P6-M01** (origin Reviewer): `docs/ops/DEPLOYMENT.md:265` has the historical
+  regenerable-cache line without a repeated inline no-delete qualifier. Current§0 and historical§1–9
+  warning expressly prohibit applying it to extant unique volumes. Follow-up prose improvement only.
+- Final: minor (deferred), **P6-M02** (origin Reviewer): `docs/ops/VM_DEPLOYMENT_READINESS.md:81–95`
+  retains imperative wording below a no-execution historical header. Future record-polish should use
+  descriptive historical voice; no script/lifecycle or current recovery promotion is authorized.
+- Final: minor (deferred), **P6-M03** (origin Reviewer): canonical-digest test diagnostic `line=1`
+  follows the exact approved plan and affects only a hypothetical violation location; it is not a
+  lookup, pin exception or passing guard. Future optional test-triage annotation may name real line76.
+
+Each Reviewer “Declined to judge” item is adjudicated in its reported order:
+
+1. Final: Ruling: execution/types/archive/P4hashes — use independent Runner's actual terminal logs and
+   source-bound receipt above, not Reviewer counts — cost if wrong: technical closure must reopen.
+2. Final: Ruling: fresh sync/images/boot/CI/host/TLS/UDS/ACL — remain UNVERIFIED; P6 excludes effects —
+   cost if wrong: independent build/run readiness remains unproved, never a production-ready claim.
+3. Final: Ruling: permittedt0/t1/t2/rights/grants/accuracy/customer acceptance — retain F01–04 and
+   actual two-cycle requirement; do not substitute generated fixtures — cost if wrong: product goal unmet.
+4. Final: Ruling: `.env.example` historical fields — keep exact file-map exclusion plus current warning;
+   no provisioned files/mounts inferred — cost if wrong: future ops preparation must resolve stale inputs.
+5. Final: Ruling: external/synthetic candidate Compose — unchanged separate scopes, not proof of current
+   default/VM readiness — cost if wrong: later candidate verification remains needed, no lifecycle now.
+6. Final: Ruling: analysis-pilot NodeODM/cache — retained historical/out-of-default evidence, not a new
+   platform dependency or cleanup target — cost if wrong: independent future audit, never silent deletion.
+7. Final: Ruling: precommit release refusal — accept read-only10→9probe plus actual committed127/full6058
+   passing unchanged guard — cost if wrong: source-bound release evidence gate reopens, no waiver.
+8. Final: Ruling: P4pixels/mobile/aesthetics — unchanged-source prior design/functional evidence only;
+   no new visual judgment, runtime or real-byte claim — cost if wrong: changed-source design review needed.
+9. Final: Ruling: final3record prose — Primary checks scoped diffs/links/frozen milestone and acceptance
+   fields, then affected committed-HEAD consumers — cost if wrong: repair those records before closure.
+10. Final: Ruling: signed-Mission/device semantics — historical invariants stay immutable; no acquisition
+    execution or safety promotion — cost if wrong: historical contract/replay verification remains required.
+
+- Task2 Ruling: step-limit recovery continues the same Runner only for missing finalization, reuses
+  matching terminal outputs and runs scoped final record checks instead of replaying the755second
+  suite — why: actual commands are complete and source unchanged — cost if wrong: incomplete evidence
+  would block closure; immutable logs/pre/post/input checks are the control, not a guessed pass.
+- Local record closeout owns only parent ledger/audit/product-state; ignored checkpoint/skill outputs
+  stay uncommitted. No task-created worktree exists; four foreign worktrees and narrow scratch evidence
+  are preserved for review, no broad cleanup. Full objective/RB02/03/08/EXT-VAL/customer/operational
+  acceptance remains OPEN; source-bound local report closure is not product acceptance or delivery.
+
+### P6 local deliverable closure / remaining authorization boundary
+
+- P6's two approved tasks are technically complete locally: acquisition-free default/VM template,
+  unchanged state/service/runtime/contract identities and independent source/software/static evidence
+  with failed/unverified gates explicitly preserved. This closes P5-COMP-01's declarative graph gap,
+  not RB03/08fresh execution or the full goal/customer/EXT-VAL acceptance.
+- Fresh scoped record checks:42nonrecord inputs/11rawlogs matched; spec/approved P5/P6 plans and
+  pre-P6 ledger history unchanged;38relative links/0broken and whitespace0; product milestones/current
+  slice/acceptance/backlog bytes unchanged. Check receiptSHA
+  `f72e4213e79cc0c0a279043159935a39dbdb3d2d660ef6dc41f0075d466791f6`.
+- Affected record-consumer command at1254747 + only3final record paths:
+  `uv run --no-sync pytest -q -p no:cacheprovider tests/contract/test_physical_site_product_boundary.py tests/contract/test_physical_site_disposition.py tests/contract/test_repository_normalization.py tests/contract/test_acquisition_archive_boundary.py tests/contract/test_physical_site_move_tooling.py`
+  → **99passed/exit0/6.65s**, logSHA
+  `b054eda15449751545844247d79093038b236b659e692493a8ea065383a2b7b3`.
+  The local closeout commit contains exactly3record paths; final HEAD/clean-index/checkpoint and
+  committed-HEAD consumer reception follow this checked record revision, not a repeated full suite.
+- Finishing uses the already authorized original checkout/local main target, no menu/new merge/push
+  permission and no foreign-worktree cleanup. Narrow ignored proof is retained for review; its hashes,
+  sanitized results and limits are durable above. No dependency/runtime/image/CI/credential/data/
+  device/customer effect occurred; local commit is not external delivery.
+- Remaining goal-serving work requires its real input/decision rather than fixture repetition:
+  isolated fresh dependency/image/boot authorization and prepared capability (Human/build/ops),
+  append-only adaptation-lineage decision (Human/lineage), scoped Site/WorkArea-bootstrap ownership
+  (Human/security/product), permitted same-Site t0/t1/t2/rights plus selected consumer/host and protected
+  runtime configuration (Human/customer/ops). Fresh build/run is the next recommended evidence gate;
+  an exact isolated-environment plan and explicit effect approval are required before running it.
+  No successor implementation, runtime setup, blanket grant or product-state reprioritization is inferred.
