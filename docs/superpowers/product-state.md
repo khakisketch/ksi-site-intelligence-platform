@@ -84,6 +84,9 @@ actual committed record consumers99passed/6.36s. The
 not executed. It requests only new isolated locked installs/candidate builds/synthetic Core-storage
 auth/restart evidence. No existing environment/data/grant mutation or production activation is
 authorized; F01–04, strict archive/broad type, customer/EXT-VAL/native whole-goal gates stay OPEN.
+Human subsequently approved exact P7 planSHAfba7776e and its bounded local effects; execution approval
+and resource preflight are in the rebaseline ledger. This does not authorize production activation or
+alter any customer/slice/milestone gate; fresh installation/image/runtime results are not yet received.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

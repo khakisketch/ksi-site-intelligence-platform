@@ -2229,3 +2229,21 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   `de25cad15987f1566092d6fe7d26a133606008838c00e1a7b2f979f15a940289`.
   This verifies planning records, not any proposed install/build/runtime command; the full suite
   remains the received source-bound P6 evidence and is not repeated for a documentation proposal.
+
+### P7 written execution/effect approval — 2026-10-09
+
+- Human answered **“P7 실행 승인 (Recommended)”** to the rendered written-review question for
+  [the exact P7 plan](2026-10-09-isolated-fresh-platform-verification.md), SHA256
+  `fba7776eb022ffb3e87f7c062f25cfb4f98a18bbb5311d786a48aff568f18909`, recorded at0b31edb.
+  This explicitly approves the plan's bounded detached worktree, new locked scratch/image dependency
+  downloads/installs, three local image builds, synthetic temporary credentials and isolated Core/storage
+  boot/restart/owned-container-network teardown. Existing environment/state/grant protection and all
+  no-host-install/no-publication/no-production/no-device/customer boundaries remain unchanged.
+- Preserve sequential inline execution and independent final Reviewer/Test Runner; no execution-method
+  re-selection. Frozen product source remains4a0a08e, local integration target original main. First action
+  is resource/capability preflight; unavailable prepared capability or60GiB/32GiB headroom is a reported
+  blocker, not permission to install tools, prune other work or change approved pins/security controls.
+- Task1 Ruling: this is immutable-source verification, not production implementation; use the plan's
+  real installation/import/test assertions rather than an artificial TDD failure — approved plan explicitly
+  states that distinction — cost if wrong: a source change would require its own scoped RED/GREEN repair
+  authorization and new source binding, not be hidden in this trial. No product code repair is authorized.
