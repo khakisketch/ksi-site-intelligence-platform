@@ -27,8 +27,11 @@ input bytes each fail closed.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from types import SimpleNamespace
 from typing import Any
 
@@ -100,27 +103,60 @@ def _record(
     )
 
 
-def _registry() -> AuthRegistry:
-    return AuthRegistry(
-        [
-            _record(_OP_TOKEN, "platform-flow-operator", "org-a"),
-            _record(_V2_OP_TOKEN, "analysis-local-operator", "org-a"),
-            _record(
-                _WORKER_TOKEN,
-                "platform-flow-analysis-worker",
-                "org-a",
-                kind=PrincipalKind.ANALYSIS_WORKER,
-                role=None,
-            ),
-            _record(
-                _VALIDATION_WORKER_TOKEN,
-                "platform-flow-validation-worker",
-                "org-a",
-                kind=PrincipalKind.PROCESSING_WORKER,
-                role=None,
-            ),
-            _record(_FOREIGN_TOKEN, "platform-flow-foreign", "org-b"),
-        ]
+def _registry(*, sdk_clients: bool = False) -> AuthRegistry:
+    records = [
+        _record(_OP_TOKEN, "platform-flow-operator", "org-a"),
+        _record(_V2_OP_TOKEN, "analysis-local-operator", "org-a"),
+        _record(
+            _WORKER_TOKEN,
+            "platform-flow-analysis-worker",
+            "org-a",
+            kind=PrincipalKind.ANALYSIS_WORKER,
+            role=None,
+        ),
+        _record(
+            _VALIDATION_WORKER_TOKEN,
+            "platform-flow-validation-worker",
+            "org-a",
+            kind=PrincipalKind.PROCESSING_WORKER,
+            role=None,
+        ),
+        _record(_FOREIGN_TOKEN, "platform-flow-foreign", "org-b"),
+    ]
+    if sdk_clients:
+        records.extend(
+            [
+                PrincipalTokenRecord(
+                    token_sha256=hashlib.sha256(b"platform-flow-analysis-mcp").hexdigest(),
+                    principal=_sdk_principal(PrincipalKind.ANALYSIS_MCP_CLIENT),
+                ),
+                PrincipalTokenRecord(
+                    token_sha256=hashlib.sha256(b"platform-flow-spatial-mcp").hexdigest(),
+                    principal=_sdk_principal(PrincipalKind.SPATIAL_DATA_MCP_CLIENT),
+                ),
+                _record(
+                    "platform-flow-spatial-worker",
+                    "platform-data-worker",
+                    "org-a",
+                    kind=PrincipalKind.SPATIAL_DATA_WORKER,
+                    role=None,
+                ),
+            ]
+        )
+    return AuthRegistry(records)
+
+
+def _sdk_principal(kind: PrincipalKind) -> Principal:
+    return Principal(
+        principal_id="platform-flow-analysis-mcp"
+        if kind == PrincipalKind.ANALYSIS_MCP_CLIENT
+        else "platform-flow-spatial-mcp",
+        kind=kind,
+        role=None,
+        device_id=None,
+        organization_id="org-a",
+        allowed_site_ids=frozenset({"site-a"}),
+        allowed_work_area_ids=frozenset({"wa-site-a-0001"}),
     )
 
 
@@ -134,7 +170,19 @@ def _op_headers(key: str | None = None) -> dict[str, str]:
 class _PlatformFlowContext:
     """Platform app plus the real-participant material the lane/worker need."""
 
-    def __init__(self, tmp_path: Path, *, with_spatial_data: bool = False) -> None:
+    spatial_provider: Any
+    spatial_workspace: Path
+    spatial_object_server: ThreadingHTTPServer
+    spatial_object_thread: Thread
+    spatial_object_origin: str
+
+    def __init__(
+        self,
+        tmp_path: Path,
+        *,
+        with_spatial_data: bool = False,
+        sdk_clients: bool = False,
+    ) -> None:
         self.now = datetime.now(UTC).replace(microsecond=0)
         self.data_dir = tmp_path
         self.storage = LoopbackObjectStorage()
@@ -150,21 +198,53 @@ class _PlatformFlowContext:
         )
         spatial: Any = None
         if with_spatial_data:
-            spatial = _spatial_data_config(self.now)
+            spatial = (
+                _sdk_spatial_data_config(self) if sdk_clients else _spatial_data_config(self.now)
+            )
+        analysis_config = _local_graph_config(self.envelope)
+        activation = None
+        if sdk_clients:
+            from test_external_analysis_activation import _write_activation
+
+            activation = _write_activation(
+                tmp_path / "generated-analysis-activation",
+                bindings={
+                    "organization_id": "org-a",
+                    "policy": analysis_config.policy,
+                    "runtime": analysis_config.runtime,
+                    "resource_envelope": self.envelope,
+                    "worker_principal": _record(
+                        _WORKER_TOKEN,
+                        "platform-flow-analysis-worker",
+                        "org-a",
+                        kind=PrincipalKind.ANALYSIS_WORKER,
+                        role=None,
+                    ).principal,
+                },
+                activation_fields={
+                    "issuedAt": (self.now - timedelta(minutes=1)).isoformat(),
+                    "validUntil": (self.now + timedelta(hours=1)).isoformat(),
+                },
+            )[2]
         try:
             self.app = assemble_platform_app(
                 tmp_path,
                 journal=self._journal,
                 opened=self.opened,
-                auth_registry=_registry(),
+                auth_registry=_registry(sdk_clients=sdk_clients),
                 evidence_storage=self.storage,
                 external_result_workflow=workflow,
-                external_analysis_local_graph=_local_graph_config(self.envelope),
+                external_analysis_local_graph=analysis_config,
+                analysis_activation=activation,
                 spatial_data=spatial,
             )
+            if sdk_clients and with_spatial_data:
+                # LocalVersionProvider checks the durable output reservation
+                # before issuing PUT. Bind it to the actual assembled store,
+                # not a router-only fixture or a synthetic journal.
+                self.spatial_provider.graph.store = self.app.state.spatial_data.jobs
         except BaseException:
-            for journal in reversed(self.opened):
-                journal.close()
+            self.close()
             raise
         self.site_id = "site-a"
         self.work_area_id = ""
@@ -180,8 +260,193 @@ class _PlatformFlowContext:
         return item
 
     def close(self) -> None:
+        if hasattr(self, "spatial_object_server"):
+            self.spatial_object_server.shutdown()
+            self.spatial_object_server.server_close()
+            self.spatial_object_thread.join(timeout=2)
         for journal in reversed(self.opened):
             journal.close()
+
+
+def _sdk_spatial_data_config(ctx: _PlatformFlowContext) -> Any:
+    """Generated storage/currentness connected to the actual platform participants."""
+    import base64
+
+    from ksi_core.composition.spatial_data_graph import (
+        SpatialDataLocalAssemblyConfig,
+        SpatialDataLocalGraphConfig,
+    )
+    from ksi_core.domains.external.delivery.storage import SpatialDataObjectObservation
+    from ksi_event_contracts.processing_job import ExecutionLocus
+    from spatial_data_fixture import make_activation, make_envelope, make_policy, make_runtime
+    from spatial_data_http_fixture import LocalVersionProvider
+    from spatial_data_job_fixture import LocalJobAuthority
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_: Any) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            assert self.path == "/source" and "Authorization" not in self.headers
+            payload = ctx.spatial_provider.source
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_PUT(self) -> None:
+            assert self.path == "/output" and "Authorization" not in self.headers
+            payload = self.rfile.read(int(self.headers["Content-Length"]))
+            provider = ctx.spatial_provider
+            expected = provider.expected
+            assert expected is not None
+            assert len(payload) == expected.size_bytes
+            assert "sha256:" + hashlib.sha256(payload).hexdigest() == expected.sha256
+            assert (
+                self.headers["x-amz-checksum-sha256"]
+                == base64.b64encode(bytes.fromhex(expected.sha256[7:])).decode()
+            )
+            provider.payload = payload
+            provider.observation = SpatialDataObjectObservation(
+                expected.object_key,
+                "platform-output-v1",
+                len(payload),
+                expected.sha256,
+                "image/tiff",
+            )
+            provider.uploads += 1
+            self.send_response(200)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+    ctx.spatial_provider = None
+    ctx.spatial_workspace = ctx.data_dir / "spatial-worker"
+    ctx.spatial_workspace.mkdir(mode=0o700)
+    spool = ctx.data_dir / "spatial-spool"
+    spool.mkdir(mode=0o700)
+    ctx.spatial_object_server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    ctx.spatial_object_thread = Thread(target=ctx.spatial_object_server.serve_forever, daemon=True)
+    ctx.spatial_object_thread.start()
+    ctx.spatial_object_origin = f"http://127.0.0.1:{ctx.spatial_object_server.server_port}"
+    # The tiny metadata-only fixture cap (1 MiB) cannot even import the real
+    # raster decoder, and its 4 KiB output cap is below the native parser's
+    # 64 KiB overhead reservation. Reuse the existing generated SDK lane's
+    # finite memory/workspace/output budgets; source/pixel bounds stay narrow.
+    policy = make_policy(
+        stream_chunk_bytes=512,
+        max_output_bytes=1_000_000,
+        max_stream_bytes=1_000_000,
+        resource_envelope=make_envelope(
+            max_memory_bytes=1_073_741_824,
+            max_workspace_bytes=6_000_000,
+            max_output_bytes=1_000_000,
+        ),
+    )
+    runtime = make_runtime()
+    activation = make_activation(
+        organization_id="org-a",
+        worker_principal_id="platform-data-worker",
+        worker_instance_id="platform-data-instance-1",
+        policy_digest=policy.policy_digest,
+        runtime_digest=runtime.runtime_digest,
+        trusted_endpoint_origins=(ctx.spatial_object_origin,),
+        valid_from=ctx.now - timedelta(minutes=1),
+        valid_until=ctx.now + timedelta(hours=1),
+    )
+
+    def storage(reconstruction: Any) -> Any:
+        ctx.spatial_provider = LocalVersionProvider(
+            SimpleNamespace(reconstruction=reconstruction),
+            ctx.spatial_object_origin,
+            b"",
+        )
+        return ctx.spatial_provider
+
+    return SpatialDataLocalAssemblyConfig(
+        config=SpatialDataLocalGraphConfig(
+            policy=policy,
+            runtime=runtime,
+            activation=activation,
+            processing_location=ExecutionLocus.SITE_ONPREM,
+            clock=lambda: ctx.now,
+        ),
+        build_storage=storage,
+        build_currentness=lambda coordinator: LocalJobAuthority(
+            SimpleNamespace(
+                coordinator=coordinator,
+                principal=_sdk_principal(PrincipalKind.SPATIAL_DATA_MCP_CLIENT),
+            )
+        ),
+        spool_root=spool,
+    )
+
+
+def _run_platform_spatial_worker(ctx: _PlatformFlowContext, core_origin: str) -> None:
+    """The HTTPS-only worker client forwards to real loopback Core; no success bodies."""
+    import httpx
+    from ksi_processing_controller.external_object_streams import (
+        ExternalObjectTransportPolicyV1,
+        TrustedObjectEndpointV1,
+    )
+    from ksi_processing_controller.spatial_data_core_client import SpatialDataCoreClient
+    from ksi_processing_controller.spatial_data_sandbox import SpatialDataSandbox
+    from ksi_processing_controller.spatial_data_worker import run_once
+    from spatial_data_http_fixture import GeneratedLauncher
+
+    wiring = ctx.app.state.spatial_data
+    with httpx.Client(base_url=core_origin, trust_env=False) as direct:
+
+        def forward(request: httpx.Request) -> httpx.Response:
+            assert request.url.host == "core.invalid"
+            response = direct.request(
+                request.method,
+                request.url.raw_path.decode(),
+                headers=dict(request.headers),
+                content=request.read(),
+            )
+            return httpx.Response(
+                response.status_code, headers=response.headers, content=response.content
+            )
+
+        with SpatialDataCoreClient(
+            base_url="https://core.invalid",
+            token="platform-flow-spatial-worker",
+            activation=wiring.config.activation,
+            policy=wiring.config.policy,
+            runtime=wiring.config.runtime,
+            clock=lambda: ctx.now,
+            maximum_response_bytes=wiring.config.policy.max_snapshot_bytes,
+            request_timeout_seconds=5,
+            transport=httpx.MockTransport(forward),
+        ) as core:
+            sandbox = SpatialDataSandbox(
+                launcher=GeneratedLauncher(None),
+                clock=lambda: ctx.now,
+                wall_timeout_seconds=10,
+                heartbeat_interval_millis=50,
+            )
+            try:
+                assert run_once(
+                    core=core,
+                    sandbox=sandbox,
+                    transport_policy=ExternalObjectTransportPolicyV1(
+                        endpoints=(
+                            TrustedObjectEndpointV1(
+                                origin=ctx.spatial_object_origin,
+                                addresses=("127.0.0.1",),
+                            ),
+                        ),
+                        max_header_bytes=4096,
+                        max_object_bytes=1000000,
+                        max_chunk_bytes=512,
+                    ),
+                    worker_instance_id="platform-data-instance-1",
+                    clock=lambda: ctx.now,
+                    workspace_root=ctx.spatial_workspace,
+                    heartbeat_interval_millis=100,
+                )
+            finally:
+                sandbox.close()
 
 
 def _spatial_data_config(now: datetime) -> Any:
@@ -231,7 +496,7 @@ def _spatial_data_config(now: datetime) -> Any:
     )
 
 
-def _seed_site_and_area(ctx: _PlatformFlowContext) -> str:
+def _seed_site_and_area(ctx: _PlatformFlowContext, *, ai_egress_allowed: bool = False) -> str:
     app = ctx.app
     registered = app.state.site_store.register(
         "site-a",
@@ -243,6 +508,7 @@ def _seed_site_and_area(ctx: _PlatformFlowContext) -> str:
             transform_version="fixture-v1",
         ),
         organization_id="org-a",
+        ai_egress_allowed=ai_egress_allowed,
         actor="platform-flow-operator",
         now=ctx.now - timedelta(minutes=30),
     )
@@ -1095,3 +1361,320 @@ def test_platform_route_inventory_has_no_flight_or_managed_mutation_surface(
             assert not (segments & denied_segments), path
     finally:
         ctx.close()
+
+
+@pytest.fixture
+def platform_sdk_flow(tmp_path: Path) -> Iterator[SimpleNamespace]:
+    """Opt-in generated SDK identities/consent/grants on the real platform app."""
+    ctx = _PlatformFlowContext(tmp_path, with_spatial_data=True, sdk_clients=True)
+    try:
+        area_id = _seed_site_and_area(ctx, ai_egress_allowed=True)
+        with TestClient(ctx.app) as client:
+            baseline_order = _store_order(
+                ctx, _create_external_order(client, area_id, key="sdk-baseline")["workOrderId"]
+            )
+            current_order = _store_order(
+                ctx, _create_external_order(client, area_id, key="sdk-current")["workOrderId"]
+            )
+            baseline_revision, baseline_subject, current_revision, current_subject = (
+                _seal_two_dsm_revisions(ctx, client, baseline_order, current_order)
+            )
+        policy, manifest = _admit_real_inspection_policy(ctx, (baseline_subject, current_subject))
+        view = _lane_view(
+            ctx,
+            baseline_revision,
+            baseline_subject,
+            current_revision,
+            current_subject,
+            policy,
+            manifest,
+        )
+        with _CoreAndObjectServers(view) as servers:
+            reports = _drive_two_epochs_through_lane(
+                view,
+                core_origin=servers.core_origin,
+                object_origin=servers.object_origin,
+                tmp_path=tmp_path,
+            )
+            from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
+            from spatial_data_fixture import make_grant
+
+            principal = _sdk_principal(PrincipalKind.SPATIAL_DATA_MCP_CLIENT)
+            catalogue = SpatialAssetCatalog(
+                reconstruction=ctx.app.state.external_reconstruction_store,
+                work_orders=ctx.app.state.observation_work_order_store,
+                sites=ctx.app.state.site_store,
+                work_areas=ctx.app.state.work_area_store,
+                inspections=ctx.app.state.external_artifact_inspection_store,
+            ).items(ctx.site_id, area_id, principal)
+            entry = current_revision.manifest.entries[0]
+            asset = next(
+                item
+                for item in catalogue
+                if item.artifact_id == entry.artifact_id
+                and item.work_order_id == current_order.work_order_id
+            )
+            wiring = ctx.app.state.spatial_data
+            source = wiring.sources.resolve(
+                site_id=ctx.site_id,
+                work_area_id=area_id,
+                asset_ref=asset.asset_ref,
+                principal=principal,
+            )
+            measurements = source.inspection.measurements
+            assert measurements is not None
+            wiring.grants.provision(
+                make_grant(
+                    grant_id="platform-sdk-current-only",
+                    organization_id="org-a",
+                    beneficiary_principal_id=principal.principal_id,
+                    site_id=ctx.site_id,
+                    work_area_id=area_id,
+                    asset_ref=asset.asset_ref,
+                    observed_crs_digest=measurements.observed_crs_digest,
+                    allowed_bounds=(199999.0, 549999.0, 200001.0, 550001.0),
+                    operations=("PREPARE", "READ"),
+                    purposes=("EXTERNAL_AI",),
+                    policy_digest=wiring.config.policy.policy_digest,
+                    valid_from=ctx.now - timedelta(minutes=1),
+                    valid_until=ctx.now + timedelta(hours=1),
+                )
+            )
+            ctx.spatial_provider.source = ctx.storage.object_bytes(entry.object_key)
+            yield SimpleNamespace(
+                ctx=ctx,
+                servers=servers,
+                reports=reports,
+                baseline_revision=baseline_revision,
+                current_revision=current_revision,
+                selectors=_analysis_view(ctx, baseline_order, current_order),
+            )
+    finally:
+        ctx.close()
+
+
+def test_platform_spatial_ai_routes_refuse_missing_site_consent(tmp_path: Path) -> None:
+    """The real mount must bind the AI gate and return typed denials, not 503 or data."""
+    ctx = _PlatformFlowContext(tmp_path, with_spatial_data=True, sdk_clients=True)
+    try:
+        area_id = _seed_site_and_area(ctx)  # Consent is false by default.
+        base = f"/v1/sites/{ctx.site_id}/work-areas/{area_id}"
+        missing = "sdj-v1-00000000-0000-4000-8000-000000000001"
+        headers = {"Authorization": "Bearer platform-flow-spatial-mcp"}
+        with TestClient(ctx.app) as client:
+            for method, path in (
+                ("GET", base + "/spatial-data-assets"),
+                ("GET", base + "/spatial-data-requests"),
+                ("POST", base + "/spatial-data-requests"),
+                ("GET", base + "/spatial-data-requests/" + missing),
+                ("POST", base + "/spatial-data-requests/" + missing + "/cancel"),
+            ):
+                response = client.request(method, path, headers=headers)
+                assert response.status_code == 403, (method, path, response.text)
+                assert response.json()["reason"] == "AI_EGRESS_DENIED"
+                assert "X-KSI-Spatial-Data-AI-Egress" not in response.headers
+        assert ctx.app.state.spatial_data.metadata_audit.count == 0
+        assert ctx.spatial_provider.uploads == 0
+    finally:
+        ctx.close()
+
+
+def test_platform_analysis_sdk_matches_http_record(platform_sdk_flow: SimpleNamespace) -> None:
+    """A missing full-platform SDK identity/activation or divergent result must fail."""
+    import asyncio
+    import sys
+
+    import httpx
+    from mcp.client.session import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+    from spatial_data_mcp_fixture import write_token
+    from test_spatial_data_mcp_http_integration import _assert_no_raster_bytes
+
+    flow = platform_sdk_flow
+    ctx, servers = flow.ctx, flow.servers
+    token = write_token("p5-platform-analysis", "platform-flow-analysis-mcp")
+    parameters = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "ksi_analysis_mcp.server"],
+        env={
+            "KSI_ANALYSIS_MCP_CORE_ORIGIN": servers.core_origin,
+            "KSI_ANALYSIS_MCP_TOKEN_FILE": str(token),
+        },
+    )
+    arguments = {
+        "siteId": ctx.site_id,
+        "workAreaId": ctx.work_area_id,
+        "baseline": flow.selectors.baseline.model_dump(by_alias=True, mode="json"),
+        "current": flow.selectors.current.model_dump(by_alias=True, mode="json"),
+        "idempotencyKey": "p5-platform-sdk-analysis",
+    }
+
+    async def exercise() -> tuple[dict[str, Any], ...]:
+        async with (
+            stdio_client(parameters) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+
+            async def call(name: str, body: dict[str, Any]) -> dict[str, Any]:
+                response = await session.call_tool(name, body)
+                assert response.is_error is False, response
+                assert isinstance(response.structured_content, dict)
+                return response.structured_content
+
+            created = await call("ksi_create_analysis", arguments)
+            await asyncio.to_thread(
+                _run_analysis_worker,
+                ctx,
+                core_origin=servers.core_origin,
+                object_origin=servers.object_origin,
+            )
+            identity = {"siteId": ctx.site_id, "analysisId": created["analysisId"]}
+            result = await call("ksi_get_analysis_result", identity)
+            evidence = await call("ksi_get_analysis_evidence", identity)
+            retried = await call("ksi_create_analysis", arguments)
+            return created, result, evidence, retried
+
+    created, result, evidence, retried = asyncio.run(exercise())
+    path = f"/v2/sites/{ctx.site_id}/analyses/{created['analysisId']}"
+    with httpx.Client(base_url=servers.core_origin, trust_env=False) as api:
+        direct = api.get(path, headers=_op_headers())
+        direct_evidence = api.get(path + "/evidence", params={"limit": 32}, headers=_op_headers())
+    assert direct.status_code == direct_evidence.status_code == 200
+    assert result == direct.json() == retried
+    assert evidence == direct_evidence.json()
+    assert result["analysisId"] == created["analysisId"]
+    assert result["executionState"] == "COMPLETED"
+    assert result["suitabilityState"] == "PROVISIONAL_ACCURACY_UNVERIFIED"
+    metrics = result["result"]["metrics"]
+    assert metrics["cutM3"] == pytest.approx(0.01)
+    assert metrics["fillM3"] == pytest.approx(0.01)
+    assert metrics["netM3"] == pytest.approx(0.0)
+    assert metrics["uncertaintyM3"] is None
+    epochs = {item["epoch"]: item for item in evidence["items"] if item["kind"] == "EPOCH_IDENTITY"}
+    for label, revision, report in (
+        ("BASELINE", flow.baseline_revision, flow.reports[0]),
+        ("CURRENT", flow.current_revision, flow.reports[1]),
+    ):
+        assert (
+            epochs[label]["observedSha256"]
+            == "sha256:" + revision.manifest.entries[0].observed_sha256
+        )
+        assert epochs[label]["inspectionReportDigest"] == report.report_digest
+    for payload in (created, result, evidence):
+        _assert_no_raster_bytes(payload)
+
+
+def test_platform_spatial_sdk_matches_http_receipt(
+    platform_sdk_flow: SimpleNamespace,
+    tmp_path: Path,
+) -> None:
+    """A router-only/receipt-only success cannot substitute for actual platform bytes."""
+    import asyncio
+
+    import httpx
+    import rasterio
+    from mcp.client.session import ClientSession
+    from mcp.client.stdio import stdio_client
+    from spatial_data_http_fixture import client_module
+    from spatial_data_mcp_fixture import task5_sdk_parameters, write_adapter_config, write_token
+    from test_spatial_data_mcp_http_integration import _assert_no_raster_bytes
+
+    flow = platform_sdk_flow
+    ctx, servers = flow.ctx, flow.servers
+    assert ctx.app.state.spatial_data.downloads is not None, (
+        "platform byte-delivery path is unwired"
+    )
+    token_value = "platform-flow-spatial-mcp"
+    token = write_token("p5-platform-spatial", token_value)
+    config = write_adapter_config(
+        "p5-platform-spatial.json",
+        origin=servers.core_origin,
+        token_path=token,
+    )
+    requested = [200000.0, 549999.8, 200000.2, 550000.0]
+
+    async def exercise() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+        async with (
+            stdio_client(task5_sdk_parameters(config)) as (read, write),
+            ClientSession(read, write) as session,
+        ):
+            await session.initialize()
+
+            async def call(name: str, body: dict[str, Any]) -> dict[str, Any]:
+                response = await session.call_tool(name, body)
+                assert response.is_error is False, response
+                assert isinstance(response.structured_content, dict)
+                return response.structured_content
+
+            identity = {"siteId": ctx.site_id, "workAreaId": ctx.work_area_id}
+            page = await call("ksi_list_spatial_data_assets", {**identity, "limit": 2})
+            assert len(page["items"]) == 1, page
+            asset = page["items"][0]
+            created = await call(
+                "ksi_create_spatial_data_request",
+                {
+                    **identity,
+                    "assetRef": asset["assetRef"],
+                    "requestedBounds": requested,
+                    "observedCrsDigest": asset["observedCrsDigest"],
+                    "idempotencyKey": "p5-platform-sdk-spatial",
+                },
+            )
+            await asyncio.to_thread(_run_platform_spatial_worker, ctx, servers.core_origin)
+            view = await call(
+                "ksi_get_spatial_data_request", {**identity, "jobId": created["jobId"]}
+            )
+            return asset, created, view
+
+    asset, created, view = asyncio.run(exercise())
+    base = f"/v1/sites/{ctx.site_id}/work-areas/{ctx.work_area_id}/spatial-data-requests"
+    with httpx.Client(base_url=servers.core_origin, trust_env=False) as api:
+        direct = api.get(
+            base + "/" + created["jobId"], headers={"Authorization": "Bearer " + token_value}
+        )
+    assert direct.status_code == 200
+    assert view["job"] == direct.json()
+    status = view["job"]
+    assert status["jobId"] == created["jobId"]
+    assert status["executionState"] == "COMPLETED", status["reason"]
+    receipt = status["receipt"]
+    assert (
+        receipt["sourceSha256"]
+        == "sha256:" + flow.current_revision.manifest.entries[0].observed_sha256
+    )
+    assert receipt["pixelWindow"] == [0, 2, 0, 2]
+    assert receipt["transform"] == [0.1, 0.0, 200000.0, 0.0, -0.1, 550000.0]
+    assert receipt["observedCrsIdentifier"] == "EPSG:5186"
+    assert receipt["validPixelCount"] == 4
+    assert view["fileReference"]["relativePath"] == base + "/" + created["jobId"] + "/file"
+    for payload in (asset, created, view):
+        _assert_no_raster_bytes(payload)
+    consumer = client_module().NativeWindowClient(
+        base_url=servers.core_origin,
+        site_id=ctx.site_id,
+        work_area_id=ctx.work_area_id,
+        token=token_value,
+        max_json_bytes=131072,
+        max_file_bytes=1000000,
+        timeout_seconds=10,
+        transport=None,
+    )
+    try:
+        downloaded = consumer.download(status=status, output_dir=tmp_path / "consumer")
+        assert (
+            "sha256:" + hashlib.sha256(downloaded.read_bytes()).hexdigest()
+            == receipt["outputSha256"]
+        )
+        assert downloaded.stat().st_size == receipt["outputSizeBytes"]
+        with rasterio.open(downloaded) as output:
+            np.testing.assert_array_equal(output.read(1), [[101.0, 99.0], [100.0, 100.0]])
+            np.testing.assert_array_equal(
+                output.dataset_mask(), np.full((2, 2), 255, dtype=np.uint8)
+            )
+            assert tuple(output.transform)[:6] == (0.1, 0.0, 200000.0, 0.0, -0.1, 550000.0)
+            assert output.crs == rasterio.crs.CRS.from_string("EPSG:5186+5773")
+            assert output.nodata is None
+        assert list(ctx.spatial_workspace.iterdir()) == []
+    finally:
+        consumer.close()

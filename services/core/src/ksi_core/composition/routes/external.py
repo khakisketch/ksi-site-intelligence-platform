@@ -53,6 +53,7 @@ def mount_external_routes(
                 grants=spatial_data.authorizer,
                 sources=spatial_data.sources,
                 downloads=spatial_data.downloads,
+                egress=spatial_data.ai_egress,
                 clock=spatial_data.config.clock,
             )
         )
