@@ -3,6 +3,11 @@
 Read [`../../AGENTS.md`](../../AGENTS.md) for shared product authority, task routing, and control
 boundaries before applying this prototype's local rules.
 
+> Harness note (2026-10-09): current sessions run under the OpenCode harness, not ChatGPT Work
+> Mode or Codex Desktop. The host-specific preview steps below are preserved historical
+> instructions; for preview/render work, follow the global OpenCode policy's design-workspace
+> boundary and the repository's current routing.
+
 ## Prototype Instructions
 
 ### KSI A-direction product decisions

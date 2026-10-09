@@ -87,6 +87,16 @@ authorized; F01–04, strict archive/broad type, customer/EXT-VAL/native whole-g
 Human subsequently approved exact P7 planSHAfba7776e and its bounded local effects; execution approval
 and resource preflight are in the rebaseline ledger. This does not authorize production activation or
 alter any customer/slice/milestone gate; fresh installation/image/runtime results are not yet received.
+2026-10-09 P7 결과 접수/상태: Task1 새 환경 full6058passed/30skipped/98warnings/0failed(6088cases),
+후보 이미지3건 build/inspect/probe 9/9 exit0이 실제로 접수됐다(receipts/해시는 rebaseline 원장).
+Task3 합성 Core/저장소 기동은 승인되지 않은 trial origin 변경(P7-A2)으로 blocked이며, 4시간 rail
+만료 후 owned 컨테이너/네트워크만 정리하고 볼륨/이미지/증거는 보존했다. RB03/08의 부분 증거일 뿐
+goal·EXT-VAL·고객/운영 수용을 닫지 않는다.
+2026-10-09 하네스 기록 매핑(1회): 구 하네스 표현(writing-plans, Developer/Test Runner 위임,
+Goal 자동 계속, 실행 방법 선택)의 구→신 매핑을
+[매핑 ledger](plans/2026-10-09-site-harness-mapping.md)에 기록했다. 기존 계획·Spec·PRD 문구는
+재작성하지 않는다. Native goal `b13320f7`의 `active` 표시는 플러그인 제거로 inert이며
+auto-continuation이나 pause/재개 실행 권한이 아니다. 이 갱신은 slice close가 아니다.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

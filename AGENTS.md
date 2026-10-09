@@ -40,7 +40,10 @@ Only when no active bounded checkout task exists may work selection begin from p
 `docs/goals/PHASE_REGISTRY.yaml` is a capability-track index, not a competing current-task or
 next-priority source.
 Historical `.ksi/` records and managed NodeODM/ProcessingJob evidence remain historical or
-managed/test scope unless the applicable authority says otherwise.
+managed/test scope unless the applicable authority says otherwise. Pre-2026-10-09 plan/ledger
+wording (writing-plans recipes, delegated Developer/Test Runner seats, goal mode) is historical;
+its one-time old→new mapping is recorded in
+`docs/superpowers/plans/2026-10-09-site-harness-mapping.md` without rewriting the originals.
 Tool auto-memory, session summaries, and handoffs are context only: re-read current product
 authority and revalidate Git before deriving product direction, authorization, or readiness from
 cached memory.
