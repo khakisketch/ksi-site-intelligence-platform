@@ -1757,3 +1757,84 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   attempts (missing dynamic tool files/CSV) are separately retained and excluded from product RED/
   GREEN evidence. Their resolved cause was copied input closure, not another product fix. Actual
   committed-HEAD/full-suite checks still follow; no archive/manifest/test bytes changed.
+- Actual repair/partial-evidence commit`eeea71c`: three doc paths only, query-guide candidate bytes
+  unchanged; actual committed-HEAD witness/move-tooling + four routing/boundary files **99passed/exit0**,
+  6.32s. P5-ROUTE-01's narrow witness is GREEN; full repaired-revision closure still pending.
+- Compact independent completion assignment: new Test Runner on`eeea71c` plus this assignment prose;
+  one owned scratch driver collects the repaired full suite and unfinished link/archive recovery/scoped
+  and broad/control type/P4 hash-reuse checks. Reuse the first Runner's SDK49/checker29/static6 only
+  on unchanged relevant hashes; do not duplicate them blindly. Record complete pre/post SHA/status,
+  exact commands/exits/logs and all failed/unverified gates in one receipt. No product edits, further
+  agents, installation, runtime/browser restart, credential/grant/activation, Docker/CI/external action.
+
+### P5 Task5 completion receipt / second independent failure — 2026-10-09
+
+- Completion Runner `ses_ee121ef3affedxIjP1C4dYGOvs` returned all required driver outputs;
+  optional additional cause probing reached the seat step limit. Receipt SHA256
+  `8a72834e56dedf7ddc917bea8ea9659ab3ccd6915222a79835ef58ce0d1500ce` under
+  `/tmp/opencode/p5-independent-completion-20261009/`. Primary verified actual receipt/log hashes,
+  all20post-input hashes, `eeea71c` HEAD and unchanged sole pending assignment-ledger bytes.
+  No product/test/document/checkpoint/index mutation by Runner; ambient umask0002 unchanged.
+- Fresh full suite remains **FAILED: 1failed/6044passed/30skipped/98warnings**,751.92s/exit1,
+  log SHA256`e3a2a5ddd7a6eb29d05b8e33ad7368f213ba3ece82778d5c31c39a6da0bd1ded`.
+  P5-ROUTE-01's committed-HEAD witness passed. New **P5-OBS-01 (origin independent Test Runner,
+  OPEN)**: `test_spatial_data_mcp_workflow_example.py::test_workflow_example_requests_polls_persists_and_downloads`
+  failed at `_wait_for_job`'s AI list observer,409 instead of200 while the subprocess creates its job.
+  Runner's isolated3/3passes demonstrate intermittent observation, not a root cause or waiver.
+  Do not rerun the whole suite blindly or call it green; trace the exact refusal and reproduce the
+  preserved-contract interleaving before choosing an in-scope harness/contract repair.
+- Fresh remaining checks: archive strict exit1/251checked/251original/249destination, same four
+  findings only; twelve original blobs independently materialized/hash-matched. Scoped4-file mypy0;
+  broad109errors/14files/exit1 matches pre-P5 control with0added/removed. Markdown146links/0broken,
+  both required YAML evidence paths exist. Unchanged P4 source353/input22(18PNGs)/design/runner/log
+  hashes match; reuse77E2E/15explicit skips/0fail/0flaky, not a fresh/live browser run.
+- SDK49/checker29/routing69/static6 are explicit unchanged-input **REUSED** evidence. Receipt's
+  full-suite `warnings` parser field17 counts warning-summary entries; actual pytest summary says98
+  warnings and remains the authoritative count. Strict archive, broad types, fresh environment/host,
+  actual customer rights/data/first-flow and successor approval gates remain open. Task5 not closed.
+
+- P5-OBS-01 cause verified by controlled real-HTTP interleaving: prepare an empty AI job page,
+  issue one genuine Core POST on the same generated lane before publication, then send the page.
+  Actual result409/`REPORT_CONFLICT`, no AI acknowledgement or protected items; fresh AI page200,
+  existing authenticated worker pending queue200 with the exact issued ID. Original `_wait_for_job`
+  deterministically raises on this interleaving. Probe receipt
+  `/tmp/opencode/p5-obs01-investigation-20261009/probe-receipt.json` binds original testb1a75f2b,
+  metadata-responseca94a50b and egress9f259b32. Two probe setup failures (missing test-support path,
+  group-writable shared scratch rejected by spool gate) are excluded; no gate was weakened.
+  Private generated roots under sticky `/tmp` preserve the same spool protections as pytest.
+- Authority/pattern: approved data-MCP plan`2026-10-06-spatial-data-mcp-v1.md` Task2Step4 requires
+  exact projection-drift409 rather than stale metadata. `metadata_response.py:355-356` and
+  `ai_egress.py:214-223` enforce it; the whole-suite failure is a test-orchestration assumption,
+  not proof of a broken delivery guard. Its consumer workflow itself uses CREATE/GET, not this list.
+- Bounded repair binding: RequirementsRB-04/06/09; owner`tests/contract/`; acceptance deterministic
+  overlappingGET/POST witness RED→GREEN, preserved AI409/noack negative, existing example real SDK/
+  worker/download/same-key/refusal coverage and independent full suite. Contracts affected:none.
+  Reference: existing real generated lane and authenticated worker pending route. Adoption: retain
+  unchanged product API/SDK/response/currentness and use worker identity only in private test dispatch.
+  Files: `tests/contract/test_spatial_data_mcp_workflow_example.py` plus existing evidence records.
+  INV-040 is enforced by real responses/bytes; INV-060/061 by unchanged distinct worker/AI permissions,
+  scopes/consent/currentness/ack gates and negative tests. No HIL/vendor/customer/license/rights change.
+  Rollback: reviewed inverse of the task-owned test-only repair; no data/index/history reset.
+- Ruling: replace only the private worker observer's AI-list use with the **existing worker pending
+  queue**, exact generated worker token/instance and same finite deadline — no ADMIN stand-in, generic
+  conflict retry, 409 waiver, longer sleep, consumer downgrade, policy/grant or product change. Cost if
+  wrong: readiness could mask AI-list regression; deterministicAI409/noack and retainedSDKlist negatives
+  explicitly protect that boundary. Keep the original200/ID/result/byte assertions strict.
+
+- Deterministic regression `test_worker_observer_handles_issue_between_empty_read_and_send`
+  reproduced **RED409/200** with the original observer; companion
+  `test_ai_job_page_refuses_issue_between_empty_read_and_send` passed the unchanged protected409/noack
+  control. Repair uses `SPATIAL_DATA_WORKER` and exact activation instance on the existing pending
+  route; original SDK CREATE/GET/receipt/download/idempotency/refusal assertions remain unchanged.
+  Scoped final four-file workflow/AI-egress/worker-API/SDK-HTTP matrix **122passed/exit0**,46.85s;
+  test SHA256`525b754ed0ba8810bc71213ac08cbc1b8fc2ca30e22104d2583a99b0f9396c5a`.
+  Receipt SHA256`64c92c94e7e8742906d2f159f981bd5eb3bf1475f48afba1ed0138715d60104a` at
+  `/tmp/opencode/p5-obs01-investigation-20261009/repair-receipt.json` binds RED/GREEN logs and source.
+  Changed-file Ruff0/whitespace0; scoped test+explicit native-window example module mypy2clean.
+  Bare single-file mypy reports one unresolved flat example import identically before/after; no new
+  diagnostic. One wrong explicit-module path command exited2/no checking and is excluded. The broad
+  gate remains failed109/14, not made green by this scoped command.
+- Narrow observer witness is fixed locally, **not integrated completion**; commit this test/evidence
+  revision before freezing and assigning the affected independent full suite. Do not rerun unchanged
+  archive/type controls or P4/browser work unnecessarily; verify reused-input hashes. No source writer
+  overlaps that final run. Preserve both genuine independent failed-suite logs and their causes.

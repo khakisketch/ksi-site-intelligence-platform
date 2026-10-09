@@ -274,18 +274,24 @@ def _diag_summary(diag: Path) -> str:
 
 
 def _wait_for_job(lane: Any, *, timeout: float = 20.0) -> str:
+    """Observe worker readiness without racing protected AI page publication."""
     import httpx
+    from ksi_core.domains.external.delivery.worker_api import INTERNAL_BASE
+    from ksi_event_contracts.spatial_data_worker import SPATIAL_DATA_WORKER_INSTANCE_ID_HEADER
 
     client = httpx.Client(
         base_url=lane.origin,
-        headers={"Authorization": "Bearer " + fixture.TASK5_AI_TOKEN},
+        headers={
+            "Authorization": "Bearer " + fixture.TASK5_WORKER_TOKEN,
+            SPATIAL_DATA_WORKER_INSTANCE_ID_HEADER: lane.graph.activation.worker_instance_id,
+        },
         timeout=10,
         trust_env=False,
     )
     try:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
-            page = client.get(lane.base, params={"limit": 2})
+            page = client.get(INTERNAL_BASE, params={"limit": 2})
             assert page.status_code == 200
             items = page.json()["items"]
             if items:
@@ -294,6 +300,86 @@ def _wait_for_job(lane: Any, *, timeout: float = 20.0) -> str:
     finally:
         client.close()
     raise AssertionError("example never issued its single request")
+
+
+def test_worker_observer_handles_issue_between_empty_read_and_send(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Private worker dispatch must not require an AI page to stay unchanged."""
+    root = tmp_path / "observer-interleave"
+    root.mkdir(mode=0o700)
+    with fixture.task5_ai_lane(root, kind="dsm") as lane:
+        issued: list[dict[str, Any]] = []
+        original_list = lane.graph.store.list
+        original_pending = lane.graph.store.pending
+
+        def issue_after_empty_read(items: Any) -> None:
+            if not items and not issued:
+                # A real POST overlaps the GET between its read and send. Keep
+                # both genuine store results and publication checks, no sleeps.
+                issued.append(
+                    lane.consumer.issue(
+                        request=lane.request_body(), idempotency_key="observer-interleave"
+                    )
+                )
+
+        def list_with_issue(**kwargs: Any) -> Any:
+            page = original_list(**kwargs)
+            issue_after_empty_read(page.items)
+            return page
+
+        def pending_with_issue(**kwargs: Any) -> Any:
+            jobs = original_pending(**kwargs)
+            issue_after_empty_read(jobs)
+            return jobs
+
+        monkeypatch.setattr(lane.graph.store, "list", list_with_issue)
+        monkeypatch.setattr(lane.graph.store, "pending", pending_with_issue)
+        job_id = _wait_for_job(lane)
+        assert len(issued) == 1
+        assert job_id == issued[0]["jobId"]
+        assert lane.consumer.status(job_id)["executionState"] == "QUEUED"
+
+
+def test_ai_job_page_refuses_issue_between_empty_read_and_send(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A changing AI page is a real conflict, never stale acknowledged JSON."""
+    import httpx
+
+    root = tmp_path / "ai-page-interleave"
+    root.mkdir(mode=0o700)
+    with fixture.task5_ai_lane(root, kind="dsm") as lane:
+        issued: list[dict[str, Any]] = []
+        original = lane.egress.prepare_job_page_response
+
+        def prepare_with_issue(**kwargs: Any) -> Any:
+            response = original(**kwargs)
+            if not issued:
+                assert not kwargs["page"].items
+                issued.append(
+                    lane.consumer.issue(
+                        request=lane.request_body(), idempotency_key="ai-page-interleave"
+                    )
+                )
+            return response
+
+        monkeypatch.setattr(lane.egress, "prepare_job_page_response", prepare_with_issue)
+        with httpx.Client(
+            base_url=lane.origin,
+            headers={"Authorization": "Bearer " + fixture.TASK5_AI_TOKEN},
+            timeout=10,
+            trust_env=False,
+        ) as client:
+            response = client.get(lane.base, params={"limit": 2})
+            assert response.status_code == 409
+            assert response.json()["reason"] == "REPORT_CONFLICT"
+            assert "x-ksi-spatial-data-ai-egress" not in response.headers
+            assert "items" not in response.json()
+            fresh = client.get(lane.base, params={"limit": 2})
+            assert fresh.status_code == 200
+            assert fresh.headers["x-ksi-spatial-data-ai-egress"] == "ALLOWED"
+            assert [item["jobId"] for item in fresh.json()["items"]] == [issued[0]["jobId"]]
 
 
 def test_workflow_example_requests_polls_persists_and_downloads(tmp_path: Path) -> None:

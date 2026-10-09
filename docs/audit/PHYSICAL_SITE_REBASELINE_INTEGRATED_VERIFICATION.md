@@ -294,13 +294,29 @@ minimal written successor scope with its approval/external-effect gates; no P6 w
 
 ## 7. RB-01..09 and independent closeout
 
-Task5 remains in progress. Independent source review found no Critical/Important code finding, but
-the independent integrated Python run at `efae2af` returned **1failed/6044passed/30skipped/98warnings**.
-`P5-ROUTE-01` (origin Test Runner) is the Task4 query guide's removed historical Edge provenance
-reference still recorded in the immutable consumer CSV. The focused test reproduced RED; a narrow
-provenance-only documentation repair is being verified without changing tests/manifests/authority.
-Source review is not a substitute for this failed test. Author6045pass belongs to Task2, not final
-Task4 source. Full-suite log SHA256 `3b892cad9b81687989dfc2232903b704577244d721bf5749dab6f68cc568d730`.
-The step-limited Runner completed checker29/routing69/SDK49 and prepared static6commands, but final
-type/archive/P4/link checks remain unfinished. RB-02's strict archive gate and RB-08's type/fresh-runtime
-gates are explicitly open. No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance.
+Task5 remains in progress. Whole-P5 source Reviewer found no Critical/Important code finding and
+two deferred evidence-hygiene minors. Source review does not replace independent execution.
+
+| Independent state | Actual result | Disposition |
+| --- | --- | --- |
+| `efae2af` first Runner | 1failed/6044passed/30skipped/98warnings; logSHA `3b892cad9b81687989dfc2232903b704577244d721bf5749dab6f68cc568d730` | P5-ROUTE-01: lost historical Edge consumer reference. RED→provenance-only `eeea71c` repair; actual committed-HEAD gates99passed |
+| `eeea71c` completion Runner | 1failed/6044passed/30skipped/98warnings; logSHA `e3a2a5ddd7a6eb29d05b8e33ad7368f213ba3ece82778d5c31c39a6da0bd1ded` | Repaired routing witness passes. P5-OBS-01: private worker observer incorrectly requires concurrent AI-list projection to stay stable; no waiver |
+| Narrow observer repair, pending integrated run | Deterministic original409/200 RED; preservedAI409/noack controlPASS; final affected matrix122passed/exit0 | Test-only authenticated worker-queue observation, not changed permissions/SDK/metadata guard. Full independent suite still required |
+
+Completion receipt SHA256`8a72834e56dedf7ddc917bea8ea9659ab3ccd6915222a79835ef58ce0d1500ce`
+confirms unchanged HEAD/pre/post20inputs and supplies all unfinished required checks: strict archive
+251checked/251original/249destination (exit1), twelve recovered original blobs match, scoped4files
+clean, broad/control109errors/14files with0added/removed,146local links/0broken+YAML paths, matching
+P4source353/input22(18PNGs)/reports/logs. SDK49/checker29/routing69/static6 are unchanged-input reuse,
+not another fresh run. P4reuse remains77E2E/15explicit skips/0fail/0flaky, not a live browser claim.
+
+P5-OBS-01 controlled real-HTTP overlap proves the preserved contract: emptyAIpage → genuine jobPOST
+→ send-time digest mismatch409`REPORT_CONFLICT`, no acknowledgement/items; a new page and existing
+authenticated worker queue both200 with the correct job. The fixture's worker dispatch now observes
+that queue using its already-generated worker token/activation instance, without generic retries,
+ADMIN impersonation, sleep extension or consumer downgrade. Two deterministic tests protect both
+dispatch and the unchanged AI refusal; original example SDK/result/bytes assertions remain strict.
+Repair receipt SHA256`64c92c94e7e8742906d2f159f981bd5eb3bf1475f48afba1ed0138715d60104a`
+binds testSHA525b754e/RED/GREEN logs. Full-suite failures remain historical evidence, not green.
+RB-02's strict archive gate and RB-08's type/fresh-runtime gates remain open; author6045pass belongs
+to Task2 before Task4. No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance.
