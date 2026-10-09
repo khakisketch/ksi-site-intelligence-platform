@@ -79,9 +79,9 @@ These files route work; they do not override product authority or contracts. Rou
 | Responsibility | Canonical path | Boundary |
 |---|---|---|
 | Operator UX | `apps/dashboard/` | Displays and requests intent; owns no device authority |
-| Durable product authority and workflow | `services/core/` | Owns identity, policy, Mission, evidence and journals |
-| DJI capability and transport adapters | `services/dji-gateway/` | Exposes verified ports/receipts; owns no product intelligence |
-| Local acquisition, perception and tactical safety | `edge/psdk-app/`, `edge/manifold-runtime/` | Manifold/local only; Flight Controller keeps low-level authority |
+| Durable product authority and workflow | `services/core/` | Owns identity, Site/WorkArea, external WorkOrder, policy, results, evidence and journals; platform assembly only |
+| API/MCP consumers | `services/analysis-mcp/`, `services/spatial-data-mcp/` | Bounded source-run stdio adapters over Core; no independent authority or byte store |
+| Retired DJI/Edge/managed acquisition sources | `archive/acquisition-2026/` | Historical evidence only, not a current owner or instruction entry; never runtime import/build input |
 | Measurement worker | `services/processing-controller/` | Independently operated worker; measures artifacts while Core adjudicates durable state |
 | Reusable domain and algorithm code | `packages/` | Import-only code, including change/BIM/defect processing libraries, through explicit package/contract boundaries |
 | Contract and conformance authority | `contracts/`, `tests/contract/`, `tests/replay/` | Schema and replay verification, not product requirements |
@@ -89,7 +89,10 @@ These files route work; they do not override product authority or contracts. Rou
 | Product slice | `docs/superpowers/product-state.md` + its named slice ledger | Current Goal/Milestone/slice/Backlog; select from it only when no active bounded checkout task exists; update at slice close (`.ksi/` retired archive) |
 | Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | Track/status routing only; not current task or next-priority selection |
 
-### Terrain-aware planning route (design-only)
+### Terrain-aware planning route (historical design, out-of-product)
+
+ADR-KSI-039 excludes acquisition execution from current platform work. The following is the
+preserved design/evidence route, not authorization to select or resume a runtime task.
 
 For terrain-aware observation planning, read
 `docs/architecture/ADR-KSI-035-terrain-aware-planning-and-pilot-execution.md`,
@@ -146,7 +149,10 @@ License/data implications:
 Rollback:
 ```
 
-## Control boundaries
+## Control boundaries (retained historical acquisition contracts)
+
+These constraints retain their original safety meaning; they do not mount Mission/device/Edge
+routes or assign current product work to the archive. Current platform ownership is the table above.
 
 - Manifold owns tactical perception, tracking, local world model, risk, active perception and local mission decisions.
 - DJI Flight Controller owns stabilization, low-level flight, verified reactive avoidance and RTH.

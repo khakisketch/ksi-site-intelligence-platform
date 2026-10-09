@@ -1663,3 +1663,38 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   identical to the immutable pre-P5 source control; fresh dependency/image/CI/host gates remain
   UNVERIFIED. Audit currently IN PROGRESS only because routing and final independent closeout
   follow in Tasks4–5; Task3's evidence deliverable is ready for local commit, not RB08 closure.
+
+### P5 Task4 routing and first-flow binding — 2026-10-09
+
+- Task3 was locally committed e21e0fe and skill final33tests passed; its deliverable is the truthful
+  gate/classification report, not RB08 success. Task4 basee21e0fe, current main/one writer.
+  Requirements RB-01/02/07/09; docs owner only. Contracts/invariants and frozen product milestones,
+  Current slice, registry status/state, spec/plan approval hashes, P4 source/images/tokens preserved.
+  No HIL/customer/vendor/data implications. Rollback reviewed inverse of task-owned doc commit.
+- Found stale actual routing: Gateway/Edge current-owner paths, Core signing/device/managed shims,
+  initial09-30pause, P4pending Console, old S3three-draft fixtures and “kept worker” reachability.
+  Correct only named active README/routing/status/roadmap files; archived instructions are provenance
+  only, not authority. The registry's literal PAUSED_BY_USER is a frozen dated status; comments and
+  execution/evidence links distinguish current bounded approvals without replacing its status map.
+- Ruling: P4 required353workspace/352Git hashes match; reuse exact design/functional evidence for
+  unchanged source — allowed Task5 path, no new UI source or aesthetic judgment — cost if wrong:
+  runtime/auth environment drift not caught; all3old evidence URLs now fail ConnectError and that
+  limitation is explicit. No server restart/substitute preview. Only Dashboard README is edited,
+  outside the P4 source snapshot. Product binding/source/entry/ports/tokens/reports recorded in audit§6.
+- Final P4 rendered report5635f47b confirms18actual PNGs and0required residual defects plus named
+  earlier keyboard/CTA/Home/edge-state bindings. Independent P4 receipte6267ceb establishes
+  tsc/lint/build0,762unit/77E2E/15explicit skips/0fail/0flaky, not configured full-byte analysis.
+- First-flow audit§6 maps Core HTTP/SDK vs Console vs input/acceptance: scoped OIDC Site POST remains
+  denied by auth.py602/901; WorkArea POST is already audited623 and exact new grants are not automatic;
+  sdk excludes human admin/admission deliberately. Current dev storage fails closed without S3 and
+  Analysis/workflow graph is opt-in. SDK/API real-byte results and repeated areas are implemented;
+  configured full Console/result/repeated customer flow remains unverified. No allowlist, endpoint,
+  policy, grant or storage configuration change under P5.
+- Proposed successor direction only: standalone default template+separately authorized fresh boot
+  evidence before feature expansion. Actual NodeODM mixed template and strict adaptation gate remain
+  open. F-01 Site bootstrap/grant decision, F-02protected storage/workers, F-03graph authority, F-04
+  permittedt0/t1/t2/rights/oneconsumer+host/customer2cycle remain explicit. No new formats/general
+  State/feed/remote transport or competing product objective. Final independent Task5 before handoff.
+- Fresh Task4 routing4-file matrix **69passed/exit0**,4.17s; R3 validator0;145localMarkdown+2YAML
+  paths resolve. P4 sources unchanged353/353, frozen spec/plan/move manifests unchanged;
+  milestone/Currentslice/registry-status pin tests pass. Receiptc476d7e6; whitespace check0.

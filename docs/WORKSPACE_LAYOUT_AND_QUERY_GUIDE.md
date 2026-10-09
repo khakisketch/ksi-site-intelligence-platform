@@ -17,7 +17,7 @@
 |---|---|
 | KSI Operations Console | `apps/dashboard/README.md` |
 | KSI Site Intelligence Core / Processing | `services/README.md` |
-| Manifold Edge / PSDK (P3 Task 6 historical) | `archive/acquisition-2026/edge/README.md` |
+| Archived acquisition evidence (not a product owner or instruction entry) | Root `AGENTS.md` + `docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md`; archived READMEs are provenance only |
 | 재사용 domain/contract/algorithm | `packages/README.md` |
 | wire/API/HIL schema | `contracts/` |
 | 문서 authority/status | `docs/00_READ_FIRST.md`, `docs/DOCUMENT_STATUS.md` |
@@ -77,7 +77,7 @@ git submodule status
 ### 4. 신규 구현 검색
 
 ```bash
-./scripts/qimpl "MissionContract"
+./scripts/qimpl "assemble_platform_app"
 ```
 
 ## 좋은 Agent 질의

@@ -149,7 +149,8 @@ and operational retention cleanup are separate Core delivery responsibilities.
 
 ## Platform/managed split (P3 Task 3)
 
-This package now carries only the platform lanes. The managed reconstruction
+The registered entrypoints now carry only platform lanes. Some import-only historical helpers
+remain but are not current external workflows (classification below). The managed reconstruction
 set — its modules, its tests, the `ksi-processing-worker` daemon entrypoint,
 `Dockerfile.worker`, and the `worker` service in `deploy/compose.yaml` —
 moved with unchanged blobs to `archive/acquisition-2026/<original path>`
@@ -162,8 +163,7 @@ Surviving entrypoints (names and behavior unchanged):
 `ksi-external-validation-worker`, `ksi-external-analysis-worker`,
 `ksi-spatial-data-worker`.
 
-Shared lane modules kept per import evidence (no managed-only consumer, no
-managed import): `comparison_worker`, `design_conformance_worker`,
+Retained modules (no archived runtime imports): `comparison_worker`, `design_conformance_worker`,
 `design_surface_verifier`, `region_extraction_worker`, `checkpoint_validator`
 (the last is imported by the platform `external_measurement_algorithms` lane),
 `workspace`, `capture_time` (imported by the kept `core_client`),
@@ -194,3 +194,10 @@ Boundary: `tests/contract/test_acquisition_archive_boundary.py` proves in a
 fresh process that the surviving lanes import no managed module and no
 acquisition package, and that `[project.scripts]` still registers exactly the
 seven platform entrypoints.
+
+P5's [consumer/entrypoint classification](../../docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)
+supersedes the ambiguous “kept lanes” reachability wording above, not the original keep decision:
+`checkpoint_validator`'s aggregate helper is active through `external_measurement_algorithms`;
+comparison/design/region/verifier wrappers have retained test/helper consumers but no current
+registered producer/poller or platform route. LandXML remains parser/audit utility, not external
+format acceptance. No additional deletion, move or producer revival follows from this classification.

@@ -43,7 +43,7 @@ Domain invariant -> contract/schema -> acceptance/replay criteria
 REPOSITORY_STRUCTURE (owner path) + DOCUMENT_STATUS (current vs history)
         |
         v
-Dashboard | Core | Gateway | Edge | Processing | reusable package
+Dashboard | platform Core | external workers | bounded MCP | reusable package
         |
         v
 nearest README/agent rules -> actual manifest/entrypoint -> owner tests
@@ -56,24 +56,24 @@ The resulting responsibility model is:
 
 ```text
 Operator
-  -> Dashboard: intent and evidence presentation
-      -> Core: durable authority, policy, Mission and journals
-          -> DJI Gateway: exact external capability/transport ports
-          -> Processing Controller: artifact measurement orchestration
-              -> import-only algorithm/model packages
+  -> Console / bounded MCP / external API consumer
+      -> platform Core: scoped Site/WorkArea, external observations, authority and journals
+          -> independent inspection / measurement / Analysis / Spatial Data workers
+              -> import-only algorithm/contract packages
 
-DJI Flight Controller: stabilization, verified reactive avoidance and RTH
-Manifold Edge: local acquisition, perception, world model, risk and tactical decisions
-Core: signed Mission Contract and workflow; never low-level flight control
+External capture and reconstruction: customer responsibility, not platform runtime dependency
+Gateway / Edge / signed Mission and managed reconstruction: archived historical contracts only
 ```
 
 ADR-KSI-037 places the API-first Site/WorkArea/Epoch/result/evidence record at the product core.
-The displayed acquisition topology is retained transitional implementation under
+The former acquisition topology is retained transitional implementation under
 [`ADR-KSI-039`](docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md),
 not long-term product responsibility and not an automatic flight or robot-execution prerequisite
-for the weekly two-epoch MVP; no runtime ownership changes.
+for the weekly two-epoch MVP. P3 relocated that source to `archive/acquisition-2026/`;
+P4 removed its Console routes. Original move records and P5's two post-move hash discrepancies are
+in the [integrated audit](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md).
 
-PSDK Liveview stays on the Manifold acquisition/perception path. `EDGE_UPLINK` carries bounded
+In historical acquisition contracts PSDK Liveview stays on the Manifold acquisition/perception path. `EDGE_UPLINK` carries bounded
 observations/telemetry/events. For the ADR-KSI-036 D6 external first-release route, a customer field
 PC reconstructs M4D captures with DJI Terra as the initial reference workflow and KSI receives
 derived artifacts/evidence; originals remain customer-side. The SD/storage -> field PC -> web raw
@@ -107,9 +107,9 @@ contracts, establish Pilot/device support, or change the `NOT_VERIFIED` HIL/fiel
 | Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | No | RETAIN; not current task selection |
 | Session continuity and audit snapshots | `.ai/`, `.ksi/`, dated handoffs/audits | No | RETAIN as historical evidence, never current state or product authority |
 | External first-release result ingress | M4D → customer field PC/Terra → KSI derived artifacts/evidence | Product direction | RETAIN; license/export/accuracy acceptance separate |
-| Managed/test source-media ingress | SD/storage → field PC → KSI web upload | Operational path | RETAIN scoped |
-| Target automated source-media ingress | separately gated `MEDIA_PULL` → `MEDIA_UPLOAD` adapter | Target runtime | RETAIN gated; do not activate |
-| Local acquisition video | PSDK Liveview inside Manifold acquisition/perception | Edge runtime input | RETAIN |
+| Managed/test source-media ingress | SD/storage → field PC → former KSI web upload | Historical path | Preserved contracts/readers; no mounted managed producer |
+| Former automated source-media target | separately gated `MEDIA_PULL` → `MEDIA_UPLOAD` adapter | Historical target | Out-of-product; do not activate |
+| Local acquisition video | PSDK Liveview inside former Manifold acquisition/perception | Historical Edge input | Archived evidence, not current platform ownership |
 | Continuous central video | not a core product path | No | REMOVE from product assumptions |
 | Long-term product boundary | `docs/architecture/ADR-KSI-039-*` | No | RETAIN; flight/autonomous acquisition/tactical perception/customer production reconstruction are out-of-product; acquisition sources are retained transitional implementation until a verified successor move |
 
@@ -131,7 +131,7 @@ trash.
 | `.ksi/` | Legacy goal governance | Retired helper-era goal/risk state | No | RETAIN as archive/evidence; product slice is `docs/superpowers/product-state.md` + named slice ledger, while an active checkout task uses its checkpoint + named task ledger |
 | `.venv/` | Python toolchain | Reproducible local environment from `uv.lock` | No | RETAIN local; regenerated only by operator choice |
 | `apps/` | Dashboard | User-facing applications | Yes | RETAIN |
-| `cmake/` | Edge | Cross-build toolchains | Build/runtime delivery | RETAIN |
+| Former `cmake/` | Historical Edge | Cross-build toolchain moved to `archive/acquisition-2026/cmake/` | No — historical | Archived by P3; R0-R2 decision retained as provenance |
 | `contracts/` | Cross-domain contract owners | JSON Schema, API, conformance and HIL schemas | Runtime input | RETAIN |
 | `data/` | Geo/Data | Licensed/provenanced runtime data such as KNGeoid | Runtime input | RETAIN |
 | `deploy/` | Operations | Compose, container, service and backup configuration | Runtime delivery | RETAIN |
@@ -145,7 +145,7 @@ trash.
 | `packages/` | Domain/library owners | Reusable typed domain, geometry, contracts and algorithms | Yes | RETAIN; R3 package boundary current |
 | `references/` | Reference governance | Pinned read-only reference repositories | No product runtime | RETAIN read-only; direct import forbidden |
 | `scripts/` | Developer/operations tooling | Repository and device workflow entry scripts | Build/ops | RETAIN |
-| `services/` | Core/Gateway/Processing owners | Independently deployed or operated services/workers | Yes | RETAIN; deployable units only |
+| `services/` | Core/Processing/MCP owners | Independently operated services/workers and source-run adapters | Yes | RETAIN; lifecycle/entrypoint boundary required |
 | `templates/` | Repository governance | Agent/task templates | No | RETAIN |
 | `tests/` | Quality owners | Contract, golden, replay, HIL-software and E2E verification | No | RETAIN |
 | `tools/` | Domain/quality owners | Offline conversion, validation, HIL and audit tools | No direct product runtime | RETAIN |
@@ -160,10 +160,11 @@ their owner until an explicit cleanup task removes them.
 | Path | Owner/purpose | Runtime | Dependency boundary | Decision |
 |---|---|---:|---|---|
 | `apps/dashboard/` | Dashboard — KSI Operations Console | Yes | Core HTTP/API contracts; no device authority | RETAIN |
-| `services/core/` | Core — identity, site, Mission, policy, evidence and durable journals | Yes | Owns authority/state; imports reusable packages, never DJI SDK | RETAIN |
-| `services/dji-gateway/` | Gateway — exact capability ports, route selection and receipts | Yes | Owns transport adapters, not product intelligence or flight control | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/services/dji-gateway/`, historical) |
+| `services/core/` | Core — identity, Site/WorkArea, external WorkOrder, policy, results, evidence and durable journals | Yes | Platform-only factory; no Mission/device signing/managed assembly aliases | RETAIN |
+| Former `services/dji-gateway/` | Historical Gateway capability ports and receipts | No — historical | Not a current owner, transport or instruction entry | ARCHIVED (P3 Task 6 → `archive/acquisition-2026/services/dji-gateway/`, historical) |
 | `services/processing-controller/` | Processing — job workers, artifact measurement/upload | Yes | Reads Core work; workers measure, Core adjudicates | RETAIN |
 | `services/spatial-data-mcp/` | Bounded local stdio MCP adapter — six fixed tools over one configured Core origin | No (source-run adapter; no listener/deployment) | Reads Core AI delivery only; owns no bytes, grants, credentials, or device authority | RETAIN |
+| `services/analysis-mcp/` | Bounded local stdio Analysis adapter — six fixed tools over Core | No (source-run adapter; no listener/deployment) | Same fixed V2 result/evidence records; no independent computation or authority | RETAIN |
 
 A new `services/` child must have its own independently managed listener, daemon/polling loop,
 health/readiness boundary, deployment configuration, or separately started worker entrypoint. Import
@@ -178,13 +179,16 @@ explicit aliases to the same modules. The exhaustive active/planned map is
 [`docs/audit/CORE_R1_MODULE_MIGRATION.json`](docs/audit/CORE_R1_MODULE_MIGRATION.json), checked by
 [`tools/check_core_module_boundaries.py`](tools/check_core_module_boundaries.py).
 
-Managed domains now live under `ksi_core.domains`, and external modules under
-`ksi_core.domains.external.{ingress,quantity,workflow,authority}`, with exact legacy aliases.
-Capture quality belongs to the retained acquisition package. `ksi_core.composition` owns
-ordered checks, routes, graph assembly, runtime surfaces and production configuration.
-`app.py`, `app_assembly.py`, and `production.py` remain exact root public module aliases.
-This routing adds neither a generic dependency container nor permission to consolidate adjacent
-services, packages, acquisition, capability, Dashboard, worker, Edge, or DJI boundaries.
+The earlier R1 moves placed domains under `ksi_core.domains` and external modules under
+`ksi_core.domains.external.{ingress,quantity,workflow,authority}`. P3 then archived the acquisition,
+capability, managed assembly/production, signing/device and affected shims; the current inventory
+records them as archived, not aliases. `ksi_core.app` still aliases the shared factory, while
+`app_assembly`, `assembly`, `production` and `production_config` are absent. Active public assembly
+is `ksi_core.composition.platform_assembly.assemble_platform_app`; production factory is
+`ksi_core.composition.platform_production.build_platform_production_app`.
+Retained `processing_jobs`/`artifact_manifest`/`source_media`/`evidence` readers remain in active
+ownership for historical records, not mounted managed job/artifact HTTP or new execution.
+See `services/core/README.md` and the integrated audit; no archive runtime import is allowed.
 
 ## Edge modules
 

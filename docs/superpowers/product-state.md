@@ -1,8 +1,9 @@
 # Product State - KSI-Site-Intelligence-Platform
-Updated: 2026-10-09 (bounded rebaseline linkage only; slice/acceptance unchanged)
+Updated: 2026-10-09 (P5 bounded verification/routing only; slice/acceptance unchanged)
 ## Goal
-외부 재구성 산출물을 등록·검사·구조화하고 공간데이터와 재현 가능한 분석을 API·MCP로
-제공하여 외부 에이전트·산업용 소프트웨어가 재사용하는 Site Intelligence 기반(ADR-KSI-038).
+물리적 현장 관측을 근거형 Site State/Change로 연결하는 Site Intelligence 기반이다.
+외부 산출물 등록·검사와 공간데이터·고정 분석의 API·MCP 제공은 현재의 두 재사용 경로다
+(ADR-KSI-038/039; 새 일반화 State wire 모델·포맷 지원을 만드는 Goal 변경 아님).
 원본은 고객 장비에 두며 고객 소유 재구성 경계(ADR-KSI-036)를 유지한다.
 첫 플랫폼 검증 목표는 DSM·정사영상의 외부 구역 데이터 활용 + 기존 주간 토공 분석 사례다.
 장기 계획·보완 결정: [SDP-20260930](plans/2026-09-30-spatial-data-platform-roadmap.md).
@@ -18,28 +19,37 @@ milestone/next-slice 목록의 상태·순서는 변경하지 않았다. 이 개
 [rebaseline ledger](plans/2026-10-07-agent-first-platform-rebaseline.md): authority/inventory/neutral
 primitives have local foundation evidence atf12857c (full Python9093passed; broad type gate still
 unpassed). The [Core assembly successor](plans/2026-10-07-platform-core-assembly.md) is a written
-proposal awaiting review, not runtime/archive/UI implementation authority. This link does not close,
+proposal awaiting review at that dated foundation boundary (subsequent P2 approval/closure below), not new execution authority. This link does not close,
 reprioritize or replace the Current slice, EXT-VAL/customer acceptance or historical milestones below.
 2026-10-08 P2 platform Core assembly technical closure is recorded in the same ledger
 (f7779e9/1bc76b5/6b6fc08/26b3c5d/8aaba33; full Python9145passed with one environment-induced
 failure adjudicated by a pre-P2 control; broad mypy109/14 pre-existing open). The
 [worker/archive successor](plans/2026-10-08-acquisition-separation-and-archive.md) is a written
-proposal awaiting review, not execution authority. No slice/acceptance/milestone change.
+proposal awaiting review at that dated P2 boundary (subsequent P3 approval/closure below), not new execution authority. No slice/acceptance/milestone change.
 2026-10-08 P3 acquisition separation / worker split / source archive technical closure is recorded
 in the same ledger: 194+57 blob-identical moves with inverse records (archive/acquisition-2026),
 Core/worker acquisition deps dropped, platform imports zero acquisition code (committed boundary
 gates), CI historical route (dispatch-only), lock162→157, full suite5996passed/0failed, whole-P3
 review + independent runner receipt green. P4 Console (design-owned) and P5 whole verification
-remain; real customer/operational acceptance stays external. No slice/acceptance/milestone change.
+were successor work at that dated boundary. Two post-move field-kit adaptations were later
+identified by P5's strict hash gate; originals remain recoverable, not all final destinations
+are blob-identical. Real customer/operational acceptance stays external. No slice/acceptance/milestone change.
 2026-10-09 P4 Console cleanup is technically closed locally at `7f44d11967e9b31524e7f2bbe0ef466c98ad5aec`:
 retired acquisition routes/actions removed, approved Home/Sites/five-tab workspace preserved;
 actual auth/reload/denial/error/mobile flows and design-owned rendered review verified. Independent
 Dashboard typecheck/lint/build exit0, Vitest762/100 and four-viewport E2E77passed/0failed/15explicit
 conditional skips; six unchanged Python/fixture hashes reuse the prior independent6013/30/0 receipt.
 Exact evidence/limits and deferred minor cleanup are in the [rebaseline ledger](plans/2026-10-07-agent-first-platform-rebaseline.md)
-and `apps/dashboard/p4-cleanup-evidence/verification/`. The [P5 integrated-verification proposal](plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
-awaits written Human review; no P5 execution, slice closure, customer/operational acceptance or
-release is implied. Optional local analysis/storage capability remains honestly unavailable.
+and `apps/dashboard/p4-cleanup-evidence/verification/`. The [P5 integrated-verification plan](plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
+was subsequently approved by Human for all five tasks; canonical approval/progress lives in the
+rebaseline ledger, not its frozen proposal header. Tasks1–3 local evidence is at2686789/c5cca2a/e21e0fe:
+actual platform SDK/API49passed, full active Python6045passed/30skipped/98warnings/0failed;
+strict archive2adaptation gate and broad mypy109/14 remain failed; fresh dependency/image/CI/host
+checks are unverified. Tasks4–5 reconcile routing and independent final evidence; no full RB closure,
+goal, product slice/EXT-VAL/customer/operational acceptance or release implied. See
+[P5 integrated audit](../audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md).
+Optional local analysis/storage remains unavailable. Former P4 loopback3241/8041/9041 is now offline;
+matching source-bound P4 evidence is reused, not a claim of a live fresh login/result flow.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

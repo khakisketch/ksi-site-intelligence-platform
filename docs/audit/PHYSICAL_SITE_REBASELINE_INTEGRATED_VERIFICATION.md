@@ -196,8 +196,101 @@ historical volume/data preservation must remain explicit.
 
 ## 6. Routing, product binding and first-flow gaps
 
-Task4 pending: source-bound P4 evidence reuse, exact active-document corrections and UI/API/SDK gap map.
-This placeholder grants no implementation scope or product acceptance.
+### Current-owner/document corrections
+
+| Stale active statement | Corrected route/status | Evidence/limit |
+| --- | --- | --- |
+| Root components / AGENTS / structure delegated to former Gateway/Edge paths | Platform Core, independent external workers, MCP and packages; archive is labeled historical, not an instruction entry | Current dependency/route/import gates; root AGENTS still governs |
+| Core README / structure advertised signing/device/acquisition/managed assembly aliases | `platform_assembly` and `platform_production`; retired shims absent, selected historical readers retained |140record inventory + real import/factory controls |
+| README/docs described the 2026-09-30 pause as current | Dated initial planning snapshot separated from subsequent development and actual P5 approval in the parent ledger | No execution inferred from a frozen proposal header |
+| Read-first / product-state described P4 screens as pending | Local P4 technical closure reused under exact source/render/functional hashes | No fresh UI/measurement/customer acceptance |
+| System overview confused old equipment diagrams with current runtime | Current platform source table added; old diagrams explicitly historical/out-of-product | Safety/quantitative meanings preserved |
+| Dashboard README described three draft-only fixtures and old Mission/fleet UI | Five synthetic Sites/areas, four historical rows + one external APPROVED/OPEN, exact E2E-only scopes and current five-tab Console | Normal accounts still empty-scoped; no mock result |
+| Processing README's “kept lanes” implied current producers | Exact test/helper/entrypoint classification in §5 | No code move/deletion/revival |
+| Capability registry's PAUSED_BY_USER looked like current task control | Literal status/state snapshot retained with dated comments and execution/evidence pointers | Frozen registry status multiset and product-state Milestones/Current slice unchanged |
+
+Historical ADRs, milestone/approval records and the two move manifests remain unchanged. Current
+instructions do not delegate to archived AGENTS/READMEs. An archive provenance link grants neither
+runtime use nor authority. These corrections change routing/status only, not contracts or policy.
+Task4 verification: product-boundary/disposition/normalization/archive-boundary **69passed/exit0**,
+4.17s; explicit R3 validator exit0. Changed documents'145local Markdown links +2new YAML record
+paths resolve; frozen plan/spec/manifests and P4 source hashes remain unchanged. Link-check receipt
+SHA256 `c476d7e68616f657da39ed9c9eb49002a8efec3d891371b65c838ef91376d3ee`.
+This is a file/link/status check, not a deployed-site or missing-customer gate pass.
+
+### Product binding and P4 evidence reuse
+
+- Repository/actual source: `/home/ksi/Desktop/KSI-Projects/KSI-Site-Intelligence-Platform`,
+  `apps/dashboard`; locally integrated P4 source/evidence`7f44d11`, closeout`1dac44a`.
+  Representative design project`6edb22d8-bd56-43df-9e13-521a30700925` (existing KSI Operations
+  Console binding; no new run/project/rebinding). P5 has no design/UI writer.
+- Start entry: `apps/dashboard/scripts/run-local-oidc-stack.mjs`; the existing prepared standard
+  loopback start is `npm run dev:local` in`apps/dashboard`. Last P4 evidence target used that entry
+  with `--dashboard-port 3241 --core-port 8041 --issuer-port 9041 --tailscale disabled`, run-owned
+  data/identity paths, `.next-p4-resume` and `--seed-operations-console-e2e`. These are recorded
+  commands, **not a P5 restart/install/grant authorization**.
+- Last actual-product URL`http://localhost:3241/` and Core8041/Identity9041 are temporary
+  host-loopback only (not customer workstation/tailnet/public). P5 read-only GETs now fail
+  `ConnectError` on all three; no substitute demo or duplicate runtime was started.
+  Prior Studio context`http://127.0.0.1:7456/projects/6edb22d8-bd56-43df-9e13-521a30700925/`
+  is separate design context, not actual auth/API verification or a verified live link.
+- Brand source: `apps/dashboard/src/app/globals.css` SHA256
+  `0cab25cb895182296a0fdc565ce4445565bab3502e20cffe21b736c5fe300b47` and existing approved
+  components. No token, Home image, timestamp mask, `maxDiffPixels3500` or visual source change.
+- Final P4 source snapshot`p4-cleanup-evidence/t5-final-source-v1/source-snapshot.json` SHA256
+  `8256911ce314281e04e2b3b57852033d54d1e07333bfc46106a8fafa66701a1c`:
+  **353/353 workspace hashes match**,352tracked Git blobs match; the remaining ignored `.pyc`
+  is explicitly nonportable and not product source. P5's Dashboard README is outside this snapshot.
+- Design-owned rendered report`p4-cleanup-final-render-review.md` SHA256
+  `5635f47bc2979adfd38358bb0a2f7a708be5709fc78b9c33c1aa8c14260ecc19` confirms reading all18
+  actual accessible/denied Analysis/assets/More PNGs at390/768/1440. Concrete heading/copy/alert
+  findings fixed; previous four-width keyboard/CTA/Home and empty/loading/motion bindings explicitly
+  reused. Required design-owned residuals0. It is not a new Build aesthetic review.
+- Independent final-P4 Runner`ses_ee3cff067ffenNG7tq5WksJSvI`, receipt SHA256
+  `e6267cebe7e6d49eb4b6c9a70d7a2241460b0c9e46e859f3141869f52596718d`:
+  typecheck/lint/build exit0, Vitest762/100; authenticated E2E77passed/15explicit conditional skips/
+  0failed/0flaky at390/768/1024/1440. Genuine login, navigation, work assignment persistence/reload,
+  denial and honest optional-unavailable states were tested, **not successful configured full analysis**.
+  Receipt's remaining unresolved conditional coverage remains disclosed.
+- Before/after/state evidence and reports: `apps/dashboard/p4-cleanup-evidence/`,
+  `apps/dashboard/p4-cleanup-final-render-review.md`, `apps/dashboard/p4-cleanup-evidence/verification/`.
+  Task4 reuse/reachability receipt SHA256
+  `4508f7f66ed8413ac3d9de61f7a6e212c606f6f242abf17b12ea1d3af2d70fde`.
+
+### First useful experience: intended vs actual vs acceptance
+
+The approved target is Site/WorkArea → two supported DSM observations → deterministic compatible
+area/pair selection → evidence-bound change or actionable blockers → same area for next epoch.
+Analysis and data preparation are separate uses of the same authorized records, not two backends.
+
+| Step | Actual Core HTTP/API and SDK | Console / local evidence | Remaining input/decision |
+| --- | --- | --- | --- |
+| Create Site | Existing POST`/v1/sites` works for authorized unscoped human in actual-platform tests. Scoped OIDC allowlist lacks this method/path; human403 is intentional current contract. MCP has no Site-admin tool | Existing registration UI/proxy present but scoped default operator cannot create; P4 does not establish onboarding success | **F-01** explicit human Site-bootstrap/grant ownership decision; no simple allowlist widening. Product target remains, not silently downgraded to precreated Sites |
+| Create/reuse WorkArea | Scoped POST/list/archive is already audited; frozen polygon/revision and exact grants retained. New identity does not automatically enlarge a caller's allowed-area mapping | Existing WorkAreaPanel/proxy; original API/generated setup and reuse tests. No complete default-account first-onboarding browser proof | Grant provisioning for a newly created area's use needs the F-01 contract; do not broaden all resources |
+| Register t0/t1 DSMs | External-only WorkOrder; V2 context/registration, direct upload grants/PUT/seal, inspected revision/report/source digests through real byte lanes | External registration UI exists. P4 runner uses unavailable evidence storage without explicit S3; real upload/seal/display therefore not verified there | **F-02** permitted derived exports/rights and configured owned storage/inspection/worker environment |
+| Select area/compatible inputs | Existing Analysis V2 and Spatial Data V1 discovery bind exact area/revision/digests; ambiguity/foreign/stale inputs fail closed. SDK uses those same selectors | Current AnalysisRequestPanel and assets selector exist; default Analysis graph not configured; no synthesized empty-success substituted | **F-03** protected graph/authority/runtime configuration and reviewed signed worker/inspection pins, not new computation/format |
+| Retrieve result/evidence/blockers | Full-platform Analysis SDK vs HTTP compares same IDs/result/evidence; Spatial SDK vs HTTP receipt/download pixels match. V1 strict / V2 provisional remain distinct | P4 actual unavailable and denied states verified; configured result-bearing Console journey is **not** end-to-end proved by the separate SDK fixture | Configured same-origin/auth/real-byte browser flow; no live grant/policy activation implicit. Numbers never establish progress/settlement |
+| t1→t2, reuse area | Existing Analysis actual-inspection SDK, Spatial next-epoch and platform replay tests cover repeated area/history/idempotency/currentness | New-observation CTA/navigation and historical follow-up views retained; full repeated configured browser workflow still unverified | **F-04** permitted same-Site t0/t1/t2, one selected external consumer/host, two-cycle operational/customer acceptance |
+
+Known roster/team/pending denial/unmounted optional endpoints are not permission to create a new
+workflow. They remain limits/backlog unless they block the selected approved first experience.
+MCP registration/admin omissions are deliberate human-authority boundaries, not “missing tools”.
+Finite generated fixtures demonstrate software behavior only; repeating them cannot replace rights,
+customer data, accuracy evidence, external host or operational acceptance.
+
+### Smallest justified successor direction (proposal, not execution)
+
+Before expanding features, resolve the concrete standalone-runtime gap: an acquisition-free **default
+deployment template** preserving existing historical data/volumes, followed by separately authorized
+fresh locked dependency/image/boot evidence. This addresses P5-COMP-01/RB-08 rather than inventing
+another API/format/State/feed/remote transport. The stricter archive gate still needs a reviewed
+append-only adaptation-lineage decision, never edited original inverse hashes.
+
+The first-flow follow-on should then connect the **existing** UI/API/SDK and configured storage/
+workers, not rewrite the supported engines. F-01 is a material auth/bootstrap decision; F-02..04
+require named rights/environment inputs. Until those are available, do not claim full first-flow
+acceptance or run a new feature plan. Task5 will reconcile independent findings and present the
+minimal written successor scope with its approval/external-effect gates; no P6 work starts here.
 
 ## 7. RB-01..09 and independent closeout
 

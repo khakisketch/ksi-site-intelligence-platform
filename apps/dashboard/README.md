@@ -1,18 +1,28 @@
 # apps/dashboard
 
-KSI Dashboard: mission, events, site twin, fleet/edge, reports and expert mode.
+KSI Operations Console: Home, Sites and the existing five-tab Site workspace
+(overview, observations, assets, analysis, work). P4 removed Mission/flight/Edge/managed
+acquisition screens and actions; S3's older mission/event/fleet scope is historical only.
+Auth, scoped external registration, work operations, result/evidence and unavailable states remain.
 
-S3 MVP scope (see `docs/architecture/03_DASHBOARD_UX_GOALS.md`): home, site
-list/detail, event triage, mission list, site-registration wizard, new-survey
-wizard.
+P4 local technical evidence is in [`p4-cleanup-evidence/verification/receipt.md`](p4-cleanup-evidence/verification/receipt.md)
+and the design-owned [`p4-cleanup-final-render-review.md`](p4-cleanup-final-render-review.md).
+P5 reuses their unchanged source/capture hashes, not a new aesthetic judgment. The former evidence
+stack at `http://localhost:3241/` (Core8041/Identity9041, host-loopback only) is no longer reachable
+as of the P5 read-only check; it is not a live customer/demo link. No duplicate server was started.
+Current approval/limitations: [task ledger](../../docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)
+and [first-flow gap map](../../docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md).
 
 ## Local development
 
 1. Start the standard local stack:
 
+   Commands below describe the existing workflow, not permission to install, alter Tailscale,
+   register a persistent service or restart a live target. Use the already prepared toolchain;
+   dependency installation is separately approved.
+
    ```bash
    cd apps/dashboard
-   npm install
    npm run dev
    ```
 
@@ -82,7 +92,7 @@ wizard.
 
 ## Operations Console validation
 
-Run the component and production-build gates before handing off a UI change:
+Run the component and production-build gates before handing off an authorized UI change:
 
 ```bash
 npm test
@@ -97,7 +107,6 @@ navigation, horizontal overflow, touch targets, reduced motion, and serious or
 critical axe-core findings:
 
 ```bash
-npx playwright install chromium
 npm run test:e2e
 ```
 
@@ -110,9 +119,13 @@ KSI_DASHBOARD_E2E_BASE_URL=http://<magic-dns-name>:3210 npm run test:e2e
 
 Playwright state is isolated in a run-scoped `test-results/runtime-*`
 directory; it does not reuse or overwrite the normal local OIDC journals. The
-browser suite registers three synthetic Sites, their work areas, and **draft
-WorkOrders only** through the same authenticated Core route used by the
-Console. It creates no Mission, device receipt, processing result, or Event.
+current fixture seed writes five owned synthetic Sites/WorkAreas through real stores;
+four managed-mode WorkOrders are explicitly historical/non-executable and one external
+WorkOrder is APPROVED/OPEN. E2E-only OIDC mapping grants these exact fixture resources;
+the normal and empty-organization accounts do not inherit those grants. It creates no Mission,
+device receipt, ProcessingJob/result or Event. This is not scoped-OIDC Site-creation acceptance:
+that mutation is currently denied by Core's audited allowlist. Missing optional Analysis/workflow
+configuration and real storage bytes remain honest unavailable states, not successful first-flow evidence.
 Visual snapshots and fixture data are not HIL evidence and never change a DJI
 capability from `NOT_VERIFIED`.
 

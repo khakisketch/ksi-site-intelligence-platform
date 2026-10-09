@@ -23,8 +23,11 @@ decisions. [ADR-KSI-037](architecture/ADR-KSI-037-api-first-earthwork-evidence-a
 retains the first earthwork analysis case's semantics and acceptance.
 [ADR-KSI-039](architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)
 bounds long-term product responsibility: acquisition/flight/autonomous execution are out-of-product
-and their sources are retained transitional implementation until a verified successor move. The 2026-09-30 user request
-authorizes documentation/planning only; it does not resume implementation or close `EXT-VAL`.
+and their sources are retained transitional implementation, now archived by P3. The initial
+2026-09-30 planning-only request is historical; subsequent development approvals are in the
+[current bounded rebaseline ledger](superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
+[P5's integrated audit](audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md) records actual
+source/verification limits. No cleanup record closes `EXT-VAL` or customer acceptance.
 
 | Client | Intended repository entry | Evidence limit |
 |---|---|---|

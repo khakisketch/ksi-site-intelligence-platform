@@ -19,8 +19,9 @@
 
 ## 한 문장 정의
 
-**KSI는 외부 재구성 산출물을 등록·검사·구조화하고, 필요한 공간데이터와 재현 가능한
-분석 결과를 API·MCP로 제공해 외부 에이전트와 산업용 소프트웨어가 재사용하는 기반이다.**
+**KSI는 물리적 현장의 관측을 사람·외부 에이전트·소프트웨어·로보틱스가 재사용하는
+근거형 Site State와 Change로 바꾸는 기반이다.** 외부 산출물 등록·검사, 데이터 제공과
+고정 분석은 현재의 두 재사용 경로이며, 건설·토공은 첫 시장이지 배타적 정체성이 아니다.
 
 2026-09-30 [ADR-KSI-038](ADR-KSI-038-spatial-data-and-analysis-platform.md)의 목표 구조는
 다음과 같다. 주간 토공 분석은 분석 경로의 첫 사례이며, 첫 플랫폼 검증에는 DSM·정사영상의
@@ -39,7 +40,21 @@ out-of-product다.
                       └─ Console: 등록·상태·보완·근거·접근 관리
 ```
 
-## 전체 구성도 (목표)
+## 현행 소스와 검증 범위 — 2026-10-09
+
+| 소유 | 실제 입구 | 증거와 한계 |
+| --- | --- | --- |
+| Core | `ksi_core.composition.platform_assembly.assemble_platform_app` / `platform_production.build_platform_production_app` | Site/WorkArea/외부 WorkOrder·등록·결과·근거; Mission/device/managed assembly 없음 |
+| 독립 워커 | processing-controller의 7개 script | 외부 검사·계측·Analysis·Spatial Data; generated 실제 바이트 검증≠운영 이미지/호스트 수용 |
+| 소비자 | Analysis/Spatial Data stdio MCP, HTTP 소비 코드, Console | 같은 Core 기록; 별도 권한·계산 없음; 설정 없는 선택 기능은 명시적 unavailable |
+| 취득 출처 | `archive/acquisition-2026/` | 역사적 transitional implementation, 현행 runtime/지시 입구 아님 |
+
+정확한 소스·성공/실패/미검증은 [P5 통합 감사](../audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md),
+승인·현재 과업은 [정본 원장](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)을 따른다.
+아래 그림·장비·FIELD/P0~P3 설명은 **역사적 취득 목표**로 보존하며 현재 제품 의무나
+다음 구현 후보를 선택하지 않는다. DJI/Manifold 안전 권위는 원래 의미를 유지한다.
+
+## 역사적 취득 구성도 (과거 목표; 현행 플랫폼 아님)
 
 ```text
   현장 노트북/컴퓨터                         건 설 현 장

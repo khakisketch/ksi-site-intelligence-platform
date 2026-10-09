@@ -14,7 +14,12 @@ spatial_data_platform:
   planning_ledger: docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md
   status: PLANNED
   direction_status: ACCEPTED
+  # Dated 2026-09-30 planning snapshot, preserved verbatim (not the current task switch).
+  # Subsequent approved development is routed by checkpoint + rebaseline ledger below;
+  # this index never selects or automatically resumes that work.
   execution_status: PAUSED_BY_USER
+  execution_record: docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md
+  verification_record: docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md
   scope: >-
     Spatial-data delivery and reproducible analysis for external agents and industrial software.
     First platform validation: DSM/ortho area-data reuse plus the existing earthwork analysis case.

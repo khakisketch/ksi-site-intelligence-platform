@@ -40,12 +40,15 @@ API-first 토공 분석·통합 작업은 [ADR-KSI-037](architecture/ADR-KSI-037
 데이터 제공과 분석의 두 경로를 두며 첫 플랫폼 검증은 DSM·정사영상의 외부 구역 데이터
 활용과 기존 분석 사례를 함께 입증한다. 제품 전체 범위·고객 해석은 038을, 기존 분석의
 계산·권위·정확도·수용 계약은 037을 읽는다. [SDP-20260930](superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)이
-장기 작업과 보완 결정을 연결한다. 현재 지시는 문서·계획 반영만이며 개발은 보류다.
+장기 작업과 보완 결정을 연결한다. 2026-09-30 최초 문서/보류 기록은 역사적 단계이며,
+후속 개발 재개와 현재 bounded rebaseline의 승인·진행은
+[정본 원장](superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)을 따른다.
 이번 명시적 방향 개정에 따른 product-state Goal/계획 연결은 slice close나 완료 판정이 아니다.
 
 2026-10-07의 [ADR-KSI-039](architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)은
 장기 제품 책임 경계다: 비행·자율 취득·전술 인지/제어·고객 production 재구성은 Site Intelligence의
-장기 책임 밖이며, 취득·Edge 출처는 검증된 후속 이동 전까지 유지되는 transitional implementation이다.
+장기 책임 밖이며, 취득·Edge 출처는 역사적 transitional implementation이다. P3에서
+`archive/acquisition-2026/`으로 이동했고 현재 플랫폼 실행·지시 입구가 아니다.
 Constitution·Decision Ledger·PRD와 ADR-KSI-037 D6/ADR-KSI-038 취득 조항의 책임 라우팅은 039가
 supersede하고, 수치·원본·불변식·EXT-VAL·역사적 milestone 증거는 바꾸지 않는다.
 
@@ -122,6 +125,9 @@ mission/perception/equipment packages, their tests and edge tooling) moved
 blob-identical to `archive/acquisition-2026/` per
 `docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv`. The archive is historical
 evidence only — never a runtime import path, workspace member, production
-build context, or pytest/mypy/ruff target. The `apps/dashboard/` acquisition
-screens still reference retired routes until the design-owned P4 Console
-cleanup (recorded transitional state, not silent support).
+build context, or pytest/mypy/ruff target. The design-owned P4 Console cleanup
+is now technically closed locally (`7f44d11`); its current Home/Sites/five-tab
+workspace no longer mounts acquisition screens/actions. P5's approved
+[integrated audit](audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md) separates
+local evidence, the two historical post-move adaptations, and open runtime/customer gates.
+Archived instructions are provenance only; the root `AGENTS.md` governs current work.

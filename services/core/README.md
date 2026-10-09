@@ -1,6 +1,6 @@
 # services/core
 
-KSI Core: identity, site, Mission Contract, event workflow, map/model registry and audit.
+KSI Core: scoped identity, Site/WorkArea, external observations, policy, jobs, results, evidence and audit.
 
 ## P3 Task 5 — Core acquisition closure (archive boundary)
 
@@ -26,6 +26,9 @@ comparison/design-conformance/region-extraction, report-exports, copilot,
 workspace) retire with the legacy assembly. Historical managed results stay
 readable through the retained readers (`processing_jobs`, `artifact_manifest`,
 `source_media`, `evidence`), pinned by `test_historical_managed_readers.py`.
+Those readers do not mount managed ProcessingJob/artifact HTTP routes or enable new execution.
+See the [P5 integrated audit](../../docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)
+for exact SDK/HTTP/replay evidence and failed/unverified gates.
 
 ## Spatial data delivery (explicit local lane)
 
@@ -47,11 +50,11 @@ software only) is recorded in
 ## Core R1 module routing (partial)
 
 `KSI-CORE-R1-20260914` has relocated the reusable foundation and identity
-implementations without changing their public behavior. Canonical modules are
+implementations without changing their public behavior. Active canonical modules are
 `ksi_core.foundation.{api_base,durable_journal,identifiers,leasing,metrics,observability,
-retention,currentness}` and `ksi_core.identity.{auth,oidc,signing_keys,device_attestation}`.
-The prior root paths remain explicit aliases to the same module objects, so legacy imports
-share journal globals and identity types with canonical imports.
+retention,currentness}` and `ksi_core.identity.{auth,oidc}`. Their retained compatibility
+aliases share types and globals. P3 archived signing/device and acquisition aliases;
+those names are absent rather than resolved through the archive.
 
 `docs/audit/CORE_R1_MODULE_MIGRATION.json` is the exhaustive old/active/planned map and
 `tools/check_core_module_boundaries.py` validates it. Foundation imports stay protected;
@@ -59,28 +62,23 @@ the only recorded transitional domain dependencies are retention's runtime evide
 storage error and its type-only evidence/event annotations. They are narrow existing contracts,
 not permission for a general foundation-to-domain dependency.
 
-T2 managed domains now live under `ksi_core.domains` (sites, missions, edge transport,
-artifacts, processing, analytics, design, observations and workspace); capture quality lives
-under the retained acquisition package. T3 external modules live under
-`ksi_core.domains.external.{ingress,quantity,workflow,authority}`. Legacy root imports
-remain exact module aliases. Provider helpers do not own lifecycle locks or publication.
-Acquisition/capability packages remain in place. Task 3 detaches neutral
-primitives: `ksi_core.domains.observations.epoch_identity.observation_epoch_id`
-canonically owns the deterministic external epoch identity (unchanged recipe, no
-new journal; `ksi_core.acquisition.analysis_readiness` re-exports the same
-function), and the Site/external-ingress consumers import neutral
-`ksi_event_contracts.site_frame` / `ksi_geo_core.aoi` types. `ksi_core.composition` now owns app creation,
-ordered validation and route groups, domain graph assembly, runtime surfaces and production
-configuration. Root app, common assembly and production entrypoints remain exact aliases;
-API, JSONL and authority semantics are unchanged, including lazy workspace loading.
+The R1 T2/T3 moves are historical path lineage; P3 subsequently archived missions, edge transport,
+acquisition/capability and coupled workspace domains. Active external modules live under
+`ksi_core.domains.external.{ingress,quantity,workflow,authority,delivery}`. Retained readers and
+their explicitly listed aliases remain; archived aliases are not public entrypoints.
+`ksi_core.domains.observations.epoch_identity.observation_epoch_id` owns the unchanged deterministic
+external identity, and Site/ingress use neutral `ksi_event_contracts.site_frame` / `ksi_geo_core.aoi`.
+`ksi_core.composition` owns ordered checks, routes, platform assembly and runtime configuration.
+`ksi_core.app` aliases the shared factory; `app_assembly`, `assembly`, `production` and
+`production_config` no longer exist. The inventory and archive boundary tests govern this distinction.
 
-Alongside the retained managed assembly, `ksi_core.composition.{platform_graph,platform_app,
+`ksi_core.composition.{platform_graph,platform_app,
 platform_assembly}` provides the explicit external-only profile: only Site/WorkArea/roster/
 WorkOrder stores plus the existing external graphs, mounted through `assemble_platform_app`
 with no Mission key, device, acquisition, flight or managed-processing state. The existing
 observation router gains only the opt-in `external_only` flag, which omits the four managed
 mutation routes and rejects omitted/managed execution modes with `422
-EXTERNAL_RECONSTRUCTION_REQUIRED`; legacy defaults are unchanged.
+EXTERNAL_RECONSTRUCTION_REQUIRED`. Retained historical WorkOrders keep their original execution modes.
 `ksi_core.composition.platform_production.build_platform_production_app` boots that
 profile from environment configuration with only a data directory, S3 endpoint/bucket
 and principal digest/OIDC inputs — no Mission signing key directory or device
@@ -92,8 +90,13 @@ inspection, the Analysis worker, and region-data receipt end to end, and
 managed rows and revocation distinctions. No new result schema, identity, grant,
 calculation, or producer adapter is introduced for either file.
 The shared pure env helpers live neutrally in `ksi_core.composition.runtime_config`
-and `ksi_core.foundation.config_values`; the legacy `production_config`/`assembly`
-paths re-export the same function objects.
+and `ksi_core.foundation.config_values`; no legacy production/assembly shim is present.
+
+### Historical acquisition behavior (not current APIs or rollout instructions)
+
+The following dated description retains the original device/flight authority meanings only.
+Its code and managed assembly are archived; these routes, settings and producers are not mounted
+by the current platform factory. Never import or activate archive code to satisfy a platform request.
 
 Core는 장비별 SDK 코드를 소유하지 않는다. 장비 배치·연결 정책은
 `ksi_core/acquisition/`의 profile/readiness store와 `coordination` 원장·API로
@@ -113,19 +116,18 @@ MissionExecution·SourceMedia·ProcessingJob 원장이 계속 권위이며
 
 ## Customer-owned external reconstruction ingress
 
-`POST /v1/sites/{site_id}/observation-work-orders` defaults to a managed
-`MANAGED_ACQUISITION` WorkOrder. Supplying `EXTERNAL_RECONSTRUCTION` creates an
+The current platform's `POST /v1/sites/{site_id}/observation-work-orders` requires explicit
+`EXTERNAL_RECONSTRUCTION`; omitted/`MANAGED_ACQUISITION` requests return422
+`EXTERNAL_RECONSTRUCTION_REQUIRED`. An external request creates an
 already-approved customer artifact registration request with no schedule and no
 acquisition callback. The request requires `Idempotency-Key`; Core journals its
 hash and normalized request fingerprint, never the raw key. Retrying the same
 request returns the current WorkOrder without a second create event; reusing the
-key for another request is a conflict. Managed callers may also supply a key and
-receive the same retry protection.
+key for another request is a conflict. Historical managed rows remain readable and non-executable.
 
-ADR-KSI-036's bounded ingress is available only when the shared assembly supplies the durable
-journal and supported evidence storage. Storage-less development assembly deliberately has no
-external-reconstruction routes: it cannot safely issue a digest-bound upload capability or make a
-server object observation. The five-route flow is:
+ADR-KSI-036's bounded ingress requires the platform assembly's durable journal and evidence-storage
+port. The current dev runner supplies a fail-closed unavailable port when S3 is not configured;
+mounted routes do not imply usable uploads or successful byte seal. The five-route flow is:
 
 1. `POST /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions` registers
    an authenticated customer declaration and returns a server-issued `submissionRef`.
