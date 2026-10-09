@@ -1,6 +1,6 @@
 # Physical Site rebaseline — integrated local verification (P5)
 
-Updated: 2026-10-09. **Final P5 local evidence received; cleanup/whole-product/goal acceptance remains OPEN.**
+Updated: 2026-10-09. **P5 local verification-report deliverable CLOSED; cleanup/whole-product/goal acceptance remains OPEN.**
 Authority and actual approval: [rebaseline ledger](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
 Approved [P5 plan](../superpowers/plans/2026-10-08-physical-site-rebaseline-integrated-verification-p5.md)
 SHA256 `4119e5d1dca5f89c6f6c1edbb9880289c183d7529b03f53f45224a51fbfe374a`;
@@ -399,7 +399,7 @@ its affected consumer/link checks and local record commit are recorded separatel
 | RB-06 | Controlled restart/idempotency/tenant/rights/consent/currentness/cancel/cleanup negatives verified | Production TLS/UDS/ACL/kernel/configuration unverified |
 | RB-07 | Changed P4 cleanup's auth/reload/mobile/error and design-owned actual rendered review reused under matching hashes | Old target offline; configured real-byte/repeated first-customer flow unverified |
 | RB-08 | Active offline lock/pins/inventory/package/archive exclusions verified; **PARTIAL overall** | Broad109/14FAILED,5dangling editables, fresh sync/images/CI/host unverified; P6 only a proposal |
-| RB-09 | Independent integrated source checks received; task-owned record reconciliation is the final P5 closeout step | Parent ledger binds affected record checks/local commit; human acceptance/external delivery remain separate |
+| RB-09 | Local integrated source/review/record evidence reconciled: `a8f6e93` + record commit `7bc7693`; committed-HEAD99consumer checks and154links valid | Local report deliverable only; receipt-only follow-up status in parent ledger, human acceptance/external delivery remain separate |
 
 No whole-cleanup/goal/customer/EXT-VAL/vendor/accuracy/operational acceptance is established.
 The P5 deliverable is a verified local preservation/repair and discrepancy report, not a waiver of

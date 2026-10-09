@@ -1939,3 +1939,32 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   Milestones/Current slice/Backlog and exact4record-only scope; no P6implementation exists. That
   receipt is a precommit record snapshot, not the later postcommit state. Commit only those4paths;
   verify the actual committed HEAD's affected consumer checks and final record snapshot afterward.
+
+### P5 local verification-report closure / P6 written-review gate
+
+- Record/proposal-only local commit `7bc76934b1ecc9ccd90fff93e492a8833b587559`: exactly4named
+  paths, staged whitelist/workspace equality/whitespace checked, index/checkpoint/secrets and foreign
+  work excluded. No source/test/template/runtime/permission change or external action. Actual
+  committed-HEAD five-file consumer/routing command above **99passed/exit0**,6.24s; log SHA256
+  `895e50530986ca98d631eb10f904236660a151b742d9890e4b102074a770b8e0` at
+  `/tmp/opencode/p5-closeout-postcommit-99.log`. Git was clean afterward.
+- Final record reception SHA256 `43a14e0da794d0581c827d4096fbc08fe81d09c476715a0c040dfcb3fc6225c8`
+  at `/tmp/opencode/p5-closeout-final-record-check.json` binds actual `7bc7693`, four record hashes,
+ 154valid local links/0broken,18unchanged non-record frozen inputs, exact unmodifiedspec/P5plan/
+  product Milestones/Current slice/Backlog and P6planSHAccee1d92/no implementation. This paragraph
+  and the audit's final status are receipt-only follow-up metadata; source/consumer links do not change.
+- **Tasks1–5 local P5 verification/report deliverable is CLOSED**, using its explicit discrepancy/
+  unverified-report path, not an archive/type/runtime waiver or whole-cleanup acceptance. Independent
+  source `a8f6e93` full6047/30/98/0 + Ruff/scoped-types, whole/delta review, preserved failures,
+  source-bound P4 reuse, all RB rows and full-objective/owner checklist are reconciled. Scoped
+  engineering usability: existing generated actual-platform register/inspect/Analysis/data/API-MCP/
+  history/recovery paths can be exercised in the prepared environment; production/realcustomer and
+  configured successful Console data/result loop remain unverified.
+- Deferred hygiene: MIN-1 record diff-context options, MIN-2 retain SDK per-test output, and self-origin
+  Task3 missing full17/6argv. No retrofitted command, new source sweep or duplicate full test. Four
+  foreign worktrees, immutable original archive and private state remain preserved; no task-created
+  workspace requires removal. Evidence scratch is kept rather than discarded before Human review.
+- **Next is Human written review of P6ccee1d92**, preserving the sequential method. Until that actual
+  approval, no P6 implementation or automatic retry is authorized. Remaining full-goal gates and
+  responsible owners above stay OPEN; local report closure does not reduce or complete the objective,
+  close EXT-VAL/customer/operational acceptance, or deliver externally.
