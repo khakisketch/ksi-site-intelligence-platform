@@ -97,10 +97,11 @@ Goal 자동 계속, 실행 방법 선택)의 구→신 매핑을
 [매핑 ledger](plans/2026-10-09-site-harness-mapping.md)에 기록했다. 기존 계획·Spec·PRD 문구는
 재작성하지 않는다. Native goal `b13320f7`의 `active` 표시는 플러그인 제거로 inert이며
 auto-continuation이나 pause/재개 실행 권한이 아니다. 이 갱신은 slice close가 아니다.
-2026-10-09 F-01 결정 제안: 첫-flow 온보딩(Site bootstrap·WorkArea grant 소유권) 결정 제안서를
-[F-01 제안](plans/2026-10-09-f01-site-bootstrap-and-grant-ownership.md)으로 작성해 Human written
-review에 올렸다(실행 아님). 권장 2안(지정 org-admin self-bootstrap)+B안(site 단위 grant level);
-승인 시 상세 구현 계획으로 진행한다.
+2026-10-09 F-01 승인·개선: Human이 2안(지정 org-admin self-bootstrap)+B안(site 단위 grant level)을
+승인했고, 검토 조건(C1 same-Site 상속 한정·scope-only, C2 capability 수명주기 KSI 통제, C3 신규
+Site 접근 출처 확정, C4 부정 테스트, C5 ADMIN 표기 정정)을
+[F-01 제안 v2](plans/2026-10-09-f01-site-bootstrap-and-grant-ownership.md)에 반영했다. 실행은
+상세 구현 계획 승인 후다(코드·route·registry·grant 변경 없음).
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.
