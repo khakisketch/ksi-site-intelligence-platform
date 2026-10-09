@@ -1968,3 +1968,63 @@ Built wheel SHA256s (all version0.0.1, `py3-none-any`; temporary artifacts, not 
   approval, no P6 implementation or automatic retry is authorized. Remaining full-goal gates and
   responsible owners above stay OPEN; local report closure does not reduce or complete the objective,
   close EXT-VAL/customer/operational acceptance, or deliver externally.
+
+### P6 written execution approval and preflight — 2026-10-09
+
+- Human answered **“P6 실행 승인 (Recommended)”** after reviewing the linked two-task
+  [P6 plan](2026-10-09-platform-only-default-deployment-template.md), SHA256
+  `ccee1d92c440e342d0d504902ad06ef782148d66455db321a54bade3d0707425`. This is actual approval,
+  not inferred from goal continuation or the frozen proposal header. Preserve sequential inline
+  execution and independent final Reviewer/Test Runner; no new runtime/install/CI/deploy/grant effects.
+- Base/target: original checkout `main` `a0daa32bca28e894ee2bedc25479d578e95c31a6`, clean index/
+  tracked state before approval prose; four foreign worktrees retained. Current native goalb13320f7
+  verified active, full objective unchanged. P5 report sourcea8f6e93/records7bc7693+metadataa0daa32.
+- Thirteen exact proposed-input hashes match the approved plan; scoped preflight snapshot
+  `.superpowers/sdd/2026-10-09-platform-only-default-deployment-template/task-1-inputs.json`, SHA256
+  `dbc60b0237b68d80089a25cc3a540e538633e67863d4ab176f90bacf3370ccca`. Docker CLI is present;
+  prepared example-only Compose config may run through the named test. Broken/missing Compose
+  plugin is a genuine capability failure, not permission to install or create an environmental skip.
+- Implementation contract: RB03/08/P5-COMP-01; owner deploy templates/comments/current ops prose
+  and the three named contract tests; no service/API/schema/permission/profile/data-format change.
+  INV040 truthful failure/unverified reporting and INV054 pinned references/historical digest controls
+  enforced; INV020/024/050/051/053/055/060/061 preserved by unchanged engines/auth/state/contracts.
+  Existing volume identities and all remaining service maps/executable Dockerfile lines are frozen.
+  No customer/license transfer, reconstruction engine execution or HIL assumption; rollback is a
+  reviewed inverse task-owned local change, never reset, live lifecycle or volume deletion.
+- Preflight Task1→Task2: actual source/semantic dictionaries, named volumes and Dockerfile snapshot
+  are the independent verification inputs; one writer, no conflicting interfaces. Static tagged-YAML
+  loader recognizes only existing!reset. Existing VM and image-reference assertions must be reconciled
+  with the authorized service removal, retaining Caddy-only ports/networks and historical NodeODM pin.
+- Execution checklist and artifact-level results stay in the task's ignored skill ledger; this parent
+  ledger owns approval, durable rulings/source/verification and remaining full-goal gates. Task1 starts
+  with service/mount RED witnesses and pre-change preservation controls, not production edits first.
+
+### P6 Task1 RED/GREEN and revision-bound release control
+
+- Actual pre-removal witnesses: new template matrix2failed/8passed (NodeODM service/mount, not a
+  loader error); expanded static+actual Compose+pin matrix4failed/9passed/0.15s, raw RED log SHA256
+  `ad1340e27aeeed2b57802637b23b1d9cae6c1a22ec00e2ea02f06e0e9e4811c5`. VM config actually merged
+  the original NodeODM; canonical historical digest control already passed. Eight preservation controls
+  passed before removal. Minimal removal gave the same13selected checks **13passed/exit0/0.14s**.
+- Source changes: only NodeODM service in base/VM, comments/current startup prose and the three
+  named tests. Seven remaining service dictionaries, named-volume maps and executableDockerfile
+  preserved; historicalksi-odm declaration remains unused. Current docs require protected OIDC subject
+  registry and distinguish optional trusted Analysis/external configuration from local SpatialData
+  assembly; old keys/acquisition/Copilot/backup/staging procedures explicitly historical/evidence-only.
+- First complete nine-target Task1 matrix **1failed/126passed/7.98s**, logSHA
+  `dd789f3caf2c1e8cf20d7deb96f47eb155d2dd513546de5aca052fb2d84c5b0a`. Failure is the unchanged
+  `test_stage_consumes_the_canonical_generator_output_without_legacy_manifest_fields`: release
+  generator snapshots GitHEAD a0daa32 while stage validator scans the edited worktree. Read-only
+  probe121b9ef0 proves committed10references versus working9, only historicalcanonicalNodeODM removed,
+  zero added refs. Generator, release schema, pin CLI and runtime-stage script are unchanged.
+- Task1 Ruling (self-origin evidence/order issue): preserve exact release/source guards and bind the
+  full matrix to the actual committed candidate rather than modifying its read-only contracts/test
+  or pretending the uncommitted run passed — a local reversible commit is needed for HEAD/worktree
+  identity convergence, as with the already-planned HEAD-aware consumer gate — cost if wrong:
+  candidate remains provisional with a failing gate and needs bounded repair; no deployment/exposure.
+  Do not mark Task1 complete until the actual committed matrix is green. This is not a security waiver.
+- Preparation: pinCLI0, scopedmypy3clean; initial new-test8E501linewrap findings fixed without semantic
+  change and scopedRuff now0. Exact10task-owned paths (nine Task1 files+this approval/evidence ledger),
+  17local Markdown links/0broken and whitespace0; eight read-only contract/tool/env/lock inputs match
+  HEAD. No sync/install/image lifecycle/CI/credentials/volume or service operation. Commit candidate,
+  then immediately run unchanged full Task1 matrix/pins against that real revision before Task2 freeze.

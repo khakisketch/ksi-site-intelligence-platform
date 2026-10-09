@@ -5,20 +5,25 @@
 
 | 경계 | 디렉터리 | 책임 |
 |---|---|---|
-| 사람용 앱 | `apps/` | Dashboard, Field Web, 운영 승인 |
-| 서버 런타임 | `services/` | Core, Processing, DJI integration gateway |
+| 사람용 앱 | `apps/dashboard/` | 인증된 Console·근거 조회·업무 의도 요청 |
+| 서버 런타임 | `services/` | 플랫폼 Core·독립 외부 검사/측정/Analysis/공간데이터 워커와 MCP 소비자 |
 | 배포 조립 | `deploy/` | 환경변수, 영속 볼륨, Core/스토리지 조립 |
 
-공통 wire 계약과 라이브러리는 `contracts/`·`packages/`, 현장 장비 런타임은
-`edge/`에 남는다. 따라서 KSI Cloud 기능을 추가할 때도 소스를 `cloud/` 아래로
-복제하거나 이동하지 않는다.
+공통 wire 계약과 라이브러리는 `contracts/`·`packages/`다. 과거 `edge/` 장비 출처는
+`archive/acquisition-2026/edge/`에 보존하며 플랫폼 런타임이나 지시 진입점이 아니다.
+따라서 플랫폼 기능을 추가할 때도 소스를 `cloud/` 아래로 복제하거나 이동하지 않는다.
 
-`compose.yaml`은 Core·MinIO·NodeODM 로컬 최소 조합이다. (P3 Task 3: managed
-Processing Worker 서비스는 `archive/acquisition-2026/` 으로 분리됐다.) 외부 VM
+`compose.yaml`의 서비스는 `init-volumes`·Core·MinIO뿐이다. NodeODM·managed Processing
+Worker·DJI Gateway는 기본·VM 조합에 없다. 비행·자율 취득·고객 production 재구성은
+ADR-KSI-039에 따라 플랫폼 책임 밖이다. 외부 VM
 준비에는 additive `compose.vm.yaml`을 함께 사용해 Dashboard production image와 Caddy TLS
-ingress를 더한다. DJI Gateway는 RC 기본형 HIL에서 실제 adapter가 선택된 뒤에만
-runner/Dockerfile/service를 추가한다. HIL 전 빈 Gateway 컨테이너나 가짜 장비 상태는
-어느 조합에도 넣지 않는다.
+ingress를 더한다. 합친 서비스는 `init-volumes/core/minio/dashboard/caddy`다. 검사/측정/
+Analysis/공간데이터 워커의 보호된 구성·활성화와 실제 운영 기동은 별도 검증 대상이다.
+
+템플릿 편집은 기존 컨테이너를 중지하지도, 데이터를 옮기거나 볼륨을 삭제하지도 않는다.
+`ksi-data`·`ksi-objects` 식별자와 서비스 설정은 보존한다. `ksi-odm`은 역사적 미사용 선언만
+남기며 현재 서비스가 마운트하지 않는다. 그 볼륨에 고유한 데이터가 있을 수 있으므로 삭제/
+이름 변경/자동 정리를 허용하지 않는다. 실제 이미지 빌드·기동·배포·운영 복구는 별도 승인이다.
 
 ## External reconstruction private candidate
 
@@ -35,7 +40,10 @@ socket ACL proof and independent external quantitative authorities are supplied.
 That boundary is recorded in
 [`docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md`](../docs/acceptance/EXTERNAL_PRODUCT_LOOP_STAGING_ACCEPTANCE.md).
 
-최초 실행 전:
+### 역사적 취득 입력 예시 — 현재 플랫폼의 사전 준비가 아님
+
+다음은 이전 취득 팩토리의 입력 생성 예시를 보존한 것이다. 현재 플랫폼 경로는 다음 절이다.
+장비 증명 파일을 복사하거나 Mission 키를 만드는 것을 정상 플랫폼 기동 요건으로 삼지 않는다.
 
 ```bash
 cp .env.example .env
@@ -50,20 +58,30 @@ digest만 두며, `device-attestation-keys.json`에는 Manifold 공개키만 둔
 
 정상 부팅 프로파일은 `ksi_core.composition.platform_production:
 build_platform_production_app` 이다(Docker 이미지 CMD·CI 스모크 동일). 필수
-입력은 데이터 디렉터리, S3 endpoint/bucket, principal digest/OIDC 설정뿐이다.
+입력은 다음 실제 팩토리의 데이터·S3·principal·인증 설정이다. 예제만 복사해 운영 준비가
+완료되는 것은 아니다. [현재 기동 요건](../docs/ops/DEPLOYMENT.md)을 함께 확인한다.
 
 | 필수 | 설명 |
 |---|---|
 | `KSI_CORE_DATA_DIR` | 원장(append-only journal) 영속 디렉터리 |
 | `KSI_CORE_S3_ENDPOINT` / `KSI_CORE_S3_BUCKET` | 증거·산출물 객체 저장소 |
-| `KSI_CORE_PRINCIPAL_TOKENS_JSON` | digest 전용 접근 토큰 목록 |
-| OIDC 일식 (`KSI_CORE_HUMAN_AUTH_MODE` + `KSI_CORE_OIDC_*`) | 사람 인증이 DUAL/OIDC 일 때 |
+| `KSI_CORE_PRINCIPAL_TOKENS_JSON` | 비어 있지 않은 digest 전용 principal 목록; 실제 권한/수명/조직 범위는 별도 |
+| `KSI_CORE_HUMAN_AUTH_MODE`와 issuer/audience/JWKS | 사람 인증이 DUAL/OIDC 일 때; VM은 OIDC |
+| `KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE` | DUAL/OIDC에서는 보호된 subject 등록 파일까지 필수; issuer/JWKS만으로 기동하지 않음 |
 
-선택 입력은 서명된 Analysis 3종
+선택 업무 구성은 서명된 Analysis 3종
 (`KSI_CORE_ANALYSIS_RUNTIME_CONFIG_FILE`·`KSI_CORE_ANALYSIS_ACTIVATION_FILE`·
 `KSI_CORE_ANALYSIS_ACTIVATION_KEYS_FILE`, 전부 아니면 전무)과 외부 권한 쌍
 (`KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG`·
-`KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG`, 함께 아니면 전무)뿐이다.
+`KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG`, 함께 아니면 전무)다. Analysis 활성화에는
+등록된 `ANALYSIS_WORKER`가 정확히 하나여야 한다. 경로를 채우는 것만으로 신뢰·권리·
+worker 기동이 생기지 않는다. 나머지 로그/저널/공개 S3 등의 기존 옵션은 실제 팩토리를 따른다.
+보호된 파일의 안전한 공급/접근 경로는 운영 입력으로 따로 검증해야 하며, 이 템플릿 변경이
+파일·자격·마운트·워커 서비스를 추가하지 않는다.
+
+현재 production 팩토리는 `spatial_data`를 주입하지 않는다. 실제 로컬 공간데이터 조립은
+`SpatialDataLocalAssemblyConfig`를 명시하는 별도 경로다. 이 구성 정리로 새 production
+환경변수나 활성화 기능이 생겼다고 간주하지 않는다.
 플랫폼 부팅은 Mission 서명키 디렉터리(`KSI_CORE_SIGNING_KEYS_DIR`)와 장비 증명
 파일(`KSI_CORE_DEVICE_ATTESTATION_KEYS_FILE`)을 요구하지도 읽지도 않으므로
 `compose.yaml` core 서비스는 그 둘을 마운트하지 않는다. 레거시 팩토리
@@ -72,6 +90,11 @@ build_platform_production_app` 이다(Docker 이미지 CMD·CI 스모크 동일)
 `ksi_core.composition.platform_production:build_platform_production_app` 가
 정상 부팅 경로) `.env.example` 의 서명키·증명 관련 주석과
 `device-attestation-keys.example.json` 은 레거시 기록으로 유지된다.
+
+### 역사적 취득 설정과 출처 — 현재 플랫폼 설정/활성화 절차가 아님
+
+아래는 은퇴한 취득 팩토리의 설정/안전 경계를 보존한다. 활성 플랫폼 조립이나 장비 운영의
+지시 진입점이 아니며, archived runner/config는 역사적 증거로만 읽는다.
 
 Acquisition coordinator는 `KSI_CORE_ACQUISITION_COORDINATION_ENABLED=true`가 기본이며,
 문제가 생기면 이 flag만 내려 기존 Mission/KMZ와 수동 ingest 경로를 보존할 수 있다.
@@ -87,11 +110,14 @@ HIL-0의 Gateway runner(`ksi-dji-gateway --config ...`)와 그 빌드 입력
 (`Dockerfile.gateway`)·설정 예시(`gateway.config.example.json`)는 P3 Task 6에서
 `archive/acquisition-2026/` 으로 blob-identical 이동했다(historical, 제품 지원
 아님). 기본 Compose에는 Gateway가 없으며(아래 deploy contract가 단정한다),
-`EDGE_ROUTE_OBSERVER` journal 호환성(다음 절)은 Core reader의 플랫폼 계약으로
-유지된다. 아카이브된 runner 예시의 credential 분리 형태는
+`EDGE_ROUTE_OBSERVER` journal 호환성(다음 절)은 보존된 역사적 reader/replay 범위이며
+현재 플랫폼에 observation mutation/dispatch 경로가 있다는 뜻이 아니다. 아카이브된 runner 예시의 credential 분리 형태는
 `archive/acquisition-2026/deploy/gateway.config.example.json` 원본을 보라.
 
-### EDGE_ROUTE_OBSERVER journal compatibility and rollback
+### Historical EDGE_ROUTE_OBSERVER journal compatibility and rollback
+
+이 절은 역사적 producer/reader의 호환성·안전 조건이다. 현재 플랫폼에서 observer를
+provisioning하거나 Gateway를 restart하라는 지시가 아니며 기존 기록을 재작성할 권한도 없다.
 
 PSDK route observation은 `EDGE_ROUTE_OBSERVER`의 전용 token으로만 연다. 기본 예제는
 그 principal이나 token을 provisioning하지 않으며, 기존 Gateway/Edge producer가 쓰는
@@ -116,7 +142,10 @@ principal/token을 없앤다고 legacy producer record를 삭제하거나 broad 
 개발·합성 데이터까지이며, Cloud 사업자 적법성 승인과 실제 고객 데이터 배포는
 `docs/security/CLOUD_PROVIDER_DUE_DILIGENCE.md`가 열려 있는 동안 금지다.
 
-## Optional grounded Copilot
+## Historical optional grounded Copilot — evidence only
+
+아래 overlay/활성화 설명은 이전 팩토리의 기록이다. 현재 플랫폼 부팅에서 검증된 Copilot
+활성화 경로가 아니며 이 명령으로 구성/신뢰/권한이 생기지 않는다. 새 모델 호출·활성화는 별도 범위다.
 
 현장 AI는 기본 compose에 포함되지 않는다. 승인된 OpenAI-compatible provider를
 합성 데이터로 검증할 때만 additive overlay를 사용한다.
@@ -136,6 +165,10 @@ Provider 연결이나 저장형 대화가 실패해도 기존 현장 결과·작
 승인 전까지 금지한다.
 
 ## Phase 2 synthetic staging on DGX Spark
+
+역사적 staging 경로/증거를 보존한다. 아래 lifecycle·backup/restore 스크립트는 현재 플랫폼
+팩토리로 재검증되지 않았으며 정상 기동/복구 지침으로 실행하지 않는다. 이 문서 변경은
+그 stack을 재시작/삭제하거나 새 운영 배포를 승인하지 않는다.
 
 외부 사업자와 실제 모델을 승인하기 전에는 독립 `compose.synthetic-staging.yaml`로
 production Dashboard/Core 경계를 합성 데이터에만 적용한다. 이 조합에는 worker,

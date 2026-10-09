@@ -1,18 +1,54 @@
-# 배포 (로컬 최소 조합: Core · 처리 워커)
+# 플랫폼 배포 템플릿 (Core · MinIO · 볼륨 초기화)
 
 > 이 문서가 있기 전에는 이 시스템을 띄우려면 `production.py` 를 읽어야만 무엇을
 > 채울지 알 수 있었다. 저장소에 compose·env 예제가 하나도 없었다.
 >
-> 값의 정본은 항상 코드다 — Core 는 `services/core/src/ksi_core/production.py`,
-> 워커는 `services/processing-controller/src/ksi_processing_controller/runner.py`.
-> 이 문서는 그 코드가 요구하는 것을 사람이 읽는 순서로 옮긴 것이고, 어긋나면 코드가 맞다.
+> 현재 기동 입력은 `services/core/src/ksi_core/composition/platform_production.py`와
+> `runtime_config.py`를 따른다. 예전 `production.py`/managed `runner.py` 설명은 아래
+> 역사적 기록이며 현재 owner/기동 지침이 아니다. 제품 요구사항의 권위는 `docs/00_READ_FIRST.md`다.
 > Dashboard+Caddy 외부 VM 조립은 `VM_DEPLOYMENT_READINESS.md`가 별도로 소유한다.
 >
 > **사람의 로컬 Console 로그인은 이 compose가 아니라 `apps/dashboard`의 `npm run dev`를
 > 사용한다.** 그 표준 경로는 loopback OIDC Authorization Code + PKCE를 실제로 거치며
 > Bearer 토큰을 붙여넣지 않는다. 이 문서의 opaque token은 Core 저수준 API 진단과
-> Gateway·Edge·worker 같은 비사람 principal을 위한 복구/운영 자격이다. 외부 VM의 사람
+> 승인된 비사람 principal의 저수준 자격이다. Gateway·Edge는 취득 전용 역사적 범위다. 외부 VM의 사람
 > 로그인도 OIDC만 허용한다.
+
+## 현재 플랫폼 경로와 실제 준비 조건
+
+- Base `deploy/compose.yaml`: `init-volumes/core/minio`. VM overlay를 합치면
+  `init-volumes/core/minio/dashboard/caddy`다. NodeODM·managed 재구성 워커·장비 서비스는 없다.
+- 이미지 CMD는 `ksi_core.composition.platform_production:build_platform_production_app`다.
+  템플릿은 독립 외부 검사/측정/Analysis/공간데이터 워커나 그 권한·활성화를 생성하지 않는다.
+- `ksi-data` 원장과 `ksi-objects` 객체 저장소의 기존 볼륨 식별자는 그대로다. `init-volumes`는
+  Core의 uid10001 원장 소유권만 초기화한다. `ksi-odm`은 마운트되지 않는 역사적 선언이다.
+  고유한 데이터가 있을 수 있으므로 캐시라고 추정해 삭제하거나 이름을 바꾸지 않는다.
+- Base의 Core8000/MinIO9000·9001은 loopback이다. TLS/Dashboard는 VM overlay의 별도
+  준비 조건이며 공개되는 것은 Caddy80/443뿐이다. 공개망 배포/DNS/실제 기동은 별도 승인이다.
+
+| 현재 입력 | 조건 / 준비 책임 |
+| --- | --- |
+| `KSI_CORE_DATA_DIR` | 기존 영속 디렉터리; 컨테이너 원장 마운트와 uid 접근을 실제로 검증 |
+| `KSI_CORE_S3_ENDPOINT` / `KSI_CORE_S3_BUCKET` | 실제 저장소와 bucket; MinIO 자격·접근/보존은 별도 운영 입력 |
+| `KSI_CORE_PRINCIPAL_TOKENS_JSON` | 비어 있지 않은 digest 전용 목록; 조직/권한/수명과 원문 보호를 별도 확인 |
+| DUAL/OIDC 설정 | issuer/audience/JWKS와 **보호된 `KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE`**까지 필수; JWT 설정만으로 부팅 불가 |
+| Analysis 선택 구성 | runtime/activation/검증키 3파일 전부 아니면 전무; 등록된 `ANALYSIS_WORKER` 정확히 하나 필요 |
+| 외부 workflow 선택 구성 | `KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG`와 `KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG` 함께 아니면 전무 |
+
+기존 로그·저널·공개 S3 등의 옵션은 실제 팩토리를 따른다. 이 문서는 새 자격/정책을 발급하거나
+보호된 파일의 마운트·공급 경로를 추가하지 않는다. 예제 `.env.example`에는 취득 관련 역사적
+필드도 있으므로 복사만으로 현재 production 설정이 완성됐다고 보지 않는다. Mission 서명키와
+device attestation 파일은 플랫폼 부팅이 요구하지도 마운트하지도 않는다.
+
+현재 production 팩토리는 `spatial_data`를 주입하지 않는다. 실제 공간데이터 로컬 조립은
+`SpatialDataLocalAssemblyConfig`를 명시하는 별도 경로이며 새 환경변수 스위치로 대체하지 않는다.
+보호된 데이터/Analysis 구성이 없다는 F02–03 한계는 이 템플릿 변경으로 닫히지 않는다.
+
+현재 템플릿/기동 조건의 연결은 [deploy 안내](../../deploy/README.md)와
+[VM 준비 경계](VM_DEPLOYMENT_READINESS.md)에 있다. 준비된 도구의 `compose config`는
+구문/병합 검증일 뿐 이미지 빌드·기동·권한·저장·복구나 고객 수용의 증거가 아니다.
+템플릿 편집은 이미 실행 중인 컨테이너를 중지하지 않으며 볼륨을 삭제/이전하지 않는다.
+fresh sync/image/boot/CI와 production TLS/UDS/ACL/host 증거는 별도 승인·검증까지 미확인이다.
 
 ## 이 배포가 뜨지 않는 것은 정상이다
 
@@ -22,6 +58,15 @@ Core 는 필수 환경변수가 하나라도 없거나 형식이 틀리면 **기
 로그가 **어느 변수가 왜 문제인지** 말해준다.
 
 ---
+
+# 역사적 취득/managed 운영 기록 — 현재 플랫폼 기동/복구 지침이 아님
+
+아래 §1–9는 이전 조합의 입력·서명·취득·재구성·복구 절차를 출처와 함께 보존한다.
+과거의 signing-key 바인드, managed worker/NodeODM, device attestation, CAP-5 설명을
+현재 base/VM 구성에 적용하지 않는다. 관련 sources는 은퇴했으며 플랫폼 runtime import/
+빌드 입력/지시 진입점이 아니다. 아래 명령을 현재 서비스에서 실행하도록 승인하지 않는다.
+기존 backup/restore/staging 도구도 현재 플랫폼에서 재검증된 복구 경로로 간주하지 않는다.
+특히 역사적 캐시 분류는 현존 볼륨의 고유 데이터나 원본을 삭제할 근거가 아니다.
 
 ## 1. 준비물
 

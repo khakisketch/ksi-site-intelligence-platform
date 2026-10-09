@@ -315,11 +315,16 @@ def test_expected_multi_arch_digest_references_are_present() -> None:
         "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:"
         "14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
     )
-    nodeodm_reference = (
+    assert python_reference in dockerfile
+    assert minio_reference in compose
+    assert "opendronemap/nodeodm" not in compose
+
+
+def test_canonical_historical_nodeodm_digest_still_validates() -> None:
+    reference = (
         "opendronemap/nodeodm@sha256:"
         "cb07d06e21fd6189cfad287c6fedfa0b72568100355635cd9035cb86eed42ee2"
     )
-
-    assert python_reference in dockerfile
-    assert minio_reference in compose
-    assert nodeodm_reference in compose
+    assert _tool()._validate_reference(
+        reference, path=Path("deploy/bin/external-runtime-stage.sh"), line=1
+    ) == []

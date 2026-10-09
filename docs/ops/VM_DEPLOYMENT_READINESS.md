@@ -17,17 +17,19 @@ Internet :80/:443
  app   api       objects
   │     │          │
 Dashboard Core    MinIO API
-        │          │
-        ├─ Worker ─┴─ NodeODM
-        └─ private compose network
+         │          │
+        └──────────┴─ private compose network
 ```
 
-- `compose.yaml`: 기존 로컬 최소 조합이며 rollback 경로다.
+- `compose.yaml`: `init-volumes/core/minio` 플랫폼 로컬 최소 템플릿이다.
 - `compose.vm.yaml`: Dashboard와 Caddy를 더하는 additive 외부 VM profile이다.
-- DJI Gateway service는 없다. 실제 adapter와 다섯 capability는 HIL 전 `NOT_VERIFIED`다.
-- 외부 publish는 Caddy 80/443뿐이다. Base compose의 Core/MinIO/NodeODM port는
+- 합친 서비스는 `init-volumes/core/minio/dashboard/caddy`다. NodeODM·managed 워커·DJI
+  Gateway는 없다. 취득 장비 capability는 역사적 범위의 `NOT_VERIFIED`이며 제품 지원이 아니다.
+- 외부 publish는 Caddy 80/443뿐이다. Base compose의 Core/MinIO port는
   `127.0.0.1` loopback binding이라 원격에서 접근할 수 없다. MinIO console 9001은 Caddy로
   proxy하지 않는다.
+- 기존 서비스 설정/이미지/볼륨 식별자는 보존한다. `ksi-odm`은 역사적 미사용 선언이며
+  고유한 데이터가 있을 수 있다. 템플릿 변경은 기존 컨테이너 중지나 데이터/볼륨 삭제가 아니다.
 
 ## 준비
 
@@ -35,22 +37,33 @@ Dashboard Core    MinIO API
 2. `app.<domain>`, `api.<domain>`, `objects.<domain>` DNS를 VM에 연결한다.
 3. 승인된 OIDC client의 callback URL을
    `https://app.<domain>/api/auth/callback/ksi-oidc`로 등록한다.
-4. OIDC access token에 `ksi_principal_id`, `ksi_organization_id`, `ksi_role`을 넣고 Core
-   audience를 설정한다. role은 `ADMIN | FIELD_OPERATOR | VIEWER`만 허용된다.
+4. Core audience/issuer/JWKS와 보호된 `KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE`을 함께 준비한다.
+   실제 subject→조직/principal/role/범위는 기존 등록 계약을 따른다. JWT claims만으로
+   principal이나 신규 Site/WorkArea grant가 자동 생성되는 것이 아니다.
 5. `deploy/secrets/README.md`에 따라 session/client secret file을 만든다.
-6. Mission signing key와 device attestation 공개키 manifest를 기존 절차로 준비한다.
+6. [현재 플랫폼 요건](DEPLOYMENT.md)에 따라 원장/S3/bucket와 비어 있지 않은 principal
+   digest 목록을 준비한다. 보호된 파일의 안전한 공급·접근 경로는 별도 운영 검증이며 이
+   템플릿 정리는 마운트/자격을 추가하지 않는다. Mission 키/device attestation은 요구하지 않는다.
+
+아래는 별도 승인된 운영 환경을 위한 기존 config/start 예시이며 이 문서나 P6 코드 승인으로
+실제 이미지 빌드·기동·DNS/IdP/secret 변경이 허용되는 것은 아니다. `.env.example` 및
+`compose config` 병합 성공은 보호된 입력·실제 이미지/운영 기동·고객 수용의 증거가 아니다.
 
 ```bash
 cd deploy
 docker compose -f compose.yaml -f compose.vm.yaml --env-file .env config --quiet
 docker compose -f compose.yaml -f compose.vm.yaml --env-file .env up -d --build
-./bin/smoke-vm.sh "$KSI_CLOUD_DOMAIN"
 ```
 
 Dashboard는 `EXTERNAL_VM + OIDC + https origins + secret files` 중 하나라도 빠지면
 instrumentation 기동 검증에서 실패한다. Core는 OIDC issuer/audience/JWKS/algorithm 설정을
-검증하고, JWKS cache가 만료된 상태에서 issuer 장애가 나면 사람 인증을 fail-closed한다.
-장비·워커 opaque 자격은 OIDC mode에서도 별도로 유지된다.
+검증하며 보호된 subject 등록 파일도 요구한다. JWKS cache가 만료된 상태에서 issuer 장애가
+나면 사람 인증을 fail-closed한다. 승인된 비사람 principal의 opaque 자격은 별도로 유지된다.
+
+선택 Analysis runtime/activation/검증키는 전부 아니면 전무이며 `ANALYSIS_WORKER`가
+정확히 하나여야 한다. 외부 workflow/provider 설정은 함께 아니면 전무다. 워커 기동/신뢰는
+이 VM 템플릿이 생성하지 않는다. 현재 production 팩토리에 `spatial_data` 주입은 없고,
+실제 로컬 경로는 `SpatialDataLocalAssemblyConfig`다. 새 환경변수나 활성화 기능을 가정하지 않는다.
 
 ## Presigned object 경로
 
@@ -58,7 +71,12 @@ Core 내부 S3 I/O는 `http://minio:9000`, 현장에 반환하는 presigned URL�
 `https://objects.<domain>`을 사용한다. 두 값을 합치면 브라우저에 Docker DNS 이름이 노출되어
 업로드가 실패하므로 `KSI_CORE_S3_PUBLIC_ENDPOINT`를 제거하지 않는다.
 
-## 백업과 restore
+## 역사적 backup/restore 절차 — 현재 플랫폼 복구 증거 아님
+
+아래는 이전 조합의 절차/스크립트를 보존한 기록이다. `backup-vm.sh`, `restore-check-vm.sh`,
+`smoke-backup-restore.sh`, `smoke-vm.sh`는 현재 플랫폼에 대한 검증된 운영/복구 절차로
+실행하지 않는다. key/worker/ODM 설명도 역사적 범위다. 현재 원장·객체·역사적 볼륨을
+보존하며 fresh 환경의 실제 복구/TLS/UDS/ACL/host 검증은 별도 승인까지 미확인이다.
 
 백업 대상은 Core journal, Mission signing key, 원본 object다. worker/ODM cache는 재생성할 수
 있다. `deploy/bin/backup-vm.sh <absolute-output-dir>`는 timestamp bundle과 SHA-256 manifest를
@@ -78,6 +96,9 @@ Core 내부 S3 I/O는 `http://minio:9000`, 현장에 반환하는 presigned URL�
 Restore를 실행해 본 증거가 없는 tar 파일은 백업 완료로 간주하지 않는다.
 
 ## 2026-08-25 synthetic staging evidence
+
+이하 dated 증거/판정은 당시 source/조합에만 귀속된다. 현재 플랫폼 기동이나 새 VM 복구,
+P6 fresh runtime 검증으로 소급 사용하지 않는다.
 
 DGX Spark의 별도 Compose project에서 production Dashboard/Core OIDC·S3·Copilot 경계를
 합성 데이터로 검증했다. Tailscale HTTPS `10000`~`10003`, Local Identity, MinIO 실제 PNG,

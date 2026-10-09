@@ -1,10 +1,10 @@
-# KSI Core 프로덕션 이미지 — services/core/src/ksi_core/production.py 의
-# build_production_app() 을 uvicorn 팩토리로 기동한다.
+# KSI 플랫폼 Core 이미지 — ksi_core.composition.platform_production 의
+# build_platform_production_app() 을 uvicorn 팩토리로 기동한다.
 #
 # 이 저장소는 uv workspace 다(루트 pyproject.toml [tool.uv.workspace]) — ksi-core
-# 는 packages/*(ksi-domain·ksi-mission-contracts 등) workspace 멤버에 의존하므로
+# 는 활성 packages/* workspace 멤버에 의존하므로
 # services/core 디렉터리 하나만 복사해서는 `uv sync` 가 의존성을 해석할 수 없다.
-# 저장소 전체(.dockerignore 로 apps/·edge/·references/·models/ 등 서버 런타임과
+# 저장소 전체(.dockerignore 로 apps/·archive/·references/·models/ 등 서버 런타임과
 # 무관한 대용량 트리는 제외)를 컨텍스트로 넣는 이유다.
 FROM python:3.12.14-slim@sha256:09f7da3bc104798d0afb40bc08d23ab2da20a76130cec1f2ef170848f5d85217
 
@@ -56,8 +56,8 @@ USER ksi-core
 EXPOSE 8000
 
 # uv run 을 거치지 않고 빌드 시점에 이미 동기화된 venv 를 직접 실행한다 — 위
-# useradd 단락 참조. 이 CMD 는 필수 환경변수(KSI_CORE_DATA_DIR 등, production.py
-# 모듈 docstring 참조) 없이는 build_production_app() 이 RuntimeError 로 즉시
+# useradd 단락 참조. 이 CMD 는 필수 환경변수(KSI_CORE_DATA_DIR 등, platform_production.py
+# 모듈 docstring 참조) 없이는 build_platform_production_app() 이 RuntimeError 로 즉시
 # 죽는다 — 그것이 의도된 fail-closed 동작이다. 실행에는 배포자가 env var 를
 # 채워야 한다.
 CMD ["/app/.venv/bin/uvicorn", "ksi_core.composition.platform_production:build_platform_production_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]

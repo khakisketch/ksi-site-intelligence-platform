@@ -20,7 +20,12 @@ _ENV = (_DEPLOY / ".env.example").read_text(encoding="utf-8")
 def test_vm_compose_resolves_with_only_caddy_80_443_published() -> None:
     if shutil.which("docker") is None:
         pytest.skip("docker compose가 없는 환경")
-    env = {**os.environ, "KSI_DEPLOY_ENV_FILE": ".env.example"}
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith(("KSI_", "COMPOSE_"))
+    }
+    env["KSI_DEPLOY_ENV_FILE"] = ".env.example"
     result = subprocess.run(
         [
             "docker",
@@ -43,15 +48,17 @@ def test_vm_compose_resolves_with_only_caddy_80_443_published() -> None:
         check=True,
     )
     config = json.loads(result.stdout)
+    assert set(config["services"]) == {"init-volumes", "core", "minio", "dashboard", "caddy"}
+    assert "nodeodm" not in config["services"]
     published = {
         service_name: [str(port["published"]) for port in service.get("ports", [])]
         for service_name, service in config["services"].items()
         if service.get("ports")
     }
     assert published == {"caddy": ["80", "443"]}
-    # P3 Task 5: the managed worker service retired to archive/acquisition-2026/
-    # (T3 split); no worker service exists to attach to the private network.
-    for name in ("core", "dashboard", "minio", "nodeodm", "caddy"):
+    # No managed worker or reconstruction engine in the platform graph.
+    # Preserve network isolation of all four existing long-running VM services.
+    for name in ("core", "dashboard", "minio", "caddy"):
         assert "ksi-private" in config["services"][name]["networks"]
 
 
