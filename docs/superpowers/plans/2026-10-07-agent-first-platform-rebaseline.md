@@ -2337,3 +2337,71 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   Why: terminal revision-bound full coverage is stronger than duplicating129unreported assertions;
   cost if wrong: missing node/module coverage leaves Task1 unfinished. Use background/long command
   timeout and completion notification, never poll/replay. Unaffected static/type outputs remain reused.
+
+### P7 Tasks1–2 evidence received / P7-A2 runtime-origin decision — 2026-10-09
+
+- A1 independent repaired full ran once at immutable4a0a08e: **6058passed/30skipped/98warnings/
+  0failed/765.16s**, exit0. All59first-failed IDs and seven affected modules130cases are collected/green;
+  total6088cases, exact old/new skip-node/reason multiset unchanged. No product/test/guard/lock/pin
+  repair or full-suite replay for receipts. Broad109/14/0delta remains FAILED, five static/scoped checks
+  reused at the identical source. ReceiptSHA
+  `24b862244663ea4f1fbc37e7afcb9ea68e1cb6b53529f98faa0b9e097f5741a3`, fullLogSHA
+  `084d08246527d2c381baf037c502848f03936da400cd6293993faf7619cc11c9`, XMLSHA
+  `5245bf47b062e9481056a85e76036b183b075305d79f50544253ed38d6db7edb`, Primary receptionSHA
+  `1b297a72949c46ab2706612078bea80f107dcb26f8ec3722cba8a6e356771b63`. Source2751blobs/
+  3uninitialized gitlinks/18original metadata/12neweditables and original944b231clean matched.
+- Task2 source-bound nativeARM64 builds/inspect/import-controls: **9commands/9exit0**, receiptSHA
+  `705308e1c4ac7bb9d472387dd27514f3e0ba1924dd07487e2a73c54dd502bced`.
+  Core image617c3b95/inspectorf1d42c1b/measurement0dae5061; exact full IDs/log/argv in receipt.
+  Actual corresponding UIDs10001/10003/10004; source433/178/178files match; read-only root,
+  CapEff0/no-new-privileges, networknone/onlylo,4GiB/256PIDs/2CPU verified. All three owned probe
+  containers were removed. Candidates retained locally, base blobs may be reused in shared daemon;
+  no registry push, signed worker/job, runtime activation, customer/accuracy or release claim.
+- Task3 scratch config exit0/sanitized configSHA
+  `06736ea860b07533d37f1a386d9023f883e22af38bb242f6c0d561483827c031`; three-services/new-only
+  resource declarations checked. Synthetic opaque operator/viewer/foreign-viewer digests have24h
+  expiry; raw test/storage secrets remain0600below0700scratch, no copied private configuration.
+  Exact existing BusyBox/MinIO pinned pulls and init/MinIO start completed; init chown ran only against
+  new labeled data volume, exit0. No Core startup, Site mutation or S3 byte persistence trial yet.
+- Startup driver then stopped at actual MinIO port resolution: `NetworkSettings.Ports[9000/tcp]`
+  isnull despite requested `HostConfig.PortBindings=127.0.0.1:0`. Selected internal bridge is healthy
+  and actual host→owned private-IP `/minio/health/ready` read returned200. This is observed selected-
+  daemon behavior, not a product-source defect or an assertion that YAML implies published ports.
+  DiagnosisSHA `9b4262d6507fa204d780e9581d3bf2247ef659414007640e3fb79e99c16e843a` preserves
+  all seven terminal startup commands and source/project/resource identity. Do not blindly rerun
+  startup or weaken `internal:true`/loopback/firewall/security controls to hide the mismatch.
+- **P7-A2 proposal — NOT yet approved:** preserve the existing private `internal:true` network and
+  exact three-service graph; remove only the scratch Core/MinIO port-publication requests using an
+  additional `compose.a2.override.yaml` (`ports: !override []` for both). Verify real TCP from the
+  same prepared Docker host using the verified owned containers' current private bridge IPs instead
+  of claiming a localhost published endpoint. Re-resolve exact container/network identity after restart.
+  Keep Core/MinIO/init limits, Core read-only/cap-drop/no-new-privileges, factory/image, credentials,
+  tenant/auth semantics and existing owned volumes unchanged; no new service, proxy, public/tailnet
+  listener, external route, egress-enabling network or host firewall/daemon modification.
+- P7-A2 would explicitly replace **only this trial's loopback-origin acceptance** with host→owned-
+  internal-IP TCP evidence. It would **not** verify published localhost ports or the production network,
+  and internal-network inspection plus host success is not a complete external-denial/kernel proof.
+  Reuse current owned init/MinIO/data/object/network resources after matching their labels/IDs; any
+  recreated trial container must retain those exact owned volumes and approved controls. Continue
+  missing bucket/byte/Core/auth/restart steps only; retain first failed startup/logs/config unchanged.
+  No product Compose/Dockerfile, source, signature/Analysis policy, remote consumer, data rights or
+  customer acceptance change follows. Human decision required because approved endpoint contract differs.
+- Recommended: approve this stronger no-published-port trial origin; do not enable runtime external
+  networking or add a proxy just to retain a localhost-shaped URL. Without that approval, Task3
+  remains blocked and owned trial shutdown/final source/evidence review can still proceed. Tasks1–2
+  evidence is usable locally; final report/review/Task3 and whole-goal/customer/EXT-VAL remain OPEN.
+
+### P7 rail 만료 / owned trial shutdown / 기록 매핑 — 2026-10-09
+
+- 승인된 4-hour rail(08:16:47.942470Z + 4h)이 2026-10-09T12:16:47.942470Z에 만료됐고 P7-A2는
+  미승인이라 Task3은 blocked 상태다. 승인 계획의 teardown 범위(owned 컨테이너/네트워크만)로 실제
+  정리: minio `fd6a3f6c352b3d3a23bc47e6b7c8ab1cbf0c48061f0d178dec0aa80389e0ebd6`(healthy→stop/
+  removed), init-volumes `7cd96e263cd3c0023d77e7c859ef163b94290e5e73ede808f7765e428e81308c`
+  (exited→removed), network `ksi-p7-34cc796826d6_default`
+  (`9d00c7d34eeea4856e25191cbd1f1116e344e95709a139404aef2313a485b298`) removed.
+- 보존: volumes `ksi-p7-34cc796826d6_ksi-data`/`_ksi-objects`, 후보 이미지3건(Core`617c3b95b509`/
+  inspector`f1d42c1b8153`/measurement`0dae50617e84`), scratch receipts/logs/config, 전용 HOME,
+  trial worktree. `down -v`/prune/기존 리소스 삭제 없음.
+- Task3 재개는 별도 rail + P7-A2 결정이 필요하다. 하네스 기록 매핑(1회) 결과는
+  docs/superpowers/plans/2026-10-09-site-harness-mapping.md에 있다. 기존 계획·Spec·PRD 문구는
+  재작성하지 않았고 Goal `active`는 inert로만 표기한다.
