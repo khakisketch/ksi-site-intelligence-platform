@@ -2477,3 +2477,16 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   계약 테스트로만(스택 미실행); 화면 디자인 리뷰는 별도 디자인 소유 단계(미실시); production/
   RB03·08·TLS/UDS/ACL/CI/AMD64·P7-A2/Task3·F-02..04·고객/EXT-VAL은 OPEN 유지. 이 PASS는 로컬
   합성 수용이며 고객/현장/배포/정확도 수용이 아니다.
+
+### F-01 후속 — e2e 스펙·디자인 리뷰 단계 — 2026-10-10
+
+- 반복 스펙: apps/dashboard/e2e/f01-site-bootstrap.spec.ts(KSI_F01_E2E=1 + 외부 스택 base URL
+  게이트; desktop-1024/1440만) — 새 격리 스택에서 각 ~10s 통과. 비활성 사유의 인뷰포트 단언 포함.
+- 디자인 리뷰(디자인 소유, OpenDesign 프로젝트): 1차(plan-design-review, codex) 8–9/10 +
+  "01 캡처 하단 잘림" 1건. 독립 검증: 표준 데스크톱 뷰포트(1024×900/1440×1000)에서 사유 문구는
+  인뷰포트(e2e 단언 통과) — 잘림은 1280×633 캡처 뷰포트 아티팩트이며 F-01이 바꾼 레이아웃이 아니다.
+  신선 컨텍스트 대체 리뷰는 claude CLI 미인증(AGENT_AUTH_REQUIRED)·gemini-2.5 종료·antigravity
+  무출력·gemini-3.1 잔액 일시중지로 OPEN이며, 재개 옵션(로그인/충전)은 사용자 결정 사안이다.
+  1차 리뷰는 같은 native thread 재개·도구 로그 제한이라는 공개된 한계를 가진 유일한 사용 가능 증거다.
+- 주의: 새 --dashboard-dist-dir로 `next dev` 실행 시 apps/dashboard/tsconfig.json에 생성 경로가
+  추가된다(커밋 전 제거).

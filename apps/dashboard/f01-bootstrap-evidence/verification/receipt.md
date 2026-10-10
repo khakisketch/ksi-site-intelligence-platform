@@ -84,3 +84,27 @@ node apps/dashboard/scripts/run-local-oidc-stack.mjs --tailscale disabled \
 
 File hashes for everything in this directory: `MANIFEST.sha256` (HAR path + hash in
 `f01-flow.har.sha256`; the HAR itself stays in the scratch directory).
+
+## Addendum — e2e spec and design-review stage (2026-10-10, later)
+
+- Repeatable spec: `apps/dashboard/e2e/f01-site-bootstrap.spec.ts` (gated by `KSI_F01_E2E=1` +
+  `KSI_DASHBOARD_E2E_BASE_URL`; desktop-1024/1440 projects only). Executed green against a fresh
+  isolated stack (≈10 s per project), including an in-viewport assertion for the disabled-next
+  reason at both configured desktop viewports.
+- Design-review stage (design-owned; run in the OpenDesign "KSI Operations Console" project):
+  - Round 1 (plan-design-review skill, codex runtime): ratings 8–9/10 (information hierarchy 8,
+    cross-screen consistency 8, copy/state clarity 8, action clarity 9, visual restraint 9).
+    One defect claim: the disabled-next reason line appears clipped at the bottom of
+    `01-sites-new-mapped.png`. No other visual defect found; mobile not executed; no legacy-mode
+    rendered capture available for pixel parity (compare from source structure).
+  - Independent verification of that claim: at the app's configured desktop viewports (1024×900
+    and 1440×1000) the reason text is inside the viewport — the spec's `toBeInViewport` assertion
+    passes on both projects. The clipping is an artifact of the 1280×633 capture viewport, not a
+    defect at the target viewports; the wizard footer layout is unchanged by F-01.
+  - Fresh-context replacement review remained OPEN: the claude runtime required CLI login
+    (AGENT_AUTH_REQUIRED), a gemini-2.5-pro run hit model retirement, an antigravity run returned
+    no captured output, and a gemini-3.1-pro run paused for account balance (recharge required).
+    Round 1's result is therefore the only usable review evidence and carries the disclosed
+    context caveats (same-thread resume; limited tool log).
+- Note for future runs: `next dev` with a novel `--dashboard-dist-dir` appends that dist dir to
+  `apps/dashboard/tsconfig.json`; revert that generated line before committing.
