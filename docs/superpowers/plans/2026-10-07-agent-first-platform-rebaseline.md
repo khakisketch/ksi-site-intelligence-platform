@@ -2518,3 +2518,21 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   이는 synthetic 환경 검증이며 고객 자료·형식 호환·정확도·수용 증거가 아니다.
 - 다음: F-03 보호 구성(합성 로컬 Analysis runtime/activation/workflow-provider + 검사 lane
   policy/authority) → synthetic 검사→분석→결과 리허설; 이후 실제 자료 입력 시 같은 환경에서 완주.
+
+### F-03 준비 1단계 — 보호 Analysis 구성·production factory 부팅 검증 — 2026-10-10
+
+- 합성 보호 material(서명 Analysis activation trio: sealed policy/runtime/envelope + Ed25519 서명 +
+  검증키 registry + ADMIN/ANALYSIS_WORKER/PROCESSING_WORKER 토큰) 생성기로 생성 후, **production
+  factory**(uvicorn `build_platform_production_app`)를 로컬 부팅해 검증: `/ready` 200, analysis 계열
+  route 12·external-reconstruction route 15 마운트, 더미 create가 **404 ANALYSIS_RESOURCE_NOT_FOUND**
+  (503 ACTIVATION_EXPIRED 아님 = 서명 activation 실제 수용), `/ready/external-authority` 404
+  (workflow/provider pair 미구성 — 정직한 중간 상태).
+- 관측: 보호 파일 로더가 그룹 쓰기 가능 조상(`/tmp/opencode`)을 `CONFIG_FILE`로 거부(fail-closed) →
+  material을 `~/.cache/ksi-f03-*`(0700/0600)로 이전해 통과.
+- 증거(prep dir `/tmp/opencode/f02-prep-20261010-194828/`): `evidence/f03-material-01.json`
+  (e73145fc…), `evidence/f03-boot-01.md`(d6244698…), `evidence/f03-core-2.log`(7b0b3b4b…),
+  생성기 `scripts/gen_f03_material.py`. **synthetic이며 activation/수용 증거가 아니다.**
+  컨테이너/프로세스 정리, 포트 비움.
+- 남음(F-03 phase 2+): workflow/provider pair(서명 snapshot의 policy/catalog authority record) +
+  workflow config → 검사 정책 admit → inspector lane(로컬 합성 한정) → `ksi-external-analysis-worker`
+  실행 → 결과/증거 → 소비자 E2E. 실제 자료(체크리스트 A~E) 도착 시 같은 환경에서 완주.

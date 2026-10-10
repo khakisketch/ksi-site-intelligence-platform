@@ -36,14 +36,22 @@
 - D. 외부 소비자 1개+호스트: Analysis MCP(stdio) / Spatial Data MCP / SDK 스크립트 / 직접 API 중 선택.
 - E. 수용 참여: 2-cycle 운영 검토 참여(관찰·판정) 주체.
 
-## 3. 우리측 남은 준비 (자료 도착 전에 진행 가능)
+## 3. 우리측 준비 상태
 
-- F-03: 보호된 Analysis runtime config + activation trio + workflow/provider pair를 **합성 로컬**로
-  생성하는 경로 확정·문서화(활성화 증거로 표기하지 않음) → Analysis API/실제 워커 기동.
-- 검사(적합성) lane: `INSPECTION_PENDING_POLICY` 해소를 위한 policy/authority 구성과 inspector
-  worker 실행 경로 확정(현 platform profile에서 어떤 worker entrypoint가 검사를 수행·보고하는지).
-- F-02: 실제 자료 수신 절차(격리 위치·sha256 확인·선언 값 대조)와 업로드 스크립트 정비.
-- F-04: 선택된 소비자 클라이언트(`services/analysis-mcp`, `services/spatial-data-mcp` 소스 실행)
+- **F-03 phase 1 — 완료(2026-10-10, synthetic)**: 서명 Analysis activation trio(runtime/envelope/activation
+  + 검증키)와 ADMIN/ANALYSIS_WORKER 토큰을 만드는 생성기(`scripts/gen_f03_material.py`)로 보호 구성을
+  만들고, **production factory**(uvicorn factory)를 로컬 부팅해 검증했다 — `/ready` 200, analysis 계열
+  route 12·external-reconstruction route 15 마운트, 더미 create가 404 scope(503 activation-expired 아님
+  = 서명 activation 실제 수용). 보호 파일 로더는 그룹 쓰기 가능 조상을 `CONFIG_FILE`로 거부하므로
+  material은 `~/.cache/ksi-f03-*/analysis`(0700/0600)에 둔다. 증거: prep dir `evidence/f03-*`.
+- **F-03 phase 2 — 남음**: 외부 workflow/provider pair(서명 snapshot에 policy/catalog authority record
+  포함)와 workflow config 생성 → Core를 authority 구성으로 재부팅 → **검사 정책 admit**(authority
+  operations 경로 또는 검증된 시드)로 `INSPECTION_PENDING_POLICY` 해소.
+- **검사기·Analysis 워커 — 남음**: 로컬 합성 한정 inspector lane 실행 경로 확정(UDS inspector 체인 —
+  staging의 ACL activation blocker와 구분해 표기), `ksi-external-analysis-worker` CLI를 worker config·
+  토큰으로 실행해 실제 계산→결과/증거 저장.
+- **F-02 접수 절차**: 실제 자료 수신(격리 위치·sha256 확인·선언 값 대조)과 업로드 스크립트 정비.
+- **F-04**: 선택된 소비자 클라이언트(`services/analysis-mcp`, `services/spatial-data-mcp` 소스 실행)
   준비, 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집.
 
 ## 4. 순서
