@@ -21,6 +21,7 @@ from ksi_core.composition.platform_app import create_platform_app
 from ksi_core.composition.platform_graph import build_platform_graph
 from ksi_core.composition.runtime_surfaces import mount_runtime_surfaces
 from ksi_core.composition.spatial_data_graph import SpatialDataLocalAssemblyConfig
+from ksi_core.domains.sites.sites import _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
 from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
 
 if TYPE_CHECKING:
@@ -46,6 +47,7 @@ def assemble_platform_app(
     external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
     analysis_activation: AnalysisActivationV1 | None = None,
     spatial_data: SpatialDataLocalAssemblyConfig | None = None,
+    site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
     expose_docs: bool = False,
 ) -> FastAPI:
     """Build the platform graph, mount the external-only app, add runtime surfaces."""
@@ -62,6 +64,7 @@ def assemble_platform_app(
         external_analysis_local_graph=external_analysis_local_graph,
         analysis_activation=analysis_activation,
         spatial_data=spatial_data,
+        site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
     )
     app = create_platform_app(
         graph=graph,

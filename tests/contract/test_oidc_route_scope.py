@@ -49,14 +49,57 @@ def _oidc_token(key: RSAPrivateKey) -> str:
             "sub": "pilot-operator-subject",
             "exp": now + 600,
             "nbf": now - 5,
-            # Untrusted authority claims must not affect the protected mapping.
+            # Untrusted authority claims must not affect the protected mapping —
+            # role·조직·capability 위조 claim 은 registry 매핑을 이기지 못한다.
             "ksi_role": "ADMIN",
             "ksi_organization_id": "attacker-org",
+            "ksi_capabilities": ["SITE_BOOTSTRAP"],
         },
         key,
         algorithm="RS256",
         headers={"kid": "pilot-route-scope-key"},
     )
+
+
+def _install_oidc_v2(
+    fixture: Any,
+    *,
+    capabilities: list[str],
+    site_ids: list[str] | None,
+    area_ids: list[str] | None,
+) -> tuple[str, RSAPrivateKey]:
+    """v2 registry(F-01) 로 매핑 신원을 세운다 — null scope 도 검토된 matrix 안이다."""
+    key = generate_private_key(public_exponent=65537, key_size=2048)
+    registry = OidcSubjectRegistry.from_document(
+        {
+            "version": "oidc-subject-registry.v2",
+            "subjects": [
+                {
+                    "issuer": _ISSUER,
+                    "subject": "pilot-operator-subject",
+                    "principalId": "pilot-mapped-operator",
+                    "organizationId": fixture.organization_id,
+                    "role": "FIELD_OPERATOR",
+                    "status": "ACTIVE",
+                    "capabilities": capabilities,
+                    "allowedSiteIds": site_ids,
+                    "allowedWorkAreaIds": area_ids,
+                }
+            ],
+        },
+        expected_issuer=_ISSUER,
+    )
+    fixture.app.state.human_auth_mode = HumanAuthMode.OIDC
+    fixture.app.state.oidc_verifier = OidcJwtVerifier(
+        OidcVerifierConfig(
+            issuer=_ISSUER,
+            audience=_AUDIENCE,
+            jwks_url=f"{_ISSUER}/jwks.json",
+        ),
+        fetch_jwks=lambda: {"keys": [_jwk(key)]},
+        subject_registry=registry,
+    )
+    return _oidc_token(key), key
 
 
 def _install_oidc(fixture: Any) -> tuple[str, RSAPrivateKey]:
@@ -256,5 +299,126 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
         opaque_headers = fixture.operator_headers()
         opaque_sites_read = client.get("/v1/sites", headers=opaque_headers)
         assert opaque_sites_read.status_code == 200
+    finally:
+        fixture.close()
+
+
+# ── F-01 v2: null scope 와 capability 조건부 bootstrap 경계 ────────────
+
+
+def test_v2_null_scope_without_capability_stays_in_reviewed_matrix(tmp_path: Path) -> None:
+    """명시 null(자기 조직 전체)은 opaque unscoped 처럼 미검토 route 로 새지 않는다."""
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        token, _key = _install_oidc_v2(
+            fixture, capabilities=[], site_ids=None, area_ids=None
+        )
+        client = TestClient(fixture.app)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        whoami = client.get("/v1/auth/whoami", headers=headers)
+        assert whoami.status_code == 200
+        body = whoami.json()
+        assert body["registryScoped"] is True
+        assert body["capabilities"] == []
+        assert body["siteScopeLevel"] == "ORG_ALL"
+        # 조직 전체 scope 라도 매트릭스 밖 route 는 403 이고, capability 조건부
+        # Site 생성도 capability 가 없으면 403 이다(위조 JWT claim 포함).
+        assert client.get("/v1/organization-work-roster", headers=headers).status_code == 403
+        assert (
+            client.post(
+                f"/v1/sites/{fixture.site_id}/transitions",
+                headers=headers,
+                json={"targetStatus": "SUSPENDED", "evidence": "x", "reason": "x"},
+            ).status_code
+            == 403
+        )
+        assert client.get("/v1/sites", headers=headers).status_code == 200
+        denied_create = client.post(
+            "/v1/sites",
+            headers=headers,
+            json={
+                "bootstrapRequestId": "0f8fad5b-d9cb-469f-a165-70867728950e",
+                "name": "거부",
+                "siteFrame": fixture.app.state.site_store.get_scoped(
+                    fixture.site_id, fixture.organization_id
+                ).site_frame,
+            },
+        )
+        assert denied_create.status_code == 403
+    finally:
+        fixture.close()
+
+
+def test_v2_capability_opens_only_conditional_bootstrap_route(tmp_path: Path) -> None:
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        token, _key = _install_oidc_v2(
+            fixture, capabilities=["SITE_BOOTSTRAP"], site_ids=None, area_ids=None
+        )
+        client = TestClient(fixture.app)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        whoami = client.get("/v1/auth/whoami", headers=headers)
+        assert whoami.status_code == 200
+        assert whoami.json()["capabilities"] == ["SITE_BOOTSTRAP"]
+        # capability 는 승인된 조건부 route 하나만 연다 — 다른 미검토 route 는
+        # 여전히 403 이다.
+        assert client.get("/v1/organization-work-roster", headers=headers).status_code == 403
+
+        site = fixture.app.state.site_store.get_scoped(
+            fixture.site_id, fixture.organization_id
+        )
+        assert site is not None
+        request_id = "6f1c8f3a-4c1e-4c9e-8f0a-2b7d5e9a1c33"
+        created = client.post(
+            "/v1/sites",
+            headers=headers,
+            json={
+                "bootstrapRequestId": request_id,
+                "name": "부트스트랩 현장",
+                "siteFrame": site.site_frame,
+            },
+        )
+        assert created.status_code == 201, created.text
+        site_id = created.json()["site"]["siteId"]
+        assert site_id.startswith("site-")
+
+        retry = client.post(
+            "/v1/sites",
+            headers=headers,
+            json={
+                "bootstrapRequestId": request_id,
+                "name": "부트스트랩 현장",
+                "siteFrame": site.site_frame,
+            },
+        )
+        assert retry.status_code == 201
+        assert retry.json()["site"]["siteId"] == site_id
+        listed_ids = {
+            item["siteId"] for item in client.get("/v1/sites", headers=headers).json()["sites"]
+        }
+        assert {fixture.site_id, site_id} <= listed_ids
+    finally:
+        fixture.close()
+
+
+def test_v2_explicit_list_level_and_site_list_scope(tmp_path: Path) -> None:
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+        )
+        client = TestClient(fixture.app)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        whoami = client.get("/v1/auth/whoami", headers=headers)
+        assert whoami.status_code == 200
+        assert whoami.json()["siteScopeLevel"] == "EXPLICIT"
+        listed = client.get("/v1/sites", headers=headers)
+        assert [item["siteId"] for item in listed.json()["sites"]] == [fixture.site_id]
     finally:
         fixture.close()

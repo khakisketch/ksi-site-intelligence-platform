@@ -65,7 +65,10 @@ AOI 를 현장 AOI 에 실제로 대조할지는 별도 제품 결정 대상이�
 
 from __future__ import annotations
 
+import hashlib
+import re
 import threading
+import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
@@ -74,6 +77,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from ksi_domain.canonical_json import canonical_json_bytes
 from ksi_domain.enums import (
     IllegalSiteTransitionError,
     SiteStatus,
@@ -83,7 +87,7 @@ from ksi_domain.enums import (
 from ksi_event_contracts.processing_job import DataResidency
 from ksi_event_contracts.site_frame import SiteFrame
 from ksi_geo_core.aoi import AreaOfInterest
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from ksi_core.foundation.api_base import JOURNAL_SEALED_DETAIL, CamelModel, iso_utc
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
@@ -117,6 +121,9 @@ class SiteVerdict(StrEnum):
     SITE_FRAME_MISMATCH = "SITE_FRAME_MISMATCH"
     AOI_LOCKED = "AOI_LOCKED"
     MODEL_AGE_POLICY_SET = "MODEL_AGE_POLICY_SET"
+    # F-01 D1 2안 — 서버 발급 bootstrap 전용 판정.
+    BOOTSTRAP_REQUEST_CONFLICT = "BOOTSTRAP_REQUEST_CONFLICT"
+    SITE_BOOTSTRAP_LIMIT_REACHED = "SITE_BOOTSTRAP_LIMIT_REACHED"
 
 
 _STATUS: dict[SiteVerdict, int] = {
@@ -131,10 +138,25 @@ _STATUS: dict[SiteVerdict, int] = {
     SiteVerdict.SITE_FRAME_MISMATCH: 422,
     SiteVerdict.AOI_LOCKED: 409,
     SiteVerdict.MODEL_AGE_POLICY_SET: 200,
+    SiteVerdict.BOOTSTRAP_REQUEST_CONFLICT: 409,
+    SiteVerdict.SITE_BOOTSTRAP_LIMIT_REACHED: 409,
 }
 
 _SITE_NOT_FOUND_DETAIL = "현장을 찾을 수 없다"
 _STORE_UNAVAILABLE_DETAIL = JOURNAL_SEALED_DETAIL
+
+# ── F-01 서버 발급 bootstrap ───────────────────────────────────────────
+# mapped OIDC bootstrap 은 고객이 고른 siteId 를 쓰지 않는다 — 전역 siteId
+# 중복 조회 자체가 다른 조직의 Site 존재를 알려주는 오라클이 되기 때문이다
+# (INV-060). 서버가 무작위 UUID 기반 경로-안전 ID 를 발급하고, 재시도는
+# (organizationId, actor, requestKey) namespace 의 durable binding 으로 해소한다.
+_BOOTSTRAP_BINDING_VERSION = "site-bootstrap-binding.v1"
+_BOOTSTRAP_BINDING_FIELDS = {"version", "requestKey", "requestDigest"}
+_BOOTSTRAP_PAYLOAD_FIELDS = ("name", "siteFrame", "aoi", "dataResidency", "aiEgressAllowed")
+_BOOTSTRAP_DIGEST_RE = re.compile(r"^[0-9a-f]{64}$")
+_BOOTSTRAP_ID_ATTEMPTS = 3
+_SITE_BOOTSTRAP_ID_FAILED_DETAIL = "현장 ID 발급에 실패했다 — 잠시 후 다시 시도하라"
+_DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG = 1_000
 
 
 class SiteStoreRecoveryError(RuntimeError):
@@ -222,6 +244,41 @@ def _has_lone_surrogate(value: str) -> bool:
     return False
 
 
+def _is_canonical_uuid(value: object) -> bool:
+    """canonical 소문자 4-5-4-5 hyphenated UUID 문자열인지 (bootstrap request key).
+
+    ``uuid.UUID`` 는 brace/URN/대문자 표기를 정규화해 받아들이므로, 왕복
+    문자열 동등성까지 확인해 wire 표기를 하나로 고정한다 — 같은 요청 키가
+    표기만 달라 별도 namespace 를 만드는 갈라짐을 막는다.
+    """
+    if type(value) is not str:
+        return False
+    try:
+        return str(uuid.UUID(value)) == value
+    except ValueError:
+        return False
+
+
+def _bootstrap_payload_digest(raw: dict[str, Any]) -> str:
+    """bootstrap 생성 payload(요청 검증본)의 canonical SHA-256.
+
+    요청 시점(handler 의 검증된 payload)과 재생 시점(journal 레코드)이 **같은
+    필드 집합·같은 직렬화**(``canonical_json_bytes``)를 쓰므로, 의미가 같은
+    재시도는 같은 digest 를 낸다. 기록된 digest 와 재계산값이 다르면 재생이
+    거부된다(부분 조작·손상 탐지).
+    """
+    payload = {field: raw.get(field) for field in _BOOTSTRAP_PAYLOAD_FIELDS}
+    return hashlib.sha256(canonical_json_bytes(payload)).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class _BootstrapBinding:
+    """(organizationId, actor, requestKey) → 서버 발급 siteId 결속 1건."""
+
+    site_id: str
+    request_digest: str
+
+
 _FRAME_FIELDS: tuple[str, ...] = ("crs", "vertical_datum", "transform_version")
 _FRAME_FIELD_ALIASES: dict[str, str] = {
     "crs": "crs",
@@ -257,11 +314,21 @@ class SiteStore:
         journal: DurableJournal,
         *,
         coordinator: ExternalAuthorityCurrentnessCoordinator | None = None,
+        max_bootstrap_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
     ) -> None:
+        if type(max_bootstrap_sites_per_org) is not int or max_bootstrap_sites_per_org < 1:
+            raise ValueError("max_bootstrap_sites_per_org 는 1 이상 정수여야 한다")
         self._journal = journal
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._sites: dict[str, SiteRecord] = {}
         self._issuance_revisions: dict[str, int] = {}
+        # (organizationId, actor, requestKey) → 발급 결속. 재생이 복원하며,
+        # 같은 namespace 의 재등록은 서버 발급 ID 재반환(멱등)이다.
+        self._bootstrap_bindings: dict[tuple[str, str, str], _BootstrapBinding] = {}
+        # 조직별 등록 Site 수 — F-01 bootstrap 상한의 원천. legacy opaque
+        # 등록에도 집계되지만 상한은 bootstrap 신규 생성에만 적용된다.
+        self._org_site_counts: dict[str, int] = {}
+        self._max_bootstrap_sites_per_org = max_bootstrap_sites_per_org
         self._lock = threading.Lock()
         try:
             self._replay(journal)
@@ -357,6 +424,42 @@ class SiteStore:
                 f"재생: organizationId 가 경로-안전 비공백 문자열이 아니다: {organization_id!r}"
             )
         ts = _parse_ts(raw["ts"])
+        # F-01 bootstrap binding — 선택 필드다. 키가 없는 구버전 레코드는
+        # binding 없는 legacy 등록으로만 재생된다(관대한 기본값이 아니라
+        # "그 당시 계약"의 보존). 있는데 형식·digest·namespace 가 어긋나면
+        # 재생을 거부한다 — 손상되거나 조작된 원장으로 기동하지 않는다.
+        binding_payload = raw.get("bootstrap")
+        if binding_payload is not None:
+            if (
+                not isinstance(binding_payload, dict)
+                or set(binding_payload) != _BOOTSTRAP_BINDING_FIELDS
+            ):
+                raise ValueError(f"재생: bootstrap binding 필드가 잘못됐다: siteId={site_id}")
+            if binding_payload["version"] != _BOOTSTRAP_BINDING_VERSION:
+                raise ValueError(f"재생: 미지 bootstrap binding version: siteId={site_id}")
+            request_key = binding_payload["requestKey"]
+            if not _is_canonical_uuid(request_key):
+                raise ValueError(
+                    f"재생: bootstrap requestKey 가 canonical UUID 가 아니다: siteId={site_id}"
+                )
+            request_digest = binding_payload["requestDigest"]
+            if not isinstance(request_digest, str) or not _BOOTSTRAP_DIGEST_RE.fullmatch(
+                request_digest
+            ):
+                raise ValueError(f"재생: bootstrap requestDigest 형식 위반: siteId={site_id}")
+            if _bootstrap_payload_digest(raw) != request_digest:
+                raise ValueError(f"재생: bootstrap requestDigest 불일치: siteId={site_id}")
+            actor = raw["actor"]
+            if not isinstance(actor, str) or not actor:
+                raise ValueError(
+                    f"재생: bootstrap binding actor 가 비공백 문자열이 아니다: siteId={site_id}"
+                )
+            namespace = (organization_id, actor, request_key)
+            if namespace in self._bootstrap_bindings:
+                raise ValueError(f"재생: bootstrap namespace 중복: siteId={site_id}")
+            self._bootstrap_bindings[namespace] = _BootstrapBinding(
+                site_id=site_id, request_digest=request_digest
+            )
         self._sites[site_id] = SiteRecord(
             site_id=site_id,
             name=name,
@@ -371,6 +474,7 @@ class SiteStore:
             organization_id=organization_id,
         )
         self._issuance_revisions[site_id] = 1
+        self._org_site_counts[organization_id] = self._org_site_counts.get(organization_id, 0) + 1
 
     def _apply_transitioned(self, raw: dict[str, Any]) -> None:
         """전이 레코드를 projection 에 반영한다.
@@ -485,83 +589,233 @@ class SiteStore:
         영속되고 UNMAPPED 에서만 바뀐다" 참조). 구조 검증(닫힌 단순 폴리곤 등)은
         :class:`~ksi_mission_planning.geometry.AreaOfInterest` 파싱 시점(FastAPI
         요청 본문 검증)에 이미 끝나 있다 — 여기서 재검증하지 않는다.
+
+        이것이 기존(비-mapped) client 지정 siteId 계약이다. mapped OIDC
+        bootstrap 은 :meth:`register_bootstrap` 을 쓴다 — 이 메서드는 그 경로에
+        대해 아무것도 바꾸지 않는다(opaque legacy 의미 보존).
         """
         if now.tzinfo is None:
             raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
         with self._coordinator.mutation(), self._lock:
+            return self._register_locked(
+                site_id,
+                name,
+                site_frame,
+                aoi=aoi,
+                data_residency=data_residency,
+                ai_egress_allowed=ai_egress_allowed,
+                organization_id=organization_id,
+                actor=actor,
+                now=now,
+                bootstrap=None,
+            )
+
+    def register_bootstrap(
+        self,
+        request_key: str,
+        name: str,
+        site_frame: SiteFrame,
+        *,
+        aoi: AreaOfInterest | None = None,
+        data_residency: DataResidency | None = None,
+        ai_egress_allowed: bool = False,
+        organization_id: str,
+        actor: str,
+        allowed_site_ids: frozenset[str] | None,
+        now: datetime,
+    ) -> SiteResult:
+        """mapped OIDC bootstrap — 서버가 siteId 를 발급하고 재시도를 멱등 해소한다.
+
+        고객이 고른 siteId 의 전역 중복 조회는 다른 조직의 Site 존재를 알려주는
+        오라클이 된다(INV-060). 그래서 이 경로는 siteId 를 요청에서 받지 않고
+        ``site-bootstrap-`` 이 아닌 무작위 UUID 기반 경로-안전 ID 를 스스로
+        발급한다.
+
+        재시도 해소: ``(organizationId, actor, requestKey)`` namespace 의 durable
+        binding 이 같은 payload digest 면 같은 Site 를 201 로 돌려주고, payload
+        가 바뀌었으면 ``BOOTSTRAP_REQUEST_CONFLICT``(409)다. binding 은 등록
+        레코드 **한 건**에 함께 기록되므로 부분 commit 이 없다.
+
+        ``allowed_site_ids`` 는 요청자의 **현재** Site scope 다(핸들러가 인증
+        Principal 에서 공급). scope 축소 후 재시도는 숨겨진 영수증을 돌려주지
+        않고 ``UNKNOWN_SITE``(404, 미지 Site 와 같은 문구)로 접는다 — 결과를
+        돌려주는 것은 회수된 접근을 되살리는 일이기 때문이다.
+
+        ``organizationId`` 는 namespace·원장 귀속에만 쓰이고 요청 body 에서
+        받을 수 없다(항상 인증 Principal 유래).
+        """
+        if now.tzinfo is None:
+            raise ValueError("now 는 tz-aware 여야 한다 — naive datetime 거부")
+        if not _is_canonical_uuid(request_key):
+            return SiteResult(
+                SiteVerdict.INVALID_SITE,
+                detail="bootstrapRequestId 는 canonical 소문자 UUID 문자열이어야 한다",
+            )
+        if not isinstance(actor, str) or not actor:
+            return SiteResult(
+                SiteVerdict.INVALID_SITE, detail="bootstrap actor 는 비공백이어야 한다"
+            )
+        payload: dict[str, Any] = {
+            "name": name,
+            "siteFrame": site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
+            "aoi": (
+                None
+                if aoi is None
+                else aoi.model_dump(by_alias=True, mode="json", exclude_none=True)
+            ),
+            "dataResidency": (
+                None
+                if data_residency is None
+                else data_residency.model_dump(by_alias=True, mode="json")
+            ),
+            "aiEgressAllowed": ai_egress_allowed,
+        }
+        payload_digest = _bootstrap_payload_digest(payload)
+        with self._coordinator.mutation(), self._lock:
             if self._journal.sealed_reason is not None:
                 return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
-            if not site_id.strip():
-                return SiteResult(SiteVerdict.INVALID_SITE, detail="siteId 는 비공백이어야 한다")
-            if not is_path_safe_identifier(site_id):
-                # siteId 는 그대로 /v1/sites/{site_id} 의 경로 세그먼트가 된다
-                # (2차 독립 재검토 P2) — '/'·공백을 허용하면 durable 등록은
-                # 성공하고 이후 상세 조회·전이 라우트에 영구히 도달할 수 없는
-                # site 가 만들어진다(mission_records.py 의 동일 클래스 방어와
-                # 대칭 — ksi_core.identifiers 가 SSOT).
-                return SiteResult(
-                    SiteVerdict.INVALID_SITE, detail="siteId 는 경로-안전 문자만 허용한다"
-                )
-            if not name.strip():
-                return SiteResult(SiteVerdict.INVALID_SITE, detail="name 은 비공백이어야 한다")
-            if not is_path_safe_identifier(organization_id):
-                return SiteResult(
-                    SiteVerdict.INVALID_SITE,
-                    detail="organizationId 는 경로-안전 비공백 식별자여야 한다",
-                )
-            if _has_lone_surrogate(site_id) or _has_lone_surrogate(name):
-                # journal 자체 기록(ensure_ascii=True)은 통과하지만 이후 응답
-                # 렌더링(UTF-8 인코딩)이 500 으로 붕괴한다 — 등록 경계에서 거부.
-                return SiteResult(
-                    SiteVerdict.INVALID_SITE,
-                    detail="siteId·name 에 처리할 수 없는 문자가 포함됨",
-                )
-            # INV-020 — CRS·수직기준·변환버전이 공백이면 좌표계 식별이 불가능한
-            # 무의미한 frame 이다. 공유 SiteFrame 모델은 타입만 강제하므로(다른
-            # 소비자 호환) 등록 경계에서 비공백을 추가로 강제한다.
-            for frame_field in _FRAME_FIELDS:
-                value = getattr(site_frame, frame_field)
-                if not value.strip() or _has_lone_surrogate(value):
+            namespace = (organization_id, actor, request_key)
+            existing = self._bootstrap_bindings.get(namespace)
+            if existing is not None:
+                record = self._sites.get(existing.site_id)
+                if record is None:
+                    # 재생이 둘을 항상 함께 세우므로 도달 불가능한 내부 불변식
+                    # 위반이다 — 조용히 새 Site 를 발급하지 않고 크게 실패한다.
+                    raise RuntimeError("bootstrap binding without registered Site projection")
+                if allowed_site_ids is not None and existing.site_id not in allowed_site_ids:
+                    return SiteResult(SiteVerdict.UNKNOWN_SITE, detail=_SITE_NOT_FOUND_DETAIL)
+                if payload_digest != existing.request_digest:
                     return SiteResult(
-                        SiteVerdict.INVALID_SITE,
+                        SiteVerdict.BOOTSTRAP_REQUEST_CONFLICT,
                         detail=(
-                            "siteFrame 의 crs·verticalDatum·transformVersion 은 "
-                            "비공백·유효 문자여야 한다"
+                            "같은 bootstrapRequestId 가 다른 생성 payload 로 이미 등록됐다 — "
+                            "새 등록은 새 요청 키로 시작해야 한다"
                         ),
                     )
-            if site_id in self._sites:
-                return SiteResult(SiteVerdict.DUPLICATE_SITE_ID, detail="이미 등록된 siteId")
+                return SiteResult(SiteVerdict.REGISTERED, record=record)
+            if self._org_site_counts.get(organization_id, 0) >= self._max_bootstrap_sites_per_org:
+                return SiteResult(
+                    SiteVerdict.SITE_BOOTSTRAP_LIMIT_REACHED,
+                    detail="조직의 등록 Site 수 상한에 도달했다",
+                )
 
-            raw: dict[str, Any] = {
-                "kind": "site-registered",
-                "ts": iso_utc(now),
-                "actor": actor,
-                "before": None,
-                "after": SiteStatus.UNMAPPED.value,
-                "evidence": None,
-                "reason": None,
-                "siteId": site_id,
-                "organizationId": organization_id,
-                "name": name,
-                "siteFrame": site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
-                "aoi": (
-                    None
-                    if aoi is None
-                    else aoi.model_dump(by_alias=True, mode="json", exclude_none=True)
-                ),
-                "dataResidency": (
-                    None
-                    if data_residency is None
-                    else data_residency.model_dump(by_alias=True, mode="json")
-                ),
-                "aiEgressAllowed": ai_egress_allowed,
+            binding: dict[str, Any] = {
+                "version": _BOOTSTRAP_BINDING_VERSION,
+                "requestKey": request_key,
+                "requestDigest": payload_digest,
             }
-            try:
-                self._journal.append(raw)
-            except JournalSealedError:
-                return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
-            self._apply_registered(raw)
-            return SiteResult(SiteVerdict.REGISTERED, record=self._sites[site_id])
+            for _attempt in range(_BOOTSTRAP_ID_ATTEMPTS):
+                candidate = f"site-{uuid.uuid4()}"
+                result = self._register_locked(
+                    candidate,
+                    name,
+                    site_frame,
+                    aoi=aoi,
+                    data_residency=data_residency,
+                    ai_egress_allowed=ai_egress_allowed,
+                    organization_id=organization_id,
+                    actor=actor,
+                    now=now,
+                    bootstrap=binding,
+                )
+                if result.verdict is SiteVerdict.REGISTERED:
+                    return result
+                if result.verdict is not SiteVerdict.DUPLICATE_SITE_ID:
+                    return result
+            return SiteResult(
+                SiteVerdict.STORE_UNAVAILABLE, detail=_SITE_BOOTSTRAP_ID_FAILED_DETAIL
+            )
+
+    def _register_locked(
+        self,
+        site_id: str,
+        name: str,
+        site_frame: SiteFrame,
+        *,
+        aoi: AreaOfInterest | None,
+        data_residency: DataResidency | None,
+        ai_egress_allowed: bool,
+        organization_id: str,
+        actor: str,
+        now: datetime,
+        bootstrap: dict[str, Any] | None,
+    ) -> SiteResult:
+        """``register``/``register_bootstrap`` 공용 등록 본체 — 호출자가 lock 을 쥔다."""
+        if self._journal.sealed_reason is not None:
+            return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+        if not site_id.strip():
+            return SiteResult(SiteVerdict.INVALID_SITE, detail="siteId 는 비공백이어야 한다")
+        if not is_path_safe_identifier(site_id):
+            # siteId 는 그대로 /v1/sites/{site_id} 의 경로 세그먼트가 된다
+            # (2차 독립 재검토 P2) — '/'·공백을 허용하면 durable 등록은
+            # 성공하고 이후 상세 조회·전이 라우트에 영구히 도달할 수 없는
+            # site 가 만들어진다(mission_records.py 의 동일 클래스 방어와
+            # 대칭 — ksi_core.identifiers 가 SSOT).
+            return SiteResult(
+                SiteVerdict.INVALID_SITE, detail="siteId 는 경로-안전 문자만 허용한다"
+            )
+        if not name.strip():
+            return SiteResult(SiteVerdict.INVALID_SITE, detail="name 은 비공백이어야 한다")
+        if not is_path_safe_identifier(organization_id):
+            return SiteResult(
+                SiteVerdict.INVALID_SITE,
+                detail="organizationId 는 경로-안전 비공백 식별자여야 한다",
+            )
+        if _has_lone_surrogate(site_id) or _has_lone_surrogate(name):
+            # journal 자체 기록(ensure_ascii=True)은 통과하지만 이후 응답
+            # 렌더링(UTF-8 인코딩)이 500 으로 붕괴한다 — 등록 경계에서 거부.
+            return SiteResult(
+                SiteVerdict.INVALID_SITE,
+                detail="siteId·name 에 처리할 수 없는 문자가 포함됨",
+            )
+        # INV-020 — CRS·수직기준·변환버전이 공백이면 좌표계 식별이 불가능한
+        # 무의미한 frame 이다. 공유 SiteFrame 모델은 타입만 강제하므로(다른
+        # 소비자 호환) 등록 경계에서 비공백을 추가로 강제한다.
+        for frame_field in _FRAME_FIELDS:
+            value = getattr(site_frame, frame_field)
+            if not value.strip() or _has_lone_surrogate(value):
+                return SiteResult(
+                    SiteVerdict.INVALID_SITE,
+                    detail=(
+                        "siteFrame 의 crs·verticalDatum·transformVersion 은 "
+                        "비공백·유효 문자여야 한다"
+                    ),
+                )
+        if site_id in self._sites:
+            return SiteResult(SiteVerdict.DUPLICATE_SITE_ID, detail="이미 등록된 siteId")
+
+        raw: dict[str, Any] = {
+            "kind": "site-registered",
+            "ts": iso_utc(now),
+            "actor": actor,
+            "before": None,
+            "after": SiteStatus.UNMAPPED.value,
+            "evidence": None,
+            "reason": None,
+            "siteId": site_id,
+            "organizationId": organization_id,
+            "name": name,
+            "siteFrame": site_frame.model_dump(by_alias=True, mode="json", exclude_none=True),
+            "aoi": (
+                None
+                if aoi is None
+                else aoi.model_dump(by_alias=True, mode="json", exclude_none=True)
+            ),
+            "dataResidency": (
+                None
+                if data_residency is None
+                else data_residency.model_dump(by_alias=True, mode="json")
+            ),
+            "aiEgressAllowed": ai_egress_allowed,
+        }
+        if bootstrap is not None:
+            raw["bootstrap"] = dict(bootstrap)
+        try:
+            self._journal.append(raw)
+        except JournalSealedError:
+            return SiteResult(SiteVerdict.STORE_UNAVAILABLE, detail=_STORE_UNAVAILABLE_DETAIL)
+        self._apply_registered(raw)
+        return SiteResult(SiteVerdict.REGISTERED, record=self._sites[site_id])
 
     def get_scoped(self, site_id: str, organization_id: str) -> SiteRecord | None:
         """조직 밖 site는 미지 site와 같은 ``None``으로 접는다(INV-060)."""
@@ -590,6 +844,8 @@ class SiteStore:
         snapshot = object.__new__(type(self))
         snapshot._sites = {}
         snapshot._issuance_revisions = {}
+        snapshot._bootstrap_bindings = {}
+        snapshot._org_site_counts = {}
         for raw in self._journal.replay():
             if type(raw) is not dict:
                 raise SiteStoreRecoveryError("historical Site journal event is not an object")
@@ -848,7 +1104,20 @@ class SiteStore:
 
 
 class SiteRegistrationRequest(CamelModel):
-    site_id: str = Field(min_length=1)
+    """Site 등록 body — 두 **배타적** identity 형태 중 정확히 하나를 요구한다.
+
+    - ``siteId``: 기존(비-mapped) 계약 — 호출자가 ID 를 정한다.
+    - ``bootstrapRequestId``: F-01 mapped OIDC bootstrap — 호출자는 요청 키만
+      주고 서버가 siteId 를 발급한다(전역 중복 조회가 다른 조직의 Site 존재를
+      알려주는 오라클이 되는 것을 막는다, INV-060).
+
+    서버는 인증 Principal 로 형태를 강제한다(핸들러): mapped registry 신원은
+    bootstrapRequestId 만, 그 밖은 siteId 만 허용한다. 여기서는 "정확히 하나"와
+    값의 문법만 검사한다 — 어느 쪽이 유효한지는 인증 결과가 정한다.
+    """
+
+    site_id: str | None = None
+    bootstrap_request_id: str | None = None
     name: str = Field(min_length=1)
     site_frame: SiteFrame
     # 선택 필드 — 필수로 하면 이미 등록된 site·기존 위저드 흐름이 깨진다. 나중에
@@ -861,6 +1130,18 @@ class SiteRegistrationRequest(CamelModel):
     data_residency: DataResidency | None = None
     # 별도 명시 동의. generic dataResidency.egressAllowed와 결합하지 않는다(INV-050).
     ai_egress_allowed: bool = False
+
+    @model_validator(mode="after")
+    def _exactly_one_identity_form(self) -> SiteRegistrationRequest:
+        if (self.site_id is None) == (self.bootstrap_request_id is None):
+            raise ValueError("siteId 또는 bootstrapRequestId 중 정확히 하나여야 한다")
+        if self.site_id is not None and not self.site_id.strip():
+            raise ValueError("siteId 는 비공백이어야 한다")
+        if self.bootstrap_request_id is not None and not _is_canonical_uuid(
+            self.bootstrap_request_id
+        ):
+            raise ValueError("bootstrapRequestId 는 canonical 소문자 UUID 문자열이어야 한다")
+        return self
 
 
 class SiteTransitionRequest(CamelModel):
@@ -989,17 +1270,60 @@ def build_sites_router(
         response: Response,
         principal: Principal = Depends(require_permission(Permission.SITES_WRITE)),  # noqa: B008
     ) -> SiteMutationResponse:
-        result = store.register(
-            request.site_id,
-            request.name,
-            request.site_frame,
-            aoi=request.aoi,
-            data_residency=request.data_residency,
-            ai_egress_allowed=request.ai_egress_allowed,
-            organization_id=principal.organization_id,
-            actor=principal.principal_id,
-            now=datetime.now(UTC),
-        )
+        """Site 등록 — 요청 형태는 인증 Principal 의 출처가 결정한다(F-01).
+
+        registry-mapped 신원(v2 bootstrap)은 서버 발급 ID 계약만 쓸 수 있고,
+        그 밖(opaque legacy)은 기존 client 지정 siteId 계약만 쓴다. 형태가
+        교차하면 저장소·journal 에 닿기 전에 422 로 거부한다. capability 는
+        요청 경계(`_SITE_BOOTSTRAP_ROUTE`)가 이미 확인했다 — 여기서는 기존
+        SITES_WRITE 게이트가 그대로 추가 적용된다(capability→permission 변환
+        없음).
+        """
+        if principal.registry_scoped:
+            if request.site_id is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "registry bootstrap 은 서버 발급 siteId 계약이다 — "
+                        "siteId 를 보내지 말고 bootstrapRequestId 를 사용하라"
+                    ),
+                )
+            request_key = request.bootstrap_request_id
+            assert request_key is not None  # model validator: 정확히 하나
+            result = store.register_bootstrap(
+                request_key,
+                request.name,
+                request.site_frame,
+                aoi=request.aoi,
+                data_residency=request.data_residency,
+                ai_egress_allowed=request.ai_egress_allowed,
+                organization_id=principal.organization_id,
+                actor=principal.principal_id,
+                allowed_site_ids=principal.allowed_site_ids,
+                now=datetime.now(UTC),
+            )
+        else:
+            if request.bootstrap_request_id is not None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        "bootstrapRequestId 는 registry 발급 bootstrap 전용이다 — "
+                        "이 신원은 기존 siteId 계약을 사용한다"
+                    ),
+                )
+            site_id = request.site_id
+            assert site_id is not None  # model validator: 정확히 하나
+            result = store.register(
+                site_id,
+                request.name,
+                request.site_frame,
+                aoi=request.aoi,
+                data_residency=request.data_residency,
+                ai_egress_allowed=request.ai_egress_allowed,
+                organization_id=principal.organization_id,
+                actor=principal.principal_id,
+                now=datetime.now(UTC),
+            )
         response.status_code = _STATUS[result.verdict]
         return SiteMutationResponse(
             verdict=result.verdict.value,

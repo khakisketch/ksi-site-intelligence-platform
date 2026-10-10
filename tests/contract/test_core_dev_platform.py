@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import secrets
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.rsa import generate_private_key
 from fastapi.testclient import TestClient
 from ksi_core.auth import (
     AuthRegistry,
+    Capability,
     HumanAuthMode,
     Principal,
     PrincipalKind,
@@ -317,3 +319,161 @@ def test_unconfigured_evidence_storage_issues_no_capability(runner: Any, operati
             storage.get_bytes("owned-synthetic-key")
         else:
             storage.put_bytes("owned-synthetic-key", b"synthetic", content_type="image/png")
+
+
+# ── F-01: 보호 registry 파일 입력(OIDC/DUAL 전용, 폴백 금지) ──────────────
+
+
+def _v2_registry_document(*, subject: str = "local-admin", organization_id: str = "org-f01-e2e",
+                          include_capabilities: bool = True) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "issuer": ISSUER,
+        "subject": subject,
+        "principalId": subject,
+        "organizationId": organization_id,
+        "role": "ADMIN",
+        "status": "ACTIVE",
+        "allowedSiteIds": None,
+        "allowedWorkAreaIds": None,
+    }
+    if include_capabilities:
+        row["capabilities"] = ["SITE_BOOTSTRAP"]
+    return {"version": "oidc-subject-registry.v2", "subjects": [row]}
+
+
+def test_registry_file_flag_is_oidc_only_and_fails_without_fallback(tmp_path: Path) -> None:
+    """F-01: explicit registry 파일은 OIDC/DUAL 전용이며 dev fixture 로 fallback 하지 않는다."""
+    registry = tmp_path / "registry-f01.json"
+    registry.write_text(json.dumps(_v2_registry_document()), encoding="utf-8")
+    registry.chmod(0o600)
+    target = tmp_path / "must-not-exist"
+
+    opaque = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/run_core_dev.py"),
+            "--data-dir",
+            str(target),
+            "--oidc-subject-registry-file",
+            str(registry),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert opaque.returncode == 2
+    assert "requires OIDC/DUAL" in opaque.stderr
+    assert not target.exists()
+
+    invalid_registry = tmp_path / "registry-invalid.json"
+    invalid_registry.write_text(
+        json.dumps(_v2_registry_document(include_capabilities=False)), encoding="utf-8"
+    )
+    invalid_registry.chmod(0o600)
+    invalid = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/run_core_dev.py"),
+            "--data-dir",
+            str(target),
+            "--human-auth-mode",
+            "OIDC",
+            "--oidc-issuer",
+            ISSUER,
+            "--oidc-audience",
+            "ksi-core",
+            "--oidc-jwks-url",
+            f"{ISSUER}/jwks.json",
+            "--oidc-subject-registry-file",
+            str(invalid_registry),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert invalid.returncode == 2
+    assert "unavailable or invalid" in invalid.stderr
+    assert not target.exists()
+
+    combined = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts/run_core_dev.py"),
+            "--data-dir",
+            str(target),
+            "--human-auth-mode",
+            "OIDC",
+            "--oidc-issuer",
+            ISSUER,
+            "--oidc-audience",
+            "ksi-core",
+            "--oidc-jwks-url",
+            f"{ISSUER}/jwks.json",
+            "--oidc-operations-console-e2e",
+            "--oidc-subject-registry-file",
+            str(registry),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert combined.returncode == 2
+    assert "cannot combine" in combined.stderr
+    assert not target.exists()
+
+
+def test_registry_file_flag_loads_v2_instead_of_dev_fixture(
+    runner: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = tmp_path / "registry-f01.json"
+    registry.write_text(json.dumps(_v2_registry_document()), encoding="utf-8")
+    registry.chmod(0o600)
+
+    captured: dict[str, Any] = {}
+
+    class _Assembly:
+        app = object()
+        journals: tuple[Any, ...] = ()
+
+        def close(self) -> None:
+            captured["closed"] = True
+
+    def _capture(*args: Any, **kwargs: Any) -> _Assembly:
+        captured.update(kwargs)
+        return _Assembly()
+
+    monkeypatch.setattr(runner, "build_dev_app", _capture)
+    monkeypatch.setattr(runner.uvicorn, "run", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "run_core_dev.py",
+            "--data-dir",
+            str(tmp_path / "core"),
+            "--human-auth-mode",
+            "OIDC",
+            "--oidc-issuer",
+            ISSUER,
+            "--oidc-audience",
+            "ksi-core",
+            "--oidc-jwks-url",
+            f"{ISSUER}/jwks.json",
+            "--oidc-subject-registry-file",
+            str(registry),
+        ],
+    )
+    runner.main()
+
+    verifier = captured["oidc_verifier"]
+    principal = verifier._subject_registry.resolve(ISSUER, "local-admin")
+    assert principal is not None
+    assert principal.organization_id == "org-f01-e2e"
+    assert principal.registry_scoped is True
+    assert Capability.SITE_BOOTSTRAP in principal.capabilities
+    # dev fixture 전용 계정이 없어야 한다 — fallback 금지의 관측 증거.
+    assert verifier._subject_registry.resolve(ISSUER, "local-empty-org-admin") is None
+    assert captured.get("closed") is True

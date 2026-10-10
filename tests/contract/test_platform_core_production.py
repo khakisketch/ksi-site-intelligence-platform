@@ -346,6 +346,72 @@ def test_platform_dual_rejects_oidc_subject_collision_with_opaque(
     assert list(Path(env["KSI_CORE_DATA_DIR"]).iterdir()) == []
 
 
+def test_platform_v2_registry_boot_and_site_bootstrap_cap_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F-01 배선: v2 registry 로드, 상한 환경변수 fail-closed, 부수효과 순서."""
+    from ksi_core.composition.platform_production import build_platform_production_app
+
+    env = _platform_env(tmp_path)
+    subject_path = tmp_path / "oidc-subjects-v2.json"
+    valid_row = {
+        "issuer": "https://issuer.example.test",
+        "subject": "provider-subject-2",
+        "principalId": "pilot-oidc-admin",
+        "organizationId": "org-pilot",
+        "role": "ADMIN",
+        "status": "ACTIVE",
+        "capabilities": ["SITE_BOOTSTRAP"],
+        "allowedSiteIds": None,
+        "allowedWorkAreaIds": None,
+    }
+    subject_path.write_text(
+        json.dumps(
+            {
+                "version": "oidc-subject-registry.v2",
+                "subjects": [{key: value for key, value in valid_row.items() if key != "capabilities"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    subject_path.chmod(0o600)
+    env.update(
+        {
+            "KSI_CORE_HUMAN_AUTH_MODE": "DUAL",
+            "KSI_CORE_OIDC_ISSUER": "https://issuer.example.test",
+            "KSI_CORE_OIDC_AUDIENCE": "ksi-core",
+            "KSI_CORE_OIDC_JWKS_URL": "https://issuer.example.test/jwks.json",
+            "KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE": str(subject_path),
+        }
+    )
+    _apply_env(monkeypatch, env)
+
+    # v2 필수 필드(capabilities) 누락은 로드 실패이고, 무거운 부수효과
+    # (S3 client·journal open) 전에 끝난다.
+    with pytest.raises(RuntimeError, match="OIDC subject registry is invalid"):
+        build_platform_production_app()
+    assert list(Path(env["KSI_CORE_DATA_DIR"]).iterdir()) == []
+
+    subject_path.write_text(
+        json.dumps({"version": "oidc-subject-registry.v2", "subjects": [valid_row]}),
+        encoding="utf-8",
+    )
+    subject_path.chmod(0o600)
+
+    # 상한 환경변수: 0·음수·비정수는 부팅 실패다(조용한 기본값 금지).
+    for invalid in ("0", "-1", "many"):
+        monkeypatch.setenv("KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG", invalid)
+        with pytest.raises(
+            RuntimeError, match="KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG"
+        ):
+            build_platform_production_app()
+    monkeypatch.delenv("KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG", raising=False)
+
+    app = build_platform_production_app()
+    assert app.state.oidc_verifier is not None
+    assert app.state.site_store._max_bootstrap_sites_per_org == 1000
+
+
 # ── 4. Signed Analysis trio and external authority pair semantics ─────────────
 
 

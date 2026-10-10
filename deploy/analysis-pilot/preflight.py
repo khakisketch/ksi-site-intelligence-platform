@@ -384,14 +384,57 @@ def _check_protected_material(env: dict[str, str], *, expected_uid: int) -> None
             if stat.S_IMODE(key_path.stat(follow_symlinks=False).st_mode) != 0o600:
                 raise _blocked("SIGNING_KEY_FILE")
     registry = _protected_json(authority / "oidc-subject-registry.json", expected_uid=expected_uid)
-    if not isinstance(registry, dict) or registry.get("version") != "oidc-subject-registry.v1":
+    if not isinstance(registry, dict):
         raise _blocked("OIDC_REGISTRY")
+    version = registry.get("version")
     mappings = registry.get("subjects")
     if not isinstance(mappings, list) or not mappings:
         raise _blocked("OIDC_REGISTRY")
+    # F-01: v2 는 capabilities 필수 + scope 필수(null = 조직 전체). 이 preflight 는
+    # 배포 전 빠른 형식 게이트이고, semantics 는 Core 로더(load_oidc_subject_registry)
+    # 가 부팅 시 동일하게 다시 강제한다.
+    if version == "oidc-subject-registry.v1":
+        subject_fields = frozenset(
+            {
+                "issuer",
+                "subject",
+                "principalId",
+                "organizationId",
+                "role",
+                "status",
+                "allowedSiteIds",
+                "allowedWorkAreaIds",
+            }
+        )
+    elif version == "oidc-subject-registry.v2":
+        subject_fields = frozenset(
+            {
+                "issuer",
+                "subject",
+                "principalId",
+                "organizationId",
+                "role",
+                "status",
+                "allowedSiteIds",
+                "allowedWorkAreaIds",
+                "capabilities",
+            }
+        )
+    else:
+        raise _blocked("OIDC_REGISTRY")
     issuer = env["KSI_ANALYSIS_PILOT_OIDC_ISSUER"]
-    if any(not isinstance(row, dict) or row.get("issuer") != issuer for row in mappings):
-        raise _blocked("OIDC_REGISTRY_ISSUER")
+    for row in mappings:
+        if not isinstance(row, dict) or frozenset(row) != subject_fields:
+            raise _blocked("OIDC_REGISTRY")
+        if row.get("issuer") != issuer:
+            raise _blocked("OIDC_REGISTRY_ISSUER")
+        if version == "oidc-subject-registry.v2":
+            if not isinstance(row.get("capabilities"), list):
+                raise _blocked("OIDC_REGISTRY")
+            for field in ("allowedSiteIds", "allowedWorkAreaIds"):
+                value = row.get(field)
+                if value is not None and not isinstance(value, list):
+                    raise _blocked("OIDC_REGISTRY")
     for name in ("dashboard-session.secret", "oidc-client.secret"):
         secret_path = secret_dir / name
         secret = _read_protected_bytes(secret_path, expected_uid=expected_uid)

@@ -141,6 +141,48 @@ def test_owned_candidate_is_private_under_a_group_writable_host_umask(tmp_path: 
         os.umask(previous)
 
 
+def test_v2_registry_with_capability_and_null_scopes_passes_preflight(
+    tmp_path: Path,
+) -> None:
+    """F-01: v2 grammar(capabilities 필수 + 명시 null scope)를 preflight 가 받는다."""
+    env, compose = _candidate(tmp_path)
+    registry_path = (
+        Path(env["KSI_ANALYSIS_PILOT_AUTHORITY_DIR"]) / "oidc-subject-registry.json"
+    )
+    registry_path.write_text(
+        json.dumps(
+            {
+                "version": "oidc-subject-registry.v2",
+                "subjects": [
+                    {
+                        "issuer": "https://login.example.com",
+                        "subject": "pilot-user",
+                        "principalId": "pilot-user",
+                        "organizationId": "pilot-org",
+                        "role": "ADMIN",
+                        "status": "ACTIVE",
+                        "capabilities": ["SITE_BOOTSTRAP"],
+                        "allowedSiteIds": None,
+                        "allowedWorkAreaIds": None,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry_path.chmod(0o600)
+
+    preflight.validate_candidate(env, compose_text=compose, expected_uid=os.geteuid())
+
+    # v2 형식 위반(scalar scope)은 거부된다 — null 만 "전체"다.
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    registry["subjects"][0]["allowedSiteIds"] = "pilot-site"
+    registry_path.write_text(json.dumps(registry), encoding="utf-8")
+    registry_path.chmod(0o600)
+    with pytest.raises(preflight.PreflightBlocked):
+        preflight.validate_candidate(env, compose_text=compose, expected_uid=os.geteuid())
+
+
 @pytest.mark.parametrize(
     "key",
     [

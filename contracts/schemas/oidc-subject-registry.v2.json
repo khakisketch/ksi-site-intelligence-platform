@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/oidc-subject-registry.v2.json",
+  "title": "OIDC subject registry v2",
+  "description": "Protected issuer-subject -> KSI principal provisioning file (F-01 C3). v2 adds a required capabilities array and makes both scope fields required nullable: an explicit null is a KSI-issued own-organization-wide scope, an array is an explicit least-privilege list. A missing or invalid field is a load failure in the parser; this schema documents the same grammar and does not replace the parser's semantic checks (expected-issuer match, duplicate detection, private-file safety).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "subjects"],
+  "properties": {
+    "version": {
+      "const": "oidc-subject-registry.v2"
+    },
+    "subjects": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": {
+        "$ref": "#/$defs/subject"
+      }
+    }
+  },
+  "$defs": {
+    "pathSafeId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "maxLength": 2048
+    },
+    "scope": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "array",
+          "maxItems": 512,
+          "items": {
+            "$ref": "#/$defs/pathSafeId"
+          }
+        }
+      ]
+    },
+    "capability": {
+      "enum": ["SITE_BOOTSTRAP"]
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "issuer",
+        "subject",
+        "principalId",
+        "organizationId",
+        "role",
+        "status",
+        "allowedSiteIds",
+        "allowedWorkAreaIds",
+        "capabilities"
+      ],
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        },
+        "principalId": {
+          "$ref": "#/$defs/pathSafeId"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/pathSafeId"
+        },
+        "role": {
+          "enum": ["ADMIN", "FIELD_OPERATOR", "VIEWER"]
+        },
+        "status": {
+          "enum": ["ACTIVE", "REVOKED"]
+        },
+        "allowedSiteIds": {
+          "$ref": "#/$defs/scope"
+        },
+        "allowedWorkAreaIds": {
+          "$ref": "#/$defs/scope"
+        },
+        "capabilities": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/capability"
+          }
+        }
+      }
+    }
+  }
+}

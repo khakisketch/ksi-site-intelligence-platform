@@ -33,11 +33,15 @@ from ksi_core.auth import (
     Role,
 )
 from ksi_core.composition.platform_assembly import assemble_platform_app
+from ksi_core.domains.sites.sites import _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import EvidenceStorage, EvidenceStorageError
 from ksi_core.external_result_workflow_assembly import ExternalResultWorkflowAssemblyConfig
 from ksi_core.foundation.config_values import cli_optional_positive
-from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
+from ksi_core.identity.oidc_subject_registry import (
+    OidcSubjectRegistry,
+    load_oidc_subject_registry,
+)
 from ksi_core.observability import configure_structured_logging
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
 
@@ -211,6 +215,7 @@ def build_dev_app(
     external_result_workflow: ExternalResultWorkflowAssemblyConfig | None = None,
     external_analysis_local_graph: Any | None = None,
     external_authority_provider: Any | None = None,
+    site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
 ) -> DevAssembly:
     """dev 조립 — 디렉터리는 호출자가 이미 만들어 뒀다고 가정한다.
 
@@ -245,6 +250,7 @@ def build_dev_app(
             external_result_workflow=external_result_workflow,
             external_analysis_local_graph=external_analysis_local_graph,
             external_authority_provider=external_authority_provider,
+            site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
         )
     except BaseException:
         for journal in opened:
@@ -264,6 +270,7 @@ def _build_dev_app_locked(
     external_result_workflow: ExternalResultWorkflowAssemblyConfig | None,
     external_analysis_local_graph: Any | None,
     external_authority_provider: Any | None,
+    site_bootstrap_max_sites_per_org: int,
 ) -> DevAssembly:
     """실제 조립 — 열린 원장은 ``opened`` 에 누적돼 실패 시 호출자가 닫는다.
 
@@ -310,6 +317,7 @@ def _build_dev_app_locked(
         evidence_storage=evidence_storage,
         external_result_workflow=external_result_workflow,
         external_analysis_local_graph=external_analysis_local_graph,
+        site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
     )
     if external_authority_provider is not None:
         from ksi_core.external_authority_operations import mount_external_authority_operations
@@ -394,6 +402,16 @@ def main() -> None:
         default=64 * 1024 * 1024,
         help="journal 세그먼트 회전 임계(바이트, 기본 64MiB). 0 이면 회전하지 않는다.",
     )
+    parser.add_argument(
+        "--site-bootstrap-max-sites-per-org",
+        type=int,
+        default=0,
+        help=(
+            "F-01 mapped Site bootstrap 의 조직당 등록 Site 상한. "
+            f"0(미지정)이면 플랫폼 기본 {_DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG} 이고, "
+            "음수는 거부된다."
+        ),
+    )
     # Evidence 스토리지(ADR-KSI-010 §1) — 플랫폼 조립은 storage 를 필수로 요구한다.
     # --s3-* 를 주면 실제 어댑터를, 없으면 네트워크/서명 전에 명시적으로 실패한다.
     parser.add_argument(
@@ -438,6 +456,15 @@ def main() -> None:
         type=int,
         default=60,
         help="개발 OIDC JWKS cache TTL(초, 기본 60)",
+    )
+    parser.add_argument(
+        "--oidc-subject-registry-file",
+        default=None,
+        help=(
+            "보호된 OIDC subject registry 파일(v1/v2)을 production 과 같은 private "
+            "loader 로 읽는다(OIDC/DUAL 전용). 잘못된 파일은 dev fixture 로 "
+            "fallback 하지 않고 즉시 실패한다 — F-01 v2 실증 경로."
+        ),
     )
     parser.add_argument(
         "--oidc-operations-console-e2e",
@@ -497,10 +524,18 @@ def main() -> None:
             parser.error("--oidc-operations-console-e2e requires a loopback bind")
         if human_auth_mode is HumanAuthMode.OPAQUE:
             parser.error("--oidc-operations-console-e2e requires OIDC/DUAL authentication")
+        if args.oidc_subject_registry_file is not None:
+            # e2e fixture 계정은 dev registry 안에만 있다 — 파일 registry 와
+            # 조합하면 e2e grant 가 조용히 사라진다(fail loud).
+            parser.error(
+                "--oidc-operations-console-e2e cannot combine with --oidc-subject-registry-file"
+            )
     oidc_values = (args.oidc_issuer, args.oidc_audience, args.oidc_jwks_url)
     if human_auth_mode is HumanAuthMode.OPAQUE:
         if any(value is not None for value in oidc_values):
             parser.error("--human-auth-mode OPAQUE에는 --oidc-* 설정을 함께 쓸 수 없다")
+        if args.oidc_subject_registry_file is not None:
+            parser.error("--oidc-subject-registry-file requires OIDC/DUAL authentication")
         oidc_verifier = None
     else:
         if not all(oidc_values):
@@ -509,6 +544,26 @@ def main() -> None:
             )
         if args.oidc_jwks_ttl_seconds <= 0:
             parser.error("--oidc-jwks-ttl-seconds는 양수여야 한다")
+        if args.oidc_subject_registry_file is not None:
+            # production 과 동일한 private loader — 잘못된 파일은 dev fixture 로
+            # fallback 하지 않는다(F-01 KTD8).
+            registry_path = _absolute_config_path(
+                args.oidc_subject_registry_file,
+                option="--oidc-subject-registry-file",
+                parser=parser,
+            )
+            try:
+                subject_registry = load_oidc_subject_registry(
+                    registry_path, expected_issuer=args.oidc_issuer
+                )
+            except ValueError as exc:
+                parser.error("--oidc-subject-registry-file is unavailable or invalid")
+                raise AssertionError("argparse parser.error always exits") from exc
+        else:
+            subject_registry = _dev_oidc_subject_registry(
+                args.oidc_issuer,
+                enable_operations_console_e2e=args.oidc_operations_console_e2e,
+            )
         oidc_verifier = OidcJwtVerifier(
             OidcVerifierConfig(
                 issuer=args.oidc_issuer,
@@ -516,10 +571,7 @@ def main() -> None:
                 jwks_url=args.oidc_jwks_url,
                 jwks_ttl_seconds=args.oidc_jwks_ttl_seconds,
             ),
-            subject_registry=_dev_oidc_subject_registry(
-                args.oidc_issuer,
-                enable_operations_console_e2e=args.oidc_operations_console_e2e,
-            ),
+            subject_registry=subject_registry,
         )
 
     # Validate/load all optional trusted material before --reset can remove
@@ -565,6 +617,13 @@ def main() -> None:
         external_result_workflow=external_result_workflow,
         external_analysis_local_graph=external_analysis_local_graph,
         external_authority_provider=external_authority_provider,
+        site_bootstrap_max_sites_per_org=(
+            cli_optional_positive(
+                args.site_bootstrap_max_sites_per_org,
+                name="--site-bootstrap-max-sites-per-org",
+            )
+            or _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
+        ),
     )
 
     print("=" * 72)

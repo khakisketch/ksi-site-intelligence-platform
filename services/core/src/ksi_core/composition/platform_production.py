@@ -38,6 +38,7 @@ from ksi_core.composition.runtime_config import (
     _parse_principal_tokens,
     _require_dir,
     _require_env,
+    _site_bootstrap_max_sites_per_org_env,
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.identity.oidc_subject_registry import load_oidc_subject_registry
@@ -73,6 +74,7 @@ def build_platform_production_app() -> FastAPI:
     journal_segment_bytes = _optional_positive_env(
         "KSI_CORE_JOURNAL_SEGMENT_BYTES", default=_JOURNAL_SEGMENT_BYTES_DEFAULT
     )
+    site_bootstrap_max_sites_per_org = _site_bootstrap_max_sites_per_org_env()
     expose_docs = _expose_docs_env()
     human_auth_mode, oidc_config = _human_auth_config_env()
     oidc_subject_registry = None
@@ -198,6 +200,7 @@ def build_platform_production_app() -> FastAPI:
             external_result_workflow=external_result_workflow,
             external_analysis_local_graph=external_analysis_local_graph,
             analysis_activation=analysis_activation,
+            site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
             expose_docs=expose_docs,
         )
         if external_authority_provider is not None:

@@ -35,7 +35,10 @@ from ksi_core.composition.spatial_data_graph import (
 from ksi_core.domains.sites.external_report_resolver import ExternalVolumeReportResolver
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.domains.sites.organization_work_roster import OrganizationWorkRosterStore
-from ksi_core.domains.sites.sites import SiteStore
+from ksi_core.domains.sites.sites import (
+    _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
+    SiteStore,
+)
 from ksi_core.domains.sites.work_areas import WorkAreaStore
 from ksi_core.domains.sites.work_inbox import WorkInboxStore
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
@@ -75,6 +78,7 @@ def build_platform_graph(
     external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
     analysis_activation: AnalysisActivationV1 | None = None,
     spatial_data: SpatialDataLocalAssemblyConfig | None = None,
+    site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
 ) -> PlatformGraph:
     """Build the external-only graph; never synthesize a missing participant.
 
@@ -112,7 +116,11 @@ def build_platform_graph(
                 raise ValueError(
                     "external result workflow context authority must share the Core coordinator"
                 )
-    site_store = SiteStore(journal("sites.jsonl"), coordinator=coordinator)
+    site_store = SiteStore(
+        journal("sites.jsonl"),
+        coordinator=coordinator,
+        max_bootstrap_sites_per_org=site_bootstrap_max_sites_per_org,
+    )
     work_area_store = WorkAreaStore(
         journal("work-areas.jsonl"),
         site_exists=lambda site_id: site_store.get(site_id) is not None,

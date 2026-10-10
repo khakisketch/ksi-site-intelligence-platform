@@ -543,8 +543,11 @@ def build_work_area_router(store: WorkAreaStore, *, site_store: Any = None) -> A
             raise HTTPException(status_code=404, detail="현장을 찾을 수 없다")
         if site_store is not None:
             visible = site_store.get_scoped(site_id, principal.organization_id) is not None
-        elif principal.allowed_site_ids is not None:
-            # Mapped OIDC grants must resolve through the organization-owned Site projection.
+        elif principal.allowed_site_ids is not None or principal.registry_scoped:
+            # Mapped OIDC grants must resolve through the organization-owned Site
+            # projection. F-01: 명시 null(조직 전체)도 marker 로 판정한다 —
+            # site_store 없는 최소 조립에서 mapped 신원이 legacy
+            # ``site_is_visible`` 경로로 새면 org 귀속 확인이 사라진다.
             visible = False
         else:
             visible = store.site_is_visible(site_id)
@@ -577,6 +580,12 @@ def build_work_area_router(store: WorkAreaStore, *, site_store: Any = None) -> A
         require_site_scope(principal, site_id)
         if request.supersedes is not None:
             require_work_area_grant(principal, request.supersedes)
+            previous = store.get(request.supersedes)
+            if previous is None or previous.site_id != site_id:
+                # F-01 KTD5: 다른 Site 소속 area 의 존재/소속 siteId 는 이 요청의
+                # scope 밖 정보일 수 있다 — store 의 SUPERSEDES_OTHER_SITE 상세가
+                # 그것을 설명형으로 노출하기 전에 미지 area 와 같은 404 로 접는다.
+                raise HTTPException(status_code=404, detail="작업구역을 찾을 수 없다")
         result = store.register(
             site_id,
             name=request.name,

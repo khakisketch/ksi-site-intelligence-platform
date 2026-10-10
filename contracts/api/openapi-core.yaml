@@ -1002,6 +1002,12 @@ paths:
         SITES_WRITE 권한 필요. siteId 중복은 409, 구조 위반은 422 — 최종상태
         직접 등록은 불가하다(§6.1, 항상 UNMAPPED 로 시작). aoi 는 선택 — 등록과
         함께 줄 수도, 나중에 PUT /v1/sites/{site_id}/aoi 로 설정할 수도 있다.
+        **두 배타적 identity 형태 중 정확히 하나**를 보낸다: 기존 계약은 호출자가
+        정하는 `siteId`, F-01 mapped OIDC bootstrap 은 서버 발급 ID 계약의
+        `bootstrapRequestId` 다. 인증 Principal 출처가 어느 형태가 유효한지
+        결정한다(registry-mapped 는 bootstrapRequestId 만 — 그 밖은 siteId 만;
+        교차 형태는 저장소 이전에 422). mapped bootstrap 의 생성 capability 는
+        보호 OIDC subject registry 의 `SITE_BOOTSTRAP` 이며 JWT claim 이 아니다.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -1010,9 +1016,22 @@ paths:
             schema:
               type: object
               additionalProperties: false
-              required: [siteId, name, siteFrame]
+              required: [name, siteFrame]
               properties:
-                siteId: { type: string, minLength: 1 }
+                siteId:
+                  type: string
+                  minLength: 1
+                  description: >-
+                    기존(비-mapped) 계약 — 호출자가 정한다. registry-mapped
+                    bootstrap 신원이 보내면 422 다(그 신원은 bootstrapRequestId).
+                bootstrapRequestId:
+                  type: string
+                  description: >-
+                    F-01 mapped OIDC bootstrap 의 client 요청 키(canonical 소문자
+                    UUID). 서버가 siteId 를 발급하며, 같은
+                    (organizationId, principalId, requestKey) 재시도는 같은
+                    Site 를 201 로 돌려준다(같은 키·다른 payload 는 409
+                    BOOTSTRAP_REQUEST_CONFLICT). opaque 신원이 보내면 422 다.
                 name: { type: string, minLength: 1 }
                 siteFrame:
                   type: object
@@ -1067,16 +1086,29 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/SiteMutationResponse' }
-        '409': { description: DUPLICATE_SITE_ID }
+        '409':
+          description: >-
+            DUPLICATE_SITE_ID(기존 client 지정 계약) /
+            BOOTSTRAP_REQUEST_CONFLICT(같은 bootstrapRequestId·다른 payload) /
+            SITE_BOOTSTRAP_LIMIT_REACHED(조직 등록 Site 상한)
+        '404':
+          description: >-
+            mapped bootstrap 재시도가 현재 scope 밖으로 좁혀진 Site 를 가리킴 —
+            숨겨진 영수증을 돌려주지 않고 미지 Site 와 같은 문구로 접는다
         '422':
           description: >-
             INVALID_SITE(siteId/name/siteFrame 필드 공백 — INV-020 / siteId 가
             경로-안전 문자 밖 — '/'·공백 등, /v1/sites/{site_id} 경로 세그먼트
             제약) / aoi 구조 위반(자기교차·중복 꼭짓점·범위 밖 좌표 등 —
-            AreaOfInterest 파싱 실패, FastAPI 표준 422)
+            AreaOfInterest 파싱 실패, FastAPI 표준 422) / identity 형태 위반
+            (siteId·bootstrapRequestId 동시 제공·양쪽 누락, bootstrapRequestId
+            문법, 신원에 맞지 않는 형태)
         '503': { description: STORE_UNAVAILABLE — journal 봉인됨, 재시작 필요 }
         '401': { description: 인증 실패 }
-        '403': { description: SITES_WRITE 권한 없음 }
+        '403':
+          description: >-
+            SITES_WRITE 권한 없음 / registry-mapped 신원의 생성 capability
+            (SITE_BOOTSTRAP) 없음 또는 검토된 route matrix 밖
     get:
       summary: List sites (siteId 오름차순 결정적 정렬)
       description: SITES_READ 권한 필요.
@@ -2794,7 +2826,12 @@ paths:
                   type: object
                 crs: { type: string, minLength: 1 }
                 supersedes:
-                  description: 기하를 고칠 때 이전 구역의 id. 주면 그 구역은 자동으로 보관된다.
+                  description: >-
+                    기하를 고칠 때 이전 구역의 id. 주면 그 구역은 자동으로 보관된다.
+                    **다른 Site 소속 id 는 미지 area 와 같은 404 로 접는다**(F-01
+                    KTD5) — 타 현장 area 의 존재/소속 siteId 는 이 요청의 scope 밖
+                    정보이고, SUPERSEDES_OTHER_SITE 판정은 store 내부 계약으로만
+                    남는다.
                   type: [string, 'null']
       responses:
         '201':
@@ -2802,8 +2839,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/WorkAreaResponse' }
-        '404': { description: UNKNOWN_SITE · SUPERSEDES_NOT_FOUND }
-        '409': { description: SUPERSEDES_OTHER_SITE · SUPERSEDES_NOT_ACTIVE · TOO_MANY_ACTIVE }
+        '404': { description: UNKNOWN_SITE · SUPERSEDES_NOT_FOUND(타 Site 소속 포함) }
+        '409': { description: SUPERSEDES_NOT_ACTIVE · TOO_MANY_ACTIVE }
         '422': { description: INVALID_WORK_AREA — 폴리곤이 쓸 수 없는 모양이다 }
         '503': { description: STORE_UNAVAILABLE — 봉인됨, Retry-After }
         '401': { description: 인증 실패 }

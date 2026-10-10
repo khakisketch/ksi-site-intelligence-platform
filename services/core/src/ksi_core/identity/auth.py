@@ -138,6 +138,22 @@ class HumanAuthMode(StrEnum):
     OIDC = "OIDC"
 
 
+class Capability(StrEnum):
+    """보호 OIDC subject registry 가 발급하는 capability — role/permission 과 독립.
+
+    capability 는 role 에서 추론하지 않고 permission 으로 변환하지 않는다:
+    ``ADMIN`` 이라는 사실은 어떤 capability 도 자동 부여하지 않고, 그 반대도 같다
+    (ADR-KSI-015 매핑 유지). 소비 지점은 검토된 route 경계 하나이며, 각 지점이
+    자기 capability 를 직접 확인한다.
+
+    - ``SITE_BOOTSTRAP``: 자기 조직 한정 신규 Site 등록(F-01 D1 2안). 발급·변경·
+      회수는 KSI 가 통제하는 보호 registry 배포로만 이루어지고, opaque 토큰
+      설정(:mod:`ksi_core.composition.runtime_config`)으로는 발급되지 않는다.
+    """
+
+    SITE_BOOTSTRAP = "SITE_BOOTSTRAP"
+
+
 class OidcVerifier(Protocol):
     def verify(self, token: str) -> Principal | None: ...
 
@@ -243,8 +259,18 @@ class Principal:
     organization_id: str = "legacy"
     # OIDC subject registry가 부여한 명시적 자원 scope. ``None``은 기존 opaque
     # 신원의 미분화 의미를 보존하며, 매핑 OIDC 신원은 빈 집합도 명시한다.
+    # v2의 명시 ``null``(자기 조직 전체)도 ``None`` 으로 표현된다 — 그래서
+    # ``None`` 하나로는 "opaque 미분화"와 "v2 전체 허용"을 구분할 수 없다.
     allowed_site_ids: frozenset[str] | None = None
     allowed_work_area_ids: frozenset[str] | None = None
+    # 보호 OIDC subject registry 파싱 출처 marker(F-01 INV-F01-4). 성공적으로
+    # 파싱된 v1/v2 mapping 만 True 를 설정하며, opaque 경로는 조립 시점에
+    # 거부된다(_validate_record). 요청 경계는 이 marker **또는** non-None
+    # scope 로 매핑 신원을 검토된 route matrix 에 묶는다 — v2 의 명시 null
+    # scope 가 opaque unscoped 신원처럼 미검토 route 로 새지 않게 한다.
+    registry_scoped: bool = False
+    # registry 가 발급한 capability(role/permission 과 독립).
+    capabilities: frozenset[Capability] = frozenset()
 
 
 @dataclass(frozen=True, slots=True)
@@ -437,6 +463,16 @@ def _validate_record(record: PrincipalTokenRecord) -> None:
             or any(type(grant) is not str or not is_path_safe_identifier(grant) for grant in grants)
         ):
             raise AuthRegistryError(f"{principal.principal_id}: invalid {name}")
+
+    # registry_scoped/capabilities 는 보호 OIDC subject registry 전용 발급
+    # 표면이다. opaque 토큰 레코드가 이 값을 실으면 제2의(감사되지 않는)
+    # 발급 경로가 생긴다 — 조용히 무시하지 않고 조립 시점에 거부한다(다른
+    # 필드 불변식과 같은 fail-closed 관습).
+    if principal.registry_scoped or principal.capabilities:
+        raise AuthRegistryError(
+            f"{principal.principal_id}: registry_scoped/capabilities 는 opaque 토큰 "
+            "레코드로 발급할 수 없다 — 보호 OIDC subject registry 전용이다"
+        )
 
 
 class AuthRegistry:
@@ -717,6 +753,10 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     }
 )
 
+# F-01 D1 2안 — capability 조건부 route. 정적 allowlist 와 달리 registry_scoped
+# 와 SITE_BOOTSTRAP 을 함께 요구하므로 별도 상수로 두고 경계에서만 판정한다.
+_SITE_BOOTSTRAP_ROUTE: tuple[str, str] = ("POST", "/v1/sites")
+
 _SPATIAL_DATA_WORKER_PERMISSIONS: frozenset[Permission] = frozenset({Permission.SPATIAL_DATA_WORK})
 _SPATIAL_DATA_CLIENT_PERMISSIONS: frozenset[Permission] = frozenset(
     {Permission.SPATIAL_DATA_READ, Permission.SPATIAL_DATA_REQUEST}
@@ -899,14 +939,24 @@ async def _principal_request_scope(
         if (request.method.upper(), route_path) not in _ANALYSIS_MCP_ROUTE_ALLOWLIST:
             raise HTTPException(status_code=403, detail="권한이 부족하다")
     elif principal.kind is PrincipalKind.OPERATOR and (
-        principal.allowed_site_ids is not None or principal.allowed_work_area_ids is not None
+        principal.registry_scoped
+        or principal.allowed_site_ids is not None
+        or principal.allowed_work_area_ids is not None
     ):
         route = request.scope.get("route")
         route_path = getattr(route, "path", None)
         if (
             request.method.upper(),
             route_path,
-        ) not in (_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST | _SPATIAL_DATA_ROUTE_ALLOWLIST):
+        ) not in (_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST | _SPATIAL_DATA_ROUTE_ALLOWLIST) and not (
+            # F-01 D1 2안: capability 조건부 항목 — 정적 allowlist 에 넣을 수
+            # 없다. SITE_BOOTSTRAP 이 없는 mapped 신원(v1 포함)은 그대로 403
+            # 이고, 통과한 요청도 핸들러의 기존 SITES_WRITE 게이트를 별도로
+            # 통과해야 한다(capability→permission 변환 없음).
+            (request.method.upper(), route_path) == _SITE_BOOTSTRAP_ROUTE
+            and principal.registry_scoped
+            and Capability.SITE_BOOTSTRAP in principal.capabilities
+        ):
             raise HTTPException(status_code=403, detail="권한이 부족하다")
 
     token = _REQUEST_PRINCIPAL.set(principal)
@@ -962,6 +1012,23 @@ class WhoAmIResponse(BaseModel):
     role: str | None
     device_id: str | None
     permissions: list[str]
+    # F-01: registry 발급 상태의 자기 설명. 인가 결정이 아니라 "이 신원이 어디서
+    # 왔는가"를 보여준다 — 클라이언트가 legacy/mapped 모드를 구분할 수 있고,
+    # 이 필드가 응답에 없다고 v2 기능을 추론하지는 않는다(구버전 서버 호환).
+    registry_scoped: bool
+    capabilities: list[str]
+    site_scope_level: str
+
+
+def _site_scope_level(principal: Principal) -> str:
+    """whoami 표시용 Site scope 수준 — 인가 게이트가 아니다(게이트는 요청 경계).
+
+    ``LEGACY``: opaque 미분화 신원. ``ORG_ALL``: v2 명시 null(자기 조직 전체).
+    ``EXPLICIT``: v1/v2 명시 목록(빈 목록 포함).
+    """
+    if not principal.registry_scoped:
+        return "LEGACY"
+    return "ORG_ALL" if principal.allowed_site_ids is None else "EXPLICIT"
 
 
 def build_auth_router() -> APIRouter:
@@ -983,6 +1050,9 @@ def build_auth_router() -> APIRouter:
             role=principal.role.value if principal.role is not None else None,
             device_id=principal.device_id,
             permissions=sorted(p.value for p in principal_permissions(principal)),
+            registry_scoped=principal.registry_scoped,
+            capabilities=sorted(capability.value for capability in principal.capabilities),
+            site_scope_level=_site_scope_level(principal),
         )
 
     return router

@@ -1,4 +1,20 @@
-"""Protected issuer-subject to KSI principal mappings for human OIDC auth."""
+"""Protected issuer-subject to KSI principal mappings for human OIDC auth.
+
+## 버전별 문법 (F-01 C3)
+
+- ``oidc-subject-registry.v1``: 기존 문법 그대로 — 두 scope 필드가 **필수
+  배열**이고 capability 표현이 없다.
+- ``oidc-subject-registry.v2``: ``capabilities`` 필수 + 두 scope 필드 **필수**
+  (명시 ``null`` 또는 배열). 명시 ``null`` 은 "KSI 가 별도로 발급한 자기 조직
+  전체 범위"라는 결정이고, 배열은 명시 목록(빈 배열 포함)이다.
+
+필드 누락·invalid 는 어느 버전에서도 **로드 실패**다 — 누락이 ``null``(전체
+허용)로 승격되는 fail-open 경로를 만들지 않는다. v2 파싱 실패 후 v1 재시도도
+하지 않는다(버전이 문법을 결정한다). 파싱에 성공한 매핑만
+``Principal.registry_scoped`` 를 세워 검토된 route matrix 밖의 미검토 route 로
+새지 않게 한다. capability 는 role/permission 과 독립이며, v1 에는 존재하지
+않는다.
+"""
 
 from __future__ import annotations
 
@@ -10,14 +26,15 @@ from pathlib import Path
 from typing import Any
 
 from ksi_core.foundation.identifiers import is_path_safe_identifier
-from ksi_core.identity.auth import Principal, PrincipalKind, Role
+from ksi_core.identity.auth import Capability, Principal, PrincipalKind, Role
 
-_VERSION = "oidc-subject-registry.v1"
+_V1_VERSION = "oidc-subject-registry.v1"
+_V2_VERSION = "oidc-subject-registry.v2"
 _MAX_FILE_BYTES = 64 * 1024
 _MAX_SUBJECTS = 512
 _MAX_TEXT_LENGTH = 2_048
 _TOP_FIELDS = {"version", "subjects"}
-_SUBJECT_FIELDS = {
+_V1_SUBJECT_FIELDS = {
     "issuer",
     "subject",
     "principalId",
@@ -27,6 +44,7 @@ _SUBJECT_FIELDS = {
     "allowedSiteIds",
     "allowedWorkAreaIds",
 }
+_V2_SUBJECT_FIELDS = _V1_SUBJECT_FIELDS | {"capabilities"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,8 +55,11 @@ class OidcSubjectMapping:
     organization_id: str
     role: Role
     status: str
-    allowed_site_ids: frozenset[str]
-    allowed_work_area_ids: frozenset[str]
+    # v2 명시 null = 자기 조직 전체. v1 은 항상 frozenset(빈 집합 = 접근 없음).
+    allowed_site_ids: frozenset[str] | None
+    allowed_work_area_ids: frozenset[str] | None
+    # v1 매핑은 빈 집합이다(v1 에는 capability 표현이 없다).
+    capabilities: frozenset[Capability] = frozenset()
 
     def principal(self) -> Principal | None:
         if self.status != "ACTIVE":
@@ -51,6 +72,8 @@ class OidcSubjectMapping:
             device_id=None,
             allowed_site_ids=self.allowed_site_ids,
             allowed_work_area_ids=self.allowed_work_area_ids,
+            registry_scoped=True,
+            capabilities=self.capabilities,
         )
 
 
@@ -63,7 +86,14 @@ class OidcSubjectRegistry:
         cls, document: object, *, expected_issuer: str
     ) -> OidcSubjectRegistry:
         body = _mapping(document, _TOP_FIELDS)
-        if _text(body["version"]) != _VERSION:
+        version = _text(body["version"])
+        if version == _V1_VERSION:
+            subject_fields = _V1_SUBJECT_FIELDS
+        elif version == _V2_VERSION:
+            subject_fields = _V2_SUBJECT_FIELDS
+        else:
+            # 미지원 버전은 재시도 없이 거부한다 — v2 문서를 v1 문법으로
+            # 재해석하거나 그 반대의 fallback 을 만들지 않는다.
             raise ValueError("unsupported OIDC subject registry version")
         if not expected_issuer or len(expected_issuer) > _MAX_TEXT_LENGTH:
             raise ValueError("expected OIDC issuer is invalid")
@@ -74,7 +104,7 @@ class OidcSubjectRegistry:
         mappings: dict[tuple[str, str], OidcSubjectMapping] = {}
         principal_ids: set[str] = set()
         for entry in entries:
-            row = _mapping(entry, _SUBJECT_FIELDS)
+            row = _mapping(entry, subject_fields)
             issuer = _text(row["issuer"])
             subject = _text(row["subject"])
             if issuer != expected_issuer:
@@ -94,6 +124,20 @@ class OidcSubjectRegistry:
             status = _text(row["status"])
             if status not in {"ACTIVE", "REVOKED"}:
                 raise ValueError("OIDC subject status must be ACTIVE or REVOKED")
+            if version == _V2_VERSION:
+                allowed_site_ids = _safe_id_set_or_none(
+                    row["allowedSiteIds"], "allowedSiteIds"
+                )
+                allowed_work_area_ids = _safe_id_set_or_none(
+                    row["allowedWorkAreaIds"], "allowedWorkAreaIds"
+                )
+                capabilities = _capabilities(row["capabilities"])
+            else:
+                allowed_site_ids = _safe_id_set(row["allowedSiteIds"], "allowedSiteIds")
+                allowed_work_area_ids = _safe_id_set(
+                    row["allowedWorkAreaIds"], "allowedWorkAreaIds"
+                )
+                capabilities = frozenset()
             mappings[key] = OidcSubjectMapping(
                 issuer=issuer,
                 subject=subject,
@@ -101,10 +145,9 @@ class OidcSubjectRegistry:
                 organization_id=organization_id,
                 role=role,
                 status=status,
-                allowed_site_ids=_safe_id_set(row["allowedSiteIds"], "allowedSiteIds"),
-                allowed_work_area_ids=_safe_id_set(
-                    row["allowedWorkAreaIds"], "allowedWorkAreaIds"
-                ),
+                allowed_site_ids=allowed_site_ids,
+                allowed_work_area_ids=allowed_work_area_ids,
+                capabilities=capabilities,
             )
         return cls(mappings)
 
@@ -248,6 +291,37 @@ def _safe_id_set(value: object, name: str) -> frozenset[str]:
     if len(values) != len(set(values)):
         raise ValueError(f"OIDC {name} contains duplicate identifiers")
     return frozenset(values)
+
+
+def _safe_id_set_or_none(value: object, name: str) -> frozenset[str] | None:
+    """v2 전용 — **명시 ``null``** 만 "자기 조직 전체"이고, 그 밖의 값은 배열이다.
+
+    호출 전에 ``_mapping`` 이 필드 존재를 강제하므로, 여기서 ``None`` 은 항상
+    "키가 없어서"가 아니라 "JSON null 이 명시됐다"는 뜻이다. 그 구분이
+    fail-open 방지의 핵심이다(문서 docstring).
+    """
+    if value is None:
+        return None
+    return _safe_id_set(value, name)
+
+
+def _capabilities(value: object) -> frozenset[Capability]:
+    """v2 ``capabilities`` — 알려진 capability 의 중복 없는 배열만 허용한다.
+
+    빈 배열은 유효하다(발급 없음). ``null``·누락·미지 값은 거부한다 — 미지
+    capability 를 조용히 무시하면 발급자와 소비자의 해석이 갈라진다.
+    """
+    if not isinstance(value, list) or len(value) > len(Capability):
+        raise ValueError("OIDC capabilities must be a bounded array")
+    parsed: list[Capability] = []
+    for item in value:
+        try:
+            parsed.append(Capability(_text(item)))
+        except ValueError as exc:
+            raise ValueError("OIDC capability is invalid") from exc
+    if len(parsed) != len(set(parsed)):
+        raise ValueError("OIDC capabilities contains duplicate identifiers")
+    return frozenset(parsed)
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:

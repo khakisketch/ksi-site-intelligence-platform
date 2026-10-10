@@ -1781,7 +1781,10 @@ class ExternalAnalysisFacade:
         site_id: str,
         selectors: Sequence[AnalysisObservationSelectorV1],
     ) -> bool:
-        if principal.allowed_work_area_ids is None:
+        # F-01 KTD5: area scope 가 null(조직 전체)이어도 WorkOrder 의 Org·Site
+        # binding 확인은 계속한다 — null 은 area membership 검사만 생략하지
+        # "모든 검사 생략"이 아니다. graph/원장 부재를 unrestricted 로 읽지 않는다.
+        if principal.allowed_work_area_ids is None and not principal.registry_scoped:
             return True
         if self._work_orders is None:
             return False

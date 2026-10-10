@@ -24,6 +24,7 @@ from ksi_core.auth import (
     Role,
     TokenStatus,
 )
+from ksi_core.domains.sites.sites import _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
 from ksi_core.foundation.config_values import cli_optional_positive
 from ksi_core.foundation.identifiers import is_path_safe_identifier
 from ksi_core.oidc import OidcVerifierConfig
@@ -95,6 +96,26 @@ def _optional_positive_env(name: str, *, default: int) -> int | None:
         # 던진다 — 이 함수는 환경변수 검증 경계이므로 모듈 docstring 이 약속하는
         # "형식이 틀리면 RuntimeError" 를 이 실패에 대해서도 지킨다(음수 입력 등).
         raise RuntimeError(str(exc)) from exc
+
+
+def _site_bootstrap_max_sites_per_org_env() -> int:
+    """``KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG`` — F-01 bootstrap 조직 상한.
+
+    미설정은 기본 상한(1,000)이다. 0·음수·비정수는 **부팅 실패**다 — 여기서
+    0 은 "상한 없음"을 뜻하지 않는다(``_optional_positive_env`` 의 "0 = 없음"
+    규약과 다른 이유: 상한 해제는 조용한 기본값이 아니라 별도 결정이어야 한다).
+    """
+    name = "KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG"
+    raw = os.environ.get(name)
+    if raw is None:
+        return _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name}={raw!r} 는 1 이상 정수여야 한다") from exc
+    if value < 1:
+        raise RuntimeError(f"{name}={raw!r} 는 1 이상 정수여야 한다")
+    return value
 
 
 def _expose_docs_env() -> bool:
@@ -234,6 +255,15 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
                 f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}] scope grants are only valid "
                 "for ANALYSIS_MCP_CLIENT"
             )
+        # F-01: registry 자원 scope/capability 는 보호 OIDC subject registry 전용
+        # 발급 표면이다. opaque 토큰 설정에 이 이름을 실어 capability 를 얻는
+        # 경로를 만들지 않는다 — 조용히 무시하지 않고 부팅 실패로 드러낸다.
+        for reserved in ("registryScoped", "capabilities"):
+            if reserved in entry:
+                raise RuntimeError(
+                    f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}].{reserved} 는 예약 필드다 — "
+                    "scope/capability 발급은 보호 OIDC subject registry 로만 한다"
+                )
 
         role: Role | None = None
         if role_raw is not None:

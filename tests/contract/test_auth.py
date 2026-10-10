@@ -840,6 +840,10 @@ def test_whoami_operator() -> None:
                 "SPATIAL_DATA_REQUEST",
             ]
         ),
+        # F-01: opaque 신원은 registry 밖이다 — capability 없음, scope 는 legacy.
+        "registryScoped": False,
+        "capabilities": [],
+        "siteScopeLevel": "LEGACY",
     }
 
 
@@ -874,6 +878,9 @@ def test_whoami_edge_device() -> None:
             "EDGE_SOURCE_MEDIA_WRITE",
             "EDGE_SYNC_INGEST",
         ],
+        "registryScoped": False,
+        "capabilities": [],
+        "siteScopeLevel": "LEGACY",
     }
 
 
