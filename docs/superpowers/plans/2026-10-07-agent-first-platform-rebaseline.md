@@ -2490,3 +2490,16 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   1차 리뷰는 같은 native thread 재개·도구 로그 제한이라는 공개된 한계를 가진 유일한 사용 가능 증거다.
 - 주의: 새 --dashboard-dist-dir로 `next dev` 실행 시 apps/dashboard/tsconfig.json에 생성 경로가
   추가된다(커밋 전 제거).
+
+### F-01 종결 및 F-02~04 착수 결정 — 2026-10-10 (Human, 직접)
+
+- 디자인 재리뷰: **(c) 현 기록 수용으로 종결** — 1차 리뷰(8–9/10)와 캡처 뷰포트 아티팩트
+  검증으로 충분하며, 별도 충전·재실행은 하지 않는다(제품 개발 병목으로 두지 않는다).
+- F-01은 669df6d의 수용 증거 기준으로 고정한다. 이후 변경은 F-02~04와 섞지 않는다.
+- P7-A2/Task3: F-02~04의 직접 선행조건이 아님(검토 결과 — P7은 fresh 환경/이미지 증거 트랙으로
+  현재 제품 경로와 독립) → 현 종결(blocked·trial 정리 완료) 상태를 유지한다. 직접 의존성이
+  확인될 경우에만 해당 범위만 별도 제안한다.
+- 다음 우선순위: **F-02~04 입력 착수** — 외부 산출물 등록 → 적합성 검사 → Analysis API →
+  실제 워커 실행 → Result/Evidence 저장 → 외부 소비를 **실제(Terra 계열) 자료 기준**으로
+  완주하는 경로를 닫는 데 집중한다. 필요한 고객측 입력 목록과 우리측 준비 항목은
+  docs/superpowers/plans/2026-10-10-f02-04-first-flow-input-checklist.md에 기록한다.
