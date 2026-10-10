@@ -2503,3 +2503,18 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   실제 워커 실행 → Result/Evidence 저장 → 외부 소비를 **실제(Terra 계열) 자료 기준**으로
   완주하는 경로를 닫는 데 집중한다. 필요한 고객측 입력 목록과 우리측 준비 항목은
   docs/superpowers/plans/2026-10-10-f02-04-first-flow-input-checklist.md에 기록한다.
+
+### F-02~04 입력 착수 — 환경 준비 1단계(실바이트 레인) — 2026-10-10
+
+- 입력 목록·순서는 docs/superpowers/plans/2026-10-10-f02-04-first-flow-input-checklist.md에 기록
+  (고객측 A~E: real Terra 계열 t0/t1(+t2) ortho/DSM·CRS/수직기준·캡처시각, 권리/동의/거주, 검사점
+  CSV(정량), 소비자+호스트 1개, 수용 참여).
+- 우리측 준비 1단계 실행(synthetic, 로컬 격리): 캐시된 MinIO 컨테이너(loopback 9100) + Core dev
+  (`--s3-endpoint/--s3-bucket` + boto3 체인)으로 **등록→upload-grant(MinIO presign)→실제 PUT
+  (ortho·dsm)→seal SEALED**까지 성공. inspection 조회는 `INSPECTION_PENDING_POLICY`(=F-03 보호
+  구성 필요)로 정직하게 드러남. 컨테이너/프로세스는 종료·제거, 포트 비움.
+- 증거(보존): /tmp/opencode/f02-prep-20261010-194828/evidence/rehearsal-01..04.txt 실패→성공 순
+  (sha256 1bcf90e2…/c53d8f54…/fda0d002…/8d96373e…), 재실행 스크립트 scripts/rehearse_f02.py.
+  이는 synthetic 환경 검증이며 고객 자료·형식 호환·정확도·수용 증거가 아니다.
+- 다음: F-03 보호 구성(합성 로컬 Analysis runtime/activation/workflow-provider + 검사 lane
+  policy/authority) → synthetic 검사→분석→결과 리허설; 이후 실제 자료 입력 시 같은 환경에서 완주.
