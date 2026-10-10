@@ -412,6 +412,12 @@ export type Permission =
   // 진입/복귀)만 가르는 관리자 전용 권한(ADR-KSI-015 D2).
   | "SITES_AUTONOMY_APPROVE";
 
+/**
+ * F-01: 보호 OIDC subject registry 발급 상태의 자기 설명. 인가 게이트가 아니라
+ * "이 신원이 어디서 왔는가"다 — 실제 권한은 항상 Core 가 최종 판정한다.
+ */
+export type SiteScopeLevel = "ORG_ALL" | "EXPLICIT" | "LEGACY";
+
 export interface WhoAmIResponse {
   principalId: string;
   organizationId: string;
@@ -419,6 +425,11 @@ export interface WhoAmIResponse {
   role: Role | null;
   deviceId: string | null;
   permissions: Permission[];
+  // additive(F-01) — 구버전 Core 응답에는 없을 수 있으므로 optional 이다.
+  // 없으면 v2 bootstrap 권한을 추론하지 않는다(fail-closed).
+  registryScoped?: boolean;
+  capabilities?: string[];
+  siteScopeLevel?: SiteScopeLevel;
 }
 
 export type AcquisitionCapability =

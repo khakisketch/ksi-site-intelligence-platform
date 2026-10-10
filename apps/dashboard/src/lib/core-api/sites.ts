@@ -36,8 +36,15 @@ export async function setSiteModelAgePolicy(
   return body.site;
 }
 
-export interface RegisterSiteInput {
-  siteId: string;
+/**
+ * F-01: 두 identity 형태는 배타적이다 — 정확히 하나만 보낸다.
+ *
+ * - `siteId`: 기존 opaque 계약(호출자가 정한다).
+ * - `bootstrapRequestId`: registry-mapped bootstrap(canonical UUID 요청 키).
+ *   서버가 siteId 를 발급하며 응답의 `site.siteId` 가 유일한 후속 참조다.
+ *   같은 키·같은 payload 재시도는 같은 Site 를 201 로 돌려준다.
+ */
+export type RegisterSiteInput = {
   name: string;
   siteFrame: SiteFrame;
   /** 선택 — 생략하면 등록 후 setSiteAoi 로 나중에 설정한다(UNMAPPED 상태에서만). */
@@ -50,7 +57,7 @@ export interface RegisterSiteInput {
   dataResidency?: DataResidency;
   /** 외부 AI provider 호출의 별도 명시 동의. 생략/false는 호출 거부다. */
   aiEgressAllowed?: boolean;
-}
+} & ({ siteId: string; bootstrapRequestId?: never } | { bootstrapRequestId: string; siteId?: never });
 
 export async function registerSite(input: RegisterSiteInput): Promise<SiteView> {
   const body = await coreFetch<{ site: SiteView }>("/v1/sites", {

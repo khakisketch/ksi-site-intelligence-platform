@@ -9,6 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useDraftState } from "@/hooks/useDraftState";
 import { buildDataResidencyInput, type EgressChoice } from "@/lib/data-residency";
 import { isConvexPolygon } from "@/lib/geometry";
+import type { SiteRegistrationMode } from "@/lib/core-api/permissions";
 import {
   EGRESS_CHOICE_OPTIONS,
   Field,
@@ -23,9 +24,12 @@ import type { AoiVertex, SiteFrame } from "@/lib/core-api/types";
 // 등록 성공 뒤 현장 작업공간에서 별도로 시작한다. 현장 등록과 Mission 발급을 한
 // Wizard에 묶지 않는 것은 ADR-KSI-026의 작업 경계다.
 const STEP_LABELS = ["기본정보", "현장 범위·좌표계", "확인·등록"];
+const DRAFT_STORAGE_KEY = "ksi-wizard-site-registration-only";
+const CANONICAL_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 interface FormState {
   siteId: string;
+  bootstrapRequestId?: string;
   name: string;
   aoi: AoiVertex[];
   crs: string;
@@ -64,6 +68,11 @@ function migrateRegistrationDraft(stored: unknown): FormState {
   return {
     ...INITIAL_FORM,
     ...candidate,
+    bootstrapRequestId:
+      typeof candidate.bootstrapRequestId === "string" &&
+      CANONICAL_UUID_PATTERN.test(candidate.bootstrapRequestId)
+        ? candidate.bootstrapRequestId
+        : undefined,
     aoi: Array.isArray(candidate.aoi) ? candidate.aoi : INITIAL_FORM.aoi,
     aiEgressAllowed:
       typeof candidate.aiEgressAllowed === "boolean"
@@ -76,10 +85,14 @@ const inputClassName = "input";
 
 type SubmitPhase = "idle" | "pending" | "error" | "success";
 
-export function SiteRegistrationOnlyWizard() {
+export function SiteRegistrationOnlyWizard({
+  mode,
+}: {
+  mode: Exclude<SiteRegistrationMode, "DENIED">;
+}) {
   const router = useRouter();
   const [form, setForm, clearDraft] = useDraftState<FormState>(
-    "ksi-wizard-site-registration-only",
+    DRAFT_STORAGE_KEY,
     INITIAL_FORM,
     migrateRegistrationDraft,
   );
@@ -93,27 +106,132 @@ export function SiteRegistrationOnlyWizard() {
   const postAttemptedSiteIdRef = useRef<string | null>(null);
   const [submitPhase, setSubmitPhase] = useState<SubmitPhase>("idle");
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [registeredSiteId, setRegisteredSiteId] = useState<string | null>(null);
 
   useEffect(() => {
     // useDraftState restores session storage in its own effect. Waiting one
-    // task turn keeps a restored custom ID intact before we fill an empty new
+    // task turn keeps a restored custom ID intact before we fill an empty legacy
     // draft, and the ref prevents re-generating after a person clears/edits it.
     const timer = window.setTimeout(() => setDraftReady(true), 0);
     return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (!draftReady || initialSiteIdResolvedRef.current) return;
+    if (mode !== "LEGACY_SITE_ID" || !draftReady || initialSiteIdResolvedRef.current) return;
     initialSiteIdResolvedRef.current = true;
     if (form.siteId.trim()) return;
     setForm({ ...form, siteId: createGeneratedSiteId() });
-  }, [draftReady, form, setForm]);
+  }, [draftReady, form, mode, setForm]);
 
   function update(partial: Partial<FormState>) {
-    setForm({ ...form, ...partial });
+    const payloadFields: (keyof FormState)[] = [
+      "name",
+      "aoi",
+      "crs",
+      "verticalDatum",
+      "transformVersion",
+      "egressChoice",
+      "jurisdiction",
+      "aiEgressAllowed",
+    ];
+    const payloadChanged = payloadFields.some(
+      (field) =>
+        Object.prototype.hasOwnProperty.call(partial, field) &&
+        !Object.is(partial[field], form[field]),
+    );
+    const nextForm = { ...form, ...partial };
+    if (mode === "MAPPED_BOOTSTRAP" && form.bootstrapRequestId && payloadChanged) {
+      nextForm.bootstrapRequestId = undefined;
+      setRegisteredSiteId(null);
+    }
+    setForm(nextForm);
+  }
+
+  async function runMappedSubmission() {
+    setSubmitPhase("pending");
+    setSubmitError(null);
+
+    const bootstrapRequestId = form.bootstrapRequestId ?? globalThis.crypto.randomUUID();
+    const pendingForm = { ...form, bootstrapRequestId };
+    setForm(pendingForm);
+
+    // The retry key must reach the existing session draft before the POST can
+    // have an unknown outcome; the draft hook also keeps it synchronized later.
+    try {
+      sessionStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(pendingForm));
+    } catch {
+      setSubmitError("등록 요청 정보를 저장하지 못해 요청을 보내지 않았습니다. 브라우저 저장 공간을 확인한 뒤 다시 시도하세요.");
+      setSubmitPhase("error");
+      return;
+    }
+
+    const siteFrame: SiteFrame = {
+      crs: form.crs.trim(),
+      verticalDatum: form.verticalDatum.trim(),
+      unit: "meter",
+      transformVersion: form.transformVersion.trim(),
+    };
+    const dataResidency = buildDataResidencyInput(form.egressChoice, form.jurisdiction);
+
+    try {
+      const res = await fetch("/api/sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bootstrapRequestId,
+          name: form.name.trim(),
+          siteFrame,
+          aoi: { vertices: form.aoi },
+          dataResidency,
+          aiEgressAllowed: form.aiEgressAllowed,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = await parseJsonSafe(res);
+        const message =
+          res.status === 404
+            ? "현장이 현재 부여된 접근 범위 밖에 있을 수 있습니다. KSI에 접근 권한 범위를 다시 발급해 달라고 요청하세요."
+            : res.status === 409
+              ? body.code === "BOOTSTRAP_REQUEST_CONFLICT"
+                ? "같은 등록 요청 키가 다른 내용으로 사용되어 현장을 등록하지 못했습니다. 내용을 확인한 뒤 다시 시도하세요."
+                : body.code === "SITE_BOOTSTRAP_LIMIT_REACHED"
+                  ? "조직의 현장 등록 한도에 도달해 현장을 등록하지 못했습니다. 관리자에게 문의하세요."
+                  : "현장 등록 요청이 충돌했습니다. 내용을 확인한 뒤 다시 시도하세요."
+              : body.message ?? "요청을 처리하지 못했습니다.";
+        setSubmitError(message);
+        setSubmitPhase("error");
+        return;
+      }
+
+      const body: unknown = await res.json();
+      const siteId =
+        body && typeof body === "object" && "site" in body &&
+        body.site && typeof body.site === "object" && "siteId" in body.site
+          ? body.site.siteId
+          : undefined;
+      if (typeof siteId !== "string" || !siteId.startsWith("site-")) {
+        setSubmitError("등록 응답에서 서버가 발급한 현장 ID를 확인하지 못했습니다. 같은 요청으로 다시 시도하세요.");
+        setSubmitPhase("error");
+        return;
+      }
+
+      setRegisteredSiteId(siteId);
+      setSubmitPhase("success");
+      setCurrentStep(2);
+      router.refresh();
+    } catch {
+      setSubmitError("요청을 처리하지 못했습니다.");
+      setSubmitPhase("error");
+    }
   }
 
   async function runSubmission() {
+    if (mode === "MAPPED_BOOTSTRAP") {
+      await runMappedSubmission();
+      return;
+    }
+
     setSubmitPhase("pending");
     setSubmitError(null);
 
@@ -202,8 +320,8 @@ export function SiteRegistrationOnlyWizard() {
   const jurisdictionRequired = form.egressChoice !== "unset";
   const stepValid: Record<number, boolean> = {
     0:
-      trimmedSiteId.length > 0 &&
-      SITE_ID_PATTERN.test(trimmedSiteId) &&
+      (mode === "MAPPED_BOOTSTRAP" ||
+        (trimmedSiteId.length > 0 && SITE_ID_PATTERN.test(trimmedSiteId))) &&
       form.name.trim().length > 0 &&
       (!jurisdictionRequired || form.jurisdiction.trim().length > 0),
     1:
@@ -228,7 +346,8 @@ export function SiteRegistrationOnlyWizard() {
   function handleNext() {
     if (currentStep === 2) {
       if (submitPhase === "success") {
-        router.push(`/sites/${encodeURIComponent(trimmedSiteId)}`);
+        const siteId = mode === "MAPPED_BOOTSTRAP" ? registeredSiteId : trimmedSiteId;
+        if (siteId) router.push(`/sites/${encodeURIComponent(siteId)}`);
       } else {
         void runSubmission();
       }
@@ -258,15 +377,21 @@ export function SiteRegistrationOnlyWizard() {
   // 여전히 값이 있고 형식이 틀렸을 때만 보인다(위 siteIdError 주석과 같은 원칙).
   const step0DisabledReason = stepValid[0]
     ? undefined
-    : !trimmedSiteId
-      ? "현장 ID를 입력하세요."
-      : siteIdError
-        ? siteIdError
-        : !form.name.trim()
-          ? "현장 이름을 입력하세요."
-          : jurisdictionRequired && !form.jurisdiction.trim()
-            ? "데이터 반출 여부에 따른 관할을 선택하세요."
-            : undefined;
+    : mode === "LEGACY_SITE_ID"
+      ? !trimmedSiteId
+        ? "현장 ID를 입력하세요."
+        : siteIdError
+          ? siteIdError
+          : !form.name.trim()
+            ? "현장 이름을 입력하세요."
+            : jurisdictionRequired && !form.jurisdiction.trim()
+              ? "데이터 반출 여부에 따른 관할을 선택하세요."
+              : undefined
+      : !form.name.trim()
+        ? "현장 이름을 입력하세요."
+        : jurisdictionRequired && !form.jurisdiction.trim()
+          ? "데이터 반출 여부에 따른 관할을 선택하세요."
+          : undefined;
 
   return (
     <WizardShell
@@ -297,21 +422,23 @@ export function SiteRegistrationOnlyWizard() {
               className={inputClassName}
             />
           </Field>
-          <Field
-            label="현장 ID"
-            helpText="자동으로 만들며, 필요하면 바꿀 수 있습니다. 영문·숫자로 시작하고 하이픈(-), 밑줄(_), 점(.)만 쓸 수 있습니다. 공백과 슬래시(/)는 쓸 수 없습니다."
-            error={siteIdError}
-            required
-          >
-            <input
-              type="text"
-              value={form.siteId}
-              onChange={(event) => update({ siteId: event.target.value })}
-              placeholder="SITE-2026-001"
-              aria-invalid={Boolean(siteIdError)}
-              className={inputClassName}
-            />
-          </Field>
+          {mode === "LEGACY_SITE_ID" && (
+            <Field
+              label="현장 ID"
+              helpText="자동으로 만들며, 필요하면 바꿀 수 있습니다. 영문·숫자로 시작하고 하이픈(-), 밑줄(_), 점(.)만 쓸 수 있습니다. 공백과 슬래시(/)는 쓸 수 없습니다."
+              error={siteIdError}
+              required
+            >
+              <input
+                type="text"
+                value={form.siteId}
+                onChange={(event) => update({ siteId: event.target.value })}
+                placeholder="SITE-2026-001"
+                aria-invalid={Boolean(siteIdError)}
+                className={inputClassName}
+              />
+            </Field>
+          )}
 
           <fieldset className="flex flex-col gap-2 sm:col-span-2">
             <legend className="text-[12.5px] font-semibold break-keep text-ink-1">
@@ -427,7 +554,9 @@ export function SiteRegistrationOnlyWizard() {
               <h2 className="font-semibold break-keep">등록 내용을 확인하세요</h2>
               <dl className="grid gap-2 sm:grid-cols-2">
                 <div><dt className="text-[11.5px] text-ink-muted">현장</dt><dd className="font-medium">{form.name.trim()}</dd></div>
-                <div><dt className="text-[11.5px] text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
+                {mode === "LEGACY_SITE_ID" && (
+                  <div><dt className="text-[11.5px] text-ink-muted">현장 ID</dt><dd className="num break-token">{trimmedSiteId}</dd></div>
+                )}
                 <div><dt className="text-[11.5px] text-ink-muted">현장 범위</dt><dd>{form.aoi.length}개 꼭짓점</dd></div>
                 <div><dt className="text-[11.5px] text-ink-muted">현장 좌표계</dt><dd className="num break-token">{form.crs.trim()}</dd></div>
                 <div><dt className="text-[11.5px] text-ink-muted">KSI AI</dt><dd>{form.aiEgressAllowed ? "구조화 결과 반출 허용" : "사용 안 함"}</dd></div>
@@ -450,8 +579,10 @@ export function SiteRegistrationOnlyWizard() {
                   MISSIONS_ISSUE 를 갖고 있어(권한이 아니라 순서를 미룬 것뿐이다),
                   상세 화면에서 "베이스라인 조사 계획" 버튼이 곧바로 보인다. */}
               <p className="break-keep text-safe-ink/90">
-                첫 조사는 아직 만들어지지 않았습니다. 현장 브리핑에서
-                &quot;베이스라인 조사 계획&quot;으로 이어서 진행할 수 있습니다.
+                {mode === "MAPPED_BOOTSTRAP"
+                  ? "현장 브리핑에서 사용할 수 있는 작업을 확인하세요."
+                  : <>첫 조사는 아직 만들어지지 않았습니다. 현장 브리핑에서
+                    &quot;베이스라인 조사 계획&quot;으로 이어서 진행할 수 있습니다.</>}
               </p>
             </div>
           )}

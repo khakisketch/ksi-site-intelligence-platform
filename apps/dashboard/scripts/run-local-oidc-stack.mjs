@@ -74,6 +74,7 @@ const dashboardDistDirectory = stringArgument(
 );
 const localAnalysisS3Endpoint = stringArgument("--s3-endpoint", undefined);
 const localAnalysisS3Bucket = stringArgument("--s3-bucket", undefined);
+const oidcSubjectRegistryFile = protectedConfigPathArgument("--oidc-subject-registry-file");
 const localAnalysisConfig = protectedConfigPathArgument("--local-analysis-config");
 const externalResultWorkflowConfig = protectedConfigPathArgument(
   "--external-result-workflow-config",
@@ -95,6 +96,11 @@ if (localAnalysisOptInValues.some((value) => value !== undefined)
   );
 }
 const seedOperationsConsoleE2e = process.argv.includes("--seed-operations-console-e2e");
+if (seedOperationsConsoleE2e && oidcSubjectRegistryFile) {
+  throw new Error(
+    "--seed-operations-console-e2e cannot combine with --oidc-subject-registry-file.",
+  );
+}
 const secretsDirectory = resolve(identityStateDirectory, "secrets");
 const sessionSecretFile = resolve(secretsDirectory, "dashboard-session.secret");
 const clientSecretFile = resolve(secretsDirectory, "dashboard-oidc-client.secret");
@@ -297,6 +303,9 @@ try {
       "ksi-core",
       "--oidc-jwks-url",
       `http://${bindHost}:${issuerPort}/jwks.json`,
+      ...(oidcSubjectRegistryFile
+        ? ["--oidc-subject-registry-file", oidcSubjectRegistryFile]
+        : []),
       ...(seedOperationsConsoleE2e ? ["--oidc-operations-console-e2e"] : []),
       ...(localAnalysisConfig ? [
         "--s3-endpoint",

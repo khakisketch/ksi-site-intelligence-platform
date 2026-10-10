@@ -1,7 +1,7 @@
 import "server-only";
 
 import { whoAmI } from "./auth";
-import type { Permission } from "./types";
+import type { Permission, WhoAmIResponse } from "./types";
 
 /**
  * 로그인 주체가 주어진 권한을 전부 가지고 있는지 확인한다. 세션이 없거나 무효면 false —
@@ -18,5 +18,41 @@ export async function hasAllPermissions(...perms: Permission[]): Promise<boolean
     return perms.every((p) => principal.permissions.includes(p));
   } catch {
     return false;
+  }
+}
+
+/**
+ * F-01 현장 등록 모드 — Core whoami 의 registry metadata 로만 판정한다.
+ *
+ * - `MAPPED_BOOTSTRAP`: registry 발급 신원 + SITE_BOOTSTRAP + SITES_WRITE.
+ *   서버 발급 siteId 계약(bootstrapRequestId)을 써야 하고, 은퇴한 MISSIONS_ISSUE
+ *   를 등록 전제로 요구하지 않는다.
+ * - `LEGACY_SITE_ID`: 기존 opaque 계약(SITES_WRITE + MISSIONS_ISSUE) — 그대로.
+ * - `DENIED`: 그 외 전부. **registry 신원인데 capability 가 없으면 legacy 로
+ *   되돌아가지 않는다** — mapped 신원의 siteId 형태는 Core 가 422 로 거부하므로
+ *   legacy 진입은 반쪽 성공을 부른다(fail-closed).
+ */
+export type SiteRegistrationMode = "MAPPED_BOOTSTRAP" | "LEGACY_SITE_ID" | "DENIED";
+
+export function resolveSiteRegistrationMode(
+  principal: Pick<WhoAmIResponse, "permissions" | "registryScoped" | "capabilities">,
+): SiteRegistrationMode {
+  const canWrite = principal.permissions.includes("SITES_WRITE");
+  if (principal.registryScoped === true) {
+    return canWrite && principal.capabilities?.includes("SITE_BOOTSTRAP") === true
+      ? "MAPPED_BOOTSTRAP"
+      : "DENIED";
+  }
+  return canWrite && principal.permissions.includes("MISSIONS_ISSUE")
+    ? "LEGACY_SITE_ID"
+    : "DENIED";
+}
+
+/** whoami 실패(세션 없음·Core 장애)는 DENIED — 진입을 열지 않는다. */
+export async function getSiteRegistrationMode(): Promise<SiteRegistrationMode> {
+  try {
+    return resolveSiteRegistrationMode(await whoAmI());
+  } catch {
+    return "DENIED";
   }
 }
