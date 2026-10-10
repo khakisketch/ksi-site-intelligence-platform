@@ -1,0 +1,53 @@
+{
+  "version": "oidc-subject-registry.v2",
+  "subjects": [
+    {
+      "issuer": "http://localhost:9071",
+      "subject": "local-admin",
+      "principalId": "local-admin",
+      "organizationId": "org-local-pilot",
+      "role": "ADMIN",
+      "status": "ACTIVE",
+      "capabilities": [
+        "SITE_BOOTSTRAP"
+      ],
+      "allowedSiteIds": [
+        "pilot-unrelated-site"
+      ],
+      "allowedWorkAreaIds": null
+    },
+    {
+      "issuer": "http://localhost:9071",
+      "subject": "local-field-operator",
+      "principalId": "local-field-operator",
+      "organizationId": "org-local-pilot",
+      "role": "FIELD_OPERATOR",
+      "status": "ACTIVE",
+      "capabilities": [],
+      "allowedSiteIds": null,
+      "allowedWorkAreaIds": null
+    },
+    {
+      "issuer": "http://localhost:9071",
+      "subject": "local-viewer",
+      "principalId": "local-viewer",
+      "organizationId": "org-local-pilot",
+      "role": "VIEWER",
+      "status": "ACTIVE",
+      "capabilities": [],
+      "allowedSiteIds": null,
+      "allowedWorkAreaIds": null
+    },
+    {
+      "issuer": "http://localhost:9071",
+      "subject": "local-empty-org-admin",
+      "principalId": "local-empty-org-admin",
+      "organizationId": "org-local-empty",
+      "role": "ADMIN",
+      "status": "ACTIVE",
+      "capabilities": [],
+      "allowedSiteIds": null,
+      "allowedWorkAreaIds": null
+    }
+  ]
+}

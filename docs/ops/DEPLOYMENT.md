@@ -32,8 +32,33 @@
 | `KSI_CORE_S3_ENDPOINT` / `KSI_CORE_S3_BUCKET` | 실제 저장소와 bucket; MinIO 자격·접근/보존은 별도 운영 입력 |
 | `KSI_CORE_PRINCIPAL_TOKENS_JSON` | 비어 있지 않은 digest 전용 목록; 조직/권한/수명과 원문 보호를 별도 확인 |
 | DUAL/OIDC 설정 | issuer/audience/JWKS와 **보호된 `KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE`**까지 필수; JWT 설정만으로 부팅 불가 |
+| F-01 bootstrap 상한(선택) | `KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG` — 미설정 기본 1,000. 1 이상 정수만; 0·음수·비정수는 부팅 실패 |
 | Analysis 선택 구성 | runtime/activation/검증키 3파일 전부 아니면 전무; 등록된 `ANALYSIS_WORKER` 정확히 하나 필요 |
 | 외부 workflow 선택 구성 | `KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG`와 `KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG` 함께 아니면 전무 |
+
+### OIDC subject registry v1/v2 — F-01 발급·회수 지침
+
+- v1(기존 문법): 두 scope 필드가 필수 배열. v2: 필수 `capabilities` + 두 scope 필드 **필수**
+  (명시 `null` = KSI가 별도 발급한 자기 조직 전체, 배열 = 명시 목록, 빈 배열 = 접근 없음).
+  필드 누락·invalid·미지원 버전은 로드 실패이며 누락이 null(전체)로 승격되지 않는다 — v2 실패 후
+  v1 재시도도 없다.
+- 발급 짝: `SITE_BOOTSTRAP`은 원칙적으로 org 전체 scope(`null`)와 함께 발급하고, org 전체 scope는
+  본사 관리자급(ADR-KSI-015 매핑)에게 발급한다. capability와 scope는 **분리된 발급 결정**이다 —
+  생성 행위는 scope를 넓히지 않는다(per-site grant 레코드 없음). explicit site 목록과 함께
+  발급하면 새 Site는 재발급 전까지 생성자에게도 보이지 않는다(계약상 허용, lockout을 숨기지 않음).
+- 변경·회수: registry 파일 교체 + **재시작/재배포**가 반영 시점이다(부팅 시 1회 로드 — 파일만 바꾼
+  실행 중 프로세스는 이전 snapshot을 유지한다). 회수는 재발급(범위 축소) 또는 `REVOKED`(신원
+  전체). org 전체 모드에는 개별 site 제외 표현이 없다 — 필요하면 explicit 목록으로 전환한다.
+  DUAL에서 별도 opaque 자격이 남아 있으면 그것은 OIDC 회수가 아니다(별도 발급 상태 기록).
+- rollback: v1 명시 배열 전환은 승인된 실제 최소권한 목록만 담고, 한 필드 512개/파일 크기 한계를
+  넘으면 **자르지 않고 실패**한다. wildcard를 v1로 표현할 수 없으면 compatible reader와 v2 scope를
+  유지한 채 capabilities만 빈 배열로 재발급해 생성만 회수한다(wildcard scope rollback 완료를
+  주장하지 않는다). 새 journal binding을 읽는 리더 호환 증거 없이는 코드 downgrade를 하지 않는다.
+- 교차 조직 중복: legacy opaque 경로는 client 지정 siteId의 동일 409 응답 계약을 유지한다(호환 —
+  전역 존재 oracle 잔여 위험은 F-01 기록에 남는다). 신규 v2 bootstrap은 서버 발급 ID라 이 경로가
+  없고, 재시도가 scope 밖이면 미지 Site와 같은 404로 접힌다.
+- opaque `KSI_CORE_PRINCIPAL_TOKENS_JSON`은 capability 발급 표면이 아니다 — `registryScoped`/
+  `capabilities` 예약 필드 주입은 부팅 실패다. 새 MCP/endpoint는 없다.
 
 기존 로그·저널·공개 S3 등의 옵션은 실제 팩토리를 따른다. 이 문서는 새 자격/정책을 발급하거나
 보호된 파일의 마운트·공급 경로를 추가하지 않는다. 예제 `.env.example`에는 취득 관련 역사적

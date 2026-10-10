@@ -1,0 +1,4 @@
+URL: http://localhost:3235/api/sites/site-c6095357-1e44-442d-a8fe-ab12e9c42b85/work-areas
+STATUS: 201
+REQ: {"name":"F-01 작업구역","polygon":{"type":"Polygon","coordinates":[[[126.97251319885255,37.56551780984112],[126.9789505004883,37.56636823336762],[126.97680473327638,37.564667376605904],[126.97251319885255,37.56551780984112]]]},"crs":"EPSG:4326","supersedes":null}
+RESP: {"verdict":"REGISTERED","detail":null,"workArea":{"schemaVersion":"1.0","workAreaId":"wa-site-c6095357-1e44-442d-a8fe-ab12e9c42b85-0001","siteId":"site-c6095357-1e44-442d-a8fe-ab12e9c42b85","name":"F-01 작업구역","polygon":{"type":"Polygon","coordinates":[[[126.97251319885255,37.56551780984112],[126.9789505004883,37.56636823336762],[126.97680473327638,37.564667376605904],[126.97251319885255,37.56551780984112]]]},"crs":"EPSG:4326","status":"ACTIVE","supersedes":null,"createdAt":"2026-10-10T02:47:28.037364+00:00"}}

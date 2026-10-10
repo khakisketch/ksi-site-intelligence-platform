@@ -174,6 +174,34 @@ The wire contract is [`contracts/api/openapi-core.yaml`](../../contracts/api/ope
 the submission/manifest schemas it references. Exact local evidence, test commands, and remaining
 gates are in the [external ingress verification audit](../../docs/audit/EXTERNAL_RECONSTRUCTION_INGRESS_API_VERIFICATION.md).
 
+## F-01 Site bootstrap and grant ownership (mapped OIDC)
+
+`oidc-subject-registry.v2` adds a required `capabilities` array and required
+nullable Site/WorkArea scopes: explicit `null` is a KSI-issued own-organization
+scope, arrays stay least-privilege, and missing/invalid fields fail the load
+(schema: `contracts/schemas/oidc-subject-registry.v2.json`). `SITE_BOOTSTRAP` is
+issued only through that protected file — never from roles, JWT claims, or the
+opaque token configuration (reserved-field injection fails boot). Mapped
+principals stay inside the reviewed route matrix; the capability opens exactly
+one conditional entry (`POST /v1/sites`) and the handler still requires
+`SITES_WRITE` separately.
+
+The v2 bootstrap uses a **server-issued siteId**: the request carries only a
+canonical-UUID `bootstrapRequestId`, and a `(organizationId, principalId,
+requestKey)` binding is journaled atomically with the registration record, so a
+retry with the same payload returns the same Site, a changed payload is `409
+BOOTSTRAP_REQUEST_CONFLICT`, and a retry outside the caller's current scope is
+the same non-disclosing `404`. Legacy opaque client-ID registration is
+unchanged. The per-org bootstrap cap defaults to 1000
+(`KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG`, positive integer only; invalid
+values fail boot).
+
+WorkArea scope is site-level: `allowedWorkAreaIds: null` covers areas of the
+granted Sites only, never another Site/Org, and grants never widen permissions,
+delivery rights, AI consent, or quantitative eligibility. See
+[ADR-KSI-040](../../docs/architecture/ADR-KSI-040-site-bootstrap-and-grant-ownership.md)
+and the rebaseline ledger for the decision record and current evidence/limits.
+
 ## External artifact inspection and sanitized display
 
 When durable external reconstruction, policy, inspection, display, WorkOrder, and evidence-storage

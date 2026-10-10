@@ -102,6 +102,13 @@ auto-continuation이나 pause/재개 실행 권한이 아니다. 이 갱신은 s
 Site 접근 출처 확정, C4 부정 테스트, C5 ADMIN 표기 정정)을
 [F-01 제안 v2](plans/2026-10-09-f01-site-bootstrap-and-grant-ownership.md)에 반영했다. 실행은
 상세 구현 계획 승인 후다(코드·route·registry·grant 변경 없음).
+2026-10-10 F-01 구현·로컬 합성 수용: 상세 계획 승인(070-0103)에 따라 registry v2·서버 발급
+Site bootstrap·same-Site scope·화면 등록 모드가 구현됐고(159698b/bb1c4bf), 격리 loopback
+스택에서 D3 단계가 기록됐다 —
+[ADR-KSI-040](../architecture/ADR-KSI-040-site-bootstrap-and-grant-ownership.md),
+[rebaseline 원장](plans/2026-10-07-agent-first-platform-rebaseline.md),
+증거 `apps/dashboard/f01-bootstrap-evidence/`. 이 갱신은 slice close·고객 수용·EXT-VAL/
+milestone 변경이 아니다. 화면 디자인 리뷰·DUAL 스택·F-02..04 입력은 별도 OPEN이다.
 Archive: docs/archive/ksi-legacy-2026/ (retired 2026-09-17; historical goals only)
 ## Milestones
 legacy /tmp/... evidence pointers below are transient and non-durable.

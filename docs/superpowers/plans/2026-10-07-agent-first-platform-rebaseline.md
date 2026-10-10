@@ -2432,3 +2432,48 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   (per-site grant 레코드 없음). 회수는 registry 재발급/REVOKED, 반영은 재시작 절차, org 전체
   모드의 개별 site 제외 불가(잔여 한계 → C안 후속).
 - 이 기록은 코드·route·registry·grant 변경이 아니다. 다음: 상세 구현 계획 작성 → Human 승인 → 실행.
+
+### F-01 상세 구현 계획 승인 — 2026-10-10
+
+- Human(직접)의 승인 순서: (1) "이견 없습니다. F-01 v2 기준으로 상세 구현 계획 작성으로 진행해도
+  됩니다"와 명시 fail-closed 조건(명시 null / 명시 배열 / 필드 누락·invalid 는 거부 또는 v1
+  semantics, 구버전 fallback 이 null=org 전체로 승격 금지), (2) 계획 범위 지시(registry v2
+  parser/schema, 명시적 site-scope marker, org-admin capability 조건부 Site 생성 route,
+  same-Site WorkArea 상속, 발급·변경·회수 semantics, v1 및 일반 operator 비회귀, D3 (a)–(f)
+  실제 OIDC 수용 검증, rollback), (3) "승인 게이트를 거친 다음 코드 작업" 지시.
+- 교차 조직 siteId 존재 노출 방지 결정(Human 선택, 2026-10-10): 신규 v2 bootstrap 은 **서버 발급
+  Site ID** 를 사용한다. 기존 v1/opaque client-ID 계약과 저장된 ID 는 불변.
+- 상세 계획 산출물: `/home/ksi/.opencode/plan/2026-10-10-0103-feat-f01-bootstrap-grant-implementation-plan.md`
+  (SHA256 `cbba7fe5924a4caca810b9c52a476d212222a133e6282dd70dde44d12ba649ca`; repo 밖 승인용 계획) —
+  U1–U7, KTD1–KTD8, 보호 registry v2, capability 조건부 경계, 서버 발급 ID+멱등성, same-Site 상속
+  소비자, 실제 OIDC/DUAL·browser·restart D3 증거, v1 scope 512 한계 초과 시 rollback 거부,
+  Org당 기본 1,000 상한.
+- Human 승인(2026-10-10, 직접): "상세 계획 승인" — 승인 범위 U1–U7·서버 발급 ID/멱등성·1,000 상한·
+  compatible-reader rollback. live 발급·배포·새 network origin, P7-A2, F-02..04 는 별도 게이트 유지.
+- provenance 정정: 위 2026-10-09 "F-01 승인 반영과 계약 개선(v2)" 항목의 "Human 승인" 인용문은
+  Human 이 전달한 GPT 응답 문구를 포함한다 — 그 문구 자체는 독립 Human 승인 근거로 사용하지 않는다.
+  실제 직접 승인은 (a) "그래요 권장되는방향으로 개선해주세요"(C1–C5 반영), (b) 2026-10-10 상세 계획
+  승인이다. 과거 기록 문장은 지우거나 재작성하지 않는다.
+
+### F-01 구현·U6 로컬 합성 수용(D3) — 2026-10-10
+
+- 구현: 레지스트리 v2(fail-closed 문법·marker·조건부 POST /v1/sites·whoami metadata), 서버 발급
+  Site ID + (org, principal, requestKey) durable binding(멱등 201·409 conflict·404 hidden), Org당
+  기본 1,000 상한, same-Site 상속 소비자(work_areas fallback·supersedes fold·analysis selector),
+  pilot preflight v2, dev runner --oidc-subject-registry-file, dashboard 판정/BFF/화면(wizard는
+  OpenDesign Local Codex 실행 결과를 검수 반영). 커밋 159698b(core)·bb1c4bf(dashboard).
+- 검증: full active Python 6143passed/30skipped/0failed(12m38s), 신규·기존 oidc/auth/production/
+  pilot/core-dev contract tests green, dashboard vitest772/tsc/lint/build green.
+- U6 실행(사전 대상 확인 후): 격리 loopback 스택(issuer9071/Core8071/dashboard3235, tailscale
+  disabled; 기존 systemd dev 스택 무접촉) + 보호 v2 registry(0700 dir/0600, ~/.cache — /tmp/opencode
+  직접 배치는 loader의 unsafe ancestor 거부로 올바르게 실패했고 보호 경로로 이동).
+  D3 결과: mapped wizard(현장 ID 없음) → 서버 발급 site-c6095357-…(201, actor local-admin,
+  journal binding 1건) → WorkArea wa-…-0001 즉시 사용(201) → 재시작 후 동일 ID 재현 → 동일 키
+  재시도 201 같은 ID(멱등) → capability 제거 403+조회 유지 → scope 축소(목록0/상세404/숨겨진
+  재시도404) → 재발급 가시성 복귀+같은 ID → REVOKED 401 → v1 파일 가시성 유지·bootstrap 403.
+- 증거: apps/dashboard/f01-bootstrap-evidence/verification/(receipt.md, 캡처 12, journal 사본,
+  registry 단계 파일, MANIFEST.sha256; HAR 70MB는 scratch 경로+해시만). ADR-KSI-040 기록.
+- 한계(명시): DUAL 스택·교차 org 브라우저 계정 전환·모바일 캡처·위조 claim/area 주입은 in-process
+  계약 테스트로만(스택 미실행); 화면 디자인 리뷰는 별도 디자인 소유 단계(미실시); production/
+  RB03·08·TLS/UDS/ACL/CI/AMD64·P7-A2/Task3·F-02..04·고객/EXT-VAL은 OPEN 유지. 이 PASS는 로컬
+  합성 수용이며 고객/현장/배포/정확도 수용이 아니다.

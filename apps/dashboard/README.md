@@ -123,8 +123,15 @@ current fixture seed writes five owned synthetic Sites/WorkAreas through real st
 four managed-mode WorkOrders are explicitly historical/non-executable and one external
 WorkOrder is APPROVED/OPEN. E2E-only OIDC mapping grants these exact fixture resources;
 the normal and empty-organization accounts do not inherit those grants. It creates no Mission,
-device receipt, ProcessingJob/result or Event. This is not scoped-OIDC Site-creation acceptance:
-that mutation is currently denied by Core's audited allowlist. Missing optional Analysis/workflow
+device receipt, ProcessingJob/result or Event. Scoped-OIDC Site creation is the F-01
+capability bootstrap (server-issued `siteId`, `SITE_BOOTSTRAP` via the protected registry;
+[ADR-KSI-040](../../docs/architecture/ADR-KSI-040-site-bootstrap-and-grant-ownership.md)):
+the fixture accounts do not carry that capability, so this suite does not exercise it —
+actual-auth acceptance evidence is recorded in the
+[task ledger](../../docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
+The `/sites/new` flow resolves its registration mode from Core's `whoami` registry
+metadata (`getSiteRegistrationMode`): legacy opaque accounts keep the client `siteId`
+form, mapped accounts use the bootstrap form. Missing optional Analysis/workflow
 configuration and real storage bytes remain honest unavailable states, not successful first-flow evidence.
 Visual snapshots and fixture data are not HIL evidence and never change a DJI
 capability from `NOT_VERIFIED`.
