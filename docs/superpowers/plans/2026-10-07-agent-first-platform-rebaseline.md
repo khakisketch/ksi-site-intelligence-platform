@@ -2536,3 +2536,21 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
 - 남음(F-03 phase 2+): workflow/provider pair(서명 snapshot의 policy/catalog authority record) +
   workflow config → 검사 정책 admit → inspector lane(로컬 합성 한정) → `ksi-external-analysis-worker`
   실행 → 결과/증거 → 소비자 E2E. 실제 자료(체크리스트 A~E) 도착 시 같은 환경에서 완주.
+
+### F-03 준비 2단계 — 서명 정책 인정·검사 실측 (진행 중) — 2026-10-11
+
+- 서명 스냅샷 체인으로 검사 정책 인정 성공: seq1(카탈로그)→seq2..(정책 v1→v4→v5, 정확한 sealed
+  subject 묶음)→reload→`PROVIDER_CONFIGURED`, 검사 상태 `INSPECTION_PENDING_POLICY`→`QUEUED`.
+  체인 헤드는 영수증 원장이 정본이다(오프라인 로드 digest가 아님 — 직접 확인된 함정).
+- **검사 lane 실측 성공(핵심)**: suite-shaped 실 GeoTIFF(2×2, EPSG:5186+5773) 2 에폭을 live Core+
+  실 MinIO에서 핀드 프로파일 lane으로 측정 → **MEASURED ×2**(2×2·4px·EPSG:5186/5773, 리포트
+  digest 기록). 정책 envelope/deadline(600s)·manifest·parser digest 삼위일치가 전제다(1s 테스트
+  envelope·누락 manifest가 막은 함정 3건도 기록).
+- 증거(checkpoint CSV) 선언→grant→실바이트 PUT→seal ×2 완료, 컨텍스트 서명 인정 후 검증 요청
+  2건 발행됨.
+- **열림**: checkpoint `_checkpoint_launch` 바인딩 점검 실패 → DEFERRED → 불완전 기록. 다음 단계는
+  새 에폭+새 증거+즉시 구동에서 전체 input body 덤프 후 직접 `_checkpoint_launch` 호출로 어긋난
+  필드를 특정한다(후보: `is_active_at(issued_at)`·subject 정합·sealed() 교차검사).
+- 증거(prep dir `/tmp/opencode/f02-prep-20261010-194828/evidence/`): f03-lane-1[4-8]*, f03-checkpoint-0*,
+  f03-admit-0*, f03-contexts-02, 정책/스냅샷 버전 기록. 스택·컨테이너 정리, 포트 비움.
+  **synthetic이며 수용 증거가 아니다.**
