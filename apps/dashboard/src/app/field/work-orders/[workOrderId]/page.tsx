@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ExternalSiteResultSummary } from "@/components/external-results/ExternalSiteResultSummary";
+import { ResponsiveNotice } from "@/components/responsive/ResponsiveActionBoundary";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -76,7 +77,7 @@ export default async function FieldWorkOrderPage({ params }: { params: Promise<{
         </div>
       </OperationsWorkHeader>
 
-      <div className="flex flex-col gap-4 p-4 lg:p-5">
+      <div className="flex flex-col gap-4 p-4 pb-24 lg:p-5">
         <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div><span className="text-[12px] font-semibold text-ink-muted">플랫폼 작업 상태</span><h2 className="mt-1 text-[18px] font-bold">{stage?.label ?? status.label}</h2></div>
@@ -87,6 +88,8 @@ export default async function FieldWorkOrderPage({ params }: { params: Promise<{
           {externalExecutionContext === "UNVERIFIED" && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">작업 실행 유형을 확인하지 못했습니다. 관리형 실행 상태나 장비 동작을 표시하지 않습니다.</p>}
           {!externalWorkflow && externalExecutionContext !== "UNVERIFIED" && <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.</p>}
         </section>
+
+        {externalWorkflow && <ResponsiveNotice action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료와 산출물 등록을 이어가세요." />}
 
         {externalWorkflow && <WorkOrderOperationsPanel
           workOrderId={workOrder.workOrderId}

@@ -171,7 +171,7 @@ export function ExternalObservationCreateForm({
             </label>
             <fieldset disabled={busy || attempt !== null}>
               <legend className="text-[13px] font-semibold">비교할 작업구역</legend>
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2 grid gap-2">
                 {workAreas.map((area, index) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-[13px] hover:bg-sunk">
                   <input type="checkbox" aria-label={workAreaLabel(area, index)} checked={selected.includes(area.workAreaId)} onChange={() => toggle(area.workAreaId)} />
                   <span>{workAreaLabel(area, index)}</span>

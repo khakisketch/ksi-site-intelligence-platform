@@ -238,7 +238,7 @@ export function WorkOrderOperationsPanel({
           {notice && <p className="rounded-lg border border-high/30 bg-high-bg px-3 py-2 leading-5 text-high-ink">{notice}</p>}
         </div>
 
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.">
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.">
           <div className="flex flex-col gap-3 rounded-lg bg-sunk p-3">
             {!canWrite && <p className="text-[13px] leading-5 text-ink-2">이 계정에는 작업 운영 정보를 변경할 권한이 없습니다.</p>}
             {unresolvedRetry && <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink-2">
@@ -275,6 +275,7 @@ export function WorkOrderOperationsPanel({
               <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("close", { expectedOperationsRevision: operations.operationsRevision, note: closeNote.trim() || null })}>
                 {pending?.kind === "close" ? "업무 종료 저장 중" : "업무 종료"}
               </button>
+              <p className="text-[12.5px] leading-5 text-ink-2">종료하면 새 산출물 등록이 멈추고, 이미 등록한 기록과 결과는 계속 확인할 수 있습니다.</p>
             </>}
             {isClosed && <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("reopen", { expectedOperationsRevision: operations.operationsRevision })}>
               {pending?.kind === "reopen" ? "다시 열기 저장 중" : "업무 다시 열기"}
