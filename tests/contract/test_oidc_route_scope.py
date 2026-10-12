@@ -6,12 +6,14 @@ import time
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import jwt
+import pytest
 from analysis_api_local_fixture import build_local_analysis_api_fixture
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, generate_private_key
-from fastapi import Depends
+from fastapi import Depends, HTTPException
 from fastapi.testclient import TestClient
 from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role, require_principal
 from ksi_core.domains.external.workflow.external_result_projection_models import (
@@ -469,6 +471,28 @@ def test_scoped_volume_reads_require_exact_work_order_grants(tmp_path: Path) -> 
         assert client.get(relative, headers=headers).status_code == 200
         assert client.get(single, headers=headers).status_code == 200
 
+        # 한쪽 차원만 설정되면 None 차원은 제한하지 않는다(F-01 관례).
+        token, _key = _install_oidc_v2(
+            fixture, capabilities=[], site_ids=[fixture.site_id], area_ids=None
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 200
+        assert client.get(single, headers=headers).status_code == 200
+
+        token, _key = _install_oidc_v2(
+            fixture, capabilities=[], site_ids=None, area_ids=[fixture.work_area_id]
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 200
+        assert client.get(single, headers=headers).status_code == 200
+
+        token, _key = _install_oidc_v2(
+            fixture, capabilities=[], site_ids=None, area_ids=["wa-ungranted-0001"]
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 404
+        assert client.get(single, headers=headers).status_code == 404
+
         # 같은 Site grant 라도 WorkOrder 의 area 가 grant 밖이면 동일 404 다.
         token, _key = _install_oidc_v2(
             fixture,
@@ -546,3 +570,110 @@ def test_scoped_pending_decisions_filter_by_site_and_work_area() -> None:
         organization_id="org-a",
     )
     assert _scoped_pending_items(unscoped, view) == view.items
+
+
+def test_mapped_oidc_volume_detail_routes_stay_closed(tmp_path: Path) -> None:
+    """grant가 있어도 volume 상세 route는 검토된 목록 route 밖이므로 403이다."""
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        client = TestClient(fixture.app)
+        work_order_id = fixture.baseline.work_order_id
+        relative_detail = (
+            f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests/req-x"
+        )
+        single_detail = (
+            f"/v1/observation-work-orders/{work_order_id}/single-volume-requests/req-x"
+        )
+        # legacy opaque 신원에게는 같은 route가 403이 아니라 일반 404다(경계 대조).
+        legacy_headers = fixture.operator_headers()
+        assert client.get(relative_detail, headers=legacy_headers).status_code == 404
+        assert client.get(single_detail, headers=legacy_headers).status_code == 404
+
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative_detail, headers=headers).status_code == 403
+        assert client.get(single_detail, headers=headers).status_code == 403
+    finally:
+        fixture.close()
+
+
+def test_legacy_unscoped_volume_lists_keep_organization_behavior(tmp_path: Path) -> None:
+    """opaque unscoped 신원은 volume 목록의 기존 조직 필터 동작을 유지한다."""
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        client = TestClient(fixture.app)
+        work_order_id = fixture.baseline.work_order_id
+        headers = fixture.operator_headers()
+        assert (
+            client.get(
+                f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests",
+                headers=headers,
+            ).status_code
+            == 200
+        )
+        assert (
+            client.get(
+                f"/v1/observation-work-orders/{work_order_id}/single-volume-requests",
+                headers=headers,
+            ).status_code
+            == 200
+        )
+    finally:
+        fixture.close()
+
+
+def test_scoped_work_order_guard_semantics() -> None:
+    """volume 목록 가드: area 부분집합·site 불일치·의존성 부재·legacy 조기 반환."""
+    from ksi_core.domains.external.quantity.external_relative_volumes import (
+        _require_scoped_work_order,
+    )
+    from ksi_core.domains.external.quantity.external_single_volumes import (
+        _require_scoped_work_order as _require_single_volume_work_order,
+    )
+
+    order = SimpleNamespace(site_id="site-a", work_area_ids=["wa-a", "wa-b"])
+
+    class _Store:
+        def get(self, work_order_id: str, *, organization_id: str) -> Any:
+            return order if work_order_id == "wo-1" else None
+
+    scoped = Principal(
+        principal_id="scoped-operator",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        organization_id="org-a",
+        allowed_site_ids=frozenset({"site-a"}),
+        allowed_work_area_ids=frozenset({"wa-a", "wa-b"}),
+    )
+    _require_scoped_work_order(_Store(), scoped, "wo-1")
+
+    partial = replace(scoped, allowed_work_area_ids=frozenset({"wa-a"}))
+    with pytest.raises(HTTPException) as partial_exc:
+        _require_scoped_work_order(_Store(), partial, "wo-1")
+    assert partial_exc.value.status_code == 404  # 부분 겹침은 통과가 아니다
+
+    foreign_site = replace(scoped, allowed_site_ids=frozenset({"site-b"}))
+    with pytest.raises(HTTPException) as site_exc:
+        _require_scoped_work_order(_Store(), foreign_site, "wo-1")
+    assert site_exc.value.status_code == 404
+
+    with pytest.raises(HTTPException) as none_exc:
+        _require_scoped_work_order(None, scoped, "wo-1")
+    assert none_exc.value.status_code == 404  # 의존성 부재는 fail-closed
+
+    legacy = Principal(
+        principal_id="legacy-operator",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.ADMIN,
+        device_id=None,
+        organization_id="org-a",
+    )
+    _require_scoped_work_order(None, legacy, "wo-1")  # legacy는 store 없이 조기 반환
+
+    _require_single_volume_work_order(_Store(), scoped, "wo-1")  # 단일 체적 가드도 동일

@@ -211,3 +211,17 @@ def test_pending_decisions_http_filters_rows_for_mapped_grants(harness: _Harness
         )
         assert ungranted.status_code == 200, ungranted.text
         assert ungranted.json()["items"] == []
+
+        cross_org_token, _key = _install_oidc_v2(
+            scoped,
+            capabilities=[],
+            site_ids=[_SITE],
+            area_ids=None,
+            organization_id="org-b",
+        )
+        cross_org = client.get(
+            "/v1/external-decisions/pending",
+            headers={"Authorization": f"Bearer {cross_org_token}"},
+        )
+        assert cross_org.status_code == 200, cross_org.text
+        assert cross_org.json()["items"] == []
