@@ -2750,7 +2750,9 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 디자인 후속 2건(2026-10-13): ① 모바일 작업 운영 헤더를 단일 행으로 정리하고 상태 배지 좌측 인셋
   제거(우측 인셋 유지) ② 분석 요청의 지속적 503을 활성화 게이트로 구분 — 보류 배너·오류에 활성화
   전용 안내(UNAVAILABLE/EXPIRED) 표시. 테스트 +3, vitest 780·tsc·eslint 0 errors, 라이브 확인
-  (새 안내 문구·배지 배치, 캡처 `after4-*`).
+  (새 안내 문구·배지 배치, 캡처 `after4-*`). ③ 컴팩트 판정이 잔여 결함을 발견: 활성화 안내가
+  새로고침 후 일반 문구로 되돌아감(플래그가 메모리 상태) → 보류 시도 저장 v2로 차단 코드를 보존
+  (커밋 20061a8), 라이브 503→새로고침에서 활성화 안내 유지 확인(vitest 784, 캡처 `after5-*`).
 - F-04 2-cycle 스크립트(커밋 af91151): `scripts/rehearse_two_cycle_external_flow.py` — idempotent
   work order→context→v1 register(canonical digest, submittedBy=whoami)→grants→PUT→seal→inspection,
   이어서 pair analysis. 실검증(DUAL 스택, f03-admin-token): t0/t1 봉인(`ers-v1-78c33d…`/`44e94e…`),

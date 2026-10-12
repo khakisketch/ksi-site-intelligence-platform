@@ -71,8 +71,8 @@
   라이브 파일 등록 성공/실패·신규 분석 503 게이트·보류 취소 지속성 확인; 검토 지속성은 완료 측정
   필요로 OPEN. 런북:
   [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). main 병합 완료(a18e2af, fast-forward·push
-  없음). 완료: 2-cycle 시퀀스 스크립트(af91151, 실검증)·디자인 후속 2건(배지 정렬·분석 503 활성화
-  안내, vitest 780). 남음: 검토 지속성(measurement lane 구성 필요 — worker config·UDS identity·서명
+  없음). 완료: 2-cycle 시퀀스 스크립트(af91151, 실검증)·디자인 후속 3건(배지 정렬·분석 503 활성화
+  안내·새로고침 유지, vitest 784). 남음: 검토 지속성(measurement lane 구성 필요 — worker config·UDS identity·서명
   manifest), parser 호스트 acceptance, A–E/고객 수용.
 
 ## 4. 순서
