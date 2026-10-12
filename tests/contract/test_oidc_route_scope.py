@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,14 @@ from analysis_api_local_fixture import build_local_analysis_api_fixture
 from cryptography.hazmat.primitives.asymmetric.rsa import RSAPrivateKey, generate_private_key
 from fastapi import Depends
 from fastapi.testclient import TestClient
-from ksi_core.auth import HumanAuthMode, Principal, require_principal
+from ksi_core.auth import HumanAuthMode, Principal, PrincipalKind, Role, require_principal
+from ksi_core.domains.external.workflow.external_result_projection_models import (
+    ExternalPendingDecisionItem,
+    ExternalPendingDecisionsView,
+)
+from ksi_core.domains.external.workflow.external_result_workflow_api import (
+    _scoped_pending_items,
+)
 from ksi_core.identity.auth import _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
 from ksi_core.identity.oidc_subject_registry import OidcSubjectRegistry
 from ksi_core.oidc import OidcJwtVerifier, OidcVerifierConfig
@@ -67,6 +75,7 @@ def _install_oidc_v2(
     capabilities: list[str],
     site_ids: list[str] | None,
     area_ids: list[str] | None,
+    organization_id: str | None = None,
 ) -> tuple[str, RSAPrivateKey]:
     """v2 registry(F-01) 로 매핑 신원을 세운다 — null scope 도 검토된 matrix 안이다."""
     key = generate_private_key(public_exponent=65537, key_size=2048)
@@ -78,7 +87,9 @@ def _install_oidc_v2(
                     "issuer": _ISSUER,
                     "subject": "pilot-operator-subject",
                     "principalId": "pilot-mapped-operator",
-                    "organizationId": fixture.organization_id,
+                    "organizationId": (
+                        organization_id if organization_id is not None else fixture.organization_id
+                    ),
                     "role": "FIELD_OPERATOR",
                     "status": "ACTIVE",
                     "capabilities": capabilities,
@@ -186,6 +197,9 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
                 "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
             ),
             ("GET", "/v1/work-inbox"),
+            ("GET", "/v1/external-decisions/pending"),
+            ("GET", "/v1/observation-work-orders/{work_order_id}/relative-volume-requests"),
+            ("GET", "/v1/observation-work-orders/{work_order_id}/single-volume-requests"),
         }
         spatial_catalog_routes = {
             ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets"),
@@ -248,6 +262,15 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
                 headers=headers,
             ).status_code,
             client.get("/v1/work-inbox", headers=headers).status_code,
+            client.get("/v1/external-decisions/pending", headers=headers).status_code,
+            client.get(
+                f"/v1/observation-work-orders/{fixture.baseline.work_order_id}/relative-volume-requests",
+                headers=headers,
+            ).status_code,
+            client.get(
+                f"/v1/observation-work-orders/{fixture.baseline.work_order_id}/single-volume-requests",
+                headers=headers,
+            ).status_code,
         ]
         assert allowed[:9] == [200] * 9
         assert allowed[9] == 404
@@ -422,3 +445,104 @@ def test_v2_explicit_list_level_and_site_list_scope(tmp_path: Path) -> None:
         assert [item["siteId"] for item in listed.json()["sites"]] == [fixture.site_id]
     finally:
         fixture.close()
+
+
+# ── 2026-10-12: 외부 결과 read 표면의 mapped 신원 경계 ─────────────────
+
+
+def test_scoped_volume_reads_require_exact_work_order_grants(tmp_path: Path) -> None:
+    """매핑 신원은 정확한 WorkOrder site/area grant 없이는 volume 목록을 볼 수 없다."""
+    fixture = build_local_analysis_api_fixture(tmp_path)
+    try:
+        client = TestClient(fixture.app)
+        work_order_id = fixture.baseline.work_order_id
+        relative = f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests"
+        single = f"/v1/observation-work-orders/{work_order_id}/single-volume-requests"
+
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 200
+        assert client.get(single, headers=headers).status_code == 200
+
+        # 같은 Site grant 라도 WorkOrder 의 area 가 grant 밖이면 동일 404 다.
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=["wa-ungranted-0001"],
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 404
+        assert client.get(single, headers=headers).status_code == 404
+
+        # area grant 는 맞아도 Site grant 가 다르면 404 다.
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=["site-foreign-grant"],
+            area_ids=[fixture.work_area_id],
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 404
+        assert client.get(single, headers=headers).status_code == 404
+
+        # 교차 조직 신원은 이 조직의 WorkOrder 를 해석하지 못한다(404 비노출).
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+            organization_id="other-organization",
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        assert client.get(relative, headers=headers).status_code == 404
+        assert client.get(single, headers=headers).status_code == 404
+    finally:
+        fixture.close()
+
+
+def test_scoped_pending_decisions_filter_by_site_and_work_area() -> None:
+    """검토 대기 목록은 매핑 신원의 Site/WorkArea grant 안의 행만 남긴다."""
+
+    def item(site_id: str, work_area_id: str) -> ExternalPendingDecisionItem:
+        return ExternalPendingDecisionItem(
+            site_id=site_id,
+            report_ref=f"report-{site_id}-{work_area_id}",
+            kind="EXTERNAL_RELATIVE_VOLUME",
+            stage="AWAITING_REVIEW",
+            reported_at=datetime.now(UTC),
+            net_m3=0.0,
+            uncertainty_m3=None,
+            work_area_id=work_area_id,
+        )
+
+    view = ExternalPendingDecisionsView(
+        items=[item("site-a", "wa-a-0001"), item("site-b", "wa-b-0001")]
+    )
+    scoped = Principal(
+        principal_id="scoped-operator",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        organization_id="org-a",
+        allowed_site_ids=frozenset({"site-a"}),
+        allowed_work_area_ids=frozenset({"wa-a-0001"}),
+    )
+    assert [row.site_id for row in _scoped_pending_items(scoped, view)] == ["site-a"]
+
+    area_denied = replace(scoped, allowed_work_area_ids=frozenset({"wa-other-0001"}))
+    assert _scoped_pending_items(area_denied, view) == []
+
+    unscoped = Principal(
+        principal_id="legacy-operator",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        organization_id="org-a",
+    )
+    assert _scoped_pending_items(unscoped, view) == view.items

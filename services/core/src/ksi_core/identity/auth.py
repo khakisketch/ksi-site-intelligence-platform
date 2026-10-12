@@ -732,6 +732,14 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "GET",
             "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}/display-artifacts/{sanitized_display_ref}/download",
         ),
+        # External-result read surfaces opened 2026-10-12 (stage-1 UI review):
+        # the volume request lists additionally require the exact WorkOrder
+        # site/area grants for mapped principals, and pending decisions filter
+        # rows by the principal's Site/WorkArea grants. Transitions/AOI/roster
+        # and all worker/internal routes stay closed.
+        ("GET", "/v1/observation-work-orders/{work_order_id}/relative-volume-requests"),
+        ("GET", "/v1/observation-work-orders/{work_order_id}/single-volume-requests"),
+        ("GET", "/v1/external-decisions/pending"),
         ("GET", "/v1/work-inbox"),
         ("POST", "/v1/work-inbox/{notification_ref}/read"),
         ("POST", "/v1/external-relative-volume-reports/{report_ref}/shares"),

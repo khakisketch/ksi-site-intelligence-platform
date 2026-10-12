@@ -91,6 +91,33 @@ from ksi_core.foundation.leasing import LeaseFence
 from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
 _NOT_FOUND_DETAIL = "해당 외부 단일 시점 체적 요청을 찾을 수 없다"
+
+
+def _require_scoped_work_order(
+    work_orders: Any | None, principal: Principal, work_order_id: str
+) -> None:
+    """F-01(2026-10-12): mapped/scoped operators read only granted WorkOrders.
+
+    Legacy (unscoped) identities keep the previous organization-filtered
+    behavior. Mapped identities additionally need the exact WorkOrder
+    site/area grants, and any mismatch is the same 404 as a missing request.
+    """
+    if principal.allowed_site_ids is None and principal.allowed_work_area_ids is None:
+        return
+    order = (
+        work_orders.get(work_order_id, organization_id=principal.organization_id)
+        if work_orders is not None
+        else None
+    )
+    if order is None:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+    if principal.allowed_site_ids is not None and order.site_id not in principal.allowed_site_ids:
+        raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
+    if (
+        principal.allowed_work_area_ids is not None
+        and not set(order.work_area_ids).issubset(principal.allowed_work_area_ids)
+    ):
+        raise HTTPException(status_code=404, detail=_NOT_FOUND_DETAIL)
 _ISSUE_DOMAIN = "external-single-volume-issue.v1"
 _AUTHORITY_SNAPSHOT_FIELDS = frozenset(
     {
@@ -889,6 +916,7 @@ def build_external_single_volume_router(
         work_order_id: str,
         principal: Principal = Depends(require_permission(Permission.SITES_READ)),  # noqa: B008
     ) -> ExternalRelativeVolumeListResponse:
+        _require_scoped_work_order(work_orders, principal, work_order_id)
         return ExternalRelativeVolumeListResponse(
             items=[
                 _to_view(record)

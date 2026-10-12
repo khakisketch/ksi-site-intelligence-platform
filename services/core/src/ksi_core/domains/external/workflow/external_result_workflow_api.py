@@ -49,6 +49,28 @@ from ksi_core.foundation.durable_journal import JournalSealedError
 from ksi_core.identity.auth import Permission, Principal, PrincipalKind, require_permission
 
 
+def _scoped_pending_items(
+    principal: Principal, view: ExternalPendingDecisionsView
+) -> list[ExternalPendingDecisionItem]:
+    """F-01(2026-10-12): mapped operators see only decisions inside their grants.
+
+    Legacy (unscoped) identities keep the organization-wide list. Mapped
+    identities filter rows by the exact Site/WorkArea grants; a row outside the
+    grants is absent, never a different-shaped error.
+    """
+    if principal.allowed_site_ids is None and principal.allowed_work_area_ids is None:
+        return view.items
+    return [
+        item
+        for item in view.items
+        if (principal.allowed_site_ids is None or item.site_id in principal.allowed_site_ids)
+        and (
+            principal.allowed_work_area_ids is None
+            or item.work_area_id in principal.allowed_work_area_ids
+        )
+    ]
+
+
 class ExternalResultReviewView(CamelModel):
     """One review receipt of either family, discriminated on ``contractVersion``."""
 
@@ -827,7 +849,8 @@ def build_external_result_workflow_router(
         principal: Principal = read_dependency,
     ) -> ExternalPendingDecisionsView:
         """External results waiting for a person, one per site (AX-4, ADR-KSI-025 D1)."""
-        return projector.pending_decisions(organization_id=principal.organization_id)
+        view = projector.pending_decisions(organization_id=principal.organization_id)
+        return ExternalPendingDecisionsView(items=_scoped_pending_items(principal, view))
 
     @router.get(
         "/v1/sites/{site_id}/external-volume-reports",
