@@ -20,6 +20,7 @@ type Attempt = {
   key: string;
   workAreaId: string;
   body: { baseline: AnalysisSelector; current: AnalysisSelector };
+  activationBlockCode: ActivationBlockCode | null;
 };
 
 type AttemptScope = { organizationId: string; principalId: string; siteId: string };
@@ -27,7 +28,8 @@ type AnalysisListRow = Omit<AnalysisListItem, "analysisHref">;
 type AnalysisPageState = Omit<AnalysisListPage, "items"> & { items: AnalysisListRow[] };
 type LoadedEvidence = { analysisId: string; pages: AnalysisEvidencePage[] };
 
-const pendingAttemptPrefix = "ksi.analysis.pending.v1";
+const pendingAttemptPrefix = "ksi.analysis.pending.v2";
+const legacyPendingAttemptPrefix = "ksi.analysis.pending.v1";
 const maxStoredAttemptLength = 4_096;
 const submissionRefPattern = /^ers-v1-[0-9a-f]{64}$/;
 const activationBlockMessages = {
@@ -36,13 +38,17 @@ const activationBlockMessages = {
 } as const;
 type ActivationBlockCode = keyof typeof activationBlockMessages;
 
-function activationBlockCode(status: number, value: unknown): ActivationBlockCode | null {
-  if (status !== 503 || !isRecord(value) || typeof value.code !== "string") return null;
-  return value.code === "ANALYSIS_ACTIVATION_UNAVAILABLE" || value.code === "ANALYSIS_ACTIVATION_EXPIRED" ? value.code : null;
+function isActivationBlockCode(value: unknown): value is ActivationBlockCode {
+  return value === "ANALYSIS_ACTIVATION_UNAVAILABLE" || value === "ANALYSIS_ACTIVATION_EXPIRED";
 }
 
-function pendingAttemptKey(scope: AttemptScope) {
-  return `${pendingAttemptPrefix}:${encodeURIComponent(scope.organizationId)}:${encodeURIComponent(scope.principalId)}:${encodeURIComponent(scope.siteId)}`;
+function activationBlockCode(status: number, value: unknown): ActivationBlockCode | null {
+  if (status !== 503 || !isRecord(value) || typeof value.code !== "string") return null;
+  return isActivationBlockCode(value.code) ? value.code : null;
+}
+
+function pendingAttemptKey(scope: AttemptScope, prefix = pendingAttemptPrefix) {
+  return `${prefix}:${encodeURIComponent(scope.organizationId)}:${encodeURIComponent(scope.principalId)}:${encodeURIComponent(scope.siteId)}`;
 }
 
 function isBoundedString(value: unknown, maximum: number): value is string {
@@ -65,18 +71,26 @@ function parseSelector(value: unknown): AnalysisSelector | null {
   return { workOrderId, submissionRef, revision };
 }
 
-function parseStoredAttempt(value: unknown, scope: AttemptScope): Attempt | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["version", "organizationId", "principalId", "siteId", "attempt"]) || value.version !== 1 || value.organizationId !== scope.organizationId || value.principalId !== scope.principalId || value.siteId !== scope.siteId || !isRecord(value.attempt) || !hasExactKeys(value.attempt, ["key", "workAreaId", "body"])) return null;
-  const { key, workAreaId, body } = value.attempt;
+function parseStoredAttempt(value: unknown, scope: AttemptScope, version: 1 | 2): Attempt | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["version", "organizationId", "principalId", "siteId", "attempt"]) || value.version !== version || value.organizationId !== scope.organizationId || value.principalId !== scope.principalId || value.siteId !== scope.siteId || !isRecord(value.attempt)) return null;
+  const storedAttempt = value.attempt;
+  let activationBlock: ActivationBlockCode | null;
+  if (version === 1) {
+    if (!hasExactKeys(storedAttempt, ["key", "workAreaId", "body"])) return null;
+    activationBlock = null;
+  } else {
+    if (!hasExactKeys(storedAttempt, ["key", "workAreaId", "body", "activationBlockCode"]) || (storedAttempt.activationBlockCode !== null && !isActivationBlockCode(storedAttempt.activationBlockCode))) return null;
+    activationBlock = storedAttempt.activationBlockCode;
+  }
+  const { key, workAreaId, body } = storedAttempt;
   if (!isBoundedString(key, 255) || key.trim().length === 0 || !isBoundedString(workAreaId, 255) || !isRecord(body) || !hasExactKeys(body, ["baseline", "current"])) return null;
   const baseline = parseSelector(body.baseline);
   const current = parseSelector(body.current);
   if (!baseline || !current || sameSelector(baseline, current)) return null;
-  return { key, workAreaId, body: { baseline, current } };
+  return { key, workAreaId, body: { baseline, current }, activationBlockCode: activationBlock };
 }
 
-function readPendingAttempt(scope: AttemptScope): Attempt | null {
-  const key = pendingAttemptKey(scope);
+function readPendingAttemptAtKey(key: string, scope: AttemptScope, version: 1 | 2): Attempt | null {
   try {
     const raw = window.sessionStorage.getItem(key);
     if (!raw) return null;
@@ -86,7 +100,7 @@ function readPendingAttempt(scope: AttemptScope): Attempt | null {
     }
     try {
       const parsed: unknown = JSON.parse(raw);
-      const attempt = parseStoredAttempt(parsed, scope);
+      const attempt = parseStoredAttempt(parsed, scope, version);
       if (attempt) return attempt;
     } catch {
       // Invalid JSON is treated exactly like an invalid record below.
@@ -98,8 +112,25 @@ function readPendingAttempt(scope: AttemptScope): Attempt | null {
   return null;
 }
 
+function readPendingAttempt(scope: AttemptScope): Attempt | null {
+  const current = readPendingAttemptAtKey(pendingAttemptKey(scope), scope, 2);
+  if (current) return current;
+
+  const legacyKey = pendingAttemptKey(scope, legacyPendingAttemptPrefix);
+  const legacy = readPendingAttemptAtKey(legacyKey, scope, 1);
+  if (!legacy) return null;
+  if (writePendingAttempt(scope, legacy)) {
+    try {
+      window.sessionStorage.removeItem(legacyKey);
+    } catch {
+      // The validated legacy attempt remains usable even if cleanup is unavailable.
+    }
+  }
+  return legacy;
+}
+
 function writePendingAttempt(scope: AttemptScope, attempt: Attempt): boolean {
-  const encoded = JSON.stringify({ version: 1, ...scope, attempt });
+  const encoded = JSON.stringify({ version: 2, ...scope, attempt });
   try {
     window.sessionStorage.setItem(pendingAttemptKey(scope), encoded);
     return window.sessionStorage.getItem(pendingAttemptKey(scope)) === encoded;
@@ -111,9 +142,9 @@ function writePendingAttempt(scope: AttemptScope, attempt: Attempt): boolean {
 function clearPendingAttempt(scope: AttemptScope | null): boolean {
   if (!scope) return true;
   try {
-    const key = pendingAttemptKey(scope);
-    window.sessionStorage.removeItem(key);
-    return window.sessionStorage.getItem(key) === null;
+    const keys = [pendingAttemptKey(scope), pendingAttemptKey(scope, legacyPendingAttemptPrefix)];
+    keys.forEach((key) => window.sessionStorage.removeItem(key));
+    return keys.every((key) => window.sessionStorage.getItem(key) === null);
   } catch {
     return false;
   }
@@ -500,6 +531,10 @@ export function AnalysisRequestPanel({
       const restored = readPendingAttempt(attemptScope);
       if (!restored) return;
       setAttempt(restored);
+      if (restored.activationBlockCode) {
+        setActivationBlock(restored.activationBlockCode);
+        setError({ analysisId: null, message: activationBlockMessages[restored.activationBlockCode] });
+      }
       setWorkAreaId(restored.workAreaId);
       const baseline = observations.findIndex((option) => sameSelector(option.selector, restored.body.baseline));
       const current = observations.findIndex((option) => sameSelector(option.selector, restored.body.current));
@@ -729,7 +764,7 @@ export function AnalysisRequestPanel({
 
   const submit = async () => {
     if (busy) return;
-    const nextAttempt = attempt ?? (() => {
+    let nextAttempt: Attempt | null = attempt ?? (() => {
       if (!workAreaId || baselineIndex === "" || currentIndex === "") {
         setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
@@ -740,7 +775,7 @@ export function AnalysisRequestPanel({
         setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
       }
-      const created = { key: createIdempotencyKey(), workAreaId, body: { baseline: baseline.selector, current: current.selector } };
+      const created: Attempt = { key: createIdempotencyKey(), workAreaId, body: { baseline: baseline.selector, current: current.selector }, activationBlockCode: null };
       if (!attemptScope || !writePendingAttempt(attemptScope, created)) {
         setError({ analysisId: null, message: "이 브라우저에서는 요청 재시도 정보를 저장할 수 없습니다. 다시 시도하세요." });
         return null;
@@ -749,6 +784,11 @@ export function AnalysisRequestPanel({
       return created;
     })();
     if (!nextAttempt) return;
+    if (nextAttempt.activationBlockCode) {
+      nextAttempt = { ...nextAttempt, activationBlockCode: null };
+      if (attemptScope) writePendingAttempt(attemptScope, nextAttempt);
+      setAttempt(nextAttempt);
+    }
     setBusy(true);
     setError(null);
     setActivationBlock(null);
@@ -767,6 +807,9 @@ export function AnalysisRequestPanel({
       if (!mountedRef.current || createGeneration.current !== generation) return;
       const blockedBy = activationBlockCode(response.status, value);
       if (blockedBy) {
+        const blockedAttempt = { ...nextAttempt, activationBlockCode: blockedBy };
+        setAttempt(blockedAttempt);
+        if (attemptScope) writePendingAttempt(attemptScope, blockedAttempt);
         setActivationBlock(blockedBy);
         setError({ analysisId: null, message: activationBlockMessages[blockedBy] });
         return;

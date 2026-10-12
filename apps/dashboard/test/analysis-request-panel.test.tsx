@@ -251,6 +251,95 @@ describe("analysis V2 panel", () => {
     expect(sessionStorage.length).toBe(0);
   });
 
+  it("restores the activation gate message and error after a refresh", async () => {
+    const code = "ANALYSIS_ACTIVATION_UNAVAILABLE";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ code }, 503)));
+    const props = { initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
+    const firstRender = renderPanel(props);
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
+    await screen.findByText(/이 환경에서는 분석 실행이 활성화되어 있지 않아/);
+
+    const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
+    expect(stored.version).toBe(2);
+    expect(stored.attempt.activationBlockCode).toBe(code);
+    firstRender.unmount();
+
+    renderPanel(props);
+    await screen.findByText(/이 환경에서는 분석 실행이 활성화되어 있지 않아/);
+    expect(screen.getByText("보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "보류 요청 취소" })).toBeTruthy();
+  });
+
+  it("keeps the generic pending notice after refresh when the failure was not an activation gate", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(json({ error: "temporary" }, 503)));
+    const props = { initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true };
+    const firstRender = renderPanel(props);
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
+    await screen.findByText("요청을 다시 시도하세요.");
+
+    const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
+    expect(stored.version).toBe(2);
+    expect(stored.attempt.activationBlockCode).toBeNull();
+    firstRender.unmount();
+
+    renderPanel(props);
+    expect(await screen.findByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeTruthy();
+    expect(screen.queryByText(/보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다/)).toBeNull();
+  });
+
+  it("continues to restore strictly shaped version 1 pending attempts as generic", async () => {
+    sessionStorage.setItem("ksi.analysis.pending.v1:org-1:operator-1:site-1", JSON.stringify({
+      version: 1,
+      organizationId: "org-1",
+      principalId: "operator-1",
+      siteId: "site-1",
+      attempt: {
+        key: "analysis-existing-attempt",
+        workAreaId: "area-1",
+        body: { baseline: observations[0]!.selector, current: observations[1]!.selector },
+      },
+    }));
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    expect(await screen.findByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "보류 요청 취소" })).toBeTruthy();
+    const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
+    expect(stored.version).toBe(2);
+    expect(stored.attempt.activationBlockCode).toBeNull();
+    expect(sessionStorage.getItem("ksi.analysis.pending.v1:org-1:operator-1:site-1")).toBeNull();
+  });
+
+  it("discards version 2 pending attempts that contain unexpected keys", async () => {
+    sessionStorage.setItem("ksi.analysis.pending.v2:org-1:operator-1:site-1", JSON.stringify({
+      version: 2,
+      organizationId: "org-1",
+      principalId: "operator-1",
+      siteId: "site-1",
+      attempt: {
+        key: "analysis-malformed-attempt",
+        workAreaId: "area-1",
+        body: { baseline: observations[0]!.selector, current: observations[1]!.selector },
+        activationBlockCode: null,
+        unexpected: true,
+      },
+    }));
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    await waitFor(() => expect(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1")).toBeNull());
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(screen.queryByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeNull();
+  });
+
   it("loads the next bounded list page and selects its Core summary", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(detail()))
