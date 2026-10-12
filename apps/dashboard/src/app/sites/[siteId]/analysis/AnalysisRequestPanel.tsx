@@ -30,6 +30,16 @@ type LoadedEvidence = { analysisId: string; pages: AnalysisEvidencePage[] };
 const pendingAttemptPrefix = "ksi.analysis.pending.v1";
 const maxStoredAttemptLength = 4_096;
 const submissionRefPattern = /^ers-v1-[0-9a-f]{64}$/;
+const activationBlockMessages = {
+  ANALYSIS_ACTIVATION_UNAVAILABLE: "이 환경에서는 분석 실행이 활성화되어 있지 않아 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 운영자나 관리자에게 분석 실행 활성화 상태를 확인해 달라고 요청하세요.",
+  ANALYSIS_ACTIVATION_EXPIRED: "분석 실행 활성화가 만료되어 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 관리자에게 활성화를 갱신해 달라고 요청하세요.",
+} as const;
+type ActivationBlockCode = keyof typeof activationBlockMessages;
+
+function activationBlockCode(status: number, value: unknown): ActivationBlockCode | null {
+  if (status !== 503 || !isRecord(value) || typeof value.code !== "string") return null;
+  return value.code === "ANALYSIS_ACTIVATION_UNAVAILABLE" || value.code === "ANALYSIS_ACTIVATION_EXPIRED" ? value.code : null;
+}
 
 function pendingAttemptKey(scope: AttemptScope) {
   return `${pendingAttemptPrefix}:${encodeURIComponent(scope.organizationId)}:${encodeURIComponent(scope.principalId)}:${encodeURIComponent(scope.siteId)}`;
@@ -388,6 +398,7 @@ export function AnalysisRequestPanel({
   const [baselineIndex, setBaselineIndex] = useState("");
   const [currentIndex, setCurrentIndex] = useState("");
   const [attempt, setAttempt] = useState<Attempt | null>(null);
+  const [activationBlock, setActivationBlock] = useState<ActivationBlockCode | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ analysisId: string | null; message: string } | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
@@ -505,6 +516,7 @@ export function AnalysisRequestPanel({
       return false;
     }
     setAttempt(null);
+    setActivationBlock(null);
     setError(null);
     return true;
   };
@@ -739,6 +751,7 @@ export function AnalysisRequestPanel({
     if (!nextAttempt) return;
     setBusy(true);
     setError(null);
+    setActivationBlock(null);
     const generation = ++createGeneration.current;
     createController.current?.abort();
     const controller = new AbortController();
@@ -752,6 +765,12 @@ export function AnalysisRequestPanel({
       });
       const value: unknown = await response.json().catch(() => null);
       if (!mountedRef.current || createGeneration.current !== generation) return;
+      const blockedBy = activationBlockCode(response.status, value);
+      if (blockedBy) {
+        setActivationBlock(blockedBy);
+        setError({ analysisId: null, message: activationBlockMessages[blockedBy] });
+        return;
+      }
       if (!response.ok || !isAnalysisView(value)) throw new Error("요청을 다시 시도하세요.");
       if (!clearPendingAttempt(attemptScope)) throw new Error("요청은 접수됐지만 재시도 기록을 제거하지 못했습니다. 같은 요청으로 다시 확인하세요.");
       setAttempt(null);
@@ -818,7 +837,7 @@ export function AnalysisRequestPanel({
   const showError = error && (error.analysisId === null || error.analysisId === selectedId);
 
   return <div className="flex flex-col gap-4">
-    {canCreate && <section className="rounded-lg border border-line bg-surface px-4 py-4"><h2 className="text-[16px] font-bold">새 분석 요청</h2><p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 고르면 Core가 적합성·계산 실행을 기록합니다. 화면은 그 판단을 바꾸지 않습니다.</p>{attempt && <p className="mt-2 text-[12px] text-ink-2">중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.</p>}<form className="mt-4 grid gap-3 sm:grid-cols-3" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}><label className="text-[12.5px] font-semibold">작업구역<select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) setWorkAreaId(event.target.value); }}><option value="">작업구역 선택</option>{workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}</select></label><label className="text-[12.5px] font-semibold">기준 관측<select className="input mt-1 w-full" value={baselineIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}><option value="">기준 관측 선택</option>{observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{selectionLabel(item)}</option>)}</select></label><label className="text-[12.5px] font-semibold">현재 관측<select className="input mt-1 w-full" value={currentIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setCurrentIndex(event.target.value); }}><option value="">현재 관측 선택</option>{observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{selectionLabel(item)}</option>)}</select></label><div className="flex flex-wrap items-center gap-2 sm:col-span-3"><button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "분석 요청"}</button>{attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}{!busy && !attempt && !selectionReady && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}</div></form></section>}
+    {canCreate && <section className="rounded-lg border border-line bg-surface px-4 py-4"><h2 className="text-[16px] font-bold">새 분석 요청</h2><p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 고르면 Core가 적합성·계산 실행을 기록합니다. 화면은 그 판단을 바꾸지 않습니다.</p>{attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}<form className="mt-4 grid gap-3 sm:grid-cols-3" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}><label className="text-[12.5px] font-semibold">작업구역<select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) setWorkAreaId(event.target.value); }}><option value="">작업구역 선택</option>{workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}</select></label><label className="text-[12.5px] font-semibold">기준 관측<select className="input mt-1 w-full" value={baselineIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}><option value="">기준 관측 선택</option>{observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{selectionLabel(item)}</option>)}</select></label><label className="text-[12.5px] font-semibold">현재 관측<select className="input mt-1 w-full" value={currentIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setCurrentIndex(event.target.value); }}><option value="">현재 관측 선택</option>{observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{selectionLabel(item)}</option>)}</select></label><div className="flex flex-wrap items-center gap-2 sm:col-span-3"><button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "분석 요청"}</button>{attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}{!busy && !attempt && !selectionReady && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}</div></form></section>}
     {!canCreate && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">분석 기록을 볼 수 있습니다. 새 요청에는 현장 등록 권한(SITES_WRITE)이 필요합니다.</p>}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink"><span>{error.message}</span>{error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "분석 상세 다시 불러오기"}</button>}{listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void restartAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 처음부터 다시 불러오기"}</button>}{evidenceRestartRequired && <button type="button" className="btn ml-2" disabled={evidenceLoading} onClick={restartEvidence}>{evidenceLoading ? "근거 불러오는 중" : "근거 처음부터 다시 불러오기"}</button>}</div>}
     {selectedId && selectedDetail && <div className="flex justify-end"><button type="button" className="btn" onClick={loadEvidence} disabled={selectedEvidencePages.length > 0 || evidenceLoading}>{evidenceLoading ? "근거 불러오는 중" : "근거 확인"}</button></div>}

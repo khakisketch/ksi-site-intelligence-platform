@@ -227,6 +227,30 @@ describe("analysis V2 panel", () => {
     expect(screen.getByText("분석 analysis-created")).toBeTruthy();
   });
 
+  it.each(["ANALYSIS_ACTIVATION_UNAVAILABLE", "ANALYSIS_ACTIVATION_EXPIRED"])("explains persistent activation failure %s and keeps retry and cancel available", async (code) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json({ code }, 503))
+      .mockResolvedValueOnce(json({ code }, 503));
+    vi.stubGlobal("fetch", fetchMock);
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
+    const message = await screen.findByText(new RegExp(code === "ANALYSIS_ACTIVATION_UNAVAILABLE" ? "이 환경에서는 분석 실행이 활성화되어 있지 않아" : "분석 실행 활성화가 만료되어"));
+    expect(message.textContent).toContain("관리자");
+    expect(screen.getByText("보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1]?.[1]?.headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[0]?.[1]?.headers["Idempotency-Key"]);
+    await waitFor(() => expect((screen.getByRole("button", { name: "보류 요청 취소" }) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "보류 요청 취소" }));
+    expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
+    expect(sessionStorage.length).toBe(0);
+  });
+
   it("loads the next bounded list page and selects its Core summary", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(json(detail()))

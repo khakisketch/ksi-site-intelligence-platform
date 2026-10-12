@@ -215,14 +215,14 @@ export function WorkOrderOperationsPanel({
 
   return (
     <section className="rounded-xl border border-line bg-surface">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3">
-        <div>
+      <div className="flex items-start justify-between gap-3 border-b border-line px-4 py-3">
+        <div className="min-w-0">
           <h2 className="text-[15px] font-bold">작업 운영</h2>
           <p className="mt-1 text-[13px] leading-5 text-ink-2">
             담당과 기한을 정하고, 끝난 작업은 업무 종료로 남깁니다.
           </p>
         </div>
-        <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-bg text-accent-text"}`}>
+        <span className={`shrink-0 rounded-full pl-0 pr-2.5 py-1 text-[12px] font-semibold ${isClosed ? "bg-sunk text-ink-2" : "bg-accent-bg text-accent-text"}`}>
           {statusLabel(operations.workflowStatus)}
         </span>
       </div>

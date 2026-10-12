@@ -38,6 +38,16 @@ describe("WorkOrderOperationsPanel uncertain operation recovery", () => {
     expect(screen.getByText("노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.")).toBeTruthy();
   });
 
+  it("aligns the open status text with the operation card body inset", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<WorkOrderOperationsPanel workOrderId="external-1" principalId="operator-1" initialOperations={openOperations} canWrite />);
+
+    const status = screen.getByText("운영 중");
+    expect(status.tagName).toBe("SPAN");
+    expect(status.className).toContain("pl-0");
+    expect(status.className).not.toContain("px-2.5");
+  });
+
   it("keeps roster failure distinct from an empty roster and allows a retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })
