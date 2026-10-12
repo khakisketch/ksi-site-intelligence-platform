@@ -158,7 +158,7 @@ export function ExternalObservationHistory({
     <NetTrend items={items} workAreaNames={workAreaNames} />
     <section className="flex flex-col gap-3">
       {items.map((item) => <MetricRow key={item.reportRef} item={item} siteId={siteId} detailMode={detailMode} workAreaName={item.result ? workAreaNames.get(item.result.workAreaId) ?? null : null} />)}
-      {items.length === 0 && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">아직 보관된 외부 비교 결과가 없습니다.</p>}
+      {items.length === 0 && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">아직 보관된 외부 비교 결과가 없습니다. 분석 기록과 근거는 &lsquo;현장 분석&rsquo;에서 확인할 수 있습니다.</p>}
     </section>
   </div>;
 }

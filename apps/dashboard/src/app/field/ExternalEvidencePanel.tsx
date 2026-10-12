@@ -625,7 +625,7 @@ export function ExternalEvidencePanel({
         {sealed.map((revision) => (
           <li key={subject(revision)}>
             <button
-              className="btn"
+              className="btn max-w-full whitespace-normal break-all text-left"
               onClick={() => {
                 reset();
                 setTarget(revision);
