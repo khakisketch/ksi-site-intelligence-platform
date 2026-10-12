@@ -2721,9 +2721,10 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   변경 문구 확인 및 6개 화면 overflow 0; 캡처 `after-*.png` 5장.
 - 렌더 리뷰: 디자인 작업 공간의 실행 샌드박스가 로컬 주소·테스트 러너 접근을 막아 자체 렌더 리뷰를
   수행하지 못했다. 호출자가 실제 캡처를 제공해 **다른 에이전트의 새 네이티브 컨텍스트**로 디자인
-  리뷰를 별도 의뢰했다(결과·이미지 소비 증거는 도착 시 기록).
+  리뷰를 별도 의뢰했다(결과·이미지 소비 증거는 도착 시 기록). 1차 의뢰(Claude)는
+  `AGENT_AUTH_REQUIRED`로 실패했고, 인증된 다른 로컬 에이전트로 재의뢰했다.
 - Core 변경(커밋 c9ff294) CE 코드 리뷰: 5인(정확성·표준·테스트·보안·적대) — **P1 1건 confirmed**
   (검토 대기 목록 필터가 helper 단위 테스트로만 고정되고 HTTP 레벨 검증이 없음, protected subject:
   authorization-authentication) + 테스트 갭·잔여 리스크(중복 가드·detail route 무가드·부분 grant
-  미검증). 후속: HTTP 레벨 pending-decisions 테스트 보강(별도 변경).
+  미검증). 후속: HTTP 레벨 pending-decisions 테스트 보강 — **완료**(필터 unwiring 변이에서 실패 확인).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
