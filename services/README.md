@@ -8,9 +8,9 @@ algorithm, geometry, model-adapter, and processing code belongs in `../packages/
 | Path | Product name | Entry boundary |
 |---|---|---|
 | `core/` | KSI Site Intelligence Core | HTTP control plane and durable authority |
-| `dji-gateway/` | DJI Capability Gateway | Exact provider/capability routing process |
 | `processing-controller/` | Artifact Processing Worker | Polling/lease-based measurement orchestration |
 | `analysis-mcp/` | KSI Analysis MCP adapter | Local stdio adapter over the bounded Analysis API |
+| `spatial-data-mcp/` | KSI Spatial Data MCP adapter | Local stdio adapter over the bounded spatial-data API |
 
 ## Placement gate
 

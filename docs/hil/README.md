@@ -1,6 +1,8 @@
 # HIL document routing and product boundary
 
-Status: active HIL index. HIL evidence and device operations remain separately approved work.
+Status: retained HIL route index (out-of-product; ADR-KSI-039). The route serves the archived
+acquisition/device capability work. HIL evidence and device operations remain separately approved
+work only; they are not current product support or work selection.
 
 ## Product path boundary
 
