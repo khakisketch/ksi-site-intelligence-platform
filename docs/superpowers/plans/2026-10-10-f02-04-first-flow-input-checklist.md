@@ -70,8 +70,9 @@
   [하] 모바일 배지 정렬 1건만 open(디자인 작업 공간 후속). 권한 회귀 테스트 보강 완료(e26345a);
   라이브 파일 등록 성공/실패·신규 분석 503 게이트·보류 취소 지속성 확인; 검토 지속성은 완료 측정
   필요로 OPEN. 런북:
-  [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). 남음: HTTP 레벨 pending 테스트 보강,
-  2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집(실자료 흐름과 함께).
+  [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). main 병합 완료(a18e2af, fast-forward·push
+  없음). 남음: 2-cycle 시퀀스 스크립트, 검토 지속성(완료 측정 확보 시), 디자인 후속 2건(모바일 배지
+  정렬·분석 503 안내).
 
 ## 4. 순서
 

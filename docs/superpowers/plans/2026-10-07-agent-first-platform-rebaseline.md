@@ -2745,4 +2745,6 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   ④ 검토 저장 지속성은 미검증 — AWAITING_REVIEW 보고서가 없어(완료 측정 필요) 별도 게이트로 남긴다.
 - 발견(디자인 후속 후보): 분석 요청의 지속적 503(활성화 게이트)에도 UI는 "중단된 요청" 일반 문구만
   보여준다 — Core 사유(활성화 필요)를 구분해 안내하면 재시도 루프를 줄일 수 있다.
+- 병합: `feat/stage1-live-ui-verification` → main fast-forward(커밋 a18e2af, 2026-10-12), push 없음;
+  브랜치 보존. 최종 게이트(2026-10-13, main 전체 contract 스위트): 5470 passed·25 skipped·0 failed.
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
