@@ -770,6 +770,21 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.getByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeTruthy();
   });
 
+  it("explains a 403 list denial as an authorization boundary for both request families", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return { ok: false, status: 403, json: async () => ({ code: "FORBIDDEN" }) };
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return { ok: false, status: 403, json: async () => ({ code: "FORBIDDEN" }) };
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
+
+    expect(await screen.findByText("비교 요청 목록 조회 권한이 없습니다. 관리자에게 이 작업의 결과 조회 권한을 요청한 뒤 화면을 다시 열어 확인하세요.")).toBeTruthy();
+    expect(await screen.findByText("체적 측정 요청 목록 조회 권한이 없습니다. 관리자에게 이 작업의 결과 조회 권한을 요청한 뒤 화면을 다시 열어 확인하세요.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "목록 새로고침" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "체적 목록 새로고침" })).toBeNull();
+    expect(screen.queryByText(/새로고침으로 다시 시도하세요/)).toBeNull();
+  });
+
   it("explains a refused single-volume issue with the mapped reason instead of the same-selection retry text", async () => {
     const retryText = "단일 시점 체적 요청 상태를 확인하지 못했습니다. 같은 선택으로 다시 시도합니다.";
     const refuse = (issueResponse: () => unknown) => fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {

@@ -114,6 +114,25 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("explains a completed execution with reassessment required without exposing the raw state code", () => {
+    const current = {
+      ...detail(),
+      suitabilityState: "REASSESSMENT_REQUIRED" as const,
+      blockers: [{ code: "REASSESSMENT_REQUIRED", message: null, epoch: null, evidenceRef: null, detail: null }],
+      result: null,
+    };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, suitabilityState: "REASSESSMENT_REQUIRED", resultId: null, metrics: null, limitationCount: 1 };
+
+    renderPanel({ initialPage: page, initialSelectedDetail: current });
+
+    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    expect(selected.getByText("실행 완료")).toBeTruthy();
+    expect(selected.getByText("재평가 필요")).toBeTruthy();
+    expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
+    expect(selected.queryByText("REASSESSMENT_REQUIRED")).toBeNull();
+  });
+
   it("retires cached numeric detail when reselecting a completed analysis before refreshed I/O", async () => {
     const other = detail("analysis-2");
     other.result = { ...result, resultId: "other-result" };

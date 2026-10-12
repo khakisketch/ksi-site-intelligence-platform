@@ -669,7 +669,7 @@ export function ExternalEvidencePanel({
           {canWrite && (
             <ResponsiveActionBoundary
               action="EXTERNAL_RECONSTRUCTION_MUTATION"
-              reason="증거와 사용 결정 요청은 노트북 이상의 화면에서 진행합니다."
+              reason="노트북에서 같은 계정으로 이 작업 상세를 열어 증거 확인과 사용 결정 요청을 이어가세요."
             >
               <div>
                 {hasDsm(target) && (

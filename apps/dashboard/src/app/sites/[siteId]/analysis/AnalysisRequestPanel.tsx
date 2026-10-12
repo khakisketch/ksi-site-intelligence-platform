@@ -154,7 +154,7 @@ function executionLabel(state: AnalysisView["executionState"]) {
     NOT_STARTED: { label: "시작 전", tone: "neutral" },
     QUEUED: { label: "대기열", tone: "progress" },
     RUNNING: { label: "실행 중", tone: "progress" },
-    COMPLETED: { label: "완료", tone: "positive" },
+    COMPLETED: { label: "실행 완료", tone: "positive" },
     FAILED: { label: "실패", tone: "warning" },
   } as const;
   return labels[state];
@@ -169,6 +169,11 @@ function suitabilityLabel(state: AnalysisView["suitabilityState"]) {
     REASSESSMENT_REQUIRED: { label: "재평가 필요", tone: "warning" },
   } as const;
   return labels[state];
+}
+
+function analysisCodeLabel(code: string): string {
+  if (code === "REASSESSMENT_REQUIRED") return "현장 적합성 재평가 필요";
+  return code;
 }
 
 function formatNumber(value: number, suffix: string) {
@@ -208,7 +213,7 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">임계값 {formatNumber(metrics.thresholdM, "m")}: 높이 차이 기준으로 제외되는 셀이 없습니다. 공통 유효 영역은 두 관측에서 유효한 셀로 별도 제한됩니다.</p>
       <ResultIdentity result={result} />
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">{detail.suitabilityState === "EVALUATED" ? "독립 평가 근거가 있습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다." : "독립 정확도 평가는 아직 확인되지 않았습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다."}</p>
-      {result.limitationCodes.length > 0 && <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">제한: {result.limitationCodes.join(", ")}</p>}
+      {result.limitationCodes.length > 0 && <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">제한: {result.limitationCodes.map(analysisCodeLabel).join(", ")}</p>}
     </>}
     {!result && summary.limitationCount > 0 && <p className="mt-2 text-[12px] text-ink-muted">제한 코드 {summary.limitationCount}개 · 상세에서 확인</p>}
   </section>;
@@ -239,7 +244,7 @@ function evidenceLines(item: AnalysisEvidenceItem): string[] {
       return [
         `평가 ${item.epoch}: ${item.outcome} · revision ${item.revision}`,
         `평가 ID · digest: ${item.evaluationId} · ${item.evaluationDigest}`,
-        `사유 코드: ${item.reasonCodes.join(", ")}`,
+        `사유: ${item.reasonCodes.map(analysisCodeLabel).join(", ")}`,
         `평가 시각: ${formatKoreanDateTime(item.assessedAt, { dateStyle: "short", timeStyle: "short" })}`,
       ];
     case "CHECKPOINT_FACT":
@@ -259,7 +264,7 @@ function evidenceLines(item: AnalysisEvidenceItem): string[] {
     case "NUMERIC_RESULT":
       return [`수치 결과: ${item.resultId} · ${item.reportDigest}`, `결과 identity digest: ${item.numericResultIdentityDigest}`];
     case "LIMITATION":
-      return [`제한 (${item.source}): ${item.code}`, ...(item.detail ? [item.detail] : []), ...(item.evidenceRef ? [`근거 참조: ${item.evidenceRef}`] : [])];
+      return [`제한 (${item.source}): ${analysisCodeLabel(item.code)}`, ...(item.detail ? [item.detail] : []), ...(item.evidenceRef ? [`근거 참조: ${item.evidenceRef}`] : [])];
   }
 }
 
@@ -273,7 +278,7 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
       <p className="break-all font-semibold">{item.kind} · {item.recordId}</p>
       <p className="mt-1 break-all text-ink-muted">digest: {item.digest}</p>
       <ul className="mt-1 space-y-1 break-all">{evidenceLines(item).map((line) => <li key={line}>{line}</li>)}</ul>
-      {item.limitationCodes.length > 0 && <p className="mt-1 break-all text-crit-ink">제한: {item.limitationCodes.join(", ")}</p>}
+      {item.limitationCodes.length > 0 && <p className="mt-1 break-all text-crit-ink">제한: {item.limitationCodes.map(analysisCodeLabel).join(", ")}</p>}
     </li>)}</ul>
   </section>;
 }
@@ -292,8 +297,8 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages }: {
       <div><p className="text-[14px] font-bold">분석 {summary.analysisId}</p><p className="mt-1 text-[12px] text-ink-muted">작업구역 {summary.workAreaId} · 생성 {formatKoreanDateTime(summary.createdAt, { dateStyle: "short", timeStyle: "short" })}</p></div>
       <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 분석 보기</button>
     </div>
-    <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div></div>
-    {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="차단 사유"><h3 className="text-[13px] font-bold">확인 필요</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <li key={`${blocker.code}-${index}`} className="text-[12.5px] leading-5 text-ink-2"><strong className="font-semibold">{blocker.code}</strong>{blocker.epoch ? ` · ${blocker.epoch === "BASELINE" ? "기준 관측" : "현재 관측"}` : ""}{blocker.detail ? <span className="block">{blocker.detail}</span> : null}{blocker.evidenceRef ? <span className="block break-all text-ink-muted">근거 참조: {blocker.evidenceRef}</span> : null}</li>)}</ul></section> : null}
+    <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}</div>
+    {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="차단 사유"><h3 className="text-[13px] font-bold">확인 필요</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <li key={`${blocker.code}-${index}`} className="text-[12.5px] leading-5 text-ink-2"><strong className="font-semibold">{analysisCodeLabel(blocker.code)}</strong>{blocker.epoch ? ` · ${blocker.epoch === "BASELINE" ? "기준 관측" : "현재 관측"}` : ""}{blocker.detail ? <span className="block">{blocker.detail}</span> : null}{blocker.evidenceRef ? <span className="block break-all text-ink-muted">근거 참조: {blocker.evidenceRef}</span> : null}</li>)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
     {selected && evidencePages.length > 0 && <EvidenceSummary pages={evidencePages} />}
   </article>;

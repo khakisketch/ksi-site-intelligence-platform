@@ -238,7 +238,7 @@ export function WorkOrderOperationsPanel({
           {notice && <p className="rounded-lg border border-high/30 bg-high-bg px-3 py-2 leading-5 text-high-ink">{notice}</p>}
         </div>
 
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="담당·기한·업무 종료는 노트북 이상의 화면에서 변경합니다.">
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.">
           <div className="flex flex-col gap-3 rounded-lg bg-sunk p-3">
             {!canWrite && <p className="text-[13px] leading-5 text-ink-2">이 계정에는 작업 운영 정보를 변경할 권한이 없습니다.</p>}
             {unresolvedRetry && <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink-2">

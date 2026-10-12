@@ -9,6 +9,11 @@ import type { TemporalCoherencePolicy } from "@/lib/core-api/types";
 
 type WorkAreaOption = { workAreaId: string; name: string };
 
+function workAreaLabel(area: WorkAreaOption, index: number): string {
+  const name = area.name.trim();
+  return name && name !== area.workAreaId ? name : `이름을 확인할 수 없는 작업구역 ${index + 1}`;
+}
+
 type CreateAttempt = {
   key: string;
   body: {
@@ -154,7 +159,7 @@ export function ExternalObservationCreateForm({
           <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 inline-flex">작업구역 만들기</Link>
         </section>
       ) : (
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="새 관측 작업 등록은 노트북 이상의 화면에서 진행합니다.">
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 현장 화면을 열어 등록을 이어가세요.">
           <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
             <div>
               <h2 className="text-[16px] font-bold">외부 산출물 작업</h2>
@@ -167,9 +172,9 @@ export function ExternalObservationCreateForm({
             <fieldset disabled={busy || attempt !== null}>
               <legend className="text-[13px] font-semibold">비교할 작업구역</legend>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {workAreas.map((area) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-[13px] hover:bg-sunk">
-                  <input type="checkbox" aria-label={area.name} checked={selected.includes(area.workAreaId)} onChange={() => toggle(area.workAreaId)} />
-                  <span>{area.name}</span>
+                {workAreas.map((area, index) => <label key={area.workAreaId} className="flex cursor-pointer items-center gap-2 rounded-lg border border-line px-3 py-2 text-[13px] hover:bg-sunk">
+                  <input type="checkbox" aria-label={workAreaLabel(area, index)} checked={selected.includes(area.workAreaId)} onChange={() => toggle(area.workAreaId)} />
+                  <span>{workAreaLabel(area, index)}</span>
                 </label>)}
               </div>
             </fieldset>
@@ -177,6 +182,9 @@ export function ExternalObservationCreateForm({
             <div className="flex flex-wrap gap-2">
               <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "산출물 등록 시작"}</button>
             </div>
+            {!busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
+            {!busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
+            {!busy && !attempt && name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
             {error && <p role="alert" className="text-[13px] text-high-ink">{error}{attempt && <> <Link href="/field" className="font-semibold underline">작업 목록 확인</Link></>}</p>}
           </section>
         </ResponsiveActionBoundary>

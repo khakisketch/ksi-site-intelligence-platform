@@ -6,7 +6,7 @@ import { WorkOrderOperationsPanel } from "@/app/field/WorkOrderOperationsPanel";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/components/responsive/ResponsiveActionBoundary", () => ({
-  ResponsiveActionBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  ResponsiveActionBoundary: ({ children, reason }: { children: React.ReactNode; reason?: string }) => <><p>{reason}</p>{children}</>,
 }));
 
 const openOperations = {
@@ -31,6 +31,13 @@ afterEach(() => {
 });
 
 describe("WorkOrderOperationsPanel uncertain operation recovery", () => {
+  it("tells mobile users where to continue laptop-only operations", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<WorkOrderOperationsPanel workOrderId="external-1" principalId="operator-1" initialOperations={openOperations} canWrite />);
+
+    expect(screen.getByText("노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.")).toBeTruthy();
+  });
+
   it("keeps roster failure distinct from an empty roster and allows a retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })

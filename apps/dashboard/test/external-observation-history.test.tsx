@@ -62,6 +62,13 @@ afterEach(() => {
 });
 
 describe("외부 관측 이력 상세", () => {
+  it("routes an empty external-results state to the site's analysis record", () => {
+    render(<ExternalObservationHistory siteId="site-1" items={[]} workAreaNames={new Map()} />);
+
+    expect(screen.getByRole("link", { name: "현장 분석에서 결과와 근거 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1/analysis");
+  });
+
   it("shows every relative metric, its common coverage, and its limitation as labeled compact facts", () => {
     render(<ExternalObservationHistory
       siteId="site-1"

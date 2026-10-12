@@ -242,6 +242,7 @@ describe("ExternalReconstructionPanel", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     expect(await screen.findByText("등록된 외부 산출물이 없습니다.")).toBeTruthy();
     expect(screen.getByText("노트북에서 계속")).toBeTruthy();
+    expect(screen.getByText("노트북에서 같은 계정으로 이 작업 상세를 열어 정사영상·DSM 등록을 이어가세요.")).toBeTruthy();
     expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
   });
 

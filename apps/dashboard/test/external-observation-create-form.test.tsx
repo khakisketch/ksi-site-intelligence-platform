@@ -17,6 +17,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("ExternalObservationCreateForm", () => {
+  it("explains why the registration action is disabled and avoids exposing a synthetic work-area id", () => {
+    render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-generated-1", name: "wa-generated-1" }]} />);
+
+    expect(screen.getByText("작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.")).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "이름을 확인할 수 없는 작업구역 1" })).toBeTruthy();
+    expect(screen.queryByText("wa-generated-1")).toBeNull();
+    expect((screen.getByRole("button", { name: "산출물 등록 시작" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it("creates one external ingress with a stable idempotency key and opens its work detail", async () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]} />);
     expect(screen.getByRole("heading", { name: "서쪽 현장 · 새 관측 시작" })).toBeTruthy();

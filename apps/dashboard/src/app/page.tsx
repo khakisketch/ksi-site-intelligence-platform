@@ -128,7 +128,7 @@ export default async function HomePage() {
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
     {sitesResult.ok && sites.length === 0 && <EmptyState title="아직 등록된 현장이 없습니다" description={canRegisterSite ? "첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다." : "현장 등록 권한이 있는 계정에서 시작할 수 있습니다."} action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : undefined} />}
-    {sites.length > 0 && !portfolioComplete && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다. 각 현장 화면에서 다시 확인하세요.</p>}
+    {sites.length > 0 && !portfolioComplete && <section className="rounded-lg border border-line bg-sunk px-4 py-3"><p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p><Link href="/sites" className="mt-1 inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link></section>}
     {operationsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다.</p>}
     {decisionsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
 

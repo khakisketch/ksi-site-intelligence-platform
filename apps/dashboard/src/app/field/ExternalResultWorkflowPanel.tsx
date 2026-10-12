@@ -42,6 +42,13 @@ const AUTO_REQUEST_REFRESH_BUDGET = 6;
 const KNOWN_REQUEST_STATUSES = ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"] as const;
 const UNKNOWN_REQUEST_STATUS = "UNKNOWN_EXTERNAL_RELATIVE_VOLUME_REQUEST_STATUS";
 
+class WorkflowResponseError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message);
+    this.name = "WorkflowResponseError";
+  }
+}
+
 /** A server-validated Site summary binds an exact deep link to one retained report. */
 export type TrustedExternalResultLink = {
   reportRef: string;
@@ -60,7 +67,20 @@ async function responseJson<T>(response: Response): Promise<T> {
   const body = await response.json().catch(() => null) as { code?: unknown; message?: unknown } | null;
   const code = typeof body?.code === "string" ? body.code : undefined;
   const message = typeof body?.message === "string" ? body.message : undefined;
-  throw new Error(code ?? message ?? `HTTP_${response.status}`);
+  throw new WorkflowResponseError(response.status, code ?? message ?? `HTTP_${response.status}`);
+}
+
+function requestListReadError(error: unknown, family: "비교" | "체적 측정"): string {
+  if (error instanceof WorkflowResponseError && error.status === 403) {
+    return `${family} 요청 목록 조회 권한이 없습니다. 관리자에게 이 작업의 결과 조회 권한을 요청한 뒤 화면을 다시 열어 확인하세요.`;
+  }
+  if (error instanceof WorkflowResponseError && error.status === 401) {
+    return `${family} 요청 목록을 확인하려면 다시 로그인한 뒤 화면을 다시 여세요.`;
+  }
+  if (error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS) {
+    return "요청 상태 형식을 확인하지 못했습니다. 목록을 다시 확인하세요.";
+  }
+  return `${family} 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.`;
 }
 
 function isAbort(error: unknown): boolean {
@@ -359,6 +379,8 @@ function SingleVolumeWorkflow({
   const listAbort = useRef<AbortController | null>(null);
   const singleReloadAbort = useRef<AbortController | null>(null);
   const [listPhase, setListPhase] = useState<Phase>("loading");
+  const [listError, setListError] = useState<string | null>(null);
+  const [listReadBlocked, setListReadBlocked] = useState(false);
   // Core mounts the single-volume router only when a single-volume execution template is
   // configured, so a 404 list read means this environment does not offer the family.
   const [notConfigured, setNotConfigured] = useState(false);
@@ -390,12 +412,16 @@ function SingleVolumeWorkflow({
     const controller = new AbortController();
     listAbort.current = controller;
     setListPhase("loading");
+    setListError(null);
+    setListReadBlocked(false);
     try {
       const listResponse = await fetch(requestsPath, { cache: "no-store", signal: controller.signal });
       if (listResponse.status === 404) {
         if (listAbort.current !== controller) return;
         setNotConfigured(true);
         setListPhase("idle");
+        setListError(null);
+        setListReadBlocked(false);
         return;
       }
       const value = await responseJson<{ items: unknown }>(listResponse);
@@ -404,10 +430,14 @@ function SingleVolumeWorkflow({
       setNotConfigured(false);
       setList(value.items);
       setListPhase("ready");
+      setListError(null);
+      setListReadBlocked(false);
     } catch (error) {
       if (isAbort(error) || listAbort.current !== controller) return;
       setNotConfigured(false);
       setListPhase("error");
+      setListError(requestListReadError(error, "체적 측정"));
+      setListReadBlocked(error instanceof WorkflowResponseError && (error.status === 401 || error.status === 403));
     } finally {
       if (listAbort.current === controller) listAbort.current = null;
     }
@@ -652,10 +682,10 @@ function SingleVolumeWorkflow({
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="font-semibold">체적 측정 요청 목록</h4>
-        <button className="btn" disabled={listPhase === "loading"} onClick={() => void loadList()}>체적 목록 새로고침</button>
+        {!listReadBlocked && <button className="btn" disabled={listPhase === "loading"} onClick={() => void loadList()}>체적 목록 새로고침</button>}
       </div>
       {listPhase === "loading" && <p role="status" className="text-ink-2">체적 측정 요청 목록을 읽는 중입니다.</p>}
-      {listPhase === "error" && <p role="alert" className="text-high-ink">체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.</p>}
+      {listPhase === "error" && <p role="alert" className="text-high-ink">{listError ?? "체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
       {listPhase === "ready" && (list.length === 0
         ? <p className="text-ink-2">기록된 단일 시점 체적 측정 요청이 없습니다.</p>
         : <ul className="flex flex-col gap-2">{list.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>체적 요청 상태</button></li>)}</ul>)}
@@ -726,6 +756,7 @@ export function ExternalResultWorkflowPanel({
   const [worklistRefreshing, setWorklistRefreshing] = useState(false);
   const [worklistAutoRefreshStopped, setWorklistAutoRefreshStopped] = useState(false);
   const [worklistError, setWorklistError] = useState<string | null>(null);
+  const [worklistReadBlocked, setWorklistReadBlocked] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(true);
   const [worklist, setWorklist] = useState<ExternalRelativeVolumeRequestView[]>([]);
   const [selectedRequestRef, setSelectedRequestRef] = useState<string | null>(null);
@@ -762,6 +793,7 @@ export function ExternalResultWorkflowPanel({
       setWorklistRefreshing(false);
       setWorklistAutoRefreshStopped(false);
       setWorklistError(null);
+      setWorklistReadBlocked(false);
       setWorklistRefreshNotice(null);
     });
     return () => { active = false; };
@@ -796,24 +828,29 @@ export function ExternalResultWorkflowPanel({
       worklistVerified.current = true;
       setWorklistPhase("ready");
       setWorklistError(null);
+      setWorklistReadBlocked(false);
     } catch (error) {
       if (isAbort(error) || listAbort.current !== controller) return;
+      const readBlocked = error instanceof WorkflowResponseError && (error.status === 401 || error.status === 403);
+      setWorklistReadBlocked(readBlocked);
       if (retainLastVerified) {
         if (automatic) {
           setWorklistAutoRefreshStopped(true);
-          setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+          setWorklistRefreshNotice(error instanceof WorkflowResponseError && (error.status === 401 || error.status === 403)
+            ? `마지막으로 확인한 목록을 유지합니다. ${requestListReadError(error, "비교")}`
+            : error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
             ? "요청 상태 형식을 확인하지 못해 자동 상태 확인을 멈췄습니다. 마지막으로 확인한 요청 상태를 표시합니다. 수동 새로고침으로 다시 확인하세요."
             : AUTO_REFRESH_STOPPED_NOTICE);
         } else {
-          setWorklistRefreshNotice(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
+          setWorklistRefreshNotice(error instanceof WorkflowResponseError && (error.status === 401 || error.status === 403)
+            ? `마지막으로 확인한 목록을 유지합니다. ${requestListReadError(error, "비교")}`
+            : error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
             ? "요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요."
             : "요청 목록을 새로고치지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 다시 시도하세요.");
         }
       } else {
         setWorklistPhase("error");
-        setWorklistError(error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS
-          ? "요청 상태 형식을 확인하지 못했습니다. 목록을 다시 확인하세요."
-          : "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.");
+        setWorklistError(requestListReadError(error, "비교"));
       }
     } finally {
       if (listAbort.current === controller) {
@@ -1092,7 +1129,7 @@ export function ExternalResultWorkflowPanel({
       <div className="rounded-lg border border-line p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">비교 요청 목록</h3>
-          <button className="btn" disabled={worklistPhase === "loading" || worklistRefreshing} onClick={() => { worklistAutoRefreshBudget.current = 0; setWorklistAutoRefreshStopped(false); void loadWorklist({ preserveVerified: true }); }}>목록 새로고침</button>
+          {!worklistReadBlocked && <button className="btn" disabled={worklistPhase === "loading" || worklistRefreshing} onClick={() => { worklistAutoRefreshBudget.current = 0; setWorklistAutoRefreshStopped(false); void loadWorklist({ preserveVerified: true }); }}>목록 새로고침</button>}
         </div>
         {worklistPhase === "loading" && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 읽는 중입니다.</p>}
         {worklistRefreshing && <p role="status" className="mt-2 text-ink-2">마지막으로 확인한 요청 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}

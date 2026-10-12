@@ -34,6 +34,8 @@ describe("승인된 Home Visual Contract", () => {
     expect(home).toContain("recentSiteItems.length > 0");
     expect(home).toContain('regionLabel="최근 현장 캐러셀"');
     expect(home).toContain("초기 설정이 필요한 현장");
+    expect(home).toContain("현장 전체를 열어 직접 확인하세요.");
+    expect(home).toContain('<Link href="/sites"');
     expect(home.indexOf("<HomeAttentionCarousel")).toBeLessThan(home.indexOf("<HomeSituationList"));
     expect(carousel).toContain("lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]");
 
