@@ -92,6 +92,12 @@ MinIO 컨테이너는 F-03 캐시 자산이므로 기본적으로 그대로 둔�
 5. **만료된 Analysis activation** — 기존 F-03 activation은 만료 상태이므로 새 분석 생성은 차단된다
    (읽기·근거 조회는 정상). 새 정량 실행을 주장하지 않는다.
 
+## 2026-10-13 변경: 리허설용 DUAL 인증
+
+2-cycle 리허설 스크립트(`scripts/rehearse_two_cycle_external_flow.py`)를 opaque 토큰으로 실행하기
+위해 Core를 `KSI_CORE_HUMAN_AUTH_MODE=DUAL`로 기동한다(`f03-admin-token` + OIDC 동시 수용). OIDC
+전용으로 확인한 scoped 경계 결과는 그대로 유효하다 — DUAL은 opaque 경로를 추가할 뿐이다.
+
 ## 이 런북으로 확인 가능/불가능
 
 - 가능: 사용자 흐름(현장·관측 등록 → 작업 → 검사/판정 조회 → 분석 → 결과·근거 → 리뷰 상태),

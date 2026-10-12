@@ -2747,4 +2747,17 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   보여준다 — Core 사유(활성화 필요)를 구분해 안내하면 재시도 루프를 줄일 수 있다.
 - 병합: `feat/stage1-live-ui-verification` → main fast-forward(커밋 a18e2af, 2026-10-12), push 없음;
   브랜치 보존. 최종 게이트(2026-10-13, main 전체 contract 스위트): 5470 passed·25 skipped·0 failed.
+- 디자인 후속 2건(2026-10-13): ① 모바일 작업 운영 헤더를 단일 행으로 정리하고 상태 배지 좌측 인셋
+  제거(우측 인셋 유지) ② 분석 요청의 지속적 503을 활성화 게이트로 구분 — 보류 배너·오류에 활성화
+  전용 안내(UNAVAILABLE/EXPIRED) 표시. 테스트 +3, vitest 780·tsc·eslint 0 errors, 라이브 확인
+  (새 안내 문구·배지 배치, 캡처 `after4-*`).
+- F-04 2-cycle 스크립트(커밋 af91151): `scripts/rehearse_two_cycle_external_flow.py` — idempotent
+  work order→context→v1 register(canonical digest, submittedBy=whoami)→grants→PUT→seal→inspection,
+  이어서 pair analysis. 실검증(DUAL 스택, f03-admin-token): t0/t1 봉인(`ers-v1-78c33d…`/`44e94e…`),
+  INSPECTION_PENDING_POLICY·503 ANALYSIS_ACTIVATION_EXPIRED 게이트 보고(exit 2), 재실행은 기존
+  work order·SEALED 제출을 재사용. 생성 데이터가 UI(작업 상세·분석 셀렉터)에 표시됨을 확인.
+- 검토 지속성 blocker(2026-10-13): Console의 리뷰 쓰기는 volume report가 있을 때만 노출되며,
+  보고서 생성에는 measurement lane(`ksi-external-validation-worker` config + inspection/measurement
+  UDS identity + 서명 measurement manifest·revocation·trusted keys, HTTPS Core origin) 구성이
+  필요한데 한 번도 구성된 적 없다 → 완료 측정 확보 시로 OPEN 유지(구체 요건 기록).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
