@@ -2537,7 +2537,77 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   workflow config → 검사 정책 admit → inspector lane(로컬 합성 한정) → `ksi-external-analysis-worker`
   실행 → 결과/증거 → 소비자 E2E. 실제 자료(체크리스트 A~E) 도착 시 같은 환경에서 완주.
 
-### F-03 준비 2단계 — 서명 정책 인정·검사 실측 (진행 중) — 2026-10-11
+### F-03 phase 2 — synthetic evidence 기록; parser sandbox acceptance OPEN (2026-10-11)
+
+#### 실행 환경 게이트 — `PARSER_SANDBOX_UNAVAILABLE` (2026-10-12)
+
+- 상태: **호스트 capability blocker**. 제품 버그가 아니며 제품 코드, sandbox contract,
+  fail-closed 동작을 변경하지 않는다.
+- host evidence: `bwrap` binary present (`/usr/bin/bwrap`, 0.9.0); user namespace unavailable
+  (`unshare -Ur true` → `Operation not permitted`); UID mapping denied
+  (`bwrap --ro-bind / / -- /bin/true` → `setting up uid map: Permission denied`);
+  network namespace unavailable (`bwrap --unshare-net ...` → `Failed RTM_NEWADDR: Operation not permitted`).
+- 결과: parser execution **BLOCKED**; fallback **NONE**; product behavior **FAIL-CLOSED**.
+  root 우회, `--unshare-*` 제거, sandbox 없는 parser 실행, host security 설정 변경은 하지 않는다.
+- 이 호스트에서 확인 가능한 범위는 입력/권한/lease, 파일 전달, policy/manifest/digest,
+  parser 실행 전 launch 조건 및 그 회귀 테스트다. sandbox 내부 parser 실행과 filesystem/network
+  격리, parser 성공에서 `VALIDATED`를 거쳐 Analysis→Result/Evidence→review로 이어지는 단일
+  chain은 확인되지 않았다. 아래 synthetic inspector/Analysis/review 기록은 개별 관측 증거로
+  보존하되 parser containment acceptance 또는 synthetic end-to-end 완료 증거로 승격하지 않는다.
+- 정식 acceptance gate: bwrap user namespace/UID mapping이 허용된 별도 검증 호스트에서 **동일한
+  artifact·policy·manifest**로 기존 설계를 실행하고, sandbox 격리 관측 → parser launch → `VALIDATED`
+  → Analysis worker → Result/Evidence → review까지 완주한다. 그 전까지 parser 이후 gate는 OPEN이다.
+  호스트 capability와 무관한 F-03/F-04 작업은 별도로 진행 가능하다.
+
+- 기존 `DEFERRED`는 `_checkpoint_launch`의 binding 판정 실패가 아니었다. 보존된
+  request/context/policy를 재구성한 결과 **pre-execution binding check PASS**; 새 live request에서도
+  role 순서를 정규화한 15개 binding 판정 전부 참이었다. 이는 bwrap 안 parser 프로세스의 실행
+  증거가 아니다. 최초 UDS 실패는 prep harness workspace 재사용(`FileExistsError`), 이어진 두 실패는
+  잘못된 `measurementExecutionManifestDigest`와 DSM footprint 밖 CSV 좌표였다. 제품 fail-closed
+  판정은 변경하지 않았다. prep harness에 매 실행 고유 workspace, actual canonical manifest digest,
+  2×2 DSM 셀 중심 좌표를 적용해 해결.
+- 실제 live Core+MinIO 및 worker 경로에서 checkpoint CSV 3점의 `COMPLETED`→Core `VALIDATED`
+  기록 확인. policy7 pair: `obs-work-00000008` validation
+  `external-evidence-validation-de6dac1a409530e0c1ed761dfa226a9d`, evidence-record digest
+  `sha256:ad0570e405033428c4122b002cd0350a140ae5150ea56e0732eb67272d40c3a5`;
+  `obs-work-00000009` validation `external-evidence-validation-54783769143d9b7526a39a032c5b171d`,
+  evidence-record digest `sha256:7ce5e96ab1ee4a4319e2a5229707fe5fcea5f3895ddd950f17d5ffa0344d9b47`.
+  둘 다 DSM digest `sha256:601400a33deea10f6…`와 checkpoint evidence digest에 바인딩되고
+  3-point RMSE/MAE/max error = 0.0m. 두 epoch의 policy7 inspector lane도 Core에 `MEASURED`(2×2,
+  EPSG:5186/5773)로 기록됨; 이 기록만으로 bwrap containment를 입증하지 않는다. 세부 worker input/terminal evidence는
+  `/tmp/opencode/f02-prep-20261010-194828/evidence/f03-rootcause-checkpoint-retry5-live.txt`,
+  `f03-pair-checkpoint8.txt`, `f03-pair-checkpoint9.txt`, `f03-pair-inspection7-retry2.txt`.
+- 정합성을 위해 WorkArea `wa-f03-flow-site-0002/0003`를 DSM footprint와 동일한 EPSG:5186 범위로
+  구성하고 RGB ortho + DSM을 포함한 sealed pair `obs-work-00000012/13`를 사용했다. inspection
+  결과 둘 다 `MEASURED`; checkpoint CSV 실제 worker/Core 결과 둘 다 `VALIDATED`(3점 RMSE/MAE/max
+  error 0.0m; record digests `sha256:e1f1d7…` / `sha256:4b522e…`). synthetic independence
+  attestation이다.
+- Mapping은 policy v10의 rule allow-list + 새 카탈로그 authority로 서명 admit했다. 구 catalog
+  authority mapping과 새 mapping이 동시 active였던 동안 evaluator는 모호성을 fail-closed로 막았고,
+  이전 mapping을 서명 `REVOKE_MAPPING`으로 폐기한 뒤 fresh pair decision이 `ELIGIBLE`이며 새
+  mapping digest `sha256:b7a2e802…`를 바인딩함을 확인했다. WorkArea footprint mismatch 및 old-map
+  ambiguity 모두 harness setup/authority history 이슈; 제품 코드는 변경하지 않았다.
+- 실제 Analysis worker CLI가 `analysis-v1-33bb91af966a1b2d56099d1f8122abec`를 처리해 COMPLETED.
+  Result: net 0.0 m³, selected/common-valid 4/4 cells, report digest
+  `sha256:717593ee15e8329bdabf71c800b800f29790f048786a39177c2dc79bdcafbf59`; evidence 조회에서
+  baseline/current input digests `sha256:f38d51…` / `sha256:9c534a…`, profile `KSI-GIS-RELATIVE-VOLUME-V2`
+  및 calculation identity 확인. Review target에 결합된 ACK receipt
+  `sha256:e71f759b0a25a4b188cdadf6728617b76d67f218ebc6442ad00b5086636df46a`는 synthetic rehearsal
+  전용(`reviewerId=f03-admin`); 정확도 검증·현장 승인·settlement/customer acceptance가 아님.
+  같은 idempotency key 재POST는 같은 COMPLETED analysis ID를 반환했다.
+- 첫 Analysis attempt의 실제 실패는 fixture `maxMemoryBytes=100000`이 worker 고정 TIFF predecode
+  작업공간 1 MiB보다 작아 난 `RESOURCE_LIMIT_EXCEEDED`; validation 완화 없이 로컬 synthetic
+  finite envelope를 8 MiB로 재설정하고 새 signed activation으로 bound했다. deterministic calculation
+  ID가 failure terminal을 재사용해 새 aligned WorkArea definition으로 새 ID를 발급했다.
+- 별도 relative-volume-request API에도 2026-10-11 request
+  `external-relative-volume-27d4373b0c6ca8da31809a3ed21acc63`를 발급했으나, 이 API/worker path는
+  Analysis worker job과 별개이며 deadline 경과 후에도 read view가 QUEUED다. 분석 E2E acceptance에
+  포함시키지 않았고 새 실행 시 유효 deadline과 authorized worker 필요. synthetic evidence는
+  `/tmp/opencode/f02-prep-20261010-194828/evidence/`; A–E/Terra/customer/production acceptance 미완료.
+  위 `PARSER_SANDBOX_UNAVAILABLE` 때문에 이 단계를 parser부터 review까지 이어진 synthetic E2E
+  완료로 주장하지 않는다.
+
+### F-03 준비 2단계 — 서명 정책 인정·검사 실측 (당시 진행 기록; 후속 완주는 위 항목) — 2026-10-11
 
 - 서명 스냅샷 체인으로 검사 정책 인정 성공: seq1(카탈로그)→seq2..(정책 v1→v4→v5, 정확한 sealed
   subject 묶음)→reload→`PROVIDER_CONFIGURED`, 검사 상태 `INSPECTION_PENDING_POLICY`→`QUEUED`.
@@ -2554,3 +2624,56 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
 - 증거(prep dir `/tmp/opencode/f02-prep-20261010-194828/evidence/`): f03-lane-1[4-8]*, f03-checkpoint-0*,
   f03-admit-0*, f03-contexts-02, 정책/스냅샷 버전 기록. 스택·컨테이너 정리, 포트 비움.
   **synthetic이며 수용 증거가 아니다.**
+
+### DJI/Manifold 잔여 참조 정리 — 사용자 지시 (2026-10-12)
+
+사용자 재확인: Manifold·DJI/PSDK 장비는 제품 책임 밖(ADR-KSI-039, DOCUMENT_STATUS ACTIVE).
+런타임/서비스 계층은 이미 제거돼 있다(`services/dji-gateway` 없음, platform factory 미mount,
+main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중 안전한 범위를 정리했다.
+
+- 제거(로컬, Git 밖): `edge/` 1.3GB/2,347 files — build-asan 등 CMake 빌드 트리, fetched PSDK
+  vendor SDK 클론(`edge/third_party/psdk`), 로컬 전용 `dji_sdk_app_info.h` 2개; `scripts/manifold/
+  manifold.env`(로컬 SSH 설정, 템플릿은 archive에 있음). 모두 git-ignored 로컬 잔재로 재생성 가능.
+- 제거(tracked, dead code): `apps/dashboard/src/lib/aircraft.ts`(M4D enum/카메라 SSOT — P4 위저드
+  제거 후 importer 0) 및 `apps/dashboard/src/lib/core-api/types.ts` 취득 타입 9종
+  (AcquisitionCapability, AcquisitionDeploymentProfileV1, CapabilityReceiptV1, ConnectivitySnapshotV1,
+  AcquisitionReadinessView, AcquisitionRunStage, AcquisitionNextAction, GatewayOperationReceiptV1,
+  AcquisitionProgressView). disposition CSV의 RECONCILE("File-level consumer review; no blanket
+  move or removal")에 대한 소비자 전수 확인(src/test/e2e/Python tests 0건) 후 제거.
+- 정정: `services/README.md` deployable-units에서 존재하지 않는 `dji-gateway/` 행 제거 및 누락된
+  `spatial-data-mcp/` 행 추가.
+- 검증: `scripts/check_repo_hygiene.sh` OK; 대상 contract 71 passed(repo-hygiene·대시보드 sync 3종·
+  product boundary·아카이브 경계·역사 reader); dashboard eslint 0 errors(기존 p4-evidence warning 1),
+  `tsc --noEmit`·vitest 772/772 passed; `git diff --check` clean.
+- 보존(변경 없음, ADR-KSI-039/DOCUMENT_STATUS): `archive/acquisition-2026/`(432 files, 8.2MB) +
+  dispatch-only `historical-archive.yml`, 역사 문서(docs/dji·docs/edge·docs/hil)와 HIL 도구·테스트
+  (tools/hil·tests/hil·contracts/hil, 39 tracked), 취득 계약 스키마(mission-contract/action-intent/
+  acquisition-deployment-profile/mission-dispatch-envelope/asyncapi-edge), ADR 결정 이력, RETAIN
+  판정된 capability/spike 모듈.
+- 사용자 결정(2026-10-12): **보존 유지** — archive·HIL·역사 문서·계약 이력은 그대로 두고 잔여 참조의
+  '역사적·비제품' 표기만 강화했다. `docs/DOCUMENT_STATUS.md`에 취득/device HIL family
+  (docs/hil·docs/dji·docs/edge·tools/hil·tests/hil·contracts/hil) HISTORICAL/OUT-OF-PRODUCT 행 추가 및
+  HIL route index를 active 표에서 해당 historical로 이동, contracts 행에 역사 계약 family 명시,
+  `docs/hil/README.md` 헤더를 retained(out-of-product)로 갱신. 완전 삭제는 하지 않으며 ADR-KSI-039의
+  "verified successor move까지 보류" 조항이 그대로 유지된다.
+
+### F-04 소비자 준비 1단계 — Analysis MCP 실 스택 read (synthetic) — 2026-10-12
+
+- 소비자 클라이언트로 `services/analysis-mcp`(저장소 설치형 stdio 어댑터)를 선택했다. 원본
+  F-03 스택(8092)은 그대로 두고 `f03/core-data`·`provider` 복사본(보호 경로
+  `~/.cache/ksi-f04-20261012`, 0700)으로 별도 Core(8093, production factory)를 구동하고,
+  토큰 registry에 ANALYSIS_MCP_CLIENT principal(사이트/WorkArea grant)을 추가했다.
+- deny 대조(복사본 consent=false): `ksi_list_analyses` → `AI_EGRESS_NOT_ALLOWED`(fail-closed).
+  allow(복사본 `aiEgressAllowed=true`): tool 6종 노출, read 5건 성공 — `ksi_get_analysis`/
+  `_result`가 COMPLETED·`REASSESSMENT_REQUIRED`·evidenceDigest `sha256:f34f75b2…`; evidence
+  22 items에 F-03 기록과 일치하는 baseline/current input digest(`f38d51…`/`9c534a…`),
+  checkpoint fact(`e1f1d7…`/`4b522e…`), CALCULATION_IDENTITY `cal-v2-0a5fc421465da9512ce82f4c573ce773`,
+  reportDigest `sha256:717593ee…` 포함.
+- Learning: MCP client의 WorkArea grant는 subset 의미 — WorkOrder의 `work_area_ids` 전체가
+  grant에 없으면 목록 0건/단건 404. 좁은 grant 시도 증거(`mcp-allow-narrow-scope.json`) 보존.
+- 경계: synthetic 소비자 read 준비 증거일 뿐 parser→VALIDATED→Analysis chain·정확도·고객 수용·
+  배포 증거가 아니다(`PARSER_SANDBOX_UNAVAILABLE` 유지). 원본 스택/데이터/tokens 불변, 8093은
+  종료·포트 비움.
+- 증거: `/tmp/opencode/f04-consumer-20261012/evidence/`(SUMMARY.md, mcp-deny 77a59091…,
+  narrow 4a9b4632…, allow a1321c0c…), `~/.cache/ksi-f04-20261012/`(core-*.log). scripts:
+  launch_core_f04.py, drive_mcp.py.

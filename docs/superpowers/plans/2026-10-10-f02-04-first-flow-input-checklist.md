@@ -44,26 +44,37 @@
   route 12·external-reconstruction route 15 마운트, 더미 create가 404 scope(503 activation-expired 아님
   = 서명 activation 실제 수용). 보호 파일 로더는 그룹 쓰기 가능 조상을 `CONFIG_FILE`로 거부하므로
   material은 `~/.cache/ksi-f03-*/analysis`(0700/0600)에 둔다. 증거: prep dir `evidence/f03-*`.
-- **F-03 phase 2 — 남음**: 외부 workflow/provider pair(서명 snapshot에 policy/catalog authority record
-  포함)와 workflow config 생성 → Core를 authority 구성으로 재부팅 → **검사 정책 admit**(authority
-  operations 경로 또는 검증된 시드)로 `INSPECTION_PENDING_POLICY` 해소.
-- **검사기·Analysis 워커 — 남음**: 로컬 합성 한정 inspector lane 실행 경로 확정(UDS inspector 체인 —
-  staging의 ACL activation blocker와 구분해 표기), `ksi-external-analysis-worker` CLI를 worker config·
-  토큰으로 실행해 실제 계산→결과/증거 저장.
+- **F-03 phase 2 — 부분 검증, parser acceptance OPEN**: workflow/provider authority 구성,
+  inspection/checkpoint 기록, pair/use decision, Analysis worker Result/Evidence 및 synthetic review
+  각각의 증거는 rebaseline ledger에 보존한다. 다만 parser가 기존 bwrap sandbox 안에서 실행되어
+  downstream 결과를 만들었다는 연결 증거는 없다. 따라서 이들을 하나의 synthetic E2E 완료로
+  간주하지 않는다.
+- **실행 환경 gate — `PARSER_SANDBOX_UNAVAILABLE` (2026-10-12)**: `/usr/bin/bwrap` 0.9.0 present;
+  user namespace unavailable, UID mapping denied, network namespace unavailable. Parser execution
+  BLOCKED; fallback NONE; product behavior FAIL-CLOSED. 현 호스트에서는 입력/권한/lease, 파일 전달,
+  policy/manifest/digest와 parser 전 launch 조건까지만 확인하고 parser 전 단계 회귀 테스트를 유지한다.
+- **정식 parser-to-review acceptance — OPEN**: bwrap user namespace/UID mapping이 허용된 별도 검증
+  호스트에서 동일 artifact·policy·manifest로 sandbox 격리 → parser launch → `VALIDATED` → Analysis
+  worker → Result/Evidence → review까지 완주한다. bwrap과 독립적인 F-03/F-04 작업은 진행 가능.
 - **F-02 접수 절차**: 실제 자료 수신(격리 위치·sha256 확인·선언 값 대조)과 업로드 스크립트 정비.
-- **F-04**: 선택된 소비자 클라이언트(`services/analysis-mcp`, `services/spatial-data-mcp` 소스 실행)
-  준비, 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집.
+- **F-04 — 소비자 준비 1단계(2026-10-12, synthetic)**: `services/analysis-mcp` stdio 어댑터를
+  복사 스택 Core(8093)에서 실 구동 — consent=false deny(`AI_EGRESS_NOT_ALLOWED`)와 consent=true
+  read 5건 성공(evidence 22 items, reportDigest `717593ee…` 일치) 기록. WorkArea grant는 subset
+  의미(전체 work area 필요). 남음: 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집.
 
 ## 4. 순서
 
 1. (완료 2026-10-10) 스토리지+Core+등록→PUT→seal 리허설 — synthetic.
-2. 우리측: F-03 보호 구성(합성 로컬) + 검사 lane 활성화 → synthetic 자료로 검사→분석→결과/증거까지.
+2. 우리측: F-03 parser 단계는 `PARSER_SANDBOX_UNAVAILABLE` host gate 통과 후 기존 bwrap 경로로
+   synthetic 자료를 실행하고, parser launch→`VALIDATED`→Analysis→Result/Evidence→review 연결을
+   증명한다. 현재 호스트의 개별 synthetic 결과는 end-to-end acceptance가 아니다.
 3. 고객측 A~E 도착 → 같은 환경에서 실제 자료 등록/검사/분석/결과 → 외부 소비자 E2E → 기록.
 4. t2 주기 재사용 → F-04 운영/고객 수용 기록(별도 판정).
 
 ## 5. 현재 차단/한계
 
-- 검사 미구성(`INSPECTION_PENDING_POLICY`) — F-03 준비로 해소 예정.
+- `PARSER_SANDBOX_UNAVAILABLE`: 현재 호스트의 namespace/UID-mapping capability blocker. 코드 수정,
+  fallback, host 보안 설정 변경 없이 fail-closed 유지; 별도 검증 호스트 전까지 parser 이후 E2E 차단.
 - real-data admission(형식·CRS·수직기준·프로파일)은 실제 Terra export로만 검증된다.
 - 정량 결과는 검사점·정책·실행 활성화 구성이 필요하며, 이는 P7-A2/새 rail과 무관한 별도 F-03 작업이다.
 - production/배포·CI/AMD64/TLS·고객/EXT-VAL 수용은 계속 별도 게이트다.
