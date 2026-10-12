@@ -61,10 +61,12 @@
   복사 스택 Core(8093)에서 실 구동 — consent=false deny(`AI_EGRESS_NOT_ALLOWED`)와 consent=true
   read 5건 성공(evidence 22 items, reportDigest `717593ee…` 일치) 기록. WorkArea grant는 subset
   의미(전체 work area 필요).
-- **F-04 — Stage-1 라이브 UI 검증(2026-10-12, synthetic)**: OIDC Console로 외부 루프·상태 일치·
-  저장/재조회·모바일 390·키보드·axe를 확인하고, 모바일 오버플로와 빈 상태 문구 2건을 수정했다.
-  scoped 신원 route 공백 4건은 결정 대기. 런북: [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md).
-  남음: 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집(실자료 흐름과 함께).
+- **F-04 — Stage-1 라이브 UI 검증+후속(2026-10-12, synthetic)**: OIDC Console로 외부 루프·상태 일치·
+  저장/재조회·모바일 390·키보드·axe를 확인하고 모바일 오버플로를 수정했다(e0c85e2). scoped read 3
+  route를 grant 검증과 함께 개방했고(c9ff294, CE 리뷰 P1 1건 후속), 디자인 작업 공간에서 상태 문구·
+  다음 행동·401/403 정직 안내를 적용했다(b409cdc, 라이브 재검증·vitest 777). 런북:
+  [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). 남음: HTTP 레벨 pending 테스트 보강,
+  2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집(실자료 흐름과 함께).
 
 ## 4. 순서
 
