@@ -121,8 +121,9 @@ def test_signed_archived_details_remain_readable_without_mutation_permission(
     with client:
         for path in _paths(first, single):
             assert client.get(path, headers=headers).status_code == 200
+        # 2026-10-12: /v1/external-decisions/pending moved into the reviewed
+        # matrix (grant-filtered read — see test_oidc_route_scope.py).
         for path in (
-            "/v1/external-decisions/pending",
             "/v1/sites/site-a/external-relative-volume-reports",
             "/v1/external-reobservation-proposals/unknown",
             "/v1/external-result-reviews/unknown",

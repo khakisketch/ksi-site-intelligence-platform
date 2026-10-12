@@ -268,7 +268,9 @@ def test_revoked_or_missing_auth_never_reads_history(customer_http) -> None:
 
 
 @pytest.mark.parametrize("path", [
-    "/v1/external-decisions/pending",
+    # 2026-10-12: /v1/external-decisions/pending moved into the reviewed matrix
+    # (grant-filtered read — see test_oidc_route_scope.py); the remaining
+    # adjacent unaudited read stays closed.
     "/v1/sites/site-a/external-relative-volume-reports",
 ])
 def test_adjacent_unaudited_reads_stay_closed(customer_http, path) -> None:
