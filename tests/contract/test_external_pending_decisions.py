@@ -4,15 +4,23 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import timedelta
+from types import SimpleNamespace
 
 from external_product_loop_fixture import record_measurement
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from ksi_core.auth import AuthRegistry, mount_auth
 from ksi_core.domains.external.workflow.external_result_projection_models import (
     ExternalPendingDecisionItem,
 )
-from ksi_core.external_result_workflow_api import ExternalResultReadProjector
+from ksi_core.external_result_workflow_api import (
+    ExternalResultReadProjector,
+    build_external_result_workflow_router,
+)
 from ksi_event_contracts.external_result_review import ExternalReobservationProposalV1
-from test_external_result_review_proposals import _NOW, _TOKEN, _principal
+from test_external_result_review_proposals import _NOW, _TOKEN, _principal, _token_record
 from test_external_result_single_volume_projection import (  # noqa: F401 - pytest fixture
+    _SITE,
     _Harness,
     _http_client,
     _record_second_relative,
@@ -157,3 +165,49 @@ def test_pending_route_is_authenticated_and_organization_scoped(harness: _Harnes
         other = client.get(path, headers={"Authorization": "Bearer other-org-fixture"})
         assert other.status_code == 200
         assert other.json() == {"items": []}
+
+
+def test_pending_decisions_http_filters_rows_for_mapped_grants(harness: _Harness) -> None:  # noqa: F811
+    """mapped OIDC 신원은 grant 밖 검토 대기 행을 HTTP 목록에서 받지 않는다."""
+    from test_oidc_route_scope import _install_oidc_v2
+
+    report = record_measurement(harness.graph)
+    app = FastAPI()
+    mount_auth(app, AuthRegistry([_token_record()]))
+    app.include_router(
+        build_external_result_workflow_router(
+            harness.graph.volumes,
+            harness.graph.service,
+            single_volumes=harness.single,
+            clock=lambda: _NOW,
+        )
+    )
+    scoped = SimpleNamespace(app=app, organization_id="org-a")
+    with TestClient(app) as client:
+        # Legacy opaque 신원은 기존 조직 전체 목록을 유지한다.
+        legacy = client.get(
+            "/v1/external-decisions/pending",
+            headers={"Authorization": f"Bearer {_TOKEN}"},
+        )
+        assert legacy.status_code == 200, legacy.text
+        assert [item["reportRef"] for item in legacy.json()["items"]] == [report.report_id]
+
+        granted_token, _key = _install_oidc_v2(
+            scoped, capabilities=[], site_ids=[_SITE], area_ids=None
+        )
+        granted = client.get(
+            "/v1/external-decisions/pending",
+            headers={"Authorization": f"Bearer {granted_token}"},
+        )
+        assert granted.status_code == 200, granted.text
+        assert [item["reportRef"] for item in granted.json()["items"]] == [report.report_id]
+
+        ungranted_token, _key = _install_oidc_v2(
+            scoped, capabilities=[], site_ids=["site-ungranted"], area_ids=None
+        )
+        ungranted = client.get(
+            "/v1/external-decisions/pending",
+            headers={"Authorization": f"Bearer {ungranted_token}"},
+        )
+        assert ungranted.status_code == 200, ungranted.text
+        assert ungranted.json()["items"] == []
