@@ -2762,4 +2762,14 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   보고서 생성에는 measurement lane(`ksi-external-validation-worker` config + inspection/measurement
   UDS identity + 서명 measurement manifest·revocation·trusted keys, HTTPS Core origin) 구성이
   필요한데 한 번도 구성된 적 없다 → 완료 측정 확보 시로 OPEN 유지(구체 요건 기록).
+- Measurement lane 시도(2026-10-13, 복사 스택): 검토 지속성 검증을 위해 복사 스택(9051/8051/3251,
+  Stage-1 무접촉)을 세우고 F-03 레인 선례(인프로세스 레인 + 실제 UDS 측정 피어)로 보고서 생성을
+  시도했다. 확정된 게이트 체인: ① provider 스냅샷 만료 → 보존된 서명 키로 seq 25 갱신(현재 유효)
+  ② 카탈로그 창·매핑·스냅샷(seq 26) 재서명 후 `/v1/operations/external-authority/reload`가
+  `BLOCKED` — 매핑 승인이 **evidence context 만료**로 거부됨(`admit_mapping` →
+  `_current_participants` None) ③ 따라서 실행 재활성화·새 요청·보고서 생성 불가. 생산 워커는 별도로
+  HTTPS origin + UDS identity를 요구한다. → 남은 요건: F-03 세대 합성 evidence/policy/context 자재를
+  현재 창으로 재생성(gen_f03_* 생성기) 후 매핑→실행→스냅샷 체인 재실행. 자산:
+  `/tmp/opencode/ksi-f04-review-20261013/{copy_stack.py,refresh_snapshot.py,refresh_authority.py,
+  drive_measurement.py}`(워크스트림 지속 시 scripts/ 승격 검토).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
