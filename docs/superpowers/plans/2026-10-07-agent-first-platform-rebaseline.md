@@ -2677,3 +2677,33 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 증거: `/tmp/opencode/f04-consumer-20261012/evidence/`(SUMMARY.md, mcp-deny 77a59091…,
   narrow 4a9b4632…, allow a1321c0c…), `~/.cache/ksi-f04-20261012/`(core-*.log). scripts:
   launch_core_f04.py, drive_mcp.py.
+
+### Stage-1 라이브 UI 검증 — 합성 스택 브라우저 패스 (2026-10-12)
+
+- 구성: 원본 F-03 스택(8092)은 그대로 두고 `f03/core-data`·provider 복사본(보호 경로
+  `~/.cache/ksi-ui-20261012`)으로 **OIDC issuer(9041) + production factory Core(8041) +
+  Console next dev(3241)**을 띄웠다. OIDC registry v1은 local-admin/field-operator/viewer를
+  org-a `f03-flow-site`에, 빈 조직 관리자를 org-local-empty에 매핑했다. dev 러너는 만료
+  snapshot에서 부팅하지 못해(allow_expired는 production 전용) production factory를 사용했다.
+- 검증(데스크톱 1440/모바일 390): 홈→현장→작업/분석/외부 결과 흐름; 분석 목록·상세·근거가
+  Core와 일치(완료/실패/재평가 필요; 근거 22항목, reportDigest `sha256:717593ee…` 포함);
+  작업 상세의 검사·검증 집계(VALIDATED·3점 0m) 일치; 저장·재조회(작업 배정 유지, 신규 외부
+  작업 `obs-work-00000014` 생성→목록 반영); 계정별 게이팅(운영자/열람자/빈 조직); 키보드
+  스킵링크; axe 0 violations(홈 color-contrast incomplete 7건은 수동 확인 대상).
+- 수정(범위 한정): ① `ExternalEvidencePanel` revision 버튼의 모바일 가로 오버플로(390px에서
+  +359px) — wrap 클래스로 해소(전 페이지 overflow 0 확인). ② 외부 관측 이력 빈 상태 문구에
+  "분석 기록·근거는 현장 분석에서 확인" 안내 추가. dashboard tsc/lint/vitest 772 passed.
+- **결정 필요 — scoped Console 신원의 route 표면 공백 4건**: ① `GET /v1/external-decisions/pending`
+  (홈 주의 원장 저하) ② `GET .../relative-volume-requests` ③ `GET .../single-volume-requests`
+  (작업 상세 패널 상시 오류) ④ `POST /v1/sites/{site_id}/transitions`(현장 운영자 403; F-01
+  §4(f)가 transitions/AOI/roster를 의도적 403 유지로 문서화 — UI는 SITES_WRITE만 보고 노출).
+  ①②③은 F-01 allowlist에 없어 403이며, 열기 위해서는 same-site grant 검증을 붙인 검토된 추가가
+  필요하다(단순 allowlist 확장 금지 지침). ④는 F-01 매트릭스 유지 시 UI 노출 정리가 맞다.
+- 신선한 컨텍스트 사용성 리뷰(스크린샷 16장 소비): 현장 담당자 기준 must-fix로 모바일 등록
+  차단 안내, 403 패널의 거짓 재시도 문구, "완료+재평가 필요" 혼합 표기·원문 코드 노출,
+  외부 결과 이력과 분석 목록의 발견 경로 분리를 지적했다(상세는 같은 회차 보고·증거).
+- 경계: synthetic 전용. parser sandbox→VALIDATED 정량 E2E는 OPEN이며 이 패스는 이를 주장하지
+  않는다. 실자료 A–E·고객 수용·배포는 미검증.
+- 증거: `/tmp/opencode/ksi-ui-20261012/evidence/`(스크린샷 17장), 로그
+  `/tmp/opencode/ksi-ui-20261012/logs/{issuer,core,dashboard}.log`, 런북
+  `docs/ops/UI_VERIFICATION_STACK_RUNBOOK.md`.

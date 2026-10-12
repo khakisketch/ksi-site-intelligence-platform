@@ -60,7 +60,11 @@
 - **F-04 — 소비자 준비 1단계(2026-10-12, synthetic)**: `services/analysis-mcp` stdio 어댑터를
   복사 스택 Core(8093)에서 실 구동 — consent=false deny(`AI_EGRESS_NOT_ALLOWED`)와 consent=true
   read 5건 성공(evidence 22 items, reportDigest `717593ee…` 일치) 기록. WorkArea grant는 subset
-  의미(전체 work area 필요). 남음: 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집.
+  의미(전체 work area 필요).
+- **F-04 — Stage-1 라이브 UI 검증(2026-10-12, synthetic)**: OIDC Console로 외부 루프·상태 일치·
+  저장/재조회·모바일 390·키보드·axe를 확인하고, 모바일 오버플로와 빈 상태 문구 2건을 수정했다.
+  scoped 신원 route 공백 4건은 결정 대기. 런북: [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md).
+  남음: 2-cycle 시퀀스 스크립트, 브라우저/API 증거 수집(실자료 흐름과 함께).
 
 ## 4. 순서
 
