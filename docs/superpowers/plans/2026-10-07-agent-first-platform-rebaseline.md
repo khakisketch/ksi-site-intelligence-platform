@@ -2727,4 +2727,10 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   (검토 대기 목록 필터가 helper 단위 테스트로만 고정되고 HTTP 레벨 검증이 없음, protected subject:
   authorization-authentication) + 테스트 갭·잔여 리스크(중복 가드·detail route 무가드·부분 grant
   미검증). 후속: HTTP 레벨 pending-decisions 테스트 보강 — **완료**(필터 unwiring 변이에서 실패 확인).
+- 독립 디자인 리뷰(다른 에이전트의 새 네이티브 컨텍스트, 캡처 9장 실제 소비) → open 결함 6건
+  (상1·중2·하3). "회귀"로 보고된 외부 이력 링크 소실은 호출자가 캡처를 직접 열어 **사실 아님**을
+  확인했다(링크 정상). 디자인 작업 공간 수정 라운드에서 6건 fixed + 중복 안내 제거에 따른 테스트
+  계약 1건 갱신(커밋 0e723fb). 개발 측 검증: tsc·eslint 0 errors, vitest 777/777, 라이브에서 실패
+  카드 안내·카드 제목(작업구역·시각)·요청 버튼 비활성+힌트·모바일 안내 1회·위저드 단일 열·6화면
+  overflow 0 확인; 캡처 `after2-*`. 남음: 새 캡처 기준 디자인 재리뷰(마지막 라운드).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
