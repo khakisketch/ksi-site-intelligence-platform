@@ -72,8 +72,32 @@
   필요로 OPEN. 런북:
   [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). main 병합 완료(a18e2af, fast-forward·push
   없음). 완료: 2-cycle 시퀀스 스크립트(af91151, 실검증)·디자인 후속 3건(배지 정렬·분석 503 활성화
-  안내·새로고침 유지, vitest 784). 남음: 검토 지속성(복사 스택·스냅샷/카탈로그/매핑 재서명 진행; policy 본문↔레코드
-  다이제스트 결합으로 **F-03 자재 체인 전체 재생성**이 필요함을 확정 — 창 연장만으로는 불가), parser 호스트 acceptance, A–E/고객 수용.
+  안내·새로고침 유지, vitest 784). **검토 지속성은 2026-10-13 로컬 폐쇄**(F-03 자재 체인 전체 재생성
+  → 검사/체크포인트/측정 레인 → Console 검토 201 → 새로고침·Core 재기동 지속성; 증거
+  `apps/dashboard/f04-review-evidence/`, 창 만료 대응 도구 `tools/regenerate_external_validation_chain.py`).
+  남음: parser 호스트 acceptance, A–E/고객 수용.
+
+### 실자료 온보딩 provisioning 순서 — 2026-10-13 확정 (합성 복사 스택에서 절차 검증)
+
+2-cycle 리허설 재드라이런(복사 스택·재생성 체인, wo17/18)의 결과는 **봉인 SEALED까지 정상, 검사
+`INSPECTION_PENDING_POLICY`·분석 503 `ANALYSIS_ACTIVATION_EXPIRED`에서 exit 2** — 실자료 완주까지
+남은 것은 아래 provisioning 순서다.
+
+1. **별도 스택 준비**: 정책 버전 범프는 그 스택의 기존 매핑/evidence 체인(policyDigest 결합)을
+   무효화한다. 검토 스탠드(9051/8051/3251)를 재사용하지 말고 새 복사 스택에서 진행한다.
+2. **정책 레코드 subject 추가**: 실자료 sealed subject(정확한 tuple)를 `permittedSubjects`에 넣은 새
+   레코드 + 새 버전 본문 + 서명 스냅샷(ADMIT_POLICY). 창 갱신만 필요하면
+   `tools/regenerate_external_validation_chain.py`로 충분하고, subject 추가는 별도 서명 단계(KSI 승인
+   흐름)다 — 도구는 "같은 인가의 새 창"만 재생성한다(fail-closed 의도).
+3. **분석 activation 재서명**: `~/.cache/ksi-f03-*/analysis/*` 원본은 불변으로 두고 복사본에 새 키
+   (`f03-activation-key-4` — 공개키만 registry에 추가; F-03도 key 1→2→3 동일 패턴)로
+   `policyDigest`·`runtimeDigest`·`resourceEnvelopeDigest`·`workerPrincipalId`는 유지한 채
+   `issuedAt/validUntil`만 갱신 서명한다. 스택 env(`KSI_CORE_ANALYSIS_{RUNTIME_CONFIG_FILE,
+   ACTIVATION_FILE, ACTIVATION_KEYS_FILE}`)를 복사본으로 전환한다.
+4. **검사/측정 레인 → 분석 워커**: 재기동/reload reconciliation이 sealed revision·sealed evidence에
+   대해 요청을 발행하면(정책 subject가 덮는 범위) 인프로세스 UDS 레인으로 MEASURED/VALIDATED를
+   만들고(F-04 prep 스크립트 선례), pair analysis 202 → 분석 워커 → Result/Evidence → 외부 소비자로
+   이어간다.
 
 ## 4. 순서
 
@@ -81,7 +105,8 @@
 2. 우리측: F-03 parser 단계는 `PARSER_SANDBOX_UNAVAILABLE` host gate 통과 후 기존 bwrap 경로로
    synthetic 자료를 실행하고, parser launch→`VALIDATED`→Analysis→Result/Evidence→review 연결을
    증명한다. 현재 호스트의 개별 synthetic 결과는 end-to-end acceptance가 아니다.
-3. 고객측 A~E 도착 → 같은 환경에서 실제 자료 등록/검사/분석/결과 → 외부 소비자 E2E → 기록.
+3. 고객측 A~E 도착 → **위 provisioning 순서(별도 스택)** 후 실제 자료 등록/검사/분석/결과 →
+   외부 소비자 E2E → 기록.
 4. t2 주기 재사용 → F-04 운영/고객 수용 기록(별도 판정).
 
 ## 5. 현재 차단/한계

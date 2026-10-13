@@ -2835,7 +2835,10 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `/tmp/opencode/ksi-f04-review-20261013/evidence/rehearsal-2cycle-rerun.log`.
   exit 0까지 남은 provisioning: ① 정책 레코드에 리허설/실자료 subject 추가(버전 범프는 검토 스탠드
   매핑·evidence 체인을 무효화하므로 **별도 스택** 필요) ② 분석 activation 재서명(원 F-03 자재는 불변,
-  복사본으로 전환) ③ 검사 레인 실행 ④ 분석 워커 경로. 실자료 A–E 도착 시 동일 순서가 요건이 된다.
+  복사본으로 전환) ③ 검사 레인 실행 ④ 분석 워커 경로. 실자료 A–E 도착 시 동일 순서가 요건이 된다 —
+  [F-02~04 체크리스트](2026-10-10-f02-04-first-flow-input-checklist.md) §3에 확정 기록. 복사 검토
+  스탠드(9051/8051/3251)는 **유지**(증거 기준; 창 만료 후 live 해석은 열화될 수 있으나 리뷰·저널·repo
+  증거는 내구). 앞으로 정책 버전을 올리는 검증은 별도 스택에서 한다.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
