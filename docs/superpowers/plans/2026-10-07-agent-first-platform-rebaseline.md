@@ -2826,6 +2826,16 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `apps/dashboard/f04-review-evidence/`(README+SUMMARY+캡처 3장)로 승격했고 prep/레인 스크립트는
   /tmp 참조를 유지한다. `apps/dashboard/tsconfig.json`의 `.next-f04-review` 타입 루트는 개발 서버
   규약대로 커밋한다(선행 `.next-accept`/`.next-p4-resume`과 동일).
+- 2-cycle 리허설 재드라이런(2026-10-13, 복사 스택·재생성 체인): 리허설 전용 opaque 신원
+  `f04-rehearsal-admin`(복사 tokens-ui에만 추가, OIDC와 disjoint)로 실행 — 새 페어 wo17/18 등록→grant→
+  PUT→seal **SEALED**, 검사는 기존과 동일한 `INSPECTION_PENDING_POLICY`(정책 subject allowlist 불포함)
+  ×2, 분석은 503 `ANALYSIS_ACTIVATION_EXPIRED`(activation `validUntil 2026-10-11T19:04Z` 만료) —
+  **exit 2, 새 게이트/회귀 없음**, 재실행은 409→기존 SEALED 제출 재사용(멱등). 관찰: 같은
+  Idempotency-Key라도 principal이 다르면 새 work order가 생성된다(액터 스코프). 로그
+  `/tmp/opencode/ksi-f04-review-20261013/evidence/rehearsal-2cycle-rerun.log`.
+  exit 0까지 남은 provisioning: ① 정책 레코드에 리허설/실자료 subject 추가(버전 범프는 검토 스탠드
+  매핑·evidence 체인을 무효화하므로 **별도 스택** 필요) ② 분석 activation 재서명(원 F-03 자재는 불변,
+  복사본으로 전환) ③ 검사 레인 실행 ④ 분석 워커 경로. 실자료 A–E 도착 시 동일 순서가 요건이 된다.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
