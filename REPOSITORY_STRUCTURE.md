@@ -127,7 +127,7 @@ trash.
 | `.codex/` | Local agent tooling | Local Codex configuration | No | RETAIN local |
 | `.dev-data/` | Development operator | Ignored local Core/OIDC state and keys | Local runtime state | RETAIN; never archive to Git |
 | `.github/` | Platform/CI | CI workflows | Build/verification | RETAIN |
-| `archive/acquisition-2026/` | P3 acquisition separation archive | Acquisition-only sources moved blob-identical per `docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv` | No — historical, never runtime/build/test input | ARCHIVED; the single bounded exception is the `workflow_dispatch`-only historical verification route |
+| `archive/acquisition-2026/` | P3 acquisition separation archive | Acquisition-only sources moved per `docs/audit/PHYSICAL_SITE_MOVE_DECISIONS_v1.csv`; two post-move adaptations recorded append-only in `docs/audit/PHYSICAL_SITE_MOVE_ADAPTATIONS_v1.json` (strict gate binds them to the reviewed commit) | No — historical, never runtime/build/test input | ARCHIVED; the single bounded exception is the `workflow_dispatch`-only historical verification route |
 | `.ksi/` | Legacy goal governance | Retired helper-era goal/risk state | No | RETAIN as archive/evidence; product slice is `docs/superpowers/product-state.md` + named slice ledger, while an active checkout task uses its checkpoint + named task ledger |
 | `.venv/` | Python toolchain | Reproducible local environment from `uv.lock` | No | RETAIN local; regenerated only by operator choice |
 | `apps/` | Dashboard | User-facing applications | Yes | RETAIN |

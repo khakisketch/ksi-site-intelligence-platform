@@ -1,0 +1,26 @@
+{
+  "version": "physical-site-move-adaptations.v1",
+  "note": "Append-only post-move adaptation lineage (P5 successor decision). The original inverse records and their hashes are never edited; each entry binds one move record to the exact reviewed commit whose tree carries the adapted bytes. verify_physical_site_archive.py accepts the two adaptation-caused findings only while the destination still equals that commit's blob.",
+  "adaptations": [
+    {
+      "recordSet": "extras",
+      "recordIndex": 55,
+      "path": "tools/build_field0a_kit.py",
+      "destination": "archive/acquisition-2026/tools/build_field0a_kit.py",
+      "preMoveSha256": "abc3d8b606a23c3e636366726a0faf872ae763c41000bd01e7e19f46a9be156a",
+      "preMoveGitObject": "78940f4663359eded3bce4b3f49ecfcc920f4dbf",
+      "adaptedSha256": "5cfaac4fdac7019258f5eebf9b180f77ccefe33cb40d48be1621218504f22459",
+      "adaptationCommit": "dc9d681ac92eb628cfa753d43920daaca0f42fa9"
+    },
+    {
+      "recordSet": "extras",
+      "recordIndex": 56,
+      "path": "tests/contract/test_field0a_kit.py",
+      "destination": "archive/acquisition-2026/tests/contract/test_field0a_kit.py",
+      "preMoveSha256": "65a1efc2b47ca44f5dcc1e6aef498cd4f6c582f4e3a4df97e07180f28f8318e9",
+      "preMoveGitObject": "015db511f10399db3add57c8d537648ea4bb40ef",
+      "adaptedSha256": "03d522ef54408fe1228f7b5a60c5c7344e63b50e8aec5dfe5223fe178a70c2f8",
+      "adaptationCommit": "dc9d681ac92eb628cfa753d43920daaca0f42fa9"
+    }
+  ]
+}

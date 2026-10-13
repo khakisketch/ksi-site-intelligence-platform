@@ -24,8 +24,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PREFIX = "archive/acquisition-2026/"
 _PROTECTED = {
-    ".git", ".ai", ".dev-data", ".worktrees", ".venv", ".claude", ".codex",
-    ".opencode", ".superpowers", ".agents", "references", "download", "hil_raw_logs", "models",
+    ".git",
+    ".ai",
+    ".dev-data",
+    ".worktrees",
+    ".venv",
+    ".claude",
+    ".codex",
+    ".opencode",
+    ".superpowers",
+    ".agents",
+    "references",
+    "download",
+    "hil_raw_logs",
+    "models",
 }
 _HEX40 = re.compile(r"[0-9a-f]{40}").fullmatch
 _HEX64 = re.compile(r"[0-9a-f]{64}").fullmatch
@@ -101,6 +113,127 @@ def _rows(payload: object, lane: str) -> list[object]:
     return list(payload)
 
 
+_ADAPTATION_VERSION = "physical-site-move-adaptations.v1"
+_ADAPTATION_FIELDS = frozenset(
+    {
+        "recordSet",
+        "recordIndex",
+        "path",
+        "destination",
+        "preMoveSha256",
+        "preMoveGitObject",
+        "adaptedSha256",
+        "adaptationCommit",
+    }
+)
+
+
+def _adaptations(
+    root: Path, path: Path | None
+) -> tuple[dict[tuple[str, int], dict[str, object]], list[str]]:
+    """Load the append-only adaptation lineage.
+
+    An absent lineage accepts nothing (every mismatch still fails, so deleting
+    the record cannot open the gate); malformed content fails closed.
+
+    A recorded adaptation never edits the original inverse record. The lineage
+    binds one record to the reviewed commit whose tree carries the adapted
+    bytes; the accepted bytes must still equal that commit's blob, so a later
+    unreviewed edit fails again.
+    """
+    failures: list[str] = []
+    if path is None:
+        return {}, failures
+    try:
+        relative = _relative(root, path)
+        try:
+            raw = _read_file(root, relative)
+        except FileNotFoundError:
+            return {}, failures
+        payload = json.loads(raw)
+        if not isinstance(payload, dict) or payload.get("version") != _ADAPTATION_VERSION:
+            raise ValueError("adaptation lineage version is invalid")
+        entries = payload.get("adaptations")
+        if not isinstance(entries, list):
+            raise ValueError("adaptation lineage must list adaptations")
+        mapping: dict[tuple[str, int], dict[str, object]] = {}
+        for entry in entries:
+            if not isinstance(entry, dict) or set(entry) != _ADAPTATION_FIELDS:
+                raise ValueError("adaptation entry shape is invalid")
+            lane = entry["recordSet"]
+            index_raw = entry["recordIndex"]
+            if (
+                lane not in ("execution", "extras")
+                or isinstance(index_raw, bool)
+                or not isinstance(index_raw, (int, str))
+            ):
+                raise ValueError("adaptation entry record identity is invalid")
+            if isinstance(index_raw, str) and not index_raw.isdigit():
+                raise ValueError("adaptation entry record index is invalid")
+            index = int(index_raw)
+            for field in ("path", "destination"):
+                if not isinstance(entry[field], str) or not entry[field]:
+                    raise ValueError("adaptation entry path is invalid")
+            if not _HEX40(str(entry["preMoveGitObject"])) or not _HEX40(
+                str(entry["adaptationCommit"])
+            ):
+                raise ValueError("adaptation entry git identity is invalid")
+            if not _HEX64(str(entry["preMoveSha256"])) or not _HEX64(str(entry["adaptedSha256"])):
+                raise ValueError("adaptation entry digest is invalid")
+            key = (lane, index)
+            if key in mapping:
+                raise ValueError("duplicate adaptation entry")
+            mapping[key] = {**entry, "recordIndex": index}
+        return mapping, failures
+    except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
+        failures.append("ADAPTATIONS_UNREADABLE_OR_MALFORMED")
+        return {}, failures
+
+
+def _adaptation_accepts(
+    root: Path,
+    entry: dict[str, object] | None,
+    *,
+    lane: str,
+    index: int,
+    source: str,
+    destination: str,
+    obj: str,
+    digest: str,
+    current_object: str | None,
+    measured_sha256: str | None,
+) -> bool:
+    if entry is None or measured_sha256 is None:
+        return False
+    if (
+        entry["recordSet"] != lane
+        or entry["recordIndex"] != index
+        or entry["path"] != source
+        or entry["destination"] != destination
+        or entry["preMoveSha256"] != digest
+        or entry["preMoveGitObject"] != obj
+        or entry["adaptedSha256"] != measured_sha256
+        or current_object is None
+    ):
+        return False
+    # The adapted bytes must be exactly the reviewed adaptation commit's blob,
+    # so a later edit invalidates the lineage and fails closed again.
+    try:
+        reviewed_tree = _tree(root, str(entry["adaptationCommit"]))
+    except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
+        return False
+    reviewed_entry = reviewed_tree.get(destination)
+    return (
+        reviewed_entry is not None
+        and reviewed_entry[:2]
+        in (
+            ("100644", "blob"),
+            ("100755", "blob"),
+        )
+        and reviewed_entry[2] == current_object
+    )
+
+
 def _verify_record(
     root: Path,
     row: object,
@@ -111,11 +244,15 @@ def _verify_record(
     seen_sources: set[str],
     seen_destinations: set[str],
     blob_hashes: dict[str, str],
+    adaptations: dict[tuple[str, int], dict[str, object]],
 ) -> tuple[dict[str, object], list[str]]:
     findings: list[str] = []
     result: dict[str, object] = {
-        "recordSet": lane, "recordIndex": index,
-        "baselineSha256": None, "destinationSha256": None, "failures": findings,
+        "recordSet": lane,
+        "recordIndex": index,
+        "baselineSha256": None,
+        "destinationSha256": None,
+        "failures": findings,
     }
     if not isinstance(row, dict) or set(row) != _FIELDS:
         findings.append("MALFORMED_RECORD")
@@ -124,7 +261,10 @@ def _verify_record(
         findings.append("MALFORMED_RECORD")
         return result, findings
     source, destination, obj, digest = (
-        row["path"], row["destination"], row["git_object"], row["blob_sha256"]
+        row["path"],
+        row["destination"],
+        row["git_object"],
+        row["blob_sha256"],
     )
     result.update(path=source, destination=destination, gitObject=obj, expectedSha256=digest)
     safe_source = _safe_relative(source) and not source.startswith("archive/")
@@ -154,8 +294,10 @@ def _verify_record(
         findings.append("SOURCE_REINTRODUCED")
     destination_entry = head.get(destination)
     regular = destination_entry is not None and destination_entry[:2] in (
-        ("100644", "blob"), ("100755", "blob")
+        ("100644", "blob"),
+        ("100755", "blob"),
     )
+    current_object = destination_entry[2] if regular and destination_entry else None
     if not regular or destination_entry is None or destination_entry[2] != obj:
         findings.append("GIT_OBJECT_MISMATCH")
     # 54 extras were moved before head_before; their already-archived baseline
@@ -164,9 +306,11 @@ def _verify_record(
     baseline_entry = baseline.get(source)
     if lane == "extras" and baseline_entry is None:
         baseline_entry = baseline.get(destination)
-    baseline_bound = baseline_entry is not None and baseline_entry[:2] in (
-        ("100644", "blob"), ("100755", "blob")
-    ) and baseline_entry[2] == obj
+    baseline_bound = (
+        baseline_entry is not None
+        and baseline_entry[:2] in (("100644", "blob"), ("100755", "blob"))
+        and baseline_entry[2] == obj
+    )
     if not baseline_bound:
         findings.append("BASELINE_OBJECT_MISMATCH")
     if baseline_bound:
@@ -181,11 +325,41 @@ def _verify_record(
         if measured != digest:
             findings.append("DESTINATION_HASH_MISMATCH")
     except (OSError, ValueError):
+        measured = None
         findings.append("DESTINATION_UNREADABLE")
+    # A recorded, reviewed adaptation may accept exactly the two findings it
+    # explains; every other record stays bound to its original inverse hash.
+    if (
+        "GIT_OBJECT_MISMATCH" in findings
+        and set(findings) <= {"GIT_OBJECT_MISMATCH", "DESTINATION_HASH_MISMATCH"}
+        and _adaptation_accepts(
+            root,
+            adaptations.get((lane, index)),
+            lane=lane,
+            index=index,
+            source=source,
+            destination=destination,
+            obj=obj,
+            digest=digest,
+            current_object=current_object,
+            measured_sha256=measured,
+        )
+    ):
+        findings.clear()
+        result["adaptation"] = {
+            "adaptedSha256": measured,
+            "adaptationCommit": adaptations[(lane, index)]["adaptationCommit"],
+        }
     return result, findings
 
 
-def verify_archive_records(root: Path, execution: Path, extras: Path) -> dict[str, object]:
+def verify_archive_records(
+    root: Path,
+    execution: Path,
+    extras: Path,
+    *,
+    adaptations: Path | None = None,
+) -> dict[str, object]:
     """Visit all supplied records, return findings, and never mutate the checkout.
 
     Record-set completeness is checked against tracked HEAD records, not a count
@@ -195,8 +369,11 @@ def verify_archive_records(root: Path, execution: Path, extras: Path) -> dict[st
     failures: list[str] = []
     records: list[dict[str, object]] = []
     report: dict[str, object] = {
-        "recordsChecked": 0, "recordsExpected": 0, "failures": failures,
-        "records": records, "inputSha256": {},
+        "recordsChecked": 0,
+        "recordsExpected": 0,
+        "failures": failures,
+        "records": records,
+        "inputSha256": {},
     }
     input_hashes: dict[str, str] = {}
     report["inputSha256"] = input_hashes
@@ -258,7 +435,8 @@ def verify_archive_records(root: Path, execution: Path, extras: Path) -> dict[st
         ]
         execution_bindings = [
             tuple(row.get(key) for key in keys)
-            for row in batches.get("execution", []) if isinstance(row, dict)
+            for row in batches.get("execution", [])
+            if isinstance(row, dict)
         ]
         if not move_bindings or sorted(move_bindings) != sorted(execution_bindings):
             failures.append("MANIFEST_RECORD_SET_MISMATCH")
@@ -267,12 +445,22 @@ def verify_archive_records(root: Path, execution: Path, extras: Path) -> dict[st
     seen_sources: set[str] = set()
     seen_destinations: set[str] = set()
     blob_hashes: dict[str, str] = {}
+    adaptation_map, adaptation_failures = _adaptations(root, adaptations)
+    failures.extend(adaptation_failures)
     for lane, rows in batches.items():
         for index, row in enumerate(rows):
             try:
                 result, findings = _verify_record(
-                    root, row, lane, index, head, baseline,
-                    seen_sources, seen_destinations, blob_hashes,
+                    root,
+                    row,
+                    lane,
+                    index,
+                    head,
+                    baseline,
+                    seen_sources,
+                    seen_destinations,
+                    blob_hashes,
+                    adaptation_map,
                 )
             except (OSError, ValueError, UnicodeError, subprocess.TimeoutExpired):
                 findings = ["RECORD_BINDING_UNAVAILABLE"]
@@ -286,14 +474,23 @@ def verify_archive_records(root: Path, execution: Path, extras: Path) -> dict[st
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
-    parser.add_argument("--execution", type=Path, default=Path(
-        "docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_v1.json"
-    ))
-    parser.add_argument("--extras", type=Path, default=Path(
-        "docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_EXTRAS_v1.json"
-    ))
+    parser.add_argument(
+        "--execution", type=Path, default=Path("docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_v1.json")
+    )
+    parser.add_argument(
+        "--extras",
+        type=Path,
+        default=Path("docs/audit/PHYSICAL_SITE_MOVE_EXECUTION_EXTRAS_v1.json"),
+    )
+    parser.add_argument(
+        "--adaptations",
+        type=Path,
+        default=Path("docs/audit/PHYSICAL_SITE_MOVE_ADAPTATIONS_v1.json"),
+    )
     args = parser.parse_args(argv)
-    report = verify_archive_records(args.root, args.execution, args.extras)
+    report = verify_archive_records(
+        args.root, args.execution, args.extras, adaptations=args.adaptations
+    )
     print(json.dumps(report, indent=2, sort_keys=True))
     return 1 if report["failures"] else 0
 

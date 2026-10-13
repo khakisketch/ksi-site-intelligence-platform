@@ -56,3 +56,21 @@ The executor (`tools/execute_physical_site_moves.py`) applies the refined Task 6
   `test_no_compose_file_defines_an_archived_service_or_build_input`, which
   sweeps all four compose files for gateway/managed-worker/manifold service
   defs and archived image/entrypoint/mount strings.
+
+## Addendum — post-move adaptation lineage (2026-10-13, P5 successor decision)
+
+Two archived Task 6 paths were adapted after the move (commit `dc9d681`, "repoint the
+archived field-kit procedure at its archive mirrors") so the archived kit stays
+self-consistent. Per the P5 audit's successor direction — a **reviewed append-only
+adaptation-lineage decision, never edited original inverse hashes** — the original
+inverse records and their hashes stay untouched; the append-only lineage record
+[`PHYSICAL_SITE_MOVE_ADAPTATIONS_v1.json`](PHYSICAL_SITE_MOVE_ADAPTATIONS_v1.json) binds
+each affected record to that exact reviewed commit, and
+`tools/verify_physical_site_archive.py --adaptations` accepts precisely those two
+adaptation-caused findings only while the destination bytes still equal the reviewed
+commit's blob. An unrecorded, forged, or later edit fails the strict gate again.
+
+| recordSet | recordIndex | path | pre-move sha256 | adapted sha256 |
+|---|---|---|---|---|
+| extras | 55 | `tools/build_field0a_kit.py` | `abc3d8b606a23c3e…` | `5cfaac4fdac70192…` |
+| extras | 56 | `tests/contract/test_field0a_kit.py` | `65a1efc2b47ca44f…` | `03d522ef54408fe1…` |

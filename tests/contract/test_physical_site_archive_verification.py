@@ -23,7 +23,7 @@ TOOL = ROOT / "tools/verify_physical_site_archive.py"
 PREFIX = "archive/acquisition-2026/"
 
 
-def _verify(root: Path) -> dict[str, Any]:
+def _verify(root: Path, adaptations: Path | None = None) -> dict[str, Any]:
     # An explicit assertion makes the missing behavior a test failure, not a
     # collection/import error; once present, exercise the actual tool function.
     assert TOOL.is_file(), "read-only complete-record archive checker is missing"
@@ -31,7 +31,9 @@ def _verify(root: Path) -> dict[str, Any]:
     assert spec is not None and spec.loader is not None
     tool = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(tool)
-    return tool.verify_archive_records(root, root / "execution.json", root / "extras.json")
+    return tool.verify_archive_records(
+        root, root / "execution.json", root / "extras.json", adaptations=adaptations
+    )
 
 
 def _git(root: Path, *args: str) -> str:
@@ -120,11 +122,14 @@ def test_visits_every_record(archive_repo: Path) -> None:
     assert report["failures"] == []
     assert report["recordsChecked"] == 3
     assert [record["path"] for record in report["records"]] == [
-        "edge/one.txt", "packages/mission-planning/second.txt", "tools/edge/last.txt"
+        "edge/one.txt",
+        "packages/mission-planning/second.txt",
+        "tools/edge/last.txt",
     ]
-    assert report["records"][-1]["destinationSha256"] == hashlib.sha256(
-        b"last extra blob\n"
-    ).hexdigest()
+    assert (
+        report["records"][-1]["destinationSha256"]
+        == hashlib.sha256(b"last extra blob\n").hexdigest()
+    )
     (archive_repo / _last(archive_repo)["destination"]).write_bytes(b"corrupt final record\n")
     _assert_last_failure(_verify(archive_repo), "DESTINATION_HASH_MISMATCH")
 
@@ -182,7 +187,8 @@ def test_wrong_git_blob_or_inverse_fails(archive_repo: Path, corruption: str) ->
 def _snapshot(root: Path) -> dict[str, bytes]:
     return {
         str(path.relative_to(root)): path.read_bytes()
-        for path in root.rglob("*") if path.is_file() and not path.is_symlink()
+        for path in root.rglob("*")
+        if path.is_file() and not path.is_symlink()
     }
 
 
@@ -206,12 +212,13 @@ def test_committed_destination_edit_retains_independent_baseline_hash(archive_re
     _git(archive_repo, "commit", "-qm", "explicit later historical adaptation")
     report = _verify(archive_repo)
     _assert_last_failure(report, "GIT_OBJECT_MISMATCH")
-    assert report["records"][-1]["baselineSha256"] == hashlib.sha256(
-        b"last extra blob\n"
-    ).hexdigest()
-    assert report["records"][-1]["destinationSha256"] == hashlib.sha256(
-        b"later archive adaptation\n"
-    ).hexdigest()
+    assert (
+        report["records"][-1]["baselineSha256"] == hashlib.sha256(b"last extra blob\n").hexdigest()
+    )
+    assert (
+        report["records"][-1]["destinationSha256"]
+        == hashlib.sha256(b"later archive adaptation\n").hexdigest()
+    )
 
 
 def test_previously_archived_extra_is_bound_without_rewriting_source_history(
@@ -242,7 +249,8 @@ def test_malformed_final_record_is_visited(archive_repo: Path, row: object) -> N
 
 
 def test_record_input_symlink_cannot_supply_an_omitted_manifest(
-    archive_repo: Path, tmp_path: Path,
+    archive_repo: Path,
+    tmp_path: Path,
 ) -> None:
     extras = archive_repo / "extras.json"
     outside = tmp_path / "outside-extras.json"
@@ -320,8 +328,14 @@ def test_protected_source_is_refused(archive_repo: Path, source: str) -> None:
 def test_cli_emits_json_and_nonzero_for_final_record_failure(archive_repo: Path) -> None:
     assert TOOL.is_file(), "read-only complete-record archive checker is missing"
     command = [
-        sys.executable, str(TOOL), "--root", str(archive_repo),
-        "--execution", "execution.json", "--extras", "extras.json",
+        sys.executable,
+        str(TOOL),
+        "--root",
+        str(archive_repo),
+        "--execution",
+        "execution.json",
+        "--extras",
+        "extras.json",
     ]
     success = subprocess.run(command, capture_output=True, text=True, check=False)
     assert success.returncode == 0, success.stderr
@@ -330,3 +344,97 @@ def test_cli_emits_json_and_nonzero_for_final_record_failure(archive_repo: Path)
     failed = subprocess.run(command, capture_output=True, text=True, check=False)
     assert failed.returncode == 1
     _assert_last_failure(json.loads(failed.stdout), "DESTINATION_HASH_MISMATCH")
+
+
+def _lineage(root: Path, entry: dict[str, object]) -> Path:
+    path = root / "adaptations.json"
+    _write_json(path, {"version": "physical-site-move-adaptations.v1", "adaptations": [entry]})
+    return path
+
+
+def test_recorded_adaptation_lineage_accepts_only_the_reviewed_commit(
+    archive_repo: Path,
+) -> None:
+    """Append-only lineage: reviewed adaptation passes; a later edit fails again."""
+    row = _last(archive_repo)
+    destination = archive_repo / row["destination"]
+    destination.write_bytes(b"adapted extra blob\n")
+    _git(archive_repo, "add", ".")
+    _git(archive_repo, "commit", "-qm", "reviewed adaptation")
+    commit = _git(archive_repo, "rev-parse", "HEAD")
+    adapted_sha = hashlib.sha256(b"adapted extra blob\n").hexdigest()
+
+    # Without the lineage the committed adaptation still fails the strict gate.
+    assert any("GIT_OBJECT_MISMATCH" in failure for failure in _verify(archive_repo)["failures"])
+
+    entry: dict[str, object] = {
+        "recordSet": "extras",
+        "recordIndex": 0,
+        "path": row["path"],
+        "destination": row["destination"],
+        "preMoveSha256": row["blob_sha256"],
+        "preMoveGitObject": row["git_object"],
+        "adaptedSha256": adapted_sha,
+        "adaptationCommit": commit,
+    }
+    lineage = _lineage(archive_repo, entry)
+    report = _verify(archive_repo, lineage)
+    assert report["failures"] == [], report
+    assert report["records"][-1]["adaptation"] == {
+        "adaptedSha256": adapted_sha,
+        "adaptationCommit": commit,
+    }
+
+    # A later unrecorded edit invalidates the reviewed lineage.
+    destination.write_bytes(b"later unreviewed edit\n")
+    _git(archive_repo, "add", ".")
+    _git(archive_repo, "commit", "-qm", "later edit")
+    assert any(
+        "GIT_OBJECT_MISMATCH" in failure for failure in _verify(archive_repo, lineage)["failures"]
+    )
+
+
+def test_forged_or_mismatched_adaptation_lineage_still_fails(archive_repo: Path) -> None:
+    row = _last(archive_repo)
+    destination = archive_repo / row["destination"]
+    destination.write_bytes(b"adapted extra blob\n")
+    _git(archive_repo, "add", ".")
+    _git(archive_repo, "commit", "-qm", "reviewed adaptation")
+    commit = _git(archive_repo, "rev-parse", "HEAD")
+
+    forged: dict[str, object] = {
+        "recordSet": "extras",
+        "recordIndex": 0,
+        "path": row["path"],
+        "destination": row["destination"],
+        "preMoveSha256": row["blob_sha256"],
+        "preMoveGitObject": row["git_object"],
+        # A digest the destination bytes do not have cannot pass.
+        "adaptedSha256": row["blob_sha256"],
+        "adaptationCommit": commit,
+    }
+    report = _verify(archive_repo, _lineage(archive_repo, forged))
+    assert any("DESTINATION_HASH_MISMATCH" in failure for failure in report["failures"])
+
+    wrong_index: dict[str, object] = {
+        **forged,
+        "recordIndex": 7,
+        "adaptedSha256": hashlib.sha256(b"adapted extra blob\n").hexdigest(),
+    }
+    report = _verify(archive_repo, _lineage(archive_repo, wrong_index))
+    assert any("GIT_OBJECT_MISMATCH" in failure for failure in report["failures"])
+
+
+def test_absent_adaptation_lineage_accepts_nothing_and_malformed_fails(
+    archive_repo: Path,
+) -> None:
+    # Absence is safe: no adaptation can be accepted, so a clean record set
+    # passes and any mismatch (covered above) still fails; only malformed
+    # lineage content is itself a failure.
+    missing = archive_repo / "missing-adaptations.json"
+    assert _verify(archive_repo, missing)["failures"] == []
+
+    malformed = archive_repo / "adaptations.json"
+    malformed.write_text("{not json", encoding="utf-8")
+    report = _verify(archive_repo, malformed)
+    assert any("ADAPTATIONS_UNREADABLE_OR_MALFORMED" in failure for failure in report["failures"])
