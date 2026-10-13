@@ -5,6 +5,8 @@ import {
   type TypedArrayWithDimensions,
 } from "geotiff";
 
+import { formatCountKo } from "@/lib/number-format";
+
 import { proj4, registerKoreaProjections } from "./proj4-defs";
 
 /** Leaflet ImageOverlay가 받는 `[south, west] → [north, east]` 경계다. */
@@ -271,7 +273,7 @@ async function maxAggregatedAbs(
   const pixels = width * height;
   if (pixels > MAX_DIFF_ANALYSIS_PIXELS) {
     throw new Error(
-      `차분 GeoTIFF가 너무 큽니다(${pixels.toLocaleString("ko-KR")} 셀). 타일 산출물로 다시 생성하세요`,
+      `차분 GeoTIFF가 너무 큽니다(${formatCountKo(pixels)} 셀). 타일 산출물로 다시 생성하세요`,
     );
   }
 

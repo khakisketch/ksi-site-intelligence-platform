@@ -2882,6 +2882,12 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   게이트: vitest **792**(+4)·tsc/eslint/build 0; 라이브 `fileTriggers=2·nativeVisibleInputs=0`+에코 확인;
   캡처 `/tmp/opencode/ksi-f04-review-20261013/evidence/a3-korean-file-picker.png`. 독립/디자인 리뷰는
   계획 프로토콜대로 배치 대기.
+- 대시보드 B1(날짜/수치 표기 SSOT) 구현(2026-10-13, 선구현): `lib/number-format.ts` 신설
+  (`formatNumberKo` 이동 + `formatSignificantKo`·`formatCountKo`·`formatBytesKo`), `phase34-labels`
+  재수출로 호환 유지. 원시 `toLocaleString` 15곳(헤더 인식·업로드/해시·분석 패널·공간자산·geotiff
+  overlay·워크플로 리포트 지표) SSOT 전환 + 공간자산 관측 시각 `formatKoreanDateTime`. grep-audit 잔여
+  **0**(SSOT 모듈 제외); 감사 변형(`2026.8.25.`/`2026.8.25.09:40`)은 현 HEAD에 없음. 게이트:
+  vitest **798**(+6)·tsc/eslint 0. 독립 리뷰 배치 대기.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리

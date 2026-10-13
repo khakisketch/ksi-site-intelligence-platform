@@ -13,6 +13,8 @@ import {
   type SpatialAssetInspectedRasterFacts,
 } from "@/lib/core-api/spatial-assets";
 import { getSite } from "@/lib/core-api/sites";
+import { formatKoreanDateTime } from "@/lib/datetime";
+import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 export const metadata = { title: "공간 자산 · KSI" };
@@ -76,7 +78,7 @@ function kindLabel(kind: SpatialAssetCatalogItem["kind"]): string {
 
 function exactByteCount(value: number): string {
   return Number.isSafeInteger(value) && value >= 0
-    ? `${value.toLocaleString("ko-KR")} bytes`
+    ? formatBytesKo(value)
     : "정확한 크기 표시 불가";
 }
 
@@ -149,7 +151,7 @@ function ObservedFacts({ item }: { item: SpatialAssetCatalogItem }) {
       <Fact label="관측 MIME" value={observed.contentType} />
       <Fact label="관측 SHA-256" value={observed.sha256} mono />
       <Fact label="매니페스트 digest" value={observed.manifestDigest} mono />
-      <Fact label="KSI 관측 시각" value={observed.observedAt} />
+      <Fact label="KSI 관측 시각" value={formatKoreanDateTime(observed.observedAt, { dateStyle: "medium", timeStyle: "short" })} />
     </dl>
     <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">바이트 관측은 파일의 공간적 의미나 분석 적합성을 확인한 결과가 아닙니다.</p>
   </section>;
@@ -163,7 +165,7 @@ function RasterFacts({ raster }: { raster: SpatialAssetInspectedRasterFacts }) {
   return <>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
       <Fact label="관측 CRS" value={raster.observedCrsIdentifier} />
-      <Fact label="격자 크기" value={`${raster.width.toLocaleString("ko-KR")} × ${raster.height.toLocaleString("ko-KR")} pixels`} />
+      <Fact label="격자 크기" value={`${formatCountKo(raster.width)} × ${formatCountKo(raster.height)} pixels`} />
       <Fact label="관측 CRS digest" value={raster.observedCrsDigest} mono />
       <Fact label="검사 보고서 digest" value={raster.sourceReportDigest} mono />
       <Fact label="검사기 build digest" value={raster.inspectorBuildDigest} mono />

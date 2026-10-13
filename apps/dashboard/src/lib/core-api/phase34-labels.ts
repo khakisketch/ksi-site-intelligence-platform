@@ -1,7 +1,11 @@
 // Phase 3/4 표시 라벨·표현 규칙 — 판정이 아니라 **말로 옮기는 것**만 여기 둔다.
 // (mission-labels.ts / triage.ts 와 같은 자리)
 
+import { formatNumberKo } from "@/lib/number-format";
+
 import type { EquipmentSupportLevel } from "./types";
+
+export { formatNumberKo };
 
 /**
  * 장비 지원단계 라벨.
@@ -75,19 +79,8 @@ export function formatVolumeM3(value: number): string {
   return `${formatNumberKo(value, 1)} m³`;
 }
 
-/**
- * 한국어 수 표기 — 소수 자리만 자르고 `-0` 은 `0` 으로 눕힌다.
- *
- * 체적 전용 표기(`formatVolumeM3`)의 `-0` 규칙과 같은 이유다: 집계가 한쪽 부호뿐인
- * 구역에서 음의 0 이 나오는 것은 정상이고, 화면의 "-0 m³"/"-0 m²" 는 사람이 읽는
- * 값이 아니다. 면적·비율 등 체적 밖의 수치가 같은 규칙을 필요로 할 때도 컴포넌트가
- * `toLocaleString` 을 직접 부르지 않고 이 함수를 쓴다 — 규칙이 컴포넌트마다
- * 갈라지는 것을 막는다.
- */
-export function formatNumberKo(value: number, maximumFractionDigits = 1): string {
-  const shown = value === 0 ? 0 : value;
-  return shown.toLocaleString("ko-KR", { maximumFractionDigits });
-}
+// 수 표기 SSOT 는 lib/number-format.ts 다 — formatNumberKo 는 위에서 재수출한다
+// (기존 import 경로 호환).
 
 /** 순변화는 방향이 보여야 한다 — 증가에 명시적 `+` 를 붙인다. */
 export function formatNetVolumeM3(value: number): string {

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { formatBytesKo, formatCountKo, formatNumberKo, formatSignificantKo } from "@/lib/number-format";
 import type {
   AnalysisEvidenceItem,
   AnalysisEvidencePage,
@@ -218,10 +219,10 @@ function analysisCodeLabel(code: string): string {
 }
 
 function formatNumber(value: number, suffix: string) {
-  const options = Math.abs(value) > 0 && Math.abs(value) < 0.1
-    ? { maximumSignificantDigits: 3 }
-    : { maximumFractionDigits: 1 };
-  return `${value.toLocaleString("ko-KR", options)} ${suffix}`;
+  const rendered = Math.abs(value) > 0 && Math.abs(value) < 0.1
+    ? formatSignificantKo(value, 3)
+    : formatNumberKo(value, 1);
+  return `${rendered} ${suffix}`;
 }
 
 function selectionLabel(option: AnalysisObservationOption) {
@@ -248,8 +249,8 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
       <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
         <div><dt className="text-ink-muted">선택 면적</dt><dd>{formatNumber(result.coverage.selectedAreaM2, "m²")}</dd></div>
         <div><dt className="text-ink-muted">공통 유효 면적</dt><dd>{formatNumber(result.coverage.commonValidAreaM2, "m²")}</dd></div>
-        <div><dt className="text-ink-muted">선택 셀</dt><dd>{result.coverage.selectedCellCount.toLocaleString("ko-KR")}</dd></div>
-        <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{result.coverage.commonValidCellCount.toLocaleString("ko-KR")}</dd></div>
+        <div><dt className="text-ink-muted">선택 셀</dt><dd>{formatCountKo(result.coverage.selectedCellCount)}</dd></div>
+        <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(result.coverage.commonValidCellCount)}</dd></div>
       </dl>
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">임계값 {formatNumber(metrics.thresholdM, "m")}: 높이 차이 기준으로 제외되는 셀이 없습니다. 공통 유효 영역은 두 관측에서 유효한 셀로 별도 제한됩니다.</p>
       <ResultIdentity result={result} />
@@ -268,7 +269,7 @@ function evidenceLines(item: AnalysisEvidenceItem): string[] {
         `선택: ${item.selector.workOrderId} · ${item.selector.submissionRef} · revision ${item.selector.revision}`,
         `CRS: ${item.observedCrsIdentifier} · ${item.observedCrsDigest}`,
         `높이 기준: ${item.verticalReferenceBasis} · ${item.verticalReferenceIdentifier} · ${item.verticalUnit}`,
-        `DSM: ${item.observedSha256} · ${item.observedSizeBytes.toLocaleString("ko-KR")} bytes`,
+        `DSM: ${item.observedSha256} · ${formatBytesKo(item.observedSizeBytes)}`,
         `검사 보고서: ${item.inspectionReportDigest} · ${item.inspectionReportRecordId}`,
         `입력 digest: ${item.inputDigest}`,
       ];

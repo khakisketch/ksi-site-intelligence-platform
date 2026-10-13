@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { formatNumberKo } from "@/lib/number-format";
 import type {
   ExternalReobservationProposalView,
   ExternalRelativeVolumeReportView,
@@ -109,7 +110,7 @@ function statusLabel(status: unknown): string {
 }
 
 function formatNumber(value: number, maximumFractionDigits = 2): string {
-  return value.toLocaleString("ko-KR", { maximumFractionDigits });
+  return formatNumberKo(value, maximumFractionDigits);
 }
 
 function formatSignedNumber(value: number, maximumFractionDigits = 2): string {

@@ -14,6 +14,7 @@ import {
 } from "@/app/field/ExternalResultWorkflowPanel";
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import {
@@ -42,7 +43,7 @@ function utcSeconds(): string { return new Date().toISOString().replace(/\.\d{3}
 function attemptId(): string { return `console-${crypto.randomUUID()}`; }
 function formatFileSize(size: number): string {
   if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
-  return `${(size / (1024 * 1024)).toLocaleString("ko-KR", { maximumFractionDigits: 1 })} MB`;
+  return `${formatNumberKo(size / (1024 * 1024), 1)} MB`;
 }
 function abortError(): DOMException { return new DOMException("Operation was aborted", "AbortError"); }
 function isAbortError(error: unknown): boolean { return error instanceof DOMException && error.name === "AbortError"; }
@@ -521,11 +522,11 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         />
         {dsm && headers.dsm && <ExternalHeaderRecognition slot="dsm" state={headers.dsm} crs={declaredCrs.dsm} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, dsm: value }))} />}
         {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새 선언으로 전환</button>}
-        {hashing && <p role="status" className="text-ink-2">파일 확인 중: {hashProgress?.toLocaleString() ?? 0} bytes</p>}
+        {hashing && <p role="status" className="text-ink-2">파일 확인 중: {formatBytesKo(hashProgress ?? 0)}</p>}
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : "정사영상을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ""}</p>
         <button className="btn w-fit" disabled={!canSubmit} onClick={() => void submit()}>{busy ? "산출물 등록 중" : "산출물 등록하기"}</button>
-        {uploadProgress && <p role="status" className="text-ink-2">{uploadProgress.artifactId === "ortho" ? "정사영상" : "DSM"} {uploadProgress.phase === "uploaded" ? "파일 전송 완료" : "파일 전송 중"}: {uploadProgress.transferredBytes.toLocaleString()} / {uploadProgress.totalBytes.toLocaleString()} bytes{uploadProgress.phase === "uploading" && " · 전송 시간이나 비율은 추정하지 않습니다."}</p>}
+        {uploadProgress && <p role="status" className="text-ink-2">{uploadProgress.artifactId === "ortho" ? "정사영상" : "DSM"} {uploadProgress.phase === "uploaded" ? "파일 전송 완료" : "파일 전송 중"}: {formatBytesKo(uploadProgress.transferredBytes)} / {formatBytesKo(uploadProgress.totalBytes)} {uploadProgress.phase === "uploading" && " · 전송 시간이나 비율은 추정하지 않습니다."}</p>}
         {busy && <button className="btn w-fit" onClick={cancelSubmission}>등록 중단</button>}
         {message && <p role="status" className="text-ink-2">{message}</p>}
       </div>

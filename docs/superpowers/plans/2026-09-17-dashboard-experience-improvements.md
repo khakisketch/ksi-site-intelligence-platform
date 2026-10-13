@@ -330,6 +330,16 @@ copy beyond the work-order mobile case.
 - [ ] B1 [F09] date/count SSOT — owner: — (deferred: 15 files use raw
   `toLocaleDate/String` outside `lib/datetime.ts`; needs a per-file audit, not
   a mechanical sweep — see note below)
+  2026-10-13 implemented locally (선구현): number formatting consolidated into `lib/number-format.ts`
+  (`formatNumberKo` moved from `phase34-labels` + `formatSignificantKo`/`formatCountKo`/`formatBytesKo`);
+  `phase34-labels` re-exports `formatNumberKo` so existing importers stay. Fifteen raw `toLocaleString`
+  sites (header recognition, reconstruction upload/hash text, analysis panel, spatial assets, geotiff
+  overlay, workflow report metrics) now use the SSOT, and the spatial-assets observation time renders
+  through `formatKoreanDateTime`. Grep-audit: `toLocaleString|toLocaleDateString|toLocaleTimeString`
+  outside the two SSOT modules = **0**; the audit variants `2026.8.25.`/`2026.8.25.09:40` are absent at
+  current HEAD (`page.tsx` already formats via the SSOT); the remaining manual date construction is the
+  `datetime-local` input value (widget format, not display). Dev gates: vitest 798 (+6
+  `test/number-format.test.ts`), tsc/eslint 0. Independent review pending (batch).
 - [x] B2 [F05] event evidence hierarchy — owner: Claude — row now leads with a
   human evidence kind (사진/동영상/파일 증거) + status badge + time; artifact
   id and raw MIME moved to a muted subline; `test/event-evidence-panel-hierarchy.test.tsx`.

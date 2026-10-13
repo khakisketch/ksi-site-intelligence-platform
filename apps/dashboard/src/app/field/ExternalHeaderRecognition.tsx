@@ -1,6 +1,7 @@
 "use client";
 
 import { slotMismatch, type ArtifactSlot, type GeoTiffRecognition } from "@/lib/geo/geotiff-header";
+import { formatCountKo, formatSignificantKo } from "@/lib/number-format";
 
 export type HeaderRecognitionState =
   | { status: "recognized"; value: GeoTiffRecognition }
@@ -9,7 +10,7 @@ export type HeaderRecognitionState =
 const SLOT_LABEL: Record<ArtifactSlot, string> = { ortho: "정사영상", dsm: "DSM" };
 
 function formatPixelSize([x, y]: [number, number]): string {
-  const digits = (value: number) => value.toLocaleString("ko-KR", { maximumSignificantDigits: 4 });
+  const digits = (value: number) => formatSignificantKo(value, 4);
   return x === y ? digits(x) : `${digits(x)} × ${digits(y)}`;
 }
 
@@ -49,7 +50,7 @@ export function ExternalHeaderRecognition({ slot, state, crs, onCrsChange, crsLo
         {value.declaredCrs === null && <p className="text-ink-2">헤더에 EPSG 좌표계가 없습니다. 알고 있는 경우에만 입력하세요.</p>}
       </>}
     <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-ink-2">
-      <dt>크기</dt><dd>{value.width.toLocaleString("ko-KR")} × {value.height.toLocaleString("ko-KR")} 픽셀</dd>
+      <dt>크기</dt><dd>{formatCountKo(value.width)} × {formatCountKo(value.height)} 픽셀</dd>
       {value.pixelSize && <><dt>픽셀 크기</dt><dd>{formatPixelSize(value.pixelSize)} (좌표계 단위, 참고)</dd></>}
       {value.producer && <><dt>생산 소프트웨어</dt><dd>{value.producer.name}{value.producer.version ? ` ${value.producer.version}` : ""} (비어 있는 소프트웨어 칸에만 채움)</dd></>}
       {value.headerDateTime && <><dt>헤더 날짜</dt><dd>{value.headerDateTime} (참고: 소프트웨어에 따라 촬영 시각 또는 파일 생성 시각)</dd></>}
