@@ -2779,3 +2779,52 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `/tmp/opencode/ksi-f04-review-20261013/{copy_stack.py,refresh_snapshot.py,refresh_authority.py,
   drive_measurement.py}`(워크스트림 지속 시 scripts/ 승격 검토).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
+
+### F-03 체인 재생성 — Console 검토 지속성 로컬 폐쇄 — 2026-10-13 (synthetic, 복사 스택)
+
+- 목표: 전 항목의 검토 지속성 게이트(정책/컨텍스트/검사점 evidence 창 만료)를 체인 **전체 재생성**으로
+  폐쇄했다. 복사 스택(9051/8051/3251)만 사용 — Stage-1(9041/8041/3241)·원 F-03 자재 무접촉.
+- 재생성 순서(합성): 정책 authority record R'(현재 창) → 정책 v11(`external-geotiff-v1@11`,
+  `authorityRecordDigest=R'`) → evidence 컨텍스트 ×2(`policyDigest=v11`) → 카탈로그 권위(현재 창) →
+  스냅샷 seq 25(ADMIT_POLICY)+부팅 → 검사 레인 ×2 **MEASURED**(정책 v11, report `66ef0aae…`/`cb9305bb…`)
+  → 체크포인트 레인 ×2 **VALIDATED**(evidence record `c976a7d6…`/`22f6bbf6…`) → 매핑 재승인
+  (`9619bbcde3499cca…`, executionPolicyRef=카탈로그 C‴) → pair decision **ELIGIBLE** → 상대물량 요청
+  `external-relative-volume-69b1a106…` → 측정 레인(RELATIVE_VOLUME) **COMPLETED** → report
+  `external-relative-volume-report-ae2d5e64…`(`sha256:da0337c2…`, net 0.0 m³, common-valid 4/4=100%,
+  uncertainty ±0 m³) → **Console 검토 쓰기 201**(review `err-v1-0894a51a…`, digest `sha256:9015c31c…`,
+  reviewedAt 2026-10-13T04:37:20Z, authority actors `f03-admin`).
+  지속성: 새로고침 후 유지 → **Core 재기동 후에도 유지**(동일 13:37 기록, 관측 페이지 병기).
+- 재생성에서 확정된 게이트·조치(전부 합성 복사 자료 범위):
+  ① reload 중 새 컨텍스트는 *다음* reload에 발행된다(부팅과 달리 historical 폴백이 직전 게재 세대만
+  조회) — bump reload(seq 27)로 발행했다.
+  ② 체크포인트 레인 UDS 픽스처는 1회용 — 2건 연속 실행 시 2번째가 TRANSIENT로 REJECTED(불변 기록) →
+  order-13은 새 컨텍스트 r2 재발행 후 VALIDATED(정직한 재시도 경로).
+  ③ F-03 `gen_f03_provider.py`의 카탈로그 실행 envelope(`digest("f03-synthetic-resource-envelope")`)가
+  검증 정책 envelope(`c5dca416…`)와 달라 `_policy_matches`(정책↔실행 envelope 동일 요구)가 영구
+  불가였다 → 복사 카탈로그를 검증 envelope로 정합화.
+  ④ 같은 생성기의 `algorithmBuildDigest=digest("volume-algorithm")`는 PREPARE_V2가 요구하는 측정
+  manifest body digest와 불일치 — `_manifest_for_resource_envelope(c5dca416…)`=`1d061713…`로 정합화.
+  카탈로그 바인딩은 Core 부팅 시점이라 라운드마다 재기동+매핑 재승인이 필요했고, 동시 active 매핑
+  모호성은 서명 `REVOKE_MAPPING`으로 해소했다(F-03 선례).
+  ⑤ **인증 allowlist 공백(신규 발견)**: Console(OIDC 매핑 신원) 검토 플로우가 volume 단건 요청 GET
+  403·review POST 403으로 막혀 있었다. Human 승인(2026-10-13) 후
+  `_OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST`에 4개 route 추가(relative/single 단건 GET, relative/single
+  report reviews POST) — 핸들러의 WorkOrder grant·review source authority 검사는 그대로다(allowlisted
+  `/shares`와 동일 자세). `test_oidc_route_scope.py`의 "detail stay closed" 계약을 "도달하되 핸들러가
+  404/409로 fail-closed"로 갱신.
+  ⑥ 작업지시 12/13의 `workAreaIds=["wa-…-0001"]`와 분석 구역 `wa-…-0002` 불일치로 scoped 신원은
+  보고서/관측 페이지가 404 — **복사 스택 한정**으로 Console 계정을 v2 registry null scope(비스코프)로
+  조정해 검증했다. 실자료에서는 작업지시 구역과 분석 구역 일치가 자재 정합성 요건이다.
+- 제품 변경(커밋 b4a3905·6c3cc3b, main): `services/core/src/ksi_core/identity/auth.py`(+4 route),
+  `tests/contract/test_oidc_route_scope.py`·`test_oidc_external_detail_scope.py`·
+  `test_oidc_external_history_scope.py`(구 403 경계 → 도달+핸들러 404/409 계약). 관련 OIDC/volume 계약
+  file set 재실행 green; 전체 contract 스위트 최종 **5470 passed·25 skipped·0 failed**(2026-10-13,
+  선행 기준선과 동일 수 — 첫 실행에서 남은 구 경계 1건을 6c3cc3b로 정렬).
+- 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
+  review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
+  `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
+  (`regen_chain_phase1.py, regen_context_r2.py, bump_and_reload.py, fix_catalog_and_mapping.py,
+  fix_catalog_round2.py, regen_mapping.py, revoke_stale_mapping2.py, drive_inspection_lane2.py,
+  drive_checkpoint_lane2.py, drive_measurement.py`).
+- 경계: synthetic 전용. 이 폐쇄는 합성 복사 스택의 Console 검토 지속성이며 parser sandbox 정량 E2E,
+  실자료 A–E, 검증 호스트, 고객/EXT-VAL 수용을 닫지 않는다. F-04 2-cycle 리허설(실자료)은 별도 OPEN.
