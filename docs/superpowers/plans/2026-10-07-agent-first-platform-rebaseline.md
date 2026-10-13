@@ -2857,6 +2857,23 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `--adaptations`로 확장 — 승인된 커밋의 blob과 일치할 때만 두 finding을 수용, 이후 무단 수정은 다시
   실패. 계약 테스트 3건 추가(수용/위조·미기록 인덱스/부재·malformed). DOCUMENT_STATUS·
   REPOSITORY_STRUCTURE의 "blob-identical" 문구도 lineage로 정합화.
+- parser-sandbox 검증 호스트 — **로컬 QEMU VM 구성·프로브 READY**(2026-10-13): 신선한 noble VM에서도
+  raw `unshare -Ur` 실패가 재현됐다 — Ubuntu 24.04 기본 `kernel.apparmor_restrict_unprivileged_userns=1`
+  이 unconfined userns을 막지만 **bwrap에는 자체 AppArmor 프로파일로 userns을 허용**한다(표준 프로파일
+  `abi 4.0`+`userns,` 로드 후 uid-map·net-ns 모두 PASS 확인; cloud 이미지는 프로파일이 없어 실패).
+  프로브를 이 실제 요건에 맞게 수정(`unshare -Ur`=informational, bwrap checks가 READY 결정; 계약
+  테스트 7건)하고, qemu+AAVMF UEFI+cloud-init VM 레시피를
+  `docs/ops/PARSER_SANDBOX_HOST_REQUIREMENTS.md`에 기록했다. VM 격리 관측: unprivileged bwrap →
+  uid 1000·`FS_HOME_HIDDEN`·`FS_WRITE_DENIED`·`NET_BLOCKED`; hardened 패턴(sudo bwrap+setpriv) →
+  uid/gid 10001·`CapBnd 0`·`NoNewPrivs 1`. 증거
+  `/tmp/opencode/ksi-f04-review-20261013/evidence/vm-sandbox-capability-20261013.txt`(+serial.log).
+  남은 것: 이 호스트에서 실제 parser launch(inspector/rootless-docker stack) → `VALIDATED` 이후 체인.
+- push·CI·AMD64 실측(2026-10-13): ⑤ origin(khakisketch)으로 **main push 완료**(203커밋,
+  `9edc4a1..5c7a875`). ④ CI는 **실행 불가** — GitHub Actions `enabled:false` + 계정 결제 실패로 과거
+  main push 런들도 전부 동일 실패("recent account payments have failed"). AMD64: binfmt/qemu-user
+  등록 + `ksi-utest-amd64` 실행(`uname -m` → `x86_64`) 확인; inspector 이미지의 **amd64 에뮬레이션
+  빌드는 snapshot.debian.org OpenPGP 서명 실패로 중단**(외부 스냅샷 문제, arm64 레이어는 캐시로 생존).
+  amd64 실빌드는 실 amd64 호스트 또는 고정 스냅샷 필요 시 OPEN 유지.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
