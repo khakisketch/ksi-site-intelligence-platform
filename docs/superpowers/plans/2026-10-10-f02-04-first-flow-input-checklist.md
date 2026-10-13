@@ -72,8 +72,8 @@
   필요로 OPEN. 런북:
   [UI 검증 스택 런북](../ops/UI_VERIFICATION_STACK_RUNBOOK.md). main 병합 완료(a18e2af, fast-forward·push
   없음). 완료: 2-cycle 시퀀스 스크립트(af91151, 실검증)·디자인 후속 3건(배지 정렬·분석 503 활성화
-  안내·새로고침 유지, vitest 784). 남음: 검토 지속성(복사 스택·스냅샷/카탈로그/매핑 재서명까지 진행, evidence
-  context 만료가 확정 게이트 — F-03 자재 재생성 필요), parser 호스트 acceptance, A–E/고객 수용.
+  안내·새로고침 유지, vitest 784). 남음: 검토 지속성(복사 스택·스냅샷/카탈로그/매핑 재서명 진행; policy 본문↔레코드
+  다이제스트 결합으로 **F-03 자재 체인 전체 재생성**이 필요함을 확정 — 창 연장만으로는 불가), parser 호스트 acceptance, A–E/고객 수용.
 
 ## 4. 순서
 

@@ -2769,7 +2769,13 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `BLOCKED` — 매핑 승인이 **evidence context 만료**로 거부됨(`admit_mapping` →
   `_current_participants` None) ③ 따라서 실행 재활성화·새 요청·보고서 생성 불가. 생산 워커는 별도로
   HTTPS origin + UDS identity를 요구한다. → 남은 요건: F-03 세대 합성 evidence/policy/context 자재를
-  현재 창으로 재생성(gen_f03_* 생성기) 후 매핑→실행→스냅샷 체인 재실행. 자산:
+  현재 창으로 재생성(gen_f03_* 생성기) 후 매핑→실행→스냅샷 체인 재실행.
+  ④ 정책/컨텍스트 창 연장 시도가 더 깊은 결합을 확정했다: 정책 **본문**이 자신의 authority record
+  다이제스트를 담고 있어(`authorityRecordDigest`) 레코드 창을 새로 서명하면 본문 다이제스트가 바뀌고,
+  이는 컨텍스트 `policyDigest` → **evidence record `policyDigest`** → 매핑까지 연쇄한다. 즉 창 연장만
+  으로는 불가하고 F-03 자재 체인(정책 본문→레코드→컨텍스트→검사점 evidence→매핑)을 **처음부터 재생성**
+  해야 한다(라이브 레인 재실행 포함). 복사 스택은 원래 F-03 기준선으로 복원했다(Stage-1 파일 재복사,
+  seq 24·receipts 24 일치, 기동 확인). 자산:
   `/tmp/opencode/ksi-f04-review-20261013/{copy_stack.py,refresh_snapshot.py,refresh_authority.py,
   drive_measurement.py}`(워크스트림 지속 시 scripts/ 승격 검토).
 - 경계: synthetic 전용; parser sandbox 정량 E2E·실자료 A–E·고객 수용은 계속 OPEN.
