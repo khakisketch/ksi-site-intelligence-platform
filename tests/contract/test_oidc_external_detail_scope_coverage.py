@@ -1,6 +1,7 @@
 """C2 final-review proof of inline/count parity and valid-reference route closure."""
 
 from types import SimpleNamespace
+from typing import Any
 
 from test_external_result_review_proposals import _NOW, _principal
 from test_oidc_external_detail_scope import _client
@@ -8,7 +9,7 @@ from test_oidc_external_history_scope import history  # noqa: F401 -- shared pyt
 
 
 def test_visible_inline_counts_match_and_direct_valid_workflow_refs_remain_closed(
-    history,  # noqa: F811 -- imported pytest fixture
+    history: tuple[Any, ...],  # noqa: F811 -- imported pytest fixture
 ) -> None:
     graph, _, report, area = history
     actor = _principal()
@@ -16,9 +17,14 @@ def test_visible_inline_counts_match_and_direct_valid_workflow_refs_remain_close
         organization_id="org-a", report_ref=report.report_id, principal=actor, evaluated_at=_NOW
     )
     proposal = graph.service.create(
-        organization_id="org-a", report_ref=report.report_id, target_work_area_ids=(area,),
-        reason="Verified follow-up", idempotency_key="detail-counts",
-        principal=actor, actor=actor.principal_id, now=_NOW,
+        organization_id="org-a",
+        report_ref=report.report_id,
+        target_work_area_ids=(area,),
+        reason="Verified follow-up",
+        idempotency_key="detail-counts",
+        principal=actor,
+        actor=actor.principal_id,
+        now=_NOW,
     )
     client, headers = _client(SimpleNamespace(graph=graph, single=None), area)
     with client:

@@ -114,8 +114,9 @@ def test_ai_identity_requires_explicit_scope() -> None:
         ("allowed_work_area_ids", frozenset({"other\x00area"})),
     ]:
         principal = mcp_client()
+        changes: dict[str, Any] = {field: value}
         with pytest.raises(AuthRegistryError):
-            registry(replace(principal, **{field: value}))
+            registry(replace(principal, **changes))
 
 
 @pytest.mark.parametrize("field,value", [("role", Role.ADMIN), ("device_id", "device")])

@@ -1,5 +1,6 @@
 """Customer history scope regressions on real durable report/work-order graphs."""
 
+from collections.abc import Iterator
 from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
@@ -31,14 +32,20 @@ from test_oidc_external_evidence_scope import _AUDIENCE, _ISSUER, _jwk, _token
 
 def _principal(area: str, *, sites: frozenset[str] = frozenset({"site-a"})) -> Principal:
     return Principal(
-        principal_id="customer-a", organization_id="org-a",
-        kind=PrincipalKind.OPERATOR, role=Role.FIELD_OPERATOR, device_id=None,
-        allowed_site_ids=sites, allowed_work_area_ids=frozenset({area}),
+        principal_id="customer-a",
+        organization_id="org-a",
+        kind=PrincipalKind.OPERATOR,
+        role=Role.FIELD_OPERATOR,
+        device_id=None,
+        allowed_site_ids=sites,
+        allowed_work_area_ids=frozenset({area}),
     )
 
 
 @pytest.fixture
-def history(tmp_path: Path, request):
+def history(
+    tmp_path: Path, request: pytest.FixtureRequest
+) -> Iterator[tuple[Any, ExternalResultReadProjector, Any, str]]:
     source = seed_original(tmp_path)
     graph = build_graph(tmp_path, source)
     area = source.authority.zone_snapshot.work_area_id
@@ -47,8 +54,13 @@ def history(tmp_path: Path, request):
     if hasattr(request, "param"):
         owner, assigned = request.param
         extra = graph.service.work_areas.register(
-            "site-a", name="Unassigned zone", polygon=POLYGON, crs="EPSG:5186",
-            supersedes=None, actor="operator-a", now=_NOW,
+            "site-a",
+            name="Unassigned zone",
+            polygon=POLYGON,
+            crs="EPSG:5186",
+            supersedes=None,
+            actor="operator-a",
+            now=_NOW,
         ).work_area
         assert extra is not None
         source_areas[owner] = [
@@ -56,57 +68,79 @@ def history(tmp_path: Path, request):
         ]
         if owner == "current":
             current_id = graph.service.work_orders.create_work_order(
-                organization_id="org-a", site_id="site-a", name="Current scoped source",
-                work_area_ids=source_areas["current"], schedule_id=None,
-                actor="operator-a", now=_NOW,
+                organization_id="org-a",
+                site_id="site-a",
+                name="Current scoped source",
+                work_area_ids=source_areas["current"],
+                schedule_id=None,
+                actor="operator-a",
+                now=_NOW,
             ).work_order_id
     baseline = graph.service.work_orders.create_work_order(
-        organization_id="org-a", site_id="site-a", name="Baseline",
-        work_area_ids=source_areas["baseline"], schedule_id=None, actor="operator-a", now=_NOW,
+        organization_id="org-a",
+        site_id="site-a",
+        name="Baseline",
+        work_area_ids=source_areas["baseline"],
+        schedule_id=None,
+        actor="operator-a",
+        now=_NOW,
     )
     graph.close()
     source = _sealed_source(
         source_work_order_id=current_id,
-        baseline_work_order_id=baseline.work_order_id, work_area_id=area, polygon=POLYGON,
+        baseline_work_order_id=baseline.work_order_id,
+        work_area_id=area,
+        polygon=POLYGON,
     )
     graph = build_graph(tmp_path, source)
     report = record_measurement(graph)
-    projector = ExternalResultReadProjector(volumes=graph.volumes, workflow=graph.service,
-                                            clock=lambda: _NOW)
+    projector = ExternalResultReadProjector(
+        volumes=graph.volumes, workflow=graph.service, clock=lambda: _NOW
+    )
     try:
         yield graph, projector, report, area
     finally:
         graph.close()
 
 
-def test_scoped_history_returns_exact_bound_report(history) -> None:
+def test_scoped_history_returns_exact_bound_report(history: tuple[Any, ...]) -> None:
     _, projector, report, area = history
-    page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                      principal=_principal(area))
+    page = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=20, principal=_principal(area)
+    )
     assert [row.report_ref for row in page.items] == [report.report_id]
     assert page.items[0].result.metrics.net_m3 == 4
 
 
 @pytest.mark.parametrize("sites", [frozenset(), frozenset({"site-b"})])
-def test_ungranted_site_is_not_found(history, sites) -> None:
+def test_ungranted_site_is_not_found(history: tuple[Any, ...], sites: Any) -> None:
     _, projector, _, area = history
     with pytest.raises(LookupError):
-        projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                    principal=_principal(area, sites=sites))
+        projector.history_for_site(
+            "site-a",
+            organization_id="org-a",
+            after=None,
+            limit=20,
+            principal=_principal(area, sites=sites),
+        )
 
 
-def test_hidden_report_is_not_an_unavailable_placeholder_or_cursor(history) -> None:
+def test_hidden_report_is_not_an_unavailable_placeholder_or_cursor(
+    history: tuple[Any, ...],
+) -> None:
     _, projector, report, _ = history
     principal = _principal("ungranted-area")
-    page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=1,
-                                      principal=principal)
+    page = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=1, principal=principal
+    )
     assert page.items == [] and page.next_cursor is None
     with pytest.raises(LookupError):
-        projector.history_for_site("site-a", organization_id="org-a", after=report.report_id,
-                                    limit=1, principal=principal)
+        projector.history_for_site(
+            "site-a", organization_id="org-a", after=report.report_id, limit=1, principal=principal
+        )
 
 
-def test_missing_baseline_binding_hides_report(history, tmp_path: Path) -> None:
+def test_missing_baseline_binding_hides_report(history: tuple[Any, ...], tmp_path: Path) -> None:
     graph, _, _, area = history
     # A distinct real graph with the legacy fixture's nonexistent baseline, not a mocked resolver.
     root = tmp_path / "missing-baseline"
@@ -115,23 +149,30 @@ def test_missing_baseline_binding_hides_report(history, tmp_path: Path) -> None:
     other = build_graph(root, source)
     try:
         record_measurement(other)
-        projector = ExternalResultReadProjector(volumes=other.volumes, workflow=other.service,
-                                                clock=lambda: _NOW)
-        page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                          principal=_principal(area))
+        projector = ExternalResultReadProjector(
+            volumes=other.volumes, workflow=other.service, clock=lambda: _NOW
+        )
+        page = projector.history_for_site(
+            "site-a", organization_id="org-a", after=None, limit=20, principal=_principal(area)
+        )
         assert page.items == []
     finally:
         other.close()
 
 
-def test_organization_argument_cannot_override_principal(history) -> None:
+def test_organization_argument_cannot_override_principal(history: tuple[Any, ...]) -> None:
     _, projector, _, area = history
     with pytest.raises(LookupError):
-        projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                    principal=replace(_principal(area), organization_id="org-b"))
+        projector.history_for_site(
+            "site-a",
+            organization_id="org-a",
+            after=None,
+            limit=20,
+            principal=replace(_principal(area), organization_id="org-b"),
+        )
 
 
-def test_unrestricted_existing_history_is_unchanged(history) -> None:
+def test_unrestricted_existing_history_is_unchanged(history: tuple[Any, ...]) -> None:
     _, projector, report, _ = history
     page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20)
     assert [row.report_ref for row in page.items] == [report.report_id]
@@ -140,23 +181,31 @@ def test_unrestricted_existing_history_is_unchanged(history) -> None:
 def test_scoped_history_proposals_cannot_target_another_zone(history: Any) -> None:
     graph, projector, report, area = history
     extra = graph.service.work_areas.register(
-        "site-a", name="Other zone", polygon=POLYGON, crs="EPSG:5186",
-        supersedes=None, actor="operator-a", now=_NOW,
+        "site-a",
+        name="Other zone",
+        polygon=POLYGON,
+        crs="EPSG:5186",
+        supersedes=None,
+        actor="operator-a",
+        now=_NOW,
     ).work_area
     assert extra is not None
     app = FastAPI()
     mount_auth(app, AuthRegistry([_token_record()]))
-    app.include_router(build_external_result_workflow_router(
-        graph.volumes, graph.service, clock=lambda: _NOW
-    ))
-    app.include_router(build_external_reobservation_proposal_router(
-        graph.service, clock=lambda: _NOW
-    ))
+    app.include_router(
+        build_external_result_workflow_router(graph.volumes, graph.service, clock=lambda: _NOW)
+    )
+    app.include_router(
+        build_external_reobservation_proposal_router(graph.service, clock=lambda: _NOW)
+    )
     headers = {"Authorization": f"Bearer {_TOKEN}"}
     with TestClient(app) as client:
-        assert client.post(
-            f"/v1/external-relative-volume-reports/{report.report_id}/reviews", headers=headers
-        ).status_code == 201
+        assert (
+            client.post(
+                f"/v1/external-relative-volume-reports/{report.report_id}/reviews", headers=headers
+            ).status_code
+            == 201
+        )
         response = client.post(
             "/v1/external-reobservation-proposals",
             headers={**headers, "Idempotency-Key": "hidden-proposal"},
@@ -171,8 +220,9 @@ def test_scoped_history_proposals_cannot_target_another_zone(history: Any) -> No
         )
         assert visible.status_code == 201, visible.text
     full = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20)
-    scoped = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                        principal=_principal(area))
+    scoped = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=20, principal=_principal(area)
+    )
     assert full.items[0].result.proposal_count == 1
     assert scoped.items[0].result.proposal_count == 1
     assert scoped.items[0].result.approved_proposal_count == 0
@@ -182,20 +232,23 @@ def test_scoped_history_proposals_cannot_target_another_zone(history: Any) -> No
 def test_archived_zone_keeps_granted_history_readable(history: Any) -> None:
     graph, projector, report, area = history
     graph.service.work_areas.archive(area, site_id="site-a", actor="operator-a", now=_NOW)
-    page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=20,
-                                      principal=_principal(area))
+    page = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=20, principal=_principal(area)
+    )
     assert [row.report_ref for row in page.items] == [report.report_id]
 
 
 @pytest.fixture
-def customer_http(history):
+def customer_http(
+    history: tuple[Any, ...],
+) -> Iterator[tuple[Any, dict[str, dict[str, str]], Any]]:
     graph, _, report, area = history
     key = generate_private_key(public_exponent=65537, key_size=2048)
     app = FastAPI()
     mount_auth(app, AuthRegistry([]))
-    app.include_router(build_external_result_workflow_router(
-        graph.volumes, graph.service, clock=lambda: _NOW
-    ))
+    app.include_router(
+        build_external_result_workflow_router(graph.volumes, graph.service, clock=lambda: _NOW)
+    )
     rows = []
     for subject, org, sites, areas, status in (
         ("granted", "org-a", ["site-a"], [area], "ACTIVE"),
@@ -205,11 +258,18 @@ def customer_http(history):
         ("foreign", "org-b", ["site-a"], [area], "ACTIVE"),
         ("revoked", "org-a", ["site-a"], [area], "REVOKED"),
     ):
-        rows.append({
-            "issuer": _ISSUER, "subject": subject, "principalId": subject,
-            "organizationId": org, "role": "FIELD_OPERATOR", "status": status,
-            "allowedSiteIds": sites, "allowedWorkAreaIds": areas,
-        })
+        rows.append(
+            {
+                "issuer": _ISSUER,
+                "subject": subject,
+                "principalId": subject,
+                "organizationId": org,
+                "role": "FIELD_OPERATOR",
+                "status": status,
+                "allowedSiteIds": sites,
+                "allowedWorkAreaIds": areas,
+            }
+        )
     app.state.human_auth_mode = HumanAuthMode.OIDC
     app.state.oidc_verifier = OidcJwtVerifier(
         OidcVerifierConfig(issuer=_ISSUER, audience=_AUDIENCE, jwks_url=f"{_ISSUER}/jwks.json"),
@@ -218,14 +278,17 @@ def customer_http(history):
             {"version": "oidc-subject-registry.v1", "subjects": rows}, expected_issuer=_ISSUER
         ),
     )
-    headers = {subject: {"Authorization": f"Bearer {_token(key, subject)}"} for subject in (
-        "granted", "no-areas", "no-sites", "other-area", "foreign", "revoked"
-    )}
+    headers = {
+        subject: {"Authorization": f"Bearer {_token(key, subject)}"}
+        for subject in ("granted", "no-areas", "no-sites", "other-area", "foreign", "revoked")
+    }
     with TestClient(app) as client:
         yield client, headers, report
 
 
-def test_signed_customer_reads_history_with_original_metrics(customer_http) -> None:
+def test_signed_customer_reads_history_with_original_metrics(
+    customer_http: tuple[Any, ...],
+) -> None:
     client, headers, report = customer_http
     response = client.get("/v1/sites/site-a/external-volume-reports", headers=headers["granted"])
     assert response.status_code == 200, response.text
@@ -238,7 +301,9 @@ def test_signed_customer_reads_history_with_original_metrics(customer_http) -> N
 
 
 @pytest.mark.parametrize("subject", ["no-areas", "other-area"])
-def test_signed_customer_cannot_enumerate_hidden_rows_or_cursors(customer_http, subject) -> None:
+def test_signed_customer_cannot_enumerate_hidden_rows_or_cursors(
+    customer_http: tuple[Any, ...], subject: Any
+) -> None:
     client, headers, report = customer_http
     path = "/v1/sites/site-a/external-volume-reports"
     response = client.get(path, headers=headers[subject])
@@ -250,35 +315,47 @@ def test_signed_customer_cannot_enumerate_hidden_rows_or_cursors(customer_http, 
     assert hidden.json() == missing.json()
 
 
-@pytest.mark.parametrize("subject,site", [
-    ("no-sites", "site-a"), ("foreign", "site-a"), ("granted", "site-other"),
-])
-def test_signed_site_scope_denial_is_same_not_found(customer_http, subject, site) -> None:
+@pytest.mark.parametrize(
+    "subject,site",
+    [
+        ("no-sites", "site-a"),
+        ("foreign", "site-a"),
+        ("granted", "site-other"),
+    ],
+)
+def test_signed_site_scope_denial_is_same_not_found(
+    customer_http: tuple[Any, ...], subject: Any, site: Any
+) -> None:
     client, headers, _ = customer_http
     response = client.get(f"/v1/sites/{site}/external-volume-reports", headers=headers[subject])
     assert response.status_code == 404, response.text
     assert response.json() == {"detail": "EXTERNAL_VOLUME_REPORT_NOT_FOUND"}
 
 
-def test_revoked_or_missing_auth_never_reads_history(customer_http) -> None:
+def test_revoked_or_missing_auth_never_reads_history(customer_http: tuple[Any, ...]) -> None:
     client, headers, _ = customer_http
     path = "/v1/sites/site-a/external-volume-reports"
     assert client.get(path).status_code == 401
     assert client.get(path, headers=headers["revoked"]).status_code == 401
 
 
-@pytest.mark.parametrize("path", [
-    # 2026-10-12: /v1/external-decisions/pending moved into the reviewed matrix
-    # (grant-filtered read — see test_oidc_route_scope.py); the remaining
-    # adjacent unaudited read stays closed.
-    "/v1/sites/site-a/external-relative-volume-reports",
-])
-def test_adjacent_unaudited_reads_stay_closed(customer_http, path) -> None:
+@pytest.mark.parametrize(
+    "path",
+    [
+        # 2026-10-12: /v1/external-decisions/pending moved into the reviewed matrix
+        # (grant-filtered read — see test_oidc_route_scope.py); the remaining
+        # adjacent unaudited read stays closed.
+        "/v1/sites/site-a/external-relative-volume-reports",
+    ],
+)
+def test_adjacent_unaudited_reads_stay_closed(customer_http: tuple[Any, ...], path: str) -> None:
     client, headers, _ = customer_http
     assert client.get(path, headers=headers["granted"]).status_code == 403
 
 
-def test_audited_v1_detail_opens_without_mutation_permission(customer_http) -> None:
+def test_audited_v1_detail_opens_without_mutation_permission(
+    customer_http: tuple[Any, ...],
+) -> None:
     client, headers, report = customer_http
     path = f"/v1/external-relative-volume-reports/{report.report_id}"
     assert client.get(path, headers=headers["granted"]).status_code == 200
@@ -290,7 +367,9 @@ def test_audited_v1_detail_opens_without_mutation_permission(customer_http) -> N
 
 
 @pytest.fixture
-def mixed_history(history, tmp_path: Path):
+def mixed_history(
+    history: tuple[Any, ...], tmp_path: Path
+) -> Iterator[tuple[Any, Any, Any, Any, str]]:
     graph, _, first, area = history
     port = _AuthorityPort(
         _single_authority(graph, captured_to=_NOW + timedelta(hours=4)),
@@ -306,31 +385,37 @@ def mixed_history(history, tmp_path: Path):
         single._journal.close()  # noqa: SLF001 -- test owns this real journal
 
 
-def test_mixed_family_scoped_pagination_preserves_exact_order(mixed_history) -> None:
+def test_mixed_family_scoped_pagination_preserves_exact_order(
+    mixed_history: tuple[Any, ...],
+) -> None:
     harness, first, single, latest, area = mixed_history
     projector = harness.projector()
     principal = _principal(area)
-    page = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=1,
-                                      principal=principal)
+    page = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=1, principal=principal
+    )
     assert [row.report_ref for row in page.items] == [latest.report_id]
     assert page.next_cursor == latest.report_id
-    page2 = projector.history_for_site("site-a", organization_id="org-a", after=page.next_cursor,
-                                       limit=1, principal=principal)
+    page2 = projector.history_for_site(
+        "site-a", organization_id="org-a", after=page.next_cursor, limit=1, principal=principal
+    )
     assert [row.report_ref for row in page2.items] == [single.report_id]
     assert page2.items[0].result.kind == "EXTERNAL_SINGLE_VOLUME"
     assert page2.items[0].result.baseline_work_order_id is None
     assert page2.next_cursor == single.report_id
-    last = projector.history_for_site("site-a", organization_id="org-a", after=page2.next_cursor,
-                                      limit=1, principal=principal)
+    last = projector.history_for_site(
+        "site-a", organization_id="org-a", after=page2.next_cursor, limit=1, principal=principal
+    )
     assert [row.report_ref for row in last.items] == [first.report_id]
     assert last.next_cursor is None
-    hidden = projector.history_for_site("site-a", organization_id="org-a", after=None, limit=1,
-                                        principal=_principal("other-area"))
+    hidden = projector.history_for_site(
+        "site-a", organization_id="org-a", after=None, limit=1, principal=_principal("other-area")
+    )
     assert hidden.items == [] and hidden.next_cursor is None
 
 
 def test_provider_resolution_stops_at_page_plus_visible_lookahead(
-    mixed_history, monkeypatch
+    mixed_history: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     harness, _, _, latest, area = mixed_history
     # Instrument only the independent authority boundary, keep real stores/projections/joins.
@@ -338,7 +423,7 @@ def test_provider_resolution_stops_at_page_plus_visible_lookahead(
     resolve = port.resolve_historical
     seen = []
 
-    def observed(**kwargs):
+    def observed(**kwargs: Any) -> Any:
         seen.append(kwargs["historical_authority_digest"])
         return resolve(**kwargs)
 
@@ -350,26 +435,33 @@ def test_provider_resolution_stops_at_page_plus_visible_lookahead(
     assert harness.graph.source.authority.historical_authority_digest not in seen
 
 
-def test_valid_cursor_skips_preceding_reports_without_provider_calls(mixed_history, monkeypatch):
+def test_valid_cursor_skips_preceding_reports_without_provider_calls(
+    mixed_history: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
+) -> None:
     harness, first, single, _, area = mixed_history
     port = harness.graph.authority_port
     resolve = port.resolve_historical
     seen = []
 
-    def observed(**kwargs):
+    def observed(**kwargs: Any) -> Any:
         seen.append(kwargs["historical_authority_digest"])
         return resolve(**kwargs)
 
     monkeypatch.setattr(port, "resolve_historical", observed)
     page = harness.projector().history_for_site(
-        "site-a", organization_id="org-a", after=single.report_id, limit=1,
+        "site-a",
+        organization_id="org-a",
+        after=single.report_id,
+        limit=1,
         principal=_principal(area),
     )
     assert [row.report_ref for row in page.items] == [first.report_id]
     assert set(seen) == {harness.graph.source.authority.historical_authority_digest}
 
 
-def test_hidden_single_family_row_does_not_consume_page_or_create_cursor(mixed_history) -> None:
+def test_hidden_single_family_row_does_not_consume_page_or_create_cursor(
+    mixed_history: tuple[Any, ...],
+) -> None:
     harness, first, single, latest, area = mixed_history
     harness.port.authority = replace(harness.port.authority, decision_id="withdrawn-history")
     projector = harness.projector()
@@ -390,11 +482,19 @@ def test_hidden_single_family_row_does_not_consume_page_or_create_cursor(mixed_h
         )
 
 
-@pytest.mark.parametrize("history", [
-    ("baseline", ["extra"]), ("current", ["extra"]),
-    ("baseline", ["zone", "extra"]), ("current", ["zone", "extra"]),
-], indirect=True)
-def test_all_current_and_baseline_assignments_must_be_proven_and_granted(history) -> None:
+@pytest.mark.parametrize(
+    "history",
+    [
+        ("baseline", ["extra"]),
+        ("current", ["extra"]),
+        ("baseline", ["zone", "extra"]),
+        ("current", ["zone", "extra"]),
+    ],
+    indirect=True,
+)
+def test_all_current_and_baseline_assignments_must_be_proven_and_granted(
+    history: tuple[Any, ...],
+) -> None:
     _, projector, _, area = history
     page = projector.history_for_site(
         "site-a", organization_id="org-a", after=None, limit=20, principal=_principal(area)
@@ -402,10 +502,15 @@ def test_all_current_and_baseline_assignments_must_be_proven_and_granted(history
     assert page.items == [] and page.next_cursor is None
 
 
-def test_source_order_producer_rejects_empty_assignments(history) -> None:
+def test_source_order_producer_rejects_empty_assignments(history: tuple[Any, ...]) -> None:
     graph, _, _, _ = history
     with pytest.raises(ValueError):
         graph.service.work_orders.create_work_order(
-            organization_id="org-a", site_id="site-a", name="Empty source",
-            work_area_ids=[], schedule_id=None, actor="operator-a", now=_NOW,
+            organization_id="org-a",
+            site_id="site-a",
+            name="Empty source",
+            work_area_ids=[],
+            schedule_id=None,
+            actor="operator-a",
+            now=_NOW,
         )

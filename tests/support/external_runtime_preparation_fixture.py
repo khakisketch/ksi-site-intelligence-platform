@@ -79,9 +79,9 @@ def write_bundle_dir(
     fixture = make_bundle(wheel_overrides=wheel_overrides)
     root = base / "bundle"
     (root / "wheels").mkdir(parents=True)
-    manifest_payload = json.dumps(
-        fixture.manifest, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
+    manifest_payload = json.dumps(fixture.manifest, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
     (root / "manifest.json").write_bytes(manifest_payload)
     for name, payload in fixture.payloads.items():
         (root / name).write_bytes(payload)
@@ -127,12 +127,8 @@ def stub_controller_wheel() -> bytes:
         extra_entries={
             "ksi_processing_controller/__init__.py": b"# synthetic stub\n",
             "ksi_processing_controller/external_inspector_daemon.py": _STUB_MAIN.encode(),
-            "ksi_processing_controller/external_measurement_daemon.py": (
-                _STUB_MAIN.encode()
-            ),
-            "ksi_processing_controller/external_validation_worker.py": (
-                _STUB_MAIN.encode()
-            ),
+            "ksi_processing_controller/external_measurement_daemon.py": (_STUB_MAIN.encode()),
+            "ksi_processing_controller/external_validation_worker.py": (_STUB_MAIN.encode()),
         },
     )
 
@@ -145,9 +141,7 @@ def build_runtime_tree(
     (root / "bin").mkdir(parents=True)
     (root / "lib" / "python3.12").mkdir(parents=True)
     interp_bytes = (
-        interpreter
-        if interpreter is not None
-        else b"SYNTHETIC-INTERPRETER-BLOB-7f3a\n" * 64
+        interpreter if interpreter is not None else b"SYNTHETIC-INTERPRETER-BLOB-7f3a\n" * 64
     )
     interp = root / "bin" / "python3.12"
     interp.write_bytes(interp_bytes)
@@ -194,10 +188,9 @@ def build_binding_record(
     ]
     interp_payload = Path(tree["interpreter"]).read_bytes()
     inventory_rows = [
-        {"path": path, "sha256": value, "bytes": size}
-        for path, value, size in sorted(entries)
+        {"path": path, "sha256": value, "bytes": size} for path, value, size in sorted(entries)
     ] + link_rows
-    inventory_rows.sort(key=lambda row: row["path"])
+    inventory_rows.sort(key=lambda row: str(row["path"]))
     return {
         "schemaVersion": "external-runtime-python-binding.v1",
         "interpreter": {

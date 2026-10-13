@@ -124,18 +124,6 @@ def test_static_bundle_verification_succeeds_without_runtime_and_executes_nothin
     assert calls == []
 
 
-def _make_guard(calls: list[str]) -> Any:
-    class _Guard:
-        def __getattr__(self, item: str) -> Any:
-            def _boom(*args: Any, **kwargs: Any) -> Any:
-                calls.append(item)
-                raise AssertionError(f"static verification executed {item}")
-
-            return _boom
-
-    return _Guard()
-
-
 def test_cli_static_reports_bundle_bytes_verified(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -10,6 +10,7 @@ import json
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 from analysis_api_local_fixture import build_local_analysis_api_fixture
@@ -39,7 +40,7 @@ from test_external_analysis_real_inspection_lane_integration import _CoreAndObje
 from test_oidc_route_scope import _install_oidc
 
 
-def _completed_fixture(path: Path):
+def _completed_fixture(path: Path) -> tuple[Any, Any, dict[str, str], str]:
     fixture = build_local_analysis_api_fixture(
         path, v2_dsm_only=True, analysis_activation=_active_analysis_activation(path)
     )
@@ -193,7 +194,7 @@ def test_review_retains_history_but_cannot_acknowledge_later_failed_evidence(
 
 
 def test_review_append_rechecks_real_mutation_after_prepared_witness(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fixture, client, headers, base = _completed_fixture(tmp_path)
     try:
@@ -201,7 +202,7 @@ def test_review_append_rechecks_real_mutation_after_prepared_witness(
         target = client.get(base + "/review-target", headers=headers).json()
         original = source.current
 
-        def interleaved(*args, **kwargs):
+        def interleaved(*args: Any, **kwargs: Any) -> Any:
             prepared = original(*args, **kwargs)
             fixture.append_failed_current_checkpoint_evaluation()
             return prepared
@@ -343,7 +344,7 @@ def test_review_routes_recheck_current_site_area_role_and_revocation(tmp_path: P
 
 
 def test_policy_expiry_withholds_new_review_but_keeps_historical_receipt(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Advance the review clock, not policy contents or journal authority."""
     from ksi_core.domains.external.quantity import external_analysis_reviews as review_module
@@ -360,7 +361,7 @@ def test_policy_expiry_withholds_new_review_but_keeps_historical_receipt(
 
         class ReviewClock(datetime):
             @classmethod
-            def now(cls, tz=None):
+            def now(cls, tz: Any = None) -> Any:
                 return future
 
         monkeypatch.setattr(review_module, "datetime", ReviewClock)

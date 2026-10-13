@@ -16,6 +16,7 @@ from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import FastAPI
@@ -49,12 +50,16 @@ def _wkt_5186() -> str:
     return CRS.from_epsg(5186).to_wkt(version="WKT2_2019", pretty=False, output_axis_rule=True)
 
 
-def _two_asset_measurements(_policy):
+def _two_asset_measurements(
+    _policy: object,
+) -> tuple[ArtifactInspectionOutcomeV1, ArtifactInspectionOutcomeV1]:
     """Two MEASURED outcomes (ortho + dsm) bound to the sealed two-artifact submission."""
     wkt = _wkt_5186()
     crs_digest = "sha256:" + hashlib.sha256(wkt.encode()).hexdigest()
 
-    def measured(artifact_id: str, observed: str, dtype: str, bands: int):
+    def measured(
+        artifact_id: str, observed: str, dtype: str, bands: int
+    ) -> ArtifactInspectionOutcomeV1:
         return ArtifactInspectionOutcomeV1(
             artifact_id=artifact_id,
             observed_sha256="sha256:" + observed,
@@ -222,7 +227,7 @@ def ai_headers() -> dict[str, str]:
     return {"Authorization": "Bearer ai-token"}
 
 
-def _revoke_one(graph: SimpleNamespace, name: str):
+def _revoke_one(graph: SimpleNamespace, name: str) -> Any:
     """Withdraw one named test AI grant; returns the revoked grant."""
     from ksi_event_contracts.spatial_data_authority import SpatialDataRevocationV1
 
@@ -450,6 +455,7 @@ def test_read_only_grant_and_subpixel_bounds_do_not_advertise_prepare(
     # can never advertise preparation of a whole native cell.
     from ksi_event_contracts.spatial_data_authority import SpatialDataRevocationV1
 
+    assert read_only.grant_digest is not None
     graph.grants.revoke(
         SpatialDataRevocationV1(
             grant_id=read_only.grant_id,
@@ -688,6 +694,7 @@ def test_discovery_mount_requires_exact_graph(tmp_path: Path) -> None:
         storage=LocalProvider(other),
         currentness=other.authority,
     )
+    assert other_lane.discovery is not None
     with pytest.raises(ValueError, match="participant"):
         build_spatial_data_asset_router(
             discovery=other_lane.discovery, egress=lane.ai_egress, clock=lambda: NOW
@@ -701,7 +708,7 @@ def test_discovery_mount_requires_exact_graph(tmp_path: Path) -> None:
 # ---- 8. send-time recheck + ack ---------------------------------------------------------
 
 
-def _framed(response) -> tuple[int, dict[bytes, bytes], bytes]:
+def _framed(response: Any) -> tuple[int, dict[bytes, bytes], bytes]:
     messages: list[Message] = []
 
     async def send(message: Message) -> None:
@@ -785,7 +792,7 @@ def test_discovery_ack_rechecked_at_send(tmp_path: Path, monkeypatch: pytest.Mon
     real_resolve = SpatialDataCredentialCurrentness.resolve
     calls = {"count": 0}
 
-    def resolving_twice(self, *, now):
+    def resolving_twice(self: Any, *, now: Any) -> Any:
         calls["count"] += 1
         principal = real_resolve(self, now=now)
         if calls["count"] == 2:
@@ -1036,18 +1043,18 @@ def test_fix1_catalog_budgets_refuse_before_accumulation(tmp_path: Path) -> None
     assert len(catalog.items(max_bytes=total, **call)) == 2
 
 
-def _counting_policy_port(graph: SimpleNamespace):
+def _counting_policy_port(graph: SimpleNamespace) -> tuple[dict[str, int], Any, Any]:
     """Wrap the real inspection authority port with a counting delegate (genuine behavior)."""
     registry = graph.inspections._policy_registry  # noqa: SLF001
     inner = registry._authority_port  # noqa: SLF001
     calls = {"resolve": 0, "resolve_historical": 0}
 
     class CountingPort:
-        def resolve(self, digest, now):
+        def resolve(self, digest: str, now: Any) -> Any:
             calls["resolve"] += 1
             return inner.resolve(digest, now)
 
-        def resolve_historical(self, digest, at):
+        def resolve_historical(self, digest: str, at: Any) -> Any:
             calls["resolve_historical"] += 1
             return inner.resolve_historical(digest, at)
 
@@ -1157,7 +1164,7 @@ def test_fix2_asset_send_gate_phases_make_zero_port_calls(tmp_path: Path) -> Non
     gates = {"runs": 0, "resolve": 0, "historical": 0}
     real_recheck = graph.discovery.recheck_view
 
-    def wrapped(*, view, principal, now):
+    def wrapped(*, view: Any, principal: Any, now: Any) -> Any:
         gates["runs"] += 1
         before = (calls["resolve"], calls["resolve_historical"])
         try:
@@ -1200,7 +1207,16 @@ def test_fix2_asset_page_send_gate_phases_make_zero_port_calls(tmp_path: Path) -
     gates = {"runs": 0, "resolve": 0, "historical": 0}
     real_recheck = graph.discovery.recheck_page
 
-    def wrapped(*, site_id, work_area_id, principal, limit, cursor, gate, now):
+    def wrapped(
+        *,
+        site_id: Any,
+        work_area_id: Any,
+        principal: Any,
+        limit: Any,
+        cursor: Any,
+        gate: Any,
+        now: Any,
+    ) -> Any:
         gates["runs"] += 1
         before = (calls["resolve"], calls["resolve_historical"])
         try:
@@ -1259,10 +1275,10 @@ def test_fix2_local_gates_succeed_with_raising_port(tmp_path: Path) -> None:
     inner = registry._authority_port  # noqa: SLF001
 
     class RaisingPort:
-        def resolve(self, digest, now):
+        def resolve(self, digest: str, now: Any) -> Any:
             raise AssertionError("final gate must not resolve the authority port")
 
-        def resolve_historical(self, digest, at):
+        def resolve_historical(self, digest: str, at: Any) -> Any:
             raise AssertionError("final gate must not resolve the authority port historically")
 
     registry._authority_port = RaisingPort()  # noqa: SLF001
@@ -1277,7 +1293,7 @@ def test_fix2_local_gates_succeed_with_raising_port(tmp_path: Path) -> None:
         registry._authority_port = inner  # noqa: SLF001
 
 
-def _grant_for_ref(graph: SimpleNamespace, asset_ref: str, grant_id: str):
+def _grant_for_ref(graph: SimpleNamespace, asset_ref: str, grant_id: str) -> Any:
     """Provision a genuine current AI grant for one catalog asset ref (test setup)."""
     from spatial_data_fixture import make_grant
 
@@ -1303,7 +1319,7 @@ def _grant_for_ref(graph: SimpleNamespace, asset_ref: str, grant_id: str):
     return grant
 
 
-def _register_second_submission(graph: SimpleNamespace, submission_id: str):
+def _register_second_submission(graph: SimpleNamespace, submission_id: str) -> Any:
     """Register a genuinely unsealed second submission via the owner API."""
     from ksi_core.domains.observations.epoch_identity import observation_epoch_id
     from support.external_artifact_inspection_fixtures import sealed_submission
@@ -1326,7 +1342,7 @@ def _register_second_submission(graph: SimpleNamespace, submission_id: str):
     return submission, result.revision
 
 
-def _admit_policy_for_subject(graph: SimpleNamespace, subject):
+def _admit_policy_for_subject(graph: SimpleNamespace, subject: Any) -> Any:
     """Admit a genuine inspection policy permitting one sealed subject (owner APIs)."""
     from ksi_core.external_validation_policy import (
         PolicyAuthorityRecord,
@@ -1369,7 +1385,7 @@ def _admit_policy_for_subject(graph: SimpleNamespace, subject):
     return policy
 
 
-def _seal_revision(graph: SimpleNamespace, submission, revision):
+def _seal_revision(graph: SimpleNamespace, submission: Any, revision: Any) -> tuple[Any, Any]:
     """Seal one registered revision via the owner API; returns sealed record + subject."""
     from ksi_core.evidence import ObjectStorageObservation
     from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
@@ -1408,7 +1424,7 @@ def _seal_revision(graph: SimpleNamespace, submission, revision):
     return record, subject
 
 
-def _record_measurement(graph: SimpleNamespace, subject, policy):
+def _record_measurement(graph: SimpleNamespace, subject: Any, policy: Any) -> Any:
     """Record a genuine MEASURED ortho report for one sealed subject (owner APIs)."""
     from ksi_core.leasing import LeaseFence
     from ksi_event_contracts.external_artifact_validation import SealedArtifactBindingV1
@@ -1454,7 +1470,7 @@ def _record_measurement(graph: SimpleNamespace, subject, policy):
     return subject
 
 
-def _seal_and_measure(graph: SimpleNamespace, submission, revision, policy):
+def _seal_and_measure(graph: SimpleNamespace, submission: Any, revision: Any, policy: Any) -> Any:
     """Seal one revision then record its MEASURED ortho report (owner APIs)."""
     _, subject = _seal_revision(graph, submission, revision)
     return _record_measurement(graph, subject, policy)
@@ -1503,7 +1519,7 @@ def test_fix2_newly_ready_granted_candidate_stales_send(tmp_path: Path) -> None:
     real_append = graph.ai_audit.append
     sealed = {"done": False}
 
-    def append_then_ready(*args, **kwargs):
+    def append_then_ready(*args: Any, **kwargs: Any) -> Any:
         # Deterministic barrier: readiness lands after the bounded preflight
         # (which runs before the audit) and before the header/body gates, via
         # genuine owner APIs only.
@@ -1553,7 +1569,7 @@ def test_fix2_unrelated_ungranted_readiness_keeps_page_stable(tmp_path: Path) ->
     real_append = graph.ai_audit.append
     sealed = {"done": False}
 
-    def append_then_ready(*args, **kwargs):
+    def append_then_ready(*args: Any, **kwargs: Any) -> Any:
         if not sealed["done"]:
             sealed["done"] = True
             _, subject = _seal_revision(graph, submission, revision)
@@ -1576,7 +1592,7 @@ def test_fix2_unrelated_ungranted_readiness_keeps_page_stable(tmp_path: Path) ->
 # ---- FIXROUND3: pure report-arrival P5 (behavioral RED on fix2 tree) -----------------
 
 
-def _subject_for(graph: SimpleNamespace, submission):
+def _subject_for(graph: SimpleNamespace, submission: Any) -> Any:
     """Current sealed subject for one submission from the genuine record."""
     from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
 
@@ -1655,7 +1671,7 @@ def test_fix3_pure_report_arrival_stales_send(tmp_path: Path) -> None:
     real_append = graph.ai_audit.append
     reported = {"done": False}
 
-    def append_then_report(*args, **kwargs):
+    def append_then_report(*args: Any, **kwargs: Any) -> Any:
         # Deterministic barrier: only the measurement report lands after the
         # bounded preflight (which runs before the audit) and before the
         # header/body gates, via genuine owner APIs. The seal predates the
@@ -1696,10 +1712,10 @@ def test_fix3_retained_state_fingerprint_unit(tmp_path: Path) -> None:
     inner = registry._authority_port  # noqa: SLF001
 
     class RaisingPort:
-        def resolve(self, digest, now):
+        def resolve(self, digest: str, now: Any) -> Any:
             raise AssertionError("fingerprint must not resolve the authority port")
 
-        def resolve_historical(self, digest, at):
+        def resolve_historical(self, digest: str, at: Any) -> Any:
             raise AssertionError("fingerprint must not resolve the authority port")
 
     registry._authority_port = RaisingPort()  # noqa: SLF001
@@ -1804,7 +1820,7 @@ def test_fix4_snapshot_cursor_negative_matrix(tmp_path: Path) -> None:
     def raw(payload: bytes) -> str:
         return _b64_raw(payload)
 
-    def obj(**fields) -> str:
+    def obj(**fields: object) -> str:
         return raw(jsonlib.dumps(fields, sort_keys=True, separators=(",", ":")).encode())
 
     foreign = "sha256:" + "f" * 64
@@ -1920,7 +1936,7 @@ def test_fix4_ai_job_pages_filter_stable_and_invalidate(tmp_path: Path) -> None:
         SpatialDataAiDomainError,
         SpatialDataDomainError,
     )
-    from ksi_event_contracts.spatial_data import SpatialDataRequestV1
+    from ksi_event_contracts.spatial_data import SpatialDataPurposeV1, SpatialDataRequestV1
     from test_spatial_data_ai_egress import ai_lane
 
     lane = ai_lane(tmp_path)
@@ -1935,7 +1951,7 @@ def test_fix4_ai_job_pages_filter_stable_and_invalidate(tmp_path: Path) -> None:
             requested_bounds=(0, 0, 1, 1),
             observed_crs_digest=measurements.observed_crs_digest,
             resolution_mode="NATIVE",
-            purpose="EXTERNAL_AI",
+            purpose=SpatialDataPurposeV1("EXTERNAL_AI"),
         ),
         principal=lane.ai,
         idempotency_key="ai-two",
@@ -2018,7 +2034,7 @@ def test_fix4_ai_job_cursor_negatives_and_quiescence(tmp_path: Path) -> None:
     )
     good_snapshot = "sha256:" + "0" * 64
 
-    def obj(**fields) -> str:
+    def obj(**fields: object) -> str:
         return _b64_raw(jsonlib.dumps(fields, sort_keys=True, separators=(",", ":")).encode())
 
     for name, bad in {

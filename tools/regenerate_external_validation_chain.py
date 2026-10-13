@@ -75,6 +75,37 @@ def _read_private_json(path: Path) -> dict[str, object]:
     return value
 
 
+def _mapping(value: object, name: str) -> dict[str, object]:
+    if not isinstance(value, dict):
+        raise SystemExit(f"{name} must be a JSON object")
+    return value
+
+
+def _list(value: object, name: str) -> list[object]:
+    if not isinstance(value, list):
+        raise SystemExit(f"{name} must be a list")
+    return value
+
+
+def _text(value: object, name: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise SystemExit(f"{name} must be a non-empty string")
+    return value
+
+
+def _text_list(value: object, name: str) -> tuple[str, ...]:
+    items = _list(value, name)
+    if not items or any(not isinstance(item, str) or not item for item in items):
+        raise SystemExit(f"{name} must be a non-empty string list")
+    return tuple(item for item in items if isinstance(item, str))
+
+
+def _integer(value: object, name: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise SystemExit(f"{name} must be an integer")
+    return value
+
+
 def _write_private_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     os.chmod(path, 0o600)
@@ -175,7 +206,10 @@ def main(argv: list[str] | None = None) -> int:
     if prior_record_payload is None:
         raise SystemExit("current policy authority record is not retained in the snapshot")
     policy_body = _read_private_json(policy_path)
-    new_version = int(policy_body["version"]) + 1
+    new_version = _integer(policy_body.get("version"), "policy version") + 1
+    actor_ids = _text_list(
+        prior_record_payload.get("authorizedActorIds"), "authorizedActorIds"
+    )
 
     policy_placeholder = ExternalValidationPolicyV1.model_validate(
         {
@@ -187,15 +221,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     body_digest = authorized_policy_body_digest(policy_placeholder)
     record = PolicyAuthorityRecord(
-        policy_id=str(policy_body["policyId"]),
+        policy_id=_text(policy_body.get("policyId"), "policyId"),
         policy_version=new_version,
         authorized_policy_body_digest=body_digest,
         permitted_subjects=tuple(
             SealedExternalSubjectV1.model_validate(item)
-            for item in prior_record_payload["permittedSubjects"]
+            for item in _list(
+                prior_record_payload.get("permittedSubjects"), "permittedSubjects"
+            )
         ),
-        permitted_uses=tuple(prior_record_payload["permittedUses"]),
-        authorized_actor_ids=tuple(prior_record_payload["authorizedActorIds"]),
+        permitted_uses=_text_list(prior_record_payload.get("permittedUses"), "permittedUses"),
+        authorized_actor_ids=actor_ids,
         active_from=window_start,
         active_until=window_end,
         synthetic_test_only=bool(prior_record_payload["syntheticTestOnly"]),
@@ -237,20 +273,28 @@ def main(argv: list[str] | None = None) -> int:
         if prior_catalog_payload is None:
             raise SystemExit("current catalog authority record is not retained in the snapshot")
         catalog = _read_private_json(catalog_path)
-        prior_top = catalog["authorityRecordDigest"]
+        prior_top = _text(catalog.get("authorityRecordDigest"), "authorityRecordDigest")
+        catalog_body = _mapping(catalog.get("body"), "catalog body")
         for group in ("executionTemplates", "singleExecutionTemplates"):
-            for template in catalog["body"].get(group, []):
-                template["validFrom"] = _iso(window_start)
-                template["validUntil"] = _iso(
+            for template in _list(catalog_body.get(group, []), group):
+                template_row = _mapping(template, group)
+                execution_policy = _mapping(
+                    template_row.get("executionPolicy"), "executionPolicy"
+                )
+                template_row["validFrom"] = _iso(window_start)
+                template_row["validUntil"] = _iso(
                     now + timedelta(hours=max(args.window_hours - 1.0, 0.5))
                 )
-                template["executionPolicy"]["authorityRecordDigest"] = prior_top
+                execution_policy["authorityRecordDigest"] = prior_top
         body_digest_catalog = catalog_admission_body_digest(catalog)
         catalog_authority = ExternalQuantitativeCatalogAuthorityRecord(
-            organization_id=str(prior_catalog_payload["organizationId"]),
+            organization_id=_text(
+                prior_catalog_payload.get("organizationId"), "catalog organizationId"
+            ),
             catalog_body_digest=body_digest_catalog,
-            authorized_administration_actor_ids=tuple(
-                prior_catalog_payload["authorizedAdministrationActorIds"]
+            authorized_administration_actor_ids=_text_list(
+                prior_catalog_payload.get("authorizedAdministrationActorIds"),
+                "authorizedAdministrationActorIds",
             ),
             active_from=window_start,
             active_until=window_end,
@@ -258,8 +302,11 @@ def main(argv: list[str] | None = None) -> int:
         ).sealed()
         assert catalog_authority.digest
         for group in ("executionTemplates", "singleExecutionTemplates"):
-            for template in catalog["body"].get(group, []):
-                template["executionPolicy"]["authorityRecordDigest"] = catalog_authority.digest
+            for template in _list(catalog_body.get(group, []), group):
+                execution_policy = _mapping(
+                    _mapping(template, group).get("executionPolicy"), "executionPolicy"
+                )
+                execution_policy["authorityRecordDigest"] = catalog_authority.digest
         catalog["authorityRecordDigest"] = catalog_authority.digest
         assert catalog_admission_body_digest(catalog) == body_digest_catalog
         catalog_payload = catalog
@@ -297,7 +344,7 @@ def main(argv: list[str] | None = None) -> int:
                     "actionId": f"renew-policy-v{new_version}-{str(record.digest)[7:19]}",
                     "kind": "ADMIT_POLICY",
                     "effectiveAt": issued,
-                    "actorId": prior_record_payload["authorizedActorIds"][0],
+                    "actorId": actor_ids[0],
                     "policy": policy.model_dump(by_alias=True, mode="json"),
                 }
             ]

@@ -2,6 +2,7 @@
 
 import json
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -191,7 +192,7 @@ def test_consumer_cli_does_not_print_terminal_response_private_fields(
     body = {"jobId": job_id, "executionState": "FAILED", "reason": marker}
     original_client = httpx.Client
 
-    def transported_client(**kwargs: object) -> httpx.Client:
+    def transported_client(**kwargs: Any) -> httpx.Client:
         kwargs["transport"] = httpx.MockTransport(
             lambda _: httpx.Response(200, stream=httpx.ByteStream(json.dumps(body).encode()))
         )

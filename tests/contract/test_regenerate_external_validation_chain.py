@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import importlib.util
 import json
 import os
 import stat
 import sys
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -32,7 +33,10 @@ from ksi_core.domains.external.authority.external_result_workflow_config import 
     catalog_admission_body_digest,
 )
 from ksi_core.domains.external.authority.provider_loading import _snapshot_from_path
-from ksi_core.domains.external.authority.provider_types import _ProviderConfig
+from ksi_core.domains.external.authority.provider_types import (
+    _ProviderConfig,
+    _VerifiedSnapshot,
+)
 from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicyAuthorityRecord,
     authorized_policy_body_digest,
@@ -51,19 +55,19 @@ from ksi_event_contracts.external_artifact_validation import (
 from ksi_event_contracts.external_evidence_context import ExternalEvidenceMeasurementContextV1
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_TOOL_PATH = REPO_ROOT / "tools" / "regenerate_external_validation_chain.py"
+sys.path.insert(0, str(REPO_ROOT / "tools"))
+
+import regenerate_external_validation_chain as tool  # noqa: E402 -- tools/ 를 sys.path 에 넣은 뒤에만 해석 가능
+
 _DOMAIN = "ksi.external-authority-provider-snapshot.v1"
 
 
-def _load_tool_module():
-    spec = importlib.util.spec_from_file_location(
-        "regenerate_external_validation_chain", _TOOL_PATH
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+@dataclass(frozen=True, slots=True)
+class _ProviderFiles:
+    provider: Path
+    core_data: Path
+    snapshot_digest: str
+    policy_digest: str | None
 
 
 def _digest(label: str) -> str:
@@ -86,7 +90,7 @@ def _snapshot_digest(snapshot: dict[str, object]) -> str:
 
 
 @pytest.fixture()
-def provider(tmp_path: Path) -> dict[str, Path]:
+def provider(tmp_path: Path) -> _ProviderFiles:
     """Minimal signed provider with one policy/context/catalog generation."""
     now = datetime.now(UTC).replace(microsecond=0)
     signer = Ed25519PrivateKey.generate()
@@ -286,7 +290,9 @@ def provider(tmp_path: Path) -> dict[str, Path]:
     ).sealed()
     assert catalog_authority.digest
     catalog["authorityRecordDigest"] = catalog_authority.digest
-    catalog["body"]["executionTemplates"][0]["executionPolicy"]["authorityRecordDigest"] = (
+    catalog_body = cast(dict[str, object], catalog["body"])
+    templates = cast(list[dict[str, object]], catalog_body["executionTemplates"])
+    cast(dict[str, object], templates[0]["executionPolicy"])["authorityRecordDigest"] = (
         catalog_authority.digest
     )
     assert catalog_admission_body_digest(catalog) == catalog_body_digest
@@ -335,15 +341,15 @@ def provider(tmp_path: Path) -> dict[str, Path]:
         encoding="utf-8",
     )
     os.chmod(receipts, 0o600)
-    return {
-        "provider": tmp_path,
-        "core_data": core_data,
-        "snapshot_digest": _snapshot_digest(snapshot),
-        "policy_digest": sealed_v1.policy_digest,
-    }
+    return _ProviderFiles(
+        provider=tmp_path,
+        core_data=core_data,
+        snapshot_digest=_snapshot_digest(snapshot),
+        policy_digest=sealed_v1.policy_digest,
+    )
 
 
-def _verify_with_loader(provider: Path) -> object:
+def _verify_with_loader(provider: Path) -> _VerifiedSnapshot:
     config = _ProviderConfig(
         organization_id="org-a",
         key_registry_path=provider / "authority-keys.json",
@@ -359,16 +365,15 @@ def _verify_with_loader(provider: Path) -> object:
     return _snapshot_from_path(config, clock=lambda: datetime.now(UTC))
 
 
-def test_renewal_rebinds_every_digest_and_advances_one_sequence(provider) -> None:
-    tool = _load_tool_module()
-    provider_dir = provider["provider"]
+def test_renewal_rebinds_every_digest_and_advances_one_sequence(provider: _ProviderFiles) -> None:
+    provider_dir = provider.provider
     before = (provider_dir / "authority-snapshot.json").read_bytes()
     exit_code = tool.main(
         [
             "--provider-dir",
             str(provider_dir),
             "--core-data-dir",
-            str(provider["core_data"]),
+            str(provider.core_data),
         ]
     )
     assert exit_code == 0
@@ -378,7 +383,7 @@ def test_renewal_rebinds_every_digest_and_advances_one_sequence(provider) -> Non
     catalog = json.loads((provider_dir / "catalog.json").read_text())
     assert (provider_dir / "authority-snapshot.json").read_bytes() != before
     assert snapshot["sequence"] == 2
-    assert snapshot["previousSnapshotDigest"] == provider["snapshot_digest"]
+    assert snapshot["previousSnapshotDigest"] == provider.snapshot_digest
 
     verified = _verify_with_loader(provider_dir)
     assert verified.sequence == 2
@@ -397,9 +402,8 @@ def test_renewal_rebinds_every_digest_and_advances_one_sequence(provider) -> Non
     ]
 
 
-def test_check_only_leaves_files_untouched(provider) -> None:
-    tool = _load_tool_module()
-    provider_dir = provider["provider"]
+def test_check_only_leaves_files_untouched(provider: _ProviderFiles) -> None:
+    provider_dir = provider.provider
     before = (provider_dir / "authority-snapshot.json").read_bytes()
     assert (
         tool.main(
@@ -407,7 +411,7 @@ def test_check_only_leaves_files_untouched(provider) -> None:
                 "--provider-dir",
                 str(provider_dir),
                 "--core-data-dir",
-                str(provider["core_data"]),
+                str(provider.core_data),
                 "--check-only",
             ]
         )
@@ -416,27 +420,21 @@ def test_check_only_leaves_files_untouched(provider) -> None:
     assert (provider_dir / "authority-snapshot.json").read_bytes() == before
 
 
-def test_stale_receipt_head_refuses_the_renewal(provider) -> None:
-    tool = _load_tool_module()
-    provider_dir = provider["provider"]
+def test_stale_receipt_head_refuses_the_renewal(provider: _ProviderFiles) -> None:
+    provider_dir = provider.provider
     # First renewal succeeds (head matches), then the retained head is stale.
     assert (
-        tool.main(
-            ["--provider-dir", str(provider_dir), "--core-data-dir", str(provider["core_data"])]
-        )
+        tool.main(["--provider-dir", str(provider_dir), "--core-data-dir", str(provider.core_data)])
         == 0
     )
     assert stat.S_IMODE((provider_dir / "authority-snapshot.json").stat().st_mode) == 0o600
     with pytest.raises(SystemExit):
-        tool.main(
-            ["--provider-dir", str(provider_dir), "--core-data-dir", str(provider["core_data"])]
-        )
+        tool.main(["--provider-dir", str(provider_dir), "--core-data-dir", str(provider.core_data)])
 
 
-def test_snapshot_digest_continuity_is_verified(provider) -> None:
+def test_snapshot_digest_continuity_is_verified(provider: _ProviderFiles) -> None:
     """A receipt head whose digest does not match the snapshot is refused."""
-    tool = _load_tool_module()
-    receipts = provider["core_data"] / "external-authority-provider-receipts.jsonl"
+    receipts = provider.core_data / "external-authority-provider-receipts.jsonl"
     receipts.write_text(
         json.dumps(
             {
@@ -454,9 +452,9 @@ def test_snapshot_digest_continuity_is_verified(provider) -> None:
         tool.main(
             [
                 "--provider-dir",
-                str(provider["provider"]),
+                str(provider.provider),
                 "--core-data-dir",
-                str(provider["core_data"]),
+                str(provider.core_data),
                 "--check-only",
             ]
         )

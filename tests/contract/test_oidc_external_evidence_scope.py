@@ -506,20 +506,21 @@ def test_empty_work_area_order_fails_closed_for_area_restricted_principal() -> N
     empty = SimpleNamespace(site_id="site-a", work_area_ids=[])
     assert not ExternalAnalysisFacade._has_work_area_grants(restricted, [])
     assert ExternalAnalysisFacade._has_work_area_grants(legacy, [])
+    stub_empty = cast(Any, _StubOrders(empty))
     for require_scoped in (
         evidence_require_scoped,
         inspections_require_scoped,
         _require_work_order,
     ):
         try:
-            require_scoped(_StubOrders(empty), "wo-empty", restricted)
+            require_scoped(stub_empty, "wo-empty", restricted)
         except HTTPException as exc:
             assert exc.status_code == 404
         else:
             raise AssertionError("empty WorkArea anchor must fail closed")
-        assert require_scoped(_StubOrders(empty), "wo-empty", legacy) is empty
+        assert require_scoped(stub_empty, "wo-empty", legacy) is empty
         granted = SimpleNamespace(site_id="site-a", work_area_ids=["wa-a"])
-        assert require_scoped(_StubOrders(granted), "wo-empty", restricted) is granted
+        assert require_scoped(cast(Any, _StubOrders(granted)), "wo-empty", restricted) is granted
 
 
 def test_revoked_subject_is_rejected(tmp_path: Path) -> None:

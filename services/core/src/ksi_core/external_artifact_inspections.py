@@ -12,5 +12,8 @@ from ksi_core.domains.external.ingress.external_artifact_inspections import (
 from ksi_core.domains.external.ingress.external_artifact_inspections import (
     SealedExternalReconstructionSnapshotPort as SealedExternalReconstructionSnapshotPort,
 )
+from ksi_core.domains.external.ingress.external_artifact_inspections import (
+    _require_scoped_work_order as _require_scoped_work_order,
+)
 
 _sys.modules[__name__] = _canonical

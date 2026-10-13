@@ -20,7 +20,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -184,9 +184,7 @@ def _install_mapped_v2(
 
 
 def _store(tmp_path: Path, *, cap: int = 1000, name: str = "sites.jsonl") -> SiteStore:
-    return SiteStore(
-        DurableJournal(tmp_path / name), max_bootstrap_sites_per_org=cap
-    )
+    return SiteStore(DurableJournal(tmp_path / name), max_bootstrap_sites_per_org=cap)
 
 
 # ── 1. store 수준: 발급·멱등·namespace ────────────────────────────────
@@ -478,9 +476,7 @@ def _bootstrap_raw(
         lambda raw: raw.update({"actor": ""}),
     ],
 )
-def test_replay_rejects_malformed_bootstrap_binding(
-    tmp_path: Path, mutate: Any
-) -> None:
+def test_replay_rejects_malformed_bootstrap_binding(tmp_path: Path, mutate: Any) -> None:
     journal_path = tmp_path / "sites.jsonl"
     seed = DurableJournal(journal_path)
     raw = _bootstrap_raw(site_id="site-corrupt", request_key=str(uuid.uuid4()))
@@ -632,9 +628,7 @@ def test_mapped_bootstrap_route_creates_and_is_idempotent(tmp_path: Path) -> Non
 
 
 def test_mapped_without_capability_is_403_even_with_admin_claim(tmp_path: Path) -> None:
-    app, store, token = _build_auth_app(
-        tmp_path, capabilities=[], site_ids=None, area_ids=None
-    )
+    app, store, token = _build_auth_app(tmp_path, capabilities=[], site_ids=None, area_ids=None)
     client = TestClient(app)
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -681,9 +675,7 @@ def test_registration_form_violations_are_422(tmp_path: Path, body: dict[str, An
         tmp_path, capabilities=["SITE_BOOTSTRAP"], site_ids=None, area_ids=None
     )
     client = TestClient(app)
-    response = client.post(
-        "/v1/sites", headers={"Authorization": f"Bearer {token}"}, json=body
-    )
+    response = client.post("/v1/sites", headers={"Authorization": f"Bearer {token}"}, json=body)
     assert response.status_code == 422
     assert store.list_scoped("org-1") == []
 
@@ -756,9 +748,7 @@ def test_work_area_site_store_absent_is_fail_closed_for_mapped_scope(tmp_path: P
     )
     app = FastAPI()
     mount_auth(app, _opaque_registry())
-    mapped_token, _key = _install_mapped_v2(
-        app, capabilities=[], site_ids=None, area_ids=None
-    )
+    mapped_token, _key = _install_mapped_v2(app, capabilities=[], site_ids=None, area_ids=None)
     mount_work_areas(app, store)  # site_store 미주입 — fallback 경로
     client = TestClient(app)
 
@@ -794,20 +784,28 @@ def test_supersedes_other_site_area_folds_to_not_found(tmp_path: Path) -> None:
         DurableJournal(tmp_path / "work-areas.jsonl"), site_exists=site_store.get
     )
     area_a = area_store.register(
-        "site-a", name="A구역", polygon=_polygon(), crs="EPSG:4326",
-        supersedes=None, now=_NOW, actor="seed",
+        "site-a",
+        name="A구역",
+        polygon=_polygon(),
+        crs="EPSG:4326",
+        supersedes=None,
+        now=_NOW,
+        actor="seed",
     ).work_area
     area_b = area_store.register(
-        "site-b", name="B구역", polygon=_polygon(), crs="EPSG:4326",
-        supersedes=None, now=_NOW, actor="seed",
+        "site-b",
+        name="B구역",
+        polygon=_polygon(),
+        crs="EPSG:4326",
+        supersedes=None,
+        now=_NOW,
+        actor="seed",
     ).work_area
     assert area_a is not None and area_b is not None
 
     app = FastAPI()
     mount_auth(app, _opaque_registry())
-    mapped_token, _key = _install_mapped_v2(
-        app, capabilities=[], site_ids=None, area_ids=None
-    )
+    mapped_token, _key = _install_mapped_v2(app, capabilities=[], site_ids=None, area_ids=None)
     mount_work_areas(app, area_store, site_store=site_store)
     client = TestClient(app)
 
@@ -851,9 +849,10 @@ def test_analysis_selector_scope_requires_work_order_binding_for_mapped_null() -
         device_id=None,
     )
     selector = SimpleNamespace(work_order_id="order-1")
+    selectors = cast(Any, (selector,))
 
     # 원장이 없으면 mapped 는 unrestricted 가 아니라 fail-closed 다.
-    assert not facade._selectors_are_in_scope(mapped_null, "site-1", (selector,))
+    assert not facade._selectors_are_in_scope(mapped_null, "site-1", selectors)
 
     class _Orders:
         def __init__(self, row: Any) -> None:
@@ -878,15 +877,15 @@ def test_analysis_selector_scope_requires_work_order_binding_for_mapped_null() -
         )
 
     facade._work_orders = _Orders(_order(org="org-2", site="site-1"))
-    assert not facade._selectors_are_in_scope(mapped_null, "site-1", (selector,))
+    assert not facade._selectors_are_in_scope(mapped_null, "site-1", selectors)
     facade._work_orders = _Orders(_order(org="org-1", site="site-2"))
-    assert not facade._selectors_are_in_scope(mapped_null, "site-1", (selector,))
+    assert not facade._selectors_are_in_scope(mapped_null, "site-1", selectors)
     facade._work_orders = _Orders(_order(org="org-1", site="site-1"))
-    assert facade._selectors_are_in_scope(mapped_null, "site-1", (selector,))
+    assert facade._selectors_are_in_scope(mapped_null, "site-1", selectors)
 
     # legacy 미분화 신원(area None, marker 없음)은 종전 계약 그대로다.
     facade._work_orders = None
-    assert facade._selectors_are_in_scope(legacy, "site-1", (selector,))
+    assert facade._selectors_are_in_scope(legacy, "site-1", selectors)
 
 
 def test_mapped_null_analysis_flow_matches_legacy_contract(tmp_path: Path) -> None:
