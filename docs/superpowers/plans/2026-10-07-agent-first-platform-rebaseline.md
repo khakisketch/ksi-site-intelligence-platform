@@ -2820,6 +2820,12 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `test_oidc_external_history_scope.py`(구 403 경계 → 도달+핸들러 404/409 계약). 관련 OIDC/volume 계약
   file set 재실행 green; 전체 contract 스위트 최종 **5470 passed·25 skipped·0 failed**(2026-10-13,
   선행 기준선과 동일 수 — 첫 실행에서 남은 구 경계 1건을 6c3cc3b로 정렬).
+- 승격·정리: 체인 창 만료 대응을 `tools/regenerate_external_validation_chain.py`로 승격(기록→본문→
+  컨텍스트→카탈로그→스냅샷 재생성, receipt head 연속성 fail-closed, real loader preflight, `--check-only`;
+  계약 테스트 `tests/contract/test_regenerate_external_validation_chain.py` 4건). 증거는
+  `apps/dashboard/f04-review-evidence/`(README+SUMMARY+캡처 3장)로 승격했고 prep/레인 스크립트는
+  /tmp 참조를 유지한다. `apps/dashboard/tsconfig.json`의 `.next-f04-review` 타입 루트는 개발 서버
+  규약대로 커밋한다(선행 `.next-accept`/`.next-p4-resume`과 동일).
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
