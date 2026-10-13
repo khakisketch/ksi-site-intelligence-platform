@@ -2847,6 +2847,16 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   SSOT로 통합) + 요청 목록·선택 줄의 원문 ISO 제거(`formatKoreanDateTime`). 라이브 검증(복사 스택):
   요청 목록 "2026. 10. 13. 12:18"·관측 표 "0 m³"; 대시보드 vitest **788**·tsc/eslint 0. 캡처
   `/tmp/opencode/ksi-f04-review-20261013/evidence/c-*.png`.
+- P5 기술 게이트 폐쇄(2026-10-13): ① **broad mypy 109/14 → 0/760**(`uv run --no-sync mypy packages
+  services tests tools` → Success, 760 files) — 내 몫(체인 도구·프로브 20건) 포함 15개 파일의 타입
+  공백 정리(주석·cast·`mypy_path`에 `examples/analysis`·`examples/spatial-data` 추가, shim private
+  재수출, 중복 `_make_guard` 제거). ② **strict archive gate → exit 0(251/251)** — 두 post-move
+  adaptation(`build_field0a_kit.py`/`test_field0a_kit.py`, 커밋 `dc9d681` "reviewed adaptation")을
+  P5 감사의 방향대로 **append-only adaptation-lineage**로 기록
+  (`docs/audit/PHYSICAL_SITE_MOVE_ADAPTATIONS_v1.json`, 원본 inverse 해시·레코드 불변)하고 검증기를
+  `--adaptations`로 확장 — 승인된 커밋의 blob과 일치할 때만 두 finding을 수용, 이후 무단 수정은 다시
+  실패. 계약 테스트 3건 추가(수용/위조·미기록 인덱스/부재·malformed). DOCUMENT_STATUS·
+  REPOSITORY_STRUCTURE의 "blob-identical" 문구도 lineage로 정합화.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
