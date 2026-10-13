@@ -128,6 +128,11 @@ function recordedDeadlineElapsed(deadlineAt: string): boolean {
   return Number.isFinite(timestamp) && timestamp <= Date.now();
 }
 
+/** 요청 목록/선택 줄의 발급·마감 시각 — 원문 ISO 를 화면에 내보내지 않는다. */
+function requestMoment(iso: string): string {
+  return formatKoreanDateTime(iso, { dateStyle: "short", timeStyle: "short" });
+}
+
 function isUnfinishedRequest(status: unknown): boolean {
   return status === "QUEUED" || status === "RUNNING";
 }
@@ -688,9 +693,9 @@ function SingleVolumeWorkflow({
       {listPhase === "error" && <p role="alert" className="text-high-ink">{listError ?? "체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
       {listPhase === "ready" && (list.length === 0
         ? <p className="text-ink-2">기록된 단일 시점 체적 측정 요청이 없습니다.</p>
-        : <ul className="flex flex-col gap-2">{list.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>체적 요청 상태</button></li>)}</ul>)}
+        : <ul className="flex flex-col gap-2">{list.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {requestMoment(item.issuedAt)}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>체적 요청 상태</button></li>)}</ul>)}
 
-      {selected && <p className="text-ink-2">선택한 체적 요청: {statusLabel(selected.status)}{isUnfinishedRequest(selected.status) ? ` · 마감 ${selected.deadlineAt}${recordedDeadlineElapsed(selected.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
+      {selected && <p className="text-ink-2">선택한 체적 요청: {statusLabel(selected.status)}{isUnfinishedRequest(selected.status) ? ` · 마감 ${requestMoment(selected.deadlineAt)}${recordedDeadlineElapsed(selected.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
       {pollStopped && isUnfinishedRequest(selected?.status) && <p role="status" className="text-ink-2">{AUTO_REFRESH_STOPPED_NOTICE}</p>}
       {selectedError && <p role="alert" className="text-high-ink">{selectedError}</p>}
       {selected?.status === "FAILED" && <p role="alert" className="text-high-ink">이 단일 시점 체적 측정을 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.</p>}
@@ -1134,10 +1139,10 @@ export function ExternalResultWorkflowPanel({
         {worklistPhase === "loading" && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 읽는 중입니다.</p>}
         {worklistRefreshing && <p role="status" className="mt-2 text-ink-2">마지막으로 확인한 요청 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
         {worklistPhase === "error" && <p role="alert" className="mt-2 text-high-ink">{worklistError ?? "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
-        {worklistPhase === "ready" && (worklist.length === 0 ? <p className="mt-2 text-ink-2">기록된 상대 물량 비교 요청이 없습니다.</p> : <ul className="mt-2 flex flex-col gap-2">{worklist.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {item.issuedAt}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>비교 요청 상태</button></li>)}</ul>)}
+        {worklistPhase === "ready" && (worklist.length === 0 ? <p className="mt-2 text-ink-2">기록된 상대 물량 비교 요청이 없습니다.</p> : <ul className="mt-2 flex flex-col gap-2">{worklist.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {requestMoment(item.issuedAt)}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>비교 요청 상태</button></li>)}</ul>)}
       </div>
 
-      {selectedRequest && <p className="text-ink-2">선택한 요청: {statusLabel(selectedRequest.status)}{isUnfinishedRequest(selectedRequest.status) ? ` · 마감 ${selectedRequest.deadlineAt}${recordedDeadlineElapsed(selectedRequest.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
+      {selectedRequest && <p className="text-ink-2">선택한 요청: {statusLabel(selectedRequest.status)}{isUnfinishedRequest(selectedRequest.status) ? ` · 마감 ${requestMoment(selectedRequest.deadlineAt)}${recordedDeadlineElapsed(selectedRequest.deadlineAt) ? " · 마감 시각 경과" : ""}` : ""}</p>}
       {selectedRequestRefreshing && <p role="status" className="text-ink-2">마지막으로 확인한 요청을 유지한 채 상태를 확인하고 있습니다.</p>}
       {selectedRequestError && <p role="alert" className="text-high-ink">{selectedRequestError}</p>}
       {selectedRequest?.status === "FAILED" && <p role="alert" className="text-high-ink">이 상대 물량 비교를 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.</p>}

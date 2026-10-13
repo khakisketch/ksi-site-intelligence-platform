@@ -314,8 +314,8 @@ it("distinguishes a pending Core request from a failed one and keeps the failed 
     throw new Error(`unexpected fetch ${url}`);
   });
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={[]} />);
-  expect(await screen.findByText(/대기 · 2026-09-02T00:00:00Z/)).toBeTruthy();
-  expect(screen.getByText(/실패 · 2026-09-02T00:00:00Z/)).toBeTruthy();
+  expect(await screen.findByText(/대기 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
+  expect(screen.getByText(/실패 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
   fireEvent.click(screen.getAllByRole("button", { name: "비교 요청 상태" })[1]);
   expect(await screen.findByText("이 상대 물량 비교를 완료하지 못했습니다. 결과 수치는 표시하지 않습니다.")).toBeTruthy();
   expect(screen.queryByText(/절토/)).toBeNull();
@@ -331,12 +331,12 @@ it("keeps the last verified queued request visible while it performs a bounded G
     throw new Error(`unexpected fetch ${url}`);
   });
   const { unmount } = render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={[]} />);
-  await screen.findByText(/대기 · 2026-09-02T00:00:00Z/);
+  await screen.findByText(/대기 · 2026\. 9\. 2\. 09:00/);
   vi.useFakeTimers();
   try {
     fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
     await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText(/대기 · 2026-09-02T00:00:00Z/)).toBeTruthy();
+    expect(screen.getByText(/대기 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
     for (let attempt = 0; attempt < 12; attempt += 1) await vi.advanceTimersByTimeAsync(5_000);
     expect(requestListReads).toBe(8);
     unmount();
@@ -357,10 +357,10 @@ it("retains a verified list and explains an unknown request status instead of re
     throw new Error(`unexpected fetch ${url}`);
   });
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={[]} />);
-  expect(await screen.findByText(/대기 · 2026-09-02T00:00:00Z/)).toBeTruthy();
+  expect(await screen.findByText(/대기 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
   expect(await screen.findByText("요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요.")).toBeTruthy();
-  expect(screen.getByText(/대기 · 2026-09-02T00:00:00Z/)).toBeTruthy();
+  expect(screen.getByText(/대기 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
   expect(screen.queryByText("undefined")).toBeNull();
 });
 
@@ -383,7 +383,7 @@ it("rejects an unknown selected request status without replacing the verified re
   render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} permissions={[]} />);
   fireEvent.click(await screen.findByRole("button", { name: "비교 요청 상태" }));
   expect(await screen.findByText("요청 상태 형식을 확인하지 못했습니다. 마지막으로 확인한 요청과 목록을 유지합니다. 다시 시도하세요.")).toBeTruthy();
-  expect(screen.getByText(/대기 · 2026-09-02T00:00:00Z/)).toBeTruthy();
+  expect(screen.getByText(/대기 · 2026\. 9\. 2\. 09:00/)).toBeTruthy();
   expect(screen.queryByText("undefined")).toBeNull();
 });
 

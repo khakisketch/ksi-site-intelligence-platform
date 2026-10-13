@@ -72,8 +72,21 @@ export function formatRatioPercent(ratio: number): string {
  * 아니라 표기의 문제라 계약·집계는 건드리지 않고 여기서만 눕힌다.
  */
 export function formatVolumeM3(value: number): string {
+  return `${formatNumberKo(value, 1)} m³`;
+}
+
+/**
+ * 한국어 수 표기 — 소수 자리만 자르고 `-0` 은 `0` 으로 눕힌다.
+ *
+ * 체적 전용 표기(`formatVolumeM3`)의 `-0` 규칙과 같은 이유다: 집계가 한쪽 부호뿐인
+ * 구역에서 음의 0 이 나오는 것은 정상이고, 화면의 "-0 m³"/"-0 m²" 는 사람이 읽는
+ * 값이 아니다. 면적·비율 등 체적 밖의 수치가 같은 규칙을 필요로 할 때도 컴포넌트가
+ * `toLocaleString` 을 직접 부르지 않고 이 함수를 쓴다 — 규칙이 컴포넌트마다
+ * 갈라지는 것을 막는다.
+ */
+export function formatNumberKo(value: number, maximumFractionDigits = 1): string {
   const shown = value === 0 ? 0 : value;
-  return `${shown.toLocaleString("ko-KR", { maximumFractionDigits: 1 })} m³`;
+  return shown.toLocaleString("ko-KR", { maximumFractionDigits });
 }
 
 /** 순변화는 방향이 보여야 한다 — 증가에 명시적 `+` 를 붙인다. */

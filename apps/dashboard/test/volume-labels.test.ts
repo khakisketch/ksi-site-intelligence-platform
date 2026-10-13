@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   describeVolumeUncertainty,
   formatNetVolumeM3,
+  formatNumberKo,
   formatVolumeM3,
 } from "@/lib/core-api/phase34-labels";
 
@@ -56,5 +57,20 @@ describe("describeVolumeUncertainty", () => {
 
   it("0 은 null 이 아니다 — '오차가 없다'와 '모른다'를 구분한다", () => {
     expect(describeVolumeUncertainty(0, "n").missing).toBe(false);
+  });
+});
+
+describe("formatNumberKo", () => {
+  it("체적 밖 수치도 같은 소수 규칙을 쓴다", () => {
+    expect(formatNumberKo(1_234.567, 2)).toBe("1,234.57");
+  });
+
+  it("[핵심] 음의 0 은 0 으로 보여준다 — 컴포넌트의 직접 toLocaleString 을 대신한다", () => {
+    expect(formatNumberKo(-0)).toBe("0");
+    expect(formatNumberKo(-0, 2)).toBe("0");
+  });
+
+  it("formatVolumeM3 는 이 함수를 거친다 — 규칙이 한 곳에만 있다", () => {
+    expect(formatVolumeM3(-0)).toBe(`${formatNumberKo(-0, 1)} m³`);
   });
 });

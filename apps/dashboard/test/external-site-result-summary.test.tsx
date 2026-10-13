@@ -92,6 +92,29 @@ describe("ExternalSiteResultSummary", () => {
     expect(copy).not.toContain("1970");
   });
 
+  it("[핵심] 음의 0 은 0 으로 보여준다 — '-0 m³' 는 요약 카드에도 뜨지 않는다", () => {
+    const zeroish = available({
+      metrics: {
+        zoneCellCount: 100,
+        commonValidCellCount: 90,
+        zoneAreaM2: 1_000,
+        measuredAreaM2: 900,
+        commonValidFraction: 0.9,
+        cutM3: -0,
+        fillM3: -0,
+        netM3: -0,
+        thresholdM: 0.1,
+        uncertaintyM3: -0,
+        uncertaintyNote: "독립 검사점 검증 기준",
+      },
+    });
+    const { container } = render(
+      <ExternalSiteResultSummary externalResult={zeroish} workAreaName="동측 절성토 구역" />,
+    );
+    expect(screen.getAllByText("0 m³").length).toBeGreaterThanOrEqual(3);
+    expect(container.textContent).not.toContain("-0");
+  });
+
   it("summarizes a single-volume result as a pile volume at one capture time, without comparison wording or review actions", () => {
     const single = available({
       kind: "EXTERNAL_SINGLE_VOLUME",

@@ -6,11 +6,12 @@ import {
   SingleVolumeResult,
 } from "@/components/external-results/SingleVolumeResult";
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { formatNumberKo } from "@/lib/core-api/phase34-labels";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import type { ExternalResultProjectionView, ExternalResultSummaryView } from "@/lib/core-api/types";
 
 function formatNumber(value: number, maximumFractionDigits = 2): string {
-  return value.toLocaleString("ko-KR", { maximumFractionDigits });
+  return formatNumberKo(value, maximumFractionDigits);
 }
 
 function formatSignedNumber(value: number, maximumFractionDigits = 2): string {

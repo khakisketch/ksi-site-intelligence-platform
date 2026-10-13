@@ -1,4 +1,5 @@
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { formatNumberKo } from "@/lib/core-api/phase34-labels";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 /** The Core-assigned family of a retained external volume result. */
@@ -14,7 +15,7 @@ export function ExternalVolumeKindBadge({ single }: { single: boolean }) {
 }
 
 function formatNumber(value: number, maximumFractionDigits = 2): string {
-  return value.toLocaleString("ko-KR", { maximumFractionDigits });
+  return formatNumberKo(value, maximumFractionDigits);
 }
 
 function captureRange(from: string, to: string): string {

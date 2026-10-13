@@ -9,10 +9,11 @@ import {
   SingleVolumeResult,
 } from "@/components/external-results/SingleVolumeResult";
 import type { ExternalVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
+import { formatNumberKo } from "@/lib/core-api/phase34-labels";
 import { formatKoreanDateTime } from "@/lib/datetime";
 
 function number(value: number, digits = 1) {
-  return value.toLocaleString("ko-KR", { maximumFractionDigits: digits });
+  return formatNumberKo(value, digits);
 }
 
 function signed(value: number) {
