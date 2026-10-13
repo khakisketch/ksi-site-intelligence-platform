@@ -13,6 +13,15 @@
 [![Contract Tests](https://img.shields.io/badge/contract-5484_passed-brightgreen)](tests/contract/)
 [![Dashboard Tests](https://img.shields.io/badge/dashboard_vitest-788_passed-brightgreen)](apps/dashboard/)
 
+![KSI Operations Console — Home](docs/portfolio/hero-home-1440.png)
+
+## 시연 영상 (16초, 합성 데모 현장)
+
+![홈 → 현장 목록 → 현장 상세 → 분석 → 관측 → 홈](docs/portfolio/demo-800.gif)
+
+> 자동 재생이 안 되면 [`demo-1440.mp4`](docs/portfolio/demo-1440.mp4)를 내려받아 보세요.
+> 로그인 → 현장 목록 → 현장 상세 → 분석 기록 → 관측 현황 → 홈 흐름의 실제 구동입니다.
+
 ## 목차
 
 - [담당자가 1분 만에 보는 요약](#담당자가-1분-만에-보는-요약)
@@ -60,7 +69,7 @@
 
 같은 작업구역의 기준 관측과 현재 관측을 고르면 Core가 적합성 계산 실행을 기록합니다.
 
-![현장 분석 화면](apps/dashboard/design-review-inputs/ui-20261012/after2-analysis-desktop.png)
+![현장 분석 화면](docs/portfolio/analysis-1440.png)
 
 ### 2. 새 관측 시작 — 외부 산출물 등록
 
@@ -74,7 +83,7 @@
 봉인된 산출물의 검사 결과를 확인하고 기준 시점과의 비교 판정을 요청합니다.
 담당·기한·종료 메모는 업무 종료로 남습니다.
 
-![현장 작업 화면](apps/dashboard/design-review-inputs/ui-20261012/after-workorder-desktop.png)
+![현장 작업 화면](docs/portfolio/work-ledger-1440.png)
 
 | 분석 목록 | 관측 현황 |
 |---|---|
@@ -96,7 +105,7 @@
 
 | 모바일 작업 | 외부 이력 |
 |---|---|
-| ![모바일](apps/dashboard/design-review-inputs/ui-20261012/after-workorder-mobile-390.png) | ![외부 이력](apps/dashboard/design-review-inputs/ui-20261012/external-history-desktop.png) |
+| ![모바일](docs/portfolio/home-390.png) | ![외부 이력](apps/dashboard/design-review-inputs/ui-20261012/external-history-desktop.png) |
 
 ## 핵심 기능
 
