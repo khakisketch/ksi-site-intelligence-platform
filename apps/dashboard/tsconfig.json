@@ -42,7 +42,9 @@
     ".next-accept/types/**/*.ts",
     ".next-accept/dev/types/**/*.ts",
     ".next-p4-resume/types/**/*.ts",
-    ".next-p4-resume/dev/types/**/*.ts"
+    ".next-p4-resume/dev/types/**/*.ts",
+    ".next-f04-review/types/**/*.ts",
+    ".next-f04-review/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
