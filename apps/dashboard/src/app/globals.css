@@ -21,6 +21,13 @@
    ═══════════════════════════════════════════════════════════════════════════ */
 
 :root {
+  /* Fixed mobile navigation and document clearance must grow together on safe-area devices. */
+  --mobile-bottom-nav-row-height: 3.5rem;
+  --mobile-bottom-nav-safe-area: env(safe-area-inset-bottom, 0px);
+  --mobile-bottom-nav-clearance: calc(
+    var(--mobile-bottom-nav-row-height) + 1px + var(--mobile-bottom-nav-safe-area)
+  );
+
   /* — 액센트(무채색) — 누를 것·활성 상태·현재 위치 — */
   --accent: #1f2124;
   --accent-hover: #0e0f11;

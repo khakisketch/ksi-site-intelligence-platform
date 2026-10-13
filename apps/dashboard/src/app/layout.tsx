@@ -98,7 +98,7 @@ export default async function RootLayout({
           <main
             id="main-content"
             tabIndex={-1}
-            className="flex-1 pb-16 lg:min-h-0 lg:overflow-y-auto lg:pb-0"
+            className="flex-1 pb-[var(--mobile-bottom-nav-clearance)] lg:min-h-0 lg:overflow-y-auto lg:pb-0"
           >
             {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
             {children}

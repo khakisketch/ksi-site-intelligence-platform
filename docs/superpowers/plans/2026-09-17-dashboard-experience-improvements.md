@@ -234,6 +234,19 @@ Created: 2026-09-17 by Build (session ses_f5571c6d7ffeJQIpTb0goaMxUF).
 - Reproduce: live 390 viewport scroll on long pages (fullPage captures can misplace fixed elements).
 - Acceptance: last content is not occluded; bottom padding equals nav height + safe area; verify on
   home/sites/field/work-order.
+  2026-10-13 closed after reproduction and fix. At 390×844 with zero safe inset, the live shell had
+  57px navigation over 64px reserved space and no overlap. Simulating a 34px device inset exposed
+  the defect on Home: nav grew to 91px while main stayed at 64px, covering the last text by 11px.
+  `globals.css` now shares the nav-row (56px), divider (1px), and safe-area tokens between
+  `MobileBottomNav` and `layout.tsx`; main clearance equals the actual nav height. A mobile E2E
+  checks Home, Sites, Field, and WorkOrder with a 34px inset. Live 390×844 checks passed on all four;
+  1440px confirms the bottom nav remains hidden and main padding is zero. The old Home snapshot
+  (last captured before the 2026-10-12 unavailable-lane notice) was refreshed to current UI.
+  Gates: Vitest 798, ESLint/tsc/build clean; mobile Playwright 2/2 passed. Screenshots:
+  `/tmp/opencode/ksi-f04-review-20261013/evidence/c1-home-mobile-390-{top,safe-area-sim}.png` and
+  `c1-work-order-desktop-1440.png`. Independent Design Specialist review: pass, no blockers.
+  No domain invariants, API contracts, or device assumptions changed; safe-area behavior was simulated,
+  not tested on a physical iPhone.
 
 ### C2 — [F13] observations/new path selection (M)
 

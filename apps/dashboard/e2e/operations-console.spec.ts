@@ -137,6 +137,66 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
   }
 });
 
+test("모바일 하단 내비는 안전영역을 포함해 마지막 내용을 가리지 않는다", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith("mobile-390"), "390px 모바일 셸에만 적용합니다.");
+  test.skip(
+    Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL),
+    "작업 상세 경로는 로컬 합성 원장을 사용합니다.",
+  );
+
+  const checkBottomClearance = async (path: string) => {
+    await page.goto(path);
+    await expect(page.getByRole("main")).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      // Headless Chromium has no physical safe area. Inject an iPhone-sized inset to
+      // exercise the same CSS env token without changing product data or browser state.
+      document.documentElement.style.setProperty("--mobile-bottom-nav-safe-area", "34px");
+      window.scrollTo(0, document.documentElement.scrollHeight);
+
+      const nav = document.querySelector<HTMLElement>('nav[aria-label="하단 메뉴"]');
+      const main = document.querySelector<HTMLElement>("#main-content");
+      if (!nav || !main) return null;
+
+      const navRect = nav.getBoundingClientRect();
+      const lastContent = [...main.querySelectorAll<HTMLElement>("h1,h2,h3,p,a,button,dt,dd,li")]
+        .filter((element) => element.getClientRects().length && element.innerText.trim())
+        .reduce<HTMLElement | null>(
+          (last, element) =>
+            !last || element.getBoundingClientRect().bottom > last.getBoundingClientRect().bottom
+              ? element
+              : last,
+          null,
+        );
+
+      return {
+        navDisplay: getComputedStyle(nav).display,
+        navHeight: navRect.height,
+        safeAreaPadding: Number.parseFloat(getComputedStyle(nav).paddingBottom),
+        mainPadding: Number.parseFloat(getComputedStyle(main).paddingBottom),
+        lastContentClearance: lastContent
+          ? navRect.top - lastContent.getBoundingClientRect().bottom
+          : null,
+      };
+    });
+
+    expect(metrics).not.toBeNull();
+    expect(metrics!.navDisplay).toBe("flex");
+    expect(metrics!.safeAreaPadding).toBe(34);
+    expect(metrics!.mainPadding).toBe(metrics!.navHeight);
+    expect(metrics!.lastContentClearance).not.toBeNull();
+    expect(metrics!.lastContentClearance!).toBeGreaterThanOrEqual(0);
+  };
+
+  for (const path of ["/", "/sites", "/field"]) {
+    await checkBottomClearance(path);
+  }
+
+  await page.goto("/field");
+  const workOrder = page.getByRole("link", { name: /E2E 과거 읽기 전용 · 작업 범위 승인/ });
+  await expect(workOrder).toBeVisible();
+  await checkBottomClearance((await workOrder.getAttribute("href"))!);
+});
+
 test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준다", async ({ page }) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "외부 원장은 읽기 전용이며 fixture를 전제하지 않습니다.");
   await page.goto("/");

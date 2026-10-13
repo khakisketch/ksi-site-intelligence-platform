@@ -2888,6 +2888,14 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   overlay·워크플로 리포트 지표) SSOT 전환 + 공간자산 관측 시각 `formatKoreanDateTime`. grep-audit 잔여
   **0**(SSOT 모듈 제외); 감사 변형(`2026.8.25.`/`2026.8.25.09:40`)은 현 HEAD에 없음. 게이트:
   vitest **798**(+6)·tsc/eslint 0. 독립 리뷰 배치 대기.
+- 대시보드 C1(하단 내비 안전영역, F06) 구현·검증(2026-10-13): 390×844 표준 뷰포트에서는 가림이
+  재현되지 않았으나, safe-area 34px 주입으로 Home에서 내비 91px > 본문 여백 64px, 마지막 텍스트
+  11px 가림을 재현. `globals.css`의 행 높이·안전영역·clearance 토큰을 `layout.tsx`와
+  `MobileBottomNav.tsx`가 공유해 본문 여백을 내비와 동기화. 모바일 E2E가 Home/Sites/Field/작업 상세
+  4개 경로에서 34px inset·본문 clearance를 검사. E2E 2/2, vitest **798**, ESLint/tsc/build 통과;
+  1440px에서 내비 숨김·본문 여백 0 확인. 오래된 Home 스냅샷은 10-12 unavailable-lane 문구를
+  반영해 갱신. 신선한 390/1440 캡처는 `/tmp/opencode/ksi-f04-review-20261013/evidence/c1-*`;
+  Design Specialist 독립 리뷰 pass. 실제 iPhone 미검증, 안전영역은 브라우저에서 모의.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
