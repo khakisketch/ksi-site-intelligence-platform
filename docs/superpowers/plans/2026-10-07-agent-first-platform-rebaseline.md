@@ -2839,6 +2839,14 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   [F-02~04 체크리스트](2026-10-10-f02-04-first-flow-input-checklist.md) §3에 확정 기록. 복사 검토
   스탠드(9051/8051/3251)는 **유지**(증거 기준; 창 만료 후 live 해석은 열화될 수 있으나 리뷰·저널·repo
   증거는 내구). 앞으로 정책 버전을 올리는 검증은 별도 스택에서 한다.
+- 검증 준비·소품질 폐쇄(2026-10-13): ① parser-sandbox 검증 호스트 요건+프로브 —
+  `tools/verify_parser_sandbox_host.py`(기록된 실측 명령 고정, exit 0=READY/2=BLOCKED, 계약 테스트 6건) +
+  `docs/ops/PARSER_SANDBOX_HOST_REQUIREMENTS.md`(DOCUMENT_STATUS 등재; 현 호스트 실측 **BLOCKED** —
+  bwrap present만 PASS). ② 고객 자료 요청 문안을 F-02~04 체크리스트 §6에 확정(발송 대기). ③ 대시보드
+  소품질 2건: 음의 0 표기 제거(요청/관측/요약/단일 체적의 로컬 `toLocaleString` 을 `formatNumberKo`
+  SSOT로 통합) + 요청 목록·선택 줄의 원문 ISO 제거(`formatKoreanDateTime`). 라이브 검증(복사 스택):
+  요청 목록 "2026. 10. 13. 12:18"·관측 표 "0 m³"; 대시보드 vitest **788**·tsc/eslint 0. 캡처
+  `/tmp/opencode/ksi-f04-review-20261013/evidence/c-*.png`.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
