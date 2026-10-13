@@ -282,7 +282,11 @@ def test_audited_v1_detail_opens_without_mutation_permission(customer_http) -> N
     client, headers, report = customer_http
     path = f"/v1/external-relative-volume-reports/{report.report_id}"
     assert client.get(path, headers=headers["granted"]).status_code == 200
-    assert client.post(path + "/reviews", headers=headers["granted"]).status_code == 403
+    # 2026-10-13: /reviews moved into the reviewed scoped matrix (console review
+    # flow — see test_oidc_route_scope.py). The route is now reachable for this
+    # scoped operator; the handler's own refusal (review source/workflow
+    # authority) is the boundary, not the scope gate.
+    assert client.post(path + "/reviews", headers=headers["granted"]).status_code == 409
 
 
 @pytest.fixture
