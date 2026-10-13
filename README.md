@@ -6,24 +6,32 @@
 >
 > **주식회사 케이에스아이 (KSI Corporation) · 대표번호 043-288-4860**
 
+**30초 요약**
+
+- 매주 같은 WorkArea의 두 시점 관측을 골라 **변화·물량을 검토**합니다. 결과마다 출처·좌표·프로파일·유효 범위·불확실성을 함께 보여줍니다.
+- 조건이 맞지 않으면 수치를 추정하지 않고 **사유와 보완 방법을 표시**합니다.
+- UI·MCP·외부 API가 **같은 Core 자산·작업·결과 기록**을 씁니다. 대용량 바이트는 허용된 접근 참조로만 전달합니다.
+
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue)](services/core/pyproject.toml)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](apps/dashboard/package.json)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB)](apps/dashboard/package.json)
 [![FastAPI Core](https://img.shields.io/badge/Core-FastAPI-009688)](services/core/)
-[![Contract Tests](https://img.shields.io/badge/contract-5484_passed-brightgreen)](tests/contract/)
-[![Dashboard Tests](https://img.shields.io/badge/dashboard_vitest-788_passed-brightgreen)](apps/dashboard/)
+[![로컬 검증 2026-10-13](https://img.shields.io/badge/verification-local_2026--10--13-lightgrey)](#검증-현황)
 
-![KSI Operations Console — Home](docs/portfolio/hero-home-1440.png)
+> 아래 수치 배지는 **2026-10-13 로컬 실행 결과**입니다. GitHub Actions는 계정 결제 문제로 비활성 상태이며, 별도 조치 전까지 원격 CI 통과를 주장하지 않습니다.
 
-## 시연 영상 (16초, 합성 데모 현장)
+![두 시점 비교 결과와 검토 기록 — 합성 데모](apps/dashboard/f04-review-evidence/observations-page.png)
 
-![홈 → 현장 목록 → 현장 상세 → 분석 → 관측 → 홈](docs/portfolio/demo-800.gif)
+## 시연 흐름 (합성 데모, 자막 포함)
 
-> 자동 재생이 안 되면 [`demo-1440.mp4`](docs/portfolio/demo-1440.mp4)를 내려받아 보세요.
-> 로그인 → 현장 목록 → 현장 상세 → 분석 기록 → 관측 현황 → 홈 흐름의 실제 구동입니다.
+![① 두 시점 비교 결과 → ② 새로고침 후 검토 유지 → ③ Core 재기동 후 검토 유지](docs/portfolio/demo-800.gif)
+
+> 자동 재생이 안 되면 [`demo-800.mp4`](docs/portfolio/demo-800.mp4)를 내려받아 보세요.
+> 같은 합성 시나리오(F-03 flow site, 두 관측 구간, 리포트 `ae2d5e64…`)의 결과 → 검토 → 지속성 흐름입니다.
 
 ## 목차
 
+- [시연 흐름](#시연-흐름-합성-데모-자막-포함)
 - [담당자가 1분 만에 보는 요약](#담당자가-1분-만에-보는-요약)
 - [실제 구동 화면](#실제-구동-화면)
 - [핵심 기능](#핵심-기능)
@@ -31,7 +39,7 @@
 - [시스템 구성](#시스템-구성)
 - [기술 스택](#기술-스택)
 - [검증 현황](#검증-현황)
-- [5분 만에 로컬 실행](#5분-만에-로컬-실행)
+- [로컬 실행](#로컬-실행-개발자용)
 - [프로젝트 구조](#프로젝트-구조)
 - [문서 안내](#문서-안내)
 - [책임 경계](#책임-경계)
@@ -65,47 +73,52 @@
 > 아래는 모두 실제 로컬 스택에서 구동된 **KSI Operations Console** 화면입니다.
 > 현장명·수치는 합성 데모 데이터이며 흐름·권한·지속성은 실제 코드 그대로입니다.
 
-### 1. 현장 분석 — 두 시점 비교 요청
+### 1. 두 시점 비교 결과 — 수치·근거·검토가 한 화면에
 
-같은 작업구역의 기준 관측과 현재 관측을 고르면 Core가 적합성 계산 실행을 기록합니다.
+같은 작업구역의 기준 관측(2026-10-10 19:00~19:30)과 현재 관측(20:00~20:30)을 비교한 합성 리포트입니다.
+절·성토·순변화(`-0 / 0 / 0 m³`), 공통 유효 영역 100%, 불확실성 ±0 m³, 양 시점의 독립 검증 체크포인트 RMSE 근거가 함께 표시되고,
+같은 화면에서 검토 기록을 남기고 다음 관측·작업으로 이어집니다.
+수치는 측정 기록의 예시이며 정확도·정산·측량 수용의 근거가 아닙니다.
 
-![현장 분석 화면](docs/portfolio/analysis-1440.png)
+![외부 관측 비교 결과](apps/dashboard/f04-review-evidence/observations-page.png)
 
 ### 2. 새 관측 시작 — 외부 산출물 등록
 
 이미 만든 정사영상·DSM을 등록해 비교 결과와 검토 상태를 확인하는 입구입니다.
-비행·장비 제어는 이 화면에서 시작하지 않습니다.
+이 작업은 파일 등록과 비교 확인만 하며, 비행·장비 제어는 시작하지 않습니다.
 
 ![새 관측 시작](apps/dashboard/design-review-inputs/ui-20261012/observation-wizard-desktop.png)
 
-### 3. 현장 작업 — 검사와 비교 판정
+### 3. 현장 작업 — 관측 작업과 외부 결과 흐름
 
-봉인된 산출물의 검사 결과를 확인하고 기준 시점과의 비교 판정을 요청합니다.
-담당·기한·종료 메모는 업무 종료로 남습니다.
+플랫폼 작업 원장에 기록된 관측 작업 목록입니다. 각 작업의 산출물 등록 준비 상태를 한눈에 봅니다.
 
 ![현장 작업 화면](docs/portfolio/work-ledger-1440.png)
 
-| 분석 목록 | 관측 현황 |
-|---|---|
-| ![분석 목록](apps/dashboard/design-review-inputs/ui-20261012/site-analysis-list-desktop.png) | ![관측 현황](apps/dashboard/design-review-inputs/ui-20261012/after-observations-desktop.png) |
-
 ### 4. 검토 지속성 — 새로고침·Core 재기동 후에도 유지
 
-외부 상대물량 리포트의 검토 기록이 페이지 새로고침과 Core 재기동(저널 replay) 뒤에도 그대로 표시됩니다.
+위 ①과 같은 합성 시나리오의 검토 기록(`err-v1-0894a51a…`, Core 201)입니다.
+페이지 새로고침 후와 Core 재기동(저널 replay) 후에 같은 검토가 그대로 표시됩니다.
+이 증거의 범위는 **검토 기록의 재조회·지속성**이며, 분석 흐름 전체나 수치 정확도의 검증이 아닙니다.
+같은 리허설의 작업구역·분석구역 불일치(`wa-…-0001` vs `wa-…-0002`)는 실자료에서 반복하지 않을 조건으로 기록돼 있습니다
+([리허설 요약](apps/dashboard/f04-review-evidence/SUMMARY.md)).
 
 | 새로고침 후 | Core 재기동 후 |
 |---|---|
 | ![검토-새로고침](apps/dashboard/f04-review-evidence/review-before-restart.png) | ![검토-재기동](apps/dashboard/f04-review-evidence/review-after-core-restart.png) |
 
-### 5. 현장 등록 — 좌표계·구역 포함
+### 5. 현장 등록 — 3단계와 좌표계·구역
 
-![현장 등록 AOI·좌표계](apps/dashboard/f01-bootstrap-evidence/verification/02-step1-aoi-crs.png)
+서버 발급 ID·멱등 binding의 현장 등록 1단계(기본 정보·외부 반출 동의 기본값 포함)와,
+지도에서 그린 작업구역이 저장된 모습입니다.
 
-모바일(390px) 제한 표현과 외부 이력 화면도 동일 백엔드에서 동작합니다.
+![현장 등록 1단계](apps/dashboard/f01-bootstrap-evidence/verification/01-sites-new-mapped.png)
 
-| 모바일 작업 | 외부 이력 |
-|---|---|
-| ![모바일](docs/portfolio/home-390.png) | ![외부 이력](apps/dashboard/design-review-inputs/ui-20261012/external-history-desktop.png) |
+![작업구역 저장](apps/dashboard/f01-bootstrap-evidence/verification/07-work-area-created.png)
+
+모바일(390px) 제한 표현도 동일 백엔드에서 동작합니다.
+
+![모바일 홈](docs/portfolio/home-390.png)
 
 ## 핵심 기능
 
@@ -181,7 +194,8 @@ M4D 촬영 → 고객 통제 현장 PC 재구성 → 파생 산출물·근거 KS
 
 ## 검증 현황
 
-> 로컬 소프트웨어 검증 근거이며 현장·고객 수용을 대체하지 않습니다. (2026-10-13 기준)
+> 아래는 **2026-10-13 로컬 소프트웨어 검증 근거**이며 현장·고객 수용을 대체하지 않습니다.
+> GitHub Actions는 계정 결제 문제로 비활성 상태이므로, 원격 CI 통과와 혼동하지 마세요.
 
 | 게이트 | 결과 |
 |---|---|
@@ -197,14 +211,19 @@ production/TLS·고객·EXT-VAL 수용, GitHub Actions 결제 차단. 상세는
 [통합 감사](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)와
 [정본 원장](docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
 
-## 5분 만에 로컬 실행
+## 로컬 실행 (개발자용)
+
+사전 조건: Python 3.12(`uv`), Node.js, Docker, Tailscale(선택).
+소요 시간은 환경에 따라 다르며, 아래는 이미 도구가 준비된 개발 호스트 기준입니다.
 
 ```bash
 # 1. Console + Core + Local Identity (loopback)
 cd apps/dashboard
 npm run dev
-# 표시된 MagicDNS URL로 접속 (tailnet 전용)
+# 표시된 MagicDNS URL로 접속 (tailnet 전용, tailnet 미사용 시 아래 참조)
+```
 
+```bash
 # Tailscale 없이 localhost로만 볼 때
 npm run dev:local
 ```
@@ -221,6 +240,7 @@ uv run pytest tests/contract -q
 ```
 
 상세 운영·배포 경계는 [`deploy/README.md`](deploy/README.md), [`docs/ops/DEPLOYMENT.md`](docs/ops/DEPLOYMENT.md).
+`npm run dev`의 tailnet 프록시·로컬 OIDC 저널 동작은 [`apps/dashboard/README.md`](apps/dashboard/README.md)를 따릅니다.
 
 ## 프로젝트 구조
 
