@@ -5,8 +5,16 @@ The F-03/F-04 parser -> VALIDATED -> review acceptance requires a host where the
 bubblewrap parser sandbox actually works (user namespaces + UID mapping + network
 namespace). On hosts where `PARSER_SANDBOX_UNAVAILABLE` was recorded, the product
 stays fail-closed and only the pre-launch conditions are verifiable. This probe
-runs the exact capability commands and reports PASS/FAIL per check so a candidate
+runs the exact capability commands and reports PASS/Fail per check so a candidate
 verification host can be judged before the acceptance run.
+
+Verdict semantics (2026-10-13): the bwrap checks decide READY. A raw
+`unshare -Ur` failure is informational — Ubuntu 24.04 ships
+`kernel.apparmor_restrict_unprivileged_userns=1` and grants user namespaces to
+bwrap through its own AppArmor profile (`userns,`), so a host where unconfined
+user namespaces are restricted yet bwrap works is still sandbox-capable. A host
+also needs the bwrap profile loaded (or the restriction relaxed) for bwrap to
+pass at all.
 
 Usage:
   uv run --locked python tools/verify_parser_sandbox_host.py
@@ -14,7 +22,7 @@ Usage:
   uv run --locked python tools/verify_parser_sandbox_host.py \
       --core-url http://127.0.0.1:8051 --object-origin http://127.0.0.1:9100
 
-Exit codes: 0 = every capability check passed (parser acceptance can run);
+Exit codes: 0 = every essential capability passed (parser acceptance can run);
 2 = blocked on a named capability; 1 = usage error. The probe changes nothing
 on the host.
 """
@@ -61,7 +69,7 @@ class Capability:
     check_id: str
     description: str
     command: tuple[str, ...]
-    expect_stdout_contains: str | None = None
+    informational: bool = False
 
 
 CAPABILITIES: tuple[Capability, ...] = (
@@ -72,8 +80,11 @@ CAPABILITIES: tuple[Capability, ...] = (
     ),
     Capability(
         "user-namespace",
-        "unprivileged user namespaces are permitted",
+        "unconfined unprivileged user namespaces are permitted "
+        "(informational: Ubuntu 24.04 grants this to bwrap via its AppArmor profile "
+        "while raw unshare stays restricted)",
         ("unshare", "-Ur", "true"),
+        informational=True,
     ),
     Capability(
         "bwrap-uid-map",
@@ -100,6 +111,7 @@ def run_capabilities(runner: Runner) -> list[dict[str, object]]:
                 "description": capability.description,
                 "command": " ".join(capability.command),
                 "ok": ok,
+                "informational": capability.informational,
                 "exitCode": result.returncode,
                 "detail": detail,
             }
@@ -122,6 +134,7 @@ def run_endpoint(
         "description": description,
         "command": url,
         "ok": ok,
+        "informational": False,
         "exitCode": None,
         "detail": detail,
     }
@@ -169,14 +182,16 @@ def main(
             )
         )
 
-    passed = [item for item in results if item["ok"]]
-    failed = [item for item in results if not item["ok"]]
+    passed = [item for item in results if item["ok"] and not item["informational"]]
+    failed = [item for item in results if not item["ok"] and not item["informational"]]
+    warnings = [item for item in results if not item["ok"] and item["informational"]]
     verdict = "READY" if not failed else "BLOCKED"
     report = {
         "host": sys.platform,
         "verdict": verdict,
         "passed": len(passed),
         "failed": len(failed),
+        "warnings": [item["id"] for item in warnings],
         "checks": results,
     }
 
@@ -184,7 +199,7 @@ def main(
         print(json.dumps(report, ensure_ascii=False, indent=1))
     else:
         for item in results:
-            marker = "PASS" if item["ok"] else "FAIL"
+            marker = "PASS" if item["ok"] else "WARN" if item["informational"] else "FAIL"
             print(f"[{marker}] {item['id']}: {item['description']}")
             print(f"       $ {item['command']}")
             if item["detail"]:

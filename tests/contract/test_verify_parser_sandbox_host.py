@@ -48,9 +48,7 @@ def _runner_from(
 
 
 def test_probe_commands_match_the_recorded_host_evidence() -> None:
-    commands = {
-        capability.check_id: " ".join(capability.command) for capability in CAPABILITIES
-    }
+    commands = {capability.check_id: " ".join(capability.command) for capability in CAPABILITIES}
     assert commands["user-namespace"] == "unshare -Ur true"
     assert commands["bwrap-uid-map"] == "bwrap --ro-bind / / -- /bin/true"
     assert commands["bwrap-net-namespace"] == ("bwrap --unshare-net --ro-bind / / -- /bin/true")
@@ -81,6 +79,18 @@ def test_uid_map_failure_blocks_with_exit_two_and_names_the_check(
     # Every other check still ran (a probe reports, it does not stop early).
     assert len(report["checks"]) == len(CAPABILITIES)
     assert "BLOCKED" in captured.err
+
+
+def test_unconfined_userns_failure_is_informational_when_bwrap_works(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Ubuntu 24.04: raw unshare stays restricted while bwrap works via AppArmor."""
+    exit_code = main(["--json"], runner=_runner_from({"user-namespace"}))
+    assert exit_code == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["verdict"] == "READY"
+    assert report["failed"] == 0
+    assert report["warnings"] == ["user-namespace"]
 
 
 def test_missing_bwrap_binary_is_blocked(capsys: pytest.CaptureFixture[str]) -> None:
