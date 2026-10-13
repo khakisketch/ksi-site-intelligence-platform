@@ -301,6 +301,17 @@ copy beyond the work-order mobile case.
   129files/973tests/lint/types/build passed and generated tracked config restored/type-rechecked.
   Broader authorized history availability stays open; no route/grant expansion.
 - [ ] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
+  2026-10-13 implemented locally (선구현): native file controls replaced with the shared
+  `components/ui/FilePickerField` — styled Korean trigger (`파일 선택`) + sr-only input, no browser
+  locale chrome (applied to `ExternalReconstructionPanel` ortho/DSM and `ExternalEvidencePanel`
+  checkpoint CSV); the three `datetime-local` controls gained a shared Korean echo
+  (`선택: 2026. 10. 15. 14:30` via `formatKoreanDateTime`, operations due + capture start/end).
+  Notice-stack half is **not reproducible at current HEAD**: live DOM check at the work-order page
+  (1440) shows 0 beige notices and no duplicate notice; the 2026-09-17 captures include the fixture
+  banner state the plan says not to chase. Dev gates: vitest 792 (+4 `test/file-picker-field.test.tsx`),
+  tsc/eslint/build 0; live check `fileTriggers=2 emptyLabels=2 nativeVisibleInputs=0` + datetime echo;
+  capture `/tmp/opencode/ksi-f04-review-20261013/evidence/a3-korean-file-picker.png`. Independent
+  test-runner + design fidelity review still pending before [x].
 - [x] A4 [F04] mission detail hierarchy/KMZ — owner: Claude — scoped title
   (`MISSION_TYPE_LABEL`) now leads; missionId + KMZ SHA-256 moved into a collapsed
   "전문가 정보" `<details>`; the no-KMZ state is a non-button notice labelled
@@ -354,6 +365,10 @@ copy beyond the work-order mobile case.
   alone; the scoped "외부 산출물 작업" heading already existed once selected;
   `test/observation-path-selection.test.tsx`.
 - [ ] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
+  2026-10-13: **obsolete at current HEAD** — the `sites/[siteId]/design` route and
+  `DesignSurfacePanel.tsx` no longer exist (P4 console cleanup removed the retired acquisition
+  design route; `grep -rn 'type="file"' apps/dashboard/src/app/sites` returns nothing). Nothing to
+  localize; close as not-applicable with this method when the batch review runs.
 - [x] C4 [F16] sites/new form — owner: Claude — fixed
   `SiteRegistrationOnlyWizard.tsx`, the component the `/sites/new` route
   actually renders (`SiteRegistrationWizard.tsx` is unreachable dead code kept

@@ -4,6 +4,7 @@ import { ExternalUseBlockerCard } from "@/components/external-results/ExternalUs
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { FilePickerField } from "@/components/ui/FilePickerField";
 import { putExternalEvidenceFile } from "@/lib/external-evidence-upload";
 
 type Revision = {
@@ -674,16 +675,14 @@ export function ExternalEvidencePanel({
               <div>
                 {hasDsm(target) && (
                   <>
-                    <label>
-                      독립 검사점 CSV
-                      <input
-                        aria-label="독립 검사점 CSV"
-                        type="file"
-                        accept=".csv,text/csv"
-                        disabled={busy || Boolean(upload) || !newIntentAllowed}
-                        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                      />
-                    </label>
+                    <FilePickerField
+                      label="독립 검사점 CSV"
+                      ariaLabel="독립 검사점 CSV"
+                      accept=".csv,text/csv"
+                      disabled={busy || Boolean(upload) || !newIntentAllowed}
+                      onSelect={(selected) => setFile(selected)}
+                      selectedFileName={file?.name ?? null}
+                    />
                     <label>
                       독립성 근거 선언
                       <input

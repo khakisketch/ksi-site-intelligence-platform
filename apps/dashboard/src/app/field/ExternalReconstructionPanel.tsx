@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { FilePickerField } from "@/components/ui/FilePickerField";
 import { ExternalSanitizedOrthophoto } from "@/app/field/ExternalSanitizedOrthophoto";
 import { ExternalEvidencePanel } from "@/app/field/ExternalEvidencePanel";
 import { presentExternalInspectionStatus } from "@/app/field/external-reconstruction-status";
@@ -12,6 +13,7 @@ import {
   type TrustedExternalResultLink,
 } from "@/app/field/ExternalResultWorkflowPanel";
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import {
@@ -491,14 +493,32 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           <legend className="px-1 font-semibold">촬영 시각 (한국 표준시)</legend>
           <p className="text-[12px] text-ink-2">{requiresCaptureInterval ? "이 외부 등록에는 시작과 종료 시각이 필요합니다." : "알고 있는 경우에만 시작과 종료 시각을 함께 입력하세요."}</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <label className="flex flex-col gap-1">시작<input className="input" aria-label="촬영 시작 시각 (한국 표준시)" type="datetime-local" step="1" value={captureStartedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureStartedLocal(event.target.value); }} /></label>
-            <label className="flex flex-col gap-1">종료<input className="input" aria-label="촬영 종료 시각 (한국 표준시)" type="datetime-local" step="1" value={captureEndedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureEndedLocal(event.target.value); }} /></label>
+            <label className="flex flex-col gap-1">시작<input className="input" aria-label="촬영 시작 시각 (한국 표준시)" type="datetime-local" step="1" value={captureStartedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureStartedLocal(event.target.value); }} />
+              {captureStartedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureStartedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
+            </label>
+            <label className="flex flex-col gap-1">종료<input className="input" aria-label="촬영 종료 시각 (한국 표준시)" type="datetime-local" step="1" value={captureEndedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureEndedLocal(event.target.value); }} />
+              {captureEndedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureEndedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
+            </label>
           </div>
           {captureIntervalTouched && !captureIntervalValid && <p role="alert" className="text-[12px] text-high-ink">시작과 종료를 모두 입력하고, 종료가 시작보다 늦은지 확인하세요.</p>}
         </fieldset>
-        <label className="flex flex-col gap-1 font-semibold">정사영상 (필수)<input className="input" aria-label="정사영상 GeoTIFF" type="file" accept=".tif,.tiff" disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)} onChange={(event) => void select("ortho", event.target.files?.[0])} /></label>
+        <FilePickerField
+          label="정사영상 (필수)"
+          ariaLabel="정사영상 GeoTIFF"
+          accept=".tif,.tiff"
+          disabled={busy || hashing || Boolean(frozenAttempt) || (!newIntentAllowed && !resume)}
+          onSelect={(file) => void select("ortho", file ?? undefined)}
+          selectedFileName={ortho?.file.name ?? null}
+        />
         {ortho && headers.ortho && <ExternalHeaderRecognition slot="ortho" state={headers.ortho} crs={declaredCrs.ortho} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, ortho: value }))} />}
-        <label className="flex flex-col gap-1 font-semibold">DSM (선택)<input className="input" aria-label="DSM GeoTIFF" type="file" accept=".tif,.tiff" disabled={busy || hashing || Boolean(frozenAttempt) || !ortho || (!newIntentAllowed && !resume)} onChange={(event) => void select("dsm", event.target.files?.[0])} /></label>
+        <FilePickerField
+          label="DSM (선택)"
+          ariaLabel="DSM GeoTIFF"
+          accept=".tif,.tiff"
+          disabled={busy || hashing || Boolean(frozenAttempt) || !ortho || (!newIntentAllowed && !resume)}
+          onSelect={(file) => void select("dsm", file ?? undefined)}
+          selectedFileName={dsm?.file.name ?? null}
+        />
         {dsm && headers.dsm && <ExternalHeaderRecognition slot="dsm" state={headers.dsm} crs={declaredCrs.dsm} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, dsm: value }))} />}
         {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새 선언으로 전환</button>}
         {hashing && <p role="status" className="text-ink-2">파일 확인 중: {hashProgress?.toLocaleString() ?? 0} bytes</p>}

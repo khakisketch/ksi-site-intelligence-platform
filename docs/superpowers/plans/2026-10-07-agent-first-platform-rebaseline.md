@@ -2874,6 +2874,14 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   등록 + `ksi-utest-amd64` 실행(`uname -m` → `x86_64`) 확인; inspector 이미지의 **amd64 에뮬레이션
   빌드는 snapshot.debian.org OpenPGP 서명 실패로 중단**(외부 스냅샷 문제, arm64 레이어는 캐시로 생존).
   amd64 실빌드는 실 amd64 호스트 또는 고정 스냅샷 필요 시 OPEN 유지.
+- 대시보드 개발 재개 — A3 구현(2026-10-13, 선구현): [경험 개선 원장](2026-09-17-dashboard-experience-improvements.md)
+  A3(F03) 로컬 구현 — 네이티브 파일 입력 3곳(정사영상·DSM·검사점 CSV)을 공유 `FilePickerField`
+  (한국어 트리거+sr-only 입력, 브라우저 로케일 chrome 제거)로 교체, datetime 3곳(마감·촬영 시작/종료)에
+  한국어 에코(`formatKoreanDateTime`) 추가. 중복 안내 절반은 현 HEAD에서 **재현 불가**(라이브 DOM 0건;
+  감사 캡처의 스택 안내는 픽스처 상태)로 종결 기록, C3(F14 설계 업로드)는 P4에서 화면 제거로 obsolete.
+  게이트: vitest **792**(+4)·tsc/eslint/build 0; 라이브 `fileTriggers=2·nativeVisibleInputs=0`+에코 확인;
+  캡처 `/tmp/opencode/ksi-f04-review-20261013/evidence/a3-korean-file-picker.png`. 독립/디자인 리뷰는
+  계획 프로토콜대로 배치 대기.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리
