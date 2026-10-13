@@ -162,7 +162,7 @@ export function ExternalObservationCreateForm({
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 현장 화면을 열어 등록을 이어가세요.">
           <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
             <div>
-              <h2 className="text-[16px] font-bold">외부 산출물 작업</h2>
+              <h2 className="text-[16px] font-bold">외부 산출물 등록</h2>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">이 작업은 파일 등록과 비교 확인을 위한 것입니다. 비행 또는 장비 제어는 시작하지 않습니다.</p>
               {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : initialWorkAreaIds.length > 0 && <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 새 관측을 만들기 전에 범위를 확인하세요.</p>}
             </div>

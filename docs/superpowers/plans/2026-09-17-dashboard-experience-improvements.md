@@ -253,6 +253,13 @@ Created: 2026-09-17 by Build (session ses_f5571c6d7ffeJQIpTb0goaMxUF).
 - Files: `apps/dashboard/src/app/sites/[siteId]/observations/new/page.tsx`.
 - Acceptance: explicit selected state (label/check, not border only); form heading scoped to the
   selected path.
+  2026-10-13 closed: the card already had visible `✓ 선택됨` and `aria-pressed` (commit `2061411`);
+  the form heading now uses the same exact path label, `외부 산출물 등록`, replacing `외부 산출물
+  작업`. Live 1440 render shows matching selected-card and form headings. At 390 the existing
+  `노트북에서 계속` boundary remains (the write form is intentionally not shown on mobile).
+  Vitest 798, ESLint/tsc and isolated Next build pass; selected-state tests 6/6; independent design
+  review passed on fresh renders. Captures: `/tmp/opencode/ksi-f04-review-20261013/evidence/
+  c2-observation-path-{mobile-390,desktop-1440}-final.png`. No API or domain invariant changes.
 
 ### C3 — [F14] Design surface upload (M)
 

@@ -2896,6 +2896,12 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   1440px에서 내비 숨김·본문 여백 0 확인. 오래된 Home 스냅샷은 10-12 unavailable-lane 문구를
   반영해 갱신. 신선한 390/1440 캡처는 `/tmp/opencode/ksi-f04-review-20261013/evidence/c1-*`;
   Design Specialist 독립 리뷰 pass. 실제 iPhone 미검증, 안전영역은 브라우저에서 모의.
+- 대시보드 C2(관측 경로 선택, F13) 완료(2026-10-13): 카드의 명시적 `✓ 선택됨`/`aria-pressed`
+  (기존 commit `2061411`)을 재검증하고, 폼 h2를 선택 경로와 같은 `외부 산출물 등록`으로 통일
+  (`외부 산출물 작업`에서 수정). 1440에서 카드·폼 제목 일치, 390에서 기존 `노트북에서 계속`
+  경계 유지. 선택 상태 테스트 6/6, 전체 vitest **798**, ESLint/tsc/isolated build 통과;
+  fresh desktop/mobile 캡처 `.../evidence/c2-observation-path-{desktop-1440,mobile-390}-final.png`;
+  independent Design Specialist 리뷰 pass. API/도메인 계약 불변.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리

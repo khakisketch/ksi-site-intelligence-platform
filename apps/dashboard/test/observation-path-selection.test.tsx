@@ -20,5 +20,7 @@ describe("ExternalObservationCreateForm path selection", () => {
     const selectedCard = screen.getByRole("button", { name: /외부 산출물 등록/ });
     expect(selectedCard.getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText(/선택됨/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /^외부 산출물 등록$/ })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /^외부 산출물 작업$/ })).toBeNull();
   });
 });
