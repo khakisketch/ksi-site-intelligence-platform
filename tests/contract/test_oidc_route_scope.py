@@ -202,6 +202,16 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
             ("GET", "/v1/external-decisions/pending"),
             ("GET", "/v1/observation-work-orders/{work_order_id}/relative-volume-requests"),
             ("GET", "/v1/observation-work-orders/{work_order_id}/single-volume-requests"),
+            (
+                "GET",
+                "/v1/observation-work-orders/{work_order_id}/relative-volume-requests/{request_ref}",
+            ),
+            (
+                "GET",
+                "/v1/observation-work-orders/{work_order_id}/single-volume-requests/{request_ref}",
+            ),
+            ("POST", "/v1/external-relative-volume-reports/{report_ref}/reviews"),
+            ("POST", "/v1/external-single-volume-reports/{report_ref}/reviews"),
         }
         spatial_catalog_routes = {
             ("GET", "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets"),
@@ -572,8 +582,9 @@ def test_scoped_pending_decisions_filter_by_site_and_work_area() -> None:
     assert _scoped_pending_items(unscoped, view) == view.items
 
 
-def test_mapped_oidc_volume_detail_routes_stay_closed(tmp_path: Path) -> None:
-    """grant가 있어도 volume 상세 route는 검토된 목록 route 밖이므로 403이다."""
+def test_mapped_oidc_volume_detail_and_review_routes_reach_their_handlers(tmp_path: Path) -> None:
+    """2026-10-13 승인 확장: volume 상세·검토 route는 mapped 신원도 도달하지만,
+    핸들러(WorkOrder grant guard·review source authority)가 그대로 fail-closed한다."""
     fixture = build_local_analysis_api_fixture(tmp_path)
     try:
         client = TestClient(fixture.app)
@@ -584,10 +595,15 @@ def test_mapped_oidc_volume_detail_routes_stay_closed(tmp_path: Path) -> None:
         single_detail = (
             f"/v1/observation-work-orders/{work_order_id}/single-volume-requests/req-x"
         )
-        # legacy opaque 신원에게는 같은 route가 403이 아니라 일반 404다(경계 대조).
+        relative_review = "/v1/external-relative-volume-reports/req-x/reviews"
+        single_review = "/v1/external-single-volume-reports/req-x/reviews"
+
+        # legacy opaque 신원: 같은 route가 일반 핸들러 판정(404/409)이다(경계 대조).
         legacy_headers = fixture.operator_headers()
         assert client.get(relative_detail, headers=legacy_headers).status_code == 404
         assert client.get(single_detail, headers=legacy_headers).status_code == 404
+        assert client.post(relative_review, headers=legacy_headers).status_code == 409
+        assert client.post(single_review, headers=legacy_headers).status_code == 409
 
         token, _key = _install_oidc_v2(
             fixture,
@@ -596,8 +612,24 @@ def test_mapped_oidc_volume_detail_routes_stay_closed(tmp_path: Path) -> None:
             area_ids=[fixture.work_area_id],
         )
         headers = {"Authorization": f"Bearer {token}"}
-        assert client.get(relative_detail, headers=headers).status_code == 403
-        assert client.get(single_detail, headers=headers).status_code == 403
+        # 분석 경계 403이 아니라 핸들러 판정으로 fail-closed한다 — 존재하지 않는
+        # ref는 단건 상세 404, review는 source authority 부재 409다.
+        assert client.get(relative_detail, headers=headers).status_code == 404
+        assert client.get(single_detail, headers=headers).status_code == 404
+        assert client.post(relative_review, headers=headers).status_code == 409
+        assert client.post(single_review, headers=headers).status_code == 409
+
+        # 단건 상세도 목록과 같은 WorkOrder site/area guard를 통과해야 한다:
+        # 불일치 grant는 존재 여부를 드러내지 않고 404로 접힌다.
+        other_area_token, _key2 = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=["wa-other-0001"],
+        )
+        other_headers = {"Authorization": f"Bearer {other_area_token}"}
+        assert client.get(relative_detail, headers=other_headers).status_code == 404
+        assert client.get(single_detail, headers=other_headers).status_code == 404
     finally:
         fixture.close()
 

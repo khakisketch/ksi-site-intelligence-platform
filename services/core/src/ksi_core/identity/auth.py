@@ -739,6 +739,22 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         # and all worker/internal routes stay closed.
         ("GET", "/v1/observation-work-orders/{work_order_id}/relative-volume-requests"),
         ("GET", "/v1/observation-work-orders/{work_order_id}/single-volume-requests"),
+        # External-result console review flow opened 2026-10-13 (human-approved
+        # boundary extension; F-04 review persistence): the single-request reads
+        # keep the same WorkOrder site/area grant guard as their lists, and the
+        # review writes enforce OPERATOR kind plus the review store's exact
+        # source/authority resolution — the same posture as the allowlisted
+        # /shares writes. No other route is opened.
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/relative-volume-requests/{request_ref}",
+        ),
+        (
+            "GET",
+            "/v1/observation-work-orders/{work_order_id}/single-volume-requests/{request_ref}",
+        ),
+        ("POST", "/v1/external-relative-volume-reports/{report_ref}/reviews"),
+        ("POST", "/v1/external-single-volume-reports/{report_ref}/reviews"),
         ("GET", "/v1/external-decisions/pending"),
         ("GET", "/v1/work-inbox"),
         ("POST", "/v1/work-inbox/{notification_ref}/read"),

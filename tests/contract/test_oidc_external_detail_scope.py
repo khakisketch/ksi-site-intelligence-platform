@@ -129,9 +129,13 @@ def test_signed_archived_details_remain_readable_without_mutation_permission(
             "/v1/external-result-reviews/unknown",
         ):
             assert client.get(path, headers=headers).status_code == 403
+        # 2026-10-13: /v1/external-*-volume-reports/{report_ref}/reviews moved into
+        # the reviewed matrix (console review flow — see test_oidc_route_scope.py).
+        # The route is now reachable; the review source authority still refuses
+        # this principal with 409 EXTERNAL_RESULT_REVIEW_SOURCE_UNAVAILABLE.
         assert client.post(
             f"/v1/external-relative-volume-reports/{first.report_id}/reviews", headers=headers
-        ).status_code == 403
+        ).status_code == 409
 
 
 @pytest.mark.parametrize("history", [
