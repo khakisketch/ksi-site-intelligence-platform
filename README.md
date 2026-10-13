@@ -1,107 +1,256 @@
 # KSI Site Intelligence Platform
 
-KSI는 **물리적 현장의 관측을 사람·외부 에이전트·소프트웨어·로보틱스가 재사용하는
-근거형 Site State와 Change로 바꾸는 기반**이다. 건설·토공 운영은 첫 시장이지 배타적
-정체성이 아니다. 외부 산출물 등록·검사, 데이터 제공과 고정 분석이 현재 재사용 경로다. 고객의 에이전트와
-산업용 소프트웨어가 공간데이터 처리·권한·계보·근거 관리를 매번 구축하는 부담을 줄인다.
-시간·비용 절감은 실제 고객 사용으로 검증할 목표다.
+> **물리적 현장의 관측을, 사람·소프트웨어·외부 AI가 재사용하는 근거형 Site State와 Change로 바꾸는 기반**
+>
+> 첫 적용: 건설·토공 주간 현장 관리 — DSM·정사영상 기반 변화·물량 검토와 구역 데이터 활용
+>
+> **주식회사 케이에스아이 (KSI Corporation) · 대표번호 043-288-4860**
 
-제품에는 **공간데이터 제공**과 **서버 분석**의 두 경로가 있다. 첫 분석 사례는 WorkArea별
-주간 두 시점 지형 변화다. 첫 플랫폼 검증은 DSM·정사영상으로 같은 현장의 분석 요청과
-외부 코드용 구역 데이터 활용을 모두 입증한다. UI·선택한 MCP·외부 API 소비 코드는 같은
-자산·작업·결과 기록을 사용한다. Point cloud·Mesh·외부 분석 레이어와 추가 클라이언트는
-후속 계약·수용 대상이다. [제품 방향](docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md)과
-[장기 계획·보완 과제](docs/superpowers/plans/2026-09-30-spatial-data-platform-roadmap.md)는
-목표를 정의하며, 전체 기능의 구현·지원 완료를 뜻하지 않는다.
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue)](services/core/pyproject.toml)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-black)](apps/dashboard/package.json)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB)](apps/dashboard/package.json)
+[![FastAPI Core](https://img.shields.io/badge/Core-FastAPI-009688)](services/core/)
+[![Contract Tests](https://img.shields.io/badge/contract-5484_passed-brightgreen)](tests/contract/)
+[![Dashboard Tests](https://img.shields.io/badge/dashboard_vitest-788_passed-brightgreen)](apps/dashboard/)
 
-첫 출시에서 KSI는 사진을 3D 지도로 재구성하는 자체 엔진이나 고객용 재구성 서비스를
-운영하지 않는다. 장기적으로 비행·자율 취득·전술 인지/제어·고객 production 재구성은 제품 책임 밖이며
-관련 출처는 역사적 transitional implementation으로 `archive/acquisition-2026/`에 보존된다
-([ADR-KSI-039](docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)). 고객이 통제하는 현장 PC의 재구성 도구가 만든 결과를 등록·검증·분석해,
-외부 시스템과 사람이 재사용할 수 있는 근거형 분석 기록을 제공한다.
+## 목차
+
+- [담당자가 1분 만에 보는 요약](#담당자가-1분-만에-보는-요약)
+- [실제 구동 화면](#실제-구동-화면)
+- [핵심 기능](#핵심-기능)
+- [동작 흐름](#동작-흐름)
+- [시스템 구성](#시스템-구성)
+- [기술 스택](#기술-스택)
+- [검증 현황](#검증-현황)
+- [5분 만에 로컬 실행](#5분-만에-로컬-실행)
+- [프로젝트 구조](#프로젝트-구조)
+- [문서 안내](#문서-안내)
+- [책임 경계](#책임-경계)
+- [문의](#문의)
+
+## 담당자가 1분 만에 보는 요약
+
+건설 현장소장·공사관리자·본사 담당자가 매주 반복하는 질문에 답합니다.
+
+| 담당자 질문 | KSI가 주는 답 |
+|---|---|
+| 이번 주 현장이 지난주와 뭐가 달라졌나? | 같은 WorkArea의 두 시점 관측을 고르고, Core가 **적합성 계산 실행을 기록**으로 남깁니다. 화면은 그 판단을 바꾸지 않습니다. |
+| 숫자(절·성토·순변화)를 믿어도 되나? | 출처·좌표·변환·프로파일·유효/제외영역을 함께 기록합니다. 조건이 안 맞으면 수치를 추정하지 않고 **사유를 표시**합니다. |
+| 외부 툴·AI와 이어쓸 수 있나? | UI·MCP·외부 API 소비 코드가 **같은 Core 자산·작업·결과 기록**을 씁니다. 대용량 바이트는 허용된 접근 참조로만 전달합니다. |
+| 권한·반출은 안전한가? | 조직·현장·구역 범위 + 데이터 제공 권리·AI 동의·접근 회수를 매 요청마다 재확인합니다. |
+
+제품에는 **데이터 제공 경로**(자료 탐색 → 구역 데이터 준비 → 외부 코드 활용)와
+**분석 경로**(입력 admission → 고정 분석 → 결과·근거 조회)가 있습니다.
+첫 분석 사례는 WorkArea별 주간 두 시점 지형 변화이며,
+첫 플랫폼 검증 목표는 DSM·정사영상의 분석 + 외부 구역 데이터 활용 입증입니다.
 
 ```text
-고객 관측/재구성 -> 산출물·시점·구역·버전 등록과 검사 -> Core 권한·용도별 적합성
-        ├─ 데이터 경로: 자료 탐색 -> 지원하는 구역 데이터 준비 -> 외부 코드 활용
-        └─ 분석 경로: 입력 admission -> 고정 분석 -> 결과·근거 조회
-                 공통 API / 선택한 MCP / 최소 관리·근거 화면
+고객 관측/재구성 → 산출물·시점·구역·버전 등록과 검사 → Core 권한·용도별 적합성
+        ├─ 데이터 경로: 자료 탐색 → 구역 데이터 준비 → 외부 코드 활용
+        └─ 분석 경로: 입력 admission → 고정 분석 → 결과·근거 조회
+                 공통 API / 선택한 MCP / Operations Console
 ```
 
-RTK-equipped M4D와 고객 PC/DJI Terra는 초기 현장 검증·재구성 **입력 참조 흐름**이다.
-이 문서는 Terra 라이선스·내보내기
-호환성·자동 연동·정확도 또는 현장 수용을 주장하지 않는다. RTK FIX도 완성 지도나
-물량의 정확도 보증이 아니다. 계약 정산·측량급 결과는 별도 수용 근거 없이는 제품
-주장이 아니다. 정확한 책임 경계와 입력별 사용 제한은
-[`ADR-KSI-036`](docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md)를
-따른다.
+## 실제 구동 화면
 
-## Product components
+> 아래는 모두 실제 로컬 스택에서 구동된 **KSI Operations Console** 화면입니다.
+> 현장명·수치는 합성 데모 데이터이며 흐름·권한·지속성은 실제 코드 그대로입니다.
 
-| Product component | Source path | Responsibility |
+### 1. 현장 분석 — 두 시점 비교 요청
+
+같은 작업구역의 기준 관측과 현재 관측을 고르면 Core가 적합성 계산 실행을 기록합니다.
+
+![현장 분석 화면](apps/dashboard/design-review-inputs/ui-20261012/after2-analysis-desktop.png)
+
+### 2. 새 관측 시작 — 외부 산출물 등록
+
+이미 만든 정사영상·DSM을 등록해 비교 결과와 검토 상태를 확인하는 입구입니다.
+비행·장비 제어는 이 화면에서 시작하지 않습니다.
+
+![새 관측 시작](apps/dashboard/design-review-inputs/ui-20261012/observation-wizard-desktop.png)
+
+### 3. 현장 작업 — 검사와 비교 판정
+
+봉인된 산출물의 검사 결과를 확인하고 기준 시점과의 비교 판정을 요청합니다.
+담당·기한·종료 메모는 업무 종료로 남습니다.
+
+![현장 작업 화면](apps/dashboard/design-review-inputs/ui-20261012/after-workorder-desktop.png)
+
+| 분석 목록 | 관측 현황 |
+|---|---|
+| ![분석 목록](apps/dashboard/design-review-inputs/ui-20261012/site-analysis-list-desktop.png) | ![관측 현황](apps/dashboard/design-review-inputs/ui-20261012/after-observations-desktop.png) |
+
+### 4. 검토 지속성 — 새로고침·Core 재기동 후에도 유지
+
+외부 상대물량 리포트의 검토 기록이 페이지 새로고침과 Core 재기동(저널 replay) 뒤에도 그대로 표시됩니다.
+
+| 새로고침 후 | Core 재기동 후 |
+|---|---|
+| ![검토-새로고침](apps/dashboard/f04-review-evidence/review-before-restart.png) | ![검토-재기동](apps/dashboard/f04-review-evidence/review-after-core-restart.png) |
+
+### 5. 현장 등록 — 좌표계·구역 포함
+
+![현장 등록 AOI·좌표계](apps/dashboard/f01-bootstrap-evidence/verification/02-step1-aoi-crs.png)
+
+모바일(390px) 제한 표현과 외부 이력 화면도 동일 백엔드에서 동작합니다.
+
+| 모바일 작업 | 외부 이력 |
+|---|---|
+| ![모바일](apps/dashboard/design-review-inputs/ui-20261012/after-workorder-mobile-390.png) | ![외부 이력](apps/dashboard/design-review-inputs/ui-20261012/external-history-desktop.png) |
+
+## 핵심 기능
+
+| 영역 | 내용 | 소스 |
 |---|---|---|
-| KSI Operations Console | `apps/dashboard/` | 사람의 의도, 업무 상태, blocker, 복구, 증거 표시 |
-| KSI Site Intelligence Core | `services/core/` | Site/WorkArea/외부 WorkOrder·권한·등록·정책·결과·증거와 durable authority |
-| Artifact Processing Worker | `services/processing-controller/` | 외부 산출물 검사·계측, 고정 Analysis, 구역 데이터 준비; Core가 권위를 소유 |
-| Bounded MCP adapters | `services/analysis-mcp/`, `services/spatial-data-mcp/` | 같은 Core 기록의 고정 stdio 도구; 독립 권한·계산·스토리지 없음 |
-| Shared product libraries | `packages/` | domain, contract binding, geo, change/BIM/defect 알고리즘; 선택적 코드 존재≠공개 포맷 지원 |
+| Operations Console | Home·Sites·현장 5탭(개요·관측·자산·분석·작업), 검토·승인·보고서, 390/768/1024/1440 반응형 | `apps/dashboard/` |
+| Site Intelligence Core | Site/WorkArea·외부 WorkOrder·정책·등록·결과·증거·저널의 durable 권위 | `services/core/` |
+| Artifact Processing Worker | 외부 산출물 검사·계측, 고정 Analysis, 구역 데이터 준비 — 권위는 Core 소유 | `services/processing-controller/` |
+| Bounded MCP 어댑터 | Analysis 6 tools + Spatial Data 6 tools, stdio, 독립 권한·계산·스토리지 없음 | `services/analysis-mcp/`, `services/spatial-data-mcp/` |
+| 공용 라이브러리 | domain·contract binding·geo·change/BIM/defect 알고리즘 (import-only) | `packages/` |
+| 공간자산 카탈로그 | WorkArea별 자산 revision 조회, 페이지당 50, 유한 조회 예산 초과 시 명시적 503 | `services/core/` + `contracts/` |
 
-Gateway/Edge/비행계획/인지/managed 재구성 출처는 `archive/acquisition-2026/`의 **역사적
-증거**이며 현재 제품 구성요소·실행 입구가 아니다. 이동/복원 기록과 잔여 차이는
-[P5 통합 감사](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)에 있다.
+상세 책임·실행 경계는 [`REPOSITORY_STRUCTURE.md`](REPOSITORY_STRUCTURE.md)를 따릅니다.
 
-DJI Flight Controller는 안정화·모터·검증된 reactive avoidance·RTH를 계속 소유한다. Core나
-LLM은 저수준 비행 좌표/명령을 만들거나 안전정책을 우회하지 않는다.
+## 동작 흐름
 
-역사적 취득 계약에서 PSDK Liveview는 Manifold 로컬 acquisition/perception 입력이고 `EDGE_UPLINK`는 bounded
-metadata다. 외부 첫 출시 경로의 원본 사진은 고객 장비에 남고, KSI에는 필요한 파생
-산출물과 provenance/품질 근거만 등록한다. SD/storage -> field PC -> KSI web raw ingress는
-역사적 managed/test 또는 별도 승인 경로로만 해석한다. `MEDIA_PULL`/`MEDIA_UPLOAD`는
-이 플랫폼의 현행 개발 후보가 아니며 보존된 취득 계약의 실기 미검증 capability다.
+### 분석 경로 (주간 토공 예시)
 
-`KSI Safety`는 드론 밖 센서까지 포함하는 별도 다중센서 실시간 안전 운영 제품 구상이다.
-그 구상이 이 저장소의 Site Intelligence 안전순찰 Mission 유형을 흡수하거나 대체하지는
-않는다. 두 제품이 일부 현장 관측을 공유해도 제품 책임과 코드 모듈은 근거 없이 합치지 않는다.
+```text
+1. 현장·WorkArea 선택
+2. 두 시점 관측 선택 (t0 → t1, 다음 주 t1 → t2 재사용)
+3. Core가 호환성·권한·정책 확인 후 실행 기록
+4. 고정 프로파일로 변화·높이·상대물량 계산
+5. 출처·좌표·변환·유효/제외영역과 함께 결과·근거 조회
+6. 사람 검토 → 다음 관측·작업 연결
+```
 
-## Repository navigation
+### 데이터 경로 (외부 활용 예시)
 
-코드 책임·실행 경계·현재 경로는 [`REPOSITORY_STRUCTURE.md`](REPOSITORY_STRUCTURE.md), 현재
-문서와 역사적 증거의 구분은 [`docs/DOCUMENT_STATUS.md`](docs/DOCUMENT_STATUS.md)를 따른다.
-서비스/패키지 판정과 R3 이동은
-[`ADR-KSI-034`](docs/architecture/ADR-KSI-034-service-package-runtime-boundary.md)와
-[`R3 migration manifest`](docs/audit/REPOSITORY_MIGRATION_MANIFEST_R3.json)에 기록돼 있다.
-각 상위 코드 디렉터리와 이동된 패키지의 `README.md`가 제품명, 책임, 비책임, 소비자와
-검증 명령을 설명한다.
+```text
+1. Site/WorkArea/Epoch/submission revision으로 자료 탐색
+2. 용도별 사용 가능 여부 확인 (등록≠검증≠정량사용)
+3. DSM·정사영상 구역 데이터 준비 (범위·CRS·수직기준·단위·NoData·계보 포함)
+4. 외부 산업 소프트웨어·고객 코드·선택 MCP에서 활용
+```
 
-## Authoritative Documents
+### 외부 재구성 입력 경계
 
-1. `docs/product/PRODUCT_CONSTITUTION.md`
-2. `docs/product/FINAL_DECISION_LEDGER_v1.0.md`
-3. `docs/product/MASTER_PRD_v3.0.md`
-4. `contracts/`
-5. Architecture/Acceptance 문서 — 전체 구성 한 장 개요는
-   `docs/architecture/00_SYSTEM_OVERVIEW.md`(현행 플랫폼 + 분리된 역사적 취득 그림),
-   과거 취득 우선순위(P0~P3)는 ADR-KSI-018의 역사적 기록이며 현재 작업을 선택하지 않는다
-6. Reference Adoption 문서
-7. Pinned reference repositories
+```text
+M4D 촬영 → 고객 통제 현장 PC 재구성 → 파생 산출물·근거 KSI 등록/검사 → 분석·검토
+```
 
-에이전트는 루트 `AGENTS.md`/`CLAUDE.md`를 읽고 위 authority 순서, invariant, contract,
-acceptance를 대조한 뒤 담당 모듈의 README/manifest/entrypoint/tests를 확인한다. 구조 문서는
-탐색을 돕지만 제품 정본을 대체하지 않는다.
+원본 사진은 고객 장비에 남고, KSI에는 필요한 파생 산출물과 provenance/품질 근거만 등록됩니다.
 
-## Reference repositories
+## 시스템 구성
 
-- KSI Platform
-- KSI-Terra
-- KSI-Scout
+```text
+고객 재구성 산출물 → Core: 자산·시점·구역·버전·권한·용도별 적합성
+                      ├─ 데이터 준비 워커 → 구역 데이터·공간 메타데이터·가공 계보
+                      └─ 분석 워커 → 고정 계산·결과·근거
+                              Core 공통 API
+                      ├─ 외부 산업 소프트웨어 / 고객 코드
+                      ├─ MCP → 선택한 외부 에이전트
+                      └─ Console: 등록·상태·보완·근거·접근 관리
+```
 
-세 저장소는 읽기 전용 참고 구현이며 Runtime Dependency가 아니다.
+- Core 조립: `assemble_platform_app` / `build_platform_production_app`
+- 워커 7종 스크립트 + Spatial/Analysis 소비자
+- 취득·비행·Edge 실행은 현행 플랫폼 책임 밖 — 관련 출처는 `archive/acquisition-2026/`에 역사적 증거로 보존
+- DJI Flight Controller가 저수준 비행 안전(안정화·회피·RTH)을 계속 소유, Core·LLM은 비행 좌표/명령을 만들지 않음
 
-## Product status
+전체 구성 한 장 개요는 [`docs/architecture/00_SYSTEM_OVERVIEW.md`](docs/architecture/00_SYSTEM_OVERVIEW.md).
 
-- 2026-09-30의 최초 문서/보류 기록과 후속 개발 재개는 역사적 단계다. 현재 bounded rebaseline은 [정본 원장](docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)에 기록돼 있다. P4는 로컬 기술 마감, P5는 서면 승인된 통합 검증이며 실제 진행은 `.opencode/working-state.md`와 원장을 대조한다.
-- [P5 통합 감사](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)는 로컬 성공·실패·미검증을 분리한다. 아카이브 두 파일의 후속 수정, 전체 타입 오류, 혼합 base Compose와 새 환경/이미지/고객 수용은 열린 조건이다. 전체 정돈·배포 완료를 주장하지 않는다.
-- 기존 분석 API·MCP·운영 후보의 로컬 근거는 [FPO 원장](docs/superpowers/plans/2026-09-30-first-pilot-operational-runtime.md)에 있다. 실자료·운영 호스트·고객 두 주기 수용과 새 데이터 제공 경로의 제품 검증은 별도 미완 항목이다.
-- 제품 권위: `docs/00_READ_FIRST.md`의 active hierarchy와 accepted ADRs
-- 과거 PRD 모호성 기록: CLOSED (현재 작업·우선순위 상태를 뜻하지 않음)
-- 실기 Parameter: HIL/Field 검증 후 Versioned Safety Profile로 관리
-- 공식 저장소명: `ksi-site-intelligence-platform`
+## 기술 스택
+
+| 층 | 스택 |
+|---|---|
+| Console | Next.js 16, React 19, TypeScript 5, Tailwind v4, Leaflet·GeoTIFF·proj4, next-auth (OIDC), Vitest·Playwright·axe-core |
+| Core | Python 3.12, FastAPI, Pydantic 계약, append-only 저널, S3 호환 증거 스토리지 |
+| 공간·분석 | rasterio/GDAL·pyproj(CRS·수직기준), 고정 외부 프로파일 `external-geotiff-profile.v1`, checkpoint 봉인 CSV 직접 대조 |
+| MCP·소비자 | stdio 6+6 고정 도구, HTTP 소비 코드, 예시 workflow |
+| 배포·운영 | Docker Compose (Core·MinIO·Dashboard·Caddy), systemd, versioned resource policy + OCI digest pin |
+
+## 검증 현황
+
+> 로컬 소프트웨어 검증 근거이며 현장·고객 수용을 대체하지 않습니다. (2026-10-13 기준)
+
+| 게이트 | 결과 |
+|---|---|
+| Contract 전체 | 5484 passed · 25 skipped · 0 failed |
+| Core 타입 | broad mypy 760 files Success |
+| 아카이브 경계 | strict archive exit 0 (251/251) |
+| Dashboard 단위 | vitest 788 · tsc/eslint 0 |
+| Console 검토 지속성 | 201 → 새로고침 → Core 재기동 유지 (증거 `apps/dashboard/f04-review-evidence/`) |
+| Site bootstrap | 서버 발급 ID·멱등 binding·same-Site scope (증거 `apps/dashboard/f01-bootstrap-evidence/`) |
+
+열린 항목(정직 표기): 실자료 A–E provisioning, 샌드박스 VM parser 실체인, 2-cycle 완주,
+production/TLS·고객·EXT-VAL 수용, GitHub Actions 결제 차단. 상세는
+[통합 감사](docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VERIFICATION.md)와
+[정본 원장](docs/superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md).
+
+## 5분 만에 로컬 실행
+
+```bash
+# 1. Console + Core + Local Identity (loopback)
+cd apps/dashboard
+npm run dev
+# 표시된 MagicDNS URL로 접속 (tailnet 전용)
+
+# Tailscale 없이 localhost로만 볼 때
+npm run dev:local
+```
+
+```bash
+# 2. 품질 게이트 (변경 전 제출 기준)
+npm test && npm run lint && npx tsc --noEmit && npm run build
+npm run test:e2e   # 390/768/1024/1440 + OIDC + 접근성
+```
+
+```bash
+# 3. Core 계약 테스트 (발췌)
+uv run pytest tests/contract -q
+```
+
+상세 운영·배포 경계는 [`deploy/README.md`](deploy/README.md), [`docs/ops/DEPLOYMENT.md`](docs/ops/DEPLOYMENT.md).
+
+## 프로젝트 구조
+
+| 경로 | 책임 |
+|---|---|
+| `apps/dashboard/` | KSI Operations Console |
+| `services/core/` | Site/WorkArea·외부 WorkOrder·정책·결과·증거·저널 |
+| `services/processing-controller/` | 검사·계측 워커 (Core가 권위 판정) |
+| `services/analysis-mcp/`, `services/spatial-data-mcp/` | bounded stdio 어댑터 |
+| `packages/` | domain·geo·change/BIM/defect import-only 라이브러리 |
+| `contracts/`, `tests/contract/`, `tests/replay/` | 스키마·적합성·재현 검증 |
+| `archive/acquisition-2026/` | 역사적 취득 출처 (런타임·빌드 입력 아님) |
+| `docs/` | 제품 정본·ADR·수용·감사·운영 |
+
+## 문서 안내
+
+1. [`docs/00_READ_FIRST.md`](docs/00_READ_FIRST.md) — active hierarchy
+2. [`docs/product/PRODUCT_CONSTITUTION.md`](docs/product/PRODUCT_CONSTITUTION.md) — 제품 정체성·경계
+3. [`docs/product/FINAL_DECISION_LEDGER_v1.0.md`](docs/product/FINAL_DECISION_LEDGER_v1.0.md) — durable 결정
+4. [`docs/product/MASTER_PRD_v3.0.md`](docs/product/MASTER_PRD_v3.0.md) — 요구사항 본문
+5. [`contracts/`](contracts/) — wire·스키마 정본
+6. [`docs/architecture/00_SYSTEM_OVERVIEW.md`](docs/architecture/00_SYSTEM_OVERVIEW.md) — 전체 구성 한 장
+7. [`docs/DOCUMENT_STATUS.md`](docs/DOCUMENT_STATUS.md) — 현행 vs 역사 구분
+
+아키텍처 결정: [ADR-036 고객 재구성](docs/architecture/ADR-KSI-036-customer-reconstruction-and-result-ingress.md) ·
+[ADR-037 API-first](docs/architecture/ADR-KSI-037-api-first-earthwork-evidence-and-integration.md) ·
+[ADR-038 플랫폼](docs/architecture/ADR-KSI-038-spatial-data-and-analysis-platform.md) ·
+[ADR-039 취득 분리](docs/architecture/ADR-KSI-039-physical-site-intelligence-and-acquisition-separation.md)
+
+## 책임 경계
+
+- KSI는 자체 사진측량 엔진·고객 production 재구성 서비스를 운영하지 않습니다.
+- DJI Terra·RTK FIX 언급은 초기 현장 검증·재구성 **입력 참조 흐름**이며 라이선스·내보내기 호환·자동연동·정확도·현장 수용의 주장이 아닙니다.
+- 기하 변화·증감·순물량·설계 차이는 승인·진척·정산·품질·측량·현장 수용의 증거가 아닙니다. 계약 정산·측량급 결과는 별도 수용 근거 없이는 제품 주장이 아닙니다.
+- Point cloud·Mesh·외부 분석 레이어·추가 클라이언트는 후속 계약·수용 대상입니다.
+
+## 문의
+
+- **주식회사 케이에스아이 (KSI Corporation)**
+- 대표번호: **043-288-4860**
+- 도입 상담: 현장 규모·관측 주기·활용 시스템(MCP/API/Console)·데이터 제공 범위를 알려주시면 적합 범위와 다음 단계(데모·합성 검증·실자료 파일럿)를 안내합니다.
+- 저장소: `ksi-site-intelligence-platform` — 이슈·PR 환영 (비밀·원본 매체·개인키는 올리지 마세요)
