@@ -1,10 +1,12 @@
 # 공간데이터 운영 레인 provisioning (protected production seam)
 
-- Status: 2026-10-14 작성. 4번 A+B 로컬 구현·계약 증거(`22dd33d`,
-  `tests/contract/test_spatial_data_production_adapter.py` 12건) 기준 문서다.
+- Status: 2026-10-14 작성, 같은 날 검증호스트 실증으로 갱신. 4번 A+B 로컬 구현·계약 증거(`22dd33d`,
+  `tests/contract/test_spatial_data_production_adapter.py`)와 VM 실증(공개 실자료 COMPLETED→
+  다운로드→독립 오라클 PASS; §9) 기준 문서다.
 - Authority: ADR-KSI-036/037/038, SDP-20260930, rebaseline 원장 2026-10-14 항목.
-- 이 문서는 운영 절차 형식만 고정한다. **라이브 서명키·grant 배치, 실제 S3 보장 확인,
-  VM parser/worker chain, Codex CLI 연결, 공개 실자료/고객 수용은 별도 OPEN**이다.
+- 이 문서는 운영 절차 형식만 고정한다. **클라우드/고객 S3, 고객/운영 수용, 배포/TLS/CI, 2차
+  호스트/주기 재현은 별도 OPEN**이다. 검증호스트 체인(워커→API/MCP 소비, Codex CLI 연결,
+  공개 실자료)은 2026-10-14 실증됐다(§9).
 
 ## 1. 무엇이 열리는가
 
@@ -137,6 +139,35 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
 
 ## 8. 남은 게이트 (이 문서로 닫히지 않음)
 
-- 실 S3에서 버전 ID·전체 체크섬·정확 버전 삭제 보장의 운영 확인.
-- VM에서 parser→worker→API/MCP 소비 chain 실행, Codex CLI 한 환경 연결·예제 workflow.
-- 공개 실자료 수용(라이선스/표시 유지), 고객/운영 수용, 배포/TLS/CI.
+- 실 S3 버전닝·전체 체크섬 요구는 2026-10-14 VM 체인에서 실증됐다(비버전 버킷은 `input` 503
+  `INTEGRITY_MISMATCH`; 버전닝 활성+전체 체크섬 재업로드로 해결, §9). 클라우드/고객 S3 적합성은
+  별도다.
+- VM 워커→API/MCP 소비 체인과 Codex CLI 연결은 실증 완료(공개 DSM COMPLETED→다운로드→오라클
+  PASS). 남은 것은 2차 호스트/주기 재현이다.
+- 공개 실자료 수용(라이선스/표시 유지)은 실증 범위에 포함; 고객/운영 수용, 배포/TLS/CI는 별도.
+- file-cap 런처 하네스는 검증호스트 운영자 자재이며, 배포 적합성·제품측 참고자료 검토는 OPEN.
+
+## 9. 검증호스트 체인 — 실증된 요구사항 (2026-10-14)
+
+격리 QEMU VM(uid 10001 워커, file-cap 인터프리터, TLS 종단, 로컬 포워더)에서 실 공개 DSM
+181,498,053B를 Codex MCP 요청 → 컨테인먼트 크롭(2000×2000) → COMPLETED → 소비자 다운로드 →
+독립 오라클 PASS 11/11로 완주하며 확인된 필수 조건:
+
+1. **오브젝트 스토리지**: 버킷 버전닝 ENABLED + 업로드에 전체 오브젝트 SHA-256. 버전 ID가
+   null이면 `versioned_head_identity`가 거부해 `input`이 503이 된다(비버전 버킷의 실패 실측).
+2. **워커→Core**: 워커 설정의 `coreOrigin`은 https이며 TLS 신뢰가 필요하다(검증호스트는 로컬
+   TLS 종단 + CA를 venv certifi에 오버레이). 오브젝트 오리진은 활성화의
+   `trustedEndpointOrigins`와 정확히 일치해야 한다(`http://127.0.0.1:9100`).
+3. **컨테인먼트**: 자식은 uid/gid 10001·caps 0·NoNewPrivs 1·Seccomp 2·고정 mountinfo·envelope
+   rlimits로 실행되고, 워커는 자식의 네임스페이스를 관측할 수 있어야 한다(동일 uid + 권한;
+   검증호스트는 file-cap 인터프리터). 자식의 자체검증은 요청 프레임 v2의
+   `authorityNamespaceInodes` 수치 비교를 사용한다(`d286c13`) — 워커 자신의 ns inode를
+   제공해야 하며, 커널 관측은 부모가 유지한다.
+4. **자재 준비 순서**: 9p 등 읽기 전용 공유는 uid 10001에서 접근이 거부될 수 있으므로 워커/
+   자식 런타임은 VM-로컬로 스테이징하고(바이트 동일성 확인), proof는 실 정책/런타임 다이제스트로
+   발급하며(`gen_proof`), mountinfo 고정은 holder 시작 이후 마운트 변경이 없어야 유지된다.
+5. **수용 envelope**: 검사 봉투(입력/pixels)가 실자료를 못 담으면 MEASURED가 불가하다 — 수용
+   목적의 서명 봉투 재발급(제품 정책 아님)이 선행돼야 한다.
+
+증거·하네스: `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`,
+`/tmp/opencode/ksi-sdata-vm-sandbox/`(운영자 자재), `evidence/public-sample/`(rig).
