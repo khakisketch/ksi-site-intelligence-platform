@@ -3075,3 +3075,5 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   형식·검증 규칙·기본 OFF·cleanup·rollback·남은 게이트를 구현·계약 증거 기준으로 고정. 테스트
   키/구성은 형식 증거이며 운영 발급이 아니다. worker 신원 검사는 동일 Principal의 회전 digest
   중복을 허용한다(13번째 테스트로 고정).
+- 최종 게이트: full contract `pytest tests/contract -q` **5497 passed·25 skipped·0 failed**(746.68s,
+  10-13 기록 5484 대비 +13 = 신규 adapter). repo ruff 전체 green, full mypy 762, boundary 141.
