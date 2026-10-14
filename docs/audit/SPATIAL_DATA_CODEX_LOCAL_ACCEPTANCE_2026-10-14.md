@@ -98,3 +98,75 @@ Real client, real Core, synthetic copied data, local MinIO:
 - Next bounded candidates: run the same chain on the VM verification host
   (sandboxed parser plus a real preparation launcher), then re-check the
   storage guarantees against a cloud/customer S3 provider.
+
+## VM verification-host + public-sample acceptance (2026-10-14, later — supersedes the prepared/COMPLETED-open bullet above for this host)
+
+Real public data (Cambridge Coastcare Floreat-f4 DSM/ortho, CC BY 4.0, retained
+read-only under `.dev-data/public-geotiff/floreat-f4-2022-08-24/`), an isolated
+QEMU/virtio VM (Ubuntu 24.04 arm64), the real MinIO, the real Core, the real
+Codex CLI and a genuinely contained worker.
+
+### Product defects found by the acceptance (fixed, `d286c13`)
+
+1. **The contained child's containment self-check was unsatisfiable.** The child
+   check compared its namespaces against the authority's by stat'ing
+   `/proc/<authority>/ns/*`; the kernel denies that across user namespaces to a
+   zero-capability caller (verified on 6.8.0-142, including same-uid), while the
+   required `child != authority` clause forces the worker into different
+   namespaces. Every real launcher therefore died at exit 2 and no receipt was
+   possible. The sandbox request frame (now `spatial-data-sandbox-request.v2`)
+   carries the worker's own namespace inodes; the child compares numerically and
+   the privileged parent keeps the kernel observation.
+2. **Interpreter builds without `os.memfd_create`/`fcntl` seal constants** (this
+   uv standalone CPython) died with `AttributeError` before spawning; the sealed
+   proof descriptor now falls back to libc `memfd_create` with identical
+   CLOEXEC and sealing flags. Regression tests: numeric authority inequality and
+   fail-closed edges, the v2 frame contents, sealed-descriptor write rejection.
+
+### Acceptance-envelope minting (KSI acceptance material, not product policy)
+
+- The pinned inspection envelope (20 MB / 2 M px) could not measure the real
+  artifacts; a renewed KSI-signed acceptance manifest/envelope (500 MB input,
+  4 GB memory, 250 M px, 1 GB samples, 3600 s deadline) reached MEASURED on the
+  real bytes (policy v17, report `sha256:18ef998a…`); `--add-subject-file`
+  (`f77298d`) added the public subject to the chain.
+- Spatial material re-minted for the public asset (policy `d6f54928…`), grant
+  revision 2, CC BY 4.0 attribution retained; earlier acceptance material is
+  preserved under `protected/history/`.
+- Storage contract: the acceptance bucket had versioning disabled, so
+  `versioned_head_identity` failed and `input` returned 503
+  `INTEGRITY_MISMATCH`. Versioning was enabled and the two artifacts
+  re-uploaded with full-object SHA-256 (versions `bf667e8e…`/`b1e368c8…`,
+  checksums equal to the pinned originals).
+
+### Completed chain (real Codex CLI → real Core → real VM worker)
+
+- Codex MCP discovery → create (`sdata-public-accept-final`) →
+  `sdj-v1-ca9b7b2f…` QUEUED.
+- VM worker (uid 10001, file-cap interpreter, TLS to Core, MinIO through a
+  VM-local forwarder) downloaded the sealed 181,498,053-byte DSM; the pinned
+  launcher joined the persistent namespaces; the child ran with uid/gid 10001,
+  all capability sets 0, NoNewPrivs 1, Seccomp 2, pinned mountinfo and envelope
+  rlimits; the real native-window crop ran (2000×2000, EPSG:7850); the receipt
+  was uploaded → **COMPLETED** (output `sha256:0fcb7fd7…`, 9,166,428 bytes,
+  window `[1357,3357,3633,5633]`).
+- An HTTP-only consumer downloaded with receipt/header verification and an
+  independent oracle (direct rasterio window read of the original) returned
+  **PASS 11/11**: pixel arrays equal, nodata/mask and valid count (4,000,000),
+  transform/resolution/CRS, bounds, and byte identity.
+- Smoke result `sdj-v1-543dc281…` completed the same flow during debugging;
+  failed intermediate attempts (pre-envelope / pre-versioning) remain in the
+  journal honestly. Evidence: `evidence/public-sample/` in the rig.
+
+### Host/harness notes and remaining uncertainty
+
+- The sandbox harness (holder/launcher/proof, file-cap interpreter, staged
+  byte-identical runtime) is operator material under
+  `/tmp/opencode/ksi-sdata-vm-sandbox/`; suitability for deployed hosts remains
+  a separate operator gate, and a product-side reference review of that
+  material has not happened.
+- The 9p passthrough share denies uid 10001, so the contained runtime is a
+  staged copy; mountinfo pinning is stable only while the VM mount table is
+  unchanged.
+- Still OPEN: cloud/customer S3, customer/operational acceptance, deploy/CI,
+  re-running the chain on a second host/cycle.

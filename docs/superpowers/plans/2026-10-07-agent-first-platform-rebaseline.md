@@ -3126,3 +3126,31 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   앞선 실행이 8061을 점유한 낡은 프로세스에 응답하던 문제는 rig 런처의 포트 정리로 수정하고 최종
   증거를 새 pid로 재확인했다. prepared/`COMPLETED` 절반은 여전히 샌드박스 준비 레인·호스트
   containment 게이트에 의존한다.
+
+### 2026-10-14 공개 실자료 + VM 검증호스트 수용 — 발견→COMPLETED→소비 완주
+
+- 범위: 공간데이터 제공 경로의 **첫 실자료 수용**. 실자료는 Cambridge Coastcare Floreat-f4
+  DSM(181,498,053B)·정사영상(346,715,111B), CC BY 4.0, `0400` 보관. 격리 QEMU/virtio VM
+  (Ubuntu 24.04 arm64), 실 MinIO, 실 Core, 실 Codex CLI, 실제 컨테인먼트 워커.
+- 수용 중 **제품 결함 2건 발견·수정(커밋 d286c13)**: (1) 컨테인먼트 자식의 자체검증이 교차
+  userns ns-stat 커널 규칙(6.8.0-142 실측, 동일 uid 포함 거부)과 `≠authority` 조항의 **양립
+  불가**로 어떤 실제 launcher에서도 exit 2 → 요청 프레임 v2에 워커 자신의 ns inode를 실어
+  자식이 수치 비교하고, 커널 관측은 부모가 유지; (2) `os.memfd_create`/`fcntl` seal 상수가
+  없는 standalone CPython 빌드에서 스폰 전 `AttributeError` → libc `memfd_create` 폴백(동일
+  CLOEXEC/sealing). 회귀 테스트 3건 포함, 공간계열 547 tests·ruff·mypy green.
+- 수용 자재(합성·서명, 제품 정책 아님): 검사 정책 v17에서 실자료 **MEASURED**(report
+  `sha256:18ef998a…`; 공개 subject 추가는 `--add-subject-file`, 커밋 f77298d), 공간 정책
+  `d6f54928…`·grant rev2(CC BY 4.0 표기 유지). 스토리지 계약: 버킷 버전닝 비활성 →
+  `input` 503 `INTEGRITY_MISMATCH` → 버전닝 활성 + 실바이트 재업로드(체크섬 일치, 버전
+  `bf667e8e…`/`b1e368c8…`).
+- **완주(실측)**: Codex MCP 발견→생성(`sdata-public-accept-final`, `sdj-v1-ca9b7b2f…`) →
+  VM 워커(uid 10001·file-cap, TLS, 영속 네임스페이스: caps 0·NNP1·Seccomp2·mountinfo 고정·
+  rlimits) → 181MB 실자료 다운로드 → 실제 크롭(2000×2000, EPSG:7850) → receipt 업로드 →
+  **COMPLETED**(출력 `0fcb7fd7…`, 9,166,428B, window [1357,3357,3633,5633]) → HTTP 소비자
+  다운로드(헤더/영수증 검증) → **독립 오라클 PASS 11/11**(원본 직접 윈도우 대조: 픽셀·마스크·
+  유효수 4,000,000·변환·CRS·경계·바이트 동일). 디버그 반복 중 완료된 `sdj-v1-543dc281…`도
+  동일 흐름. 실패 중간 시도(봉투/버전닝 이전)는 저널에 그대로 남긴다.
+- 경계: **합성/검증호스트 수용**이며 클라우드·고객 S3, 고객/운영 수용, 배포/CI, 두 번째
+  호스트/주기 재현, file-cap 런처 하네스의 배포 적합성·제품측 참고자료 검토는 OPEN. 감사:
+  `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`; 증거:
+  `/tmp/opencode/ksi-sdata-codex-20261014/evidence/public-sample/`.
