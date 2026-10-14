@@ -157,7 +157,11 @@ class SpatialDataCoreClient:
                 attempt.attempt_digest != attempt.canonical_digest()
                 or attempt.worker_instance_id != self._activation.worker_instance_id
                 or attempt.worker_principal_id != self._activation.worker_principal_id
-                or not attempt.acquired_at <= self._clock() < attempt.lease_until
+                # Only the upper bound is locally checkable: acquired_at is stamped
+                # by the Core clock, and a worker clock behind it (routine NTP skew)
+                # must not turn a just-issued attempt into a fence conflict. Using
+                # an attempt past expiry is still refused by the Core on every call.
+                or not self._clock() < attempt.lease_until
             ):
                 raise ValueError("attempt not current for activated worker")
             return attempt

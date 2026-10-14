@@ -12,16 +12,22 @@ from spatial_data_job_fixture import NOW
 from test_spatial_data_worker_api import upload_body, worker_mounted
 
 
-def core_client(graph: SimpleNamespace, transport: httpx.BaseTransport) -> Any:
+def core_client(
+    graph: SimpleNamespace,
+    transport: httpx.BaseTransport,
+    *,
+    clock: Any = None,
+    activation: Any = None,
+) -> Any:
     from ksi_processing_controller.spatial_data_core_client import SpatialDataCoreClient
 
     return SpatialDataCoreClient(
         base_url="https://core.invalid",
         token="local-worker",
-        activation=graph.activation,
+        activation=activation if activation is not None else graph.activation,
         policy=graph.data_policy,
         runtime=graph.runtime,
-        clock=lambda: NOW,
+        clock=clock if clock is not None else (lambda: NOW),
         maximum_response_bytes=graph.data_policy.max_snapshot_bytes,
         request_timeout_seconds=5,
         transport=transport,
@@ -55,6 +61,44 @@ def test_core_client_drives_mounted_exact_lease_input_upload_complete(tmp_path: 
         assert capability.upload_digest == declaration.upload_digest
         result = core.complete(attempt=attempt, upload_digest=declaration.upload_digest)
         assert result.execution_state == "COMPLETED" and provider.heads == 1
+
+
+def test_core_client_accepts_a_fresh_lease_when_its_clock_is_behind_the_core(
+    tmp_path: Path,
+) -> None:
+    """Routine negative skew (worker clock behind the Core) must not fence a fresh lease.
+
+    acquired_at is stamped by the Core clock; requiring the worker clock to be at
+    or past it made every lease fail on hosts whose clock ran milliseconds behind.
+    """
+    from datetime import timedelta
+
+    client, graph, _ = worker_mounted(tmp_path)
+    behind = NOW - timedelta(milliseconds=100)
+    activation = graph.activation.model_copy(
+        update={"valid_from": NOW - timedelta(seconds=1), "activation_digest": None}
+    ).sealed()
+    with core_client(
+        graph, mounted_transport(client), clock=lambda: behind, activation=activation
+    ) as core:
+        attempt = core.lease(job_id=graph.job_id, acquisition_id="skewed-acquisition")
+    assert attempt.worker_instance_id == graph.activation.worker_instance_id
+    assert attempt.attempt_number == 1
+
+
+def test_core_client_refuses_an_attempt_past_its_lease_expiry(tmp_path: Path) -> None:
+    """The upper bound stays: a worker clock past lease_until must fence before any use."""
+    from datetime import timedelta
+
+    from ksi_processing_controller.spatial_data_core_client import SpatialDataCoreClientError
+
+    client, graph, _ = worker_mounted(tmp_path)
+    ahead = NOW + timedelta(seconds=30)
+    with (
+        core_client(graph, mounted_transport(client), clock=lambda: ahead) as core,
+        pytest.raises(SpatialDataCoreClientError, match="FENCE_CONFLICT"),
+    ):
+        core.lease(job_id=graph.job_id, acquisition_id="expired-acquisition")
 
 
 def test_core_client_rejects_path_injection_before_transport(tmp_path: Path) -> None:
@@ -212,6 +256,28 @@ def test_worker_stages_rehashes_puts_exact_private_bytes_and_cleans_workspace(
         assert core.completed_reports[0].accuracy_assessed is False
         assert core.renewals >= 3
         assert all("Authorization" not in h and "Cookie" not in h for h in headers)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_worker_accepts_a_fresh_lease_when_its_clock_is_behind_the_core(tmp_path: Path) -> None:
+    """The lease guard must not lose a just-issued attempt under negative skew."""
+    from datetime import timedelta
+
+    from ksi_processing_controller.spatial_data_worker import run_once
+    from spatial_data_worker_fixture import byte_lane
+
+    with byte_lane() as (core, sandbox, policy, uploads, headers):
+        assert run_once(
+            core=core,
+            sandbox=sandbox,
+            transport_policy=policy,
+            worker_instance_id="instance-local",
+            clock=lambda: BYTE_NOW - timedelta(seconds=2),
+            workspace_root=tmp_path,
+            heartbeat_interval_millis=100,
+        )
+        assert uploads == [b"private-output" * 100]
+        assert core.completed_reports[0].accuracy_assessed is False
     assert list(tmp_path.iterdir()) == []
 
 

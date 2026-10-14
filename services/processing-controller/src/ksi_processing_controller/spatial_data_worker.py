@@ -86,10 +86,11 @@ class _LeaseGuard:
             return False
         try:
             now = self.clock()
-            if (
-                not self.attempt.acquired_at
-                <= now
-                < min(self.attempt.lease_until, self.job.deadline, self.job.grant.valid_until)
+            # Only expiry bounds are locally checkable; acquired_at is stamped by
+            # the Core clock and must not fence a fresh lease under negative skew.
+            # The Core refuses any use past its own authoritative bounds.
+            if not now < min(
+                self.attempt.lease_until, self.job.deadline, self.job.grant.valid_until
             ):
                 raise SpatialDataWorkerError("LEASE_EXPIRED")
             if force or monotonic() >= self.next_check:
