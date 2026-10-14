@@ -225,3 +225,29 @@ fixed worker runtime was re-staged byte-identical into the VM
 (`1c501e35…`/`fbe29708…`). Diagnostic attempts (2 lease-only probes and one
 attempt-exhausted job `sdj-v1-5e8cf748…` → FAILED `LEASE_EXPIRED`) remain in
 the journal honestly. Evidence: `evidence/public-sample/cycle2/`.
+
+### Ortho (RGBA) extraction path on the same rig (2026-10-14 late)
+
+The public orthophoto (`floreat-f4-2022_transparent_mosaic.tif`, 346,715,111
+bytes, 10298×17615 RGBA, 0.025 m, EPSG:7850) was MEASURED under the same v17
+inspection report. A dedicated grant was minted for the ortho asset
+(`sdata-public-accept-ortho-1` rev 1, `cf20d42c…`, same beneficiary, bounds,
+operations, purposes and policy; rev2 stays revoked and rev3 stays current
+for the DSM asset) and two request cycles completed:
+
+- `sdj-v1-93ea4f26…`: bounds `[382400,6467700,382475,6467775]` → COMPLETED
+  (`sha256:ec113d69…`, 21,941,326 bytes, 3001×3000, 4-band uint8, window
+  `[4712,7713,6265,9265]`) — a fully opaque window.
+- `sdj-v1-5fb7bc78…`: bounds `[382282.2,6467700,382306,6467722]` → COMPLETED
+  (`sha256:38316bc7…`, 685,914 bytes, 953×880, window `[0,953,8385,9265]`) —
+  contains the mosaic's transparent edge (377,288 of 837,760 pixels alpha 0).
+
+Both downloads matched their receipts, and the independent RGBA oracle
+(`verify_public_oracle_rgba.py`) returned **PASS 16/16** each: exact
+four-band pixel-array equality, **dataset masks compared directly**
+(`read_masks`), alpha-band equality, alpha-mask equality, alpha counts, and
+transparency presence mirroring the source window, plus transform origin,
+resolution, CRS, bounds and byte identity. This closes the dataset-mask/alpha
+comparison gap noted for the earlier DSM oracle (whose stronger checks were
+pixel-array equality, the declared nodata value and NoData-derived counts).
+Evidence: `evidence/public-sample/cycle2/`.
