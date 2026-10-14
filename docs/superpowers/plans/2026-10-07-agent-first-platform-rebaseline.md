@@ -6,6 +6,12 @@ Base / proposed local target: main b27e5d94b04d11e155e41d8df94c70519808a976
 Workspace: current checkout, one writer; other worktrees retained unchanged.
 Prior unmet goal remains closed; Human-approved new goal b13320f7 is active.
 
+> 2026-10-14 routing note: pre-2026-10-09 wording in this ledger's header/early foundation sections
+> (planning-recipe and execution-method choices, delegated Developer/Test Runner/Reviewer/CE seats,
+> goal-mode notes) is dated history under `2026-10-09-site-harness-mapping.md`. Current approval and
+> progress live in the dated sections below and in Git; references to retired roles anywhere in this
+> ledger are historical evidence, not current execution steps. Originals remain unrewritten.
+
 ## Human intent and decisions
 
 - Human excludes flight/autonomous acquisition from long-term product responsibility.
@@ -2190,6 +2196,8 @@ Each Reviewer “Declined to judge” item is adjudicated in its reported order:
   SHA256 `fba7776eb022ffb3e87f7c062f25cfb4f98a18bbb5311d786a48aff568f18909`.
   **Approval waiting; NOT approved/executed.** Preserve the already selected sequential inline method
   and independent final Reviewer/Test Runner. No goal continuation or P6 closure grants these effects.
+  Execution approval/progress is recorded in the dated P7 sections below (e.g. the 2026-10-09 P7
+  written execution/effect approval); this bullet remains a frozen snapshot.
 - Frozen intended source:4a0a08e, same product files as1254747; new report/status commits do not change
   that source binding. Three tasks: fresh locked Python environment/full/static evidence; three unchanged
   Core/inspector/measurement candidate images; isolated three-service Core/MinIO boot plus real TCP

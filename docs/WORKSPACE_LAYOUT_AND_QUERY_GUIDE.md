@@ -45,7 +45,7 @@ owner test를 대조한다.
 
 ## Agent 실행
 
-Codex와 Claude Code는 `ksi-site-intelligence-platform/` 루트에서 실행한다.
+OpenCode(및 Codex·Claude Code 등 클라이언트)는 `ksi-site-intelligence-platform/` 루트에서 실행한다.
 
 Submodule 초기화:
 

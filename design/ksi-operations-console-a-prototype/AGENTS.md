@@ -3,10 +3,11 @@
 Read [`../../AGENTS.md`](../../AGENTS.md) for shared product authority, task routing, and control
 boundaries before applying this prototype's local rules.
 
-> Harness note (2026-10-09): current sessions run under the OpenCode harness, not ChatGPT Work
-> Mode or Codex Desktop. The host-specific preview steps below are preserved historical
-> instructions; for preview/render work, follow the global OpenCode policy's design-workspace
-> boundary and the repository's current routing.
+> Harness note (2026-10-09, updated 2026-10-14): current sessions run under the OpenCode harness,
+> not ChatGPT Work Mode or Codex Desktop. The host-specific preview steps (the paragraph starting
+> "In ChatGPT Work Mode…") and the "Product Design plugin get-context" reference below are preserved
+> historical host instructions, not current process; for preview/render work, follow the global
+> OpenCode policy's design-workspace boundary and the repository's current routing.
 
 ## Prototype Instructions
 
@@ -37,11 +38,11 @@ boundaries before applying this prototype's local rules.
 - Every B update card opens a site-bound evidence summary. Copy must preserve limitations: relative results are not absolute quantity, and absence of a new case does not mean the whole site is normal or safe.
 - Candidate A is the selected direction. Its attention area is a manual two-item `Carousel`: Seocho capture sufficiency and Gimpo progress context each use a distinct synthetic aerial image, site-bound claim, evidence signal, dot indicator, and explicit `1 / 2` count. Do not autoplay. Mobile swipe and visible previous/next controls must coexist; Incheon and Pangyo remain in the fixed `나머지 현장` list below.
 
-In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.
+(Historical host instruction — see harness note.) In ChatGPT Work Mode, run `sites-preview start "$PWD"`, open `http://terminal.local:4173/` in the cloud browser, and verify the rendered app and its primary interactions. Keep that preview open and tell the user to inspect it in the cloud browser; do not present the local URL as a user-facing chat link. In Codex Desktop, run the local server yourself, open the preview in the in-app browser, and provide the clickable local URL. Do not deploy to Sites unless the user explicitly asks to share, publish, or deploy. Do not give the user server-start instructions when you can run it.
 
 Before planning or implementing any mobile-app change, read this `AGENTS.md` in full. It is the source of truth for the template's runtime and component guidance.
 
-Before making substantial visual changes, use the Product Design plugin's `get-context` skill when the visual source is unclear or no longer matches the current goal. When the user gives durable prototype-specific design feedback, preferences, or decisions, record them in `AGENTS.md`.
+(Historical plugin instruction — see harness note.) Before making substantial visual changes, use the Product Design plugin's `get-context` skill when the visual source is unclear or no longer matches the current goal. When the user gives durable prototype-specific design feedback, preferences, or decisions, record them in `AGENTS.md`.
 
 When implementing from a selected generated mock, treat that image as the source of truth for layout, component anatomy, density, spacing, color, typography, visible content, and hierarchy.
 

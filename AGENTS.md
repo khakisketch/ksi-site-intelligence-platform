@@ -40,10 +40,13 @@ Only when no active bounded checkout task exists may work selection begin from p
 `docs/goals/PHASE_REGISTRY.yaml` is a capability-track index, not a competing current-task or
 next-priority source.
 Historical `.ksi/` records and managed NodeODM/ProcessingJob evidence remain historical or
-managed/test scope unless the applicable authority says otherwise. Pre-2026-10-09 plan/ledger
-wording (writing-plans recipes, delegated Developer/Test Runner seats, goal mode) is historical;
-its one-time old→new mapping is recorded in
-`docs/superpowers/plans/2026-10-09-site-harness-mapping.md` without rewriting the originals.
+managed/test scope unless the applicable authority says otherwise. Execution and verification
+ownership is native to the current harness: the active agent plans, implements, integrates and
+verifies, delegating bounded work when useful and using a fresh-context review selectively.
+Retired seat/role instructions (writing-plans recipes, delegated Developer/Test Runner seats,
+goal mode, CE/Reviewer process lines) are historical records only: do not re-instantiate them or
+map them into execution steps. The one-time old→new mapping record is
+`docs/superpowers/plans/2026-10-09-site-harness-mapping.md` (history, not an execution entry).
 Tool auto-memory, session summaries, and handoffs are context only: re-read current product
 authority and revalidate Git before deriving product direction, authorization, or readiness from
 cached memory.
@@ -92,6 +95,11 @@ These files route work; they do not override product authority or contracts. Rou
 | Product slice | `docs/superpowers/product-state.md` + its named slice ledger | Current Goal/Milestone/slice/Backlog; select from it only when no active bounded checkout task exists; update at slice close (`.ksi/` retired archive) |
 | Capability-track index | `docs/goals/PHASE_REGISTRY.yaml` | Track/status routing only; not current task or next-priority selection |
 
+Priority within a task: applicable authority → the design/spec explicitly selected by an accepted ADR
+or higher authority (subordinate; never runtime/field proof) → owner contracts/README/tests →
+implementation. Verify with the existing owner tests, contract/replay suites and recorded
+verification paths before introducing new process; UI/UX changes are design work under the global policy.
+
 ### Terrain-aware planning route (historical design, out-of-product)
 
 ADR-KSI-039 excludes acquisition execution from current platform work. The following is the
@@ -119,7 +127,8 @@ recreate `services/change-detection`, `services/bim-integration`, or `services/d
 Do not consolidate any other similarly named runtime modules from names alone. A new move requires an
 approved scope plus dependency, build, CI, replay, deployment, and rollback evidence.
 
-After selecting an owner path, read its nearest `README.md` and any nested `AGENTS.md`/`CLAUDE.md`, then
+After selecting an owner path, read its nearest `README.md` and any nested `AGENTS.md` (OpenCode V2
+loads nested `AGENTS.md` on discovery; `CLAUDE.md` wrappers apply only to Claude Code clients), then
 inspect its actual entrypoint and dependency manifest (`pyproject.toml`, `package.json`, `CMakeLists.txt`,
 Dockerfile/Compose) plus owner tests. A directory name or architecture diagram alone is not runtime proof.
 

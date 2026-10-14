@@ -21,6 +21,11 @@ ACTIVE/HISTORICAL/SUPERSEDED 라우팅은 `docs/DOCUMENT_STATUS.md`가 소유한
 제품 결정보다 아래의 repository-governance 정본이며 제품 의미나 현재 capability 상태를
 독자적으로 바꾸지 않는다.
 
+실행·검증 소유권은 현행 native 흐름을 따른다: 활성 agent가 계획·구현·통합·검증을 소유하고,
+필요한 경우에만 범위를 정해 위임하거나 fresh-context 리뷰를 선택 수행한다. 2026-10-09 이전
+plan/ledger의 퇴역 역할(Developer/Test Runner seat, goal mode 등)과 그 1회 매핑 기록
+(`superpowers/plans/2026-10-09-site-harness-mapping.md`)은 역사 기록이며 실행 입구가 아니다.
+
 미디어 경로는 ADR-KSI-033에 따라 분리한다. `SD/저장매체 → 현장 PC → KSI 웹 업로드`는
 managed/test 또는 별도 승인 source-media ingress이고, PSDK Liveview는 Manifold 로컬
 acquisition/perception 입력, `EDGE_UPLINK`는 bounded EventBundle/EdgeBundle metadata다.

@@ -1,7 +1,8 @@
 # Documentation map
 
-The intended shared repository entry is [`../AGENTS.md`](../AGENTS.md); [`../CLAUDE.md`](../CLAUDE.md)
-is a Claude-specific wrapper that imports it. For a session, read global policy → project `AGENTS.md`
+The intended shared repository entry is [`../AGENTS.md`](../AGENTS.md); OpenCode V2 loads
+`AGENTS.md` only (nested files on discovery), while [`../CLAUDE.md`](../CLAUDE.md) is a
+Claude Code-specific wrapper that imports it. For a session, read global policy → project `AGENTS.md`
 → `.opencode/working-state.md` when it exists → [`superpowers/product-state.md`](superpowers/product-state.md)
 → the applicable ledger → revalidate Git. The checkpoint identifies an active checkout task and its
 task ledger; a current Human-assigned bounded task persists without closing or reprioritizing a
@@ -32,8 +33,8 @@ source/verification limits. No cleanup record closes `EXT-VAL` or customer accep
 | Client | Intended repository entry | Evidence limit |
 |---|---|---|
 | Codex | `AGENTS.md` instruction chain | Per-run behavior is documented, not accepted for this checkout/session ([official docs](https://learn.chatgpt.com/docs/agent-configuration/agents-md)). |
-| OpenCode | root/global `AGENTS.md` rules | Referenced files are not automatically parsed; this map is an explicit readpath, not live-client acceptance ([official docs](https://opencode.ai/docs/rules/)). |
-| Claude Code | `CLAUDE.md` → `@AGENTS.md` | `@` import is documented; existing sessions/worktrees still must reread/adopt reviewed docs ([official docs](https://code.claude.com/docs/en/memory)). |
+| OpenCode (V2) | root/global `AGENTS.md`; nested `AGENTS.md` loaded as the agent explores | V2 loads `AGENTS.md` automatically and does not resolve the `instructions` config array; referenced documents here remain an explicit read path ([official docs](https://opencode.ai/v2/docs/instructions)). |
+| Claude Code | `CLAUDE.md` → `@AGENTS.md` | Wrapper applies to Claude Code clients only (OpenCode V2 does not use `CLAUDE.md`); existing sessions/worktrees still must reread/adopt reviewed docs ([official docs](https://code.claude.com/docs/en/memory)). |
 
 | Path | Routing role |
 |---|---|
