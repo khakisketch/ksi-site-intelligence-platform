@@ -1439,6 +1439,12 @@ def test_runtime_adapter_builds_only_proc_launcher_fd_mounts_and_never_persists_
         "ReadOnly": True,
         "BindOptions": {"NonRecursive": True},
     }
+    assert payload["HostConfig"]["Mounts"][1] == {
+        "Type": "tmpfs",
+        "Target": "/work",
+        "ReadOnly": False,
+        "TmpfsOptions": {"SizeBytes": 2000, "Mode": 0o700},
+    }
     assert payload["HostConfig"]["Tmpfs"] == {"/work": "rw,nodev,nosuid,noexec,size=2000,mode=0700"}
     assert payload["OpenStdin"] is True
     assert payload["StdinOnce"] is True
@@ -1941,6 +1947,51 @@ def test_created_runtime_inspection_requires_the_exact_stdin_and_hardened_mount_
     with pytest.raises(DockerRuntimeUnavailable, match="read-only input mount"):
         _verify_created_inspection(
             inspected=extra_mount,
+            runtime_id="runtime-a",
+            binding=binding,
+            configuration=configuration,
+            image_id=configuration.image_config_digest,
+            source=source,
+        )
+
+    # The Engine merges the image's default environment into the created
+    # container; the fixed variables must still be present with exact values.
+    merged_env = deepcopy(inspected)
+    merged_env["Config"]["Env"] = list(merged_env["Config"]["Env"]) + [
+        "PATH=/usr/local/bin:/usr/bin",
+        "LANG=C.UTF-8",
+    ]
+    _verify_created_inspection(
+        inspected=merged_env,
+        runtime_id="runtime-a",
+        binding=binding,
+        configuration=configuration,
+        image_id=configuration.image_config_digest,
+        source=source,
+    )
+
+    missing_env = deepcopy(merged_env)
+    missing_env["Config"]["Env"] = [
+        entry for entry in missing_env["Config"]["Env"] if not entry.startswith("PROJ_NETWORK=")
+    ]
+    with pytest.raises(DockerRuntimeUnavailable, match="fixed runtime"):
+        _verify_created_inspection(
+            inspected=missing_env,
+            runtime_id="runtime-a",
+            binding=binding,
+            configuration=configuration,
+            image_id=configuration.image_config_digest,
+            source=source,
+        )
+
+    changed_env = deepcopy(merged_env)
+    changed_env["Config"]["Env"] = [
+        "PROJ_NETWORK=ON" if entry.startswith("PROJ_NETWORK=") else entry
+        for entry in changed_env["Config"]["Env"]
+    ]
+    with pytest.raises(DockerRuntimeUnavailable, match="fixed runtime"):
+        _verify_created_inspection(
+            inspected=changed_env,
             runtime_id="runtime-a",
             binding=binding,
             configuration=configuration,

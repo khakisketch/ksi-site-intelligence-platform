@@ -1691,6 +1691,18 @@ def _fixed_create_payload(
                     "ReadOnly": True,
                     "BindOptions": {"NonRecursive": True},
                 },
+                # The workspace tmpfs is created through Mounts so the Engine
+                # reports it in the inspect Mounts list (verified below);
+                # HostConfig.Tmpfs still carries the fixed mount options.
+                {
+                    "Type": "tmpfs",
+                    "Target": "/work",
+                    "ReadOnly": False,
+                    "TmpfsOptions": {
+                        "SizeBytes": configuration.tmpfs_bytes,
+                        "Mode": 0o700,
+                    },
+                },
             ],
             # API 1.44 represents tmpfs options in HostConfig.Tmpfs, not in
             # MountPoint/TmpfsOptions.  Host proof later verifies mounted
@@ -1735,8 +1747,14 @@ def _verify_created_inspection(
         or config.get("AttachStdin") is not True
         or config.get("AttachStdout") is not True
         or config.get("AttachStderr") is not True
-        or config.get("Env")
-        != [f"{key}={value}" for key, value in configuration.runtime_environment]
+        # The Engine merges the image's default environment into the created
+        # container, so every fixed variable must be present with its exact
+        # value; extra entries come from the identity-verified signed image.
+        or not isinstance(config.get("Env"), list)
+        or not all(
+            f"{key}={value}" in config["Env"]
+            for key, value in configuration.runtime_environment
+        )
         or config.get("Volumes") not in (None, {})
         or host.get("NetworkMode") != "none"
         or host.get("ReadonlyRootfs") is not True
