@@ -1447,12 +1447,9 @@ def test_runtime_adapter_builds_only_proc_launcher_fd_mounts_and_never_persists_
         "ReadOnly": True,
         "BindOptions": {"NonRecursive": True},
     }
-    assert payload["HostConfig"]["Mounts"][1] == {
-        "Type": "tmpfs",
-        "Target": "/work",
-        "ReadOnly": False,
-        "TmpfsOptions": {"SizeBytes": 2000, "Mode": 0o700},
-    }
+    # The workspace rides on the legacy Tmpfs map alone: a Mounts duplicate
+    # would shadow its uid/gid options (the Engine rejects uid/gid there).
+    assert len(payload["HostConfig"]["Mounts"]) == 1
     assert payload["HostConfig"]["Tmpfs"] == {
         "/work": "rw,nodev,nosuid,noexec,size=2000,mode=0700,uid=10001,gid=10001"
     }
@@ -1817,7 +1814,6 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start(
                         "Destination": "/input/artifact.tif",
                         "RW": False,
                     },
-                    {"Type": "tmpfs", "Destination": "/work", "RW": True},
                 ],
                 "State": {"Running": self.start_calls == 1},
             }
@@ -1927,11 +1923,6 @@ def test_created_runtime_inspection_requires_the_exact_stdin_and_hardened_mount_
                 "Source": source,
                 "Destination": "/input/artifact.tif",
                 "RW": False,
-            },
-            {
-                "Type": "tmpfs",
-                "Destination": "/work",
-                "RW": True,
             },
         ],
     }

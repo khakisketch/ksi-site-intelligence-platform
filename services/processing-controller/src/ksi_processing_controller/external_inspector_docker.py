@@ -1718,18 +1718,13 @@ def _fixed_create_payload(
                     "ReadOnly": True,
                     "BindOptions": {"NonRecursive": True},
                 },
-                # The workspace tmpfs is created through Mounts so the Engine
-                # reports it in the inspect Mounts list (verified below);
-                # HostConfig.Tmpfs still carries the fixed mount options.
-                {
-                    "Type": "tmpfs",
-                    "Target": "/work",
-                    "ReadOnly": False,
-                    "TmpfsOptions": {
-                        "SizeBytes": configuration.tmpfs_bytes,
-                        "Mode": 0o700,
-                    },
-                },
+                # The workspace rides on HostConfig.Tmpfs alone: an additional
+                # tmpfs Mounts entry REPLACES the legacy mount with one whose
+                # TmpfsOptions cannot carry uid/gid (the Engine rejects
+                # uid/gid there), which silently left /work root-owned and
+                # killed every workspace-using container (observed host-backed
+                # on the measurement lane).  The inspect still reports the
+                # exact option string under HostConfig.Tmpfs (verified below).
             ],
             # API 1.44 represents tmpfs options in HostConfig.Tmpfs, not in
             # MountPoint/TmpfsOptions.  Host proof later verifies mounted
@@ -1825,18 +1820,15 @@ def _verify_created_inspection(
         for mount in mounts
         if isinstance(mount, dict) and mount.get("Destination") == "/input/artifact.tif"
     ]
-    workspace_mounts = [
-        mount for mount in mounts if isinstance(mount, dict) and mount.get("Destination") == "/work"
-    ]
+    # The workspace tmpfs is not part of the Mounts list: the Engine reports
+    # the legacy HostConfig.Tmpfs entry for it (checked above), and a Mounts
+    # duplicate would silently shadow its uid/gid options.
     if (
-        len(mounts) != 2
+        len(mounts) != 1
         or len(input_mounts) != 1
-        or len(workspace_mounts) != 1
         or input_mounts[0].get("Type") != "bind"
         or input_mounts[0].get("Source") != source
         or input_mounts[0].get("RW") is not False
-        or workspace_mounts[0].get("Type") != "tmpfs"
-        or workspace_mounts[0].get("RW") is not True
     ):
         raise DockerRuntimeUnavailable(
             "Docker inspect response did not prove one read-only input mount"
