@@ -1482,7 +1482,11 @@ class RootlessDockerRuntimeAdapter:
                 configuration=configuration,
                 deadline_monotonic=deadline_monotonic,
             )
-            source = f"/proc/{facts.launcher_pid}/fd/{fd}"
+            # Same resolved-path bind source as the create payload: the Engine
+            # cannot resolve another namespace's /proc/<pid>/fd entries.
+            source = os.readlink(f"/proc/self/fd/{fd}")
+            if not source.startswith("/"):
+                raise DockerRuntimeUnavailable("sealed input path is not absolute")
             inspected = self._client.inspect_exact(
                 runtime_id, deadline_monotonic=deadline_monotonic
             )
@@ -1552,12 +1556,19 @@ class RootlessDockerRuntimeAdapter:
             is not True
         ):
             raise DockerRuntimeUnavailable("rootless Docker proc-FD proof is unavailable")
+        # The Engine (rootless dockerd) runs in its own user namespace and
+        # cannot stat another namespace's /proc/<pid>/fd entries, so the bind
+        # source must be the resolved path; the fd identity proof above still
+        # binds the exact inode before and after the create.
+        source_path = os.readlink(f"/proc/self/fd/{fd}")
+        if not source_path.startswith("/"):
+            raise DockerRuntimeUnavailable("sealed input path is not absolute")
         payload = _fixed_create_payload(
             configuration=configuration,
             binding=binding,
             image_id=image.docker_image_id,
             cgroup_parent=binding.systemd_slice_name,
-            source=candidate,
+            source=source_path,
         )
         _verify_borrowed_source(
             source=source,

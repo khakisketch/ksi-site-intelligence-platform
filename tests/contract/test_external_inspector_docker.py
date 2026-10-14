@@ -693,7 +693,9 @@ def test_direct_v2_proof_constructor_rejects_an_unhashable_layer_media_type() ->
         )
 
 
-def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payload() -> None:
+def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payload(
+    tmp_path: Path,
+) -> None:
     """The unchanged daemon adapter consumes V2 via its common proof properties only."""
     pair = _v2_pair()
     image = LocalOciImageProofV2(
@@ -702,6 +704,9 @@ def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payloa
         oci_manifest_bytes=base64.b64decode(pair["ociManifestBytesBase64"]),
     )
     payload_bytes = b"abc"
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(payload_bytes)
+    artifact_fd = os.open(artifact, os.O_RDONLY)
 
     class _Source:
         def verify_readback(self, *, deadline_monotonic: float) -> FileIoSealReceiptV1:
@@ -723,7 +728,7 @@ def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payloa
 
         def consume_fd(self, consumer: Any, *, deadline_monotonic: float) -> object:
             del deadline_monotonic
-            return consumer(9)
+            return consumer(artifact_fd)
 
     class _Facts:
         launcher_pid = os.getpid()
@@ -735,7 +740,7 @@ def test_runtime_adapter_uses_v2_manifest_id_for_exact_inspect_and_create_payloa
             self, *, fd: int, candidate: str, configuration: FixedContainerConfigurationV1
         ) -> bool:
             del configuration
-            return fd == 9 and candidate == f"/proc/{os.getpid()}/fd/9"
+            return fd == artifact_fd and candidate == f"/proc/{os.getpid()}/fd/{artifact_fd}"
 
     class _Proof:
         def prove(self, *, configuration: FixedContainerConfigurationV1) -> _Facts:
@@ -1429,12 +1434,15 @@ def test_runtime_adapter_builds_only_proc_launcher_fd_mounts_and_never_persists_
         payload = adapter.create_payload(
             configuration=configuration, binding=_binding(), deadline_monotonic=10.0
         )
+        resolved_source = os.readlink(f"/proc/self/fd/{artifact_fd}")
     finally:
         os.close(artifact_fd)
 
     assert payload["HostConfig"]["Mounts"][0] == {
         "Type": "bind",
-        "Source": f"/proc/{os.getpid()}/fd/{artifact_fd}",
+        # The Engine cannot resolve another namespace's /proc/<pid>/fd entry,
+        # so the payload carries the fd's resolved path.
+        "Source": resolved_source,
         "Target": "/input/artifact.tif",
         "ReadOnly": True,
         "BindOptions": {"NonRecursive": True},
@@ -1674,11 +1682,16 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_create(
     assert source.readback_deadlines == [10.0, 10.0, 10.0]
 
 
-def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start() -> None:
+def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start(
+    tmp_path: Path,
+) -> None:
     """The post-start guard rejects bytes changed after the pre-start receipt."""
     from ksi_processing_controller.external_inspector_docker import _fixed_create_payload
 
     payload_bytes = b"abc"
+    artifact = tmp_path / "artifact"
+    artifact.write_bytes(payload_bytes)
+    artifact_fd = os.open(artifact, os.O_RDONLY)
     valid = FileIoSealReceiptV1(
         device=1,
         inode=2,
@@ -1715,7 +1728,7 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start() -> Non
 
         def consume_fd(self, consumer: Any, *, deadline_monotonic: float) -> object:
             del deadline_monotonic
-            return consumer(9)
+            return consumer(artifact_fd)
 
     class _Facts:
         launcher_pid = os.getpid()
@@ -1727,7 +1740,7 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start() -> Non
             self, *, fd: int, candidate: str, configuration: FixedContainerConfigurationV1
         ) -> bool:
             del configuration
-            return fd == 9 and candidate == f"/proc/{os.getpid()}/fd/9"
+            return fd == artifact_fd and candidate == f"/proc/{os.getpid()}/fd/{artifact_fd}"
 
     class _Proof:
         def prove(self, *, configuration: FixedContainerConfigurationV1) -> _Facts:
@@ -1765,7 +1778,7 @@ def test_runtime_adapter_rechecks_the_bounded_source_after_engine_start() -> Non
             del deadline_monotonic
             self.inspect_calls += 1
             binding = _binding()
-            source = f"/proc/{os.getpid()}/fd/9"
+            source = os.readlink(f"/proc/self/fd/{artifact_fd}")
             payload = _fixed_create_payload(
                 configuration=self._configuration,
                 binding=binding,
