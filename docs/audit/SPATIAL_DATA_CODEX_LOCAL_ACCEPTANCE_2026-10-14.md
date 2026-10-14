@@ -198,3 +198,30 @@ only recovery is a new revision. Evidence: `evidence/public-sample/lifecycle/`.
   acceptance-time download was inside the window).
 - The rig now runs on grant rev3 (rev2 revoked) and the console request
   surface renders the frozen/denied states from the same Core.
+
+### Second cycle on the same rig + worker clock-skew fix (2026-10-14 late)
+
+A second request cycle ran end-to-end on the same rig and Core data dir
+(no journal resets): `sdj-v1-dbdb2f13-e0d7-418e-89c3-db670129a851` (bounds
+`[382430,6467680,382530,6467780]`, grant rev3) → VM worker → **COMPLETED**
+(`sha256:6bac8aa7…`, 8,658,999 bytes, window `[2957,4957,3033,5033]`,
+2000×2000, EPSG:7850, availability `AVAILABLE`) → requester download matched
+receipt size/hash → independent oracle **PASS 11/11**. This crop contains
+NoData (valid 3,903,511 of 4,000,000 pixels), unlike the first acceptance
+crop, and the oracle still confirms exact pixel-array equality, the declared
+nodata value and the NoData-derived valid count. The oracle compares pixel
+arrays, the declared nodata and derived counts — not dataset masks/alpha
+arrays directly; an RGBA/alpha comparison remains an ortho-path item.
+
+The first attempt failed with `FENCE_CONFLICT` and led to a real defect fix
+(`246e954`): `acquired_at` is stamped by the Core clock, and both the client
+attempt check and the lease guard required the worker clock to be at or past
+it, so any negative clock skew (the VM ran 13 ms behind the Core; the
+acceptance had passed on skew in the other direction) fenced a fresh lease
+before any Core call. Only expiry bounds are locally checkable; the Core
+refuses any use past its own lease/deadline/grant bounds. Regression tests
+pin both directions (behind clock accepted, past-expiry refused) and the
+fixed worker runtime was re-staged byte-identical into the VM
+(`1c501e35…`/`fbe29708…`). Diagnostic attempts (2 lease-only probes and one
+attempt-exhausted job `sdj-v1-5e8cf748…` → FAILED `LEASE_EXPIRED`) remain in
+the journal honestly. Evidence: `evidence/public-sample/cycle2/`.
