@@ -17,7 +17,7 @@ import stat
 import struct
 import subprocess
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -69,14 +69,24 @@ def verify_process_containment(
     job: SpatialDataFrozenJobV1,
     proof: SpatialDataContainmentProofV1,
     now: datetime,
-    authority_pid: int,
+    authority_pid: int | None = None,
+    authority_inodes: Mapping[str, int] | None = None,
 ) -> bool:
     """Observed namespaces + pinned mount inventory + privilege/rlimit facts, fail closed.
+
+    Exactly one authority source is required. A privileged observer passes
+    ``authority_pid`` and reads the authority's live namespace inodes; the
+    contained child passes the parent-supplied ``authority_inodes`` because
+    observing another user namespace's namespace files requires privilege the
+    zero-capability child does not hold. The kernel observation of the child
+    itself always remains the privileged parent's responsibility.
 
     This is a software proof checker. Suitability of the operator's pinned mounts,
     launcher image and host remains an independent deployment acceptance gate.
     """
     try:
+        if (authority_pid is None) == (authority_inodes is None):
+            return False
         if (
             proof.runtime_digest != job.runtime.runtime_digest
             or proof.policy_digest != job.policy.policy_digest
@@ -92,10 +102,13 @@ def verify_process_containment(
             ("user", proof.user_namespace_inode),
         ):
             observed = os.stat(f"/proc/{pid}/ns/{name}").st_ino
-            if (
-                observed != expected
-                or observed == os.stat(f"/proc/{authority_pid}/ns/{name}").st_ino
-            ):
+            if observed != expected:
+                return False
+            if authority_inodes is not None:
+                baseline = authority_inodes.get(name)
+                if type(baseline) is not int or observed == baseline:
+                    return False
+            elif observed == os.stat(f"/proc/{authority_pid}/ns/{name}").st_ino:
                 return False
         status = dict(
             line.split(":", 1)
@@ -156,6 +169,49 @@ def apply_spatial_data_rlimits(envelope: ResourceEnvelopeV1, *, max_output_bytes
         (resource.RLIMIT_CORE, 0),
     ):
         resource.setrlimit(key, (bound, bound))
+
+
+def _sealed_proof_descriptor(raw: bytes) -> int:
+    """Anonymous, sealed, read-only proof descriptor.
+
+    Interpreter builds without ``os.memfd_create``/``fcntl`` seal constants (some
+    standalone CPython distributions) still call the same kernel primitive
+    through libc with the stable Linux constants; sealing is not weakened.
+    """
+    import ctypes
+    import fcntl
+
+    cloexec = getattr(os, "MFD_CLOEXEC", 0x0001)
+    allow_sealing = getattr(os, "MFD_ALLOW_SEALING", 0x0002)
+    if hasattr(os, "memfd_create"):
+        descriptor = os.memfd_create("ksi-data-proof", cloexec | allow_sealing)
+    else:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        try:
+            create = libc.memfd_create
+        except AttributeError as exc:  # pragma: no cover - ancient libc only
+            raise OSError("memfd_create is unavailable") from exc
+        create.restype = ctypes.c_int
+        create.argtypes = (ctypes.c_char_p, ctypes.c_uint)
+        descriptor = create(b"ksi-data-proof", cloexec | allow_sealing)
+        if descriptor < 0:
+            error = ctypes.get_errno()
+            raise OSError(error, os.strerror(error))
+    try:
+        os.write(descriptor, raw)
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        fcntl.fcntl(
+            descriptor,
+            getattr(fcntl, "F_ADD_SEALS", 1033),
+            getattr(fcntl, "F_SEAL_WRITE", 0x0008)
+            | getattr(fcntl, "F_SEAL_GROW", 0x0004)
+            | getattr(fcntl, "F_SEAL_SHRINK", 0x0002)
+            | getattr(fcntl, "F_SEAL_SEAL", 0x0001),
+        )
+    except OSError:
+        os.close(descriptor)
+        raise
+    return descriptor
 
 
 class SpatialDataSandboxLauncherPort(Protocol):
@@ -238,16 +294,7 @@ class PinnedSpatialDataLauncher:
             # Anonymous read-only proof descriptor: the child gets no token, config,
             # credentials or default environment. The exact launcher must exec the
             # fixed entrypoint, preserving its PID/session and this one proof fd.
-            proof_fd = os.memfd_create("ksi-data-proof", os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING)
-            os.write(proof_fd, raw)
-            os.lseek(proof_fd, 0, os.SEEK_SET)
-            import fcntl
-
-            fcntl.fcntl(
-                proof_fd,
-                fcntl.F_ADD_SEALS,
-                fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL,
-            )
+            proof_fd = _sealed_proof_descriptor(raw)
             process = subprocess.Popen(
                 [
                     f"/proc/self/fd/{fd}",
@@ -425,9 +472,13 @@ class SpatialDataSandbox:
                 raise SpatialDataWorkerError("ACTIVATION_UNAVAILABLE")
             guard()
             request = {
-                "version": "spatial-data-sandbox-request.v1",
+                "version": "spatial-data-sandbox-request.v2",
                 "job": job.model_dump(by_alias=True, mode="json"),
                 "preparedAt": self.clock().isoformat(),
+                "authorityNamespaceInodes": {
+                    name: os.stat(f"/proc/self/ns/{name}").st_ino
+                    for name in ("net", "mnt", "user")
+                },
             }
             if isinstance(self.launcher, PinnedSpatialDataLauncher):
                 request["containmentProofSha256"] = self.launcher.settings.containment_proof_sha256

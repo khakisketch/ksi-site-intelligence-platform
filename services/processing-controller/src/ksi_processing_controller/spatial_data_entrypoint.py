@@ -140,15 +140,35 @@ def main(argv: list[str] | None = None) -> int:
         request = parse_strict_json(raw)
         if (
             not isinstance(request, dict)
-            or set(request) != {"version", "job", "preparedAt", "containmentProofSha256"}
-            or request["version"] != "spatial-data-sandbox-request.v1"
+            or set(request)
+            != {
+                "version",
+                "job",
+                "preparedAt",
+                "containmentProofSha256",
+                "authorityNamespaceInodes",
+            }
+            or request["version"] != "spatial-data-sandbox-request.v2"
         ):
             return 2
         if request["containmentProofSha256"] != "sha256:" + hashlib.sha256(proof_raw).hexdigest():
             return 2
+        authority_inodes = request["authorityNamespaceInodes"]
+        if (
+            not isinstance(authority_inodes, dict)
+            or set(authority_inodes) != {"net", "mnt", "user"}
+            or any(
+                type(value) is not int or value <= 0 for value in authority_inodes.values()
+            )
+        ):
+            return 2
         job = SpatialDataFrozenJobV1.model_validate(request["job"])
         if job.job_digest != job.canonical_digest() or not verify_process_containment(
-            pid=os.getpid(), job=job, proof=proof, now=datetime.now(UTC), authority_pid=os.getppid()
+            pid=os.getpid(),
+            job=job,
+            proof=proof,
+            now=datetime.now(UTC),
+            authority_inodes=authority_inodes,
         ):
             return 2
         workspace = Path(args.workspace)

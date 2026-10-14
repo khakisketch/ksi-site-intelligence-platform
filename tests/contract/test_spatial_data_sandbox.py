@@ -1,6 +1,7 @@
 """Synthetic child protocol and trusted generated raster tests; not host containment proof."""
 
 import json
+import os
 import subprocess
 import sys
 from datetime import timedelta
@@ -48,6 +49,8 @@ emit({'version':'spatial-data-sandbox-ready.v1','pid':os.getpid(),'ready':True})
 head = sys.stdin.buffer.read(4)
 if not head: sys.exit(0)
 request = json.loads(sys.stdin.buffer.read(struct.unpack('>I', head)[0]))
+if mode == 'capture':
+    with open(directory + '/request.json', 'w') as f: json.dump(request, f, sort_keys=True)
 if mode == 'hang': time.sleep(10)
 if mode == 'crash': sys.exit(7)
 with open(directory + '/candidate.tif', 'wb') as f: f.write(b'candidate')
@@ -465,3 +468,106 @@ def test_sandbox_failed_reap_retains_owned_process_and_blocks_next_launch(
         monkeypatch.setattr(sandbox, "_reap", original)
         sandbox.close()
         assert launcher.process is not None and launcher.process.poll() is not None
+
+
+def test_child_side_authority_inequality_is_verified_numerically() -> None:
+    """The contained child verifies the authority inequality without cross-namespace stat.
+
+    Kernel access to another user namespace's /proc namespace files requires a
+    privilege the zero-capability child does not hold, so the worker supplies its
+    own namespace inodes in the request frame and the child compares numerically.
+    """
+    from ksi_processing_controller.spatial_data_sandbox import (
+        SpatialDataContainmentProofV1,
+        verify_process_containment,
+    )
+    from spatial_data_fixture import DIGEST
+
+    job = make_job()
+    assert job.runtime.runtime_digest is not None and job.policy.policy_digest is not None
+    self_inodes = {
+        name: os.stat(f"/proc/self/ns/{name}").st_ino for name in ("net", "mnt", "user")
+    }
+    proof = SpatialDataContainmentProofV1(
+        version="spatial-data-containment-proof.v1",
+        runtime_digest=job.runtime.runtime_digest,
+        policy_digest=job.policy.policy_digest,
+        launcher_sha256=DIGEST,
+        resource_envelope=job.policy.resource_envelope,
+        max_output_bytes=job.policy.max_output_bytes,
+        network_namespace_inode=self_inodes["net"],
+        mount_namespace_inode=self_inodes["mnt"],
+        user_namespace_inode=self_inodes["user"],
+        mountinfo_sha256=DIGEST,
+        child_uid=os.geteuid(),
+        child_gid=os.getegid(),
+        valid_until=NOW + timedelta(hours=1),
+    )
+    # Sharing the authority's namespaces fails without any privileged stat.
+    assert (
+        verify_process_containment(
+            pid=os.getpid(), job=job, proof=proof, now=NOW, authority_inodes=dict(self_inodes)
+        )
+        is False
+    )
+    # Exactly one authority source is required; ambiguity and absence fail closed.
+    assert (
+        verify_process_containment(
+            pid=os.getpid(),
+            job=job,
+            proof=proof,
+            now=NOW,
+            authority_pid=os.getpid(),
+            authority_inodes=dict(self_inodes),
+        )
+        is False
+    )
+    assert verify_process_containment(pid=os.getpid(), job=job, proof=proof, now=NOW) is False
+    # An incomplete baseline fails closed.
+    assert (
+        verify_process_containment(
+            pid=os.getpid(),
+            job=job,
+            proof=proof,
+            now=NOW,
+            authority_inodes={"net": self_inodes["net"], "mnt": self_inodes["mnt"]},
+        )
+        is False
+    )
+
+
+def test_prepare_request_carries_v2_frame_with_authority_inodes(tmp_path: Path) -> None:
+    from ksi_processing_controller.spatial_data_sandbox import SpatialDataSandbox
+
+    launcher = SyntheticLauncher("capture")
+    sandbox = SpatialDataSandbox(
+        launcher=launcher, clock=lambda: NOW, wall_timeout_seconds=1.0, heartbeat_interval_millis=10
+    )
+    try:
+        receipt = sandbox.prepare(
+            job=make_job(),
+            source_path=tmp_path / "source.tif",
+            output_parent=tmp_path,
+            is_current=lambda: True,
+        )
+    finally:
+        sandbox.close()
+    assert receipt.output_size_bytes == 9
+    request = json.loads((tmp_path / "request.json").read_text(encoding="utf-8"))
+    assert request["version"] == "spatial-data-sandbox-request.v2"
+    expected = {name: os.stat(f"/proc/self/ns/{name}").st_ino for name in ("net", "mnt", "user")}
+    assert request["authorityNamespaceInodes"] == expected
+    assert "containmentProofSha256" not in request
+
+
+def test_sealed_proof_descriptor_seals_and_rejects_writes() -> None:
+    """Interpreter builds without os.memfd_create keep the same sealed descriptor."""
+    from ksi_processing_controller.spatial_data_sandbox import _sealed_proof_descriptor
+
+    descriptor = _sealed_proof_descriptor(b"proof-payload")
+    try:
+        assert os.pread(descriptor, 64, 0) == b"proof-payload"
+        with pytest.raises(OSError):
+            os.write(descriptor, b"x")
+    finally:
+        os.close(descriptor)
