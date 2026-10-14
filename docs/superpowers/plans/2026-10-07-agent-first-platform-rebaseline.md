@@ -2919,3 +2919,117 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   drive_checkpoint_lane2.py, drive_measurement.py`).
 - 경계: synthetic 전용. 이 폐쇄는 합성 복사 스택의 Console 검토 지속성이며 parser sandbox 정량 E2E,
   실자료 A–E, 검증 호스트, 고객/EXT-VAL 수용을 닫지 않는다. F-04 2-cycle 리허설(실자료)은 별도 OPEN.
+
+### 2026-10-14 첫 사용 경험 개선 — Human 승인·bounded 구현 착수
+
+- Human이 제품 추가 과제 검토 후 제안한 순서에 대해 “그렇다면, 그렇게 진행해보자”라고 승인했다.
+  이번 첫 묶음은 **1 시작 안내, 2 보완 행동 안내, 3 관측 선택·근거 가독성**의 Dashboard 구현이다.
+  **4 공간데이터 운영 연결은 상세 설계 후속**, **5 다음 회차 재사용은 기존 흐름 대조 후속**이며
+  신규 운영 권위·권한 확대·호스트 활성화·실자료 접수·push/deploy 승인으로 해석하지 않는다.
+- Git entry: `main` `956a825`, 추적 소스 변경 없음, 기존 미추적 UI PNG 11개 보존. checkpoint의
+  이전 `2a1dab1`은 역사적 검증 기준이며 최신 소스와 같은 상태로 취급하지 않는다.
+- Requirement IDs: REQ-UX-101, SDP-REQ-01/02/05/06. Owner: `apps/dashboard/`.
+  Acceptance: scoped Core 기록만으로 다음 단계/담당 주체를 안내하고, 관측 선택의 구분과
+  근거의 계층적 표시를 개선한다. 조회 실패/부분 페이지/알 수 없는 사유를 정직하게 표시한다.
+- Contracts affected: 기존 wire/API/auth/calculation 계약 불변; 표시용 helper/component만 추가.
+  References/adoption: 기존 Console tokens/components, Core clients, 날짜/수치 SSOT 재사용;
+  reference repositories 직접 import나 새 외부 의존/서비스/데이터 도입 없음.
+- Planned files: Site/Analysis 시작 안내, `AnalysisRequestPanel`과 표시 helper/component,
+  대응 Dashboard test/E2E 및 본 원장/checkpoint. Material UI 판단·구현은 Design Specialist,
+  통합/수용 증거 대조는 Build가 소유한다. 실제 변경 파일과 결과는 수신 후 아래 기록한다.
+- Tests: 단위·페이지·타입·lint·격리 production build, 실제 로그인 desktop/mobile render,
+  unknown/denied/unavailable/expired와 근거 펼침/접기·재조회. Live 복사 스택은 read-only;
+  기존 영속 자료·권한·컨텍스트를 수정하거나 성공 화면을 위해 만료 창을 연장하지 않는다.
+- Invariants: INV-020/024/040/051/053/060. 신고/봉인/검사/적합성/정확도/검토를 구분하고,
+  없는 근거나 좌표·수치를 추정하지 않으며 조회 실패를 빈 자료로 바꾸지 않는다. Server authority,
+  scope/tenant nondisclosure, immutable IDs/digests와 race/idempotency fencing을 유지한다.
+- HIL/real-device assumptions: 없음. License/data implications: 신규 없음, 합성 read-only 검증만.
+  Rollback: 이번 Dashboard/record delta만 역패치; 기존 journals/volumes/configuration/PNG 보존.
+  EXT-VAL·실자료 두 주기·parser/운영/고객 수용·제품 slice 상태는 그대로 OPEN이다.
+
+#### 4 공간데이터 운영 연결 — read-only 상세 설계 대조 (미구현)
+
+- Native Plan이 Core/Processing/MCP 기존 계약·실행 경로를 read-only 대조했다. Build도 실제
+  `platform_production.py`가 `spatial_data`를 전달하지 않음, `SpatialDataLocalAssemblyConfig`의
+  storage/currentness factory 요구, `run_spatial_data_cleanup_once`의 운영 호출자 부재를 확인했다.
+  이 검토는 실행 증거나 4의 구현/운영 수용 완료가 아니다; UI 1–3과 병렬인 설계만 수행했다.
+- 재사용: native-grid 사각 DSM/RGB/RGBA 준비 primitive, Core grant/job/fence/receipt/download/audit,
+  별도 Spatial Data worker 및 stdio 6-tool MCP·HTTP 소비 예제. 재투영/재표본화/새 포맷/공개 URL은 제외.
+- 소스 공백: 보호된 production opt-in loader, 진짜 policy/runtime/activation/currentness와 현재
+  requester identity 해석, 실제 봉인 매니페스트에 결속된 versioned storage factory, 보호 grant 공급,
+  같은 journal owner 안에서의 유한 cleanup lifecycle. 단순 factory 인자 한 줄 추가로 닫지 않는다.
+- 선행 결정: KSI 서명/검증키·권리 공급 custodian, opaque/OIDC requester의 배경 작업 권한 수명주기,
+  자산/요청 및 확장 bounds/용도/위치/보관의 권리, versioned storage 보장과 운영 책임,
+  선택한 API/MCP 소비 환경. 고객 관리자 grant UI·암묵적 동의·Analysis activation 재사용은 승인 없음.
+- 후속 제안 순서: A 기본 OFF 운영 어댑터 → B 권리/저장소/회수·복구/cleanup 연결 → C 한 API/MCP
+  실제 소비 경로 → Console 접점. 기존 wire/권한/identity를 유지하고 authentic-expired optional lane의
+  replay/availability를 분리한다. 추가 Human 결정과 상세 실행 범위 확정 전 source 구현하지 않는다.
+- Live signer/grant/configuration/TLS/kernel/launcher·host 검증과 고객 실자료 두 주기는 별도 게이트.
+  비활성화 rollback은 새 주입/worker만 중지하고 원본·grant/revocation/job/receipt/audit를 보존한다.
+
+#### 1–3 통합 수용 기준과 기준선
+
+- 시작 안내: scoped Site가 확인된 뒤에만 노출; 작업구역/관측/분석의 읽기 실패는 확인 불가로,
+  실제 빈 페이지는 해당 조회 범위의 빈 자료로 구분한다. 일부 자료/분석 성공만으로 모든 준비나
+  검사/정량 적합성이 완료됐다고 표시하지 않는다. 열람자·모바일은 새 쓰기 권한을 얻지 않는다.
+- 보완 안내: 알려진 사유의 한국어 설명·담당 주체·기존 허용 경로를 연결하고 unknown은 일반 안내와
+  원문 technical code를 보존한다. 인증/권한/운영 만료에서 무의미한 재시도를 정상 해결책으로
+  제시하지 않는다. Core blocker/limitation/evidence binding과 수치 억제는 바꾸지 않는다.
+- 선택/근거: 두 관측의 날짜·revision·식별 가능 정보를 표시하되 자동선택/이름 추정 없음;
+  모든 근거·digest·제한을 펼쳐 확인할 수 있고 로드된 부분 페이지를 전체라고 표시하지 않는다.
+  분석 선택 전환/근거 재조회에서 이전 선택의 응답이 섞이지 않으며 접기 이후 재조회도 확인한다.
+- Entry/same-state 근거: Dashboard803 단위, tsc exit0, lint0errors/기존 warning1은 이번 대화의
+  `956a825` read-only 평가에서 실행됐다. 수정 후 별도 재검증 예정; 기존 전체 contract5484는
+  2026-10-13 기록이며 이번 source 실행 결과로 승격하지 않는다.
+- 병렬 Build 경계 점검: `uv run --no-sync python tools/check_core_module_boundaries.py` exit0(140records),
+  Dashboard enum/transition/autonomy sync + physical product/archive boundary5files **49passed**.
+  새 UI 행동/렌더 수용 증거는 아니며 Design Specialist 결과 수신 뒤 영향을 받은 UI를 검증한다.
+- 4 설계의 기존 계약 대조: spatial-data authority/current-grants/permissions/storage/storage-supervision/
+  downloads/cleanup7files **210passed/53warnings**(9.20s). Warning은 multi-threaded process의
+  `os.fork` DeprecationWarning이며 숨기거나 운영 안전성 증거로 해석하지 않는다. 이 실행은 기존
+  local fixture 계약의 증거이지 새 production adapter/storage provider/host 활성화 검증이 아니다.
+
+#### 1–3 구현 접수·통합 보완·로컬 기술 완료 — 2026-10-14
+
+- 변경 파일13개(Dashboard source/test만): Site `page.tsx`/`SiteStartGuidance.tsx`, Analysis
+  `page.tsx`/`AnalysisStartGuide.tsx`/`AnalysisRequestPanel.tsx`, `lib/analysis-guidance.ts`,
+  `test/{site-start-guidance,site-detail-start-guidance,analysis-start-guide,analysis-guidance,
+  analysis-page,analysis-request-panel}.test.{ts,tsx}`, `analysis-e2e/analysis-workflow.spec.ts`.
+  Core/API/schema/auth/worker/calculation·외부 의존은 변경하지 않았다. 미커밋·push/deploy 없음.
+- 동작: 기본 현장 화면의 시작 안내는 실제 목록 수와 이력 continuation을 표시하고 실패는
+  `확인 불가`로 구분한다. Analysis 안내는 기록 수를 적합성으로 승격하지 않는다. 관측은 촬영
+  구간·revision·기존 epoch ID로 구분하고 선택 selector 전체를 펼칠 수 있다. 알려진 blocker의
+  담당 주체·다음 행동·기존 read-only 경로와 unknown의 정직한 안내를 제공한다. 근거는 사람 언어
+  요약/기술 상세로 구분하며 partial page·원문 code/digest·실패 평가와 숫자 억제 경계를 유지한다.
+- Design Specialist 실제 실행 결과 접수: 처음 scoped6files40passed, 전체 **107files820passed**,
+  tsc/build exit0, lint0errors/기존 warning1. 기존 격리 Analysis E2E의 normal/viewer-readonly/
+  weekly-reuse/missing-vertical-reference/overlapping-current-nodata-cell **각1passed(5scenarios)**.
+  viewer390 작업구역 조회에서 등록/archive control 부재 확인. 테스트의 초기 모호한 locator/text
+  실패는 정렬 후 통과했으며 runtime 권한이나 assertion의 사실 대조를 완화하지 않았다.
+- 실제 렌더: `/tmp/opencode/ksi-start-guidance-20261014/`의 Site/Analysis1440·390 PNG를 Design
+  Specialist와 Build가 열어 소비했다. 접근성 audit0violations/contrast incomplete1(자동 확인 한계).
+  첫 Analysis 캡처 이후 계산 결과 표의 keyboard scroll region만 추가했고 이후 audit/E2E 통과.
+  실제 고객/iPhone/production 수용 증거는 아니다.
+- Build 통합 발견·보완: unknown code `__proto__`/`constructor`/`toString`이 상속 속성을 알려진
+  안내로 취급하지 않도록 own-property lookup; 접힌 근거의 `limitationCodes`도 summary에 보이도록
+  유지. 신규4tests가 **RED4fail/26pass → 최종 전체824pass/107files**로 전환됐다. 서버 사유/기록
+  identity·digest는 그대로이고 새 권한이나 파생 적합성 상태를 만들지 않았다.
+- 보완 후 Build 직접 실행: `npm test` **824passed**, `npm run lint`0errors/기존 warning1,
+  `npx tsc --noEmit --incremental false` exit0. 기존 `createAnalysisTsconfig`로 새 private run-local
+  config/dist를 만들어 **isolated production build exit0**; 추적 `tsconfig.json` diff없음.
+- 보완 후 normal 실제 inspected Analysis E2E를 `--trace on`으로 재실행 **1passed/28.4s**.
+  inspected bytes·selector·report/API/UI 일치, 교차 조직404, 후속 실패 평가의 수치 억제·보완 요청과
+  빈 worker queue를 대조했다. 이전 viewer/weekly/두 negative 결과는 변경 없는 권한/API/상태
+  기계의 접수 증거로 재사용한다; 실제 고객 두 주기/새 호스트 chain을 뜻하지 않는다.
+- 증거: `/tmp/opencode/ksi-start-guidance-20261014/integration/{production-build.log,build-input.json,
+  final-source-receipt.json,render-receipt.json,final-render-*.jpeg}`. Build가 새 trace의 최종 시작/선택/
+  보완 화면을 열어 확인했다(중간 skeleton frame은 loading 증거만). 최종13file source/test receipt
+  SHA256 `b5bf9632051f9b4b83e3bc9dbedca90aa4ba4ad1f31e8964ce76acb698f6b907`;
+  trace는 ignored Analysis run output에 유지하고 credentials 포함 가능성 때문에 Git에 올리지 않는다.
+- 기존 live 복사 스택의 OIDC `/login?error=Configuration` 문제는 변경/재기동하지 않았다.
+  격리 Playwright가 소유한8033/9031/3231 스택과 browser는 종료됐으며 현재 preview 링크로 광고하지
+  않는다. 기존 미추적 PNG11개·영속 stack/grant/policy/원본 보존. 전체 Python Ruff의 기존 E5011건은
+  이번 Dashboard-only 범위 밖으로 그대로 공개한다; Python 전체 suite/CI를 새 통과로 주장하지 않는다.
+- 판정: **1–3 로컬 기술 결과 완료**, Human 사용 수용·제품 slice/EXT-VAL·parser/host·실자료 두 주기
+  ·원격 CI·상용 출시/운영 수용은 별도 OPEN. 4는 read-only 상세 설계와 기존 계약 대조까지만이며,
+  권리/서명 공급자·requester 수명주기·storage/consumer 환경 결정을 기다린다. 5 신규 구현 없음.
