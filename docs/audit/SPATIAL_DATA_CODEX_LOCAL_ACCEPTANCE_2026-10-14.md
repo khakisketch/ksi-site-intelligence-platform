@@ -138,6 +138,12 @@ Codex CLI and a genuinely contained worker.
   `INTEGRITY_MISMATCH`. Versioning was enabled and the two artifacts
   re-uploaded with full-object SHA-256 (versions `bf667e8e…`/`b1e368c8…`,
   checksums equal to the pinned originals).
+- Observation-date boundary: the sealed public submission's declared capture
+  window (`2026-10-10T10:00Z`–`10:30Z`) is a synthetic placeholder copied from
+  the earlier acceptance material, not the Floreat-f4 source date
+  (2022-08-24). Declared observation metadata in this rig must not be read as
+  truthful public acquisition history; correcting it would require a new
+  immutable submission revision and is not part of this acceptance.
 
 ### Completed chain (real Codex CLI → real Core → real VM worker)
 
