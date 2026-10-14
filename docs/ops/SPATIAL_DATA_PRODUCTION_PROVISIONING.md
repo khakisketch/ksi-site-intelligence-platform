@@ -194,3 +194,7 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
 6. Seccomp denylist는 심층 방어일 뿐 샌드박스 증명이 아니다(README §7과 동일 취지).
 7. holder liveness(cmdline·uid_map·ns 존재)를 launch 전 확인; stale pid 파일 주의.
 8. §9.1–9.2(버전닝·전체 체크섬, https/TLS, `trustedEndpointOrigins`)는 배포 게이트로 유지.
+9. **프로비저닝 순서(2차 호스트 실증)**: 모든 마운트(9p, CA 오버레이)를 holder 시작·proof 발급
+   **이전**에 완료한다 — 호스트 ns의 bind mount가 holder의 공유 마운트 peer group으로 전파되어
+   고정한 mountinfo sha를 바꾼다. CA 오버레이는 스테이징된 venv의 certifi에도 적용해야 한다
+   (아니면 워커가 `CORE_UNAVAILABLE`). 마운트 변경이 생기면 holder 재시작·proof 재발급.

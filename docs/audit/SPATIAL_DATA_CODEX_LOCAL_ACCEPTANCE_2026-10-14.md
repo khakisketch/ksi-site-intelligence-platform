@@ -257,3 +257,30 @@ resolution, CRS, bounds and byte identity. This closes the dataset-mask/alpha
 comparison gap noted for the earlier DSM oracle (whose stronger checks were
 pixel-array equality, the declared nodata value and NoData-derived counts).
 Evidence: `evidence/public-sample/cycle2/`.
+
+### Second host reproduction (2026-10-14 late)
+
+A second verification host was built from a clean copy of the VM image
+(`noble2.img`, standalone qcow2 convert) with **full re-provisioning**: the
+sandbox tree was wiped and `provision_sandbox.sh` re-staged the runtime from
+the repo (picking up the clock-skew fix), started a new holder and re-installed
+the launcher/python-cap; the TLS/MinIO forwarders were reinstalled. The proof
+was re-minted from the new live holder (user/mnt/net ns `4026532289/348/290`,
+mountinfo `61f1a29d…`, launcher `0c76f563…`) bound to the public policy
+(`d6f54928…`)/runtime (`3b1a84bb…`) material.
+
+- New request `sdj-v1-cb73aba7…` (the original acceptance window
+  `[382350,6467650,382450,6467750]`, grant rev3) → VM2 worker → **COMPLETED**
+  (`sha256:0fcb7fd7…`, 9,166,428 bytes, window `[1357,3357,3633,5633]`).
+- The downloaded output is **byte-identical** (`cmp`) to the first acceptance
+  output (`sdj-v1-ca9b7b2f…`) and the oracle returned **PASS 11/11**: same
+  input bytes + same window + same code reproduce the same output on a second,
+  freshly provisioned machine.
+
+Two provisioning-order findings (recorded in runbook §9.1): the CA overlay
+must be applied to the **staged** venv's certifi (provision→install_net order
+otherwise leaves the staged copy CA-less and the worker reports
+`CORE_UNAVAILABLE`), and every mount must happen **before** the holder starts
+or the proof is minted — the certifi bind mount propagated into the holder's
+shared mount peer group and changed the pinned mountinfo sha after
+provisioning. Evidence: `evidence/public-sample/host2/`.
