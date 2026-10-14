@@ -570,7 +570,14 @@ class ExternalArtifactInspectionStore:
                 and record.lease is not None
                 and now >= record.lease.expires_at
             )
-            if expired_or_queued:
+            # A request whose policy generation was superseded can never be
+            # claimed for inspection (the lease refuses it), so listing it
+            # would starve the queue behind an older generation; the subject's
+            # re-issued request under the selected current policy carries the
+            # work instead.  The DISPLAY obligation is deliberately not gated
+            # here: it survives revocation and has its own display-policy
+            # currency check at claim time.
+            if expired_or_queued and self._policy_is_current(record):
                 candidates.append(
                     PendingExternalInspection(
                         record.request.request_id,

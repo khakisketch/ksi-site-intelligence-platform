@@ -995,6 +995,74 @@ def test_historical_display_obligation_survives_revocation_without_a_display_sto
     )
 
 
+def test_superseded_inspection_generation_is_not_listed_and_the_reissued_one_is(
+    tmp_path: Path,
+) -> None:
+    """A queued request under a superseded policy must not starve the queue.
+
+    The lease refuses a non-current policy generation, so listing it would make
+    every worker retry it forever; the subject's re-issued request under the
+    current policy carries the work instead.
+    """
+    policy_v1, authority_v1 = _bound_policy()
+    template = policy_template()
+    v2_body = template.model_copy(update={"version": 2}, deep=True)
+    authority_v2 = PolicyAuthorityRecord(
+        policy_id=template.policy_id,
+        policy_version=2,
+        authorized_policy_body_digest=authorized_policy_body_digest(v2_body),
+        permitted_subjects=(subject(),),
+        permitted_uses=("INSPECTION", "DISPLAY"),
+        authorized_actor_ids=("authority",),
+        active_from=NOW - timedelta(minutes=1),
+        active_until=NOW + timedelta(minutes=1),
+        synthetic_test_only=True,
+    ).sealed()
+    policy_v2 = v2_body.model_copy(
+        update={"authority_record_digest": authority_v2.digest, "policy_digest": None}, deep=True
+    ).sealed()
+    current_time = [NOW]
+    registry = _policy_registry(
+        DurableJournal(tmp_path / "policy.jsonl"),
+        _Authority(
+            _sealed_record(authority_v1, policy_v1), authority_v2
+        ),
+        clock=lambda: current_time[0],
+    )
+    registry.admit(policy_v1, actor="authority", now=NOW)
+    store = ExternalArtifactInspectionStore(
+        DurableJournal(tmp_path / "inspection.jsonl"),
+        policy_registry=registry,
+        external_reconstruction=_FixtureIngress(),
+        clock=lambda: current_time[0],
+    )
+    first = store.issue_after_seal(subject(), now=NOW)
+    assert first.request is not None
+    assert store.list_pending(1)[0].request_id == first.request.request_id
+
+    registry.admit(policy_v2, actor="authority", now=NOW)
+    registry.revoke(policy_v1.policy_id, policy_v1.version, actor="authority", now=NOW)
+    assert store.list_pending(1) == ()
+    assert (
+        store.claim(first.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW).verdict
+        == "POLICY_UNAVAILABLE"
+    )
+
+    reissued = store.issue_after_seal(subject(), now=NOW)
+    assert reissued.request is not None
+    assert reissued.request.request_id != first.request.request_id
+    pending = store.list_pending(1)
+    assert len(pending) == 1 and pending[0].request_id == reissued.request.request_id
+
+
+def _sealed_record(
+    authority: _Authority, policy: ExternalValidationPolicyV1
+) -> PolicyAuthorityRecord:
+    record = authority.resolve(_sealed_digest(policy.authority_record_digest), NOW)
+    assert record is not None
+    return record
+
+
 def test_historical_obligation_ignores_later_display_competition_but_execution_does_not(
     tmp_path: Path,
 ) -> None:
