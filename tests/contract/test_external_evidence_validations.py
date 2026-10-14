@@ -333,12 +333,15 @@ def _policy_registry(
 
 
 def _context(
-    item: EvidenceItem, policy: ExternalValidationPolicyV1
+    item: EvidenceItem,
+    policy: ExternalValidationPolicyV1,
+    *,
+    context_id: str = "context-a",
 ) -> ExternalEvidenceMeasurementContextV1:
     assert item.manifest is not None and item.manifest.evidence_manifest_digest is not None
     assert policy.policy_digest is not None
     return ExternalEvidenceMeasurementContextV1(
-        context_id="context-a",
+        context_id=context_id,
         subject=item.manifest.subject,
         evidence_manifest_digest=item.manifest.evidence_manifest_digest,
         evidence_observed_sha256=item.manifest.observed_object_digest,
@@ -1047,6 +1050,57 @@ def test_pending_validation_omits_expired_records_but_keeps_live_records(tmp_pat
         pending.validation_id for pending in store.list_pending(10, organization_id="org-a")
     ]
     assert pending_ids == [second.request.validation_id]
+
+
+def test_pending_validation_lists_only_the_latest_issuance_per_context_key(
+    tmp_path: Path,
+) -> None:
+    """A superseded context generation must not starve the queue behind it.
+
+    Only one context can be current for a (subject, evidence manifest, target
+    DSM, policy) key, so a record issued under an earlier generation answers
+    CONTEXT_UNAVAILABLE for every claim while still occupying the queue head.
+    The pending list keeps the newest issuance per key and drops the older one
+    without consulting the context authority (which the recovery path may no
+    longer be able to answer for).
+    """
+    item = _evidence()
+    registry, policy = _policy_registry(tmp_path, max_deadline_seconds=120.0)
+    path = tmp_path / "restart.jsonl"
+    context_a = _context(item, policy)
+    context_b = _context(item, policy, context_id="context-b")
+    assert context_a.context_digest != context_b.context_digest
+
+    first = ExternalEvidenceValidationStore(
+        DurableJournal(path),
+        evidence=_Evidence(item),
+        policy_registry=registry,
+        context_authority=_ContextAuthority(context_a),
+        clock=lambda: NOW,
+    )
+    superseded = first.issue_after_seal(item.evidence_ref, now=NOW)
+    assert superseded.request is not None
+    assert [pending.validation_id for pending in first.list_pending(10)] == [
+        superseded.request.validation_id
+    ]
+    del first  # release the journal writer lock before reopening the path
+
+    second = ExternalEvidenceValidationStore(
+        DurableJournal(path),
+        evidence=_Evidence(item),
+        policy_registry=registry,
+        # Both contexts stay historically resolvable for replay; the first
+        # entry is the one the store resolves as current.
+        context_authority=_ContextAuthority(context_b, context_a),
+        clock=lambda: NOW,
+    )
+    issued = second.issue_after_seal(item.evidence_ref, now=NOW + timedelta(seconds=30))
+    assert issued.request is not None
+    assert issued.request.validation_id != superseded.request.validation_id
+
+    assert [pending.validation_id for pending in second.list_pending(10)] == [
+        issued.request.validation_id
+    ]
 
 
 def test_concurrent_fresh_admission_after_expiry_respects_released_queue_boundary(

@@ -433,6 +433,20 @@ def _fence_from_wire(raw: Mapping[str, object]) -> LeaseFence:
     return fence
 
 
+def _natural_key(record: _Record) -> tuple[str, ...]:
+    """The context-resolution tuple: only one current context can match it."""
+
+    manifest = record.item.manifest
+    target_dsm = manifest.target_dsm_artifact_id if manifest is not None else ""
+    return (
+        record.request.subject_digest,
+        record.request.evidence_manifest_digest,
+        target_dsm,
+        record.request.target_dsm_observed_sha256,
+        record.request.policy_digest,
+    )
+
+
 class ExternalEvidenceValidationStore:
     """Current-policy, fenced lifecycle for one sealed evidence manifest."""
 
@@ -591,10 +605,24 @@ class ExternalEvidenceValidationStore:
             raise ValueError("limit must be positive")
         now = self._clock()
         with self._lock:
+            # For one natural key only a single current context can exist, so a
+            # record superseded by a later issuance for the same key (subject,
+            # evidence manifest, target DSM, policy) can never be claimed
+            # (the lease answers CONTEXT_UNAVAILABLE) and must not starve the
+            # queue behind it.  This stays authority-free by construction: the
+            # store compares only its own issuance history.
+            latest_by_key: dict[tuple[str, ...], tuple[datetime, str]] = {}
+            for record in self._records.values():
+                key = _natural_key(record)
+                candidate = (record.request.issued_at, record.request.validation_id)
+                if key not in latest_by_key or candidate > latest_by_key[key]:
+                    latest_by_key[key] = candidate
+            current_ids = {value[1] for value in latest_by_key.values()}
             return tuple(
                 PendingEvidenceValidation(record.request.validation_id, record.request.issued_at)
                 for record in self._records.values()
                 if self._is_pending_execution(record, now)
+                and record.request.validation_id in current_ids
                 and (
                     organization_id is None
                     or record.item.declaration.subject.organization_id == organization_id
