@@ -114,6 +114,70 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("uses capture time, revision and the recorded epoch ID to distinguish observations", () => {
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
+    expect(baseline.options[1]?.textContent).toContain("revision 1 · epoch-baseline");
+    expect(baseline.options[1]?.textContent).toContain("09:00–09:30");
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(baseline, { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    expect(screen.getByText(/선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다/)).toBeTruthy();
+    expect(screen.getByText(/기준 · .*revision 1 · epoch-baseline/)).toBeTruthy();
+    expect(screen.getByText(/현재 · .*revision 1 · epoch-current/)).toBeTruthy();
+
+    const selectorDetails = screen.getByText("요청 selector 전체 확인").closest("details");
+    expect(selectorDetails?.hasAttribute("open")).toBe(false);
+    fireEvent.click(screen.getByText("요청 selector 전체 확인"));
+    expect(selectorDetails?.textContent).toContain(observations[0]!.selector.submissionRef);
+    expect(selectorDetails?.textContent).toContain("work-baseline");
+    expect(selectorDetails?.textContent).toContain("revision · 1");
+  });
+
+  it("shows safe remediation and preserves the original blocker only in technical details", () => {
+    const blocked = {
+      ...detail(),
+      suitabilityState: "BLOCKED" as const,
+      blockers: [{ code: "VERTICAL_REFERENCE_MISMATCH", message: null, epoch: "CURRENT" as const, evidenceRef: "checkpoint-ref-1", detail: "height datum differs" }],
+      result: null,
+    };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
+
+    renderPanel({ initialPage: page, initialSelectedDetail: blocked });
+    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+
+    expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
+    expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
+    expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    const technical = selected.getByText("Core 코드·원문 설명 보기").closest("details");
+    expect(technical?.hasAttribute("open")).toBe(false);
+    fireEvent.click(selected.getByText("Core 코드·원문 설명 보기"));
+    expect(technical?.textContent).toContain("VERTICAL_REFERENCE_MISMATCH");
+    expect(technical?.textContent).toContain("height datum differs");
+    expect(technical?.textContent).toContain("checkpoint-ref-1");
+  });
+
+  it("gives an honest fallback for unknown blocker codes without treating them as retryable", () => {
+    const blocked = {
+      ...detail(),
+      suitabilityState: "BLOCKED" as const,
+      blockers: [{ code: "FUTURE_REASON_CODE", message: null, epoch: null, evidenceRef: null, detail: null }],
+      result: null,
+    };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
+
+    renderPanel({ initialPage: page, initialSelectedDetail: blocked });
+    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    expect(selected.getByText("세부 원인 확인 필요")).toBeTruthy();
+    expect(selected.getByText(/이 사유에 대한 화면 안내가 없습니다/)).toBeTruthy();
+    expect(selected.getByText(/반복 요청하지 마세요/)).toBeTruthy();
+    expect(selected.getByText("Core 코드·원문 설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
+  });
+
   it("explains a completed execution with reassessment required without exposing the raw state code", () => {
     const current = {
       ...detail(),
@@ -130,7 +194,8 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("실행 완료")).toBeTruthy();
     expect(selected.getByText("재평가 필요")).toBeTruthy();
     expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
-    expect(selected.queryByText("REASSESSMENT_REQUIRED")).toBeNull();
+    expect(selected.getByText("현장 적합성 재평가 필요")).toBeTruthy();
+    expect(selected.getByText("Core 코드·원문 설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("retires cached numeric detail when reselecting a completed analysis before refreshed I/O", async () => {
@@ -195,8 +260,10 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     renderPanel();
     expect(screen.getByText("분석 analysis-1")).toBeTruthy();
+    expect(screen.getByRole("region", { name: "계산 결과 표" }).getAttribute("tabindex")).toBe("0");
     expect(screen.getByText("result-core-1")).toBeTruthy();
-    expect(screen.getByText((_text, element) => element?.textContent === "제한: PROVISIONAL_ACCURACY_UNVERIFIED, INSPECTION_LIMITED")).toBeTruthy();
+    expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
+    expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();
     expect(screen.getByText("정확도 미확인")).toBeTruthy();
   });
 
@@ -403,7 +470,7 @@ describe("analysis V2 panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await waitFor(() => expect(screen.getByLabelText("근거").textContent).toContain("LIMIT-B"));
     expect(fetchMock.mock.calls[2]![0]).toBe("/api/sites/site-1/analyses/analysis-1/evidence?limit=32&cursor=evidence-cursor");
-    expect(screen.getByText("근거 · 2개 항목")).toBeTruthy();
+    expect(screen.getByLabelText("근거").textContent).toContain("현재 불러온 2개 항목");
 
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await screen.findByRole("alert");
@@ -424,7 +491,7 @@ describe("analysis V2 panel", () => {
   it("guides viewers in task language without exposing the permission token", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     const first = renderPanel({ canCreate: false });
-    expect(screen.getByText("분석 기록을 볼 수 있습니다. 새 분석 요청은 현장 등록 권한이 있는 담당자에게 요청하세요.")).toBeTruthy();
+    expect(screen.getByText("분석 기록을 조회할 수 있습니다. 새 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     first.unmount();
 
@@ -432,7 +499,7 @@ describe("analysis V2 panel", () => {
     const page = listPage(["analysis-1"]);
     page.items[0] = { ...page.items[0]!, executionState: "FAILED", suitabilityState: "REASSESSMENT_REQUIRED", resultId: null, metrics: null };
     renderPanel({ initialPage: page, initialSelectedDetail: failed, canCreate: false });
-    expect(screen.getByText("분석 실행이 실패했습니다. 새 분석 요청은 현장 등록 권한이 있는 담당자에게 다시 요청을 맡기세요.")).toBeTruthy();
+    expect(screen.getByText("Core가 분석을 완료하지 못했습니다. 현장 분석 담당자에게 실패 사유와 근거 검토를 요청하세요.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
   });
 
@@ -447,5 +514,20 @@ describe("analysis V2 panel", () => {
     fireEvent.click(collapse);
     expect(await screen.findByRole("button", { name: "근거 확인" })).toBeTruthy();
     expect(screen.queryByLabelText("근거")).toBeNull();
+  });
+
+  it("keeps evidence-specific restrictions visible while technical details are collapsed", async () => {
+    const page = evidencePage("LIMIT-A", null);
+    page.items[0]!.limitationCodes = ["CHECKPOINT_NOT_INDEPENDENT"];
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json(detail()))
+      .mockResolvedValueOnce(json(page)));
+    renderPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: "근거 확인" }));
+    const notice = await screen.findByText("이 근거의 제한 · 독립성이 확인되지 않은 검사점 근거");
+    const summary = notice.closest("summary");
+    expect(summary).not.toBeNull();
+    expect(summary!.closest("details")?.hasAttribute("open")).toBe(false);
   });
 });

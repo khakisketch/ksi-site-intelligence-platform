@@ -5,6 +5,7 @@ import { cache } from "react";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteHeader } from "./SiteHeader";
+import { SiteStartGuidance } from "./SiteStartGuidance";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ExternalObservationHistory } from "./observations/ExternalObservationHistory";
 import { EmptyState } from "@/components/ui/EmptyState";
@@ -81,6 +82,12 @@ export default async function SiteDetailPage({
   const canApproveAutonomy = canApproveResult.status === "fulfilled" && canApproveResult.value;
   const areas = areasResult.status === "fulfilled" ? areasResult.value.workAreas : [];
   const areaNames = new Map(areas.map((area) => [area.workAreaId, area.name]));
+  const siteStartCounts = {
+    workAreaCount: areasResult.status === "fulfilled" ? areasResult.value.workAreas.length : null,
+    observationWorkOrderCount: ordersResult.status === "fulfilled" ? ordersResult.value.length : null,
+    externalResultCount: historyResult.status === "fulfilled" ? historyResult.value.items.length : null,
+    hasMoreExternalResults: historyResult.status === "fulfilled" ? historyResult.value.nextCursor !== null : null,
+  };
   const latestObservation = historyResult.status === "fulfilled"
     ? historyResult.value.items.find((item) => item.result)?.result?.reportedAt ?? null
     : null;
@@ -99,6 +106,7 @@ export default async function SiteDetailPage({
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       {tab === "observations" && <div className="flex flex-col gap-4">
+        <SiteStartGuidance siteId={site.siteId} {...siteStartCounts} />
         <SectionCard title="외부 관측 이력">
           <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다.</p>
           <Link href={`${sitePath}/observations`} className="btn mt-3 w-fit">외부 관측 이력 열기</Link>

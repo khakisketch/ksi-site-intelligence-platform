@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 
 type Selector = { workOrderId: string; submissionRef: string; revision: number };
 type ObservationOption = {
@@ -80,6 +80,17 @@ type AnalysisEvidence = {
   };
   result: AnalysisResult | null;
 };
+
+async function revealCoreDetails(container: Locator): Promise<void> {
+  const summaries = container.locator("summary").filter({ hasText: "Core 코드" });
+  for (const summary of await summaries.all()) await summary.click();
+}
+
+async function revealEpochEvidence(container: Locator, observationEpochId: string): Promise<Locator> {
+  const item = container.locator("details").filter({ hasText: observationEpochId }).first();
+  await item.locator("summary").click();
+  return item;
+}
 type ControlAck = {
   controlId: string;
   status: string;
@@ -362,7 +373,7 @@ test("OIDC 사용자가 실제 검사된 두 관측의 Analysis 결과와 근거
   expect(detail?.suitabilityState).toBe("PROVISIONAL_ACCURACY_UNVERIFIED");
 
   const analysisCard = page.getByRole("article").filter({ hasText: accepted.analysisId });
-  await expect(analysisCard.getByText("완료", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(analysisCard.getByText("실행 완료", { exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "근거 확인" }).click();
 
   const result = await coreGet<{ result: AnalysisResult; executionState: string }>(
@@ -394,8 +405,11 @@ test("OIDC 사용자가 실제 검사된 두 관측의 Analysis 결과와 근거
   await expect(analysisCard).toContainText(resultMetricLabel(result.result.metrics.cutM3));
   await expect(analysisCard).toContainText(resultMetricLabel(result.result.metrics.fillM3));
   await expect(analysisCard).toContainText(resultMetricLabel(result.result.metrics.netM3));
-  await expect(analysisCard).toContainText(evidence.baseline.inspectionReportDigest);
-  await expect(analysisCard).toContainText(evidence.current.inspectionReportDigest);
+  const evidenceRegion = analysisCard.getByRole("region", { name: "근거" });
+  const baselineEvidenceItem = await revealEpochEvidence(evidenceRegion, evidence.baseline.observationEpochId);
+  const currentEvidenceItem = await revealEpochEvidence(evidenceRegion, evidence.current.observationEpochId);
+  await expect(baselineEvidenceItem).toContainText(evidence.baseline.inspectionReportDigest);
+  await expect(currentEvidenceItem).toContainText(evidence.current.inspectionReportDigest);
   expect(evidence.baseline.observedSha256).not.toBe(evidence.current.observedSha256);
 
   const lateEvaluation = await requestRunnerControl("APPEND_FAILED_CURRENT_CHECKPOINT_EVALUATION");
@@ -557,19 +571,30 @@ test("OIDC 열람자는 저장된 Analysis 결과를 읽고 새 요청은 만들
     `/sites/${encodeURIComponent(fixture.siteId)}/analysis?analysisId=${encodeURIComponent(accepted.analysisId)}`,
   );
   await expect(page.getByRole("heading", { name: "현장 분석" })).toBeVisible();
-  await expect(page.getByText("분석 기록을 볼 수 있습니다. 새 요청에는 현장 등록 권한(SITES_WRITE)이 필요합니다.")).toBeVisible();
+  await expect(page.getByText("분석 기록을 조회할 수 있습니다. 새 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.")).toBeVisible();
   await expect(page.getByText("새 분석 요청", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "분석 요청" })).toHaveCount(0);
   const card = page.getByRole("article").filter({ hasText: accepted.analysisId });
-  await expect(card.getByText("완료", { exact: true })).toBeVisible();
+  await expect(card.getByText("실행 완료", { exact: true })).toBeVisible();
   await expect(card).toContainText(result.result.resultId);
   await expect(card).toContainText(resultMetricLabel(result.result.metrics.cutM3));
   await expect(card).toContainText(resultMetricLabel(result.result.metrics.fillM3));
   await expect(card).toContainText(resultMetricLabel(result.result.metrics.netM3));
   await page.getByRole("button", { name: "근거 확인" }).click();
   await expect(card.getByRole("region", { name: "근거" })).toBeVisible();
-  await expect(card).toContainText(evidence.baseline.inspectionReportDigest);
-  await expect(card).toContainText(evidence.current.inspectionReportDigest);
+  const evidenceRegion = card.getByRole("region", { name: "근거" });
+  const baselineEvidence = await revealEpochEvidence(evidenceRegion, evidence.baseline.observationEpochId);
+  const currentEvidence = await revealEpochEvidence(evidenceRegion, evidence.current.observationEpochId);
+  await expect(baselineEvidence).toContainText(evidence.baseline.inspectionReportDigest);
+  await expect(currentEvidence).toContainText(evidence.current.inspectionReportDigest);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("link", { name: "작업구역 현황 확인" }).click();
+  await expect(page).toHaveURL(`http://localhost:3231/sites/${encodeURIComponent(fixture.siteId)}/work-areas`);
+  await expect(page.getByText(/작업구역을 등록하거나 보관하려면/)).toBeVisible();
+  await expect(page.getByRole("heading", { name: "사용 중인 작업구역" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "등록", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /보관/ })).toHaveCount(0);
 
   const viewerAnalysesBefore = await coreGet<{ items: AnalysisView[] }>(analysisCollection, viewerToken);
   expect(viewerAnalysesBefore.items.some((item) => item.analysisId === accepted.analysisId)).toBe(true);
@@ -725,7 +750,7 @@ test("operator reuses three inspected epochs for two stored weekly Analysis resu
     expect(record.v2Evidence.analysisId).toBe(record.v2Detail.analysisId);
     expect(record.v2Evidence.evidenceRevision).toBe(record.v2Detail.evidenceRevision);
     expect(record.v2Evidence.evidenceDigest).toBe(record.v2Detail.evidenceDigest);
-    await expect(card.getByText("완료", { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expect(card.getByText("실행 완료", { exact: true })).toBeVisible({ timeout: 30_000 });
     await card.getByRole("button", { name: "이 분석 보기" }).click();
     await expect(card).toContainText(record.result.result.resultId);
     await expect(card).toContainText("정확도 미확인");
@@ -733,14 +758,17 @@ test("operator reuses three inspected epochs for two stored weekly Analysis resu
     await expect(card).toContainText(resultMetricLabel(record.result.result.metrics.cutM3));
     await expect(card).toContainText(resultMetricLabel(record.result.result.metrics.fillM3));
     await expect(card).toContainText(resultMetricLabel(record.result.result.metrics.netM3));
+    await revealCoreDetails(card);
     for (const code of record.v2Detail.result?.limitationCodes ?? []) await expect(card).toContainText(code);
     await page.getByRole("button", { name: "근거 확인" }).click();
     const evidenceRegion = card.getByRole("region", { name: "근거" });
     await expect(evidenceRegion).toBeVisible();
-    await expect(evidenceRegion).toContainText(record.evidence.baseline.inspectionReportDigest);
-    await expect(evidenceRegion).toContainText(record.evidence.current.inspectionReportDigest);
-    await expect(evidenceRegion).toContainText(record.evidence.baseline.inputDigest);
-    await expect(evidenceRegion).toContainText(record.evidence.current.inputDigest);
+    const baselineEvidence = await revealEpochEvidence(evidenceRegion, record.evidence.baseline.observationEpochId);
+    const currentEvidence = await revealEpochEvidence(evidenceRegion, record.evidence.current.observationEpochId);
+    await expect(baselineEvidence).toContainText(record.evidence.baseline.inspectionReportDigest);
+    await expect(currentEvidence).toContainText(record.evidence.current.inspectionReportDigest);
+    await expect(baselineEvidence).toContainText(record.evidence.baseline.inputDigest);
+    await expect(currentEvidence).toContainText(record.evidence.current.inputDigest);
   }
 
   const firstAccepted = await submitPair(options[0], options[1]);
@@ -954,14 +982,16 @@ test("operator reuses three inspected epochs for two stored weekly Analysis resu
   );
   await page.getByRole("button", { name: "근거 확인" }).click();
   const evidenceRegion = page.getByRole("region", { name: "근거" });
-  await expect(evidenceRegion).toContainText("근거 · 32개 항목");
+  await expect(evidenceRegion).toContainText("현재 불러온 32개 항목");
   await page.getByRole("button", { name: "다음 근거 보기" }).click();
-  await expect(evidenceRegion).toContainText("pagination-evidence-page-two");
+  const pageTwoEvidence = evidenceRegion.locator("details").last();
+  await pageTwoEvidence.locator("summary").click();
+  await expect(pageTwoEvidence).toContainText("pagination-evidence-page-two");
   expect(evidenceCursorPageTwoRead).toBe(true);
   await page.getByRole("button", { name: "다음 근거 보기" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "근거 개정이 변경되었습니다." })).toBeVisible();
   await page.getByRole("button", { name: "근거 처음부터 다시 불러오기" }).click();
-  await expect(evidenceRegion).toContainText("근거 · 32개 항목");
+  await expect(evidenceRegion).toContainText("현재 불러온 32개 항목");
 });
 
 test("OIDC 사용자가 수직 기준 누락 관측의 분석 차단과 빈 worker queue를 확인한다", async ({ page }) => {
@@ -1055,6 +1085,7 @@ test("OIDC 사용자가 수직 기준 누락 관측의 분석 차단과 빈 work
   const card = page.getByRole("article").filter({ hasText: blocked.analysisId });
   await expect(card.getByText("시작 전", { exact: true })).toBeVisible();
   await expect(card.getByText("차단됨", { exact: true })).toBeVisible();
+  await revealCoreDetails(card);
   await expect(card).toContainText("ESSENTIAL_INPUT_UNAVAILABLE");
   await expect(card).not.toContainText("절토");
   await expect(card).not.toContainText("성토");
@@ -1182,6 +1213,7 @@ test("실제 검사된 겹치는 NoData DSM 분석이 worker에서 차단되고 
   const card = page.getByRole("article").filter({ hasText: queued.analysisId });
   await expect(card.getByText("실패", { exact: true })).toBeVisible({ timeout: 30_000 });
   await expect(card.getByText("차단됨", { exact: true })).toBeVisible();
+  await revealCoreDetails(card);
   await expect(card).toContainText("INSUFFICIENT_COMMON_VALID_COVERAGE");
   await expect(card).not.toContainText("절토");
   await expect(card).not.toContainText("성토");

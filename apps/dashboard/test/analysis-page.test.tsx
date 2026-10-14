@@ -37,6 +37,26 @@ describe("analysis deep link", () => {
     expect(screen.getByText("analysis-old:analysis-old:analysis-recent")).toBeTruthy();
   });
 
+  it("shows start guidance from exact loaded records and labels the bounded analysis page", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [
+      { workAreaId: "area-1", name: "1구역" },
+      { workAreaId: "area-2", name: "2구역" },
+    ] });
+    mocked.observations.mockResolvedValue([
+      { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+      { selector: { workOrderId: "work-2", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 2 }, observationEpochId: "epoch-2", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
+    ]);
+    mocked.list.mockResolvedValue({ siteId: "site-1", items: [{ analysisId: "analysis-1" }], nextCursor: "older-records" });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByRole("heading", { name: "분석 시작 안내" })).toBeTruthy();
+    expect(screen.getByText("2개 확인됨")).toBeTruthy();
+    expect(screen.getByText("2개 표시됨")).toBeTruthy();
+    expect(screen.getByText("1개 표시됨")).toBeTruthy();
+    expect(screen.getByText(/최근 페이지의 일부 기록/)).toBeTruthy();
+  });
+
   it("keeps accessible Site context when an optional analysis child returns 404", async () => {
     const calls: string[] = [];
     mocked.site.mockImplementation(async () => { calls.push("site"); return { name: "접근 확인된 현장" }; });
