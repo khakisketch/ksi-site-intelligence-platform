@@ -155,6 +155,18 @@ class OidcSubjectRegistry:
         mapping = self._mappings.get((issuer, subject))
         return mapping.principal() if mapping is not None else None
 
+    def principal_by_id(self, principal_id: str) -> Principal | None:
+        """Trusted local lookup for boot-loaded mapped identities.
+
+        Only an ACTIVE mapping yields a principal; a REVOKED mapping returns
+        ``None``. Revocation is therefore applied at the next Core restart,
+        consistent with the other boot-loaded Core authorities.
+        """
+        for mapping in self._mappings.values():
+            if mapping.principal_id == principal_id:
+                return mapping.principal()
+        return None
+
     @property
     def principal_ids(self) -> frozenset[str]:
         return frozenset(mapping.principal_id for mapping in self._mappings.values())

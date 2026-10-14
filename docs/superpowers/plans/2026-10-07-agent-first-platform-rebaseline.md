@@ -3033,3 +3033,41 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 판정: **1–3 로컬 기술 결과 완료**, Human 사용 수용·제품 slice/EXT-VAL·parser/host·실자료 두 주기
   ·원격 CI·상용 출시/운영 수용은 별도 OPEN. 4는 read-only 상세 설계와 기존 계약 대조까지만이며,
   권리/서명 공급자·requester 수명주기·storage/consumer 환경 결정을 기다린다. 5 신규 구현 없음.
+
+#### 4 운영 어댑터 A+B 구현 — 2026-10-14 (protected production seam, 기본 OFF)
+
+- Human 조건: MCP/AI 우선(Codex CLI), KSI 운영자 권리 관리, 격리 VM 검증, 공개 실자료,
+  승인 범위 내 에이전트 직접 실행. 이번 커밋은 **A(운영 어댑터)+B(권리/저장소/복구/cleanup)의
+  로컬 기술 구현**이다. C의 Codex CLI 실제 연결·예제 workflow, VM parser/worker 실행, 공개 실자료
+  수용, 고객/운영 수용은 별도 게이트로 남는다.
+- 기본 OFF: `KSI_CORE_SPATIAL_DATA_CONFIG_FILE` 부재 시 레인 미장착 — 기존 운영 표면·저널·라우트가
+  그대로다. 값이 있으면 정규화 절대 경로만 허용하고, 잘못된 형식은 부팅 실패다.
+- `spatial_data_production.py`(신규, T5_NEW_MODULE): 보호 파일 로더(0600·무링크·비대체 체인·
+  bounded·읽기 중 변경 감지), Ed25519 디태치 서명 검증, exact policy/runtime/activation 결속,
+  worker 신원=등록된 SPATIAL_DATA_WORKER 정확 1명(조직 일치), revoked digest 모순 거부,
+  **만료 authentic activation 부팅 허용**(보존 이력 replay, 새 작업은 기존 ACTIVATION/CURRENTNESS
+  fail-closed), rights 파일(grants+revocations 쌍·현재 policy digest·onprem locus·부팅 시 해석 가능한
+  beneficiary), production currentness 포트(opaque+OIDC boot-loaded 신원, is_current=정확 세대+유효+
+  비revoked), S3 저장소 팩토리(감독 child에서 fresh client, s3v4·단일 시도·policy-bounded 데드라인),
+  source key resolver(봉인 subject→manifest entry, digest/size 불일치 거부), cleanup loop(주기 실행·
+  명시 stop, 기존 `run_spatial_data_cleanup_once` 재사용).
+- `spatial_data_graph.py`/`platform_graph.py`: assembly `import_rights` 옵션 필드(기본 None) →
+  정확 배선 후 멱등 공급·회수 적용. 기존 local/test 조립은 필드 기본값으로 동작 불변.
+  `platform_production.py`: 검증(부수효과 이전)→조립 연결→`app.state.spatial_data_cleanup`+
+  router shutdown stop. `runtime_config.py` env helper. `auth.py`/`oidc_subject_registry.py`에
+  읽기 전용 `principal_by_id`(배경 작업용 신원 조회; 토큰 해석·원격 재인증이 아니다 — 토큰 폐기·
+  subject REVOKED는 다음 Core 재기동에 반영).
+- 검증(로컬 소프트웨어, 합성 자료): 신규 `test_spatial_data_production_adapter.py` 12건 — 부재=미장착·
+  0644/서명/신원/revocation 모순 부팅 실패·만료 authentic 부팅+is_current False·정책/beneficiary
+  거부·부팅 후 rights 저널 provisioned/revoked 각 1·import 멱등+회수·currentness opaque/OIDC/무효·
+  manifest key 정확 일치+불일치 거부·cleanup loop 실행/정지. 배치 결과:
+  spatial-data 계열+신규 **222 passed**, production/auth/OIDC **190 passed**,
+  platform http/replay/spatial http/normalization/boundary **66 passed**.
+  repo-wide `ruff check .` **All checks passed**(기존 E501 1건 포함 정리), full mypy **762 files
+  Success**, core module boundary **141 records exit0**(신규 모듈 inventory 등재).
+- 경계: 이 증거는 A+B의 로컬 계약·회귀 증거다. 라이브 서명키/grant 발급·보호 구성 배치, 실제 S3
+  버전·전체 체크섬·정확 버전 삭제의 운영 확인, VM parser→worker→consumer 체인, Codex CLI 실제
+  연결, 공개 실자료 수용, 고객/운영 수용, 배포/CI는 **OPEN**이다. 테스트의 서명·정책·자료는 로컬
+  생성물이며 발급 권위·제공자 보장·정확도 주장이 아니다. 1–3 UI의 Human/고객 수용도 별도다.
+- Rollback: 새 env 부재로 레인을 내리고(기본값) cleanup loop를 중지하면 된다. 기존 저널·grant/
+  revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는다.

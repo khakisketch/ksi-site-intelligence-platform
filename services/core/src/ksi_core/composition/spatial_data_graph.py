@@ -232,7 +232,11 @@ def build_spatial_data_wiring(
             "spatial data requires complete explicit local storage/currentness material"
         )
     config = SpatialDataLocalGraphConfig(
-        config.policy, config.runtime, config.activation, config.processing_location, config.clock
+        config.policy,
+        config.runtime,
+        config.activation,
+        config.processing_location,
+        config.clock,
     )
     sources = SpatialDataSourceResolver(
         reconstruction=reconstruction,
@@ -314,12 +318,17 @@ class SpatialDataLocalAssemblyConfig:
         [ExternalAuthorityCurrentnessCoordinator], SpatialDataJobCurrentnessPort
     ]
     spool_root: Path | None = None
+    # Operator-provisioned grant/revocation import for the protected production
+    # seam. Absent keeps the local/test assembly behaviour unchanged.
+    import_rights: Callable[[SpatialDataGrantStore], None] | None = None
 
     def __post_init__(self) -> None:
         if (
             not isinstance(self.config, SpatialDataLocalGraphConfig)
             or not callable(self.build_storage)
             or not callable(self.build_currentness)
+            or self.import_rights is not None
+            and not callable(self.import_rights)
         ):
             raise ValueError(
                 "complete explicit local data config/storage/currentness factories required"

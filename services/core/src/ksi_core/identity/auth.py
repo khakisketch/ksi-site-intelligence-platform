@@ -502,6 +502,7 @@ class AuthRegistry:
             by_digest[record.token_sha256] = record
             principal_by_id[principal_id] = record.principal
         self._by_digest = by_digest
+        self._by_principal_id = principal_by_id
 
     def resolve(self, token: str, *, now: datetime | None = None) -> Principal | None:
         """제시된 토큰 원문의 sha256 digest 로 조회한다.
@@ -520,6 +521,15 @@ class AuthRegistry:
         if record.not_after is not None and check_time > record.not_after:
             return None
         return record.principal
+
+    def principal_by_id(self, principal_id: str) -> Principal | None:
+        """Trusted local identity lookup for background work; never a credential check.
+
+        Retirement/rotation of the *token* is not decided here: the returned
+        identity is the boot-loaded registry record, and current-use paths
+        re-evaluate scopes and grants separately. A missing id returns ``None``.
+        """
+        return self._by_principal_id.get(principal_id)
 
 
 # role → permission 표 하나가 SSOT(ADR-KSI-008 §2, ADR-KSI-015 D1/D2) —

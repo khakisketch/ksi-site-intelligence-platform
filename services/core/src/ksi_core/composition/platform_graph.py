@@ -229,6 +229,10 @@ def build_platform_graph(
             currentness=spatial_data.build_currentness(coordinator),
             spool_root=spatial_data.spool_root,
         )
+        if spatial_data.import_rights is not None:
+            # Operator-provisioned grants/revocations are applied after the exact
+            # participant wiring exists; idempotent, conflicts fail the boot.
+            spatial_data.import_rights(data_lane.grants)
     return PlatformGraph(
         sites=site_store,
         work_areas=work_area_store,

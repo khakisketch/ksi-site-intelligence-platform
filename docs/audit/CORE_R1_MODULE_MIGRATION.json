@@ -1370,6 +1370,15 @@
       "migrationStatus": "T3_NEW_MODULE"
     },
     {
+      "sourceModule": "ksi_core.composition.spatial_data_production",
+      "activeCanonicalModule": "ksi_core.composition.spatial_data_production",
+      "activePath": "ksi_core/composition/spatial_data_production.py",
+      "plannedCanonicalModule": "ksi_core.composition.spatial_data_production",
+      "plannedPath": "ksi_core/composition/spatial_data_production.py",
+      "ownerBoundary": "composition",
+      "migrationStatus": "T5_NEW_MODULE"
+    },
+    {
       "sourceModule": "ksi_core.domains.external.delivery.audit",
       "activeCanonicalModule": "ksi_core.domains.external.delivery.audit",
       "activePath": "ksi_core/domains/external/delivery/audit.py",

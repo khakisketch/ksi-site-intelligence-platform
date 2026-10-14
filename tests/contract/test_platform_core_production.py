@@ -369,7 +369,9 @@ def test_platform_v2_registry_boot_and_site_bootstrap_cap_env(
         json.dumps(
             {
                 "version": "oidc-subject-registry.v2",
-                "subjects": [{key: value for key, value in valid_row.items() if key != "capabilities"}],
+                "subjects": [
+                    {key: value for key, value in valid_row.items() if key != "capabilities"}
+                ],
             }
         ),
         encoding="utf-8",

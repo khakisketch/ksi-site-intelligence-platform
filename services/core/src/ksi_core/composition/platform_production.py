@@ -39,6 +39,7 @@ from ksi_core.composition.runtime_config import (
     _require_dir,
     _require_env,
     _site_bootstrap_max_sites_per_org_env,
+    _spatial_data_config_path_env,
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.identity.oidc_subject_registry import load_oidc_subject_registry
@@ -97,6 +98,27 @@ def build_platform_production_app() -> FastAPI:
         opaque_principal_ids = {record.principal.principal_id for record in principal_records}
         if oidc_subject_registry.principal_ids & opaque_principal_ids:
             raise RuntimeError("OIDC subject principalId collides with opaque principalId")
+    spatial_config_path = _spatial_data_config_path_env()
+    spatial_config = None
+    spatial_rights = None
+    if spatial_config_path is not None:
+        from ksi_core.composition.spatial_data_production import (
+            SpatialDataCoreConfigError,
+            load_spatial_data_core_config,
+            load_spatial_data_rights_file,
+        )
+
+        try:
+            spatial_config = load_spatial_data_core_config(
+                spatial_config_path, principal_records=principal_records
+            )
+            spatial_rights = load_spatial_data_rights_file(
+                spatial_config,
+                principal_records=principal_records,
+                oidc_subject_registry=oidc_subject_registry,
+            )
+        except SpatialDataCoreConfigError as exc:
+            raise RuntimeError("protected spatial data configuration is invalid") from exc
     external_analysis_local_graph = None
     analysis_activation = None
     analysis_paths = _analysis_activation_paths_env()
@@ -176,6 +198,20 @@ def build_platform_production_app() -> FastAPI:
         if oidc_config is not None and oidc_subject_registry is not None
         else None
     )
+    spatial_data = None
+    if spatial_config is not None and spatial_rights is not None:
+        from ksi_core.composition.spatial_data_production import (
+            build_spatial_data_production,
+        )
+
+        spatial_data = build_spatial_data_production(
+            spatial_config,
+            spatial_rights,
+            auth_registry=auth_registry,
+            oidc_subject_registry=oidc_subject_registry,
+            bucket=s3_bucket,
+            endpoint_url=s3_endpoint,
+        )
 
     opened: list[Any] = []
 
@@ -200,6 +236,7 @@ def build_platform_production_app() -> FastAPI:
             external_result_workflow=external_result_workflow,
             external_analysis_local_graph=external_analysis_local_graph,
             analysis_activation=analysis_activation,
+            spatial_data=spatial_data,
             site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
             expose_docs=expose_docs,
         )
@@ -209,6 +246,19 @@ def build_platform_production_app() -> FastAPI:
             external_authority_provider.attach_app(app)
             mount_external_authority_operations(app, external_authority_provider)
             app.state.external_authority_provider = external_authority_provider
+        if spatial_data is not None and spatial_config is not None:
+            from ksi_core.composition.spatial_data_production import (
+                start_spatial_data_cleanup,
+            )
+
+            wiring = getattr(app.state, "spatial_data", None)
+            if wiring is None:
+                raise RuntimeError("spatial data wiring was not mounted by the platform app")
+            cleanup = start_spatial_data_cleanup(
+                wiring, interval_seconds=float(spatial_config.cleanup_interval_seconds)
+            )
+            app.state.spatial_data_cleanup = cleanup
+            app.router.add_event_handler("shutdown", cleanup.stop)
         return app
     except BaseException:
         # 레거시 프로덕션 조립과 같은 이유 — 안 닫으면 재시도가 flock 에 막혀

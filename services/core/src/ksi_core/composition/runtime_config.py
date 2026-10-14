@@ -98,6 +98,23 @@ def _optional_positive_env(name: str, *, default: int) -> int | None:
         raise RuntimeError(str(exc)) from exc
 
 
+def _spatial_data_config_path_env() -> Path | None:
+    """``KSI_CORE_SPATIAL_DATA_CONFIG_FILE`` — 부재는 데이터 레인 미장착을 뜻한다.
+
+    값이 있으면 정규화된 절대 경로여야 한다. 부분 구성·잘못된 경로는 조용한
+    기본값이 아니라 부팅 실패다 — 이 레인은 어떤 환경변수만으로도 열리지 않는다.
+    """
+    raw = os.environ.get("KSI_CORE_SPATIAL_DATA_CONFIG_FILE")
+    if raw is None:
+        return None
+    path = Path(raw)
+    if not raw or not path.is_absolute() or ".." in path.parts:
+        raise RuntimeError(
+            "KSI_CORE_SPATIAL_DATA_CONFIG_FILE은 정규화된 절대 경로여야 한다"
+        )
+    return path
+
+
 def _site_bootstrap_max_sites_per_org_env() -> int:
     """``KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG`` — F-01 bootstrap 조직 상한.
 
