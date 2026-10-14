@@ -145,7 +145,8 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
 - VM 워커→API/MCP 소비 체인과 Codex CLI 연결은 실증 완료(공개 DSM COMPLETED→다운로드→오라클
   PASS). 남은 것은 2차 호스트/주기 재현이다.
 - 공개 실자료 수용(라이선스/표시 유지)은 실증 범위에 포함; 고객/운영 수용, 배포/TLS/CI는 별도.
-- file-cap 런처 하네스는 검증호스트 운영자 자재이며, 배포 적합성·제품측 참고자료 검토는 OPEN.
+- file-cap 런처 하네스는 검증호스트 운영자 자재이며, 제품측 검토는 §9.1로 종결(제품 코드 변경 없음,
+  배포 전제 체크리스트 문서화).
 
 ## 9. 검증호스트 체인 — 실증된 요구사항 (2026-10-14)
 
@@ -171,3 +172,25 @@ grant/revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는�
 
 증거·하네스: `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`,
 `/tmp/opencode/ksi-sdata-vm-sandbox/`(운영자 자재), `evidence/public-sample/`(rig).
+
+### 9.1 하네스 제품측 검토 결과 (2026-10-14, OPEN 해소)
+
+제품측 검토 결론: **제품 코드 변경 없음.** 하네스(holder/launcher/proof/provision)는 운영자
+자재로 유지하고, 배포 전제를 아래 체크리스트로 문서화한다. 하네스 README/selftest는
+`d286c13` 이전(자식 자체검증 만족 불가) 서술이라 역사 스냅샷으로만 읽는다 — 현재 검증자는
+요청 프레임 v2 수치 비교를 쓰고, 공개 실자료 2주기·ortho 크롭이 COMPLETED로 완주했다(감사 문서).
+
+배포 전제 체크리스트(운영 호스트):
+
+1. file-cap 인터프리터: `setcap`(install/chown/setuid/setgid/setpcap/sys_admin/sys_ptrace) +
+   오프라인 provision/verify(설치·`getcap`·sha 단언). 파일 캐퍼빌리티가 제거되는
+   백업/패키지 갱신/커널 강화 환경에서는 lane이 `ACTIVATION_UNAVAILABLE`로 fail-closed.
+2. 전용 uid/gid 10001 예약(로그인·서비스 사용자와 충돌 금지). 워커=자식 동일 uid라
+   호스트 DAC는 자식↔워커를 격리하지 않는다 — 전용 호스트/계정 전제.
+3. holder 시작 이후 마운트 변경 금지(mountinfo 고정): 업데이트·자동마운트·백업 에이전트의
+   마운트 변경 시 proof 재발급·재프로비저닝, 재부팅은 holder/proof 무효.
+4. proof는 실 정책/런타임 다이제스트·짧은 valid_until로 발급(수동 `gen_proof` 체크리스트).
+5. 런타임은 스테이징 사본 + 바이트 동일성 단언(`diff -r` 패턴)으로 고정; 재배포 시 재스테이징.
+6. Seccomp denylist는 심층 방어일 뿐 샌드박스 증명이 아니다(README §7과 동일 취지).
+7. holder liveness(cmdline·uid_map·ns 존재)를 launch 전 확인; stale pid 파일 주의.
+8. §9.1–9.2(버전닝·전체 체크섬, https/TLS, `trustedEndpointOrigins`)는 배포 게이트로 유지.
