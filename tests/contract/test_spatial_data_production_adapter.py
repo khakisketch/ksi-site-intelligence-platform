@@ -293,6 +293,48 @@ def test_expired_authentic_activation_loads_but_is_not_current(tmp_path: Path) -
     assert policy.policy_digest == config.policy.policy_digest
 
 
+def test_spatial_data_mcp_client_scope_registration_and_rejection(tmp_path: Path) -> None:
+    from ksi_core.composition.runtime_config import _parse_principal_tokens
+
+    records = _parse_principal_tokens(
+        json.dumps(
+            [
+                {
+                    "tokenSha256": hashlib.sha256(b"mcp-rotation").hexdigest(),
+                    "principalId": "mcp-client-a",
+                    "kind": "SPATIAL_DATA_MCP_CLIENT",
+                    "role": None,
+                    "deviceId": None,
+                    "organizationId": ORG,
+                    "allowedSiteIds": ["site-1"],
+                    "allowedWorkAreaIds": ["area-1"],
+                }
+            ]
+        )
+    )
+    principal = records[0].principal
+    assert principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT
+    assert principal.allowed_site_ids == frozenset({"site-1"})
+    assert principal.allowed_work_area_ids == frozenset({"area-1"})
+    with pytest.raises(RuntimeError, match="only valid"):
+        _parse_principal_tokens(
+            json.dumps(
+                [
+                    {
+                        "tokenSha256": hashlib.sha256(b"opaque-scope").hexdigest(),
+                        "principalId": "opaque-scope",
+                        "kind": "OPERATOR",
+                        "role": "ADMIN",
+                        "deviceId": None,
+                        "organizationId": ORG,
+                        "allowedSiteIds": ["site-1"],
+                        "allowedWorkAreaIds": ["area-1"],
+                    }
+                ]
+            )
+        )
+
+
 def test_worker_identity_allows_rotating_duplicate_digests(tmp_path: Path) -> None:
     payload, _policy, _activation = _config_payload(tmp_path)
     config_path = _write_private(tmp_path / "config.json", payload)

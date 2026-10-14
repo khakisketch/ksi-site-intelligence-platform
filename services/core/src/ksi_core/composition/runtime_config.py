@@ -243,7 +243,7 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         kind = _KIND_VALUES[kind_raw]
 
         scope_fields = ("allowedSiteIds", "allowedWorkAreaIds")
-        if kind is PrincipalKind.ANALYSIS_MCP_CLIENT:
+        if kind in (PrincipalKind.ANALYSIS_MCP_CLIENT, PrincipalKind.SPATIAL_DATA_MCP_CLIENT):
             parsed_grants: list[frozenset[str]] = []
             for field_name in scope_fields:
                 values = entry.get(field_name)
@@ -270,7 +270,7 @@ def _parse_principal_tokens(raw: str) -> list[PrincipalTokenRecord]:
         elif any(field_name in entry for field_name in scope_fields):
             raise RuntimeError(
                 f"KSI_CORE_PRINCIPAL_TOKENS_JSON[{index}] scope grants are only valid "
-                "for ANALYSIS_MCP_CLIENT"
+                "for MCP client identities"
             )
         # F-01: registry 자원 scope/capability 는 보호 OIDC subject registry 전용
         # 발급 표면이다. opaque 토큰 설정에 이 이름을 실어 capability 를 얻는
