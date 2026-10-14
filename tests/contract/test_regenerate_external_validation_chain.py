@@ -458,3 +458,97 @@ def test_snapshot_digest_continuity_is_verified(provider: _ProviderFiles) -> Non
                 "--check-only",
             ]
         )
+
+
+def _subject_payload(
+    submission_id: str, submission_label: str, manifest_label: str
+) -> dict[str, object]:
+    return SealedExternalSubjectV1(
+        organization_id="org-a",
+        site_id="f03-flow-site",
+        work_order_id="wo-public",
+        submission_id=submission_id,
+        revision=1,
+        submission_digest=_digest(submission_label),
+        manifest_digest=_digest(manifest_label),
+    ).model_dump(by_alias=True, mode="json")
+
+
+def test_add_subject_file_appends_subject_with_prior_order_and_dedup(
+    provider: _ProviderFiles,
+) -> None:
+    """The explicit signing step retains priors, appends, dedups, stays deterministic."""
+    provider_dir = provider.provider
+    added = _subject_payload("sub-public", "submission-public", "manifest-public")
+    prior_duplicate = SealedExternalSubjectV1(
+        organization_id="org-a",
+        site_id="site-a",
+        work_order_id="wo-1",
+        submission_id="sub-1",
+        revision=1,
+        submission_digest=_digest("submission-1"),
+        manifest_digest=_digest("manifest-1"),
+    ).model_dump(by_alias=True, mode="json")
+    # canonical_digest() is deterministic across validations of the same payload.
+    first = SealedExternalSubjectV1.model_validate(added).canonical_digest()
+    assert SealedExternalSubjectV1.model_validate(added).canonical_digest() == first
+    assert (
+        SealedExternalSubjectV1.model_validate(prior_duplicate).canonical_digest()
+        != first
+    )
+    subjects_file = provider_dir / "add-subjects.json"
+    subjects_file.write_text(
+        json.dumps([added, prior_duplicate]), encoding="utf-8"
+    )
+    state_file = provider_dir / "renew-state.json"
+    assert (
+        tool.main(
+            [
+                "--provider-dir",
+                str(provider_dir),
+                "--core-data-dir",
+                str(provider.core_data),
+                "--add-subject-file",
+                str(subjects_file),
+                "--state-file",
+                str(state_file),
+            ]
+        )
+        == 0
+    )
+    snapshot = json.loads((provider_dir / "authority-snapshot.json").read_text())
+    subjects = snapshot["policyAuthorities"]["records"][0]["permittedSubjects"]
+    # Prior subject retained first, added subject appended, duplicate dropped.
+    assert [item["submissionId"] for item in subjects] == ["sub-1", "sub-public"]
+    assert SealedExternalSubjectV1.model_validate(subjects[0]).canonical_digest() != first
+    assert SealedExternalSubjectV1.model_validate(subjects[1]).canonical_digest() == first
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    assert state["addedSubjectDigests"] == [first]
+    verified = _verify_with_loader(provider_dir)
+    assert verified.sequence == 2
+
+
+def test_absent_add_subject_file_preserves_prior_subjects_only(
+    provider: _ProviderFiles,
+) -> None:
+    """Without the option the renewal carries the prior subjects unchanged."""
+    provider_dir = provider.provider
+    state_file = provider_dir / "renew-state.json"
+    assert (
+        tool.main(
+            [
+                "--provider-dir",
+                str(provider_dir),
+                "--core-data-dir",
+                str(provider.core_data),
+                "--state-file",
+                str(state_file),
+            ]
+        )
+        == 0
+    )
+    snapshot = json.loads((provider_dir / "authority-snapshot.json").read_text())
+    subjects = snapshot["policyAuthorities"]["records"][0]["permittedSubjects"]
+    assert [item["submissionId"] for item in subjects] == ["sub-1"]
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    assert state["addedSubjectDigests"] == []

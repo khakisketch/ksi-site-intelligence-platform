@@ -19,6 +19,13 @@ fields are carried over unchanged, so the operator can keep whatever the
 deployment corrected. Dependent mappings must be re-admitted separately against
 the renewed catalog authority (the Core binds the catalog body at boot).
 
+A new subject is admitted only through the explicit ``--add-subject-file``
+option: a JSON array of ``SealedExternalSubjectV1`` payloads (same field
+names as the ``permittedSubjects`` records). The renewed policy record's
+``permittedSubjects`` is the prior subjects plus the added subjects, deduped
+by ``canonical_digest()`` with prior order preserved. This is the KSI signing
+step for adding a subject; there is no automatic subject discovery.
+
 The regenerated snapshot is validated with the real provider loader before any
 file is replaced. Files are written owner-private (0600); the provider
 directory must be protected (0700 ancestors) because the loader enforces it.
@@ -106,6 +113,43 @@ def _integer(value: object, name: str) -> int:
     return value
 
 
+def _load_added_subjects(path: Path) -> list[SealedExternalSubjectV1]:
+    """Load an explicit JSON array of SealedExternalSubjectV1 payloads.
+
+    This is the KSI signing step for admitting a new subject: only subjects
+    listed in this file are appended. There is no automatic discovery.
+    """
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"--add-subject-file cannot be read as JSON: {exc}") from exc
+    items = _list(raw, "--add-subject-file subjects")
+    subjects = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            raise SystemExit(f"--add-subject-file subject #{index} must be a JSON object")
+        try:
+            subjects.append(SealedExternalSubjectV1.model_validate(item))
+        except ValueError as exc:
+            raise SystemExit(f"--add-subject-file subject #{index} is invalid: {exc}") from exc
+    return subjects
+
+
+def _merge_subjects(
+    prior: list[SealedExternalSubjectV1], added: list[SealedExternalSubjectV1]
+) -> tuple[SealedExternalSubjectV1, ...]:
+    """Prior subjects first, then added subjects, deduped by canonical_digest()."""
+    merged = list(prior)
+    seen = {subject.canonical_digest() for subject in merged}
+    for subject in added:
+        digest = subject.canonical_digest()
+        if digest in seen:
+            continue
+        seen.add(digest)
+        merged.append(subject)
+    return tuple(merged)
+
+
 def _write_private_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     os.chmod(path, 0o600)
@@ -176,6 +220,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--window-hours", type=float, default=6.0)
     parser.add_argument("--reload-url", default=None, help="Core origin for the authority reload")
     parser.add_argument("--admin-token", default=None)
+    parser.add_argument(
+        "--add-subject-file",
+        type=Path,
+        default=None,
+        help=(
+            "JSON array of SealedExternalSubjectV1 payloads (same field names as "
+            "permittedSubjects records) to append to the renewed policy record's "
+            "permittedSubjects. Prior subjects are preserved first, then added "
+            "subjects, deduped by canonical_digest(). This explicit option is "
+            "the only way the tool admits a new subject; no automatic discovery."
+        ),
+    )
     parser.add_argument("--check-only", action="store_true", help="preflight without writing")
     parser.add_argument("--state-file", type=Path, default=None)
     args = parser.parse_args(argv)
@@ -220,16 +276,29 @@ def main(argv: list[str] | None = None) -> int:
         }
     )
     body_digest = authorized_policy_body_digest(policy_placeholder)
+    prior_subjects = [
+        SealedExternalSubjectV1.model_validate(item)
+        for item in _list(prior_record_payload.get("permittedSubjects"), "permittedSubjects")
+    ]
+    added_subjects = (
+        _load_added_subjects(args.add_subject_file)
+        if args.add_subject_file is not None
+        else []
+    )
+    if added_subjects:
+        print(f"adding {len(added_subjects)} explicit subject(s) to permittedSubjects")
+    merged_subjects = _merge_subjects(prior_subjects, added_subjects)
+    prior_digests = {subject.canonical_digest() for subject in prior_subjects}
+    appended_subject_digests = [
+        subject.canonical_digest()
+        for subject in merged_subjects
+        if subject.canonical_digest() not in prior_digests
+    ]
     record = PolicyAuthorityRecord(
         policy_id=_text(policy_body.get("policyId"), "policyId"),
         policy_version=new_version,
         authorized_policy_body_digest=body_digest,
-        permitted_subjects=tuple(
-            SealedExternalSubjectV1.model_validate(item)
-            for item in _list(
-                prior_record_payload.get("permittedSubjects"), "permittedSubjects"
-            )
-        ),
+        permitted_subjects=merged_subjects,
         permitted_uses=_text_list(prior_record_payload.get("permittedUses"), "permittedUses"),
         authorized_actor_ids=actor_ids,
         active_from=window_start,
@@ -400,6 +469,7 @@ def main(argv: list[str] | None = None) -> int:
         "policyVersion": new_version,
         "policyDigest": policy.policy_digest,
         "policyAuthorityRecordDigest": record.digest,
+        "addedSubjectDigests": appended_subject_digests,
         "contextDigests": [row.context_digest for row in fresh_contexts],
         "catalogAuthorityDigest": None if catalog_authority is None else catalog_authority.digest,
     }
