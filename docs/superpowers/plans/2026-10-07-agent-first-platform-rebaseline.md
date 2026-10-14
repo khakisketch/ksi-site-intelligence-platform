@@ -3057,10 +3057,10 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   router shutdown stop. `runtime_config.py` env helper. `auth.py`/`oidc_subject_registry.py`에
   읽기 전용 `principal_by_id`(배경 작업용 신원 조회; 토큰 해석·원격 재인증이 아니다 — 토큰 폐기·
   subject REVOKED는 다음 Core 재기동에 반영).
-- 검증(로컬 소프트웨어, 합성 자료): 신규 `test_spatial_data_production_adapter.py` 12건 — 부재=미장착·
-  0644/서명/신원/revocation 모순 부팅 실패·만료 authentic 부팅+is_current False·정책/beneficiary
-  거부·부팅 후 rights 저널 provisioned/revoked 각 1·import 멱등+회수·currentness opaque/OIDC/무효·
-  manifest key 정확 일치+불일치 거부·cleanup loop 실행/정지. 배치 결과:
+- 검증(로컬 소프트웨어, 합성 자료): 신규 `test_spatial_data_production_adapter.py` 13건 — 부재=미장착·
+  0644/서명/신원/revocation 모순 부팅 실패·회전 digest 중복 허용·만료 authentic 부팅+is_current False·
+  정책/beneficiary 거부·부팅 후 rights 저널 provisioned/revoked 각 1·import 멱등+회수·currentness
+  opaque/OIDC/무효·manifest key 정확 일치+불일치 거부·cleanup loop 실행/정지. 배치 결과:
   spatial-data 계열+신규 **222 passed**, production/auth/OIDC **190 passed**,
   platform http/replay/spatial http/normalization/boundary **66 passed**.
   repo-wide `ruff check .` **All checks passed**(기존 E501 1건 포함 정리), full mypy **762 files
@@ -3071,3 +3071,7 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   생성물이며 발급 권위·제공자 보장·정확도 주장이 아니다. 1–3 UI의 Human/고객 수용도 별도다.
 - Rollback: 새 env 부재로 레인을 내리고(기본값) cleanup loop를 중지하면 된다. 기존 저널·grant/
   revocation·job/receipt/audit·원본은 보존되며 삭제되지 않는다.
+- 운영 문서: `docs/ops/SPATIAL_DATA_PRODUCTION_PROVISIONING.md`(DOCUMENT_STATUS 등재) — 보호 파일
+  형식·검증 규칙·기본 OFF·cleanup·rollback·남은 게이트를 구현·계약 증거 기준으로 고정. 테스트
+  키/구성은 형식 증거이며 운영 발급이 아니다. worker 신원 검사는 동일 Principal의 회전 digest
+  중복을 허용한다(13번째 테스트로 고정).
