@@ -315,6 +315,30 @@ def test_bounded_inspection_returns_detached_retained_report_without_issuing(
     assert method(foreign, max_records=1, max_retained_policies=1).report is None
 
 
+def test_bounded_inspection_without_active_selection_hides_stale_report(
+    tmp_path: Path,
+) -> None:
+    """A withdrawn generation must not surface its report as the current inspection."""
+    store, policy, authority = _delivery_inspection_stores(tmp_path)
+    accepted = _accept_delivery_inspection(store, policy)
+    method = getattr(store, "public_snapshot_bounded", None)
+    assert callable(method), "bounded inspection lookup is missing"
+    assert method(subject(), max_records=1, max_retained_policies=1).report == accepted
+    with authority.coordinator.mutation():
+        authority._records.clear()  # noqa: SLF001 -- synthetic authority withdrawal
+    snapshot = method(subject(), max_records=1, max_retained_policies=1)
+    assert snapshot.report is None
+    assert snapshot.state in {"INSPECTION_PENDING", "INSPECTION_PENDING_POLICY"}
+    assert (
+        store.historical_report(
+            subject(),
+            report_digest=_sealed_digest(accepted.report_digest),
+            policy_digest=_sealed_digest(policy.policy_digest),
+        )
+        == accepted
+    )
+
+
 def test_bounded_inspection_exact_subject_index_survives_restart(tmp_path: Path) -> None:
     """An index absent on replay would lose an authentic historical measured report."""
     store, policy, _ = _delivery_inspection_stores(tmp_path)

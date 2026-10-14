@@ -3102,6 +3102,19 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   False였다. fail-closed(무음 성공 없음)이며 정확한 selection 상태 원인은 체인 재생성 검토 과제.
 - 경계: **synthetic 로컬 증거**이며 bwrap containment·VM 체인·클라우드 S3·공개/고객 수용·배포/CI는
   OPEN. 상세 증거·rig: `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`,
-  `/tmp/opencode/ksi-sdata-codex-20261014/`. 다음 bounded 후보: (a) 체인 갱신·selection 상태 검토 후
-  Codex happy path 재실행, (b) 구세대 후보의 per-candidate currentness 실패를 페이지 전체 실패로 둘지
-  후보별 unready로 억제할지 **검토된 제품 결정**.
+  `/tmp/opencode/ksi-sdata-codex-20261014/`. 초기 기록의 "체인 검토·억제 결정" 후보는 아래 후속에서
+  수정·완주로 종결됐고, 남은 후보는 VM/샌드박스 체인과 클라우드/고객 S3·수용이다.
+- **후속(같은 날): preflight 스냅샷 결함 수정 + Codex happy path 종단 완주.** 활성 selection이 없는
+  후보에 대해 `public_snapshot_bounded`가 과거 보고서로 폴백하던 경로를 제거(비ACTIVE = 보고서 없음·
+  PENDING) — 한 후보의 구세대 보고서가 비억제 `CURRENTNESS_UNAVAILABLE`로 목록 전체를 503으로 만들던
+  결함과 카탈로그의 stale `MEASURED` 표시를 함께 교정. `require_current`의 최종 check-and-commit
+  CURRENTNESS 계약은 불변(기존 withdrawal 테스트 유지). 신규 테스트 2건: 스냅샷 은닉
+  (`test_bounded_inspection_without_active_selection_hides_stale_report`)·프리플라이트 분류
+  (`test_source_withdrawal_classifies_listing_preflight_as_unmeasured`). 검증: 영향 스위트
+  501+55+85 green, repo ruff green, full mypy **762 files**.
+- **Codex CLI 종단(수정 빌드, 합성 복사·실 MinIO)**: 발견 200(대상 `ksa-v1-8430fcc…`
+  `READ`+`PREPARE`, 혼합 세대 후보는 후보별 `SOURCE_NOT_MEASURED`로 억제) → 생성 201
+  `sdj-v1-a9bb54c9…` QUEUED/NOT_READY → 조회 동일 → 취소 CANCELED(저널 `issued`→`state=CANCELED`).
+  앞선 실행이 8061을 점유한 낡은 프로세스에 응답하던 문제는 rig 런처의 포트 정리로 수정하고 최종
+  증거를 새 pid로 재확인했다. prepared/`COMPLETED` 절반은 여전히 샌드박스 준비 레인·호스트
+  containment 게이트에 의존한다.

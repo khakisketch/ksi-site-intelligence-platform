@@ -653,6 +653,10 @@ class ExternalArtifactInspectionStore:
     ) -> PublicInspectionSnapshot:
         """Return detached exact-subject evidence; never schedule or truncate inspection work.
 
+        With no active selection this returns no retained report: a report bound
+        to a non-active policy generation is historical evidence, never this
+        subject's current inspection.
+
         This is a preflight snapshot, not byte authorization. Delivery must repeat
         ``report_for_locally_current_use`` under the shared currentness guard.
         """
@@ -675,7 +679,24 @@ class ExternalArtifactInspectionStore:
             raise ExternalArtifactInspectionSnapshotBudgetExceeded(
                 "inspection policy source budget exceeded"
             ) from exc
-        current_digest = selection.policy.policy_digest if selection.policy is not None else None
+        if selection.policy is None:
+            # No active selection means no currently usable measurement to
+            # surface. Delivery then classifies one candidate as
+            # SOURCE_NOT_MEASURED (suppressible in AI discovery) instead of
+            # failing a whole listing on a stale per-asset report, and the
+            # catalog projects the current pending state; the retained report
+            # remains retrievable through the dedicated historical lookups.
+            return PublicInspectionSnapshot(
+                (
+                    InspectionVerdict.INSPECTION_PENDING_POLICY.value
+                    if selection.status is PolicySelectionStatus.INSPECTION_PENDING_POLICY
+                    else "INSPECTION_PENDING"
+                ),
+                None,
+                None,
+                None,
+            )
+        current_digest = selection.policy.policy_digest
         with self._lock:
             record_ids = self._record_ids_by_subject_digest.get(subject.canonical_digest(), ())
             if len(record_ids) > max_records:
@@ -685,8 +706,7 @@ class ExternalArtifactInspectionStore:
             candidates = tuple(
                 self._records[request_id]
                 for request_id in record_ids
-                if current_digest is None
-                or self._records[request_id].request.inspection_policy_digest == current_digest
+                if self._records[request_id].request.inspection_policy_digest == current_digest
             )
             record = candidates[-1] if candidates else None
             if record is None:

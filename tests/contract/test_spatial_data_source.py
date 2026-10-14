@@ -121,6 +121,34 @@ def test_source_rechecks_withdrawal_without_rewriting_frozen_history(tmp_path: P
     )
 
 
+def test_source_withdrawal_classifies_listing_preflight_as_unmeasured(tmp_path: Path) -> None:
+    """One stale candidate must not escalate into a whole-listing currentness failure.
+
+    The final check-and-commit recheck keeps its CURRENTNESS_UNAVAILABLE
+    contract (``test_source_rechecks_withdrawal_without_rewriting_frozen_history``);
+    the preflight/listing path classifies the withdrawn generation as the
+    per-candidate ``SOURCE_NOT_MEASURED`` (suppressible in AI discovery).
+    """
+    stores = source_stores(tmp_path)
+    resolver = source_resolver(stores)
+    source = resolver.resolve(
+        site_id="site-1",
+        work_area_id=stores.area.work_area_id,
+        asset_ref=source_identity(stores),
+        principal=stores.principal,
+    )
+    with stores.coordinator.mutation():
+        stores.authority._records.clear()  # noqa: SLF001
+    with pytest.raises(SpatialDataDomainError) as error:
+        resolver.resolve(
+            site_id="site-1",
+            work_area_id=stores.area.work_area_id,
+            asset_ref=source.asset_ref,
+            principal=stores.principal,
+        )
+    assert (error.value.reason, error.value.status_code) == ("SOURCE_NOT_MEASURED", 403)
+
+
 def test_source_requires_identical_coordinator_participants(tmp_path: Path) -> None:
     """Independently locked Core participants cannot make an atomic authority decision."""
     stores = source_stores(tmp_path)

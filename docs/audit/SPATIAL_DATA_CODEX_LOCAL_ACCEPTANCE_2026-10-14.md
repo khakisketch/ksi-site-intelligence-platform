@@ -43,33 +43,58 @@
   configuration. Fixed in `ksi_core.composition.runtime_config`
   (`_parse_principal_tokens` now accepts both MCP client kinds) with a locked
   adapter test; the runbook documents the registration shape.
+- The AI discovery preflight could surface a non-current inspection report.
+  Root cause: after the copied 10-12 chain renewal, candidates whose subject is
+  no longer permitted by the active record get a non-ACTIVE selection; the
+  preflight snapshot treated "no active selection" as "any retained record" and
+  returned an old report bound to an expired policy. Delivery then failed that
+  one candidate in `require_current`, and `CURRENTNESS_UNAVAILABLE` (not in
+  `_LIST_SUPPRESSED`) escalated a single stale candidate into a whole-listing
+  `503`; the operator catalog could also show a stale `MEASURED` as the current
+  inspection. Fixed in
+  `ExternalArtifactInspectionStore.public_snapshot_bounded`: without an active
+  selection it returns the pending state and no report. The candidate is then
+  classified per-candidate `SOURCE_NOT_MEASURED` (suppressed; `unready` when
+  granted, invisible otherwise), the catalog projects the current pending
+  state, and the historical report stays retrievable via
+  `historical_report`/retained lookups. `require_current`'s pinned
+  `CURRENTNESS_UNAVAILABLE` contract for the final check-and-commit is
+  unchanged.
+  Locked by two tests: store-level withdrawn-authority snapshot hiding
+  (`test_bounded_inspection_without_active_selection_hides_stale_report`) and
+  source-level preflight classification
+  (`test_source_withdrawal_classifies_listing_preflight_as_unmeasured`), with
+  the pinned final-recheck currentness test still green.
+- Process lesson: two "fixed build" acceptance runs silently served a stale
+  process that still held port 8061 (readiness was answered by the old build).
+  The rig launcher now frees the acceptance port before spawning; the final
+  evidence below was verified against the new process id.
 
-## Blocked with reproduction (deferred to a reviewed chain-generation task)
+## Completed Codex CLI chain (after both fixes)
 
-- After renewing the copied 10-12 authority chain
-  (`tools/regenerate_external_validation_chain.py`, seq 24→25), the AI
-  discovery route (`GET /v1/sites/{site}/work-areas/{area}/spatial-data-assets`)
-  fails `CURRENTNESS_UNAVAILABLE` (503): page projection materializes each
-  catalog candidate; an older candidate whose retained report is bound to an
-  expired policy fails the per-source currentness recheck, and since
-  `CURRENTNESS_UNAVAILABLE` is not in `_LIST_SUPPRESSED`, the whole page fails.
-  During the same run the renewed authority record resolved with a matching
-  digest, but a reconcile-time `permits_selection(use="EVIDENCE")` returned
-  False, so the registry's active selection did not cover every path the
-  discovery flow rechecks. This is fail-closed behavior (no silent success);
-  the exact selection-state cause needs a reviewed chain-generation review.
-- Consequence: the Codex happy path (discover → create request → status via
-  MCP) could not complete on this mixed-generation synthetic site; the client
-  and authority boundary itself is proven (real tool call + typed Core error).
+Real client, real Core, synthetic copied data, local MinIO:
+
+- Discovery (`ksi_list_spatial_data_assets`, limit 8): page `200` with the
+  target `ksa-v1-8430fcc…` (`permittedOperations` `["READ","PREPARE"]`,
+  `permittedBounds` `[200000, 549999.8, 200000.2, 550000]`); the other
+  mixed-generation candidates are suppressed per-candidate as
+  `SOURCE_NOT_MEASURED` instead of failing the page.
+- Create (`ksi_create_spatial_data_request`, idempotency key
+  `sdata-acc-codex-1`): `201` job `sdj-v1-a9bb54c9…`, `executionState`
+  `QUEUED`, `availability` `NOT_READY` — an honest not-yet-prepared state, no
+  fabricated receipt.
+- Status (`ksi_get_spatial_data_request`): same job, `QUEUED`/`NOT_READY`.
+- Cancel (`ksi_cancel_spatial_data_request`): `CANCELED`/`NOT_READY`; the Core
+  journal shows `spatial-data-job.issued.v1` → `spatial-data-job.state.v1`
+  (`CANCELED`) for that exact job.
 
 ## Boundaries and next steps
 
 - The sandboxed parser (`bwrap`) containment, the VM verification host chain,
   a cloud/customer S3, public-sample acceptance, customer/operational
   acceptance, and deploy/CI remain OPEN and are not implied by this evidence.
-- Next bounded candidates: (a) review the chain-renewal + selection state
-  (why the renewed record does not permit EVIDENCE selection / why mixed old
-  candidates fail the page), then re-run the Codex happy path; (b) decide
-  whether a per-candidate currentness failure should suppress one candidate
-  (visible as unready) instead of failing the whole listing — an explicitly
-  reviewed product/behavior decision, not a unilateral change.
+  The prepared/`COMPLETED` half of the flow still requires the sandboxed
+  preparation lane and its host containment proof.
+- Next bounded candidates: run the same chain on the VM verification host
+  (sandboxed parser plus a real preparation launcher), then re-check the
+  storage guarantees against a cloud/customer S3 provider.
