@@ -33,6 +33,27 @@ type Attempt = {
 };
 
 type AttemptScope = { organizationId: string; principalId: string; siteId: string };
+type AttributedAnalysisObservation = AnalysisObservationOption & { workAreaIds: readonly string[] };
+type IndexedAnalysisObservation = { item: AttributedAnalysisObservation; index: number };
+
+function latestPriorObservationIndex(
+  options: readonly IndexedAnalysisObservation[],
+  current: AnalysisObservationOption,
+): string {
+  const currentStart = Date.parse(current.captureStartedAt);
+  if (!Number.isFinite(currentStart)) return "";
+  const priors = options.flatMap(({ item, index }) => {
+    if (sameSelector(item.selector, current.selector)) return [];
+    const start = Date.parse(item.captureStartedAt);
+    const end = Date.parse(item.captureEndedAt);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || end > currentStart) return [];
+    return [{ index, end }];
+  });
+  if (priors.length === 0) return "";
+  const latestEnd = Math.max(...priors.map(({ end }) => end));
+  const latest = priors.filter(({ end }) => end === latestEnd);
+  return latest.length === 1 ? String(latest[0]!.index) : "";
+}
 type AnalysisListRow = Omit<AnalysisListItem, "analysisHref">;
 type AnalysisPageState = Omit<AnalysisListPage, "items"> & { items: AnalysisListRow[] };
 type LoadedEvidence = { analysisId: string; pages: AnalysisEvidencePage[] };
@@ -453,6 +474,7 @@ export function AnalysisRequestPanel({
   siteId,
   workAreas,
   observations,
+  unattributedObservationCount = 0,
   initialPage,
   initialSelectedDetail,
   canCreate,
@@ -462,7 +484,8 @@ export function AnalysisRequestPanel({
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
-  observations: readonly AnalysisObservationOption[];
+  observations: readonly AttributedAnalysisObservation[];
+  unattributedObservationCount?: number;
   initialPage: AnalysisListPage;
   initialSelectedDetail: AnalysisView | null;
   canCreate: boolean;
@@ -525,8 +548,11 @@ export function AnalysisRequestPanel({
   const lastEvidencePage = evidencePages.at(-1);
   const nextListCursor = pages.at(-1)?.nextCursor ?? null;
   const workAreaNameById = new Map(workAreas.map((area) => [area.workAreaId, area.name]));
-  const pickedBaseline = baselineIndex === "" ? undefined : observations[Number(baselineIndex)];
-  const pickedCurrent = currentIndex === "" ? undefined : observations[Number(currentIndex)];
+  const scopedObservations = useMemo<IndexedAnalysisObservation[]>(() => workAreaId
+    ? observations.flatMap((item, index) => item.workAreaIds.includes(workAreaId) ? [{ item, index }] : [])
+    : [], [observations, workAreaId]);
+  const pickedBaseline = scopedObservations.find(({ index }) => String(index) === baselineIndex)?.item;
+  const pickedCurrent = scopedObservations.find(({ index }) => String(index) === currentIndex)?.item;
   const selectionReady = Boolean(workAreaId && pickedBaseline && pickedCurrent && !sameSelector(pickedBaseline.selector, pickedCurrent.selector));
   const selectedSelectors = pickedBaseline && pickedCurrent
     ? [{ label: "기준", selector: pickedBaseline.selector }, { label: "현재", selector: pickedCurrent.selector }]
@@ -598,8 +624,8 @@ export function AnalysisRequestPanel({
         setError({ analysisId: null, message: activationBlockMessages[restored.activationBlockCode] });
       }
       setWorkAreaId(restored.workAreaId);
-      const baseline = observations.findIndex((option) => sameSelector(option.selector, restored.body.baseline));
-      const current = observations.findIndex((option) => sameSelector(option.selector, restored.body.current));
+      const baseline = observations.findIndex((option) => option.workAreaIds.includes(restored.workAreaId) && sameSelector(option.selector, restored.body.baseline));
+      const current = observations.findIndex((option) => option.workAreaIds.includes(restored.workAreaId) && sameSelector(option.selector, restored.body.current));
       setBaselineIndex(baseline >= 0 ? String(baseline) : "");
       setCurrentIndex(current >= 0 ? String(current) : "");
     }, 0);
@@ -831,8 +857,8 @@ export function AnalysisRequestPanel({
         setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
       }
-      const baseline = observations[Number(baselineIndex)];
-      const current = observations[Number(currentIndex)];
+      const baseline = pickedBaseline;
+      const current = pickedCurrent;
       if (!baseline || !current || sameSelector(baseline.selector, current.selector)) {
         setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
@@ -955,26 +981,34 @@ export function AnalysisRequestPanel({
       <h2 className="text-[16px] font-bold">새 분석 요청</h2>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
       <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 촬영 구간·기존 epoch ID·제출 revision으로 구분합니다. 목록에 없는 구역 연결이나 분석 적합성을 추정하지 않습니다.</p>
+      {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
       {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
       <form className="mt-4 grid gap-3 sm:grid-cols-3" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <label className="text-[12.5px] font-semibold">작업구역
-          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) setWorkAreaId(event.target.value); }}>
+          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); } }}>
             <option value="">작업구역 선택</option>
             {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
           </select>
         </label>
         <label className="text-[12.5px] font-semibold">기준 관측
-          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}>
-            <option value="">기준 관측 선택</option>
-            {observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
+          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}>
+            <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
           </select>
         </label>
         <label className="text-[12.5px] font-semibold">현재 관측
-          <select className="input mt-1 w-full" value={currentIndex} disabled={busy} onChange={(event) => { if (discardAttempt()) setCurrentIndex(event.target.value); }}>
-            <option value="">현재 관측 선택</option>
-            {observations.map((item, index) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
+          <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId} onChange={(event) => {
+            if (!discardAttempt()) return;
+            const value = event.target.value;
+            const selected = scopedObservations.find(({ index }) => String(index) === value)?.item;
+            setCurrentIndex(value);
+            setBaselineIndex(selected ? latestPriorObservationIndex(scopedObservations, selected) : "");
+          }}>
+            <option value="">{workAreaId ? "현재 관측 선택" : "먼저 작업구역 선택"}</option>
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
           </select>
         </label>
+        <p className="text-[11.5px] leading-5 text-ink-muted sm:col-span-3">가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.</p>
         {pickedBaseline && pickedCurrent && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 sm:col-span-3" aria-live="polite">
           <p className="font-semibold">선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다.</p>
           <p className="mt-1 break-words">기준 · {analysisObservationLabel(pickedBaseline)}</p>

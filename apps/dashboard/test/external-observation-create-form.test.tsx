@@ -52,6 +52,23 @@ describe("ExternalObservationCreateForm", () => {
     expect(push).toHaveBeenCalledWith("/field/work-orders/work-order-1");
   });
 
+  it("shows a repeat name suggestion as an editable value and does not submit it automatically", () => {
+    render(<ExternalObservationCreateForm
+      siteId="site-1"
+      siteName="서쪽 현장"
+      workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]}
+      initialWorkAreaIds={["wa-1"]}
+      suggestedName="1차 관측 · 2회차"
+    />);
+
+    const name = screen.getByLabelText("작업 이름") as HTMLInputElement;
+    expect(name.value).toBe("1차 관측 · 2회차");
+    expect((screen.getByRole("button", { name: "산출물 등록 시작" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.change(name, { target: { value: "운영자가 바꾼 이름" } });
+    expect(name.value).toBe("운영자가 바꾼 이름");
+  });
+
   it("keeps external-result creation separate and gives a recovery link when no work area is available", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[]} />);
     expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");

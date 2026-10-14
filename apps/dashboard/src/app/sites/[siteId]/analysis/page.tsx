@@ -6,6 +6,7 @@ import { resolveFieldSession } from "@/app/field/resolve-session";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
+import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
@@ -35,20 +36,40 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   let loaded: {
     areas: Awaited<ReturnType<typeof listWorkAreas>>;
     observations: Awaited<ReturnType<typeof listAnalysisObservations>>;
+    attributedObservations: (Awaited<ReturnType<typeof listAnalysisObservations>>[number] & { workAreaIds: string[] })[];
+    unattributedObservationCount: number;
     analyses: Awaited<ReturnType<typeof listAnalyses>>;
     selectedDetail: Awaited<ReturnType<typeof getAnalysis>> | null;
   } | null = null;
   let childError: unknown;
   try {
-    const [areas, observations, listedAnalyses] = await Promise.all([
+    const [areas, observations, listedAnalyses, workOrders] = await Promise.all([
       listWorkAreas(siteId),
       listAnalysisObservations(siteId),
       listAnalyses(siteId, { limit: 50 }),
+      listObservationWorkOrders(siteId).catch(() => null),
     ]);
     const detail = analysisId && !listedAnalyses.items.some((item) => item.analysisId === analysisId)
       ? await getAnalysis(siteId, analysisId)
       : null;
-    loaded = { areas, observations, analyses: listedAnalyses, selectedDetail: detail };
+    const workAreasByOrder = new Map<string, string[]>();
+    for (const order of workOrders ?? []) {
+      if (order.siteId !== siteId || order.organizationId !== session.principal.organizationId) continue;
+      const workAreaIds = Array.isArray(order.workAreaIds)
+        ? [...new Set(order.workAreaIds.filter((id): id is string => typeof id === "string" && id.length > 0))]
+        : [];
+      if (workAreaIds.length > 0) workAreasByOrder.set(order.workOrderId, workAreaIds);
+    }
+    let unattributedObservationCount = 0;
+    const attributedObservations = observations.flatMap((observation) => {
+      const workAreaIds = workAreasByOrder.get(observation.selector.workOrderId);
+      if (!workAreaIds) {
+        unattributedObservationCount += 1;
+        return [];
+      }
+      return [{ ...observation, workAreaIds }];
+    });
+    loaded = { areas, observations, attributedObservations, unattributedObservationCount, analyses: listedAnalyses, selectedDetail: detail };
   } catch (error) {
     childError = error;
   }
@@ -69,7 +90,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       <AnalysisStartGuide
         siteId={siteId}
         workAreaCount={loaded.areas.workAreas.length}
-        observationCount={loaded.observations.length}
+        observationCount={loaded.attributedObservations.length}
         analysisCount={loaded.analyses.items.length}
         hasMoreAnalyses={loaded.analyses.nextCursor !== null}
         canCreate={canCreate}
@@ -79,7 +100,8 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         organizationId={session.principal.organizationId}
         principalId={session.principal.principalId}
         workAreas={loaded.areas.workAreas}
-        observations={loaded.observations}
+        observations={loaded.attributedObservations}
+        unattributedObservationCount={loaded.unattributedObservationCount}
         initialPage={loaded.analyses}
         initialSelectedDetail={loaded.selectedDetail}
         canCreate={canCreate}

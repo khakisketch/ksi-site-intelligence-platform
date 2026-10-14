@@ -9,9 +9,9 @@ import { AnalysisRequestPanel } from "@/app/sites/[siteId]/analysis/AnalysisRequ
 import type { AnalysisEvidencePage, AnalysisListPage, AnalysisObservationOption, AnalysisView } from "@/lib/core-api/analysis";
 
 const selector = (workOrderId: string, digit: string) => ({ workOrderId, submissionRef: `ers-v1-${digit.repeat(64)}`, revision: 1 });
-const observations: AnalysisObservationOption[] = [
-  { selector: selector("work-baseline", "a"), observationEpochId: "epoch-baseline", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
-  { selector: selector("work-current", "b"), observationEpochId: "epoch-current", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
+const observations: (AnalysisObservationOption & { workAreaIds: string[] })[] = [
+  { selector: selector("work-baseline", "a"), observationEpochId: "epoch-baseline", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z", workAreaIds: ["area-1"] },
+  { selector: selector("work-current", "b"), observationEpochId: "epoch-current", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z", workAreaIds: ["area-1"] },
 ];
 const scope = { organizationId: "org-1", principalId: "operator-1" };
 const metrics = { cutM3: 12, fillM3: 20, netM3: 8, thresholdM: 0.1, uncertaintyM3: null };
@@ -118,12 +118,18 @@ describe("analysis V2 panel", () => {
     renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
+    const current = screen.getByLabelText("현재 관측") as HTMLSelectElement;
+    expect(baseline.value).toBe("");
+    expect(current.value).toBe("");
+    expect(baseline.disabled).toBe(true);
+    expect(screen.getByText("가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     expect(baseline.options[1]?.textContent).toContain("revision 1 · epoch-baseline");
     expect(baseline.options[1]?.textContent).toContain("09:00–09:30");
 
-    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(baseline, { target: { value: "0" } });
-    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
+    fireEvent.change(current, { target: { value: "1" } });
     expect(screen.getByText(/선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다/)).toBeTruthy();
     expect(screen.getByText(/기준 · .*revision 1 · epoch-baseline/)).toBeTruthy();
     expect(screen.getByText(/현재 · .*revision 1 · epoch-current/)).toBeTruthy();
@@ -134,6 +140,43 @@ describe("analysis V2 panel", () => {
     expect(selectorDetails?.textContent).toContain(observations[0]!.selector.submissionRef);
     expect(selectorDetails?.textContent).toContain("work-baseline");
     expect(selectorDetails?.textContent).toContain("revision · 1");
+  });
+
+  it("scopes both pickers to the WorkArea and suggests the unique latest prior epoch without submitting", () => {
+    const scoped: (AnalysisObservationOption & { workAreaIds: string[] })[] = [
+      { ...observations[0]!, selector: selector("work-t0", "a"), observationEpochId: "epoch-t0", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+      { ...observations[0]!, selector: selector("work-t1", "b"), observationEpochId: "epoch-t1", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
+      { ...observations[0]!, selector: selector("work-t2", "c"), observationEpochId: "epoch-t2", captureStartedAt: "2026-09-15T00:00:00Z", captureEndedAt: "2026-09-15T00:30:00Z" },
+      { ...observations[0]!, selector: selector("other-area", "d"), observationEpochId: "epoch-other-area", captureStartedAt: "2026-09-15T00:00:00Z", captureEndedAt: "2026-09-15T00:30:00Z", workAreaIds: ["area-2"] },
+    ];
+    renderPanel({ observations: scoped, workAreas: [{ workAreaId: "area-1", name: "1구역" }, { workAreaId: "area-2", name: "2구역" }], initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, unattributedObservationCount: 1 });
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
+    const current = screen.getByLabelText("현재 관측") as HTMLSelectElement;
+    expect(baseline.options).toHaveLength(4);
+    expect([...baseline.options].map((option) => option.textContent).join(" ")).not.toContain("epoch-other-area");
+    fireEvent.change(current, { target: { value: "2" } });
+    expect(baseline.value).toBe("1");
+    expect(screen.getByText("작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.")).toBeTruthy();
+    expect([...current.options].map((option) => option.textContent).join(" ")).not.toContain("회차");
+    fireEvent.change(baseline, { target: { value: "0" } });
+    expect(baseline.value).toBe("0");
+  });
+
+  it("does not suggest an overlapping or tied latest prior epoch", () => {
+    const overlapping: (AnalysisObservationOption & { workAreaIds: string[] })[] = [
+      { ...observations[0]!, selector: selector("work-older", "a"), observationEpochId: "epoch-older", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+      { ...observations[0]!, selector: selector("work-overlap", "b"), observationEpochId: "epoch-overlap", captureStartedAt: "2026-09-08T00:20:00Z", captureEndedAt: "2026-09-11T00:10:00Z" },
+      { ...observations[0]!, selector: selector("work-tie", "c"), observationEpochId: "epoch-tie", captureStartedAt: "2026-09-09T00:00:00Z", captureEndedAt: "2026-09-09T00:30:00Z" },
+      { ...observations[0]!, selector: selector("work-tie-2", "d"), observationEpochId: "epoch-tie-2", captureStartedAt: "2026-09-09T00:00:00Z", captureEndedAt: "2026-09-09T00:30:00Z" },
+      { ...observations[0]!, selector: selector("work-current-later", "e"), observationEpochId: "epoch-current-later", captureStartedAt: "2026-09-11T00:00:00Z", captureEndedAt: "2026-09-11T00:30:00Z" },
+    ];
+    renderPanel({ observations: overlapping, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "4" } });
+    expect((screen.getByLabelText("기준 관측") as HTMLSelectElement).value).toBe("");
   });
 
   it("shows safe remediation and preserves the original blocker only in technical details", () => {

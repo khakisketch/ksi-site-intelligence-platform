@@ -35,6 +35,7 @@ export function ExternalObservationCreateForm({
   workAreas,
   initialWorkAreaIds = [],
   temporalPolicy = null,
+  suggestedName = null,
   templateNotice = null,
 }: {
   siteId: string;
@@ -42,11 +43,12 @@ export function ExternalObservationCreateForm({
   workAreas: readonly WorkAreaOption[];
   initialWorkAreaIds?: readonly string[];
   temporalPolicy?: TemporalCoherencePolicy | null;
+  suggestedName?: string | null;
   templateNotice?: string | null;
 }) {
   const router = useRouter();
   const [intent, setIntent] = useState<"external" | "flight">("external");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(suggestedName ?? "");
   const [selected, setSelected] = useState<string[]>(() => [...initialWorkAreaIds]);
   const [attempt, setAttempt] = useState<CreateAttempt | null>(null);
   const [busy, setBusy] = useState(false);
@@ -167,7 +169,7 @@ export function ExternalObservationCreateForm({
               {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : initialWorkAreaIds.length > 0 && <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 새 관측을 만들기 전에 범위를 확인하세요.</p>}
             </div>
             <label className="flex flex-col gap-1 text-[13px] font-semibold">작업 이름
-              <input aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder="예: 9월 6일 현황 비교" />
+              <input aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />
             </label>
             <fieldset disabled={busy || attempt !== null}>
               <legend className="text-[13px] font-semibold">비교할 작업구역</legend>

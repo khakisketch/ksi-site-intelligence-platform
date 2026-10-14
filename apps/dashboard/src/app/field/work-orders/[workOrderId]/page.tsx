@@ -8,12 +8,14 @@ import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getObservationWorkOrder, getObservationWorkOrderOperations, listReobservationDrafts } from "@/lib/core-api/observation-work-orders";
 import { getExternalReconstructionContext, listExternalReconstructionSubmissions, resolveExternalWorkOrderExecutionContext } from "@/lib/core-api/external-reconstruction";
-import { getSiteExternalRelativeVolumeReport, listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
+import { getExternalRelativeVolumeReport, getSiteExternalRelativeVolumeReport, listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
+import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative-volume-references";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionPanel";
+import type { TrustedExternalResultLink } from "@/app/field/ExternalResultWorkflowPanel";
 import { WorkOrderOperationsPanel } from "@/app/field/WorkOrderOperationsPanel";
 import { OperationsWorkHeader } from "@/app/field/OperationsWorkHeader";
 import { deriveExternalWorkOrderStage } from "@/app/field/external-work-order-stage";
@@ -21,8 +23,104 @@ import { presentWorkOrder } from "@/app/field/work-order-stage";
 
 export const metadata = { title: "관측 작업 · KSI" };
 
-export default async function FieldWorkOrderPage({ params }: { params: Promise<{ workOrderId: string }> }) {
-  const { workOrderId } = await params;
+async function resolveTrustedReportLink(
+  siteId: string,
+  workOrderId: string,
+  organizationId: string,
+  workAreaIds: readonly string[],
+  reportRef: string,
+): Promise<TrustedExternalResultLink | null> {
+  if (!isExternalRelativeVolumeReportReference(reportRef)) return null;
+  const projection = await getSiteExternalRelativeVolumeReport(siteId, reportRef).catch(() => null);
+  const summary = projection?.state === "AVAILABLE" ? projection.result ?? null : null;
+  if (
+    !summary
+    || typeof summary.reportRef !== "string"
+    || summary.reportRef !== reportRef
+    || typeof summary.reportDigest !== "string"
+    || summary.reportDigest.length === 0
+    || typeof summary.workAreaId !== "string"
+    || !workAreaIds.includes(summary.workAreaId)
+    || summary.currentWorkOrderId !== workOrderId
+    || summary.baselineWorkOrderId === null
+    || summary.sourceWorkOrderId !== summary.baselineWorkOrderId
+  ) return null;
+
+  const view = await getExternalRelativeVolumeReport(reportRef).catch(() => null);
+  if (!view?.request || !view.report) return null;
+  const { request, report } = view;
+  const baselineSubject = request?.baseline?.subject;
+  const currentSubject = request?.current?.subject;
+  const zoneSnapshot = request?.zoneSnapshot;
+  const exact = report?.reportId === reportRef
+    && report.reportDigest === summary.reportDigest
+    && report.requestId === request.requestId
+    && report.requestDigest === request.requestDigest
+    && request.currentWorkOrderId === workOrderId
+    && baselineSubject?.workOrderId === summary.baselineWorkOrderId
+    && currentSubject?.workOrderId === workOrderId
+    && baselineSubject?.siteId === siteId
+    && currentSubject?.siteId === siteId
+    && baselineSubject?.organizationId === organizationId
+    && currentSubject?.organizationId === organizationId
+    && zoneSnapshot?.organizationId === organizationId
+    && zoneSnapshot?.siteId === siteId
+    && zoneSnapshot?.workAreaId === summary.workAreaId;
+  return exact
+    ? { reportRef, reportDigest: summary.reportDigest, view }
+    : null;
+}
+
+async function resolveSuccessorSourceReportRef({
+  workOrder,
+  binding,
+  organizationId,
+}: {
+  workOrder: Awaited<ReturnType<typeof getObservationWorkOrder>>;
+  binding: NonNullable<Awaited<ReturnType<typeof getExternalReconstructionContext>>>["externalPlanningBinding"];
+  organizationId: string;
+}): Promise<{ reportRef: string; sourceCycleNumber: number } | null> {
+  if (
+    !binding
+    || binding.organizationId !== organizationId
+    || binding.siteId !== workOrder.siteId
+    || binding.successorWorkOrderId !== workOrder.workOrderId
+  ) return null;
+  const source = await getObservationWorkOrder(binding.sourceWorkOrderId).catch(() => null);
+  if (
+    !source
+    || source.workOrderId !== binding.sourceWorkOrderId
+    || source.siteId !== workOrder.siteId
+    || source.organizationId !== organizationId
+  ) return null;
+
+  const reportRefs = Array.isArray(source.reportRefs)
+    ? source.reportRefs.filter(isExternalRelativeVolumeReportReference)
+    : [];
+  const matches = await Promise.all(reportRefs.map(async (reportRef) => {
+    const trusted = await resolveTrustedReportLink(source.siteId, source.workOrderId, organizationId, source.workAreaIds, reportRef);
+    if (!trusted || trusted.reportDigest !== binding.reportDigest) return null;
+    const proposals = Array.isArray(trusted.view.proposals) ? trusted.view.proposals : [];
+    const proposal = proposals.find(({ proposal, approvalReceipt }) => (
+      proposal.proposalRef === binding.proposalId
+      && proposal.version === binding.proposalVersion
+      && proposal.proposalDigest === binding.proposalDigest
+      && proposal.reportRef === reportRef
+      && proposal.reportDigest === binding.reportDigest
+      && proposal.decisionDigest === binding.decisionDigest
+      && approvalReceipt?.successorWorkOrderId === workOrder.workOrderId
+    ));
+    return proposal ? reportRef : null;
+  }));
+  const reportRef = matches.find((ref): ref is string => ref !== null);
+  return reportRef ? { reportRef, sourceCycleNumber: source.cycleNumber } : null;
+}
+
+export default async function FieldWorkOrderPage({ params, searchParams }: {
+  params: Promise<{ workOrderId: string }>;
+  searchParams: Promise<{ reportRef?: string | string[] }>;
+}) {
+  const [{ workOrderId }, { reportRef: reportRefParam }] = await Promise.all([params, searchParams]);
   const session = await resolveFieldSession();
   if (session.kind === "blocked") return <OperationsSessionFailure verdict={session.verdict} next={`/field/work-orders/${encodeURIComponent(workOrderId)}`} />;
 
@@ -43,6 +141,30 @@ export default async function FieldWorkOrderPage({ params }: { params: Promise<{
   ]);
   const externalExecutionContext = resolveExternalWorkOrderExecutionContext(workOrder, externalContext);
   const externalWorkflow = externalExecutionContext === "EXTERNAL_INGRESS" || externalExecutionContext === "EXTERNAL_REOBSERVATION_PLANNING";
+  const planningBinding = externalExecutionContext === "EXTERNAL_REOBSERVATION_PLANNING"
+    ? externalContext?.externalPlanningBinding ?? null
+    : null;
+  const reportRef = typeof reportRefParam === "string" ? reportRefParam : null;
+  const reportLinkRequested = reportRefParam !== undefined;
+  const [initialReport, sourceReport] = await Promise.all([
+    reportLinkRequested && reportRef !== null && externalExecutionContext === "EXTERNAL_INGRESS"
+      ? resolveTrustedReportLink(workOrder.siteId, workOrder.workOrderId, session.principal.organizationId, workOrder.workAreaIds, reportRef)
+      : Promise.resolve(null),
+    planningBinding
+      ? resolveSuccessorSourceReportRef({ workOrder, binding: planningBinding, organizationId: session.principal.organizationId })
+      : Promise.resolve(null),
+  ]);
+  const reportLinkNotice = reportLinkRequested
+    ? reportRef === null || !isExternalRelativeVolumeReportReference(reportRef)
+      ? "요청한 비교 결과 주소를 확인하지 못했습니다. 관측 이력에서 결과를 다시 선택하세요."
+      : initialReport === null
+        ? "요청한 비교 결과를 이 작업에 결속하지 못했습니다. 관측 이력에서 다시 확인하세요."
+        : null
+    : null;
+  const sourceReportHref = planningBinding && sourceReport
+    ? `/field/work-orders/${encodeURIComponent(planningBinding.sourceWorkOrderId)}?reportRef=${encodeURIComponent(sourceReport.reportRef)}#external-result`
+    : null;
+  const t1ToT2 = sourceReport?.sourceCycleNumber === 1 && workOrder.cycleNumber === 2;
   const operations = externalWorkflow
     ? await getObservationWorkOrderOperations(workOrder.workOrderId).catch(() => null)
     : null;
@@ -91,6 +213,21 @@ export default async function FieldWorkOrderPage({ params }: { params: Promise<{
 
         {externalWorkflow && <ResponsiveNotice action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료와 산출물 등록을 이어가세요." />}
 
+        {reportLinkNotice && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{reportLinkNotice} <Link className="font-semibold text-accent-text underline underline-offset-2" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations`}>관측 이력</Link></p>}
+
+        {planningBinding && <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-sunk px-4 py-3" aria-label="다음 관측 안내">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-[13px] font-bold">다음 관측 준비</h2>
+            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{t1ToT2 ? "산출물을 봉인한 뒤 현장 분석 화면에서 t1→t2 분석을 요청하세요." : "산출물을 봉인한 뒤 현장 분석 화면에서 기준·현재 관측을 선택해 분석을 요청하세요."}</p>
+            {!sourceReportHref && <p role="status" className="mt-1 text-[12px] text-ink-muted">원본 결과와 승인 제안 연결을 확인할 수 없습니다.</p>}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {sourceReportHref && <Link className="btn" href={sourceReportHref}>원본 결과·제안 보기</Link>}
+            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/analysis#new-analysis-request`}>현장 분석 열기</Link>
+            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations/new?repeatWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}`}>이 범위로 새 관측</Link>
+          </div>
+        </section>}
+
         {externalWorkflow && <WorkOrderOperationsPanel
           workOrderId={workOrder.workOrderId}
           principalId={session.principal.principalId}
@@ -106,12 +243,14 @@ export default async function FieldWorkOrderPage({ params }: { params: Promise<{
           permissions={session.principal.permissions}
           requiresCaptureInterval={externalExecutionContext === "EXTERNAL_INGRESS"}
           newIntentAllowed={!workflowClosed}
+          initialReport={initialReport ?? undefined}
         />}
 
         {pendingDrafts.length > 0 && (
           <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
             <h2 className="text-[14px] font-bold">재관측 제안</h2>
             <p className="text-[12.5px] text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 결과 화면에서 진행합니다.</p>
+            {externalWorkflow && <Link className="w-fit text-[12.5px] font-semibold text-accent-text underline underline-offset-2" href={initialReport ? "#external-result" : "#external-volume"}>{initialReport ? "결과와 제안 결정으로 이동" : "비교 요청·제안 상태로 이동"}</Link>}
             <ul className="divide-y divide-line">
               {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-[12.5px]"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{draft.targetRegionRefs.length}개 구역 · {draft.expiresAt}</p></li>)}
             </ul>

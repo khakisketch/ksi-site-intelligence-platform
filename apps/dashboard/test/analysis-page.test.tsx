@@ -2,12 +2,13 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), list: vi.fn(), detail: vi.fn() }));
+const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), workOrders: vi.fn(), list: vi.fn(), detail: vi.fn() }));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalysisObservations: mocked.observations, listAnalyses: mocked.list, getAnalysis: mocked.detail }));
-vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null }) => <p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p> }));
+vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
+vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p></> }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
   useRouter: () => ({ refresh: vi.fn() }),
@@ -23,6 +24,7 @@ beforeEach(() => {
   mocked.site.mockResolvedValue({ name: "접근 확인된 현장" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.observations.mockResolvedValue([]);
+  mocked.workOrders.mockResolvedValue([]);
   mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
   mocked.detail.mockResolvedValue(null);
 });
@@ -46,6 +48,10 @@ describe("analysis deep link", () => {
       { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
       { selector: { workOrderId: "work-2", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 2 }, observationEpochId: "epoch-2", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
     ]);
+    mocked.workOrders.mockResolvedValue([
+      { workOrderId: "work-1", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] },
+      { workOrderId: "work-2", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-2"] },
+    ]);
     mocked.list.mockResolvedValue({ siteId: "site-1", items: [{ analysisId: "analysis-1" }], nextCursor: "older-records" });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
@@ -55,6 +61,32 @@ describe("analysis deep link", () => {
     expect(screen.getByText("2개 표시됨")).toBeTruthy();
     expect(screen.getByText("1개 표시됨")).toBeTruthy();
     expect(screen.getByText(/최근 페이지의 일부 기록/)).toBeTruthy();
+  });
+
+  it("passes only Site-verified WorkArea attribution to the analysis selector and counts unknown links", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.observations.mockResolvedValue([
+      { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-known", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+      { selector: { workOrderId: "work-missing", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-unknown", captureStartedAt: "2026-09-08T00:00:00Z", captureEndedAt: "2026-09-08T00:30:00Z" },
+    ]);
+    mocked.workOrders.mockResolvedValue([{ workOrderId: "work-1", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] }]);
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByTestId("panel-attribution").textContent).toBe("epoch-known:area-1|unknown:1");
+    expect(screen.getByText("1개 표시됨")).toBeTruthy();
+  });
+
+  it("does not treat a mismatched WorkOrder scope as a WorkArea attribution", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.observations.mockResolvedValue([
+      { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+    ]);
+    mocked.workOrders.mockResolvedValue([{ workOrderId: "work-1", siteId: "another-site", organizationId: "org-1", workAreaIds: ["area-1"] }]);
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByTestId("panel-attribution").textContent).toBe("|unknown:1");
   });
 
   it("keeps accessible Site context when an optional analysis child returns 404", async () => {
