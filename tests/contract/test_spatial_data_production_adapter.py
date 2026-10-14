@@ -293,6 +293,19 @@ def test_expired_authentic_activation_loads_but_is_not_current(tmp_path: Path) -
     assert policy.policy_digest == config.policy.policy_digest
 
 
+def test_worker_identity_allows_rotating_duplicate_digests(tmp_path: Path) -> None:
+    payload, _policy, _activation = _config_payload(tmp_path)
+    config_path = _write_private(tmp_path / "config.json", payload)
+    rotated = PrincipalTokenRecord(
+        token_sha256=hashlib.sha256(b"worker-token-next").hexdigest(),
+        principal=_worker_record().principal,
+    )
+    config = load_spatial_data_core_config(
+        config_path, principal_records=[_worker_record(), rotated, _operator_record()]
+    )
+    assert config.activation.worker_principal_id == WORKER_ID
+
+
 def test_rights_must_bind_current_policy_and_resolvable_beneficiary(tmp_path: Path) -> None:
     config, _policy, _path = _load_config(tmp_path)
     other_policy = make_policy(policy_id="production-adapter-other")

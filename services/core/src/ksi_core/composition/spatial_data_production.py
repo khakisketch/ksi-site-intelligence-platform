@@ -314,14 +314,14 @@ class SpatialDataRightsFileV1(SpatialDataModel):
 def _worker_records(
     config: SpatialDataCoreConfigV1, principal_records: Iterable[PrincipalTokenRecord]
 ) -> Principal:
-    matches = [
+    matches = {
         record.principal
         for record in principal_records
         if record.principal.principal_id == config.activation.worker_principal_id
-    ]
+    }
     if len(matches) != 1:
         raise ValueError("activation requires exactly one registered worker identity")
-    worker = matches[0]
+    worker = next(iter(matches))
     if (
         worker.kind is not PrincipalKind.SPATIAL_DATA_WORKER
         or worker.organization_id != config.activation.organization_id
