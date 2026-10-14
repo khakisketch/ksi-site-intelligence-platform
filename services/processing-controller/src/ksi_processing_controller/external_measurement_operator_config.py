@@ -344,7 +344,17 @@ def _validate_cross_binding(config: ExternalMeasurementOperatorConfigV2) -> None
         or production.listener.expected_owner_uid != proof.launcher_uid
         or production.systemd_base_slice != "ksi-measurement.slice"
         or production.systemd_base_slice != proof.systemd_base_slice
-        or production.cgroup_root.base_control_group != proof.launcher_cgroup_path
+        # The launcher runs as the slice's service child while the transient
+        # attempt slices hang off the base slice itself (cgroup-v2 forbids a
+        # process inside a slice that has controller-bearing children), so the
+        # base is verified as the slice ancestor of the observed launcher
+        # cgroup, mirroring the inspector binding.
+        or not production.cgroup_root.base_control_group.endswith(
+            "/" + proof.systemd_base_slice
+        )
+        or not proof.launcher_cgroup_path.startswith(
+            production.cgroup_root.base_control_group + "/"
+        )
         or production.admission_capacity.maximum_concurrency_units != 1
         or production.admission_capacity.maximum_primary_staging_bytes
         > production.protocol_limits.max_input_bytes

@@ -148,7 +148,9 @@ def measurement_operator_config(tmp_path: Path, *, listener_path: Path | None = 
             "rootlessDaemonPidPath": os.fspath(tmp_path / "rootless-docker.pid"),
             "daemonUidMapSha256": "sha256:" + "a" * 64,
             "daemonGidMapSha256": "sha256:" + "b" * 64,
-            "launcherCgroupPath": "/base.slice/ksi-measurement.slice",
+            "launcherCgroupPath": (
+                "/base.slice/ksi-measurement.slice/ksi-external-measurement.service"
+            ),
             "daemonCgroupPath": "/base.slice/ksi-measurement.slice/daemon.scope",
             "systemdBaseSlice": "ksi-measurement.slice",
             "dockerSocketPath": os.fspath(tmp_path / "rootless-docker.sock"),
