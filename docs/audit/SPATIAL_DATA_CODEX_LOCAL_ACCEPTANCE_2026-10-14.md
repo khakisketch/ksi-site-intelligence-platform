@@ -170,3 +170,31 @@ Codex CLI and a genuinely contained worker.
   unchanged.
 - Still OPEN: cloud/customer S3, customer/operational acceptance, deploy/CI,
   re-running the chain on a second host/cycle.
+
+### Grant lifecycle on the same rig (2026-10-14, after the acceptance)
+
+Ran against the rig Core (:8061) that issued the accepted job, restarting it
+between rights imports. The revocation is append-only (recorded once in the
+grants journal with its exact digest; re-sealing produces a new digest and is
+refused with `REPORT_CONFLICT`), so rev2 stays revoked permanently and the
+only recovery is a new revision. Evidence: `evidence/public-sample/lifecycle/`.
+
+- Baseline: requester (MCP) file download 200, `sha256:0fcb7fd7…`,
+  9,166,428 bytes (exact match).
+- Revoked rev2 (revocation journaled, `f70fad4d…`, reason `OWNER_REVOKED`):
+  new AI create **403 `GRANT_REQUIRED`** (`REQUEST_NEW_GRANT`); requester
+  status **403 `ACCESS_REVOKED`**; requester bytes **403**; operator status
+  stayed **200 COMPLETED** with `availability: ACCESS_REVOKED` (frozen
+  historic visibility, no bytes) and operator bytes **404** (contract:
+  byte authority is the requester, never admin sharing).
+- Recovery under rev3 (`sha256:7fa50b5d…`, imported while rev2 stays
+  revoked): new create **201** (`sdj-v1-d9825d25…`, canceled), replay of the
+  revoked-window idempotency key now **201** (denials are not journaled as
+  idempotent outcomes), and the rev2-issued COMPLETED job's bytes remain
+  **403 `ACCESS_REVOKED`** by design — revocation is not retroactively
+  recoverable per job.
+- Retention: the rig policy keeps outputs for 3600 s, so the accepted job's
+  availability now reads `RETENTION_EXPIRED` (honest lifecycle; the
+  acceptance-time download was inside the window).
+- The rig now runs on grant rev3 (rev2 revoked) and the console request
+  surface renders the frozen/denied states from the same Core.
