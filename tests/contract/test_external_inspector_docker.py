@@ -1453,7 +1453,9 @@ def test_runtime_adapter_builds_only_proc_launcher_fd_mounts_and_never_persists_
         "ReadOnly": False,
         "TmpfsOptions": {"SizeBytes": 2000, "Mode": 0o700},
     }
-    assert payload["HostConfig"]["Tmpfs"] == {"/work": "rw,nodev,nosuid,noexec,size=2000,mode=0700"}
+    assert payload["HostConfig"]["Tmpfs"] == {
+        "/work": "rw,nodev,nosuid,noexec,size=2000,mode=0700,uid=10001,gid=10001"
+    }
     assert payload["OpenStdin"] is True
     assert payload["StdinOnce"] is True
     assert payload["AttachStdin"] is True

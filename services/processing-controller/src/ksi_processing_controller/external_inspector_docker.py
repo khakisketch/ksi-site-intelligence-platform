@@ -1653,6 +1653,22 @@ class RootlessDockerRuntimeAdapter:
         return facts, image
 
 
+def _workspace_tmpfs_options(configuration: FixedContainerConfigurationV1) -> str:
+    """Fixed workspace tmpfs options owned by the contained runtime user.
+
+    Docker mounts a tmpfs owned by root unless the mount options carry
+    uid/gid, while the contained entrypoints require the private workspace
+    directory to be owned by the runtime uid/gid (owner-only, mode 0700).
+    Without these options every workspace-using container exits before its
+    control frame, which was observed host-backed on the measurement lane.
+    """
+
+    return (
+        f"rw,nodev,nosuid,noexec,size={configuration.tmpfs_bytes},mode=0700"
+        f",uid={configuration.runtime_uid},gid={configuration.runtime_gid}"
+    )
+
+
 def _fixed_create_payload(
     *,
     configuration: FixedContainerConfigurationV1,
@@ -1718,9 +1734,7 @@ def _fixed_create_payload(
             # API 1.44 represents tmpfs options in HostConfig.Tmpfs, not in
             # MountPoint/TmpfsOptions.  Host proof later verifies mounted
             # flags because Docker inspect cannot report them faithfully.
-            "Tmpfs": {
-                "/work": (f"rw,nodev,nosuid,noexec,size={configuration.tmpfs_bytes},mode=0700")
-            },
+            "Tmpfs": {"/work": _workspace_tmpfs_options(configuration)},
             "Memory": configuration.memory_bytes,
             "MemorySwap": configuration.memory_bytes,
             "PidsLimit": configuration.pids,
@@ -1777,8 +1791,7 @@ def _verify_created_inspection(
         or host.get("SecurityOpt") != ["no-new-privileges:true"]
         or host.get("LogConfig") != {"Type": "none", "Config": {}}
         or host.get("Binds") not in (None, [])
-        or host.get("Tmpfs")
-        != {"/work": (f"rw,nodev,nosuid,noexec,size={configuration.tmpfs_bytes},mode=0700")}
+        or host.get("Tmpfs") != {"/work": _workspace_tmpfs_options(configuration)}
         or host.get("CgroupParent") != binding.systemd_slice_name
         or host.get("Memory") != configuration.memory_bytes
         or host.get("MemorySwap") != configuration.memory_bytes
