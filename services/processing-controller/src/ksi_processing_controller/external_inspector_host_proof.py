@@ -369,9 +369,14 @@ def _verify_rootless_maps(
         or _digest(daemon.gid_map) != config.daemon_gid_map_sha256
     ):
         raise RootlessDockerHostProofUnavailable(HostProofBlockedCode.USER_NAMESPACE)
-    for mapping in (daemon.uid_map, daemon.gid_map):
+    for mapping, expected_outside in (
+        (daemon.uid_map, config.launcher_uid),
+        (daemon.gid_map, config.launcher_gid),
+    ):
         rows = _parse_user_namespace_map(mapping)
-        if not any(inside == 0 and outside == config.launcher_uid for inside, outside, _ in rows):
+        if not any(
+            inside == 0 and outside == expected_outside for inside, outside, _ in rows
+        ):
             raise RootlessDockerHostProofUnavailable(HostProofBlockedCode.USER_NAMESPACE)
         if any(outside == 0 for _inside, outside, _length in rows):
             raise RootlessDockerHostProofUnavailable(HostProofBlockedCode.USER_NAMESPACE)

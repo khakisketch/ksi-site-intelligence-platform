@@ -297,6 +297,60 @@ def test_host_proof_rejects_rootful_map_even_when_operator_digest_matches(tmp_pa
     assert raised.value.code is HostProofBlockedCode.USER_NAMESPACE
 
 
+def test_rootless_map_check_compares_each_map_against_its_own_identity(tmp_path: Path) -> None:
+    """A service account whose gid differs from its uid must pass the map check.
+
+    The previous check required the gid map to map gid 0 to launcher_uid, which
+    only holds when uid == gid (the developer/test-user case); real service
+    accounts have distinct ids and the daemon refused to start with
+    USER_NAMESPACE on a provisioned host.
+    """
+    from ksi_processing_controller.external_inspector_host_proof import _verify_rootless_maps
+
+    proc_root = tmp_path / "proc"
+    uid_map = b"0 1001 1\n1 200000 65536\n"
+    gid_map = b"0 1002 1\n1 200000 65536\n"
+    _write_proc_fixture(
+        proc_root=proc_root,
+        pid=4242,
+        uid=1001,
+        gid=1002,
+        uid_map=uid_map,
+        gid_map=gid_map,
+        cgroup="/user.slice/ksi-inspector.slice",
+    )
+    observer = ProcfsHostProofObserver(proc_root=proc_root)
+    config = RootlessDockerHostProofConfigV1(
+        launcher_uid=1001,
+        launcher_gid=1002,
+        worker_uid=1003,
+        rootless_daemon_pid_path=tmp_path / "daemon.pid",
+        daemon_uid_map_sha256=_digest(uid_map),
+        daemon_gid_map_sha256=_digest(gid_map),
+        launcher_cgroup_path="/user.slice/ksi-inspector.slice",
+        daemon_cgroup_path="/user.slice/ksi-inspector.slice",
+        systemd_base_slice="ksi-inspector.slice",
+        docker_socket_path=tmp_path / "docker.sock",
+        retained_input_mode=0o600,
+    )
+    _verify_rootless_maps(observer.observe_process(4242), config)
+
+    wrong_gid_map = b"0 1001 1\n1 200000 65536\n"
+    _write_proc_fixture(
+        proc_root=proc_root,
+        pid=4243,
+        uid=1001,
+        gid=1002,
+        uid_map=uid_map,
+        gid_map=wrong_gid_map,
+        cgroup="/user.slice/ksi-inspector.slice",
+    )
+    wrong_config = replace(config, daemon_gid_map_sha256=_digest(wrong_gid_map))
+    with pytest.raises(RootlessDockerHostProofUnavailable) as raised:
+        _verify_rootless_maps(observer.observe_process(4243), wrong_config)
+    assert raised.value.code is HostProofBlockedCode.USER_NAMESPACE
+
+
 def test_host_proof_rejects_replaced_socket_and_unbound_fd(tmp_path: Path) -> None:
     proof, source = _proof_fixture(tmp_path)
     configuration = _configuration(source)
