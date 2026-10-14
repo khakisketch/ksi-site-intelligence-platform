@@ -28,4 +28,9 @@ describe("field page top action strip (F18)", () => {
     expect(inbox).not.toContain("btn-primary");
     expect(team).not.toContain("btn-primary");
   });
+
+  it("gates 새 관측 시작 on WORK_ORDERS_WRITE with viewer guidance", () => {
+    expect(PAGE).toContain("WORK_ORDERS_WRITE");
+    expect(PAGE).toContain("새 관측 시작은 작업 등록 권한이 있는 계정에서 할 수 있습니다.");
+  });
 });

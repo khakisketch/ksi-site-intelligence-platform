@@ -54,11 +54,36 @@ const INITIAL_FORM: FormState = {
 };
 
 /**
+ * `randomUUID()` is restricted to secure contexts, but this Console is also
+ * intentionally served over tailnet-only HTTP in the local workflow. Keep the
+ * same cryptographic randomness there via `getRandomValues()`; never fall back
+ * to `Math.random()` for request or Site identifiers.
+ */
+export function createRegistrationUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (typeof cryptoApi.randomUUID === "function") {
+    try {
+      return cryptoApi.randomUUID();
+    } catch {
+      // Some browsers expose the method but reject it outside secure contexts.
+      // `getRandomValues()` remains available there and preserves CSPRNG quality.
+    }
+  }
+
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+  // RFC 9562 UUID v4 version and variant bits.
+  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+/**
  * A generated identifier is a starting point, not a server-side identity.
  * It is saved with the browser draft and may always be edited before posting.
  */
 export function createGeneratedSiteId(now = Date.now()): string {
-  const randomSegment = globalThis.crypto.randomUUID().replaceAll("-", "").slice(0, 8);
+  const randomSegment = createRegistrationUuid().replaceAll("-", "").slice(0, 8);
   return `site-${now.toString(36)}-${randomSegment}`;
 }
 
@@ -151,7 +176,7 @@ export function SiteRegistrationOnlyWizard({
     setSubmitPhase("pending");
     setSubmitError(null);
 
-    const bootstrapRequestId = form.bootstrapRequestId ?? globalThis.crypto.randomUUID();
+    const bootstrapRequestId = form.bootstrapRequestId ?? createRegistrationUuid();
     const pendingForm = { ...form, bootstrapRequestId };
     setForm(pendingForm);
 

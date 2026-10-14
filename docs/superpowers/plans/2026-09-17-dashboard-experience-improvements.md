@@ -320,6 +320,12 @@ copy beyond the work-order mobile case.
   Page RED5/GREEN7 and actual1440/390 browser recheck recorded in the same Task5 ledger; independent
   129files/973tests/lint/types/build passed and generated tracked config restored/type-rechecked.
   Broader authorized history availability stays open; no route/grant expansion.
+  2026-10-13 live re-verification (synthetic F-03 stack, local-admin):
+  `/sites/no-such-site-xyz/observations` renders h1 `외부 관측 이력` (route context)
+  + h2 `현장을 찾을 수 없습니다` + honest copy (no deletion claim) + `현장 목록으로`
+  exit + `현장으로 이동` breadcrumb. Capture: `/tmp/opencode/ksi-ux-a2-404.png`.
+  UI half of the acceptance is met at current HEAD; the item stays open only for
+  the Core-scope history-availability part.
 - [ ] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
   2026-10-13 implemented locally (선구현): native file controls replaced with the shared
   `components/ui/FilePickerField` — styled Korean trigger (`파일 선택`) + sr-only input, no browser
@@ -371,7 +377,11 @@ copy beyond the work-order mobile case.
   column no longer duplicates the site's contextual CTA next to "현장 열기";
   `SiteHeader.tsx` already shows that CTA on the site detail page, so the row
   now carries one action; `test/sites-table-row-action.test.ts`.
-- [ ] B5 [F10] reports picker facts — owner: — (sequence after AX-6 report draft)
+- [x] B5 [F10] reports picker facts — closed 2026-10-13 as obsolete as specified:
+  target `apps/dashboard/src/app/reports/page.tsx` no longer exists (retired by
+  approved P4; verified: NO reports route) and AX-6 report draft is unexecuted
+  (no commit). No picker-card surface survives; the site report route keeps only
+  external-result-summary access. No code change.
 - [x] B6 [F11] external stub consolidation — owner: Claude —
   `ExternalSiteResultSummary` was rendered verbatim in the briefing, data and
   reports tabs of `[siteId]/page.tsx` (three of the site's own tabs, not the
@@ -383,8 +393,19 @@ copy beyond the work-order mobile case.
   schematic background stays visible; the redundant "N / M" text counter next
   to the already-interactive dot pagination is gone;
   `test/home-attention-carousel.test.tsx`.
-- [ ] B8 [F12] events desktop pane — owner: — (sequence after AX-4 triage)
-- [ ] B9 [F19] fold/wrap check (verify-first) — owner: —
+- [x] B8 [F12] events desktop pane — closed 2026-10-13 as obsolete as specified:
+  target `apps/dashboard/src/app/events/page.tsx` no longer exists (retired by
+  approved P4; verified: NO events route, `/events` intentional 404 covered by
+  `empty-organization.spec.ts`). The single-item placeholder concern is covered
+  on the surviving work queue (compact rows, E2E `operations-console` green).
+  No code change.
+- [x] B9 [F19] fold/wrap check — closed 2026-10-13 with live method: original targets
+  (site data section, mission-detail stat block) no longer exist as specified
+  (P4 retire/repoint). Surviving longest-string surfaces verified on the synthetic
+  F-03 stack — spatial-asset detail (digests + footprintWkt) at 390 and 1440 and
+  work-order detail (long filenames) at 390: document width equals viewport width,
+  every mono block wraps (sw == cw), axe 0 violations. Captures:
+  `/tmp/opencode/ksi-ux-b9-asset-detail-390.png`. No code change.
 - [x] B10 [F20] badge separation — owner: Claude — event row's status badge
   (observation→…→confirmed/dismissed lifecycle) was `StatusBadge` (attribute
   shape) same as severity; now `StateBadge` (progress shape), matching
@@ -406,8 +427,25 @@ copy beyond the work-order mobile case.
   leads before the machine 현장 ID; `WizardShell` gained an optional
   `nextDisabledReason` prop, and step 0 names the first unmet requirement
   when 다음 is disabled. `test/site-registration-only-wizard-step0.test.ts`,
-  `test/wizard-shell-next-disabled-reason.test.tsx`. Step-rail legibility not
-  addressed — needs the live re-capture to assess.
+  `test/wizard-shell-next-disabled-reason.test.tsx`. Step-rail legibility was
+  visually checked at 1024×900 and 1440×1000: all three labels fit on one line
+  in the 230px rail with no clipping; the current step remains distinct from
+  upcoming steps. At 768×1024 and 390×844 the existing `노트북에서 계속`
+  boundary is shown instead of the desktop wizard. Captures:
+  `/tmp/opencode/c4-f16-{1024,1440,768,390}.png`. The visual capture needed a
+  browser-only `crypto.randomUUID` shim because the reviewed tailnet HTTP origin
+  is not a secure context. Follow-up compatibility fix: registration now prefers
+  `crypto.randomUUID()` and falls back to a cryptographic UUID v4 from
+  `crypto.getRandomValues()`; no `Math.random()` or contract change. The actual
+  HTTP origin was observed with `isSecureContext=false`, `randomUUID=undefined`,
+  and `getRandomValues=function`. Dashboard Vitest: 799/799; TypeScript and
+  production build pass; changed-file ESLint is clean. Full ESLint has zero
+  errors and one unrelated warning in
+  `p4-cleanup-evidence/t4-round4-render-v1/capture-script.js:1`. An isolated
+  E2E attempt reached the deliberate permission-denied state because its default
+  principal lacks the Core-issued registration capability; no access was
+  expanded and no Site was submitted. Actual authorized registration remains
+  unverified; this compatibility fix is distinct from C4's visual acceptance.
 - [x] C5 [F17] field/new copy — owner: Claude — each site row now shows its
   own `SITE_STATUS_LABEL` status badge instead of the identical boilerplate
   sentence; "선택" affordance bumped to 13px/bold with a chevron;

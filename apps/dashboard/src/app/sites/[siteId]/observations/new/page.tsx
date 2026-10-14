@@ -100,7 +100,7 @@ export default async function NewObservationPage({
     return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><ErrorState message={result.message} retryable /></div>;
   }
   if (!result.canCreate) {
-    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="새 관측을 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." /></div>;
+    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="새 관측을 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "현장으로 돌아가기", href: `/sites/${encodeURIComponent(siteId)}` }} /></div>;
   }
   const activeAreaIds = new Set(result.areas.workAreas.map((area) => area.workAreaId));
   const repeatTemplate = await resolveRepeatObservationTemplate({

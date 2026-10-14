@@ -2902,6 +2902,15 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   경계 유지. 선택 상태 테스트 6/6, 전체 vitest **798**, ESLint/tsc/isolated build 통과;
   fresh desktop/mobile 캡처 `.../evidence/c2-observation-path-{desktop-1440,mobile-390}-final.png`;
   independent Design Specialist 리뷰 pass. API/도메인 계약 불변.
+- 대시보드 C4/F16 단계 레일 시각 확인: 1024×900·1440×1000에서 세 라벨이 230px 레일 안에
+  한 줄로 표시되고 잘리지 않음; 768×1024·390×844에서는 승인된 `노트북에서 계속` 경계 확인.
+  캡처 `/tmp/opencode/c4-f16-{1024,1440,768,390}.png`. tailnet HTTP 시각 캡처에는
+  `crypto.randomUUID`가 없어 `crypto.getRandomValues()` 기반 UUID v4 fallback을 등록 위저드에
+  추가함(무작위 품질·API·권한 계약 불변). fallback 단위 테스트 2/2, 전체 Dashboard Vitest
+  **799/799**, tsc·production build 통과. 변경 파일 ESLint clean; 전체 ESLint는 오류 0, 별개
+  `p4-cleanup-evidence/t4-round4-render-v1/capture-script.js:1` 경고 1건. 격리 E2E는
+  기본 원장 principal에 등록 capability가 없어 의도된 권한 거부 화면에서 멈춤; 권한을 바꾸거나
+  Site를 제출하지 않았으며 실제 authorized 등록 수용은 미검증으로 유지.
 - 증거: `/tmp/opencode/ksi-f04-review-20261013/evidence/{review-before-restart.png,
   review-after-core-restart.png, observations-page.png}`; 상태/다이제스트
   `/tmp/opencode/ksi-f04-review-20261013/chain-phase1-state.json`; 재생성·레인 스크립트 동 디렉터리

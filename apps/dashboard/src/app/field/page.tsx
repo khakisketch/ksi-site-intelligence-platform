@@ -44,6 +44,7 @@ export default async function FieldWorkListPage() {
   const notices = operations
     ? deriveWorkQueueOperationalNotices(workOrders, byId, session.principal.principalId, new Date())
     : [];
+  const canCreateObservation = session.principal.permissions.includes("WORK_ORDERS_WRITE");
 
   return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
@@ -52,7 +53,11 @@ export default async function FieldWorkListPage() {
           <div className="flex items-center gap-3">
             <Link href="/field/inbox" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">받은 업무</Link>
             <Link href="/field/team" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">팀 관리</Link>
-            <Link href="/field/new" className="btn btn-primary tap-target">새 관측 시작</Link>
+            {canCreateObservation ? (
+              <Link href="/field/new" className="btn btn-primary tap-target">새 관측 시작</Link>
+            ) : (
+              <p className="text-[12px] leading-5 text-ink-2">새 관측 시작은 작업 등록 권한이 있는 계정에서 할 수 있습니다.</p>
+            )}
           </div>
         </header>
         <WorkQueueOperationsNotices notices={notices} />

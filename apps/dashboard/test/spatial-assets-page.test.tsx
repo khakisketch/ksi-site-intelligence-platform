@@ -107,8 +107,9 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain("KSI 검사 결과");
     expect(html).toContain("north-dsm.tif");
     expect(html).toContain("DSM");
-    expect(html).toContain("카탈로그에서 바이트 다운로드는 제공되지 않습니다.");
-    expect(html).toContain("분석 상태는 평가되지 않았습니다.");
+    expect(html).toContain("이 목록은 메타데이터 조회이며 파일 다운로드나 분석 가능 판정을 제공하지 않습니다.");
+    expect(html).not.toContain("카탈로그에서 바이트 다운로드는 제공되지 않습니다.");
+    expect(html).not.toContain("분석 상태는 평가되지 않았습니다.");
     expect(html).toContain("?workAreaId=area-1&amp;assetRef=");
     expect(html).not.toContain("objectKey");
     expect(html).not.toContain("https://");

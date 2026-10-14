@@ -21,8 +21,12 @@ function site(overrides: Partial<SiteView> = {}): SiteView {
   };
 }
 
+const mockedSession = vi.hoisted(() => ({
+  resolve: async (): Promise<unknown> => ({ kind: "ready", principal: { kind: "OPERATOR", organizationId: "org-1", role: "ADMIN", principalId: "operator-a", deviceId: null, permissions: ["SITES_READ", "SITES_WRITE", "WORK_ORDERS_WRITE"] } }),
+}));
+
 vi.mock("@/app/field/resolve-session", () => ({
-  resolveFieldSession: async () => ({ kind: "ready", principal: { role: "ADMIN", principalId: "operator-a" } }),
+  resolveFieldSession: () => mockedSession.resolve(),
 }));
 vi.mock("@/lib/core-api/cached", () => ({
   listSitesCached: async () => [
@@ -41,5 +45,20 @@ describe("field/new site rows", () => {
     expect(screen.queryByText("이 현장에서 외부 산출물 등록 또는 비행 계획을 시작합니다.")).toBeNull();
     expect(screen.getByText("미매핑")).toBeTruthy();
     expect(screen.getByText("순찰 준비 완료")).toBeTruthy();
+  });
+
+  it("blocks viewers before site selection with a guided next action", async () => {
+    mockedSession.resolve = async () => ({
+      kind: "ready",
+      principal: { kind: "OPERATOR", organizationId: "org-1", role: "VIEWER", principalId: "viewer-1", deviceId: null, permissions: ["SITES_READ"] },
+    });
+    try {
+      render(await FieldNewObservationPage());
+      expect(screen.getByText("새 관측을 등록할 권한이 없습니다")).toBeTruthy();
+      expect(screen.getByRole("link", { name: "작업으로 돌아가기" })).toBeTruthy();
+      expect(screen.queryByText("A 현장")).toBeNull();
+    } finally {
+      mockedSession.resolve = async (): Promise<unknown> => ({ kind: "ready", principal: { kind: "OPERATOR", organizationId: "org-1", role: "ADMIN", principalId: "operator-a", deviceId: null, permissions: ["SITES_READ", "SITES_WRITE", "WORK_ORDERS_WRITE"] } });
+    }
   });
 });

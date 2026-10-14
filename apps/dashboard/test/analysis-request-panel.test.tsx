@@ -420,4 +420,32 @@ describe("analysis V2 panel", () => {
     await screen.findByText("분석 analysis-old");
     expect(fetchMock).toHaveBeenCalledWith("/api/sites/site-1/analyses/analysis-old", expect.objectContaining({ cache: "no-store" }));
   });
+
+  it("guides viewers in task language without exposing the permission token", () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    const first = renderPanel({ canCreate: false });
+    expect(screen.getByText("분석 기록을 볼 수 있습니다. 새 분석 요청은 현장 등록 권한이 있는 담당자에게 요청하세요.")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("SITES_WRITE");
+    first.unmount();
+
+    const failed = { ...detail(), executionState: "FAILED" as const, suitabilityState: "REASSESSMENT_REQUIRED" as const, result: null };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, executionState: "FAILED", suitabilityState: "REASSESSMENT_REQUIRED", resultId: null, metrics: null };
+    renderPanel({ initialPage: page, initialSelectedDetail: failed, canCreate: false });
+    expect(screen.getByText("분석 실행이 실패했습니다. 새 분석 요청은 현장 등록 권한이 있는 담당자에게 다시 요청을 맡기세요.")).toBeTruthy();
+    expect(document.body.textContent).not.toContain("SITES_WRITE");
+  });
+
+  it("collapses loaded evidence back to the initial confirm action", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(json(detail()))
+      .mockResolvedValueOnce(json(evidencePage("LIMIT-A", null))));
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: "근거 확인" }));
+    const collapse = await screen.findByRole("button", { name: "근거 닫기 · 1개 항목" });
+    expect(collapse.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(collapse);
+    expect(await screen.findByRole("button", { name: "근거 확인" })).toBeTruthy();
+    expect(screen.queryByLabelText("근거")).toBeNull();
+  });
 });

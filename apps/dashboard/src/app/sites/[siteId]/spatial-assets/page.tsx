@@ -102,7 +102,6 @@ function AssetSummary({ item, siteId }: { item: SpatialAssetCatalogItem; siteId:
     </div>
     <p className="mt-2 text-[12px] leading-5 text-ink-muted">관측 epoch: {item.observationEpochId} · 수정 {item.revision}</p>
     <FactStatus item={item} compact />
-    <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">카탈로그에서 바이트 다운로드는 제공되지 않습니다. 분석 상태는 평가되지 않았습니다.</p>
   </article>;
 }
 
