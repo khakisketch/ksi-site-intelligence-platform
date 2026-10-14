@@ -83,6 +83,24 @@ KSI_CORE_SPATIAL_DATA_CONFIG_FILE=/absolute/owner-private/spatial-data-core-conf
 `KSI_CORE_PRINCIPAL_TOKENS_JSON`)는 그대로다. worker/operator principal record가 등록돼야 하며,
 OIDC 모드에서는 beneficiary가 subject registry에 ACTIVE로 매핑돼 있어야 한다.
 
+`SPATIAL_DATA_MCP_CLIENT`(AI 소비자)는 `KSI_CORE_PRINCIPAL_TOKENS_JSON`에서 **명시적 scope 배열**과
+함께 등록한다(2026-10-14 수정 이후 환경변수 등록이 지원된다):
+
+```json
+{
+  "tokenSha256": "<64-hex>",
+  "principalId": "sdata-mcp",
+  "kind": "SPATIAL_DATA_MCP_CLIENT",
+  "role": null,
+  "deviceId": null,
+  "organizationId": "<org>",
+  "allowedSiteIds": ["<site>"],
+  "allowedWorkAreaIds": ["<area>"]
+}
+```
+
+scope 배열은 MCP client kind 전용이며 다른 kind에 실리면 부팅이 실패한다.
+
 ## 4. 서명 material과 경계
 
 activation 서명은 KSI가 통제하는 서명키로 수행하고 Core는 **검증만** 한다(공개키는 구성 파일에 pin).

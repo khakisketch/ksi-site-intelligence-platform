@@ -3077,3 +3077,31 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   중복을 허용한다(13번째 테스트로 고정).
 - 최종 게이트: full contract `pytest tests/contract -q` **5497 passed·25 skipped·0 failed**(746.68s,
   10-13 기록 5484 대비 +13 = 신규 adapter). repo ruff 전체 green, full mypy 762, boundary 141.
+
+#### 4 공간데이터 운영 연결 — 첫 로컬 수용 리허설 (Codex CLI·실 MinIO) — 2026-10-14
+
+- 보호 레인 실부팅: 합성 재료 생성기(서명 activation·운영자 grant·명시적 token registry)로
+  production factory(8061)에 `app.state.spatial_data` mount, grant 멱등 import 확인. 운영자
+  카탈로그 200(20자산; 대상 DSM `ksa-v1-8430fcc…` MEASURED). 실 inspection 레인(인프로세스
+  선례, 실제 MinIO 바이트)으로 현재 정책 요청 2건 `MEASURED`(2×2 EPSG:5186).
+- **결함 발견·수정**: `SPATIAL_DATA_MCP_CLIENT`가 `KSI_CORE_PRINCIPAL_TOKENS_JSON`으로 scope
+  배열과 함께 등록될 수 없었다(파서가 ANALYSIS_MCP_CLIENT만 허용) → `runtime_config._parse_principal_tokens`
+  수정 + 계약 테스트, 런북에 등록 형식 명시. (커밋)
+- **Codex CLI 실연결**: 0.160.1(ChatGPT auth)에 spatial-data MCP stdio 어댑터 구성 — initialize/
+  tools 6종 확인, `tools/call`이 Core에 도달해 유한 예산의 typed 응답(`RESOURCE_LIMIT_EXCEEDED`)을
+  정직하게 반환.
+- **스토리지 보장 프로브(로컬 MinIO) 16/16 PASS**: 버전 ID·FULL_OBJECT SHA-256 HEAD 일치·정확 버전
+  읽기·목록·서명된 `host;x-amz-checksum-mode` presigned GET 바이트/헤더 일치·정확 버전 삭제·삭제본
+  불가·타 버전 생존·정리. 미서명 추가 헤더를 보내는 클라이언트는 MinIO가 400으로 거부(제품 전송은
+  서명 헤더만 사용). 클라우드/고객 S3는 별도 OPEN.
+- **차단(재현 정확)**: 10-12 사본 체인을 `tools/regenerate_external_validation_chain.py`로
+  갱신(seq 24→25)한 뒤 AI 발견 라우트가 `CURRENTNESS_UNAVAILABLE`(503) — 페이지 투영이 각 후보를
+  materialize할 때 구세대 정책에 묶인 오래된 보고서가 per-source currentness 재검사에서 실패하고,
+  `CURRENTNESS_UNAVAILABLE`은 `_LIST_SUPPRESSED`가 아니어서 페이지 전체가 실패한다. 같은 실행에서
+  갱신 레코드는 digest 일치로 resolve됐으나 reconcile 시점 `permits_selection(use="EVIDENCE")`가
+  False였다. fail-closed(무음 성공 없음)이며 정확한 selection 상태 원인은 체인 재생성 검토 과제.
+- 경계: **synthetic 로컬 증거**이며 bwrap containment·VM 체인·클라우드 S3·공개/고객 수용·배포/CI는
+  OPEN. 상세 증거·rig: `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`,
+  `/tmp/opencode/ksi-sdata-codex-20261014/`. 다음 bounded 후보: (a) 체인 갱신·selection 상태 검토 후
+  Codex happy path 재실행, (b) 구세대 후보의 per-candidate currentness 실패를 페이지 전체 실패로 둘지
+  후보별 unready로 억제할지 **검토된 제품 결정**.
