@@ -408,6 +408,10 @@ export type Permission =
   | "WORK_ORDERS_WRITE"
   | "REOBSERVATION_APPROVE"
   | "COPILOT_QUERY"
+  // Spatial-data access is separately scoped by Core; these names mirror the
+  // existing public delivery permissions and do not grant them in Dashboard.
+  | "SPATIAL_DATA_READ"
+  | "SPATIAL_DATA_REQUEST"
   // blast radius 가 큰 site 전이(자율 시작 승인·정식 순찰 승인·SUSPENDED
   // 진입/복귀)만 가르는 관리자 전용 권한(ADR-KSI-015 D2).
   | "SITES_AUTONOMY_APPROVE";

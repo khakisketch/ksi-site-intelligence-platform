@@ -119,7 +119,7 @@ export default async function SiteDetailPage({
       {tab === "spatial-assets" && <div className="flex flex-col gap-4">
         <SectionCard title="작업구역">
           {areasResult.status === "rejected" ? <ErrorState message="작업구역을 불러오지 못했습니다." retryable /> : areas.length === 0 ? <EmptyState title="등록된 작업구역이 없습니다" description="작업구역은 공간 자산 화면에서 확인하고 관리할 수 있습니다." /> : <ul className="divide-y divide-line">{areas.map((area) => <li key={area.workAreaId} className="py-2 text-[12.5px]"><span className="font-semibold">{area.name}</span><span className="ml-2 text-ink-muted">{area.workAreaId}</span></li>)}</ul>}
-          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">공간 자산</Link></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">공간 자산</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 데이터 요청</Link></div>
         </SectionCard>
       </div>}
 

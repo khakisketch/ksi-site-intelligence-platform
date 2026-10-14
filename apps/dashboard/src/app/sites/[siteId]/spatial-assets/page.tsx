@@ -272,7 +272,7 @@ export default async function SpatialAssetsPage({
         <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 공간 자산</h2>
         <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">Core에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.</p>
       </div>
-      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 관측 이력</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
+      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 데이터 요청</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 관측 이력</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
     </header>
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">

@@ -44,6 +44,8 @@ describe("동적 경로", () => {
   it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
     expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("현장 공간 자산");
     expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("현장 공간 자산");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 데이터 요청");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 데이터 요청");
   });
 
   it("후행 슬래시가 있어도 같은 제목이다", () => {

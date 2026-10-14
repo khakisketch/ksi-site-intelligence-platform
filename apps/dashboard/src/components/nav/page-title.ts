@@ -32,6 +32,7 @@ export function resolvePageTitle(pathname: string | null): string {
   if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 관측 이력";
   if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "현장 분석";
   if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "현장 공간 자산";
+  if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 데이터 요청";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
   if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "현장 작업";
