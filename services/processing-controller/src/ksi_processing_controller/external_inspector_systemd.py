@@ -264,6 +264,7 @@ class LibsystemdUserManager:
     _TYPE_BOOLEAN = ord("b")
     _TYPE_BYTE = ord("y")
     _TYPE_UINT32 = ord("u")
+    _TYPE_UINT64 = ord("t")
 
     def __init__(self, config: UserSystemdBusConfigV1) -> None:
         self._config = config
@@ -468,6 +469,16 @@ class LibsystemdUserManager:
             elif isinstance(value, str):
                 self._open(message, self._TYPE_VARIANT, b"s")
                 self._append_string(message, value)
+            elif isinstance(value, int):
+                if value < 0 or value > 0xFFFFFFFFFFFFFFFF:
+                    raise SystemdRuntimeUnavailable("transient slice property value is invalid")
+                self._open(message, self._TYPE_VARIANT, b"t")
+                raw64 = ctypes.c_uint64(value)
+                self._check(
+                    self._library.sd_bus_message_append_basic(
+                        message, self._TYPE_UINT64, ctypes.byref(raw64)
+                    )
+                )
             else:
                 raise SystemdRuntimeUnavailable("transient slice property value is invalid")
             self._close(message)
@@ -738,6 +749,12 @@ class SystemdTransientSliceController:
                 # ksi-inspector-a<stable>.slice is name-derived and must be
                 # exactly the configured base slice (verified below).
                 ("CPUAccounting", True),
+                # A neutral CPUWeight on the child slice is what makes systemd
+                # enable the cpu controller in the base slice's subtree so the
+                # attempt slice (and the container's cpu budget below it) can
+                # expose cpu; weight 100 is systemd's default share and does
+                # not change scheduling policy.
+                ("CPUWeight", 100),
                 ("MemoryAccounting", True),
                 ("TasksAccounting", True),
                 ("StopWhenUnneeded", False),

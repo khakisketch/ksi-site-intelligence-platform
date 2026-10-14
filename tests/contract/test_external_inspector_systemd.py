@@ -127,6 +127,7 @@ def test_transient_slice_receipt_precedes_docker_create_and_binds_actual_baselin
             (
                 ("Description", "ksi-external-inspector-attempt.v1:" + binding.digest),
                 ("CPUAccounting", True),
+                ("CPUWeight", 100),
                 ("MemoryAccounting", True),
                 ("TasksAccounting", True),
                 ("StopWhenUnneeded", False),
@@ -161,6 +162,7 @@ def test_append_properties_uses_explicit_struct_signature_and_omits_slice() -> N
         (
             ("Description", "probe"),
             ("CPUAccounting", True),
+            ("CPUWeight", 100),
             ("CollectMode", "inactive-or-failed"),
         ),
     )
@@ -170,13 +172,22 @@ def test_append_properties_uses_explicit_struct_signature_and_omits_slice() -> N
         (ord("r"), b"sv"),
         (ord("r"), b"sv"),
         (ord("r"), b"sv"),
+        (ord("r"), b"sv"),
     ]
     assert [entry for entry in opens if entry[0] == ord("v")] == [
         (ord("v"), b"s"),
         (ord("v"), b"b"),
+        (ord("v"), b"t"),
         (ord("v"), b"s"),
     ]
-    assert strings == ["Description", "probe", "CPUAccounting", "CollectMode", "inactive-or-failed"]
+    assert strings == [
+        "Description",
+        "probe",
+        "CPUAccounting",
+        "CPUWeight",
+        "CollectMode",
+        "inactive-or-failed",
+    ]
 
 
 def test_stop_exact_rechecks_the_durable_binding_description_before_stopping(
