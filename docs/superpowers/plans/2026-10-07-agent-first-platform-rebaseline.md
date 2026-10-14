@@ -3154,3 +3154,34 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   호스트/주기 재현, file-cap 런처 하네스의 배포 적합성·제품측 참고자료 검토는 OPEN. 감사:
   `docs/audit/SPATIAL_DATA_CODEX_LOCAL_ACCEPTANCE_2026-10-14.md`; 증거:
   `/tmp/opencode/ksi-sdata-codex-20261014/evidence/public-sample/`.
+
+### 2026-10-14/15 F-03 사슬 — 측정(measurement) 컨테이너 실기동 개시 + 체크포인트 VALIDATED
+
+- **범위**: Task 5번대 사슬의 후반부를 인프로세스 하네스가 아니라 **실제 measurement 컨테이너**로
+  통과시키는 작업. VM2에 inspector + measurement 데몬 동시 기동(수용 카탈로그·서명 승인·격리
+  프로파일), Core :8092 + MinIO :9100은 기존 F-03 rig 유지.
+- **호스트 기동에서 드러난 제품 결함 4건(전부 수정·회귀 테스트·커밋)**:
+  - `d3d3e3d` measurement 교차 바인딩이 `baseControlGroup == launcherCgroupPath`를 요구하나
+    cgroup v2에서 불가능(데몬=슬라이스 서비스 자식, 슬라이스 내부 프로세스 금지) → inspector와
+    동일한 "슬라이스 접미 + launcher는 base의 strict descendant" 규약으로 수정.
+  - `33848af` 대체 context 세대로 발급된 구 pending 레코드가 큐 머리를 점유한 채 매 시도
+    `CONTEXT_UNAVAILABLE` → pending은 자연키별 **최신 발급만** 유지(스토어 자체 이력만 사용,
+    authority 재조회 없음 → 재기동 replay 계약 유지).
+  - `35ac36e` 워크스페이스 tmpfs가 root 소유라 두 entrypoint의 소유자 검사(`/work`)가 실패,
+    컨테이너가 control frame 없이 exit 2 → tmpfs 옵션에 `uid=<runtime uid>,gid=<runtime gid>` 추가.
+  - `6dea5bd` create payload가 `/work`을 Mounts(tmpfs)와 legacy Tmpfs로 **이중 선언**하고 실제
+    Engine에서는 Mounts가 legacy를 대체(TmpfsOptions에 uid/gid 불가, `invalid option: uid`)
+    → legacy 단독으로 통일, inspect 검증은 입력 마운트 1건 기준으로 정렬(컴파일 보안 프로파일의
+    `workspaceTmpfs.hostConfigField == "HostConfig.Tmpfs"`와 일치).
+- **진단 경로(증거 보존)**: worker `measurement exchange unavailable` → 데몬
+  `V2 container ended before its control frame` → inspect exit code 2 → 컨테이너 내부 traceback
+  (`private workspace identity is invalid`) 확보를 위해 데몬 payload 그대로의 raw attach(101)
+  + 동일 타이밍 재현 → CLI(`--tmpfs`) vs payload 비교로 Mounts 그림자 규명. 기록:
+  `/tmp/opencode/ksi-inspector-host2/NOTES.md`.
+- **체크포인트 VALIDATED(실 컨테이너)**: 2×2/0.1 m 합성 DSM(원점 200000/550000) 내부 3점·에폭별
+  고도 100.0/100.2로 evidence 재봉인 → 새 context 세대(r17, seq 48) 승인 → worker가
+  `CONTAINER_BOUND → CLEANUP_REQUIRED **BACKEND_COMPLETED** → CLEANED`. 두 subject 모두
+  **VALIDATED**: `measuredCheckpointCount 3`, mean/mae/rmse/max = **0.0 m**, `factClass OBSERVED`,
+  policy v14 `sha256:14292178…`(레코드: `…9acdf2332892e4db`, `…8d798056518f7119`).
+- **남은 사슬**: 상대체적 분석(RELATIVE_VOLUME — 동일 measurement 이미지·데몬 경유) → Result/
+  Evidence → 운영자 review. 합성/검증호스트 수용이며 클라우드·고객·배포 게이트는 여전히 OPEN.
