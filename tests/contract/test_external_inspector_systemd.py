@@ -126,7 +126,6 @@ def test_transient_slice_receipt_precedes_docker_create_and_binds_actual_baselin
             "fail",
             (
                 ("Description", "ksi-external-inspector-attempt.v1:" + binding.digest),
-                ("Slice", "ksi-inspector.slice"),
                 ("CPUAccounting", True),
                 ("MemoryAccounting", True),
                 ("TasksAccounting", True),
@@ -135,6 +134,49 @@ def test_transient_slice_receipt_precedes_docker_create_and_binds_actual_baselin
             ),
         )
     ]
+
+
+def test_append_properties_uses_explicit_struct_signature_and_omits_slice() -> None:
+    """libsystemd needs the 'sv' struct signature, and Slice= is refused on slice units."""
+    from ksi_processing_controller.external_inspector_systemd import LibsystemdUserManager
+
+    manager = object.__new__(LibsystemdUserManager)
+    opens: list[tuple[int, bytes | None]] = []
+    strings: list[str] = []
+
+    class _FakeLibrary:
+        def sd_bus_message_append_basic(
+            self, message: object, type_code: int, pointer: object
+        ) -> int:
+            return 0
+
+    manager._library = _FakeLibrary()  # type: ignore[assignment]
+    manager._check = lambda result: None  # type: ignore[method-assign]
+    manager._open = lambda message, type_code, contents: opens.append((type_code, contents))  # type: ignore[method-assign]
+    manager._close = lambda message: None  # type: ignore[method-assign]
+    manager._append_string = lambda message, value: strings.append(value)  # type: ignore[method-assign]
+
+    manager._append_properties(
+        None,
+        (
+            ("Description", "probe"),
+            ("CPUAccounting", True),
+            ("CollectMode", "inactive-or-failed"),
+        ),
+    )
+
+    assert opens[0] == (ord("a"), b"(sv)")
+    assert [entry for entry in opens if entry[0] == ord("r")] == [
+        (ord("r"), b"sv"),
+        (ord("r"), b"sv"),
+        (ord("r"), b"sv"),
+    ]
+    assert [entry for entry in opens if entry[0] == ord("v")] == [
+        (ord("v"), b"s"),
+        (ord("v"), b"b"),
+        (ord("v"), b"s"),
+    ]
+    assert strings == ["Description", "probe", "CPUAccounting", "CollectMode", "inactive-or-failed"]
 
 
 def test_stop_exact_rechecks_the_durable_binding_description_before_stopping(

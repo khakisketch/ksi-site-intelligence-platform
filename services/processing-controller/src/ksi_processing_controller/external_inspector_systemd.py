@@ -453,7 +453,9 @@ class LibsystemdUserManager:
     ) -> None:
         self._open(message, self._TYPE_ARRAY, b"(sv)")
         for name, value in properties:
-            self._open(message, self._TYPE_STRUCT, None)
+            # libsystemd requires the explicit struct signature for 'r'; a NULL
+            # contents string is refused with EINVAL.
+            self._open(message, self._TYPE_STRUCT, b"sv")
             self._append_string(message, name)
             if isinstance(value, bool):
                 self._open(message, self._TYPE_VARIANT, b"b")
@@ -732,7 +734,9 @@ class SystemdTransientSliceController:
             mode="fail",
             properties=(
                 ("Description", _binding_description(binding)),
-                ("Slice", binding.systemd_base_slice),
+                # systemd refuses Slice= on slice units: the parent of
+                # ksi-inspector-a<stable>.slice is name-derived and must be
+                # exactly the configured base slice (verified below).
                 ("CPUAccounting", True),
                 ("MemoryAccounting", True),
                 ("TasksAccounting", True),
