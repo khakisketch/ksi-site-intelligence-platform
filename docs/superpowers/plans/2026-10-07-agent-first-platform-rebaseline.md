@@ -3561,3 +3561,17 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   **PROVIDER_CONFIGURED·seq 81 복구**, 프리플라이트 OK — 재기동 불필요.
 - 남긴 상태: 라이브 리그에 **미검토 완료 분석 1건**을 의도적으로 남겨 운영자가 콘솔에서 실제 검토를
   해볼 수 있게 했다(Home 카드가 그 상태를 가리킨다).
+
+### P7-A2 승인 + Task3 재개 rail — 2026-10-15
+
+- **Human 결정(2026-10-15, 대화 Question)**: P7-A2 제안 **승인** — 게시 포트 없이(`ports: !override []`)
+  사설 `internal` 네트워크를 유지한 채, 준비된 Docker 호스트에서 **소유 컨테이너의 사설 브리지 IP**로
+  실제 TCP 증거를 만드는 강화된 Task3 시험 기준. 근거 문서: `2026-10-09-isolated-fresh-platform-verification.md`
+  (sha256 `fba7776eb022ffb3…`) + 본 원장의 P7-A2 제안 절. 승인 범위 밖 효과 없음(런타임 외부 네트워킹·
+  프록시·새 서비스·방화벽 변경 금지).
+- **새 bounded rail**: 2026-10-15T13:40Z + 4h (P7 원안의 4시간 안전 레일과 동일 규칙). 완료 못 하면
+  실측 상태·보존 자원·다음 결정을 기록하고 replay하지 않는다.
+- 보존 재료 확인: worktree `.worktrees/p7-fresh-verification-20261009`(4a0a08e, clean), scratch
+  `p7-fresh-verification-20261009`(freeze/task1/task2 receipts, compose.override, 고립 venv), 후보 이미지
+  3건(617c3b95b509/f1d42c1b8153/0dae50617e84), 소유 볼륨 2건(ksi-p7-34cc796826d6_ksi-data/_objects).
+  프로젝트 이름 `ksi-p7-34cc796826d6` 유지 → 동일 소유 볼륨 재사용(A2 제안대로).
