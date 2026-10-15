@@ -3288,3 +3288,27 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - **전체 스위트 재실행 결과(0 failed)**: `pytest tests/contract tests/replay` → **5789 passed · 0 failed · 31 skipped**(761s).
   직전 실행의 유일 실패였던 same-time revocation replay 케이스가 승인 설계 정렬(8bd098c)로 해소되어 게이트가 clean이다.
   skipped 31건은 환경 의존(호스트 미구성 NOT_VERIFIED·외부 경계) 표기다.
+
+### 2026-10-15 보존 t1 재사용 실증 — 이전 세대 봉인 주체를 다음 회차 기준으로 사용 (seq 77 carry-forward)
+
+- **배경(원인 규명)**: 앞선 재사용 시도 `analysis-v1-04f7d097…`(base=`f03-valid2-submission-4`, cur=`f03-valid3-submission-5`)가
+  `BLOCKED/EVIDENCE_CONTEXT_UNAVAILABLE`이었던 원인은 엔진 제약이 아니라 **운영자 서명 자재의 선택**이었다 —
+  각 세대 bump 스크립트가 `policyAuthorities/evidenceContexts.currentDigests`를 **새 페어만으로 교체**해,
+  과거 사실(fact)의 정책 권위·컨텍스트가 non-current가 되었다. 코드 확인: `admit`은 자동 대체하지 않고
+  `SUPERSEDED`는 명시 행위(이 리그 저널에 revoke/supersede 0건, 23개 세대 전부 ACTIVE), 컨텍스트 현재성은
+  서명 스냅샷의 `currentDigests` 목록이 결정한다. 계약(첫 요청 계약 Weekly reuse)의 "이전에 검증된
+  per-artifact evidence는 정책 조건이 유효한 동안 동일 artifact/digest로 참조 가능"과 일치.
+- **carry-forward 자재(seq 77)**: `admit_carryforward_reuse.py` — 정책 권위 v19..v23을 currentDigests에,
+  재사용 페어 두 주체의 **7개 컨텍스트**(Core 저널 issued 이벤트에서 바이트 추출·재검증: valid2-4×3,
+  valid3-5×4)를 기존 v23 페어 컨텍스트와 함께 기록. `actions: []`(문서화된 no-op 델타; 매핑 5cdd348f는
+  seq 73에서 이미 적용·유지). reload 200/PROVIDER_CONFIGURED, `/ready/external-authority` 200.
+- **재사용 분석 완주**: 동일 selector(order 15 → order 16)로 새 분석 `analysis-v1-94d20026…` 생성 →
+  **QUEUED**(blockers 없음; 직전 BLOCKED 해소) → 분석 워커 1회 → **COMPLETED**.
+  결과 `report-0caec0bc…`(digest `sha256:1e3747cc…`), **net/fill +0.008 m³**(Δ0.2m×4셀×0.01m², 수치 검증),
+  coverage 4/4, uncertaintyM3 null, limitations 0. 검토 `arv2-89b1766f…` ACKNOWLEDGED.
+- **"참조"의 증명**: 실행 중 `external-artifact-inspections.jsonl`·`external-evidence-validations.jsonl`
+  저널이 **무변화**(13:55 이후) — 새 검사·재검증 없이 기존 봉인 artifact/digest·검증 기록을 그대로
+  참조했다. 청정 재기동 후에도 결과·검토·v23 체인(c0294d58 COMPLETED, 91ea5166, +0.008 m³, ACKNOWLEDGED) 유지.
+- **경계**: 합성/검증호스트 수용. 세대 회전이 있는 실운영에서는 회전 시점 자재에 참조 유지 여부를
+  선택하게 된다(미유지 시 fail-closed `EVIDENCE_CONTEXT_UNAVAILABLE` — 의도된 동작). 현장/고객 수용은
+  여전히 외부 게이트.
