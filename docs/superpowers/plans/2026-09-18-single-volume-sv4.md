@@ -65,4 +65,4 @@ Commits carry no `Co-Authored-By` trailer (OpenCode session, owner decision).
 
 - Selected-request status line raw ISO (both families) — overlaps `2026-09-17-dashboard-experience-improvements.md` B1.
 - SV-3b render-lag follow-up: `selectedRefRef` / `selectionGenerationRef` mirror updates one render late; a reload invoked in the same tick is dropped (fail-closed, retry needed).
-- M-3: add the inspection report digest to the rehearsal evidence's differ-by-design list.
+- [x] M-3: add the inspection report digest to the rehearsal evidence's differ-by-design list. Done 2026-10-15: `.dev-data/sv4-rehearsal/EVIDENCE.md` (machine-local, git-ignored) now names the inspection report digest and why it differs (binds the Core-issued report moment; measurement/evidence/briefing values stay identical).
