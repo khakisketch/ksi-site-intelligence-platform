@@ -3517,3 +3517,13 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 이로써 10-15 세션의 모든 내부 작업(운영자 콘솔 주기 완주·검토 UI·정합 쌍·MCP 정합·배포 실측 결함 2건
   수정·백업/복구 드릴)이 호스티드 CI까지 통과했다. 남은 것은 외부 게이트(고객 실자료 A–E·실호스트 배포·
   현장/측량 수용)와 P7-A2/Task3 결정.
+
+### 2026-10-15 세 번째 호스티드 플레이크 + 하드닝 (`16d72a4`), 최종 GREEN
+- docs-only 커밋(9eb4555) 런 38724342684에서 `test_external_display_publication.py::`
+  `test_actual_core_retries_a_lost_seal_response_with_the_same_declaration`가
+  `ProtocolDeadlineExceeded`(전역 wire deadline)로 1건 실패 — 헬퍼의 2초 데드라인이 **launch context의 wire
+  예산**이 되어 private put·Core 선언/재시도·seal·모든 currentness 검사를 덮는 구조였다(호스티드 러너가
+  중간에 초과). 단일 CPU 재현은 안 됐으나(로컬 충분히 빠름) 실패 서명·메커니즘이 명확해 30초로 완화(경계는
+  유지, 주석에 근거 기록). 파일 17 passed + 부하 3연속 PASS.
+- **재실행 결과**: 같은 런 재실행 = success(플레이크 확증), 하드닝 커밋(16d72a4) 런 38726675208 =
+  **success**(pytest 6223 passed·0 failed, 12:03). main = 16d72a4, 호스티드 CI 전부 GREEN.
