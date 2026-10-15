@@ -223,6 +223,47 @@ export type AnalysisEvidencePage = {
   nextCursor: string | null;
 };
 
+export type AnalysisReviewDecision = "ACKNOWLEDGED" | "NEEDS_FOLLOW_UP";
+
+export type AnalysisReviewEvaluation = {
+  epoch: "BASELINE" | "CURRENT";
+  evaluationId: string;
+  revision: number;
+  evaluationDigest: string;
+};
+
+/** Core-issued immutable identity of the result/evaluations a review applies to. */
+export type AnalysisReviewTarget = {
+  resultId: string;
+  resultRevision: number;
+  reportDigest: string;
+  numericResultIdentityDigest: string;
+  calculationIdentityDigest: string;
+  admissionDigest: string;
+  evaluations: [AnalysisReviewEvaluation, AnalysisReviewEvaluation];
+};
+
+export type AnalysisReviewReceipt = {
+  reviewRef: string;
+  reviewerId: string;
+  decision: AnalysisReviewDecision;
+  comment: string;
+  reviewedAt: string;
+  receiptDigest: string;
+  target: AnalysisReviewTarget;
+  factualLimitations: string[];
+};
+
+export type AnalysisReviewPage = {
+  items: AnalysisReviewReceipt[];
+  nextCursor: string | null;
+};
+
+export type CreateAnalysisReviewInput = {
+  decision: AnalysisReviewDecision;
+  comment: string;
+};
+
 export async function listAnalysisObservations(siteId: string): Promise<AnalysisObservationOption[]> {
   return (await coreFetch<{ items: AnalysisObservationOption[] }>(
     `/v1/sites/${encodeURIComponent(siteId)}/analysis-observations`,
@@ -244,6 +285,40 @@ export function getAnalysis(siteId: string, analysisId: string): Promise<Analysi
 
 export function getAnalysisResult(siteId: string, analysisId: string): Promise<AnalysisView> {
   return getAnalysis(siteId, analysisId);
+}
+
+export function getAnalysisReviewTarget(siteId: string, analysisId: string): Promise<AnalysisReviewTarget> {
+  return coreFetch(
+    `/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/review-target`,
+  );
+}
+
+export function listAnalysisReviews(
+  siteId: string,
+  analysisId: string,
+  options: { limit?: number; cursor?: string | null } = {},
+): Promise<AnalysisReviewPage> {
+  return coreFetch(
+    `/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/reviews`,
+    { query: { limit: options.limit ?? 50, cursor: options.cursor ?? undefined } },
+  );
+}
+
+export function createAnalysisReview(
+  siteId: string,
+  analysisId: string,
+  target: AnalysisReviewTarget,
+  input: CreateAnalysisReviewInput,
+  idempotencyKey: string,
+): Promise<AnalysisReviewReceipt> {
+  return coreFetch(
+    `/v2/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/reviews`,
+    {
+      method: "POST",
+      body: { ...input, target },
+      headers: { "Idempotency-Key": idempotencyKey },
+    },
+  );
 }
 
 export function getAnalysisEvidence(

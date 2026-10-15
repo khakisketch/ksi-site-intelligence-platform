@@ -6,7 +6,7 @@ const router = vi.hoisted(() => ({ replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 import { AnalysisRequestPanel } from "@/app/sites/[siteId]/analysis/AnalysisRequestPanel";
-import type { AnalysisEvidencePage, AnalysisListPage, AnalysisObservationOption, AnalysisView } from "@/lib/core-api/analysis";
+import type { AnalysisEvidencePage, AnalysisListPage, AnalysisObservationOption, AnalysisReviewReceipt, AnalysisReviewTarget, AnalysisView } from "@/lib/core-api/analysis";
 
 const selector = (workOrderId: string, digit: string) => ({ workOrderId, submissionRef: `ers-v1-${digit.repeat(64)}`, revision: 1 });
 const observations: (AnalysisObservationOption & { workAreaIds: string[] })[] = [
@@ -36,6 +36,39 @@ const result = {
   },
   limitationCodes: ["PROVISIONAL_ACCURACY_UNVERIFIED", "INSPECTION_LIMITED"],
 };
+const reviewTarget: AnalysisReviewTarget = {
+  resultId: result.resultId,
+  resultRevision: 1,
+  reportDigest: result.reportDigest,
+  numericResultIdentityDigest: result.numericResultIdentityDigest,
+  calculationIdentityDigest: `sha256:${"6".repeat(64)}`,
+  admissionDigest: `sha256:${"7".repeat(64)}`,
+  evaluations: [
+    { epoch: "BASELINE", evaluationId: "evaluation-baseline", revision: 1, evaluationDigest: `sha256:${"8".repeat(64)}` },
+    { epoch: "CURRENT", evaluationId: "evaluation-current", revision: 2, evaluationDigest: `sha256:${"9".repeat(64)}` },
+  ],
+};
+
+function reviewReceipt(decision: AnalysisReviewReceipt["decision"] = "ACKNOWLEDGED"): AnalysisReviewReceipt {
+  return {
+    reviewRef: `arv2-${"c".repeat(64)}`,
+    reviewerId: "operator-reviewer-1",
+    decision,
+    comment: "현재 결과와 근거를 확인했습니다.",
+    reviewedAt: "2026-10-15T05:30:00Z",
+    receiptDigest: `sha256:${"d".repeat(64)}`,
+    target: reviewTarget,
+    factualLimitations: [
+      "HUMAN_REVIEW_IS_NOT_ACCURACY_VALIDATION",
+      "HUMAN_REVIEW_IS_NOT_FIELD_OR_FLIGHT_AUTHORIZATION",
+      "RELATIVE_VOLUME_IS_NOT_SETTLEMENT_OR_COMPLETION_PROOF",
+    ],
+  };
+}
+
+function reviewPage(items: AnalysisReviewReceipt[] = []) {
+  return { target: reviewTarget, items, nextCursor: null };
+}
 
 function detail(analysisId = "analysis-1", executionState: AnalysisView["executionState"] = "COMPLETED"): AnalysisView {
   return {
@@ -89,8 +122,20 @@ function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
-function renderPanel(overrides: Partial<Parameters<typeof AnalysisRequestPanel>[0]> = {}) {
+function renderPanel(
+  overrides: Partial<Parameters<typeof AnalysisRequestPanel>[0]> = {},
+  reviewFetch?: (url: string, init?: RequestInit) => Promise<Response>,
+) {
   const initial = detail();
+  const delegateFetch = globalThis.fetch;
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (/\/reviews(?:\?|$)/.test(url)) {
+      if (reviewFetch) return reviewFetch(url, init);
+      if (init?.method !== "POST") return Promise.resolve(json(reviewPage()));
+    }
+    return delegateFetch(input, init);
+  }));
   return render(<AnalysisRequestPanel
     siteId="site-1"
     {...scope}
@@ -308,6 +353,116 @@ describe("analysis V2 panel", () => {
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
     expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();
     expect(screen.getByText("정확도 미확인")).toBeTruthy();
+  });
+
+  it("shows 미검토 to viewers without exposing a write action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    renderPanel({ canCreate: false });
+
+    expect(await screen.findByText("미검토")).toBeTruthy();
+    expect(screen.getByText("현재 결과에 대한 검토 기록이 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("radio")).toBeNull();
+    expect(screen.getByText("검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요.")).toBeTruthy();
+  });
+
+  it("shows the exact current ACKNOWLEDGED review and its expandable audit detail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    const review = reviewReceipt();
+    renderPanel({ canCreate: false }, async () => json(reviewPage([review])));
+
+    expect(await screen.findByText("확인됨")).toBeTruthy();
+    expect(screen.getByText(/최근 검토 · operator-reviewer-1/)).toBeTruthy();
+    const summary = screen.getByText("검토 기록");
+    const audit = summary.closest("details");
+    expect(audit?.hasAttribute("open")).toBe(false);
+    fireEvent.click(summary);
+    expect(audit?.textContent).toContain(review.receiptDigest);
+    expect(audit?.textContent).toContain(review.comment);
+    expect(audit?.textContent).toContain(review.target.reportDigest);
+  });
+
+  it("treats a review with a different current-evaluation identity as 미검토", async () => {
+    const staleTarget: AnalysisReviewTarget = {
+      ...reviewTarget,
+      evaluations: [
+        reviewTarget.evaluations[0],
+        { ...reviewTarget.evaluations[1], evaluationId: "previous-current-evaluation" },
+      ],
+    };
+    const staleReview = { ...reviewReceipt(), target: staleTarget };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    renderPanel({ canCreate: false }, async () => json(reviewPage([staleReview])));
+
+    expect(await screen.findByText("미검토")).toBeTruthy();
+    expect(screen.getByText(/이전 결과 또는 평가/)).toBeTruthy();
+    expect(screen.getByText(/최근 검토 · operator-reviewer-1/)).toBeTruthy();
+  });
+
+  it("requires a nonblank comment and enforces the 1,000-character limit by Unicode code point", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    renderPanel({ canCreate: true }, async () => json(reviewPage()));
+
+    await screen.findByText("미검토");
+    fireEvent.click(screen.getByLabelText("확인"));
+    const comment = screen.getByLabelText(/검토 의견/) as HTMLTextAreaElement;
+    const submit = screen.getByRole("button", { name: "검토 기록 추가" }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(comment, { target: { value: "   " } });
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(comment, { target: { value: "😀".repeat(1_000) } });
+    expect(comment.getAttribute("aria-invalid")).toBe("false");
+    expect(submit.disabled).toBe(false);
+
+    fireEvent.change(comment, { target: { value: "😀".repeat(1_001) } });
+    expect(comment.getAttribute("aria-invalid")).toBe("true");
+    expect(submit.disabled).toBe(true);
+  });
+
+  it("submits a decision and required comment, then refreshes the current review state", async () => {
+    const saved = { ...reviewReceipt(), comment: "이번 주 결과를 확인했습니다." };
+    let reads = 0;
+    const reviewFetch = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === "POST") return Promise.resolve(json(saved, 201));
+      reads += 1;
+      return Promise.resolve(json(reviewPage(reads === 1 ? [] : [saved])));
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    renderPanel({ canCreate: true }, reviewFetch);
+
+    await screen.findByText("미검토");
+    fireEvent.click(screen.getByLabelText("확인"));
+    fireEvent.change(screen.getByLabelText(/검토 의견/), { target: { value: saved.comment } });
+    expect((screen.getByRole("button", { name: "검토 기록 추가" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "검토 기록 추가" }));
+
+    expect(await screen.findByText("확인됨")).toBeTruthy();
+    expect(screen.getByText("검토 기록을 저장하고 최신 상태를 다시 불러왔습니다.")).toBeTruthy();
+    const post = reviewFetch.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(post?.[0]).toBe("/api/sites/site-1/analyses/analysis-1/reviews");
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ decision: "ACKNOWLEDGED", comment: saved.comment });
+    expect(post?.[1]?.headers).not.toHaveProperty("Idempotency-Key");
+    expect(reviewFetch).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    [403, "검토 기록에는 현장 쓰기 권한이 필요합니다.", null],
+    [409, "분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.", "분석 상세 다시 불러오기"],
+  ] as const)("guides review permission/conflict status %s", async (status, message, refreshAction) => {
+    const reviewFetch = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(init?.method === "POST"
+      ? json({ message: "server message" }, status)
+      : json(reviewPage())));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
+    renderPanel({ canCreate: true }, reviewFetch);
+
+    await screen.findByText("미검토");
+    fireEvent.click(screen.getByLabelText("확인"));
+    fireEvent.change(screen.getByLabelText(/검토 의견/), { target: { value: "검토했습니다." } });
+    fireEvent.click(screen.getByRole("button", { name: "검토 기록 추가" }));
+
+    expect(await screen.findByText(new RegExp(message))).toBeTruthy();
+    if (refreshAction) expect(screen.getByRole("button", { name: refreshAction })).toBeTruthy();
   });
 
   it("freezes a selector-only POST and reuses its idempotency key after an ambiguous response", async () => {

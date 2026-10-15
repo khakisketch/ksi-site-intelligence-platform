@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -12,6 +12,10 @@ import type {
   AnalysisListItem,
   AnalysisListPage,
   AnalysisObservationOption,
+  AnalysisReviewDecision,
+  AnalysisReviewPage,
+  AnalysisReviewReceipt,
+  AnalysisReviewTarget,
   AnalysisResult,
   AnalysisSelector,
   AnalysisView,
@@ -57,6 +61,7 @@ function latestPriorObservationIndex(
 type AnalysisListRow = Omit<AnalysisListItem, "analysisHref">;
 type AnalysisPageState = Omit<AnalysisListPage, "items"> & { items: AnalysisListRow[] };
 type LoadedEvidence = { analysisId: string; pages: AnalysisEvidencePage[] };
+type LoadedReviews = AnalysisReviewPage & { analysisId: string; target: AnalysisReviewTarget };
 
 const pendingAttemptPrefix = "ksi.analysis.pending.v2";
 const legacyPendingAttemptPrefix = "ksi.analysis.pending.v1";
@@ -372,7 +377,7 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
   </section>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, canCreate }: {
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -382,6 +387,11 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   workAreaId: string;
   workAreaName: string;
   canCreate: boolean;
+  reviewState: LoadedReviews | null;
+  reviewLoading: boolean;
+  reviewError: string | null;
+  onRefreshReview: (analysisId: string) => Promise<boolean>;
+  onRefreshAfterReviewConflict: (analysisId: string) => Promise<boolean>;
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
@@ -393,6 +403,16 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 분석을 완료하지 못했습니다. 현장 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
+    {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisReviewSection
+      siteId={siteId}
+      analysisId={detail.analysisId}
+      reviewState={reviewState}
+      loading={reviewLoading}
+      loadError={reviewError}
+      canReview={canCreate}
+      onRefresh={onRefreshReview}
+      onRefreshAfterConflict={onRefreshAfterReviewConflict}
+    />}
     {selected && evidencePages.length > 0 && <EvidenceSummary pages={evidencePages} />}
   </article>;
 }
@@ -426,6 +446,285 @@ function isEvidencePage(value: unknown): value is AnalysisEvidencePage {
     && Array.isArray(value.items)
     && value.items.length <= 32
     && (value.nextCursor === null || typeof value.nextCursor === "string");
+}
+
+function isAnalysisReviewTarget(value: unknown): value is AnalysisReviewTarget {
+  if (!isRecord(value) || !Array.isArray(value.evaluations) || value.evaluations.length !== 2) return false;
+  const evaluation = (item: unknown, epoch: "BASELINE" | "CURRENT") => isRecord(item)
+    && item.epoch === epoch
+    && typeof item.evaluationId === "string"
+    && typeof item.revision === "number"
+    && Number.isSafeInteger(item.revision)
+    && item.revision > 0
+    && typeof item.evaluationDigest === "string";
+  return typeof value.resultId === "string"
+    && typeof value.resultRevision === "number"
+    && Number.isSafeInteger(value.resultRevision)
+    && value.resultRevision > 0
+    && typeof value.reportDigest === "string"
+    && typeof value.numericResultIdentityDigest === "string"
+    && typeof value.calculationIdentityDigest === "string"
+    && typeof value.admissionDigest === "string"
+    && evaluation(value.evaluations[0], "BASELINE")
+    && evaluation(value.evaluations[1], "CURRENT");
+}
+
+function isAnalysisReviewReceipt(value: unknown): value is AnalysisReviewReceipt {
+  return isRecord(value)
+    && typeof value.reviewRef === "string"
+    && typeof value.reviewerId === "string"
+    && (value.decision === "ACKNOWLEDGED" || value.decision === "NEEDS_FOLLOW_UP")
+    && typeof value.comment === "string"
+    && typeof value.reviewedAt === "string"
+    && typeof value.receiptDigest === "string"
+    && isAnalysisReviewTarget(value.target)
+    && Array.isArray(value.factualLimitations)
+    && value.factualLimitations.every((item) => typeof item === "string");
+}
+
+function isAnalysisReviewPage(value: unknown): value is AnalysisReviewPage & { target: AnalysisReviewTarget } {
+  return isRecord(value)
+    && isAnalysisReviewTarget(value.target)
+    && Array.isArray(value.items)
+    && value.items.length <= 50
+    && value.items.every(isAnalysisReviewReceipt)
+    && (value.nextCursor === null || typeof value.nextCursor === "string");
+}
+
+function sameAnalysisReviewTarget(left: AnalysisReviewTarget, right: AnalysisReviewTarget): boolean {
+  return left.resultId === right.resultId
+    && left.resultRevision === right.resultRevision
+    && left.reportDigest === right.reportDigest
+    && left.numericResultIdentityDigest === right.numericResultIdentityDigest
+    && left.calculationIdentityDigest === right.calculationIdentityDigest
+    && left.admissionDigest === right.admissionDigest
+    && left.evaluations.every((evaluation, index) => {
+      const other = right.evaluations[index];
+      return other !== undefined
+        && evaluation.epoch === other.epoch
+        && evaluation.evaluationId === other.evaluationId
+        && evaluation.revision === other.revision
+        && evaluation.evaluationDigest === other.evaluationDigest;
+    });
+}
+
+function latestAnalysisReview(items: readonly AnalysisReviewReceipt[]): AnalysisReviewReceipt | null {
+  return items.reduce<AnalysisReviewReceipt | null>((latest, item) => {
+    if (!latest) return item;
+    const latestTime = Date.parse(latest.reviewedAt);
+    const currentTime = Date.parse(item.reviewedAt);
+    return Number.isFinite(currentTime) && (!Number.isFinite(latestTime) || currentTime > latestTime) ? item : latest;
+  }, null);
+}
+
+function analysisReviewDecisionLabel(decision: AnalysisReviewDecision): string {
+  return decision === "ACKNOWLEDGED" ? "확인" : "후속 필요";
+}
+
+function reviewResponseError(status: number): string {
+  if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
+  if (status === 403) return "검토 기록에는 현장 쓰기 권한이 필요합니다. 권한 있는 현장 담당자에게 요청하세요.";
+  if (status === 404) return "이 분석 결과는 아직 검토할 수 없습니다. 분석 상세를 다시 불러오세요.";
+  if (status === 409) return "분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.";
+  if (status === 503) return "검토 기록 저장소를 사용할 수 없습니다. 잠시 후 검토 상태를 확인하세요.";
+  return "검토 기록을 저장하지 못했습니다. 입력과 현장 상태를 확인하세요.";
+}
+
+function analysisReviewLoadError(status: number): string {
+  if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
+  if (status === 403) return "검토 상태를 조회할 권한이 없습니다.";
+  if (status === 404) return "검토할 결과를 찾을 수 없습니다. 분석 상세를 다시 불러오세요.";
+  if (status === 409) return "분석 기록이 갱신되었습니다. 상세를 다시 불러오세요.";
+  if (status === 503) return "검토 상태 저장소를 사용할 수 없습니다. 잠시 후 다시 시도하세요.";
+  return "검토 상태를 불러오지 못했습니다.";
+}
+
+function reviewUrl(siteId: string, analysisId: string) {
+  return `/api/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/reviews?limit=50`;
+}
+
+function AnalysisReviewAuditDetail({ review }: { review: AnalysisReviewReceipt }) {
+  const { target } = review;
+  return <details className="mt-2 rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+    <summary className="tap-target flex cursor-pointer flex-wrap items-center gap-x-2 font-semibold">검토 기록 <span className="min-w-0 break-all font-normal text-ink-muted">· {analysisReviewDecisionLabel(review.decision)} · {review.reviewRef}</span></summary>
+    <div className="mt-2 flex flex-col gap-1 break-all border-t border-line pt-2">
+      <p>검토 다이제스트 · {review.receiptDigest}</p>
+      <p>검토 의견 · {review.comment}</p>
+      <p>검토 대상 · {target.resultId} · revision {target.resultRevision}</p>
+      <p>보고서 다이제스트 · {target.reportDigest}</p>
+      <p>수치 결과 ID 다이제스트 · {target.numericResultIdentityDigest}</p>
+      <p>계산 identity 다이제스트 · {target.calculationIdentityDigest}</p>
+      <p>admission 다이제스트 · {target.admissionDigest}</p>
+      {target.evaluations.map((evaluation) => <p key={evaluation.epoch}>
+        {evaluation.epoch === "BASELINE" ? "기준" : "현재"} 평가 · {evaluation.evaluationId} · revision {evaluation.revision} · {evaluation.evaluationDigest}
+      </p>)}
+      <p className="mt-1 text-ink-muted">검토 한계 · 정확도 검증, 현장·비행 권한, 정산·완료 증명을 뜻하지 않습니다.</p>
+    </div>
+  </details>;
+}
+
+function AnalysisReviewSection({
+  siteId,
+  analysisId,
+  reviewState,
+  loading,
+  loadError,
+  canReview,
+  onRefresh,
+  onRefreshAfterConflict,
+}: {
+  siteId: string;
+  analysisId: string;
+  reviewState: LoadedReviews | null;
+  loading: boolean;
+  loadError: string | null;
+  canReview: boolean;
+  onRefresh: (analysisId: string) => Promise<boolean>;
+  onRefreshAfterConflict: (analysisId: string) => Promise<boolean>;
+}) {
+  const [decision, setDecision] = useState<AnalysisReviewDecision | "">("");
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [needsDetailRefresh, setNeedsDetailRefresh] = useState(false);
+  const latest = reviewState ? latestAnalysisReview(reviewState.items) : null;
+  const latestMatchesCurrentTarget = Boolean(latest && reviewState && sameAnalysisReviewTarget(latest.target, reviewState.target));
+  const currentDecision = latestMatchesCurrentTarget && latest ? latest.decision : null;
+  const status = needsDetailRefresh
+    ? { label: "상세 새로고침 필요", tone: "warning" as const }
+    : loading
+      ? { label: "상태 확인 중", tone: "progress" as const }
+      : loadError || !reviewState
+        ? { label: "상태 확인 불가", tone: "warning" as const }
+        : currentDecision === "ACKNOWLEDGED"
+      ? { label: "확인됨", tone: "positive" as const }
+      : currentDecision === "NEEDS_FOLLOW_UP"
+        ? { label: "후속 필요", tone: "caution" as const }
+        : { label: "미검토", tone: "neutral" as const };
+  const commentLength = [...comment].length;
+  const canSubmit = canReview
+    && !loading
+    && !busy
+    && !loadError
+    && Boolean(reviewState)
+    && !needsDetailRefresh
+    && Boolean(decision)
+    && comment.trim().length > 0
+    && commentLength <= 1_000;
+
+  const submitReview = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!canSubmit || !decision) return;
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(analysisId)}/reviews`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ decision, comment: comment.trim() }),
+      });
+      const value: unknown = await response.json().catch(() => null);
+      if (response.status === 403) throw new Error(reviewResponseError(403));
+      if (response.status === 409) {
+        setNeedsDetailRefresh(true);
+        throw new Error(reviewResponseError(409));
+      }
+      if (!response.ok || !isAnalysisReviewReceipt(value)) {
+        setNeedsDetailRefresh(true);
+        throw new Error(response.status ? reviewResponseError(response.status) : "검토 기록 저장 여부를 확인하지 못했습니다. 먼저 상세를 새로고침하세요.");
+      }
+
+      setDecision("");
+      setComment("");
+      const refreshed = await onRefresh(analysisId);
+      setNotice(refreshed
+        ? "검토 기록을 저장하고 최신 상태를 다시 불러왔습니다."
+        : "검토 기록은 저장됐지만 최신 상태를 불러오지 못했습니다. 상태를 새로고침하세요.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "검토 기록 저장 여부를 확인하지 못했습니다. 먼저 상세를 새로고침하세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const refreshAfterConflict = async () => {
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    const refreshed = await onRefreshAfterConflict(analysisId);
+    if (refreshed) setNeedsDetailRefresh(false);
+    else setActionError("상세 또는 검토 상태를 새로 불러오지 못했습니다. 다시 시도하세요.");
+    setBusy(false);
+  };
+
+  return <section className="border-t border-line px-4 py-3" aria-label="분석 결과 검토">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <h3 className="text-[13px] font-bold">결과 검토</h3>
+      <StateBadge label={status.label} tone={status.tone} />
+    </div>
+    {loading && <p role="status" className="mt-2 text-[12px] text-ink-2">현재 결과 검토 상태를 불러오는 중입니다.</p>}
+    {loadError && <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-crit-ink" role="alert">
+      <span>{loadError}</span>
+      <button type="button" className="btn" disabled={busy || loading} onClick={() => {
+        if (loadError.includes("분석 기록이 갱신되었습니다")) void refreshAfterConflict();
+        else void onRefresh(analysisId);
+      }}>{loadError.includes("분석 기록이 갱신되었습니다") ? "분석 상세 다시 불러오기" : "검토 상태 다시 불러오기"}</button>
+    </div>}
+    {!loading && !loadError && reviewState && <>
+      {latest && !needsDetailRefresh
+        ? <p className="mt-2 break-words text-[12px] text-ink-2">최근 검토 · {latest.reviewerId} · {formatKoreanDateTime(latest.reviewedAt, { dateStyle: "short", timeStyle: "short" })}</p>
+        : !latest && !needsDetailRefresh
+          ? <p className="mt-2 text-[12px] text-ink-2">현재 결과에 대한 검토 기록이 없습니다.</p>
+          : null}
+      {latest && !needsDetailRefresh && !latestMatchesCurrentTarget && <p className="mt-2 rounded-md bg-high-bg px-3 py-2 text-[12px] leading-5 text-high-ink">최근 기록은 이전 결과 또는 평가를 대상으로 해 현재 결과 검토로 인정되지 않습니다.</p>}
+      {latest && !needsDetailRefresh && <AnalysisReviewAuditDetail review={latest} />}
+    </>}
+    {!loading && !loadError && !reviewState && <p className="mt-2 text-[12px] text-ink-2">현재 결과 검토 상태를 확인할 수 없습니다.</p>}
+    <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">이 검토는 결과 활용에 대한 사람의 기록이며 정확도 검증이나 정산·완료 승인이 아닙니다.</p>
+    {actionError && <p role="alert" className="mt-3 rounded-md border border-crit bg-crit-bg px-3 py-2 text-[12px] leading-5 text-crit-ink">{actionError}</p>}
+    {notice && <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12px] leading-5 text-ink-2">{notice}</p>}
+    {needsDetailRefresh && <button type="button" className="btn mt-3" disabled={busy} onClick={() => void refreshAfterConflict()}>{busy ? "상세 다시 불러오는 중" : "분석 상세 다시 불러오기"}</button>}
+    {canReview ? <form className="mt-3 grid gap-3 border-t border-line pt-3" onSubmit={(event) => void submitReview(event)}>
+      <fieldset className="grid gap-2 sm:grid-cols-2" disabled={busy || loading || Boolean(loadError) || needsDetailRefresh}>
+        <legend className="mb-1 text-[12.5px] font-semibold">검토 결정 선택</legend>
+        <label className="flex min-h-11 items-center gap-2 rounded-md border border-line px-3 py-2 text-[12.5px]">
+          <input type="radio" name={`review-decision-${analysisId}`} value="ACKNOWLEDGED" checked={decision === "ACKNOWLEDGED"} onChange={() => { setDecision("ACKNOWLEDGED"); setActionError(null); }} />
+          확인
+        </label>
+        <label className="flex min-h-11 items-center gap-2 rounded-md border border-line px-3 py-2 text-[12.5px]">
+          <input type="radio" name={`review-decision-${analysisId}`} value="NEEDS_FOLLOW_UP" checked={decision === "NEEDS_FOLLOW_UP"} onChange={() => { setDecision("NEEDS_FOLLOW_UP"); setActionError(null); }} />
+          후속 필요
+        </label>
+      </fieldset>
+      <label className="text-[12.5px] font-semibold" htmlFor={`review-comment-${analysisId}`}>검토 의견 <span className="font-normal text-ink-muted">· 필수, 최대 1,000자</span>
+        <textarea
+          id={`review-comment-${analysisId}`}
+          className="input mt-1 min-h-24 w-full resize-y"
+          required
+          minLength={1}
+          aria-invalid={commentLength > 1_000}
+          aria-describedby={`review-comment-help-${analysisId}`}
+          value={comment}
+          disabled={busy || loading || Boolean(loadError) || needsDetailRefresh}
+          onChange={(event) => { setComment(event.target.value); setActionError(null); }}
+        />
+        <span
+          id={`review-comment-help-${analysisId}`}
+          className={`mt-1 block text-right text-[11.5px] font-normal ${commentLength > 1_000 ? "text-crit-ink" : "text-ink-muted"}`}
+          aria-live="polite"
+        >
+          {commentLength > 1_000 ? "최대 1,000자까지 입력할 수 있습니다. " : null}
+          {formatCountKo(commentLength)} / 1,000자
+        </span>
+      </label>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "검토 기록 중" : "검토 기록 추가"}</button>
+        {!decision || comment.trim().length === 0 ? <p className="text-[11.5px] text-ink-muted">결정과 검토 의견을 입력하면 기록할 수 있습니다.</p> : null}
+      </div>
+    </form> : <p className="mt-3 border-t border-line pt-3 text-[12px] leading-5 text-ink-2">검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요.</p>}
+  </section>;
 }
 
 function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
@@ -520,15 +819,20 @@ export function AnalysisRequestPanel({
   const [evidence, setEvidence] = useState<LoadedEvidence | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
   const [evidenceRestartRequired, setEvidenceRestartRequired] = useState(false);
+  const [reviewData, setReviewData] = useState<LoadedReviews | null>(null);
+  const [reviewLoadingId, setReviewLoadingId] = useState<string | null>(null);
+  const [reviewLoadError, setReviewLoadError] = useState<{ analysisId: string; message: string } | null>(null);
   const selectedIdRef = useRef<string | null>(selectedId);
   const mountedRef = useRef(true);
   const createController = useRef<AbortController | null>(null);
   const detailController = useRef<AbortController | null>(null);
   const evidenceController = useRef<AbortController | null>(null);
+  const reviewController = useRef<AbortController | null>(null);
   const listController = useRef<AbortController | null>(null);
   const createGeneration = useRef(0);
   const detailGeneration = useRef(0);
   const evidenceGeneration = useRef(0);
+  const reviewGeneration = useRef(0);
   const listGeneration = useRef(0);
   const pollGeneration = useRef(0);
   const attemptScope = useMemo(() => organizationId && principalId ? { organizationId, principalId, siteId } : null, [organizationId, principalId, siteId]);
@@ -543,6 +847,9 @@ export function AnalysisRequestPanel({
   const selectedSummary = rows.find((item) => item.analysisId === selectedId) ?? null;
   const selectedDetail = selectedId ? details.get(selectedId) ?? null : null;
   const selectedExecutionState = selectedSummary?.executionState;
+  const selectedReviewKey = selectedId && selectedDetail?.executionState === "COMPLETED" && selectedDetail.result
+    ? [selectedId, selectedDetail.result.resultId, selectedDetail.result.reportDigest, selectedDetail.evidenceRevision, selectedDetail.evidenceDigest, selectedDetail.suitabilityState].join(":")
+    : null;
   const hasTerminalItems = rows.some((item) => item.executionState === "COMPLETED" || item.executionState === "FAILED");
   const evidencePages = evidence?.analysisId === selectedId ? evidence.pages : [];
   const lastEvidencePage = evidencePages.at(-1);
@@ -590,12 +897,24 @@ export function AnalysisRequestPanel({
       evidenceController.current?.abort();
       setEvidenceLoading(false);
       setEvidenceRestartRequired(false);
+      reviewGeneration.current += 1;
+      reviewController.current?.abort();
+      setReviewData(null);
+      setReviewLoadingId(null);
+      setReviewLoadError(null);
     }
   }, [setDetailsAndRef]);
 
   const upsertDetail = useCallback((detail: AnalysisView) => {
     const previous = detailsRef.current.get(detail.analysisId);
     setDetailsAndRef((current) => new Map(current).set(detail.analysisId, detail));
+    if (selectedIdRef.current === detail.analysisId && (detail.executionState !== "COMPLETED" || !detail.result)) {
+      reviewGeneration.current += 1;
+      reviewController.current?.abort();
+      setReviewData(null);
+      setReviewLoadingId(null);
+      setReviewLoadError(null);
+    }
     if (previous && (previous.evidenceRevision !== detail.evidenceRevision || previous.evidenceDigest !== detail.evidenceDigest)) {
       setEvidence((current) => current?.analysisId === detail.analysisId ? null : current);
       setEvidenceRestartRequired(false);
@@ -652,9 +971,14 @@ export function AnalysisRequestPanel({
     pollGeneration.current += 1;
     detailController.current?.abort();
     evidenceController.current?.abort();
+    reviewGeneration.current += 1;
+    reviewController.current?.abort();
     selectedIdRef.current = analysisId;
     setSelectedId(analysisId);
     setEvidence(null);
+    setReviewData(null);
+    setReviewLoadingId(null);
+    setReviewLoadError(null);
     setEvidenceRestartRequired(false);
     setEvidenceLoading(false);
     setError(null);
@@ -668,10 +992,12 @@ export function AnalysisRequestPanel({
       createGeneration.current += 1;
       detailGeneration.current += 1;
       evidenceGeneration.current += 1;
+      reviewGeneration.current += 1;
       pollGeneration.current += 1;
       createController.current?.abort();
       detailController.current?.abort();
       evidenceController.current?.abort();
+      reviewController.current?.abort();
       listController.current?.abort();
     };
   }, []);
@@ -707,6 +1033,36 @@ export function AnalysisRequestPanel({
       }
     }
   }, [retireDetail, siteId, upsertDetail]);
+
+  const loadReviewState = useCallback(async (analysisId: string): Promise<boolean> => {
+    reviewController.current?.abort();
+    const controller = new AbortController();
+    reviewController.current = controller;
+    const generation = ++reviewGeneration.current;
+    if (mountedRef.current && selectedIdRef.current === analysisId) {
+      setReviewData(null);
+      setReviewLoadError(null);
+      setReviewLoadingId(analysisId);
+    }
+    try {
+      const response = await fetch(reviewUrl(siteId, analysisId), { cache: "no-store", signal: controller.signal });
+      const value: unknown = await response.json().catch(() => null);
+      if (!response.ok || !isAnalysisReviewPage(value)) throw new Error(analysisReviewLoadError(response.status));
+      if (!mountedRef.current || controller.signal.aborted || selectedIdRef.current !== analysisId || reviewGeneration.current !== generation) return false;
+      setReviewData({ analysisId, target: value.target, items: value.items, nextCursor: value.nextCursor });
+      setReviewLoadError(null);
+      return true;
+    } catch (loadError) {
+      if (loadError instanceof DOMException && loadError.name === "AbortError") return false;
+      if (mountedRef.current && selectedIdRef.current === analysisId && reviewGeneration.current === generation) {
+        setReviewData(null);
+        setReviewLoadError({ analysisId, message: loadError instanceof Error ? loadError.message : "검토 상태를 불러오지 못했습니다." });
+      }
+      return false;
+    } finally {
+      if (mountedRef.current && selectedIdRef.current === analysisId && reviewGeneration.current === generation) setReviewLoadingId(null);
+    }
+  }, [siteId]);
 
   const fetchListPage = useCallback(async (cursor: string | null, signal: AbortSignal) => {
     const response = await fetch(listUrl(siteId, cursor), { cache: "no-store", signal });
@@ -765,6 +1121,11 @@ export function AnalysisRequestPanel({
     }
   }, [fetchListPage, refreshDetail, retireDetail, setPagesAndRef, setPinnedAndRef]);
 
+  const refreshReviewAfterConflict = useCallback(async (analysisId: string): Promise<boolean> => {
+    await refreshAnalyses();
+    return loadReviewState(analysisId);
+  }, [loadReviewState, refreshAnalyses]);
+
   const loadMoreAnalyses = async () => {
     const cursor = pagesRef.current.at(-1)?.nextCursor ?? null;
     if (!cursor || listLoading) return;
@@ -808,10 +1169,26 @@ export function AnalysisRequestPanel({
   }, [selectedExecutionState, selectedId, refreshDetail]);
 
   useEffect(() => {
+    if (!selectedId || !selectedReviewKey) {
+      reviewGeneration.current += 1;
+      reviewController.current?.abort();
+      return;
+    }
+    const timer = setTimeout(() => { void loadReviewState(selectedId); }, 0);
+    return () => {
+      clearTimeout(timer);
+      reviewController.current?.abort();
+    };
+  }, [loadReviewState, selectedId, selectedReviewKey]);
+
+  useEffect(() => {
     if (!hasTerminalItems) return;
     const refreshWhenVisible = () => { if (document.visibilityState === "visible") void refreshAnalyses(); };
     const timer = setInterval(refreshWhenVisible, 15_000);
-    const refreshOnFocus = () => void refreshAnalyses();
+    const refreshOnFocus = () => {
+      void refreshAnalyses();
+      if (selectedIdRef.current && selectedReviewKey) void loadReviewState(selectedIdRef.current);
+    };
     window.addEventListener("focus", refreshOnFocus);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
@@ -819,7 +1196,7 @@ export function AnalysisRequestPanel({
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [hasTerminalItems, refreshAnalyses]);
+  }, [hasTerminalItems, loadReviewState, refreshAnalyses, selectedReviewKey]);
 
   useEffect(() => {
     if (!selectedId || (selectedExecutionState !== "QUEUED" && selectedExecutionState !== "RUNNING")) return;
@@ -1055,6 +1432,11 @@ export function AnalysisRequestPanel({
         workAreaId={summary.workAreaId}
         workAreaName={workAreaNameById.get(summary.workAreaId) ?? summary.workAreaId}
         canCreate={canCreate}
+        reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
+        reviewLoading={reviewLoadingId === summary.analysisId}
+        reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}
+        onRefreshReview={loadReviewState}
+        onRefreshAfterReviewConflict={refreshReviewAfterConflict}
       />)}
       {rows.length === 0 && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">이 현장에는 아직 분석 요청이 없습니다.</p>}
     </section>

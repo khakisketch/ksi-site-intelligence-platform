@@ -3461,6 +3461,30 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 **의미/한계**: 전부 합성 리그 실측이며 현장·고객 정확도가 아니다. 검토 단계의 UI 화면화가 끝나면
 "화면만으로 완주" 주장의 증거가 닫힌다.
 
+### 2026-10-15 Dashboard exact-result human-use review UI — 구현·라이브 확인 (synthetic F-03)
+
+- `apps/dashboard/`에만 구현했다. 완료 결과 선택 시 Core V2의 현재 review target과 review 이력을
+  조회하고, 최신 영수증이 결과 revision/digest와 **기준·현재 평가의 ID/revision/digest 모두** 일치할
+  때만 `확인됨` 또는 `후속 필요`로 표시한다. 오래된 target은 `미검토`로 처리하면서 이전 review의
+  reviewer/time과 expandable audit details는 과거 기록으로 남긴다.
+- 결정 입력은 `SITES_WRITE`가 있을 때만 노출한다. 공백을 제외한 필수 의견을 1–1,000 Unicode code
+  point로 검증하고, Core가 생성하는 영수증의 digest·comment·target identity와 한계 안내를 표시한다.
+  Same-origin POST는 브라우저로부터 decision/comment만 받고, 서버가 매 쓰기 직전에 fresh target을
+  조회해 서버 생성 idempotency key로 Core에 전달한다. Core/OpenAPI·권한·계산 계약은 변경하지 않았다.
+- 회귀 테스트: 전체 Dashboard Vitest **871 passed / 113 files**, 변경 파일 ESLint, `npx tsc --noEmit`,
+  `npm run build` 모두 PASS. 라이브 합성 F-03 (`localhost:3241` → Core `:8092`)에서
+  `analysis-v1-0184cb0113a91e014a70edef6a61e44a`의 기존 `arv2-e80ecbee…`를 조회하고, OIDC `local-admin`
+  으로 두 번째 `ACKNOWLEDGED` review를 POST해 **201**(`arv2-837140d222994cad…`, receipt digest
+  `268dcddd…`) 받았다. 브라우저 request body는 decision/comment만 담고, 응답은 두 evaluation까지 포함한
+  exact target을 반환했다. 새로고침 후 local-admin/time/comment가 Core에서 다시 조회되어 유지됨을 확인했다.
+- OIDC `local-viewer`에서는 최신 상태를 읽을 수 있지만 radio/comment/submit은 노출되지 않고 담당자 안내만
+  표시됐다. 모바일 390px에서 `documentElement.scrollWidth === 390`; 처음 발견한 expandable reviewRef의
+  수평 overflow를 `break-all`로 수정하고 재확인했다. Chromium console error 0. desktop/mobile/viewer 캡처:
+  `/tmp/opencode/ksi-f03-20261015/shots/analysis-review-*.png`.
+- 범위/한계: 리그와 records는 전부 합성 자료이며 고객·정확도·현장/정산 수용 또는 HIL 증거가 아니다.
+  Viewer의 Home이 부분 ledger unavailable을 표시했으나 본 분석 열람·검토는 정상 — 이 관련 없는 상태는
+  변경하지 않았다. 변경은 미커밋이며 기존 `apps/dashboard/tsconfig.json` 수정과 11개 PNG를 보존했다.
+
 ### 2026-10-15 백업/복구 드릴 재실행 (`deploy/bin/smoke-backup-restore.sh`) — 합성 볼륨 범위
 
 - 현재 스크립트 계열(backup-vm.sh → restore-check-vm.sh)을 자기완결 드릴로 재실행: 고유 이름의
