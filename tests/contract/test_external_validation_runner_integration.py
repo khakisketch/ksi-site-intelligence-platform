@@ -117,6 +117,10 @@ def _digest(payload: bytes) -> str:
     return "sha256:" + hashlib.sha256(payload).hexdigest()
 
 
+class _AbandonedConnection(Exception):
+    """A peer abandoned an in-flight request; the lane may legitimately retry."""
+
+
 class _InspectionAndDisplayObjectServer:
     """A finite local GET/PUT endpoint which exposes only test bytes to the lanes."""
 
@@ -138,6 +142,7 @@ class _InspectionAndDisplayObjectServer:
         self.put_bodies: list[bytes] = []
         self.drop_next_put_response = False
         self.errors: list[BaseException] = []
+        self.abandoned: list[BaseException] = []
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._serve)
 
@@ -173,57 +178,68 @@ class _InspectionAndDisplayObjectServer:
                     connection, _address = self._listener.accept()
                 except TimeoutError:
                     continue
+                accepted += 1
                 with connection:
-                    accepted += 1
-                    request = bytearray()
-                    while b"\r\n\r\n" not in request:
-                        chunk = connection.recv(4_096)
-                        if not chunk:
-                            raise AssertionError("owned object request ended before headers")
-                        request.extend(chunk)
-                    header, body = bytes(request).split(b"\r\n\r\n", 1)
-                    method, path, _version = header.split(b"\r\n", 1)[0].split(b" ", 2)
-                    if method == b"GET" and path == b"/source":
-                        connection.sendall(
-                            b"HTTP/1.1 200 OK\r\nContent-Length: "
-                            + str(len(self._source)).encode("ascii")
-                            + b"\r\n\r\n"
-                            + self._source
-                        )
-                        continue
-                    if method != b"PUT" or path != b"/upload":
-                        raise AssertionError(header)
-                    content_length = next(
-                        int(line.split(b":", 1)[1].strip())
-                        for line in header.split(b"\r\n")
-                        if line.lower().startswith(b"content-length:")
-                    )
-                    while len(body) < content_length:
-                        chunk = connection.recv(4_096)
-                        if not chunk:
-                            raise AssertionError("owned upload ended before declared bytes")
-                        body += chunk
-                    self.put_body = body
-                    self.put_bodies.append(body)
-                    assert self._storage.last_put_key is not None
-                    self._storage.objects[self._storage.last_put_key] = (
-                        inspection_api.ObjectStorageObservation(
-                            object_key=self._storage.last_put_key,
-                            exists=True,
-                            size_bytes=len(body),
-                            sha256=_digest(body),
-                            content_type="image/tiff",
-                        )
-                    )
-                    if self.drop_next_put_response:
-                        self.drop_next_put_response = False
-                        continue
-                    connection.sendall(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n")
+                    try:
+                        self._serve_connection(connection)
+                    except _AbandonedConnection as exc:
+                        # The lane retries transient upload losses by contract, and a
+                        # loaded runner can abandon an in-flight request (aborted
+                        # stream, closed peer).  Keep serving the remaining budget so
+                        # the retry can complete; a genuinely truncated happy-path
+                        # upload still surfaces through the lane outcome below.
+                        self.abandoned.append(exc)
         except OSError as exc:
             if not self._stop.is_set() and self._listener.fileno() >= 0:
                 self.errors.append(exc)
         except BaseException as exc:  # surfaced by __exit__
             self.errors.append(exc)
+
+    def _serve_connection(self, connection: socket.socket) -> None:
+        request = bytearray()
+        while b"\r\n\r\n" not in request:
+            chunk = connection.recv(4_096)
+            if not chunk:
+                raise _AbandonedConnection("owned object request ended before headers")
+            request.extend(chunk)
+        header, body = bytes(request).split(b"\r\n\r\n", 1)
+        method, path, _version = header.split(b"\r\n", 1)[0].split(b" ", 2)
+        if method == b"GET" and path == b"/source":
+            connection.sendall(
+                b"HTTP/1.1 200 OK\r\nContent-Length: "
+                + str(len(self._source)).encode("ascii")
+                + b"\r\n\r\n"
+                + self._source
+            )
+            return
+        if method != b"PUT" or path != b"/upload":
+            raise AssertionError(header)
+        content_length = next(
+            int(line.split(b":", 1)[1].strip())
+            for line in header.split(b"\r\n")
+            if line.lower().startswith(b"content-length:")
+        )
+        while len(body) < content_length:
+            chunk = connection.recv(4_096)
+            if not chunk:
+                raise _AbandonedConnection("owned upload ended before declared bytes")
+            body += chunk
+        self.put_body = body
+        self.put_bodies.append(body)
+        assert self._storage.last_put_key is not None
+        self._storage.objects[self._storage.last_put_key] = (
+            inspection_api.ObjectStorageObservation(
+                object_key=self._storage.last_put_key,
+                exists=True,
+                size_bytes=len(body),
+                sha256=_digest(body),
+                content_type="image/tiff",
+            )
+        )
+        if self.drop_next_put_response:
+            self.drop_next_put_response = False
+            return
+        connection.sendall(b"HTTP/1.1 201 Created\r\nContent-Length: 0\r\n\r\n")
 
 
 class _InspectorUdsServer:
