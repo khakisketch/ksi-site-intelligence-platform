@@ -3569,9 +3569,27 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   실제 TCP 증거를 만드는 강화된 Task3 시험 기준. 근거 문서: `2026-10-09-isolated-fresh-platform-verification.md`
   (sha256 `fba7776eb022ffb3…`) + 본 원장의 P7-A2 제안 절. 승인 범위 밖 효과 없음(런타임 외부 네트워킹·
   프록시·새 서비스·방화벽 변경 금지).
-- **새 bounded rail**: 2026-10-15T13:40Z + 4h (P7 원안의 4시간 안전 레일과 동일 규칙). 완료 못 하면
+- **새 bounded rail**: 2026-10-15T14:22Z + 4h (실제 시작) (P7 원안의 4시간 안전 레일과 동일 규칙). 완료 못 하면
   실측 상태·보존 자원·다음 결정을 기록하고 replay하지 않는다.
 - 보존 재료 확인: worktree `.worktrees/p7-fresh-verification-20261009`(4a0a08e, clean), scratch
   `p7-fresh-verification-20261009`(freeze/task1/task2 receipts, compose.override, 고립 venv), 후보 이미지
   3건(617c3b95b509/f1d42c1b8153/0dae50617e84), 소유 볼륨 2건(ksi-p7-34cc796826d6_ksi-data/_objects).
   프로젝트 이름 `ksi-p7-34cc796826d6` 유지 → 동일 소유 볼륨 재사용(A2 제안대로).
+
+### P7-A2 실행 완료 — Task3 (게시 포트 없는 호스트→브리지 IP TCP) — 2026-10-15
+
+- 승인 레일 2026-10-15T14:22Z 기준 당일 완주. 스크래치: `p7-fresh-verification-20261009`
+  (`compose.a2.override.yaml`, `task3-a2-receipt.json`, `driver-a2-tcp.py`, TCP 영수증 2건,
+  `trial-tokens-a2.json`; 만료된 시험 자격은 계획대로 현재 형식·TTL24h로 재생성, 원본은 `.pre-a2`).
+- **병합 구성 실증**: 서비스 {init-volumes, core, minio}, 후보 이미지 617c3b95b509(동결), **게시 포트
+  없음**(A2), 네트워크 internal, 소유 볼륨 ksi-p7-34cc796826d6_ksi-data/_objects 재사용(프로젝트명 유지).
+- **증거(전부 실측)**: ①소유 스토리지 프로브로 버킷 생성·바이트 기록 sha256 `58f23e72…`·readback 일치
+  ②Core 부팅 후 **호스트→사설 브리지 IP(172.29.0.3):8000 /ready 200**(게시 포트 없이) ③TCP 인가/테넌트/
+  멱등/비노출 단언 **16/16 PASS**(401·whoami·site 201/UNMAPPED·viewer 200·중복 409 DUPLICATE_SITE_ID·
+  viewer 403·foreign/nonexistent 404 동일 본문·foreign 목록 제외·/openapi.json 404·취득 라우트 404)
+  ④재시작(동일 볼륨/자격/이미지) 후 재생 **15/15 PASS**(동일 신원·중복 409) + 실제 이미지 ID = 동결 후보
+  ⑤재시작 후 스토리지 바이트 동일 sha256 ⑥정리: 소유 컨테이너 3건·네트워크만 제거, **볼륨·이미지·영수증
+  보존**(down -v·prune 없음). 영수증: `task3-a2-receipt.json`.
+- 의미·한계: 합성 시험이며 고객/현장/HIL 아님. "호스트→내부 IP 성공"은 완전한 외부-차단/커널 증명이 아니고
+  공개 localhost 포트나 운영 네트워크를 검증한 것도 아니다(A2 제안 문구대로). 제품 Compose/Dockerfile/
+  소스/정책 변경 없음 — A2 델타는 스크래치 오버레이에만 존재한다.
