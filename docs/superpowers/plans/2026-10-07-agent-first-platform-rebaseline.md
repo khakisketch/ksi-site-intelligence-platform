@@ -3312,3 +3312,25 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - **경계**: 합성/검증호스트 수용. 세대 회전이 있는 실운영에서는 회전 시점 자재에 참조 유지 여부를
   선택하게 된다(미유지 시 fail-closed `EVIDENCE_CONTEXT_UNAVAILABLE` — 의도된 동작). 현장/고객 수용은
   여전히 외부 게이트.
+
+### 2026-10-15 Task 5c 폐쇄 — 호스트 취소/고아 드릴 + UI 일치 재검증
+
+- **드릴 도구(신규, `4024561`)**: `tools/task5c_host_lifecycle_drill.sh` — 자체 완결(런타임 venv로 드라이버·GeoTIFF
+  입력 생성). **D1 취소**: 실제 시도가 `CONTAINER_BOUND`일 때 드라이버 SIGKILL(완전 피어 소실) → 데몬이
+  `MONITOR_CANCELLED`로 정확 런타임만 kill → 컨테이너/slice/staging 정확 정리 → **durable `CLEANED`**
+  (실측 0.18–1.04 s) → 재기동 없이 서빙 지속, 이후 새 시도 `COMPLETED`/`MEASURED`.
+  **D2 고아 복구**: 시도 중 데몬 SIGKILL → 살아 있는 고아(컨테이너·`ksi-inspector-a*` slice·staging 2건) 실확인 →
+  재기동 → `CLEANUP_REQUIRED(STARTUP_RECOVERY)` → 정확 제거 → slice 소멸 → staging 정리 → `CLEANED`
+  (0.11–0.13 s) → 새 시도 `COMPLETED`/`MEASURED`. 저널 실기록 `/var/lib/ksi-external-runtime/launcher/journal/attempts.jsonl`
+  (드릴 실행 2회분: 05:56–05:57Z 수동, 05:59–06:01Z 결정적 선택 실행).
+- **결정적 선택 전환**: `tests/contract/test_external_inspector_host_enforcement.py`가 두 도구(P1–P13 + D1/D2)를
+  SSH로 구동 — **9 passed · 258 deselected**(180s). 감사 문서: 적대 입력(실레인 `MALFORMED_TIFF`)·취소·고아 복구
+  모두 PASS로 승격, OPEN 항목은 외부 경계만 남김.
+- **UI 일치 재검증(Playwright, F-03 자재)**: 콘솔 스택을 현재 F-03 기록으로 갱신(provider seq 77 + core-data
+  복사) 후 대화형 검증 — OIDC 로그인, **분석 시작 안내**(3개 작업구역·19개 관측 후보·7개 분석 기록), 작업구역
+  선택→기준/현재 관측 목록 채움(에폭·revision 표기), **재사용 분석 상세**(report-0caec0bc·실행 완료) 열람
+  전부 PASS. 함정 2건 기록: (a) 오래된 dev dist 캐시(`.next-ui-verification`)에서 하이드레이션이 정지해
+  스켈레톤만 남는 현상 — 새 dist dir로 교체 시 해소(환경 아티팩트, 공식 E2E 하네스 2/2 PASS로 교차 확인),
+  (b) F-03 주문의 `workAreaIds=[wa-0001]`(A구역)과 분석 영역 `wa-0002` 불일치 — UI는 데이터대로 정확히
+  표시(합성 리그 정렬 차이, 제품 결함 아님).
+- 경계: 합성/검증호스트. 수치(0.18–0.13 s, +0.008 m³)는 이 환경 실측이며 현장/고객 수용이 아니다.
