@@ -3425,3 +3425,38 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   Actions 활성화(계정 CLI)만으로 실실행이 가능했다. AMD64 에뮬레이션 우회는 CI 네이티브 amd64 빌드로 대체됐다.
 - CI가 로컬 절차 공백을 실측으로 드러낸 3건: mypy 3오류(단일-파일 실행이 숨김), 재개 테스트의 0.3초 데드라인
   취약(단일 CPU 재현으로 확정), 가짜 오브젝트 서버의 연결 절단 치명 처리 — 모두 수정 후 이 런에서 green.
+
+### 2026-10-15 운영자 콘솔 주기 완주 + 정합 검증 (라이브 F-03 리그, 합성 범위)
+
+**목표**: "화면 안내만으로 다음 주기 완주"의 잔여 공백(합성 데이터 정합·UI 검토 단계)을 닫는다.
+
+1. **라이브 리그에 OIDC 연결(추가형)**: F-03 Core(8092)를 캡처한 env 그대로 재기동하며
+   `KSI_CORE_HUMAN_AUTH_MODE=DUAL` + 로컬 검증 issuer(9041)·registry만 추가(불투명 토큰 경로 불변,
+   `/ready`·whoami 재확인). 대시보드는 동일 env에서 `CORE_API_BASE_URL=8092`로 3241에 기동 —
+   **읽기 전용 사본(8041)이 아니라 라이브 리그 자체**를 콘솔이 보게 했다.
+2. **합성 정합 쌍 등록(불변 기록 미수정)**: 기존 워크오더 전체가 WGS84 A구역(wa-0001)을 참조하는데
+   합성 DSM 증거는 wa-0002(200000/550000, EPSG:5186)에 정렬돼 있어 UI 사이클이 성립하지 않았다.
+   `register_ui_cycle_pair.py`(기존 리그 스크립트 계열)로 **orders 20/21을 wa-0002에 신규 등록**
+   (submission/evidence/checkpoint CSV 포함). 정책 **v24**(신규 subject, 기존 currentness 보존,
+   seq78) → VM 실검사 **dsm·ortho 모두 MEASURED** → 컨텍스트 **r28**(v24 바인딩, seq79, 기존 9개 보존)
+   → 체크포인트 **VALIDATED ×2**(v24) → **ADMIT_MAPPING**(seq81, mappingDigest efebb88a…). 재-reload
+   (seq80)로 검증 발급이 재시도·성공하는 동작(멱등 reconcile)도 실측.
+3. **UI 주기 완주(Playwright)**: 로그인(OIDC) → 분석 시작 안내 → 작업구역에서 정합 존 선택 →
+   **관측 후보 2건(13:00/14:00 KST = t1/t2)** 선택 → 콘솔에서 **분석 요청** → `analysis-v1-0184cb011…`
+   생성(QUEUED) → 분석 워커 1회 실행 → **COMPLETED·EVALUATED·blockers 없음**, 결과
+   `report-41f518868fe32802…`(net +0.008 m³) → 콘솔에서 목록·상세 확인(스크린샷 6장:
+   `/tmp/opencode/ksi-f03-20261015/shots/`). 검토(ACKNOWLEDGE)는 Core API로 완료 —
+   `arv2-e80ecbee…`(receiptDigest 4c0909f0…). **UI 검토 동작 부재는 갭으로 확인되어 UI 구현을
+   디자인 담당에 위임**(진행 중).
+4. **MCP(Codex) 정합 검증**: ksi-sdata 리그(8061)에서 실제 MCP stdio 세션(initialize→tools/list→
+   `ksi_list_spatial_data_assets`) 실행 — 어댑터 6도구 열거·호출 정상(serverInfo ksi-spatial-data-mcp).
+   **동일 principal(mcp token)·동일 경로에서 MCP 결과와 REST 결과가 정확히 동일**(둘 다 빈 페이지)
+   — 권한 경계도 실측: MCP 클라이언트는 운영자 카탈로그(SPATIAL_DATA_READ 아님·SITES_READ)에서 403
+   (설계 경계), 전용 `/spatial-data-assets`에서만 응답. 빈 결과의 원인은 카탈로그가 AI-ready
+   (inspectionOutcome MEASURED) 상태가 아님(fail-closed) — 양수 데이터 경로는 검사 레인 재수립이
+   선행조건. 리그의 AI egress **활성화 창이 2026-10-15T10:17:46Z에 만료**됨(재프로비저닝 필요).
+   참고: 이번 검증을 위해 sdata 리그에 fresh grant(`sdata-parity-proof-1`, ~10-22)를 프로비저닝·
+   재기동했다(백업 `rights.json.bak-parity`, 원본 보존).
+
+**의미/한계**: 전부 합성 리그 실측이며 현장·고객 정확도가 아니다. 검토 단계의 UI 화면화가 끝나면
+"화면만으로 완주" 주장의 증거가 닫힌다.
