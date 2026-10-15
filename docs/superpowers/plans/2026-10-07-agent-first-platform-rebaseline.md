@@ -3285,4 +3285,6 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   populated 1 → `POST /kill` 204 → **cgroup 소진 86 ms**(상한 15 s) → 정확 제거 → `StopUnit`. 호스트
   pytest 케이스 1건 추가, 결정적 선택 **7 passed**(host 6 + import-boundary). 감사 문서 갱신: 취소/지연 PASS,
   고아 복구는 사건 기반 실증 유지.
-- **전체 스위트 재실행**: 아래 결과로 게이트 갱신(기대: 0 failed).
+- **전체 스위트 재실행 결과(0 failed)**: `pytest tests/contract tests/replay` → **5789 passed · 0 failed · 31 skipped**(761s).
+  직전 실행의 유일 실패였던 same-time revocation replay 케이스가 승인 설계 정렬(8bd098c)로 해소되어 게이트가 clean이다.
+  skipped 31건은 환경 의존(호스트 미구성 NOT_VERIFIED·외부 경계) 표기다.
