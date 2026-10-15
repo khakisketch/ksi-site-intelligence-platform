@@ -3240,3 +3240,24 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `PRIMARY_MOUNT_VERIFIED`→타입드 `FAILED` 종료, stdout 완전 소비(클린 종료)·stderr 0.
 - 감사: `docs/audit/EXTERNAL_INSPECTOR_ROOTLESS_PROFILE_VERIFICATION.md`. OPEN(정직 표기): `-k 'host_'`
   pytest 케이스 전환, 취소 지연 수치·고아 복구 훈련, 적대 입력 E2E — "unavailable is failure" 유지.
+
+### 2026-10-15 주간 재사용(t1→t2) + 적대 입력 E2E + Task 5c pytest 전환
+
+- **적대 입력 실호스트 E2E**: 계약이 요구하는 ortho 자리에 잘린 GeoTIFF(약 60% 절단)를 제출(order 17) → 실제
+  샌드박스 파서가 **`REJECTED`/`MALFORMED_TIFF`** 타입드 판정을 기록하고 레인은 정상 완주(격리 유지·크래시
+  없음). 같은 세대(v20)에서 정상 페어 dsm+ortho는 전부 `MEASURED`. in-process 40케이스(Task 5a)와 함께
+  적대 입력이 실컨테이너 경로에서도 fail-closed임을 증명.
+- **주간 재사용 t1→t2**: 동일 WorkArea/zone(0002)/rule/profile/template, 새 페어(18=04:00–04:30 DSM 100.2,
+  19=05:00–05:30 DSM 100.4 + RGB ortho)로 fresh 입력 결속 admission — v23 단일 세대 → 검사 2× 전부
+  `MEASURED` → 체크포인트 2× `VALIDATED`(3/3, 0.0m) → 매핑 `f446f34f…` seq76 → 결정 ELIGIBLE →
+  `analysis-v1-c0294d58…` **COMPLETED**(`report-91ea5166…`, net **+0.008 m³** = 0.2m×4셀×0.01m², 수치 검증,
+  `uncertaintyM3=null`) → 검토 `arv2-573a59e5…` ACKNOWLEDGED. 진단 계측 원복 후 클린 재기동에도 유지.
+- **드러난 제품 규칙 2건(정상 동작, 리그 교훈)**: ① RELATIVE_VOLUME 정책 선택은 허용 주체가 **정확히 그 페어**
+  여야 한다(추가 주체 포함 시 POLICY_UNAVAILABLE — pair-scoped authority). ② 분석 admission은 subject의
+  **모든** terminal 사실이 현재 세대여야 한다(정책 회전 시 과거 사실의 정책/컨텍스트가 non-current가 되면
+  `EVIDENCE_CONTEXT_UNAVAILABLE`) — 계약의 "새 페어는 fresh 입력 결속 admission"과 일치하며, 재사용은
+  같은 구역/규칙/프로필을 재사용하되 페어별 새 주체·기록을 쓴다.
+- **Task 5c pytest 전환**: `tests/contract/test_external_inspector_host_enforcement.py` 5케이스가 승인
+  호스트에서 도구(`tools/task5c_host_enforcement_verify.py`)를 SSH로 구동해 조각별 증명을 단언. 호스트 미구성
+  시 명시적 NOT_VERIFIED 사유로 skip(수용 아님). **결정적 선택 실주행: 6 passed**(5 host + import-boundary).
+- 경계: 합성/검증호스트 수용 유지. 고객 실자료·현장 정확도·배포/클라우드/CI는 OPEN.
