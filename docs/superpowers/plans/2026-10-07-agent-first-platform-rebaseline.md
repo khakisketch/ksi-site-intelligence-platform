@@ -3360,3 +3360,14 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   vendor API 통합·비교 API·수출 호환의 '증명'을 명시적으로 금지하고, 실제 호환 표면은 **아티팩트 수용**
   (GeoTIFF DSM/ortho: CRS·transform·nodata·유효 픽셀)이며 실자료(공개 DSM 181MB)·검증호스트 체인·2주기/ortho
   크롭으로 실증됐다. 남는 것은 고객 파이프라인 실데이터(A–E)와 함께 오는 수용뿐이다.
+
+### 2026-10-15 CI 게이트 결과와 타이밍 플레이크 1건 (`a4da2ae`)
+
+- run 38692705171: mypy·Core 이미지 스모크·ruff·정규화 등 **10/11 단계 SUCCESS**, pytest 단계에서
+  **6222 passed · 48 skipped · 1 failed**(17분 12초). 실패는 `test_external_analysis_worker_loop.py::`
+  `test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_call` — 재개 응답을
+  의도적으로 **바이트 단위(0.015s/byte)로 스트리밍**하는 테스트라 로컬 실측으로도 호출 1.17s,
+  `renew_finished.wait(timeout=1)`이 CI 러너에서 1초를 넘겼다. 상한은 행(hang) 방지용이므로 15초로
+  완화(검증 대상 invariant — run_once 후 진행 중 재개 없음·inflight 0 — 불변). 로컬 19 passed.
+- 대조: 로컬 `tests/contract tests/replay` = 5789 passed(다른 디렉터리 테스트는 CI가 추가로 수집 —
+  CI 전체가 더 넓다). CI는 이 저장소에서 로컬이 놓친 절차 공백(mypy 3건·타이밍 상한)을 실측으로 잡았다.
