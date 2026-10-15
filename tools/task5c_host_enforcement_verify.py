@@ -29,6 +29,7 @@ import sys
 import time
 import uuid
 from contextlib import suppress
+from typing import Any
 
 sys.path.insert(0, os.environ.get("KSI_RUNTIME_SRC", "/srv/ksi-data-sandbox/runtime/ksisrc"))
 
@@ -218,7 +219,7 @@ def main() -> int:
             "pathlib.Path('/work/report.txt').write_text(report)\n"
             "print(report, flush=True)\n",
         ]
-        payload = {
+        payload: dict[str, Any] = {
             "Image": IMAGE,
             "User": "10004:10004",
             "Cmd": probe_cmd,

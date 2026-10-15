@@ -158,7 +158,7 @@ def test_append_properties_uses_explicit_struct_signature_and_omits_slice() -> N
     manager._append_string = lambda message, value: strings.append(value)  # type: ignore[method-assign]
 
     manager._append_properties(
-        None,
+        None,  # type: ignore[arg-type]
         (
             ("Description", "probe"),
             ("CPUAccounting", True),

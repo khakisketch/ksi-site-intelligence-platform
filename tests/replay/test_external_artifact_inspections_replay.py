@@ -399,6 +399,7 @@ def test_replay_preserves_report_time_display_obligation_after_same_time_revocat
     assert record.report is not None  # noqa: SLF001
     assert record.report.report_digest == expected.report_digest  # noqa: SLF001
     assert policy.policy_digest is not None
+    assert expected.report_digest is not None
     historical = restarted.historical_report(
         subject(),
         report_digest=expected.report_digest,
