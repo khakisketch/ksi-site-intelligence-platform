@@ -3412,3 +3412,16 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 메모: CI가 처음으로 실제 작동하면서 "호스티드 러너에서만" 재현되는 부하 민감 케이스 2건(재개 타임아웃·업로드
   절단)이 순차적으로 드러났다 — 둘 다 제품 결함이 아니라 **테스트 하네스의 타이밍/장애 모델 결함**이었고,
   수정은 실패 조건을 로컬에서 재현(또는 구조적으로 제거)한 뒤 검증했다.
+
+### 2026-10-15 CI 최종 GREEN (run 38703891076) + main 반영
+
+- **PR 검증 라인 전체 성공**: gates(run 38703891076) = `pytest` **6223 passed · 48 skipped · 0 failed**(17:58)
+  + `uv lock --check`·의존성 동기화·production runtime image digest gate·**Core 이미지 빌드+import smoke**·repository
+  normalization·ruff·mypy(765) 전부 SUCCESS. dashboard job = tsc·eslint·**vitest 856 passed**·next build SUCCESS.
+  external-runtime-images 2종(inspector/measurement) = 실제 빌드 + identity/EOF/`libexpat1 2.8.3-1~deb13u1` 핀 검증 SUCCESS.
+- **main 반영**: 로컬 main(55+ 커밋)을 origin/main으로 푸시(956a825..238147f) → GitHub가 PR #37을 merged로 표시,
+  **main 푸시 게이트 런 38706805068**이 이어서 실행(해당 런 로그는 후속 NOTED).
+- 이로써 "④ CI(GitHub Actions disabled + 결제 실패)" 블로커는 **해소**: 리포가 public이라 표준 러너가 무료였고,
+  Actions 활성화(계정 CLI)만으로 실실행이 가능했다. AMD64 에뮬레이션 우회는 CI 네이티브 amd64 빌드로 대체됐다.
+- CI가 로컬 절차 공백을 실측으로 드러낸 3건: mypy 3오류(단일-파일 실행이 숨김), 재개 테스트의 0.3초 데드라인
+  취약(단일 CPU 재현으로 확정), 가짜 오브젝트 서버의 연결 절단 치명 처리 — 모두 수정 후 이 런에서 green.
