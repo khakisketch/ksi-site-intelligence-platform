@@ -3460,3 +3460,13 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 
 **의미/한계**: 전부 합성 리그 실측이며 현장·고객 정확도가 아니다. 검토 단계의 UI 화면화가 끝나면
 "화면만으로 완주" 주장의 증거가 닫힌다.
+
+### 2026-10-15 백업/복구 드릴 재실행 (`deploy/bin/smoke-backup-restore.sh`) — 합성 볼륨 범위
+
+- 현재 스크립트 계열(backup-vm.sh → restore-check-vm.sh)을 자기완결 드릴로 재실행: 고유 이름의
+  합성 docker volume 2개(저널 샘플·오브젝트 샘플) + 합성 키 매니페스트로 번들 생성 →
+  격리 임시 볼륨 복원·검증("journals, objects, and keys.json") → **"synthetic backup/restore smoke
+  passed"**. 번들 아카이브 3종(core-data.tgz·objects.tgz·signing-keys.tgz) 복원 성공.
+- 한계(문서 정합): `docs/ops/VM_DEPLOYMENT_READINESS.md`의 유보를 그대로 유지한다 — 이 드릴은
+  **합성 볼륨 범위의 도구 동작 증거**이며, 실제 운영 호스트의 복구/TLS/UDS/ACL/host 검증이나
+  실데이터 복구 보장이 아니다(별도 승인·실호스트 필요).
