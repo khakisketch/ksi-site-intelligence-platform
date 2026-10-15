@@ -3273,3 +3273,16 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   (a) 현 설계 유지 → 해당 테스트를 이력 조회/현재 억제 검증으로 개정, (b) 표시 의무 우선 → 동일-시각(및
   그 이전) 리보크가 기록 완료 리포트를 무효화하지 못하도록 투영 수정(append-order 중재). 변경 전 Human
   판단 또는 별도 검증 세션을 둔다 — 이번 세션에서는 임의로 어느 쪽도 택하지 않았다.
+
+### 2026-10-15 후속 폐쇄 — replay 테스트 개정 + Task 5c 취소 지연 실측
+
+- **선행 실패 해소(`8bd098c`)**: `test_replay_preserves_report_time_display_obligation_after_same_time_revocation`을
+  승인된 stale-report 설계(a699f35, 스토어 docstring)에 맞춰 개정 — 현재 검사 스냅샷은 비활성 세대에 대해
+  `INSPECTION_PENDING_POLICY`(리포트 없음)를 보고하고, **불변 이력**(레코드의 리포트·`display_required`·
+  `historical_report` 조회)은 재기동 후에도 바이트 그대로 보존됨을 단언. 의무는 약화가 아니라 강화(이력 조회
+  명시 단언 추가). replay 12 passed.
+- **Task 5c 취소/지연 실측 추가**: `tools/task5c_host_enforcement_verify.py`에 P13(정확 Engine kill 드릴) —
+  populated 1 → `POST /kill` 204 → **cgroup 소진 86 ms**(상한 15 s) → 정확 제거 → `StopUnit`. 호스트
+  pytest 케이스 1건 추가, 결정적 선택 **7 passed**(host 6 + import-boundary). 감사 문서 갱신: 취소/지연 PASS,
+  고아 복구는 사건 기반 실증 유지.
+- **전체 스위트 재실행**: 아래 결과로 게이트 갱신(기대: 0 failed).
