@@ -403,6 +403,7 @@ def test_admission_refuses_a_second_active_mapping_for_the_same_pair_zone_policy
     with pytest.raises(DuplicateActiveMappingError, match="revoke it"):
         catalog.admit_mapping(second, actor="authority-a", now=_NOW)
     # Revoke-first keeps exactly one resolvable authority and admits the replacement.
+    assert first.mapping_digest is not None
     assert catalog.revoke_mapping(first.mapping_digest, actor="authority-a", now=_NOW) is True
     assert catalog.admit_mapping(second, actor="authority-a", now=_NOW) == second
 
