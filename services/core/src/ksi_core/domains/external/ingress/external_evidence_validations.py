@@ -479,6 +479,10 @@ class ExternalEvidenceValidationStore:
         self._coordinator = coordinator or ExternalAuthorityCurrentnessCoordinator()
         self._records: dict[str, _Record] = {}
         self._natural: dict[tuple[str, str, str], str] = {}
+        # Derived cache (never journaled): the generation a refused claim last
+        # taught us the authority actually resolves per natural key.  It is
+        # rebuilt by the next refused claim after a restart.
+        self._observed_context_by_key: dict[tuple[str, ...], str] = {}
         self._lock = threading.RLock()
         try:
             for raw in journal.replay():
@@ -618,11 +622,29 @@ class ExternalEvidenceValidationStore:
                 if key not in latest_by_key or candidate > latest_by_key[key]:
                     latest_by_key[key] = candidate
             current_ids = {value[1] for value in latest_by_key.values()}
+            observed = dict(self._observed_context_by_key)
+
+            def _visible(record: _Record) -> bool:
+                learned = observed.get(_natural_key(record))
+                if learned is not None:
+                    # A refused claim taught us which generation the authority
+                    # actually resolves for this key; prefer it over issuance
+                    # order so a generation the authority settles on neither
+                    # hides the live record nor keeps an unclaimable head in
+                    # front of the queue.
+                    return record.context.context_digest == learned
+                return record.request.validation_id in current_ids
+
+            visible_ids = {
+                record.request.validation_id
+                for record in self._records.values()
+                if _visible(record)
+            }
             return tuple(
                 PendingEvidenceValidation(record.request.validation_id, record.request.issued_at)
                 for record in self._records.values()
                 if self._is_pending_execution(record, now)
-                and record.request.validation_id in current_ids
+                and record.request.validation_id in visible_ids
                 and (
                     organization_id is None
                     or record.item.declaration.subject.organization_id == organization_id
@@ -650,6 +672,7 @@ class ExternalEvidenceValidationStore:
                 )
             request = record.request
         if not self._current(record, now):
+            self._remember_resolved_context(record, now)
             return EvidenceValidationLeaseResult(
                 EvidenceValidationVerdict.CONTEXT_UNAVAILABLE, request
             )
@@ -1555,31 +1578,59 @@ class ExternalEvidenceValidationStore:
         manifest = record.item.manifest
         if item is None or manifest is None or item.manifest != manifest:
             return False
-        selected = self._policy_registry.select_for_use("EVIDENCE", (manifest.subject,))
-        policy = selected.policy
-        context = (
-            self._context_authority.resolve_for_validation(
-                subject=manifest.subject,
-                evidence_manifest_digest=record.request.evidence_manifest_digest,
-                target_dsm_artifact_id=manifest.target_dsm_artifact_id,
-                target_dsm_observed_sha256=record.request.target_dsm_observed_sha256,
-                policy_digest=record.request.policy_digest,
-                now=now,
-            )
-            if (
-                selected.status is PolicySelectionStatus.ACTIVE
-                and policy is not None
-                and policy.policy_digest == record.request.policy_digest
-            )
-            else None
-        )
+        policy, context = self._selected_policy_and_context(record, now)
         return bool(
-            selected.status is PolicySelectionStatus.ACTIVE
-            and policy is not None
-            and policy.policy_digest == record.request.policy_digest
+            policy is not None
             and context == record.context
             and self._context_binds(record.context, record.item, policy, now)
         )
+
+    def _selected_policy_and_context(
+        self, record: _Record, now: datetime
+    ) -> tuple[ExternalValidationPolicyV1 | None, ExternalEvidenceMeasurementContextV1 | None]:
+        """Subject-scoped policy plus the one context the authority resolves.
+
+        Resolves the record's exact key (subject, evidence manifest, target
+        DSM, policy).  Returns ``(None, None)`` when no active policy matches
+        the record, and ``(policy, None)`` when the authority answers nothing
+        for the key (unavailable or ambiguous).
+        """
+        manifest = record.item.manifest
+        if manifest is None:
+            return None, None
+        selected = self._policy_registry.select_for_use("EVIDENCE", (manifest.subject,))
+        policy = selected.policy
+        if (
+            selected.status is not PolicySelectionStatus.ACTIVE
+            or policy is None
+            or policy.policy_digest != record.request.policy_digest
+        ):
+            return None, None
+        context = self._context_authority.resolve_for_validation(
+            subject=manifest.subject,
+            evidence_manifest_digest=record.request.evidence_manifest_digest,
+            target_dsm_artifact_id=manifest.target_dsm_artifact_id,
+            target_dsm_observed_sha256=record.request.target_dsm_observed_sha256,
+            policy_digest=record.request.policy_digest,
+            now=now,
+        )
+        return policy, context
+
+    def _remember_resolved_context(self, record: _Record, now: datetime) -> None:
+        """Cache the generation a refused claim just heard the authority resolve.
+
+        The pending projection otherwise judges currency from issuance order
+        alone, which could starve the queue when the authority settles on an
+        older generation.  This is a derived cache, never durable state: after
+        a restart the next refused claim relearns it and the projection falls
+        back to the newest-issuance rule until then.
+        """
+        _, context = self._selected_policy_and_context(record, now)
+        if context is None or context.context_digest is None:
+            return
+        key = _natural_key(record)
+        with self._lock:
+            self._observed_context_by_key[key] = context.context_digest
 
     def _locally_current(self, record: _Record, now: datetime) -> bool:
         """Final no-I/O currentness check while the coordinator is held."""

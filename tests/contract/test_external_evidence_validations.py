@@ -1103,6 +1103,142 @@ def test_pending_validation_lists_only_the_latest_issuance_per_context_key(
     ]
 
 
+class _SwitchableContextAuthority(EvidenceMeasurementContextAuthorityPort):
+    """Authority with one explicitly movable resolved context generation."""
+
+    def __init__(self, *, coordinator: ExternalAuthorityCurrentnessCoordinator) -> None:
+        self.current: ExternalEvidenceMeasurementContextV1 | None = None
+        self._historical: dict[str, ExternalEvidenceMeasurementContextV1] = {}
+        self._coordinator = coordinator
+
+    def adopt(self, context: ExternalEvidenceMeasurementContextV1) -> None:
+        digest = context.context_digest
+        assert digest is not None
+        with self._coordinator.mutation():
+            self._historical[digest] = context
+            self.current = context
+
+    def resolve_for_validation(
+        self,
+        *,
+        subject: SealedExternalSubjectV1,
+        evidence_manifest_digest: str,
+        target_dsm_artifact_id: str,
+        target_dsm_observed_sha256: str,
+        policy_digest: str,
+        now: datetime,
+    ) -> ExternalEvidenceMeasurementContextV1 | None:
+        del now
+        candidate = self.current
+        if candidate is None:
+            return None
+        if (
+            candidate.subject == subject
+            and candidate.evidence_manifest_digest == evidence_manifest_digest
+            and candidate.target_dsm_artifact_id == target_dsm_artifact_id
+            and candidate.target_dsm_observed_sha256 == target_dsm_observed_sha256
+            and candidate.policy_digest == policy_digest
+        ):
+            return candidate
+        return None
+
+    def resolve_historical_for_validation(
+        self,
+        *,
+        context_digest: str,
+        subject: SealedExternalSubjectV1,
+        evidence_manifest_digest: str,
+        target_dsm_artifact_id: str,
+        target_dsm_observed_sha256: str,
+        policy_digest: str,
+        issued_at: datetime,
+    ) -> ExternalEvidenceMeasurementContextV1 | None:
+        del subject, evidence_manifest_digest, target_dsm_artifact_id
+        del target_dsm_observed_sha256, policy_digest, issued_at
+        return self._historical.get(context_digest)
+
+    def is_current(self, context: ExternalEvidenceMeasurementContextV1) -> bool:
+        return context == self.current
+
+    @property
+    def coordinator(self) -> ExternalAuthorityCurrentnessCoordinator:
+        return self._coordinator
+
+
+def test_pending_list_follows_the_context_a_refused_claim_resolved(tmp_path: Path) -> None:
+    """A refused claim teaches the queue which generation is actually live.
+
+    Issuance order alone would keep the newest record in front even after the
+    authority settles on an older generation, starving the runnable one.  The
+    store therefore records the generation the refused claim heard from the
+    authority and prefers it in the next pending projection.
+    """
+    item = _evidence()
+    registry, policy = _policy_registry(tmp_path, max_deadline_seconds=120.0)
+    context_a = _context(item, policy)
+    context_b = _context(item, policy, context_id="context-b")
+    assert context_a.context_digest != context_b.context_digest
+    path = tmp_path / "restart.jsonl"
+    coordinator = ExternalAuthorityCurrentnessCoordinator()
+    authority = _SwitchableContextAuthority(coordinator=coordinator)
+
+    authority.adopt(context_a)
+    first = ExternalEvidenceValidationStore(
+        DurableJournal(path),
+        evidence=_Evidence(item),
+        policy_registry=registry,
+        context_authority=authority,
+        clock=lambda: NOW,
+    )
+    record_a = first.issue_after_seal(item.evidence_ref, now=NOW).request
+    assert record_a is not None
+    del first  # release the journal writer lock before reopening the path
+
+    authority.adopt(context_b)
+    store = ExternalEvidenceValidationStore(
+        DurableJournal(path),
+        evidence=_Evidence(item),
+        policy_registry=registry,
+        context_authority=authority,
+        clock=lambda: NOW,
+    )
+    record_b = store.issue_after_seal(item.evidence_ref, now=NOW + timedelta(seconds=30)).request
+    assert record_b is not None
+    assert record_b.validation_id != record_a.validation_id
+    assert [pending.validation_id for pending in store.list_pending(10)] == [
+        record_b.validation_id
+    ]
+
+    # The authority settles back on the older generation: issuance order alone
+    # still shows the now-stale newer record.
+    authority.adopt(context_a)
+    assert [pending.validation_id for pending in store.list_pending(10)] == [
+        record_b.validation_id
+    ]
+
+    refusal = store.claim(
+        record_b.validation_id,
+        LeaseFence(str(uuid4()), str(uuid4()), 0),
+        organization_id="org-a",
+        now=NOW + timedelta(seconds=31),
+    )
+    assert refusal.verdict is EvidenceValidationVerdict.CONTEXT_UNAVAILABLE
+
+    # The refused claim taught the store that context A is live, so the runnable
+    # record takes the queue head and can be leased.
+    assert [pending.validation_id for pending in store.list_pending(10)] == [
+        record_a.validation_id
+    ]
+    leased = store.claim(
+        record_a.validation_id,
+        LeaseFence(str(uuid4()), str(uuid4()), 0),
+        organization_id="org-a",
+        now=NOW + timedelta(seconds=32),
+    )
+    assert leased.verdict is EvidenceValidationVerdict.LEASED
+    assert leased.fence is not None
+
+
 def test_concurrent_fresh_admission_after_expiry_respects_released_queue_boundary(
     tmp_path: Path,
 ) -> None:
