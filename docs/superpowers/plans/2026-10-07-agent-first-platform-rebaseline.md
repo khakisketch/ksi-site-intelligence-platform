@@ -3611,3 +3611,32 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 증거: `/tmp/opencode/ksi-f03-20261015/degraded_window_check.py`, `boot-window-phase*.log`,
   `boot-sig-negative.log`; 스펙 `docs/superpowers/specs/2026-10-15-external-authority-degraded-boot.md`
   §6에 전체 기록.
+
+### 2026-10-16 P7 저장소 읽기 전용 영속성 재확인 + sdata 리그 정상 재구성·실제 Codex 양수 경로
+
+- **P7 읽기 전용 영속성 재확인**(A2 보강): 보존 볼륨 `ksi-p7-34cc796826d6_ksi-objects`를 :ro로 조회해
+  객체 원시 파일(xl.meta, 487B) sha256 `d8df8a72…`·mtime 2026-10-15T14:27:55Z가 MinIO 기동 전후 **바이트
+  동일**임을 확인하고, **put 없는 get/head 전용 프로브**로 기대 해시 `58f23e72…` 일치(LastModified = 원
+  기록 시각)를 실증 — A2 재시작 점검의 put-선행 약점을 폐쇄. 정리: 컨테이너 1·네트워크 제거, 볼륨·이미지
+  보존. 영수증 `task3-a2-readonly-persistence.json`.
+- **sdata 리그 정상 재구성**(10-15 parity 리그): 만료 3중(provider 스냅샷 seq31 창 종료·승인 material
+  6h 창·spatial activation) → ①권위 레코드(카탈로그/정책/컨텍스트 2) 재봉인 + catalog.json 참조 갱신
+  (admission digest가 record 참조와 무관함을 단언) ②정책 세대 **v18** 단일 ADMIT_POLICY(새 policy
+  authority record 바인딩; v17 엔트리는 옛 digest로 해소 불가 — fail-closed 유지) ③검사 레인 재실행:
+  rgb baseline/current(2×2)와 **floreat DSM 실바이트 181MB MEASURED(5150×8808, valid 40,448,677,
+  EPSG:7850)** ④activation 재서명·MCP 권한 재바인딩(rev2).
+- **실제 Codex 양수 경로**: Codex CLI 0.160.1 + ksi-spatial-data MCP stdio →
+  `ksi_list_spatial_data_assets` → **assetCount 1**(`ksa-v1-3367fdc7…`, READ/PREPARE, bounds
+  [382282.15,6467491.25,382539.65,6467931.65]) — 동일 principal REST 페이지와 **assetRef/operations/
+  bounds/count 4/4 일치**. UI는 :8061로 미재지향(운영자 카탈로그 REST = 대시보드 소스 라우트 200,
+  MEASURED 계열 확인) — 대시보드-8061 대조는 주장하지 않는다.
+- **발견(제품 결정 후보, 코드 미변경)**: AI 자산 목록의 후보별 예산(`max_retained_policies`·스냅샷
+  `max_records`)이 정책 `maxPendingRecords`(8)에 묶여, 한 subject의 보존 레코드/정책 세대가 이를 초과하면
+  (여기서는 v18 승격으로 9세대) **페이지 전체가 503 RESOURCE_LIMIT_EXCEEDED** — remediation
+  REDUCE_REQUEST는 limit와 무관해 도움 안 됨(8세대이던 직전까지 200). fail-closed는 유지되나 가용성
+  결합이므로 10-14의 per-candidate 억제 패턴 확장 여부는 제품 결정으로 남긴다. 리그는 정책 예산
+  (maxPendingRecords 8→64·envelope maxQueueDepth 8→128)으로 재료 수준에서 해소(권한 rev2 재바인딩).
+- 증거: `/tmp/opencode/ksi-sdata-codex-20261016/evidence/`(SUMMARY·before/after-renewal·mcp-page-positive·
+  codex-positive-discovery·parity), 리그 스크립트 `/tmp/opencode/ksi-f03-20261015/`
+  (`renew_sdata_rig.py`·`admit_sdata_policy_v18.py`·`renew_sdata_rig_budgets.py`).
+- CI: `7b4dd11`(전체 팩토리 degraded-boot 계약 테스트) run 38765206972 success.
