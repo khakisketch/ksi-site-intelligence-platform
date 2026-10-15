@@ -3227,3 +3227,16 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - **경계**: 합성/검증호스트 수용이다. 고객 실자료 A–E·Terra 호환·현장/측량 수용·배포/클라우드
   게이트는 그대로 OPEN이며, 위 수치(0.008 m³)와 0.0 m 오차는 합성 입력의 계산 일치 증거이지
   현장 정확도 증명이 아니다.
+
+### 2026-10-15 Task 5c 실호스트 강제 검증(1차) — `f105dfd`
+
+- 도구: `tools/task5c_host_enforcement_verify.py`(승인 호스트의 launcher 사용자로 실행) — 실제 user manager/
+  rootless Engine/cgroup v2에 대해 **27 PASS·0 FAIL**: `StartTransientUnit mode=fail` 중복 거부, 정확한
+  ControlGroup 하위성, controllers(cpu/memory/pids)·신규 `usage_usec=0`, `CgroupParent`→시도 slice 매핑
+  (`/proc/<pid>/cgroup` 실측), `cpu.weight=100`, `populated 0→1→0`, 정확 제거 전 안정 CPU 2회 동일,
+  `StopUnit`+unit/cgroup 소멸, 능동 격리 프로브(uid 매핑·read-only rootfs 거부·네트워크 거부·`lo`만·
+  /work 소유권).
+- 프로토콜: 실제 measurement entrypoint로 캡처 프레임 실행 — 익명 스풀 ack(`SECONDARY_STAGED`)→
+  `PRIMARY_MOUNT_VERIFIED`→타입드 `FAILED` 종료, stdout 완전 소비(클린 종료)·stderr 0.
+- 감사: `docs/audit/EXTERNAL_INSPECTOR_ROOTLESS_PROFILE_VERIFICATION.md`. OPEN(정직 표기): `-k 'host_'`
+  pytest 케이스 전환, 취소 지연 수치·고아 복구 훈련, 적대 입력 E2E — "unavailable is failure" 유지.
