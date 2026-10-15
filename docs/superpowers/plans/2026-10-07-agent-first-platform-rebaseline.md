@@ -3593,3 +3593,21 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 의미·한계: 합성 시험이며 고객/현장/HIL 아님. "호스트→내부 IP 성공"은 완전한 외부-차단/커널 증명이 아니고
   공개 localhost 포트나 운영 네트워크를 검증한 것도 아니다(A2 제안 문구대로). 제품 Compose/Dockerfile/
   소스/정책 변경 없음 — A2 델타는 스크래치 오버레이에만 존재한다.
+
+### 2026-10-16 degraded-boot 수용 완결 — 전체 팩토리 계약 + 라이브 재검증
+
+- **계약 테스트 3건 신규**(`tests/contract/test_platform_core_production.py`): ①만료 스냅샷 → 팩토리
+  전체 부팅+`/ready/external-authority` 503+로그 정확히 1줄+영수증 0 → 동일 키 재발급 스냅샷
+  `reload_and_reconcile` → PROVIDER_CONFIGURED·200·영수증 1(무재기동) ②미래 staged 스냅샷(승인된
+  카탈로그/워크플로 바인딩 포함) → 동일 경로로 부팅+503+로그 1줄+영수증 0 ③서명 훼손 → 팩토리 부팅
+  거부(구조 게이트, cause `signature is invalid`). 게이트 로그 검증은 팩토리가 루트 핸들러를 교체해
+  caplog가 볼 수 없으므로 제공자 로거에 직접 핸들러(`_GateLogs`)를 붙였다.
+- **라이브 재검증**(복사 F-03 저널, 영수증 head seq 81; `degraded_window_check.py` CHECK0–5):
+  staged 관리 액션 포함 미래 스냅샷(10-17) → 부팅·503·로그 1줄·**영수증 바이트 불변**(액션 미적용);
+  서명 훼손 → 부팅 거부; `now+90s` 창 스냅샷 → 부팅 차단 후 **창이 열려도 같은 프로세스는 503 유지
+  (자동 해제 없음)** — 이는 스펙 §3의 “창 개방 시 런타임 재평가 복구” 문구가 사실과 달랐음을 의미하여
+  **정정**했다(복구는 명시적 reload만); 운영자 `POST /v1/operations/external-authority/reload`
+  (ADMIN·동일 org) → 200 PROVIDER_CONFIGURED·seq 82·영수증 82; 재기동 멱등(중복 영수증 없음).
+- 증거: `/tmp/opencode/ksi-f03-20261015/degraded_window_check.py`, `boot-window-phase*.log`,
+  `boot-sig-negative.log`; 스펙 `docs/superpowers/specs/2026-10-15-external-authority-degraded-boot.md`
+  §6에 전체 기록.

@@ -28,7 +28,7 @@ window chained onto the receipt head, sequence 82). Runner: a scratch production
 | Snapshot window **expired** (issuedAt = now-3d, validUntil = now-1h), key valid | **Boots**; `/ready` 200; `/ready/external-authority` → 503 (blocked) |
 | Snapshot chain not matching the receipt head | Boot fails: `authority receipt history is blocked` (unchanged, correct) |
 | Receipt/journal writer already owned by another process | Boot fails: single-writer journal protection (unchanged, correct) |
-| Snapshot `issuedAt` **in the future** (now+2d) | Boot fails: `ValueError: authority snapshot is outside its validity interval` (load) / `not yet issued at attach time` (attach) |
+| Snapshot `issuedAt` **in the future** (now+2d) | Boot fails at load (`ValueError: authority snapshot is outside its validity interval`) / attach (`not yet issued at attach time`) — **fixed 2026-10-15/16: boots BLOCKED (§6)** |
 | Snapshot signing key window ended | Not yet reproduced cleanly (the variant hit an unrelated administration-order validator); listed as a verification item |
 
 Interpretation: the window-expired half of the 2026-09-18 item is **already implemented** by the
@@ -52,8 +52,11 @@ Two time gates, deliberately different:
    blocked: no inspection/evidence/mapping/analysis admission, no reconciliation, no receipt append,
    `/ready/external-authority` reports unavailable; reads that replay signed history and the rest of
    the platform (sites, work orders, journals) keep working. A reload of a current signed snapshot
-   (or the window opening, re-evaluated at runtime) restores `PROVIDER_CONFIGURED` without a restart
-   — the recovery path was exercised live on 2026-10-15 (block → restore → reload → configured).
+   restores `PROVIDER_CONFIGURED` without a restart; the window opening alone does **not** clear a
+   running process's block (verified live 2026-10-16: after `issued_at` passed, the same process
+   stayed BLOCKED until an explicit operator reload). The recovery path was exercised live on
+   2026-10-15 (block → restore → reload → configured) and re-verified 2026-10-16 for the staged
+   direction (block → window opens, still blocked → operator reload → configured).
 
    Rationale for treating `not yet effective` like `expired`: the snapshot is signed by the trusted
    administrator key, so a future window is an intentional staging/rotation decision, not an attack;
@@ -118,3 +121,37 @@ future-window snapshot that also stages an administration action effective when 
 now **boots**, `/ready` is 200, `/ready/external-authority` is 503 (blocked), and the startup log
 carries exactly one line: `external authority provider blocked: NOT_YET_EFFECTIVE`.  The expired
 direction had already been verified the same way.
+
+### Full-factory boot and reload acceptance (2026-10-16)
+
+Contract tests (`tests/contract/test_platform_core_production.py`):
+
+- `test_factory_boots_blocked_for_an_expired_authority_snapshot` — the whole factory (provider plus
+  an approved catalog/workflow pair) boots BLOCKED, `/ready/external-authority` is 503, exactly one
+  named `EXPIRED` line is logged, no receipt is appended, and `reload_and_reconcile` with a
+  reissued current snapshot (same key) restores `PROVIDER_CONFIGURED`, 200 readiness and exactly
+  one receipt — without a restart.
+- `test_factory_boots_blocked_for_a_staged_future_authority_snapshot` — the same boot path for the
+  not-yet-effective direction (one named `NOT_YET_EFFECTIVE` line, 503, no receipt).
+- `test_factory_refuses_a_tampered_authority_snapshot_signature` — signature tamper stays fatal for
+  the whole boot (structure gate), with the loader-level cause `signature is invalid`.
+
+Live scratch run (`/tmp/opencode/ksi-f03-20261015/degraded_window_check.py` on the copied F-03
+journals, receipt head seq 81):
+
+- CHECK0 tampered signature → boot refused, `signature is invalid` in the log.
+- CHECK1 fully staged future snapshot (one staged administration action, window 2026-10-17) →
+  boots, 503, exactly one `NOT_YET_EFFECTIVE` line, receipts byte-unchanged (81): the staged action
+  was not applied.
+- CHECK2/3 a window-test snapshot issued `now+90s` → boots blocked; after the window opened the
+  same process stayed 503 (no auto-unblock).
+- CHECK4 the operator `POST /v1/operations/external-authority/reload` (ADMIN principal in the
+  provider's organization) returned `PROVIDER_CONFIGURED`, sequence 82 and
+  `/ready/external-authority` 200; the receipts journal advanced to 82.
+- CHECK5 a fresh restart after the reload was idempotent (200 immediately, no gate line, no
+  duplicate receipt).
+
+Note for test authors: `build_platform_production_app` installs structured logging on the root
+logger and removes existing root handlers, so `caplog` cannot observe these startup lines; attach a
+handler to `ksi_core.domains.external.authority.external_authority_provider` instead (see
+`_GateLogs` in the contract test file).

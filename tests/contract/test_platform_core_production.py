@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -485,10 +486,12 @@ def test_not_yet_effective_authority_snapshot_stays_blocked_not_activated(
     """A staged snapshot signed ahead of its window loads blocked, never activated:
 
     the symmetric partner of the expired direction at the provider-loader level
-    - the signed history and the workflow graph stay available, and every live
-    port stays closed until a current snapshot is reloaded or the window opens.
-    A fully staged future snapshot that also stages administration actions still
-    needs the workflow-binding gate handled (see the degraded-boot spec)."""
+    - the signed history and the workflow graph stay available, and in the
+    attached production graph every live port stays closed until a current
+    signed snapshot is explicitly reloaded (the window opening alone does not
+    clear the block). A fully staged future snapshot boots the whole production
+    factory the same way; see
+    test_factory_boots_blocked_for_a_staged_future_authority_snapshot."""
     from ksi_core.external_authority_provider import load_external_authority_provider
 
     provider = load_external_authority_provider(
@@ -577,6 +580,170 @@ def test_staged_snapshot_authorizes_its_catalog_binding_for_the_degraded_boot(
     )
 
 
+def test_factory_boots_blocked_for_an_expired_authority_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signed-but-expired snapshot no longer stops the production boot.
+
+    The whole factory boots with the workflow graph intact, the provider reports
+    BLOCKED with exactly one named startup log line, no receipt is appended, and
+    reloading a current signed snapshot (same key) restores PROVIDER_CONFIGURED
+    without a restart - the operator recovery path exercised live on 2026-10-15,
+    pinned end to end here.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from ksi_core.composition.platform_production import build_platform_production_app
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    key_not_after = (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
+    workflow_path, record = _approved_workflow_files(
+        tmp_path,
+        active_from=datetime(2026, 9, 10, tzinfo=UTC),
+        active_until=datetime(2026, 9, 12, tzinfo=UTC),
+    )
+    signer = Ed25519PrivateKey.generate()
+    provider_path = _expired_snapshot_config(
+        tmp_path, catalog_authority=record, key_not_after=key_not_after, signer=signer
+    )
+    env = _platform_env(tmp_path)
+    env["KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG"] = str(workflow_path)
+    env["KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"] = str(provider_path)
+    _apply_env(monkeypatch, env)
+
+    gate_logs = _GateLogs()
+    gate_logger = logging.getLogger(
+        "ksi_core.domains.external.authority.external_authority_provider"
+    )
+    gate_logger.addHandler(gate_logs)
+    try:
+        app = build_platform_production_app()
+    finally:
+        gate_logger.removeHandler(gate_logs)
+
+    provider = app.state.external_authority_provider
+    assert provider.status()["status"] == "BLOCKED"
+    blocked = [message for message in gate_logs.messages if "blocked: EXPIRED" in message]
+    assert blocked == ["external authority provider blocked: EXPIRED"]
+    client = TestClient(app)
+    assert client.get("/ready/external-authority").status_code == 503
+    receipts_path = tmp_path / "data" / "external-authority-provider-receipts.jsonl"
+    assert (receipts_path.read_text() if receipts_path.exists() else "") == ""
+
+    # The operator reissues a current snapshot with the same key and reloads.
+    _expired_snapshot_config(
+        tmp_path,
+        issued_at=(now - timedelta(hours=1)).isoformat().replace("+00:00", "Z"),
+        valid_until=(now + timedelta(days=7)).isoformat().replace("+00:00", "Z"),
+        catalog_authority=record,
+        key_not_after=key_not_after,
+        signer=signer,
+    )
+    result = provider.reload_and_reconcile(now=now)
+    assert result["status"] == "PROVIDER_CONFIGURED"
+    assert provider.status()["status"] == "PROVIDER_CONFIGURED"
+    assert client.get("/ready/external-authority").status_code == 200
+    lines = receipts_path.read_text().splitlines() if receipts_path.exists() else []
+    assert len(lines) == 1
+
+
+def test_factory_boots_blocked_for_a_staged_future_authority_snapshot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signed-ahead snapshot with a fully staged workflow boots BLOCKED.
+
+    The workflow-config catalog binding accepts the out-of-window snapshot
+    structurally (586d6b0) so the whole factory assembles, while the provider
+    stays blocked with exactly one named log line, no receipt and no
+    reconciliation.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from ksi_core.composition.platform_production import build_platform_production_app
+
+    now = datetime.now(UTC).replace(microsecond=0)
+    workflow_path, record = _approved_workflow_files(
+        tmp_path,
+        active_from=now - timedelta(days=1),
+        active_until=now + timedelta(days=10),
+    )
+    provider_path = _expired_snapshot_config(
+        tmp_path,
+        issued_at=(now + timedelta(days=2)).isoformat().replace("+00:00", "Z"),
+        valid_until=(now + timedelta(days=5)).isoformat().replace("+00:00", "Z"),
+        catalog_authority=record,
+        key_not_before=(now - timedelta(days=2)).isoformat().replace("+00:00", "Z"),
+        key_not_after=(now + timedelta(days=30)).isoformat().replace("+00:00", "Z"),
+        signer=Ed25519PrivateKey.generate(),
+    )
+    env = _platform_env(tmp_path)
+    env["KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG"] = str(workflow_path)
+    env["KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"] = str(provider_path)
+    _apply_env(monkeypatch, env)
+
+    gate_logs = _GateLogs()
+    gate_logger = logging.getLogger(
+        "ksi_core.domains.external.authority.external_authority_provider"
+    )
+    gate_logger.addHandler(gate_logs)
+    try:
+        app = build_platform_production_app()
+    finally:
+        gate_logger.removeHandler(gate_logs)
+
+    provider = app.state.external_authority_provider
+    assert provider.status()["status"] == "BLOCKED"
+    captured_lines = [
+        message for message in gate_logs.messages if "blocked: NOT_YET_EFFECTIVE" in message
+    ]
+    assert captured_lines == [
+        "external authority provider blocked: NOT_YET_EFFECTIVE"
+    ]
+    assert TestClient(app).get("/ready/external-authority").status_code == 503
+    receipts_path = tmp_path / "data" / "external-authority-provider-receipts.jsonl"
+    assert (receipts_path.read_text() if receipts_path.exists() else "") == ""
+
+
+def test_factory_refuses_a_tampered_authority_snapshot_signature(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Signature tamper stays fatal for the whole boot (structure gate)."""
+    import base64
+
+    from ksi_core.composition.platform_production import build_platform_production_app
+    from ksi_core.external_authority_provider import (
+        ExternalAuthorityProviderError,
+        load_external_authority_provider,
+    )
+
+    workflow_path, record = _approved_workflow_files(
+        tmp_path,
+        active_from=datetime(2026, 9, 10, tzinfo=UTC),
+        active_until=datetime(2026, 9, 12, tzinfo=UTC),
+    )
+    provider_path = _expired_snapshot_config(tmp_path, catalog_authority=record)
+    snapshot_path = tmp_path / "authority-snapshot.json"
+    payload = json.loads(snapshot_path.read_text())
+    signature = bytearray(base64.b64decode(payload["signature"]))
+    signature[0] ^= 0x01
+    payload["signature"] = base64.b64encode(bytes(signature)).decode("ascii")
+    _write_provider_file(snapshot_path, payload)
+
+    env = _platform_env(tmp_path)
+    env["KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG"] = str(workflow_path)
+    env["KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"] = str(provider_path)
+    _apply_env(monkeypatch, env)
+
+    with pytest.raises(
+        ExternalAuthorityProviderError, match="external authority provider is blocked"
+    ):
+        build_platform_production_app()
+    with pytest.raises(ExternalAuthorityProviderError) as captured:
+        load_external_authority_provider(
+            provider_path, clock=lambda: datetime.now(UTC), allow_out_of_window=True
+        )
+    assert isinstance(captured.value.__cause__, ValueError)
+    assert "signature is invalid" in str(captured.value.__cause__)
+
+
 def test_platform_expired_activation_keeps_history_but_denies_new_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -640,6 +807,23 @@ def test_platform_expired_activation_keeps_history_but_denies_new_use(
 _EXPIRED_NOW = datetime(2026, 9, 11, 0, 0, tzinfo=UTC)
 
 
+class _GateLogs(logging.Handler):
+    """Collects gate-log messages on one logger.
+
+    ``build_platform_production_app`` installs structured logging on the root
+    logger and removes existing root handlers, so caplog cannot observe these
+    startup lines; a handler attached to the emitting logger survives that
+    reconfiguration and pins the "exactly one named line" contract.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
 def _write_provider_file(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
     os.chmod(path, 0o600)
@@ -651,12 +835,16 @@ def _expired_snapshot_config(
     issued_at: str = "2026-09-11T00:00:00Z",
     valid_until: str = "2026-09-11T01:00:00Z",
     catalog_authority: Any = None,
+    key_not_before: str = "2026-09-10T00:00:00Z",
+    key_not_after: str = "2026-09-12T00:00:00Z",
+    signer: Any = None,
 ) -> Path:
     """Default authority snapshot/config files (verbatim retired-helper behavior).
 
-    The window is configurable so the same signed fixture can exercise the
-    expired and the not-yet-effective degraded-boot directions (the signing key
-    window 2026-09-10..2026-09-12 covers both).
+    The window and signing-key interval are configurable so the same signed
+    fixture can exercise the expired, not-yet-effective and recovered
+    generations (a current snapshot needs a key interval covering "now");
+    passing the same ``signer`` re-issues with unchanged key material.
     """
     import base64
 
@@ -664,7 +852,8 @@ def _expired_snapshot_config(
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from ksi_domain.canonical_json import canonical_json_bytes
 
-    signer = Ed25519PrivateKey.generate()
+    if signer is None:
+        signer = Ed25519PrivateKey.generate()
     public_key = tmp_path / "authority-bundle.pem"
     public_key.write_bytes(
         signer.public_key().public_bytes(
@@ -684,8 +873,8 @@ def _expired_snapshot_config(
                     "algorithm": "Ed25519",
                     "status": "ACTIVE",
                     "publicKeyFile": public_key.name,
-                    "notBefore": "2026-09-10T00:00:00Z",
-                    "notAfter": "2026-09-12T00:00:00Z",
+                    "notBefore": key_not_before,
+                    "notAfter": key_not_after,
                 }
             ],
         },
@@ -738,6 +927,51 @@ def _expired_snapshot_config(
         },
     )
     return config
+
+
+def _approved_workflow_files(
+    tmp_path: Path, *, active_from: datetime, active_until: datetime
+) -> tuple[Path, Any]:
+    """Approved catalog/workflow pair bound to one synthetic catalog authority.
+
+    Reuses the workflow-loader fixture builders so the catalog admission digest,
+    the authority record digest and the workflow's ``authorityRecordDigest`` are
+    exactly consistent; the provider snapshot embeds the same record.
+    """
+    from ksi_core.external_quantitative_authority import (
+        ExternalQuantitativeCatalogAuthorityRecord,
+    )
+    from test_external_result_workflow_config import _catalog_body, _catalog_digest
+
+    admission_body = _catalog_body()
+    record = ExternalQuantitativeCatalogAuthorityRecord(
+        organization_id="org-a",
+        catalog_body_digest=_catalog_digest(admission_body),
+        authorized_administration_actor_ids=("catalog-admin",),
+        active_from=active_from,
+        active_until=active_until,
+        synthetic_test_only=False,
+    ).sealed()
+    assert record.digest is not None
+    catalog_path = tmp_path / "catalog.json"
+    _write_provider_file(
+        catalog_path,
+        {
+            "version": "external-quantitative-catalog.v1",
+            "authorityRecordDigest": record.digest,
+            "body": _catalog_body(record.digest),
+        },
+    )
+    workflow_path = tmp_path / "workflow.json"
+    _write_provider_file(
+        workflow_path,
+        {
+            "version": "external-result-workflow-config.v1",
+            "authorityJournalPath": str(tmp_path / "authority.jsonl"),
+            "catalogPath": str(catalog_path),
+        },
+    )
+    return workflow_path, record
 
 
 def _enable_analysis_activation(
