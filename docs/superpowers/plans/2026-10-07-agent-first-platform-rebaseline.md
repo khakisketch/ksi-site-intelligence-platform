@@ -3509,3 +3509,11 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   사본 동기화. 리포 계약 테스트(`test_host_assets_keep_validator_and_launcher_privileges_separate`) PASS.
 - **교훈**: 이번 세션의 배포-실측 결함 2건(compose secret 소유권, 유닛 경로 존재 요구)은 모두
   **실제 기동을 시도해야만** 드러나는 류다 — 정적 검사·단위 테스트로는 잡히지 않는다.
+
+### 2026-10-15 최종 CI GREEN (2건) — UI 검토 + 워커 부트 수정
+- run 38720379295(5fe556d, UI 검토 단계): **success** — gates pytest **6223 passed·0 failed**, dashboard
+  (tsc·eslint·vitest·build), external-runtime 이미지 2종 전부 SUCCESS.
+- run 38721968214(dc71288, 워커 부트 수정+원장): **success** — gates pytest **6223 passed·0 failed**(12:13).
+- 이로써 10-15 세션의 모든 내부 작업(운영자 콘솔 주기 완주·검토 UI·정합 쌍·MCP 정합·배포 실측 결함 2건
+  수정·백업/복구 드릴)이 호스티드 CI까지 통과했다. 남은 것은 외부 게이트(고객 실자료 A–E·실호스트 배포·
+  현장/측량 수용)와 P7-A2/Task3 결정.
