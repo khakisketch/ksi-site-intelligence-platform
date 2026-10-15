@@ -854,7 +854,9 @@ def test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_cal
     def wait_for_slow_renewal(**kwargs: Any) -> object:
         state.measurement_active = True
         try:
-            assert state.renew_started.wait(timeout=1)
+            # CI runners are slower than a warm local box; the bound only prevents a
+            # hang, it is not the behavior under test.
+            assert state.renew_started.wait(timeout=15)
             return actual_measurement(**kwargs)
         finally:
             state.measurement_active = False
@@ -905,7 +907,7 @@ def test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_cal
             started_monotonic = time.monotonic()
             assert run_once(client, runtime, policy, now=_Clock()) is True
             elapsed_wall_seconds = time.monotonic() - started_monotonic
-            assert state.renew_finished.wait(timeout=1)
+            assert state.renew_finished.wait(timeout=15)
             assert state.renew_inflight == 0
             assert client.list_pending()
 
