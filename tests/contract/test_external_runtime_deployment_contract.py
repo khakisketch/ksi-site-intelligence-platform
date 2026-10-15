@@ -980,7 +980,7 @@ def test_host_assets_keep_validator_and_launcher_privileges_separate() -> None:
     assert "PrivateNetwork=yes" not in worker
     assert "PrivateNetwork=no" in worker
     assert "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6" in worker
-    assert "InaccessiblePaths=/var/run/docker.sock /run/docker.sock /run/user" in worker
+    assert "InaccessiblePaths=-/var/run/docker.sock -/run/docker.sock /run/user" in worker
     assert "/run/ksi-external-runtime/launcher/inspection.sock" in worker
     assert "/run/ksi-external-runtime/launcher/measurement.sock" in worker
     assert worker.count("/var/run/docker.sock") == 1

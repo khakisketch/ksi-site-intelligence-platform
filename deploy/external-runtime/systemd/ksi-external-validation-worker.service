@@ -25,7 +25,11 @@ ProtectControlGroups=yes
 ProtectClock=yes
 ProtectHostname=yes
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
-InaccessiblePaths=/var/run/docker.sock /run/docker.sock /run/user
+# The "rootful" socket paths may legitimately be absent (a boot after tmpfs
+# loss, a host without rootful Docker).  The "-" prefix keeps them masked when
+# they exist and lets the unit start when they do not; without it the namespace
+# setup fails with "No such file or directory" and the worker never starts.
+InaccessiblePaths=-/var/run/docker.sock -/run/docker.sock /run/user
 ReadWritePaths=/var/lib/ksi-external-runtime/worker
 ReadOnlyPaths=/etc/ksi-external-runtime /run/ksi-external-runtime/launcher/inspection.sock /run/ksi-external-runtime/launcher/measurement.sock
 CapabilityBoundingSet=
