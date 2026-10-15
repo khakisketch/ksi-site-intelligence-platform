@@ -744,6 +744,105 @@ def test_factory_refuses_a_tampered_authority_snapshot_signature(
     assert "signature is invalid" in str(captured.value.__cause__)
 
 
+def test_factory_boots_blocked_when_the_signing_key_window_ended(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The signing-key window is a time gate, not a structure failure.
+
+    A snapshot still inside its own window whose declared key interval has
+    ended loads for the degraded boot (the declared signing time is inside the
+    key interval) and the provider reports BLOCKED naming EXPIRED, exactly
+    like the expired-snapshot direction. Without ``allow_out_of_window`` (the
+    reload path) the same inputs stay fatal, so a running Core never reconciles
+    or receipts key-ended authority.
+    """
+    from ksi_core.composition.platform_production import build_platform_production_app
+    from ksi_core.external_authority_provider import (
+        ExternalAuthorityProviderError,
+        load_external_authority_provider,
+    )
+
+    now = datetime.now(UTC).replace(microsecond=0)
+
+    def iso(value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
+
+    workflow_path, record = _approved_workflow_files(
+        tmp_path,
+        active_from=now - timedelta(days=3),
+        active_until=now + timedelta(days=30),
+    )
+    provider_path = _expired_snapshot_config(
+        tmp_path,
+        issued_at=iso(now - timedelta(hours=2)),
+        valid_until=iso(now + timedelta(days=5)),
+        catalog_authority=record,
+        key_not_before=iso(now - timedelta(days=3)),
+        key_not_after=iso(now - timedelta(hours=1)),
+    )
+    env = _platform_env(tmp_path)
+    env["KSI_CORE_EXTERNAL_RESULT_WORKFLOW_CONFIG"] = str(workflow_path)
+    env["KSI_CORE_EXTERNAL_AUTHORITY_PROVIDER_CONFIG"] = str(provider_path)
+    _apply_env(monkeypatch, env)
+
+    gate_logs = _GateLogs()
+    gate_logger = logging.getLogger(
+        "ksi_core.domains.external.authority.external_authority_provider"
+    )
+    gate_logger.addHandler(gate_logs)
+    try:
+        app = build_platform_production_app()
+    finally:
+        gate_logger.removeHandler(gate_logs)
+
+    provider = app.state.external_authority_provider
+    assert provider.status()["status"] == "BLOCKED"
+    blocked = [message for message in gate_logs.messages if "blocked: EXPIRED" in message]
+    assert blocked == ["external authority provider blocked: EXPIRED"]
+    assert TestClient(app).get("/ready/external-authority").status_code == 503
+    receipts_path = tmp_path / "data" / "external-authority-provider-receipts.jsonl"
+    assert (receipts_path.read_text() if receipts_path.exists() else "") == ""
+
+    with pytest.raises(
+        ExternalAuthorityProviderError, match="external authority provider is blocked"
+    ):
+        load_external_authority_provider(
+            provider_path, clock=lambda: datetime.now(UTC), allow_out_of_window=False
+        )
+
+
+def test_loader_rejects_a_snapshot_signed_before_its_key_window(tmp_path: Path) -> None:
+    """A declared signing time before the key's own interval is impossible.
+
+    This is deliberately fatal in every mode (structure gate): no window
+    direction can admit a signature that the declared key facts say could not
+    have been produced.
+    """
+    from ksi_core.external_authority_provider import (
+        ExternalAuthorityProviderError,
+        load_external_authority_provider,
+    )
+
+    now = datetime.now(UTC).replace(microsecond=0)
+
+    def iso(value: datetime) -> str:
+        return value.isoformat().replace("+00:00", "Z")
+
+    provider_path = _expired_snapshot_config(
+        tmp_path,
+        issued_at=iso(now - timedelta(hours=2)),
+        valid_until=iso(now + timedelta(days=5)),
+        key_not_before=iso(now - timedelta(hours=1)),
+        key_not_after=iso(now + timedelta(days=5)),
+    )
+    with pytest.raises(ExternalAuthorityProviderError) as captured:
+        load_external_authority_provider(
+            provider_path, clock=lambda: datetime.now(UTC), allow_out_of_window=True
+        )
+    assert isinstance(captured.value.__cause__, ValueError)
+    assert "key is outside its validity interval" in str(captured.value.__cause__)
+
+
 def test_platform_expired_activation_keeps_history_but_denies_new_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

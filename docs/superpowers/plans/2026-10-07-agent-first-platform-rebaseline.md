@@ -3640,3 +3640,13 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   codex-positive-discovery·parity), 리그 스크립트 `/tmp/opencode/ksi-f03-20261015/`
   (`renew_sdata_rig.py`·`admit_sdata_policy_v18.py`·`renew_sdata_rig_budgets.py`).
 - CI: `7b4dd11`(전체 팩토리 degraded-boot 계약 테스트) run 38765206972 success.
+- **10-16 추가: 제4 게이트(서명 키 창) 완결** — 스펙 §5-4의 남은 검증 항목 해소. 로더가 창 안 스냅샷의
+  키를 `now`로 검증해 키 창이 발급~부팅 사이에 끝나면 **부팅 거부**가 되던 불일치(attach는 EXPIRED
+  차단 설계)와, 반대로 키 시작 전 서명(`issuedAt < key.notBefore`)을 **통과시키던 구멍**을 함께 수정:
+  키는 항상 **발급 시점**으로 검증(구조 규칙 — 선언된 사실상 불가능한 서명은 시간 게이트가 아님)하고,
+  키 창 종료는 부팅 시간 게이트(`out_of_window`)에 포함 → **production 부팅+BLOCKED(EXPIRED)**·reload
+  경로는 fatal 유지(키 만료 권위는 reconcile/영수증 금지). 계약 테스트 2건
+  (`test_factory_boots_blocked_when_the_signing_key_window_ended`·
+  `test_loader_rejects_a_snapshot_signed_before_its_key_window`), 라이브 스크래치
+  CHECK1(key-ended 부팅 503·로그 1줄·영수증 불변)·CHECK2(allow_out_of_window=False 거부) 실측.
+  증거 `keyended_live_check.py`·`boot-keyended.log`; 스펙 §2/§6 갱신.

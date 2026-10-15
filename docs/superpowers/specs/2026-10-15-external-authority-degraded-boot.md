@@ -29,7 +29,7 @@ window chained onto the receipt head, sequence 82). Runner: a scratch production
 | Snapshot chain not matching the receipt head | Boot fails: `authority receipt history is blocked` (unchanged, correct) |
 | Receipt/journal writer already owned by another process | Boot fails: single-writer journal protection (unchanged, correct) |
 | Snapshot `issuedAt` **in the future** (now+2d) | Boot fails at load (`ValueError: authority snapshot is outside its validity interval`) / attach (`not yet issued at attach time`) — **fixed 2026-10-15/16: boots BLOCKED (§6)** |
-| Snapshot signing key window ended | Not yet reproduced cleanly (the variant hit an unrelated administration-order validator); listed as a verification item |
+| Snapshot signing key window ended | **fixed 2026-10-16 (§6): boots BLOCKED naming EXPIRED**; before the fix the loader validated the key at `now` and refused the boot (and it accepted signatures declared before the key's own start) |
 
 Interpretation: the window-expired half of the 2026-09-18 item is **already implemented** by the
 `allow_expired=True` load in `ksi_core.composition.platform_production` (lines ~158/174) plus the
@@ -155,3 +155,31 @@ Note for test authors: `build_platform_production_app` installs structured loggi
 logger and removes existing root handlers, so `caplog` cannot observe these startup lines; attach a
 handler to `ksi_core.domains.external.authority.external_authority_provider` instead (see
 `_GateLogs` in the contract test file).
+
+### Fourth gate: signing-key window (found and fixed 2026-10-16)
+
+Verifying the spec's remaining item surfaced two loader defects around the signing-key interval:
+
+1. For a snapshot inside its own window the loader validated the key at `now`, so a key window that
+   had ended between issuance and boot failed the **load** before the attach path could apply its
+   intended `EXPIRED` gate (`now >= key_not_after`); an ordinary reissue-with-newer-key was the only
+   way out of a boot refusal.
+2. Symmetrically, validating at `now` accepted a snapshot whose declared signing time (`issuedAt`)
+   preceded the key's own `notBefore` — a signature the declared facts say could not have been made.
+
+Fix: the signing key is **always validated at `issued_at`** (a signature produced outside the key's
+declared interval is structurally impossible, never a time gate), and the key window's end at boot
+joins the time gate (`out_of_window` includes `now >= key_not_after`) so the production factory
+boots BLOCKED naming `EXPIRED`, while the reload path (`allow_out_of_window=False`) stays fatal for
+the same inputs — key-ended authority is never reconciled or receipted by a running Core.
+
+Contract tests (`tests/contract/test_platform_core_production.py`):
+`test_factory_boots_blocked_when_the_signing_key_window_ended` (factory boots, BLOCKED, one
+`EXPIRED` line, 503 readiness, no receipt, reload path fatal) and
+`test_loader_rejects_a_snapshot_signed_before_its_key_window` (structure gate in every mode).
+
+Live scratch verification (`/tmp/opencode/ksi-f03-20261015/keyended_live_check.py` on the copied
+F-03 journals, receipt head 82): CHECK1 key-ended variant (issued 10-15T02:14Z inside a key window
+ending 10-15T06:00Z, snapshot window open) boots with `/ready/external-authority` 503, exactly one
+`blocked: EXPIRED` line and byte-unchanged receipts; CHECK2 the same inputs with
+`allow_out_of_window=False` are refused at load.

@@ -295,22 +295,21 @@ def _snapshot_from_path(
     now = clock()
     if now.tzinfo is None or now.utcoffset() != UTC.utcoffset(now):
         raise ValueError("authority provider clock must return UTC time")
-    # Out of window in either direction: already expired (a stale snapshot a
-    # restart may still boot on) or not yet effective (a staged/rotated
-    # snapshot signed ahead of its window).  Both stay fail-closed at the live
-    # ports; only an in-window snapshot can ever be current.
-    expired = now >= valid_until and issued_at <= now
+    key_id = _text(raw["keyId"], name="snapshot keyId")
+    # The signing key is always validated at issuance: a signature produced
+    # outside the key's declared interval is structurally impossible, never a
+    # time gate.  Whether the key is still current *now* is the separate time
+    # gate below (and the attach/status current-time checks).
+    active_key = _active_key(config.key_registry_path, key_id, issued_at)
+    # Out of window in either direction, including a signing-key window that
+    # has ended at boot: already expired (a stale snapshot a restart may still
+    # boot on) or not yet effective (a staged/rotated snapshot signed ahead of
+    # its window).  Both stay fail-closed at the live ports; only a fully
+    # current snapshot can ever be current.
+    expired = issued_at <= now and (now >= valid_until or now >= active_key.not_after)
     out_of_window = not issued_at <= now or expired
     if issued_at >= valid_until or (out_of_window and not allow_out_of_window):
         raise ValueError("authority snapshot is outside its validity interval")
-    key_id = _text(raw["keyId"], name="snapshot keyId")
-    # A snapshot outside its window may be retained for history only after its
-    # signing key is confirmed valid at issuance. It is never thereby made
-    # current; provider live ports apply the current-time validity gate
-    # independently.
-    active_key = _active_key(
-        config.key_registry_path, key_id, issued_at if out_of_window else now
-    )
     signature_value = raw["signature"]
     if not isinstance(signature_value, str):
         raise ValueError("authority snapshot signature must be base64 text")
