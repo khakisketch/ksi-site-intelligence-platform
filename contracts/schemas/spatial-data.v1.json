@@ -613,6 +613,7 @@
             "CLEANUP_FAILED",
             "NOT_READY",
             "UNAVAILABLE",
+            "RETAINED_HISTORY_LIMIT_EXCEEDED",
             "RESOURCE_LIMIT_EXCEEDED"
           ],
           "title": "Reason",
@@ -1073,6 +1074,7 @@
                 "CLEANUP_FAILED",
                 "NOT_READY",
                 "UNAVAILABLE",
+                "RETAINED_HISTORY_LIMIT_EXCEEDED",
                 "RESOURCE_LIMIT_EXCEEDED"
               ],
               "type": "string"

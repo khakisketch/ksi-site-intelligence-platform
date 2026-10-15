@@ -87,7 +87,7 @@ def _two_asset_measurements(
     )
 
 
-def two_asset_lane(tmp_path: Path) -> SimpleNamespace:
+def two_asset_lane(tmp_path: Path, *, policy: Any = None) -> SimpleNamespace:
     """AI lane over one sealed submission declaring ortho + dsm (two permitted assets)."""
     from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
     from ksi_core.domains.external.delivery.asset_discovery import SpatialDataAssetDiscovery
@@ -112,7 +112,7 @@ def two_asset_lane(tmp_path: Path) -> SimpleNamespace:
     graph.path = tmp_path
     record = graph.sites._sites["site-1"]  # noqa: SLF001
     graph.sites._sites["site-1"] = replace(record, ai_egress_allowed=True)  # noqa: SLF001
-    graph.data_policy = make_policy()
+    graph.data_policy = policy if policy is not None else make_policy()
     graph.runtime = make_runtime()
     graph.activation = make_activation(
         organization_id=graph.principal.organization_id,
@@ -1342,8 +1342,14 @@ def _register_second_submission(graph: SimpleNamespace, submission_id: str) -> A
     return submission, result.revision
 
 
-def _admit_policy_for_subject(graph: SimpleNamespace, subject: Any) -> Any:
-    """Admit a genuine inspection policy permitting one sealed subject (owner APIs)."""
+def _admit_policy_for_subject(
+    graph: SimpleNamespace, subject: Any, *, version: int | None = None
+) -> Any:
+    """Admit a genuine inspection policy permitting one sealed subject (owner APIs).
+
+    ``version`` overrides the template version so one test can admit a second
+    genuine generation for the same subject without an identity conflict.
+    """
     from ksi_core.external_validation_policy import (
         PolicyAuthorityRecord,
         authorized_policy_body_digest,
@@ -1358,14 +1364,15 @@ def _admit_policy_for_subject(graph: SimpleNamespace, subject: Any) -> Any:
         .model_copy(update={"max_tenant_concurrency": 2, "resource_envelope_digest": None})
         .sealed()
     )
-    template = policy_template().model_copy(
-        update={
-            "policy_id": f"policy-{subject.submission_id}",
-            "resource_envelope": widened,
-            "resource_envelope_digest": widened.resource_envelope_digest,
-            "policy_digest": None,
-        }
-    )
+    update: dict[str, Any] = {
+        "policy_id": f"policy-{subject.submission_id}",
+        "resource_envelope": widened,
+        "resource_envelope_digest": widened.resource_envelope_digest,
+        "policy_digest": None,
+    }
+    if version is not None:
+        update["version"] = version
+    template = policy_template().model_copy(update=update)
     record = PolicyAuthorityRecord(
         policy_id=template.policy_id,
         policy_version=template.version,
@@ -1383,6 +1390,26 @@ def _admit_policy_for_subject(graph: SimpleNamespace, subject: Any) -> Any:
     ).sealed()
     registry.admit(policy, actor="authority", now=NOW)
     return policy
+
+
+def _drop_other_authorities_for_subject(
+    graph: SimpleNamespace, subject: Any, keep: Any
+) -> None:
+    """Retire older policy authorities for one subject so the selection stays unique.
+
+    Reserved for tests that need a genuine multi-generation history: the
+    admitted entries and their subject keys remain (that is what grows the
+    history), while only the newest authority resolves, mirroring a rotated
+    snapshot whose older records are no longer current.
+    """
+    records = graph.inspections._policy_registry._authority_port._records  # noqa: SLF001
+    keep_identity = (keep.policy_id, keep.version)
+    for digest, record in list(records.items()):
+        if (
+            (record.policy_id, record.policy_version) != keep_identity
+            and subject in record.permitted_subjects
+        ):
+            del records[digest]
 
 
 def _seal_revision(graph: SimpleNamespace, submission: Any, revision: Any) -> tuple[Any, Any]:
@@ -1425,7 +1452,12 @@ def _seal_revision(graph: SimpleNamespace, submission: Any, revision: Any) -> tu
 
 
 def _record_measurement(graph: SimpleNamespace, subject: Any, policy: Any) -> Any:
-    """Record a genuine MEASURED ortho report for one sealed subject (owner APIs)."""
+    """Record a genuine MEASURED report for one sealed subject (owner APIs).
+
+    The report covers exactly the sealed revision's declared artifacts (one
+    outcome per artifact binding), so single- and two-artifact submissions both
+    round-trip through the real recording path.
+    """
     from ksi_core.leasing import LeaseFence
     from ksi_event_contracts.external_artifact_validation import SealedArtifactBindingV1
     from support.external_artifact_inspection_fixtures import ACQUISITION, WORKER_A
@@ -1436,17 +1468,27 @@ def _record_measurement(graph: SimpleNamespace, subject: Any, policy: Any) -> An
         issued.request.request_id, LeaseFence(WORKER_A, ACQUISITION, 0), now=NOW
     ).fence
     base = graph.accepted_report
-    ortho = next(o for o in base.measurement_payload.outcomes if o.artifact_id == "ortho")
-    assert ortho.measurements is not None
+    revision = graph.reconstruction.resolve_sealed_subject(subject)
+    assert revision is not None
+    expected_ids = {artifact_id for artifact_id, _ in revision.bindings}
+    outcomes = tuple(
+        outcome
+        for outcome in base.measurement_payload.outcomes
+        if outcome.artifact_id in expected_ids
+    )
+    assert outcomes
     payload = base.measurement_payload.model_copy(
         update={
             "subject_digest": subject.canonical_digest(),
             "sealed_manifest_digest": subject.manifest_digest,
             "inspection_policy_digest": policy.policy_digest,
             "inspector_build_digest": policy.parser_build_digest,
-            "outcomes": (ortho,),
-            "artifact_bindings": (
-                SealedArtifactBindingV1(artifact_id="ortho", observed_sha256=ortho.observed_sha256),
+            "outcomes": outcomes,
+            "artifact_bindings": tuple(
+                SealedArtifactBindingV1(
+                    artifact_id=outcome.artifact_id, observed_sha256=outcome.observed_sha256
+                )
+                for outcome in outcomes
             ),
         }
     )
@@ -1491,6 +1533,76 @@ def _unready_ref(graph: SimpleNamespace, submission_id: str) -> str:
 
     assert matches[0].lifecycle_state is SpatialAssetLifecycleStateV1.UNSEALED
     return matches[0].asset_ref
+
+
+def test_retained_history_reads_ignore_the_pending_work_budget(tmp_path: Path) -> None:
+    """Per-subject history reads are listing-scoped, not pending-work-scoped.
+
+    A subject with two retained generations (an older REPORTED record plus the
+    current one) still lists with ``max_pending_records=1``: retained
+    inspection/policy history reads are bounded by the listing budget
+    (``max_list_records``), while the pending-work knob bounds queue/work
+    admission only.  The 2026-10-16 sdata-rig regression failed the whole page
+    closed for exactly this shape (9 retained generations vs the pending
+    budget 8).
+    """
+    from spatial_data_fixture import make_policy
+
+    graph = two_asset_lane(tmp_path, policy=make_policy(max_pending_records=1))
+    subject = graph.subject
+    newer = _admit_policy_for_subject(graph, subject)
+    _drop_other_authorities_for_subject(graph, subject, newer)
+    _record_measurement(graph, subject, newer)
+
+    page = graph.discovery.list(
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        principal=graph.ai,
+        limit=8,
+        cursor=None,
+        now=NOW,
+    )
+    assert graph.catalog_refs["ortho"] in [item.asset_ref for item in page.items]
+
+
+def test_retained_history_limit_asks_for_operator_action(tmp_path: Path) -> None:
+    """The retained-history refusal is typed and operator-actionable.
+
+    When a subject's retained history exceeds the listing-scoped read budget,
+    the page fails closed with ``RETAINED_HISTORY_LIMIT_EXCEEDED`` and the AI
+    envelope asks for operator action (``CONTACT_OPERATOR``) instead of the
+    impossible ``REDUCE_REQUEST``.
+    """
+    from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+    from ksi_core.domains.external.delivery.metadata_response import ai_error_response
+    from spatial_data_fixture import make_policy
+
+    graph = two_asset_lane(
+        tmp_path, policy=make_policy(max_pending_records=8, max_list_records=2)
+    )
+    subject = graph.subject
+    version = None
+    for _ in range(2):
+        newer = _admit_policy_for_subject(graph, subject, version=version)
+        _drop_other_authorities_for_subject(graph, subject, newer)
+        assert graph.inspections.issue_after_seal(subject, now=NOW).request is not None
+        version = newer.version + 1
+
+    with pytest.raises(SpatialDataDomainError) as refused:
+        graph.discovery.list(
+            site_id="site-1",
+            work_area_id=graph.area.work_area_id,
+            principal=graph.ai,
+            limit=2,
+            cursor=None,
+            now=NOW,
+        )
+    assert refused.value.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED"
+    assert refused.value.status_code == 503
+    body = json.loads(bytes(ai_error_response(refused.value).body))
+    assert body["reason"] == "RETAINED_HISTORY_LIMIT_EXCEEDED"
+    assert body["remediation"] == ["CONTACT_OPERATOR"]
+    assert "REDUCE_REQUEST" not in body["remediation"]
 
 
 def test_fix2_newly_ready_granted_candidate_stales_send(tmp_path: Path) -> None:

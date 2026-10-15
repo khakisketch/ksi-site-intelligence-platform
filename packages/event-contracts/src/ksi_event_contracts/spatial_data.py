@@ -114,6 +114,7 @@ SpatialDataReasonV1 = Literal[
     "CLEANUP_FAILED",
     "NOT_READY",
     "UNAVAILABLE",
+    "RETAINED_HISTORY_LIMIT_EXCEEDED",
     "RESOURCE_LIMIT_EXCEEDED",
 ]
 SpatialDataRemediationV1 = Literal[

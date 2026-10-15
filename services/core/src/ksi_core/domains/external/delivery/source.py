@@ -31,6 +31,9 @@ from ksi_core.domains.external.ingress.external_reconstruction import (
     ExternalReconstructionRevision,
     ExternalReconstructionStore,
 )
+from ksi_core.domains.external.ingress.external_validation_policy import (
+    ExternalValidationPolicySelectionBudgetExceeded,
+)
 from ksi_core.domains.external.ingress.spatial_asset_catalog import SpatialAssetCatalog
 from ksi_core.domains.sites.observation_work_orders import ObservationWorkOrderStore
 from ksi_core.domains.sites.sites import SiteStore
@@ -354,14 +357,22 @@ class SpatialDataSourceResolver:
         guarded publication section, mirroring ``resolve``.
         """
         subject = self._subject(record)
+        # Per-subject retained-history reads are listing-scoped: the pending-work
+        # knob (``max_pending_records``) bounds queue/work admission only, never
+        # how much retained inspection or policy history one listing projection
+        # may read.  Over-budget reads stay a typed refusal (never a silent
+        # omission); the reason tells the operator what the client cannot fix.
         try:
             snapshot = self._inspections.public_snapshot_bounded(
                 subject,
-                max_records=self._policy.max_pending_records,
-                max_retained_policies=self._policy.max_pending_records,
+                max_records=self._policy.max_list_records,
+                max_retained_policies=self._policy.max_list_records,
             )
-        except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
-            raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+        except (
+            ExternalArtifactInspectionSnapshotBudgetExceeded,
+            ExternalValidationPolicySelectionBudgetExceeded,
+        ) as exc:
+            raise SpatialDataDomainError("RETAINED_HISTORY_LIMIT_EXCEEDED", 503) from exc
         except Exception as exc:
             raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
         if snapshot.report is None:
@@ -460,10 +471,10 @@ class SpatialDataSourceResolver:
                 expected = self._inspections.retained_report_bounded(
                     subject,
                     report_digest=report_digest,
-                    max_records=self._policy.max_pending_records,
+                    max_records=self._policy.max_list_records,
                 )
             except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
-                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+                raise SpatialDataDomainError("RETAINED_HISTORY_LIMIT_EXCEEDED", 503) from exc
             except Exception as exc:
                 raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
             if expected is None:
@@ -524,10 +535,10 @@ class SpatialDataSourceResolver:
             subject = self._subject(record)
             try:
                 state = self._inspections.locally_retained_state_digest_bounded(
-                    subject, max_records=self._policy.max_pending_records
+                    subject, max_records=self._policy.max_list_records
                 )
             except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
-                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+                raise SpatialDataDomainError("RETAINED_HISTORY_LIMIT_EXCEEDED", 503) from exc
             except Exception as exc:
                 raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
             if state is None:
@@ -620,7 +631,7 @@ class SpatialDataSourceResolver:
                 expected = self._inspections.retained_report_bounded(
                     source.sealed_subject,
                     report_digest=source.inspection_report_digest,
-                    max_records=self._policy.max_pending_records,
+                    max_records=self._policy.max_list_records,
                 )
                 report = (
                     self._inspections.data_report_for_locally_current_use(
@@ -630,7 +641,7 @@ class SpatialDataSourceResolver:
                     else None
                 )
             except ExternalArtifactInspectionSnapshotBudgetExceeded as exc:
-                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503) from exc
+                raise SpatialDataDomainError("RETAINED_HISTORY_LIMIT_EXCEEDED", 503) from exc
             except Exception as exc:
                 raise SpatialDataDomainError("CURRENTNESS_UNAVAILABLE", 503) from exc
             if report is None:

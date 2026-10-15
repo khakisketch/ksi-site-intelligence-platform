@@ -3650,3 +3650,20 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   `test_loader_rejects_a_snapshot_signed_before_its_key_window`), 라이브 스크래치
   CHECK1(key-ended 부팅 503·로그 1줄·영수증 불변)·CHECK2(allow_out_of_window=False 거부) 실측.
   증거 `keyended_live_check.py`·`boot-keyended.log`; 스펙 §2/§6과 런북 `docs/ops/DEV_EXTERNAL_RUNBOOK.md` §3a(네 게이트·명시 reload 복구·시작 로그 1줄) 갱신.
+
+### 2026-10-16 후속: AI 목록 예산 분리·사유/복구 안내 (승인된 제품 결정 이행)
+
+- **구현**: ①자산별 보존 이력 조회(검사 기록·정책 세대)의 예산을 대기-작업 노브(`max_pending_records`)에서
+  **리스팅 스코프(`max_list_records`)** 로 분리(`source.py` 4개 지점 — 대기 노브는 큐/작업 입장만 지배).
+  ②초과는 새 사유 **`RETAINED_HISTORY_LIMIT_EXCEEDED`**(503, remediation **`CONTACT_OPERATOR`**)로 표면화 —
+  페이지 전면 `RESOURCE_LIMIT_EXCEEDED`+`REDUCE_REQUEST`(limit와 무관해 무의미)를 대체. ③안전한 거부 유지:
+  부분 목록·후보별 조용한 숨김은 후속 설계로 보류(유한 예산·fail-closed 불변). ④계약: 사유 union 가산
+  (`spatial_data.py`) + 재생성 스키마 3종(spatial-data/-worker/-ai).
+- **검증**: 계약·디스커버리 테스트 2건 신규 — 회귀(pending=1에서도 이력 2세대 리스팅 200) / 초과 시 사유·
+  복구 안내(CONTACT_OPERATOR, REDUCE_REQUEST 부재) + 스윕 **385 passed**, mypy 765·ruff green.
+- **라이브 실증**: 리그를 **원래 수용 설정**(pending=8·envelope maxQueueDepth=8·정책 digest d6f54928 복귀)으로
+  복원 → 9세대 subject에서 MCP 페이지 않았 **200·1건**, 실제 Codex CLI 양수·REST 파리티 4/4. 복원 중 원 digest
+  회귀로 legacy rev1이 재유효해 rev3와 `AMBIGUOUS_GRANT` → 파일 경로로 rev1 회수(회수-교체 수명주기, fail-closed
+  확인). 증거: `mcp-page-pending-budget-8.json`·`codex-positive-pending-budget-8.{txt,jsonl}`·
+  `parity-pending-budget-8.json`(모두 `/tmp/opencode/ksi-sdata-codex-20261016/evidence/`).
+- 남은 설계 과제(비승인): 부분 목록 제공 시 누락 사실·페이지 완전성·커서 규칙 설계.
