@@ -3191,3 +3191,39 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   기록이 담당한다. 제품 코드 변경 없음. 같은 날 큐 필터 보완(`ce3e185`): 거부된 claim이 권위가
   실제 해석한 세대를 학습해, pending이 발급 순서만으로 권위를 판단하지 않는다(재기동 replay
   계약 유지, 뮤테이션 검증 2건).
+
+### 2026-10-15 parser→review 전 구간 완주 — 등록→실파서 검사→실측정 검증→ELIGIBLE→분석→검토 (v19 세대)
+
+- **범위**: 같은 페어·같은 구역으로 등록부터 운영자 검토까지 **단일 체인**을 실제 컨테이너(파서·측정)로
+  완주. 이전 세대의 개별 성공을 이어붙인 것이 아니라, v19 정책 세대 하나로 검사·체크포인트·매핑·
+  분석·검토를 모두 새로 실행했다.
+- **자재**: 신규 오더 `obs-work-00000014/00000015`(에폭 2026-10-09 03:00/04:00, DSM 100.0/100.2 +
+  **RGB ortho**), 정책 v19(동일 규칙·주체, 7일 창) + r23 evidence contexts, evidence는 수정된 3점
+  CSV(DSM 내부 좌표·에폭별 고도) 재봉인.
+- **실행 결과(실측)**:
+  - 검사: v19 2건 `reported`, 모든 outcome `MEASURED`(dsm 2×2 + ortho RGBA) — 실제 파서 컨테이너.
+  - 체크포인트: v19 2건 `VALIDATED`(3/3, mean/mae/rmse/max = 0.0 m) — 실제 measurement 컨테이너.
+  - 매핑: `sha256:08e15ba7…`(zone `wa-f03-flow-site-0002`, EPSG:5186) seq63 `PROVIDER_CONFIGURED`.
+  - 결정: `external-use-decision-98a1e861…` verdict **ELIGIBLE**(USE_ELIGIBLE).
+  - 분석: `analysis-v1-1e323d5b090d56fc1c5cfb8416c29105` 생성 202(QUEUED/EVALUATED, blockers 없음) →
+    분석 워커 1회 실행 → **COMPLETED**. 결과 `report-35e0f171a4c7c4ce6a3c897bc80f8e3d`
+    (digest `sha256:095fea9c…`), net/fill = **+0.008 m³**, cut 0, coverage 4/4, uncertaintyM3 null.
+    **수치 검증**: Δ=0.2 m × 4셀 × 0.01 m² = 0.008 m³ — 실행 결과와 정확히 일치.
+  - 검토: `arv2-8851133ce61a3dea…` ACKNOWLEDGED(reviewer f03-admin) + factual limitations 3건 명시.
+  - 전 항목이 클린 코드 재기동 후에도 유지됨(최종 스윕 200/COMPLETED/ACKNOWLEDGED).
+- **이번 단계의 원인 규명(제품 결함 아님 — fail-closed 정상 동작)**:
+  - 검사 실패(TRANSIENT 반복)의 원인은 두 데몬 모두에서 관측된 VM systemd transient slice 생성
+    **AMBIGUOUS**(야간 이후 1회성) → 데몬 래치(admission closed) → 이후 연결 즉시 종료(EPIPE).
+    복구는 표준 절차(실패 시도 보존 → 스테이징/저널 정리 → 재기동)로 완결, 재발 없음.
+  - 매핑 거부(`signed mapping admission was not applied`)는 `_binding_facts_match`의
+    **모든 outcome MEASURED** 요구에 따른 정상 거부였다 — 구 valid 페어의 "ortho"는 회색조 복사본이라
+    파서가 `UNSUPPORTED_RASTER`로 거부했고, 매핑은 오염된 패키지를 받지 않는다. 해결: 제출 계약이
+    요구하는 **RGB ortho**(측정 가능)로 재등록.
+- **리그 정비(재실행성)**: 프리플라이트(`f03-rig-preflight.sh`), 스냅샷 갱신, analysis activation
+  갱신(키4+레지스트리, 7일 창), 카탈로그 권위·템플릿 창 갱신(`renew_catalog_authority.py` — 부팅
+  리컨사일이 카탈로그 권위 창을 요구), 정책/컨텍스트 세대 스크립트. 함정 기록: 창 만료 시
+  `/ready/external-authority` 503·부팅 리컨사일 차단(RECONCILIATION), 제출은 ortho 1개 필수,
+  리뷰 라우트는 `/v2/sites/{site}/analyses/{id}/review-target`·`/reviews`.
+- **경계**: 합성/검증호스트 수용이다. 고객 실자료 A–E·Terra 호환·현장/측량 수용·배포/클라우드
+  게이트는 그대로 OPEN이며, 위 수치(0.008 m³)와 0.0 m 오차는 합성 입력의 계산 일치 증거이지
+  현장 정확도 증명이 아니다.
