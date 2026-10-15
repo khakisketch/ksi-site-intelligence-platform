@@ -227,10 +227,16 @@ class _CoreServer:
                     self.send_header("Content-Encoding", "identity")
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
-                    for byte in payload:
+                    # Bounded slow window: the client's lease-renewal timeout is 40 ms,
+                    # so the first 64 bytes at 15 ms each already outlast it.  Streaming
+                    # the whole payload at 15 ms per byte would run for ~26 s and can
+                    # outlive the join grace on a hosted runner.
+                    for byte in payload[:64]:
                         self.wfile.write(bytes((byte,)))
                         self.wfile.flush()
                         time.sleep(0.015)
+                    self.wfile.write(payload[64:])
+                    self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     return
                 finally:
