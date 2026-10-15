@@ -506,6 +506,77 @@ def test_not_yet_effective_authority_snapshot_stays_blocked_not_activated(
     assert provider.participants is not None
 
 
+def test_staged_snapshot_authorizes_its_catalog_binding_for_the_degraded_boot(
+    tmp_path: Path,
+) -> None:
+    """Both out-of-window directions authorize the catalog binding structurally.
+
+    A not-yet-effective staged snapshot (and, unchanged, an expired one) answers
+    the workflow-configuration binding check from its signed record while every
+    live port stays blocked; an in-window snapshot defers to the live
+    resolution path instead."""
+    from datetime import UTC, datetime, timedelta
+
+    from ksi_core.external_authority_provider import load_external_authority_provider
+    from ksi_core.external_quantitative_authority import (
+        ExternalQuantitativeCatalogAuthorityRecord,
+    )
+
+    body_digest = "sha256:" + "4" * 64
+    record = ExternalQuantitativeCatalogAuthorityRecord(
+        organization_id="org-a",
+        catalog_body_digest=body_digest,
+        authorized_administration_actor_ids=("catalog-admin",),
+        active_from=datetime(2026, 9, 10, 0, 0, tzinfo=UTC),
+        active_until=datetime(2026, 9, 12, 0, 0, tzinfo=UTC),
+        synthetic_test_only=False,
+    ).sealed()
+    assert record.digest is not None
+    config = _expired_snapshot_config(
+        tmp_path,
+        issued_at="2026-09-11T05:00:00Z",
+        valid_until="2026-09-11T06:00:00Z",
+        catalog_authority=record,
+    )
+    provider = load_external_authority_provider(
+        config, clock=lambda: _EXPIRED_NOW, allow_out_of_window=True
+    )
+    assert (
+        provider.catalog_configuration_was_authorized(
+            authority_record_digest=record.digest,
+            catalog_body_digest=body_digest,
+            organization_id="org-a",
+            administration_actor_id="catalog-admin",
+        )
+        is True
+    )
+    # The same snapshot inside its window defers to the live resolution path.
+    inside = load_external_authority_provider(
+        config,
+        clock=lambda: _EXPIRED_NOW + timedelta(hours=5, minutes=30),
+        allow_out_of_window=True,
+    )
+    assert (
+        inside.catalog_configuration_was_authorized(
+            authority_record_digest=record.digest,
+            catalog_body_digest=body_digest,
+            organization_id="org-a",
+            administration_actor_id="catalog-admin",
+        )
+        is False
+    )
+    # A digest the snapshot does not carry stays unauthorised in every direction.
+    assert (
+        provider.catalog_configuration_was_authorized(
+            authority_record_digest="sha256:" + "9" * 64,
+            catalog_body_digest=body_digest,
+            organization_id="org-a",
+            administration_actor_id="catalog-admin",
+        )
+        is False
+    )
+
+
 def test_platform_expired_activation_keeps_history_but_denies_new_use(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -579,6 +650,7 @@ def _expired_snapshot_config(
     *,
     issued_at: str = "2026-09-11T00:00:00Z",
     valid_until: str = "2026-09-11T01:00:00Z",
+    catalog_authority: Any = None,
 ) -> Path:
     """Default authority snapshot/config files (verbatim retired-helper behavior).
 
@@ -626,7 +698,14 @@ def _expired_snapshot_config(
         "issuedAt": issued_at,
         "validUntil": valid_until,
         "keyId": "authority-key-1",
-        "catalogAuthorities": {"records": [], "currentDigests": []},
+        "catalogAuthorities": (
+            {
+                "records": [catalog_authority.event_payload()],
+                "currentDigests": [catalog_authority.digest],
+            }
+            if catalog_authority is not None
+            else {"records": [], "currentDigests": []}
+        ),
         "policyAuthorities": {"records": [], "currentDigests": []},
         "evidenceContexts": {"records": [], "currentDigests": []},
         "quantitativeAdministration": {"actions": []},

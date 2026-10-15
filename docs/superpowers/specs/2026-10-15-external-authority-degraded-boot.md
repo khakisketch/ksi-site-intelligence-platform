@@ -99,14 +99,22 @@ Two time gates, deliberately different:
    surface keeps the opaque posture).
 3. **Indefinite blocked-with-refusal** (decided, no code change needed).
 
-### Remaining verification finding (2026-10-15, live scratch)
+### Third gate: workflow-config catalog binding (found and fixed 2026-10-15/16)
 
-A *fully staged* future snapshot (window plus actions effective when the window opens) does not yet
-reach the BLOCKED boot end to end: after the snapshot window gate passes, the composition fails at
-the external result workflow configuration (`external quantitative workflow configuration blocked:
-CATALOG_AUTHORITY`), because the workflow binding validates the catalog/authority administration
-that is not yet effective. That is a third time gate beyond this spec's original two; the fix
-belongs in the same policy (`workflow config tolerates a not-yet-effective administration and
-starts blocked`) and needs its own change + tests before the future-staged boot can be claimed.
-The snapshot-window half is independently verified (expired: live boot blocked; future: loader +
-status blocked in-process and in contract tests).
+A *fully staged* future snapshot (window plus actions effective when the window opens) initially
+failed after the snapshot window gate at the external result workflow configuration
+(`CATALOG_AUTHORITY`): `catalog_configuration_was_authorized` rejected a snapshot issued in the
+future (`snapshot.issued_at > now`) and required its historical evaluation time to be `<= now`.
+That is a third time gate beyond the original two.  Fixed in the same approved policy:
+`catalog_configuration_was_authorized` now authorizes the binding structurally from the exact
+signed window for **both** out-of-window directions (the still-current case still defers to the
+live resolution path), while every live port keeps applying the current-time gate and the provider
+stays blocked.  Contract coverage:
+`tests/contract/test_platform_core_production.py::test_staged_snapshot_authorizes_its_catalog_binding_for_the_degraded_boot`
+(future True, in-window False, unknown digest False).
+
+**End-to-end live verification (2026-10-16, scratch core)**: a chained, correctly signed,
+future-window snapshot that also stages an administration action effective when the window opens
+now **boots**, `/ready` is 200, `/ready/external-authority` is 503 (blocked), and the startup log
+carries exactly one line: `external authority provider blocked: NOT_YET_EFFECTIVE`.  The expired
+direction had already been verified the same way.

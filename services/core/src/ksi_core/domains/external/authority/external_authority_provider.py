@@ -666,7 +666,16 @@ class ExternalAuthorityProvider:
         organization_id: str,
         administration_actor_id: str,
     ) -> bool:
-        """Check a catalog binding from its exact signed record and valid history."""
+        """Check a catalog binding from its exact signed record and valid history.
+
+        Both out-of-window directions authorize structurally from the signed
+        record's own interval: an expired snapshot (a degraded boot over stale
+        authority) and a not-yet-effective staged snapshot whose window has not
+        begun.  Neither direction admits work - the provider stays blocked and
+        the live ports keep applying the current-time gate - so this check only
+        answers whether the signed history authorized the binding, evaluated at
+        the exact start of the shared window.
+        """
         try:
             now = self._clock()
         except Exception:
@@ -677,7 +686,6 @@ class ExternalAuthorityProvider:
             snapshot is None
             or now.tzinfo is None
             or now.utcoffset() != UTC.utcoffset(now)
-            or snapshot.issued_at > now
             or organization_id != self.organization_id
             or authority_record_digest not in snapshot.current_catalog_digests
         ):
@@ -685,18 +693,22 @@ class ExternalAuthorityProvider:
         record = snapshot.catalog_records.get(authority_record_digest)
         if record is None:
             return False
-        if now < snapshot.valid_until and now < record.active_until:
+        window_start = max(snapshot.issued_at, snapshot.key_not_before, record.active_from)
+        window_end = min(snapshot.valid_until, snapshot.key_not_after, record.active_until)
+        if window_start >= window_end:
             return False
-        historical_at = max(snapshot.issued_at, snapshot.key_not_before, record.active_from)
-        historical_until = min(snapshot.valid_until, snapshot.key_not_after, record.active_until)
+        if (
+            snapshot.issued_at <= now < min(snapshot.valid_until, snapshot.key_not_after)
+            and record.active_from <= now < record.active_until
+        ):
+            # Still current: the live resolution path owns this case.
+            return False
         return bool(
-            historical_at < historical_until
-            and historical_at <= now
-            and record.permits_catalog(
+            record.permits_catalog(
                 catalog_body_digest=catalog_body_digest,
                 organization_id=organization_id,
                 administration_actor_id=administration_actor_id,
-                now=historical_at,
+                now=window_start,
             )
         )
 
