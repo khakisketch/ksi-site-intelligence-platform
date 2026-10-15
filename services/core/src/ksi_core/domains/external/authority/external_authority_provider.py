@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
@@ -60,6 +61,8 @@ from ksi_core.domains.external.quantity.external_single_volume_authority import 
 )
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class ExternalAuthorityProvider:
@@ -216,9 +219,19 @@ class ExternalAuthorityProvider:
                         if candidate is None:
                             raise ExternalAuthorityProviderError("authority provider is blocked")
                         if now < candidate.issued_at:
-                            raise ExternalAuthorityProviderError(
-                                "authority snapshot is not yet issued at attach time"
+                            # A staged/rotated snapshot signed ahead of its window: keep
+                            # the signed snapshot and the complete workflow graph for
+                            # replay, never reconcile, publish or append a receipt for
+                            # not-yet-effective authority, and let live ports stay
+                            # blocked until now reaches the window.
+                            with self._state_lock:
+                                self._blocked_reason = "NOT_YET_EFFECTIVE"
+                                self._configured = False
+                                state.external_authority_provider = self
+                            _LOGGER.warning(
+                                "external authority provider blocked: NOT_YET_EFFECTIVE"
                             )
+                            return
                         if (
                             now >= candidate.valid_until
                             or now >= candidate.key_not_after
@@ -230,6 +243,9 @@ class ExternalAuthorityProvider:
                                 self._blocked_reason = "EXPIRED"
                                 self._configured = False
                                 state.external_authority_provider = self
+                            _LOGGER.warning(
+                                "external authority provider blocked: EXPIRED"
+                            )
                             return
                         if not self._snapshot_valid_at(candidate, now):
                             raise ExternalAuthorityProviderError(
@@ -809,24 +825,32 @@ def _load(
     *,
     clock: Callable[[], datetime],
     validation_now: datetime | None = None,
-    allow_expired: bool = False,
+    allow_out_of_window: bool = False,
 ) -> ExternalAuthorityProvider:
     validation_clock = clock if validation_now is None else lambda: validation_now
     return ExternalAuthorityProvider(
         config,
-        _snapshot_from_path(config, clock=validation_clock, allow_expired=allow_expired),
+        _snapshot_from_path(
+            config, clock=validation_clock, allow_out_of_window=allow_out_of_window
+        ),
         clock=clock,
     )
 
 
 def load_external_authority_provider(
-    path: Path, *, clock: Callable[[], datetime], allow_expired: bool = False
+    path: Path, *, clock: Callable[[], datetime], allow_out_of_window: bool = False
 ) -> ExternalAuthorityProvider:
-    """Verify file-backed authority inputs without opening a receipt journal."""
+    """Verify file-backed authority inputs without opening a receipt journal.
+
+    ``allow_out_of_window`` admits a correctly signed snapshot whose window has
+    ended or has not begun yet, so a degraded boot can retain signed history
+    and the complete workflow graph while every live port stays blocked until a
+    current snapshot is reloaded.
+    """
     if not callable(clock):
         raise ValueError("authority provider requires a clock")
     try:
-        return _load(_config_from_path(path), clock=clock, allow_expired=allow_expired)
+        return _load(_config_from_path(path), clock=clock, allow_out_of_window=allow_out_of_window)
     except (OSError, ValueError, TypeError) as exc:
         raise ExternalAuthorityProviderError("external authority provider is blocked") from exc
 

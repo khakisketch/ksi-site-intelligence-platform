@@ -367,7 +367,7 @@ def test_loader_can_verify_expired_activation_for_read_only_history_replay(
         resource_envelope=bindings["resource_envelope"],
         worker_principal=bindings["worker_principal"],
         now=_NOW + timedelta(hours=1),
-        allow_expired=True,
+        allow_out_of_window=True,
     )
 
     assert loaded == activation

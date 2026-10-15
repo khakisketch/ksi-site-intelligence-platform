@@ -1,6 +1,6 @@
 # External Authority Degraded Boot — 2026-10-15 (proposal, not implementation authority)
 
-Status: **written proposal awaiting owner review.** This document creates no runtime authorization,
+Status: **approved by the owner 2026-10-15** (window-expired and not-yet-effective both boot BLOCKED; one structured log line naming the gate; indefinite blocked-with-refusal). The snapshot-window half is implemented; the remaining gates are recorded below. This document creates no runtime authorization,
 does not change the current slice/acceptance, and must not be executed as a work order by itself.
 Source item: product-state backlog 2026-09-18 (owner decision: degrade to BLOCKED; needs a
 degraded-boot spec with two time gates; runbook §3a meanwhile).
@@ -86,10 +86,27 @@ Two time gates, deliberately different:
 3. Negative controls unchanged: broken signature, broken receipt chain, missing configuration.
 4. Key-window expiry: verify current behavior first, then apply the same gate decision.
 
-## 6. Open questions for the owner
+## 6. Owner decisions (2026-10-15) and implementation status
 
-1. Confirm gate 2 includes the not-yet-effective direction (recommended) or keep it fatal.
-2. Should a blocked boot emit one structured startup log/event naming the gate, or stay silent in
-   the API surface (current posture keeps exception content out of responses)?
-3. Does any customer/ops contract require a *maximum* blocked-boot tolerance (e.g., refuse to serve
-   after N days blocked), or is indefinite blocked-with-refusal the accepted posture?
+1. **Not-yet-effective window: boot + BLOCKED** (decided). Implemented: the loader's window flag is
+   now `allow_out_of_window` and tolerates both directions (`provider_loading.py`), the signing key
+   resolves at `issued_at` for any out-of-window snapshot, and the attach path turns the future case
+   into `_blocked_reason = "NOT_YET_EFFECTIVE"` instead of raising
+   (`external_authority_provider.py`). Contract coverage:
+   `tests/contract/test_platform_core_production.py::test_not_yet_effective_authority_snapshot_stays_blocked_not_activated`.
+2. **One structured startup log line naming the gate** (decided). Implemented: the attach block logs
+   `external authority provider blocked: EXPIRED` / `NOT_YET_EFFECTIVE` (module logger; the API
+   surface keeps the opaque posture).
+3. **Indefinite blocked-with-refusal** (decided, no code change needed).
+
+### Remaining verification finding (2026-10-15, live scratch)
+
+A *fully staged* future snapshot (window plus actions effective when the window opens) does not yet
+reach the BLOCKED boot end to end: after the snapshot window gate passes, the composition fails at
+the external result workflow configuration (`external quantitative workflow configuration blocked:
+CATALOG_AUTHORITY`), because the workflow binding validates the catalog/authority administration
+that is not yet effective. That is a third time gate beyond this spec's original two; the fix
+belongs in the same policy (`workflow config tolerates a not-yet-effective administration and
+starts blocked`) and needs its own change + tests before the future-staged boot can be claimed.
+The snapshot-window half is independently verified (expired: live boot blocked; future: loader +
+status blocked in-process and in contract tests).

@@ -156,7 +156,7 @@ def _registry_key(
     now: datetime,
     issued_at: datetime,
     valid_until: datetime,
-    allow_expired: bool,
+    allow_out_of_window: bool,
 ) -> Ed25519PublicKey:
     body = _exact_mapping(
         registry,
@@ -194,7 +194,7 @@ def _registry_key(
         not_before <= issued_at < valid_until <= not_after
     ):
         raise ValueError("Analysis activation was not issued within its signing key validity")
-    if not allow_expired and not (not_before <= now < not_after):
+    if not allow_out_of_window and not (not_before <= now < not_after):
         raise ValueError("Analysis activation verification key is not currently valid")
     public_path = registry_path.parent / key["publicKeyFile"]
     if public_path.parent != registry_path.parent:
@@ -218,7 +218,7 @@ def load_analysis_activation(
     resource_envelope: ResourceEnvelopeV1,
     worker_principal: Principal,
     now: datetime,
-    allow_expired: bool = False,
+    allow_out_of_window: bool = False,
 ) -> AnalysisActivationV1:
     """Load and verify activation against explicit, trusted Core graph bindings.
 
@@ -244,7 +244,7 @@ def load_analysis_activation(
         activation_path, name="Analysis activation record", private=True
     )
     activation = AnalysisActivationV1.model_validate(raw_activation)
-    if not allow_expired and not activation.is_current_at(now):
+    if not allow_out_of_window and not activation.is_current_at(now):
         raise ValueError("Analysis activation is not current")
     if (
         activation.organization_id != organization_id
@@ -268,7 +268,7 @@ def load_analysis_activation(
         now=now,
         issued_at=activation.issued_at,
         valid_until=activation.valid_until,
-        allow_expired=allow_expired,
+        allow_out_of_window=allow_out_of_window,
     )
     try:
         public_key.verify(

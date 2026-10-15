@@ -155,7 +155,7 @@ def build_platform_production_app() -> FastAPI:
                 resource_envelope=external_analysis_local_graph.resource_envelope,
                 worker_principal=worker_principal,
                 now=datetime.now(UTC),
-                allow_expired=True,
+                allow_out_of_window=True,
             )
         except ValueError as exc:
             raise RuntimeError("signed Analysis activation is invalid") from exc
@@ -171,7 +171,7 @@ def build_platform_production_app() -> FastAPI:
 
         workflow_path, provider_path = external_authority_paths
         external_authority_provider = load_external_authority_provider(
-            provider_path, clock=lambda: datetime.now(UTC), allow_expired=True
+            provider_path, clock=lambda: datetime.now(UTC), allow_out_of_window=True
         )
         external_result_workflow = load_external_result_workflow_config(
             workflow_path,

@@ -461,7 +461,7 @@ def test_platform_rejects_relative_external_authority_path(
 def test_expired_authority_snapshot_stays_blocked_not_activated(
     tmp_path: Path,
 ) -> None:
-    """The platform factory's ``allow_expired`` reuse never becomes fail-open:
+    """The platform factory's ``allow_out_of_window`` reuse never becomes fail-open:
     an expired snapshot loads for historical reads but reports BLOCKED."""
     from ksi_core.external_authority_provider import load_external_authority_provider
 
@@ -471,12 +471,39 @@ def test_expired_authority_snapshot_stays_blocked_not_activated(
     expired = load_external_authority_provider(
         _expired_snapshot_config(tmp_path),
         clock=lambda: _EXPIRED_NOW + timedelta(hours=2),
-        allow_expired=True,
+        allow_out_of_window=True,
     )
     status = expired.status()
     assert status["status"] == "BLOCKED"
     assert status.get("businessEligible", False) is False
     assert expired.participants is not None
+
+
+def test_not_yet_effective_authority_snapshot_stays_blocked_not_activated(
+    tmp_path: Path,
+) -> None:
+    """A staged snapshot signed ahead of its window loads blocked, never activated:
+
+    the symmetric partner of the expired direction at the provider-loader level
+    - the signed history and the workflow graph stay available, and every live
+    port stays closed until a current snapshot is reloaded or the window opens.
+    A fully staged future snapshot that also stages administration actions still
+    needs the workflow-binding gate handled (see the degraded-boot spec)."""
+    from ksi_core.external_authority_provider import load_external_authority_provider
+
+    provider = load_external_authority_provider(
+        _expired_snapshot_config(
+            tmp_path,
+            issued_at="2026-09-11T05:00:00Z",
+            valid_until="2026-09-11T06:00:00Z",
+        ),
+        clock=lambda: _EXPIRED_NOW,
+        allow_out_of_window=True,
+    )
+    status = provider.status()
+    assert status["status"] == "BLOCKED"
+    assert status.get("businessEligible", False) is False
+    assert provider.participants is not None
 
 
 def test_platform_expired_activation_keeps_history_but_denies_new_use(
@@ -547,8 +574,18 @@ def _write_provider_file(path: Path, payload: object) -> None:
     os.chmod(path, 0o600)
 
 
-def _expired_snapshot_config(tmp_path: Path) -> Path:
-    """Default authority snapshot/config files (verbatim retired-helper behavior)."""
+def _expired_snapshot_config(
+    tmp_path: Path,
+    *,
+    issued_at: str = "2026-09-11T00:00:00Z",
+    valid_until: str = "2026-09-11T01:00:00Z",
+) -> Path:
+    """Default authority snapshot/config files (verbatim retired-helper behavior).
+
+    The window is configurable so the same signed fixture can exercise the
+    expired and the not-yet-effective degraded-boot directions (the signing key
+    window 2026-09-10..2026-09-12 covers both).
+    """
     import base64
 
     from cryptography.hazmat.primitives import serialization
@@ -586,8 +623,8 @@ def _expired_snapshot_config(tmp_path: Path) -> Path:
         "organizationId": "org-a",
         "sequence": 1,
         "previousSnapshotDigest": None,
-        "issuedAt": "2026-09-11T00:00:00Z",
-        "validUntil": "2026-09-11T01:00:00Z",
+        "issuedAt": issued_at,
+        "validUntil": valid_until,
         "keyId": "authority-key-1",
         "catalogAuthorities": {"records": [], "currentDigests": []},
         "policyAuthorities": {"records": [], "currentDigests": []},

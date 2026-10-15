@@ -271,7 +271,7 @@ def _snapshot_from_path(
     config: _ProviderConfig,
     *,
     clock: Callable[[], datetime],
-    allow_expired: bool = False,
+    allow_out_of_window: bool = False,
 ) -> _VerifiedSnapshot:
     raw = _exact_mapping(
         _private_json(config.snapshot_path, name="authority snapshot"),
@@ -295,16 +295,21 @@ def _snapshot_from_path(
     now = clock()
     if now.tzinfo is None or now.utcoffset() != UTC.utcoffset(now):
         raise ValueError("authority provider clock must return UTC time")
+    # Out of window in either direction: already expired (a stale snapshot a
+    # restart may still boot on) or not yet effective (a staged/rotated
+    # snapshot signed ahead of its window).  Both stay fail-closed at the live
+    # ports; only an in-window snapshot can ever be current.
     expired = now >= valid_until and issued_at <= now
-    if issued_at >= valid_until or not issued_at <= now or (expired and not allow_expired):
+    out_of_window = not issued_at <= now or expired
+    if issued_at >= valid_until or (out_of_window and not allow_out_of_window):
         raise ValueError("authority snapshot is outside its validity interval")
     key_id = _text(raw["keyId"], name="snapshot keyId")
-    # An expired snapshot may be retained for history only after its signing
-    # key is confirmed to have been valid when the snapshot was issued. It is
-    # never thereby made current; provider live ports apply the current-time
-    # validity gate independently.
+    # A snapshot outside its window may be retained for history only after its
+    # signing key is confirmed valid at issuance. It is never thereby made
+    # current; provider live ports apply the current-time validity gate
+    # independently.
     active_key = _active_key(
-        config.key_registry_path, key_id, issued_at if expired else now
+        config.key_registry_path, key_id, issued_at if out_of_window else now
     )
     signature_value = raw["signature"]
     if not isinstance(signature_value, str):
