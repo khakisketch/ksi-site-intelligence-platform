@@ -37,6 +37,7 @@ _REMOTE_PYTHON = os.environ.get(
     "KSI_TASK5C_REMOTE_PYTHON", "/srv/ksi-data-sandbox/runtime/venv/bin/python"
 )
 _TOOL = Path(__file__).resolve().parents[2] / "tools" / "task5c_host_enforcement_verify.py"
+_DRILL = Path(__file__).resolve().parents[2] / "tools" / "task5c_host_lifecycle_drill.sh"
 
 pytestmark = pytest.mark.skipif(
     not (_HOST and _KEY),
@@ -100,11 +101,7 @@ def host_report() -> str:
 
 
 def _proof_lines(report: str, prefixes: tuple[str, ...]) -> list[str]:
-    return [
-        line
-        for line in report.splitlines()
-        if line.startswith(prefixes)
-    ]
+    return [line for line in report.splitlines() if line.startswith(prefixes)]
 
 
 def _require_proofs(report: str, prefixes: tuple[str, ...], expected: int) -> None:
@@ -149,3 +146,44 @@ def test_host_stable_cpu_before_exact_removal(host_report: str) -> None:
 def test_host_bounded_kill_latency(host_report: str) -> None:
     """An exact Engine kill empties the attempt-slice cgroup within the bound."""
     _require_proofs(host_report, ("PASS  P13",), 6)
+
+
+@pytest.fixture(scope="module")
+def drill_report() -> str:
+    scp = [
+        "scp",
+        "-i",
+        _KEY or "",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        "-o",
+        "BatchMode=yes",
+    ]
+    target, _, port = (_HOST or "").partition(":")
+    if port:
+        scp += ["-P", port]
+    scp += [str(_DRILL), f"{target}:/tmp/task5c_host_lifecycle_drill.sh"]
+    upload = subprocess.run(scp, capture_output=True, text=True, timeout=120)
+    assert upload.returncode == 0, upload.stderr[-400:]
+
+    run = subprocess.run(
+        _ssh_argv("sudo bash /tmp/task5c_host_lifecycle_drill.sh"),
+        capture_output=True,
+        text=True,
+        timeout=1500,
+    )
+    combined = run.stdout + run.stderr
+    assert "DRILLS OK" in combined, combined[-1600:]
+    return combined
+
+
+def test_host_cancellation_drill_cleans_and_serves(drill_report: str) -> None:
+    """Peer-loss cancellation cancels the exact runtime, cleans and keeps serving."""
+    _require_proofs(drill_report, ("PASS  D1",), 10)
+
+
+def test_host_orphan_recovery_drill_cleans_exactly(drill_report: str) -> None:
+    """Startup recovery removes a dead daemon's exact orphan resources."""
+    _require_proofs(drill_report, ("PASS  D2",), 14)

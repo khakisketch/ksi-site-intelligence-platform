@@ -33,9 +33,9 @@ profile is production-supported on any other host.
 | container UID mapping / read-only input bind | PASS | `User=10004:10004` in effect; input mount `RW=false`; active probe reports `UID 10004 10004` and `ROFS_WRITE DENIED (OSError)` |
 | no-network | PASS | `NetworkMode=none`; active probe `NET_CONNECT DENIED (ConnectionRefusedError)`, `/proc/net/dev` shows only `lo` |
 | workspace ownership | PASS | Active probe: `WORK 10004 10004 0o40700` (uid/gid/mode as required by the entrypoint checks) |
-| hostile input through the real lane | PARTIAL (host-backed) | A real registration whose "ortho" was a grayscale copy was correctly rejected `UNSUPPORTED_RASTER` by the sandboxed parser while the DSM measured cleanly; the 40-case adversarial suite (`tests/contract/test_external_inspector_adversarial_inputs.py`) runs in-process. A hostile artifact driven end-to-end through the Core lane is not yet run |
-| cancellation / kill latency | PASS | Exact Engine kill (`POST /containers/<id>/kill`, the same SIGKILL the runtime uses) empties the attempt-slice cgroup in **86 ms** (bound ≤ 15 s), followed by exact removal and `StopUnit` (`P13`, kill drill) |
-| orphan recovery | PASS (incident-based) | Live incident 2026-10-15: a one-off systemd transient-slice ambiguity left a pre-parent attempt; both daemons correctly fail-closed (latched, immediate connection resets) and were recovered with the documented procedure (preserve journal + staging, stop leftover attempt slices, restart) — the recovery path has since been executed repeatedly for both lanes. No scripted daemon orphan drill is added |
+| hostile input through the real lane | PASS (host-backed) | Two layers: a real registration whose "ortho" was a grayscale copy was rejected `UNSUPPORTED_RASTER` by the sandboxed parser while the DSM measured cleanly (order 17 generation); and a truncated GeoTIFF submitted through the Core lane returned a typed `REJECTED / MALFORMED_TIFF` from the real sandboxed parser while the lane completed contained (orders 14/15 of the same generation stayed all-`MEASURED`). The 40-case adversarial suite (`tests/contract/test_external_inspector_adversarial_inputs.py`) adds in-process coverage |
+| cancellation / kill latency | PASS | Two layers: exact Engine kill (`POST /containers/<id>/kill`, the same SIGKILL the runtime uses) empties the attempt-slice cgroup in **86 ms** (bound ≤ 15 s, `P13`); and the full product cancellation path (`D1` in `tools/task5c_host_lifecycle_drill.sh`) kills the driver at `CONTAINER_BOUND` for full UDS peer loss while a real attempt runs — the daemon records `MONITOR_CANCELLED`, cleans the exact container/slice/staging, durably `CLEANED` **1.04 s** after the kill, keeps serving (no restart) and completes a fresh `COMPLETED`/`MEASURED` attempt afterwards |
+| orphan recovery | PASS | Scripted host drill (`D2`): the daemon is SIGKILLed mid-attempt at `CONTAINER_BOUND`, leaving a live orphan (container, `ksi-inspector-a*` attempt slice, two staging entries) verified present; restarting the daemon runs startup recovery in journal order — `CLEANUP_REQUIRED (STARTUP_RECOVERY, origin CONTAINER_BOUND)` → exact container removal → slice removal → staging cleanup → durable `CLEANED` — then serves a fresh `COMPLETED`/`MEASURED` attempt. A 2026-10-15 incident (one-off transient-slice ambiguity, fail-closed latch, documented preserve/restart recovery for both lanes) remains recorded as rule evidence |
 
 ## Recorded operational evidence (prior runs, same host)
 
@@ -53,11 +53,11 @@ profile is production-supported on any other host.
 
 ## Open items / limits
 
-- The decisive pytest selection `-k 'host_'` currently collects only the in-process
-  import-boundary case; converting `tools/task5c_host_enforcement_verify.py` into
-  `test_host_*` cases executed on the approved host remains open. Until then the
-  script-driven verification above is the standing evidence.
-- Cancellation kill-latency, orphan-recovery drill, and hostile-input end-to-end are
-  partial as noted; "unavailable is failure" still applies to those three.
+- The decisive pytest selection `-k 'host_'` now executes the host-backed cases over
+  SSH: `tests/contract/test_external_inspector_host_enforcement.py` drives both
+  `tools/task5c_host_enforcement_verify.py` (`P1`–`P13`) and
+  `tools/task5c_host_lifecycle_drill.sh` (`D0`–`D2`, includes the cancellation and
+  orphan-recovery drills). Unconfigured host variables skip with an explicit
+  `NOT_VERIFIED` reason — a skip is not acceptance.
 - No cloud/customer host, no production TLS/deployment, no CI, no customer artifact.
   Unknown facts stay explicit; nothing here promotes device/field/customer acceptance.
