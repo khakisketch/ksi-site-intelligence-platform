@@ -3334,3 +3334,29 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   (b) F-03 주문의 `workAreaIds=[wa-0001]`(A구역)과 분석 영역 `wa-0002` 불일치 — UI는 데이터대로 정확히
   표시(합성 리그 정렬 차이, 제품 결함 아님).
 - 경계: 합성/검증호스트. 수치(0.18–0.13 s, +0.008 m³)는 이 환경 실측이며 현장/고객 수용이 아니다.
+
+### 2026-10-15 CI 재활성화·첫 실실행 + 로컬 배포 조립 검증(신규)
+
+- **CI 재활성화**: 리포는 public(표준 러너 무료)이었고 Actions가 `enabled:false` 상태였다 — 계정 CLI(gh,
+  workflow scope, 리포 소유자 계정)로 활성화하고 **PR #37**로 로컬 main 라인(50 commits)을 검증 라인에 올렸다.
+- **첫 실행(run 38692198624)**: external-runtime 이미지 2종(inspector/measurement)과 dashboard job(npm ci·tsc·
+  eslint·vitest·next build) **SUCCESS**, `gates`는 **mypy에서 실패** — 로컬이 ruff만 돌려 놓친 실제 오류:
+  (a) `tools/task5c_host_enforcement_verify.py` P13 추가분의 `dict[str, Any]` 어노테이션 누락,
+  (b) `tests/contract/test_external_inspector_systemd.py`의 의도적 `None` 포인터 인자. 단일 파일 mypy는
+  픽스처 import 미해결이 replay 테스트의 None-narrowing 1건을 추가로 숨겼다(`d7f2098`에서 3건 모두 수정,
+  전역 mypy 765 files green). **교훈**: CI가 로컬 절차 공백(전역 mypy 미실행)을 실제로 잡았다.
+- **재실행(run 38692705171)**: mypy 통과 → full pytest 게이트 진행.
+- **로컬 배포 조립 드라이런(신규 증거)**: `deploy/compose.yaml`+`compose.vm.yaml`을 **실빌드 이미지**로 조립
+  (project `ksi-deploy-dryrun`; Caddy는 local_certs + 로컬 한정 포트 오버라이드 8180/8543). init-volumes 소유권 →
+  MinIO → Core(healthy, `/ready`) → Dashboard → Caddy 기동, **`deploy/bin/smoke-vm.sh` 등가 검사 7종 PASS**
+  (app `/api/health` ok · api `/ready` true · objects `/minio/health/ready` 200 · app `/api/auth/providers` ksi-oidc ·
+  미인증 api 401 / app 404 · HSTS 헤더) — Caddy 로컬 CA로 **실제 TLS 검증**.
+- **발견·수정된 실제 결함 1건**: compose 파일 기반 secret은 컨테이너에서 **plain bind mount**로 나타나 long
+  syntax의 uid/gid/mode가 적용되지 않는다 — 대시보드(uid 10001)가 root:root 0400 시크릿을 읽지 못해
+  `EACCES '/run/secrets/dashboard-session'`으로 기동 실패했다. 요건(호스트 파일 `chown 10001` + 0400)을
+  `deploy/secrets/README.md`에 명문화(`3c819e5`)한 뒤 재기동으로 정상화. OIDC subject registry 로더의
+  fail-closed 부팅 검증(principalId 충돌 거부·OCI 아님)도 실측했다.
+- **"Terra 호환" 재확인**: 본 제품 문맥의 Terra는 **DJI Terra**(고객 필드PC 측광 소프트웨어)다 — ADR-KSI-037이
+  vendor API 통합·비교 API·수출 호환의 '증명'을 명시적으로 금지하고, 실제 호환 표면은 **아티팩트 수용**
+  (GeoTIFF DSM/ortho: CRS·transform·nodata·유효 픽셀)이며 실자료(공개 DSM 181MB)·검증호스트 체인·2주기/ortho
+  크롭으로 실증됐다. 남는 것은 고객 파이프라인 실데이터(A–E)와 함께 오는 수용뿐이다.
