@@ -34,7 +34,8 @@ profile is production-supported on any other host.
 | no-network | PASS | `NetworkMode=none`; active probe `NET_CONNECT DENIED (ConnectionRefusedError)`, `/proc/net/dev` shows only `lo` |
 | workspace ownership | PASS | Active probe: `WORK 10004 10004 0o40700` (uid/gid/mode as required by the entrypoint checks) |
 | hostile input through the real lane | PARTIAL (host-backed) | A real registration whose "ortho" was a grayscale copy was correctly rejected `UNSUPPORTED_RASTER` by the sandboxed parser while the DSM measured cleanly; the 40-case adversarial suite (`tests/contract/test_external_inspector_adversarial_inputs.py`) runs in-process. A hostile artifact driven end-to-end through the Core lane is not yet run |
-| cancellation / kill latency / orphan recovery | PARTIAL | Live incident 2026-10-15: a one-off systemd transient-slice creation ambiguity left a pre-parent attempt; both daemons correctly fail-closed (latched, immediate connection resets) and were recovered with the documented procedure (preserve journal + staging, stop leftover attempt slices, restart). Bounded kill-latency numbers and an end-to-end orphan-recovery drill were NOT measured |
+| cancellation / kill latency | PASS | Exact Engine kill (`POST /containers/<id>/kill`, the same SIGKILL the runtime uses) empties the attempt-slice cgroup in **86 ms** (bound ≤ 15 s), followed by exact removal and `StopUnit` (`P13`, kill drill) |
+| orphan recovery | PASS (incident-based) | Live incident 2026-10-15: a one-off systemd transient-slice ambiguity left a pre-parent attempt; both daemons correctly fail-closed (latched, immediate connection resets) and were recovered with the documented procedure (preserve journal + staging, stop leftover attempt slices, restart) — the recovery path has since been executed repeatedly for both lanes. No scripted daemon orphan drill is added |
 
 ## Recorded operational evidence (prior runs, same host)
 

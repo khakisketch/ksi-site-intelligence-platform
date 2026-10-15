@@ -106,6 +106,8 @@ def main() -> int:
     )
     manager = LibsystemdUserManager(bus)
     container_id = ""
+    kill_container_id = ""
+    kill_slice = ""
     pid = ""
 
     try:
@@ -353,8 +355,8 @@ def main() -> int:
                 "except Exception as exc:\n"
                 "    lines.append('NET_CONNECT DENIED ' + type(exc).__name__)\n"
                 "dev_lines = open('/proc/net/dev').read().splitlines()[2:]\n"
-            "devs = (entry.split(':')[0].strip() for entry in dev_lines)\n"
-            "lines.append('DEV ' + ','.join(devs))\n"
+                "devs = (entry.split(':')[0].strip() for entry in dev_lines)\n"
+                "lines.append('DEV ' + ','.join(devs))\n"
                 "print(chr(10).join(lines))\n",
             ],
             capture_output=True,
@@ -383,17 +385,13 @@ def main() -> int:
         # P12: two stable final CPU reads before exact removal.
         first = next(
             usage_line
-            for usage_line in read(
-                f"/sys/fs/cgroup{unit.control_group}/cpu.stat"
-            ).splitlines()
+            for usage_line in read(f"/sys/fs/cgroup{unit.control_group}/cpu.stat").splitlines()
             if usage_line.startswith("usage_usec")
         )
         time.sleep(0.3)
         second = next(
             usage_line
-            for usage_line in read(
-                f"/sys/fs/cgroup{unit.control_group}/cpu.stat"
-            ).splitlines()
+            for usage_line in read(f"/sys/fs/cgroup{unit.control_group}/cpu.stat").splitlines()
             if usage_line.startswith("usage_usec")
         )
         report("P12 stable final CPU before removal", first == second, f"{first} == {second}")
@@ -425,11 +423,65 @@ def main() -> int:
             "LoadState=not-found" in unit_gone or not unit_gone.strip() or cgroup_gone,
             f"cgroup_gone={cgroup_gone}",
         )
+        # P13: bounded kill latency for a long-running container under a fresh slice.
+        kill_slice = f"ksi-measurement-{TOKEN}k.slice"
+        unit2 = manager.start_transient_slice(
+            unit_name=kill_slice,
+            mode="fail",
+            properties=(
+                ("Description", "task5c-kill-drill"),
+                ("CPUAccounting", True),
+                ("CPUWeight", 100),
+                ("MemoryAccounting", True),
+                ("TasksAccounting", True),
+                ("StopWhenUnneeded", False),
+                ("CollectMode", "inactive-or-failed"),
+            ),
+        )
+        kill_payload = dict(payload)
+        kill_payload["Cmd"] = ["/app/.venv/bin/python", "-c", "import time; time.sleep(600)"]
+        kill_payload["HostConfig"] = dict(payload["HostConfig"])
+        kill_payload["HostConfig"]["CgroupParent"] = kill_slice
+        code, body = api("POST", "/v1.44/containers/create", kill_payload)
+        report("P13 drill container accepted", code == 201, str(code))
+        kill_container_id = json.loads(body)["Id"]
+        code, _ = api("POST", f"/v1.44/containers/{kill_container_id}/start")
+        report("P13 drill container started", code == 204, str(code))
+        time.sleep(1.0)
+        populated = read(f"/sys/fs/cgroup{unit2.control_group}/cgroup.events")
+        report(
+            "P13 populated=1 before kill",
+            "populated 1" in populated,
+            populated.replace(chr(10), "; "),
+        )
+        killed_at = time.monotonic()
+        code, _ = api("POST", f"/v1.44/containers/{kill_container_id}/kill")
+        report("P13 exact Engine kill accepted", code == 204, str(code))
+        deadline = time.monotonic() + 15
+        emptied = False
+        while time.monotonic() < deadline:
+            events = read(f"/sys/fs/cgroup{unit2.control_group}/cgroup.events")
+            if "populated 0" in events:
+                emptied = True
+                break
+            time.sleep(0.05)
+        latency_ms = int((time.monotonic() - killed_at) * 1000)
+        report("P13 cgroup emptied within bound (<=15s)", emptied, f"{latency_ms} ms")
+        code, _ = api("DELETE", f"/v1.44/containers/{kill_container_id}?v=1&force=1")
+        report("P13 drill exact removal", code == 204, str(code))
+        kill_container_id = ""
+        report("P13 drill StopUnit", bool(manager.stop_exact(unit_name=kill_slice)), "")
+        kill_slice = ""
     finally:
         if container_id:
             api("DELETE", f"/v1.44/containers/{container_id}?v=1&force=1")
+        if kill_container_id:
+            api("DELETE", f"/v1.44/containers/{kill_container_id}?v=1&force=1")
         with suppress(Exception):
             manager.stop_exact(unit_name=SLICE)
+        if kill_slice:
+            with suppress(Exception):
+                manager.stop_exact(unit_name=kill_slice)
     print("HARNESS", "OK" if FAILED == 0 else "FAILED", flush=True)
     return FAILED
 

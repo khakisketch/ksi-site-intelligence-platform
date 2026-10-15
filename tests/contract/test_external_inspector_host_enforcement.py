@@ -144,3 +144,8 @@ def test_host_container_confinement_probes(host_report: str) -> None:
 def test_host_stable_cpu_before_exact_removal(host_report: str) -> None:
     """Two stable CPU reads precede the exact Docker removal."""
     _require_proofs(host_report, ("PASS  P12",), 2)
+
+
+def test_host_bounded_kill_latency(host_report: str) -> None:
+    """An exact Engine kill empties the attempt-slice cgroup within the bound."""
+    _require_proofs(host_report, ("PASS  P13",), 6)
