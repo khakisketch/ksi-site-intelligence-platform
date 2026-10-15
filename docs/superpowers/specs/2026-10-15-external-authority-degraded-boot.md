@@ -1,7 +1,6 @@
 # External Authority Degraded Boot — 2026-10-15 (proposal, not implementation authority)
 
-Status: **approved by the owner 2026-10-15** (window-expired and not-yet-effective both boot BLOCKED; one structured log line naming the gate; indefinite blocked-with-refusal). The snapshot-window half is implemented; the remaining gates are recorded below. This document creates no runtime authorization,
-does not change the current slice/acceptance, and must not be executed as a work order by itself.
+Status: **approved by the owner 2026-10-15** (window-expired and not-yet-effective both boot BLOCKED; one structured log line naming the gate; indefinite blocked-with-refusal; recovery via explicit reload only). All four time gates — expired, not-yet-effective, the workflow catalog binding, and the signing-key window — are implemented, contract-tested and live-verified (§6). The runbook guidance is updated in `docs/ops/DEV_EXTERNAL_RUNBOOK.md` §3a. This document creates no runtime authorization, does not change the current slice/acceptance, and must not be executed as a work order by itself.
 Source item: product-state backlog 2026-09-18 (owner decision: degrade to BLOCKED; needs a
 degraded-boot spec with two time gates; runbook §3a meanwhile).
 

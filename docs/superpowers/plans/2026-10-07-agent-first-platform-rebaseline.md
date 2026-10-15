@@ -3649,4 +3649,4 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   (`test_factory_boots_blocked_when_the_signing_key_window_ended`·
   `test_loader_rejects_a_snapshot_signed_before_its_key_window`), 라이브 스크래치
   CHECK1(key-ended 부팅 503·로그 1줄·영수증 불변)·CHECK2(allow_out_of_window=False 거부) 실측.
-  증거 `keyended_live_check.py`·`boot-keyended.log`; 스펙 §2/§6 갱신.
+  증거 `keyended_live_check.py`·`boot-keyended.log`; 스펙 §2/§6과 런북 `docs/ops/DEV_EXTERNAL_RUNBOOK.md` §3a(네 게이트·명시 reload 복구·시작 로그 1줄) 갱신.

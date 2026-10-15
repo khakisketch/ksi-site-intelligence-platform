@@ -171,10 +171,12 @@ docker compose up -d --build        # rerun after code change
 
 ### 3a. Restarting Core with external authority configured (time windows)
 
-The 2026-09-18 degraded-boot decision is implemented: a previously valid signed snapshot
-that expires moves the external authority route to `BLOCKED` without taking unrelated Core
-routes down. Forged, unsafe, future-issued, or history-inconsistent bundles still fail boot.
-Check the signed time windows before every restart:
+The 2026-09-18 degraded-boot decision is fully implemented (all four time gates): a signed
+snapshot whose window has expired, has not yet begun, or whose signing-key window has ended at
+startup moves the external authority route to `BLOCKED` without taking unrelated Core routes down,
+and the startup log carries exactly one line naming the gate
+(`external authority provider blocked: EXPIRED` / `NOT_YET_EFFECTIVE`). Forged, unsafe, or
+history-inconsistent bundles still fail boot. Check the signed time windows before every restart:
 
 ```bash
 # snapshot window, from the provider's configured snapshot file (paths are operator-private)
@@ -185,13 +187,15 @@ jq -r '.catalogAuthorities.records[] | "catalog \(.digest[7:19]) \(.activeFrom) 
 jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <protected>/operator/authority-keys.json
 ```
 
-- A signed, previously valid snapshot that has expired by startup now opens Core in a
-  degraded state: `GET /ready` remains available, `GET /ready/external-authority` is
-  `BLOCKED` (503), and no external authority reconciliation or receipt append occurs.
-  Existing external policy/result journals still replay. Use a new signed snapshot
-  that extends the retained history (`sequence`, `previousSnapshotDigest` = last receipt)
-  and the admin reload operation below to restore the external route. A forged, unsafe,
-  future-issued, or history-inconsistent bundle still prevents startup.
+- A signed, previously valid snapshot that has expired by startup — or was staged ahead of its
+  window, or whose signing-key window has ended — opens Core in a degraded state: `GET /ready`
+  remains available, `GET /ready/external-authority` is `BLOCKED` (503), and no external authority
+  reconciliation or receipt append occurs. Existing external policy/result journals still replay.
+  Use a new signed snapshot that extends the retained history (`sequence`,
+  `previousSnapshotDigest` = last receipt) and the admin reload operation below to restore the
+  external route. The window opening alone never clears a blocked process — the reload is the only
+  recovery. A forged, unsafe, or history-inconsistent bundle still prevents startup, and a
+  signature declared outside its key's own interval is impossible in every mode.
 - If only the signed catalog authority record has expired while the snapshot/key remain
   current, Core starts with its historical quantitative journals. `/ready` remains 200;
   `/ready/external-authority` can still report `PROVIDER_CONFIGURED` because the snapshot
@@ -204,7 +208,9 @@ jq -r '.keys[] | "key \(.keyId) \(.status) \(.notBefore) -> \(.notAfter)"' <prot
 - If the snapshot expires while Core is running, `GET /ready/external-authority` turns
   `BLOCKED`, quantitative use is refused, and the rest of Core keeps serving. Recover
   with a new snapshot and `POST /v1/operations/external-authority/reload` (admin),
-  without a restart when the catalog configuration itself is unchanged.
+  without a restart when the catalog configuration itself is unchanged. A reload against
+  still out-of-window inputs (including a key window that has ended) stays fatal and keeps
+  the provider blocked.
 
 ## Appendix H. Pre-ADR-036 managed pipeline (HISTORICAL — not the first-release route)
 
