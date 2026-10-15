@@ -16,6 +16,11 @@ describe("formatNumberKo", () => {
     expect(formatNumberKo(-0, 2)).toBe("0");
   });
 
+  it("표시 정밀도에서 0으로 반올림되는 음수는 부호를 숨기되 실제 음수는 유지한다", () => {
+    expect(formatNumberKo(-0.0001, 2)).toBe("0");
+    expect(formatNumberKo(-1.25, 2)).toBe("-1.25");
+  });
+
   it("묶음 표기와 소수 자리 제한", () => {
     expect(formatNumberKo(1234.567)).toBe("1,234.6");
     expect(formatNumberKo(1234.5, 2)).toBe("1,234.5");

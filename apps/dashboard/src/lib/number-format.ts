@@ -9,8 +9,12 @@
 
 /** 소수 자리만 자르고 `-0` 은 `0` 으로 눕힌다. */
 export function formatNumberKo(value: number, maximumFractionDigits = 1): string {
-  const shown = value === 0 ? 0 : value;
-  return shown.toLocaleString("ko-KR", { maximumFractionDigits });
+  const formatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits });
+  const renderedDigits = formatter.formatToParts(value)
+    .filter((part) => part.type === "integer" || part.type === "fraction");
+  const roundsToZero = renderedDigits.length > 0 && renderedDigits.every((part) => /^0+$/.test(part.value));
+  const shown = value === 0 || (value < 0 && roundsToZero) ? 0 : value;
+  return formatter.format(shown);
 }
 
 /** 유효숫자 기준 — 정밀도가 앞자리에 걸리는 값(예: m 단위 GSD)에 쓴다. */

@@ -21,6 +21,7 @@ import type {
   AnalysisView,
 } from "@/lib/core-api/analysis";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { latestAnalysisReview, sameAnalysisReviewTarget } from "@/lib/analysis-review";
 import {
   analysisEvidenceKindLabel,
   analysisEvidenceReasonLine,
@@ -489,32 +490,6 @@ function isAnalysisReviewPage(value: unknown): value is AnalysisReviewPage & { t
     && value.items.length <= 50
     && value.items.every(isAnalysisReviewReceipt)
     && (value.nextCursor === null || typeof value.nextCursor === "string");
-}
-
-function sameAnalysisReviewTarget(left: AnalysisReviewTarget, right: AnalysisReviewTarget): boolean {
-  return left.resultId === right.resultId
-    && left.resultRevision === right.resultRevision
-    && left.reportDigest === right.reportDigest
-    && left.numericResultIdentityDigest === right.numericResultIdentityDigest
-    && left.calculationIdentityDigest === right.calculationIdentityDigest
-    && left.admissionDigest === right.admissionDigest
-    && left.evaluations.every((evaluation, index) => {
-      const other = right.evaluations[index];
-      return other !== undefined
-        && evaluation.epoch === other.epoch
-        && evaluation.evaluationId === other.evaluationId
-        && evaluation.revision === other.revision
-        && evaluation.evaluationDigest === other.evaluationDigest;
-    });
-}
-
-function latestAnalysisReview(items: readonly AnalysisReviewReceipt[]): AnalysisReviewReceipt | null {
-  return items.reduce<AnalysisReviewReceipt | null>((latest, item) => {
-    if (!latest) return item;
-    const latestTime = Date.parse(latest.reviewedAt);
-    const currentTime = Date.parse(item.reviewedAt);
-    return Number.isFinite(currentTime) && (!Number.isFinite(latestTime) || currentTime > latestTime) ? item : latest;
-  }, null);
 }
 
 function analysisReviewDecisionLabel(decision: AnalysisReviewDecision): string {

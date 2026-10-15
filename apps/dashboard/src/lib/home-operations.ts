@@ -1,3 +1,4 @@
+import type { AnalysisListItem, AnalysisReviewReceipt, AnalysisReviewTarget } from "@/lib/core-api/analysis";
 import type { ExternalPendingDecision } from "@/lib/core-api/external-decisions";
 import type {
   ObservationWorkOrderOperationsView,
@@ -5,6 +6,7 @@ import type {
   ObservationWorkOrderView,
   SiteView,
 } from "@/lib/core-api/types";
+import { latestAnalysisReview, sameAnalysisReviewTarget } from "@/lib/analysis-review";
 
 const DECISION_PRIORITY: Readonly<Record<ObservationWorkOrderStatus, number | null>> = {
   BLOCKED: 0,
@@ -65,8 +67,41 @@ export function selectHomeActiveWorkOrders(
 
 export type HomeAttentionSource =
   | { kind: "EXTERNAL_DECISION"; key: string; siteId: string; observedAt: string; decision: ExternalPendingDecision }
+  | { kind: "ANALYSIS_REVIEW"; key: string; siteId: string; observedAt: string; analysis: AnalysisListItem }
   | { kind: "WORK_ORDER"; key: string; siteId: string; observedAt: string; workOrder: ObservationWorkOrderView }
   | { kind: "SITE"; key: string; siteId: string; observedAt: string; site: SiteView };
+
+export type HomeAnalysisReviewSource = Extract<HomeAttentionSource, { kind: "ANALYSIS_REVIEW" }>;
+
+export type HomeAnalysisReviewRecord = {
+  analysis: AnalysisListItem;
+  currentTarget: AnalysisReviewTarget;
+  reviews: readonly AnalysisReviewReceipt[];
+};
+
+/** Select the newest completed analysis per Site with no review for its exact current result. */
+export function selectHomeAnalysisReviewSources(records: readonly HomeAnalysisReviewRecord[]): HomeAnalysisReviewSource[] {
+  const pending = records.flatMap((record) => {
+    if (record.analysis.executionState !== "COMPLETED" || record.analysis.resultId === null) return [];
+    const latest = latestAnalysisReview(record.reviews);
+    if (latest && sameAnalysisReviewTarget(latest.target, record.currentTarget)) return [];
+    return [record];
+  }).toSorted((a, b) => b.analysis.createdAt.localeCompare(a.analysis.createdAt)
+    || a.analysis.analysisId.localeCompare(b.analysis.analysisId));
+
+  const selectedSites = new Set<string>();
+  return pending.flatMap(({ analysis }) => {
+    if (selectedSites.has(analysis.siteId)) return [];
+    selectedSites.add(analysis.siteId);
+    return [{
+      kind: "ANALYSIS_REVIEW" as const,
+      key: `analysis-review:${analysis.analysisId}`,
+      siteId: analysis.siteId,
+      observedAt: analysis.createdAt,
+      analysis,
+    }];
+  });
+}
 
 export function selectHomeInitialSetupSites(sites: readonly SiteView[], limit = 3): SiteView[] {
   return sites.filter((site) => site.status === "UNMAPPED")
@@ -93,12 +128,14 @@ export function selectHomeAttentionSources(input: {
   sites: readonly SiteView[];
   operationsByWorkOrderId?: HomeWorkOrderOperationOptions["operationsByWorkOrderId"];
   externalDecisions?: readonly ExternalPendingDecision[];
+  analysisReviews?: readonly HomeAnalysisReviewSource[];
 }, limit = 3): HomeAttentionSource[] {
   const candidates: HomeAttentionSource[] = [
     ...(input.externalDecisions ?? []).map((decision) => ({
       kind: "EXTERNAL_DECISION" as const, key: `external-decision:${decision.reportRef}`,
       siteId: decision.siteId, observedAt: decision.reportedAt, decision,
     })),
+    ...(input.analysisReviews ?? []).toSorted((a, b) => b.observedAt.localeCompare(a.observedAt) || a.key.localeCompare(b.key)),
     ...selectHomeDecisionWorkOrders(input.workOrders, input.workOrders.length, {
       operationsByWorkOrderId: input.operationsByWorkOrderId,
     }).map((workOrder) => ({ kind: "WORK_ORDER" as const, key: `work-order:${workOrder.workOrderId}`, siteId: workOrder.siteId, observedAt: workOrder.updatedAt, workOrder })),

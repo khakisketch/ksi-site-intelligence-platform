@@ -7,6 +7,7 @@ import { presentWorkOrder } from "./field/work-order-stage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { whoAmI } from "@/lib/core-api/auth";
+import { getAnalysisReviewTarget, listAnalyses, listAnalysisReviews } from "@/lib/core-api/analysis";
 import { listSitesCached } from "@/lib/core-api/cached";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { listExternalPendingDecisions } from "@/lib/core-api/external-decisions";
@@ -15,11 +16,15 @@ import { listWorkInbox } from "@/lib/core-api/work-collaboration";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { externalDecisionCardText } from "@/lib/home-external-decision";
-import { selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
+import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
 
 export const metadata = { title: "홈 · KSI" };
+
+const MAX_HOME_ANALYSIS_REVIEW_SITES = 3;
+const MAX_HOME_ANALYSES_PER_SITE = 5;
+const MAX_HOME_ANALYSIS_REVIEW_PAGE = 50;
 
 type Settled<T> = { ok: true; value: T } | { ok: false; forbidden: boolean; message: string };
 
@@ -29,6 +34,42 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   } catch (error) {
     return { ok: false, forbidden: typeof error === "object" && error !== null && "status" in error && error.status === 403, message: "요청을 처리하지 못했습니다." };
   }
+}
+
+async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promise<HomeAnalysisReviewSource[]> {
+  // Bound the server-side read to 3 Home-context Sites × 5 analyses. Each completed
+  // analysis checked uses one target and one review-list GET: at most 33 Core calls.
+  const boundedSiteIds = [...new Set(siteIds)].slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
+  const perSite = await Promise.all(boundedSiteIds.map(async (siteId) => {
+    try {
+      const page = await listAnalyses(siteId, { limit: MAX_HOME_ANALYSES_PER_SITE });
+      const completed = page.items
+        .filter((analysis) => analysis.siteId === siteId && analysis.executionState === "COMPLETED" && analysis.resultId !== null)
+        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || a.analysisId.localeCompare(b.analysisId));
+      const records: HomeAnalysisReviewRecord[] = [];
+
+      for (const analysis of completed) {
+        try {
+          const [currentTarget, reviewPage] = await Promise.all([
+            getAnalysisReviewTarget(siteId, analysis.analysisId),
+            // Match the detail panel's bounded page; Core review pages are not newest-first.
+            listAnalysisReviews(siteId, analysis.analysisId, { limit: MAX_HOME_ANALYSIS_REVIEW_PAGE }),
+          ]);
+          records.push({ analysis, currentTarget, reviews: reviewPage.items });
+          const candidate = selectHomeAnalysisReviewSources(records)[0];
+          if (candidate) return candidate;
+        } catch {
+          // Without both current target and receipts the exact-review state is unknown.
+          return null;
+        }
+      }
+    } catch {
+      // Analysis is an optional Home source: a missing/denied Core read never breaks Home.
+    }
+    return null;
+  }));
+
+  return perSite.filter((source): source is HomeAnalysisReviewSource => source !== null);
 }
 
 function observedAt(value: string): string {
@@ -54,6 +95,21 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
   if (source.kind === "EXTERNAL_DECISION") {
     const card = externalDecisionCardText(source.decision);
     return { key: source.key, siteName, label: card.label, title: card.title, detail: card.detail, observedAt: observedAt(source.observedAt), href: card.href, actionLabel: card.actionLabel, image: null, imageFallback: fallback() };
+  }
+  if (source.kind === "ANALYSIS_REVIEW") {
+    const analysis = source.analysis;
+    return {
+      key: source.key,
+      siteName,
+      label: "분석 검토 대기",
+      title: "완료된 분석 결과를 검토하세요.",
+      detail: `작업구역 ${analysis.workAreaId}의 분석에 현재 결과를 대상으로 한 검토 기록이 없습니다. 결과와 근거를 확인하세요.`,
+      observedAt: observedAt(source.observedAt),
+      href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}`,
+      actionLabel: "분석 결과 검토",
+      image: null,
+      imageFallback: fallback(),
+    };
   }
   if (source.kind === "WORK_ORDER") {
     const order = source.workOrder;
@@ -99,11 +155,20 @@ export default async function HomePage() {
   const decisionsUnavailable = externalWorkOrders && !decisionsResult.ok;
   const permissions = whoResult.ok ? whoResult.value.permissions : [];
   const canRegisterSite = permissions.includes("SITES_WRITE");
-  const allAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions }, Number.MAX_SAFE_INTEGER);
-  const operationalAttention = allAttention.filter((source) => source.kind !== "SITE" || source.site.status !== "UNMAPPED");
-  const attentionSources = operationalAttention.slice(0, 3);
+  const baseAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions }, Number.MAX_SAFE_INTEGER);
   const initialSetupSites = selectHomeInitialSetupSites(sites);
   const recentSiteSources = selectHomeRecentSiteSources(sites);
+  const externalDecisionSiteIds = new Set(decisions.map((decision) => decision.siteId));
+  const analysisReviewSiteIds = [...new Set([
+    ...baseAttention
+      .filter((source) => source.kind !== "EXTERNAL_DECISION" && !(source.kind === "SITE" && source.site.status === "UNMAPPED"))
+      .map((source) => source.siteId),
+    ...recentSiteSources.filter((source) => !externalDecisionSiteIds.has(source.siteId)).map((source) => source.siteId),
+  ])].slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
+  const analysisReviewSources = await loadHomeAnalysisReviewSources(analysisReviewSiteIds);
+  const allAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions, analysisReviews: analysisReviewSources }, Number.MAX_SAFE_INTEGER);
+  const operationalAttention = allAttention.filter((source) => source.kind !== "SITE" || source.site.status !== "UNMAPPED");
+  const attentionSources = operationalAttention.slice(0, 3);
   const attentionSiteIds = new Set(allAttention.map((source) => source.siteId));
   const primarySiteIds = new Set((attentionSources.length ? attentionSources : recentSiteSources).map((source) => source.siteId));
   const recentSources = selectHomeRecentUpdates({ workOrders, sites, excludedSiteIds: new Set([...attentionSiteIds, ...primarySiteIds]) });
