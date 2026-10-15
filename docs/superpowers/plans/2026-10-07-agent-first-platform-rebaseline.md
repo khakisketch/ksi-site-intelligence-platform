@@ -3494,3 +3494,18 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 한계(문서 정합): `docs/ops/VM_DEPLOYMENT_READINESS.md`의 유보를 그대로 유지한다 — 이 드릴은
   **합성 볼륨 범위의 도구 동작 증거**이며, 실제 운영 호스트의 복구/TLS/UDS/ACL/host 검증이나
   실데이터 복구 보장이 아니다(별도 승인·실호스트 필요).
+
+### 2026-10-15 배포 준비성 결함 수정: 검증 워커가 부트 후 기동 불가 (`2780f8a`)
+
+- **실측 증상**: VM 재부팅 후 `ksi-external-validation-worker.service`가
+  `Failed to set up mount namespacing: /run/docker.sock: No such file or directory`(226/NAMESPACE)로
+  기동 실패 — rootful 소켓 경로는 tmpfs(`/run`)라 부트마다 사라지는데, 유닛의
+  `InaccessiblePaths=/var/run/docker.sock /run/docker.sock …`는 systemd가 **존재하는 경로**를 요구한다.
+  그 결과 새 주문(20/21)의 검사·검증이 조용히 큐에 남아 있었다(검사 발급은 되지만 소비자가 없음).
+- **수정**: 두 소켓 경로에 `-` 접두(`InaccessiblePaths=-/var/run/docker.sock -/run/docker.sock /run/user`)
+  — 존재하면 마스킹, 없으면 무시. 템플릿 `manifest.sha256` 해시와 고정 계약 테스트 핀을 함께 갱신.
+- **검증**: VM에서 `/run/docker.sock`를 제거한 **부트 상태 재현** 후 워커 기동 → `active` + 라이브
+  Core(:8092) 폴링 실측(큐 소비 재개). VM의 `/etc/systemd/system`·`/usr/share/ksi-external-runtime/systemd`
+  사본 동기화. 리포 계약 테스트(`test_host_assets_keep_validator_and_launcher_privileges_separate`) PASS.
+- **교훈**: 이번 세션의 배포-실측 결함 2건(compose secret 소유권, 유닛 경로 존재 요구)은 모두
+  **실제 기동을 시도해야만** 드러나는 류다 — 정적 검사·단위 테스트로는 잡히지 않는다.
