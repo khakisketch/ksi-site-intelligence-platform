@@ -227,15 +227,16 @@ class _CoreServer:
                     self.send_header("Content-Encoding", "identity")
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
-                    # Bounded slow window: the client's lease-renewal timeout is 40 ms,
-                    # so the first 64 bytes at 15 ms each already outlast it.  Streaming
-                    # the whole payload at 15 ms per byte would run for ~26 s and can
-                    # outlive the join grace on a hosted runner.
-                    for byte in payload[:64]:
+                    # Bounded slow window: the client's lease-renewal timeout is 1 s,
+                    # so the first 96 bytes at 15 ms each (1.44 s) already outlast it and
+                    # the client aborts mid-stream.  Streaming the whole payload at
+                    # 15 ms per byte would run for ~26 s and can outlive the join grace
+                    # on a hosted runner.
+                    for byte in payload[:96]:
                         self.wfile.write(bytes((byte,)))
                         self.wfile.flush()
                         time.sleep(0.015)
-                    self.wfile.write(payload[64:])
+                    self.wfile.write(payload[96:])
                     self.wfile.flush()
                 except (BrokenPipeError, ConnectionResetError):
                     return
@@ -838,8 +839,12 @@ def test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_cal
     tmp_path: Any, monkeypatch: Any
 ) -> None:
     """A slow renewal cannot leave an active daemon request behind after run-once."""
+    # Ten seconds of run deadline: the case exercises the renewal timeout, not the
+    # envelope deadline, and a 0.3 s deadline expired during the download phase on a
+    # loaded hosted runner - the flow then never reached the measurement and the
+    # failure surfaced as a misleading renew_finished timeout.
     envelope = _envelope().model_copy(
-        update={"max_deadline_seconds": 0.3, "resource_envelope_digest": None}
+        update={"max_deadline_seconds": 10.0, "resource_envelope_digest": None}
     ).sealed()
     identity, state = _failure_state(
         tmp_path,
@@ -908,7 +913,10 @@ def test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_cal
             base_url=core_server.base_url,
             worker_token="local-worker-token",
             worker_instance_id=_WORKER_ID,
-            request_timeout_seconds=0.04,
+            # The renewal must time out against the intentionally slow response while
+            # the downloads and the final calls stay inside the same budget.  One
+            # second is tolerant of hosted-runner scheduling jitter; 40 ms was not.
+            request_timeout_seconds=1.0,
         ) as client:
             started_monotonic = time.monotonic()
             assert run_once(client, runtime, policy, now=_Clock()) is True
@@ -919,7 +927,7 @@ def test_run_once_joins_a_timed_out_measurement_renewal_before_the_next_core_cal
 
     assert state.report is None
     assert state.failure is None
-    assert elapsed_wall_seconds >= 0.04
+    assert elapsed_wall_seconds >= 1.0
 
 
 def test_run_once_reports_runtime_identity_mismatch_as_a_current_fenced_failure(
