@@ -51,6 +51,7 @@ from ksi_core.domains.external.ingress.external_validation_policy import (
     PolicyAuthorityRecord,
 )
 from ksi_core.domains.external.quantity.external_quantitative_authority import (
+    DuplicateActiveMappingError,
     ExternalQuantitativeCatalogAuthorityCurrentnessPort,
     ExternalQuantitativeCompatibilityRecord,
 )
@@ -458,13 +459,15 @@ class ExternalAuthorityProvider:
                 mapping = ExternalQuantitativeCompatibilityRecord.from_event_payload(
                     action.payload["mapping"]
                 )
-                if (
-                    mapping.organization_id != self.organization_id
-                    or catalog.admit_mapping(
+                if mapping.organization_id != self.organization_id:
+                    raise ExternalAuthorityProviderError("signed mapping admission was not applied")
+                try:
+                    admitted = catalog.admit_mapping(
                         mapping, actor=action.actor_id, now=action.effective_at
                     )
-                    is None
-                ):
+                except DuplicateActiveMappingError as exc:
+                    raise ExternalAuthorityProviderError(str(exc)) from exc
+                if admitted is None:
                     raise ExternalAuthorityProviderError("signed mapping admission was not applied")
             elif action.kind == "ADMIT_SINGLE_MAPPING":
                 if action.actor_id != self._config.catalog_administration_actor_id:

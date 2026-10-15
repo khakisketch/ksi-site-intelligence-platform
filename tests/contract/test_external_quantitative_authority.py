@@ -13,6 +13,7 @@ from ksi_core.auth import Principal, PrincipalKind, Role
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.external_authority_currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.external_quantitative_authority import (
+    DuplicateActiveMappingError,
     ExternalQuantitativeAuthorityCatalog,
     ExternalQuantitativeAuthorityParticipants,
     ExternalQuantitativeAuthorityRecoveryError,
@@ -375,6 +376,35 @@ def test_execution_uses_its_exact_decision_mapping_when_another_mapping_shares_w
         )
         is None
     )
+
+
+def test_admission_refuses_a_second_active_mapping_for_the_same_pair_zone_policy(
+    tmp_path: Path,
+) -> None:
+    """Two active authorities for one scope would hide the mistake in a generic decision failure."""
+    first = _mapping()
+    # Same pair, work area and policy; different evidence digests -> different digest, same scope.
+    second = replace(
+        _mapping(),
+        evidence_record_digests=(
+            _digest("evidence-baseline-2"),
+            _digest("evidence-current-2"),
+        ),
+        compatibility_rule_digest=None,
+        mapping_record_digest=None,
+    ).sealed()
+    assert second.mapping_digest != first.mapping_digest
+    catalog = ExternalQuantitativeAuthorityCatalog(
+        DurableJournal(tmp_path / "quantitative-authority.jsonl"),
+        currentness_coordinator=ExternalAuthorityCurrentnessCoordinator(),
+        mapping_admission_validator=lambda _record, _now: True,
+    )
+    assert catalog.admit_mapping(first, actor="authority-a", now=_NOW) == first
+    with pytest.raises(DuplicateActiveMappingError, match="revoke it"):
+        catalog.admit_mapping(second, actor="authority-a", now=_NOW)
+    # Revoke-first keeps exactly one resolvable authority and admits the replacement.
+    assert catalog.revoke_mapping(first.mapping_digest, actor="authority-a", now=_NOW) is True
+    assert catalog.admit_mapping(second, actor="authority-a", now=_NOW) == second
 
 
 def test_mapping_is_not_usable_before_its_durable_activation(tmp_path: Path) -> None:

@@ -3527,3 +3527,19 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   유지, 주석에 근거 기록). 파일 17 passed + 부하 3연속 PASS.
 - **재실행 결과**: 같은 런 재실행 = success(플레이크 확증), 하드닝 커밋(16d72a4) 런 38726675208 =
   **success**(pytest 6223 passed·0 failed, 12:03). main = 16d72a4, 호스티드 CI 전부 GREEN.
+
+### 2026-10-15 백로그 폐쇄: 중복 활성 매핑 모호성 → 승인 단계 거부
+
+- 백로그(2026-09-17) "Two active compatibility mappings for the same pair/zone/policy make the pair
+  decision report VOLUME_AUTHORITY_UNAVAILABLE (ambiguity); admission should refuse a duplicate active
+  mapping or the decision should name the ambiguity"의 **첫 해법**을 채택했다: 같은 (baseline, current,
+  work area, policy) 범위에 두 번째 **활성** 매핑이 들어오면 `admit_mapping`이
+  `DuplicateActiveMappingError`로 거부한다(같은 digest 재승인은 기존대로 멱등, **revoke 후 교체 승인**
+  수명주기는 유지). 제공자 리로드 경로(`_apply_mapping_actions`)는 이 오류를 특정 사유 메시지로
+  변환한다(기존의 모호한 503을 로그에서 진단 가능하게). 결정 시점 코드는 그대로 fail-closed 유지 —
+  과거 저널의 모호 상태도 안전하게 남는다.
+- 근거: `resolve_for_use`는 정확히 1개의 활성 매핑만 인정(`len(matches) != 1 → None`)하므로 2개 활성
+  상태는 어떤 정상 흐름도 만들 수 없는 오류 상태였고, 거부가 그 상태의 발생 자체를 막는다.
+- 검증: 계약 테스트 신규 1건(거부 + revoke 후 교체 승인) + 관련 스윕 332 passed(mapping/provider/
+  authority) + 전역 mypy·ruff green. 라이브 리그 재기동 후 중복 승인 시도 거부·정상 리로드 무영향은
+  후속 확인 항목으로 남긴다(콘솔 검증과의 간섭 회피를 위해 순차 실행).

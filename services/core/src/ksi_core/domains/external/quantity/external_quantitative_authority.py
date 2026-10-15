@@ -96,6 +96,17 @@ class ExternalQuantitativeAuthorityRecoveryError(RuntimeError):
     """The authority journal cannot be replayed as exact, safe history."""
 
 
+class DuplicateActiveMappingError(ValueError):
+    """A second active mapping would cover the same pair, zone and policy.
+
+    The pair decision resolves exactly one active mapping per
+    (baseline, current, work area, policy) scope; admitting a second active
+    record for that scope would make every later decision fail closed with a
+    generic authority-unavailable reason that hides the operator mistake, so
+    admission refuses it here and names the required revoke-first step.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class ExternalQuantitativeCatalogAuthorityRecord:
     """Independent approval for one exact quantitative catalog body.
@@ -1271,7 +1282,13 @@ class ExternalQuantitativeAuthorityCatalog:
     def admit_mapping(
         self, record: ExternalQuantitativeCompatibilityRecord, *, actor: str, now: datetime
     ) -> ExternalQuantitativeCompatibilityRecord | None:
-        """Append a verified compatibility record before any pair decision exists."""
+        """Append a verified compatibility record before any pair decision exists.
+
+        Idempotent for the exact digest.  A second ACTIVE record covering the
+        same pair, work area and policy is refused with
+        ``DuplicateActiveMappingError`` instead of making every later pair
+        decision fail closed with a generic authority-unavailable reason.
+        """
         _utc(now, name="mapping activation time")
         if not actor or actor != actor.strip():
             raise ValueError("mapping activation actor is invalid")
@@ -1286,6 +1303,21 @@ class ExternalQuantitativeAuthorityCatalog:
             prior_mapping = self._mappings.get(sealed.mapping_digest)
             if prior_mapping is not None:
                 return sealed if prior_mapping.record == sealed else None
+            conflicting = tuple(
+                state
+                for state in self._mappings.values()
+                if state.active_at(now)
+                and state.record.baseline.subject == sealed.baseline.subject
+                and state.record.current.subject == sealed.current.subject
+                and state.record.zone_snapshot.work_area_id
+                == sealed.zone_snapshot.work_area_id
+                and state.record.validation_policy_digest == sealed.validation_policy_digest
+            )
+            if conflicting:
+                raise DuplicateActiveMappingError(
+                    "an active compatibility mapping already covers this pair, "
+                    "work area and policy; revoke it before admitting a replacement"
+                )
             if not self._participants_remain_current(sealed, snapshot, now):
                 return None
             event: dict[str, object] = {
@@ -2720,6 +2752,7 @@ __all__ = [
     "ExternalQuantitativeSingleExecutionTemplate",
     "ExternalSingleVolumeExecutionPort",
     "ExternalSingleVolumeMappingPort",
+    "DuplicateActiveMappingError",
     "ExternalQuantitativeAuthorityCatalog",
     "ExternalQuantitativeAuthorityParticipants",
     "ExternalQuantitativeAuthorityRecoveryError",
