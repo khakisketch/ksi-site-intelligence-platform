@@ -372,7 +372,13 @@ def _actual_core_context(
     root = tmp_path / "actual-core-private-staging"
     root.mkdir(mode=0o700)
     sink = FileSystemSanitizedOutputSink(private_root=root)
-    deadline = time.monotonic() + 2
+    # The deadline becomes the launch context's wire budget and must therefore
+    # cover the whole publication flow (private candidate put, Core
+    # declaration/retry, seal and every currentness check), not just the local
+    # file transaction.  A hosted runner intermittently exceeded the previous
+    # 2 s bound mid-flow (run 38724342684); 30 s keeps the bound real while
+    # tolerating runner scheduling.
+    deadline = time.monotonic() + 30.0
     transaction = sink.begin(launch, maximum_bytes=4_096, deadline_monotonic=deadline)
     transaction.write(payload, deadline_monotonic=deadline)
     transaction.finish(terminal, deadline_monotonic=deadline)
