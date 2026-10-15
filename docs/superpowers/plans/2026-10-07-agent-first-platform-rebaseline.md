@@ -3261,3 +3261,15 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   호스트에서 도구(`tools/task5c_host_enforcement_verify.py`)를 SSH로 구동해 조각별 증명을 단언. 호스트 미구성
   시 명시적 NOT_VERIFIED 사유로 skip(수용 아님). **결정적 선택 실주행: 6 passed**(5 host + import-boundary).
 - 경계: 합성/검증호스트 수용 유지. 고객 실자료·현장 정확도·배포/클라우드/CI는 OPEN.
+
+### 2026-10-15 전체 스위트 게이트 결과 — 1건의 선행(pre-existing) 실패
+
+- 실행: `pytest tests/contract tests/replay` → **5788 passed · 1 failed · 25 skipped**(759s).
+- 실패: `tests/replay/test_external_artifact_inspections_replay.py::test_replay_preserves_report_time_display_obligation_after_same_time_revocation`
+  — 단일 재실행에서도 결정적 실패. **원인 커밋 판별: `55e5dc7`의 부모에서도 동일 실패**(이번·직전 세션 무관).
+- 성격: 구설계 기대값(리포트가 기록된 뒤 같은 시각 리보크가 일어나도 현재 검사 스냅샷이 리포트를 노출)과
+  현 스토어의 문서화된 설계(“비활성 세대의 리포트는 현재 검사가 아니라 이력 조회 전용, `public_snapshot_bounded`
+  docstring”)가 충돌. 같은-시각 리보크의 표시 의무를 어떻게 해석할지의 **제품 결정 필요**:
+  (a) 현 설계 유지 → 해당 테스트를 이력 조회/현재 억제 검증으로 개정, (b) 표시 의무 우선 → 동일-시각(및
+  그 이전) 리보크가 기록 완료 리포트를 무효화하지 못하도록 투영 수정(append-order 중재). 변경 전 Human
+  판단 또는 별도 검증 세션을 둔다 — 이번 세션에서는 임의로 어느 쪽도 택하지 않았다.
