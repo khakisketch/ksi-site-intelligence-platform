@@ -306,7 +306,7 @@ copy beyond the work-order mobile case.
   striped fill + tinted track (`bg-crit-bg`), never a solid "complete-looking" bar;
   `test/dwell-bar.test.tsx` (breached vs in-progress vs settled); full dashboard
   gates green.
-- [ ] A2 [F02] observations 404 context (verify-first) — owner: —
+- [x] A2 [F02] observations 404 context (verify-first) — owner: —
   2026-10-06 bounded subcase: the existing Site not-found paragraph no longer claims a scoped404
   proves deletion/nonexistence; exact title/layout/Site-list exit retained. Real component RED→GREEN,
   actual authenticated scoped404 at1440/390 and exit→`/sites`200, independent966tests/lint/types/build
@@ -319,14 +319,20 @@ copy beyond the work-order mobile case.
   resolves Site before history so a child403 cannot mask Site404 or child404 assert Site absence.
   Page RED5/GREEN7 and actual1440/390 browser recheck recorded in the same Task5 ledger; independent
   129files/973tests/lint/types/build passed and generated tracked config restored/type-rechecked.
-  Broader authorized history availability stays open; no route/grant expansion.
+  Broader authorized history availability remains out of scope for this UI item; no route/grant expansion.
   2026-10-13 live re-verification (synthetic F-03 stack, local-admin):
   `/sites/no-such-site-xyz/observations` renders h1 `외부 관측 이력` (route context)
   + h2 `현장을 찾을 수 없습니다` + honest copy (no deletion claim) + `현장 목록으로`
   exit + `현장으로 이동` breadcrumb. Capture: `/tmp/opencode/ksi-ux-a2-404.png`.
-  UI half of the acceptance is met at current HEAD; the item stays open only for
-  the Core-scope history-availability part.
-- [ ] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
+  UI half of the acceptance is met at current HEAD; broader Core-scope history availability is
+  explicitly separate/out of scope for this close.
+  2026-10-15 live re-verification on the synthetic F-03 stack (`http://localhost:3241`, Core
+  `http://127.0.0.1:8092`): `/sites/no-such-site-xyz/observations` renders h1 `외부 관측 이력`,
+  h2 `현장을 찾을 수 없습니다`, honest “요청한 현장에 접근할 수 없습니다” copy, `현장 목록으로`
+  exit, and `현장으로 이동` breadcrumb. Capture:
+  `/tmp/opencode/ksi-f03-20261015/shots/a2-observations-no-such-site-390x844-20261015.png`.
+  Local missing-site UI is closed; no history route/grant was added.
+- [x] A3 [F03] work-order notices + native inputs (verify-first) — owner: —
   2026-10-13 implemented locally (선구현): native file controls replaced with the shared
   `components/ui/FilePickerField` — styled Korean trigger (`파일 선택`) + sr-only input, no browser
   locale chrome (applied to `ExternalReconstructionPanel` ortho/DSM and `ExternalEvidencePanel`
@@ -336,15 +342,30 @@ copy beyond the work-order mobile case.
   (1440) shows 0 beige notices and no duplicate notice; the 2026-09-17 captures include the fixture
   banner state the plan says not to chase. Dev gates: vitest 792 (+4 `test/file-picker-field.test.tsx`),
   tsc/eslint/build 0; live check `fileTriggers=2 emptyLabels=2 nativeVisibleInputs=0` + datetime echo;
-  capture `/tmp/opencode/ksi-f04-review-20261013/evidence/a3-korean-file-picker.png`. Independent
-  test-runner + design fidelity review still pending before [x].
+  capture `/tmp/opencode/ksi-f04-review-20261013/evidence/a3-korean-file-picker.png`.
+  2026-10-15 independent live verification: `/field` exposed F-03 t2 `obs-work-00000021` and t1
+  `obs-work-00000020`; both detail routes had no `작업 실행 정보 확인 필요` notice, no beige notice
+  surfaces, and no `[role=alert]`. On t2, the two `.tif,.tiff` pickers have visible Korean labels and
+  clipped `sr-only` inputs; clicking both labels opened the file chooser and selected a temporary
+  1KB GeoTIFF sample, with no submit/upload. All three datetime controls echoed Korean values
+  (`선택: 2026. 10. 15. 14:30`, `14:31`, `14:32`); `Choose File`, `No file chosen`, and `mm/dd/yyyy`
+  are absent. Fresh design-fidelity review passed at 1440×1000 (page + controls) and 390×844 (mobile
+  laptop boundary). Captures:
+  `/tmp/opencode/ksi-f03-20261015/shots/a3-workorder-obs-work-00000021-desktop-1440x1000.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/a3-workorder-obs-work-00000021-desktop-controls-echo-1440x1000.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/a3-workorder-obs-work-00000021-mobile-390x844.png`.
+  No code/API change.
 - [x] A4 [F04] mission detail hierarchy/KMZ — owner: Claude — scoped title
   (`MISSION_TYPE_LABEL`) now leads; missionId + KMZ SHA-256 moved into a collapsed
   "전문가 정보" `<details>`; the no-KMZ state is a non-button notice labelled
   "KMZ 다운로드 불가" instead of a disabled-looking clickable span;
-  `test/kmz-download-button.test.tsx`; full dashboard gates green. Design-fidelity
-  re-capture at 1440/390 not yet run (needs the live e2e stack — batch with the
-  verify-first items).
+  `test/kmz-download-button.test.tsx`; full dashboard gates green. 2026-10-15 live re-capture:
+  no Mission route exists at this HEAD (`/missions/nonexistent` returns HTTP 404; no Mission route
+  directory or `/field` Mission link). The closest current F-03 work-order state was captured at
+  1440×1000 and 390×844; it is explicitly not a Mission/KMZ detail view. A4 remains closed; no
+  acquisition route or API was restored. Captures:
+  `/tmp/opencode/ksi-f03-20261015/shots/a4-closest-workorder-obs-work-00000021-desktop-1440x1000.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/a4-closest-workorder-obs-work-00000021-mobile-390x844.png`.
 - [x] A5 [backlog] source WO next action after successor (verify-first) — owner:
   Claude — verified at current HEAD with real run3 evidence (not a re-audit): the
   run3 browser pass (`docs/audit/EXTERNAL_PRODUCT_LOOP_FIXTURE_RUN_2026-09-17.md`
@@ -410,16 +431,31 @@ copy beyond the work-order mobile case.
   (observation→…→confirmed/dismissed lifecycle) was `StatusBadge` (attribute
   shape) same as severity; now `StateBadge` (progress shape), matching
   triage; `test/event-row-badge-shape.test.ts`.
-- [ ] C1 [F06] mobile nav occlusion (verify-first) — owner: —
+- [x] C1 [F06] mobile nav occlusion (verify-first) — owner: —
+  2026-10-15 live verify-first: on Home and `/field/work-orders/obs-work-00000021`, the 390×844
+  fixed nav stayed below the content at scroll end (57px nav, 57px main clearance; the final
+  work-order link remained 96px above the nav). At 768×1024 on the same work-order route, the nav
+  was 57px with matching clearance and the final CTA remained 96.5px above it. A 34px safe-area
+  inset was CSS-simulated on Home: nav and clearance both grew to 91px with no overlap; this is not
+  physical-device verification. Tapped Home → 작업 through the mobile nav successfully. No
+  occlusion/blocking reproduced; no code change. Captures:
+  `/tmp/opencode/ksi-f03-20261015/shots/c1-home-mobile-390x844-top-20261015.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/c1-home-mobile-390x844-scroll-end-20261015.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/c1-home-mobile-390x844-safearea34-scroll-end-20261015.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/c1-workorder-mobile-390x844-scroll-end-20261015.png`,
+  `/tmp/opencode/ksi-f03-20261015/shots/c1-workorder-tablet-768x1024-scroll-end-20261015.png`.
 - [x] C2 [F13] observations/new selection — owner: Claude — the selected path
   card now shows an explicit "✓ 선택됨" label and a thicker border, not colour
   alone; the scoped "외부 산출물 작업" heading already existed once selected;
   `test/observation-path-selection.test.tsx`.
-- [ ] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
+- [x] C3 [F14] design upload localization — owner: — (sequence with A3/AX-3 input pattern)
   2026-10-13: **obsolete at current HEAD** — the `sites/[siteId]/design` route and
   `DesignSurfacePanel.tsx` no longer exist (P4 console cleanup removed the retired acquisition
   design route; `grep -rn 'type="file"' apps/dashboard/src/app/sites` returns nothing). Nothing to
   localize; close as not-applicable with this method when the batch review runs.
+  2026-10-15 re-verified: the exact grep exits 1 with empty output; both
+  `apps/dashboard/src/app/sites/[siteId]/design/` and `DesignSurfacePanel.tsx` are absent. Closed as
+  not-applicable at current HEAD; no code change.
 - [x] C4 [F16] sites/new form — owner: Claude — fixed
   `SiteRegistrationOnlyWizard.tsx`, the component the `/sites/new` route
   actually renders (`SiteRegistrationWizard.tsx` is unreachable dead code kept
