@@ -3543,3 +3543,21 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - 검증: 계약 테스트 신규 1건(거부 + revoke 후 교체 승인) + 관련 스윕 332 passed(mapping/provider/
   authority) + 전역 mypy·ruff green. 라이브 리그 재기동 후 중복 승인 시도 거부·정상 리로드 무영향은
   후속 확인 항목으로 남긴다(콘솔 검증과의 간섭 회피를 위해 순차 실행).
+
+### 2026-10-15 백로그 2건 완료: Home "검토 대기" 주의 소스 + 중복 매핑 거부 라이브 검증
+
+- **Home 검토 대기 카드**(`c2d470c`): 돌아온 운영자가 완료 분석의 미검토 상태를 Home에서 바로 본다.
+  정확 대상 일치 판정은 분석 상세와 공유 모듈(`lib/analysis-review.ts`)로 통일, 현장당 1건(ADR-025
+  no-repeat, EXTERNAL_DECISION 다음 우선순위), 조회는 현장 3×분석 5로 유계·fail-soft(카드 하나가
+  Home을 깨지 않음), 링크는 분석 상세 직행. `formatNumberKo`는 표시 정밀도에서 0으로 반올림되는
+  음수를 `-0` 대신 `0`으로 렌더(백로그 2026-09-17 cosmetic).
+  - 게이트: vitest **875**·tsc·eslint·next build PASS(독립 재실행). 전문가 라이브 확인에 더해
+    **미검토 완료 분석을 실제로 만들어**(analysis-v1-bd3a5290…, 워커 1회) Home 카드·문구·링크 클릭
+    → 분석 상세의 `미검토` 검토 섹션까지 **Playwright 전 항목 PASS**(스크린샷 independent-home-*).
+- **중복 활성 매핑 거부 라이브 검증**: 코어를 새 코드로 재기동 후 같은 (pair, zone, policy) 범위의
+  두 번째 매핑(다른 만기 창 → 다른 digest)을 ADMIT_MAPPING으로 제출 → 리로드가 **거부**(응답
+  `BLOCKED`·sequence null, 매핑 미적용)되고 제공자가 fail-closed로 차단됨(차단 사유는 설계상 고정
+  문자열 `RECONCILIATION`; API는 모호한 503 유지 — 보안 자세 그대로). 스냅샷 복원 후 리로드만으로
+  **PROVIDER_CONFIGURED·seq 81 복구**, 프리플라이트 OK — 재기동 불필요.
+- 남긴 상태: 라이브 리그에 **미검토 완료 분석 1건**을 의도적으로 남겨 운영자가 콘솔에서 실제 검토를
+  해볼 수 있게 했다(Home 카드가 그 상태를 가리킨다).
