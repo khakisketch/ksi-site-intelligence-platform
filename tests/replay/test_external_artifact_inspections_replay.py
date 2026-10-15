@@ -352,7 +352,14 @@ def test_inspection_replay_rejects_tampered_historical_display_obligation(
 def test_replay_preserves_report_time_display_obligation_after_same_time_revocation(
     tmp_path: Path,
 ) -> None:
-    """A later lifecycle state cannot rewrite a valid report's historical obligation."""
+    """A later lifecycle state cannot rewrite a valid report's historical obligation.
+
+    The accepted stale-report semantics keep a report bound to a non-active
+    policy generation out of the current-inspection projection (the subject
+    reports the pending-policy state instead), while the immutable history -
+    the record's report, its ``display_required`` obligation and the explicit
+    historical lookup - survives the replay byte-for-byte.
+    """
     registry, policy = _registry(tmp_path)
     journal_path = tmp_path / "inspection.jsonl"
     store = ExternalArtifactInspectionStore(
@@ -384,8 +391,18 @@ def test_replay_preserves_report_time_display_obligation_after_same_time_revocat
     snapshot = restarted.public_snapshot_bounded(
         subject(), max_records=128, max_policy_records=64
     )
-    assert snapshot.report is not None
-    assert snapshot.report.report_digest == report(
-        request_id=issued.request.request_id, policy=policy
-    ).report_digest
-    assert restarted._records[issued.request.request_id].display_required  # noqa: SLF001
+    assert snapshot.state == "INSPECTION_PENDING_POLICY"
+    assert snapshot.report is None
+    expected = report(request_id=issued.request.request_id, policy=policy)
+    record = restarted._records[issued.request.request_id]  # noqa: SLF001
+    assert record.display_required  # noqa: SLF001
+    assert record.report is not None  # noqa: SLF001
+    assert record.report.report_digest == expected.report_digest  # noqa: SLF001
+    assert policy.policy_digest is not None
+    historical = restarted.historical_report(
+        subject(),
+        report_digest=expected.report_digest,
+        policy_digest=policy.policy_digest,
+    )
+    assert historical is not None
+    assert historical.report_digest == expected.report_digest
