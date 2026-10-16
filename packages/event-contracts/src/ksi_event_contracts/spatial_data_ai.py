@@ -147,6 +147,7 @@ class SpatialDataAssetPageV1(SpatialDataModel):
     next_cursor: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=2048)] | (
         None
     ) = None
+    page_complete: StrictBool = True
 
 
 class SpatialDataFileReferenceV1(SpatialDataModel):

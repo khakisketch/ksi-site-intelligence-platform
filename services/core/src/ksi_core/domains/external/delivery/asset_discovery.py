@@ -434,8 +434,23 @@ class SpatialDataAssetDiscovery:
             raise SpatialDataDomainError("NOT_FOUND", 404)
         return view
 
-    def _snapshot(self, entries: Sequence[tuple[str, SpatialDataAssetViewV1, str]]) -> str:
-        """Bind the current permitted projection plus relevant grant/consent bindings."""
+    def _snapshot(
+        self,
+        entries: Sequence[tuple[str, SpatialDataAssetViewV1, str]],
+        *,
+        omitted: Sequence[str] = (),
+        complete: bool = True,
+    ) -> str:
+        """Bind the current permitted projection plus relevant grant/consent bindings.
+
+        ``omitted`` carries the sorted asset refs suppressed only for
+        over-budget retained history (granted candidates that could not be
+        projected within the listing budget); ``complete`` is False exactly
+        when that set is non-empty. Both bind the snapshot so a cursor stays
+        valid only while the admitted set and the omission set match. Never
+        includes denied counts or ungranted identities: never-granted and
+        unresolvable candidates stay invisible here as in the page.
+        """
         views: list[str] = []
         size = 0
         for _, view, _ in entries:
@@ -447,11 +462,16 @@ class SpatialDataAssetDiscovery:
         if size > self._policy.max_snapshot_bytes:
             raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
         activation = self._jobs.activation
+        omitted_refs = sorted(omitted)
+        if type(complete) is not bool or complete == (len(omitted_refs) > 0):
+            raise ValueError("snapshot completeness must match the omission set")
         return snapshot_digest(
             {
                 "refs": sorted(ref for ref, _, _ in entries),
                 "views": sorted(views),
                 "grants": sorted(grant for _, _, grant in entries),
+                "omitted": omitted_refs,
+                "complete": complete,
                 "consent": True,
                 "policy": self._policy.policy_digest,
                 "activation": activation.activation_digest,
@@ -509,30 +529,38 @@ class SpatialDataAssetDiscovery:
         gate path (no remote resolution): ``{"digests": {assetRef: retained
         report digest}, "unready": {assetRef: readiness class},
         "states": {assetRef: retained-state digest or null},
+        "omitted": {assetRef: readiness class},
         "classes": {assetRef: readiness class},
         "candidates": frozenset(...)}``. Digests are recorded for every
         source-resolved candidate, admitted or suppressed, so grant/bounds
         drift re-admits nothing silently. Readiness classes bind
         lifecycle/revision/observed facts per tracked candidate, so a granted
         candidate turning seal-ready between preflight and gate fails closed
-        instead of serving an incomplete cursor. A candidate the preflight
-        never classified is snapshot drift, never admitted.
-        Never-granted unresolvable candidates stay invisible without
+        instead of serving an incomplete cursor. ``omitted`` holds only
+        granted candidates suppressed for over-budget retained history (no
+        counts or identities leave the page or cursor beyond the opaque
+        snapshot binding); a granted candidate turning projectable between
+        preflight and gate fails closed instead of silent admission.
+        A candidate the preflight never classified is snapshot drift, never
+        admitted. Never-granted unresolvable candidates stay invisible without
         admission, payload, or cursor cost.
         """
         digests: dict[str, str] = {}
         unready: dict[str, tuple[str, int, str | None]] = {}
         states: dict[str, str | None] = {}
+        omitted: dict[str, tuple[str, int, str | None]] = {}
         if gate is not None:
             pre_digests = gate.get("digests")
             pre_unready = gate.get("unready")
             pre_states = gate.get("states")
+            pre_omitted = gate.get("omitted")
             pre_classes = gate.get("classes")
             pre_candidates = gate.get("candidates")
             if (
                 type(pre_digests) is not dict
                 or type(pre_unready) is not dict
                 or type(pre_states) is not dict
+                or type(pre_omitted) is not dict
                 or type(pre_classes) is not dict
                 or not isinstance(pre_candidates, frozenset)
             ):
@@ -541,6 +569,7 @@ class SpatialDataAssetDiscovery:
             pre_digests = {}
             pre_unready = {}
             pre_states = {}
+            pre_omitted = {}
             pre_classes = {}
             pre_candidates = frozenset()
         entries: list[tuple[str, SpatialDataAssetViewV1, str]] = []
@@ -551,6 +580,7 @@ class SpatialDataAssetDiscovery:
                 assert (
                     isinstance(pre_digests, dict)
                     and isinstance(pre_unready, dict)
+                    and isinstance(pre_omitted, dict)
                     and isinstance(pre_classes, dict)
                     and isinstance(pre_candidates, frozenset)
                 )
@@ -561,6 +591,22 @@ class SpatialDataAssetDiscovery:
                     # invisible without admission, payload, or cursor cost.
                     continue
                 if pre_classes[ref] != self._classify_candidate(item):
+                    raise SpatialDataAiDomainError("SPATIAL_DATA_CURSOR_STALE", 409)
+                if ref in pre_omitted:
+                    if item.lifecycle_state is SpatialAssetLifecycleStateV1.UNSEALED:
+                        omitted[ref] = self._classify_candidate(item)
+                        continue
+                    try:
+                        self._sources.local_retained_state(candidate=item, principal=principal)
+                    except SpatialDataDomainError as exc:
+                        if exc.reason == "NOT_FOUND":
+                            raise SpatialDataAiDomainError(
+                                "SPATIAL_DATA_CURSOR_STALE", 409
+                            ) from exc
+                        if exc.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED":
+                            omitted[ref] = self._classify_candidate(item)
+                            continue
+                        raise
                     raise SpatialDataAiDomainError("SPATIAL_DATA_CURSOR_STALE", 409)
                 if ref in pre_unready:
                     if item.lifecycle_state is SpatialAssetLifecycleStateV1.UNSEALED:
@@ -574,6 +620,9 @@ class SpatialDataAssetDiscovery:
                             raise SpatialDataAiDomainError(
                                 "SPATIAL_DATA_CURSOR_STALE", 409
                             ) from exc
+                        if exc.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED":
+                            omitted[ref] = self._classify_candidate(item)
+                            continue
                         raise
                     if current_state is None or current_state != pre_states.get(ref):
                         raise SpatialDataAiDomainError("SPATIAL_DATA_CURSOR_STALE", 409)
@@ -593,6 +642,19 @@ class SpatialDataAssetDiscovery:
                         now=now,
                     )
             except SpatialDataDomainError as exc:
+                if exc.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED":
+                    # Granted but unprojectable within the listing budget:
+                    # suppress the candidate and mark the page incomplete.
+                    # Without a beneficiary grant it stays invisible (no flag
+                    # leak, no disclosure).
+                    if self._grants.has_beneficiary_grants(
+                        site_id=item.site_id,
+                        work_area_id=item.work_area_id,
+                        asset_ref=ref,
+                        principal=principal,
+                    ):
+                        omitted[ref] = self._classify_candidate(item)
+                    continue
                 if exc.reason in _LIST_SUPPRESSED:
                     if self._grants.has_beneficiary_grants(
                         site_id=item.site_id,
@@ -606,9 +668,14 @@ class SpatialDataAssetDiscovery:
                                 candidate=item, principal=principal
                             )
                         except SpatialDataDomainError as state_exc:
-                            if state_exc.reason not in _LIST_SUPPRESSED:
+                            if state_exc.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED":
+                                del unready[ref]
+                                states.pop(ref, None)
+                                omitted[ref] = self._classify_candidate(item)
+                            elif state_exc.reason not in _LIST_SUPPRESSED:
                                 raise
-                            states[ref] = None
+                            else:
+                                states[ref] = None
                     continue
                 raise
             digests[ref] = source.inspection_report_digest
@@ -618,6 +685,16 @@ class SpatialDataAssetDiscovery:
                 )
                 view = self._project(source=source, grant=grant, candidate=item, now=now)
             except SpatialDataDomainError as exc:
+                if exc.reason == "RETAINED_HISTORY_LIMIT_EXCEEDED":
+                    digests.pop(ref, None)
+                    if self._grants.has_beneficiary_grants(
+                        site_id=item.site_id,
+                        work_area_id=item.work_area_id,
+                        asset_ref=ref,
+                        principal=principal,
+                    ):
+                        omitted[ref] = self._classify_candidate(item)
+                    continue
                 if exc.reason in _LIST_SUPPRESSED:
                     continue
                 raise
@@ -627,13 +704,16 @@ class SpatialDataAssetDiscovery:
         by_ref = {item.asset_ref: item for item in items}
         classes = {
             ref: self._classify_candidate(by_ref[ref])
-            for ref in list(digests) + [ref for ref in unready if ref not in digests]
+            for ref in list(digests)
+            + [ref for ref in unready if ref not in digests]
+            + [ref for ref in omitted if ref not in digests and ref not in unready]
             if ref in by_ref
         }
         context: dict[str, object] = {
             "digests": digests,
             "unready": unready,
             "states": states,
+            "omitted": omitted,
             "classes": classes,
             "candidates": frozenset(by_ref),
         }
@@ -678,6 +758,11 @@ class SpatialDataAssetDiscovery:
         The gate context carries every source-resolved candidate digest plus
         the source-unresolvable set, including candidates beyond the page
         slice: the final local gate re-projects the whole set, never a slice.
+        Over-budget retained history suppresses only its granted candidates
+        and marks the page incomplete (no counts or identities in the page or
+        cursor beyond the opaque snapshot binding); nothing projectable means
+        the typed operator-actionable refusal instead of an empty page. The
+        catalog over-budget stays a whole-page refusal.
         """
         require_utc(now)
         if type(limit) is not int or not 1 <= limit <= min(200, self._policy.max_list_records):
@@ -694,7 +779,14 @@ class SpatialDataAssetDiscovery:
         entries, gate_context = self._collect_entries(
             items=items, principal=principal, now=now, gate=gate
         )
-        snapshot = self._snapshot(entries)
+        raw_omitted = gate_context.get("omitted", {})
+        if not isinstance(raw_omitted, dict):
+            raise ValueError("asset page gate context carries an omission mapping")
+        omitted_refs = sorted(raw_omitted)
+        if not entries and omitted_refs:
+            raise SpatialDataDomainError("RETAINED_HISTORY_LIMIT_EXCEEDED", 503)
+        complete = not omitted_refs
+        snapshot = self._snapshot(entries, omitted=tuple(omitted_refs), complete=complete)
         scope = scope_hash(
             organization_id=principal.organization_id,
             principal_id=principal.principal_id,
@@ -722,6 +814,7 @@ class SpatialDataAssetDiscovery:
         return SpatialDataAssetPageV1(
             items=tuple(view for _, view, _ in selected),
             next_cursor=next_cursor,
+            page_complete=complete,
         ), gate_context
 
     def list_projection(

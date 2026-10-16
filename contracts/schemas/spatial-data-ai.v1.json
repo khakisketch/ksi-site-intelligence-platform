@@ -185,6 +185,11 @@
           ],
           "default": null,
           "title": "Nextcursor"
+        },
+        "pageComplete": {
+          "default": true,
+          "title": "Pagecomplete",
+          "type": "boolean"
         }
       },
       "required": [

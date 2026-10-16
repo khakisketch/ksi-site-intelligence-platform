@@ -302,9 +302,11 @@ def test_discovery_filters_before_page_and_does_not_leak_counts(tmp_path: Path) 
     )
     assert [item.asset_ref for item in filtered.items] == [graph.catalog_refs["ortho"]]
     assert filtered.next_cursor is None
+    assert filtered.page_complete is True
     wire = filtered.model_dump(by_alias=True, mode="json")
-    assert set(wire) == {"items", "nextCursor"}
+    assert set(wire) == {"items", "nextCursor", "pageComplete"}
     assert "total" not in wire and "denied" not in str(wire)
+    assert "omitted" not in wire
 
 
 # ---- 2. cursor scope + snapshot staleness --------------------------------------
@@ -1392,9 +1394,7 @@ def _admit_policy_for_subject(
     return policy
 
 
-def _drop_other_authorities_for_subject(
-    graph: SimpleNamespace, subject: Any, keep: Any
-) -> None:
+def _drop_other_authorities_for_subject(graph: SimpleNamespace, subject: Any, keep: Any) -> None:
     """Retire older policy authorities for one subject so the selection stays unique.
 
     Reserved for tests that need a genuine multi-generation history: the
@@ -1406,9 +1406,9 @@ def _drop_other_authorities_for_subject(
     keep_identity = (keep.policy_id, keep.version)
     for digest, record in list(records.items()):
         if (
-            (record.policy_id, record.policy_version) != keep_identity
-            and subject in record.permitted_subjects
-        ):
+            record.policy_id,
+            record.policy_version,
+        ) != keep_identity and subject in record.permitted_subjects:
             del records[digest]
 
 
@@ -1577,9 +1577,7 @@ def test_retained_history_limit_asks_for_operator_action(tmp_path: Path) -> None
     from ksi_core.domains.external.delivery.metadata_response import ai_error_response
     from spatial_data_fixture import make_policy
 
-    graph = two_asset_lane(
-        tmp_path, policy=make_policy(max_pending_records=8, max_list_records=2)
-    )
+    graph = two_asset_lane(tmp_path, policy=make_policy(max_pending_records=8, max_list_records=2))
     subject = graph.subject
     version = None
     for _ in range(2):
@@ -1603,6 +1601,196 @@ def test_retained_history_limit_asks_for_operator_action(tmp_path: Path) -> None
     assert body["reason"] == "RETAINED_HISTORY_LIMIT_EXCEEDED"
     assert body["remediation"] == ["CONTACT_OPERATOR"]
     assert "REDUCE_REQUEST" not in body["remediation"]
+
+
+def _partial_listing_lane(tmp_path: Path) -> Any:
+    """Two subjects where only the first subject's history exceeds the listing budget.
+
+    The lane holds three catalog items (first-subject ortho+dsm plus a sealed,
+    measured, granted second-subject ortho) under ``max_list_records=3``; three
+    extra inspection/policy generations push only the first subject beyond the
+    listing-scoped read budget. The second subject stays projectable, so the
+    page is partial (200 + ``pageComplete`` False) instead of a refusal.
+    """
+    from spatial_data_fixture import make_policy
+
+    graph = two_asset_lane(tmp_path, policy=make_policy(max_pending_records=8, max_list_records=3))
+    submission2, revision2 = _register_second_submission(graph, "submission-2")
+    _, subject2 = _seal_revision(graph, submission2, revision2)
+    policy2 = _admit_policy_for_subject(graph, subject2)
+    _record_measurement(graph, subject2, policy2)
+    items = graph.sources.candidates(
+        site_id="site-1", work_area_id=graph.area.work_area_id, principal=graph.principal
+    )
+    fresh = [item for item in items if item.asset_ref not in graph.catalog_refs.values()]
+    assert len(fresh) == 1
+    sub2_ref = fresh[0].asset_ref
+    _grant_for_ref(graph, sub2_ref, "local-ai-grant-sub2")
+    subject = graph.subject
+    version = None
+    for _ in range(3):
+        newer = _admit_policy_for_subject(graph, subject, version=version)
+        _drop_other_authorities_for_subject(graph, subject, newer)
+        assert graph.inspections.issue_after_seal(subject, now=NOW).request is not None
+        version = newer.version + 1
+    graph.sub2_ref = sub2_ref
+    return graph
+
+
+def test_partial_listing_marks_incomplete_without_leaking_identities(tmp_path: Path) -> None:
+    """Over-budget history suppresses only its granted candidates (Option A).
+
+    The projectable second-subject asset still lists (200) with
+    ``pageComplete`` False; the wire carries no omitted refs, counts, or
+    reason — only the boolean completeness flag beside ``items``/``nextCursor``.
+    """
+    graph = _partial_listing_lane(tmp_path)
+    page = graph.discovery.list(
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        principal=graph.ai,
+        limit=3,
+        cursor=None,
+        now=NOW,
+    )
+    assert page.page_complete is False
+    assert [item.asset_ref for item in page.items] == [graph.sub2_ref]
+    wire = page.model_dump(by_alias=True, mode="json")
+    assert set(wire) == {"items", "nextCursor", "pageComplete"}
+    assert wire["pageComplete"] is False
+    assert "total" not in wire and "denied" not in str(wire)
+    assert "omitted" not in wire
+    for hidden in graph.catalog_refs.values():
+        assert hidden not in json.dumps(wire)
+
+
+def test_omission_change_stales_the_cursor(tmp_path: Path) -> None:
+    """A cursor stays valid only while admitted and omission sets match.
+
+    A page taken while the first subject was projectable goes stale (409)
+    once its history overflow omits it: the snapshot binds the omission set,
+    so the old cursor cannot serve a silently narrowed page.
+    """
+    from ksi_core.domains.external.delivery.errors import SpatialDataAiDomainError
+
+    # Build the pre-overflow lane manually: same three items, no history growth.
+    from spatial_data_fixture import make_policy
+
+    lane = two_asset_lane(tmp_path, policy=make_policy(max_pending_records=8, max_list_records=3))
+    submission2, revision2 = _register_second_submission(lane, "submission-2")
+    _, subject2 = _seal_revision(lane, submission2, revision2)
+    policy2 = _admit_policy_for_subject(lane, subject2)
+    _record_measurement(lane, subject2, policy2)
+    items = lane.sources.candidates(
+        site_id="site-1", work_area_id=lane.area.work_area_id, principal=lane.principal
+    )
+    fresh = [item for item in items if item.asset_ref not in lane.catalog_refs.values()]
+    assert len(fresh) == 1
+    _grant_for_ref(lane, fresh[0].asset_ref, "local-ai-grant-sub2")
+    first = lane.discovery.list(
+        site_id="site-1",
+        work_area_id=lane.area.work_area_id,
+        principal=lane.ai,
+        limit=1,
+        cursor=None,
+        now=NOW,
+    )
+    assert first.page_complete is True
+    assert first.next_cursor is not None
+    subject = lane.subject
+    version = None
+    for _ in range(3):
+        newer = _admit_policy_for_subject(lane, subject, version=version)
+        _drop_other_authorities_for_subject(lane, subject, newer)
+        assert lane.inspections.issue_after_seal(subject, now=NOW).request is not None
+        version = newer.version + 1
+    with pytest.raises(SpatialDataAiDomainError) as stale:
+        lane.discovery.list(
+            site_id="site-1",
+            work_area_id=lane.area.work_area_id,
+            principal=lane.ai,
+            limit=1,
+            cursor=first.next_cursor,
+            now=NOW,
+        )
+    assert stale.value.reason == "SPATIAL_DATA_CURSOR_STALE"
+    assert stale.value.status_code == 409
+
+
+def test_ungranted_overbudget_stays_invisible_and_complete(tmp_path: Path) -> None:
+    """No beneficiary grant means no omission flag and no refusal.
+
+    An over-budget subject probed by a principal that never held any grant
+    stays invisible (no disclosure through the completeness flag): the page
+    is empty, complete, and 200. (Revoked grants stay tracked by design —
+    ``has_beneficiary_grants`` is ever-indexed — so this uses a grantless
+    principal, not a revoked one.)
+    """
+    from ksi_core.identity.auth import Principal, PrincipalKind
+    from spatial_data_fixture import make_policy
+
+    graph = two_asset_lane(tmp_path, policy=make_policy(max_pending_records=8, max_list_records=2))
+    subject = graph.subject
+    version = None
+    for _ in range(2):
+        newer = _admit_policy_for_subject(graph, subject, version=version)
+        _drop_other_authorities_for_subject(graph, subject, newer)
+        assert graph.inspections.issue_after_seal(subject, now=NOW).request is not None
+        version = newer.version + 1
+    stranger = Principal(
+        "ai-client-2",
+        PrincipalKind.SPATIAL_DATA_MCP_CLIENT,
+        None,
+        None,
+        "organization-1",
+        allowed_site_ids=frozenset({"site-1"}),
+        allowed_work_area_ids=frozenset({graph.area.work_area_id}),
+    )
+    page = graph.discovery.list(
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        principal=stranger,
+        limit=2,
+        cursor=None,
+        now=NOW,
+    )
+    assert page.items == ()
+    assert page.next_cursor is None
+    assert page.page_complete is True
+
+
+def test_incomplete_page_survives_the_send_time_gate(tmp_path: Path) -> None:
+    """The final local gate re-projects the omission instead of refusing it.
+
+    The egress preflight/gate pair publishes the partial page (200 + ack +
+    ``pageComplete`` False); the gate's local-only re-projection still sees
+    the same over-budget history and keeps the same omission.
+    """
+    graph = _partial_listing_lane(tmp_path)
+    page = graph.discovery.list(
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        principal=graph.ai,
+        limit=3,
+        cursor=None,
+        now=NOW,
+    )
+    assert page.page_complete is False
+    response = graph.ai_egress.prepare_asset_page_response(
+        credentials=ai_credentials(graph),
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        page=page,
+        cursor=None,
+        limit=3,
+    )
+    status, headers, body = _framed(response)
+    assert status == 200
+    assert headers[b"x-ksi-spatial-data-ai-egress"] == b"ALLOWED"
+    payload = json.loads(bytes(body))
+    assert payload["pageComplete"] is False
+    assert [item["assetRef"] for item in payload["items"]] == [graph.sub2_ref]
+    assert set(payload) == {"items", "nextCursor", "pageComplete"}
 
 
 def test_fix2_newly_ready_granted_candidate_stales_send(tmp_path: Path) -> None:

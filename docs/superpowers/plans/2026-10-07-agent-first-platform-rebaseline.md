@@ -3667,3 +3667,25 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   확인). 증거: `mcp-page-pending-budget-8.json`·`codex-positive-pending-budget-8.{txt,jsonl}`·
   `parity-pending-budget-8.json`(모두 `/tmp/opencode/ksi-sdata-codex-20261016/evidence/`).
 - 남은 설계 과제(비승인): 부분 목록 제공 시 누락 사실·페이지 완전성·커서 규칙 설계.
+
+### 2026-10-16 후속: 부분 목록 설계 승인·구현 (Option A: omission flag only)
+
+- **승인**: 부분 목록 설계 3안 중 사용자 선택 — **Option A**(후보별 이력 초과는 조용한 스킵 +
+  boolean 불완전 플래그, 카운트·ref 없음; 카탈로그 초과는 전면 503 유지; 커서는 admitted +
+  omission 집합에 바인딩). fail-closed·유한 예산·비공개 불변.
+- **구현**: ①`SpatialDataAssetPageV1`에 **`page_complete: StrictBool = True`** 가산(별칭
+  `pageComplete`) + AI 스키마 재생성(가산만). ②`asset_discovery.py`: `omitted` 추적(grant 있는
+  후보의 `RETAINED_HISTORY_LIMIT_EXCEEDED`만; grant 없는 후보는 invisible 유지 — revoked는
+  ever-indexed 특성상 tracked 유지) → 일부 projectable이면 **200 + `pageComplete: False`**,
+  projectable이 없으면 기존 typed 503 유지(OPERATOR remediation 보존) → 스냅샷이 admitted +
+  omitted + complete를 바인딩(구 커서는 409 STALE) → 게이트 경로는 omitted 재투영(해소되면 STALE,
+  유지되면 omission 지속; local-only, remote preflight 없음). 상세(`get`/`recheck_view`)는
+  typed 거부 그대로. ③MCP 어댑터·대시보드 변경 없음(어댑터는 `SpatialDataAssetPageV1` 자체로
+  검증하므로 통과; 대시보드는 catalog 경로만 소비).
+- **검증**: 기존 wire pin 1건 갱신(`{"items","nextCursor","pageComplete"}`) + 신규 4건 —
+  부분 페이지(200·1건·flag False·wire에 생략 신원/카운트 없음) / omission 변경 시 커서 STALE 409 /
+  무grant over-budget는 invisible+complete 200 / 불완전 페이지 egress 게이트 200+ack 통과.
+  discovery+AI계약 102 passed, egress/MCP 포함 215 passed, mypy·ruff·format green. 공간계열
+  전체 스윕은 백그라운드 실행 중.
+- **라이브**: sdata 리그 재검증은 OPEN(가동 중 :8092 리그는 구 코드 — 재기동이 수용 리그 보존에
+  영향을 주므로 계약 증거를 우선하고 라이브 재실증은 별도 승인 후).
