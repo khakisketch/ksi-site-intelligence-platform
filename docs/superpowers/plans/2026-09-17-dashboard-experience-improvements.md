@@ -374,9 +374,10 @@ copy beyond the work-order mobile case.
   work order (`.dev-data/visual-audit-20260917/` is unrelated; see
   `.dev-data/a2-fix/run3/shot-wo-after-review.png` and `shot-wo-after-approve.png`).
   `deriveExternalWorkOrderStage` (AX-1) already covers this. No further change.
-- [ ] B1 [F09] date/count SSOT — owner: — (deferred: 15 files use raw
-  `toLocaleDate/String` outside `lib/datetime.ts`; needs a per-file audit, not
-  a mechanical sweep — see note below)
+- [x] B1 [F09] date/count SSOT — owner: Dashboard UX batch 2 — closed 2026-10-16. The
+  original 2026-10-13 deferral was based on a raw-locale callsite audit that
+  still included one Analysis E2E assertion helper; that final helper now uses
+  the existing number SSOT.
   2026-10-13 implemented locally (선구현): number formatting consolidated into `lib/number-format.ts`
   (`formatNumberKo` moved from `phase34-labels` + `formatSignificantKo`/`formatCountKo`/`formatBytesKo`);
   `phase34-labels` re-exports `formatNumberKo` so existing importers stay. Fifteen raw `toLocaleString`
@@ -386,7 +387,24 @@ copy beyond the work-order mobile case.
   outside the two SSOT modules = **0**; the audit variants `2026.8.25.`/`2026.8.25.09:40` are absent at
   current HEAD (`page.tsx` already formats via the SSOT); the remaining manual date construction is the
   `datetime-local` input value (widget format, not display). Dev gates: vitest 798 (+6
-  `test/number-format.test.ts`), tsc/eslint 0. Independent review pending (batch).
+  `test/number-format.test.ts`), tsc/eslint 0. Independent review was pending at
+  the original 2026-10-13 entry; rendered verification closes it below.
+  2026-10-16 closeout: `\.toLocale(String|DateString|TimeString)\s*\(` audit across
+  `apps/dashboard` finds only `src/lib/number-format.ts` (the SSOT); outside
+  `datetime.ts`/`number-format.ts` the result is **0**. The analysis-workflow E2E
+  metric assertion now delegates to `formatNumberKo`/`formatSignificantKo`, preserving
+  its existing precision branch. The four B1-cited datetime variants are absent in
+  the target surfaces; `datetime-local` serialization is an input-widget value, not a
+  rendered datetime. Other `Intl.DateTimeFormat` uses are not competing display
+  formats: `site-epochs` makes a date key, and `ElapsedTime` has no consumer in the
+  current route tree. Parent `0b9e596` vs `f79bab0` rendered synthetic
+  comparison passed 10/10 checks at each build on 1440×1000 and 390×844 (16 captures
+  per build; the review-permission case is a temporary component fixture, not a product
+  route). Captures: `/tmp/opencode/ksi-console-ux-batch2-20261016/shots/{before,after}/`.
+  Gates: Vitest 877 passed (113 files), `tsc --noEmit` passed, full ESLint 0 errors
+  (one existing warning in `p4-cleanup-evidence/.../capture-script.js`), changed-file
+  ESLint passed, and production build passed. Synthetic UI evidence only; no customer
+  or measurement evidence.
 - [x] B2 [F05] event evidence hierarchy — owner: Claude — row now leads with a
   human evidence kind (사진/동영상/파일 증거) + status badge + time; artifact
   id and raw MIME moved to a muted subline; `test/event-evidence-panel-hierarchy.test.tsx`.

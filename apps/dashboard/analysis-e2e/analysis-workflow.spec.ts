@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { expect, test, type Locator } from "@playwright/test";
+import { formatNumberKo, formatSignificantKo } from "../src/lib/number-format";
 
 type Selector = { workOrderId: string; submissionRef: string; revision: number };
 type ObservationOption = {
@@ -262,10 +263,10 @@ async function coreGet<T>(path: string, accessToken: string): Promise<T> {
 }
 
 function resultMetricLabel(value: number): string {
-  const options = Math.abs(value) > 0 && Math.abs(value) < 0.1
-    ? { maximumSignificantDigits: 3 }
-    : { maximumFractionDigits: 1 };
-  return `${value.toLocaleString("ko-KR", options)} m³`;
+  const rendered = Math.abs(value) > 0 && Math.abs(value) < 0.1
+    ? formatSignificantKo(value, 3)
+    : formatNumberKo(value, 1);
+  return `${rendered} m³`;
 }
 
 async function requestRunnerControl(
