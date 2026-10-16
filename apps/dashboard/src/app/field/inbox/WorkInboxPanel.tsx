@@ -29,6 +29,7 @@ export function WorkInboxPanel({ initialItems, initialNextCursor, initialUnreadO
   const [nextCursor, setNextCursor] = useState(initialNextCursor);
   const [unreadOnly, setUnreadOnly] = useState(initialUnreadOnly);
   const [loading, setLoading] = useState(false);
+  const [listLoadFailed, setListLoadFailed] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [readPending, setReadPending] = useState<string | null>(null);
   const [readRetries, setReadRetries] = useState<Record<string, string>>({});
@@ -36,6 +37,7 @@ export function WorkInboxPanel({ initialItems, initialNextCursor, initialUnreadO
   async function load({ reset, unread }: { reset: boolean; unread: boolean }) {
     if (loading) return;
     setLoading(true);
+    setListLoadFailed(false);
     setFeedback(null);
     const after = reset ? null : nextCursor;
     try {
@@ -48,6 +50,7 @@ export function WorkInboxPanel({ initialItems, initialNextCursor, initialUnreadO
       setNextCursor(payload.nextCursor ?? null);
       setUnreadOnly(unread);
     } catch {
+      setListLoadFailed(true);
       setFeedback("받은 업무를 불러오지 못했습니다. 다시 시도하세요.");
     } finally {
       setLoading(false);
@@ -81,8 +84,10 @@ export function WorkInboxPanel({ initialItems, initialNextCursor, initialUnreadO
 
   return <div className="flex flex-col gap-4">
     <div className="flex flex-wrap gap-2"><button className={`btn ${unreadOnly ? "btn-primary" : ""}`} disabled={loading} onClick={() => void load({ reset: true, unread: true })}>읽지 않음</button><button className={`btn ${!unreadOnly ? "btn-primary" : ""}`} disabled={loading} onClick={() => void load({ reset: true, unread: false })}>전체</button></div>
-    {feedback && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[13px] text-ink-2">{feedback}</p>}
-    <section className="overflow-hidden rounded-xl border border-line bg-surface"><ul className="divide-y divide-line px-4">{items.map((item) => <li key={item.notificationRef} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-[14px] font-semibold">{item.kind === "WORK_ORDER_ASSIGNED" ? "작업이 배정되었습니다" : "외부 관측 결과가 공유되었습니다"}{item.unread && <span className="ml-2 rounded-full bg-accent-bg px-2 py-0.5 text-[11px] text-accent-text">새 항목</span>}</p><p className="mt-1 text-[12px] text-ink-2">보낸 사람 · {item.senderPrincipalId || "보낸 사람 확인 필요"} · {formatKoreanDateTime(item.createdAt, { dateStyle: "short", timeStyle: "short" })}</p></div><div className="flex flex-wrap gap-2"><Link className="btn" href={targetHref(item.target)}>{targetLabel(item)}</Link>{item.unread && <button className="btn" disabled={readPending === item.notificationRef} onClick={() => void markRead(item.notificationRef)}>{readRetries[item.notificationRef] ? "같은 읽음 요청 다시 시도" : "읽음 처리"}</button>}</div></li>)}</ul>{items.length === 0 && <p className="px-4 py-4 text-[13px] text-ink-2">{unreadOnly ? "읽지 않은 받은 업무가 없습니다." : "받은 업무가 없습니다."}</p>}</section>
+    {feedback && <p role={listLoadFailed ? "alert" : "status"} className="rounded-lg border border-line bg-sunk px-3 py-2 text-[13px] text-ink-2">{feedback}</p>}
+    <section className="overflow-hidden rounded-xl border border-line bg-surface"><ul className="divide-y divide-line px-4">{items.map((item) => <li key={item.notificationRef} className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="text-[14px] font-semibold">{item.kind === "WORK_ORDER_ASSIGNED" ? "작업이 배정되었습니다" : "외부 관측 결과가 공유되었습니다"}{item.unread && <span className="ml-2 rounded-full bg-accent-bg px-2 py-0.5 text-[11px] text-accent-text">새 항목</span>}</p><p className="mt-1 text-[12px] text-ink-2">보낸 사람 · {item.senderPrincipalId || "보낸 사람 확인 필요"} · {formatKoreanDateTime(item.createdAt, { dateStyle: "short", timeStyle: "short" })}</p></div><div className="flex flex-wrap gap-2"><Link className="btn" href={targetHref(item.target)}>{targetLabel(item)}</Link>{item.unread && <button className="btn" disabled={readPending === item.notificationRef} onClick={() => void markRead(item.notificationRef)}>{readRetries[item.notificationRef] ? "같은 읽음 요청 다시 시도" : "읽음 처리"}</button>}</div></li>)}</ul>{loading && items.length === 0 && <p role="status" className="px-4 py-4 text-[13px] text-ink-2">받은 업무 목록을 불러오는 중입니다.</p>}{items.length === 0 && !loading && !listLoadFailed && <p className="px-4 py-4 text-[13px] leading-5 text-ink-2">{unreadOnly
+      ? "읽지 않은 받은 업무가 없습니다. 전체 목록을 선택해 읽은 업무를 확인하거나, 새 업무가 배정·공유되면 여기서 확인하세요."
+      : "받은 업무가 없습니다. 작업이 배정되거나 결과가 공유되면 이 목록에 표시됩니다."}</p>}</section>
     {nextCursor && <button className="btn w-fit" disabled={loading} onClick={() => void load({ reset: false, unread: unreadOnly })}>{loading ? "불러오는 중" : "더 보기"}</button>}
   </div>;
 }

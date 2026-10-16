@@ -107,6 +107,6 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         canCreate={canCreate}
         initialAnalysisId={analysisId ?? null}
       />
-    </> : <ErrorState message={denied ? "현장 분석을 조회할 권한이 없습니다." : unavailable ? "이 환경에서는 현장 분석 기능을 사용할 수 없습니다." : "현장 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
+    </> : <ErrorState message={denied ? "현장 분석을 조회할 권한이 없습니다. 현장 담당자에게 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 분석 기능을 사용할 수 없습니다." : "현장 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
   </div>;
 }

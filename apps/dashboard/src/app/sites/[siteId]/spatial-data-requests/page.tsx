@@ -366,7 +366,7 @@ export default async function SpatialDataRequestsPage({
         </label>
         <button className="btn btn-primary min-h-11" type="submit">요청 이력 불러오기</button>
       </form>
-      {areas?.workAreas.length === 0 && <p className="mt-3 text-[12.5px] text-ink-2">조회 가능한 작업구역이 없습니다.</p>}
+      {areas?.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">요청 이력을 조회할 작업구역이 없습니다. 현장 담당자에게 작업구역 등록 여부를 확인하세요.</p>}
       {!workAreaId && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장의 작업구역 하나를 선택하면 그 범위에 귀속된 공간 데이터 요청을 Core에서 조회합니다.</p>}
       {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 페이지당 최대 50건</p>}
     </section>
@@ -385,7 +385,7 @@ export default async function SpatialDataRequestsPage({
           <span className="text-[11px] text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
         </header>
         {scopedItems.length === 0
-          ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 공간 데이터 요청이 없습니다"} description={cursor ? "Core가 반환한 다음 커서의 현재 페이지가 비어 있습니다." : "외부 요청이 생성되면 상태와 결과 근거가 이곳에 표시됩니다."} /></div>
+          ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 공간 데이터 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "공간 자산 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
           : <>
             <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청 ID · 원본 자산</span><span>생성 시각</span><span>상태 · availability</span><span>Core 사유</span></div>
             <ul className="divide-y divide-line">

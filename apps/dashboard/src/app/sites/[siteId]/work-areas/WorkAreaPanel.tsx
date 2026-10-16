@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
+import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { COMPARISON_ZONE_CRS, toZonePolygon } from "@/lib/comparison-submit";
 import { readableApiError } from "@/lib/core-api/labels";
@@ -118,12 +119,19 @@ export function WorkAreaPanel({
   siteCrs,
   canWrite,
   initialWorkAreas,
+  workAreaListError,
 }: {
   siteId: string;
   /** 현장에 등록된 좌표계 — 참고로만 적는다. 지도가 내는 좌표는 항상 WGS84 경위도다. */
   siteCrs: string;
   canWrite: boolean;
   initialWorkAreas: WorkArea[];
+  workAreaListError: {
+    message: string;
+    tone: "crit" | "high" | "idle";
+    retryable: boolean;
+    retryAfterSeconds?: number;
+  } | null;
 }) {
   const [workAreas, setWorkAreas] = useState<WorkArea[]>(initialWorkAreas);
   const [name, setName] = useState("");
@@ -372,13 +380,22 @@ export function WorkAreaPanel({
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[15px] font-bold break-keep">사용 중인 작업구역</h2>
           <span className="num text-[11.5px] whitespace-nowrap text-ink-muted">
-            {active.length}건
+            {workAreaListError ? "확인할 수 없음" : `${active.length}건`}
           </span>
         </div>
 
-        {active.length === 0 ? (
+        {workAreaListError ? (
+          <ErrorState
+            message={workAreaListError.message}
+            tone={workAreaListError.tone}
+            retryable={workAreaListError.retryable}
+            retryAfterSeconds={workAreaListError.retryAfterSeconds}
+          />
+        ) : active.length === 0 ? (
           <p className="rounded-lg border border-dashed border-line-strong bg-surface px-4 py-8 text-center text-[13px] break-keep text-ink-muted">
-            아직 등록된 작업구역이 없습니다.
+            {canWrite
+              ? "아직 등록된 작업구역이 없습니다. 위 지도에서 이름과 범위를 정해 등록하세요."
+              : "이 현장에 등록된 작업구역이 없습니다. 현장 담당자에게 구역 등록을 요청하세요."}
           </p>
         ) : (
           <ul className="flex flex-col gap-2">

@@ -569,6 +569,19 @@ function singleReviewReceipt(targetRmseM: number | null = 0.04): ExternalSingleV
 }
 
 describe("SINGLE_VOLUME measurement", () => {
+  it("names the next information available in empty request lists", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/relative-volume-requests") || url.endsWith("/single-volume-requests")) return response({ items: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={[]} />);
+
+    expect(await screen.findByText(/기록된 상대 물량 비교 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/상태와 보고서가 이 목록에 표시됩니다/)).toBeTruthy();
+    expect(await screen.findByText(/기록된 단일 시점 체적 측정 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/상태와 결과를 이 목록에서 확인할 수 있습니다/)).toBeTruthy();
+  });
+
   it("issues an ELIGIBLE single-volume decision, polls the request, and mounts review on the single review path", async () => {
     const posts: Array<{ url: string; body: unknown; key: string }> = [];
     let itemReads = 0;

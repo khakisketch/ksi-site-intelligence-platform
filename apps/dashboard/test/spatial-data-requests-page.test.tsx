@@ -192,6 +192,7 @@ describe("spatial data request Console surface", () => {
     mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("이 작업구역의 공간 데이터 요청이 없습니다");
+    expect(html).toContain("공간 자산 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다.");
     expect(html).not.toContain("조회할 권한이 없습니다");
   });
 

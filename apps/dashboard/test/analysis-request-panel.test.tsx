@@ -159,6 +159,25 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("uses a true-empty message only after a successful list read", async () => {
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    expect(screen.getByText(/이 현장에는 아직 분석 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/실제 작업구역과 관측 후보를 확인/)).toBeTruthy();
+
+    cleanup();
+    let finishRequest: ((value: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishRequest = resolve; })));
+    renderPanel({ initialPage: listPage([], "older-cursor"), initialSelectedDetail: null, initialAnalysisId: null, canCreate: false });
+    expect(screen.getByText(/현재 페이지에 분석 요청이 없습니다/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
+    expect(screen.getByRole("status").textContent).toContain("분석 목록을 불러오는 중입니다.");
+    expect(screen.queryByText(/현재 페이지에 분석 요청이 없습니다/)).toBeNull();
+    finishRequest?.({ ok: false, status: 503, json: async () => ({}) } as Response);
+    expect((await screen.findByRole("alert")).textContent).toContain("분석 목록");
+    expect(screen.queryByText(/현재 페이지에 분석 요청이 없습니다|이 현장에는 아직 분석 요청이 없습니다/)).toBeNull();
+  });
+
   it("uses capture time, revision and the recorded epoch ID to distinguish observations", () => {
     renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
 

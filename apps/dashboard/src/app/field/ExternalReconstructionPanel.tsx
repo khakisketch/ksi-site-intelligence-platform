@@ -534,7 +534,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     {!canWrite && <p className="text-ink-2">조회 전용 계정입니다.</p>}
     {listState === "loading" && <p role="status" className="text-ink-2">선언 목록을 불러오는 중입니다.</p>}
     {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>선언 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
-    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li>등록된 외부 산출물이 없습니다.</li> : revisions.map((revision) => {
+    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>등록된 외부 산출물이 없습니다.</span>{" "}산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다.</li> : revisions.map((revision) => {
       const key = inspectionKey(revision);
       const inspection = inspectionByRevision.get(key);
       const inspectionView = retainedInspectionView(inspection);

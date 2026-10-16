@@ -166,6 +166,7 @@ describe("ExternalReconstructionPanel", () => {
   it("distinguishes an empty list from a list failure", async () => {
     const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     expect(await screen.findByText("등록된 외부 산출물이 없습니다.")).toBeTruthy();
+    expect(screen.getByText(/산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다/)).toBeTruthy();
     fetchMock.mockImplementation((url: string) =>
       url.includes("work-2") && url.endsWith("/external-reconstruction-submissions")
         ? Promise.reject(new Error("offline"))

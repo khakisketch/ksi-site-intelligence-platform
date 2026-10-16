@@ -128,4 +128,14 @@ describe("analysis deep link", () => {
     expect(screen.getByRole("button", { name: /다시 시도/ })).toBeTruthy();
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
   });
+
+  it("explains the next step for a denied analysis read without offering a retry", async () => {
+    mocked.list.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 분석 기록 조회 권한을 요청하세요.");
+    expect(screen.queryByRole("button", { name: /다시 시도/ })).toBeNull();
+    expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
+  });
 });

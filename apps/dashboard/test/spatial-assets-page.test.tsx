@@ -202,13 +202,14 @@ describe("spatial asset catalog page", () => {
     expect(unavailable).toContain("작업구역을 확인할 수 없거나 접근 권한이 없습니다.");
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
     const empty = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(empty).toContain("이 작업구역에 등록된 공간 자산이 없습니다.");
+    expect(empty).toContain("이 작업구역에 등록된 공간 자산이 없습니다");
+    expect(empty).toContain("외부 관측 자료가 이 작업구역에 등록되면 해당 자산의 메타데이터가 여기에 표시됩니다.");
   });
 
   it("fails closed on denied access, temporary Core failures, duplicate selection and detail 404", async () => {
     const { CoreApiError } = await import("@/lib/core-api/client");
     mocked.catalog.mockRejectedValueOnce(new CoreApiError(403, {}));
-    expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1" }))).toContain("현장 공간 자산 조회 권한이 없습니다.");
+    expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1" }))).toContain("현장 공간 자산 조회 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요.");
     mocked.catalog.mockRejectedValueOnce(new CoreApiError(503, {}, 10));
     expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1" }))).toContain("일시적으로 불러오지 못했습니다.");
     expect(renderToStaticMarkup(await callPage({ workAreaId: ["area-1", "area-2"] }))).toContain("작업구역을 하나만 선택하세요.");

@@ -48,7 +48,7 @@ it("keeps verified Site context and does not offer futile retry for denied histo
   mocked.history.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
   render(await callPage());
   expectKnownContext();
-  expect(screen.getByRole("alert").textContent).toMatch(/권한/);
+  expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 조회 권한을 요청하세요.");
   expect(screen.queryByRole("button", { name: "다시 시도" })).toBeNull();
 });
 

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
@@ -46,7 +47,7 @@ function errorView(error: unknown, scope: "site" | "catalog" | "detail", siteId:
       />;
     }
     if (error.status === 403) {
-      return <ErrorState message="현장 공간 자산 조회 권한이 없습니다." tone="high" />;
+      return <ErrorState message="현장 공간 자산 조회 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." tone="high" />;
     }
     if (error.status === 503 || error.status >= 500) {
       return <ErrorState message="공간 자산을 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
@@ -305,7 +306,7 @@ export default async function SpatialAssetsPage({
         </label>
         <button className="btn btn-primary" type="submit">자산 불러오기</button>
       </form>
-      {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] text-ink-2">조회 가능한 작업구역이 없습니다.</p>}
+      {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자산을 조회하려면 작업구역을 먼저 등록해야 합니다.</p>}
       {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.</p>}
       {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
     </section>
@@ -326,7 +327,7 @@ export default async function SpatialAssetsPage({
         <section className="flex flex-col gap-3">
           <header><h2 className="text-[16px] font-bold">공간 자산 목록</h2><p className="mt-1 text-[12px] text-ink-muted">이 목록은 메타데이터 조회이며 파일 다운로드나 분석 가능 판정을 제공하지 않습니다.</p></header>
           {page.assets.length === 0
-            ? <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">이 작업구역에 등록된 공간 자산이 없습니다.</p>
+            ? <EmptyState compact title="이 작업구역에 등록된 공간 자산이 없습니다" description="외부 관측 자료가 이 작업구역에 등록되면 해당 자산의 메타데이터가 여기에 표시됩니다." />
             : page.assets.map((item) => {
               if (item.siteId !== siteId || item.workAreaId !== workAreaId) {
                 return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;

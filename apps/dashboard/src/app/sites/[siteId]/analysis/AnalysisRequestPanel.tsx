@@ -790,6 +790,7 @@ export function AnalysisRequestPanel({
   const [error, setError] = useState<{ analysisId: string | null; message: string } | null>(null);
   const [detailLoadingId, setDetailLoadingId] = useState<string | null>(null);
   const [listLoading, setListLoading] = useState(false);
+  const [listLoadError, setListLoadError] = useState(false);
   const [listRestartRequired, setListRestartRequired] = useState(false);
   const [evidence, setEvidence] = useState<LoadedEvidence | null>(null);
   const [evidenceLoading, setEvidenceLoading] = useState(false);
@@ -1052,10 +1053,12 @@ export function AnalysisRequestPanel({
     const controller = new AbortController();
     listController.current = controller;
     const generation = ++listGeneration.current;
+    setListLoadError(false);
     setListLoading(true);
     try {
       const loaded = await fetchListPage(null, controller.signal);
       if (loaded.stale) {
+        setListLoadError(true);
         setListRestartRequired(true);
         setError({ analysisId: selectedIdRef.current, message: "분석 목록이 변경되었습니다. 첫 페이지부터 다시 불러오세요." });
         return;
@@ -1084,11 +1087,13 @@ export function AnalysisRequestPanel({
         }
         return remaining;
       });
+      setListLoadError(false);
       setListRestartRequired(false);
       setError((current) => current?.message.includes("분석 목록") ? null : current);
       if (selectedId) await refreshDetail(selectedId, ++detailGeneration.current);
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && listGeneration.current === generation) {
+        setListLoadError(true);
         setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "현장 분석 목록을 불러오지 못했습니다." });
       }
     } finally {
@@ -1108,18 +1113,22 @@ export function AnalysisRequestPanel({
     const controller = new AbortController();
     listController.current = controller;
     const generation = ++listGeneration.current;
+    setListLoadError(false);
     setListLoading(true);
     try {
       const loaded = await fetchListPage(cursor, controller.signal);
       if (loaded.stale) {
+        setListLoadError(true);
         setListRestartRequired(true);
         setError({ analysisId: selectedIdRef.current, message: "목록 페이지가 바뀌었습니다. 첫 페이지부터 다시 불러오세요." });
         return;
       }
       if (!mountedRef.current || listGeneration.current !== generation) return;
       setPagesAndRef((current) => [...current, loaded.page]);
+      setListLoadError(false);
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && listGeneration.current === generation) {
+        setListLoadError(true);
         setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "분석 목록을 불러오지 못했습니다." });
       }
     } finally {
@@ -1413,7 +1422,12 @@ export function AnalysisRequestPanel({
         onRefreshReview={loadReviewState}
         onRefreshAfterReviewConflict={refreshReviewAfterConflict}
       />)}
-      {rows.length === 0 && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">이 현장에는 아직 분석 요청이 없습니다.</p>}
+      {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">분석 목록을 불러오는 중입니다.</p>}
+      {rows.length === 0 && !listLoading && !listLoadError && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor
+        ? "현재 페이지에 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
+        : canCreate
+          ? "이 현장에는 아직 분석 요청이 없습니다. 새 분석 요청에서 실제 작업구역과 관측 후보를 확인한 뒤 진행하세요."
+          : "이 현장에는 아직 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>}
     </section>
     {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
     {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "분석 목록 불러오는 중" : "다음 분석 보기"}</button></div>}
