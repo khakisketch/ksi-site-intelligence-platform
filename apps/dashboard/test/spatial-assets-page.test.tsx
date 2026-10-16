@@ -41,7 +41,11 @@ const digest = (letter: string) => `sha256:${letter.repeat(64)}`;
 const assetRef = `ksa-v1-${"a".repeat(64)}`;
 const workArea = { workAreaId: "area-1", name: "북측 작업구역", status: "ACTIVE" };
 
-function asset(workAreaId = "area-1", kind = "dsm") {
+function asset(
+  workAreaId = "area-1",
+  kind = "dsm",
+  captureInterval: { startedAt: string | null; endedAt: string | null } = { startedAt: null, endedAt: null },
+) {
   return {
     assetRef,
     siteId: "site-1",
@@ -57,7 +61,7 @@ function asset(workAreaId = "area-1", kind = "dsm") {
       factClass: "DECLARED", fileName: "north-dsm.tif", format: "GeoTIFF", contentType: "image/tiff",
       sha256: "c".repeat(64), sizeBytes: 1234, crs: "EPSG:32652", verticalReference: null,
       gsdM: 0.05, submittedAt: "2026-09-30T01:00:00Z", producerCompletedAt: "2026-09-30T00:50:00Z",
-      captureStartedAt: null, captureEndedAt: null,
+      captureStartedAt: captureInterval.startedAt, captureEndedAt: captureInterval.endedAt,
     },
     observed: {
       factClass: "OBSERVED", manifestDigest: digest("d"), observedAt: "2026-09-30T01:01:00Z",
@@ -121,8 +125,27 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain("선택한 자산 상세");
     expect(html).toContain("관측 epoch: epoch-1");
     expect(html).toContain("EPSG:32652");
+    expect(html).toContain("상태: 검사 완료 · 결과: 측정 정보 있음");
+    expect(html).toContain("DSM 지표면 모델 · image/tiff");
     expect(html).toContain("다운로드는 이 목록에서 제공되지 않습니다.");
     expect(html).toContain("분석 적합성은 평가되지 않았습니다.");
+  });
+
+  it("formats declared submission and capture timestamps in Seoul time", async () => {
+    const withCaptureTimes = asset("area-1", "dsm", {
+      startedAt: "2026-09-29T23:30:00Z",
+      endedAt: "2026-09-30T00:30:00Z",
+    });
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [withCaptureTimes], nextCursor: null, hasMore: false });
+    mocked.detail.mockResolvedValueOnce(withCaptureTimes);
+
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(html).toContain("2026. 9. 30. 10:00");
+    expect(html).toContain("2026. 9. 30. 09:50");
+    expect(html).toContain("2026. 9. 30. 08:30 – 2026. 9. 30. 09:30");
+    expect(html).not.toContain("2026-09-30T01:00:00Z");
+    expect(html).not.toContain("2026-09-29T23:30:00Z");
   });
 
   it("uses Core's opaque cursor for the next page and keeps WorkArea scope", async () => {
@@ -155,7 +178,8 @@ describe("spatial asset catalog page", () => {
     };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [report], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("처리 보고서 (report)");
+    expect(html).toContain("처리 보고서");
+    expect(html).not.toContain("(report)");
     expect(html).toContain("검사 결과: 적용 대상 아님");
     expect(html).not.toContain("격자 크기");
   });

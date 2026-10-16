@@ -12,7 +12,9 @@ import { getExternalRelativeVolumeReport, getSiteExternalRelativeVolumeReport, l
 import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative-volume-references";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import { formatCountKo } from "@/lib/number-format";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionPanel";
 import type { TrustedExternalResultLink } from "@/app/field/ExternalResultWorkflowPanel";
@@ -195,7 +197,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
       <OperationsWorkHeader>
         <div className="flex flex-col gap-1">
           <h2 className="break-keep text-[19px] font-bold tracking-tight">{workOrder.name}</h2>
-          <p className="break-keep text-[12.5px] text-ink-2">{site?.name ?? "현장"} · {workOrder.workAreaIds.length}개 구역 · {workOrder.cycleNumber}회차</p>
+          <p className="break-keep text-[12.5px] text-ink-2">{site?.name ?? "현장"} · {formatCountKo(workOrder.workAreaIds.length)}개 구역 · {workOrder.cycleNumber}회차</p>
         </div>
       </OperationsWorkHeader>
 
@@ -252,7 +254,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
             <p className="text-[12.5px] text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 결과 화면에서 진행합니다.</p>
             {externalWorkflow && <Link className="w-fit text-[12.5px] font-semibold text-accent-text underline underline-offset-2" href={initialReport ? "#external-result" : "#external-volume"}>{initialReport ? "결과와 제안 결정으로 이동" : "비교 요청·제안 상태로 이동"}</Link>}
             <ul className="divide-y divide-line">
-              {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-[12.5px]"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{draft.targetRegionRefs.length}개 구역 · {draft.expiresAt}</p></li>)}
+              {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-[12.5px]"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{formatCountKo(draft.targetRegionRefs.length)}개 구역 · 만료 {formatKoreanDateTime(draft.expiresAt, { dateStyle: "medium", timeStyle: "short" })}</p></li>)}
             </ul>
           </section>
         )}

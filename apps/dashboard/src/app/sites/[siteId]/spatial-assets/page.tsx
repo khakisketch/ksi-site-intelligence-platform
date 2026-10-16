@@ -62,6 +62,32 @@ function lifecycleLabel(state: SpatialAssetCatalogItem["lifecycleState"]): strin
   return "미봉인";
 }
 
+const INSPECTION_STATE_LABEL: Record<string, string> = {
+  PENDING_SEAL: "봉인 대기",
+  INSPECTION_NOT_CONFIGURED: "검사 미설정",
+  INSPECTION_NOT_QUERIED: "검사 결과 확인 전",
+  INSPECTION_PENDING_SEAL: "봉인 대기",
+  INSPECTION_PENDING_POLICY: "검사 기준 확인 중",
+  INSPECTION_PENDING: "검사 대기",
+  INSPECTION_QUEUED: "검사 대기",
+  INSPECTION_RUNNING: "검사 중",
+  INSPECTION_REPORTED: "검사 결과 기록됨",
+  INSPECTION_FAILED_INCOMPLETE: "검사 미완료",
+  COMPLETED: "검사 완료",
+  FAILED: "검사 실패",
+};
+
+function inspectionStateLabel(state: string): string {
+  return INSPECTION_STATE_LABEL[state] ?? state;
+}
+
+function inspectionOutcomeLabel(outcome: SpatialAssetInspection["outcome"]): string {
+  if (outcome === "MEASURED") return "측정 정보 있음";
+  if (outcome === "REJECTED") return "거부됨";
+  if (outcome === "NOT_APPLICABLE") return "적용 대상 아님";
+  return "아직 확인되지 않음";
+}
+
 function kindLabel(kind: SpatialAssetCatalogItem["kind"]): string {
   const labels: Record<SpatialAssetCatalogItem["kind"], string> = {
     point_cloud: "포인트 클라우드",
@@ -73,7 +99,7 @@ function kindLabel(kind: SpatialAssetCatalogItem["kind"]): string {
     tiles_3d: "3D 타일",
     report: "처리 보고서",
   };
-  return `${labels[kind]} (${kind})`;
+  return labels[kind];
 }
 
 function exactByteCount(value: number): string {
@@ -106,34 +132,28 @@ function AssetSummary({ item, siteId }: { item: SpatialAssetCatalogItem; siteId:
 }
 
 function FactStatus({ item, compact = false }: { item: SpatialAssetCatalogItem; compact?: boolean }) {
-  const inspectionText = item.inspection.outcome === "MEASURED"
-    ? "검사 결과: 측정 정보 있음"
-    : item.inspection.outcome === "REJECTED"
-      ? "검사 결과: 거부됨"
-      : item.inspection.outcome === "NOT_APPLICABLE"
-        ? "검사 결과: 적용 대상 아님"
-        : "검사 결과: 아직 확인되지 않음";
+  const inspectionText = inspectionOutcomeLabel(item.inspection.outcome);
   return <div className={compact ? "mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-2" : "mt-3 grid gap-2 sm:grid-cols-3"}>
-    <p>{compact ? "고객 신고 정보 있음" : "고객 신고 정보 (DECLARED)"}</p>
+    <p>{compact ? "고객 신고 정보 있음" : "고객 신고 정보"}</p>
     <p>{item.observed ? "KSI 바이트 관측 있음" : "KSI 바이트 관측 없음"}</p>
-    <p>{compact ? `KSI ${inspectionText}` : `KSI 검사 (${item.inspection.state}): ${inspectionText}`}</p>
+    <p>KSI 검사 결과: {inspectionText}</p>
   </div>;
 }
 
 function DeclaredFacts({ item }: { item: SpatialAssetCatalogItem }) {
   const declared = item.declared;
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">고객 신고 정보 <span className="text-[11px] font-normal text-ink-muted">DECLARED · 업로더가 제출</span></h3>
+    <h3 className="text-[14px] font-bold">고객 신고 정보 <span className="text-[11px] font-normal text-ink-muted">업로더가 제출</span></h3>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
       <Fact label="파일명 / 형식" value={`${declared.fileName} · ${declared.format}`} />
-      <Fact label="종류 / MIME" value={`${item.kind} · ${declared.contentType}`} />
+      <Fact label="종류 / MIME" value={`${kindLabel(item.kind)} · ${declared.contentType}`} />
       <Fact label="신고 크기" value={exactByteCount(declared.sizeBytes)} />
       <Fact label="신고 SHA-256" value={declared.sha256} mono />
       <Fact label="신고 CRS" value={declared.crs ?? "미기재"} />
       <Fact label="신고 해상도" value={declared.gsdM === null ? "미기재" : `${declared.gsdM} m/pixel`} />
-      <Fact label="제출 시각" value={declared.submittedAt} />
-      <Fact label="처리 완료 신고 시각" value={declared.producerCompletedAt ?? "미기재"} />
-      <Fact label="촬영 구간" value={declared.captureStartedAt && declared.captureEndedAt ? `${declared.captureStartedAt} – ${declared.captureEndedAt}` : "완전한 구간 미기재"} />
+      <Fact label="제출 시각" value={formatKoreanDateTime(declared.submittedAt, { dateStyle: "medium", timeStyle: "short" })} />
+      <Fact label="처리 완료 신고 시각" value={declared.producerCompletedAt ? formatKoreanDateTime(declared.producerCompletedAt, { dateStyle: "medium", timeStyle: "short" }) : "미기재"} />
+      <Fact label="촬영 구간" value={declared.captureStartedAt && declared.captureEndedAt ? `${formatKoreanDateTime(declared.captureStartedAt, { dateStyle: "medium", timeStyle: "short" })} – ${formatKoreanDateTime(declared.captureEndedAt, { dateStyle: "medium", timeStyle: "short" })}` : "완전한 구간 미기재"} />
       <Fact label="신고 수직 기준" value={declared.verticalReference ? `${declared.verticalReference.datum} · ${declared.verticalReference.basis}` : "미기재"} />
     </dl>
     <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">이 항목은 고객이 신고한 값이며 파일에서 확인한 사실이나 정확도 보증을 뜻하지 않습니다.</p>
@@ -144,7 +164,7 @@ function ObservedFacts({ item }: { item: SpatialAssetCatalogItem }) {
   if (!item.observed) return <section className="rounded-lg border border-line bg-surface p-4"><h3 className="text-[14px] font-bold">KSI 바이트 관측 (OBSERVED)</h3><p className="mt-2 text-[12.5px] text-ink-2">KSI가 봉인한 바이트 매니페스트가 없습니다.</p></section>;
   const observed = item.observed;
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">KSI 바이트 관측 <span className="text-[11px] font-normal text-ink-muted">OBSERVED · 봉인된 저장 바이트</span></h3>
+    <h3 className="text-[14px] font-bold">KSI 바이트 관측 <span className="text-[11px] font-normal text-ink-muted">봉인된 저장 바이트</span></h3>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
       <Fact label="관측 크기" value={exactByteCount(observed.sizeBytes)} />
       <Fact label="관측 MIME" value={observed.contentType} />
@@ -180,8 +200,8 @@ function RasterFacts({ raster }: { raster: SpatialAssetInspectedRasterFacts }) {
 
 function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection }) {
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">KSI 검사 결과 <span className="text-[11px] font-normal text-ink-muted">INSPECTED · 파일 구조 검사</span></h3>
-    <p className="mt-2 text-[12.5px] text-ink-2">상태: {inspection.state} · 결과: {inspection.outcome ?? "결과 없음"}</p>
+    <h3 className="text-[14px] font-bold">KSI 검사 결과 <span className="text-[11px] font-normal text-ink-muted">파일 구조 검사</span></h3>
+    <p className="mt-2 text-[12.5px] text-ink-2">상태: {inspectionStateLabel(inspection.state)} · 결과: {inspectionOutcomeLabel(inspection.outcome)}</p>
     {inspection.reason && <p className="mt-1 text-[12px] text-ink-2">사유: {inspection.reason}</p>}
     {inspection.raster ? <RasterFacts raster={inspection.raster} /> : <p className="mt-2 text-[12px] text-ink-muted">검사된 래스터 공간 정보가 없습니다.</p>}
     {inspection.reportDigest && <p className="mt-2 break-all font-mono text-[10.5px] text-ink-muted">검사 보고서: {inspection.reportDigest}</p>}

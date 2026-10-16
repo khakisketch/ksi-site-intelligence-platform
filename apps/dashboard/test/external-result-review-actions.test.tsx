@@ -188,7 +188,7 @@ it("renders the retained review through the family's own detail renderer", async
 
 it("names the missing permission for each action without offering it", async () => {
   const { rerender } = render(<ExternalResultReviewActions {...props({ hasReviewPermission: false })} />);
-  expect(await screen.findByText("보고서 검토에는 WORK_ORDERS_WRITE 권한이 필요합니다.")).toBeTruthy();
+  expect(await screen.findByText("결과 검토를 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
 
   rerender(<ExternalResultReviewActions {...props({
@@ -197,8 +197,8 @@ it("names the missing permission for each action without offering it", async () 
     hasReviewPermission: false,
     canApprovePermission: false,
   })} />);
-  expect(await screen.findByText("재관측 제안에는 WORK_ORDERS_WRITE 권한이 필요합니다.")).toBeTruthy();
-  expect(screen.getByText("후속 작업 승인에는 REOBSERVATION_APPROVE 권한이 필요합니다.")).toBeTruthy();
+  expect(await screen.findByText("재관측 제안을 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
+  expect(screen.getByText("후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
   expect(screen.queryByRole("button", { name: "재관측 후속 작업 승인" })).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();

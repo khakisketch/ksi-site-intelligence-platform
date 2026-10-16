@@ -30,7 +30,7 @@ it("requires a second explicit confirmation and reports the authoritative cancel
   renderActions();
   fireEvent.click(screen.getByRole("button", { name: "요청 취소" }));
   fireEvent.click(screen.getByRole("button", { name: "취소를 확인" }));
-  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("CANCELED"));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("요청 상태를 확인했습니다: 취소됨."));
   expect(fetchMock).toHaveBeenCalledWith(apiPath, expect.objectContaining({ method: "POST", cache: "no-store" }));
   expect(fetchMock.mock.calls[0]?.[1]).not.toHaveProperty("body");
   expect(mocked.refresh).toHaveBeenCalledOnce();
@@ -41,16 +41,18 @@ it("does not present a completion as canceled when the request changed before ca
   renderActions();
   fireEvent.click(screen.getByRole("button", { name: "요청 취소" }));
   fireEvent.click(screen.getByRole("button", { name: "취소를 확인" }));
-  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("취소 전에 요청이 완료되었습니다"));
-  expect(screen.getByRole("status").textContent).toContain("COMPLETED");
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("요청이 취소되지 않았습니다"));
+  expect(screen.getByRole("status").textContent).toContain("처리가 완료됐습니다");
+  expect(screen.getByRole("status").textContent).not.toContain("COMPLETED");
   expect(screen.getByRole("status").textContent).not.toContain("취소되었습니다");
 });
 
-it("shows the Core refusal code verbatim without claiming a state change", async () => {
+it("explains a denied cancellation without exposing a permission code or claiming a state change", async () => {
   fetchMock.mockResolvedValue(new Response(JSON.stringify({ code: "PERMISSION_DENIED", message: "Denied" }), { status: 403 }));
   renderActions();
   fireEvent.click(screen.getByRole("button", { name: "요청 취소" }));
   fireEvent.click(screen.getByRole("button", { name: "취소를 확인" }));
-  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("PERMISSION_DENIED"));
+  await waitFor(() => expect(screen.getByRole("status").textContent).toContain("요청을 취소할 권한이 없습니다"));
+  expect(screen.getByRole("status").textContent).not.toContain("PERMISSION_DENIED");
   expect(mocked.refresh).not.toHaveBeenCalled();
 });

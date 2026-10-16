@@ -14,6 +14,12 @@ const STATE_LABEL: Record<SpatialDataExecutionState, string> = {
   EXPIRED: "기한 만료",
 };
 
+const CANCEL_ERROR_COPY: Record<string, string> = {
+  PERMISSION_DENIED: "요청을 취소할 권한이 없습니다. 권한이 있는 담당자에게 요청하세요.",
+  REPORT_CONFLICT: "요청 상태가 바뀌어 취소하지 못했습니다. 현재 상태를 다시 확인하세요.",
+  NOT_FOUND: "요청을 찾을 수 없거나 현재 접근할 수 없습니다.",
+};
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -36,7 +42,7 @@ export function SpatialDataRequestActions({
   const [isRefreshing, startTransition] = useTransition();
 
   if (!canCancel) {
-    return <p className="text-[12px] leading-5 text-ink-muted">취소하려면 Core의 SPATIAL_DATA_REQUEST 권한이 필요합니다.</p>;
+    return <p className="text-[12px] leading-5 text-ink-muted">요청을 취소할 권한이 없습니다. 권한이 있는 담당자에게 요청하세요.</p>;
   }
 
   const cancel = async () => {
@@ -50,8 +56,7 @@ export function SpatialDataRequestActions({
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) {
         const code = isRecord(body) && typeof body.code === "string" ? body.code : null;
-        const detail = isRecord(body) && typeof body.message === "string" ? body.message : null;
-        setMessage(code ? `Core 거부: ${code}` : detail ?? "취소 요청을 Core에서 확인하지 못했습니다.");
+        setMessage(code ? CANCEL_ERROR_COPY[code] ?? "요청을 취소하지 못했습니다. 현재 상태를 다시 확인하세요." : "요청을 취소하지 못했습니다. 현재 상태를 다시 확인하세요.");
         setConfirming(false);
         return;
       }
@@ -64,8 +69,8 @@ export function SpatialDataRequestActions({
       const state = body.executionState;
       const label = STATE_LABEL[state];
       setMessage(state === "COMPLETED"
-        ? `Core 응답 상태: ${label} (${state}) · 취소 전에 요청이 완료되었습니다.`
-        : `Core 응답 상태: ${label} (${state})`);
+        ? "요청이 취소되지 않았습니다. 취소 요청 전에 처리가 완료됐습니다."
+        : `요청 상태를 확인했습니다: ${label}.`);
       setConfirming(false);
       startTransition(() => router.refresh());
     } catch {

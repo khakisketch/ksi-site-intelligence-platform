@@ -151,6 +151,18 @@ describe("관측 작업 페이지 follow-up", () => {
     await renderPage();
 
     expect(screen.getByRole("link", { name: "비교 요청·제안 상태로 이동" }).getAttribute("href")).toBe("#external-volume");
+    expect(document.body.textContent).toContain("1개 구역 · 만료 2026. 9. 30. 09:00");
+    expect(document.body.textContent).not.toContain("2026-09-30T00:00:00Z");
+  });
+
+  it("uses the shared count format for WorkAreas and draft regions", async () => {
+    mocked.workOrder.mockResolvedValueOnce({ ...baseOrder, workAreaIds: Array.from({ length: 1_234 }, (_, index) => `area-${index}`) });
+    mocked.drafts.mockResolvedValueOnce([{ draftId: "draft-1", status: "PENDING", proposedEffort: "재관측 필요", targetRegionRefs: Array.from({ length: 1_234 }, (_, index) => `region-${index}`), expiresAt: "2026-09-30T00:00:00Z" }]);
+
+    await renderPage();
+
+    expect(document.body.textContent).toContain("현장 A · 1,234개 구역 · 1회차");
+    expect(document.body.textContent).toContain("1,234개 구역 · 만료 2026. 9. 30. 09:00");
   });
 
   it("shows a compact successor banner with the exact source proposal and next analysis step", async () => {

@@ -116,10 +116,11 @@ describe("spatial data request Console surface", () => {
     ], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(mocked.list).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
-    expect(html).toContain("FAILED");
-    expect(html).toContain("NOT_READY");
+    expect(html).toContain(">실패</span>");
+    expect(html).toContain("아직 준비되지 않음");
     expect(html).toContain("RASTER_PREPARATION_FAILED");
-    expect(html).toContain("CANCELED");
+    expect(html).toContain(">취소됨</span>");
+    expect(html).toContain("현재 접근 불가");
     expect(html).toContain("ACTIVATION_UNAVAILABLE");
     expect(html).toContain("2026. 10. 14.");
   });
@@ -166,7 +167,8 @@ describe("spatial data request Console surface", () => {
     mocked.detail.mockResolvedValueOnce(job({ executionState: "RUNNING", availability: "NOT_READY", receipt: null }));
     const noCancelPermission = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
     expect(noCancelPermission).not.toContain("요청 취소</button>");
-    expect(noCancelPermission).toContain("SPATIAL_DATA_REQUEST 권한이 필요합니다");
+    expect(noCancelPermission).toContain("요청을 취소할 권한이 없습니다");
+    expect(noCancelPermission).not.toContain("SPATIAL_DATA_REQUEST");
   });
 
   it("keeps archived WorkAreas selectable for existing request history", async () => {
@@ -205,7 +207,8 @@ describe("spatial data request Console surface", () => {
       principalId: "viewer-1", organizationId: "org-1", kind: "OPERATOR", role: "VIEWER", permissions: ["SITES_READ"],
     } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("SPATIAL_DATA_READ");
+    expect(html).toContain("공간 데이터 요청을 볼 권한이 없습니다");
+    expect(html).not.toContain("SPATIAL_DATA_READ");
     expect(mocked.areas).not.toHaveBeenCalled();
     expect(mocked.list).not.toHaveBeenCalled();
   });

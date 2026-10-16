@@ -31,6 +31,7 @@ type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; requestId?
 
 const REQUEST_ID_PATTERN = /^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ACTIVE_STATES: readonly SpatialDataExecutionState[] = ["QUEUED", "RUNNING"];
+const READ_PERMISSION_MESSAGE = "이 현장의 공간 데이터 요청을 볼 권한이 없습니다. 현장 담당자에게 접근 권한을 요청하세요.";
 
 const STATE_PRESENTATION: Record<SpatialDataExecutionState, { label: string; tone: "neutral" | "progress" | "caution" | "positive" | "warning" }> = {
   QUEUED: { label: "대기", tone: "progress" },
@@ -63,11 +64,11 @@ function pageHref(siteId: string, workAreaId: string, values: { cursor?: string;
 
 function stateBadge(state: SpatialDataExecutionState) {
   const presentation = STATE_PRESENTATION[state];
-  return <StateBadge label={`${presentation.label} · ${state}`} tone={presentation.tone} />;
+  return <StateBadge label={presentation.label} tone={presentation.tone} />;
 }
 
 function availabilityText(availability: SpatialDataAvailability) {
-  return <span className="text-[11.5px] text-ink-2">{AVAILABILITY_LABEL[availability]} <span className="font-mono text-ink-muted">· {availability}</span></span>;
+  return <span className="text-[11.5px] text-ink-2">{AVAILABILITY_LABEL[availability]}</span>;
 }
 
 function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: string) {
@@ -83,7 +84,7 @@ function errorView(error: unknown, scope: "areas" | "list" | "detail", siteId: s
       />;
     }
     if (error.status === 403) {
-      return <ErrorState message="공간 데이터 요청을 조회할 권한이 없습니다. Core의 SPATIAL_DATA_READ 범위를 확인하세요." tone="high" />;
+      return <ErrorState message={READ_PERMISSION_MESSAGE} tone="high" />;
     }
     if (error.status === 503 || error.status >= 500) {
       return <ErrorState message="Core에서 공간 데이터 요청을 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
@@ -289,7 +290,7 @@ export default async function SpatialDataRequestsPage({
   if (!session.principal.permissions.includes("SPATIAL_DATA_READ")) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
       {header()}
-      <ErrorState message="공간 데이터 요청 조회 권한이 없습니다. Core의 SPATIAL_DATA_READ 범위를 확인하세요." tone="high" />
+      <ErrorState message={READ_PERMISSION_MESSAGE} tone="high" />
     </div>;
   }
 
