@@ -3688,5 +3688,13 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   discovery+AI계약 102 passed, egress/MCP 포함 215 passed, mypy·ruff·format green.
 - **검증(확정)**: 공간계열 스윕 **1274 passed/0 failed** + 전체 contract
   **5568 passed·33 skipped·0 failed**(744s) → 커밋 **`717dc2c`** push 완료(origin/main).
-- **라이브**: sdata 리그 재검증은 OPEN(가동 중 :8092 리그는 구 코드 — 재기동이 수용 리그 보존에
+- **라이브**: sdata 리그(:8061) 재검증은 OPEN(가동 중 리그는 구 코드 — 재기동이 수용 리그 보존에
   영향을 주므로 계약 증거를 우선하고 라이브 재실증은 별도 승인 후).
+- **라이브 실증(10-16 승인 후 수행)**: sdata 리그(:8061)만 동일 데이터 디렉터리·동일 env로
+  재기동(신 코드, 저널 보존) → `PROVIDER_CONFIGURED` 유지. REST 페이지 **200·1건** —
+  키 `{"items","nextCursor","pageComplete"}`, `pageComplete: true`, 동일 자산
+  (`ksa-v1-3367fdc7…`)·READ/PREPARE·bounds 4/4 일치. 상세 **200** 동일. MCP stdio→Core
+  parity **PASS**(동일 principal·동일 페이지). Codex CLI LLM 호출은 401(클라우드 인증)로
+  차단 — 외부 경계(진짜 차단, 우회 없음); MCP 경로는 stdio 직접 실증으로 대체. F-03 리그(:8092)
+  untouched·PROVIDER_CONFIGURED. 증거: `/tmp/opencode/ksi-sdata-codex-20261016/evidence/`
+  (`rest-partial-listing.json`·`mcp-parity-partial-listing.txt`; codex stderr에 401 기록).
