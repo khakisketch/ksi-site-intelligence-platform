@@ -3685,7 +3685,8 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - **검증**: 기존 wire pin 1건 갱신(`{"items","nextCursor","pageComplete"}`) + 신규 4건 —
   부분 페이지(200·1건·flag False·wire에 생략 신원/카운트 없음) / omission 변경 시 커서 STALE 409 /
   무grant over-budget는 invisible+complete 200 / 불완전 페이지 egress 게이트 200+ack 통과.
-  discovery+AI계약 102 passed, egress/MCP 포함 215 passed, mypy·ruff·format green. 공간계열
-  전체 스윕은 백그라운드 실행 중.
+  discovery+AI계약 102 passed, egress/MCP 포함 215 passed, mypy·ruff·format green.
+- **검증(확정)**: 공간계열 스윕 **1274 passed/0 failed** + 전체 contract
+  **5568 passed·33 skipped·0 failed**(744s) → 커밋 **`717dc2c`** push 완료(origin/main).
 - **라이브**: sdata 리그 재검증은 OPEN(가동 중 :8092 리그는 구 코드 — 재기동이 수용 리그 보존에
   영향을 주므로 계약 증거를 우선하고 라이브 재실증은 별도 승인 후).
