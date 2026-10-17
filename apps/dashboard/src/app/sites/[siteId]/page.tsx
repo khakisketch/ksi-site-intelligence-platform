@@ -42,10 +42,18 @@ function SectionCard({ title, children }: { title: string; children: React.React
   </section>;
 }
 
+function tabHref(tab: SiteTabKey): string {
+  switch (tab) {
+    case "analysis": return "analysis";
+    case "spatial-assets": return "spatial-assets";
+    default: return "observations";
+  }
+}
+
 function SiteTabLink({ siteId, tab, label, detail }: { siteId: string; tab: SiteTabKey; label: string; detail: string }) {
   return <SectionCard title={label}>
     <p className="text-[12.5px] leading-5 break-keep text-ink-2">{detail}</p>
-    <Link href={`/sites/${encodeURIComponent(siteId)}/${tab === "observations" ? "observations" : tab === "analysis" ? "analysis" : tab === "spatial-assets" ? "spatial-assets" : "observations"}`} className="btn mt-3 w-fit">{label} 열기</Link>
+    <Link href={`/sites/${encodeURIComponent(siteId)}/${tabHref(tab)}`} className="btn mt-3 w-fit">{label} 열기</Link>
   </SectionCard>;
 }
 

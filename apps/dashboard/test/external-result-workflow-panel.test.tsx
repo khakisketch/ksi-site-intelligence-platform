@@ -786,7 +786,7 @@ describe("SINGLE_VOLUME measurement", () => {
       initialReport={{ reportRef, reportDigest: digest("d"), view }}
     />);
 
-    expect(await screen.findByText("이 환경에는 비교 요청 목록이 구성되어 있지 않습니다. 이미 연결된 결과는 계속 확인할 수 있습니다.")).toBeTruthy();
+    expect(await screen.findByText("비교 요청 목록을 확인할 수 없습니다. 마지막으로 확인한 요청 상태와 연결된 결과는 계속 확인할 수 있습니다.")).toBeTruthy();
     expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "목록 새로고침" })).toBeNull();

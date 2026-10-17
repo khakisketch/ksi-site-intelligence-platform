@@ -1153,7 +1153,7 @@ export function ExternalResultWorkflowPanel({
         </div>
         {worklistPhase === "loading" && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 읽는 중입니다.</p>}
         {worklistRefreshing && <p role="status" className="mt-2 text-ink-2">마지막으로 확인한 요청 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
-        {worklistNotConfigured && <p role="status" className="mt-2 text-ink-2">이 환경에는 비교 요청 목록이 구성되어 있지 않습니다. 이미 연결된 결과는 계속 확인할 수 있습니다.</p>}
+        {worklistNotConfigured && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 확인할 수 없습니다. 마지막으로 확인한 요청 상태와 연결된 결과는 계속 확인할 수 있습니다.</p>}
         {worklistPhase === "error" && <p role="alert" className="mt-2 text-high-ink">{worklistError ?? "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
         {worklistPhase === "ready" && (worklist.length === 0 ? <p className="mt-2 text-ink-2">기록된 상대 물량 비교 요청이 없습니다. 요청이 생성되면 상태와 보고서가 이 목록에 표시됩니다.</p> : <ul className="mt-2 flex flex-col gap-2">{worklist.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {requestMoment(item.issuedAt)}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>비교 요청 상태</button></li>)}</ul>)}
       </div>
