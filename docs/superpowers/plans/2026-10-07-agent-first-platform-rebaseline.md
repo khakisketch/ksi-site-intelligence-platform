@@ -3735,6 +3735,9 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   Core :8092·OIDC :9041·Dashboard http://localhost:3241. 자동 생성 tsconfig 추가분만 제거해
   `3d66d76`의 원본 설정을 보존했다(`.next-ui-verification` 기존 항목은 불변).
   최종 source 해시는 `final-source-sha256.txt`, 이전 렌더 후 실패/보완도 증거 디렉터리에 보존한다.
+  커밋 후 텍스트 검토성을 위해 이름 충돌 key의 literal NUL 1바이트를 `\u0000` 표기로 정규화했다.
+  TypeScript AST 종류·식별자·literal 값이 동일함을 비교했고(`source-normalization.json`),
+  954 테스트·TypeScript·해당 파일 lint를 다시 통과했다. UI 동작 델타가 없어 렌더 증거는 재사용한다.
 - **증거·한계**: `/tmp/opencode/ksi-ux-context-20261017/`의 로그·스크립트·PNG.
   Native DOM 조회는 가능했지만 click UnknownVizError 및 focus 후 screenshot visibility failure;
   task-scoped Playwright로 기능/렌더 검증. 요청 populated/접근 회수 상태는 read-only loopback
