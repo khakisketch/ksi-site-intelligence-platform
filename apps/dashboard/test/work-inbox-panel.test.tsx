@@ -11,6 +11,19 @@ describe("WorkInboxPanel", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
     expect(screen.getByText(/읽지 않은 받은 업무가 없습니다/)).toBeTruthy();
     expect(screen.getByText(/전체 목록을 선택해 읽은 업무를 확인/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "읽지 않음" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "전체" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("updates the pressed filter after the requested list loads", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [], nextCursor: null }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "전체" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "전체" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: "읽지 않음" }).getAttribute("aria-pressed")).toBe("false");
+    expect(fetchMock).toHaveBeenCalledWith("/api/work-inbox?unreadOnly=false", { cache: "no-store" });
   });
 
   it("shows loading and failure instead of claiming the inbox is empty", async () => {
@@ -31,7 +44,12 @@ describe("WorkInboxPanel", () => {
   it("renders only a typed Core target route for a shared report", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[{ notificationRef: "notice-1", kind: "EXTERNAL_REPORT_SHARED", target: { kind: "EXTERNAL_REPORT", siteId: "site-a", reportRef: "report-a" }, senderPrincipalId: "operator-a", createdAt: "2026-09-10T00:00:00Z", unread: true }]} />);
     expect(screen.getByRole("link", { name: "공유된 결과 열기" }).getAttribute("href")).toBe("/sites/site-a/observations/report-a");
-    expect(screen.getByText((_, element) => element?.tagName === "P" && element.textContent?.includes("operator-a") === true)).toBeTruthy();
+    expect(screen.getByText(/받은 시각 ·/)).toBeTruthy();
+    const senderDetails = screen.getByText("발신 계정 정보").closest("details");
+    expect(senderDetails?.open).toBe(false);
+    expect(senderDetails?.textContent).toContain("계정 ID · operator-a");
+    fireEvent.click(screen.getByText("발신 계정 정보"));
+    expect(senderDetails?.open).toBe(true);
   });
 
   it("retries an ambiguous read receipt with its original key", async () => {

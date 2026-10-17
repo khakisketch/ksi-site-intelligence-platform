@@ -44,7 +44,9 @@
     ".next-p4-resume/types/**/*.ts",
     ".next-p4-resume/dev/types/**/*.ts",
     ".next-f04-review/types/**/*.ts",
-    ".next-f04-review/dev/types/**/*.ts"
+    ".next-f04-review/dev/types/**/*.ts",
+    ".next-ui-verification/types/**/*.ts",
+    ".next-ui-verification/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

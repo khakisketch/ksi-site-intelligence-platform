@@ -61,6 +61,27 @@ describe("Site detail start guidance", () => {
     expect(mocked.history).toHaveBeenCalledWith("site-1", { limit: 50 });
   });
 
+  it("points the primary action to the next location described by current Site records", async () => {
+    mocked.areas.mockResolvedValueOnce({ workAreas: [] });
+    mocked.orders.mockResolvedValueOnce([]);
+    render(await SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+    expect(screen.getByRole("link", { name: "공간 자산 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=spatial-assets");
+    expect(screen.queryByRole("link", { name: "분석 후보와 상태 확인" })).toBeNull();
+
+    cleanup();
+    mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "구역 1" }] });
+    mocked.orders.mockResolvedValueOnce([]);
+    render(await SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({}),
+    }));
+    expect(screen.getByRole("link", { name: "관측 작업 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
+    expect(screen.queryByRole("link", { name: "분석 후보와 상태 확인" })).toBeNull();
+  });
+
   it("keeps failed child reads unknown instead of rendering false empty guidance", async () => {
     mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
     mocked.orders.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));

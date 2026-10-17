@@ -159,6 +159,21 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("renders compact metric definitions without a forced-width horizontal table", () => {
+    renderPanel();
+
+    const metricsRegion = screen.getByRole("region", { name: "계산 결과" });
+    expect(metricsRegion.querySelector("table")).toBeNull();
+    expect(metricsRegion.querySelector("dl")?.className).toContain("sm:grid-cols-3");
+    expect([...metricsRegion.querySelectorAll("[class]")].some((element) => element.getAttribute("class")?.includes("min-w-[24rem]") ?? false)).toBe(false);
+    expect(within(metricsRegion).getByText("절토")).toBeTruthy();
+    expect(within(metricsRegion).getByText("12 m³")).toBeTruthy();
+    expect(within(metricsRegion).getByText("성토")).toBeTruthy();
+    expect(within(metricsRegion).getByText("20 m³")).toBeTruthy();
+    expect(within(metricsRegion).getByText("순변화")).toBeTruthy();
+    expect(within(metricsRegion).getByText("8 m³")).toBeTruthy();
+  });
+
   it("uses a true-empty message only after a successful list read", async () => {
     renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
     expect(screen.getByText(/이 현장에는 아직 분석 요청이 없습니다/)).toBeTruthy();
@@ -367,7 +382,7 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     renderPanel();
     expect(screen.getByText("분석 analysis-1")).toBeTruthy();
-    expect(screen.getByRole("region", { name: "계산 결과 표" }).getAttribute("tabindex")).toBe("0");
+    expect(screen.getByRole("region", { name: "계산 결과" })).toBeTruthy();
     expect(screen.getByText("result-core-1")).toBeTruthy();
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
     expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();

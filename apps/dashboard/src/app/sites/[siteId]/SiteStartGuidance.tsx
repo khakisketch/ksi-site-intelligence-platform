@@ -33,6 +33,11 @@ export function SiteStartGuidance({
         : observationWorkOrderCount === 0
           ? "현재 조회된 관측 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
           : "분석 화면에서 실제 등록된 관측 후보를 촬영 시각·revision으로 확인하세요. Core가 요청 시 용도별 적합성을 판정합니다.";
+  const nextStepAction = workAreaCount === null || workAreaCount === 0
+    ? { href: `${sitePath}?section=spatial-assets`, label: "공간 자산 현황 확인" }
+    : observationWorkOrderCount === null || observationWorkOrderCount === 0
+      ? { href: `${sitePath}?section=work-orders`, label: "관측 작업 현황 확인" }
+      : { href: `${sitePath}/analysis`, label: "분석 후보와 상태 확인" };
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-3" aria-label="현장 시작 안내">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -40,7 +45,7 @@ export function SiteStartGuidance({
         <h2 className="text-[14px] font-bold">이 현장에서 시작하기</h2>
         <p className="mt-1 max-w-3xl text-[12px] leading-5 text-ink-2">현재 조회된 기록을 기준으로 다음 확인 위치를 안내합니다. 등록·조회 상태는 검증·정확도 평가·분석 적합성을 뜻하지 않습니다.</p>
       </div>
-      <Link href={`${sitePath}/analysis`} className="btn btn-primary shrink-0">분석 후보와 상태 확인</Link>
+      <Link href={nextStepAction.href} className="btn btn-primary shrink-0">{nextStepAction.label}</Link>
     </div>
     <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-line pt-3 text-[12px] sm:grid-cols-3">
       <div><dt className="text-ink-muted">작업구역</dt><dd className="mt-0.5 font-semibold">{areaStatus}</dd></div>
@@ -49,11 +54,6 @@ export function SiteStartGuidance({
     </dl>
     <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
       <p className="max-w-3xl text-[12px] leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>
-      {workAreaCount === null || workAreaCount === 0
-        ? <Link href={`${sitePath}?section=spatial-assets`} className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">공간 자산 현황 보기</Link>
-        : observationWorkOrderCount === 0 || observationWorkOrderCount === null
-          ? <Link href={`${sitePath}?section=work-orders`} className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">관측 작업 현황 보기</Link>
-          : null}
     </div>
   </section>;
 }

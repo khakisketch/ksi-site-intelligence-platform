@@ -770,6 +770,29 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.getByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeTruthy();
   });
 
+  it("treats an absent optional comparison list as unconfigured without hiding a linked report", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === "/api/observation-work-orders/work-1/relative-volume-requests") {
+        return { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
+      }
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    const view = reportView();
+    render(<ExternalResultWorkflowPanel
+      workOrderId="work-1"
+      siteId="site-1"
+      decision={null}
+      permissions={[]}
+      initialReport={{ reportRef, reportDigest: digest("d"), view }}
+    />);
+
+    expect(await screen.findByText("이 환경에는 비교 요청 목록이 구성되어 있지 않습니다. 이미 연결된 결과는 계속 확인할 수 있습니다.")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "목록 새로고침" })).toBeNull();
+    expect(screen.queryByText(/기록된 상대 물량 비교 요청이 없습니다/)).toBeNull();
+  });
+
   it("keeps the list read-failure text for a non-404 single-volume list failure", async () => {
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });

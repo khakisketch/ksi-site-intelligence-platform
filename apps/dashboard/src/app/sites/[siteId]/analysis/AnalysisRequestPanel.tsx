@@ -286,7 +286,11 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
   if (!metrics) return null;
   return <section className="border-t border-line px-4 py-3" aria-label="계산 결과">
     <h3 className="text-[13px] font-bold">계산 결과{summary.resultId ? ` · ${summary.resultId}` : ""}</h3>
-    <div role="region" aria-label="계산 결과 표" tabIndex={0} className="mt-2 overflow-x-auto"><table className="w-full min-w-[24rem] text-left text-[12.5px]"><thead className="text-ink-muted"><tr><th className="pb-2 pr-3 font-semibold">절토</th><th className="pb-2 pr-3 font-semibold">성토</th><th className="pb-2 font-semibold">순변화</th></tr></thead><tbody><tr className="border-t border-line"><td className="num py-2 pr-3 text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</td><td className="num py-2 pr-3 text-[16px] font-bold">{formatNumber(metrics.fillM3, "m³")}</td><td className="num py-2 text-[16px] font-bold">{formatNumber(metrics.netM3, "m³")}</td></tr></tbody></table></div>
+    <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
+      <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</dd></div>
+      <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.fillM3, "m³")}</dd></div>
+      <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">순변화</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.netM3, "m³")}</dd></div>
+    </dl>
     {result && <>
       <dl className="mt-3 grid gap-2 text-[12px] text-ink-2 sm:grid-cols-2">
         <div><dt className="text-ink-muted">선택 면적</dt><dd>{formatNumber(result.coverage.selectedAreaM2, "m²")}</dd></div>

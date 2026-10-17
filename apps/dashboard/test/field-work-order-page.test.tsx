@@ -123,6 +123,8 @@ describe("관측 작업 페이지 follow-up", () => {
 
     expect(screen.getByTestId("initial-report").textContent).toBe(reportRef);
     expect(screen.queryByText(/비교 결과를 이 작업에 결속하지 못했습니다/)).toBeNull();
+    expect(screen.getByRole("heading", { name: "플랫폼 작업 상태" })).toBeTruthy();
+    expect(screen.getAllByText("외부 산출물 등록 준비")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "결과와 제안 결정으로 이동" }).getAttribute("href")).toBe("#external-result");
     expect(mocked.siteReport).toHaveBeenCalledWith("site-1", reportRef);
     expect(mocked.report).toHaveBeenCalledWith(reportRef);

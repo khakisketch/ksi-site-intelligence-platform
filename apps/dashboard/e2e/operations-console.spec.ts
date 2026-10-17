@@ -436,7 +436,8 @@ test("작업 상세는 실행 근거가 없으면 관리형 실행을 fail-close
   await page.goto(workOrderHref!);
   await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
   await expect(page.getByRole("heading", { name: "E2E 과거 읽기 전용 · 작업 범위 승인" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "승인 대기", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "플랫폼 작업 상태", exact: true })).toBeVisible();
+  await expect(page.getByText("승인 대기", { exact: true })).toBeVisible();
   await expect(page.getByText("이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "작업 운영" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "재구성 산출물 등록" })).toHaveCount(0);

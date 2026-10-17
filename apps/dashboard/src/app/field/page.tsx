@@ -24,6 +24,13 @@ const GROUPS = [
   ["completed", "완료", "완료되거나 종료된 작업"],
 ] as const;
 
+const SUMMARY_GROUPS = [
+  ["decisionRequired", "결정 필요"],
+  ["inFlight", "진행 중"],
+  ["operationsUnavailable", "운영 상태 확인 필요"],
+  ["completed", "완료"],
+] as const;
+
 export default async function FieldWorkListPage() {
   const session = await resolveFieldSession();
   if (session.kind === "blocked") return <OperationsSessionFailure verdict={session.verdict} next="/field" />;
@@ -65,11 +72,11 @@ export default async function FieldWorkListPage() {
           <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 새 관측 작업을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
         ) : (
           <>
-            <section className="grid gap-px overflow-hidden rounded-lg border border-line bg-line sm:grid-cols-3" aria-label="작업 요약">
-              {[["결정 필요", summary.decisionRequired.length], ["진행 중", summary.inFlight.length], ["완료", summary.completed.length]].map(([label, count]) => (
-                <div key={label} className="bg-surface px-4 py-3">
+            <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4" aria-label="작업 요약">
+              {SUMMARY_GROUPS.map(([key, label]) => (
+                <div key={key} className="min-w-0 bg-surface px-3 py-3 sm:px-4">
                   <p className="text-[12px] font-semibold text-ink-muted">{label}</p>
-                  <p className="num mt-1 text-[22px] font-bold tracking-tight">{count}</p>
+                  <p className="num mt-1 text-[22px] font-bold tracking-tight">{summary[key].length}</p>
                 </div>
               ))}
             </section>
@@ -95,7 +102,6 @@ export default async function FieldWorkListPage() {
                             <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-sunk">
                               <span className="min-w-0">
                                 <span className="block break-keep text-[13px] font-semibold">{order.name}</span>
-                                <span className="mt-0.5 block break-all text-[11.5px] text-ink-muted">{order.siteId} · {order.workOrderId}</span>
                               </span>
                               <StateBadge label={state.label} tone={state.tone} />
                             </Link>

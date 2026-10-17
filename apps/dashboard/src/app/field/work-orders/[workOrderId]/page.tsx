@@ -204,7 +204,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
       <div className="flex flex-col gap-4 p-4 pb-24 lg:p-5">
         <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div><span className="text-[12px] font-semibold text-ink-muted">플랫폼 작업 상태</span><h2 className="mt-1 text-[18px] font-bold">{stage?.label ?? status.label}</h2></div>
+            <h2 className="text-[12px] font-semibold text-ink-muted">플랫폼 작업 상태</h2>
             <StateBadge label={stage?.label ?? status.label} tone={stage?.tone ?? status.tone} />
           </div>
           <p className="text-[13px] leading-5 text-ink-2">{stage?.detail ?? status.detail}</p>
