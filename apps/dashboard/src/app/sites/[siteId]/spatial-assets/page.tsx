@@ -16,6 +16,14 @@ import {
 import { getSite } from "@/lib/core-api/sites";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
+import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
+import {
+  assetContextLine,
+  assetHeadline,
+  duplicateFileNames,
+  formatAssetCaptureWindow,
+  resolveWorkName,
+} from "@/lib/human-labels";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 export const metadata = { title: "공간 자산 · KSI" };
@@ -116,18 +124,36 @@ function isMetadataOnly(item: SpatialAssetCatalogItem): boolean {
     && item.supportedActions[0] === "VIEW_METADATA";
 }
 
-function AssetSummary({ item, siteId }: { item: SpatialAssetCatalogItem; siteId: string }) {
+function AssetSummary({ item, siteId, workName, areaName, nameIsDuplicated }: {
+  item: SpatialAssetCatalogItem;
+  siteId: string;
+  workName: string | null;
+  areaName: string;
+  nameIsDuplicated: boolean;
+}) {
   const stateClass = item.lifecycleState === "SEALED" ? "text-ink" : "text-high-ink";
+  const captureWindow = formatAssetCaptureWindow(item.declared.captureStartedAt, item.declared.captureEndedAt);
   return <article className="rounded-lg border border-line bg-surface px-4 py-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h3 className="text-[14px] font-semibold">{item.declared.fileName}</h3>
+      <div className="min-w-0">
+        <h3 className="break-all text-[14px] font-semibold">{assetHeadline(item.declared.fileName, item.revision, nameIsDuplicated)}</h3>
+        <p className="mt-1 break-words text-[12.5px] font-semibold leading-5 text-ink-1">{assetContextLine({ workName, areaName, captureWindow, revision: item.revision })}</p>
         <p className="mt-1 text-[12px] text-ink-2">{kindLabel(item.kind)} · {item.declared.format} · {item.declared.contentType}</p>
         <p className={`mt-1 text-[12px] ${stateClass}`}>Core 등록 상태: {lifecycleLabel(item.lifecycleState)}</p>
       </div>
-      <Link className="btn" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef })}>상세 보기</Link>
+      <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef })}>상세 보기</Link>
     </div>
-    <p className="mt-2 text-[12px] leading-5 text-ink-muted">제출 revision {item.revision} · 촬영 {item.declared.captureStartedAt ? formatKoreanDateTime(item.declared.captureStartedAt, { dateStyle: "medium", timeStyle: "short" }) : "구간 미기재"}</p>
+    {nameIsDuplicated && <p className="mt-2 rounded-md bg-sunk/70 px-3 py-2 text-[11.5px] leading-5 text-ink-2">같은 파일명이 이 목록에 여러 건 있습니다. 제출 revision·촬영 구간·아래 자산 참조로 구분하세요.</p>}
+    <details className="mt-2 text-[12px] text-ink-2">
+      <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기술 참조·ID 전체 보기</summary>
+      <div className="mt-1 flex flex-col gap-1 break-all border-l-2 border-line pl-3">
+        <p>자산 참조 · {item.assetRef}</p>
+        <p>관측 epoch ID · {item.observationEpochId}</p>
+        <p>작업 지시 ID · {item.workOrderId}</p>
+        <p>제출 참조 · {item.submissionRef} · revision {item.revision}</p>
+        <p>원본 artifact ID · {item.artifactId}</p>
+      </div>
+    </details>
     <FactStatus item={item} compact />
   </article>;
 }
@@ -210,9 +236,29 @@ function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection })
   </section>;
 }
 
-function AssetDetail({ item }: { item: SpatialAssetCatalogItem }) {
+function AssetDetail({ item, workName, areaName, nameIsDuplicated }: {
+  item: SpatialAssetCatalogItem;
+  workName: string | null;
+  areaName: string;
+  nameIsDuplicated: boolean;
+}) {
+  const captureWindow = formatAssetCaptureWindow(item.declared.captureStartedAt, item.declared.captureEndedAt);
   return <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/50 p-3 sm:p-4">
-    <header><h2 className="text-[16px] font-bold">선택한 자산 상세</h2><p className="mt-1 text-[12px] text-ink-2">제출 revision {item.revision} · 파일명 {item.declared.fileName}</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · epoch {item.observationEpochId} · 작업 {item.workOrderId}</p></header>
+    <header>
+      <h2 className="text-[16px] font-bold">선택한 자산 상세</h2>
+      <p className="mt-1 break-all text-[13.5px] font-semibold">{assetHeadline(item.declared.fileName, item.revision, nameIsDuplicated)}</p>
+      <p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{assetContextLine({ workName, areaName, captureWindow, revision: item.revision })}</p>
+      <details className="mt-2 text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기술 참조·ID 전체 보기</summary>
+        <div className="mt-1 flex flex-col gap-1 break-all border-l-2 border-line pl-3">
+          <p>자산 참조 · {item.assetRef}</p>
+          <p>관측 epoch ID · {item.observationEpochId}</p>
+          <p>작업 지시 ID · {item.workOrderId}</p>
+          <p>제출 참조 · {item.submissionRef} · revision {item.revision}</p>
+          <p>원본 artifact ID · {item.artifactId}</p>
+        </div>
+      </details>
+    </header>
     <FactStatus item={item} />
     <DeclaredFacts item={item} />
     <ObservedFacts item={item} />
@@ -243,6 +289,21 @@ export default async function SpatialAssetsPage({
     [site, areas] = await Promise.all([getSite(siteId), listWorkAreas(siteId, { includeArchived: true })]);
   } catch (error) {
     return <div className="mx-auto max-w-5xl p-4 sm:p-5">{errorView(error, "site", siteId)}</div>;
+  }
+
+  // 작업 지시 이름은 사람용 표시 전용이다. 이 조회가 실패해도 목록·상세는
+  // "작업명 확인 불가"로 그대로 표시되며, 존재·권한·적합성을 추정하지 않는다.
+  let workOrderNames: Record<string, string> | null = null;
+  try {
+    const workOrders = await listObservationWorkOrders(siteId);
+    const names: Record<string, string> = {};
+    for (const order of workOrders) {
+      if (order.siteId !== siteId || order.organizationId !== session.principal.organizationId) continue;
+      if (typeof order.name === "string" && order.name.trim().length > 0) names[order.workOrderId] = order.name;
+    }
+    workOrderNames = names;
+  } catch {
+    workOrderNames = null;
   }
 
   const basePath = `/sites/${encodeURIComponent(siteId)}/spatial-assets`;
@@ -286,6 +347,11 @@ export default async function SpatialAssetsPage({
     }
   }
 
+  const duplicatedNames = page
+    ? duplicateFileNames(page.assets.map((asset) => asset.declared.fileName))
+    : new Set<string>();
+  const areaDisplayName = selectedArea?.name ?? workAreaId ?? "";
+
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
@@ -321,7 +387,12 @@ export default async function SpatialAssetsPage({
           : null}
         {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === workAreaId
           ? isMetadataOnly(detail)
-            ? <AssetDetail item={detail} />
+            ? <AssetDetail
+              item={detail}
+              workName={resolveWorkName(detail.workOrderId, workOrderNames)}
+              areaName={areaDisplayName}
+              nameIsDuplicated={duplicatedNames.has(detail.declared.fileName)}
+            />
             : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
           : null}
         <section className="flex flex-col gap-3">
@@ -335,7 +406,14 @@ export default async function SpatialAssetsPage({
               if (!isMetadataOnly(item)) {
                 return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
               }
-              return <AssetSummary key={item.assetRef} item={item} siteId={siteId} />;
+              return <AssetSummary
+                key={item.assetRef}
+                item={item}
+                siteId={siteId}
+                workName={resolveWorkName(item.workOrderId, workOrderNames)}
+                areaName={areaDisplayName}
+                nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
+              />;
             })}
         </section>
         <nav aria-label="공간 자산 페이지" className="flex flex-wrap gap-2">

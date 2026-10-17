@@ -6,6 +6,7 @@ import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
 import { SiteThumbnail } from "@/components/site/SiteThumbnail";
+import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
@@ -159,6 +160,7 @@ export default async function SitesPage({
     : [];
 
   const hasFilter = query.length > 0 || status !== undefined || group !== "all" || sort !== "attention";
+  const sameNameSites = duplicateSiteNames(sites ?? []);
   const siteRows = visibleSites.map((site) => {
     const next = siteNextAction(site.status);
     const primaryAction = resolveSiteOperatorNextAction(
@@ -340,9 +342,10 @@ export default async function SitesPage({
                           >
                             {site.name}
                           </Link>
-                          <p className="mt-1 text-[12px] break-keep text-ink-2">
-                            최근 갱신 {formatKoreanDate(site.updatedAt)}
-                          </p>
+                           <p className="mt-1 text-[12px] break-keep text-ink-2">
+                             최근 갱신 {formatKoreanDate(site.updatedAt)}
+                           </p>
+                           {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
                         </div>
                         <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
                       </div>
@@ -389,7 +392,7 @@ export default async function SitesPage({
                 const statusLabel = SITE_STATUS_LABEL[site.status];
                 return (
                   <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
-                <span className="flex min-w-0 items-center gap-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}`}
                     aria-label={`${site.name} 현장 열기`}
@@ -403,15 +406,16 @@ export default async function SitesPage({
                       className="size-full"
                     />
                   </Link>
-                  <span className="min-w-0">
+                  <div className="min-w-0">
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}`}
-                    className="block truncate text-[13.5px] font-semibold hover:underline"
+                    className="block break-words text-[13.5px] font-semibold hover:underline"
                   >
                     {site.name}
                   </Link>
-                  </span>
-                </span>
+                  {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
+                  </div>
+                </div>
 
                 <span>
                   <StateBadge label={statusLabel.label} tone={statusLabel.tone} />

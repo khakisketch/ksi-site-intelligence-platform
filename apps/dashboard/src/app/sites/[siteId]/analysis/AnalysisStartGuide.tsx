@@ -33,7 +33,7 @@ export function AnalysisStartGuide({
       <li className="min-w-0">
         <p className="text-[11.5px] font-semibold text-ink-muted">2 · 관측 후보</p>
         <p className="mt-1 text-[13px] font-semibold">{observationCount > 0 ? `${observationCount}개 표시됨` : "표시된 후보 없음"}</p>
-        <p className="mt-1 text-[11.5px] leading-4 text-ink-2">촬영 시각·epoch ID·제출 revision으로 구분합니다. 이 목록은 작업구역 적합성을 미리 판정하지 않습니다.</p>
+        <p className="mt-1 text-[11.5px] leading-4 text-ink-2">작업명·촬영 구간·제출 revision으로 구분합니다. 이름·시각이 겹치면 기술 참조까지 함께 표시합니다. 이 목록은 작업구역 적합성을 미리 판정하지 않습니다.</p>
         {observationCount < 2 && <Link className="mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline" href={`${sitePath}/observations`}>외부 관측 결과 이력 확인</Link>}
       </li>
       <li className="min-w-0">

@@ -10,6 +10,7 @@ import { whoAmI } from "@/lib/core-api/auth";
 import { getAnalysisReviewTarget, listAnalyses, listAnalysisReviews } from "@/lib/core-api/analysis";
 import { listSitesCached } from "@/lib/core-api/cached";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
+import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { listExternalPendingDecisions } from "@/lib/core-api/external-decisions";
 import { listObservationWorkOrderOperations, listObservationWorkOrdersForOrganization } from "@/lib/core-api/observation-work-orders";
 import { listWorkInbox } from "@/lib/core-api/work-collaboration";
@@ -18,6 +19,7 @@ import { formatKoreanDateTime } from "@/lib/datetime";
 import { externalDecisionCardText } from "@/lib/home-external-decision";
 import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
+import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
 
 export const metadata = { title: "홈 · KSI" };
@@ -72,6 +74,24 @@ async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promis
   return perSite.filter((source): source is HomeAnalysisReviewSource => source !== null);
 }
 
+/**
+ * 검토 대기 분석이 가리키는 실제 작업구역 이름. 검토 대상은 최대 3개 현장으로
+ * 한정되어 있어 현장별 한 번씩만 읽는다(보관 구역 포함 — 과거 분석 맥락용).
+ * 구역 ID는 현장 안에서만 유일하므로 현장별로 나눠 둔다.
+ * 실패는 이름 확인 불가로 접고 Home을 깨뜨리지 않는다.
+ */
+async function loadReviewWorkAreaNames(siteIds: readonly string[]): Promise<ReadonlyMap<string, ReadonlyMap<string, string>>> {
+  const uniqueSiteIds = [...new Set(siteIds)];
+  const pages = await Promise.all(uniqueSiteIds.map(async (siteId) => {
+    try {
+      return { siteId, workAreas: (await listWorkAreas(siteId, { includeArchived: true })).workAreas };
+    } catch {
+      return null;
+    }
+  }));
+  return indexWorkAreaNamesBySite(pages.filter((page) => page !== null));
+}
+
 function observedAt(value: string): string {
   return formatKoreanDateTime(value, { dateStyle: "medium", timeStyle: "short" });
 }
@@ -90,7 +110,7 @@ function fallback() {
   return { label: "연결된 이미지 없음", detail: "현장 원장에 등록된 관측 이미지가 없습니다." };
 }
 
-function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>): HomeAttentionCardView {
+function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeAttentionCardView {
   const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if (source.kind === "EXTERNAL_DECISION") {
     const card = externalDecisionCardText(source.decision);
@@ -98,17 +118,20 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
   }
   if (source.kind === "ANALYSIS_REVIEW") {
     const analysis = source.analysis;
+    const areaName = areaNameBySite.get(source.siteId)?.get(analysis.workAreaId) ?? null;
+    const card = homeAnalysisReviewCardText({ siteName: siteById.get(source.siteId)?.name ?? null, workAreaId: analysis.workAreaId, areaName });
     return {
       key: source.key,
       siteName,
       label: "분석 검토 대기",
-      title: "완료된 분석 결과를 검토하세요.",
-      detail: "완료된 분석 결과에 현재 결과를 대상으로 한 검토 기록이 없습니다. 결과와 근거를 확인하세요.",
+      title: card.title,
+      detail: card.detail,
       observedAt: observedAt(source.observedAt),
       href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}`,
       actionLabel: "분석 결과 검토",
       image: null,
       imageFallback: fallback(),
+      technicalRef: formatHomeReviewTechnicalRef(analysis.analysisId, analysis.workAreaId),
     };
   }
   if (source.kind === "WORK_ORDER") {
@@ -166,6 +189,7 @@ export default async function HomePage() {
     ...recentSiteSources.filter((source) => !externalDecisionSiteIds.has(source.siteId)).map((source) => source.siteId),
   ])].slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
   const analysisReviewSources = await loadHomeAnalysisReviewSources(analysisReviewSiteIds);
+  const reviewAreaNameById = await loadReviewWorkAreaNames(analysisReviewSources.map((source) => source.siteId));
   const allAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions, analysisReviews: analysisReviewSources }, Number.MAX_SAFE_INTEGER);
   const operationalAttention = allAttention.filter((source) => source.kind !== "SITE" || source.site.status !== "UNMAPPED");
   const attentionSources = operationalAttention.slice(0, 3);
@@ -173,7 +197,7 @@ export default async function HomePage() {
   const primarySiteIds = new Set((attentionSources.length ? attentionSources : recentSiteSources).map((source) => source.siteId));
   const recentSources = selectHomeRecentUpdates({ workOrders, sites, excludedSiteIds: new Set([...attentionSiteIds, ...primarySiteIds]) });
   const siteById = new Map(sites.map((site) => [site.siteId, site]));
-  const attentionItems = attentionSources.map((source) => attentionView(source, siteById));
+  const attentionItems = attentionSources.map((source) => attentionView(source, siteById, reviewAreaNameById));
   const recentSiteItems = recentSiteSources.map(recentSiteView);
   const siteActionPermissions = { canEditSite: permissions.includes("SITES_WRITE"), canCreateWorkOrder: permissions.includes("WORK_ORDERS_WRITE") };
   const initialSetupItems: HomeSituationItem[] = initialSetupSites.map((site) => {

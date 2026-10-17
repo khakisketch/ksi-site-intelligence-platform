@@ -18,9 +18,15 @@ import {
   type SpatialDataReceipt,
 } from "@/lib/core-api/spatial-data-requests";
 import { getSite } from "@/lib/core-api/sites";
+import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo, formatNumberKo } from "@/lib/number-format";
+import {
+  requestRowPresentations,
+  spatialAssetKindLabel,
+  type CatalogAssetInfo,
+} from "@/lib/human-labels";
 
 import { SpatialDataRequestActions } from "./SpatialDataRequestActions";
 
@@ -148,12 +154,14 @@ function RequestDetail({
   item,
   siteId,
   workAreaName,
+  assetInfo,
   canCancel,
   backHref,
 }: {
   item: SpatialDataJobView;
   siteId: string;
   workAreaName: string;
+  assetInfo: CatalogAssetInfo | null;
   canCancel: boolean;
   backHref: string;
 }) {
@@ -171,6 +179,19 @@ function RequestDetail({
       </div>
       <div className="flex flex-wrap items-center gap-2">{stateBadge(item.executionState)}{availabilityText(item.availability)}</div>
     </header>
+    <section aria-label="원본 자료" className="rounded-lg border border-line bg-sunk/50 px-3 py-2">
+      <h3 className="text-[12.5px] font-bold">원본 자료</h3>
+      {assetInfo
+        ? <p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{assetInfo.fileName} · {spatialAssetKindLabel(assetInfo.kind)} · {workAreaName}</p>
+        : <p className="mt-1 text-[12px] leading-5 text-ink-2">원본 파일명을 확인하지 못했습니다. 현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다. 원본이 삭제됐다는 뜻이 아닙니다.</p>}
+      <details className="mt-1 text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">원본 기술 참조 보기</summary>
+        <p className="mt-1 break-all border-l-2 border-line pl-2">원본 assetRef · {item.assetRef}</p>
+      </details>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{hasReceipt
+        ? "요청 bounds는 아래 Core receipt에 기록된 값(요청 bounds·실제 bounds)으로 확인하세요."
+        : "Core receipt가 없어 요청 bounds를 표시하지 않습니다. 원본이 없다는 뜻이 아닙니다."}</p>
+    </section>
     <dl className="grid gap-3 sm:grid-cols-2">
       <Fact label="기술 참조 · Site / WorkArea" value={`${item.siteId} / ${item.workAreaId}`} mono />
       <Fact label="원본 assetRef" value={item.assetRef} mono />
@@ -207,28 +228,42 @@ function RequestRow({
   workAreaId,
   cursor,
   selected,
+  title,
+  sourceLine,
 }: {
   item: SpatialDataJobView;
   siteId: string;
   workAreaId: string;
   cursor?: string;
   selected: boolean;
+  title: string;
+  sourceLine: string;
 }) {
   const href = pageHref(siteId, workAreaId, { cursor, requestId: item.jobId });
   return <li className={`grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)] sm:items-center ${selected ? "bg-sunk/70" : "bg-surface"}`}>
     <div className="min-w-0">
-      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">요청 · 원본 자산</p>
-      <Link href={href} aria-current={selected ? "page" : undefined} className="tap-target inline-flex min-h-8 max-w-full items-center text-[13px] font-semibold text-accent-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-        이 요청 열기
+      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">요청</p>
+      <Link href={href} aria-current={selected ? "page" : undefined} className="tap-target inline-block min-h-8 w-full break-words text-left text-[13px] font-semibold text-accent-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        {title}
       </Link>
-      <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">{item.jobId}</p>
+      <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden">
+        {stateBadge(item.executionState)}
+        {availabilityText(item.availability)}
+      </div>
+      <p className="mt-1 break-words text-[11.5px] text-ink-2">{sourceLine}</p>
+      <details className="mt-1 text-[11.5px]">
+        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">요청·원본 기술 참조 보기</summary>
+        <div className="mt-1 flex flex-col gap-0.5 break-all border-l-2 border-line pl-2 text-ink-2">
+          <p>요청 ID · {item.jobId}</p>
+          <p>원본 assetRef · {item.assetRef}</p>
+        </div>
+      </details>
     </div>
     <div>
       <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">생성 시각</p>
       <p className="text-[12px] text-ink-2">{formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
     </div>
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      <p className="mb-1 w-full text-[10.5px] text-ink-muted sm:hidden">실행 상태 · availability</p>
+    <div className="hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex">
       {stateBadge(item.executionState)}
       {availabilityText(item.availability)}
     </div>
@@ -346,12 +381,37 @@ export default async function SpatialDataRequestsPage({
   }
 
   const canCancel = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
+  // 원본 파일명·종류는 사람용 표시 전용으로, 선택된 구역에서 최대 1회만 읽는다.
+  // 실패해도 목록·상세는 그대로 두며, 원본 삭제·부재로 해석하지 않는다.
+  let catalogInfo: Record<string, CatalogAssetInfo> | null = null;
+  if (workAreaId && !pageError) {
+    try {
+      const catalog = await listSpatialAssets(siteId, workAreaId, { limit: 50 });
+      if (catalog.siteId === siteId && catalog.workAreaId === workAreaId) {
+        const map: Record<string, CatalogAssetInfo> = {};
+        for (const asset of catalog.assets) {
+          map[asset.assetRef] = { fileName: asset.declared.fileName, kind: asset.kind };
+        }
+        catalogInfo = map;
+      }
+    } catch {
+      catalogInfo = null;
+    }
+  }
   const inScopeItems = page?.items.filter((item) => item.siteId === siteId && item.workAreaId === workAreaId) ?? [];
   const invalidStateItems = inScopeItems.filter((item) => !isSpatialDataExecutionState(item.executionState) || !isSpatialDataAvailability(item.availability));
   const scopedItems = inScopeItems.filter((item) => isSpatialDataExecutionState(item.executionState) && isSpatialDataAvailability(item.availability));
   const mismatchedItems = page?.items.filter((item) => item.siteId !== siteId || item.workAreaId !== workAreaId) ?? [];
   const detailMatchesScope = detail !== null && requestId !== undefined && detail.jobId === requestId && detail.siteId === siteId && detail.workAreaId === workAreaId && isSpatialDataExecutionState(detail.executionState) && isSpatialDataAvailability(detail.availability);
   const backHref = workAreaId ? pageHref(siteId, workAreaId, { cursor }) : basePath;
+  const rowPresentations = requestRowPresentations(
+    scopedItems,
+    // 초 단위까지 표시해 분만 같은 요청을 먼저 가른다. 그래도 겹치는 제목에만
+    // 원문 요청 ID 전체를 덧붙인다(helper가 판정).
+    (iso) => formatKoreanDateTime(iso, { dateStyle: "medium", timeStyle: "medium" }),
+    catalogInfo,
+    selectedArea?.name ?? workAreaId ?? "",
+  );
 
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     {header(workAreaId)}
@@ -377,7 +437,7 @@ export default async function SpatialDataRequestsPage({
       {invalidStateItems.length > 0 && <ErrorState message="Core 응답에 계약되지 않은 실행 상태 또는 availability가 있어 해당 항목을 숨겼습니다." tone="high" />}
       {requestId && detailError && <div>{errorView(detailError, "detail", siteId)}</div>}
       {detail && !detailMatchesScope && <ErrorState message="Core 응답 요청의 ID 또는 Site/WorkArea 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />}
-      {detail && detailMatchesScope && <RequestDetail item={detail} siteId={siteId} workAreaName={selectedArea?.name ?? workAreaId} canCancel={canCancel} backHref={backHref} />}
+      {detail && detailMatchesScope && <RequestDetail item={detail} siteId={siteId} workAreaName={selectedArea?.name ?? workAreaId} assetInfo={catalogInfo?.[detail.assetRef] ?? null} canCancel={canCancel} backHref={backHref} />}
 
       <section className="overflow-hidden rounded-xl border border-line bg-surface">
         <header className="flex flex-wrap items-end justify-between gap-2 border-b border-line px-4 py-3">
@@ -387,10 +447,10 @@ export default async function SpatialDataRequestsPage({
         {scopedItems.length === 0
           ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 공간 데이터 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "공간 자산 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
           : <>
-            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청 · 원본 자산</span><span>생성 시각</span><span>상태 · availability</span><span>Core 사유</span></div>
+            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · availability</span><span>Core 사유</span></div>
             <ul className="divide-y divide-line">
-              {scopedItems.map((item) => REQUEST_ID_PATTERN.test(item.jobId)
-                ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} />
+              {scopedItems.map((item, position) => REQUEST_ID_PATTERN.test(item.jobId)
+                ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} title={rowPresentations[position]!.title} sourceLine={rowPresentations[position]!.sourceLine} />
                 : <li key={String(item.jobId)} className="p-4"><ErrorState message="Core 응답에 유효하지 않은 요청 ID가 있어 해당 항목을 숨겼습니다." tone="high" /></li>)}
             </ul>
           </>}

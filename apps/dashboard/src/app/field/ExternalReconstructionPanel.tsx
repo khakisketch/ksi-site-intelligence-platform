@@ -119,7 +119,7 @@ function exactBindingsMatch(expected: NonNullable<Revision["submission"]["artifa
   });
 }
 
-function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true }: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean }) {
+function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true, workAreaNames }: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>> }) {
   const workers = useRef(new Set<Worker>());
   const scope = useRef(0);
   const listAbort = useRef<AbortController | null>(null);
@@ -483,9 +483,22 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const receiveRelativeVolumeDecision = volumeDecisionReceiver(setRelativeVolumeDecision);
   const receiveSingleVolumeDecision = volumeDecisionReceiver(setSingleVolumeDecision);
 
+  // 유지된 revision이 있으면 새 등록 폼은 펼침 뒤에 둔다. 단, 진행 중·동결된
+  // 시도(파일 선택·응답 미확인 재시도·재개·전송 중·안내 문구)는 절대 숨기지
+  // 않는다 — compactness보다 시도 보존이 우선이다.
+  const hasRetainedRevisions = listState === "ready" && revisions.length > 0;
+  const newFormPristine = !formIsFrozen && !busy && !hashing && !uploadProgress && !ortho && !dsm && message === null;
+  const collapseNewForm = hasRetainedRevisions && newFormPristine;
+
   return <><section id="external-submissions" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
     <div><h2 className="text-[16px] font-bold">재구성 산출물 등록</h2><p className="text-ink-2">파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.</p></div>
     {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 산출물 등록은 시작할 수 없지만, 이미 등록한 파일의 업로드·봉인 상태와 결과는 계속 확인할 수 있습니다.</p>}
+    {listState === "loading" && <p role="status" className="text-ink-2">선언 목록을 불러오는 중입니다.</p>}
+    {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>선언 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
+    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>등록된 외부 산출물이 없습니다.</span>{" "}산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다.</li> : null}</ul>}
+    <details open={collapseNewForm ? undefined : true}>
+      <summary className="tap-target cursor-pointer font-semibold">새 산출물 등록</summary>
+      <div className="mt-3 flex flex-col gap-3">
     {canWrite && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 정사영상·DSM 등록을 이어가세요.">
       <div className="flex flex-col gap-3">
         <label className="flex flex-col gap-1 font-semibold">재구성 소프트웨어 이름<input className="input" aria-label="재구성 소프트웨어 이름" value={softwareName} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} onChange={(event) => setSoftwareName(event.target.value)} /></label>
@@ -532,9 +545,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       </div>
     </ResponsiveActionBoundary>}
     {!canWrite && <p className="text-ink-2">조회 전용 계정입니다.</p>}
-    {listState === "loading" && <p role="status" className="text-ink-2">선언 목록을 불러오는 중입니다.</p>}
-    {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>선언 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
-    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>등록된 외부 산출물이 없습니다.</span>{" "}산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다.</li> : revisions.map((revision) => {
+      </div>
+    </details>
+    {listState === "ready" && revisions.length > 0 && <ul className="flex flex-col gap-2 text-ink-2">{revisions.map((revision) => {
       const key = inspectionKey(revision);
       const inspection = inspectionByRevision.get(key);
       const inspectionView = retainedInspectionView(inspection);
@@ -556,9 +569,9 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         <details className="mt-1 text-[12px] text-ink-2"><summary>전문가 정보</summary><div className="mt-1 break-all"><p>등록 상태: {revision.state}</p>{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
     })}</ul>}
-  </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} newIntentAllowed={newIntentAllowed} /></>;
+  </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} /></>;
 }
 
-export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean }) {
+export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>> }) {
   return <ExternalReconstructionPanelState key={`${props.workOrderId}:${props.initialReport?.reportRef ?? ""}:${props.initialReport?.reportDigest ?? ""}`} {...props} />;
 }

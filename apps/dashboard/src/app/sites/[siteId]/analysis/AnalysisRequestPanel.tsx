@@ -26,9 +26,12 @@ import {
   analysisEvidenceKindLabel,
   analysisEvidenceReasonLine,
   analysisEvidenceSummary,
-  analysisObservationLabel,
   getAnalysisIssueGuidance,
 } from "@/lib/analysis-guidance";
+import {
+  observationChoiceLabels,
+  type WorkOrderNameMap,
+} from "@/lib/human-labels";
 
 type Attempt = {
   key: string;
@@ -754,6 +757,7 @@ export function AnalysisRequestPanel({
   workAreas,
   observations,
   unattributedObservationCount = 0,
+  workOrderNames = {},
   initialPage,
   initialSelectedDetail,
   canCreate,
@@ -765,6 +769,7 @@ export function AnalysisRequestPanel({
   workAreas: readonly { workAreaId: string; name: string }[];
   observations: readonly AttributedAnalysisObservation[];
   unattributedObservationCount?: number;
+  workOrderNames?: WorkOrderNameMap;
   initialPage: AnalysisListPage;
   initialSelectedDetail: AnalysisView | null;
   canCreate: boolean;
@@ -841,6 +846,10 @@ export function AnalysisRequestPanel({
     : [], [observations, workAreaId]);
   const pickedBaseline = scopedObservations.find(({ index }) => String(index) === baselineIndex)?.item;
   const pickedCurrent = scopedObservations.find(({ index }) => String(index) === currentIndex)?.item;
+  const choiceLabelByIndex = useMemo(() => {
+    const labels = observationChoiceLabels(scopedObservations.map(({ item }) => item), workOrderNames);
+    return new Map(scopedObservations.map(({ index }, position) => [String(index), labels[position]!]));
+  }, [scopedObservations, workOrderNames]);
   const selectionReady = Boolean(workAreaId && pickedBaseline && pickedCurrent && !sameSelector(pickedBaseline.selector, pickedCurrent.selector));
   const selectedSelectors = pickedBaseline && pickedCurrent
     ? [{ label: "기준", selector: pickedBaseline.selector }, { label: "현재", selector: pickedCurrent.selector }]
@@ -1346,7 +1355,7 @@ export function AnalysisRequestPanel({
     {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
       <h2 className="text-[16px] font-bold">새 분석 요청</h2>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
-      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 촬영 구간·기존 epoch ID·제출 revision으로 구분합니다. 목록에 없는 구역 연결이나 분석 적합성을 추정하지 않습니다.</p>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간·제출 revision으로 구분합니다. 이름·시각이 겹치는 후보는 관측 epoch ID까지 함께 표시합니다. 목록에 없는 구역 연결이나 분석 적합성을 추정하지 않습니다.</p>
       {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
       {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
       <form className="mt-4 grid gap-3 sm:grid-cols-3" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
@@ -1359,7 +1368,7 @@ export function AnalysisRequestPanel({
         <label className="text-[12.5px] font-semibold">기준 관측
           <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}>
             <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
-            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
         <label className="text-[12.5px] font-semibold">현재 관측
@@ -1371,14 +1380,16 @@ export function AnalysisRequestPanel({
             setBaselineIndex(selected ? latestPriorObservationIndex(scopedObservations, selected) : "");
           }}>
             <option value="">{workAreaId ? "현재 관측 선택" : "먼저 작업구역 선택"}</option>
-            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{analysisObservationLabel(item)}</option>)}
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
         <p className="text-[11.5px] leading-5 text-ink-muted sm:col-span-3">가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.</p>
         {pickedBaseline && pickedCurrent && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 sm:col-span-3" aria-live="polite">
           <p className="font-semibold">선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다.</p>
-          <p className="mt-1 break-words">기준 · {analysisObservationLabel(pickedBaseline)}</p>
-          <p className="break-words">현재 · {analysisObservationLabel(pickedCurrent)}</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">기준</span> · {choiceLabelByIndex.get(baselineIndex)}</p>
+            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">현재</span> · {choiceLabelByIndex.get(currentIndex)}</p>
+          </div>
           <details className="mt-1">
             <summary className="tap-target flex cursor-pointer items-center font-semibold">요청 selector 전체 확인</summary>
             <dl className="grid gap-2 border-l-2 border-line pl-3 sm:grid-cols-2">
@@ -1386,6 +1397,7 @@ export function AnalysisRequestPanel({
                 <div key={label} className="min-w-0">
                   <dt className="font-semibold">{label} 관측</dt>
                   <dd className="break-all">작업 지시 ID · {selector.workOrderId}</dd>
+                  <dd className="break-all">관측 epoch ID · {(label === "기준" ? pickedBaseline : pickedCurrent).observationEpochId}</dd>
                   <dd className="break-all">제출 참조 · {selector.submissionRef}</dd>
                   <dd>revision · {selector.revision}</dd>
                 </div>

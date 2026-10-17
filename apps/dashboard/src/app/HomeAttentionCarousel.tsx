@@ -14,6 +14,8 @@ export interface HomeAttentionCardView {
   actionLabel: string;
   image: { src: string; alt: string } | null;
   imageFallback: { label: string; detail: string };
+  /** 접어 두는 기술 참조(분석·구역 ID 등). 있을 때만 키보드로 펼칠 수 있게 둔다. */
+  technicalRef?: string;
 }
 
 function ArrowIcon({ direction }: { direction: "left" | "right" }) {
@@ -164,6 +166,14 @@ export function HomeAttentionCarousel({
                   {item.title}
                 </h3>
                 <p className="mt-3 text-[13px] leading-6 break-keep text-ink-2">{item.detail}</p>
+                {item.technicalRef && (
+                  <details className="mt-2 text-[11.5px] text-ink-muted">
+                    <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">
+                      기술 참조 정보
+                    </summary>
+                    <p className="mt-1 break-all">{item.technicalRef}</p>
+                  </details>
+                )}
               </div>
               <Link href={item.href} className="btn btn-primary w-full justify-between sm:w-fit sm:min-w-44">
                 {item.actionLabel}

@@ -461,6 +461,11 @@ test("외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제�
   await externalWorkOrder.click();
 
   await expect(page.getByRole("heading", { level: 2, name: "E2E 외부 산출물 등록" })).toBeVisible();
+  const operations = page.locator("#work-operations");
+  await expect(operations.locator("summary")).toContainText("운영 중");
+  await expect(page.getByRole("heading", { name: "작업 운영" })).toBeHidden();
+  await operations.locator("summary").focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "작업 운영" })).toBeVisible();
   await expect(page.getByText("운영 중", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "재구성 산출물 등록" })).toBeVisible();
@@ -477,7 +482,7 @@ test("외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제�
 
   await page.reload();
   await expect(page.getByRole("heading", { name: "E2E 외부 산출물 등록" })).toBeVisible();
-  await expect(page.getByText("운영 중", { exact: true })).toBeVisible();
+  await expect(operations.locator("summary")).toContainText("운영 중");
   await expectNoHorizontalOverflow(page);
 });
 

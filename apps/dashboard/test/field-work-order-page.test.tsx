@@ -42,6 +42,7 @@ vi.mock("@/app/field/WorkOrderOperationsPanel", () => ({ WorkOrderOperationsPane
 vi.mock("@/app/field/OperationsWorkHeader", () => ({ OperationsWorkHeader: ({ children }: { children: React.ReactNode }) => <header>{children}</header> }));
 vi.mock("@/components/external-results/ExternalSiteResultSummary", () => ({ ExternalSiteResultSummary: () => <div data-testid="result-summary" /> }));
 vi.mock("@/components/responsive/ResponsiveActionBoundary", () => ({ ResponsiveNotice: () => <div data-testid="responsive-notice" /> }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import FieldWorkOrderPage from "@/app/field/work-orders/[workOrderId]/page";
 
@@ -157,13 +158,25 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(document.body.textContent).not.toContain("2026-09-30T00:00:00Z");
   });
 
+  it("moves to (not auto-opens) operations disclosure and passes scoped area names to intake", async () => {
+    await renderPage();
+
+    // 앵커는 스크롤 이동만 약속한다 — disclosure를 대신 열어주지 않는다.
+    expect(screen.getByRole("link", { name: "작업 운영으로 이동" }).getAttribute("href")).toBe("#work-operations");
+    const operations = screen.getByTestId("operations-panel");
+    const disclosure = operations.closest("details");
+    expect(disclosure?.id).toBe("work-operations");
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.querySelector("summary")?.textContent).toContain("작업 운영");
+  });
+
   it("uses the shared count format for WorkAreas and draft regions", async () => {
     mocked.workOrder.mockResolvedValueOnce({ ...baseOrder, workAreaIds: Array.from({ length: 1_234 }, (_, index) => `area-${index}`) });
     mocked.drafts.mockResolvedValueOnce([{ draftId: "draft-1", status: "PENDING", proposedEffort: "재관측 필요", targetRegionRefs: Array.from({ length: 1_234 }, (_, index) => `region-${index}`), expiresAt: "2026-09-30T00:00:00Z" }]);
 
     await renderPage();
 
-    expect(document.body.textContent).toContain("현장 A · 1,234개 구역 · 1회차");
+    expect(document.body.textContent).toContain("현장 A · 동측 구역 외 1,233개 구역 · 1회차");
     expect(document.body.textContent).toContain("1,234개 구역 · 만료 2026. 9. 30. 09:00");
   });
 
@@ -215,5 +228,14 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(screen.getByRole("link", { name: "비교 요청·제안 상태로 이동" }).getAttribute("href")).toBe("#external-volume");
     expect(screen.getByRole("link", { name: "현장 분석 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis#new-analysis-request");
     expect(screen.getByRole("link", { name: "이 범위로 새 관측" }).getAttribute("href")).toBe("/sites/site-1/observations/new?repeatWorkOrderId=successor-1");
+  });
+
+  it("keeps failed proposal and history reads unknown rather than silently empty", async () => {
+    mocked.drafts.mockRejectedValue(new Error("unavailable"));
+    mocked.history.mockRejectedValue(new Error("unavailable"));
+    await renderPage();
+    expect(screen.getByRole("alert").textContent).toContain("재관측 제안·보존된 결과 목록 확인 불가");
+    expect(screen.getByRole("alert").textContent).toContain("해당 기록이 없다는 뜻이 아닙니다");
+    expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
   });
 });

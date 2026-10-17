@@ -8,6 +8,7 @@ const mocked = vi.hoisted(() => ({
   areas: vi.fn(),
   list: vi.fn(),
   detail: vi.fn(),
+  catalog: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -26,6 +27,9 @@ vi.mock("@/lib/core-api/spatial-data-requests", () => ({
   getSpatialDataRequest: mocked.detail,
   isSpatialDataExecutionState: (value: unknown) => ["QUEUED", "RUNNING", "COMPLETED", "FAILED", "CANCELED", "EXPIRED"].includes(String(value)),
   isSpatialDataAvailability: (value: unknown) => ["NOT_READY", "AVAILABLE", "ACCESS_REVOKED", "ACCESS_EXPIRED", "RETENTION_EXPIRED", "UNAVAILABLE"].includes(String(value)),
+}));
+vi.mock("@/lib/core-api/spatial-assets", () => ({
+  listSpatialAssets: mocked.catalog,
 }));
 vi.mock("@/app/field/OperationsSessionFailure", () => ({
   OperationsSessionFailure: ({ verdict }: { verdict: { notice?: string } }) => createElement("p", null, verdict.notice ?? "로그인 필요"),
@@ -97,6 +101,15 @@ beforeEach(() => {
   mocked.areas.mockResolvedValue({ workAreas: [area] });
   mocked.list.mockResolvedValue({ items: [job()], nextCursor: null });
   mocked.detail.mockResolvedValue(job());
+  mocked.catalog.mockResolvedValue({
+    siteId: "site-1",
+    workAreaId: "area-1",
+    scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+    scopeNote: "scope",
+    assets: [{ assetRef: `ksa-v1-${"a".repeat(64)}`, declared: { fileName: "north-dsm.tif" }, kind: "dsm" }],
+    nextCursor: null,
+    hasMore: false,
+  });
 });
 
 describe("spatial data request Console surface", () => {
@@ -212,5 +225,59 @@ describe("spatial data request Console surface", () => {
     expect(html).not.toContain("SPATIAL_DATA_READ");
     expect(mocked.areas).not.toHaveBeenCalled();
     expect(mocked.list).not.toHaveBeenCalled();
+  });
+
+  it("labels rows with request time, source file and work-area context from one bounded catalog read", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
+    expect(mocked.catalog).toHaveBeenCalledTimes(1);
+    expect(html).not.toContain("이 요청 열기");
+    expect(html).toContain("북측 작업구역");
+    expect(html).toContain("2026. 10. 14.");
+    expect(html).toContain("19:40:09");
+    expect(html).toContain("north-dsm.tif");
+    expect(html).toContain("원본 · DSM 지표면 모델");
+    expect(html).not.toContain("north-dsm.tif · DSM 지표면 모델");
+    expect(html).toContain("요청·원본 기술 참조 보기");
+    expect(html).toContain(requestId);
+  });
+
+  it("places mobile status right after the title while keeping a single desktop state column", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
+    expect(html).toContain("hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex");
+    const mobileStatus = html.indexOf("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
+    const technicalDetails = html.indexOf("요청·원본 기술 참조 보기");
+    expect(mobileStatus).toBeGreaterThan(-1);
+    expect(technicalDetails).toBeGreaterThan(-1);
+    expect(mobileStatus).toBeLessThan(technicalDetails);
+  });
+
+  it("keeps listing and detail available when the catalog read fails, without implying deletion", async () => {
+    mocked.catalog.mockRejectedValueOnce(new Error("catalog unavailable"));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+    expect(html).toContain("원본 파일명 확인 불가");
+    expect(html).toContain("원본 자료");
+    expect(html).toContain("현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다");
+    expect(html).toContain("삭제됐다는 뜻이 아닙니다");
+    expect(html).not.toContain("권한이 없어");
+    expect(html).toContain("Core 작업 receipt");
+    expect(html).toContain("요청 bounds는 아래 Core receipt에 기록된 값");
+  });
+
+  it("identifies the original source and requested bounds directly in the detail", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+    expect(html).toContain("원본 자료");
+    expect(html).toContain("north-dsm.tif · DSM 지표면 모델 · 북측 작업구역");
+    expect(html).toContain(`원본 assetRef · ksa-v1-${"a".repeat(64)}`);
+    expect(html).toContain("요청 bounds (Core 순서)");
+  });
+
+  it("exposes the full request ID when two rows share the same creation time", async () => {
+    const secondId = "sdj-v1-22345678-1234-1234-1234-123456789abc";
+    mocked.list.mockResolvedValueOnce({ items: [job(), job({ jobId: secondId })], nextCursor: null });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain(`요청 ${requestId}`);
+    expect(html).toContain(`요청 ${secondId}`);
   });
 });

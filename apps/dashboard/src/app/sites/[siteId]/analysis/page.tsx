@@ -38,6 +38,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     observations: Awaited<ReturnType<typeof listAnalysisObservations>>;
     attributedObservations: (Awaited<ReturnType<typeof listAnalysisObservations>>[number] & { workAreaIds: string[] })[];
     unattributedObservationCount: number;
+    workOrderNames: Record<string, string>;
     analyses: Awaited<ReturnType<typeof listAnalyses>>;
     selectedDetail: Awaited<ReturnType<typeof getAnalysis>> | null;
   } | null = null;
@@ -53,8 +54,12 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       ? await getAnalysis(siteId, analysisId)
       : null;
     const workAreasByOrder = new Map<string, string[]>();
+    const workOrderNames: Record<string, string> = {};
     for (const order of workOrders ?? []) {
       if (order.siteId !== siteId || order.organizationId !== session.principal.organizationId) continue;
+      if (typeof order.name === "string" && order.name.trim().length > 0) {
+        workOrderNames[order.workOrderId] = order.name;
+      }
       const workAreaIds = Array.isArray(order.workAreaIds)
         ? [...new Set(order.workAreaIds.filter((id): id is string => typeof id === "string" && id.length > 0))]
         : [];
@@ -69,7 +74,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       }
       return [{ ...observation, workAreaIds }];
     });
-    loaded = { areas, observations, attributedObservations, unattributedObservationCount, analyses: listedAnalyses, selectedDetail: detail };
+    loaded = { areas, observations, attributedObservations, unattributedObservationCount, workOrderNames, analyses: listedAnalyses, selectedDetail: detail };
   } catch (error) {
     childError = error;
   }
@@ -102,6 +107,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         workAreas={loaded.areas.workAreas}
         observations={loaded.attributedObservations}
         unattributedObservationCount={loaded.unattributedObservationCount}
+        workOrderNames={loaded.workOrderNames}
         initialPage={loaded.analyses}
         initialSelectedDetail={loaded.selectedDetail}
         canCreate={canCreate}

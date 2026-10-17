@@ -8,6 +8,7 @@ const mocked = vi.hoisted(() => ({
   areas: vi.fn(),
   catalog: vi.fn(),
   detail: vi.fn(),
+  workOrders: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -21,6 +22,9 @@ vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({
   listSpatialAssets: mocked.catalog,
   getSpatialAsset: mocked.detail,
+}));
+vi.mock("@/lib/core-api/observation-work-orders", () => ({
+  listObservationWorkOrders: mocked.workOrders,
 }));
 vi.mock("@/app/field/OperationsSessionFailure", () => ({
   OperationsSessionFailure: ({ verdict }: { verdict: { notice?: string } }) => createElement("p", null, verdict.notice ?? "로그인 필요"),
@@ -94,6 +98,7 @@ beforeEach(() => {
   mocked.areas.mockResolvedValue({ workAreas: [workArea] });
   mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset()], nextCursor: null, hasMore: false });
   mocked.detail.mockResolvedValue(asset());
+  mocked.workOrders.mockResolvedValue([{ workOrderId: "order-1", siteId: "site-1", organizationId: "org-1", name: "북측 1차 관측", workAreaIds: ["area-1"] }]);
 });
 
 describe("spatial asset catalog page", () => {
@@ -123,12 +128,38 @@ describe("spatial asset catalog page", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
     expect(html).toContain("선택한 자산 상세");
-    expect(html).toContain("기술 참조 · epoch epoch-1 · 작업 order-1");
+    expect(html).toContain("북측 1차 관측");
+    expect(html).toContain("북측 작업구역");
+    expect(html).toContain("기술 참조·ID 전체 보기");
+    expect(html).toContain("관측 epoch ID · epoch-1");
+    expect(html).toContain("작업 지시 ID · order-1");
+    expect(html).not.toContain("기술 참조 · epoch epoch-1 · 작업 order-1");
     expect(html).toContain("EPSG:32652");
     expect(html).toContain("상태: 검사 완료 · 결과: 측정 정보 있음");
     expect(html).toContain("DSM 지표면 모델 · image/tiff");
     expect(html).toContain("다운로드는 이 목록에서 제공되지 않습니다.");
     expect(html).toContain("분석 적합성은 평가되지 않았습니다.");
+  });
+
+  it("connects the list rows to work name, area, capture window and version", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("북측 1차 관측 · 북측 작업구역");
+    expect(html).toContain("제출 revision 2");
+    expect(html).toContain("기술 참조·ID 전체 보기");
+    expect(html).toContain(`자산 참조 · ${assetRef}`);
+  });
+
+  it("stays honest when work names are unavailable and distinguishes duplicate file names", async () => {
+    mocked.workOrders.mockRejectedValueOnce(new Error("work orders unavailable"));
+    const first = asset();
+    const second = { ...asset(), assetRef: `ksa-v1-${"b".repeat(64)}`, revision: 3 };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("작업명 확인 불가");
+    expect(html).toContain("north-dsm.tif · revision 2");
+    expect(html).toContain("north-dsm.tif · revision 3");
+    expect(html).toContain("같은 파일명이 이 목록에 여러 건 있습니다");
+    expect(html).toContain("이 목록은 메타데이터 조회이며 파일 다운로드나 분석 가능 판정을 제공하지 않습니다.");
   });
 
   it("formats declared submission and capture timestamps in Seoul time", async () => {

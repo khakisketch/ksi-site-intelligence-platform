@@ -5,6 +5,9 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
+import { listSitesCached } from "@/lib/core-api/cached";
+import { listWorkAreas } from "@/lib/core-api/workAreas";
+import { formatKoreanDateTime } from "@/lib/datetime";
 import {
   listObservationWorkOrderOperations,
   listObservationWorkOrdersForOrganization,
@@ -14,6 +17,7 @@ import { OperationsSessionFailure } from "./OperationsSessionFailure";
 import { WorkQueueOperationsNotices } from "./WorkQueueOperationsNotices";
 import { deriveWorkQueueOperationalNotices, summarizeWorkQueue } from "./work-queue";
 import { presentWorkOrder } from "./work-order-stage";
+import { SITE_NAME_UNAVAILABLE, formatWorkAreaTechnicalRefs, formatWorkQueueRowContext, indexWorkAreaNamesBySite, isWorkQueueContextMissing, orderWorkQueueGroupsForDisplay, selectWorkQueueRowsNeedingTechnicalRef } from "@/lib/work-context-names";
 
 export const metadata = { title: "작업 · KSI" };
 
@@ -48,6 +52,43 @@ export default async function FieldWorkListPage() {
     : null;
   const byId = new Map((operations ?? []).map((item) => [item.workOrderId, item]));
   const summary = summarizeWorkQueue(workOrders, byId);
+  // 행 맥락용 이름은 이미 권한이 확인된 목록 API로 현장별 한 번씩만 읽는다
+  // (보관 구역 포함 — 과거 작업 맥락용). 구역 ID는 현장 안에서만 유일하므로
+  // 현장별로 나눠 둔다. 실패는 확인 불가로 접고 큐를 깨뜨리지 않는다.
+  const siteIds = [...new Set(workOrders.map((order) => order.siteId))];
+  const [sites, areaPages] = await Promise.all([
+    listSitesCached().catch(() => null),
+    Promise.all(siteIds.map(async (siteId) => {
+      try {
+        return { siteId, workAreas: (await listWorkAreas(siteId, { includeArchived: true })).workAreas };
+      } catch {
+        return null;
+      }
+    })),
+  ]);
+  const siteById = new Map((sites ?? []).map((site) => [site.siteId, site]));
+  const areaNameBySite = indexWorkAreaNamesBySite(areaPages.filter((page) => page !== null));
+  // 행 기술 참조는 겹치거나 빠진 맥락에만 둔다. 유일한 행은 compact하게 두고
+  // 전체 ID는 작업 상세 화면에서 계속 볼 수 있다.
+  const rowsNeedingTechnicalRef = selectWorkQueueRowsNeedingTechnicalRef(workOrders.map((order) => {
+    const siteName = siteById.get(order.siteId)?.name ?? null;
+    const nameById = areaNameBySite.get(order.siteId) ?? new Map<string, string>();
+    return {
+      rowKey: order.workOrderId,
+      name: order.name,
+      contextLine: formatWorkQueueRowContext({
+        siteName,
+        workAreaIds: order.workAreaIds,
+        nameById,
+        cycleNumber: order.cycleNumber,
+        updatedAt: order.updatedAt,
+      }),
+      missingContext: isWorkQueueContextMissing({ name: order.name, siteName, workAreaIds: order.workAreaIds, nameById }),
+    };
+  }));
+  const groups = orderWorkQueueGroupsForDisplay(GROUPS.map(([key, label, description]) => ({
+    key, label, description, rows: summary[key],
+  })));
   const notices = operations
     ? deriveWorkQueueOperationalNotices(workOrders, byId, session.principal.principalId, new Date())
     : [];
@@ -80,8 +121,7 @@ export default async function FieldWorkListPage() {
                 </div>
               ))}
             </section>
-            {GROUPS.map(([key, label, description]) => {
-              const rows = summary[key];
+            {groups.map(({ key, label, description, rows }) => {
               return (
                 <section key={key} className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby={`work-${key}`}>
                   <div className="border-b border-line px-4 py-3">
@@ -97,14 +137,27 @@ export default async function FieldWorkListPage() {
                     <ul className="divide-y divide-line">
                       {rows.map((order) => {
                         const state = presentWorkOrder(order.status, order.executionMode);
+                        const siteName = siteById.get(order.siteId)?.name ?? null;
+                        const context = formatWorkQueueRowContext({
+                          siteName,
+                          workAreaIds: order.workAreaIds,
+                          nameById: areaNameBySite.get(order.siteId) ?? new Map(),
+                          cycleNumber: order.cycleNumber,
+                          updatedAt: order.updatedAt,
+                        });
                         return (
                           <li key={order.workOrderId}>
                             <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-sunk">
-                              <span className="min-w-0">
+                              <span className="min-w-0 flex-1">
                                 <span className="block break-keep text-[13px] font-semibold">{order.name}</span>
+                                <span className="mt-1 block truncate text-[12px] text-ink-2">{context}</span>
                               </span>
                               <StateBadge label={state.label} tone={state.tone} />
                             </Link>
+                            {rowsNeedingTechnicalRef.has(order.workOrderId) && <details className="px-4 pb-2 text-[11.5px] text-ink-muted">
+                              <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">기술 참조</summary>
+                              <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 구역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
+                            </details>}
                           </li>
                         );
                       })}

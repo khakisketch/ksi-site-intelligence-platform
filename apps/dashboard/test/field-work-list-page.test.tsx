@@ -69,7 +69,15 @@ describe("Field work list page", () => {
 
     const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
     expect(task.getAttribute("href")).toBe("/field/work-orders/obs-work-opaque-0001");
-    expect(document.body.textContent).not.toContain("site-opaque-0001");
-    expect(document.body.textContent).not.toContain("obs-work-opaque-0001");
+    // Primary row text leads with human names, never raw IDs.
+    expect(task.textContent).not.toContain("site-opaque-0001");
+    expect(task.textContent).not.toContain("obs-work-opaque-0001");
+    // Full technical values live only inside the closed keyboard disclosure.
+    const disclosure = task.closest("li")?.querySelector("details");
+    expect(disclosure?.open).toBe(false);
+    const disclosureSummary = within(disclosure as HTMLElement).getByText("기술 참조");
+    expect(disclosureSummary.tagName).toBe("SUMMARY");
+    expect(disclosure?.textContent).toContain("obs-work-opaque-0001");
+    expect(disclosure?.textContent).toContain("site-opaque-0001");
   });
 });

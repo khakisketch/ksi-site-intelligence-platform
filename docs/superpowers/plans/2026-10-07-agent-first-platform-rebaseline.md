@@ -3698,3 +3698,46 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   차단 — 외부 경계(진짜 차단, 우회 없음); MCP 경로는 stdio 직접 실증으로 대체. F-03 리그(:8092)
   untouched·PROVIDER_CONFIGURED. 증거: `/tmp/opencode/ksi-sdata-codex-20261016/evidence/`
   (`rest-partial-listing.json`·`mcp-parity-partial-listing.txt`; codex stderr에 401 기록).
+
+### 2026-10-17 Human-approved Console UX 맥락·선택·위계 개선
+
+- **승인·문제**: 사용자가 이름 대신 원시 ID가 산문에 노출되는 문제와 전체 화면 사용성을 개선하도록
+  승인했고, 단순 문구 정리 후에도 남은 내부 UX 7개 항목을 확인한 뒤 “그렇다면 진행해보자”로
+  계속 구현을 승인했다. `b4ca53d`·`581bcee`·`3d66d76`은 표시 정리이며 전체 UX 수용이 아니었다.
+  당시 “외부 게이트만 남음”, “미리보기 현상은 앱 결함 아님”은 과장·원인 미확정으로 정정한다.
+- **범위·불변식**: Dashboard의 실제 Site/WorkArea/작업명, genuine cycleNumber, 촬영 구간과 제출
+  revision을 연결한다(SDP-REQ-01/02/04/05/06/07). INV-051/053/060/061을 보존: 이름은 표시일 뿐
+  권한·계보·적합성·정확도를 만들지 않으며 서버 인가 범위의 기존 GET만 사용한다. Core/schema,
+  계산, 원본, 외부 AI 동의, 장비·재구성 책임, native-grid 크롭 의미는 변경하지 않는다.
+- **구현**: Home의 bounded 검토 대상에 보관 구역까지 현장별 이름을 연결; 작업 목록/상세·업무함에
+  실제 대상 맥락과 on-demand 기술 참조; 받은 업무의 필터/페이지마다 bounded BFF 이름 보강;
+  분석 선택·기준/현재 확인에서 작업명+촬영 구간+revision과 충돌 시 exact selector 구분;
+  공간 자산의 파일/작업/구역/시점, 요청의 시각/원본 구분과 읽을 수 있는 기술 disclosure;
+  generic 404를 미설정/빈 목록으로 추정하지 않고 수동 재조회 유지. 현장 헤더의 reportedAt는
+  촬영 시각이 아닌 **외부 결과 보고**로 표시. 같은 이름의 Site는 실제 등록 시각/기술 참조 제공.
+- **검증 상태(첫 통합 빌드)**: Dashboard 945/945, TypeScript, lint 0 errors(기존 역사 캡처 JS 경고
+  1건), production standalone build 통과. 기존 Console E2E 4폭(390/768/1024/1440) 51 passed/
+  5 intentional skipped, 기존 golden 수정 없음. F-03 실제 합성 리그에서 8경로×desktop/mobile
+  16렌더에 가로 넘침·남은 busy·serious/critical axe 0. 홈→정확한 분석 상세 이동, t1/t2 선택·
+  selector 공개, 자산 상세 이동을 실제 브라우저에서 확인(새 분석·검토 POST 없음).
+- **렌더 후 보완·최종 확인 완료**: unique 작업 행의 불필요한 기술 줄, 기존 제출이 있는 작업의
+  빈 신규 등록 폼 우선 노출, 긴 업무함 이름의 Site 잘림, 모바일 요청 상태의 후순위 노출을 관찰해
+  같은 구현 단위에서 보완했다. 신규 등록은 비어 있는 작업·진행/재시도 중일 때 계속 펼치고,
+  기존 제출이 있고 입력이 없는 경우에만 접는다. native disclosure를 키보드로 열어 등록 폼과
+  작업 운영 정보에 실제로 도달했다(`task-disclosures-final.log`). 최종 모바일 업무함에서 버튼이
+  본문을 좁히는 추가 결함을 발견해 **모바일 세로 배치**로 수정: 실제 본문 폭 324px, 버튼 top이
+  본문 bottom 아래임을 측정하고 원본 PNG를 직접 확인했다(`inbox-final.log`, `simulated-inbox-mobile.png`).
+- **최종 수용 범위**: 이번에 합의한 7개 내부 UX 영역의 구현과 관련 로컬 기능/렌더 확인을 마쳤다.
+  전체 제품·고객 수용을 닫지 않는다. 최종 Dashboard **954/954 (124 files)**·TypeScript·build
+  PASS, lint 0 errors(기존 경고 1 유지). 4폭 E2E 재실행 **51 passed/5 intentional skipped**;
+  그 후 유일한 UI 변경인 업무함 모바일 배치는 해당 390px populated/긴 이름/페이지 상태에서
+  직접 재검증했다(기존 무영향 증거 재사용). 최종 실행은 `.next-ux-verified` standalone, F-03
+  Core :8092·OIDC :9041·Dashboard http://localhost:3241. 자동 생성 tsconfig 추가분만 제거해
+  `3d66d76`의 원본 설정을 보존했다(`.next-ui-verification` 기존 항목은 불변).
+  최종 source 해시는 `final-source-sha256.txt`, 이전 렌더 후 실패/보완도 증거 디렉터리에 보존한다.
+- **증거·한계**: `/tmp/opencode/ksi-ux-context-20261017/`의 로그·스크립트·PNG.
+  Native DOM 조회는 가능했지만 click UnknownVizError 및 focus 후 screenshot visibility failure;
+  task-scoped Playwright로 기능/렌더 검증. 요청 populated/접근 회수 상태는 read-only loopback
+  GET fixture, 긴 업무함/페이지 및 404 복구는 브라우저 GET fixture로 명시한 **합성 UI 상태**이며
+  실제 Core 요청/출력/권한 수용으로 주장하지 않는다. fixture는 Core 쓰기·다운로드 없이 종료하고
+  Dashboard를 F-03 Core(:8092)로 복귀했다. 고객 A–E·Terra·현장 정량/고객 수용·운영 배포는 별도.

@@ -379,6 +379,36 @@ describe("ExternalReconstructionPanel", () => {
     expect(requests.some((request) => request.url.endsWith("/upload-grants"))).toBe(true);
   });
 
+  it("keeps the registration form open when nothing is retained", async () => {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    const disclosure = screen.getByText("새 산출물 등록").closest("details");
+    expect(disclosure?.open).toBe(true);
+    expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
+  });
+
+  it("puts the new-submission form behind a disclosure when revisions are retained", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "SEALED", submission: { revision: 1 } }] }) });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    // 유지된 revision 행이 폼보다 먼저 보인다.
+    expect(await screen.findByText(/외부 산출물/)).toBeTruthy();
+    const disclosure = screen.getByText("새 산출물 등록").closest("details");
+    expect(disclosure?.open).toBe(false);
+    // 폼은 DOM에 그대로 있어 상태·재시도 맥락을 잃지 않는다.
+    expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
+    fireEvent.click(screen.getByText("새 산출물 등록"));
+    expect((disclosure as HTMLDetailsElement).open).toBe(true);
+  });
+
+  it("never hides a resumed attempt behind the disclosure", async () => {
+    fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    // 재개한 시도는 compactness보다 우선해 항상 보인다.
+    expect(screen.getByText("새 산출물 등록").closest("details")?.open).toBe(true);
+    expect(screen.getByText("등록된 파일과 같은 파일을 다시 선택하세요.")).toBeTruthy();
+  });
+
   it("aborts a pending direct upload when the operator cancels transmission", async () => {
     let uploadSignal: AbortSignal | undefined;
     fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {

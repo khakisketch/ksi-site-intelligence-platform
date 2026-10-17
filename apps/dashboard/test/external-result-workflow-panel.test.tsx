@@ -716,11 +716,13 @@ describe("SINGLE_VOLUME measurement", () => {
       if (url === `/api/external-single-volume-reports/${singleReportRef}`) return response(view);
       throw new Error(`unexpected fetch ${url}`);
     });
-    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} />);
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={null} permissions={[]} workAreaNames={{ "pile-1": "남측 적치 구역" }} />);
     expect(await screen.findByText("현재 선택에서 단일 시점 체적 결정을 요청하세요.")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "체적 요청 상태" }));
     expect(await screen.findByText("불확도 미산정")).toBeTruthy();
     expect(screen.getByText("1,234.5 m³")).toBeTruthy();
+    expect(screen.getByText("작업구역 남측 적치 구역")).toBeTruthy();
+    expect(screen.getByText(/기술 참조 · 구역 pile-1/).closest("details")).toBeTruthy();
 
     view = singleReportView({ boundaryValidFraction: 0.5 });
     fireEvent.click(screen.getByRole("button", { name: "체적 요청 상태" }));
@@ -744,20 +746,19 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
   });
 
-  it("treats a missing single-volume router (404) as not configured instead of a read failure", async () => {
-    const listError = "체적 측정 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요.";
+  it("keeps a single-volume 404 neutral and allows manual recovery without polling", async () => {
+    let available = false;
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/observation-work-orders/work-1/relative-volume-requests") return response({ items: [] });
-      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
+      if (url === "/api/observation-work-orders/work-1/single-volume-requests") return available ? response({ items: [] }) : { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
       throw new Error(`unexpected fetch ${url}`);
     });
     render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={null} singleVolumeDecision={singleDecision} permissions={["SITES_WRITE"]} />);
 
-    expect(await screen.findByText("이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.")).toBeTruthy();
-    expect(screen.queryByText(listError)).toBeNull();
-    expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "체적 목록 새로고침" })).toBeNull();
-    expect(screen.queryByText("체적 측정 요청 목록")).toBeNull();
+    expect(await screen.findByText("체적 측정 요청 목록을 현재 조회할 수 없습니다. 기록이 없거나 기능이 미설정된 것으로 판단하지 않습니다. 새로고침으로 다시 확인하세요.")).toBeTruthy();
+    expect(screen.queryByText("이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.")).toBeNull();
+    expect(screen.getByRole("button", { name: "체적 목록 새로고침" })).toBeTruthy();
+    expect(screen.queryByText(/기록된 단일 시점 체적 측정 요청이 없습니다/)).toBeNull();
     const singleReads = () => fetchMock.mock.calls.filter(([url]) => String(url).includes("single-volume")).length;
     expect(singleReads()).toBe(1);
     vi.useFakeTimers();
@@ -767,13 +768,19 @@ describe("SINGLE_VOLUME measurement", () => {
       vi.useRealTimers();
     }
     expect(singleReads()).toBe(1);
+    available = true;
+    fireEvent.click(screen.getByRole("button", { name: "체적 목록 새로고침" }));
+    expect(await screen.findByText(/기록된 단일 시점 체적 측정 요청이 없습니다/)).toBeTruthy();
+    expect(singleReads()).toBe(2);
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
     expect(screen.getByText("현재 선택에서 상대 물량 비교를 요청하세요.")).toBeTruthy();
   });
 
-  it("treats an absent optional comparison list as unconfigured without hiding a linked report", async () => {
+  it("retains a linked report through comparison-list 404 and recovers with an explicit refresh", async () => {
+    let available = false;
     fetchMock.mockImplementation(async (url: string) => {
       if (url === "/api/observation-work-orders/work-1/relative-volume-requests") {
-        return { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
+        return available ? response({ items: [] }) : { ok: false, status: 404, json: async () => ({ code: "NOT_FOUND" }) };
       }
       throw new Error(`unexpected fetch ${url}`);
     });
@@ -786,11 +793,15 @@ describe("SINGLE_VOLUME measurement", () => {
       initialReport={{ reportRef, reportDigest: digest("d"), view }}
     />);
 
-    expect(await screen.findByText("비교 요청 목록을 확인할 수 없습니다. 마지막으로 확인한 요청 상태와 연결된 결과는 계속 확인할 수 있습니다.")).toBeTruthy();
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "비교 요청 목록을 현재 조회할 수 없습니다. 기록이 없거나 기능이 미설정된 것으로 판단하지 않습니다. 새로고침으로 다시 확인하세요.");
     expect(await screen.findByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
-    expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.queryByRole("button", { name: "목록 새로고침" })).toBeNull();
+    expect(screen.getByRole("button", { name: "목록 새로고침" })).toBeTruthy();
     expect(screen.queryByText(/기록된 상대 물량 비교 요청이 없습니다/)).toBeNull();
+    available = true;
+    fireEvent.click(screen.getByRole("button", { name: "목록 새로고침" }));
+    expect(await screen.findByText(/기록된 상대 물량 비교 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "외부 상대 물량 비교 결과" })).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps the list read-failure text for a non-404 single-volume list failure", async () => {

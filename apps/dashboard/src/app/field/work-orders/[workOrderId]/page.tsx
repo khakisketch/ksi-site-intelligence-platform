@@ -13,6 +13,7 @@ import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { SITE_NAME_UNAVAILABLE, formatWorkAreaSummary, formatWorkAreaTechnicalRefs, indexWorkAreaNames } from "@/lib/work-context-names";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { formatCountKo } from "@/lib/number-format";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
@@ -136,9 +137,10 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
 
   const [site, drafts, externalContext, workAreas, history] = await Promise.all([
     getSite(workOrder.siteId).catch(() => null),
-    listReobservationDrafts(workOrder.workOrderId).catch(() => []),
+    listReobservationDrafts(workOrder.workOrderId).catch(() => null),
     getExternalReconstructionContext(workOrder.workOrderId).catch(() => null),
-    listWorkAreas(workOrder.siteId).catch(() => null),
+    // 보관 구역 포함 — 과거 작업이 보관된 구역을 가리킬 수 있다.
+    listWorkAreas(workOrder.siteId, { includeArchived: true }).catch(() => null),
     listSiteExternalVolumeHistory(workOrder.siteId, { limit: 20 }).catch(() => null),
   ]);
   const externalExecutionContext = resolveExternalWorkOrderExecutionContext(workOrder, externalContext);
@@ -189,15 +191,26 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
       })
     : null;
   const status = presentWorkOrder(workOrder.status, workOrder.executionMode);
-  const pendingDrafts = drafts.filter((draft) => draft.status === "PENDING");
-  const areaNameById = new Map((workAreas?.workAreas ?? []).map((area) => [area.workAreaId, area.name]));
+  const pendingDrafts = (drafts ?? []).filter((draft) => draft.status === "PENDING");
+  const unavailableRecords = [drafts === null ? "재관측 제안" : null, history === null ? "보존된 결과 목록" : null].filter(Boolean);
+  const areaNameById = indexWorkAreaNames(workAreas?.workAreas ?? []);
+  const areaSummary = formatWorkAreaSummary(workOrder.workAreaIds, areaNameById);
+  const operationsStateLabel = !operations
+    ? "상태 확인 필요"
+    : operations.workflowStatus === "CLOSED"
+      ? "업무 종료"
+      : operations.workflowStatus === "OPEN" ? "운영 중" : "운영 상태 확인 필요";
 
   return (
     <div className="flex flex-col">
       <OperationsWorkHeader>
         <div className="flex flex-col gap-1">
           <h2 className="break-keep text-[19px] font-bold tracking-tight">{workOrder.name}</h2>
-          <p className="break-keep text-[12.5px] text-ink-2">{site?.name ?? "현장"} · {formatCountKo(workOrder.workAreaIds.length)}개 구역 · {workOrder.cycleNumber}회차</p>
+          <p className="break-keep text-[12.5px] text-ink-2">{site?.name ?? SITE_NAME_UNAVAILABLE} · {areaSummary} · {workOrder.cycleNumber}회차</p>
+          <details className="text-[11.5px] text-ink-muted">
+            <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">기술 참조</summary>
+            <p className="mt-1 break-all">작업 {workOrder.workOrderId} · 현장 {workOrder.siteId} · 구역 {formatWorkAreaTechnicalRefs(workOrder.workAreaIds)}</p>
+          </details>
         </div>
       </OperationsWorkHeader>
 
@@ -230,12 +243,15 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           </div>
         </section>}
 
-        {externalWorkflow && <WorkOrderOperationsPanel
-          workOrderId={workOrder.workOrderId}
-          principalId={session.principal.principalId}
-          initialOperations={operations}
-          canWrite={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
-        />}
+        {(externalWorkflow || latestItem || pendingDrafts.length > 0) && (
+          <nav aria-label="다음 행동" className="flex flex-wrap gap-2 rounded-lg border border-line bg-sunk px-4 py-3">
+            {externalWorkflow && <Link className="btn" href="#external-submissions">{workflowClosed ? "산출물 이력으로 이동" : "산출물 등록·이력으로 이동"}</Link>}
+            {latestItem && <Link className="btn" href="#work-order-result">보존된 결과로 이동</Link>}
+            {pendingDrafts.length > 0 && <Link className="btn" href="#reobservation-drafts">재관측 제안으로 이동</Link>}
+            {externalWorkflow && <Link className="btn" href="#work-operations">작업 운영으로 이동</Link>}
+          </nav>
+        )}
+        {unavailableRecords.length > 0 && <ErrorState tone="idle" message={`${unavailableRecords.join("·")} 확인 불가`} detail="해당 기록이 없다는 뜻이 아닙니다. 접근 권한과 서버 상태를 확인한 뒤 다시 시도하세요." retryable />}
 
         {externalWorkflow && <ExternalReconstructionPanel
           workOrderId={workOrder.workOrderId}
@@ -246,10 +262,11 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           requiresCaptureInterval={externalExecutionContext === "EXTERNAL_INGRESS"}
           newIntentAllowed={!workflowClosed}
           initialReport={initialReport ?? undefined}
+          workAreaNames={Object.fromEntries(areaNameById)}
         />}
 
         {pendingDrafts.length > 0 && (
-          <section className="flex flex-col gap-2 rounded-lg border border-line bg-surface p-4">
+          <section id="reobservation-drafts" className="flex scroll-mt-5 flex-col gap-2 rounded-lg border border-line bg-surface p-4">
             <h2 className="text-[14px] font-bold">재관측 제안</h2>
             <p className="text-[12.5px] text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 결과 화면에서 진행합니다.</p>
             {externalWorkflow && <Link className="w-fit text-[12.5px] font-semibold text-accent-text underline underline-offset-2" href={initialReport ? "#external-result" : "#external-volume"}>{initialReport ? "결과와 제안 결정으로 이동" : "비교 요청·제안 상태로 이동"}</Link>}
@@ -259,10 +276,25 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           </section>
         )}
 
-        {latestItem ? projection ? <ExternalSiteResultSummary
+        {latestItem ? <div id="work-order-result" className="scroll-mt-5">{projection ? <ExternalSiteResultSummary
           externalResult={projection}
           workAreaName={areaNameById.get(latestItem.result?.workAreaId ?? "") ?? null}
-        /> : <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">보존된 외부 결과 상세를 확인할 수 없습니다.</p> : null}
+        /> : <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">보존된 외부 결과 상세를 확인할 수 없습니다.</p>}</div> : null}
+
+        {externalWorkflow && <details id="work-operations" className="scroll-mt-5 rounded-xl border border-line bg-surface">
+          <summary className="tap-target flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+            <span className="text-[15px] font-bold">작업 운영 · {operationsStateLabel}</span>
+            <span className="flex items-center gap-2 text-[12px] font-semibold text-ink-2">담당·기한·업무 종료<svg aria-hidden="true" className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m6 9 6 6 6-6" /></svg></span>
+          </summary>
+          <div className="border-t border-line px-4 py-4">
+            <WorkOrderOperationsPanel
+              workOrderId={workOrder.workOrderId}
+              principalId={session.principal.principalId}
+              initialOperations={operations}
+              canWrite={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+            />
+          </div>
+        </details>}
 
         <div className="flex flex-wrap gap-2">
           <Link href={`/sites/${encodeURIComponent(workOrder.siteId)}`} className="btn">현장으로</Link>

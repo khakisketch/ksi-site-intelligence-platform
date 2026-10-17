@@ -78,6 +78,9 @@ function requestListReadError(error: unknown, family: "비교" | "체적 측정"
   if (error instanceof WorkflowResponseError && error.status === 401) {
     return `${family} 요청 목록을 확인하려면 다시 로그인한 뒤 화면을 다시 여세요.`;
   }
+  if (error instanceof WorkflowResponseError && error.status === 404) {
+    return `${family} 요청 목록을 현재 조회할 수 없습니다. 기록이 없거나 기능이 미설정된 것으로 판단하지 않습니다. 새로고침으로 다시 확인하세요.`;
+  }
   if (error instanceof Error && error.message === UNKNOWN_REQUEST_STATUS) {
     return "요청 상태 형식을 확인하지 못했습니다. 목록을 다시 확인하세요.";
   }
@@ -222,7 +225,7 @@ function ReportDetail({
         <div className="px-4 py-3">
           <h3 className="text-[16px] font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
           <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? "이름을 확인할 수 없는 구역"}</p>
-          <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p>
+          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">작업구역 식별 정보</summary><p className="break-all font-mono">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p></details>
         </div>
         <span className="px-4 text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
@@ -312,7 +315,7 @@ function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolum
   );
 }
 
-function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportView }) {
+function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingleVolumeReportView; workAreaName?: string | null }) {
   const metrics = view.report.payload.metrics;
   const coveragePassed = metrics.commonValidFraction >= view.executionPolicy.minimumCommonValidFraction
     && metrics.boundaryValidFraction >= view.executionPolicy.minimumBoundaryValidFraction;
@@ -321,8 +324,8 @@ function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportVi
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
           <h4 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h4>
-          <p className="mt-1 leading-5 text-ink-2">이 측정에 사용한 작업구역</p>
-          <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId}</p>
+          <p className="mt-1 break-words leading-5 text-ink-2">작업구역 {workAreaName || "이름을 확인할 수 없는 구역"}</p>
+          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">작업구역 식별 정보</summary><p className="break-all font-mono">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p></details>
         </div>
         <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
@@ -367,6 +370,7 @@ function SingleVolumeWorkflow({
   newIntentAllowed,
   hasReviewPermission,
   canApprovePermission,
+  workAreaNames,
   onApproved,
 }: {
   workOrderId: string;
@@ -375,6 +379,7 @@ function SingleVolumeWorkflow({
   newIntentAllowed: boolean;
   hasReviewPermission: boolean;
   canApprovePermission: boolean;
+  workAreaNames: Readonly<Record<string, string>>;
   /**
    * Core approved the proposal and bound a successor. The parent finishes the approval
    * (work list refresh, navigation) and must stop as soon as `signal` is aborted, which
@@ -389,9 +394,7 @@ function SingleVolumeWorkflow({
   const [listPhase, setListPhase] = useState<Phase>("loading");
   const [listError, setListError] = useState<string | null>(null);
   const [listReadBlocked, setListReadBlocked] = useState(false);
-  // Core mounts the single-volume router only when a single-volume execution template is
-  // configured, so a 404 list read means this environment does not offer the family.
-  const [notConfigured, setNotConfigured] = useState(false);
+  // A 404 can also conceal an inaccessible resource; it is not a capability signal.
   const [list, setList] = useState<ExternalRelativeVolumeRequestView[]>([]);
   const [selectedRef, setSelectedRef] = useState<string | null>(null);
   const [selectionGeneration, setSelectionGeneration] = useState(0);
@@ -424,25 +427,15 @@ function SingleVolumeWorkflow({
     setListReadBlocked(false);
     try {
       const listResponse = await fetch(requestsPath, { cache: "no-store", signal: controller.signal });
-      if (listResponse.status === 404) {
-        if (listAbort.current !== controller) return;
-        setNotConfigured(true);
-        setListPhase("idle");
-        setListError(null);
-        setListReadBlocked(false);
-        return;
-      }
       const value = await responseJson<{ items: unknown }>(listResponse);
       if (!Array.isArray(value.items) || !value.items.every(isKnownRequestView)) throw new Error(UNKNOWN_REQUEST_STATUS);
       if (listAbort.current !== controller) return;
-      setNotConfigured(false);
       setList(value.items);
       setListPhase("ready");
       setListError(null);
       setListReadBlocked(false);
     } catch (error) {
       if (isAbort(error) || listAbort.current !== controller) return;
-      setNotConfigured(false);
       setListPhase("error");
       setListError(requestListReadError(error, "체적 측정"));
       setListReadBlocked(error instanceof WorkflowResponseError && (error.status === 401 || error.status === 403));
@@ -658,15 +651,6 @@ function SingleVolumeWorkflow({
     if (selectedRef && singleReportId) void reloadSingleReport(singleReportId, selectedRef);
   }, [reloadSingleReport, selectedRef, singleReportId]);
 
-  if (notConfigured) {
-    return (
-      <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
-        <h3 className="font-semibold">단일 시점 체적 측정</h3>
-        <p className="text-ink-2">이 환경에는 단일 시점 체적 측정이 구성되지 않았습니다.</p>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line p-3">
       <h3 className="font-semibold">단일 시점 체적 측정</h3>
@@ -705,7 +689,7 @@ function SingleVolumeWorkflow({
       {reportPhase === "loading" && <p role="status">체적 결과를 읽는 중입니다.</p>}
       {reportPhase === "error" && <p role="alert">체적 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.</p>}
       {report && reportPhase === "ready" && <>
-        <SingleVolumeReportDetail view={report} />
+        <SingleVolumeReportDetail view={report} workAreaName={Object.hasOwn(workAreaNames, report.request.zoneSnapshot.workAreaId) ? workAreaNames[report.request.zoneSnapshot.workAreaId] : null} />
         <ExternalResultReviewActions
           key={selectedRef ?? report.report.reportId}
           reportRef={report.report.reportId}
@@ -736,6 +720,7 @@ export function ExternalResultWorkflowPanel({
   singleVolumeDecision,
   permissions,
   initialReport,
+  workAreaNames = {},
   newIntentAllowed = true,
 }: {
   workOrderId: string;
@@ -748,6 +733,8 @@ export function ExternalResultWorkflowPanel({
   singleVolumeDecision?: ExternalRelativeVolumeDecision | null;
   permissions: readonly string[];
   initialReport?: TrustedExternalResultLink;
+  /** Names resolved through the current principal's Site-scoped work-area read. */
+  workAreaNames?: Readonly<Record<string, string>>;
   newIntentAllowed?: boolean;
 }) {
   const router = useRouter();
@@ -763,7 +750,6 @@ export function ExternalResultWorkflowPanel({
   const [worklistPhase, setWorklistPhase] = useState<Phase>("loading");
   const [worklistRefreshing, setWorklistRefreshing] = useState(false);
   const [worklistAutoRefreshStopped, setWorklistAutoRefreshStopped] = useState(false);
-  const [worklistNotConfigured, setWorklistNotConfigured] = useState(false);
   const [worklistError, setWorklistError] = useState<string | null>(null);
   const [worklistReadBlocked, setWorklistReadBlocked] = useState(false);
   const [documentVisible, setDocumentVisible] = useState(true);
@@ -819,7 +805,6 @@ export function ExternalResultWorkflowPanel({
     const controller = new AbortController();
     listAbort.current = controller;
     const retainLastVerified = preserveVerified && worklistVerified.current;
-    setWorklistNotConfigured(false);
     setWorklistRefreshNotice(null);
     if (retainLastVerified) setWorklistRefreshing(true);
     else {
@@ -831,18 +816,6 @@ export function ExternalResultWorkflowPanel({
         `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/relative-volume-requests`,
         { cache: "no-store", signal: controller.signal },
       );
-      if (response.status === 404) {
-        if (listAbort.current !== controller) return;
-        if (retainLastVerified) {
-          setWorklistRefreshNotice("현재 환경에서 비교 요청 목록을 읽을 수 없습니다. 마지막으로 확인한 요청 상태를 유지합니다.");
-        } else {
-          setWorklistNotConfigured(true);
-          setWorklistPhase("idle");
-          setWorklistError(null);
-          setWorklistReadBlocked(false);
-        }
-        return;
-      }
       const value = await responseJson<{ items: unknown }>(response);
       if (!Array.isArray(value.items) || !value.items.every(isKnownRequestView)) throw new Error(UNKNOWN_REQUEST_STATUS);
       if (listAbort.current !== controller) return;
@@ -1151,11 +1124,10 @@ export function ExternalResultWorkflowPanel({
       <div className="rounded-lg border border-line p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="font-semibold">비교 요청 목록</h3>
-          {!worklistReadBlocked && !worklistNotConfigured && <button className="btn" disabled={worklistPhase === "loading" || worklistRefreshing} onClick={() => { worklistAutoRefreshBudget.current = 0; setWorklistAutoRefreshStopped(false); void loadWorklist({ preserveVerified: true }); }}>목록 새로고침</button>}
+          {!worklistReadBlocked && <button className="btn" disabled={worklistPhase === "loading" || worklistRefreshing} onClick={() => { worklistAutoRefreshBudget.current = 0; setWorklistAutoRefreshStopped(false); void loadWorklist({ preserveVerified: true }); }}>목록 새로고침</button>}
         </div>
         {worklistPhase === "loading" && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 읽는 중입니다.</p>}
         {worklistRefreshing && <p role="status" className="mt-2 text-ink-2">마지막으로 확인한 요청 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
-        {worklistNotConfigured && <p role="status" className="mt-2 text-ink-2">비교 요청 목록을 확인할 수 없습니다. 마지막으로 확인한 요청 상태와 연결된 결과는 계속 확인할 수 있습니다.</p>}
         {worklistPhase === "error" && <p role="alert" className="mt-2 text-high-ink">{worklistError ?? "비교 요청 목록을 읽지 못했습니다. 새로고침으로 다시 시도하세요."}</p>}
         {worklistPhase === "ready" && (worklist.length === 0 ? <p className="mt-2 text-ink-2">기록된 상대 물량 비교 요청이 없습니다. 요청이 생성되면 상태와 보고서가 이 목록에 표시됩니다.</p> : <ul className="mt-2 flex flex-col gap-2">{worklist.map((item) => <li key={item.requestRef} className="flex flex-wrap items-center justify-between gap-2"><span>{statusLabel(item.status)} · {requestMoment(item.issuedAt)}{isUnfinishedRequest(item.status) && recordedDeadlineElapsed(item.deadlineAt) && " · 마감 시각 경과"}</span><button className="btn" onClick={() => selectRequest(item.requestRef)}>비교 요청 상태</button></li>)}</ul>)}
       </div>
@@ -1167,7 +1139,7 @@ export function ExternalResultWorkflowPanel({
       {reportPhase === "loading" && <p role="status">비교 결과를 읽는 중입니다.</p>}
       {reportPhase === "error" && <div role="alert" className="flex flex-wrap gap-2"><p>비교 결과를 읽지 못했습니다. 완료로 추정하지 않습니다.</p>{selectedRequest?.reportRef && <button className="btn" onClick={() => void loadReport(selectedRequest.reportRef!)}>보고서 다시 시도</button>}</div>}
       {report && <>
-        <ReportDetail view={report} workAreaName={reportWorkAreaName} />
+        <ReportDetail view={report} workAreaName={(Object.hasOwn(workAreaNames, report.request.zoneSnapshot.workAreaId) ? workAreaNames[report.request.zoneSnapshot.workAreaId] : null) || reportWorkAreaName} />
         <ExternalResultReviewActions
           key={selectedRequestRef ?? report.report.reportId}
           reportRef={report.report.reportId}
@@ -1195,6 +1167,7 @@ export function ExternalResultWorkflowPanel({
         newIntentAllowed={newIntentAllowed}
         hasReviewPermission={hasReviewPermission}
         canApprovePermission={hasApprovalPermission}
+        workAreaNames={workAreaNames}
         onApproved={handleApproved}
       />}
 

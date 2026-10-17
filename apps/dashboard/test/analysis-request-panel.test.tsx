@@ -193,8 +193,8 @@ describe("analysis V2 panel", () => {
     expect(screen.queryByText(/현재 페이지에 분석 요청이 없습니다|이 현장에는 아직 분석 요청이 없습니다/)).toBeNull();
   });
 
-  it("uses capture time, revision and the recorded epoch ID to distinguish observations", () => {
-    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+  it("names the real work with capture interval and submission version, keeping exact selectors inspectable", () => {
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true, workOrderNames: { "work-baseline": "기준 작업", "work-current": "현재 작업" } });
 
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     const current = screen.getByLabelText("현재 관측") as HTMLSelectElement;
@@ -204,21 +204,48 @@ describe("analysis V2 panel", () => {
     expect(screen.getByText("가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
-    expect(baseline.options[1]?.textContent).toContain("revision 1 · epoch-baseline");
+    expect(baseline.options[1]?.textContent).toContain("기준 작업");
+    expect(baseline.options[1]?.textContent).toContain("제출 revision 1");
     expect(baseline.options[1]?.textContent).toContain("09:00–09:30");
+    expect(baseline.options[1]?.textContent).not.toContain("epoch-baseline");
 
     fireEvent.change(baseline, { target: { value: "0" } });
     fireEvent.change(current, { target: { value: "1" } });
-    expect(screen.getByText(/선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다/)).toBeTruthy();
-    expect(screen.getByText(/기준 · .*revision 1 · epoch-baseline/)).toBeTruthy();
-    expect(screen.getByText(/현재 · .*revision 1 · epoch-current/)).toBeTruthy();
+    const confirmation = screen.getByText(/선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다/).closest("div")!;
+    expect(confirmation.textContent).toContain("기준");
+    expect(confirmation.textContent).toContain("기준 작업");
+    expect(confirmation.textContent).toContain("현재");
+    expect(confirmation.textContent).toContain("현재 작업");
 
     const selectorDetails = screen.getByText("요청 selector 전체 확인").closest("details");
     expect(selectorDetails?.hasAttribute("open")).toBe(false);
     fireEvent.click(screen.getByText("요청 selector 전체 확인"));
     expect(selectorDetails?.textContent).toContain(observations[0]!.selector.submissionRef);
     expect(selectorDetails?.textContent).toContain("work-baseline");
+    expect(selectorDetails?.textContent).toContain("관측 epoch ID · epoch-baseline");
     expect(selectorDetails?.textContent).toContain("revision · 1");
+  });
+
+  it("stays honest about missing work names and only falls back to epoch IDs on collision", () => {
+    renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
+    expect(baseline.options[1]?.textContent).toContain("작업명 확인 불가");
+    expect(baseline.options[1]?.textContent).toContain("제출 revision 1");
+    expect(baseline.options[1]?.textContent).not.toContain("epoch-baseline");
+
+    cleanup();
+    const colliding: (AnalysisObservationOption & { workAreaIds: string[] })[] = [
+      { ...observations[0]!, observationEpochId: "epoch-collide-first" },
+      { ...observations[0]!, observationEpochId: "epoch-collide-second" },
+    ];
+    renderPanel({ observations: colliding, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
+    fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
+    const collided = screen.getByLabelText("기준 관측") as HTMLSelectElement;
+    expect(collided.options[1]?.textContent).toContain("관측 epoch epoch-collide-first");
+    expect(collided.options[2]?.textContent).toContain("관측 epoch epoch-collide-second");
+    expect(collided.options[1]?.textContent).not.toBe(collided.options[2]?.textContent);
   });
 
   it("scopes both pickers to the WorkArea and suggests the unique latest prior epoch without submitting", () => {

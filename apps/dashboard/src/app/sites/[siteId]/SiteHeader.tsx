@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
 import {
@@ -37,16 +38,16 @@ export function SiteHeader({
   site,
   selectedEpochId,
   tab,
-  latestObservationAt,
-  latestObservationKnown,
+  latestExternalReportAt,
+  latestExternalReportKnown,
   canCreateWorkOrder,
   canEditAoi,
 }: {
   site: SiteView;
   selectedEpochId: string | null;
   tab: SiteTabKey;
-  latestObservationAt: string | null;
-  latestObservationKnown: boolean;
+  latestExternalReportAt: string | null;
+  latestExternalReportKnown: boolean;
   canCreateWorkOrder: boolean;
   canEditAoi: boolean;
 }) {
@@ -67,11 +68,11 @@ export function SiteHeader({
         <h2 className="text-[17px] font-bold tracking-tight break-keep">{site.name}</h2>
         <StateBadge label={status.label} tone={status.tone} />
         <span className="text-[11.5px] break-keep text-ink-2">
-          최신 관측{" "}
-          {!latestObservationKnown
+          최근 외부 결과 보고{" "}
+          {!latestExternalReportKnown
             ? "알 수 없음"
-            : latestObservationAt
-              ? formatKoreanDate(latestObservationAt)
+            : latestExternalReportAt
+              ? formatKoreanDate(latestExternalReportAt)
               : "아직 없음"}
         </span>
         {site.resumeTarget && (
@@ -79,6 +80,7 @@ export function SiteHeader({
             복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
           </span>
         )}
+        <SiteIdentityDetails site={site} />
 
         <span className="ml-auto hidden flex-wrap items-center gap-1.5 lg:flex">
           {primaryAction && (

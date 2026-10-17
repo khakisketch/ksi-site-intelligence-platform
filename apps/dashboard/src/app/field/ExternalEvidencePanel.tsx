@@ -130,7 +130,7 @@ function DecisionSubjectBinding({
   if (!subject) return <p>{label}: Core 기록 없음</p>;
   return (
     <div>
-      <p className="break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · {label} 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
+      <p className="break-all font-mono text-[12px] text-ink-2">기술 참조 · {label} 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
       <p>제출 {subject.submissionId} · rev {subject.revision} · 제출 다이제스트 {subject.submissionDigest}</p>
       <p>매니페스트 다이제스트 {subject.manifestDigest} · 대상 다이제스트 {coreValue(digest)}</p>
     </div>
@@ -198,7 +198,7 @@ function DecisionReceipt({ decision, historical = false }: { decision: Decision;
           <p>조치: {decision.remediations.join(", ") || "없음"}</p>
         </>
       )}
-      {historical && <DecisionBindings decision={decision} />}
+      {historical && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">결정 대상과 검증 식별 정보</summary><DecisionBindings decision={decision} /></details>}
       {historical && <p>과거 기록은 현재 사용 권한이나 실행 권한이 아닙니다.</p>}
     </div>
   );
