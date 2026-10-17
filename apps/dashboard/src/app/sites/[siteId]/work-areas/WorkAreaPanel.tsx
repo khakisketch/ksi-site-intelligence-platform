@@ -66,8 +66,8 @@ function WorkAreaCard({
 
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11.5px] sm:grid-cols-4">
         <div className="flex flex-col">
-          <dt className="break-keep text-ink-muted">식별자</dt>
-          <dd className="num break-token">{area.workAreaId}</dd>
+          <dt className="break-keep text-ink-muted">기술 참조</dt>
+          <dd className="num break-token font-mono text-[10.5px] text-ink-muted">{area.workAreaId}</dd>
         </div>
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">등록</dt>
@@ -85,8 +85,8 @@ function WorkAreaCard({
 
       {area.supersedes !== null && (
         <p className="text-[11.5px] break-keep text-ink-muted">
-          이전 구역을 대신해 등록된 구역입니다 — 대신한 구역:{" "}
-          <span className="num break-token">{area.supersedes}</span>
+          이전 구역을 대신해 등록된 구역입니다 — 기술 참조 ·{" "}
+          <span className="num break-token font-mono text-[10.5px]">{area.supersedes}</span>
         </p>
       )}
 
