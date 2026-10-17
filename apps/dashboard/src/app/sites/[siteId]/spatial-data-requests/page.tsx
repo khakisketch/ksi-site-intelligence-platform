@@ -172,7 +172,7 @@ function RequestDetail({
       <div className="flex flex-wrap items-center gap-2">{stateBadge(item.executionState)}{availabilityText(item.availability)}</div>
     </header>
     <dl className="grid gap-3 sm:grid-cols-2">
-      <Fact label="Site / WorkArea" value={`${item.siteId} / ${item.workAreaId}`} mono />
+      <Fact label="기술 참조 · Site / WorkArea" value={`${item.siteId} / ${item.workAreaId}`} mono />
       <Fact label="원본 assetRef" value={item.assetRef} mono />
       <Fact label="생성 시각" value={formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })} />
       <Fact label="Core 실행 상태" value={item.executionState} mono />

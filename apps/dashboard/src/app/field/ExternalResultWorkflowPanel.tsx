@@ -321,7 +321,8 @@ function SingleVolumeReportDetail({ view }: { view: ExternalSingleVolumeReportVi
       <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
         <div>
           <h4 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h4>
-          <p className="mt-1 leading-5 text-ink-2">작업구역 {view.request.zoneSnapshot.workAreaId}</p>
+          <p className="mt-1 leading-5 text-ink-2">이 측정에 사용한 작업구역</p>
+          <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId}</p>
         </div>
         <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>

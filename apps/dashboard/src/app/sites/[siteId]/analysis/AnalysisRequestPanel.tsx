@@ -285,7 +285,8 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
   const metrics = result?.metrics ?? summary.metrics;
   if (!metrics) return null;
   return <section className="border-t border-line px-4 py-3" aria-label="계산 결과">
-    <h3 className="text-[13px] font-bold">계산 결과{summary.resultId ? ` · ${summary.resultId}` : ""}</h3>
+    <h3 className="text-[13px] font-bold">계산 결과</h3>
+    {summary.resultId && <p className="mt-0.5 break-all font-mono text-[10.5px] text-ink-muted">결과 ID · {summary.resultId}</p>}
     <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</dd></div>
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.fillM3, "m³")}</dd></div>

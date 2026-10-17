@@ -64,7 +64,7 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
     const exactHref = `/sites/${encodeURIComponent(siteId)}/observations/${encodeURIComponent(item.reportRef)}`;
     return (
       <article className="rounded-lg border border-line bg-surface px-4 py-3">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[14px] font-semibold">보관 근거 확인 필요</p><p className="mt-1 text-[12px] text-ink-muted">결과 기록 {item.reportRef.slice(-8)}</p></div><div className="flex gap-2"><CopyLink href={exactHref} />{!detailMode && <Link className="btn print:hidden" href={exactHref}>이 결과 열기</Link>}</div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[14px] font-semibold">보관 근거 확인 필요</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">결과 기록 참조 · {item.reportRef.slice(-8)}</p></div><div className="flex gap-2"><CopyLink href={exactHref} />{!detailMode && <Link className="btn print:hidden" href={exactHref}>이 결과 열기</Link>}</div></div>
         <p className="mt-1 text-[13px] leading-5 text-ink-2">이 결과는 이력에 남아 있지만 현재 보관 근거를 검증하지 못했습니다. 수치와 비교 차트는 표시하지 않습니다.</p>
       </article>
     );

@@ -361,7 +361,7 @@ export function ExternalEvidencePanel({
           .filter((row) => !row.revisions)
           .map((row) => ({
             workOrderId: row.order.workOrderId,
-            label: row.order.name ?? `관측 작업 ${row.order.workOrderId}`,
+            label: row.order.name ?? "이름 없는 관측 작업",
           }));
         setPairLoadFailures(failures);
         setPairLoad(failures.length === 0 ? "ready" : "partial");
