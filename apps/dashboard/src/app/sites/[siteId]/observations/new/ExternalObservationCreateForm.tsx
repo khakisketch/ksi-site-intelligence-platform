@@ -37,6 +37,7 @@ export function ExternalObservationCreateForm({
   temporalPolicy = null,
   suggestedName = null,
   templateNotice = null,
+  scopeNotice = null,
 }: {
   siteId: string;
   siteName: string;
@@ -45,9 +46,9 @@ export function ExternalObservationCreateForm({
   temporalPolicy?: TemporalCoherencePolicy | null;
   suggestedName?: string | null;
   templateNotice?: string | null;
+  scopeNotice?: string | null;
 }) {
   const router = useRouter();
-  const [intent, setIntent] = useState<"external" | "flight">("external");
   const [name, setName] = useState(suggestedName ?? "");
   const [selected, setSelected] = useState<string[]>(() => [...initialWorkAreaIds]);
   const [attempt, setAttempt] = useState<CreateAttempt | null>(null);
@@ -72,6 +73,11 @@ export function ExternalObservationCreateForm({
       ? current.filter((item) => item !== workAreaId)
       : [...current, workAreaId]);
   };
+  // 돌아가기 링크는 현재 정확히 하나 고른 승인 범위만 싣는다. 없거나 여러 개면
+  // 맨 현장으로 간다 — 추측으로 범위를 붙이지 않는다.
+  const returnHref = selected.length === 1 && selected[0]
+    ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(selected[0])}`
+    : `/sites/${encodeURIComponent(siteId)}`;
 
   const submit = async () => {
     if (busy || submitLock.current) return;
@@ -115,7 +121,7 @@ export function ExternalObservationCreateForm({
         throw new Error("create failed");
       }
       if (!active.current || submitAbort.current !== controller) return;
-      router.push(`/field/work-orders/${encodeURIComponent((value as { workOrderId: string }).workOrderId)}`);
+      router.push(`/field/work-orders/${encodeURIComponent((value as { workOrderId: string }).workOrderId)}#external-submissions`);
     } catch (caught) {
       if (active.current && submitAbort.current === controller && !(caught instanceof DOMException && caught.name === "AbortError")) {
         setError("응답을 확인하지 못했습니다. 같은 요청을 다시 시도하거나 작업 목록에서 이미 만들어졌는지 확인하세요.");
@@ -130,31 +136,20 @@ export function ExternalObservationCreateForm({
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
       <div>
-        <p className="text-[12.5px] text-ink-2">현장에 필요한 관측 방식을 고르고, 관측 작업이 만들어지면 자료 등록으로 바로 이어갑니다.</p>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[22px] font-bold tracking-tight">{siteName} · 관측 자료 등록</h2>
-          <Link href={`/sites/${encodeURIComponent(siteId)}`} className="text-[13px] font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
+          <Link href={returnHref} className="text-[13px] font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
         </div>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          className={`relative rounded-xl border p-4 text-left ${intent === "external" ? "border-2 border-ink-1 bg-sunk" : "border-line bg-surface"}`}
-          aria-pressed={intent === "external"}
-          onClick={() => setIntent("external")}
-        >
-          {intent === "external" && (
-            <span className="absolute top-3 right-3 text-[11px] font-bold text-ink-1">✓ 선택됨</span>
-          )}
-          <span className="block text-[15px] font-bold">외부 산출물 등록</span>
-          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">이미 만든 정사영상과 DSM을 등록해 비교 결과를 확인합니다.</span>
-        </button>
-        <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="rounded-xl border border-line bg-surface p-4 hover:bg-sunk">
-          <span className="block text-[15px] font-bold">외부 비교 기록 보기</span>
-          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">등록된 외부 비교 기록과 검토 상태를 확인합니다.</span>
-        </Link>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">
+          등록된 외부 비교 기록과 검토 상태는{" "}
+          <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="font-semibold text-accent-text hover:underline">
+            외부 비교 기록
+          </Link>
+          에서 확인하세요.
+        </p>
       </div>
 
-      {intent === "external" && (workAreas.length === 0 ? (
+      {workAreas.length === 0 ? (
         <section className="rounded-xl border border-line bg-surface p-4">
           <h2 className="text-[15px] font-bold">먼저 작업구역을 등록하세요</h2>
           <p className="mt-1 text-[13px] leading-5 text-ink-2">비교할 범위가 있어야 결과의 위치와 의미를 확인할 수 있습니다.</p>
@@ -166,7 +161,9 @@ export function ExternalObservationCreateForm({
             <div>
               <h2 className="text-[16px] font-bold">외부 산출물 등록</h2>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">이 작업은 파일 등록과 비교 확인을 위한 것입니다. 비행 또는 장비 제어는 시작하지 않습니다.</p>
-              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : initialWorkAreaIds.length > 0 && <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요.</p>}
+              {/* 반복 템플릿 공지는 실제 검증된 반복 진입에서만 page가 넘긴다. 범위 선택만으로 추론하지 않는다. */}
+              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : null}
+              {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{scopeNotice}</p>}
             </div>
             <label className="flex flex-col gap-1 text-[13px] font-semibold">작업 이름
               <input aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />
@@ -180,17 +177,23 @@ export function ExternalObservationCreateForm({
                 </label>)}
               </div>
             </fieldset>
+            {selected.length > 1 && (
+              <p role="status" className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+                작업구역을 {selected.length}개 선택했습니다. 구역별 자료 목록·비교 선택에서는 한 구역씩 확인해야 바로 보입니다. 구역별 비교용이면 하나만 선택하세요. 여러 구역 저장은 그대로 유지됩니다.
+              </p>
+            )}
             {attempt && <p className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 요청은 같은 내용으로 재시도합니다. 내용을 바꾸려면 새 요청으로 시작하세요.</p>}
             <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "산출물 등록 시작"}</button>
+              <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "작업 만들고 파일 등록으로 계속"}</button>
             </div>
+            <p className="text-[12px] leading-5 text-ink-2">작업이 만들어지면 파일 제출·검사 화면으로 이동합니다. 파일 올리기는 그 화면에서 이어갑니다.</p>
             {!busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
             {!busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
             {!busy && !attempt && name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
             {error && <p role="alert" className="text-[13px] text-high-ink">{error}{attempt && <> <Link href="/field" className="font-semibold underline">작업 목록 확인</Link></>}</p>}
           </section>
         </ResponsiveActionBoundary>
-      ))}
+      )}
     </div>
   );
 }

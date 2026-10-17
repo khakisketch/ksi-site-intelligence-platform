@@ -73,7 +73,10 @@ describe("Site detail start guidance", () => {
     const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(guide.getAllByText("1개 목록됨")).toHaveLength(2);
     expect(guide.getByText("최근 페이지 50개 · 더 있음")).toBeTruthy();
-    expect(guide.getByRole("link", { name: "비교할 자료 선택" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+    // 작업공간 선택이 있으면 건수 요약만 둔다 — 다음 행동은 작업공간이 안내한다.
+    expect(guide.queryByRole("link")).toBeNull();
+    expect(guide.queryByText(/다음 확인/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
     expect(screen.queryByRole("link", { name: "새 관측 시작" })).toBeNull();
     expect(mocked.history).toHaveBeenCalledWith("site-1", { limit: 50 });
   });
@@ -96,7 +99,12 @@ describe("Site detail start guidance", () => {
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({}),
     }));
-    expect(screen.getByRole("link", { name: "관측 작업 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
+    // 작업공간 선택이 있으면 관측 작업이 없어도 건수 요약만 둔다.
+    const summaryOnly = within(screen.getByRole("region", { name: "현장 시작 안내" }));
+    expect(summaryOnly.getAllByText("1개 목록됨")).toHaveLength(2);
+    expect(summaryOnly.getByText("0개 목록됨")).toBeTruthy();
+    expect(summaryOnly.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("link", { name: "관측 작업 현황 확인" })).toBeNull();
     expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
   });
 

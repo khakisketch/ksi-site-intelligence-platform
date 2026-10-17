@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -13,6 +14,7 @@ import {
   type TrustedExternalResultLink,
 } from "@/app/field/ExternalResultWorkflowPanel";
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
+import { describeExternalBasenameIssue } from "@/lib/external-reconstruction-basename";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
 import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel } from "@/app/field/registration-language";
@@ -121,6 +123,7 @@ function exactBindingsMatch(expected: NonNullable<Revision["submission"]["artifa
 }
 
 function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true, workAreaNames }: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>> }) {
+  const router = useRouter();
   const workers = useRef(new Set<Worker>());
   const scope = useRef(0);
   const listAbort = useRef<AbortController | null>(null);
@@ -151,6 +154,16 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [resume, setResume] = useState<Revision | null>(null);
   const [frozenAttempt, setFrozenAttempt] = useState<FrozenAttempt | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // 등록 기준에 맞지 않는 파일 이름 — 슬롯별로 둔다. 같은 내용의 POST·동결을
+  // 막고, 이전에 확인한 선택을 조용히 내보내지 않는다. 유효한 다시 선택·
+  // 지우기로만 슬롯마다 푼다.
+  const [nameIssues, setNameIssues] = useState<Record<ExternalArtifactKind, { fileName: string; reason: string } | null>>({ ortho: null, dsm: null });
+  // 422로 분류된 선언 — 같은 식별자로는 다시 시도해도 접수되지 않는다. 조용히
+  // 버리지 않고, 명시적인 새 등록으로만 새 식별자를 만든다.
+  const [payloadRejected, setPayloadRejected] = useState(false);
+  // 확인된 봉인(seal.ok + 현 범위) — 같은 파일의 반복 업로드·승인을 막는다.
+  // 응답 미확인(uncertain)에는 세우지 않고, 명시적인 새 등록·이어하기로만 푼다.
+  const [sealedComplete, setSealedComplete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [relativeVolumeDecision, setRelativeVolumeDecision] = useState<ExternalRelativeVolumeDecision | null>(null);
@@ -292,6 +305,15 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
 
   const select = async (kind: ExternalArtifactKind, file?: File) => {
     if (!file || hashing || frozenAttempt || (!newIntentAllowed && !resume)) return;
+    // 이어하기(등록된 참조의 바이트 대조)는 새 신고가 아니라 파일 이름 문법을
+    // 적용하지 않는다. 새 등록만 해시 같은 비싼 확인 전에 파일 이름을 검사한다.
+    if (!resume) {
+      const issue = describeExternalBasenameIssue(file.name);
+      if (issue !== null) {
+        setNameIssues((current) => ({ ...current, [kind]: { fileName: file.name, reason: issue } }));
+        return;
+      }
+    }
     const requestScope = scope.current;
     const controller = new AbortController();
     hashAbort.current?.abort();
@@ -317,6 +339,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         setDsm(result);
       }
       setHeaders((current) => ({ ...current, [kind]: header }));
+      setNameIssues((current) => ({ ...current, [kind]: null }));
       if (!resume) {
         const recognized = header.status === "recognized" ? header.value : null;
         setDeclaredCrs((current) => ({ ...current, [kind]: recognized?.declaredCrs ?? "" }));
@@ -330,8 +353,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       setMessage(null);
     } catch (error) {
       if (!isAbortError(error) && currentScope(requestScope) && hashAbort.current === controller) setMessage("파일 정보를 확인하지 못했습니다.");
-    } finally {
-      if (hashAbort.current === controller) {
+    } finally {      if (hashAbort.current === controller) {
         hashAbort.current = null;
         if (currentScope(requestScope)) {
           setHashing(false);
@@ -347,6 +369,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     setResume(revision);
     setOrtho(null);
     setDsm(null);
+    setNameIssues({ ortho: null, dsm: null });
+    setSealedComplete(false);
     setSoftwareName(revision.submission.producerDeclaration?.softwareName ?? "");
     setSoftwareVersion(revision.submission.producerDeclaration?.softwareVersion ?? "");
     setMessage("등록된 파일과 같은 파일을 다시 선택하세요.");
@@ -360,9 +384,35 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     }
     setResume(null);
     setFrozenAttempt(null);
+    setPayloadRejected(false);
+    setNameIssues({ ortho: null, dsm: null });
+    setSealedComplete(false);
     setSubmissionId(attemptId());
     setSubmittedAt(utcSeconds());
     setMessage(null);
+  };
+
+  // 기준에 맞지 않는 이름이 들어온 자리 — 이전에 확인한 선택을 조용히 내보내지
+  // 않고, 유효한 다시 선택·아래 지우기로만 슬롯마다 풀리게 둔다. 정사영상을
+  // 지우면 함께 올린 DSM 파일도 없어지므로 DSM 문제도 함께 비운다.
+  const clearSlot = (kind: ExternalArtifactKind) => {
+    if (busy || hashing || frozenAttempt) return;
+    if (kind === "ortho") {
+      setNameIssues({ ortho: null, dsm: null });
+      setOrtho(null);
+      setDsm(null);
+      setHeaders({});
+      setDeclaredCrs({ ortho: "", dsm: "" });
+    } else {
+      setNameIssues((current) => ({ ...current, dsm: null }));
+      setDsm(null);
+      setHeaders((current) => {
+        const next = { ...current };
+        delete next.dsm;
+        return next;
+      });
+      setDeclaredCrs((current) => ({ ...current, dsm: "" }));
+    }
   };
 
   const freezeCurrentAttempt = (): FrozenAttempt | null => {
@@ -373,7 +423,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   };
 
   const submit = async () => {
-    if (!ortho || hashing || busy) return;
+    if (!ortho || hashing || busy || sealedComplete) return;
     let revision = resume;
     let bindings: readonly HashResult[];
     let attempt = frozenAttempt;
@@ -387,6 +437,16 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       }
       bindings = [ortho, ...(dsm ? [dsm] : [])];
     } else {
+      // 기준에 맞지 않는 이름·422 분류 선언은 같은 내용으로 보내지 않는다.
+      // 슬롯마다 남은 문제가 하나라도 있으면 동결·전송하지 않는다.
+      if (nameIssues.ortho || nameIssues.dsm) {
+        setMessage("파일 이름이 등록 기준에 맞지 않아 보낼 수 없습니다. 조건에 맞는 복사본을 다시 선택하거나 이전 선택을 지우세요.");
+        return;
+      }
+      if (payloadRejected) {
+        setMessage("제출 내용이 등록 기준에 맞지 않아 접수되지 않았습니다. 같은 내용으로는 다시 시도해도 접수되지 않습니다. 새로 등록하기로 새 식별자를 만들어 다시 시도하세요.");
+        return;
+      }
       if (!attempt) {
         if (!newIntentAllowed) {
           setMessage("업무 종료 상태에서는 새 산출물 등록을 시작할 수 없습니다.");
@@ -412,7 +472,16 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     try {
       if (!revision) {
         const response = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(attempt!.requestBody), signal: controller.signal });
-        if (!response.ok) throw new Error("registration failed");
+        if (!response.ok) {
+          // 422는 내용 자체가 기준에 맞지 않는 분류 — 같은 식별자로는 다시
+          // 보내지 않는다. 동결된 시도는 버리지 않고 명시적인 새 등록을 둔다.
+          if (response.status === 422) {
+            setPayloadRejected(true);
+            setMessage("제출 내용이 등록 기준에 맞지 않아 접수되지 않았습니다. 같은 내용으로는 다시 시도해도 접수되지 않습니다. 새로 등록하기로 새 식별자를 만들어 파일과 입력값을 확인한 뒤 다시 시도하세요.");
+            return;
+          }
+          throw new Error("registration failed");
+        }
         revision = await response.json() as Revision;
       }
       if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
@@ -436,8 +505,14 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const seal = await fetch(`/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(revision.submissionRef)}/revisions/${revision.submission.revision}/seal`, { method: "POST", signal: controller.signal });
       if (!seal.ok) throw new Error("seal failed");
       if (!currentScope(requestScope) || submissionAbort.current !== controller) return;
+      // 확인된 봉인에서만 완료로 잠근다. 응답 미확인 경로(throw·중단)는 동결된
+      // 시도를 그대로 두고 같은 식별자로 다시 확인할 수 있게 둔다.
+      setSealedComplete(true);
       setMessage("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
       await load(requestScope);
+      // The server owns the stage and scoped continuation. Refresh only after
+      // acknowledged sealing, merging its payload without resetting client drafts.
+      if (currentScope(requestScope) && submissionAbort.current === controller) router.refresh();
     } catch (error) {
       if (!isAbortError(error) && currentScope(requestScope) && submissionAbort.current === controller) setMessage("산출물 등록을 완료하지 못했습니다. 목록을 다시 확인하세요.");
     } finally {
@@ -458,8 +533,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     setMessage("등록을 중단했습니다.");
   };
 
-  const canSubmit = Boolean(ortho) && !busy && !hashing
-    && (Boolean(resume) || Boolean(frozenAttempt) || Boolean(newIntentAllowed && expectedEpochId && softwareName.trim() && softwareVersion.trim() && captureIntervalValid));
+  const canSubmit = Boolean(ortho) && !busy && !hashing && !sealedComplete && !nameIssues.ortho && !nameIssues.dsm
+    && (Boolean(resume) || (!payloadRejected && (Boolean(frozenAttempt) || Boolean(newIntentAllowed && expectedEpochId && softwareName.trim() && softwareVersion.trim() && captureIntervalValid))));
   const formIsFrozen = Boolean(frozenAttempt || resume);
 
   const volumeDecisionReceiver = (store: (decision: ExternalRelativeVolumeDecision | null) => void) => (value: {
@@ -535,11 +610,25 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           selectedFileName={dsm?.file.name ?? null}
         />
         {dsm && headers.dsm && <ExternalHeaderRecognition slot="dsm" state={headers.dsm} crs={declaredCrs.dsm} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, dsm: value }))} />}
+        <p className="text-[12px] leading-5 text-ink-2">파일 이름은 영문·숫자로 시작하고 영문·숫자·밑줄(_)·점(.)·하이픈(-)만 쓸 수 있습니다(최대 255자). 원본 파일은 바꾸지 말고 조건에 맞는 이름의 복사본을 선택하세요. 이름을 자동으로 바꾸지는 않습니다.</p>
+        {(["ortho", "dsm"] as const).map((kind) => {
+          const issue = nameIssues[kind];
+          if (!issue) return null;
+          const keptName = kind === "ortho" ? ortho?.file.name ?? null : dsm?.file.name ?? null;
+          const slotLabel = kind === "ortho" ? "정사영상" : "DSM";
+          return <div key={kind} role="alert" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+            <p className="break-all">‘{issue.fileName}’ 파일은 등록할 수 없습니다. {issue.reason} 원본 파일은 바꾸지 말고, 조건에 맞는 이름의 복사본을 선택하세요.</p>
+            {keptName
+              ? <p className="mt-1">이전에 확인한 {slotLabel} 파일({keptName})은 그대로 두었습니다. 유효한 파일을 다시 선택하면 바뀌고, 지우면 비워집니다.</p>
+              : <p className="mt-1">선택된 {slotLabel} 파일이 없습니다. 조건에 맞는 복사본을 다시 선택하세요.</p>}
+            <button className="btn mt-2 w-fit" disabled={busy || hashing || Boolean(frozenAttempt)} onClick={() => clearSlot(kind)}>이전 선택 지우기</button>
+          </div>;
+        })}
         {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새로 등록하기</button>}
         {hashing && <p role="status" className="text-ink-2">파일 확인 중: {formatBytesKo(hashProgress ?? 0)}</p>}
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : "정사영상을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ""}</p>
-        <button className="btn w-fit" disabled={!canSubmit} onClick={() => void submit()}>{busy ? "자료 등록 마무리 중" : "자료 등록 마치기"}</button>
+        <button className="btn w-fit" disabled={!canSubmit} onClick={() => void submit()}>{busy ? "자료 등록 마무리 중" : sealedComplete ? "파일 제출 완료" : "자료 등록 마치기"}</button>
         <p className="text-[12px] leading-5 text-ink-2">마치면 파일 검사가 준비됩니다. 검증 완료를 뜻하지 않습니다.</p>
         {uploadProgress && <p role="status" className="text-ink-2">{uploadProgress.artifactId === "ortho" ? "정사영상" : "DSM"} {uploadProgress.phase === "uploaded" ? "파일 전송 완료" : "파일 전송 중"}: {formatBytesKo(uploadProgress.transferredBytes)} / {formatBytesKo(uploadProgress.totalBytes)} {uploadProgress.phase === "uploading" && " · 전송 시간이나 비율은 추정하지 않습니다."}</p>}
         {busy && <button className="btn w-fit" onClick={cancelSubmission}>등록 중단</button>}

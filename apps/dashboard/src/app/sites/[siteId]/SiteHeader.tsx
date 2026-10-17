@@ -9,21 +9,18 @@ import {
 } from "@/lib/site-epochs";
 import type { SiteView } from "@/lib/core-api/types";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
+import { siteTabHref, type SiteHeaderScope } from "@/lib/operator-journey";
 
 
-/** 링크를 유지한 채 한 파라미터만 바꾼다 — 탭을 옮겨도 고른 시점을 잃지 않는다. */
+/** 탭을 옮겨도 고른 시점을 잃지 않는다 — 직접 라우트 두 개는 검증된 범위만 싣는다. */
 function hrefWith(
   siteId: string,
   current: { section?: string; epoch?: string },
   patch: { section?: string; epoch?: string },
+  scope: SiteHeaderScope,
 ): string {
   const merged = { ...current, ...patch };
-  const params = new URLSearchParams();
-  if (merged.section && merged.section !== "observations") params.set("section", merged.section);
-  if (merged.epoch) params.set("epoch", merged.epoch);
-  const search = params.toString();
-  const base = `/sites/${encodeURIComponent(siteId)}`;
-  return search ? `${base}?${search}` : base;
+  return siteTabHref(siteId, merged.section ?? "observations", { epoch: merged.epoch }, scope);
 }
 
 /**
@@ -41,6 +38,8 @@ export function SiteHeader({
   latestExternalReportKnown,
   canCreateWorkOrder,
   canEditAoi,
+  scopedWorkAreaId = null,
+  scopedAssetRef = null,
 }: {
   site: SiteView;
   selectedEpochId: string | null;
@@ -49,16 +48,31 @@ export function SiteHeader({
   latestExternalReportKnown: boolean;
   canCreateWorkOrder: boolean;
   canEditAoi: boolean;
+  /** 루트가 검증한 현행 승인 구역 — 원문 쿼리를 그대로 두지 않는다. 없으면 범위 없이 간다. */
+  scopedWorkAreaId?: string | null;
+  /** 같은 등록 자료 목록에서 확인한 자산 참조 — 구역과 함께일 때만 싣는다. */
+  scopedAssetRef?: string | null;
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { section: tab, epoch: selectedEpochId ?? undefined };
+  const scope: SiteHeaderScope = {
+    workAreaId: scopedWorkAreaId ?? null,
+    assetRef: scopedAssetRef ?? null,
+  };
   const preparationAction = resolveSiteOperatorNextAction(site, {
     canEditSite: canEditAoi,
     canCreateWorkOrder,
   }, { includeRoutineSurvey: true });
+  // 관측 자료 등록은 검증된 구역이 있을 때 범위를 함께 싣는다. 전체 경계·작업구역
+  // 설정(AOI) 링크에는 붙이지 않는다. 관측 탭의 중복 진입점은 그대로 둔다.
+  const scopedPreparationAction = preparationAction
+    && preparationAction.kind === "CREATE_OBSERVATION"
+    && scope.workAreaId
+    ? { ...preparationAction, href: `${preparationAction.href}?workAreaId=${encodeURIComponent(scope.workAreaId)}` }
+    : preparationAction;
   // The observations panel owns this same action on its default tab; keep one
   // entry point there while the mobile panel remains the direct action surface.
-  const primaryAction = tab === "observations" ? null : preparationAction;
+  const primaryAction = tab === "observations" ? null : scopedPreparationAction;
   return (
     <header className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 sm:px-5">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
@@ -116,7 +130,7 @@ export function SiteHeader({
           {SITE_TABS.map((option) => (
             <Link
               key={option.key}
-              href={hrefWith(site.siteId, current, { section: option.key })}
+              href={hrefWith(site.siteId, current, { section: option.key }, scope)}
               aria-current={option.key === tab ? "page" : undefined}
               className={`tap-target flex items-center rounded-md px-3 text-[13px] ${option.key === tab ? "bg-sunk font-bold" : "text-ink-2"}`}
             >
@@ -132,7 +146,7 @@ export function SiteHeader({
           return (
             <Link
               key={option.key}
-              href={hrefWith(site.siteId, current, { section: option.key })}
+              href={hrefWith(site.siteId, current, { section: option.key }, scope)}
               aria-current={active ? "page" : undefined}
               className={`tap-target inline-flex items-center border-b-2 px-3 text-[13px] break-keep transition-colors ${
                 active

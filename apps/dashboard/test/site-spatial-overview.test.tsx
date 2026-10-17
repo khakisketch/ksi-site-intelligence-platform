@@ -389,7 +389,7 @@ describe("Site spatial overview honesty", () => {
     });
     await renderDefaultTab({});
     expect(screen.getAllByRole("link", { name: "이 구역의 최근 분석 확인" })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "분석 기록 8건 모두 보기" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "현장 분석 기록 보기" })).toBeTruthy();
   });
 
   it("offers one primary next action with the rest as inline links", async () => {
@@ -404,5 +404,80 @@ describe("Site spatial overview honesty", () => {
     await renderDefaultTab({});
     expect(screen.getByRole("link", { name: "현장 전체 범위 보기" }).getAttribute("href"))
       .toBe("/sites/site-1?section=work-orders#site-aoi");
+  });
+
+  function grantPermissions(...perms: string[]) {
+    mocked.permissions.mockImplementation((perm: string) => Promise.resolve(perms.includes(perm)));
+  }
+
+  function analysisResultFixture() {
+    return {
+      siteId: "site-1",
+      items: [{
+        analysisId: "a1",
+        siteId: "site-1",
+        workAreaId: "tiny-1",
+        executionState: "COMPLETED",
+        suitabilityState: "EVALUATED",
+        createdAt: "2026-10-14T00:00:00Z",
+        resultId: "res-1",
+        metrics: null,
+        limitationCount: 0,
+        analysisHref: "/sites/site-1/analysis?analysisId=a1",
+      }],
+      nextCursor: null,
+    };
+  }
+
+  it("hides the duplicate register link when the primary action already registers this scope", async () => {
+    grantPermissions("WORK_ORDERS_WRITE");
+    await renderDefaultTab({});
+    const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
+    const registerHrefs = actions.getAllByRole("link").map((link) => link.getAttribute("href"));
+    expect(registerHrefs.filter((href) => href === "/sites/site-1/observations/new?workAreaId=tiny-1")).toHaveLength(1);
+    expect(actions.queryByRole("link", { name: "이 구역 자료 등록" })).toBeNull();
+  });
+
+  it("gives viewers one accurate Site-history link, not a dead form anchor or a false filtered-list claim", async () => {
+    mocked.analyses.mockResolvedValue(analysisResultFixture());
+    await renderDefaultTab({});
+    const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
+    expect(actions.queryByRole("link", { name: "이 구역 변화 비교" })).toBeNull();
+    const listLink = screen.getByRole("link", { name: "현장 분석 기록 보기" });
+    expect(listLink.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1");
+    expect(listLink.getAttribute("href")).not.toContain("#new-analysis-request");
+    expect(actions.getByRole("link", { name: "이 구역의 최근 분석 확인" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "이 구역 분석 기록 보기" })).toBeNull();
+  });
+
+  it("shows the scoped compare entry to analysis writers without registration permission", async () => {
+    grantPermissions("SITES_WRITE");
+    await renderDefaultTab({});
+    const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
+    expect(actions.queryByRole("link", { name: "이 구역 자료 등록" })).toBeNull();
+    const compare = actions.getByRole("link", { name: "이 구역 변화 비교" });
+    expect(compare.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1#new-analysis-request");
+  });
+
+  it("keeps both scoped entries distinct for writers with a prior result", async () => {
+    grantPermissions("WORK_ORDERS_WRITE", "SITES_WRITE");
+    mocked.analyses.mockResolvedValue(analysisResultFixture());
+    await renderDefaultTab({});
+    const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
+    expect(actions.getByRole("link", { name: "이 구역 자료 등록" }).getAttribute("href"))
+      .toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
+    expect(actions.getByRole("link", { name: "이 구역 변화 비교" }).getAttribute("href"))
+      .toBe("/sites/site-1/analysis?workAreaId=tiny-1#new-analysis-request");
+    expect(actions.queryByRole("link", { name: "이 구역 분석 기록 보기" })).toBeNull();
+  });
+
+  it("keeps an archived scope readable without offering new registration or a dead comparison form", async () => {
+    grantPermissions("WORK_ORDERS_WRITE", "SITES_WRITE");
+    mocked.areas.mockResolvedValue({ workAreas: [areaFixture({ status: "ARCHIVED" })] });
+    await renderDefaultTab({ workAreaId: "tiny-1" });
+    const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
+    expect(actions.getAllByRole("link").every((link) => !/observations\/new|#new-analysis-request/.test(link.getAttribute("href") ?? ""))).toBe(true);
+    expect(actions.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toContain("workAreaId=tiny-1");
+    expect(actions.getByText(/보관된 구역입니다/)).toBeTruthy();
   });
 });

@@ -23,6 +23,7 @@ import { WorkOrderOperationsPanel } from "@/app/field/WorkOrderOperationsPanel";
 import { OperationsWorkHeader } from "@/app/field/OperationsWorkHeader";
 import { deriveExternalWorkOrderStage } from "@/app/field/external-work-order-stage";
 import { presentWorkOrder } from "@/app/field/work-order-stage";
+import { resolveWorkOrderContinuation } from "@/lib/operator-journey";
 
 export const metadata = { title: "관측 작업 · KSI" };
 
@@ -173,15 +174,31 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     ? await getObservationWorkOrderOperations(workOrder.workOrderId).catch(() => null)
     : null;
   const workflowClosed = operations?.workflowStatus === "CLOSED";
-  const submissions = externalWorkflow
-    ? await listExternalReconstructionSubmissions(workOrder.workOrderId).catch(() => [])
-    : [];
+  // 목록 실패를 빈 목록으로 바꾸지 않는다 — 실패는 모름으로 둔다.
+  const submissionsResult = externalWorkflow
+    ? await listExternalReconstructionSubmissions(workOrder.workOrderId).then(
+      (items) => ({ ok: true as const, items }),
+      () => ({ ok: false as const, items: [] as Awaited<ReturnType<typeof listExternalReconstructionSubmissions>> }),
+    )
+    : { ok: true as const, items: [] as Awaited<ReturnType<typeof listExternalReconstructionSubmissions>> };
+  const submissions = submissionsResult.items;
+  const submissionsKnown = submissionsResult.ok;
   const latestItem = history?.items.find((item) => item.state === "AVAILABLE" && item.result?.currentWorkOrderId === workOrder.workOrderId);
   const projection = latestItem
     ? await getSiteExternalRelativeVolumeReport(workOrder.siteId, latestItem.reportRef).catch(() => null)
     : null;
   const ownResult = latestItem?.result ?? null;
-  const stage = externalWorkflow
+  // 단일 현행 활성 구역일 때만 다음 확인 범위를 미리 좁힌다. 여러 구역·보관·
+  // 모르는 연결이면 좁히지 않는다(목록에서 직접 고른다). 추가 조회 없음.
+  const continuation = !planningBinding && externalExecutionContext === "EXTERNAL_INGRESS"
+    ? resolveWorkOrderContinuation({
+      areas: (workAreas?.workAreas ?? []).map((area) => ({ workAreaId: area.workAreaId, name: area.name, status: area.status })),
+      workAreaIds: workOrder.workAreaIds,
+    })
+    : null;
+  const hasRetainedSubmissions = submissionsKnown && submissions.length > 0;
+  const submissionsUnknown = externalWorkflow && !submissionsKnown;
+  const baseStage = externalWorkflow
     ? deriveExternalWorkOrderStage({
         planningOnly: externalExecutionContext === "EXTERNAL_REOBSERVATION_PLANNING",
         workflowClosed,
@@ -190,6 +207,20 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         latestResult: ownResult,
       })
     : null;
+  // 목록 실패를 빈 목록으로 보지 않는다 — 모름이면 등록 준비 단계로 속이지 않고
+  // 목록 재확인을 안내한다. 결과·종료가 이미 확정된 상태는 그대로 둔다.
+  const stage = submissionsUnknown && !workflowClosed && !ownResult
+    ? {
+      stage: "REGISTER" as const,
+      label: "등록 상태 확인 필요",
+      detail: "산출물 등록 목록을 불러오지 못했습니다. 목록을 다시 확인한 뒤 이어가세요. 이 화면의 등록·검사·재시도 상태는 그대로 둡니다.",
+      tone: "warning" as const,
+      anchor: "external-submissions",
+    }
+    : baseStage;
+  const siteReturnHref = continuation?.workAreaId
+    ? `/sites/${encodeURIComponent(workOrder.siteId)}?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
+    : `/sites/${encodeURIComponent(workOrder.siteId)}`;
   const status = presentWorkOrder(workOrder.status, workOrder.executionMode);
   const pendingDrafts = (drafts ?? []).filter((draft) => draft.status === "PENDING");
   const unavailableRecords = [drafts === null ? "재관측 제안" : null, history === null ? "보존된 결과 목록" : null].filter(Boolean);
@@ -243,6 +274,30 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
             <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations/new?repeatWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}`}>이 범위로 관측 자료 등록</Link>
           </div>
         </section>}
+
+        {!planningBinding && externalExecutionContext === "EXTERNAL_INGRESS" && hasRetainedSubmissions && continuation && (() => {
+          const sitePath = `/sites/${encodeURIComponent(workOrder.siteId)}`;
+          const catalogHref = continuation.workAreaId
+            ? `${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
+            : `${sitePath}/spatial-assets`;
+          const analysisHref = continuation.workAreaId
+            ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(continuation.workAreaId)}&currentWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}#new-analysis-request`
+            : `${sitePath}/analysis#new-analysis-request`;
+          return <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3" aria-label="등록 자료 다음 확인">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[13px] font-bold">등록 자료 다음 확인</h2>
+              <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+                {continuation.workAreaId
+                  ? "이 작업 범위에서 등록 자료 목록과 변화 분석 요청으로 이어집니다. 분석 후보는 해당 화면의 실제 목록에서 확인합니다."
+                  : "이 작업은 여러 구역에 걸쳐 있어 구역을 자동으로 고르지 않았습니다. 목록에서 구역과 관측을 직접 선택하세요."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link className="btn" href={catalogHref}>등록 자료 목록 보기</Link>
+              <Link className="btn" href={analysisHref}>변화 분석에서 비교하기</Link>
+            </div>
+          </section>;
+        })()}
 
         {(externalWorkflow || latestItem || pendingDrafts.length > 0) && (
           <nav aria-label="다음 행동" className="flex flex-wrap gap-2 rounded-lg border border-line bg-sunk px-4 py-3">
@@ -298,7 +353,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         </details>}
 
         <div className="flex flex-wrap gap-2">
-          <Link href={`/sites/${encodeURIComponent(workOrder.siteId)}`} className="btn">현장으로</Link>
+          <Link href={siteReturnHref} className="btn">현장으로</Link>
           <Link href="/field" className="btn">작업 큐</Link>
         </div>
       </div>

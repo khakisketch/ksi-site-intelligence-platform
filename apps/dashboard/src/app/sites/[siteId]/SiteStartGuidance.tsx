@@ -3,9 +3,10 @@ import Link from "next/link";
 /**
  * 현장 시작 요약 — 공간 확인 작업공간 아래 두는 한 줄 요약.
  *
- * 자료가 있는 현장에서는 큰 온보딩 카드가 아니라 현재 조회된 건수와 다음 확인
- * 위치만 둔다. 비어 있거나 조회 실패(unknown)일 때는 다음 행동 안내를 그대로
- * 둔다. 건수 문구·목적지·"확인 불가" 규율은 그대로 유지한다.
+ * 실제 공간 작업공간이 검증된 선택을 이미 갖고 그 자리에서 다음 행동을
+ * 안내할 때는 건수만 둔다(중복 CTA·다음 문단 없음). 비어 있거나 조회
+ * 실패(unknown)일 때는 다음 행동 안내를 그대로 둔다. 건수 문구·목적지·
+ * "확인 불가" 규율은 그대로 유지한다.
  */
 export function SiteStartGuidance({
   siteId,
@@ -13,12 +14,15 @@ export function SiteStartGuidance({
   observationWorkOrderCount,
   externalResultCount,
   hasMoreExternalResults,
+  hasWorkspaceActions = false,
 }: {
   siteId: string;
   workAreaCount: number | null;
   observationWorkOrderCount: number | null;
   externalResultCount: number | null;
   hasMoreExternalResults: boolean | null;
+  /** 실제 공간 작업공간 선택이 있어 그 자리가 다음 행동을 안내할 때만 true. */
+  hasWorkspaceActions?: boolean;
 }) {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const areaStatus = workAreaCount === null ? "확인 불가" : `${workAreaCount}개 목록됨`;
@@ -51,8 +55,8 @@ export function SiteStartGuidance({
       <p><span className="text-ink-muted">작업구역 </span><span className="font-semibold">{areaStatus}</span></p>
       <p><span className="text-ink-muted">관측 작업 </span><span className="font-semibold">{workOrderStatus}</span></p>
       {externalResultCount !== 0 && <p><span className="text-ink-muted">외부 비교 기록 </span><span className="font-semibold">{resultStatus}</span></p>}
-      <Link href={nextStepAction.href} className="btn ml-auto">{nextStepAction.label}</Link>
+      {!hasWorkspaceActions && <Link href={nextStepAction.href} className="btn ml-auto">{nextStepAction.label}</Link>}
     </div>
-    <p className="mt-1.5 text-[12px] leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>
+    {!hasWorkspaceActions && <p className="mt-1.5 text-[12px] leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>}
   </section>;
 }

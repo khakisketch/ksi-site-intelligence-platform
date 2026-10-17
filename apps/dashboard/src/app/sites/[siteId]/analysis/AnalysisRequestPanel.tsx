@@ -428,7 +428,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
-  return <article className={`rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
+  return <article id={`analysis-${summary.analysisId}`} className={`scroll-mt-5 rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
         <p className="text-[14px] font-bold">{analysisResultTitle(summary.createdAt)}</p>
@@ -796,6 +796,10 @@ export function AnalysisRequestPanel({
   initialAnalysisId,
   organizationId,
   principalId,
+  initialWorkAreaId = "",
+  initialCurrentWorkOrderId = null,
+  scopeNotice = null,
+  currentHintNotice = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -808,6 +812,10 @@ export function AnalysisRequestPanel({
   initialAnalysisId: string | null;
   organizationId?: string;
   principalId?: string;
+  initialWorkAreaId?: string;
+  initialCurrentWorkOrderId?: string | null;
+  scopeNotice?: string | null;
+  currentHintNotice?: string | null;
 }) {
   const router = useRouter();
   const firstPage = fromListPage(initialPage);
@@ -823,11 +831,20 @@ export function AnalysisRequestPanel({
   const [details, setDetails] = useState<Map<string, AnalysisView>>(initialDetails);
   const detailsRef = useRef<Map<string, AnalysisView>>(initialDetails);
   const [selectedId, setSelectedId] = useState<string | null>(initialAnalysisId ?? initialPage.items[0]?.analysisId ?? null);
-  const [workAreaId, setWorkAreaId] = useState("");
+  const [workAreaId, setWorkAreaId] = useState(initialWorkAreaId ?? "");
   const [baselineIndex, setBaselineIndex] = useState("");
-  const [currentIndex, setCurrentIndex] = useState("");
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    if (!initialWorkAreaId || !initialCurrentWorkOrderId) return "";
+    const matches = observations.flatMap((item, index) =>
+      item.selector.workOrderId === initialCurrentWorkOrderId && item.workAreaIds.includes(initialWorkAreaId)
+        ? [String(index)]
+        : [],
+    );
+    return matches.length === 1 && matches[0] ? matches[0] : "";
+  });
   const [baselineTouched, setBaselineTouched] = useState(false);
   const [areaSwitchNotice, setAreaSwitchNotice] = useState<string | null>(null);
+  const [justCreatedId, setJustCreatedId] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [activationBlock, setActivationBlock] = useState<ActivationBlockCode | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1031,6 +1048,7 @@ export function AnalysisRequestPanel({
 
   const choose = (analysisId: string, hasFreshDetail = false) => {
     if (analysisId === selectedIdRef.current) return;
+    setJustCreatedId((current) => (current === analysisId ? current : null));
     if (!hasFreshDetail) retireDetail(analysisId);
     detailGeneration.current += 1;
     evidenceGeneration.current += 1;
@@ -1364,6 +1382,7 @@ export function AnalysisRequestPanel({
       if (!clearPendingAttempt(attemptScope)) throw new Error("요청은 접수됐지만 재시도 기록을 제거하지 못했습니다. 같은 요청으로 다시 확인하세요.");
       setAttempt(null);
       upsertDetail(value);
+      setJustCreatedId(value.analysisId);
       choose(value.analysisId, true);
     } catch (requestError) {
       if (!(requestError instanceof DOMException && requestError.name === "AbortError") && mountedRef.current && createGeneration.current === generation) {
@@ -1489,16 +1508,18 @@ export function AnalysisRequestPanel({
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
       <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
       {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
+      {scopeNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{scopeNotice}</p>}
+      {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
       {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
       <form className="mt-4 grid gap-3 lg:grid-cols-2" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <label className="min-w-0 text-[12.5px] font-semibold lg:col-span-2">작업구역
-          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
+          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
             <option value="">작업구역 선택</option>
             {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
           </select>
         </label>
         <label className="min-w-0 text-[12.5px] font-semibold">기준 관측
-          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) { setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
+          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) { setJustCreatedId(null); setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
             <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
             {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
@@ -1507,7 +1528,7 @@ export function AnalysisRequestPanel({
           <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId} onChange={(event) => {
             if (!discardAttempt()) return;
             const value = event.target.value;
-            setCurrentIndex(value);
+            setJustCreatedId(null); setCurrentIndex(value);
             setAreaSwitchNotice(null);
             // 직접 고른 기준은 현재 변경으로 덮어쓰지 않는다. 기준이 비어 있을
             // 때만 가장 최근 선행 관측을 제안하고, 요청은 직접 눌러야 한다.
@@ -1549,6 +1570,14 @@ export function AnalysisRequestPanel({
           {!busy && !attempt && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
         </div>
       </form>
+      {justCreatedId && !attempt && (
+        <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12.5px] leading-5 text-ink-2">
+          요청이 접수됐습니다. 결과는 위 이력 맨 앞에 있습니다.{" "}
+          <a href={`#analysis-${justCreatedId}`} className="font-semibold text-accent-text underline underline-offset-2">
+            이번 분석 결과 보기
+          </a>
+        </p>
+      )}
     </section>}
   </div>;
 }

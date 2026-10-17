@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -237,5 +237,32 @@ describe("관측 작업 페이지 follow-up", () => {
     expect(screen.getByRole("alert").textContent).toContain("재관측 제안·보존된 결과 목록 확인 불가");
     expect(screen.getByRole("alert").textContent).toContain("해당 기록이 없다는 뜻이 아닙니다");
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
+  });
+
+  it("marks an unreadable submission list unknown instead of faking an empty register-first stage", async () => {
+    mocked.submissions.mockRejectedValueOnce(new Error("unavailable"));
+    await renderPage();
+    expect(screen.getByText("등록 상태 확인 필요")).toBeTruthy();
+    expect(screen.getByText(/산출물 등록 목록을 불러오지 못했습니다/)).toBeTruthy();
+    expect(screen.queryByText("외부 산출물 등록 준비")).toBeNull();
+    expect(screen.queryByRole("region", { name: "등록 자료 다음 확인" })).toBeNull();
+    // 기존 등록·검사 진입과 재시도는 그대로 둔다.
+    expect(screen.getByRole("link", { name: "자료 등록·검사 기록으로 이동" }).getAttribute("href")).toBe("#external-submissions");
+  });
+
+  it("withholds the catalog/analysis continuation until a retained submission exists", async () => {
+    await renderPage();
+    expect(screen.getByText("외부 산출물 등록 준비")).toBeTruthy();
+    expect(screen.queryByRole("region", { name: "등록 자료 다음 확인" })).toBeNull();
+
+    cleanup();
+    mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "동측 구역", status: "ACTIVE" }] });
+    mocked.submissions.mockResolvedValueOnce([{ submissionId: "sub-1", submissionRef: "sub-ref-1", state: "REGISTERED" }]);
+    await renderPage();
+    const continuation = within(screen.getByRole("region", { name: "등록 자료 다음 확인" }));
+    expect(continuation.getByRole("link", { name: "등록 자료 목록 보기" }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).getAttribute("href"))
+      .toBe("/sites/site-1/analysis?workAreaId=area-1&currentWorkOrderId=order-1#new-analysis-request");
   });
 });

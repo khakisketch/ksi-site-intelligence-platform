@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionPanel";
@@ -11,7 +11,8 @@ vi.mock("@/lib/geo/geotiff-header", async (importOriginal) => ({
   readGeoTiffHeader: headerMock.read,
 }));
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+const router = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => router }));
 
 const fetchMock = vi.fn();
 class FakeWorker {
@@ -314,6 +315,7 @@ describe("ExternalReconstructionPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[1]).toEqual(posts[0]);
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 
   it("creates a new identifier only after the operator explicitly starts a new attempt", async () => {
@@ -378,6 +380,7 @@ describe("ExternalReconstructionPanel", () => {
     await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
     expect(requests.filter((request) => request.method === "POST" && request.url.endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
     expect(requests.some((request) => request.url.endsWith("/upload-grants"))).toBe(true);
+    await waitFor(() => expect(router.refresh).toHaveBeenCalledTimes(1));
   });
 
   it("keeps the registration form open when nothing is retained", async () => {
@@ -543,5 +546,236 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
     expect((screen.getByLabelText("정사영상 좌표계 신고") as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
+describe("ExternalReconstructionPanel basename preflight", () => {
+  function hashAs(sha256: string, size = 1) {
+    return vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256, size } } as MessageEvent);
+    });
+  }
+
+  it("rejects a Korean basename before hashing with actionable copy and no POST", async () => {
+    const hashSpy = hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "정사영상_동측.tif")] } });
+    const issue = await screen.findByText(/정사영상_동측.tif’ 파일은 등록할 수 없습니다/);
+    expect(issue.textContent).toContain("영문 외 문자");
+    expect(issue.textContent).toContain("원본 파일은 바꾸지 말고");
+    expect(hashSpy).not.toHaveBeenCalled();
+    expect(screen.queryByText(/확인 완료/)).toBeNull();
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(fetchMock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toHaveLength(0);
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("keeps the previous valid choice, then re-enables on valid reselection or clears it", async () => {
+    hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "한글.tif")] } });
+    await screen.findByText(/이전에 확인한 정사영상 파일\(ortho.tif\)은 그대로 두었습니다/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho2.tif")] } });
+    await waitFor(() => expect(screen.queryByText(/파일은 등록할 수 없습니다/)).toBeNull());
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "또 한글.tif")] } });
+    await screen.findByText(/파일은 등록할 수 없습니다/);
+    fireEvent.click(screen.getByRole("button", { name: "이전 선택 지우기" }));
+    await waitFor(() => expect(screen.queryByText(/파일은 등록할 수 없습니다/)).toBeNull());
+    expect(screen.getByText("정사영상을 선택하세요.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("does not ban a registered-reference resume over the new-declaration name grammar", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      return { ok: true, json: async () => ({ submissions: [registered] }) };
+    });
+    hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "한글.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect(screen.queryByText(/파일은 등록할 수 없습니다/)).toBeNull();
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("classifies a 422 declaration as payload-rejected and requires an explicit new attempt", async () => {
+    const posts: Record<string, unknown>[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions")) {
+        posts.push(JSON.parse(init.body as string));
+        if (posts.length === 1) return { ok: false, status: 422, json: async () => ({ code: "INVALID" }) };
+        return { ok: true, json: async () => ({ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1 } }) };
+      }
+      return { ok: true, json: async () => ({}) };
+    });
+    hashAs("a".repeat(64));
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText(/같은 내용으로는 다시 시도해도 접수되지 않습니다/);
+    expect(posts).toHaveLength(1);
+    expect(router.refresh).not.toHaveBeenCalled();
+    // 같은 식별자로는 조용히 재시도하지 않는다.
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(screen.getByText(/같은 내용으로는 다시 시도해도 접수되지 않습니다/)).toBeTruthy());
+    expect(posts).toHaveLength(1);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    // 명시적인 새 등록만이 새 식별자를 만든다.
+    fireEvent.click(screen.getByRole("button", { name: "새로 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect(posts[1].submissionId).not.toBe(posts[0].submissionId);
+  });
+});
+
+describe("ExternalReconstructionPanel sealed completion lock", () => {
+  function successFlow(posts: { url: string; body?: unknown }[]) {
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [] }) };
+      if (url.endsWith("/external-reconstruction-submissions")) {
+        posts.push({ url, body: init.body ? JSON.parse(init.body as string) : undefined });
+        return { ok: true, json: async () => ({ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1 } }) };
+      }
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+  }
+
+  async function fillAndChoose() {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+  }
+
+  it("locks submit after acknowledged seal and unlocks only on explicit new attempt", async () => {
+    const posts: { url: string; body?: unknown }[] = [];
+    successFlow(posts);
+    await fillAndChoose();
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    const locked = screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement;
+    expect(locked.disabled).toBe(true);
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+    // 두 번째 클릭은 같은 시도로 다시 보내지 않는다.
+    fireEvent.click(locked);
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+    // 명시적인 새 등록만이 잠금을 풀고 새 식별자를 만든다.
+    fireEvent.click(screen.getByRole("button", { name: "새로 등록하기" }));
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(posts).toHaveLength(2));
+    expect((posts[1].body as Record<string, unknown>).submissionId).not.toBe((posts[0].body as Record<string, unknown>).submissionId);
+  });
+
+  it("locks the same way after a registered-reference resume seal", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, observationEpochId: "old-epoch", producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } };
+    const posts: { url: string; body?: unknown }[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      posts.push({ url });
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect((screen.getByRole("button", { name: "파일 제출 완료" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(posts.filter((request) => request.url.endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
+    expect(router.refresh).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ExternalReconstructionPanel per-slot name issues", () => {
+  function hashAs(sha256: string, size = 1) {
+    return vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256, size } } as MessageEvent);
+    });
+  }
+
+  function declarationPosts() {
+    return fetchMock.mock.calls.filter(([url, init]) => (init as RequestInit | undefined)?.method === "POST"
+      && (url as string).endsWith("/external-reconstruction-submissions"));
+  }
+
+  async function fillTwoValidSlots() {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
+    fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm.tif")] } });
+    await screen.findByText(/DSM 1 KB 확인 완료/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+  }
+
+  it("holds every outstanding slot rejection: second-slot recovery does not enable the first slot", async () => {
+    hashAs("a".repeat(64));
+    await fillTwoValidSlots();
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "한글ortho.tif")] } });
+    await screen.findByText(/한글ortho.tif’ 파일은 등록할 수 없습니다/);
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "한글dsm.tif")] } });
+    await screen.findByText(/한글dsm.tif’ 파일은 등록할 수 없습니다/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    // DSM만 고쳐도 정사영상 거부가 그대로 남으므로 제출은 막힌다.
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "dsm2.tif")] } });
+    await waitFor(() => expect(screen.queryByText(/한글dsm.tif’ 파일은 등록할 수 없습니다/)).toBeNull());
+    expect(screen.getByText(/한글ortho.tif’ 파일은 등록할 수 없습니다/)).toBeTruthy();
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(declarationPosts()).toHaveLength(0);
+    // 정사영상을 고르면 풀리고, 그때 단 한 번만 보낸다.
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho2.tif")] } });
+    await waitFor(() => expect(screen.queryByText(/파일은 등록할 수 없습니다/)).toBeNull());
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await waitFor(() => expect(declarationPosts()).toHaveLength(1));
+    expect(router.refresh).not.toHaveBeenCalled();
+  });
+
+  it("clearing the ortho slot also clears the dependent DSM rejection and files", async () => {
+    hashAs("a".repeat(64));
+    await fillTwoValidSlots();
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "한글ortho.tif")] } });
+    await screen.findByText(/한글ortho.tif’ 파일은 등록할 수 없습니다/);
+    fireEvent.change(screen.getByLabelText("DSM GeoTIFF"), { target: { files: [new File(["x"], "한글dsm.tif")] } });
+    await screen.findByText(/한글dsm.tif’ 파일은 등록할 수 없습니다/);
+    const orthoAlert = screen.getByText(/한글ortho.tif’ 파일은 등록할 수 없습니다/).closest('[role="alert"]') as HTMLElement;
+    fireEvent.click(within(orthoAlert).getByRole("button", { name: "이전 선택 지우기" }));
+    await waitFor(() => expect(screen.queryByText(/파일은 등록할 수 없습니다/)).toBeNull());
+    expect(screen.getByText("정사영상을 선택하세요.")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(declarationPosts()).toHaveLength(0);
+    expect(router.refresh).not.toHaveBeenCalled();
   });
 });

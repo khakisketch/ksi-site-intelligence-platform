@@ -1,0 +1,49 @@
+{
+ "fixture": "synthetic practical operator journey (isolated 8096 demo)",
+ "synthetic": true,
+ "core": "http://127.0.0.1:8096",
+ "site": {
+  "siteId": "syn-demo-site-01",
+  "name": "시연 · 토공 현장"
+ },
+ "workAreas": {
+  "north": {
+   "workAreaId": "wa-syn-demo-site-01-0001",
+   "name": "북측 절토구역"
+  },
+  "south": {
+   "workAreaId": "wa-syn-demo-site-01-0003",
+   "name": "남측 성토구역"
+  }
+ },
+ "epochs": {
+  "t0": {
+   "workOrderId": "obs-work-00000002",
+   "submissionRef": "ers-v1-23995c988731335d9bbfd8d907e2047aa7664573b5a2351098f9931d6b1a2f2f",
+   "caption": "10월5일 기준 촬영",
+   "inspection": "INSPECTION_REPORTED"
+  },
+  "t1": {
+   "workOrderId": "obs-work-00000003",
+   "submissionRef": "ers-v1-e695ab76596914f08a0b56064d4250ac585ed440f2c41ca1722b6d11f806146a",
+   "caption": "10월12일 비교 촬영",
+   "inspection": "INSPECTION_REPORTED"
+  }
+ },
+ "analyses": {
+  "reviewed": "analysis-v1-bf7bbc08e3b82965325c128554e234c3",
+  "unreviewed": "analysis-v1-527d054c44ba5f00018df7a86dcb6ff7",
+  "metrics": {
+   "cutM3": 128.0,
+   "fillM3": 0.0,
+   "netM3": -128.0,
+   "uncertaintyM3": null
+  },
+  "suitability": "PROVISIONAL_ACCURACY_UNVERIFIED"
+ },
+ "reviews": {
+  "analysis-v1-bf7bbc08e3b82965325c128554e234c3": "ACKNOWLEDGED"
+ },
+ "thirdPair": "files only under /tmp/opencode/ksi-practical-journey-20261018/receipts/syn-south-* (never registered; new UI uploads need per-subject admin admission)",
+ "notes": "New UI registrations create new subjects; inspection admission is per-subject admin action (typed INSPECTION_PENDING_POLICY until admitted via signed snapshot + POST /v1/operations/external-authority/reload). V2 analyses over admitted epochs need no separate mapping."
+}

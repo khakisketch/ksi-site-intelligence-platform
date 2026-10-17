@@ -359,7 +359,9 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   const nextAction = spatialPanel.getByRole("link", { name: "관측 자료 등록", exact: true });
   await expect(page.getByRole("link", { name: "관측 자료 등록", exact: true })).toHaveCount(1);
   await expect(nextAction).toBeVisible();
-  await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new`);
+  const selectedWorkAreaId = await spatialPanel.getByRole("combobox", { name: "확인할 작업구역 선택" }).inputValue();
+  expect(selectedWorkAreaId).not.toBe("");
+  await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
 
   await page.goto(`${siteHref}/spatial-assets`);
   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
@@ -380,6 +382,8 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
     for (const label of labels) {
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
+    await expect(siteNavigation.getByRole("link", { name: "변화 분석", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "등록 자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
   } else {
     const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 자료·시점" });
     await expect(disclosure).toBeVisible();
@@ -388,6 +392,8 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
     for (const label of labels) {
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
+    await expect(siteNavigation.getByRole("link", { name: "변화 분석", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "등록 자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
     await expect(page.getByText("노트북에서 계속", { exact: true })).toHaveCount(0);
     await siteNavigation.getByRole("link", { name: "관측 작업", exact: true }).click();
     await expect(page).toHaveURL(/section=work-orders/);

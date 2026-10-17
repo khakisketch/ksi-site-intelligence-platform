@@ -56,10 +56,10 @@ function tabHref(tab: SiteTabKey): string {
   }
 }
 
-function SiteTabLink({ siteId, tab, label, detail }: { siteId: string; tab: SiteTabKey; label: string; detail: string }) {
+function SiteTabLink({ siteId, tab, label, detail, href }: { siteId: string; tab: SiteTabKey; label: string; detail: string; href?: string }) {
   return <SectionCard title={label}>
     <p className="text-[12.5px] leading-5 break-keep text-ink-2">{detail}</p>
-    <Link href={`/sites/${encodeURIComponent(siteId)}/${tabHref(tab)}`} className="btn mt-3 w-fit">{label} 열기</Link>
+    <Link href={href ?? `/sites/${encodeURIComponent(siteId)}/${tabHref(tab)}`} className="btn mt-3 w-fit">{label} 열기</Link>
   </SectionCard>;
 }
 
@@ -160,6 +160,21 @@ export default async function SiteDetailPage({
     (requestedWorkAreaId !== null && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId))
     || (requestedAssetRef !== null && selectedAssetRef !== requestedAssetRef)
   );
+  // 헤더 직접 링크용 검증 범위 — 어느 탭에서도 추가 조회 없이 승인된 현행
+  // 활성 구역만 싣는다. 원문 쿼리를 그대로 두지 않고, 조용히 다른 구역으로
+  // 바꾸지도 않는다. 공간 탭에서는 이미 고른 선택을 그대로 쓴다.
+  const activeWorkAreaIds = new Set(allAreas.filter((area) => area.status === "ACTIVE").map((area) => area.workAreaId));
+  const spatialSelectedValid = wantSpatial && selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId)
+    ? selectedWorkAreaId
+    : null;
+  const explicitScopeValid = (() => {
+    const raw = parseScopeId(firstValue(query.workAreaId));
+    return raw && activeWorkAreaIds.has(raw) ? raw : null;
+  })();
+  const headerWorkAreaId = spatialSelectedValid ?? explicitScopeValid;
+  const headerAssetRef = wantSpatial && headerWorkAreaId && selectedWorkAreaId === headerWorkAreaId
+    ? selectedAssetRef
+    : null;
 
   return <div className="flex flex-col">
     <SiteHeader
@@ -170,6 +185,8 @@ export default async function SiteDetailPage({
       latestExternalReportKnown={historyResult.status === "fulfilled"}
       canCreateWorkOrder={canCreateWorkOrder}
       canEditAoi={canTransition}
+      scopedWorkAreaId={headerWorkAreaId}
+      scopedAssetRef={headerAssetRef}
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       {tab === "observations" && <div className="flex flex-col gap-4">
@@ -187,12 +204,20 @@ export default async function SiteDetailPage({
           selectedWorkAreaId={selectedWorkAreaId}
           selectedAssetRef={selectedAssetRef}
           canCreateWorkOrder={canCreateWorkOrder}
+          // canTransition은 SITES_WRITE 승인 — 분석 요청 진입에만 쓰고 등록 권한과 섞지 않는다.
+          canCreateAnalysis={canTransition}
           scopeNotice={scopeNotice}
         />
-        <SiteStartGuidance siteId={site.siteId} {...siteStartCounts} />
+        <SiteStartGuidance
+          siteId={site.siteId}
+          {...siteStartCounts}
+          // 실제 공간 작업공간 선택이 있을 때만 건수 요약을 둔다 — 다음 행동은
+          // 작업공간이 이미 안내한다. unknown·빈 목록 복구는 그대로 둔다.
+          hasWorkspaceActions={selectedWorkAreaId !== null}
+        />
       </div>}
 
-      {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="변화 분석" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." />}
+      {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="변화 분석" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." href={headerWorkAreaId ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : `${sitePath}/analysis`} />}
 
       {tab === "spatial-assets" && <div className="flex flex-col gap-4">
         <SectionCard title="작업구역">

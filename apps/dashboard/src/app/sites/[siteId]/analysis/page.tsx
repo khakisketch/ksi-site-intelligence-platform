@@ -11,15 +11,19 @@ import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
+import { resolveAnalysisCurrentHint, resolveAnalysisScope } from "@/lib/operator-journey";
 import { AnalysisRequestPanel } from "./AnalysisRequestPanel";
 
 export const metadata = { title: "현장 변화 분석 · KSI" };
 
 export default async function SiteAnalysisPage({ params, searchParams }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ analysisId?: string }>;
+  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[] }>;
 }) {
-  const [{ siteId }, { analysisId }] = await Promise.all([params, searchParams]);
+  const [{ siteId }, query] = await Promise.all([params, searchParams]);
+  const single = (value: string | string[] | undefined): string | undefined =>
+    Array.isArray(value) ? value[0] : value;
+  const analysisId = single(query.analysisId);
   const session = await resolveFieldSession();
   if (session.kind === "blocked") return <OperationsSessionFailure verdict={session.verdict} next={`/sites/${encodeURIComponent(siteId)}/analysis`} />;
   let site: Awaited<ReturnType<typeof getSite>>;
@@ -82,6 +86,27 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const denied = childError instanceof CoreApiError && childError.status === 403;
   const retryAfterSeconds = childError instanceof CoreApiError ? childError.retryAfterSeconds : undefined;
   const canCreate = session.principal.permissions.includes("SITES_WRITE");
+  const hasDeepLink = typeof analysisId === "string" && analysisId.length > 0;
+  const journeyScope = loaded
+    ? resolveAnalysisScope({
+        areas: loaded.areas.workAreas.map((area) => ({ workAreaId: area.workAreaId, name: area.name, status: area.status })),
+        rawWorkAreaId: single(query.workAreaId),
+        hasPendingAttempt: false,
+        hasAnalysisDeepLink: hasDeepLink,
+      })
+    : { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false };
+  const deeplinkArea = loaded?.selectedDetail?.workAreaId
+    ?? (hasDeepLink ? loaded?.analyses.items.find((item) => item.analysisId === analysisId)?.workAreaId ?? "" : "");
+  const effectiveWorkAreaId = hasDeepLink ? (deeplinkArea ?? "") : journeyScope.initialWorkAreaId;
+  const currentHint = loaded
+    ? resolveAnalysisCurrentHint({
+        candidates: loaded.attributedObservations,
+        workAreaId: effectiveWorkAreaId,
+        rawCurrentWorkOrderId: single(query.currentWorkOrderId),
+        hasPendingAttempt: false,
+        hasAnalysisDeepLink: hasDeepLink,
+      })
+    : { currentWorkOrderId: null, notice: null };
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
@@ -113,6 +138,10 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         initialSelectedDetail={loaded.selectedDetail}
         canCreate={canCreate}
         initialAnalysisId={analysisId ?? null}
+        initialWorkAreaId={effectiveWorkAreaId}
+        initialCurrentWorkOrderId={currentHint.currentWorkOrderId}
+        scopeNotice={journeyScope.scopeNotice}
+        currentHintNotice={currentHint.notice}
       />
     </> : <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
   </div>;

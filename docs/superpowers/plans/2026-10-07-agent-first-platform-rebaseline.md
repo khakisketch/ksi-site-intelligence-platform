@@ -3856,3 +3856,114 @@ F03 이름들은 실제 synthetic 원장의 name 값이며 Site/WorkArea의 개�
 - 증거: `/tmp/opencode/ksi-operator-language-20261018/` README·source-hashes·unit/types/build/lint·`e2e-accepted.log`·render-checks/interactions/field-confirm·PNG. 이전 Site `/tmp/opencode/ksi-ux-improve-20261017/site-final-live.png` 및 기존 asset 상세와 비교했다. Native는 HTTP200/스크립트 fetch 뒤 DOM이 loading shell에 머물고 visible-tab screenshot이 실패해 실제 full-screen 수용 증거로 쓰지 않았다. Playwright headless 실제 앱 렌더/입력이 근거이며, 이를 사람 연구나 물리 장비 증거로 표현하지 않는다.
 - 현재 review는 detached `.next-operator-language` at `http://localhost:3241/sites/f03-flow-site?workAreaId=wa-f03-flow-site-0002`, direct Core8092/OIDC9041. 기존 `.next-ux-spatial` rollback 빌드 및 사용자 untracked PNG/.playwright-cli 보존. 새 공용 노출/영구 서비스/라이선스 자산/의존성/DB 쓰기 없음. Next가 추가한 선택 dist의 generated type include만 config에 반영했다.
 - 범위 제한: direct F03 rig의 자료 준비 API는 현재 조회 불가라 준비 완료/receipt/download 성공 경로의 최신 live 전달은 미검증(SSR/logic 회귀 통과). 고객 Terra 원본/다중 시점 field/survey/정량·고객 수용, human study·실제 touch/SR/WAN, production host/TLS/IdP 및 기존 LLM401 외부 경계는 그대로다. 본 완료는 후속 UI 단위의 local 수용이며 플랫폼 전체/외부 경계 완료가 아니다. 현재 승인된 후속 UI 작업 중 남은 actionable 항목은 없다.
+
+### 2026-10-18 — 실무형 합성 시연·자료 등록→비교→검토 흐름 (Human bounded 과제 local 검증 완료)
+
+앞선 실무 언어 후속(1cbfef8a) 뒤 Human이 다음 계획을 묻고, 기존 F03 보존/별도 합성 시연 자료/
+등록→시점 선택→두 시점 비교→결과 확인·검토의 업무 흐름 개선/최종 viewport·역할 검증 제안에
+"그래해봐"로 승인했다. 이는 앞선 언어 단위의 미완료 재분류가 아닌 새 bounded UI·local demo 과제다.
+
+```text
+Requirement IDs: SDP-REQ-01/02/04/05/06/07, REQ-INT-101..104/REQ-OPS-102; INV-020/024/051/053/060/061
+Owner module: apps/dashboard task journey + scripts local synthetic rehearsal (Core/measurement runtime는 기존 계약만 사용)
+Acceptance criteria: 원장/고객 데이터 변경 없이 명확히 합성인 새 시연 현장과 두 촬영 시점; 실제 등록·검사·분석·사람 검토 경로; 현장/구역/현재 자료 맥락이 인가된 목록 검증 후 연결돼 반복 선택 최소화; 없는 준비·정확도를 주장하지 않음; 오류/재시도/권한/compact/read-only 보존; rendered desktop/mobile/operator/reviewer 확인
+Contracts affected: wire/schema/calculation/authorization 변경 없음. Query는 표시 의도일 뿐이며 인가된 Core 응답에 존재하는 항목만 선택; frozen attempt와 명시 선택 우선. 합성 정책/bytes/계보는 격리된 test runtime에서만 사용
+Reference assets: 1cbfef8a 실제 Site/등록/작업/분석 캡처와 현 소스, 기존 API/inspector/analysis integration tests·local rehearsal scripts
+Adoption decisions: 기존 시각체계·컴포넌트·필수 work association 유지; 직접 구역 연결/명확한 다음 행동 우선; 중복 선택 카드 제거 후보; 범위 잃음과 일반 업로드 후 변화 분석 진입 부재를 실제 흐름에서 검증·수정
+Files to change: scope/registration/field/analysis/catalog UI + tests; 새 scripts/rehearse_operator_journey.py + focused tests; 명시적 local-only synthetic notice + layout/tests; 기존 ledger/checkpoint
+Tests: focused UI/helper/script tests; 실제 격리 Core HTTP 등록→봉인→parser→analysis→review; F03 hash 보존; Dashboard unit/type/build/lint/E2E; 실제 viewport와 keyboard/pointer/역할 확인
+HIL or real-device assumptions: 없음. 합성 소프트웨어 시연이며 DJI Terra/고객 호환·현장 정확도·물리 기기 검증 아님
+License/data implications: 기존 의존성/KSI 코드 + 새 합성 bytes, 새 외부 서비스/고객 자료/동의/AI 반출 없음; loopback 임시 Core8096, 기존 F03/IdP는 보존
+Rollback: 후속 UI commit revert; review를 기존 1cbfef8a/8092로 복귀; 새 own8096만 중지(기존 원장/서버는 그대로)
+```
+
+관찰된 구체 문제: Site의 선택 구역이 등록/새 분석으로 전달되지 않고, 일반 외부 작업의 제출 후
+V2 변화 분석 링크가 없으며 planning binding 때만 나타난다. 등록 시작 화면은 기본값이 유일한
+방식인데 선택 카드와 form 제목을 중복한다. 반면 파일 폼은 이미 빈 목록에서 펼치고 유지된
+등록이 있으면 접는 정상 패턴이므로 보존한다. 가설은 실제 새 시연 환경에서 재검증한다.
+
+**완료 범위와 결과**
+
+- 기존 F03 원장을 이름만 바꾸거나 alias하지 않았다. 새 `syn-demo-site-01` **시연 · 토공 현장**,
+  **북측 절토구역**(0001)·**남측 성토구역**(0003), 실제 생성한 32×32m DSM/정사영상과
+  **2026-10-05 / 10-12 촬영 시점**을 격리 Core8096/새 object bucket에 구성했다. source/derived,
+  CRS·수직 기준·capture interval·불확실성·actor 계약을 그대로 썼다. 상시 local banner/생산자 선언이
+  합성 시연임을 알리며, 실제 현장·Terra 호환·정확도·정산 승인 근거로 쓰지 않는다.
+- 선택 구역을 등록·분석의 인가된 실제 목록과 대조해 전달한다. 중복·외부·보관 query는 일반 안내로
+  복구하고, repeat template·기존 analysis deep link·frozen pending attempt·실제 사용자 선택을 덮지
+  않는다. identity/name 길이 계약을 혼동하지 않으며, 같은 이름의 다른 구역을 합치지 않는다.
+  Site 상단 분석/등록 자료 메뉴는 실제 화면으로 바로 연결한다. 등록 화면은 한 목적의 필수 이름·
+  구역 form→실제 파일 폼 anchor로 연결되고, 취소·돌아가기에도 구역을 유지한다. 여러 구역 연결은
+  기존 API대로 가능하되 단일 구역 catalog의 범위 제한을 조건부로 알린다.
+- 제출이 존재할 때만 다음 자료 목록·변화 분석 행동을 안내한다. 목록 조회 실패를 0건으로
+  오인하지 않으며, seal 응답이 확인되면 server stage/continuation만 새로 읽고 client 입력·동결
+  재시도는 유지한다. 완료된 제출은 버튼을 잠그고 명시적 새 등록으로만 다음 시도를 시작한다.
+  미리 준비된 metadata 후보 표시와 실제 검사·분석 admission은 구분한다.
+- 실사용 과정의 한글 파일명 Core422를 확인했다. 기존 ASCII basename 계약(1–255자)을 넓히거나
+  원본을 자동 개명하지 않고 선택 시점에 사유와 원본 보존/복사본 선택을 안내한다. 미해결 거절을
+  파일 슬롯별로 유지해 다른 파일 재선택이 예전 파일을 조용히 제출하지 못하게 한다. 기존 등록
+  참조의 hash/size 대조 이어하기, 불명확 응답의 같은 identity 재시도, 422의 명시적 새 시도는 보존했다.
+- 조회 전용·compact·보관 구역에서 없는 mutation form으로 안내하지 않으며, 기존 시각체계와
+  결과 우선 구조를 유지했다. 공간 작업공간이 행동을 소유할 때 하단 시작 안내는 건수만 표시한다.
+
+**실제 업무/권한 검증**
+
+- 새 격리 fixture에서 실제 HTTP 등록→grants→object PUT→봉인, 실제 parser inspection MEASURED,
+  기존 서명·digest·정확한 sealed-subject 정책 admission, 실제 V2 worker 계산·사람 review를 확인했다.
+  정책은 격리 harness의 **정상 서명 정책**이며 `syntheticTestOnly` escape flag를 이용하지 않았다.
+  provider가 그 flag를 거절한다는 이유로 production code/검사/승인 경계를 약화하지 않았다.
+- 실제 OIDC FIELD_OPERATOR UI에서 새 분석 `analysis-v1-b3f4047f3562e882b06529d35f2224ed` 생성,
+  worker COMPLETED, 절토128/성토0/순변화−128m³, uncertainty=null,
+  `PROVISIONAL_ACCURACY_UNVERIFIED` 확인. 실제 emulated-mobile Admin UI ACK review를 제출하고
+  새로고침 후 exactly1개·reviewer `local-admin` 지속을 확인했다. 이는 확인 기록이지 기업 승인 아님.
+- 실제 UI로 남측 work4와 work5를 만들고 각각 registration201/grants200/실제 2 PUT200/seal200을
+  확인했다. 새 subject는 **INSPECTION_PENDING_POLICY**로 관리자 검사 설정 확인을 요청한다.
+  자동 정책 승인이나 준비 완료를 꾸미지 않았다. work5는 잘못된 파일명 zero POST, 두 슬롯 모두
+  해소 전 제출 차단, 확인된 seal 후 재클릭 zero POST, 새로고침 없이 다음 행동 갱신을 추가 확인했다.
+  준비된 북측 두 시점의 분석 성공과 신규 남측 자료의 정책 대기를 서로 다른 상태로 검증했다.
+- 실제 issuer 계정 admin/operator/viewer에 같은 org-a와 정확한 area scope를 확인했다. 첫 browser
+  검증이 fixture registry의 placeholder WorkArea ID를 발견해 **새8096 설정만** 실제 ID로 고쳤다.
+  Site 이름만 보이는 것을 데이터 통합 성공으로 취급하지 않았으며, 기존9041/다른 원장은 변경하지 않았다.
+- 키보드 자료 선택/URL/back, 구역→등록→취소에서 반복 선택0, 직접 header 분석 이동,
+  외부 구역 query 원문·존재 누출 없음, VIEWER create/review 없음, 390px laptop gate와 20개
+  emulated-touch 44px 표본 확인. 네 폭의 최종18 route cells에서 overflow/잔여 busy/JS error 및
+  serious-critical axe 위반0. actual image를 직접 읽어 baseline 대비 판단했다.
+
+**회귀·환경·잔여 경계**
+
+- Dashboard **1142/1142, 143 files**, TypeScript/standalone build 통과, ESLint0errors/기존warning1.
+  4폭 Console E2E **51 passed/5 intentional compact skips**; golden/tolerance 변경 없음.
+  새 seed Python **31/31 + ruff** 통과. raster 테스트는 자체 생성 bytes를 사용해 개인 `/tmp` receipt
+  의존을 제거했다. seed는 loopback8096만 허용하고 이름 기준 archive를 하지 않는다.
+- 실제 UI 분석/review 뒤 screenshot 전용 locator와 metadata 후보에 대한 테스트 가정이 각각
+  실패했으나, 저장된 정확한 ID로 **read-only recovery**하여 중복 생성·업로드·review 없이 검증했다.
+  Native는 명시적 focus 뒤에도 visible-tab screenshot이 실패했다. 실제 렌더/입력 증거는 headless
+  Playwright이며, Native·사람 연구·물리 touch·screen reader 검증을 주장하지 않는다.
+- 증거 `/tmp/opencode/ksi-practical-journey-20261018/ui/`: README, baseline/round1-readonly,
+  failed-oidc-scope(실패 증거), **verified-render**, roles-keyboard, analysis-review/recover-review,
+  registration-upload/recover-upload, **final-upload**, filename-render, unit/types/build/lint/E2E logs.
+  `receipts/f03-final-preservation.json`으로 실제 후속 writes 이후에도 기존 F03 15/15 원장 hash 동일.
+- 현재 review `http://localhost:3241/sites/syn-demo-site-01?workAreaId=wa-syn-demo-site-01-0001`,
+  `.next-practical-journey-verified` standalone→Core8096/issuer9041. loopback 임시 프로세스이며
+  worker loop는 12시간 한도다. `ui/serve.sh`/새 root `launch_core_8096.py`와
+  `run_workers.sh {start|once|stop|status}`로 관리한다. 공용 노출·영구 service 설치 없음.
+  이전1cbfef8a/8092 launch와 빌드는 보존했고 rollback 가능하다. 비밀키·tokens·raster bytes·개인
+  런타임 설정은 Git에 추가하지 않았고, 사용자 기존 untracked PNG/.playwright-cli를 보존했다.
+- 최종 독립 대조는 추가 UI/RBAC/정량 계약 문제 없이 seed의 no-op 전 mirror 쓰기와 잘못된 v2
+  chmod/고정 template·journal 경로 문제를 발견했다. 승인된 원장→순수 계획→쓰기 순서로 고쳐
+  기존 정책의 정확한 subject tuple/실제 유효기간/현재 authority·독립 policy mirror가 맞을 때만
+  무변경 skip한다. 불일치·만료·회수는 reload 없이 거절하며 같은 version으로 새 창을 만들지 않는다.
+  CLI의 template/core-data/provider 경로를 실제 사용하고, fresh 임시 fixture가 과거 v2 파일 없이
+  0600 v5를 생성하는 execution-path 회귀를 추가했다. V2에 없는 `/result` 호출도 detail의 실제
+  result 검사로 고쳐 빈 metrics를 성공으로 출력하지 못한다.
+- 이전 잘못된 재실행이 만든 **비권위 policy mirror만** Core의 정확한 admitted v5/현재 signed
+  authority와 typed seal/digest를 대조해 복원했다. 원장·정책 승인·snapshot sequence7·runtime는
+  바꾸지 않았다(`receipts/policy-mirror-repair.json`). 수정된 실제 `finish_admit`를 현 fixture에
+  read-only/행정 호출 금지 client로 실행해 정상 skip, **16개 설정·원장 bytes/mtime 무변경과
+  runtime API0** 확인(`receipts/seed-noop-final.json`). 이는 전체 새 VM provisioning 검증을
+  주장하지 않으며, fresh 정책 파일 실행은 별도 offline fixture로 검증했다.
+- **현재 Human bounded UI·local demo 과제는 검증 완료**. 새 파일의 exact-subject 정책 승인 절차는
+  기존 관리자 경계이며 자동화/정책관리 UI 추가는 이 과제에 포함하지 않는다. 고객 자료 A–E,
+  실제 DJI Terra/field/survey·정량/고객 수용, production host/domain/TLS/IdP·실데이터 복구,
+  현재 LLM401·준비파일 실제 전달의 기존 외부/미검증 경계는 그대로다. 이 local 완료는 플랫폼 전체,
+  production 배포 또는 고객 정확도 수용 완료가 아니며 그 경계를 통과했다고 기록하지 않는다.

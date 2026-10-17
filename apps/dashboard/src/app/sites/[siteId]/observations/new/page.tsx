@@ -11,6 +11,8 @@ import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { isExternalRelativeVolumeReportReference } from "@/lib/external-relative-volume-references";
 
+import { resolveRegistrationScope } from "@/lib/operator-journey";
+
 import { ExternalObservationCreateForm } from "./ExternalObservationCreateForm";
 
 async function loadNewObservation(siteId: string) {
@@ -135,10 +137,12 @@ export default async function NewObservationPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ repeatWorkOrderId?: string; repeatReportRef?: string }>;
+  searchParams: Promise<{ repeatWorkOrderId?: string | string[]; repeatReportRef?: string | string[]; workAreaId?: string | string[] }>;
 }) {
   const { siteId } = await params;
-  const { repeatWorkOrderId, repeatReportRef } = await searchParams;
+  const { repeatWorkOrderId: repeatWorkOrderIdParam, repeatReportRef: repeatReportRefParam, workAreaId: workAreaIdParam } = await searchParams;
+  const repeatWorkOrderId = Array.isArray(repeatWorkOrderIdParam) ? repeatWorkOrderIdParam[0] : repeatWorkOrderIdParam;
+  const repeatReportRef = Array.isArray(repeatReportRefParam) ? repeatReportRefParam[0] : repeatReportRefParam;
   const result = await loadNewObservation(siteId);
   if (result.kind === "not-found") notFound();
   if (result.kind === "error") {
@@ -154,14 +158,25 @@ export default async function NewObservationPage({
     repeatReportRef,
     repeatWorkOrderId,
   });
+  // 반복 템플릿이 있으면 쿼리 범위보다 먼저 둔다. 쿼리로 덮어쓰지 않는다.
+  const journeyScope = resolveRegistrationScope({
+    areas: result.areas.workAreas.map((area) => ({ workAreaId: area.workAreaId, name: area.name, status: area.status })),
+    rawWorkAreaId: workAreaIdParam,
+    repeatWorkAreaIds: repeatTemplate.initialWorkAreaIds,
+  });
+  const initialWorkAreaIds = repeatTemplate.initialWorkAreaIds.length > 0
+    ? repeatTemplate.initialWorkAreaIds
+    : journeyScope.initialWorkAreaIds;
+  const scopeNotice = repeatTemplate.initialWorkAreaIds.length > 0 ? null : journeyScope.scopeNotice;
   return <ExternalObservationCreateForm
-    key={`${repeatReportRef ?? ""}:${repeatWorkOrderId ?? ""}`}
+    key={`${repeatReportRef ?? ""}:${repeatWorkOrderId ?? ""}:${Array.isArray(workAreaIdParam) ? "invalid" : (workAreaIdParam ?? "")}`}
     siteId={result.site.siteId}
     siteName={result.site.name}
     workAreas={result.areas.workAreas.map((area) => ({ workAreaId: area.workAreaId, name: area.name }))}
-    initialWorkAreaIds={repeatTemplate.initialWorkAreaIds}
+    initialWorkAreaIds={initialWorkAreaIds}
     temporalPolicy={repeatTemplate.temporalPolicy}
     suggestedName={repeatTemplate.suggestedName}
     templateNotice={repeatTemplate.notice}
+    scopeNotice={scopeNotice}
   />;
 }
