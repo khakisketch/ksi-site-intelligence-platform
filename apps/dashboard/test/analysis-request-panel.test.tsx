@@ -269,7 +269,7 @@ describe("analysis V2 panel", () => {
     page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
 
     renderPanel({ initialPage: page, initialSelectedDetail: blocked });
-    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
 
     expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
     expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
@@ -293,7 +293,7 @@ describe("analysis V2 panel", () => {
     page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
 
     renderPanel({ initialPage: page, initialSelectedDetail: blocked });
-    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
     expect(selected.getByText("세부 원인 확인 필요")).toBeTruthy();
     expect(selected.getByText(/이 사유에 대한 화면 안내가 없습니다/)).toBeTruthy();
     expect(selected.getByText(/반복 요청하지 마세요/)).toBeTruthy();
@@ -312,7 +312,7 @@ describe("analysis V2 panel", () => {
 
     renderPanel({ initialPage: page, initialSelectedDetail: current });
 
-    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
     expect(selected.getByText("실행 완료")).toBeTruthy();
     expect(selected.getByText("재평가 필요")).toBeTruthy();
     expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
@@ -333,7 +333,7 @@ describe("analysis V2 panel", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "이 분석 보기" })[1]!);
     await screen.findByText("other-result");
     fireEvent.click(screen.getAllByRole("button", { name: "이 분석 보기" })[0]!);
-    const selected = within(screen.getByText("분석 analysis-1").closest("article")!);
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
     expect(selected.queryByText("result-core-1")).toBeNull();
     expect(selected.queryByText("계산 결과")).toBeNull();
     const current = { ...detail(), suitabilityState: "REASSESSMENT_REQUIRED" as const, result: null };
@@ -381,7 +381,7 @@ describe("analysis V2 panel", () => {
   it("shows Core's exact IDs, metrics and limitations from V2 detail", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     renderPanel();
-    expect(screen.getByText("분석 analysis-1")).toBeTruthy();
+    expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
     expect(screen.getByRole("region", { name: "계산 결과" })).toBeTruthy();
     expect(screen.getByText("result-core-1")).toBeTruthy();
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
@@ -523,7 +523,7 @@ describe("analysis V2 panel", () => {
     expect(secondUrl).toBe(firstUrl);
     expect(JSON.parse(firstInit.body)).toEqual({ baseline: observations[0]!.selector, current: observations[1]!.selector });
     expect(secondInit.headers["Idempotency-Key"]).toBe(firstInit.headers["Idempotency-Key"]);
-    expect(screen.getByText("분석 analysis-created")).toBeTruthy();
+    expect(screen.getByText("분석 ID · analysis-created")).toBeTruthy();
   });
 
   it.each(["ANALYSIS_ACTIVATION_UNAVAILABLE", "ANALYSIS_ACTIVATION_EXPIRED"])("explains persistent activation failure %s and keeps retry and cancel available", async (code) => {
@@ -675,17 +675,17 @@ describe("analysis V2 panel", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(screen.getByText("분석 analysis-1")).toBeTruthy();
+    expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
 
     fireEvent.focus(window);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
-    await waitFor(() => expect(screen.queryByText("분석 analysis-50")).toBeNull());
-    expect(screen.getByText("분석 analysis-101")).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("분석 ID · analysis-50")).toBeNull());
+    expect(screen.getByText("분석 ID · analysis-101")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(fetchMock.mock.calls[4]![0]).toBe("/api/sites/site-1/analyses?limit=50&cursor=fresh-cursor");
-    await waitFor(() => expect(screen.getByText("분석 analysis-51")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("분석 ID · analysis-51")).toBeTruthy());
   });
 
   it("pages typed evidence and restarts when Core marks a cursor stale", async () => {
@@ -716,7 +716,7 @@ describe("analysis V2 panel", () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(json(old));
     vi.stubGlobal("fetch", fetchMock);
     renderPanel({ initialPage: listPage(["analysis-recent"]), initialSelectedDetail: null, initialAnalysisId: "analysis-old" });
-    await screen.findByText("분석 analysis-old");
+    await screen.findByText("분석 ID · analysis-old");
     expect(fetchMock).toHaveBeenCalledWith("/api/sites/site-1/analyses/analysis-old", expect.objectContaining({ cache: "no-store" }));
   });
 

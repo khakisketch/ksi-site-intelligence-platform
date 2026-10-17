@@ -127,7 +127,7 @@ function AssetSummary({ item, siteId }: { item: SpatialAssetCatalogItem; siteId:
       </div>
       <Link className="btn" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef })}>상세 보기</Link>
     </div>
-    <p className="mt-2 text-[12px] leading-5 text-ink-muted">관측 epoch: {item.observationEpochId} · 수정 {item.revision}</p>
+    <p className="mt-2 text-[12px] leading-5 text-ink-muted">제출 revision {item.revision} · 촬영 {item.declared.captureStartedAt ? formatKoreanDateTime(item.declared.captureStartedAt, { dateStyle: "medium", timeStyle: "short" }) : "구간 미기재"}</p>
     <FactStatus item={item} compact />
   </article>;
 }
@@ -212,7 +212,7 @@ function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection })
 
 function AssetDetail({ item }: { item: SpatialAssetCatalogItem }) {
   return <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/50 p-3 sm:p-4">
-    <header><h2 className="text-[16px] font-bold">선택한 자산 상세</h2><p className="mt-1 text-[12px] text-ink-2">관측 epoch: {item.observationEpochId} · 작업 지시: {item.workOrderId} · 제출 revision {item.revision}</p></header>
+    <header><h2 className="text-[16px] font-bold">선택한 자산 상세</h2><p className="mt-1 text-[12px] text-ink-2">제출 revision {item.revision} · 파일명 {item.declared.fileName}</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · epoch {item.observationEpochId} · 작업 {item.workOrderId}</p></header>
     <FactStatus item={item} />
     <DeclaredFacts item={item} />
     <ObservedFacts item={item} />

@@ -123,7 +123,7 @@ describe("spatial asset catalog page", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
     expect(html).toContain("선택한 자산 상세");
-    expect(html).toContain("관측 epoch: epoch-1");
+    expect(html).toContain("기술 참조 · epoch epoch-1 · 작업 order-1");
     expect(html).toContain("EPSG:32652");
     expect(html).toContain("상태: 검사 완료 · 결과: 측정 정보 있음");
     expect(html).toContain("DSM 지표면 모델 · image/tiff");

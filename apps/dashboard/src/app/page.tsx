@@ -91,7 +91,7 @@ function fallback() {
 }
 
 function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>): HomeAttentionCardView {
-  const siteName = siteById.get(source.siteId)?.name ?? source.siteId;
+  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if (source.kind === "EXTERNAL_DECISION") {
     const card = externalDecisionCardText(source.decision);
     return { key: source.key, siteName, label: card.label, title: card.title, detail: card.detail, observedAt: observedAt(source.observedAt), href: card.href, actionLabel: card.actionLabel, image: null, imageFallback: fallback() };
@@ -103,7 +103,7 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
       siteName,
       label: "분석 검토 대기",
       title: "완료된 분석 결과를 검토하세요.",
-      detail: `작업구역 ${analysis.workAreaId}의 분석에 현재 결과를 대상으로 한 검토 기록이 없습니다. 결과와 근거를 확인하세요.`,
+      detail: "완료된 분석 결과에 현재 결과를 대상으로 한 검토 기록이 없습니다. 결과와 근거를 확인하세요.",
       observedAt: observedAt(source.observedAt),
       href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}`,
       actionLabel: "분석 결과 검토",
@@ -122,7 +122,7 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
 }
 
 function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<string, SiteView>): HomeRecentUpdateView {
-  const siteName = siteById.get(source.siteId)?.name ?? source.siteId;
+  const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if ("site" in source) {
     return { key: source.key, siteName, label: "현재 원장", title: "등록된 대기 작업 없음", detail: "현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `현장 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
   }
@@ -188,7 +188,7 @@ export default async function HomePage() {
   return <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
     <header className="flex items-center justify-between gap-4 border-b border-line pb-3">
       <p className="text-[14px] font-bold tracking-[-0.015em] break-keep">전체 {sitesResult.ok ? `${sites.length}곳` : "—"}<span aria-hidden="true" className="mx-2 text-line-strong">·</span><span className={portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}>확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}</span></p>
-      <div className="flex items-center gap-3"><Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline"><TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} /></Link><Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">현장 전체</Link></div>
+      <div className="flex items-center gap-4"><Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline"><TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} /></Link><span aria-hidden="true" className="hidden h-4 w-px bg-line sm:block" /><Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">현장 전체</Link></div>
     </header>
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}

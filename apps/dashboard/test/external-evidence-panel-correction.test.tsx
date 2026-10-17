@@ -371,7 +371,7 @@ it("shows every immutable single-subject Core binding to a read-only user withou
   expect(await screen.findByText(/과거 불변 Core 결정: DISPLAY/)).toBeTruthy();
   expect(screen.getByText(`결정 ID: ${historicalId}`)).toBeTruthy();
   expect(screen.getByText(`결정 다이제스트: ${historicalDecision.decisionDigest}`)).toBeTruthy();
-  expect(screen.getByText("대상: 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
+  expect(screen.getByText("기술 참조 · 대상 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
   expect(screen.getByText(`제출 ${current.submissionRef} · rev 1 · 제출 다이제스트 ${historicalDecision.subject.submissionDigest}`)).toBeTruthy();
   expect(screen.getByText(`매니페스트 다이제스트 ${historicalDecision.subject.manifestDigest} · 대상 다이제스트 ${historicalDecision.subjectDigest}`)).toBeTruthy();
   expect(screen.getByText(`정책 다이제스트: ${historicalDecision.policyDigest}`)).toBeTruthy();
@@ -447,10 +447,10 @@ it("shows the ordered pair and zone bindings returned by an immutable historical
   expect(screen.getByText(`결정 ID: ${historicalId}`)).toBeTruthy();
   expect(screen.getByText(`결정 다이제스트: ${pairDecision.decisionDigest}`)).toBeTruthy();
   expect(screen.getByText("계약 버전: external-pair-use-decision-v1")).toBeTruthy();
-  expect(screen.getByText("순서 있는 기준 대상: 조직 org-1 · 현장 site-1 · 작업 baseline-work-order")).toBeTruthy();
+  expect(screen.getByText("기술 참조 · 순서 있는 기준 대상 조직 org-1 · 현장 site-1 · 작업 baseline-work-order")).toBeTruthy();
   expect(screen.getByText(`제출 ${sameWorkOrderBaseline.submissionRef} · rev 2 · 제출 다이제스트 ${baseline.submissionDigest}`)).toBeTruthy();
   expect(screen.getByText(`매니페스트 다이제스트 ${baseline.manifestDigest} · 대상 다이제스트 ${pairDecision.baselineSubjectDigest}`)).toBeTruthy();
-  expect(screen.getByText("순서 있는 현재 대상: 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
+  expect(screen.getByText("기술 참조 · 순서 있는 현재 대상 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
   expect(screen.getByText(`제출 ${current.submissionRef} · rev 1 · 제출 다이제스트 ${currentSubject.submissionDigest}`)).toBeTruthy();
   expect(screen.getByText(`매니페스트 다이제스트 ${currentSubject.manifestDigest} · 대상 다이제스트 ${pairDecision.currentSubjectDigest}`)).toBeTruthy();
   expect(screen.getByText(`정책 다이제스트: ${pairDecision.policyDigest}`)).toBeTruthy();

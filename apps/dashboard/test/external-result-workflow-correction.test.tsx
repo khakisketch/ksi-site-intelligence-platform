@@ -157,12 +157,12 @@ it("retires a delayed old review when a different retained request is selected",
   await select(0);
   fireEvent.click(await screen.findByRole("button", { name: "결과 검토 기록" }));
   await select(1);
-  expect(await screen.findByText(/작업구역 new-area/)).toBeTruthy();
+  expect(await screen.findByText(/기술 참조 · 구역 new-area/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "결과 검토 기록" }));
   expect(await screen.findByText("결과 검토 기록 중")).toBeTruthy();
   resolveReview();
   await waitFor(() => expect(screen.getByText("결과 검토 기록 중")).toBeTruthy());
-  expect(screen.queryByText(/작업구역 old-area/)).toBeNull();
+  expect(screen.queryByText(/기술 참조 · 구역 old-area/)).toBeNull();
   resolveNewReview();
   expect(await screen.findByText("결과 검토를 기록했습니다.")).toBeTruthy();
 });
@@ -186,9 +186,9 @@ it("retires a delayed old proposal rather than restoring it after selection chan
   await select(0);
   fireEvent.click(await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" }));
   await select(1);
-  expect(await screen.findByText(/작업구역 new-area/)).toBeTruthy();
+  expect(await screen.findByText(/기술 참조 · 구역 new-area/)).toBeTruthy();
   resolveProposal();
-  await waitFor(() => expect(screen.getByText(/작업구역 new-area/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/기술 참조 · 구역 new-area/)).toBeTruthy());
   expect(screen.queryByText(`제안 ${proposalRef} · v1`)).toBeNull();
 });
 
@@ -211,9 +211,9 @@ it("retires a delayed old approval without navigating after selection changes", 
   await select(0);
   fireEvent.click(await screen.findByRole("button", { name: "재관측 후속 작업 승인" }));
   await select(1);
-  expect(await screen.findByText(/작업구역 new-area/)).toBeTruthy();
+  expect(await screen.findByText(/기술 참조 · 구역 new-area/)).toBeTruthy();
   resolveApproval();
-  await waitFor(() => expect(screen.getByText(/작업구역 new-area/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/기술 참조 · 구역 new-area/)).toBeTruthy());
   expect(router.push).not.toHaveBeenCalled();
   expect(router.refresh).not.toHaveBeenCalled();
 });
@@ -245,9 +245,9 @@ it("retires an old approval worklist refresh after selection changes", async () 
   fireEvent.click(await screen.findByRole("button", { name: "재관측 후속 작업 승인" }));
   await worklistStarted;
   await select(1);
-  expect(await screen.findByText(/작업구역 new-area/)).toBeTruthy();
+  expect(await screen.findByText(/기술 참조 · 구역 new-area/)).toBeTruthy();
   resolveWorklist();
-  await waitFor(() => expect(screen.getByText(/작업구역 new-area/)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/기술 참조 · 구역 new-area/)).toBeTruthy());
   expect(screen.queryByText("Core 작업 목록에서 후속 작업을 새로 고쳤습니다.")).toBeNull();
   expect(router.push).not.toHaveBeenCalled();
 });

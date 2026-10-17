@@ -166,8 +166,8 @@ function RequestDetail({
     <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">선택한 요청</p>
-        <h2 className="mt-1 break-all font-mono text-[13px] font-bold text-ink">{item.jobId}</h2>
-        <p className="mt-1 text-[12px] text-ink-2">{workAreaName} · 생성 {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
+        <h2 className="mt-1 text-[16px] font-bold tracking-tight break-keep">{workAreaName} · {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}</h2>
+        <p className="mt-1 break-all font-mono text-[11px] text-ink-muted">요청 ID · {item.jobId}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">{stateBadge(item.executionState)}{availabilityText(item.availability)}</div>
     </header>
@@ -217,11 +217,11 @@ function RequestRow({
   const href = pageHref(siteId, workAreaId, { cursor, requestId: item.jobId });
   return <li className={`grid gap-3 px-4 py-4 sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)] sm:items-center ${selected ? "bg-sunk/70" : "bg-surface"}`}>
     <div className="min-w-0">
-      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">요청 ID · 원본 자산</p>
-      <Link href={href} aria-current={selected ? "page" : undefined} className="tap-target inline-flex min-h-8 max-w-full items-center break-all font-mono text-[11px] font-semibold text-accent-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-        {item.jobId}
+      <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">요청 · 원본 자산</p>
+      <Link href={href} aria-current={selected ? "page" : undefined} className="tap-target inline-flex min-h-8 max-w-full items-center text-[13px] font-semibold text-accent-text hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+        이 요청 열기
       </Link>
-      <p className="mt-1 break-all text-[10.5px] text-ink-muted">assetRef · {item.assetRef}</p>
+      <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">{item.jobId}</p>
     </div>
     <div>
       <p className="mb-1 text-[10.5px] text-ink-muted sm:hidden">생성 시각</p>
@@ -387,7 +387,7 @@ export default async function SpatialDataRequestsPage({
         {scopedItems.length === 0
           ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 공간 데이터 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "공간 자산 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
           : <>
-            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청 ID · 원본 자산</span><span>생성 시각</span><span>상태 · availability</span><span>Core 사유</span></div>
+            <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청 · 원본 자산</span><span>생성 시각</span><span>상태 · availability</span><span>Core 사유</span></div>
             <ul className="divide-y divide-line">
               {scopedItems.map((item) => REQUEST_ID_PATTERN.test(item.jobId)
                 ? <RequestRow key={item.jobId} item={item} siteId={siteId} workAreaId={workAreaId} cursor={cursor} selected={requestId === item.jobId} />

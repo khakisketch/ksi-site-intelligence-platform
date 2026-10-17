@@ -402,7 +402,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   const suitability = suitabilityLabel(summary.suitabilityState);
   return <article className={`rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
-      <div><p className="text-[14px] font-bold">{workAreaName} · {formatKoreanDateTime(summary.createdAt, { dateStyle: "short", timeStyle: "short" })}</p><p className="mt-1 break-all text-[11.5px] text-ink-muted">분석 {summary.analysisId}</p></div>
+      <div><p className="text-[14px] font-bold">{workAreaName} · {formatKoreanDateTime(summary.createdAt, { dateStyle: "short", timeStyle: "short" })}</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">분석 ID · {summary.analysisId}</p></div>
       <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 분석 보기</button>
     </div>
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 분석을 완료하지 못했습니다. 현장 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
@@ -1418,7 +1418,7 @@ export function AnalysisRequestPanel({
         evidencePages={summary.analysisId === selectedId ? selectedEvidencePages : []}
         siteId={siteId}
         workAreaId={summary.workAreaId}
-        workAreaName={workAreaNameById.get(summary.workAreaId) ?? summary.workAreaId}
+        workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
         canCreate={canCreate}
         reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
         reviewLoading={reviewLoadingId === summary.analysisId}

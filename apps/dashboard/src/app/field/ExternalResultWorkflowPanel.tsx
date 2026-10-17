@@ -221,7 +221,8 @@ function ReportDetail({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="px-4 py-3">
           <h3 className="text-[16px] font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
-          <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? view.request.zoneSnapshot.workAreaId}</p>
+          <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? "이름을 확인할 수 없는 구역"}</p>
+          <p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p>
         </div>
         <span className="px-4 text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>

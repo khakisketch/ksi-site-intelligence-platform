@@ -130,7 +130,7 @@ function DecisionSubjectBinding({
   if (!subject) return <p>{label}: Core 기록 없음</p>;
   return (
     <div>
-      <p>{label}: 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
+      <p className="break-all font-mono text-[10.5px] text-ink-muted">기술 참조 · {label} 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
       <p>제출 {subject.submissionId} · rev {subject.revision} · 제출 다이제스트 {subject.submissionDigest}</p>
       <p>매니페스트 다이제스트 {subject.manifestDigest} · 대상 다이제스트 {coreValue(digest)}</p>
     </div>
