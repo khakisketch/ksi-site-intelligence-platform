@@ -33,7 +33,7 @@ describe("owned single-h1 hierarchy", () => {
       workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
     /></main>);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 2, name: "A 현장 · 새 관측 시작" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "A 현장 · 관측 자료 등록" })).toBeTruthy();
   });
 
   it("hands a compact reader to the exact notebook target without promising features", () => {

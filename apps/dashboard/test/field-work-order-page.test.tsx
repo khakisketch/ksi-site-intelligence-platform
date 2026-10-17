@@ -223,11 +223,11 @@ describe("관측 작업 페이지 follow-up", () => {
 
     await renderPage({}, "successor-1");
 
-    expect(screen.getByText("산출물을 봉인한 뒤 현장 분석 화면에서 t1→t2 분석을 요청하세요.")).toBeTruthy();
+    expect(screen.getByText("산출물 제출을 마친 뒤 변화 분석 화면에서 기준 자료→비교 자료 분석을 요청하세요.")).toBeTruthy();
     expect(screen.getByRole("link", { name: "원본 결과·제안 보기" }).getAttribute("href")).toBe(`/field/work-orders/source-1?reportRef=${reportRef}#external-result`);
     expect(screen.getByRole("link", { name: "비교 요청·제안 상태로 이동" }).getAttribute("href")).toBe("#external-volume");
-    expect(screen.getByRole("link", { name: "현장 분석 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis#new-analysis-request");
-    expect(screen.getByRole("link", { name: "이 범위로 새 관측" }).getAttribute("href")).toBe("/sites/site-1/observations/new?repeatWorkOrderId=successor-1");
+    expect(screen.getByRole("link", { name: "변화 분석 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis#new-analysis-request");
+    expect(screen.getByRole("link", { name: "이 범위로 관측 자료 등록" }).getAttribute("href")).toBe("/sites/site-1/observations/new?repeatWorkOrderId=successor-1");
   });
 
   it("keeps failed proposal and history reads unknown rather than silently empty", async () => {

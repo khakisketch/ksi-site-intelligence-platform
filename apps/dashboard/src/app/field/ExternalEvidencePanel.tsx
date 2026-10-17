@@ -6,6 +6,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { FilePickerField } from "@/components/ui/FilePickerField";
 import { putExternalEvidenceFile } from "@/lib/external-evidence-upload";
+import { formatKoreanDateTime } from "@/lib/datetime";
+import {
+  describeArtifactKinds,
+  duplicateSealedTargetKeys,
+  formatRegistrationVersion,
+  formatSealedTargetLabel,
+  sealedTargetSubjectKey,
+  decisionUseLabel,
+  decisionVerdictLabel,
+} from "@/app/field/registration-language";
 
 type Revision = {
   submissionRef: string;
@@ -116,7 +126,7 @@ async function fileDigest(file: File, signal: AbortSignal): Promise<string> {
     .join("")}`;
 }
 
-const coreValue = (value?: string | null) => value || "Core 기록 없음";
+const coreValue = (value?: string | null) => value || "분석 시스템 기록 없음";
 
 function DecisionSubjectBinding({
   label,
@@ -127,12 +137,13 @@ function DecisionSubjectBinding({
   subject?: DecisionSubject;
   digest?: string;
 }) {
-  if (!subject) return <p>{label}: Core 기록 없음</p>;
+  if (!subject) return <p>{label}: 분석 시스템 기록 없음</p>;
   return (
     <div>
-      <p className="break-all font-mono text-[12px] text-ink-2">기술 참조 · {label} 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
-      <p>제출 {subject.submissionId} · rev {subject.revision} · 제출 다이제스트 {subject.submissionDigest}</p>
-      <p>매니페스트 다이제스트 {subject.manifestDigest} · 대상 다이제스트 {coreValue(digest)}</p>
+      <p className="break-all font-mono text-[12px] text-ink-2">{label} · {formatRegistrationVersion(subject.revision)}</p>
+      <p>제출 식별자 {subject.submissionId} · 제출 확인값(해시) {subject.submissionDigest}</p>
+      <p>목록 확인값(해시) {subject.manifestDigest} · 대상 확인값(해시) {coreValue(digest)}</p>
+      <p className="break-all font-mono text-[12px] text-ink-2">원본 보관용 식별자 · 조직 {subject.organizationId} · 현장 {subject.siteId} · 작업 {subject.workOrderId}</p>
     </div>
   );
 }
@@ -141,21 +152,21 @@ function DecisionBindings({ decision }: { decision: Decision }) {
   const pair = Boolean(decision.baselineSubject || decision.currentSubject);
   const inspectionBindings = pair
     ? [
-        ["기준 검사 보고서 다이제스트", decision.baselineInspectionReportDigest],
-        ["현재 검사 보고서 다이제스트", decision.currentInspectionReportDigest],
+        ["기준 검사 보고서 확인값(해시)", decision.baselineInspectionReportDigest],
+        ["현재 검사 보고서 확인값(해시)", decision.currentInspectionReportDigest],
       ]
-    : [["검사 보고서 다이제스트", decision.inspectionReportDigest]];
+    : [["검사 보고서 확인값(해시)", decision.inspectionReportDigest]];
   const displayBindings = pair
     ? [
-        ["기준 표시 영수증 다이제스트", decision.baselineSanitizedDisplayReceiptDigest],
-        ["현재 표시 영수증 다이제스트", decision.currentSanitizedDisplayReceiptDigest],
+        ["기준 표시 영수증 확인값(해시)", decision.baselineSanitizedDisplayReceiptDigest],
+        ["현재 표시 영수증 확인값(해시)", decision.currentSanitizedDisplayReceiptDigest],
       ]
-    : [["표시 영수증 다이제스트", decision.sanitizedDisplayReceiptDigest]];
+    : [["표시 영수증 확인값(해시)", decision.sanitizedDisplayReceiptDigest]];
 
   return (
     <div className="mt-2 border-t border-line pt-2">
-      <p>결정 ID: {decision.decisionId}</p>
-      <p>결정 다이제스트: {coreValue(decision.decisionDigest)}</p>
+      <p>판정 식별자: {decision.decisionId}</p>
+      <p>판정 확인값(해시): {coreValue(decision.decisionDigest)}</p>
       <p>계약 버전: {coreValue(decision.contractVersion)}</p>
       {pair ? (
         <>
@@ -165,19 +176,19 @@ function DecisionBindings({ decision }: { decision: Decision }) {
       ) : (
         <DecisionSubjectBinding label="대상" subject={decision.subject} digest={decision.subjectDigest} />
       )}
-      <p>정책 다이제스트: {coreValue(decision.policyDigest)}</p>
+      <p>정책 확인값(해시): {coreValue(decision.policyDigest)}</p>
       {inspectionBindings.map(([label, value]) => <p key={label}>{label}: {coreValue(value)}</p>)}
-      <p>증거 기록 다이제스트: {decision.evidenceRecordDigests?.join(", ") || "Core 기록 없음"}</p>
+      <p>증거 기록 확인값(해시): {decision.evidenceRecordDigests?.join(", ") || "분석 시스템 기록 없음"}</p>
       {displayBindings.map(([label, value]) => <p key={label}>{label}: {coreValue(value)}</p>)}
       {pair && (
         <>
           <p>
-            봉인 작업구역: {decision.zone ? `${decision.zone.zoneId} · rev ${decision.zone.revision}` : "Core 기록 없음"}
+            비교 구역: {decision.zone ? `${decision.zone.zoneId} · 구역 버전 ${decision.zone.revision}` : "분석 시스템 기록 없음"}
           </p>
-          <p>작업구역 정의 다이제스트: {coreValue(decision.zone?.definitionDigest)}</p>
-          <p>관측 좌표계 다이제스트: {coreValue(decision.zone?.observedCrsDigest)}</p>
-          <p>관측 수직 기준 다이제스트: {coreValue(decision.zone?.observedVerticalReferenceDigest)}</p>
-          <p>호환성 매핑 다이제스트: {coreValue(decision.compatibilityMappingDigest)}</p>
+          <p>작업구역 정의 확인값(해시): {coreValue(decision.zone?.definitionDigest)}</p>
+          <p>관측 좌표계 확인값(해시): {coreValue(decision.zone?.observedCrsDigest)}</p>
+          <p>관측 수직 기준 확인값(해시): {coreValue(decision.zone?.observedVerticalReferenceDigest)}</p>
+          <p>호환성 매핑 확인값(해시): {coreValue(decision.compatibilityMappingDigest)}</p>
         </>
       )}
     </div>
@@ -185,11 +196,13 @@ function DecisionBindings({ decision }: { decision: Decision }) {
 }
 
 function DecisionReceipt({ decision, historical = false }: { decision: Decision; historical?: boolean }) {
+  const headline = `${decisionUseLabel(decision.use)} · ${decisionVerdictLabel(decision.verdict)} · ${formatKoreanDateTime(decision.decidedAt, { dateStyle: "medium", timeStyle: "short" })}`;
   return (
     <div className="rounded border border-line p-2 text-ink-2">
       <p>
-        {historical ? "과거 불변 Core 결정" : "현재 Core 결정"}: {decision.use} · {decision.verdict} · {decision.decidedAt}
+        {historical ? "과거 판정 기록" : "현재 분석 시스템 판정"}: {headline}
       </p>
+      <p className="mt-1 text-[12px] text-ink-2">처리용 원본 코드 {decision.use} · {decision.verdict}는 파일 정보에서 확인할 수 있습니다.</p>
       {decision.verdict === "BLOCKED" ? (
         <ExternalUseBlockerCard reasons={decision.reasons} remediations={decision.remediations} />
       ) : (
@@ -198,7 +211,7 @@ function DecisionReceipt({ decision, historical = false }: { decision: Decision;
           <p>조치: {decision.remediations.join(", ") || "없음"}</p>
         </>
       )}
-      {historical && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">결정 대상과 검증 식별 정보</summary><DecisionBindings decision={decision} /></details>}
+      {historical && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">파일 정보 · 처리 상세</summary><DecisionBindings decision={decision} /></details>}
       {historical && <p>과거 기록은 현재 사용 권한이나 실행 권한이 아닙니다.</p>}
     </div>
   );
@@ -209,21 +222,21 @@ function EvidenceItemState({ item }: { item: Evidence }) {
 
   return (
     <div className="mt-2 rounded border border-line p-2 text-ink-2">
-      <p>독립성 근거 선언: {item.independenceBasis}</p>
-      <p>이 선언은 Core가 독립성을 증명한 사실이 아닙니다.</p>
+      <p>제출자가 적은 독립 근거: {item.independenceBasis}</p>
+      <p>이 내용은 제출자가 적은 것으로, 분석 시스템이 독립성을 증명한 것은 아닙니다.</p>
       {item.state === "DECLARED" ? (
-        <p>CSV 바이트 봉인 대기</p>
+        <p>파일 제출 마무리 대기</p>
       ) : summaries.length === 0 ? (
-        <p>Core 측정 집계 대기</p>
+        <p>분석 시스템 집계 대기</p>
       ) : (
         summaries.map((summary) => (
           <div key={`${summary.recordedAt}:${summary.coreVerdict}`} className="mt-2">
-            <p className="font-semibold">Core 측정 집계</p>
-            <p>Core 판정: {summary.coreVerdict}</p>
+            <p className="font-semibold">분석 시스템 측정 집계</p>
+            <p>판정: {decisionVerdictLabel(summary.coreVerdict)} (원본 {summary.coreVerdict})</p>
             <p>
               검사점 {summary.measuredCheckpointCount}개 · 평균 오차 {summary.meanErrorM}m · MAE {summary.maeM}m · RMSE {summary.rmseM}m
             </p>
-            <p>Core 기록 시각: {summary.recordedAt}</p>
+            <p>분석 시스템 기록 시각: {formatKoreanDateTime(summary.recordedAt, { dateStyle: "medium", timeStyle: "short" })}</p>
           </div>
         ))
       )}
@@ -283,6 +296,18 @@ export function ExternalEvidencePanel({
   const sealed = useMemo(() => revisions.filter((revision) => revision.state === "SEALED"), [revisions]);
   const current = target ? subject(target) : "";
   const choices = pairs.filter((item) => !target || item.value !== `${workOrderId}:${subject(target)}`);
+  // 같은 작업에 제출 참조가 여럿 있을 수 있고 revision·파일명이 같을 수 있다.
+  // 겹치는 보기 라벨에만 전체 제출 식별자를 덧붙인다. 기본은 식별자를 내보내지 않는다.
+  const duplicateTargetKeys = useMemo(
+    () => duplicateSealedTargetKeys(
+      sealed.map((revision) => ({
+        submissionRef: revision.submissionRef,
+        revision: revision.submission.revision,
+        artifacts: revision.submission.artifacts,
+      })),
+    ),
+    [sealed],
+  );
 
   const loadEvidence = useCallback(async (signal?: AbortSignal) => {
     const request = ++evidenceLoadGeneration.current;
@@ -352,7 +377,7 @@ export function ExternalEvidencePanel({
                     value: `${row.order.workOrderId}:${subject(revision)}`,
                     workOrderId: row.order.workOrderId,
                     revision,
-                    label: `${row.order.name ?? "관측 작업"} · ${row.order.cycleNumber ?? ""}회차 · ${revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ") ?? "산출물"}`,
+                    label: `${row.order.name ?? "관측 작업"} · ${describeArtifactKinds(revision.submission.artifacts)} · ${formatRegistrationVersion(revision.submission.revision)} · ${revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ") ?? "산출물"}`,
                   }))
               : [],
           ),
@@ -465,7 +490,7 @@ export function ExternalEvidencePanel({
           setUpload(null);
           setFile(null);
           setBasis("");
-          setMessage("Core가 동일 CSV 바이트를 이미 봉인했습니다.");
+          setMessage("분석 시스템이 같은 파일을 이미 받았습니다.");
         }
         return;
       }
@@ -491,7 +516,7 @@ export function ExternalEvidencePanel({
         setUpload(null);
         setFile(null);
         setBasis("");
-        setMessage("Core가 CSV 바이트를 봉인했습니다. 측정 집계는 Core 기록 후 표시됩니다.");
+        setMessage("분석 시스템이 파일을 받았습니다. 측정 집계는 분석 시스템 기록 후 표시됩니다.");
       }
     } catch {
       if (!controller.signal.aborted && generation.current === scope) {
@@ -512,19 +537,19 @@ export function ExternalEvidencePanel({
     // A single-epoch volume never binds a baseline, even when one is selected for another use.
     const selected = singleVolume ? undefined : choices.find((item) => item.value === baseline);
     if (pair && !selected) {
-      setMessage("비교 기준 봉인 재구성을 선택하세요.");
+      setMessage("비교할 이전 등록 버전을 선택하세요.");
       return;
     }
     if (use === "RELATIVE_VOLUME" && !zone) {
-      setMessage("상대 물량 작업구역을 선택하세요.");
+      setMessage("변화 분석 구역을 선택하세요.");
       return;
     }
     if (singleVolume && !singleZone) {
-      setMessage("단일 시점 체적 작업구역을 선택하세요.");
+      setMessage("한 시점 측정 구역을 선택하세요.");
       return;
     }
     if ((use === "HEIGHT" || use === "RELATIVE_VOLUME" || singleVolume) && !hasDsm(target)) {
-      setMessage("DSM이 없어 이 결정을 요청할 수 없습니다.");
+      setMessage("DSM이 없어 이 확인을 요청할 수 없습니다.");
       return;
     }
     const intent = decisionIntent(use, selected, singleVolume ? singleZone : zone);
@@ -580,7 +605,7 @@ export function ExternalEvidencePanel({
     } catch {
       if (!controller.signal.aborted && generation.current === scope && active.current === controller) {
         setDecisions((previous) => ({ ...previous, [intent]: { phase: "error" } }));
-        setMessage("Core 결정을 요청하지 못했습니다. 같은 결정 요청을 다시 시도하세요.");
+        setMessage("분석 시스템 확인을 요청하지 못했습니다. 같은 확인 요청을 다시 시도하세요.");
       }
     } finally {
       if (active.current === controller) {
@@ -593,7 +618,7 @@ export function ExternalEvidencePanel({
   const loadHistoricalDecision = async () => {
     if (!target) return;
     if (!/^external-use-decision-[0-9a-f]{32}$/.test(historyRef)) {
-      setMessage("유효한 과거 결정 참조를 입력하세요.");
+      setMessage("유효한 과거 판정 기록 참조를 입력하세요.");
       return;
     }
     const scope = generation.current;
@@ -611,7 +636,7 @@ export function ExternalEvidencePanel({
     } catch {
       if (!controller.signal.aborted && generation.current === scope && historyRequest.current === controller) {
         setHistory(null);
-        setMessage("과거 Core 결정을 읽지 못했습니다.");
+        setMessage("과거 판정 기록을 읽지 못했습니다.");
       }
     } finally {
       if (historyRequest.current === controller) historyRequest.current = null;
@@ -626,44 +651,48 @@ export function ExternalEvidencePanel({
         {sealed.map((revision) => (
           <li key={subject(revision)}>
             <button
-              className="btn max-w-full whitespace-normal break-all text-left"
+              className="btn max-w-full flex-col items-start whitespace-normal break-all text-left"
               onClick={() => {
                 reset();
                 setTarget(revision);
                 setUpload(null);
               }}
             >
-              현재 작업 · 봉인 재구성 rev {revision.submission.revision} · {revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ")}
+              <span className="block font-semibold">{formatSealedTargetLabel(revision.submission.revision, revision.submission.artifacts)}</span>
+              <span className="mt-0.5 block break-all text-[12px] text-ink-2">{revision.submission.artifacts?.map((artifact) => artifact.fileName).join(", ")}</span>
+              {duplicateTargetKeys.has(sealedTargetSubjectKey({ submissionRef: revision.submissionRef, revision: revision.submission.revision })) && (
+                <span className="mt-0.5 block break-all font-mono text-[11.5px] text-ink-muted">제출 식별자 · {revision.submissionRef}</span>
+              )}
             </button>
-            {!hasDsm(revision) && <p>DSM 없음: 표시는 가능하지만 독립 검사점·높이·상대 물량은 제한됩니다.</p>}
+            {!hasDsm(revision) && <p>DSM 없음: 표시는 가능하지만 독립 검사점·높이 확인·변화 분석은 제한됩니다.</p>}
             <EvidenceState load={evidence[subject(revision)]} />
           </li>
         ))}
       </ul>
 
-      {pairLoad === "loading" && <p>비교 기준과 작업구역을 읽는 중입니다.</p>}
+      {pairLoad === "loading" && <p>비교할 이전 등록 버전과 작업구역을 읽는 중입니다.</p>}
       {(pairLoad === "error" || pairLoad === "partial") && (
         <div role="alert" className="flex flex-wrap items-center gap-2">
-          <p>비교 기준 또는 작업구역을 읽지 못했습니다.</p>
+          <p>비교할 이전 등록 버전 또는 작업구역을 읽지 못했습니다.</p>
           {pairLoad === "partial" && (
             <p>
-              일부 같은 현장 작업의 비교 기준을 읽지 못했습니다: {pairLoadFailures.map((failure) => failure.label).join(", ")}. 목록이 완전하지 않습니다.
+              일부 같은 현장 작업의 비교 대상을 읽지 못했습니다: {pairLoadFailures.map((failure) => failure.label).join(", ")}. 목록이 완전하지 않습니다.
             </p>
           )}
-          <button className="btn" onClick={retryPairChoices}>비교 기준 다시 시도</button>
+          <button className="btn" onClick={retryPairChoices}>비교 대상 다시 시도</button>
         </div>
       )}
 
       {target && (
         <>
           <details>
-            <summary>과거 불변 Core 결정 조회</summary>
+            <summary>과거 판정 기록 조회</summary>
             <input
-              aria-label="과거 Core 결정 참조"
+              aria-label="과거 판정 기록 참조"
               value={historyRef}
               onChange={(event) => setHistoryRef(event.target.value)}
             />
-            <button onClick={() => void loadHistoricalDecision()}>과거 결정 조회</button>
+            <button onClick={() => void loadHistoricalDecision()}>과거 기록 조회</button>
             {history && <DecisionReceipt decision={history} historical />}
           </details>
 
@@ -697,8 +726,9 @@ export function ExternalEvidencePanel({
                       disabled={!file || !basis.trim() || busy || (!newIntentAllowed && !upload)}
                       onClick={() => void uploadEvidence()}
                     >
-                      CSV 선언·업로드·봉인
+                      파일 제출 마치기
                     </button>
+                    <p className="text-[12px] leading-5 text-ink-2">마치면 파일 검사가 준비됩니다. 검증 완료를 뜻하지 않습니다.</p>
                   </>
                 )}
 
@@ -707,7 +737,7 @@ export function ExternalEvidencePanel({
                   disabled={!newIntentAllowed && currentSlot("DISPLAY")?.phase !== "error"}
                   onClick={() => void decide("DISPLAY", currentSlot("DISPLAY")?.phase === "ready")}
                 >
-                  표시 결정 다시 평가
+                  화면 표시 다시 확인
                 </button>
                 {hasDsm(target) && (
                   <button
@@ -715,12 +745,12 @@ export function ExternalEvidencePanel({
                     disabled={!newIntentAllowed && currentSlot("HEIGHT")?.phase !== "error"}
                     onClick={() => void decide("HEIGHT", currentSlot("HEIGHT")?.phase === "ready")}
                   >
-                    높이 결정 다시 평가
+                    높이 다시 확인
                   </button>
                 )}
 
                 <select
-                  aria-label="비교 기준 봉인 재구성"
+                  aria-label="비교할 이전 등록 버전"
                   value={baseline}
                   disabled={!newIntentAllowed}
                   onChange={(event) => {
@@ -728,7 +758,7 @@ export function ExternalEvidencePanel({
                     setBaseline(event.target.value);
                   }}
                 >
-                  <option value="">비교 기준 선택</option>
+                  <option value="">이전 등록 버전 선택</option>
                   {choices.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                 </select>
                 <button
@@ -736,13 +766,13 @@ export function ExternalEvidencePanel({
                   disabled={!newIntentAllowed && currentSlot("VISUAL_COMPARISON")?.phase !== "error"}
                   onClick={() => void decide("VISUAL_COMPARISON", currentSlot("VISUAL_COMPARISON")?.phase === "ready")}
                 >
-                  시각 비교 결정 다시 평가
+                  눈으로 비교 다시 확인
                 </button>
 
                 {hasDsm(target) && (
                   <>
                     <select
-                      aria-label="상대 물량 작업구역"
+                      aria-label="변화 분석 구역"
                       value={zone}
                       disabled={!newIntentAllowed}
                       onChange={(event) => {
@@ -758,13 +788,13 @@ export function ExternalEvidencePanel({
                       disabled={!newIntentAllowed && currentSlot("RELATIVE_VOLUME")?.phase !== "error"}
                       onClick={() => void decide("RELATIVE_VOLUME", currentSlot("RELATIVE_VOLUME")?.phase === "ready")}
                     >
-                      상대 물량 결정 다시 평가
+                      변화 분석 다시 확인
                     </button>
                   </>
                 )}
 
                 <select
-                  aria-label="단일 시점 체적 작업구역"
+                  aria-label="한 시점 측정 구역"
                   value={singleZone}
                   disabled={!newIntentAllowed}
                   onChange={(event) => {
@@ -780,7 +810,7 @@ export function ExternalEvidencePanel({
                   disabled={!newIntentAllowed && currentSlot("SINGLE_VOLUME")?.phase !== "error"}
                   onClick={() => void decide("SINGLE_VOLUME", currentSlot("SINGLE_VOLUME")?.phase === "ready")}
                 >
-                  단일 시점 체적 결정 다시 평가
+                  한 시점 측정 다시 확인
                 </button>
               </div>
             </ResponsiveActionBoundary>
@@ -789,8 +819,8 @@ export function ExternalEvidencePanel({
           {(["DISPLAY", "HEIGHT", "VISUAL_COMPARISON", "RELATIVE_VOLUME", "SINGLE_VOLUME"] as const).map((use) => {
             const slot = currentSlot(use);
             if (!slot) return null;
-            if (slot.phase === "pending") return <p key={use} role="status">{use} Core 결정 요청 중</p>;
-            if (slot.phase === "error") return <p key={use} role="alert">{use} Core 결정을 읽지 못했습니다.</p>;
+            if (slot.phase === "pending") return <p key={use} role="status">{decisionUseLabel(use)} 확인 요청 중</p>;
+            if (slot.phase === "error") return <p key={use} role="alert">{decisionUseLabel(use)} 확인 결과를 읽지 못했습니다.</p>;
             return <DecisionReceipt key={use} decision={slot.decision} />;
           })}
         </>

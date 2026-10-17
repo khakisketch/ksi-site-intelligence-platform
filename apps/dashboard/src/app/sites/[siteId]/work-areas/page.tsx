@@ -101,15 +101,11 @@ export default async function SiteWorkAreasPage({
         </Link>
         <h2 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h2>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
-          두 시점의 관측 변화를 같은 범위에서 반복 비교하기 위한 구역입니다. 한 번
-          등록해 두면 이후 비교할 때마다 지도에 새로 그리는 대신 이 구역을{" "}
-          <strong className="font-bold">고르기만</strong> 하면 됩니다.
+          비교할 범위를 이름과 함께 등록합니다. 이후 관측 자료를 같은 구역에 연결해 변화를 확인할 수 있습니다.
         </p>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-muted">
-          그래서 <strong className="font-bold">한 번 등록한 모양은 고칠 수 없습니다</strong> —
-          잘못 그렸다면 대신할 구역을 새로 등록하세요(이전 구역은 자동으로 보관되고, 이미 낸
-          리포트는 그때의 범위를 그대로 가리킵니다). 등록은 범위 고정일 뿐, 계획 대비
-          진척·정확도·분석 가능 여부·사람 검토를 증명하지 않습니다.
+          등록한 경계는 그대로 보존합니다. 범위를 바꾸려면 새 구역으로 대체하며, 기존 결과는 이전 구역을 계속 참조합니다.
+          구역 등록만으로 정확도나 분석 가능 여부가 확인되지는 않습니다.
         </p>
       </div>
 

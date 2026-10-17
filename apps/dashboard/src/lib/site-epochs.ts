@@ -100,11 +100,11 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
 
 export const SITE_TABS = [
-  { key: "observations", label: "관측" },
-  { key: "analysis", label: "분석" },
-  { key: "spatial-assets", label: "공간 자산" },
-  { key: "work-orders", label: "작업" },
-  { key: "external-results", label: "외부 결과" },
+  { key: "observations", label: "자료·시점" },
+  { key: "analysis", label: "변화 분석" },
+  { key: "spatial-assets", label: "등록 자료" },
+  { key: "work-orders", label: "관측 작업" },
+  { key: "external-results", label: "외부 비교 기록" },
 ] as const;
 
 export type SiteTabKey = (typeof SITE_TABS)[number]["key"];

@@ -56,7 +56,7 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByRole("heading", { name: "분석 시작 안내" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "변화 분석 시작 안내" })).toBeTruthy();
     expect(screen.getByText("2개 확인됨")).toBeTruthy();
     expect(screen.getByText("2개 표시됨")).toBeTruthy();
     expect(screen.getByText("표시된 기록 없음")).toBeTruthy();
@@ -76,7 +76,7 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.queryByRole("heading", { name: "분석 시작 안내" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "변화 분석 시작 안내" })).toBeNull();
   });
 
   it("passes only Site-verified WorkArea attribution to the analysis selector and counts unknown links", async () => {
@@ -132,8 +132,8 @@ describe("analysis deep link", () => {
 
     expect(calls[0]).toBe("site");
     expect(screen.getByText("접근 확인된 현장")).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: "현장 분석" })).toBeTruthy();
-    expect(screen.getByRole("alert").textContent).toMatch(/현장 분석/);
+    expect(screen.getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toMatch(/현장 변화 분석/);
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
     expect(screen.queryByText(/현장을 찾을 수 없습니다/)).toBeNull();
   });
@@ -166,7 +166,7 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 분석 기록 조회 권한을 요청하세요.");
+    expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
     expect(screen.queryByRole("button", { name: /다시 시도/ })).toBeNull();
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
   });

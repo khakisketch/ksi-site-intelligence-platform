@@ -15,6 +15,7 @@ import {
 import { putExternalReconstructionFile } from "@/lib/external-reconstruction-upload";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatNumberKo } from "@/lib/number-format";
+import { formatRegistrationVersion, describeArtifactKinds, submissionStateLabel } from "@/app/field/registration-language";
 import { ExternalHeaderRecognition, type HeaderRecognitionState } from "@/app/field/ExternalHeaderRecognition";
 import { readGeoTiffHeader, recognizeGeoTiffHeader } from "@/lib/geo/geotiff-header";
 import {
@@ -381,7 +382,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       const selectedArtifacts = [artifact("ortho", ortho, ""), ...(dsm ? [artifact("dsm", dsm, "")] : [])];
       const expectedArtifacts = revision.submission.artifacts ?? [];
       if (!exactBindingsMatch(expectedArtifacts, selectedArtifacts)) {
-        setMessage("선택한 파일이 등록된 선언의 종류, 해시 또는 크기와 일치하지 않습니다.");
+        setMessage("선택한 파일이 등록된 자료의 종류, 해시 또는 크기와 일치하지 않습니다.");
         return;
       }
       bindings = [ortho, ...(dsm ? [dsm] : [])];
@@ -491,11 +492,11 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const collapseNewForm = hasRetainedRevisions && newFormPristine;
 
   return <><section id="external-submissions" className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4 text-[13px]">
-    <div><h2 className="text-[16px] font-bold">재구성 산출물 등록</h2><p className="text-ink-2">파일을 선택해 정보를 확인한 뒤 등록합니다. 파일 형식과 측정 적합성은 등록 후 별도로 확인합니다.</p></div>
+    <div><h2 className="text-[16px] font-bold">관측 자료 등록</h2><p className="text-ink-2">외부에서 준비한 파일을 선택해 등록합니다. 파일 검사와 분석에 사용할 수 있는지 확인하는 절차는 별도입니다.</p></div>
     {!newIntentAllowed && <p className="rounded-lg border border-line bg-sunk px-3 py-2 leading-5 text-ink-2">업무 종료 상태입니다. 새 산출물 등록은 시작할 수 없지만, 이미 등록한 파일의 업로드·봉인 상태와 결과는 계속 확인할 수 있습니다.</p>}
-    {listState === "loading" && <p role="status" className="text-ink-2">선언 목록을 불러오는 중입니다.</p>}
-    {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>선언 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
-    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>등록된 외부 산출물이 없습니다.</span>{" "}산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다.</li> : null}</ul>}
+    {listState === "loading" && <p role="status" className="text-ink-2">등록 목록을 불러오는 중입니다.</p>}
+    {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>등록 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
+    {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>아직 등록된 관측 자료가 없습니다.</span>{" "}자료를 등록하면 파일 제출과 검사 상태를 이곳에서 확인할 수 있습니다.</li> : null}</ul>}
     <details open={collapseNewForm ? undefined : true}>
       <summary className="tap-target cursor-pointer font-semibold">새 산출물 등록</summary>
       <div className="mt-3 flex flex-col gap-3">
@@ -534,11 +535,12 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           selectedFileName={dsm?.file.name ?? null}
         />
         {dsm && headers.dsm && <ExternalHeaderRecognition slot="dsm" state={headers.dsm} crs={declaredCrs.dsm} crsLocked={busy || hashing || formIsFrozen || !newIntentAllowed} resumingRegistered={Boolean(resume)} onCrsChange={(value) => setDeclaredCrs((current) => ({ ...current, dsm: value }))} />}
-        {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새 선언으로 전환</button>}
+        {newIntentAllowed && (resume || frozenAttempt) && <button className="btn w-fit" disabled={busy || hashing} onClick={startNewAttempt}>새로 등록하기</button>}
         {hashing && <p role="status" className="text-ink-2">파일 확인 중: {formatBytesKo(hashProgress ?? 0)}</p>}
         {hashing && <button className="btn w-fit" onClick={cancelHash}>파일 확인 취소</button>}
         <p className="text-ink-2">{ortho ? `정사영상 ${formatFileSize(ortho.size)} 확인 완료` : "정사영상을 선택하세요."}{dsm ? ` · DSM ${formatFileSize(dsm.size)} 확인 완료` : ""}</p>
-        <button className="btn w-fit" disabled={!canSubmit} onClick={() => void submit()}>{busy ? "산출물 등록 중" : "산출물 등록하기"}</button>
+        <button className="btn w-fit" disabled={!canSubmit} onClick={() => void submit()}>{busy ? "자료 등록 마무리 중" : "자료 등록 마치기"}</button>
+        <p className="text-[12px] leading-5 text-ink-2">마치면 파일 검사가 준비됩니다. 검증 완료를 뜻하지 않습니다.</p>
         {uploadProgress && <p role="status" className="text-ink-2">{uploadProgress.artifactId === "ortho" ? "정사영상" : "DSM"} {uploadProgress.phase === "uploaded" ? "파일 전송 완료" : "파일 전송 중"}: {formatBytesKo(uploadProgress.transferredBytes)} / {formatBytesKo(uploadProgress.totalBytes)} {uploadProgress.phase === "uploading" && " · 전송 시간이나 비율은 추정하지 않습니다."}</p>}
         {busy && <button className="btn w-fit" onClick={cancelSubmission}>등록 중단</button>}
         {message && <p role="status" className="text-ink-2">{message}</p>}
@@ -559,14 +561,15 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           receiptDigest: inspectionView.display.receiptDigest,
         }
         : null;
-      return <li key={key} className="rounded-lg border border-line px-3 py-2"><p>{revision.submission.artifacts?.map((item) => item.fileName).join(", ") || "외부 산출물"} · {revision.submission.producerDeclaration?.softwareName ?? "재구성 소프트웨어"} {revision.submission.producerDeclaration?.softwareVersion ?? ""} · {presentation?.title ?? (inspection?.phase === "error" ? "검사 상태를 불러오지 못했습니다." : "검사 상태 확인 중")}</p>
+      return <li key={key} className="rounded-lg border border-line px-3 py-2"><p>{describeArtifactKinds(revision.submission.artifacts)} · {formatRegistrationVersion(revision.submission.revision)} · {presentation?.title ?? (inspection?.phase === "error" ? "검사 상태를 불러오지 못했습니다." : "검사 상태 확인 중")}</p>
+        <p className="mt-1 break-all text-[12px] text-ink-2">{revision.submission.artifacts?.map((item) => item.fileName).join(", ") || "외부 산출물"}{revision.submission.producerDeclaration?.softwareName ? ` · ${revision.submission.producerDeclaration.softwareName}${revision.submission.producerDeclaration.softwareVersion ? ` ${revision.submission.producerDeclaration.softwareVersion}` : ""}` : ""}</p>
         {presentation && <><p className="mt-1 text-[12px] leading-5 text-ink-2">{presentation.detail}</p><p className="mt-1 text-[12px] leading-5 text-ink-muted">다음: {presentation.nextAction}</p>{presentation.artifactReasons.length > 0 && <ul className="mt-1 list-disc pl-5 text-[12px] leading-5 text-high-ink">{presentation.artifactReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</>}
         {inspection?.phase === "loading" && inspectionView !== null && <p role="status" className="mt-1 text-[12px] text-ink-2">마지막으로 확인한 검사 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
         {inspection?.phase === "error" && inspectionView !== null && <p role="alert" className="mt-1 text-[12px] text-high-ink">검사 상태 업데이트를 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요.</p>}
         {inspectionAutoRefreshStopped && presentation?.autoRefresh && <p role="status" className="mt-1 text-[12px] text-ink-2">자동 상태 확인을 멈췄습니다. 마지막으로 확인한 검사 상태를 표시합니다. 새로고침으로 다시 확인하세요.</p>}
-        <div className="mt-2 flex flex-wrap gap-2"><button className="btn" onClick={() => { inspectionAutoRefreshBudget.current = 0; setInspectionAutoRefreshStopped(false); void loadInspection(revision); }}>검사 상태 새로고침</button>{display && <button className="btn" onClick={() => setVisibleDisplay((current) => current === key ? null : key)}>{visibleDisplay === key ? "정제 정사영상 닫기" : "정제 정사영상 표시"}</button>}{canWrite && revision.state === "REGISTERED" && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="등록 중인 외부 산출물을 다시 이어가는 일은 노트북 이상의 화면에서만 진행합니다."><button className="btn" onClick={() => selectResume(revision)}>등록된 선언 재개</button></ResponsiveActionBoundary>}</div>
+        <div className="mt-2 flex flex-wrap gap-2"><button className="btn" onClick={() => { inspectionAutoRefreshBudget.current = 0; setInspectionAutoRefreshStopped(false); void loadInspection(revision); }}>검사 상태 새로고침</button>{display && <button className="btn" onClick={() => setVisibleDisplay((current) => current === key ? null : key)}>{visibleDisplay === key ? "정제 정사영상 닫기" : "정제 정사영상 표시"}</button>}{canWrite && revision.state === "REGISTERED" && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="등록 중인 외부 산출물을 다시 이어가는 일은 노트북 이상의 화면에서만 진행합니다."><button className="btn" onClick={() => selectResume(revision)}>등록 이어하기</button></ResponsiveActionBoundary>}</div>
         {display && visibleDisplay === key && <ExternalSanitizedOrthophoto workOrderId={workOrderId} submissionRef={revision.submissionRef} revision={revision.submission.revision} sanitizedDisplayRef={display.sanitizedDisplayRef} receiptDigest={display.receiptDigest} onDismiss={() => setVisibleDisplay(null)} />}
-        <details className="mt-1 text-[12px] text-ink-2"><summary>전문가 정보</summary><div className="mt-1 break-all"><p>등록 상태: {revision.state}</p>{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
+        <details className="mt-1 text-[12px] text-ink-2"><summary>파일 정보 · 처리 상세</summary><div className="mt-1 break-all"><p>제출 상태: {submissionStateLabel(revision.state)} ({revision.state})</p><p>제출 식별자: {revision.submissionRef}</p>{revision.submission.observationEpochId && <p>촬영 기록: {revision.submission.observationEpochId}</p>}{revision.submission.artifacts?.map((artifact) => <p key={artifact.artifactId}>산출물: {artifact.kind} · {artifact.fileName} · {artifact.declaredSizeBytes}바이트 · 확인값(해시) {artifact.declaredSha256}</p>)}{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
     })}</ul>}
   </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} /></>;

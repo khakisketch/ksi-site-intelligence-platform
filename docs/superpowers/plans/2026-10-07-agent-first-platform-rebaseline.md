@@ -3821,3 +3821,38 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
   실제 사람/실폰/SR/WAN·대용량·운영 배포 수용은 별도 미검증/외부 경계다. 카탈로그는 여전히
   metadata-only이며 실제 정사영상 사진/전후 영상 비교를 새로 제공하지 않는다. 표시용 footprint는
   같은 CRS 단순 링만 겹친다; 미지원/불일치는 범위/단위 미확인 상태와 원본 metadata로 남긴다.
+
+### 2026-10-18 — 실무 언어·자료 인식 후속 (Human 요청, 구현 중)
+
+사용자는 F03·revision1 같은 표시가 코드처럼 보여 의미를 모르겠다고 피드백하고 전체 실무 사용성
+개선을 요청했다. 앞선 U01–U11 수용은 이 후속 언어 문제까지 해결했다는 뜻이 아니었다.
+
+```text
+Requirement IDs: SDP-REQ-01/02/04/05/06/07; 이번 task의 사업무맥락/선택식별/원문보존/상태구분 검증
+Owner module: apps/dashboard (primary Architect integration; data/analysis and work/registration General units)
+Acceptance criteria: 자료 종류·촬영 시점·현재 상태·다음 행동을 코드 해석 없이 파악; 전체 파일명·등록 버전·정확한 selector를 찾을 수 있음; 충돌/결측/긴 이름·모바일·권한·보류 재시도 회귀 보존
+Contracts affected: 없음. INV-020/051/053/060/061, 계산/원본/기하/멱등성/AI 동의/정확도 의미 보존
+Reference assets: d2f5871 실제 Site/analysis/asset/task/inbox/queue 캡처, 현재 Native Review, 기존 토큰·컴포넌트
+Adoption decisions: 종류+실제 촬영시점 우선; revision은 등록 버전(회차 아님); 파일명/ID/확인값은 상황별 상세; 등록·업로드·검사·분석 조건·사람 검토를 합치지 않음
+Files to change: human-labels/operator-language; Site workspace/header/scope/workarea/home; asset/request/analysis; work detail/registration/inspection and tests
+Tests: focused + full Dashboard unit/type/build/lint, 실제 desktop/mobile 흐름·collision/unknown/permission/input/disclosure 검증, 기존 E2E 보존
+HIL or real-device assumptions: 없음; 합성 local rig와 Native/Playwright 증거를 고객/물리장비 수용으로 승격하지 않음
+License/data implications: 기존 코드/스타일/자료만 재사용; 새 자산·외부 서비스·Core 데이터 변경 없음
+Rollback: 후속 UI 커밋을 되돌림; 기존 d2f5871 빌드와 합성 원장/원본 보존
+```
+
+F03 이름들은 실제 synthetic 원장의 name 값이며 Site/WorkArea의 개명 API가 없다. 원장을
+고치거나 regex로 이름을 지우지 않는다. 실무용 UI 표현과 자료 자체의 등록명을 구분하고,
+파일명/버전/기술 식별자가 주 작업 언어를 대신하지 않게 한다. 새 가짜 현장명·동의·정확도는 만들지 않는다.
+
+#### 2026-10-18 최종 수용 — 실무 언어 후속 완료 (local software/UI 범위)
+
+- Site·등록 자료 목록/상세는 종류 + 실제 촬영 구간(연도 포함)으로 찾는다. 촬영 시점과 신고/등록/계산/결과 생성 시각을 섞지 않는다. 동일 표시가 겹칠 때만 초→등록 버전→전체 원문 식별자로 구분하며 목록/선택값을 병합하지 않는다. 원본 파일명·불변 ID·확인값·좌표/격자/제출자 입력/저장 파일 사실은 닫힌 `파일 정보`/`처리 상세`에서 확인할 수 있다.
+- revision은 제출의 `등록 버전`, 구역은 `구역 버전`, 결과는 `결과 버전`, 평가는 `평가 버전`으로 구분했다. 등록 버전을 촬영/업무 회차로 바꾸지 않았다. 파일 제출 완료·파일 검사·분석 사용 조건·사람의 검토를 별개로 유지한다. 정확도/측량·정산 승인 의미는 승격하지 않는다.
+- Home은 해야 할 일, 외부 작업 상세는 `관측 자료와 검사 확인`을 제목으로 삼고 실제 작업명을 `등록된 작업명`으로 보존했다. Site의 저장명/F03 값 자체는 그대로다. 메뉴는 `자료·시점`/`변화 분석`/`등록 자료`/`관측 작업`/`외부 비교 기록`; 준비 요청은 `구역 자료 준비`로 맞췄다. 현재 인가된 현장에 한해 검색·이동에서 자료/분석 목적지를 찾을 수 있으며 원문 ID 검색은 숨겨진 검색어로 유지한다.
+- 마지막 원본/실제 렌더 비교에서 evidence 대상 단추의 React key가 사용자에게 보이는 구분을 대신할 수 없음을 발견했다. 서로 다른 제출 참조가 같은 버전/종류/파일명을 가질 때만 전체 참조를 단추에 추가했고, 파일명이 실제 다음 줄에 오도록 flex 방향을 수정했다. 5개 순수 충돌 테스트 + 1개 컴포넌트 회귀를 추가했다.
+- 최종 Dashboard **136파일 1069/1069**, **TypeScript/standalone build 통과**, **ESLint 0 errors / 기존 warning 1**. 최종 Console E2E **51 passed / 5 intentional skips** (390/768/1024/1440). 문구 변경으로 깨진 문자열 기대값은 이름 원문·href·disabled·재시도/멱등성·선택 보존·0 POST 등 의미 검증을 보존하며 갱신했고, 허용 오차나 golden은 바꾸지 않았다.
+- 실제 direct F03 합성 rig **30개 viewport cell**과 마지막 영향 범위 **작업 상세 2개 cell**을 캡처/직접 읽었다. Site/catalog 자료 선택, 키보드 Enter 상세 펼침, 검색 `사진`→등록 자료→구역 선택→정확한 파일, 선택 URL/back, 역순 비교 비활성화/프로그램 submit 0 POST 및 정상 쌍 활성화를 실제 입력으로 확인했다. 관련 overflow/busy/페이지 오류/serious-critical axe 없음. 마지막 field-only 수정 외 경로는 변경되지 않은 유효 증거를 재사용했다. 실제 등록/업로드/seal/분석 생성/검토/보관/기하 저장은 보내지 않았다.
+- 증거: `/tmp/opencode/ksi-operator-language-20261018/` README·source-hashes·unit/types/build/lint·`e2e-accepted.log`·render-checks/interactions/field-confirm·PNG. 이전 Site `/tmp/opencode/ksi-ux-improve-20261017/site-final-live.png` 및 기존 asset 상세와 비교했다. Native는 HTTP200/스크립트 fetch 뒤 DOM이 loading shell에 머물고 visible-tab screenshot이 실패해 실제 full-screen 수용 증거로 쓰지 않았다. Playwright headless 실제 앱 렌더/입력이 근거이며, 이를 사람 연구나 물리 장비 증거로 표현하지 않는다.
+- 현재 review는 detached `.next-operator-language` at `http://localhost:3241/sites/f03-flow-site?workAreaId=wa-f03-flow-site-0002`, direct Core8092/OIDC9041. 기존 `.next-ux-spatial` rollback 빌드 및 사용자 untracked PNG/.playwright-cli 보존. 새 공용 노출/영구 서비스/라이선스 자산/의존성/DB 쓰기 없음. Next가 추가한 선택 dist의 generated type include만 config에 반영했다.
+- 범위 제한: direct F03 rig의 자료 준비 API는 현재 조회 불가라 준비 완료/receipt/download 성공 경로의 최신 live 전달은 미검증(SSR/logic 회귀 통과). 고객 Terra 원본/다중 시점 field/survey/정량·고객 수용, human study·실제 touch/SR/WAN, production host/TLS/IdP 및 기존 LLM401 외부 경계는 그대로다. 본 완료는 후속 UI 단위의 local 수용이며 플랫폼 전체/외부 경계 완료가 아니다. 현재 승인된 후속 UI 작업 중 남은 actionable 항목은 없다.

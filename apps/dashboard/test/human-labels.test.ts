@@ -29,13 +29,15 @@ function observation(overrides: Partial<AnalysisObservationOption> = {}): Analys
 }
 
 describe("human labels for observation selection", () => {
-  it("names the real work with its genuine capture interval and submission version", () => {
+  it("names the real work with its genuine capture interval and no version headline", () => {
     const label = observationChoiceLabel(observation(), "북측 1차 관측");
 
     expect(label).toContain("북측 1차 관측");
     expect(label).toContain("2026. 9. 1.");
     expect(label).toContain("09:00–09:30");
-    expect(label).toContain("제출 revision 2");
+    expect(label).toContain("촬영");
+    expect(label).not.toContain("등록 버전");
+    expect(label).not.toContain("revision");
     expect(label).not.toContain("epoch-recorded-a");
   });
 
@@ -46,10 +48,10 @@ describe("human labels for observation selection", () => {
 
     const label = observationChoiceLabel(observation(), null);
     expect(label).toContain("작업명 확인 불가");
-    expect(label).toContain("제출 revision 2");
+    expect(label).not.toContain("등록 버전");
   });
 
-  it("keeps same-time, same-version candidates distinguishable with the recorded epoch ID", () => {
+  it("adds the actual registration version only where same work and capture collide", () => {
     const first = observation({ observationEpochId: "epoch-first-recorded" });
     const second = observation({ observationEpochId: "epoch-second-recorded" });
     const names = { "work-order-a": "같은 작업" };
@@ -57,8 +59,23 @@ describe("human labels for observation selection", () => {
     const [firstLabel, secondLabel] = observationChoiceLabels([first, second], names);
 
     expect(firstLabel).not.toBe(secondLabel);
+    expect(firstLabel).toContain("등록 버전 2");
     expect(firstLabel).toContain("epoch-first-recorded");
     expect(secondLabel).toContain("epoch-second-recorded");
+  });
+
+  it("escalates to actual seconds before versions when only the minute format collides", () => {
+    const names = { "work-order-a": "같은 작업" };
+    const first = observation({ observationEpochId: "epoch-first", captureStartedAt: "2026-09-01T00:00:10Z", captureEndedAt: "2026-09-01T00:30:10Z" });
+    const second = observation({ observationEpochId: "epoch-second", captureStartedAt: "2026-09-01T00:00:45Z", captureEndedAt: "2026-09-01T00:30:45Z" });
+
+    const [firstLabel, secondLabel] = observationChoiceLabels([first, second], names);
+
+    expect(firstLabel).not.toBe(secondLabel);
+    expect(firstLabel).toContain("09:00:10");
+    expect(secondLabel).toContain("09:00:45");
+    expect(firstLabel).not.toContain("등록 버전");
+    expect(secondLabel).not.toContain("등록 버전");
   });
 
   it("falls back to the exact selector when the same epoch is reused across selectors", () => {
@@ -77,11 +94,13 @@ describe("human labels for observation selection", () => {
     expect(firstLabel).toContain("작업 work-order-a");
   });
 
-  it("does not attach technical IDs when candidates already differ", () => {
+  it("does not attach versions or technical IDs when candidates already differ", () => {
     const first = observation();
     const second = observation({
       selector: { workOrderId: "work-order-a", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 3 },
       observationEpochId: "epoch-recorded-b",
+      captureStartedAt: "2026-09-08T00:00:00Z",
+      captureEndedAt: "2026-09-08T00:30:00Z",
     });
 
     const [firstLabel, secondLabel] = observationChoiceLabels([first, second], { "work-order-a": "같은 작업" });
@@ -89,6 +108,8 @@ describe("human labels for observation selection", () => {
     expect(firstLabel).not.toBe(secondLabel);
     expect(firstLabel).not.toContain("epoch-recorded-a");
     expect(secondLabel).not.toContain("epoch-recorded-b");
+    expect(firstLabel).not.toContain("등록 버전");
+    expect(secondLabel).not.toContain("등록 버전");
   });
 
   it("formats multi-day capture intervals without dropping either side", () => {
@@ -99,7 +120,7 @@ describe("human labels for observation selection", () => {
 });
 
 describe("human labels for spatial assets", () => {
-  it("connects work name, area, capture window and version in one context line", () => {
+  it("connects work name, area, capture window and registration version in one context line", () => {
     const line = assetContextLine({
       workName: "북측 1차 관측",
       areaName: "북측 작업구역",
@@ -109,7 +130,7 @@ describe("human labels for spatial assets", () => {
 
     expect(line).toContain("북측 1차 관측");
     expect(line).toContain("북측 작업구역");
-    expect(line).toContain("제출 revision 2");
+    expect(line).toContain("등록 버전 2");
     expect(line).toContain("2026. 9. 30.");
   });
 
@@ -118,17 +139,28 @@ describe("human labels for spatial assets", () => {
     expect(formatAssetCaptureWindow("2026-09-30T01:00:00Z", null)).toContain("종료 미기재");
   });
 
-  it("distinguishes duplicate file names by revision while keeping unique names short", () => {
+  it("keeps unique file names short and marks duplicates with the registration version", () => {
     expect(assetHeadline("north-dsm.tif", 2, false)).toBe("north-dsm.tif");
-    expect(assetHeadline("north-dsm.tif", 2, true)).toContain("revision 2");
+    expect(assetHeadline("north-dsm.tif", 2, true)).toContain("등록 버전 2");
+    expect(assetHeadline("north-dsm.tif", 2, true)).not.toContain("revision");
     expect(duplicateFileNames(["a.tif", "b.tif", "a.tif"])).toEqual(new Set(["a.tif"]));
     expect(duplicateFileNames(["a.tif", "b.tif"]).size).toBe(0);
   });
 
-  it("labels known asset kinds without rewriting unknown ones", () => {
-    expect(spatialAssetKindLabel("dsm")).toBe("DSM 지표면 모델");
+  it("shortens awkward file names without translating them", () => {
+    const longName = `f03-ui-cycle-very-long-synthetic-rig-name-${"z".repeat(50)}.tif`;
+    const shortened = assetHeadline(longName, 1, false);
+    expect(shortened.length).toBeLessThan(longName.length);
+    expect(shortened.endsWith(".tif")).toBe(true);
+    const unicode = `관측자료_${"가".repeat(60)}.tif`;
+    expect([...assetHeadline(unicode, 1, false)].length).toBeLessThanOrEqual(48);
+  });
+
+  it("labels known asset kinds and stays neutral on unknown ones without inventing names", () => {
+    expect(spatialAssetKindLabel("dsm")).toBe("지표면 높이 자료(DSM)");
+    expect(spatialAssetKindLabel("dtm")).toBe("지형 높이 자료(DTM)");
     expect(spatialAssetKindLabel("ortho")).toBe("정사영상");
-    expect(spatialAssetKindLabel("future-kind")).toBe("future-kind");
+    expect(spatialAssetKindLabel("future-kind")).toBe("자료 종류 확인 필요");
   });
 });
 
@@ -138,28 +170,41 @@ describe("human labels for spatial data requests", () => {
     { jobId: "sdj-v1-22222222-2222-2222-2222-222222222222", createdAt: "2026-10-14T10:40:09Z", assetRef: `ksa-v1-${"b".repeat(64)}` },
   ];
   const assets = {
-    [`ksa-v1-${"a".repeat(64)}`]: { fileName: "north-dsm.tif", kind: "dsm" },
-    [`ksa-v1-${"b".repeat(64)}`]: { fileName: "north-ortho.tif", kind: "ortho" },
+    [`ksa-v1-${"a".repeat(64)}`]: {
+      fileName: "north-dsm.tif",
+      kind: "dsm",
+      captureStartedAt: "2026-10-09T05:00:00Z",
+      captureEndedAt: "2026-10-09T05:30:00Z",
+    },
+    [`ksa-v1-${"b".repeat(64)}`]: {
+      fileName: "north-ortho.tif",
+      kind: "ortho",
+      captureStartedAt: "2026-10-09T04:00:00Z",
+      captureEndedAt: "2026-10-09T04:30:00Z",
+    },
   };
 
-  it("titles rows with request time, source file and work-area context", () => {
+  it("titles rows with request time, source kind and capture period instead of opaque codes", () => {
     const [first] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 작업구역");
 
     expect(first!.title).toContain("북측 작업구역");
     expect(first!.title).toContain("2026-10-14T10:40:09Z");
-    expect(first!.title).toContain("north-dsm.tif");
-    expect(first!.sourceLine).toBe("원본 · DSM 지표면 모델");
+    expect(first!.title).toContain("지표면 높이 자료(DSM)");
+    expect(first!.title).toContain("촬영");
+    expect(first!.title).not.toContain(items[0]!.jobId);
+    expect(first!.title).not.toContain(`ksa-v1-${"a".repeat(64)}`);
+    expect(first!.sourceLine).toBe("원본 파일 · north-dsm.tif");
     expect(first!.hasCatalogInfo).toBe(true);
   });
 
-  it("keeps distinct filenames at the same time free of raw IDs", () => {
+  it("keeps distinct source kinds at the same time free of raw IDs", () => {
     const [first, second] = requestRowPresentations(items, (iso) => iso, assets, "북측 작업구역");
 
     expect(first!.title).not.toBe(second!.title);
     expect(first!.title).not.toContain(items[0]!.jobId);
     expect(second!.title).not.toContain(items[1]!.jobId);
-    expect(first!.title).toContain("north-dsm.tif");
-    expect(second!.title).toContain("north-ortho.tif");
+    expect(first!.title).toContain("지표면 높이 자료(DSM)");
+    expect(second!.title).toContain("정사영상");
   });
 
   it("exposes the full request ID only when whole titles still collide", () => {
@@ -174,11 +219,29 @@ describe("human labels for spatial data requests", () => {
     expect(second!.title).toContain(sameSource[1]!.jobId);
   });
 
+  it("preserves an unsupported source kind for the disclosure instead of printing it as a title", () => {
+    const unknownAssets = {
+      [`ksa-v1-${"a".repeat(64)}`]: {
+        fileName: "mystery.bin",
+        kind: "future-kind",
+        captureStartedAt: "2026-10-09T05:00:00Z",
+        captureEndedAt: "2026-10-09T05:30:00Z",
+      },
+    };
+    const [row] = requestRowPresentations([items[0]!], (iso) => iso, unknownAssets, "북측 작업구역");
+
+    expect(row!.title).toContain("자료 종류 확인 필요");
+    expect(row!.title).not.toContain("future-kind");
+    expect(row!.rawSourceKind).toBe("future-kind");
+    const [known] = requestRowPresentations([items[0]!], (iso) => iso, assets, "북측 작업구역");
+    expect(known!.rawSourceKind).toBeNull();
+  });
+
   it("never implies a deleted source when the catalog is unavailable", () => {
     const [first] = requestRowPresentations([items[0]!], (iso) => iso, null, "북측 작업구역");
 
-    expect(first!.title).toContain("원본 파일명 확인 불가");
-    expect(first!.sourceLine).toContain("원본 파일명 확인 불가");
+    expect(first!.title).toContain("원본 정보 확인 불가");
+    expect(first!.sourceLine).toContain("원본 정보 확인 불가");
     expect(first!.sourceLine).toContain("현재 조회한 카탈로그에서 확인되지 않음");
     expect(first!.sourceLine).toContain("뜻하지 않음");
     expect(first!.sourceLine).not.toContain("삭제됐");

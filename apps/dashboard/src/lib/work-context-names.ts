@@ -173,7 +173,7 @@ export interface HomeAnalysisReviewCardContext {
   areaName: string | null;
 }
 
-/** Home 분석-검토 카드 문구. 제목은 실제 구역 이름으로 이끌고 ID를 지어내지 않는다. */
+/** Home은 해야 할 행동으로 이끌고, 실제 구역 이름은 대상 맥락으로 보존한다. */
 export function homeAnalysisReviewCardText(context: HomeAnalysisReviewCardContext): {
   title: string;
   detail: string;
@@ -181,8 +181,8 @@ export function homeAnalysisReviewCardText(context: HomeAnalysisReviewCardContex
   const site = context.siteName ?? SITE_NAME_UNAVAILABLE;
   if (context.areaName) {
     return {
-      title: `${context.areaName} 분석 결과를 검토하세요.`,
-      detail: "현재 결과에 대한 검토 기록이 없습니다. 결과와 근거를 확인하세요.",
+      title: "분석 결과를 검토하세요.",
+      detail: `대상 구역 · ${context.areaName}. 현재 결과의 검토 기록이 없습니다. 결과와 근거를 확인하세요.`,
     };
   }
   return {

@@ -83,14 +83,46 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("shows the full submission reference only for colliding sealed targets and keeps distinct targets merge-free", async () => {
+  const duplicate = {
+    submissionRef: ref("b"),
+    state: "SEALED" as const,
+    submission: {
+      revision: 1,
+      artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: "current.tif" }],
+    },
+  };
+  const distinct = {
+    submissionRef: ref("f"),
+    state: "SEALED" as const,
+    submission: {
+      revision: 1,
+      artifacts: [{ artifactId: "dsm", kind: "dsm", fileName: "other.tif" }],
+    },
+  };
+  fetchMock.mockImplementation(async (url: string) => {
+    if (url.endsWith("/evidence")) return response({ items: [] });
+    if (url === "/api/sites/site-1/work-areas") return response({ workAreas: [] });
+    if (url === "/api/sites/site-1/observation-work-orders") return response({ workOrders: [] });
+    throw new Error(`unexpected fetch ${url}`);
+  });
+
+  render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current, duplicate, distinct]} canWrite={false} />);
+
+  expect(await screen.findByText(`제출 식별자 · ${current.submissionRef}`)).toBeTruthy();
+  expect(screen.getByText(`제출 식별자 · ${duplicate.submissionRef}`)).toBeTruthy();
+  expect(screen.queryByText(`제출 식별자 · ${distinct.submissionRef}`)).toBeNull();
+  expect(screen.getAllByRole("button", { name: /current\.tif/ })).toHaveLength(2);
+});
+
 it("renders only the Core-recorded checkpoint aggregate and labels independence as a declaration", async () => {
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite={false} />);
 
-  expect(await screen.findByText("Core 측정 집계")).toBeTruthy();
+  expect(await screen.findByText("분석 시스템 측정 집계")).toBeTruthy();
   expect(screen.getByText("검사점 3개 · 평균 오차 -0.02m · MAE 0.04m · RMSE 0.05m")).toBeTruthy();
-  expect(screen.getByText("Core 기록 시각: 2026-09-09T00:00:00Z")).toBeTruthy();
-  expect(screen.getByText("독립성 근거 선언: 현장 재구성과 독립된 측량")).toBeTruthy();
-  expect(screen.getByText("이 선언은 Core가 독립성을 증명한 사실이 아닙니다.")).toBeTruthy();
+  expect(screen.getByText("분석 시스템 기록 시각: 2026. 9. 9. 09:00")).toBeTruthy();
+  expect(screen.getByText("제출자가 적은 독립 근거: 현장 재구성과 독립된 측량")).toBeTruthy();
+  expect(screen.getByText("이 내용은 제출자가 적은 것으로, 분석 시스템이 독립성을 증명한 것은 아닙니다.")).toBeTruthy();
 });
 
 it("keeps sealed ortho-only display subjects visible while distinguishing an aggregate wait from an evidence read failure", async () => {
@@ -115,8 +147,8 @@ it("keeps sealed ortho-only display subjects visible while distinguishing an agg
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current, orthoOnly]} canWrite={false} />);
 
-  expect(await screen.findByText("Core 측정 집계 대기")).toBeTruthy();
-  expect(screen.getByText("DSM 없음: 표시는 가능하지만 독립 검사점·높이·상대 물량은 제한됩니다.")).toBeTruthy();
+  expect(await screen.findByText("분석 시스템 집계 대기")).toBeTruthy();
+  expect(screen.getByText("DSM 없음: 표시는 가능하지만 독립 검사점·높이 확인·변화 분석은 제한됩니다.")).toBeTruthy();
   expect((await screen.findByRole("alert")).textContent).toContain("독립 검사점 증거를 읽지 못했습니다.");
 });
 
@@ -125,7 +157,7 @@ it("keeps evidence readable but blocks new evidence and use decisions after clos
 
   expect(await screen.findByText(/업무 종료 상태입니다. 새 증거와 사용 결정은 요청할 수 없지만/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: /current\.tif/ }));
-  expect((screen.getByRole("button", { name: "표시 결정 다시 평가" }) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button", { name: "화면 표시 다시 확인" }) as HTMLButtonElement).disabled).toBe(true);
   expect((screen.getByLabelText("독립 검사점 CSV") as HTMLInputElement).disabled).toBe(true);
 });
 
@@ -165,27 +197,27 @@ it("keeps same-work-order and cross-work-order baselines human-readable, sends a
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite onRelativeVolumeDecisionChange={onRelativeVolumeDecisionChange} />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  await waitFor(() => expect(screen.getByLabelText("비교 기준 봉인 재구성").querySelectorAll("option")).toHaveLength(3));
-  const options = [...screen.getByLabelText("비교 기준 봉인 재구성").querySelectorAll("option")];
+  await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
+  const options = [...screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")];
   expect(options.map((option) => option.textContent).join(" ")).not.toContain("ers-v1-");
   expect(options.map((option) => option.textContent).join(" ")).toContain("same-work-order.tif");
   expect(options.map((option) => option.textContent).join(" ")).toContain("other-work-order.tif");
 
-  fireEvent.change(screen.getByLabelText("비교 기준 봉인 재구성"), {
+  fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), {
     target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` },
   });
-  fireEvent.change(screen.getByLabelText("상대 물량 작업구역"), { target: { value: "area-1" } });
-  fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
-  expect(await screen.findByText(/현재 Core 결정: DISPLAY/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "높이 결정 다시 평가" }));
-  expect(await screen.findByText(/현재 Core 결정: HEIGHT/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "시각 비교 결정 다시 평가" }));
-  expect(await screen.findByText(/현재 Core 결정: VISUAL_COMPARISON/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "상대 물량 결정 다시 평가" }));
-  expect(await screen.findByText(/현재 Core 결정: RELATIVE_VOLUME/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-1" } });
+  fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
+  expect(await screen.findByText(/현재 분석 시스템 판정: 화면 표시/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "높이 다시 확인" }));
+  expect(await screen.findByText(/현재 분석 시스템 판정: 높이 확인/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "눈으로 비교 다시 확인" }));
+  expect(await screen.findByText(/현재 분석 시스템 판정: 눈으로 비교/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
+  expect(await screen.findByText(/현재 분석 시스템 판정: 변화 분석\(두 시점 비교\)/)).toBeTruthy();
 
-  expect(screen.getByText(/현재 Core 결정: DISPLAY/)).toBeTruthy();
-  expect(screen.getByText(/현재 Core 결정: HEIGHT/)).toBeTruthy();
+  expect(screen.getByText(/현재 분석 시스템 판정: 화면 표시/)).toBeTruthy();
+  expect(screen.getByText(/현재 분석 시스템 판정: 높이 확인/)).toBeTruthy();
   expect(pairBodies).toEqual([
     {
       use: "VISUAL_COMPARISON",
@@ -237,10 +269,10 @@ it("reuses an uncertain decision key and never publishes its late response after
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current, next]} canWrite />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
-  expect(await screen.findByText("DISPLAY Core 결정을 읽지 못했습니다.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
+  expect(await screen.findByText("화면 표시 확인 결과를 읽지 못했습니다.")).toBeTruthy();
   const firstHeader = fetchMock.mock.calls.find(([url]) => String(url).endsWith("/single"))?.[1] as RequestInit;
-  fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
+  fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
   await waitFor(() => expect(oldSignal).toBeDefined());
   const secondHeader = fetchMock.mock.calls.filter(([url]) => String(url).endsWith("/single"))[1]?.[1] as RequestInit;
   expect((firstHeader.headers as Record<string, string>)["idempotency-key"]).toBe((secondHeader.headers as Record<string, string>)["idempotency-key"]);
@@ -248,8 +280,8 @@ it("reuses an uncertain decision key and never publishes its late response after
   fireEvent.click(screen.getByRole("button", { name: /next\.tif/ }));
   expect(oldSignal?.aborted).toBe(true);
   resolveLate?.(response({ decision: { decisionId: `external-use-decision-${"f".repeat(32)}`, use: "DISPLAY", verdict: "ELIGIBLE", reasons: [], remediations: [], decidedAt: "2026-09-09T00:00:00Z" } }));
-  await waitFor(() => expect(screen.queryByText(/현재 Core 결정: DISPLAY/)).toBeNull());
-  fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
+  await waitFor(() => expect(screen.queryByText(/현재 분석 시스템 판정: 화면 표시/)).toBeNull());
+  fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
   await waitFor(() => expect(displayAttempts).toBe(3));
 });
 
@@ -301,11 +333,11 @@ it("converges a lost successful seal response with the frozen CSV declaration an
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
   fireEvent.change(screen.getByLabelText("독립 검사점 CSV"), { target: { files: [checkpoint] } });
   fireEvent.change(screen.getByLabelText("독립성 근거 선언"), { target: { value: "독립 측량" } });
-  fireEvent.click(screen.getByRole("button", { name: "CSV 선언·업로드·봉인" }));
+  fireEvent.click(screen.getByRole("button", { name: "파일 제출 마치기" }));
   expect(await screen.findByText("증거 전송 상태를 확인하지 못했습니다. 같은 파일과 선언으로 재시도합니다.")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "CSV 선언·업로드·봉인" }));
+  fireEvent.click(screen.getByRole("button", { name: "파일 제출 마치기" }));
 
-  expect(await screen.findByText("Core가 동일 CSV 바이트를 이미 봉인했습니다.")).toBeTruthy();
+  expect(await screen.findByText("분석 시스템이 같은 파일을 이미 받았습니다.")).toBeTruthy();
   expect(declarationBodies).toEqual([
     {
       targetDsmArtifactId: "dsm",
@@ -365,21 +397,21 @@ it("shows every immutable single-subject Core binding to a read-only user withou
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite={false} />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  fireEvent.change(screen.getByLabelText("과거 Core 결정 참조"), { target: { value: historicalId } });
-  fireEvent.click(screen.getByRole("button", { name: "과거 결정 조회" }));
+  fireEvent.change(screen.getByLabelText("과거 판정 기록 참조"), { target: { value: historicalId } });
+  fireEvent.click(screen.getByRole("button", { name: "과거 기록 조회" }));
 
-  expect(await screen.findByText(/과거 불변 Core 결정: DISPLAY/)).toBeTruthy();
-  expect(screen.getByText(`결정 ID: ${historicalId}`)).toBeTruthy();
-  expect(screen.getByText(`결정 다이제스트: ${historicalDecision.decisionDigest}`)).toBeTruthy();
-  expect(screen.getByText("기술 참조 · 대상 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
-  expect(screen.getByText(`제출 ${current.submissionRef} · rev 1 · 제출 다이제스트 ${historicalDecision.subject.submissionDigest}`)).toBeTruthy();
-  expect(screen.getByText(`매니페스트 다이제스트 ${historicalDecision.subject.manifestDigest} · 대상 다이제스트 ${historicalDecision.subjectDigest}`)).toBeTruthy();
-  expect(screen.getByText(`정책 다이제스트: ${historicalDecision.policyDigest}`)).toBeTruthy();
-  expect(screen.getByText(`검사 보고서 다이제스트: ${historicalDecision.inspectionReportDigest}`)).toBeTruthy();
-  expect(screen.getByText(`증거 기록 다이제스트: ${historicalDecision.evidenceRecordDigests.join(", ")}`)).toBeTruthy();
-  expect(screen.getByText(`표시 영수증 다이제스트: ${historicalDecision.sanitizedDisplayReceiptDigest}`)).toBeTruthy();
+  expect(await screen.findByText(/과거 판정 기록: 화면 표시/)).toBeTruthy();
+  expect(screen.getByText(`판정 식별자: ${historicalId}`)).toBeTruthy();
+  expect(screen.getByText(`판정 확인값(해시): ${historicalDecision.decisionDigest}`)).toBeTruthy();
+  expect(screen.getByText("원본 보관용 식별자 · 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
+  expect(screen.getByText(`제출 식별자 ${current.submissionRef} · 제출 확인값(해시) ${historicalDecision.subject.submissionDigest}`)).toBeTruthy();
+  expect(screen.getByText(`목록 확인값(해시) ${historicalDecision.subject.manifestDigest} · 대상 확인값(해시) ${historicalDecision.subjectDigest}`)).toBeTruthy();
+  expect(screen.getByText(`정책 확인값(해시): ${historicalDecision.policyDigest}`)).toBeTruthy();
+  expect(screen.getByText(`검사 보고서 확인값(해시): ${historicalDecision.inspectionReportDigest}`)).toBeTruthy();
+  expect(screen.getByText(`증거 기록 확인값(해시): ${historicalDecision.evidenceRecordDigests.join(", ")}`)).toBeTruthy();
+  expect(screen.getByText(`표시 영수증 확인값(해시): ${historicalDecision.sanitizedDisplayReceiptDigest}`)).toBeTruthy();
   expect(screen.getByText("과거 기록은 현재 사용 권한이나 실행 권한이 아닙니다.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "표시 결정 다시 평가" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "화면 표시 다시 확인" })).toBeNull();
 });
 
 it("shows the ordered pair and zone bindings returned by an immutable historical Core decision", async () => {
@@ -440,30 +472,30 @@ it("shows the ordered pair and zone bindings returned by an immutable historical
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite={false} />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  fireEvent.change(screen.getByLabelText("과거 Core 결정 참조"), { target: { value: historicalId } });
-  fireEvent.click(screen.getByRole("button", { name: "과거 결정 조회" }));
+  fireEvent.change(screen.getByLabelText("과거 판정 기록 참조"), { target: { value: historicalId } });
+  fireEvent.click(screen.getByRole("button", { name: "과거 기록 조회" }));
 
-  expect(await screen.findByText(/과거 불변 Core 결정: RELATIVE_VOLUME/)).toBeTruthy();
-  expect(screen.getByText(`결정 ID: ${historicalId}`)).toBeTruthy();
-  expect(screen.getByText(`결정 다이제스트: ${pairDecision.decisionDigest}`)).toBeTruthy();
+  expect(await screen.findByText(/과거 판정 기록: 변화 분석\(두 시점 비교\)/)).toBeTruthy();
+  expect(screen.getByText(`판정 식별자: ${historicalId}`)).toBeTruthy();
+  expect(screen.getByText(`판정 확인값(해시): ${pairDecision.decisionDigest}`)).toBeTruthy();
   expect(screen.getByText("계약 버전: external-pair-use-decision-v1")).toBeTruthy();
-  expect(screen.getByText("기술 참조 · 순서 있는 기준 대상 조직 org-1 · 현장 site-1 · 작업 baseline-work-order")).toBeTruthy();
-  expect(screen.getByText(`제출 ${sameWorkOrderBaseline.submissionRef} · rev 2 · 제출 다이제스트 ${baseline.submissionDigest}`)).toBeTruthy();
-  expect(screen.getByText(`매니페스트 다이제스트 ${baseline.manifestDigest} · 대상 다이제스트 ${pairDecision.baselineSubjectDigest}`)).toBeTruthy();
-  expect(screen.getByText("기술 참조 · 순서 있는 현재 대상 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
-  expect(screen.getByText(`제출 ${current.submissionRef} · rev 1 · 제출 다이제스트 ${currentSubject.submissionDigest}`)).toBeTruthy();
-  expect(screen.getByText(`매니페스트 다이제스트 ${currentSubject.manifestDigest} · 대상 다이제스트 ${pairDecision.currentSubjectDigest}`)).toBeTruthy();
-  expect(screen.getByText(`정책 다이제스트: ${pairDecision.policyDigest}`)).toBeTruthy();
-  expect(screen.getByText(`기준 검사 보고서 다이제스트: ${pairDecision.baselineInspectionReportDigest}`)).toBeTruthy();
-  expect(screen.getByText(`현재 검사 보고서 다이제스트: ${pairDecision.currentInspectionReportDigest}`)).toBeTruthy();
-  expect(screen.getByText(`증거 기록 다이제스트: ${pairDecision.evidenceRecordDigests.join(", ")}`)).toBeTruthy();
-  expect(screen.getByText(`기준 표시 영수증 다이제스트: ${pairDecision.baselineSanitizedDisplayReceiptDigest}`)).toBeTruthy();
-  expect(screen.getByText(`현재 표시 영수증 다이제스트: ${pairDecision.currentSanitizedDisplayReceiptDigest}`)).toBeTruthy();
-  expect(screen.getByText("봉인 작업구역: area-1 · rev 3")).toBeTruthy();
-  expect(screen.getByText(`작업구역 정의 다이제스트: ${pairDecision.zone.definitionDigest}`)).toBeTruthy();
-  expect(screen.getByText(`관측 좌표계 다이제스트: ${pairDecision.zone.observedCrsDigest}`)).toBeTruthy();
-  expect(screen.getByText(`관측 수직 기준 다이제스트: ${pairDecision.zone.observedVerticalReferenceDigest}`)).toBeTruthy();
-  expect(screen.getByText(`호환성 매핑 다이제스트: ${pairDecision.compatibilityMappingDigest}`)).toBeTruthy();
+  expect(screen.getByText("원본 보관용 식별자 · 조직 org-1 · 현장 site-1 · 작업 baseline-work-order")).toBeTruthy();
+  expect(screen.getByText(`제출 식별자 ${sameWorkOrderBaseline.submissionRef} · 제출 확인값(해시) ${baseline.submissionDigest}`)).toBeTruthy();
+  expect(screen.getByText(`목록 확인값(해시) ${baseline.manifestDigest} · 대상 확인값(해시) ${pairDecision.baselineSubjectDigest}`)).toBeTruthy();
+  expect(screen.getByText("원본 보관용 식별자 · 조직 org-1 · 현장 site-1 · 작업 current")).toBeTruthy();
+  expect(screen.getByText(`제출 식별자 ${current.submissionRef} · 제출 확인값(해시) ${currentSubject.submissionDigest}`)).toBeTruthy();
+  expect(screen.getByText(`목록 확인값(해시) ${currentSubject.manifestDigest} · 대상 확인값(해시) ${pairDecision.currentSubjectDigest}`)).toBeTruthy();
+  expect(screen.getByText(`정책 확인값(해시): ${pairDecision.policyDigest}`)).toBeTruthy();
+  expect(screen.getByText(`기준 검사 보고서 확인값(해시): ${pairDecision.baselineInspectionReportDigest}`)).toBeTruthy();
+  expect(screen.getByText(`현재 검사 보고서 확인값(해시): ${pairDecision.currentInspectionReportDigest}`)).toBeTruthy();
+  expect(screen.getByText(`증거 기록 확인값(해시): ${pairDecision.evidenceRecordDigests.join(", ")}`)).toBeTruthy();
+  expect(screen.getByText(`기준 표시 영수증 확인값(해시): ${pairDecision.baselineSanitizedDisplayReceiptDigest}`)).toBeTruthy();
+  expect(screen.getByText(`현재 표시 영수증 확인값(해시): ${pairDecision.currentSanitizedDisplayReceiptDigest}`)).toBeTruthy();
+  expect(screen.getByText("비교 구역: area-1 · 구역 버전 3")).toBeTruthy();
+  expect(screen.getByText(`작업구역 정의 확인값(해시): ${pairDecision.zone.definitionDigest}`)).toBeTruthy();
+  expect(screen.getByText(`관측 좌표계 확인값(해시): ${pairDecision.zone.observedCrsDigest}`)).toBeTruthy();
+  expect(screen.getByText(`관측 수직 기준 확인값(해시): ${pairDecision.zone.observedVerticalReferenceDigest}`)).toBeTruthy();
+  expect(screen.getByText(`호환성 매핑 확인값(해시): ${pairDecision.compatibilityMappingDigest}`)).toBeTruthy();
 });
 
 it("names incomplete same-site baselines and retries every exact choice after a partial fetch failure", async () => {
@@ -490,12 +522,12 @@ it("names incomplete same-site baselines and retries every exact choice after a 
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  expect((await screen.findByRole("alert")).textContent).toContain("일부 같은 현장 작업의 비교 기준을 읽지 못했습니다: 누락 기준. 목록이 완전하지 않습니다.");
-  expect(screen.getByLabelText("비교 기준 봉인 재구성").querySelectorAll("option")).toHaveLength(2);
+  expect((await screen.findByRole("alert")).textContent).toContain("일부 같은 현장 작업의 비교 대상을 읽지 못했습니다: 누락 기준. 목록이 완전하지 않습니다.");
+  expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(2);
 
   recovered = true;
-  fireEvent.click(screen.getByRole("button", { name: "비교 기준 다시 시도" }));
-  await waitFor(() => expect(screen.getByLabelText("비교 기준 봉인 재구성").querySelectorAll("option")).toHaveLength(3));
+  fireEvent.click(screen.getByRole("button", { name: "비교 대상 다시 시도" }));
+  await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
@@ -531,22 +563,22 @@ it("retires a pending pair request for baseline and zone changes so each next sc
 
   render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite />);
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-  await waitFor(() => expect(screen.getByLabelText("비교 기준 봉인 재구성").querySelectorAll("option")).toHaveLength(3));
-  fireEvent.change(screen.getByLabelText("비교 기준 봉인 재구성"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
-  fireEvent.change(screen.getByLabelText("상대 물량 작업구역"), { target: { value: "area-a" } });
-  fireEvent.click(screen.getByRole("button", { name: "시각 비교 결정 다시 평가" }));
+  await waitFor(() => expect(screen.getByLabelText("비교할 이전 등록 버전").querySelectorAll("option")).toHaveLength(3));
+  fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${sameWorkOrderBaseline.submissionRef}:2` } });
+  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-a" } });
+  fireEvent.click(screen.getByRole("button", { name: "눈으로 비교 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(1));
 
-  fireEvent.change(screen.getByLabelText("비교 기준 봉인 재구성"), { target: { value: `current:${secondBaseline.submissionRef}:1` } });
+  fireEvent.change(screen.getByLabelText("비교할 이전 등록 버전"), { target: { value: `current:${secondBaseline.submissionRef}:1` } });
   expect(signals[0].aborted).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "시각 비교 결정 다시 평가" }));
+  fireEvent.click(screen.getByRole("button", { name: "눈으로 비교 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(2));
 
-  fireEvent.click(screen.getByRole("button", { name: "상대 물량 결정 다시 평가" }));
+  fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(3));
-  fireEvent.change(screen.getByLabelText("상대 물량 작업구역"), { target: { value: "area-b" } });
+  fireEvent.change(screen.getByLabelText("변화 분석 구역"), { target: { value: "area-b" } });
   expect(signals[1].aborted).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "상대 물량 결정 다시 평가" }));
+  fireEvent.click(screen.getByRole("button", { name: "변화 분석 다시 확인" }));
   await waitFor(() => expect(pairAttempts).toBe(4));
 });
 
@@ -583,12 +615,12 @@ it("retires a pending evidence operation when the target changes so the next tar
   fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
   fireEvent.change(screen.getByLabelText("독립 검사점 CSV"), { target: { files: [checkpoint] } });
   fireEvent.change(screen.getByLabelText("독립성 근거 선언"), { target: { value: "독립 측량" } });
-  fireEvent.click(screen.getByRole("button", { name: "CSV 선언·업로드·봉인" }));
+  fireEvent.click(screen.getByRole("button", { name: "파일 제출 마치기" }));
   await waitFor(() => expect(evidenceSignal).toBeDefined());
 
   fireEvent.click(screen.getByRole("button", { name: /next\.tif/ }));
   expect(evidenceSignal?.aborted).toBe(true);
-  fireEvent.click(screen.getByRole("button", { name: "표시 결정 다시 평가" }));
+  fireEvent.click(screen.getByRole("button", { name: "화면 표시 다시 확인" }));
   await waitFor(() => expect(displayAttempts).toBe(1));
 });
 
@@ -631,23 +663,23 @@ describe("SINGLE_VOLUME decision", () => {
 
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} onRelativeVolumeDecisionChange={onRelativeVolumeDecisionChange} />);
     fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
 
-    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
-    expect(await screen.findByText("단일 시점 체적 작업구역을 선택하세요.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
+    expect(await screen.findByText("한 시점 측정 구역을 선택하세요.")).toBeTruthy();
     expect(bodies).toHaveLength(0);
 
-    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
-    expect(await screen.findByText("SINGLE_VOLUME Core 결정을 읽지 못했습니다.")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
-    expect(await screen.findByText(/현재 Core 결정: SINGLE_VOLUME · ELIGIBLE/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
+    expect(await screen.findByText("한 시점 측정 확인 결과를 읽지 못했습니다.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
+    expect(await screen.findByText(/현재 분석 시스템 판정: 한 시점 측정/)).toBeTruthy();
 
     expect(bodies).toEqual([{ zoneId: "pile-1" }, { zoneId: "pile-1" }]);
     expect(keys[0]).toBeTruthy();
     expect(keys[1]).toBe(keys[0]);
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/pair"))).toBe(false);
-    expect((screen.getByLabelText("비교 기준 봉인 재구성") as HTMLSelectElement).value).toBe("");
+    expect((screen.getByLabelText("비교할 이전 등록 버전") as HTMLSelectElement).value).toBe("");
     expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({
       decisionId: `external-use-decision-${"5".repeat(32)}`,
       verdict: "ELIGIBLE",
@@ -660,10 +692,10 @@ describe("SINGLE_VOLUME decision", () => {
     fetchMock.mockImplementation(singleVolumeFetch(["eligible"], bodies, []));
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[orthoOnly]} canWrite />);
     fireEvent.click(await screen.findByRole("button", { name: /ortho-only\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
-    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
-    expect(await screen.findByText("DSM이 없어 이 결정을 요청할 수 없습니다.")).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
+    expect(await screen.findByText("DSM이 없어 이 확인을 요청할 수 없습니다.")).toBeTruthy();
     expect(bodies).toHaveLength(0);
   });
 
@@ -672,9 +704,9 @@ describe("SINGLE_VOLUME decision", () => {
     fetchMock.mockImplementation(singleVolumeFetch(["blocked"], [], []));
     render(<ExternalEvidencePanel workOrderId="current" siteId="site-1" revisions={[current]} canWrite onSingleVolumeDecisionChange={onSingleVolumeDecisionChange} />);
     fireEvent.click(await screen.findByRole("button", { name: /current\.tif/ }));
-    await waitFor(() => expect(screen.getByLabelText("단일 시점 체적 작업구역").querySelectorAll("option")).toHaveLength(2));
-    fireEvent.change(screen.getByLabelText("단일 시점 체적 작업구역"), { target: { value: "pile-1" } });
-    fireEvent.click(screen.getByRole("button", { name: "단일 시점 체적 결정 다시 평가" }));
+    await waitFor(() => expect(screen.getByLabelText("한 시점 측정 구역").querySelectorAll("option")).toHaveLength(2));
+    fireEvent.change(screen.getByLabelText("한 시점 측정 구역"), { target: { value: "pile-1" } });
+    fireEvent.click(screen.getByRole("button", { name: "한 시점 측정 다시 확인" }));
     expect(await screen.findByText("단일 시점 체적 매핑이 없습니다")).toBeTruthy();
     expect(screen.getByText("관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.")).toBeTruthy();
     expect(onSingleVolumeDecisionChange).toHaveBeenLastCalledWith(expect.objectContaining({ verdict: "BLOCKED" }));

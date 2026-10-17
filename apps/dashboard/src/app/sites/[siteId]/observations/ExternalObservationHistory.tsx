@@ -64,7 +64,7 @@ function MetricRow({ item, workAreaName, siteId, detailMode }: {
     const exactHref = `/sites/${encodeURIComponent(siteId)}/observations/${encodeURIComponent(item.reportRef)}`;
     return (
       <article className="rounded-lg border border-line bg-surface px-4 py-3">
-        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[14px] font-semibold">보관 근거 확인 필요</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">결과 기록 참조 · {item.reportRef.slice(-8)}</p></div><div className="flex gap-2"><CopyLink href={exactHref} />{!detailMode && <Link className="btn print:hidden" href={exactHref}>이 결과 열기</Link>}</div></div>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-[14px] font-semibold">보관 근거 확인 필요</p><details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">결과 등록 정보</summary><p className="break-all font-mono">{item.reportRef}</p></details></div><div className="flex gap-2"><CopyLink href={exactHref} />{!detailMode && <Link className="btn print:hidden" href={exactHref}>이 결과 열기</Link>}</div></div>
         <p className="mt-1 text-[13px] leading-5 text-ink-2">이 결과는 이력에 남아 있지만 현재 보관 근거를 검증하지 못했습니다. 수치와 비교 차트는 표시하지 않습니다.</p>
       </article>
     );
@@ -159,7 +159,7 @@ export function ExternalObservationHistory({
     <NetTrend items={items} workAreaNames={workAreaNames} />
     <section className="flex flex-col gap-3">
       {items.map((item) => <MetricRow key={item.reportRef} item={item} siteId={siteId} detailMode={detailMode} workAreaName={item.result ? workAreaNames.get(item.result.workAreaId) ?? null : null} />)}
-      {items.length === 0 && <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2"><p>아직 보관된 외부 비교 결과가 없습니다. 현장 분석 기록과 근거는 &lsquo;현장 분석&rsquo;에서 확인할 수 있습니다.</p><Link className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>현장 분석에서 결과와 근거 보기</Link></div>}
+      {items.length === 0 && <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2"><p>조회된 외부 비교 기록이 없습니다. 시스템에서 계산한 결과와 근거는 변화 분석에서 확인하세요.</p><Link className="mt-2 inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-4" href={`/sites/${encodeURIComponent(siteId)}/analysis`}>변화 분석에서 결과 확인</Link></div>}
     </section>
   </div>;
 }

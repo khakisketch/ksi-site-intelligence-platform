@@ -31,10 +31,10 @@ export async function buildPaletteItems(): Promise<PaletteItem[]> {
     key: `site:${site.siteId}`,
     label: site.name,
     group: "현장",
-    href: `/sites/${site.siteId}`,
-    // ID 를 힌트에 넣는 이유: 사용자가 현장명을 기억 못 해도 ID 로 찾을 수 있어야 한다.
-    // 상태 라벨은 labels.ts 가 정본이다 — 여기서 새 조어를 만들지 않는다.
-    hint: `${site.siteId} · ${SITE_STATUS_LABEL[site.status]?.label ?? site.status}`,
+    href: `/sites/${encodeURIComponent(site.siteId)}`,
+    // 원문 식별자 검색은 유지하지만, 기술 코드를 보조 설명으로 반복하지 않는다.
+    hint: "현장 자료와 작업 보기",
+    keywords: `${site.siteId} ${SITE_STATUS_LABEL[site.status]?.label ?? site.status}`,
   }));
 
   return [...screens, ...siteItems];

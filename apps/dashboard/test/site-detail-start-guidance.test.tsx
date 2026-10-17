@@ -73,7 +73,7 @@ describe("Site detail start guidance", () => {
     const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(guide.getAllByText("1개 목록됨")).toHaveLength(2);
     expect(guide.getByText("최근 페이지 50개 · 더 있음")).toBeTruthy();
-    expect(guide.getByRole("link", { name: "분석 후보와 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+    expect(guide.getByRole("link", { name: "비교할 자료 선택" }).getAttribute("href")).toBe("/sites/site-1/analysis");
     expect(screen.queryByRole("link", { name: "새 관측 시작" })).toBeNull();
     expect(mocked.history).toHaveBeenCalledWith("site-1", { limit: 50 });
   });
@@ -87,7 +87,7 @@ describe("Site detail start guidance", () => {
     }));
     const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(guide.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.queryByRole("link", { name: "분석 후보와 상태 확인" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
 
     cleanup();
     mocked.areas.mockResolvedValueOnce({ workAreas: [{ workAreaId: "area-1", name: "구역 1", status: "ACTIVE" }] });
@@ -97,7 +97,7 @@ describe("Site detail start guidance", () => {
       searchParams: Promise.resolve({}),
     }));
     expect(screen.getByRole("link", { name: "관측 작업 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=work-orders");
-    expect(screen.queryByRole("link", { name: "분석 후보와 상태 확인" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
   });
 
   it("keeps failed child reads unknown instead of rendering false empty guidance", async () => {
@@ -125,7 +125,7 @@ describe("Site detail start guidance", () => {
     }));
 
     expect(screen.queryByRole("region", { name: "현장 시작 안내" })).toBeNull();
-    expect(screen.getByText("현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다.")).toBeTruthy();
+    expect(screen.getByText("같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다.")).toBeTruthy();
   });
 
   it("uses archived area names for retained tasks without counting them as active areas", async () => {

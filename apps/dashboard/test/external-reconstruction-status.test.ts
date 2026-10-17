@@ -15,7 +15,7 @@ function inspection(overrides: Record<string, unknown> = {}): ExternalArtifactIn
 
 describe("external reconstruction inspection presentation", () => {
   it("keeps registration, policy, queue, running, report, display preparation, and ready as separate operator stages", () => {
-    expect(presentExternalInspectionStatus(inspection({ registrationState: "REGISTERED", sealState: "UNSEALED", inspection: { state: "INSPECTION_PENDING_SEAL", phase: null, outcome: null, request: null, report: null } })).title).toBe("등록됨 · 파일 봉인 필요");
+    expect(presentExternalInspectionStatus(inspection({ registrationState: "REGISTERED", sealState: "UNSEALED", inspection: { state: "INSPECTION_PENDING_SEAL", phase: null, outcome: null, request: null, report: null } })).title).toBe("자료 등록됨 · 파일 제출 마무리 필요");
     const policy = presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_PENDING_POLICY", phase: null, outcome: null, request: null, report: null } }));
     expect(policy.title).toBe("검사 기준 확인 필요");
     expect(policy.autoRefresh).toBe(false);
@@ -60,7 +60,7 @@ describe("external reconstruction inspection presentation", () => {
         state: "INSPECTION_FAILED_INCOMPLETE", phase: "FAILED_INCOMPLETE",
         outcome: [{ artifactId: "ortho", outcome: "REJECTED", reason: "UNKNOWN_MACHINE_CODE" }], request: null, report: null,
       },
-    })).artifactReasons).toEqual(["정사영상: 추가 확인이 필요합니다. 전문가 정보의 사유 코드를 확인하세요."]);
+    })).artifactReasons).toEqual(["정사영상: 추가 확인이 필요합니다. 파일 정보 · 처리 상세의 사유 코드를 확인하세요."]);
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_RUNNING", phase: "INSPECTION", outcome: null, request: null, report: null } })).autoRefresh).toBe(true);
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "RETRY_EXHAUSTED", sanitizedDisplayRef: null, receiptDigest: null } })).nextAction).toMatch(/상태를 새로고침/);
   });

@@ -28,7 +28,7 @@ describe("ExternalObservationCreateForm", () => {
 
   it("creates one external ingress with a stable idempotency key and opens its work detail", async () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]} />);
-    expect(screen.getByRole("heading", { name: "서쪽 현장 · 새 관측 시작" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "서쪽 현장 · 관측 자료 등록" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getByLabelText("작업 이름").getAttribute("maxlength")).toBe("200");
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 6일 현황 비교" } });
@@ -72,7 +72,7 @@ describe("ExternalObservationCreateForm", () => {
   it("keeps external-result creation separate and gives a recovery link when no work area is available", () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[]} />);
     expect(screen.getByRole("link", { name: "작업구역 만들기" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: /관측 이력 보기/ }).getAttribute("href")).toBe("/sites/site-1/observations");
+    expect(screen.getByRole("link", { name: /외부 비교 기록 보기/ }).getAttribute("href")).toBe("/sites/site-1/observations");
     expect(screen.queryByRole("button", { name: "산출물 등록 시작" })).toBeNull();
   });
 

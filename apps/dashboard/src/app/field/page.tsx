@@ -68,7 +68,7 @@ export default async function FieldWorkListPage() {
   ]);
   const siteById = new Map((sites ?? []).map((site) => [site.siteId, site]));
   const areaNameBySite = indexWorkAreaNamesBySite(areaPages.filter((page) => page !== null));
-  // 행 기술 참조는 겹치거나 빠진 맥락에만 둔다. 유일한 행은 compact하게 두고
+  // 행 파일 정보는 겹치거나 빠진 맥락에만 둔다. 유일한 행은 compact하게 두고
   // 전체 ID는 작업 상세 화면에서 계속 볼 수 있다.
   const rowsNeedingTechnicalRef = selectWorkQueueRowsNeedingTechnicalRef(workOrders.map((order) => {
     const siteName = siteById.get(order.siteId)?.name ?? null;
@@ -97,20 +97,20 @@ export default async function FieldWorkListPage() {
   return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[12.5px] text-ink-2">플랫폼 작업 원장에 기록된 관측 작업과 외부 결과 흐름입니다.</p>
+          <p className="text-[12.5px] text-ink-2">플랫폼 작업 원장에 기록된 관측 작업과 외부 비교 흐름입니다.</p>
           <div className="flex items-center gap-3">
             <Link href="/field/inbox" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">받은 업무</Link>
             <Link href="/field/team" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">팀 관리</Link>
             {canCreateObservation ? (
-              <Link href="/field/new" className="btn btn-primary tap-target">새 관측 시작</Link>
+              <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
             ) : (
-              <p className="text-[12px] leading-5 text-ink-2">새 관측 시작은 작업 등록 권한이 있는 계정에서 할 수 있습니다.</p>
+              <p className="text-[12px] leading-5 text-ink-2">관측 자료 등록은 작업 등록 권한이 있는 계정에서 할 수 있습니다.</p>
             )}
           </div>
         </header>
         <WorkQueueOperationsNotices notices={notices} />
         {workOrders.length === 0 ? (
-          <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 새 관측 작업을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
+          <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
         ) : (
           <>
             <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4" aria-label="작업 요약">
@@ -155,7 +155,7 @@ export default async function FieldWorkListPage() {
                               <StateBadge label={state.label} tone={state.tone} />
                             </Link>
                             {rowsNeedingTechnicalRef.has(order.workOrderId) && <details className="px-4 pb-2 text-[11.5px] text-ink-muted">
-                              <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">기술 참조</summary>
+                              <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">파일 정보</summary>
                               <p className="mt-1 break-all">작업 {order.workOrderId} · 현장 {siteName ?? SITE_NAME_UNAVAILABLE} ({order.siteId}) · 구역 {formatWorkAreaTechnicalRefs(order.workAreaIds)} · {formatKoreanDateTime(order.updatedAt, { dateStyle: "medium", timeStyle: "short" })} 갱신</p>
                             </details>}
                           </li>

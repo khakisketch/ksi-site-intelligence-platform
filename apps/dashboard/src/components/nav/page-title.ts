@@ -11,7 +11,7 @@ const STATIC_TITLES: Record<string, string> = {
   "/sites/new": "현장 등록",
   "/more": "더보기",
   "/field": "작업",
-  "/field/new": "새 관측",
+  "/field/new": "관측 자료 등록",
   "/field/inbox": "받은 업무",
   "/field/team": "팀 관리",
 };
@@ -27,12 +27,12 @@ export function resolvePageTitle(pathname: string | null): string {
     return NAV_ITEMS.find((item) => item.href === `/coming-soon/${section}`)?.label ?? "준비 중";
   }
 
-  if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "새 관측";
-  if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 관측 결과";
-  if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 관측 이력";
-  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "현장 분석";
-  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "현장 공간 자산";
-  if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 데이터 요청";
+  if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "관측 자료 등록";
+  if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 비교 결과";
+  if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 비교 기록";
+  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "변화 분석";
+  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "등록 자료";
+  if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";
   if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) return "현장 작업";

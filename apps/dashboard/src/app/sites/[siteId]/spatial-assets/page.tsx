@@ -18,15 +18,20 @@ import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import {
-  assetContextLine,
-  assetHeadline,
   duplicateFileNames,
-  formatAssetCaptureWindow,
   resolveWorkName,
 } from "@/lib/human-labels";
+import {
+  assetBusinessTitle,
+  assetBusinessTitles,
+  assetLifecycleLabel,
+  dataKindLabel,
+  isSupportedDataKind,
+  isSupportedLifecycleState,
+} from "@/lib/operator-language";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
-export const metadata = { title: "공간 자산 · KSI" };
+export const metadata = { title: "등록 자료 · KSI" };
 
 type SearchValue = string | string[] | undefined;
 type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; assetRef?: SearchValue };
@@ -51,31 +56,44 @@ function errorView(error: unknown, scope: "site" | "catalog" | "detail", siteId:
           ? "작업구역을 확인할 수 없거나 접근 권한이 없습니다."
           : "자산을 찾을 수 없거나 현재 조회할 수 없습니다."}
         tone="high"
-        action={{ label: "공간 자산 목록으로", href: `/sites/${encodeURIComponent(siteId)}/spatial-assets` }}
+        action={{ label: "등록 자료 목록으로", href: `/sites/${encodeURIComponent(siteId)}/spatial-assets` }}
       />;
     }
     if (error.status === 403) {
-      return <ErrorState message="현장 공간 자산 조회 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." tone="high" />;
+      return <ErrorState message="현장 등록 자료 조회 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." tone="high" />;
     }
     if (error.status === 503 || error.status >= 500) {
-      return <ErrorState message="공간 자산을 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
+      return <ErrorState message="등록 자료를 일시적으로 불러오지 못했습니다." retryable retryAfterSeconds={error.retryAfterSeconds} />;
     }
-    return <ErrorState message="요청한 공간 자산 정보를 확인할 수 없습니다." tone="high" />;
+    return <ErrorState message="요청한 등록 자료 정보를 확인할 수 없습니다." tone="high" />;
   }
-  return <ErrorState message="공간 자산 정보를 Core에서 불러오지 못했습니다." retryable />;
+  return <ErrorState message="등록 자료 정보를 불러오지 못했습니다." retryable />;
 }
 
-function lifecycleLabel(state: SpatialAssetCatalogItem["lifecycleState"]): string {
-  if (state === "SEALED") return "봉인됨";
-  if (state === "SUPERSEDED") return "대체됨";
-  return "미봉인";
+function TechnicalFileInfo({ item, workName, areaName }: { item: SpatialAssetCatalogItem; workName?: string | null; areaName?: string }) {
+  return <details className="mt-2 text-[12px] text-ink-2">
+    <summary className="tap-target cursor-pointer font-semibold text-ink-muted">파일 정보·처리 상세 보기</summary>
+    <div className="mt-1 flex flex-col gap-1 break-all border-l-2 border-line pl-3">
+      <p>등록 파일명 · {item.declared.fileName}</p>
+      {areaName && <p>작업구역명 · {areaName}</p>}
+      <p>등록된 관측 작업명 · {workName ?? "확인 불가"}</p>
+      <p>제출 참조 · {item.submissionRef} · 등록 버전 {item.revision}</p>
+      <p>등록 버전은 제출한 자료 묶음의 버전이며 촬영 횟수와 다릅니다.</p>
+      {!isSupportedDataKind(item.kind) && <p>등록 종류(원문) · {item.kind}</p>}
+      {!isSupportedLifecycleState(item.lifecycleState) && <p>등록 상태(원문) · {item.lifecycleState}</p>}
+      <p>자산 참조 · {item.assetRef}</p>
+      <p>관측 기록 ID · {item.observationEpochId}</p>
+      <p>작업 지시 ID · {item.workOrderId}</p>
+      <p>원본 artifact ID · {item.artifactId}</p>
+    </div>
+  </details>;
 }
 
 const INSPECTION_STATE_LABEL: Record<string, string> = {
-  PENDING_SEAL: "봉인 대기",
+  PENDING_SEAL: "파일 제출 대기",
   INSPECTION_NOT_CONFIGURED: "검사 미설정",
   INSPECTION_NOT_QUERIED: "검사 결과 확인 전",
-  INSPECTION_PENDING_SEAL: "봉인 대기",
+  INSPECTION_PENDING_SEAL: "파일 제출 대기",
   INSPECTION_PENDING_POLICY: "검사 기준 확인 중",
   INSPECTION_PENDING: "검사 대기",
   INSPECTION_QUEUED: "검사 대기",
@@ -87,28 +105,18 @@ const INSPECTION_STATE_LABEL: Record<string, string> = {
 };
 
 function inspectionStateLabel(state: string): string {
-  return INSPECTION_STATE_LABEL[state] ?? state;
+  return INSPECTION_STATE_LABEL[state] ?? "검사 상태 확인 필요";
 }
 
 function inspectionOutcomeLabel(outcome: SpatialAssetInspection["outcome"]): string {
-  if (outcome === "MEASURED") return "측정 정보 있음";
+  if (outcome === "MEASURED") return "파일 정보 확인됨";
   if (outcome === "REJECTED") return "거부됨";
   if (outcome === "NOT_APPLICABLE") return "적용 대상 아님";
   return "아직 확인되지 않음";
 }
 
 function kindLabel(kind: SpatialAssetCatalogItem["kind"]): string {
-  const labels: Record<SpatialAssetCatalogItem["kind"], string> = {
-    point_cloud: "포인트 클라우드",
-    camera_poses: "카메라 자세 자료",
-    ortho: "정사영상",
-    dsm: "DSM 지표면 모델",
-    dtm: "DTM 지면 모델",
-    mesh: "3D Mesh",
-    tiles_3d: "3D 타일",
-    report: "처리 보고서",
-  };
-  return labels[kind];
+  return dataKindLabel(kind);
 }
 
 function exactByteCount(value: number): string {
@@ -124,36 +132,26 @@ function isMetadataOnly(item: SpatialAssetCatalogItem): boolean {
     && item.supportedActions[0] === "VIEW_METADATA";
 }
 
-function AssetSummary({ item, siteId, workName, areaName, nameIsDuplicated }: {
+function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated }: {
   item: SpatialAssetCatalogItem;
   siteId: string;
   workName: string | null;
   areaName: string;
+  headline: string;
   nameIsDuplicated: boolean;
 }) {
   const stateClass = item.lifecycleState === "SEALED" ? "text-ink" : "text-high-ink";
-  const captureWindow = formatAssetCaptureWindow(item.declared.captureStartedAt, item.declared.captureEndedAt);
   return <article className="rounded-lg border border-line bg-surface px-4 py-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
-        <h3 className="break-all text-[14px] font-semibold">{assetHeadline(item.declared.fileName, item.revision, nameIsDuplicated)}</h3>
-        <p className="mt-1 break-words text-[12.5px] font-semibold leading-5 text-ink-1">{assetContextLine({ workName, areaName, captureWindow, revision: item.revision })}</p>
-        <p className="mt-1 text-[12px] text-ink-2">{kindLabel(item.kind)} · {item.declared.format} · {item.declared.contentType}</p>
-        <p className={`mt-1 text-[12px] ${stateClass}`}>Core 등록 상태: {lifecycleLabel(item.lifecycleState)}</p>
+        <h3 className="break-words text-[14px] font-semibold">{headline}</h3>
+        <p className="mt-1 text-[12px] text-ink-2">{item.declared.format} · {exactByteCount(item.declared.sizeBytes)} (제출 정보 기준)</p>
+        <p className={`mt-1 text-[12px] ${stateClass}`}>제출 상태: {assetLifecycleLabel(item.lifecycleState)}</p>
       </div>
       <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef })}>상세 보기</Link>
     </div>
-    {nameIsDuplicated && <p className="mt-2 rounded-md bg-sunk/70 px-3 py-2 text-[11.5px] leading-5 text-ink-2">같은 파일명이 이 목록에 여러 건 있습니다. 제출 revision·촬영 구간·아래 자산 참조로 구분하세요.</p>}
-    <details className="mt-2 text-[12px] text-ink-2">
-      <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기술 참조·ID 전체 보기</summary>
-      <div className="mt-1 flex flex-col gap-1 break-all border-l-2 border-line pl-3">
-        <p>자산 참조 · {item.assetRef}</p>
-        <p>관측 epoch ID · {item.observationEpochId}</p>
-        <p>작업 지시 ID · {item.workOrderId}</p>
-        <p>제출 참조 · {item.submissionRef} · revision {item.revision}</p>
-        <p>원본 artifact ID · {item.artifactId}</p>
-      </div>
-    </details>
+    {nameIsDuplicated && <p className="mt-2 rounded-md bg-sunk/70 px-3 py-2 text-[11.5px] leading-5 text-ink-2">같은 파일명이 이 목록에 여러 건 있습니다. 등록 버전·촬영 구간·아래 파일 정보로 구분하세요.</p>}
+    <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
     <FactStatus item={item} compact />
   </article>;
 }
@@ -161,22 +159,22 @@ function AssetSummary({ item, siteId, workName, areaName, nameIsDuplicated }: {
 function FactStatus({ item, compact = false }: { item: SpatialAssetCatalogItem; compact?: boolean }) {
   const inspectionText = inspectionOutcomeLabel(item.inspection.outcome);
   return <div className={compact ? "mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-ink-2" : "mt-3 grid gap-2 sm:grid-cols-3"}>
-    <p>{compact ? "고객 신고 정보 있음" : "고객 신고 정보"}</p>
-    <p>{item.observed ? "KSI 바이트 관측 있음" : "KSI 바이트 관측 없음"}</p>
-    <p>KSI 검사 결과: {inspectionText}</p>
+    <p>제출자 입력 정보 있음</p>
+    <p>{item.observed ? "저장 파일 확인 기록 있음" : "저장 파일 확인 기록 없음"}</p>
+    <p>파일 검사: {inspectionText}</p>
   </div>;
 }
 
 function DeclaredFacts({ item }: { item: SpatialAssetCatalogItem }) {
   const declared = item.declared;
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">고객 신고 정보 <span className="text-[11px] font-normal text-ink-muted">업로더가 제출</span></h3>
+    <h3 className="text-[14px] font-bold">제출자가 입력한 정보</h3>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
       <Fact label="파일명 / 형식" value={`${declared.fileName} · ${declared.format}`} />
       <Fact label="종류 / MIME" value={`${kindLabel(item.kind)} · ${declared.contentType}`} />
       <Fact label="신고 크기" value={exactByteCount(declared.sizeBytes)} />
-      <Fact label="신고 SHA-256" value={declared.sha256} mono />
-      <Fact label="신고 CRS" value={declared.crs ?? "미기재"} />
+      <Fact label="신고 파일 확인값(SHA-256)" value={declared.sha256} mono />
+      <Fact label="신고 좌표 기준" value={declared.crs ?? "미기재"} />
       <Fact label="신고 해상도" value={declared.gsdM === null ? "미기재" : `${declared.gsdM} m/pixel`} />
       <Fact label="제출 시각" value={formatKoreanDateTime(declared.submittedAt, { dateStyle: "medium", timeStyle: "short" })} />
       <Fact label="처리 완료 신고 시각" value={declared.producerCompletedAt ? formatKoreanDateTime(declared.producerCompletedAt, { dateStyle: "medium", timeStyle: "short" }) : "미기재"} />
@@ -188,15 +186,15 @@ function DeclaredFacts({ item }: { item: SpatialAssetCatalogItem }) {
 }
 
 function ObservedFacts({ item }: { item: SpatialAssetCatalogItem }) {
-  if (!item.observed) return <section className="rounded-lg border border-line bg-surface p-4"><h3 className="text-[14px] font-bold">KSI 바이트 관측 (OBSERVED)</h3><p className="mt-2 text-[12.5px] text-ink-2">KSI가 봉인한 바이트 매니페스트가 없습니다.</p></section>;
+  if (!item.observed) return <section className="rounded-lg border border-line bg-surface p-4"><h3 className="text-[14px] font-bold">저장 파일 확인 정보</h3><p className="mt-2 text-[12.5px] text-ink-2">제출 파일을 확인한 기록이 없습니다.</p></section>;
   const observed = item.observed;
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">KSI 바이트 관측 <span className="text-[11px] font-normal text-ink-muted">봉인된 저장 바이트</span></h3>
+    <h3 className="text-[14px] font-bold">저장 파일 확인 정보</h3>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
       <Fact label="관측 크기" value={exactByteCount(observed.sizeBytes)} />
       <Fact label="관측 MIME" value={observed.contentType} />
-      <Fact label="관측 SHA-256" value={observed.sha256} mono />
-      <Fact label="매니페스트 digest" value={observed.manifestDigest} mono />
+      <Fact label="관측 파일 확인값(SHA-256)" value={observed.sha256} mono />
+      <Fact label="매니페스트 확인값" value={observed.manifestDigest} mono />
       <Fact label="KSI 관측 시각" value={formatKoreanDateTime(observed.observedAt, { dateStyle: "medium", timeStyle: "short" })} />
     </dl>
     <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">바이트 관측은 파일의 공간적 의미나 분석 적합성을 확인한 결과가 아닙니다.</p>
@@ -210,64 +208,57 @@ function Fact({ label, value, mono = false }: { label: string; value: string; mo
 function RasterFacts({ raster }: { raster: SpatialAssetInspectedRasterFacts }) {
   return <>
     <dl className="mt-3 grid gap-3 text-[12.5px] sm:grid-cols-2">
-      <Fact label="관측 CRS" value={raster.observedCrsIdentifier} />
+      <Fact label="관측 좌표 기준" value={raster.observedCrsIdentifier} />
       <Fact label="격자 크기" value={`${formatCountKo(raster.width)} × ${formatCountKo(raster.height)} pixels`} />
-      <Fact label="관측 CRS digest" value={raster.observedCrsDigest} mono />
-      <Fact label="검사 보고서 digest" value={raster.sourceReportDigest} mono />
-      <Fact label="검사기 build digest" value={raster.inspectorBuildDigest} mono />
+      <Fact label="관측 좌표 기준 확인값" value={raster.observedCrsDigest} mono />
+      <Fact label="검사 보고서 확인값" value={raster.sourceReportDigest} mono />
+      <Fact label="검사 도구 빌드 확인값" value={raster.inspectorBuildDigest} mono />
       <Fact label="관측 수직 기준" value={raster.observedVerticalReference ? `${raster.observedVerticalReference.identifier} · ${raster.observedVerticalReference.basis}` : "관측되지 않음"} />
     </dl>
-    <details className="mt-3 text-[11.5px] text-ink-2"><summary className="cursor-pointer">격자 변환과 범위 근거</summary>
+    <details className="mt-3 text-[11.5px] text-ink-2"><summary className="cursor-pointer">격자 변환과 포함 범위 근거</summary>
       <p className="mt-2 break-all font-mono">{raster.transform.join(", ")}</p>
       <p className="mt-2 break-all font-mono">{raster.footprintWkt}</p>
-      <p className="mt-1 break-all font-mono text-ink-muted">범위 digest: {raster.footprintDigest}</p>
+      <p className="mt-1 break-all font-mono text-ink-muted">범위 확인값: {raster.footprintDigest}</p>
     </details>
   </>;
 }
 
 function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection }) {
   return <section className="rounded-lg border border-line bg-surface p-4">
-    <h3 className="text-[14px] font-bold">KSI 검사 결과 <span className="text-[11px] font-normal text-ink-muted">파일 구조 검사</span></h3>
+    <h3 className="text-[14px] font-bold">파일 검사 결과</h3>
     <p className="mt-2 text-[12.5px] text-ink-2">상태: {inspectionStateLabel(inspection.state)} · 결과: {inspectionOutcomeLabel(inspection.outcome)}</p>
     {inspection.reason && <p className="mt-1 text-[12px] text-ink-2">사유: {inspection.reason}</p>}
-    {inspection.raster ? <RasterFacts raster={inspection.raster} /> : <p className="mt-2 text-[12px] text-ink-muted">검사된 래스터 공간 정보가 없습니다.</p>}
-    {inspection.reportDigest && <p className="mt-2 break-all font-mono text-[10.5px] text-ink-muted">검사 보고서: {inspection.reportDigest}</p>}
+    <details className="mt-2 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">좌표·격자와 검사 근거</summary>
+    <p className="mt-1">검사 상태 코드 · {inspection.state}</p>
+    {inspection.raster ? <RasterFacts raster={inspection.raster} /> : <p className="mt-2 text-[12px] text-ink-muted">파일에서 확인한 위치·격자 정보가 없습니다.</p>}
+    {inspection.reportDigest && <p className="mt-2 break-all font-mono text-[10.5px] text-ink-muted">검사 보고서 확인값: {inspection.reportDigest}</p>}
+    </details>
     <p className="mt-3 text-[11.5px] leading-5 text-ink-muted">형식·격자 정보 검사만 나타냅니다. 정확도, 좌표 기준의 현장 검증, 분석 적합성은 판정하지 않습니다.</p>
   </section>;
 }
 
-function AssetDetail({ item, workName, areaName, nameIsDuplicated }: {
+function AssetDetail({ item, workName, areaName, headline }: {
   item: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
-  nameIsDuplicated: boolean;
+  headline: string;
 }) {
-  const captureWindow = formatAssetCaptureWindow(item.declared.captureStartedAt, item.declared.captureEndedAt);
   return <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/50 p-3 sm:p-4">
     <header>
-      <h2 className="text-[16px] font-bold">선택한 자산 상세</h2>
-      <p className="mt-1 break-all text-[13.5px] font-semibold">{assetHeadline(item.declared.fileName, item.revision, nameIsDuplicated)}</p>
-      <p className="mt-1 break-words text-[12.5px] leading-5 text-ink-2">{assetContextLine({ workName, areaName, captureWindow, revision: item.revision })}</p>
-      <details className="mt-2 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold text-ink-muted">기술 참조·ID 전체 보기</summary>
-        <div className="mt-1 flex flex-col gap-1 break-all border-l-2 border-line pl-3">
-          <p>자산 참조 · {item.assetRef}</p>
-          <p>관측 epoch ID · {item.observationEpochId}</p>
-          <p>작업 지시 ID · {item.workOrderId}</p>
-          <p>제출 참조 · {item.submissionRef} · revision {item.revision}</p>
-          <p>원본 artifact ID · {item.artifactId}</p>
-        </div>
-      </details>
+      <h2 className="text-[16px] font-bold">선택한 자료</h2>
+      <p className="mt-1 break-words text-[13.5px] font-semibold">{headline}</p>
+      <p className="mt-1 text-[12px] text-ink-2">촬영 시점은 제출자가 입력한 정보 기준입니다.</p>
+      <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
     </header>
     <FactStatus item={item} />
-    <DeclaredFacts item={item} />
-    <ObservedFacts item={item} />
+    <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">제출자 입력 정보 상세</summary><DeclaredFacts item={item} /></details>
+    <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">저장 파일 확인 상세</summary><ObservedFacts item={item} /></details>
     <InspectionFacts inspection={item.inspection} />
     <section className="rounded-lg border border-high/30 bg-high-bg px-4 py-3 text-[12px] leading-5 text-high-ink">
       <p className="font-semibold">데이터 사용 제한</p>
-      <p className="mt-1">다운로드는 이 목록에서 제공되지 않습니다. Core에 등록된 메타데이터만 볼 수 있습니다.</p>
+      <p className="mt-1">이 화면은 파일의 등록 정보만 제공합니다. 파일이 필요하면 구역 자료 준비에서 요청하세요.</p>
       <p className="mt-1">분석 적합성은 평가되지 않았습니다. 이 자산을 분석 입력으로 사용할 수 있다고 판단하지 않습니다.</p>
-      {item.lifecycleState !== "SEALED" && <p className="mt-1">현재 생애주기 상태가 {lifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
+      {item.lifecycleState !== "SEALED" && <p className="mt-1">현재 제출 상태가 {assetLifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
     </section>
   </section>;
 }
@@ -350,16 +341,19 @@ export default async function SpatialAssetsPage({
   const duplicatedNames = page
     ? duplicateFileNames(page.assets.map((asset) => asset.declared.fileName))
     : new Set<string>();
+  const businessTitles = page ? assetBusinessTitles(page.assets) : new Map<string, string>();
+  const businessTitleFor = (item: SpatialAssetCatalogItem): string =>
+    businessTitles.get(item.assetRef) ?? assetBusinessTitle(item);
   const areaDisplayName = selectedArea?.name ?? workAreaId ?? "";
 
   return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
     <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
       <div>
         <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 공간 자산</h2>
-        <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">Core에 등록된 관측의 공간 데이터 메타데이터를 확인합니다. 고객 신고, KSI 바이트 관측, 형식 검사를 별도 근거로 표시합니다.</p>
+        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
+        <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
       </div>
-      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 데이터 요청</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 관측 이력</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
+      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
     </header>
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -370,10 +364,10 @@ export default async function SpatialAssetsPage({
             {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
           </select>
         </label>
-        <button className="btn btn-primary" type="submit">자산 불러오기</button>
+            <button className="btn btn-primary" type="submit">등록 자료 보기</button>
       </form>
-      {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자산을 조회하려면 작업구역을 먼저 등록해야 합니다.</p>}
-      {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">현장 안의 작업구역 하나를 선택하면 그 범위에 귀속된 자산 목록을 Core에서 조회합니다.</p>}
+      {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
+      {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.</p>}
       {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
     </section>
 
@@ -391,14 +385,14 @@ export default async function SpatialAssetsPage({
               item={detail}
               workName={resolveWorkName(detail.workOrderId, workOrderNames)}
               areaName={areaDisplayName}
-              nameIsDuplicated={duplicatedNames.has(detail.declared.fileName)}
+              headline={businessTitleFor(detail)}
             />
             : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
           : null}
         <section className="flex flex-col gap-3">
-          <header><h2 className="text-[16px] font-bold">공간 자산 목록</h2><p className="mt-1 text-[12px] text-ink-muted">이 목록은 메타데이터 조회이며 파일 다운로드나 분석 가능 판정을 제공하지 않습니다.</p></header>
+          <header><h2 className="text-[16px] font-bold">등록 자료 목록</h2><p className="mt-1 text-[12px] text-ink-muted">파일의 등록 정보만 보여줍니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다.</p></header>
           {page.assets.length === 0
-            ? <EmptyState compact title="이 작업구역에 등록된 공간 자산이 없습니다" description="외부 관측 자료가 이 작업구역에 등록되면 해당 자산의 메타데이터가 여기에 표시됩니다." />
+            ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
             : page.assets.map((item) => {
               if (item.siteId !== siteId || item.workAreaId !== workAreaId) {
                 return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;
@@ -412,11 +406,12 @@ export default async function SpatialAssetsPage({
                 siteId={siteId}
                 workName={resolveWorkName(item.workOrderId, workOrderNames)}
                 areaName={areaDisplayName}
+                headline={businessTitleFor(item)}
                 nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
               />;
             })}
         </section>
-        <nav aria-label="공간 자산 페이지" className="flex flex-wrap gap-2">
+        <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
           {cursor && <Link className="btn" href={pageHref(siteId, workAreaId!)}>처음부터 보기</Link>}
           {page.hasMore && page.nextCursor && <Link className="btn btn-primary" href={pageHref(siteId, workAreaId!, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
         </nav>

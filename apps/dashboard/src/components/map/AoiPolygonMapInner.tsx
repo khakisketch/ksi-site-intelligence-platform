@@ -16,26 +16,26 @@ const _MAX_AOI_VERTICES = 256;
 /** Leaflet.draw가 기본으로 주는 영문 title/tooltip을 Console 언어에 맞춘다. */
 function applyKoreanDrawLabels() {
   L.drawLocal.draw.toolbar.actions = { title: "도형 그리기 취소", text: "취소" };
-  L.drawLocal.draw.toolbar.finish = { title: "현장 범위 그리기 완료", text: "완료" };
+  L.drawLocal.draw.toolbar.finish = { title: "경계 그리기 완료", text: "완료" };
   L.drawLocal.draw.toolbar.undo = { title: "마지막 점 삭제", text: "마지막 점 취소" };
-  L.drawLocal.draw.toolbar.buttons.polygon = "현장 범위 다각형 그리기";
+  L.drawLocal.draw.toolbar.buttons.polygon = "경계 그리기";
   L.drawLocal.draw.handlers.polygon.tooltip = {
-    start: "현장 범위의 첫 점을 선택하세요.",
+    start: "경계의 첫 점을 선택하세요.",
     cont: "다음 점을 선택하거나 첫 점을 눌러 완료하세요.",
-    end: "첫 점을 눌러 현장 범위를 완료하세요.",
+    end: "첫 점을 눌러 경계를 완성하세요.",
   };
-  L.drawLocal.edit.toolbar.actions.save = { title: "현장 범위 변경 저장", text: "저장" };
-  L.drawLocal.edit.toolbar.actions.cancel = { title: "현장 범위 변경 취소", text: "취소" };
-  L.drawLocal.edit.toolbar.actions.clearAll = { title: "현장 범위 전체 삭제", text: "전체 삭제" };
-  L.drawLocal.edit.toolbar.buttons.edit = "현장 범위 편집";
-  L.drawLocal.edit.toolbar.buttons.editDisabled = "편집할 현장 범위가 없습니다";
-  L.drawLocal.edit.toolbar.buttons.remove = "현장 범위 삭제";
-  L.drawLocal.edit.toolbar.buttons.removeDisabled = "삭제할 현장 범위가 없습니다";
+  L.drawLocal.edit.toolbar.actions.save = { title: "경계 편집 내용 반영", text: "편집 완료" };
+  L.drawLocal.edit.toolbar.actions.cancel = { title: "경계 편집 취소", text: "취소" };
+  L.drawLocal.edit.toolbar.actions.clearAll = { title: "그린 경계 전체 삭제", text: "전체 삭제" };
+  L.drawLocal.edit.toolbar.buttons.edit = "경계 편집";
+  L.drawLocal.edit.toolbar.buttons.editDisabled = "편집할 경계가 없습니다";
+  L.drawLocal.edit.toolbar.buttons.remove = "그린 경계 삭제";
+  L.drawLocal.edit.toolbar.buttons.removeDisabled = "삭제할 경계가 없습니다";
   L.drawLocal.edit.handlers.edit.tooltip = {
-    text: "점을 끌어 현장 범위를 수정하세요.",
+    text: "점을 끌어 경계를 수정하세요.",
     subtext: "취소하려면 취소를 누르세요.",
   };
-  L.drawLocal.edit.handlers.remove.tooltip = { text: "현장 범위를 눌러 삭제하세요." };
+  L.drawLocal.edit.handlers.remove.tooltip = { text: "그린 경계를 눌러 삭제하세요." };
 }
 
 function toVertices(layer: L.Polygon): AoiVertex[] {

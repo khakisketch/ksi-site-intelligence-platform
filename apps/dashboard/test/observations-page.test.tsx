@@ -38,10 +38,10 @@ afterEach(cleanup);
 
 function expectKnownContext() {
   expect(screen.getByText("권한 확인된 현장")).toBeTruthy();
-  expect(screen.getByRole("heading", { name: "외부 관측 결과 이력" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "외부 비교 기록" })).toBeTruthy();
   expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
-  expect(screen.getByRole("link", { name: "현장 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
-  expect(screen.getByRole("link", { name: "공간 자산" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+  expect(screen.getByRole("link", { name: "변화 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+  expect(screen.getByRole("link", { name: "등록 자료" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
 }
 
 it("keeps verified Site context and does not offer futile retry for denied history", async () => {

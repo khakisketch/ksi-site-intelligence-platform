@@ -13,7 +13,7 @@ describe("정적 경로", () => {
     ["/sites", "현장"],
     ["/sites/new", "현장 등록"],
     ["/field", "작업"],
-    ["/field/new", "새 관측"],
+    ["/field/new", "관측 자료 등록"],
     ["/field/inbox", "받은 업무"],
     ["/field/team", "팀 관리"],
     ["/more", "더보기"],
@@ -26,11 +26,11 @@ describe("동적 경로", () => {
   it("상세 화면은 대상 이름이 아니라 종류를 적는다 — 이름은 본문 h1 이 갖는다", () => {
     expect(resolvePageTitle("/sites/SITE-1")).toBe("현장 상세");
     expect(resolvePageTitle("/field/work-orders/WO-1")).toBe("현장 작업");
-    expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("새 관측");
-    expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 관측 이력");
-    expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 관측 결과");
-    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("현장 분석");
-    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("현장 분석");
+    expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("관측 자료 등록");
+    expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 비교 기록");
+    expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 비교 결과");
+    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("변화 분석");
+    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("변화 분석");
     expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/design")).toBe("");
@@ -42,10 +42,10 @@ describe("동적 경로", () => {
   });
 
   it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("현장 공간 자산");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("현장 공간 자산");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 데이터 요청");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 데이터 요청");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("등록 자료");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("등록 자료");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 자료 준비");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 자료 준비");
   });
 
   it("후행 슬래시가 있어도 같은 제목이다", () => {

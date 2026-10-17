@@ -56,7 +56,7 @@ function renderPairPanel(overrides: Partial<Parameters<typeof AnalysisRequestPan
 }
 
 function submitButton() {
-  return screen.getByRole("button", { name: "분석 요청" }) as HTMLButtonElement;
+  return screen.getByRole("button", { name: "변화 분석 요청" }) as HTMLButtonElement;
 }
 
 afterEach(() => {
@@ -173,7 +173,8 @@ describe("analysis pair feedback", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     expect(baseline.options[1]?.textContent).toContain(longName);
-    expect(baseline.options[1]?.textContent).toContain("제출 revision 1");
+    expect(baseline.options[1]?.textContent).toContain("2026. 9. 1.");
+    expect(baseline.options[1]?.textContent).not.toContain("등록 버전");
   });
 
   it("summarizes the latest result and next action before the request form", () => {
@@ -213,13 +214,13 @@ describe("analysis pair feedback", () => {
       initialSelectedDetail: completed,
       initialAnalysisId: "analysis-1",
     });
-    const summary = screen.getByLabelText("최근 분석 요약");
-    const request = screen.getByText("새 분석 요청");
+    const summary = screen.getByLabelText("최근 변화 분석 요약");
+    const request = screen.getByText("새 변화 분석 요청");
     expect(summary.textContent).toContain("최근: 실행 완료");
     expect(summary.textContent).toContain("정확도 보증이 아닙니다");
     expect(summary.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    const history = screen.getByRole("region", { name: "분석 이력" });
+    const history = screen.getByRole("region", { name: "변화 분석 이력" });
     expect(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole("link", { name: "분석 이력으로 이동" }).getAttribute("href")).toBe("#analysis-history");
+    expect(screen.getByRole("link", { name: "변화 분석 이력으로 이동" }).getAttribute("href")).toBe("#analysis-history");
   });
 });

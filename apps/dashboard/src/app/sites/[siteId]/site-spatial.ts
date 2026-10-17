@@ -6,6 +6,7 @@ import type {
   SpatialAssetCatalogPage,
 } from "@/lib/core-api/spatial-assets";
 import type { WorkArea } from "@/lib/core-api/types";
+import { assetBusinessTitle, assetLifecycleLabel, capturePeriodTitle } from "@/lib/operator-language";
 
 /**
  * 현장 상세 기본 탭(읽기 전용 공간 확인)의 순수 선택·요약 규칙.
@@ -329,6 +330,7 @@ export interface AreaCaptureEntry {
   source: "asset" | "legacy";
   /** 자산 행만 값 — 선택 쿼리(`?workAreaId&assetRef`)를 만들 때 쓴다. */
   assetRef: string | null;
+  reportRef?: string;
   headline: string;
   detail: string;
   capturedFrom: string | null;
@@ -356,8 +358,8 @@ export function buildAreaCaptureEntries({
       key: `asset:${item.assetRef}`,
       source: "asset",
       assetRef: item.assetRef,
-      headline: `${item.declared.fileName} · revision ${item.revision}`,
-      detail: `${item.kind} · ${item.lifecycleState}`,
+      headline: assetBusinessTitle(item),
+      detail: assetLifecycleLabel(item.lifecycleState),
       capturedFrom: item.declared.captureStartedAt,
       capturedTo: item.declared.captureEndedAt,
       reportedAt: item.declared.submittedAt,
@@ -370,8 +372,9 @@ export function buildAreaCaptureEntries({
         key: `legacy:${row.reportRef}`,
         source: "legacy",
         assetRef: null,
-        headline: row.reportRef,
-        detail: row.state === "AVAILABLE" ? "외부 비교 기록 있음" : "원본 확인 불가 이력",
+        reportRef: row.reportRef,
+        headline: "외부 비교 기록",
+        detail: "보관된 결과를 확인할 수 없습니다.",
         capturedFrom: null,
         capturedTo: null,
         reportedAt: null,
@@ -382,10 +385,13 @@ export function buildAreaCaptureEntries({
       key: `legacy:${row.reportRef}`,
       source: "legacy",
       assetRef: null,
-      headline: row.reportRef,
-      detail: `외부 비교 기록 · ${result.measurementStatus}`,
-      capturedFrom: result.baselineCapturedFrom ?? result.currentCapturedFrom,
-      capturedTo: result.baselineCapturedTo ?? result.currentCapturedTo,
+      reportRef: row.reportRef,
+      headline: `외부 비교 결과 · ${capturePeriodTitle(result.currentCapturedFrom, result.currentCapturedTo)}`,
+      detail: result.baselineCapturedFrom && result.baselineCapturedTo
+        ? `비교 기준 · ${capturePeriodTitle(result.baselineCapturedFrom, result.baselineCapturedTo)}`
+        : "비교 기준의 촬영 시점 미기재",
+      capturedFrom: result.currentCapturedFrom,
+      capturedTo: result.currentCapturedTo,
       reportedAt: result.reportedAt,
     });
   }

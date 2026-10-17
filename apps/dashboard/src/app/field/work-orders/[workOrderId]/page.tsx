@@ -160,9 +160,9 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
   ]);
   const reportLinkNotice = reportLinkRequested
     ? reportRef === null || !isExternalRelativeVolumeReportReference(reportRef)
-      ? "요청한 비교 결과 주소를 확인하지 못했습니다. 관측 이력에서 결과를 다시 선택하세요."
+      ? "요청한 비교 결과 주소를 확인하지 못했습니다. 외부 비교 기록에서 결과를 다시 선택하세요."
       : initialReport === null
-        ? "요청한 비교 결과를 이 작업에 결속하지 못했습니다. 관측 이력에서 다시 확인하세요."
+        ? "요청한 비교 결과를 이 작업에 결속하지 못했습니다. 외부 비교 기록에서 다시 확인하세요."
         : null
     : null;
   const sourceReportHref = planningBinding && sourceReport
@@ -205,10 +205,11 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
     <div className="flex flex-col">
       <OperationsWorkHeader>
         <div className="flex flex-col gap-1">
-          <h2 className="break-keep text-[19px] font-bold tracking-tight">{workOrder.name}</h2>
+          <h2 className="break-keep text-[19px] font-bold tracking-tight">{externalWorkflow ? "관측 자료와 검사 확인" : workOrder.name}</h2>
+          {externalWorkflow && <p className="break-keep text-[12.5px] text-ink-2">등록된 작업명 · {workOrder.name}</p>}
           <p className="break-keep text-[12.5px] text-ink-2">{site?.name ?? SITE_NAME_UNAVAILABLE} · {areaSummary} · {workOrder.cycleNumber}회차</p>
           <details className="text-[11.5px] text-ink-muted">
-            <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">기술 참조</summary>
+          <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">파일 정보</summary>
             <p className="mt-1 break-all">작업 {workOrder.workOrderId} · 현장 {workOrder.siteId} · 구역 {formatWorkAreaTechnicalRefs(workOrder.workAreaIds)}</p>
           </details>
         </div>
@@ -228,24 +229,24 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
 
         {externalWorkflow && <ResponsiveNotice action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료와 산출물 등록을 이어가세요." />}
 
-        {reportLinkNotice && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{reportLinkNotice} <Link className="font-semibold text-accent-text underline underline-offset-2" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations`}>관측 이력</Link></p>}
+        {reportLinkNotice && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{reportLinkNotice} <Link className="font-semibold text-accent-text underline underline-offset-2" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations`}>외부 비교 기록</Link></p>}
 
         {planningBinding && <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-sunk px-4 py-3" aria-label="다음 관측 안내">
           <div className="min-w-0 flex-1">
             <h2 className="text-[13px] font-bold">다음 관측 준비</h2>
-            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{t1ToT2 ? "산출물을 봉인한 뒤 현장 분석 화면에서 t1→t2 분석을 요청하세요." : "산출물을 봉인한 뒤 현장 분석 화면에서 기준·현재 관측을 선택해 분석을 요청하세요."}</p>
+            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{t1ToT2 ? "산출물 제출을 마친 뒤 변화 분석 화면에서 기준 자료→비교 자료 분석을 요청하세요." : "산출물 제출을 마친 뒤 변화 분석 화면에서 기준·현재 관측을 선택해 분석을 요청하세요."}</p>
             {!sourceReportHref && <p role="status" className="mt-1 text-[12px] text-ink-muted">원본 결과와 승인 제안 연결을 확인할 수 없습니다.</p>}
           </div>
           <div className="flex flex-wrap gap-2">
             {sourceReportHref && <Link className="btn" href={sourceReportHref}>원본 결과·제안 보기</Link>}
-            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/analysis#new-analysis-request`}>현장 분석 열기</Link>
-            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations/new?repeatWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}`}>이 범위로 새 관측</Link>
+            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/analysis#new-analysis-request`}>변화 분석 열기</Link>
+            <Link className="btn" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations/new?repeatWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}`}>이 범위로 관측 자료 등록</Link>
           </div>
         </section>}
 
         {(externalWorkflow || latestItem || pendingDrafts.length > 0) && (
           <nav aria-label="다음 행동" className="flex flex-wrap gap-2 rounded-lg border border-line bg-sunk px-4 py-3">
-            {externalWorkflow && <Link className="btn" href="#external-submissions">{workflowClosed ? "산출물 이력으로 이동" : "산출물 등록·이력으로 이동"}</Link>}
+            {externalWorkflow && <Link className="btn" href="#external-submissions">{workflowClosed ? "자료 검사 기록으로 이동" : "자료 등록·검사 기록으로 이동"}</Link>}
             {latestItem && <Link className="btn" href="#work-order-result">보존된 결과로 이동</Link>}
             {pendingDrafts.length > 0 && <Link className="btn" href="#reobservation-drafts">재관측 제안으로 이동</Link>}
             {externalWorkflow && <Link className="btn" href="#work-operations">작업 운영으로 이동</Link>}
@@ -268,7 +269,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         {pendingDrafts.length > 0 && (
           <section id="reobservation-drafts" className="flex scroll-mt-5 flex-col gap-2 rounded-lg border border-line bg-surface p-4">
             <h2 className="text-[14px] font-bold">재관측 제안</h2>
-            <p className="text-[12.5px] text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 결과 화면에서 진행합니다.</p>
+            <p className="text-[12.5px] text-ink-2">승인 대기 초안은 승인 가능 여부를 추정하지 않고 표시합니다. 제안 생성과 결정은 외부 비교 화면에서 진행합니다.</p>
             {externalWorkflow && <Link className="w-fit text-[12.5px] font-semibold text-accent-text underline underline-offset-2" href={initialReport ? "#external-result" : "#external-volume"}>{initialReport ? "결과와 제안 결정으로 이동" : "비교 요청·제안 상태로 이동"}</Link>}
             <ul className="divide-y divide-line">
               {pendingDrafts.map((draft) => <li key={draft.draftId} className="py-2 text-[12.5px]"><p className="font-semibold">{draft.proposedEffort}</p><p className="mt-1 text-ink-muted">{formatCountKo(draft.targetRegionRefs.length)}개 구역 · 만료 {formatKoreanDateTime(draft.expiresAt, { dateStyle: "medium", timeStyle: "short" })}</p></li>)}
@@ -279,7 +280,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         {latestItem ? <div id="work-order-result" className="scroll-mt-5">{projection ? <ExternalSiteResultSummary
           externalResult={projection}
           workAreaName={areaNameById.get(latestItem.result?.workAreaId ?? "") ?? null}
-        /> : <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">보존된 외부 결과 상세를 확인할 수 없습니다.</p>}</div> : null}
+        /> : <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">보존된 외부 비교 결과 상세를 확인할 수 없습니다.</p>}</div> : null}
 
         {externalWorkflow && <details id="work-operations" className="scroll-mt-5 rounded-xl border border-line bg-surface">
           <summary className="tap-target flex cursor-pointer items-center justify-between gap-3 px-4 py-3">

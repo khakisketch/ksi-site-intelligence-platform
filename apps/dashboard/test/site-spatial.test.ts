@@ -216,6 +216,10 @@ describe("site spatial scope summaries", () => {
     expect(entries.map((entry) => entry.key)).toEqual(["legacy:r1", "asset:a1"]);
     expect(entries[0].source).toBe("legacy");
     expect(entries[1].source).toBe("asset");
+    expect(entries[0].reportRef).toBe("r1");
+    expect(entries[0].headline).toContain("촬영");
+    expect(entries[0].headline).not.toContain("r1");
+    expect(entries[1].headline).not.toMatch(/tile\.tif|revision/);
     expect(buildAreaCaptureEntries({ assets: null, legacyRows: null, limit: 10 })).toEqual([]);
   });
 

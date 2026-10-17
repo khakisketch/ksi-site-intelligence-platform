@@ -192,16 +192,16 @@ export default async function SiteDetailPage({
         <SiteStartGuidance siteId={site.siteId} {...siteStartCounts} />
       </div>}
 
-      {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="현장 분석" detail="현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다." />}
+      {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="변화 분석" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." />}
 
       {tab === "spatial-assets" && <div className="flex flex-col gap-4">
         <SectionCard title="작업구역">
-          {areasResult.status === "rejected" ? <ErrorState message="작업구역을 불러오지 못했습니다." retryable /> : areas.length === 0 ? <EmptyState title="등록된 작업구역이 없습니다" description="작업구역은 공간 자산 화면에서 확인하고 관리할 수 있습니다." /> : <ul className="divide-y divide-line">{areas.map((area) => <li key={area.workAreaId} className="py-3 text-[13px]">
+          {areasResult.status === "rejected" ? <ErrorState message="작업구역을 불러오지 못했습니다." retryable /> : areas.length === 0 ? <EmptyState title="등록된 작업구역이 없습니다" description="자료를 연결할 작업구역을 먼저 확인하세요." action={{ label: "작업구역 확인", href: `${sitePath}/work-areas` }} /> : <ul className="divide-y divide-line">{areas.map((area) => <li key={area.workAreaId} className="py-3 text-[13px]">
             <p className="break-words font-semibold">{area.name || "이름을 확인할 수 없는 구역"}</p>
             <p className="mt-1 text-[12px] text-ink-2">등록 {formatKoreanDateTime(area.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
             <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">구역 식별 정보</summary><p className="break-all font-mono">{area.workAreaId}</p></details>
           </li>)}</ul>}
-          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">공간 자산</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 데이터 요청</Link></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">등록 자료 보기</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 자료 준비</Link></div>
         </SectionCard>
       </div>}
 
@@ -230,9 +230,9 @@ export default async function SiteDetailPage({
         </SectionCard>
       </div>}
 
-      {tab === "external-results" && <SectionCard title="외부 결과">
-        {historyResult.status === "rejected" ? <ErrorState message="외부 관측 결과를 불러오지 못했습니다." retryable /> : historyResult.value.items.length === 0 ? <EmptyState title="외부 관측 결과가 없습니다" description="결과가 기록되면 이 탭에서 보관 근거와 함께 확인할 수 있습니다." /> : <ExternalObservationHistory siteId={site.siteId} items={historyResult.value.items} workAreaNames={areaNames} />}
-        <div className="mt-3"><Link href={`${sitePath}/observations`} className="btn">외부 관측 이력 열기</Link></div>
+      {tab === "external-results" && <SectionCard title="외부 비교 기록">
+        {historyResult.status === "rejected" ? <ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /> : historyResult.value.items.length === 0 ? <EmptyState title="조회된 외부 비교 기록이 없습니다" description="시스템에서 계산한 지형 변화는 변화 분석에서 확인하세요. 이 목록은 별도로 등록된 비교 기록입니다." action={{ label: "변화 분석 보기", href: `${sitePath}/analysis` }} /> : <ExternalObservationHistory siteId={site.siteId} items={historyResult.value.items} workAreaNames={areaNames} />}
+        <div className="mt-3"><Link href={`${sitePath}/observations`} className="btn">외부 비교 기록 열기</Link></div>
       </SectionCard>}
     </div>
   </div>;

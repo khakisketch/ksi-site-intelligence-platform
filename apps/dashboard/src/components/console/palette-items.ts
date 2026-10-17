@@ -20,6 +20,8 @@ export interface PaletteItem {
   href: string;
   /** 라벨 밑에 붙는 보조 문구(현장 ID·상태 등). 검색 대상에 포함된다. */
   hint?: string;
+  /** 검색용 원문·동의어. 화면 설명에는 기술 식별자를 반복하지 않는다. */
+  keywords?: string;
   /** 준비 중 항목 — 목록에서 숨기지 않고 상태를 밝힌다(UX 목표 §6). */
   pending?: boolean;
 }
@@ -44,6 +46,7 @@ export function matchScore(item: PaletteItem, query: string): number | null {
   if (label.startsWith(query)) return 0;
   if (label.includes(query)) return 1;
   if (item.hint && item.hint.toLowerCase().includes(query)) return 2;
+  if (item.keywords && item.keywords.toLowerCase().includes(query)) return 2;
   return null;
 }
 

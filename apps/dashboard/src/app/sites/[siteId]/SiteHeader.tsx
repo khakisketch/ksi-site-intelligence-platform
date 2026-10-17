@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
-import { SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
 import {
@@ -65,27 +64,35 @@ export function SiteHeader({
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
         {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은 그 하위
             맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다. */}
+        <span className="text-[12px] text-ink-2">현장명</span>
         <h2 className="text-[17px] font-bold tracking-tight break-keep">{site.name}</h2>
-        <StateBadge label={status.label} tone={status.tone} />
-        <span className="text-[11.5px] break-keep text-ink-2">
+        {site.status === "SUSPENDED" && <StateBadge label={status.label} tone={status.tone} />}
+        <details className="text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer">현장 등록 정보</summary>
+          <dl className="my-2 grid gap-1">
+            <div><dt className="font-semibold">등록된 현장명</dt><dd className="break-words">{site.name}</dd></div>
+            <div><dt className="font-semibold">현장 관리 상태</dt><dd>{status.label}</dd></div>
+            <div><dt className="font-semibold">현장 식별자</dt><dd className="break-all font-mono">{site.siteId}</dd></div>
+          </dl>
+        <p className="text-[11.5px] break-keep text-ink-2">
           최근 외부 비교 보고{" "}
           {!latestExternalReportKnown
             ? "알 수 없음"
             : latestExternalReportAt
               ? formatKoreanDate(latestExternalReportAt)
               : "아직 없음"}
-        </span>
+        </p>
         {site.resumeTarget && (
           <span className="text-[11.5px] break-keep text-ink-2">
             복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
           </span>
         )}
-        <SiteIdentityDetails site={site} />
+        </details>
         <Link
           href={`/sites/${encodeURIComponent(site.siteId)}?section=work-orders#site-aoi`}
           className="tap-target text-[11.5px] break-keep underline text-ink-2"
         >
-          전체 경계 보기
+          현장 전체 범위 보기
         </Link>
 
         <span className="ml-auto hidden flex-wrap items-center gap-1.5 lg:flex">

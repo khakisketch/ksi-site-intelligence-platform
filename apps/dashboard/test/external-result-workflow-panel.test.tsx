@@ -300,8 +300,8 @@ it("loads a retained work-order report without a current pair decision, renders 
   expect(screen.queryByText(/마감 시각 경과/)).toBeNull();
   expect(await screen.findByText("4 m³")).toBeTruthy();
   expect(screen.getByText("불확실성은 아직 산정되지 않았습니다. independent checkpoint RMSE is retained by Core evidence")).toBeTruthy();
-  fireEvent.click(screen.getByText("전문가용 기록 및 검증 정보"));
-  expect(screen.getByText(`구역 ID area-1 · rev 1 · 정의 ${digest("8")}`)).toBeTruthy();
+  fireEvent.click(screen.getByText("파일 정보 · 처리 상세"));
+  expect(screen.getByText(`비교 구역 area-1 · 구역 버전 1 · 구역 정의 확인값(해시) ${digest("8")}`)).toBeTruthy();
   expect(screen.getByText(`독립 검사점 증거 기록: ${digest("5")}`)).toBeTruthy();
 });
 
@@ -675,7 +675,7 @@ describe("SINGLE_VOLUME measurement", () => {
     await waitFor(() => expect(router.push).toHaveBeenCalledWith("/field/work-orders/successor-1"));
     expect(router.refresh).toHaveBeenCalled();
     expect(screen.getByRole("link", { name: "후속 작업 보기" }).getAttribute("href")).toBe("/field/work-orders/successor-1");
-    fireEvent.click(screen.getByText("전문가용 검토 기록"));
+    fireEvent.click(screen.getByText("검토 기록 · 처리 상세"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
     expect(audit.textContent).toContain("대상 촬영");
     expect(audit.textContent).toContain("0.04m");
@@ -700,7 +700,7 @@ describe("SINGLE_VOLUME measurement", () => {
     const reviewStatusLine = screen.getByText(/결과 검토 기록이 있습니다\./);
     expect(reviewStatusLine.textContent).toContain("2026. 9. 15. 12:00");
     expect(reviewStatusLine.textContent).not.toMatch(/T\d{2}:\d{2}:\d{2}Z/);
-    fireEvent.click(screen.getByText("전문가용 검토 기록"));
+    fireEvent.click(screen.getByText("검토 기록 · 처리 상세"));
     const audit = screen.getByText(/대상 독립 검사점 RMSE/).closest("details")!;
     expect(audit.textContent).toContain("기록 없음");
     expect(audit.textContent).toContain("대상 독립 검사점 RMSE: 기록 없음");
@@ -722,7 +722,7 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(await screen.findByText("불확도 미산정")).toBeTruthy();
     expect(screen.getByText("1,234.5 m³")).toBeTruthy();
     expect(screen.getByText("작업구역 남측 적치 구역")).toBeTruthy();
-    expect(screen.getByText(/기술 참조 · 구역 pile-1/).closest("details")).toBeTruthy();
+    expect(screen.getByText("비교 구역 pile-1 · 구역 버전 1").closest("details")).toBeTruthy();
 
     view = singleReportView({ boundaryValidFraction: 0.5 });
     fireEvent.click(screen.getByRole("button", { name: "체적 요청 상태" }));

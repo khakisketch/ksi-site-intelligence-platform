@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { formatRegistrationVersion, zoneVersionLabel } from "@/app/field/registration-language";
 import { formatNumberKo } from "@/lib/number-format";
 import type {
   ExternalReobservationProposalView,
@@ -92,7 +93,7 @@ function isAbort(error: unknown): boolean {
 }
 
 function subjectLabel(subject: { workOrderId: string; submissionId: string; revision: number }): string {
-  return `${subject.workOrderId} · ${subject.submissionId} · rev ${subject.revision}`;
+  return `${formatRegistrationVersion(subject.revision)} · 제출 ${subject.submissionId} · 작업 ${subject.workOrderId}`;
 }
 
 function isKnownRequestStatus(status: unknown): status is ExternalRelativeVolumeRequestView["status"] {
@@ -186,14 +187,13 @@ function CoreBindings({ view }: { view: ExternalRelativeVolumeReportView }) {
   const { request, report, executionPolicy } = view;
   return (
     <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">전문가용 기록 및 검증 정보</summary>
+      <summary className="cursor-pointer font-semibold">파일 정보 · 처리 상세</summary>
       <div className="mt-2 flex flex-col gap-1 break-all">
         <p>기준 대상: {subjectLabel(request.baseline.subject)}</p>
         <p>현재 대상: {subjectLabel(request.current.subject)}</p>
-        <p>구역 ID {request.zoneSnapshot.workAreaId} · rev {request.zoneSnapshot.revision} · 정의 {request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
-        <p>정책: 검증 {request.validationPolicyDigest} · 실행 {executionPolicy.policyDigest ?? request.executionPolicyDigest}</p>
-        <p>증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
-        <p>보고서: {report.reportDigest ?? "기록 없음"} · 요청 {request.requestDigest ?? "기록 없음"}</p>
+        <p>비교 구역 {request.zoneSnapshot.workAreaId} · {zoneVersionLabel(request.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>정책 확인값(해시): 검증 {request.validationPolicyDigest} · 실행 {executionPolicy.policyDigest ?? request.executionPolicyDigest}</p>
+        <p>보고서 확인값(해시): {report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {request.requestDigest ?? "기록 없음"}</p>
         <p>독립 검사점 증거 기록: {request.evidenceRecordDigests.join(", ")}</p>
       </div>
     </details>
@@ -225,7 +225,7 @@ function ReportDetail({
         <div className="px-4 py-3">
           <h3 className="text-[16px] font-bold tracking-tight">외부 상대 물량 비교 결과</h3>
           <p className="mt-1 leading-5 text-ink-2">작업구역 {workAreaName ?? "이름을 확인할 수 없는 구역"}</p>
-          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">작업구역 식별 정보</summary><p className="break-all font-mono">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p></details>
+          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보</summary><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></details>
         </div>
         <span className="px-4 text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
@@ -266,20 +266,20 @@ function ReviewAuditDetail({ review }: { review: ExternalResultReview }) {
   const { authority, decision, report, request } = review;
   return (
     <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">전문가용 검토 기록</summary>
+      <summary className="cursor-pointer font-semibold">검토 기록 · 처리 상세</summary>
       <div className="mt-2 flex flex-col gap-1 break-all">
-        <p>검토 다이제스트: {review.reviewDigest ?? "기록 없음"}</p>
+        <p>검토 확인값(해시): {review.reviewDigest ?? "기록 없음"}</p>
         <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
         <p>검토 보고서: {review.reportRef} · 요청 {request.requestId}</p>
-        <p>검토 보고 다이제스트: {report.reportDigest ?? "기록 없음"} · 요청 다이제스트 {request.requestDigest ?? "기록 없음"}</p>
+        <p>검토 보고 확인값(해시): {report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {request.requestDigest ?? "기록 없음"}</p>
         <p>검토 결정: {decision.decisionId} · {decision.decisionDigest ?? "기록 없음"}</p>
         <p>기준 독립 검사점 RMSE: {reviewRmseLabel(authority.baselineRmseM)}</p>
         <p>현재 독립 검사점 RMSE: {reviewRmseLabel(authority.currentRmseM)}</p>
-        <p>기준 대상: {subjectLabel(authority.baseline.subject)} · 검사 {authority.baseline.inspectionReportDigest}</p>
-        <p>현재 대상: {subjectLabel(authority.current.subject)} · 검사 {authority.current.inspectionReportDigest}</p>
-        <p>구역 ID: {authority.zoneSnapshot.workAreaId} · rev {authority.zoneSnapshot.revision} · 정의 {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
-        <p>검증 정책: {authority.validationPolicyDigest} · 실행 정책: {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
-        <p>호환 매핑: {authority.compatibilityMappingDigest} · 권한 기록: {authority.authorityDigest ?? "기록 없음"}</p>
+        <p>기준 대상: {subjectLabel(authority.baseline.subject)} · 검사 보고서 확인값(해시) {authority.baseline.inspectionReportDigest}</p>
+        <p>현재 대상: {subjectLabel(authority.current.subject)} · 검사 보고서 확인값(해시) {authority.current.inspectionReportDigest}</p>
+        <p>비교 구역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>검증 정책 확인값(해시): {authority.validationPolicyDigest} · 실행 정책 확인값(해시): {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
+        <p>호환 매핑 확인값(해시): {authority.compatibilityMappingDigest} · 권한 기록 확인값(해시): {authority.authorityDigest ?? "기록 없음"}</p>
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
         {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
       </div>
@@ -295,19 +295,19 @@ function SingleVolumeReviewAuditDetail({ review }: { review: ExternalSingleVolum
   const { authority, decision, report, request } = review;
   return (
     <details className="mt-2 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-      <summary className="cursor-pointer font-semibold">전문가용 검토 기록</summary>
+      <summary className="cursor-pointer font-semibold">검토 기록 · 처리 상세</summary>
       <div className="mt-2 flex flex-col gap-1 break-all">
-        <p>검토 다이제스트: {review.reviewDigest ?? "기록 없음"}</p>
+        <p>검토 확인값(해시): {review.reviewDigest ?? "기록 없음"}</p>
         <p>검토 원본: 조직 {review.organizationId} · 현장 {review.siteId} · 작업 {review.sourceWorkOrderId}</p>
         <p>검토 보고서: {review.reportRef} · 요청 {request.requestId}</p>
-        <p>검토 보고 다이제스트: {report.reportDigest ?? "기록 없음"} · 요청 다이제스트 {request.requestDigest ?? "기록 없음"}</p>
+        <p>검토 보고 확인값(해시): {report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {request.requestDigest ?? "기록 없음"}</p>
         <p>검토 결정: {decision.decisionId} · {decision.decisionDigest ?? "기록 없음"}</p>
         <p>대상 촬영 {observationRange(request.target.capturedFrom, request.target.capturedTo)}</p>
         <p>대상 독립 검사점 RMSE: {authority.targetRmseM === null ? "기록 없음" : `${authority.targetRmseM}m`}</p>
-        <p>대상: {subjectLabel(authority.target.subject)} · 검사 {authority.target.inspectionReportDigest}</p>
-        <p>구역 ID: {authority.zoneSnapshot.workAreaId} · rev {authority.zoneSnapshot.revision} · 정의 {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
-        <p>검증 정책: {authority.validationPolicyDigest} · 실행 정책: {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
-        <p>호환 매핑: {authority.compatibilityMappingDigest} · 권한 기록: {authority.authorityDigest ?? "기록 없음"}</p>
+        <p>대상: {subjectLabel(authority.target.subject)} · 검사 보고서 확인값(해시) {authority.target.inspectionReportDigest}</p>
+        <p>비교 구역: {authority.zoneSnapshot.workAreaId} · {zoneVersionLabel(authority.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {authority.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+        <p>검증 정책 확인값(해시): {authority.validationPolicyDigest} · 실행 정책 확인값(해시): {authority.executionPolicy.policyDigest ?? "기록 없음"}</p>
+        <p>호환 매핑 확인값(해시): {authority.compatibilityMappingDigest} · 권한 기록 확인값(해시): {authority.authorityDigest ?? "기록 없음"}</p>
         <p>증거 기록: {authority.evidenceRecordDigests.join(", ")}</p>
         {review.factualLimitations.map((limitation) => <p key={limitation}>검토 한계: {limitation}</p>)}
       </div>
@@ -325,7 +325,7 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
         <div>
           <h4 className="text-[16px] font-bold tracking-tight">단일 시점 체적 결과</h4>
           <p className="mt-1 break-words leading-5 text-ink-2">작업구역 {workAreaName || "이름을 확인할 수 없는 구역"}</p>
-          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">작업구역 식별 정보</summary><p className="break-all font-mono">기술 참조 · 구역 {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision}</p></details>
+          <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보</summary><p className="break-all font-mono">비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)}</p></details>
         </div>
         <span className="text-[12px] text-ink-muted">보고 {formatKoreanDateTime(view.report.reportedAt, { dateStyle: "medium", timeStyle: "short" })}</span>
       </div>
@@ -345,13 +345,13 @@ function SingleVolumeReportDetail({ view, workAreaName }: { view: ExternalSingle
         <p role="alert" className="border-t border-line px-4 py-3 text-high-ink">적용 범위가 측정 기준을 충족하지 않아 체적을 표시하지 않습니다.</p>
       )}
       <details className="mx-4 mb-3 rounded border border-line px-3 py-2 text-[12px] text-ink-2">
-        <summary className="cursor-pointer font-semibold">전문가용 기록 및 검증 정보</summary>
+        <summary className="cursor-pointer font-semibold">파일 정보 · 처리 상세</summary>
         <div className="mt-2 flex flex-col gap-1 break-all">
           <p>대상: {subjectLabel(view.request.target.subject)}</p>
-          <p>구역 ID {view.request.zoneSnapshot.workAreaId} · rev {view.request.zoneSnapshot.revision} · 정의 {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
-          <p>정책: 검증 {view.request.validationPolicyDigest} · 실행 {view.executionPolicy.policyDigest ?? view.request.executionPolicyDigest}</p>
+          <p>비교 구역 {view.request.zoneSnapshot.workAreaId} · {zoneVersionLabel(view.request.zoneSnapshot.revision)} · 구역 정의 확인값(해시) {view.request.zoneSnapshot.definitionDigest ?? "기록 없음"}</p>
+          <p>정책 확인값(해시): 검증 {view.request.validationPolicyDigest} · 실행 {view.executionPolicy.policyDigest ?? view.request.executionPolicyDigest}</p>
           <p>경계 셀 {metrics.boundaryCellCount}개 · 경계 표본 {metrics.boundarySampleCount}개</p>
-          <p>보고서: {view.report.reportDigest ?? "기록 없음"} · 요청 {view.request.requestDigest ?? "기록 없음"}</p>
+          <p>보고서 확인값(해시): {view.report.reportDigest ?? "기록 없음"} · 요청 확인값(해시) {view.request.requestDigest ?? "기록 없음"}</p>
         </div>
       </details>
     </section>

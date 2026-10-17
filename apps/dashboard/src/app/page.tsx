@@ -104,11 +104,11 @@ function attentionWorkOrderDetail(source: Extract<HomeAttentionSource, { kind: "
   if (order.status === "DRAFT" || order.status === "AWAITING_APPROVAL") return `조사 범위 ${order.workAreaIds.length}개 구역과 목적을 검토해야 합니다.`;
   if (order.status === "REOBSERVATION_PENDING") return "부족한 근거와 추가 관측 범위를 확인한 뒤 사람이 결정합니다.";
   if (order.status === "REVIEW_READY") return "외부 결과와 보관 근거를 검토합니다.";
-  return "작업 원장에 기록된 현재 상태와 근거를 확인합니다.";
+  return "현재 작업 상태와 확인 근거를 살펴봅니다.";
 }
 
 function fallback() {
-  return { label: "연결된 이미지 없음", detail: "현장 원장에 등록된 관측 이미지가 없습니다." };
+  return { label: "연결된 이미지 없음", detail: "이 현장에 연결된 관측 이미지가 없습니다." };
 }
 
 function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeAttentionCardView {
@@ -148,17 +148,17 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
 function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<string, SiteView>): HomeRecentUpdateView {
   const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if ("site" in source) {
-    return { key: source.key, siteName, label: "현재 원장", title: "등록된 대기 작업 없음", detail: "현재 KSI 작업 원장 기준이며 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `현장 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
+    return { key: source.key, siteName, label: "현재 등록 상태", title: "등록된 대기 작업 없음", detail: "현재 조회된 작업 기준입니다. 현장 전체의 정상이나 안전을 의미하지 않습니다.", observedAt: `현장 갱신 ${observedAt(source.observedAt)}`, href: `/sites/${encodeURIComponent(source.site.siteId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
   }
   if (source.kind === "RESULT_READY" || source.kind === "OBSERVATION_COMPLETED") {
-    return { key: source.key, siteName, label: source.kind === "RESULT_READY" ? "새 결과" : "최근 조사", title: source.workOrder.name, detail: source.kind === "RESULT_READY" ? "외부 결과와 보관 근거를 검토합니다." : "조사 결과가 작업 원장에 기록되었습니다.", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(source.workOrder.workOrderId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
+    return { key: source.key, siteName, label: source.kind === "RESULT_READY" ? "새 결과" : "최근 관측", title: source.workOrder.name, detail: source.kind === "RESULT_READY" ? "외부 결과와 보관 근거를 검토합니다." : "관측 결과가 작업 기록에 등록되었습니다.", observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(source.workOrder.workOrderId)}`, image: null, imageFallbackLabel: "연결된 미리보기 없음" };
   }
   throw new Error("Unsupported Home update source");
 }
 
 function recentSiteView(source: HomeRecentSiteSource): HomeAttentionCardView {
   const status = SITE_STATUS_LABEL[source.site.status];
-  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "초기 설정" : `현재 원장 · ${status.label}`, title: source.site.status === "UNMAPPED" ? "최근 등록한 현장 맥락을 확인하세요." : "최근 현장 맥락을 살펴보세요.", detail: source.site.status === "UNMAPPED" ? "현장 범위와 상태를 확인하고 필요한 준비 작업을 이어가세요." : "현장 원장과 다음 관측 준비 상황을 직접 확인할 수 있습니다.", observedAt: `현장 갱신 ${observedAt(source.site.updatedAt)}`, href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null, imageFallback: fallback() };
+  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `현장 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "작업구역을 고르고 촬영 자료·비교 결과·다음 작업을 확인할 수 있습니다.", observedAt: `현장 갱신 ${observedAt(source.site.updatedAt)}`, href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null, imageFallback: fallback() };
 }
 
 export default async function HomePage() {

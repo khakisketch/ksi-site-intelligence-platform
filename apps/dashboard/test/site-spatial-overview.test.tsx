@@ -168,14 +168,14 @@ describe("Site spatial overview data bounds", () => {
     expect(screen.getByRole("status").textContent).toContain("요청한 대상을 확인할 수 없어 조회 가능한 구역을 표시합니다");
     expect(screen.queryByText(/no-such-area/)).toBeNull();
     expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
-    expect(screen.getByRole("heading", { name: "미세 분석 구역" })).toBeTruthy();
+    expect(screen.getByText("등록된 구역명 · 미세 분석 구역")).toBeTruthy();
   });
 
   it("announces an unknown asset query while keeping the valid default footprint", async () => {
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderDefaultTab({ assetRef: "ghost-asset" });
     expect(screen.getByRole("status").textContent).toContain("요청한 대상을 확인할 수 없어 조회 가능한 구역을 표시합니다");
-    expect(screen.getByText(/tile\.tif의 검사된 footprint/)).toBeTruthy();
+    expect(screen.getByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeTruthy();
   });
 
   it("prefers the bound area over a newer empty one when choosing the default", async () => {
@@ -186,7 +186,7 @@ describe("Site spatial overview data bounds", () => {
     mocked.orders.mockResolvedValue([{ workOrderId: "w1", workAreaIds: ["bound-1"] }]);
     await renderDefaultTab({});
     expect(mocked.assets).toHaveBeenCalledWith("site-1", "bound-1", { limit: 50 });
-    expect(screen.getByRole("heading", { name: "기록 있는 구역" })).toBeTruthy();
+    expect(screen.getByText("등록된 구역명 · 기록 있는 구역")).toBeTruthy();
   });
 
   it("skips extra reads on non-default tabs", async () => {
@@ -212,8 +212,9 @@ describe("Site spatial overview honesty", () => {
       expect(vertex.lonDeg).toBeLessThan(135);
     }
     // Tiny projected footprint: the native vector plane is the primary visual evidence.
-    expect(screen.getByText(/원본 좌표 평면 · EPSG:5186/)).toBeTruthy();
-    expect(screen.getByText(/배경 지도에서 위치 보기/)).toBeTruthy();
+    expect(screen.getByRole("img", { name: /작업구역 경계/ })).toBeTruthy();
+    expect(screen.getByText(/EPSG:5186 · 단위 m/).closest("details")).toBeTruthy();
+    expect(screen.getByText(/배경 지도에서 위치 확인/)).toBeTruthy();
   });
 
   it("disambiguates colliding area names with full ids and nowhere else", async () => {
@@ -235,9 +236,13 @@ describe("Site spatial overview honesty", () => {
       ],
     });
     await renderDefaultTab({});
-    expect(screen.getAllByText("same.tif · revision 2 · ref-aaa").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("same.tif · revision 2 · ref-bbb")).toBeTruthy();
-    expect(screen.getAllByText(/DSM 지표면 모델/).length).toBeGreaterThan(0);
+    const first = screen.getByRole("link", { name: /ref-aaa/ });
+    const second = screen.getByRole("link", { name: /ref-bbb/ });
+    expect(first.textContent).toContain("등록 버전 2");
+    expect(second.textContent).toContain("등록 버전 2");
+    expect(first.textContent).not.toContain("same.tif");
+    expect(first.getAttribute("href")).toContain("assetRef=ref-aaa");
+    expect(second.getAttribute("href")).toContain("assetRef=ref-bbb");
     expect(screen.queryByText(/^\s*dsm\s*·/)).toBeNull();
   });
 
@@ -246,7 +251,7 @@ describe("Site spatial overview honesty", () => {
     await renderDefaultTab({});
     expect(screen.queryByTestId("aoi-map")).toBeNull();
     expect(screen.getByText(/미리보기를 지원하지 않습니다/)).toBeTruthy();
-    expect(screen.getByText(/원본 좌표 평면 · EPSG:9999/)).toBeTruthy();
+    expect(screen.getByText(/EPSG:9999 · 단위 미확인/)).toBeTruthy();
     expect(screen.getByText(/단위 미확인/)).toBeTruthy();
   });
 
@@ -256,14 +261,14 @@ describe("Site spatial overview honesty", () => {
       assets: [rasterAsset("asset-1", "POLYGON ((200000 549999.8, 200010 549999.8, 200010 550009.8, 200000 549999.8))")],
     });
     await renderDefaultTab({});
-    expect(screen.getByText(/파일 범위와 작업구역 경계가 겹쳐 표시됩니다/)).toBeTruthy();
+    expect(screen.getByText(/선택 자료의 포함 범위와 겹칩니다/)).toBeTruthy();
   });
 
   it("keeps scope context useful on catalog permission denial without inventing emptiness", async () => {
     mocked.assets.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
     await renderDefaultTab({});
-    expect(screen.getByText(/공간 자산을 조회할 권한이 없습니다/)).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "미세 분석 구역" })).toBeTruthy();
+    expect(screen.getByText(/등록 자료를 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(screen.getByText("등록된 구역명 · 미세 분석 구역")).toBeTruthy();
     expect(screen.queryByText("이 구역에 조회된 공간 자산이 없습니다")).toBeNull();
     expect(screen.queryByText("조회된 자산·외부 비교 기록이 없습니다.")).toBeNull();
     expect(screen.getByText(/조회하지 못한 출처의 자료는 판단하지 않습니다/)).toBeTruthy();
@@ -273,26 +278,28 @@ describe("Site spatial overview honesty", () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture({ crs: "EPSG:9999" })] });
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderDefaultTab({});
-    expect(screen.getByText(/함께 표시할 수 없어 작업구역 경계만 표시합니다/)).toBeTruthy();
-    expect(screen.queryByText("검사된 footprint를 평면에 표시합니다")).toBeNull();
+    expect(screen.getByText("위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다.")).toBeTruthy();
+    expect(screen.queryByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeNull();
   });
 
   it("selects an asset footprint through the scoped query instead of only linking out", async () => {
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderDefaultTab({ assetRef: "asset-1" });
-    const selected = screen.getByRole("link", { name: /tile\.tif · revision 2[\s\S]*선택 중/ });
+    const selected = screen.getByRole("link", { name: /선택 중/ });
     expect(selected.getAttribute("href")).toBe("/sites/site-1?workAreaId=tiny-1&assetRef=asset-1");
     expect(selected.getAttribute("aria-current")).toBe("true");
     expect(screen.getByRole("heading", { name: "선택된 자료" })).toBeTruthy();
-    expect(screen.getAllByText("tile.tif · revision 2")).toHaveLength(2);
+    expect(selected.textContent).not.toMatch(/tile\.tif|revision|등록 버전/);
+    expect(screen.getByText("등록 파일명 · tile.tif").closest("details")).toBeTruthy();
+    expect(screen.getByText("등록 버전 2").closest("details")).toBeTruthy();
   });
 
   it("defaults to the first inspected raster so caption and selection always match", async () => {
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1"), rasterAsset("asset-2", undefined, "ortho-2.tif")] });
     await renderDefaultTab({});
-    const selected = screen.getByRole("link", { name: /tile\.tif · revision 2[\s\S]*선택 중/ });
+    const selected = screen.getByRole("link", { name: /선택 중/ });
     expect(selected.getAttribute("href")).toBe("/sites/site-1?workAreaId=tiny-1&assetRef=asset-1");
-    expect(screen.getByText(/tile\.tif의 검사된 footprint/)).toBeTruthy();
+    expect(screen.getByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeTruthy();
   });
 
   it("keeps known asset dates when the legacy read failed", async () => {
@@ -313,8 +320,8 @@ describe("Site spatial overview honesty", () => {
       }],
     });
     await renderDefaultTab({});
-    expect(screen.getByText(/tile\.tif · revision 1/)).toBeTruthy();
-    expect(screen.getByText(/외부 비교 이력 확인 불가/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /촬영/ }).getAttribute("href")).toContain("assetRef=asset-1");
+    expect(screen.getByText(/외부 비교 기록을 조회하지 못했습니다/)).toBeTruthy();
   });
 
   it("keeps V2 analysis records separate from an empty legacy history", async () => {
@@ -335,9 +342,9 @@ describe("Site spatial overview honesty", () => {
       nextCursor: null,
     });
     await renderDefaultTab({});
-    const v2 = within(screen.getByRole("heading", { name: "분석 결과" }).closest("div") as HTMLElement);
-    expect(v2.getByText("판정 기록됨")).toBeTruthy();
-    expect(v2.getByRole("link", { name: "이 결과 열기" }).getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1");
+    const v2 = within(screen.getByRole("heading", { name: "이 구역의 최근 분석" }).closest("div") as HTMLElement);
+    expect(v2.getByText("분석 조건 확인 결과 있음")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "이 구역의 최근 분석 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1");
     expect(screen.queryByText("외부 관측 결과가 없습니다")).toBeNull();
   });
 
@@ -359,7 +366,7 @@ describe("Site spatial overview honesty", () => {
       nextCursor: null,
     });
     await renderDefaultTab({});
-    expect(screen.getByText("재평가 필요")).toBeTruthy();
+    expect(screen.getByText("사용 조건 재확인 필요")).toBeTruthy();
     expect(screen.queryByText(/REASSESSMENT_REQUIRED/)).toBeNull();
   });
 
@@ -381,21 +388,21 @@ describe("Site spatial overview honesty", () => {
       nextCursor: null,
     });
     await renderDefaultTab({});
-    expect(screen.getAllByRole("link", { name: "이 결과 열기" })).toHaveLength(1);
-    expect(screen.getByRole("link", { name: "결과 8개 모두 보기" })).toBeTruthy();
+    expect(screen.getAllByRole("link", { name: "이 구역의 최근 분석 확인" })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "분석 기록 8건 모두 보기" })).toBeTruthy();
   });
 
   it("offers one primary next action with the rest as inline links", async () => {
     await renderDefaultTab({});
     const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
-    expect(actions.getByRole("link", { name: "현장 분석에서 관측 쌍·근거 확인" }).className).toContain("btn-primary");
-    expect(actions.getByRole("link", { name: "이 구역의 공간 자산" })).toBeTruthy();
-    expect(actions.getByRole("link", { name: "외부 관측 이력" })).toBeTruthy();
+    expect(actions.getByRole("link", { name: "변화 분석 보기" }).className).toContain("btn-primary");
+    expect(actions.getByRole("link", { name: "등록 자료 보기" })).toBeTruthy();
+    expect(actions.getByRole("link", { name: "외부 비교 기록" })).toBeTruthy();
   });
 
   it("links the header to the preserved AOI anchor on the work tab", async () => {
     await renderDefaultTab({});
-    expect(screen.getByRole("link", { name: "전체 경계 보기" }).getAttribute("href"))
+    expect(screen.getByRole("link", { name: "현장 전체 범위 보기" }).getAttribute("href"))
       .toBe("/sites/site-1?section=work-orders#site-aoi");
   });
 });

@@ -75,7 +75,7 @@ describe("Field work list page", () => {
     // Full technical values live only inside the closed keyboard disclosure.
     const disclosure = task.closest("li")?.querySelector("details");
     expect(disclosure?.open).toBe(false);
-    const disclosureSummary = within(disclosure as HTMLElement).getByText("기술 참조");
+    const disclosureSummary = within(disclosure as HTMLElement).getByText("파일 정보");
     expect(disclosureSummary.tagName).toBe("SUMMARY");
     expect(disclosure?.textContent).toContain("obs-work-opaque-0001");
     expect(disclosure?.textContent).toContain("site-opaque-0001");

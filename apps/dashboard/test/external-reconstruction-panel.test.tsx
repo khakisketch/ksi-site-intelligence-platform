@@ -49,7 +49,7 @@ describe("ExternalReconstructionPanel", () => {
     const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
     await screen.findByText(/검사 상태 확인 중/);
     rerender(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-1" canWrite={false} />);
-    expect(await screen.findByText("등록된 외부 산출물이 없습니다.")).toBeTruthy();
+    expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
     expect(oldInspectionSignal?.aborted).toBe(true);
     resolveOldInspection?.({ ok: true, json: async () => ({ registrationState: "SEALED", sealState: "SEALED", inspection: { state: "INSPECTION_REPORTED" }, display: { state: "SEALED", sanitizedDisplayRef: "sda-v1-old", receiptDigest: `sha256:${"e".repeat(64)}` } }) });
     await waitFor(() => expect(screen.queryByRole("button", { name: "정제 정사영상 표시" })).toBeNull());
@@ -69,7 +69,7 @@ describe("ExternalReconstructionPanel", () => {
       return { ok: true, json: async () => ({ registrationState: "SEALED", sealState: "SEALED", inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "SEALED", sanitizedDisplayRef: "sda-v1-synthetic-display", receiptDigest: `sha256:${"d".repeat(64)}` } }) };
     });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
-    expect(await screen.findByText(/등록됨 · 파일 봉인 필요/)).toBeTruthy();
+    expect(await screen.findByText(/자료 등록됨 · 파일 제출 마무리 필요/)).toBeTruthy();
     expect(screen.getByText(/파일 검사 준비 중/)).toBeTruthy();
     expect(screen.getByText(/정제 정사영상 표시 가능/)).toBeTruthy();
     expect(screen.queryByText(/RMSE|절토|성토|순토/)).toBeNull();
@@ -165,16 +165,16 @@ describe("ExternalReconstructionPanel", () => {
 
   it("distinguishes an empty list from a list failure", async () => {
     const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    expect(await screen.findByText("등록된 외부 산출물이 없습니다.")).toBeTruthy();
-    expect(screen.getByText(/산출물을 등록하면 제출 revision과 검사 상태가 이 목록에 표시됩니다/)).toBeTruthy();
+    expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
+    expect(screen.getByText(/자료를 등록하면 파일 제출과 검사 상태를 이곳에서 확인할 수 있습니다/)).toBeTruthy();
     fetchMock.mockImplementation((url: string) =>
       url.includes("work-2") && url.endsWith("/external-reconstruction-submissions")
         ? Promise.reject(new Error("offline"))
         : Promise.resolve({ ok: true, json: async () => ({ submissions: [], items: [] }) }),
     );
     rerender(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-1" canWrite />);
-    expect(await screen.findByText("선언 목록을 불러오지 못했습니다.")).toBeTruthy();
-    expect(screen.queryByText("등록된 외부 산출물이 없습니다.")).toBeNull();
+    expect(await screen.findByText("등록 목록을 불러오지 못했습니다.")).toBeTruthy();
+    expect(screen.queryByText("아직 등록된 관측 자료가 없습니다.")).toBeNull();
   });
 
   it("keeps a viewer read-only and fails closed when the inspection payload is malformed", async () => {
@@ -182,13 +182,13 @@ describe("ExternalReconstructionPanel", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
     expect(await screen.findByText("조회 전용 계정입니다.")).toBeTruthy();
     expect(screen.queryByLabelText("정사영상 GeoTIFF")).toBeNull();
-    expect(screen.queryByRole("button", { name: "산출물 등록하기" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "자료 등록 마치기" })).toBeNull();
     expect(await screen.findByText(/검사 상태를 불러오지 못했습니다\./)).toBeTruthy();
   });
 
   it("terminates an active hash worker when the panel unmounts", async () => {
     const { unmount } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     const file = new File(["raster"], "ortho.tif", { type: "application/octet-stream" });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [file] } });
     await waitFor(() => expect(FakeWorker.instances).toHaveLength(1));
@@ -197,7 +197,7 @@ describe("ExternalReconstructionPanel", () => {
   });
   it("cancels only the active client hash", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["raster"], "ortho.tif")] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "파일 확인 취소" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "파일 확인 취소" }));
@@ -208,7 +208,7 @@ describe("ExternalReconstructionPanel", () => {
   it("offers resume only for a registered server revision", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     expect(screen.getByDisplayValue("ODM")).toBeTruthy();
     expect(screen.getByText("등록된 파일과 같은 파일을 다시 선택하세요.")).toBeTruthy();
   });
@@ -219,29 +219,30 @@ describe("ExternalReconstructionPanel", () => {
 
     expect(await screen.findByText(/업무 종료 상태입니다. 새 산출물 등록은 시작할 수 없지만/)).toBeTruthy();
     expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(screen.getByRole("button", { name: "등록 이어하기" }));
     expect((screen.getByLabelText("정사영상 GeoTIFF") as HTMLInputElement).disabled).toBe(false);
-    expect(screen.queryByRole("button", { name: "새 선언으로 전환" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "새로 등록하기" })).toBeNull();
   });
 
   it("keeps a registered resume action inside the desktop mutation boundary while the list remains readable", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    const resumeButton = await screen.findByRole("button", { name: "등록된 선언 재개" });
+    const resumeButton = await screen.findByRole("button", { name: "등록 이어하기" });
     expect(resumeButton.closest("div[class*='hidden'][class*='lg:contents']")).not.toBeNull();
-    expect(screen.getByText(/ortho\.tif.*검사 상태를 불러오지 못했습니다\./)).toBeTruthy();
+    expect(screen.getByText("ortho.tif · ODM 1")).toBeTruthy();
+    expect(screen.getByText(/검사 상태를 불러오지 못했습니다\./)).toBeTruthy();
   });
 
   it("keeps a viewer list error and retry action outside the write boundary", async () => {
     fetchMock.mockRejectedValue(new Error("offline"));
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
-    expect(await screen.findByText("선언 목록을 불러오지 못했습니다.")).toBeTruthy();
+    expect(await screen.findByText("등록 목록을 불러오지 못했습니다.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "목록 다시 시도" })).toBeTruthy();
   });
 
   it("keeps the readable list beside the compact mutation boundary without a duplicate notice", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    expect(await screen.findByText("등록된 외부 산출물이 없습니다.")).toBeTruthy();
+    expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
     expect(screen.queryByText("노트북에서 계속")).toBeNull();
     expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
   });
@@ -262,15 +263,15 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    expect((screen.getByRole("button", { name: "산출물 등록하기" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("촬영 시작 시각 (한국 표준시)"), { target: { value: "2026-09-06T09:00:00" } });
     fireEvent.change(screen.getByLabelText("촬영 종료 시각 (한국 표준시)"), { target: { value: "2026-09-06T09:10:00" } });
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect(registrations[0]).toMatchObject({
       captureStartedAt: "2026-09-06T00:00:00Z",
@@ -280,7 +281,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("starts a required capture interval with neutral help, then alerts only after an invalid edit", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite requiresCaptureInterval />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect(screen.getByText("이 외부 등록에는 시작과 종료 시각이 필요합니다.")).toBeTruthy();
     expect(screen.queryByText("시작과 종료를 모두 입력하고, 종료가 시작보다 늦은지 확인하세요.")).toBeNull();
     fireEvent.change(screen.getByLabelText("촬영 시작 시각 (한국 표준시)"), { target: { value: "2026-09-06T09:00:00" } });
@@ -301,16 +302,16 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     const { rerender } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await screen.findByText("산출물 등록을 완료하지 못했습니다. 목록을 다시 확인하세요.");
     rerender(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite newIntentAllowed={false} />);
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(true);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[1]).toEqual(posts[0]);
   });
@@ -329,16 +330,16 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await screen.findByText("산출물 등록을 완료하지 못했습니다. 목록을 다시 확인하세요.");
-    fireEvent.click(screen.getByRole("button", { name: "새 선언으로 전환" }));
+    fireEvent.click(screen.getByRole("button", { name: "새로 등록하기" }));
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).disabled).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(posts).toHaveLength(2));
     expect(posts[1].submissionId).not.toBe(posts[0].submissionId);
   });
@@ -350,10 +351,10 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
-    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    expect((screen.getByRole("button", { name: "산출물 등록하기" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("uses a registered reference for an old epoch without a second declaration POST", async () => {
@@ -370,10 +371,10 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite />);
-    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
     expect(requests.filter((request) => request.method === "POST" && request.url.endsWith("/external-reconstruction-submissions"))).toHaveLength(0);
     expect(requests.some((request) => request.url.endsWith("/upload-grants"))).toBe(true);
@@ -381,7 +382,7 @@ describe("ExternalReconstructionPanel", () => {
 
   it("keeps the registration form open when nothing is retained", async () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     const disclosure = screen.getByText("새 산출물 등록").closest("details");
     expect(disclosure?.open).toBe(true);
     expect(screen.getByLabelText("정사영상 GeoTIFF")).toBeTruthy();
@@ -403,7 +404,7 @@ describe("ExternalReconstructionPanel", () => {
   it("never hides a resumed attempt behind the disclosure", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     // 재개한 시도는 compactness보다 우선해 항상 보인다.
     expect(screen.getByText("새 산출물 등록").closest("details")?.open).toBe(true);
     expect(screen.getByText("등록된 파일과 같은 파일을 다시 선택하세요.")).toBeTruthy();
@@ -427,12 +428,12 @@ describe("ExternalReconstructionPanel", () => {
     });
 
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(uploadSignal).toBeDefined());
     fireEvent.click(screen.getByRole("button", { name: "등록 중단" }));
     expect(uploadSignal?.aborted).toBe(true);
@@ -467,7 +468,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
 
   async function chooseOrtho() {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
   }
@@ -481,7 +482,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
     expect(screen.getByText(/2026-09-15 10:20:30 \(참고: 소프트웨어에 따라 촬영 시각 또는 파일 생성 시각\)/)).toBeTruthy();
     expect((screen.getByLabelText("촬영 시작 시각 (한국 표준시)") as HTMLInputElement).value).toBe("");
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect(registrations[0]).toMatchObject({ softwareName: "Pix4Dmapper", softwareVersion: "4.8.4", captureStartedAt: null });
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBe("EPSG:5186");
@@ -491,7 +492,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     registerFlow();
     headerMock.read.mockResolvedValue(orthoHeader);
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    await screen.findByText("등록된 외부 산출물이 없습니다.");
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "Metashape" } });
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByLabelText("정사영상 좌표계 신고");
@@ -513,7 +514,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect(await screen.findByText(/GeoTIFF 헤더를 읽지 못했습니다/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 이름"), { target: { value: "ODM" } });
     fireEvent.change(screen.getByLabelText("재구성 소프트웨어 버전"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
   });
@@ -526,7 +527,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     });
     headerMock.read.mockResolvedValue(orthoHeader);
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
-    fireEvent.click(await screen.findByRole("button", { name: "등록된 선언 재개" }));
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/파일 헤더에서 읽은 정사영상 정보입니다/);
     expect(screen.queryByLabelText("정사영상 좌표계 신고")).toBeNull();
@@ -538,7 +539,7 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     headerMock.read.mockResolvedValue(orthoHeader);
     await chooseOrtho();
     fireEvent.change(await screen.findByLabelText("정사영상 좌표계 신고"), { target: { value: "  " } });
-    fireEvent.click(screen.getByRole("button", { name: "산출물 등록하기" }));
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect((registrations[0].artifacts as { declaredCrs: unknown }[])[0].declaredCrs).toBeNull();
     expect((screen.getByLabelText("정사영상 좌표계 신고") as HTMLInputElement).disabled).toBe(true);

@@ -32,6 +32,13 @@ import {
   observationChoiceLabels,
   type WorkOrderNameMap,
 } from "@/lib/human-labels";
+import {
+  analysisResultTitle,
+  capturePeriodTitle,
+  dataKindLabel,
+  isSupportedDataKind,
+  registrationVersionLabel,
+} from "@/lib/operator-language";
 import { describePairSelection, isKnownBadPairSelection, shouldAutoSuggestBaseline } from "./pair-selection";
 
 type Attempt = {
@@ -73,8 +80,8 @@ const legacyPendingAttemptPrefix = "ksi.analysis.pending.v1";
 const maxStoredAttemptLength = 4_096;
 const submissionRefPattern = /^ers-v1-[0-9a-f]{64}$/;
 const activationBlockMessages = {
-  ANALYSIS_ACTIVATION_UNAVAILABLE: "이 환경에서는 분석 실행이 활성화되어 있지 않아 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 운영자나 관리자에게 분석 실행 활성화 상태를 확인해 달라고 요청하세요.",
-  ANALYSIS_ACTIVATION_EXPIRED: "분석 실행 활성화가 만료되어 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 관리자에게 활성화를 갱신해 달라고 요청하세요.",
+  ANALYSIS_ACTIVATION_UNAVAILABLE: "이 환경에서는 변화 분석 실행이 활성화되어 있지 않아 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 운영자나 관리자에게 변화 분석 실행 활성화 상태를 확인해 달라고 요청하세요.",
+  ANALYSIS_ACTIVATION_EXPIRED: "변화 분석 실행 활성화가 만료되어 요청을 처리할 수 없습니다. 재시도로는 해결되지 않으니 관리자에게 활성화를 갱신해 달라고 요청하세요.",
 } as const;
 type ActivationBlockCode = keyof typeof activationBlockMessages;
 
@@ -194,6 +201,10 @@ function sameSelector(left: AnalysisSelector, right: AnalysisSelector) {
   return left.workOrderId === right.workOrderId && left.submissionRef === right.submissionRef && left.revision === right.revision;
 }
 
+function selectorKey(selector: AnalysisSelector) {
+  return `${selector.workOrderId}|${selector.submissionRef}|${selector.revision}`;
+}
+
 function createIdempotencyKey() {
   return `analysis-${crypto.randomUUID()}`;
 }
@@ -264,12 +275,15 @@ function formatNumber(value: number, suffix: string) {
 }
 
 function ResultIdentity({ result }: { result: AnalysisResult }) {
-  return <dl className="mt-3 grid gap-1 text-[11.5px] text-ink-2 sm:grid-cols-2">
-    <div><dt className="text-ink-muted">결과 ID</dt><dd className="break-all">{result.resultId}</dd></div>
-    <div><dt className="text-ink-muted">계산 시각</dt><dd>{formatKoreanDateTime(result.computedAt, { dateStyle: "short", timeStyle: "short" })}</dd></div>
-    <div><dt className="text-ink-muted">보고서 digest</dt><dd className="break-all">{result.reportDigest}</dd></div>
-    <div><dt className="text-ink-muted">수치 결과 ID digest</dt><dd className="break-all">{result.numericResultIdentityDigest}</dd></div>
-  </dl>;
+  return <details className="mt-3 text-[11.5px] text-ink-2">
+    <summary className="tap-target cursor-pointer font-semibold text-ink-muted">처리 상세</summary>
+    <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3 sm:grid-cols-2">
+      <div className="min-w-0"><dt className="text-ink-muted">결과 ID</dt><dd className="break-all">{result.resultId}</dd></div>
+      <div className="min-w-0"><dt className="text-ink-muted">계산 시각</dt><dd>{formatKoreanDateTime(result.computedAt, { dateStyle: "short", timeStyle: "short" })}</dd></div>
+      <div className="min-w-0"><dt className="text-ink-muted">보고서 확인값</dt><dd className="break-all">{result.reportDigest}</dd></div>
+      <div className="min-w-0"><dt className="text-ink-muted">수치 결과 확인값</dt><dd className="break-all">{result.numericResultIdentityDigest}</dd></div>
+    </dl>
+  </details>;
 }
 
 function IssueCodeList({ codes }: { codes: string[] }) {
@@ -277,7 +291,7 @@ function IssueCodeList({ codes }: { codes: string[] }) {
     {codes.map((code, index) => <li key={`${code}-${index}`} className="flex flex-wrap items-center gap-x-2">
       <span>{analysisCodeLabel(code)}</span>
       <details>
-        <summary className="tap-target inline-flex cursor-pointer items-center text-[11px] text-ink-muted">Core 코드</summary>
+        <summary className="tap-target inline-flex cursor-pointer items-center text-[11px] text-ink-muted">원문 코드</summary>
         <code className="break-all text-[11px] text-ink-muted">{code}</code>
       </details>
     </li>)}
@@ -290,7 +304,6 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
   if (!metrics) return null;
   return <section className="border-t border-line px-4 py-3" aria-label="계산 결과">
     <h3 className="text-[13px] font-bold">계산 결과</h3>
-    {summary.resultId && <p className="mt-0.5 break-all font-mono text-[10.5px] text-ink-muted">결과 ID · {summary.resultId}</p>}
     <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</dd></div>
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">성토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.fillM3, "m³")}</dd></div>
@@ -314,50 +327,59 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
 
 function evidenceLines(item: AnalysisEvidenceItem): string[] {
   switch (item.kind) {
-    case "EPOCH_IDENTITY":
+    case "EPOCH_IDENTITY": {
+      const epoch = item.epoch === "BASELINE" ? "기준" : "현재";
+      const artifactKind = isSupportedDataKind(item.artifactId)
+        ? dataKindLabel(item.artifactId)
+        : `자료 종류 확인 필요(원문: ${item.artifactId})`;
       return [
-        `${item.epoch === "BASELINE" ? "기준" : "현재"} 관측 · ${item.observationEpochId}`,
-        `선택: ${item.selector.workOrderId} · ${item.selector.submissionRef} · revision ${item.selector.revision}`,
-        `CRS: ${item.observedCrsIdentifier} · ${item.observedCrsDigest}`,
-        `높이 기준: ${item.verticalReferenceBasis} · ${item.verticalReferenceIdentifier} · ${item.verticalUnit}`,
-        `DSM: ${item.observedSha256} · ${formatBytesKo(item.observedSizeBytes)}`,
-        `검사 보고서: ${item.inspectionReportDigest} · ${item.inspectionReportRecordId}`,
-        `입력 digest: ${item.inputDigest}`,
+        `${epoch} 관측 기록 · ${item.observationEpochId}`,
+        `선택 자료 정보 · 작업 지시 ${item.selector.workOrderId} · 제출 ${item.selector.submissionRef} · ${registrationVersionLabel(item.selector.revision)}`,
+        `관측 좌표 기준 · ${item.observedCrsIdentifier} · 확인값 ${item.observedCrsDigest}`,
+        `높이 기준 · ${item.verticalReferenceBasis} · ${item.verticalReferenceIdentifier} · ${item.verticalUnit}`,
+        `${artifactKind} · 파일 확인값 ${item.observedSha256} · ${formatBytesKo(item.observedSizeBytes)}`,
+        `검사 보고서 · ${item.inspectionReportDigest} · 기록 ${item.inspectionReportRecordId}`,
+        `입력 확인값 · ${item.inputDigest}`,
       ];
+    }
     case "CALCULATION_IDENTITY":
       return [
-        `계산 ID: ${item.calculation.calculationId}`,
-        `WorkArea 정의 digest: ${item.calculation.workAreaDefinitionDigest}`,
-        `계산 프로필: ${item.calculation.policy.profileId} · ${item.calculation.policy.profileDigest}`,
-        `정책 digest: ${item.calculation.policy.policyDigest}`,
-        `런타임 이미지: ${item.calculation.runtime.runtimeImageVersion} · ${item.calculation.runtime.runtimeImageOciDigest}`,
-        `실행물 digest: ${item.calculation.runtime.workerExecutableDigest} · ${item.calculation.runtime.workerBuildDigest}`,
+        `계산 기록 ID · ${item.calculation.calculationId}`,
+        `작업구역 정의 확인값 · ${item.calculation.workAreaDefinitionDigest}`,
+        `계산 프로필 · ${item.calculation.policy.profileId} · 프로필 확인값 ${item.calculation.policy.profileDigest}`,
+        `정책 확인값 · ${item.calculation.policy.policyDigest}`,
+        `실행 이미지 · ${item.calculation.runtime.runtimeImageVersion} · 이미지 확인값 ${item.calculation.runtime.runtimeImageOciDigest}`,
+        `실행물 확인값 · ${item.calculation.runtime.workerExecutableDigest} · 빌드 확인값 ${item.calculation.runtime.workerBuildDigest}`,
       ];
-    case "EVALUATION":
+    case "EVALUATION": {
+      const outcome = item.outcome === "PASS" ? "통과" : item.outcome === "FAIL" ? "거부" : item.outcome === "UNASSESSED" ? "평가 전" : "확인 불가";
       return [
-        `평가 ${item.epoch}: ${item.outcome} · revision ${item.revision}`,
-        `평가 ID · digest: ${item.evaluationId} · ${item.evaluationDigest}`,
+        `${item.epoch === "BASELINE" ? "기준" : "현재"} 관측 평가 · ${outcome} · 평가 버전 ${item.revision}`,
+        `평가 기록 ID · ${item.evaluationId} · 확인값 ${item.evaluationDigest}`,
         `사유: ${item.reasonCodes.map(analysisEvidenceReasonLine).join(", ")}`,
-        `평가 시각: ${formatKoreanDateTime(item.assessedAt, { dateStyle: "short", timeStyle: "short" })}`,
+        `평가 시각 · ${formatKoreanDateTime(item.assessedAt, { dateStyle: "short", timeStyle: "short" })}`,
       ];
-    case "CHECKPOINT_FACT":
+    }
+    case "CHECKPOINT_FACT": {
+      const verdict = item.coreVerdict === "VALIDATED" ? "검증됨" : "거부됨";
       return [
-        `검사점 근거: ${item.evidenceRecordId} · ${item.coreVerdict}`,
-        `평가: ${item.epoch} · ${item.evaluationId} · revision ${item.evaluationRevision}`,
-        `참조: ${item.evidenceRef} · context ${item.contextId}`,
-        `근거 기록 digest: ${item.evidenceRecordDigest} · manifest ${item.evidenceManifestDigest}`,
+        `검사점 근거 기록 · ${item.evidenceRecordId} · 판정 ${verdict}`,
+        `평가 연결 · ${item.epoch === "BASELINE" ? "기준" : "현재"} 관측 · ${item.evaluationId} · 평가 버전 ${item.evaluationRevision}`,
+        `참조 · ${item.evidenceRef} · 맥락 ${item.contextId}`,
+        `근거 기록 확인값 · ${item.evidenceRecordDigest} · 목록 확인값 ${item.evidenceManifestDigest}`,
       ];
+    }
     case "AUTHORITY_REFERENCE":
       return [
-        `권위 참조: ${item.referenceName} · ${item.recordId}`,
-        ...(item.sourceDigest ? [`원본 digest: ${item.sourceDigest}`] : []),
+        `권위 기록 연결 · ${item.referenceName} · ${item.recordId}`,
+        ...(item.sourceDigest ? [`원본 확인값 · ${item.sourceDigest}`] : []),
       ];
     case "SOURCE_REFERENCE":
-      return [`출처 참조: ${item.referenceKind} · ${item.recordId}`, ...(item.sourceDigest ? [`출처 digest: ${item.sourceDigest}`] : [])];
+      return [`출처 기록 연결 · ${item.referenceKind} · ${item.recordId}`, ...(item.sourceDigest ? [`출처 확인값 · ${item.sourceDigest}`] : [])];
     case "NUMERIC_RESULT":
-      return [`수치 결과: ${item.resultId} · ${item.reportDigest}`, `결과 identity digest: ${item.numericResultIdentityDigest}`];
+      return [`수치 결과 기록 · ${item.resultId} · 보고서 ${item.reportDigest}`, `수치 결과 확인값 · ${item.numericResultIdentityDigest}`];
     case "LIMITATION":
-      return [`제한 (${item.source}): ${analysisEvidenceReasonLine(item.code)}`, ...(item.detail ? [item.detail] : []), ...(item.evidenceRef ? [`근거 참조: ${item.evidenceRef}`] : [])];
+      return [`제한 (${item.source}): ${analysisEvidenceReasonLine(item.code)}`, ...(item.detail ? [item.detail] : []), ...(item.evidenceRef ? [`근거 참조 · ${item.evidenceRef}`] : [])];
   }
 }
 
@@ -367,8 +389,8 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
   const hasMore = pages.at(-1)?.nextCursor !== null;
   return <section className="border-t border-line px-4 py-3" aria-label="근거">
     <h3 className="text-[13px] font-bold">근거</h3>
-    {first && <p className="mt-1 break-all text-[11.5px] text-ink-muted">현재 불러온 {formatCountKo(items.length)}개 항목 · 개정 {first.evidenceRevision} · evidence digest {first.evidenceDigest}</p>}
-    <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{hasMore ? "현재 페이지까지 표시 중입니다. 다음 근거를 불러오면 이어서 확인할 수 있습니다." : "현재 불러온 페이지의 모든 근거 항목을 표시합니다. 각 항목을 펼치면 원문 ID와 digest를 확인할 수 있습니다."}</p>
+    {first && <p className="mt-1 break-all text-[11.5px] text-ink-muted">현재 불러온 근거 {formatCountKo(items.length)}개 · 근거 버전 {first.evidenceRevision} · 근거 목록 확인값 {first.evidenceDigest}</p>}
+    <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{hasMore ? "현재 페이지까지 표시 중입니다. 다음 근거를 불러오면 이어서 확인할 수 있습니다." : "현재 불러온 페이지의 모든 근거 항목을 표시합니다. 각 항목을 펼치면 원문 ID와 확인값을 볼 수 있습니다."}</p>
     {items.length > 0 ? <ul className="mt-3 space-y-2">{items.map((item) => <li key={`${item.recordId}:${item.digest}`}>
       <details className="rounded-md border border-line bg-surface text-[12px] text-ink-2">
         <summary className="tap-target flex cursor-pointer flex-wrap items-center gap-x-2 px-3 py-2">
@@ -378,7 +400,7 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
         </summary>
         <div className="border-t border-line px-3 py-2">
           <p className="break-all font-semibold">기록 ID · {item.recordId}</p>
-          <p className="mt-1 break-all text-ink-muted">digest · {item.digest}</p>
+          <p className="mt-1 break-all text-ink-muted">확인값 · {item.digest}</p>
           <ul className="mt-2 space-y-1 break-all">{evidenceLines(item).map((line) => <li key={line}>{line}</li>)}</ul>
           {item.limitationCodes.length > 0 && <ul className="mt-2 space-y-1 break-all text-crit-ink" aria-label="근거 제한">{item.limitationCodes.map((code) => <li key={code}>제한 · {analysisEvidenceReasonLine(code)}</li>)}</ul>}
         </div>
@@ -387,7 +409,7 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
   </section>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict }: {
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -396,6 +418,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   siteId: string;
   workAreaId: string;
   workAreaName: string;
+  scopeLine: string | null;
   canCreate: boolean;
   reviewState: LoadedReviews | null;
   reviewLoading: boolean;
@@ -407,10 +430,18 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   const suitability = suitabilityLabel(summary.suitabilityState);
   return <article className={`rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
-      <div><p className="text-[14px] font-bold">{workAreaName} · {formatKoreanDateTime(summary.createdAt, { dateStyle: "short", timeStyle: "short" })}</p><p className="mt-1 break-all font-mono text-[10.5px] text-ink-muted">분석 ID · {summary.analysisId}</p></div>
-      <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 분석 보기</button>
+      <div className="min-w-0">
+        <p className="text-[14px] font-bold">{analysisResultTitle(summary.createdAt)}</p>
+        <p className="mt-1 text-[12px] text-ink-2">{workAreaName} · {formatKoreanDateTime(summary.createdAt, { dateStyle: "medium", timeStyle: "short" })} 변화 분석 기록 생성</p>
+        {scopeLine && <p className="mt-0.5 text-[12px] text-ink-2">{scopeLine}</p>}
+        <details className="mt-1 text-[11px] text-ink-muted">
+          <summary className="tap-target cursor-pointer font-semibold">처리 상세</summary>
+          <p className="mt-1 break-all">분석 ID · {summary.analysisId}</p>
+        </details>
+      </div>
+      <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
     </div>
-      <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 분석을 완료하지 못했습니다. 현장 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
+      <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
     {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisReviewSection
@@ -508,8 +539,8 @@ function analysisReviewDecisionLabel(decision: AnalysisReviewDecision): string {
 function reviewResponseError(status: number): string {
   if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
   if (status === 403) return "검토 기록에는 현장 쓰기 권한이 필요합니다. 권한 있는 현장 담당자에게 요청하세요.";
-  if (status === 404) return "이 분석 결과는 아직 검토할 수 없습니다. 분석 상세를 다시 불러오세요.";
-  if (status === 409) return "분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.";
+  if (status === 404) return "이 분석 결과는 아직 검토할 수 없습니다. 변화 분석 상세를 다시 불러오세요.";
+  if (status === 409) return "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.";
   if (status === 503) return "검토 기록 저장소를 사용할 수 없습니다. 잠시 후 검토 상태를 확인하세요.";
   return "검토 기록을 저장하지 못했습니다. 입력과 현장 상태를 확인하세요.";
 }
@@ -517,8 +548,8 @@ function reviewResponseError(status: number): string {
 function analysisReviewLoadError(status: number): string {
   if (status === 401) return "세션이 만료되었습니다. 다시 로그인하세요.";
   if (status === 403) return "검토 상태를 조회할 권한이 없습니다.";
-  if (status === 404) return "검토할 결과를 찾을 수 없습니다. 분석 상세를 다시 불러오세요.";
-  if (status === 409) return "분석 기록이 갱신되었습니다. 상세를 다시 불러오세요.";
+  if (status === 404) return "검토할 결과를 찾을 수 없습니다. 변화 분석 상세를 다시 불러오세요.";
+  if (status === 409) return "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러오세요.";
   if (status === 503) return "검토 상태 저장소를 사용할 수 없습니다. 잠시 후 다시 시도하세요.";
   return "검토 상태를 불러오지 못했습니다.";
 }
@@ -532,15 +563,15 @@ function AnalysisReviewAuditDetail({ review }: { review: AnalysisReviewReceipt }
   return <details className="mt-2 rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
     <summary className="tap-target flex cursor-pointer flex-wrap items-center gap-x-2 font-semibold">검토 기록 <span className="min-w-0 break-all font-normal text-ink-muted">· {analysisReviewDecisionLabel(review.decision)} · {review.reviewRef}</span></summary>
     <div className="mt-2 flex flex-col gap-1 break-all border-t border-line pt-2">
-      <p>검토 다이제스트 · {review.receiptDigest}</p>
+      <p>검토 기록 확인값 · {review.receiptDigest}</p>
       <p>검토 의견 · {review.comment}</p>
-      <p>검토 대상 · {target.resultId} · revision {target.resultRevision}</p>
-      <p>보고서 다이제스트 · {target.reportDigest}</p>
-      <p>수치 결과 ID 다이제스트 · {target.numericResultIdentityDigest}</p>
-      <p>계산 identity 다이제스트 · {target.calculationIdentityDigest}</p>
-      <p>admission 다이제스트 · {target.admissionDigest}</p>
+      <p>검토 대상 · {target.resultId} · 결과 버전 {target.resultRevision}</p>
+      <p>보고서 확인값 · {target.reportDigest}</p>
+      <p>수치 결과 확인값 · {target.numericResultIdentityDigest}</p>
+      <p>계산 기록 확인값 · {target.calculationIdentityDigest}</p>
+      <p>admission 확인값 · {target.admissionDigest}</p>
       {target.evaluations.map((evaluation) => <p key={evaluation.epoch}>
-        {evaluation.epoch === "BASELINE" ? "기준" : "현재"} 평가 · {evaluation.evaluationId} · revision {evaluation.revision} · {evaluation.evaluationDigest}
+        {evaluation.epoch === "BASELINE" ? "기준" : "현재"} 평가 · {evaluation.evaluationId} · 평가 버전 {evaluation.revision} · {evaluation.evaluationDigest}
       </p>)}
       <p className="mt-1 text-ink-muted">검토 한계 · 정확도 검증, 현장·비행 권한, 정산·완료 증명을 뜻하지 않습니다.</p>
     </div>
@@ -643,7 +674,7 @@ function AnalysisReviewSection({
     setBusy(false);
   };
 
-  return <section className="border-t border-line px-4 py-3" aria-label="분석 결과 검토">
+  return <section className="border-t border-line px-4 py-3" aria-label="변화 분석 결과 검토">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-[13px] font-bold">결과 검토</h3>
       <StateBadge label={status.label} tone={status.tone} />
@@ -652,9 +683,9 @@ function AnalysisReviewSection({
     {loadError && <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-crit-ink" role="alert">
       <span>{loadError}</span>
       <button type="button" className="btn" disabled={busy || loading} onClick={() => {
-        if (loadError.includes("분석 기록이 갱신되었습니다")) void refreshAfterConflict();
+        if (loadError.includes("변화 분석 기록이 갱신되었습니다")) void refreshAfterConflict();
         else void onRefresh(analysisId);
-      }}>{loadError.includes("분석 기록이 갱신되었습니다") ? "분석 상세 다시 불러오기" : "검토 상태 다시 불러오기"}</button>
+      }}>{loadError.includes("변화 분석 기록이 갱신되었습니다") ? "변화 분석 상세 다시 불러오기" : "검토 상태 다시 불러오기"}</button>
     </div>}
     {!loading && !loadError && reviewState && <>
       {latest && !needsDetailRefresh
@@ -669,7 +700,7 @@ function AnalysisReviewSection({
     <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">이 검토는 결과 활용에 대한 사람의 기록이며 정확도 검증이나 정산·완료 승인이 아닙니다.</p>
     {actionError && <p role="alert" className="mt-3 rounded-md border border-crit bg-crit-bg px-3 py-2 text-[12px] leading-5 text-crit-ink">{actionError}</p>}
     {notice && <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12px] leading-5 text-ink-2">{notice}</p>}
-    {needsDetailRefresh && <button type="button" className="btn mt-3" disabled={busy} onClick={() => void refreshAfterConflict()}>{busy ? "상세 다시 불러오는 중" : "분석 상세 다시 불러오기"}</button>}
+    {needsDetailRefresh && <button type="button" className="btn mt-3" disabled={busy} onClick={() => void refreshAfterConflict()}>{busy ? "상세 다시 불러오는 중" : "변화 분석 상세 다시 불러오기"}</button>}
     {canReview ? <form className="mt-3 grid gap-3 border-t border-line pt-3" onSubmit={(event) => void submitReview(event)}>
       <fieldset className="grid gap-2 sm:grid-cols-2" disabled={busy || loading || Boolean(loadError) || needsDetailRefresh}>
         <legend className="mb-1 text-[12.5px] font-semibold">검토 결정 선택</legend>
@@ -731,7 +762,7 @@ function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
     <p className="mt-1 text-[11.5px] text-ink-muted">확인 담당 · {guidance.owner}</p>
     {destination && <Link className="mt-2 inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline" href={destination.href}>{destination.label}</Link>}
     <details className="mt-1">
-      <summary className="tap-target flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">Core 코드·원문 설명 보기</summary>
+      <summary className="tap-target flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">원문 코드·설명 보기</summary>
       <div className="break-all border-l-2 border-line pl-3 text-[11.5px] text-ink-muted">
         <p>기술 코드 · <code>{blocker.code}</code></p>
         {blocker.detail && <p className="mt-1">Core 설명 · {blocker.detail}</p>}
@@ -854,6 +885,25 @@ export function AnalysisRequestPanel({
     return new Map(scopedObservations.map(({ index }, position) => [String(index), labels[position]!]));
   }, [scopedObservations, workOrderNames]);
   const selectionReady = Boolean(workAreaId && pickedBaseline && pickedCurrent && !sameSelector(pickedBaseline.selector, pickedCurrent.selector));
+  const observationBySelectorKey = useMemo(() => {
+    const map = new Map<string, AttributedAnalysisObservation>();
+    for (const option of observations) {
+      map.set(selectorKey(option.selector), option);
+    }
+    return map;
+  }, [observations]);
+  const scopeLineByAnalysisId = useMemo(() => {
+    const lines = new Map<string, string>();
+    for (const [analysisId, analysisDetail] of details) {
+      const baseline = observationBySelectorKey.get(selectorKey(analysisDetail.baseline));
+      const current = observationBySelectorKey.get(selectorKey(analysisDetail.current));
+      if (!baseline && !current) continue;
+      const part = (option: AttributedAnalysisObservation | undefined) =>
+        option ? capturePeriodTitle(option.captureStartedAt, option.captureEndedAt) : "확인 불가";
+      lines.set(analysisId, `비교 구간 · 기준 ${part(baseline)} → 현재 ${part(current)}`);
+    }
+    return lines;
+  }, [details, observationBySelectorKey]);
   const selectedSelectors = pickedBaseline && pickedCurrent
     ? [{ label: "기준", selector: pickedBaseline.selector }, { label: "현재", selector: pickedCurrent.selector }]
     : [];
@@ -871,9 +921,9 @@ export function AnalysisRequestPanel({
   const latestNextAction = !latestRow
     ? ""
     : latestRow.executionState === "QUEUED" || latestRow.executionState === "RUNNING"
-      ? "진행 중인 분석입니다. 아래 이력에서 최신 상태를 확인하세요."
+      ? "진행 중인 변화 분석입니다. 아래 이력에서 최신 상태를 확인하세요."
       : latestRow.executionState === "FAILED"
-        ? "실패한 분석이 있습니다. 아래 이력의 실패 사유와 보완 안내를 먼저 확인하세요."
+        ? "실패한 변화 분석이 있습니다. 아래 이력의 실패 사유와 보완 안내를 먼저 확인하세요."
         : latestRow.suitabilityState === "BLOCKED" || latestRow.suitabilityState === "REMEDIATION_REQUIRED" || latestRow.suitabilityState === "REASSESSMENT_REQUIRED"
           ? "적합성 확인이 필요합니다. 아래 이력의 확인 및 보완 안내를 확인하세요."
           : "최신 기록의 근거와 검토 상태를 아래에서 확인하세요. 이 기록은 정확도 보증이 아닙니다.";
@@ -1032,7 +1082,7 @@ export function AnalysisRequestPanel({
       );
       const value: unknown = await response.json().catch(() => null);
       if (!response.ok || !isAnalysisView(value) || value.analysisId !== analysisId) {
-        throw new Error(response.status === 409 ? "분석 기록이 갱신되었습니다. 상세를 다시 불러오세요." : "분석 상세를 불러오지 못했습니다.");
+        throw new Error(response.status === 409 ? "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러오세요." : "변화 분석 상세를 불러오지 못했습니다.");
       }
       if (mountedRef.current && selectedIdRef.current === analysisId && detailGeneration.current === generation) {
         upsertDetail(value);
@@ -1041,7 +1091,7 @@ export function AnalysisRequestPanel({
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && selectedIdRef.current === analysisId && detailGeneration.current === generation) {
         retireDetail(analysisId);
-        setError({ analysisId, message: loadError instanceof Error ? loadError.message : "분석 상세를 불러오지 못했습니다." });
+        setError({ analysisId, message: loadError instanceof Error ? loadError.message : "변화 분석 상세를 불러오지 못했습니다." });
       }
     } finally {
       if (mountedRef.current && selectedIdRef.current === analysisId && detailGeneration.current === generation) {
@@ -1084,7 +1134,7 @@ export function AnalysisRequestPanel({
     const response = await fetch(listUrl(siteId, cursor), { cache: "no-store", signal });
     const payload: unknown = await response.json().catch(() => null);
     if (response.status === 409) return { stale: true as const };
-    if (!response.ok || !isListPage(payload) || payload.siteId !== siteId) throw new Error("현장 분석 목록을 불러오지 못했습니다.");
+    if (!response.ok || !isListPage(payload) || payload.siteId !== siteId) throw new Error("현장 변화 분석 목록을 불러오지 못했습니다.");
     return { stale: false as const, page: fromListPage(payload) };
   }, [siteId]);
 
@@ -1100,7 +1150,7 @@ export function AnalysisRequestPanel({
       if (loaded.stale) {
         setListLoadError(true);
         setListRestartRequired(true);
-        setError({ analysisId: selectedIdRef.current, message: "분석 목록이 변경되었습니다. 첫 페이지부터 다시 불러오세요." });
+        setError({ analysisId: selectedIdRef.current, message: "변화 분석 목록이 변경되었습니다. 첫 페이지부터 다시 불러오세요." });
         return;
       }
       if (!mountedRef.current || controller.signal.aborted || listGeneration.current !== generation) return;
@@ -1129,12 +1179,12 @@ export function AnalysisRequestPanel({
       });
       setListLoadError(false);
       setListRestartRequired(false);
-      setError((current) => current?.message.includes("분석 목록") ? null : current);
+      setError((current) => current?.message.includes("변화 분석 목록") ? null : current);
       if (selectedId) await refreshDetail(selectedId, ++detailGeneration.current);
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && listGeneration.current === generation) {
         setListLoadError(true);
-        setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "현장 분석 목록을 불러오지 못했습니다." });
+        setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "현장 변화 분석 목록을 불러오지 못했습니다." });
       }
     } finally {
       if (mountedRef.current && listGeneration.current === generation) setListLoading(false);
@@ -1169,7 +1219,7 @@ export function AnalysisRequestPanel({
     } catch (loadError) {
       if (!(loadError instanceof DOMException && loadError.name === "AbortError") && mountedRef.current && listGeneration.current === generation) {
         setListLoadError(true);
-        setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "분석 목록을 불러오지 못했습니다." });
+        setError({ analysisId: selectedIdRef.current, message: loadError instanceof Error ? loadError.message : "변화 분석 목록을 불러오지 못했습니다." });
       }
     } finally {
       if (mountedRef.current && listGeneration.current === generation) setListLoading(false);
@@ -1234,7 +1284,7 @@ export function AnalysisRequestPanel({
       try {
         const response = await fetch(`/api/sites/${encodeURIComponent(siteId)}/analyses/${encodeURIComponent(selectedId)}`, { cache: "no-store", signal: controller.signal });
         const value: unknown = await response.json().catch(() => null);
-        if (!response.ok || !isAnalysisView(value) || value.analysisId !== selectedId) throw new Error("분석 상태를 새로 불러오지 못했습니다.");
+        if (!response.ok || !isAnalysisView(value) || value.analysisId !== selectedId) throw new Error("변화 분석 상태를 새로 불러오지 못했습니다.");
         if (canApply()) {
           upsertDetail(value);
           setError((current) => current?.analysisId === selectedId ? null : current);
@@ -1242,7 +1292,7 @@ export function AnalysisRequestPanel({
         }
       } catch (pollError) {
         if (!(pollError instanceof DOMException && pollError.name === "AbortError") && canApply()) {
-          setError({ analysisId: selectedId, message: pollError instanceof Error ? pollError.message : "분석 상태를 새로 불러오지 못했습니다." });
+          setError({ analysisId: selectedId, message: pollError instanceof Error ? pollError.message : "변화 분석 상태를 새로 불러오지 못했습니다." });
           schedule();
         }
       }
@@ -1385,28 +1435,28 @@ export function AnalysisRequestPanel({
   const showError = error && (error.analysisId === null || error.analysisId === selectedId);
 
   return <div className="flex flex-col gap-4">
-    {latestRow && <section aria-label="최근 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
+    {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
       <p className="text-[12.5px] leading-5 text-ink-2">
-        <span className="font-bold text-ink-1">최근 분석 요약</span>
+        <span className="font-bold text-ink-1">최근 변화 분석 요약</span>
         {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""} · 최근: ${executionLabel(latestRow.executionState).label} · ${suitabilityLabel(latestRow.suitabilityState).label}`}
       </p>
       <p className="mt-1 text-[12px] leading-5 text-ink-2">{latestNextAction}</p>
       <div className="mt-1 flex flex-wrap gap-x-5">
-        <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">분석 이력으로 이동</a>
-        {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 분석 요청으로 이동"}</a>}
+        <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>
+        {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 변화 분석 요청으로 이동"}</a>}
       </div>
       {attempt && <p role="status" className="text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
     </section>}
-    {!canCreate && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">분석 기록을 조회할 수 있습니다. 새 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.</p>}
+    {!canCreate && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">변화 분석 기록을 조회할 수 있습니다. 새 변화 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.</p>}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink">
       <span>{error.message}</span>
-      {error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "분석 상세 다시 불러오기"}</button>}
+      {error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "변화 분석 상세 다시 불러오기"}</button>}
       {listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void restartAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 처음부터 다시 불러오기"}</button>}
       {evidenceRestartRequired && <button type="button" className="btn ml-2" disabled={evidenceLoading} onClick={restartEvidence}>{evidenceLoading ? "근거 불러오는 중" : "근거 처음부터 다시 불러오기"}</button>}
     </div>}
     {selectedId && selectedDetail && <div className="flex justify-end"><button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button></div>}
-    {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">분석 상세를 불러오는 중입니다.</p>}
-    <section id="analysis-history" className="flex flex-col gap-3" aria-label="분석 이력">
+    {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
+    <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
       {rows.map((summary) => <AnalysisCard
         key={summary.analysisId}
         summary={summary}
@@ -1417,6 +1467,7 @@ export function AnalysisRequestPanel({
         siteId={siteId}
         workAreaId={summary.workAreaId}
         workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
+        scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
         canCreate={canCreate}
         reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
         reviewLoading={reviewLoadingId === summary.analysisId}
@@ -1424,21 +1475,21 @@ export function AnalysisRequestPanel({
         onRefreshReview={loadReviewState}
         onRefreshAfterReviewConflict={refreshReviewAfterConflict}
       />)}
-      {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">분석 목록을 불러오는 중입니다.</p>}
+      {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
       {rows.length === 0 && !listLoading && !listLoadError && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor
-        ? "현재 페이지에 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
+        ? "현재 페이지에 변화 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
         : canCreate
-          ? "이 현장에는 아직 분석 요청이 없습니다. 새 분석 요청에서 실제 작업구역과 관측 후보를 확인한 뒤 진행하세요."
-          : "이 현장에는 아직 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>}
+          ? "이 현장에는 아직 변화 분석 요청이 없습니다. 새 변화 분석 요청에서 실제 작업구역과 관측 후보를 확인한 뒤 진행하세요."
+          : "이 현장에는 아직 변화 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>}
     </section>
     {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
-    {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "분석 목록 불러오는 중" : "다음 분석 보기"}</button></div>}
+    {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
     {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
-      <h2 className="text-[16px] font-bold">새 분석 요청</h2>
+      <h2 className="text-[16px] font-bold">새 변화 분석 요청</h2>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
-      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간·제출 revision으로 구분합니다. 이름·시각이 겹치는 후보는 관측 epoch ID까지 함께 표시합니다.</p>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
       {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
-      {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
+      {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
       <form className="mt-4 grid gap-3 lg:grid-cols-2" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <label className="min-w-0 text-[12.5px] font-semibold lg:col-span-2">작업구역
           <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
@@ -1468,7 +1519,7 @@ export function AnalysisRequestPanel({
             {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
           </select>
         </label>
-        <p className="text-[11.5px] leading-5 text-ink-muted lg:col-span-2">기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 분석 요청은 직접 눌러야 합니다.</p>
+        <p className="text-[11.5px] leading-5 text-ink-muted lg:col-span-2">기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 변화 분석 요청은 직접 눌러야 합니다.</p>
         {areaSwitchNotice && <p role="status" className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 lg:col-span-2">{areaSwitchNotice}</p>}
         {pickedBaseline && pickedCurrent && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 lg:col-span-2" aria-live="polite">
           <p className="font-semibold">선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다.</p>
@@ -1477,22 +1528,22 @@ export function AnalysisRequestPanel({
             <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">현재</span> · {choiceLabelByIndex.get(currentIndex)}</p>
           </div>
           <details className="mt-1">
-            <summary className="tap-target flex cursor-pointer items-center font-semibold">요청 selector 전체 확인</summary>
+            <summary className="tap-target flex cursor-pointer items-center font-semibold">요청 선택 정보 전체 확인</summary>
             <dl className="grid gap-2 border-l-2 border-line pl-3 sm:grid-cols-2">
               {selectedSelectors.map(({ label, selector }) => (
                 <div key={label} className="min-w-0">
                   <dt className="font-semibold">{label} 관측</dt>
                   <dd className="break-all">작업 지시 ID · {selector.workOrderId}</dd>
-                  <dd className="break-all">관측 epoch ID · {(label === "기준" ? pickedBaseline : pickedCurrent).observationEpochId}</dd>
+                  <dd className="break-all">관측 기록 ID · {(label === "기준" ? pickedBaseline : pickedCurrent).observationEpochId}</dd>
                   <dd className="break-all">제출 참조 · {selector.submissionRef}</dd>
-                  <dd>revision · {selector.revision}</dd>
+                  <dd>{registrationVersionLabel(selector.revision)}</dd>
                 </div>
               ))}
             </dl>
           </details>
         </div>}
         <div className="flex flex-wrap items-center gap-2 lg:col-span-2">
-          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "분석 요청"}</button>
+          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "변화 분석 요청"}</button>
           {attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}
           {!busy && !attempt && !areaSwitchNotice && pairIssue.kind !== "ready" && (workAreaId !== "" || baselineIndex !== "" || currentIndex !== "") && <p role="status" className="basis-full text-[12px] leading-5 text-ink-2">{pairIssue.message}</p>}
           {!busy && !attempt && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}

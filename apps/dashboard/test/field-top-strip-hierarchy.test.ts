@@ -3,8 +3,8 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-// 상단 세 액션(받은 업무·팀 관리·새 관측 시작)이 같은 .btn 모양으로 나란히 있으면
-// 우선순위가 없다(F18). 이 화면의 유일한 새 작업 시작 동작인 "새 관측 시작"이
+// 상단 세 액션(받은 업무·팀 관리·관측 자료 등록)이 같은 .btn 모양으로 나란히 있으면
+// 우선순위가 없다(F18). 이 화면의 유일한 새 작업 시작 동작인 "관측 자료 등록"이
 // 1차 액션이어야 하고, 나머지 둘은 낮은 무게의 텍스트 링크로 물러난다.
 const PAGE = readFileSync(join(process.cwd(), "src/app/field/page.tsx"), "utf8");
 
@@ -17,7 +17,7 @@ function stripAround(marker: string): string {
 }
 
 describe("field page top action strip (F18)", () => {
-  it("makes 새 관측 시작 the one primary action", () => {
+  it("makes 관측 자료 등록 the one primary action", () => {
     const link = stripAround('href="/field/new"');
     expect(link).toContain("btn-primary");
   });
@@ -29,8 +29,8 @@ describe("field page top action strip (F18)", () => {
     expect(team).not.toContain("btn-primary");
   });
 
-  it("gates 새 관측 시작 on WORK_ORDERS_WRITE with viewer guidance", () => {
+  it("gates 관측 자료 등록 on WORK_ORDERS_WRITE with viewer guidance", () => {
     expect(PAGE).toContain("WORK_ORDERS_WRITE");
-    expect(PAGE).toContain("새 관측 시작은 작업 등록 권한이 있는 계정에서 할 수 있습니다.");
+    expect(PAGE).toContain("관측 자료 등록은 작업 등록 권한이 있는 계정에서 할 수 있습니다.");
   });
 });

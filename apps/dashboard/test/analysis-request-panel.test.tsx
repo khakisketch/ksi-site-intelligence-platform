@@ -176,21 +176,21 @@ describe("analysis V2 panel", () => {
 
   it("uses a true-empty message only after a successful list read", async () => {
     renderPanel({ initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
-    expect(screen.getByText(/이 현장에는 아직 분석 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeTruthy();
     expect(screen.getByText(/실제 작업구역과 관측 후보를 확인/)).toBeTruthy();
 
     cleanup();
     let finishRequest: ((value: Response) => void) | undefined;
     vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishRequest = resolve; })));
     renderPanel({ initialPage: listPage([], "older-cursor"), initialSelectedDetail: null, initialAnalysisId: null, canCreate: false });
-    expect(screen.getByText(/현재 페이지에 분석 요청이 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/현재 페이지에 변화 분석 요청이 없습니다/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
-    expect(screen.getByRole("status").textContent).toContain("분석 목록을 불러오는 중입니다.");
-    expect(screen.queryByText(/현재 페이지에 분석 요청이 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
+    expect(screen.getByRole("status").textContent).toContain("변화 분석 목록을 불러오는 중입니다.");
+    expect(screen.queryByText(/현재 페이지에 변화 분석 요청이 없습니다/)).toBeNull();
     finishRequest?.({ ok: false, status: 503, json: async () => ({}) } as Response);
-    expect((await screen.findByRole("alert")).textContent).toContain("분석 목록");
-    expect(screen.queryByText(/현재 페이지에 분석 요청이 없습니다|이 현장에는 아직 분석 요청이 없습니다/)).toBeNull();
+    expect((await screen.findByRole("alert")).textContent).toContain("변화 분석 목록");
+    expect(screen.queryByText(/현재 페이지에 변화 분석 요청이 없습니다|이 현장에는 아직 변화 분석 요청이 없습니다/)).toBeNull();
   });
 
   it("names the real work with capture interval and submission version, keeping exact selectors inspectable", () => {
@@ -201,12 +201,13 @@ describe("analysis V2 panel", () => {
     expect(baseline.value).toBe("");
     expect(current.value).toBe("");
     expect(baseline.disabled).toBe(true);
-    expect(screen.getByText("기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
+    expect(screen.getByText("기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 변화 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     expect(baseline.options[1]?.textContent).toContain("기준 작업");
-    expect(baseline.options[1]?.textContent).toContain("제출 revision 1");
+    expect(baseline.options[1]?.textContent).toContain("2026. 9. 1.");
     expect(baseline.options[1]?.textContent).toContain("09:00–09:30");
+    expect(baseline.options[1]?.textContent).not.toContain("등록 버전");
     expect(baseline.options[1]?.textContent).not.toContain("epoch-baseline");
 
     fireEvent.change(baseline, { target: { value: "0" } });
@@ -217,13 +218,13 @@ describe("analysis V2 panel", () => {
     expect(confirmation.textContent).toContain("현재");
     expect(confirmation.textContent).toContain("현재 작업");
 
-    const selectorDetails = screen.getByText("요청 selector 전체 확인").closest("details");
+    const selectorDetails = screen.getByText("요청 선택 정보 전체 확인").closest("details");
     expect(selectorDetails?.hasAttribute("open")).toBe(false);
-    fireEvent.click(screen.getByText("요청 selector 전체 확인"));
+    fireEvent.click(screen.getByText("요청 선택 정보 전체 확인"));
     expect(selectorDetails?.textContent).toContain(observations[0]!.selector.submissionRef);
     expect(selectorDetails?.textContent).toContain("work-baseline");
-    expect(selectorDetails?.textContent).toContain("관측 epoch ID · epoch-baseline");
-    expect(selectorDetails?.textContent).toContain("revision · 1");
+    expect(selectorDetails?.textContent).toContain("관측 기록 ID · epoch-baseline");
+    expect(selectorDetails?.textContent).toContain("등록 버전 1");
   });
 
   it("stays honest about missing work names and only falls back to epoch IDs on collision", () => {
@@ -232,7 +233,8 @@ describe("analysis V2 panel", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const baseline = screen.getByLabelText("기준 관측") as HTMLSelectElement;
     expect(baseline.options[1]?.textContent).toContain("작업명 확인 불가");
-    expect(baseline.options[1]?.textContent).toContain("제출 revision 1");
+    expect(baseline.options[1]?.textContent).toContain("2026. 9. 1.");
+    expect(baseline.options[1]?.textContent).not.toContain("등록 버전");
     expect(baseline.options[1]?.textContent).not.toContain("epoch-baseline");
 
     cleanup();
@@ -243,8 +245,8 @@ describe("analysis V2 panel", () => {
     renderPanel({ observations: colliding, initialPage: listPage([]), initialSelectedDetail: null, initialAnalysisId: null, canCreate: true });
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     const collided = screen.getByLabelText("기준 관측") as HTMLSelectElement;
-    expect(collided.options[1]?.textContent).toContain("관측 epoch epoch-collide-first");
-    expect(collided.options[2]?.textContent).toContain("관측 epoch epoch-collide-second");
+    expect(collided.options[1]?.textContent).toContain("관측 기록 epoch-collide-first");
+    expect(collided.options[2]?.textContent).toContain("관측 기록 epoch-collide-second");
     expect(collided.options[1]?.textContent).not.toBe(collided.options[2]?.textContent);
   });
 
@@ -301,9 +303,9 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("높이 기준이 서로 다름 · 현재 관측")).toBeTruthy();
     expect(selected.getByText(/수직 기준과 단위를 담당자가 확인해야 합니다/)).toBeTruthy();
     expect(selected.getByRole("link", { name: "공간 자산 기록 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
-    const technical = selected.getByText("Core 코드·원문 설명 보기").closest("details");
+    const technical = selected.getByText("원문 코드·설명 보기").closest("details");
     expect(technical?.hasAttribute("open")).toBe(false);
-    fireEvent.click(selected.getByText("Core 코드·원문 설명 보기"));
+    fireEvent.click(selected.getByText("원문 코드·설명 보기"));
     expect(technical?.textContent).toContain("VERTICAL_REFERENCE_MISMATCH");
     expect(technical?.textContent).toContain("height datum differs");
     expect(technical?.textContent).toContain("checkpoint-ref-1");
@@ -324,7 +326,7 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("세부 원인 확인 필요")).toBeTruthy();
     expect(selected.getByText(/이 사유에 대한 화면 안내가 없습니다/)).toBeTruthy();
     expect(selected.getByText(/반복 요청하지 마세요/)).toBeTruthy();
-    expect(selected.getByText("Core 코드·원문 설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(selected.getByText("원문 코드·설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("explains a completed execution with reassessment required without exposing the raw state code", () => {
@@ -344,7 +346,7 @@ describe("analysis V2 panel", () => {
     expect(selected.getByText("재평가 필요")).toBeTruthy();
     expect(selected.getByText("계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.")).toBeTruthy();
     expect(selected.getByText("현장 적합성 재평가 필요")).toBeTruthy();
-    expect(selected.getByText("Core 코드·원문 설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
+    expect(selected.getByText("원문 코드·설명 보기").closest("details")?.hasAttribute("open")).toBe(false);
   });
 
   it("retires cached numeric detail when reselecting a completed analysis before refreshed I/O", async () => {
@@ -357,9 +359,9 @@ describe("analysis V2 panel", () => {
       .mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; })));
     renderPanel({ initialPage: listPage(["analysis-1", "analysis-2"]) });
     await waitFor(() => expect(screen.getByText("result-core-1")).toBeTruthy());
-    fireEvent.click(screen.getAllByRole("button", { name: "이 분석 보기" })[1]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
     await screen.findByText("other-result");
-    fireEvent.click(screen.getAllByRole("button", { name: "이 분석 보기" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[0]!);
     const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
     expect(selected.queryByText("result-core-1")).toBeNull();
     expect(selected.queryByText("계산 결과")).toBeNull();
@@ -376,7 +378,7 @@ describe("analysis V2 panel", () => {
     expect(screen.queryByText("result-core-1")).toBeNull();
     expect(screen.queryByText("계산 결과")).toBeNull();
     expect(screen.queryByRole("button", { name: "근거 확인" })).toBeNull();
-    expect(screen.getByRole("button", { name: "분석 상세 다시 불러오기" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "변화 분석 상세 다시 불러오기" })).toBeTruthy();
   });
 
   it.each([true, false])("withdraws stale detail and evidence on refreshed remediation even if detail fetch succeeds=%s", async (success) => {
@@ -509,7 +511,7 @@ describe("analysis V2 panel", () => {
 
   it.each([
     [403, "검토 기록에는 현장 쓰기 권한이 필요합니다.", null],
-    [409, "분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.", "분석 상세 다시 불러오기"],
+    [409, "변화 분석 기록이 갱신되었습니다. 상세를 다시 불러온 뒤 검토하세요.", "변화 분석 상세 다시 불러오기"],
   ] as const)("guides review permission/conflict status %s", async (status, message, refreshAction) => {
     const reviewFetch = vi.fn((_url: string, init?: RequestInit) => Promise.resolve(init?.method === "POST"
       ? json({ message: "server message" }, status)
@@ -539,7 +541,7 @@ describe("analysis V2 panel", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
     await screen.findByText("요청을 다시 시도하세요.");
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -563,10 +565,10 @@ describe("analysis V2 panel", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
-    const message = await screen.findByText(new RegExp(code === "ANALYSIS_ACTIVATION_UNAVAILABLE" ? "이 환경에서는 분석 실행이 활성화되어 있지 않아" : "분석 실행 활성화가 만료되어"));
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
+    const message = await screen.findByText(new RegExp(code === "ANALYSIS_ACTIVATION_UNAVAILABLE" ? "이 환경에서는 변화 분석 실행이 활성화되어 있지 않아" : "변화 분석 실행 활성화가 만료되어"));
     expect(message.textContent).toContain("관리자");
-    expect(screen.getByText("보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
+    expect(screen.getByText("보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -586,8 +588,8 @@ describe("analysis V2 panel", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
-    await screen.findByText(/이 환경에서는 분석 실행이 활성화되어 있지 않아/);
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
+    await screen.findByText(/이 환경에서는 변화 분석 실행이 활성화되어 있지 않아/);
 
     const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
     expect(stored.version).toBe(2);
@@ -595,8 +597,8 @@ describe("analysis V2 panel", () => {
     firstRender.unmount();
 
     renderPanel(props);
-    await screen.findByText(/이 환경에서는 분석 실행이 활성화되어 있지 않아/);
-    expect(screen.getByText("보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
+    await screen.findByText(/이 환경에서는 변화 분석 실행이 활성화되어 있지 않아/);
+    expect(screen.getByText("보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "다시 시도" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "보류 요청 취소" })).toBeTruthy();
   });
@@ -609,7 +611,7 @@ describe("analysis V2 panel", () => {
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     fireEvent.change(screen.getByLabelText("기준 관측"), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText("현재 관측"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "분석 요청" }));
+    fireEvent.click(screen.getByRole("button", { name: "변화 분석 요청" }));
     await screen.findByText("요청을 다시 시도하세요.");
 
     const stored = JSON.parse(sessionStorage.getItem("ksi.analysis.pending.v2:org-1:operator-1:site-1") ?? "null");
@@ -619,7 +621,7 @@ describe("analysis V2 panel", () => {
 
     renderPanel(props);
     expect(await screen.findByText("중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다.")).toBeTruthy();
-    expect(screen.queryByText(/보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다/)).toBeNull();
+    expect(screen.queryByText(/보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다/)).toBeNull();
   });
 
   it("continues to restore strictly shaped version 1 pending attempts as generic", async () => {
@@ -673,7 +675,7 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json(detail("analysis-next")));
     vi.stubGlobal("fetch", fetchMock);
     renderPanel({ initialPage: listPage(["analysis-1"], "list-cursor"), initialSelectedDetail: detail() });
-    fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/sites/site-1/analyses/analysis-1",
@@ -682,7 +684,7 @@ describe("analysis V2 panel", () => {
     await waitFor(() => expect(document.body.textContent).toContain("analysis-next"));
     expect(fetchMock).toHaveBeenCalledWith("/api/sites/site-1/analyses/analysis-1", expect.objectContaining({ cache: "no-store" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sites/site-1/analyses?limit=50&cursor=list-cursor", expect.objectContaining({ cache: "no-store" }));
-    fireEvent.click(screen.getAllByRole("button", { name: "이 분석 보기" })[1]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
     expect(router.replace).toHaveBeenCalledWith("/sites/site-1/analysis?analysisId=analysis-next");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sites/site-1/analyses/analysis-next", expect.any(Object)));
     expect(fetchMock.mock.calls[2]![0]).toBe("/api/sites/site-1/analyses/analysis-next");
@@ -700,7 +702,7 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderPanel({ initialPage: listPage(oldFirstPage, "old-cursor"), initialSelectedDetail: detail() });
 
-    fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
 
@@ -709,7 +711,7 @@ describe("analysis V2 panel", () => {
     await waitFor(() => expect(screen.queryByText("분석 ID · analysis-50")).toBeNull());
     expect(screen.getByText("분석 ID · analysis-101")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "다음 분석 보기" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 변화 분석 보기" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(fetchMock.mock.calls[4]![0]).toBe("/api/sites/site-1/analyses?limit=50&cursor=fresh-cursor");
     await waitFor(() => expect(screen.getByText("분석 ID · analysis-51")).toBeTruthy());
@@ -729,7 +731,7 @@ describe("analysis V2 panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await waitFor(() => expect(screen.getByLabelText("근거").textContent).toContain("LIMIT-B"));
     expect(fetchMock.mock.calls[2]![0]).toBe("/api/sites/site-1/analyses/analysis-1/evidence?limit=32&cursor=evidence-cursor");
-    expect(screen.getByLabelText("근거").textContent).toContain("현재 불러온 2개 항목");
+    expect(screen.getByLabelText("근거").textContent).toContain("현재 불러온 근거 2개");
 
     fireEvent.click(screen.getByRole("button", { name: "다음 근거 보기" }));
     await screen.findByRole("alert");
@@ -750,7 +752,7 @@ describe("analysis V2 panel", () => {
   it("guides viewers in task language without exposing the permission token", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     const first = renderPanel({ canCreate: false });
-    expect(screen.getByText("분석 기록을 조회할 수 있습니다. 새 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.")).toBeTruthy();
+    expect(screen.getByText("변화 분석 기록을 조회할 수 있습니다. 새 변화 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     first.unmount();
 
@@ -758,7 +760,7 @@ describe("analysis V2 panel", () => {
     const page = listPage(["analysis-1"]);
     page.items[0] = { ...page.items[0]!, executionState: "FAILED", suitabilityState: "REASSESSMENT_REQUIRED", resultId: null, metrics: null };
     renderPanel({ initialPage: page, initialSelectedDetail: failed, canCreate: false });
-    expect(screen.getByText("Core가 분석을 완료하지 못했습니다. 현장 분석 담당자에게 실패 사유와 근거 검토를 요청하세요.")).toBeTruthy();
+    expect(screen.getByText("Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요.")).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
   });
 

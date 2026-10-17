@@ -226,18 +226,18 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
   const siteHref = `/sites/${encodeURIComponent(syntheticSiteId)}`;
   await page.goto(`${siteHref}?section=analysis`);
 
-  const openAnalysis = page.getByRole("link", { name: "현장 분석 열기", exact: true });
+  const openAnalysis = page.getByRole("link", { name: "변화 분석 열기", exact: true });
   await expect(openAnalysis).toBeVisible();
   await openAnalysis.click();
 
   await expect(page).toHaveURL(`${siteHref}/analysis`);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "현장 분석", exact: true })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 분석" })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "변화 분석", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
   const analysisError = page.getByRole("main").getByRole("alert");
   await expect(analysisError).toHaveCount(1);
   await expect(analysisError).toBeVisible();
-  await expect(analysisError).toContainText("이 환경에서는 현장 분석 기능을 사용할 수 없습니다.");
+  await expect(analysisError).toContainText("이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다.");
   await expect(page.getByRole("button", { name: "다시 시도" })).toHaveCount(0);
   await expect(page.getByText(/0건|분석 결과/, { exact: false })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "현장을 찾을 수 없습니다" })).toHaveCount(0);
@@ -245,11 +245,11 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
 
   await page.goto(`${siteHref}/observations`);
   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "외부 관측 결과 이력" })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "외부 비교 기록" })).toBeVisible();
   const observationError = page.getByRole("main").getByRole("alert");
   await expect(observationError).toHaveCount(1);
   await expect(observationError).toBeVisible();
-  await expect(observationError).toContainText("외부 관측 이력을 불러오지 못했습니다.");
+  await expect(observationError).toContainText("외부 비교 기록을 불러오지 못했습니다.");
   await expectNoHorizontalOverflow(page);
 });
 
@@ -354,17 +354,17 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
   const spatialPanel = page.getByRole("region", { name: "선택 구역 공간 확인", exact: true });
   await expect(spatialPanel).toBeVisible();
-  await expect(spatialPanel.getByRole("combobox", { name: /선택 구역/ })).toBeVisible();
+  await expect(spatialPanel.getByRole("combobox", { name: "확인할 작업구역 선택" })).toBeVisible();
   await expect(page.locator(".leaflet-container")).toBeVisible();
-  const nextAction = spatialPanel.getByRole("link", { name: "새 관측 시작", exact: true });
-  await expect(page.getByRole("link", { name: "새 관측 시작", exact: true })).toHaveCount(1);
+  const nextAction = spatialPanel.getByRole("link", { name: "관측 자료 등록", exact: true });
+  await expect(page.getByRole("link", { name: "관측 자료 등록", exact: true })).toHaveCount(1);
   await expect(nextAction).toBeVisible();
   await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new`);
 
   await page.goto(`${siteHref}/spatial-assets`);
   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "현장 공간 자산", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 공간 자산", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "등록 자료", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 등록 자료", exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
   const returnToSite = page.getByRole("main").getByRole("link", { name: "현장으로 돌아가기", exact: true });
   await expect(returnToSite).toHaveCount(1);
@@ -373,7 +373,7 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   await returnToSite.click();
   await expect(page).toHaveURL(siteHref!);
 
-  const labels = ["관측", "분석", "공간 자산", "작업", "외부 결과"];
+  const labels = ["자료·시점", "변화 분석", "등록 자료", "관측 작업", "외부 비교 기록"];
   if (testInfo.project.name.startsWith("desktop")) {
     const siteNavigation = page.getByRole("navigation", { name: "현장 상세 화면" });
     await expect(siteNavigation).toBeVisible();
@@ -381,7 +381,7 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
   } else {
-    const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 관측" });
+    const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 자료·시점" });
     await expect(disclosure).toBeVisible();
     await disclosure.click();
     const siteNavigation = page.getByRole("navigation", { name: "현장 메뉴" });
@@ -389,7 +389,7 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
     await expect(page.getByText("노트북에서 계속", { exact: true })).toHaveCount(0);
-    await siteNavigation.getByRole("link", { name: "작업", exact: true }).click();
+    await siteNavigation.getByRole("link", { name: "관측 작업", exact: true }).click();
     await expect(page).toHaveURL(/section=work-orders/);
   }
   await page.goto(`${siteHref}?section=work-orders`);
@@ -398,8 +398,8 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   await expect(page.getByText("E2E 외부 산출물 등록", { exact: true })).toBeVisible();
 
   await page.goto(`${siteHref}?section=external-results`);
-  const unavailableHistory = page.getByText("외부 관측 결과를 불러오지 못했습니다.", { exact: true });
-  const emptyHistory = page.getByText("외부 관측 결과가 없습니다", { exact: true });
+  const unavailableHistory = page.getByText("외부 비교 기록을 불러오지 못했습니다.", { exact: true });
+  const emptyHistory = page.getByText("조회된 외부 비교 기록이 없습니다", { exact: true });
   await expect(unavailableHistory.or(emptyHistory)).toBeVisible();
   await expectNoHorizontalOverflow(page);
 });
@@ -447,7 +447,7 @@ test("작업 상세는 실행 근거가 없으면 관리형 실행을 fail-close
   await expect(page.getByText("승인 대기", { exact: true })).toBeVisible();
   await expect(page.getByText("이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.", { exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "작업 운영" })).toHaveCount(0);
-  await expect(page.getByRole("heading", { name: "재구성 산출물 등록" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "관측 자료 등록" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /승인|거절|업무 종료|내게 배정/ })).toHaveCount(0);
   await expect(page.getByText("Acquisition progress", { exact: true })).toHaveCount(0);
   await expect(page.getByText("전문가 복구 정보", { exact: true })).toHaveCount(0);
@@ -467,7 +467,8 @@ test("외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제�
   await expect(externalWorkOrder).toBeVisible();
   await externalWorkOrder.click();
 
-  await expect(page.getByRole("heading", { level: 2, name: "E2E 외부 산출물 등록" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "관측 자료와 검사 확인" })).toBeVisible();
+  await expect(page.getByText("등록된 작업명 · E2E 외부 산출물 등록", { exact: true })).toBeVisible();
   const operations = page.locator("#work-operations");
   await expect(operations.locator("summary")).toContainText("운영 중");
   await expect(page.getByRole("heading", { name: "작업 운영" })).toBeHidden();
@@ -475,20 +476,21 @@ test("외부 재구성 작업은 승인·운영 중 상태와 등록 UI를 제�
   await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "작업 운영" })).toBeVisible();
   await expect(page.getByText("운영 중", { exact: true })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "재구성 산출물 등록" })).toBeVisible();
-  await expect(page.getByText("등록된 외부 산출물이 없습니다.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "관측 자료 등록" })).toBeVisible();
+  await expect(page.getByText("아직 등록된 관측 자료가 없습니다.", { exact: true })).toBeVisible();
   await expect(page.getByText(/측정 성공|정확도 검증 완료|산출물 검증 완료/)).toHaveCount(0);
 
   if (testInfo.project.name.startsWith("desktop")) {
     await expect(page.getByLabel("정사영상 GeoTIFF")).toBeVisible();
-    await expect(page.getByRole("button", { name: "산출물 등록하기" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "자료 등록 마치기" })).toBeDisabled();
   } else {
     await expect(page.getByText("노트북에서 계속", { exact: true }).first()).toBeVisible();
     await expect(page.getByLabel("정사영상 GeoTIFF")).toBeHidden();
   }
 
   await page.reload();
-  await expect(page.getByRole("heading", { name: "E2E 외부 산출물 등록" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "관측 자료와 검사 확인" })).toBeVisible();
+  await expect(page.getByText("등록된 작업명 · E2E 외부 산출물 등록", { exact: true })).toBeVisible();
   await expect(operations.locator("summary")).toContainText("운영 중");
   await expectNoHorizontalOverflow(page);
 });

@@ -11,13 +11,13 @@ import type { WorkArea } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { toDisplayVertices } from "@/lib/geo/display-geometry";
 import { spatialAssetKindLabel } from "@/lib/human-labels";
+import { assetBusinessTitles, assetLifecycleLabel, registrationVersionLabel } from "@/lib/operator-language";
 
 import { SiteNativeExtentSvg } from "./SiteNativeExtentSvg";
 import {
   analysesForArea,
   buildAreaCaptureEntries,
   disambiguatedAreaNames,
-  disambiguatedAssetHeadlines,
   displayName,
   extractSimpleRing,
   legacyRowsForArea,
@@ -47,29 +47,16 @@ function analysisStateLabel(item: AnalysisListItem): string {
   if (item.executionState === "QUEUED") return "처리 대기 중";
   if (item.executionState === "NOT_STARTED") return "처리 시작 전";
   switch (item.suitabilityState) {
-    case "EVALUATED": return "판정 기록됨";
-    case "BLOCKED": return "분석 불가";
-    case "REMEDIATION_REQUIRED": return "보완 필요";
+    case "EVALUATED": return "분석 조건 확인 결과 있음";
+    case "BLOCKED": return "분석을 진행할 수 없음";
+    case "REMEDIATION_REQUIRED": return "자료 보완 필요";
     case "PROVISIONAL_ACCURACY_UNVERIFIED": return "정확도 미확인";
-    case "REASSESSMENT_REQUIRED": return "재평가 필요";
-    default: return `적합성 ${item.suitabilityState}`;
+    case "REASSESSMENT_REQUIRED": return "사용 조건 재확인 필요";
+    default: return "분석 조건 확인 필요";
   }
-}
-
-function captureWindowLabel(from: string | null, to: string | null): string {
-  if (from && to) {
-    return `${formatKoreanDateTime(from, { dateStyle: "medium", timeStyle: "short" })} – ${formatKoreanDateTime(to, { dateStyle: "medium", timeStyle: "short" })}`;
-  }
-  return "촬영 구간 미기재";
 }
 
 /** 봉인 상태의 사람용 이름 — 인증이 아니라 Core 등록 상태의 옮김이다. */
-function assetLifecycleLabel(state: string): string {
-  if (state === "SEALED") return "봉인됨";
-  if (state === "SUPERSEDED") return "대체됨";
-  return "미봉인";
-}
-
 /**
  * 현장 기본 탭의 읽기 전용 공간 확인 — 선택한 구역 하나를 눈으로 검증하는 자리.
  *
@@ -128,7 +115,7 @@ export function SiteSpatialOverview({
   const planeUnit = geometry ? planeUnitForCrs(geometry.crs) : "unknown" as const;
 
   const assetsPage = assetsState.status === "ready" ? assetsState.page : null;
-  const assetHeadlines = assetsPage ? disambiguatedAssetHeadlines(assetsPage.assets) : new Map<string, { label: string; disambiguated: boolean }>();
+  const assetHeadlines = assetsPage ? assetBusinessTitles(assetsPage.assets) : new Map<string, string>();
   const selectedAsset = assetsPage
     ? (selectedAssetRef ? assetsPage.assets.find((item) => item.assetRef === selectedAssetRef) ?? null : null)
     : null;
@@ -154,9 +141,9 @@ export function SiteSpatialOverview({
     ? buildAreaCaptureEntries({ assets: assetsPage?.assets ?? null, legacyRows: areaLegacy })
     : [];
   const latestAnalysis = areaAnalyses?.[0] ?? null;
-  const primaryAction = canCreateWorkOrder
-    ? { href: `${sitePath}/observations/new`, label: "새 관측 시작" }
-    : { href: `${sitePath}/analysis`, label: "현장 분석에서 관측 쌍·근거 확인" };
+  const primaryAction = latestAnalysis
+    ? { href: latestAnalysis.analysisHref, label: "이 구역의 최근 분석 확인" }
+    : { href: canCreateWorkOrder ? `${sitePath}/observations/new` : `${sitePath}/analysis`, label: canCreateWorkOrder ? "관측 자료 등록" : "변화 분석 보기" };
 
   return <section aria-label="선택 구역 공간 확인" className="flex flex-col gap-3">
     {scopeNotice && (
@@ -167,7 +154,7 @@ export function SiteSpatialOverview({
     {areas.length > 0 ? (
       <form method="get" action={sitePath} className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface px-4 py-3">
         <div className="min-w-0 flex-1 basis-56">
-          <label htmlFor="site-spatial-area" className="block text-[12px] font-semibold">선택 구역 — 한 번에 하나씩 확인합니다</label>
+        <label htmlFor="site-spatial-area" className="block text-[12px] font-semibold">확인할 작업구역 선택</label>
           <select
             id="site-spatial-area"
             name="workAreaId"
@@ -210,13 +197,13 @@ export function SiteSpatialOverview({
             boundary={ring}
             footprint={footprintOverlaid && footprintRing ? footprintRing : null}
             crsLabel={geometry?.crs ?? "확인 불가"}
-            footprintLabel={footprintAsset && footprintOverlaid ? footprintAsset.declared.fileName : null}
+            footprintLabel={footprintAsset && footprintOverlaid ? assetHeadlines.get(footprintAsset.assetRef) ?? null : null}
             planeUnit={planeUnit}
             vertexCount={ring.length}
             coincident={coincident}
           />}
           <details className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">배경 지도에서 위치 보기(표시 전용 · 작은 범위는 점으로 보일 수 있음)</summary>
+            <summary className="tap-target cursor-pointer font-semibold">배경 지도에서 위치 확인</summary>
             <div className="mt-2">
               {display && display.ok ? (
                 <AoiPolygonMap value={display.vertices} readOnly />
@@ -242,7 +229,7 @@ export function SiteSpatialOverview({
                 boundary={ring}
                 footprint={footprintOverlaid && footprintRing ? footprintRing : null}
                 crsLabel={geometry?.crs ?? "확인 불가"}
-                footprintLabel={footprintAsset && footprintOverlaid ? footprintAsset.declared.fileName : null}
+                footprintLabel={footprintAsset && footprintOverlaid ? assetHeadlines.get(footprintAsset.assetRef) ?? null : null}
                 planeUnit={planeUnit}
                 vertexCount={ring.length}
                 coincident={coincident}
@@ -267,12 +254,12 @@ export function SiteSpatialOverview({
                   if (entry.source !== "asset" || !entry.assetRef) {
                     return <li key={entry.key} className="px-2 py-1.5 text-[12px]">
                       <p className="break-all font-semibold">{entry.headline}</p>
-                      <p className="mt-0.5 text-ink-2">외부 비교 기록 · {entry.detail}</p>
+                      <p className="mt-0.5 text-ink-2">{entry.detail}</p>
+                      {entry.reportRef && <details className="mt-1 text-ink-2"><summary className="tap-target cursor-pointer">결과 등록 정보</summary><p className="break-all font-mono">{entry.reportRef}</p><Link className="tap-target inline-block underline" href={`${sitePath}/observations/${encodeURIComponent(entry.reportRef)}`}>외부 비교 결과 열기</Link></details>}
                     </li>;
                   }
                   const item = assetsPage?.assets.find((candidate) => candidate.assetRef === entry.assetRef);
-                  const naming = assetHeadlines.get(entry.assetRef);
-                  const headline = naming?.disambiguated ? naming.label : displayName(naming?.label ?? entry.headline);
+                  const headline = assetHeadlines.get(entry.assetRef) ?? entry.headline;
                   const isSelected = selectedAssetRef === entry.assetRef;
                   return <li key={entry.key} className="py-1.5 text-[12px]">
                     <Link
@@ -280,40 +267,33 @@ export function SiteSpatialOverview({
                       aria-current={isSelected ? "true" : undefined}
                       className={`tap-target block rounded-md px-2 py-1.5 ${isSelected ? "bg-sunk font-semibold" : ""}`}
                     >
-                      <span className="block break-all" title={naming?.label ?? entry.headline}>{headline}</span>
-                      <span className="mt-0.5 block text-ink-2">{item ? spatialAssetKindLabel(item.kind) : entry.detail} · 촬영 {entry.capturedFrom && entry.capturedTo
-                        ? `${formatKoreanDateTime(entry.capturedFrom, { dateStyle: "medium", timeStyle: "short" })} – ${formatKoreanDateTime(entry.capturedTo, { dateStyle: "medium", timeStyle: "short" })}`
-                        : "구간 미기재"}{isSelected ? " · 선택 중" : ""}</span>
+                      <span className="block break-words">{headline}</span>
+                      <span className="mt-0.5 block text-ink-2">{item ? assetLifecycleLabel(item.lifecycleState) : entry.detail}{isSelected ? " · 선택 중" : ""}</span>
                     </Link>
                   </li>;
                 })}
               </ul>
             )}
-            {!assetsPage && <p className="mt-1 text-[11.5px] text-ink-muted">공간 자산 목록 확인 불가 — 외부 비교 기록만 표시합니다.</p>}
-            {!areaLegacy && <p className="mt-1 text-[11.5px] text-ink-muted">외부 비교 이력 확인 불가 — 공간 자산만 표시합니다.</p>}
+            {!assetsPage && <p className="mt-1 text-[11.5px] text-ink-muted">등록 자료를 조회하지 못했습니다. 확인 가능한 외부 비교 기록만 표시합니다.</p>}
+            {!areaLegacy && <p className="mt-1 text-[11.5px] text-ink-muted">외부 비교 기록을 조회하지 못했습니다. 확인 가능한 등록 자료만 표시합니다.</p>}
           </>)}
         </div>
       </div>
 
       <aside className="flex min-w-0 flex-col gap-3" aria-label="선택 범위 상태">
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <h2 className="break-words text-[14px] font-bold" title={selected.name || selected.workAreaId}>
-            {(() => {
-              const naming = areaNames.get(selected.workAreaId);
-              if (naming?.disambiguated) return naming.label;
-              return displayName(naming?.label ?? selected.name ?? selected.workAreaId, 60);
-            })()}
-          </h2>
+          <h2 className="text-[14px] font-bold">선택한 작업구역</h2>
           <dl className="mt-2 grid gap-1.5 text-[12px]">
             <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">상태</dt><dd className="break-words text-right font-semibold">{selected.status === "ACTIVE" ? "사용 중" : "보관됨"}</dd></div>
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">좌표계</dt><dd className="break-all text-right font-mono">{geometry?.crs ?? "확인 불가"}</dd></div>
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">등록</dt><dd className="text-right">{formatKoreanDateTime(selected.createdAt, { dateStyle: "medium", timeStyle: "short" })}</dd></div>
             <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">관측 작업</dt><dd className="text-right font-semibold">{areaOrders === null ? "확인 불가" : `${areaOrders.length}개 연결됨`}</dd></div>
             <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">분석 결과</dt><dd className="text-right font-semibold">{areaAnalyses === null ? "확인 불가" : `${areaAnalyses.length}개${analysesHasMore ? " · 더 있음" : ""}`}</dd></div>
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">외부 비교 이력</dt><dd className="text-right font-semibold">{areaLegacy === null ? "확인 불가" : `${areaLegacy.length}개${legacyHasMore ? " · 더 있음" : ""}`}</dd></div>
           </dl>
           <details className="mt-2 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer">구역 식별 정보</summary>
+            <summary className="tap-target cursor-pointer">구역 등록 정보</summary>
+            <p className="mt-1 break-words">등록된 구역명 · {areaNames.get(selected.workAreaId)?.label ?? selected.name}</p>
+            <p className="mt-1">등록 · {formatKoreanDateTime(selected.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
+            <p className="mt-1">좌표계 · {geometry?.crs ?? "확인 불가"}</p>
+            <p className="mt-1">외부 비교 기록 · {areaLegacy === null ? "확인 불가" : `${areaLegacy.length}건${legacyHasMore ? " · 더 있음" : ""}`}</p>
             <p className="mt-1 break-all font-mono">{selected.workAreaId}</p>
             {selected.supersedes && <p className="mt-1 break-all font-mono">대체 전 구역 · {selected.supersedes}</p>}
           </details>
@@ -322,28 +302,37 @@ export function SiteSpatialOverview({
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
           <h3 className="text-[13px] font-bold">선택된 자료</h3>
           {assetsState.status === "denied" && (
-            <p className="mt-1 text-[12px] leading-5 text-ink-2">공간 자산을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요.</p>
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">등록 자료를 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요.</p>
           )}
           {assetsState.status === "unavailable" && (
-            <p className="mt-1 text-[12px] leading-5 text-ink-2">공간 자산을 일시적으로 불러오지 못했습니다.</p>
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">등록 자료를 불러오지 못했습니다. 잠시 후 다시 확인하세요.</p>
           )}
           {assetsState.status === "ready" && assetsPage && (
             selectedAsset ? <>
-              <p className="mt-1 break-all text-[12px] font-semibold" aria-live="polite">{assetHeadlines.get(selectedAsset.assetRef)?.label ?? `${selectedAsset.declared.fileName} · rev ${selectedAsset.revision}`}</p>
-              <p className="mt-0.5 text-[12px] text-ink-2">{spatialAssetKindLabel(selectedAsset.kind)} · {assetLifecycleLabel(selectedAsset.lifecycleState)} · 촬영 {captureWindowLabel(selectedAsset.declared.captureStartedAt, selectedAsset.declared.captureEndedAt)}</p>
+              <p className="mt-1 break-words text-[13px] font-semibold" aria-live="polite">{assetHeadlines.get(selectedAsset.assetRef) ?? spatialAssetKindLabel(selectedAsset.kind)}</p>
+              <p className="mt-0.5 text-[12px] text-ink-2">{assetLifecycleLabel(selectedAsset.lifecycleState)}</p>
               <p className="mt-0.5 text-[12px] text-ink-2">{!selectedAsset.inspection?.raster
-                ? "검사된 footprint가 없어 경계만 표시합니다"
+                ? "파일의 포함 범위를 확인하지 못해 작업구역만 표시합니다."
                 : footprintOverlaid
-                  ? "검사된 footprint를 평면에 표시합니다"
-                  : "검사된 footprint의 기하·좌표계를 함께 표시할 수 없어 작업구역 경계만 표시합니다"}</p>
+                  ? "선택한 파일이 포함하는 범위를 함께 표시합니다."
+                  : "위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다."}</p>
+              <details className="mt-1 text-[12px] text-ink-2">
+                <summary className="tap-target cursor-pointer">파일 정보</summary>
+                <p className="mt-1 break-all">등록 파일명 · {selectedAsset.declared.fileName}</p>
+                <p className="mt-1">{registrationVersionLabel(selectedAsset.revision)}</p>
+                <p className="mt-1">제출한 자료 묶음의 버전이며, 촬영 횟수와는 다릅니다.</p>
+                <p className="mt-1">등록 종류 · {selectedAsset.kind}</p>
+                <p className="mt-1">파일 제출 상태 코드 · {selectedAsset.lifecycleState}</p>
+                <p className="mt-1 break-all font-mono">자료 식별자 · {selectedAsset.assetRef}</p>
+              </details>
               <Link
                 href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}&assetRef=${encodeURIComponent(selectedAsset.assetRef)}`}
                 className="tap-target mt-0.5 inline-block text-[12px] underline"
               >
-                메타데이터 보기
+                파일 등록 정보 열기
               </Link>
             </> : assetsPage.assets.length === 0 ? (
-              <p className="mt-1 text-[12px] leading-5 text-ink-2">이 구역에 조회된 공간 자산이 없습니다.</p>
+              <p className="mt-1 text-[12px] leading-5 text-ink-2">이 구역에 조회된 등록 자료가 없습니다.</p>
             ) : (
               <p className="mt-1 text-[12px] leading-5 text-ink-2">왼쪽 목록에서 자료를 선택하세요.</p>
             )
@@ -351,7 +340,7 @@ export function SiteSpatialOverview({
         </div>
 
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <h3 className="text-[13px] font-bold">분석 결과</h3>
+          <h3 className="text-[13px] font-bold">이 구역의 최근 분석</h3>
           {!analysesKnown ? (
             <p className="mt-1 text-[12px] leading-5 text-ink-2">분석 기록을 확인할 수 없습니다.</p>
           ) : !latestAnalysis ? (
@@ -360,8 +349,7 @@ export function SiteSpatialOverview({
             <p className="mt-1 text-[12px] font-semibold">{analysisStateLabel(latestAnalysis)}</p>
             <p className="mt-0.5 text-[12px] text-ink-2">기록 {formatKoreanDateTime(latestAnalysis.createdAt, { dateStyle: "medium", timeStyle: "short" })}{latestAnalysis.limitationCount > 0 ? ` · 제한 ${latestAnalysis.limitationCount}건` : ""}</p>
             <p className="mt-1 flex flex-wrap gap-x-3 text-[12px]">
-              <Link href={latestAnalysis.analysisHref} className="tap-target inline-block underline">이 결과 열기</Link>
-              <Link href={`${sitePath}/analysis`} className="tap-target inline-block underline">결과 {areaAnalyses?.length ?? 0}개 모두 보기</Link>
+              <Link href={`${sitePath}/analysis`} className="tap-target inline-block underline">분석 기록 {areaAnalyses?.length ?? 0}건 모두 보기</Link>
             </p>
           </>)}
         </div>
@@ -369,8 +357,8 @@ export function SiteSpatialOverview({
         <nav className="flex flex-col gap-2" aria-label="선택 구역 다음 확인">
           <Link href={primaryAction.href} className="btn btn-primary w-fit">{primaryAction.label}</Link>
           <p className="flex flex-wrap gap-x-3 text-[12px]">
-            <Link href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">이 구역의 공간 자산</Link>
-            <Link href={`${sitePath}/observations`} className="tap-target underline">외부 관측 이력</Link>
+            <Link href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">등록 자료 보기</Link>
+            <Link href={`${sitePath}/observations`} className="tap-target underline">외부 비교 기록</Link>
           </p>
         </nav>
       </aside>

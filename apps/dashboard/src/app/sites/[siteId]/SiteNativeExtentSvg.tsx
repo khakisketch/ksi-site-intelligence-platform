@@ -66,8 +66,6 @@ export function SiteNativeExtentSvg({
   const width = viewWidth(bounds);
   const toPoints = (points: Array<[number, number]>) =>
     points.map(([x, y]) => project(x, y, bounds, width).join(",")).join(" ");
-  const midX = (bounds.minX + bounds.maxX) / 2;
-  const midY = (bounds.minY + bounds.maxY) / 2;
   const barLength = planeUnit === "meters" ? niceBarLength(bounds.maxX - bounds.minX) : 0;
   const unitNote = planeUnit === "meters" ? "단위 m" : planeUnit === "degrees" ? "단위 °" : "단위 미확인";
 
@@ -76,9 +74,9 @@ export function SiteNativeExtentSvg({
       viewBox={`0 0 ${width} ${VIEW_HEIGHT}`}
       className="block h-60 w-full text-ink-1 sm:h-80"
       role="img"
-      aria-label={`원본 좌표 평면의 등록 범위. 좌표계 ${crsLabel}, 꼭짓점 ${vertexCount}개${footprint ? ", 검사된 파일 footprint 함께 표시" : ""}.`}
+      aria-label={`작업구역 경계${footprint ? ", 선택한 자료의 포함 범위 함께 표시" : ""}. ${planeUnit === "unknown" ? "좌표 단위 미확인." : ""}`}
     >
-      <title>{`등록 범위 평면도 (${crsLabel})`}</title>
+      <title>작업구역과 선택 자료의 범위</title>
       <rect x={1} y={1} width={width - 2} height={VIEW_HEIGHT - 2} fill="none" stroke="currentColor" strokeOpacity={0.25} />
       {footprint && !coincident && (
         <polygon points={toPoints(footprint)} fill="none" stroke="currentColor" strokeOpacity={0.55} strokeDasharray="5 3" strokeWidth={1.5} />
@@ -89,13 +87,6 @@ export function SiteNativeExtentSvg({
       {!coincident && (
         <polygon points={toPoints(boundary)} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" />
       )}
-      <g fontSize={10} fill="currentColor" opacity={0.7}>
-        <text x={4} y={VIEW_HEIGHT - 8}>{formatPlaneValue(bounds.minX, planeUnit)}</text>
-        <text x={width / 2} y={VIEW_HEIGHT - 8} textAnchor="middle">{formatPlaneValue(midX, planeUnit)}</text>
-        <text x={width - 4} y={VIEW_HEIGHT - 8} textAnchor="end">{formatPlaneValue(bounds.maxX, planeUnit)}</text>
-        <text x={4} y={14}>{formatPlaneValue(bounds.maxY, planeUnit)}</text>
-        <text x={4} y={VIEW_HEIGHT / 2}>{formatPlaneValue(midY, planeUnit)}</text>
-      </g>
       {barLength > 0 && (() => {
         const [x1, y1] = project(bounds.minX, bounds.minY, bounds, width);
         const [x2] = project(bounds.minX + barLength, bounds.minY, bounds, width);
@@ -109,9 +100,19 @@ export function SiteNativeExtentSvg({
       })()}
     </svg>
     <figcaption className="border-t border-line px-3 py-2 text-[11.5px] leading-5 text-ink-2">
-      원본 좌표 평면 · {crsLabel} · {unitNote} · 꼭짓점 {vertexCount}개.
-      실선은 작업구역 경계{footprint ? (coincident ? "이며, 파일 범위와 작업구역 경계가 겹쳐 표시됩니다" : `이며, 점선은 ${footprintLabel ?? "선택된 파일"}의 검사된 footprint입니다`) : "입니다"}.
-      위성사진이 아니며 겹침은 정확도 인증이 아닙니다.
+      <p>실선은 작업구역{footprint ? (coincident ? "이며, 선택 자료의 포함 범위와 겹칩니다" : "이며, 점선은 선택 자료가 포함하는 범위입니다") : "의 경계입니다"}.
+      {planeUnit === "unknown" && " 좌표 단위를 확인하지 못했습니다."} 사진이 아닌 범위 표시이며 정확도를 보증하지 않습니다.</p>
+      <details className="mt-1">
+        <summary className="tap-target cursor-pointer">좌표 정보 확인</summary>
+        <dl className="mt-1 grid gap-1">
+          <div><dt className="font-semibold">좌표계·단위</dt><dd>{crsLabel} · {unitNote}</dd></div>
+          <div><dt className="font-semibold">경계 꼭짓점</dt><dd>{vertexCount}개</dd></div>
+          <div><dt className="font-semibold">가로 좌표 범위</dt><dd className="break-all font-mono">{formatPlaneValue(bounds.minX, planeUnit)} – {formatPlaneValue(bounds.maxX, planeUnit)}</dd></div>
+          <div><dt className="font-semibold">세로 좌표 범위</dt><dd className="break-all font-mono">{formatPlaneValue(bounds.minY, planeUnit)} – {formatPlaneValue(bounds.maxY, planeUnit)}</dd></div>
+          {footprintLabel && <div><dt className="font-semibold">함께 표시한 자료</dt><dd className="break-words">{footprintLabel}</dd></div>}
+        </dl>
+        <p className="mt-1">지도 표시를 위한 좌표 변환은 원본 자료를 변경하지 않습니다.</p>
+      </details>
     </figcaption>
   </figure>;
 }

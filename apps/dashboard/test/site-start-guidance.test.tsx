@@ -20,7 +20,7 @@ describe("SiteStartGuidance", () => {
     expect(guide.getByText("2개 목록됨")).toBeTruthy();
     expect(guide.getByText("1개 목록됨")).toBeTruthy();
     expect(guide.getByText("최근 페이지 50개 · 더 있음")).toBeTruthy();
-    expect(guide.getByRole("link", { name: "분석 후보와 상태 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis");
+    expect(guide.getByRole("link", { name: "비교할 자료 선택" }).getAttribute("href")).toBe("/sites/site-1/analysis");
     expect(guide.queryByRole("button")).toBeNull();
     expect(guide.queryByText(/분석 준비 완료|정량 사용 가능/)).toBeNull();
   });

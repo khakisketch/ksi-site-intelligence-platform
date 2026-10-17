@@ -29,7 +29,7 @@ export default async function FieldNewObservationPage() {
     return <OperationsSessionFailure verdict={session.verdict} next="/field/new" />;
   }
   if (!session.principal.permissions.includes("WORK_ORDERS_WRITE")) {
-    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="새 관측을 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "작업으로 돌아가기", href: "/field" }} /></div>;
+    return <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5"><EmptyState title="관측 자료를 등록할 권한이 없습니다" description="작업 등록 권한이 있는 계정으로 다시 시도하세요." action={{ label: "작업으로 돌아가기", href: "/field" }} /></div>;
   }
 
   const result = await fetchSitesForNewObservation();
@@ -40,7 +40,7 @@ export default async function FieldNewObservationPage() {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
       <div>
-        <p className="text-[12.5px] text-ink-2">새 관측은 현장의 작업구역과 함께 시작합니다.</p>
+        <p className="text-[12.5px] text-ink-2">관측 자료 등록은 현장의 작업구역과 함께 시작합니다.</p>
         <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 선택</h2>
       </div>
       {sites.length === 0 ? (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -10,6 +10,7 @@ import {
 } from "./palette-items";
 import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
+import { contextPaletteItems } from "./context-palette";
 
 /** 사이드바의 검색 버튼이 팔레트를 여는 신호. 컨텍스트 대신 이벤트를 쓰는 이유는
  *  셸의 절반이 서버 컴포넌트라, 프로바이더로 감싸면 그 경계가 통째로 클라이언트가
@@ -26,6 +27,7 @@ function KeyCap({ children }: { children: React.ReactNode }) {
 
 export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const router = useRouter();
+  const pathname = usePathname();
   const commandModifier = useCommandModifierLabel();
   const [open, setOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -34,7 +36,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  const results = useMemo(() => filterPaletteItems(items, query), [items, query]);
+  const results = useMemo(() => filterPaletteItems([...contextPaletteItems(items, pathname ?? ""), ...items], query), [items, pathname, query]);
   const shortcutRows: Array<{ keys: string[]; desc: string }> = [
     { keys: [commandModifier, "K"], desc: "검색 · 이동 팔레트 열기" },
     { keys: ["?"], desc: "이 도움말 열기" },

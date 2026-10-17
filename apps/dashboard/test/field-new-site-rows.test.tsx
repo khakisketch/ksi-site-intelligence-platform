@@ -54,7 +54,7 @@ describe("field/new site rows", () => {
     });
     try {
       render(await FieldNewObservationPage());
-      expect(screen.getByText("새 관측을 등록할 권한이 없습니다")).toBeTruthy();
+      expect(screen.getByText("관측 자료를 등록할 권한이 없습니다")).toBeTruthy();
       expect(screen.getByRole("link", { name: "작업으로 돌아가기" })).toBeTruthy();
       expect(screen.queryByText("A 현장")).toBeNull();
     } finally {

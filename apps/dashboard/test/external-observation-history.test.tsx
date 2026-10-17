@@ -65,7 +65,7 @@ describe("외부 관측 이력 상세", () => {
   it("routes an empty external-results state to the site's analysis record", () => {
     render(<ExternalObservationHistory siteId="site-1" items={[]} workAreaNames={new Map()} />);
 
-    expect(screen.getByRole("link", { name: "현장 분석에서 결과와 근거 보기" }).getAttribute("href"))
+    expect(screen.getByRole("link", { name: "변화 분석에서 결과 확인" }).getAttribute("href"))
       .toBe("/sites/site-1/analysis");
   });
 

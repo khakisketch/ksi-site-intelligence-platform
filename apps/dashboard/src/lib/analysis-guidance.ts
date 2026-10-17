@@ -1,5 +1,6 @@
 import type { AnalysisEvidenceItem, AnalysisObservationOption } from "@/lib/core-api/analysis";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { dataKindLabel } from "@/lib/operator-language";
 
 export type AnalysisGuidanceDestination = "work-areas" | "spatial-assets";
 
@@ -220,7 +221,7 @@ export function analysisObservationLabel(option: AnalysisObservationOption): str
   const interval = startDate === endDate
     ? `${startDate} ${startTime}–${endTime}`
     : `${startDate} ${startTime}–${endDate} ${endTime}`;
-  return `${interval} · revision ${option.selector.revision} · ${option.observationEpochId}`;
+  return `${interval} · 등록 버전 ${option.selector.revision} · ${option.observationEpochId}`;
 }
 
 export function analysisEvidenceKindLabel(kind: string): string {
@@ -229,7 +230,7 @@ export function analysisEvidenceKindLabel(kind: string): string {
     CALCULATION_IDENTITY: "분석 조건",
     EVALUATION: "독립 근거 평가",
     CHECKPOINT_FACT: "검사점 근거",
-    AUTHORITY_REFERENCE: "Core 권위 기록",
+    AUTHORITY_REFERENCE: "분석 기준 기록",
     SOURCE_REFERENCE: "출처 연결",
     NUMERIC_RESULT: "수치 결과 기록",
     LIMITATION: "사용 제한",
@@ -241,18 +242,18 @@ export function analysisEvidenceSummary(item: AnalysisEvidenceItem): string {
   switch (item.kind) {
     case "EPOCH_IDENTITY": {
       const epoch = item.epoch === "BASELINE" ? "기준" : "현재";
-      return `${epoch} 관측 · ${item.observationEpochId} · revision ${item.selector.revision}`;
+      return `${epoch} 관측 · ${dataKindLabel(item.artifactId)}`;
     }
     case "CALCULATION_IDENTITY":
-      return `고정 분석 프로필 · ${item.calculation.policy.profileId}`;
+      return "고정 분석 조건";
     case "EVALUATION": {
       const outcome = item.outcome === "PASS" ? "통과" : item.outcome === "FAIL" ? "거부" : item.outcome === "UNASSESSED" ? "평가 전" : "확인 불가";
-      return `${item.epoch === "BASELINE" ? "기준" : "현재"} 관측 · ${outcome} · revision ${item.revision}`;
+      return `${item.epoch === "BASELINE" ? "기준" : "현재"} 관측 평가 · ${outcome}`;
     }
     case "CHECKPOINT_FACT":
-      return `Core 근거 상태 · ${item.coreVerdict === "VALIDATED" ? "검증됨" : "거부됨"}`;
+      return `검사점 근거 · ${item.coreVerdict === "VALIDATED" ? "검증됨" : "거부됨"}`;
     case "AUTHORITY_REFERENCE":
-      return "분석 권위 기록 연결";
+      return "분석 기준 기록 연결";
     case "SOURCE_REFERENCE":
       return "출처 기록 연결";
     case "NUMERIC_RESULT":
@@ -260,7 +261,7 @@ export function analysisEvidenceSummary(item: AnalysisEvidenceItem): string {
     case "LIMITATION":
       return `사용 제한 · ${getAnalysisIssueGuidance(String(item.code)).label}`;
     default:
-      return "Core가 반환한 근거 기록";
+      return "추가 근거 기록";
   }
 }
 

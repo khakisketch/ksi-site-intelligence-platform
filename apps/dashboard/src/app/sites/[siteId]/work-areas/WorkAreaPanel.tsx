@@ -84,7 +84,9 @@ function WorkAreaCard({
 
       <p className="text-[12px] break-keep text-ink-2">{status.description}</p>
 
-      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11.5px] sm:grid-cols-4">
+      <details className="text-[12px] text-ink-2">
+      <summary className="tap-target cursor-pointer">구역 등록 정보</summary>
+      <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-[11.5px] sm:grid-cols-4">
         <div className="flex flex-col">
           <dt className="break-keep text-ink-muted">기술 참조</dt>
           <dd className="num break-token font-mono text-[10.5px] text-ink-muted">{area.workAreaId}</dd>
@@ -110,6 +112,8 @@ function WorkAreaCard({
         </p>
       )}
 
+      </details>
+
       {/* 읽기 전용 미리보기 — 카드마다 지도를 두지 않고, 고른 구역 하나만 펼친다.
           작은 화면에서도 열리므로 현장에서 "어디 범위인지"를 먼저 확인할 수 있다. */}
       <button
@@ -118,7 +122,7 @@ function WorkAreaCard({
         aria-expanded={previewOpen}
         onClick={() => onTogglePreview(area)}
       >
-        {previewOpen ? "범위 미리보기 닫기" : "범위 미리보기"}
+        {previewOpen ? "구역 범위 접기" : "구역 범위 보기"}
       </button>
       {previewOpen &&
         (previewResult !== null && previewResult.ok ? (
@@ -147,7 +151,7 @@ function WorkAreaCard({
               disabled={disabled || correcting}
               onClick={() => onCorrect(area)}
             >
-              {correcting ? "위 폼에서 그리는 중…" : "다시 그리기(새 구역으로 대체)"}
+              {correcting ? "위 폼에서 그리는 중…" : "범위 바꾸기(새 구역)"}
             </button>
             <button
               type="button"
@@ -155,7 +159,7 @@ function WorkAreaCard({
               disabled={disabled}
               onClick={() => onArchive(area)}
             >
-              {archiving ? "보관하는 중…" : "보관(삭제 아님)"}
+              {archiving ? "보관하는 중…" : "구역 보관"}
             </button>
           </div>
         </ResponsiveActionBoundary>

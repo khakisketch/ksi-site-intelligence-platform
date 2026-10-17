@@ -26,7 +26,7 @@ function presentOutcomeReason(reason: string): string {
   };
   if (known[reason]) return known[reason];
   return /^[A-Z][A-Z0-9_]*$/.test(reason)
-    ? "추가 확인이 필요합니다. 전문가 정보의 사유 코드를 확인하세요."
+    ? "추가 확인이 필요합니다. 파일 정보 · 처리 상세의 사유 코드를 확인하세요."
     : reason;
 }
 
@@ -56,9 +56,9 @@ function presentation(
 export function presentExternalInspectionStatus(view: ExternalArtifactInspectionView): ExternalInspectionPresentation {
   if (view.registrationState === "REGISTERED" || view.sealState === "UNSEALED" || view.inspection.state === "INSPECTION_PENDING_SEAL") {
     return presentation(
-      "등록됨 · 파일 봉인 필요",
-      "파일 저장과 봉인이 확인되기 전에는 검사와 표시 준비가 시작되지 않습니다.",
-      "등록된 선언을 재개해 같은 파일의 업로드와 봉인을 완료하세요.",
+      "자료 등록됨 · 파일 제출 마무리 필요",
+      "파일 저장과 제출 마무리가 확인되기 전에는 검사와 표시 준비가 시작되지 않습니다.",
+      "등록 이어하기로 같은 파일의 업로드와 제출 마무리를 완료하세요.",
       { autoRefresh: false, displayReady: false },
       outcomeReasons(view),
     );
@@ -109,7 +109,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       return presentation(
         "검사 상태를 확인할 수 없음",
         "현재 검사 또는 표시 상태를 해석할 수 없습니다. 준비 완료로 추정하지 않습니다.",
-        "상태를 새로고침하고 계속되면 전문가 정보와 함께 운영자에게 문의하세요.",
+        "상태를 새로고침하고 계속되면 파일 정보 · 처리 상세와 함께 운영자에게 문의하세요.",
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );
@@ -178,7 +178,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       return presentation(
         "검사 상태를 확인할 수 없음",
         "현재 검사 또는 표시 상태를 해석할 수 없습니다. 준비 완료로 추정하지 않습니다.",
-        "상태를 새로고침하고 계속되면 전문가 정보와 함께 운영자에게 문의하세요.",
+        "상태를 새로고침하고 계속되면 파일 정보 · 처리 상세와 함께 운영자에게 문의하세요.",
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );

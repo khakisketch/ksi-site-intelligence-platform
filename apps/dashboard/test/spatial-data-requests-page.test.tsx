@@ -106,7 +106,7 @@ beforeEach(() => {
     workAreaId: "area-1",
     scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
     scopeNote: "scope",
-    assets: [{ assetRef: `ksa-v1-${"a".repeat(64)}`, declared: { fileName: "north-dsm.tif" }, kind: "dsm" }],
+    assets: [{ assetRef: `ksa-v1-${"a".repeat(64)}`, declared: { fileName: "north-dsm.tif", captureStartedAt: "2026-10-09T05:00:00Z", captureEndedAt: "2026-10-09T05:30:00Z" }, kind: "dsm" }],
     nextCursor: null,
     hasMore: false,
   });
@@ -115,7 +115,7 @@ beforeEach(() => {
 describe("spatial data request Console surface", () => {
   it("mirrors the WorkArea selector and does not fetch jobs until one area is selected", async () => {
     const html = renderToStaticMarkup(await callPage());
-    expect(html).toContain("구역 데이터 요청");
+    expect(html).toContain("구역 자료 준비");
     expect(html).toContain("작업구역 선택");
     expect(html).toContain("북측 작업구역");
     expect(mocked.areas).toHaveBeenCalledWith("site-1", { includeArchived: true });
@@ -141,11 +141,11 @@ describe("spatial data request Console surface", () => {
   it("shows a COMPLETED receipt and download only when the Core receipt and availability agree", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", requestId);
-    expect(html).toContain("Core 작업 receipt");
+    expect(html).toContain("준비된 출력 정보");
     expect(html).toContain("9,166,428 bytes");
     expect(html).toContain(digest("b"));
-    expect(html).toContain("픽셀 창 (Core 순서)");
-    expect(html).toContain("실제 bounds (Core 순서)");
+    expect(html).toContain("픽셀 창(파일 좌표 순서)");
+    expect(html).toContain("실제 범위(파일 좌표 순서)");
     expect(html).toContain("EPSG:7850");
     expect(html).toContain("Attribution");
     expect(html).toContain("Modification notice");
@@ -159,8 +159,8 @@ describe("spatial data request Console surface", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
     expect(html).toContain("FAILED");
     expect(html).toContain("RASTER_PREPARATION_FAILED");
-    expect(html).toContain("요청 상태가 COMPLETED가 아니므로 receipt와 파일 결과를 표시하지 않습니다.");
-    expect(html).not.toContain("Core 작업 receipt");
+    expect(html).toContain("처리 완료 전에는 출력 정보와 파일을 제공하지 않습니다.");
+    expect(html).not.toContain("준비된 출력 정보</h3>");
     expect(html).not.toContain("준비된 파일 다운로드");
   });
 
@@ -204,8 +204,8 @@ describe("spatial data request Console surface", () => {
   it("keeps an empty Core page distinct from missing permission or a failed query", async () => {
     mocked.list.mockResolvedValueOnce({ items: [], nextCursor: null });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("이 작업구역의 공간 데이터 요청이 없습니다");
-    expect(html).toContain("공간 자산 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다.");
+    expect(html).toContain("이 작업구역의 자료 준비 요청이 없습니다");
+    expect(html).toContain("등록 자료 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다.");
     expect(html).not.toContain("조회할 권한이 없습니다");
   });
 
@@ -221,7 +221,7 @@ describe("spatial data request Console surface", () => {
       principalId: "viewer-1", organizationId: "org-1", kind: "OPERATOR", role: "VIEWER", permissions: ["SITES_READ"],
     } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("공간 데이터 요청을 볼 권한이 없습니다");
+    expect(html).toContain("구역 자료 준비 기록을 볼 권한이 없습니다");
     expect(html).not.toContain("SPATIAL_DATA_READ");
     expect(mocked.areas).not.toHaveBeenCalled();
     expect(mocked.list).not.toHaveBeenCalled();
@@ -236,9 +236,10 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("2026. 10. 14.");
     expect(html).toContain("19:40:09");
     expect(html).toContain("north-dsm.tif");
-    expect(html).toContain("원본 · DSM 지표면 모델");
-    expect(html).not.toContain("north-dsm.tif · DSM 지표면 모델");
-    expect(html).toContain("요청·원본 기술 참조 보기");
+    expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영");
+    expect(html).toContain("원본 파일 · north-dsm.tif");
+    expect(html).not.toContain("north-dsm.tif · 지표면 높이 자료(DSM)");
+    expect(html).toContain("요청·원본 처리 상세 보기");
     expect(html).toContain(requestId);
   });
 
@@ -247,7 +248,7 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
     expect(html).toContain("hidden flex-wrap items-center gap-x-2 gap-y-1 sm:flex");
     const mobileStatus = html.indexOf("mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 sm:hidden");
-    const technicalDetails = html.indexOf("요청·원본 기술 참조 보기");
+    const technicalDetails = html.indexOf("요청·원본 처리 상세 보기");
     expect(mobileStatus).toBeGreaterThan(-1);
     expect(technicalDetails).toBeGreaterThan(-1);
     expect(mobileStatus).toBeLessThan(technicalDetails);
@@ -256,21 +257,21 @@ describe("spatial data request Console surface", () => {
   it("keeps listing and detail available when the catalog read fails, without implying deletion", async () => {
     mocked.catalog.mockRejectedValueOnce(new Error("catalog unavailable"));
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
-    expect(html).toContain("원본 파일명 확인 불가");
+    expect(html).toContain("원본 정보 확인 불가");
     expect(html).toContain("원본 자료");
     expect(html).toContain("현재 조회한 카탈로그에서 확인되지 않아 표시만 생략합니다");
     expect(html).toContain("삭제됐다는 뜻이 아닙니다");
     expect(html).not.toContain("권한이 없어");
-    expect(html).toContain("Core 작업 receipt");
-    expect(html).toContain("요청 bounds는 아래 Core receipt에 기록된 값");
+    expect(html).toContain("준비된 출력 정보");
+    expect(html).toContain("요청 범위는 아래 준비된 출력 정보에 기록된 값");
   });
 
   it("identifies the original source and requested bounds directly in the detail", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
     expect(html).toContain("원본 자료");
-    expect(html).toContain("north-dsm.tif · DSM 지표면 모델 · 북측 작업구역");
+    expect(html).toContain("지표면 높이 자료(DSM) · 2026. 10. 9. 14:00–14:30 촬영 · 북측 작업구역");
     expect(html).toContain(`원본 assetRef · ksa-v1-${"a".repeat(64)}`);
-    expect(html).toContain("요청 bounds (Core 순서)");
+    expect(html).toContain("요청 범위(파일 좌표 순서)");
   });
 
   it("exposes the full request ID when two rows share the same creation time", async () => {

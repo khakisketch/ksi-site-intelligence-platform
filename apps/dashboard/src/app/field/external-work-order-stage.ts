@@ -66,7 +66,7 @@ export function deriveExternalWorkOrderStage(input: ExternalStageInput): Externa
     return {
       stage: "DECIDE",
       label: "검사와 비교 판정",
-      detail: "봉인된 산출물의 검사 결과를 확인하고 기준 시점과의 비교 판정을 요청하세요.",
+      detail: "제출한 자료의 파일 검사 결과를 확인하고, 기준 자료와 비교를 준비하세요.",
       tone: "progress",
       anchor: "external-submissions",
     };

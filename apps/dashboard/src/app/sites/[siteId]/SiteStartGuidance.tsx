@@ -39,18 +39,18 @@ export function SiteStartGuidance({
         ? "관측 작업 상태를 확인할 수 없습니다. 작업 현황을 확인한 뒤 분석 후보를 살펴보세요."
         : observationWorkOrderCount === 0
           ? "현재 조회된 관측 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
-          : "분석 화면에서 실제 등록된 관측 후보를 촬영 시각·revision으로 확인하세요. Core가 요청 시 용도별 적합성을 판정합니다.";
+          : "촬영 시점을 골라 기준 자료와 비교할 자료를 확인하세요. 비교 가능 여부는 요청할 때 확인합니다.";
   const nextStepAction = workAreaCount === null || workAreaCount === 0
     ? { href: `${sitePath}/work-areas`, label: "작업구역 확인" }
     : observationWorkOrderCount === null || observationWorkOrderCount === 0
       ? { href: `${sitePath}?section=work-orders`, label: "관측 작업 현황 확인" }
-      : { href: `${sitePath}/analysis`, label: "분석 후보와 상태 확인" };
+      : { href: `${sitePath}/analysis`, label: "비교할 자료 선택" };
 
   return <section className="rounded-lg border border-line bg-surface px-4 py-2.5" aria-label="현장 시작 안내">
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
       <p><span className="text-ink-muted">작업구역 </span><span className="font-semibold">{areaStatus}</span></p>
       <p><span className="text-ink-muted">관측 작업 </span><span className="font-semibold">{workOrderStatus}</span></p>
-      <p><span className="text-ink-muted">외부 결과 이력 </span><span className="font-semibold">{resultStatus}</span></p>
+      {externalResultCount !== 0 && <p><span className="text-ink-muted">외부 비교 기록 </span><span className="font-semibold">{resultStatus}</span></p>}
       <Link href={nextStepAction.href} className="btn ml-auto">{nextStepAction.label}</Link>
     </div>
     <p className="mt-1.5 text-[12px] leading-5 text-ink-2"><span className="font-semibold">다음 확인 · </span>{nextStep}</p>

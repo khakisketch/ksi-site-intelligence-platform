@@ -130,9 +130,9 @@ export function ExternalObservationCreateForm({
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
       <div>
-        <p className="text-[12.5px] text-ink-2">현장에 필요한 관측 방식을 고르고, 다음 작업으로 바로 이어갑니다.</p>
+        <p className="text-[12.5px] text-ink-2">현장에 필요한 관측 방식을 고르고, 관측 작업이 만들어지면 자료 등록으로 바로 이어갑니다.</p>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[22px] font-bold tracking-tight">{siteName} · 새 관측 시작</h2>
+          <h2 className="text-[22px] font-bold tracking-tight">{siteName} · 관측 자료 등록</h2>
           <Link href={`/sites/${encodeURIComponent(siteId)}`} className="text-[13px] font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
         </div>
       </div>
@@ -149,8 +149,8 @@ export function ExternalObservationCreateForm({
           <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">이미 만든 정사영상과 DSM을 등록해 비교 결과를 확인합니다.</span>
         </button>
         <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="rounded-xl border border-line bg-surface p-4 hover:bg-sunk">
-          <span className="block text-[15px] font-bold">관측 이력 보기</span>
-          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">등록된 외부 관측 결과와 검토 상태를 확인합니다.</span>
+          <span className="block text-[15px] font-bold">외부 비교 기록 보기</span>
+          <span className="mt-1 block text-[12.5px] leading-5 text-ink-2">등록된 외부 비교 기록과 검토 상태를 확인합니다.</span>
         </Link>
       </div>
 
@@ -166,7 +166,7 @@ export function ExternalObservationCreateForm({
             <div>
               <h2 className="text-[16px] font-bold">외부 산출물 등록</h2>
               <p className="mt-1 text-[13px] leading-5 text-ink-2">이 작업은 파일 등록과 비교 확인을 위한 것입니다. 비행 또는 장비 제어는 시작하지 않습니다.</p>
-              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : initialWorkAreaIds.length > 0 && <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 새 관측을 만들기 전에 범위를 확인하세요.</p>}
+              {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : initialWorkAreaIds.length > 0 && <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">이전 비교에 사용한 활성 작업구역과 촬영 간격 기준을 미리 골랐습니다. 관측 자료를 등록하기 전에 범위를 확인하세요.</p>}
             </div>
             <label className="flex flex-col gap-1 text-[13px] font-semibold">작업 이름
               <input aria-label="작업 이름" className="input" maxLength={200} value={name} disabled={busy || attempt !== null} onChange={(event) => setName(event.target.value)} placeholder={suggestedName ?? "예: 9월 6일 현황 비교"} />

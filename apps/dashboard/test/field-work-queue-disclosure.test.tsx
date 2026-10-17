@@ -95,7 +95,7 @@ describe("Field work queue technical disclosure", () => {
     for (const link of links) {
       const disclosure = link.closest("li")?.querySelector("details");
       expect(disclosure?.open).toBe(false);
-      expect(within(disclosure as HTMLElement).getByText("기술 참조").tagName).toBe("SUMMARY");
+      expect(within(disclosure as HTMLElement).getByText("파일 정보").tagName).toBe("SUMMARY");
     }
     expect(document.body.textContent).toContain("wo-dup-1");
     expect(document.body.textContent).toContain("wo-dup-2");

@@ -139,14 +139,13 @@ describe("작업 맥락 이름 표시", () => {
     expect(ordered.find((group) => group.key === "decisionRequired")?.rows).toHaveLength(0);
   });
 
-  it("Home 검토 카드는 실제 구역 이름을 제목에 둔다", () => {
+  it("Home 검토 카드는 할 일을 앞세우고 실제 구역 이름을 대상 맥락에 보존한다", () => {
     const known = homeAnalysisReviewCardText({ siteName: "F-03 현장", workAreaId: "wa-1", areaName: "동측 구역" });
-    expect(known.title).toBe("동측 구역 분석 결과를 검토하세요.");
+    expect(known.title).toBe("분석 결과를 검토하세요.");
     expect(known.title).not.toContain("wa-1");
-    // 제목·상세의 현장·구역 반복을 없앤다 — 전체 이름은 제목에 온전히 둔다.
-    expect(known.detail).toBe("현재 결과에 대한 검토 기록이 없습니다. 결과와 근거를 확인하세요.");
+    expect(known.detail).toBe("대상 구역 · 동측 구역. 현재 결과의 검토 기록이 없습니다. 결과와 근거를 확인하세요.");
     expect(known.detail).not.toContain("F-03 현장");
-    expect(known.detail).not.toContain("동측 구역");
+    expect(known.detail).toContain("동측 구역");
 
     const missing = homeAnalysisReviewCardText({ siteName: null, workAreaId: "wa-1", areaName: null });
     expect(missing.title).not.toContain("wa-1");
@@ -157,7 +156,8 @@ describe("작업 맥락 이름 표시", () => {
   it("긴 구역 이름도 자르거나 유도하지 않고 그대로 둔다", () => {
     const longName = "한강 하류 좌안 제방 보강 구간 동측 3공구 야적장 진입로";
     const card = homeAnalysisReviewCardText({ siteName: "현장", workAreaId: "wa-1", areaName: longName });
-    expect(card.title).toBe(`${longName} 분석 결과를 검토하세요.`);
+    expect(card.title).toBe("분석 결과를 검토하세요.");
+    expect(card.detail).toContain(longName);
     expect(formatHomeReviewTechnicalRef("analysis-1", "wa-1")).toContain("wa-1");
   });
 
