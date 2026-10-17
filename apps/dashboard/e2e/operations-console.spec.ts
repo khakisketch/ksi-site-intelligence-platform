@@ -209,9 +209,9 @@ test("Home은 합성 운영 원장의 작업·현장 우선순위를 보여 준�
   await expect(carousel.getByRole("heading", { name: "E2E 과거 읽기 전용 · 결과 검토 기록" })).toBeVisible();
 
   const initialSetup = page.getByRole("region", { name: "초기 설정이 필요한 현장" });
-  await expect(initialSetup).toBeVisible();
-  await expect(initialSetup.getByRole("listitem")).toHaveCount(1);
-  await expect(initialSetup).toContainText("E2E 승인 검토 현장");
+  // All seeded Sites already have a work order. Legacy UNMAPPED state must not
+  // turn an in-use Site into an instruction to configure its optional AOI.
+  await expect(initialSetup).toHaveCount(0);
 });
 
 test("핵심 전역 화면은 populated 상태에서도 막히거나 가로로 넘치지 않는다", async ({ page }) => {
@@ -307,8 +307,13 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
   }
   await expect(page.locator("[data-site-thumbnail]:visible").first()).toBeVisible();
-  if (testInfo.project.name.startsWith("desktop")) {
-    await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toBeVisible();
+  if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    // This fixture has no Site-bootstrap capability. Do not advertise a link
+    // that the exact registration-mode check rejects after navigation.
+    await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toHaveCount(0);
+    await expect(page.getByText("현장 등록 권한이 필요합니다", { exact: true })).toBeVisible();
+  } else if (testInfo.project.name.startsWith("desktop")) {
+    await expect(page.getByRole("link", { name: "현장 등록", exact: true }).or(page.getByText("현장 등록 권한이 필요합니다", { exact: true }))).toBeVisible();
   } else {
     await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toBeHidden();
   }
@@ -347,9 +352,11 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
   await expect(page.getByRole("heading", { level: 2, name: "E2E 현장 작업공간" })).toBeVisible();
   await expect(page.getByRole("link", { name: "현장으로 이동" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
-  const observationPanel = page.locator("main section").filter({ hasText: "현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다." });
-  await expect(observationPanel.getByRole("heading", { level: 2, name: "외부 관측 이력", exact: true })).toBeVisible();
-  const nextAction = observationPanel.getByRole("link", { name: "새 관측 시작", exact: true });
+  const spatialPanel = page.getByRole("region", { name: "선택 구역 공간 확인", exact: true });
+  await expect(spatialPanel).toBeVisible();
+  await expect(spatialPanel.getByRole("combobox", { name: /선택 구역/ })).toBeVisible();
+  await expect(page.locator(".leaflet-container")).toBeVisible();
+  const nextAction = spatialPanel.getByRole("link", { name: "새 관측 시작", exact: true });
   await expect(page.getByRole("link", { name: "새 관측 시작", exact: true })).toHaveCount(1);
   await expect(nextAction).toBeVisible();
   await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new`);

@@ -89,6 +89,14 @@ describe("Home platform selectors", () => {
     expect(selected.map((item) => item.analysis.analysisId)).toEqual(["newest-pending"]);
   });
 
+  it("기존 작업이 있는 UNMAPPED 현장을 초기 설정으로 재분류하지 않고 필터 후 개수 제한을 적용한다", () => {
+    const sites = [site("existing", "UNMAPPED"), site("new", "UNMAPPED")];
+    const orders = [workOrder("APPROVED", "existing-work", "2026-10-17T00:00:00Z", "existing")];
+    expect(selectHomeInitialSetupSites(sites, 1, { workOrders: orders, known: true }).map((s) => s.siteId)).toEqual(["new"]);
+    expect(selectHomeInitialSetupSites(sites, 3, { workOrders: [], known: false })).toEqual([]);
+    expect(selectHomeInitialSetupSites(sites, 3, { workOrders: [], known: true })).toHaveLength(2);
+  });
+
   it("가장 최근 검토가 이전 결과 대상이면 현재 분석을 검토 대기로 남긴다", () => {
     const currentTarget = reviewTarget("current");
     const earlierMatching = reviewReceipt(currentTarget, "matching", "2026-10-14T10:00:00Z");

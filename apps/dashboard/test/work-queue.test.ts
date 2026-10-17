@@ -62,7 +62,7 @@ describe("Operations Console 작업 큐", () => {
     expect(workOrderActionLabel("REVIEW_READY")).toBe("결과와 근거 검토");
     expect(workOrderActionLabel("REOBSERVATION_PENDING")).toBe("재관측 제안 검토");
     expect(workOrderActionLabel("PROCESSING")).toBe("진행 상태 보기");
-    expect(workOrderActionLabel("APPROVED", "EXTERNAL_RECONSTRUCTION")).toBe("산출물 등록 준비");
+    expect(workOrderActionLabel("APPROVED", "EXTERNAL_RECONSTRUCTION")).toBe("자료 등록·검사 확인");
     expect(workOrderActionLabel("APPROVED", null)).toBe("진행 상태 보기");
   });
 

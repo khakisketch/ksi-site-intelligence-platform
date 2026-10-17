@@ -41,7 +41,7 @@ export default async function FieldNewObservationPage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
       <div>
         <p className="text-[12.5px] text-ink-2">새 관측은 현장의 작업구역과 함께 시작합니다.</p>
-        <h1 className="mt-1 text-[22px] font-bold tracking-tight">현장 선택</h1>
+        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 선택</h2>
       </div>
       {sites.length === 0 ? (
         <EmptyState title="선택할 현장이 없습니다" description="먼저 현장을 등록한 뒤 관측을 시작하세요." />

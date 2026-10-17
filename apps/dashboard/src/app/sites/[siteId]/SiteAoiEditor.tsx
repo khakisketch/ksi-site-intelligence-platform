@@ -43,8 +43,8 @@ export function SiteAoiEditor({ siteId, siteFrame }: { siteId: string; siteFrame
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[12.5px] break-keep text-ink-muted">
-        지도에서 조사할 공사 구역의 경계를 그리세요. 저장한 범위는 이후 조사 계획의 기본
-        구역으로 사용됩니다.
+        현장 전체의 경계를 설정합니다. 자료 등록·비교에 사용하는 작업구역과는 별개이며,
+        전체 경계가 없어도 작업구역에 연결된 자료를 등록할 수 있습니다.
       </p>
       <AoiPolygonMap value={vertices} onChange={setVertices} />
       <button

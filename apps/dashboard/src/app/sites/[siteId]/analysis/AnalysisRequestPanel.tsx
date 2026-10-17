@@ -32,6 +32,7 @@ import {
   observationChoiceLabels,
   type WorkOrderNameMap,
 } from "@/lib/human-labels";
+import { describePairSelection, isKnownBadPairSelection, shouldAutoSuggestBaseline } from "./pair-selection";
 
 type Attempt = {
   key: string;
@@ -794,6 +795,8 @@ export function AnalysisRequestPanel({
   const [workAreaId, setWorkAreaId] = useState("");
   const [baselineIndex, setBaselineIndex] = useState("");
   const [currentIndex, setCurrentIndex] = useState("");
+  const [baselineTouched, setBaselineTouched] = useState(false);
+  const [areaSwitchNotice, setAreaSwitchNotice] = useState<string | null>(null);
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const [activationBlock, setActivationBlock] = useState<ActivationBlockCode | null>(null);
   const [busy, setBusy] = useState(false);
@@ -854,7 +857,26 @@ export function AnalysisRequestPanel({
   const selectedSelectors = pickedBaseline && pickedCurrent
     ? [{ label: "기준", selector: pickedBaseline.selector }, { label: "현재", selector: pickedCurrent.selector }]
     : [];
-  const canSubmit = !busy && (attempt !== null || selectionReady);
+  const pairIssue = describePairSelection({
+    workAreaId,
+    baseline: pickedBaseline ? { captureStartedAt: pickedBaseline.captureStartedAt, captureEndedAt: pickedBaseline.captureEndedAt } : null,
+    current: pickedCurrent ? { captureStartedAt: pickedCurrent.captureStartedAt, captureEndedAt: pickedCurrent.captureEndedAt } : null,
+    sameSelection: Boolean(pickedBaseline && pickedCurrent && sameSelector(pickedBaseline.selector, pickedCurrent.selector)),
+  });
+  const pairBlocked = isKnownBadPairSelection(pairIssue.kind);
+  // 보류 재시도(attempt)는 고정된 selector·멱등 키로만 다시 보낸다. 새 조합의
+  // 시간 판독 게이트는 보류 재시도 경로에 적용하지 않는다.
+  const canSubmit = !busy && (attempt !== null || (selectionReady && !pairBlocked));
+  const latestRow = pages[0]?.items[0] ?? null;
+  const latestNextAction = !latestRow
+    ? ""
+    : latestRow.executionState === "QUEUED" || latestRow.executionState === "RUNNING"
+      ? "진행 중인 분석입니다. 아래 이력에서 최신 상태를 확인하세요."
+      : latestRow.executionState === "FAILED"
+        ? "실패한 분석이 있습니다. 아래 이력의 실패 사유와 보완 안내를 먼저 확인하세요."
+        : latestRow.suitabilityState === "BLOCKED" || latestRow.suitabilityState === "REMEDIATION_REQUIRED" || latestRow.suitabilityState === "REASSESSMENT_REQUIRED"
+          ? "적합성 확인이 필요합니다. 아래 이력의 확인 및 보완 안내를 확인하세요."
+          : "최신 기록의 근거와 검토 상태를 아래에서 확인하세요. 이 기록은 정확도 보증이 아닙니다.";
 
   const setPagesAndRef = useCallback((update: (current: AnalysisPageState[]) => AnalysisPageState[]) => {
     const next = update(pagesRef.current);
@@ -937,6 +959,10 @@ export function AnalysisRequestPanel({
       const current = observations.findIndex((option) => option.workAreaIds.includes(restored.workAreaId) && sameSelector(option.selector, restored.body.current));
       setBaselineIndex(baseline >= 0 ? String(baseline) : "");
       setCurrentIndex(current >= 0 ? String(current) : "");
+      // 복원된 보류 선택은 사용자가 이미 고른 값이다. 이후 현재 관측 변경이
+      // 기준을 조용히 덮어쓰지 않도록 직접 선택으로 취급한다.
+      setBaselineTouched(true);
+      setAreaSwitchNotice(null);
     }, 0);
     return () => clearTimeout(timer);
   }, [attemptScope, observations]);
@@ -1238,6 +1264,13 @@ export function AnalysisRequestPanel({
         setError({ analysisId: null, message: "작업구역과 서로 다른 기준·현재 관측을 선택하세요." });
         return null;
       }
+      // Disabled 버튼만으로는 Enter·프로그래밍 제출을 막지 못한다. 알려진 문제
+      // 조합(시간 역전·겹침·동일·구간 불명)은 attempt 생성·POST 전에 여기서도
+      // 차단한다. 보류 재시도(attempt)는 이 분기를 타지 않는다.
+      if (pairBlocked) {
+        setError({ analysisId: null, message: pairIssue.message });
+        return null;
+      }
       const created: Attempt = { key: createIdempotencyKey(), workAreaId, body: { baseline: baseline.selector, current: current.selector }, activationBlockCode: null };
       if (!attemptScope || !writePendingAttempt(attemptScope, created)) {
         setError({ analysisId: null, message: "이 브라우저에서는 요청 재시도 정보를 저장할 수 없습니다. 다시 시도하세요." });
@@ -1352,65 +1385,17 @@ export function AnalysisRequestPanel({
   const showError = error && (error.analysisId === null || error.analysisId === selectedId);
 
   return <div className="flex flex-col gap-4">
-    {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
-      <h2 className="text-[16px] font-bold">새 분석 요청</h2>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
-      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간·제출 revision으로 구분합니다. 이름·시각이 겹치는 후보는 관측 epoch ID까지 함께 표시합니다. 목록에 없는 구역 연결이나 분석 적합성을 추정하지 않습니다.</p>
-      {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
-      {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
-      <form className="mt-4 grid gap-3 sm:grid-cols-3" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
-        <label className="text-[12.5px] font-semibold">작업구역
-          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); } }}>
-            <option value="">작업구역 선택</option>
-            {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
-          </select>
-        </label>
-        <label className="text-[12.5px] font-semibold">기준 관측
-          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) setBaselineIndex(event.target.value); }}>
-            <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
-            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
-          </select>
-        </label>
-        <label className="text-[12.5px] font-semibold">현재 관측
-          <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId} onChange={(event) => {
-            if (!discardAttempt()) return;
-            const value = event.target.value;
-            const selected = scopedObservations.find(({ index }) => String(index) === value)?.item;
-            setCurrentIndex(value);
-            setBaselineIndex(selected ? latestPriorObservationIndex(scopedObservations, selected) : "");
-          }}>
-            <option value="">{workAreaId ? "현재 관측 선택" : "먼저 작업구역 선택"}</option>
-            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
-          </select>
-        </label>
-        <p className="text-[11.5px] leading-5 text-ink-muted sm:col-span-3">가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.</p>
-        {pickedBaseline && pickedCurrent && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 sm:col-span-3" aria-live="polite">
-          <p className="font-semibold">선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다.</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">기준</span> · {choiceLabelByIndex.get(baselineIndex)}</p>
-            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">현재</span> · {choiceLabelByIndex.get(currentIndex)}</p>
-          </div>
-          <details className="mt-1">
-            <summary className="tap-target flex cursor-pointer items-center font-semibold">요청 selector 전체 확인</summary>
-            <dl className="grid gap-2 border-l-2 border-line pl-3 sm:grid-cols-2">
-              {selectedSelectors.map(({ label, selector }) => (
-                <div key={label} className="min-w-0">
-                  <dt className="font-semibold">{label} 관측</dt>
-                  <dd className="break-all">작업 지시 ID · {selector.workOrderId}</dd>
-                  <dd className="break-all">관측 epoch ID · {(label === "기준" ? pickedBaseline : pickedCurrent).observationEpochId}</dd>
-                  <dd className="break-all">제출 참조 · {selector.submissionRef}</dd>
-                  <dd>revision · {selector.revision}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        </div>}
-        <div className="flex flex-wrap items-center gap-2 sm:col-span-3">
-          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "분석 요청"}</button>
-          {attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}
-          {!busy && !attempt && !selectionReady && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
-        </div>
-      </form>
+    {latestRow && <section aria-label="최근 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[12.5px] leading-5 text-ink-2">
+        <span className="font-bold text-ink-1">최근 분석 요약</span>
+        {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""} · 최근: ${executionLabel(latestRow.executionState).label} · ${suitabilityLabel(latestRow.suitabilityState).label}`}
+      </p>
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">{latestNextAction}</p>
+      <div className="mt-1 flex flex-wrap gap-x-5">
+        <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">분석 이력으로 이동</a>
+        {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 분석 요청으로 이동"}</a>}
+      </div>
+      {attempt && <p role="status" className="text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
     </section>}
     {!canCreate && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">분석 기록을 조회할 수 있습니다. 새 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.</p>}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink">
@@ -1421,7 +1406,7 @@ export function AnalysisRequestPanel({
     </div>}
     {selectedId && selectedDetail && <div className="flex justify-end"><button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button></div>}
     {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">분석 상세를 불러오는 중입니다.</p>}
-    <section className="flex flex-col gap-3" aria-label="분석 이력">
+    <section id="analysis-history" className="flex flex-col gap-3" aria-label="분석 이력">
       {rows.map((summary) => <AnalysisCard
         key={summary.analysisId}
         summary={summary}
@@ -1448,5 +1433,71 @@ export function AnalysisRequestPanel({
     </section>
     {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
     {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "분석 목록 불러오는 중" : "다음 분석 보기"}</button></div>}
+    {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
+      <h2 className="text-[16px] font-bold">새 분석 요청</h2>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간·제출 revision으로 구분합니다. 이름·시각이 겹치는 후보는 관측 epoch ID까지 함께 표시합니다.</p>
+      {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
+      {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
+      <form className="mt-4 grid gap-3 lg:grid-cols-2" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
+        <label className="min-w-0 text-[12.5px] font-semibold lg:col-span-2">작업구역
+          <select className="input mt-1 w-full" value={workAreaId} disabled={busy} onChange={(event) => { if (discardAttempt()) { setWorkAreaId(event.target.value); setBaselineIndex(""); setCurrentIndex(""); setBaselineTouched(false); setAreaSwitchNotice("작업구역이 바뀌어 기준·현재 선택을 모두 지웠습니다. 바뀐 구역의 후보에서 다시 고르세요."); } }}>
+            <option value="">작업구역 선택</option>
+            {workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}</option>)}
+          </select>
+        </label>
+        <label className="min-w-0 text-[12.5px] font-semibold">기준 관측
+          <select className="input mt-1 w-full" value={baselineIndex} disabled={busy || !workAreaId} onChange={(event) => { if (discardAttempt()) { setBaselineIndex(event.target.value); setBaselineTouched(true); setAreaSwitchNotice(null); } }}>
+            <option value="">{workAreaId ? "기준 관측 선택" : "먼저 작업구역 선택"}</option>
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
+          </select>
+        </label>
+        <label className="min-w-0 text-[12.5px] font-semibold">현재 관측
+          <select className="input mt-1 w-full" value={currentIndex} disabled={busy || !workAreaId} onChange={(event) => {
+            if (!discardAttempt()) return;
+            const value = event.target.value;
+            setCurrentIndex(value);
+            setAreaSwitchNotice(null);
+            // 직접 고른 기준은 현재 변경으로 덮어쓰지 않는다. 기준이 비어 있을
+            // 때만 가장 최근 선행 관측을 제안하고, 요청은 직접 눌러야 한다.
+            if (baselineTouched || !shouldAutoSuggestBaseline(baselineIndex)) return;
+            const selected = scopedObservations.find(({ index }) => String(index) === value)?.item;
+            setBaselineIndex(selected ? latestPriorObservationIndex(scopedObservations, selected) : "");
+          }}>
+            <option value="">{workAreaId ? "현재 관측 선택" : "먼저 작업구역 선택"}</option>
+            {scopedObservations.map(({ item, index }) => <option key={`${item.observationEpochId}-${index}`} value={index}>{choiceLabelByIndex.get(String(index))}</option>)}
+          </select>
+        </label>
+        <p className="text-[11.5px] leading-5 text-ink-muted lg:col-span-2">기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 분석 요청은 직접 눌러야 합니다.</p>
+        {areaSwitchNotice && <p role="status" className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 lg:col-span-2">{areaSwitchNotice}</p>}
+        {pickedBaseline && pickedCurrent && <div className="rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2 lg:col-span-2" aria-live="polite">
+          <p className="font-semibold">선택 확인 · 작업구역 연결은 Core가 요청 시 확인합니다.</p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">기준</span> · {choiceLabelByIndex.get(baselineIndex)}</p>
+            <p className="min-w-0 break-words rounded border border-line bg-surface px-2 py-1.5"><span className="font-semibold">현재</span> · {choiceLabelByIndex.get(currentIndex)}</p>
+          </div>
+          <details className="mt-1">
+            <summary className="tap-target flex cursor-pointer items-center font-semibold">요청 selector 전체 확인</summary>
+            <dl className="grid gap-2 border-l-2 border-line pl-3 sm:grid-cols-2">
+              {selectedSelectors.map(({ label, selector }) => (
+                <div key={label} className="min-w-0">
+                  <dt className="font-semibold">{label} 관측</dt>
+                  <dd className="break-all">작업 지시 ID · {selector.workOrderId}</dd>
+                  <dd className="break-all">관측 epoch ID · {(label === "기준" ? pickedBaseline : pickedCurrent).observationEpochId}</dd>
+                  <dd className="break-all">제출 참조 · {selector.submissionRef}</dd>
+                  <dd>revision · {selector.revision}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        </div>}
+        <div className="flex flex-wrap items-center gap-2 lg:col-span-2">
+          <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "요청 중" : attempt ? "다시 시도" : "분석 요청"}</button>
+          {attempt && <button type="button" className="btn" disabled={busy} onClick={discardAttempt}>보류 요청 취소</button>}
+          {!busy && !attempt && !areaSwitchNotice && pairIssue.kind !== "ready" && (workAreaId !== "" || baselineIndex !== "" || currentIndex !== "") && <p role="status" className="basis-full text-[12px] leading-5 text-ink-2">{pairIssue.message}</p>}
+          {!busy && !attempt && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
+        </div>
+      </form>
+    </section>}
   </div>;
 }

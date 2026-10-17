@@ -92,14 +92,15 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 관측 이력</Link>
     </header>
     {loaded ? <>
-      <AnalysisStartGuide
+      {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
+      {loaded.analyses.items.length === 0 && <AnalysisStartGuide
         siteId={siteId}
         workAreaCount={loaded.areas.workAreas.length}
         observationCount={loaded.attributedObservations.length}
         analysisCount={loaded.analyses.items.length}
         hasMoreAnalyses={loaded.analyses.nextCursor !== null}
         canCreate={canCreate}
-      />
+      />}
       <AnalysisRequestPanel
         siteId={siteId}
         organizationId={session.principal.organizationId}

@@ -184,3 +184,19 @@ P0(전체 작업 차단/손실)는 확정하지 않았다. **P1 4건, P2 7건**�
 `/impeccable polish`다. 이는 실행 순서 제안이며 이번 검수에서 수정 명령을 실행한 것은 아니다.
 
 Questions skipped: user requested a comprehensive independent audit; no routine design decision requires further input for this audit.
+
+---
+
+## 후속 구현 기록 — 같은 날 사용자 승인 후
+
+위 내용은 **검수 당시의 원본 판정**이다. 이후 Human "그래 개선 순서대로 해봐" 승인으로
+U01–U11을 Dashboard에 구현하고 로컬 수용했다. 실행/검증/남은 외부 경계는 기존
+[작업 원장 후속 항목](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md)에 기록했다.
+감사 자체의 과거 관찰/오탐 정정을 덮어쓰지 않는다.
+
+주요 결과는 실제 경계·파일 footprint·촬영 시점 선택을 연결한 Site 기본 화면, CRS-safe
+미리보기와 작은 도형의 가시성, 선택적 AOI/compact 경계, 기존 분석 우선 배치, 시점 선택 보존과
+시간 역전 차단, capability와 진입점의 일치 및 unknown/복구 안내다.
+최종 1045 테스트/TypeScript/build, 4폭 E2E 51 pass·5 intentional skips와 실제 렌더/입력으로 확인했다.
+이 수용은 합성 로컬 UI 단위이며, 실제 사용자 연구·고객 데이터·정량 정확도·운영 배포 승인이 아니다.
+실제 영상 사진 미리보기/전후 영상은 추가하지 않았으며, metadata-only 계약과 원본을 보존했다.

@@ -8,6 +8,8 @@ const mocked = vi.hoisted(() => ({
   areas: vi.fn(),
   orders: vi.fn(),
   history: vi.fn(),
+  analyses: vi.fn(),
+  assets: vi.fn(),
   header: vi.fn(),
 }));
 
@@ -16,9 +18,11 @@ vi.mock("@/lib/core-api/permissions", () => ({ hasAllPermissions: mocked.permiss
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.orders }));
 vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolumeHistory: mocked.history }));
+vi.mock("@/lib/core-api/analysis", () => ({ listAnalyses: mocked.analyses }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
 vi.mock("@/app/sites/[siteId]/SiteHeader", () => ({ SiteHeader: mocked.header }));
 vi.mock("@/app/sites/[siteId]/observations/ExternalObservationHistory", () => ({ ExternalObservationHistory: () => <div /> }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); } }));
+vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) }));
 
 import SiteDetailPage from "@/app/sites/[siteId]/page";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -41,6 +45,17 @@ beforeEach(() => {
   mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "구역 1", status: "ACTIVE", createdAt: "2026-10-01T00:00:00Z" }] });
   mocked.orders.mockResolvedValue([{ workOrderId: "work-1" }]);
   mocked.history.mockResolvedValue({ items: [{ reportRef: "report-1", result: null }], nextCursor: null });
+  mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+  mocked.assets.mockResolvedValue({
+    contractVersion: "spatial-asset-catalog-page.v1",
+    siteId: "site-1",
+    workAreaId: "area-1",
+    scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+    scopeNote: "",
+    assets: [],
+    nextCursor: null,
+    hasMore: false,
+  });
 });
 
 describe("Site detail start guidance", () => {
@@ -70,7 +85,8 @@ describe("Site detail start guidance", () => {
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({}),
     }));
-    expect(screen.getByRole("link", { name: "공간 자산 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=spatial-assets");
+    const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
+    expect(guide.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
     expect(screen.queryByRole("link", { name: "분석 후보와 상태 확인" })).toBeNull();
 
     cleanup();

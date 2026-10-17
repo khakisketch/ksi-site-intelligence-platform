@@ -28,7 +28,7 @@ describe("presentWorkOrder", () => {
 
   it("presents an approved external upload task without implying a flight", () => {
     expect(presentWorkOrder("APPROVED", "EXTERNAL_RECONSTRUCTION")).toMatchObject({
-      label: "산출물 등록 준비",
+      label: "자료 등록·검사 확인",
       detail: expect.stringContaining("비행이나 장비 실행을 시작하지 않습니다"),
     });
   });

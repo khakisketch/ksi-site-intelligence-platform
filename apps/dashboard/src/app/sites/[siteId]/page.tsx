@@ -5,8 +5,11 @@ import { cache } from "react";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteHeader } from "./SiteHeader";
+import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteStartGuidance } from "./SiteStartGuidance";
 import { SiteTransitionActions } from "./SiteTransitionActions";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { ExternalObservationHistory } from "./observations/ExternalObservationHistory";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -17,11 +20,14 @@ import { listObservationWorkOrders } from "@/lib/core-api/observation-work-order
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
+import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
+import { listAnalyses } from "@/lib/core-api/analysis";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
 import { normalizeSiteTab, type SiteTabKey } from "@/lib/site-epochs";
 import { presentWorkOrder } from "@/app/field/work-order-stage";
+import { parseScopeId, pickFootprintAsset, resolveSelectedAssetRef, resolveSelectedWorkAreaId } from "./site-spatial";
 
 const getSiteForDetail = cache(getSite);
 
@@ -62,10 +68,12 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ section?: string; tab?: string }>;
+  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
-  const tab = normalizeSiteTab(query.section ?? query.tab);
+  const firstValue = (value: string | string[] | undefined): string | undefined =>
+    Array.isArray(value) ? value[0] : value;
+  const tab = normalizeSiteTab(firstValue(query.section) ?? firstValue(query.tab));
   let site: Awaited<ReturnType<typeof getSite>>;
   try {
     site = await getSiteForDetail(siteId);
@@ -103,6 +111,56 @@ export default async function SiteDetailPage({
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
   const status = SITE_STATUS_LABEL[site.status];
 
+  // 기본 탭의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
+  // Core 분석 목록 50건 1회, 선택 구역의 공간 자산 20건 1회. 둘 다 실패해도
+  // unknown으로 두고 빈 목록으로 단정하지 않는다. 다른 탭에서는 읽지 않는다.
+  // 선택 구역은 이미 읽은 관측 작업·분석 목록의 묶임으로 고른다(추가 조회 없음).
+  const wantSpatial = tab === "observations";
+  const analysesResult = wantSpatial
+    ? await listAnalyses(site.siteId, { limit: 50 }).then(
+      (page) => ({ ok: true as const, page }),
+      () => ({ ok: false as const }),
+    )
+    : { ok: false as const };
+  const analysesPage = analysesResult.ok ? analysesResult.page : null;
+  const boundWorkOrderAreaIds = ordersResult.status === "fulfilled"
+    ? ordersResult.value.flatMap((order) => Array.isArray(order.workAreaIds) ? order.workAreaIds : [])
+    : [];
+  const selectedWorkAreaId = wantSpatial && areasResult.status === "fulfilled"
+    ? resolveSelectedWorkAreaId(areasResult.value.workAreas, firstValue(query.workAreaId), {
+      workOrderAreaIds: boundWorkOrderAreaIds,
+      analysisAreaIds: analysesPage?.items.map((item) => item.workAreaId) ?? [],
+    })
+    : null;
+  const assetsResult = wantSpatial
+    ? await (selectedWorkAreaId
+      ? listSpatialAssets(site.siteId, selectedWorkAreaId, { limit: 50 }).then(
+        (page) => ({ ok: true as const, page }),
+        (error: unknown) => ({ ok: false as const, denied: error instanceof CoreApiError && error.status === 403 }),
+      )
+      : Promise.resolve({ ok: false as const, denied: false, skipped: true as const }))
+    : { ok: false as const, denied: false, skipped: true as const };
+  let assetsState: SiteSpatialAssetsState = { status: "not-requested" };
+  if (wantSpatial && selectedWorkAreaId) {
+    if (assetsResult.ok) assetsState = { status: "ready", page: assetsResult.page };
+    else if (!("skipped" in assetsResult)) assetsState = { status: assetsResult.denied ? "denied" : "unavailable" };
+  }
+  const selectedAssetRef = assetsState.status === "ready"
+    ? resolveSelectedAssetRef(assetsState.page, firstValue(query.assetRef))
+      // 쿼리가 없거나 이번 페이지에 없으면 첫 검사 footprint 자료를 기본으로 둔다 —
+      // 어떤 footprint를 보여주는지 캡션과 선택 UI가 일치하게 한다.
+      ?? pickFootprintAsset(assetsState.page.assets, null)?.assetRef
+      ?? null
+    : null;
+  // 명시된 workAreaId/assetRef가 조회 범위 안에 없으면 알린다 — 조용히 다른
+  // 대상을 보여주지 않는다. 원문 id는 그대로 두지 않고(범위 밖 값) 공지만 둔다.
+  const requestedWorkAreaId = wantSpatial ? parseScopeId(firstValue(query.workAreaId)) : null;
+  const requestedAssetRef = assetsState.status === "ready" ? parseScopeId(firstValue(query.assetRef)) : null;
+  const scopeNotice = wantSpatial && (
+    (requestedWorkAreaId !== null && !allAreas.some((area) => area.workAreaId === requestedWorkAreaId))
+    || (requestedAssetRef !== null && selectedAssetRef !== requestedAssetRef)
+  );
+
   return <div className="flex flex-col">
     <SiteHeader
       site={site}
@@ -115,12 +173,23 @@ export default async function SiteDetailPage({
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       {tab === "observations" && <div className="flex flex-col gap-4">
+        <SiteSpatialOverview
+          sitePath={sitePath}
+          areas={areasResult.status === "fulfilled" ? areasResult.value.workAreas : []}
+          areasKnown={areasResult.status === "fulfilled"}
+          orders={ordersResult.status === "fulfilled" ? ordersResult.value : null}
+          analyses={analysesPage?.items ?? null}
+          analysesKnown={analysesPage !== null}
+          analysesHasMore={analysesPage?.nextCursor !== null && analysesPage !== null}
+          legacy={historyResult.status === "fulfilled" ? historyResult.value.items : null}
+          legacyHasMore={historyResult.status === "fulfilled" && historyResult.value.nextCursor !== null}
+          assetsState={assetsState}
+          selectedWorkAreaId={selectedWorkAreaId}
+          selectedAssetRef={selectedAssetRef}
+          canCreateWorkOrder={canCreateWorkOrder}
+          scopeNotice={scopeNotice}
+        />
         <SiteStartGuidance siteId={site.siteId} {...siteStartCounts} />
-        <SectionCard title="외부 관측 이력">
-          <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 외부 관측 결과와 보관 근거를 확인합니다.</p>
-          <Link href={`${sitePath}/observations`} className="btn mt-3 w-fit">외부 관측 이력 열기</Link>
-          {canCreateWorkOrder && <Link href={`${sitePath}/observations/new`} className="btn mt-3 ml-2 w-fit">새 관측 시작</Link>}
-        </SectionCard>
       </div>}
 
       {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="현장 분석" detail="현장 분석 화면에서 관측 쌍, 작업구역, 분석 기록과 근거를 확인합니다." />}
@@ -137,8 +206,10 @@ export default async function SiteDetailPage({
       </div>}
 
       {tab === "work-orders" && <div className="flex flex-col gap-4">
-        <SectionCard title="현장 범위">
-          {site.aoi ? <p className="text-[12.5px] text-ink-2">저장된 현장 범위가 있습니다.</p> : site.status === "UNMAPPED" && canTransition ? <SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /> : <EmptyState compact title="현장 범위가 등록되지 않았습니다" description="현장 등록 권한이 있는 계정에서 범위를 설정할 수 있습니다." />}
+        <SectionCard title="현장 전체 경계 · 선택 설정">
+          <div id="site-aoi" className="scroll-mt-5">
+          {site.aoi ? <AoiPolygonMap value={site.aoi.vertices} readOnly /> : site.status === "UNMAPPED" && canTransition ? <ResponsiveActionBoundary action="SITE_DEVICE_TRANSITION" reason={`${site.name}의 전체 경계 편집은 노트북에서 진행하세요. 이 설정 없이도 작업구역의 관측 자료를 확인할 수 있습니다.`}><SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /></ResponsiveActionBoundary> : <EmptyState compact title="현장 전체 경계는 아직 설정하지 않았습니다" description="전체 경계는 선택 설정입니다. 관측 자료는 각 작업구역에 연결해 사용합니다." />}
+          </div>
         </SectionCard>
         <SectionCard title="관측 작업">
           {ordersResult.status === "rejected" ? <ErrorState message="관측 작업을 불러오지 못했습니다." retryable /> : ordersResult.value.length === 0 ? <EmptyState title="등록된 관측 작업이 없습니다" description="새 관측 작업이 생성되면 이 목록에 표시됩니다." /> : <ul className="divide-y divide-line">{ordersResult.value.map((order) => {

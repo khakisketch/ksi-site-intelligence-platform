@@ -9,7 +9,7 @@ import { SiteThumbnail } from "@/components/site/SiteThumbnail";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
-import { hasAllPermissions } from "@/lib/core-api/permissions";
+import { getSiteRegistrationMode, hasAllPermissions } from "@/lib/core-api/permissions";
 import { listSitesCached } from "@/lib/core-api/cached";
 import {
   SITE_GROUPS,
@@ -138,11 +138,13 @@ export default async function SitesPage({
         : "요청을 처리하지 못했습니다.";
   }
 
-  const [canRegisterSiteResult, canCreateWorkOrderResult] = await Promise.allSettled([
+  const [registrationModeResult, canEditSiteResult, canCreateWorkOrderResult] = await Promise.allSettled([
+    getSiteRegistrationMode(),
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("WORK_ORDERS_WRITE"),
   ]);
-  const canRegisterSite = canRegisterSiteResult.status === "fulfilled" && canRegisterSiteResult.value;
+  const canRegisterSite = registrationModeResult.status === "fulfilled" && registrationModeResult.value !== "DENIED";
+  const canEditSite = canEditSiteResult.status === "fulfilled" && canEditSiteResult.value;
   const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
 
   const visibleSites = sites
@@ -166,7 +168,7 @@ export default async function SitesPage({
     const primaryAction = resolveSiteOperatorNextAction(
       site,
       {
-        canEditSite: canRegisterSite,
+        canEditSite,
         canCreateWorkOrder,
       },
       { includeRoutineSurvey: next.survey },

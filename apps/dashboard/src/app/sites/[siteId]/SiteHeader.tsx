@@ -68,7 +68,7 @@ export function SiteHeader({
         <h2 className="text-[17px] font-bold tracking-tight break-keep">{site.name}</h2>
         <StateBadge label={status.label} tone={status.tone} />
         <span className="text-[11.5px] break-keep text-ink-2">
-          최근 외부 결과 보고{" "}
+          최근 외부 비교 보고{" "}
           {!latestExternalReportKnown
             ? "알 수 없음"
             : latestExternalReportAt
@@ -81,6 +81,12 @@ export function SiteHeader({
           </span>
         )}
         <SiteIdentityDetails site={site} />
+        <Link
+          href={`/sites/${encodeURIComponent(site.siteId)}?section=work-orders#site-aoi`}
+          className="tap-target text-[11.5px] break-keep underline text-ink-2"
+        >
+          전체 경계 보기
+        </Link>
 
         <span className="ml-auto hidden flex-wrap items-center gap-1.5 lg:flex">
           {primaryAction && (

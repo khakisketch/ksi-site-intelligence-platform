@@ -13,7 +13,7 @@ describe("Site header report-time semantics", () => {
     [false, null, "알 수 없음"],
   ])("labels result reporting independently from capture (%s, %s)", (known, at, expected) => {
     const html = renderToStaticMarkup(<SiteHeader site={site} selectedEpochId={null} tab="observations" latestExternalReportAt={at} latestExternalReportKnown={known} canCreateWorkOrder={false} canEditAoi={false} />);
-    expect(html).toContain("최근 외부 결과 보고");
+    expect(html).toContain("최근 외부 비교 보고");
     expect(html).toContain(expected);
     expect(html).not.toContain("최신 관측");
   });

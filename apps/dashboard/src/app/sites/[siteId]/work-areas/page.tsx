@@ -41,11 +41,14 @@ function workAreaListFailure(error: unknown): WorkAreaListFailure {
  * 작업구역 등록 화면 — "지난주와 이번주가 같은 범위인가"를 성립시키는 자리(M4-C).
  *
  * 비교할 때마다 지도에 폴리곤을 새로 그리면 매번 범위가 조금씩 달라지고, 그러면
- * 두 시점의 숫자를 나란히 놓을 수 없다("계획 대비 진척"이 계산되지 않는 이유가
- * 그것이었다). 한 번 이름과 함께 등록해 두면 이후에는 고르기만 한다.
+ * 두 시점의 숫자를 나란히 놓을 수 없다. 한 번 이름과 함께 등록해 두면 이후에는
+ * 고르기만 한다.
  *
  * 그 대가로 **기하는 등록 순간 굳는다** — 이 화면에 수정 버튼이 없는 이유다.
  * 이미 그 구역으로 낸 리포트가 가리키는 범위가 사후에 바뀌면 안 된다.
+ *
+ * 등록은 범위 고정일 뿐이다 — 공정·계획 대비 진척, 정확도, 분석 가능 여부,
+ * 사람 검토를 증명하지 않는다(ADR037 상대 관측 지형 변화의 한계와 같다).
  */
 export default async function SiteWorkAreasPage({
   params,
@@ -98,15 +101,15 @@ export default async function SiteWorkAreasPage({
         </Link>
         <h2 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h2>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
-          현장에 이름을 붙여 등록해 두는 비교 구역입니다. 한 번 등록해 두면 이후 잔량·진척을
-          낼 때마다 지도에 새로 그리는 대신 이 구역을{" "}
-          <strong className="font-bold">고르기만</strong> 하면 되고, 지난번과 이번이 정확히
-          같은 범위라서 &ldquo;계획 대비 얼마나 진행됐나&rdquo;가 비로소 계산됩니다.
+          두 시점의 관측 변화를 같은 범위에서 반복 비교하기 위한 구역입니다. 한 번
+          등록해 두면 이후 비교할 때마다 지도에 새로 그리는 대신 이 구역을{" "}
+          <strong className="font-bold">고르기만</strong> 하면 됩니다.
         </p>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-muted">
           그래서 <strong className="font-bold">한 번 등록한 모양은 고칠 수 없습니다</strong> —
           잘못 그렸다면 대신할 구역을 새로 등록하세요(이전 구역은 자동으로 보관되고, 이미 낸
-          리포트는 그때의 범위를 그대로 가리킵니다).
+          리포트는 그때의 범위를 그대로 가리킵니다). 등록은 범위 고정일 뿐, 계획 대비
+          진척·정확도·분석 가능 여부·사람 검토를 증명하지 않습니다.
         </p>
       </div>
 

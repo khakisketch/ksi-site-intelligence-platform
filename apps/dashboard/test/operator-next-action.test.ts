@@ -20,11 +20,23 @@ function site(status: SiteView["status"], aoi: SiteView["aoi"]): SiteView {
 }
 
 describe("site operator next action", () => {
-  it("links an editable unmapped site to its AOI section", () => {
+  it("offers registration without making the optional Site boundary a prerequisite", () => {
     expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
       canEditSite: true,
       canCreateWorkOrder: true,
-    })).toMatchObject({ href: "/sites/site-1#site-aoi", label: "현장 범위 설정" });
+    })).toMatchObject({ href: "/sites/site-1/observations/new", label: "관측 자료 등록" });
+  });
+
+  it("offers actual WorkArea management rather than a dead AOI anchor for an editor", () => {
+    expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
+      canEditSite: true, canCreateWorkOrder: false,
+    })).toMatchObject({ kind: "MANAGE_WORK_AREAS", href: "/sites/site-1/work-areas" });
+  });
+
+  it("never invents a write path for a reader without a Site boundary", () => {
+    expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
+      canEditSite: false, canCreateWorkOrder: false,
+    })).toBeNull();
   });
 
   it("offers the mounted observation flow when a site has an AOI", () => {

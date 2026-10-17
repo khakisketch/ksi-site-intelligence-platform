@@ -7,9 +7,9 @@ import { MapContainer, TileLayer, useMap } from "react-leaflet";
 
 import type { AoiVertex } from "@/lib/core-api/types";
 
-// PRD §7.3 "지도에서 외곽 선택" 실체화 — 단순 폴리곤(3~256 꼭짓점, POST /v1/missions/plans
-// aoi.vertices 계약)만 지원한다. leaflet-draw 는 side-effect import 로 전역 L 에 컨트롤을
-// 붙이므로 클라이언트 전용(SSR 비활성, AoiPolygonMap.tsx 의 dynamic import 가 담당).
+// Site/WorkArea의 WGS84 화면 입력·읽기 전용 표시. 원본 CRS 변환은 호출부의
+// display-geometry가 맡으며 여기서 자료의 위치 정확도나 분석 적합성을 판정하지 않는다.
+// leaflet-draw는 전역 L에 컨트롤을 붙이므로 클라이언트 전용으로 로드한다.
 
 const _MAX_AOI_VERTICES = 256;
 
@@ -51,7 +51,7 @@ function ReadOnlyPolygon({ value }: { value: AoiVertex[] }) {
     if (value.length < 3) return;
     const polygon = L.polygon(value.map((v) => [v.latDeg, v.lonDeg]));
     polygon.addTo(map);
-    map.fitBounds(polygon.getBounds(), { maxZoom: 18 });
+    map.fitBounds(polygon.getBounds(), { maxZoom: 26, padding: [24, 24] });
     return () => {
       map.removeLayer(polygon);
     };
@@ -89,7 +89,7 @@ function DrawControl({
     if (value.length >= 3) {
       const existing = L.polygon(value.map((v) => [v.latDeg, v.lonDeg]));
       group.addLayer(existing);
-      map.fitBounds(existing.getBounds(), { maxZoom: 18 });
+      map.fitBounds(existing.getBounds(), { maxZoom: 26, padding: [24, 24] });
     }
 
     const control = new L.Control.Draw({
@@ -163,12 +163,17 @@ export function AoiPolygonMapInner({
     <MapContainer
       center={center}
       zoom={16}
+      maxZoom={26}
       style={{ height: "100%", width: "100%" }}
       className="rounded-lg"
     >
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        // Zoom the vector, not the source's resolution. Reuse the last available
+        // background tile; never request non-existent high-zoom OSM tiles.
+        maxNativeZoom={19}
+        maxZoom={26}
       />
       {readOnly ? (
         <ReadOnlyPolygon value={value} />

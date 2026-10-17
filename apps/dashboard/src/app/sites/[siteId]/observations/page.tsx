@@ -61,7 +61,7 @@ export default async function SiteObservationHistoryPage({
       <div>
         <p className="text-[12.5px] text-ink-2">{site.name}</p>
         <h2 className="mt-1 text-[22px] font-bold tracking-tight">외부 관측 결과 이력</h2>
-        <p className="mt-1 text-[13px] leading-5 text-ink-2">보관 근거가 확인된 결과만 수치와 추이를 표시합니다.</p>
+        <p className="mt-1 text-[13px] leading-5 text-ink-2">보관 근거가 확인된 외부 비교 기록을 표시합니다. Core 분석 기록(V2)은 현장 분석에서 확인하며, 두 기록의 계산·권위를 합치지 않습니다.</p>
       </div>
       <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/analysis`} className="btn">현장 분석</Link><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-assets`} className="btn">공간 자산</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
     </header>

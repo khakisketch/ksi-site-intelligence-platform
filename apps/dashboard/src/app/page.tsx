@@ -7,6 +7,7 @@ import { presentWorkOrder } from "./field/work-order-stage";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { whoAmI } from "@/lib/core-api/auth";
+import { resolveSiteRegistrationMode } from "@/lib/core-api/permissions";
 import { getAnalysisReviewTarget, listAnalyses, listAnalysisReviews } from "@/lib/core-api/analysis";
 import { listSitesCached } from "@/lib/core-api/cached";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
@@ -177,9 +178,9 @@ export default async function HomePage() {
   const operationsUnavailable = externalWorkOrders && !operationsResult.ok;
   const decisionsUnavailable = externalWorkOrders && !decisionsResult.ok;
   const permissions = whoResult.ok ? whoResult.value.permissions : [];
-  const canRegisterSite = permissions.includes("SITES_WRITE");
+  const canRegisterSite = whoResult.ok && resolveSiteRegistrationMode(whoResult.value) !== "DENIED";
   const baseAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions }, Number.MAX_SAFE_INTEGER);
-  const initialSetupSites = selectHomeInitialSetupSites(sites);
+  const initialSetupSites = selectHomeInitialSetupSites(sites, 3, { workOrders, known: workOrdersResult.ok });
   const recentSiteSources = selectHomeRecentSiteSources(sites);
   const externalDecisionSiteIds = new Set(decisions.map((decision) => decision.siteId));
   const analysisReviewSiteIds = [...new Set([
@@ -202,8 +203,7 @@ export default async function HomePage() {
   const siteActionPermissions = { canEditSite: permissions.includes("SITES_WRITE"), canCreateWorkOrder: permissions.includes("WORK_ORDERS_WRITE") };
   const initialSetupItems: HomeSituationItem[] = initialSetupSites.map((site) => {
     const nextAction = resolveSiteOperatorNextAction(site, siteActionPermissions);
-    const hasAoi = site.aoi !== null;
-    return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: hasAoi ? "첫 기준 관측을 준비하세요." : "첫 관측 전에 현장 범위를 설정하세요.", detail: hasAoi ? "현장 범위가 준비되었습니다. 관측 작업을 만들 수 있습니다." : "아직 관측 범위가 없습니다. 먼저 현장 경계를 저장하세요.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
+    return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
   });
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById));
   const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable;
@@ -223,7 +223,7 @@ export default async function HomePage() {
 
     {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "새로 확인할 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 KSI 원장 기준이며 현장 전체의 정상이나 안전을 보증하지 않습니다. 최근 현장을 선택해 관측 맥락을 살펴보세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
 
-    {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="첫 관측을 시작하기 위해 현장 범위 설정이나 작업 준비가 필요합니다." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
+    {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
     {sites.length > 0 && <HomeRecentUpdates items={recentItems} />}
   </div>;
 }

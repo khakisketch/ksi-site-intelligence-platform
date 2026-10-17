@@ -3,12 +3,17 @@
 import { useMemo, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
+import {
+  ResponsiveActionBoundary,
+  ResponsiveNotice,
+} from "@/components/responsive/ResponsiveActionBoundary";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { COMPARISON_ZONE_CRS, toZonePolygon } from "@/lib/comparison-submit";
 import { readableApiError } from "@/lib/core-api/labels";
 import { parseJsonSafe } from "@/lib/http";
 import { formatKoreanDateTime } from "@/lib/datetime";
+import { toDisplayVertices, type DisplayVerticesResult } from "@/lib/geo/display-geometry";
 import { WORK_AREA_STATUS_LABEL, partitionWorkAreas, polygonToVertices } from "@/lib/work-areas";
 import type {
   AoiVertex,
@@ -32,12 +37,22 @@ import type {
  * 화면이 짐작해서 칠하면 서버 규칙을 여기에 복제하는 셈이라, 짐작 대신 읽는다.
  */
 
+/**
+ * 정정 실패 시 다음 행동 안내 — `toDisplayVertices` 의 reason(기하·CRS 사실)에
+ * 이 호출자가 덧붙인다. 읽기 전용 미리보기는 reason만 그대로 보여준다.
+ */
+const CORRECTION_RETRY_HINT =
+  "대신할 범위를 처음부터 그려 주세요. (원래 구역은 그대로 남아 있습니다.)";
+
 function WorkAreaCard({
   area,
   canWrite,
   archiving,
   disabled,
   correcting,
+  previewOpen,
+  previewResult,
+  onTogglePreview,
   onCorrect,
   onArchive,
 }: {
@@ -49,6 +64,11 @@ function WorkAreaCard({
   disabled: boolean;
   /** 지금 위 폼이 이 구역을 대신할 새 구역을 그리는 중인가. */
   correcting: boolean;
+  /** 이 구역의 읽기 전용 미리보기를 펼쳤는가(작은 화면에서도 열린다). */
+  previewOpen: boolean;
+  /** 열린 미리보기의 표시 변환 결과 — null이면 아직 고르지 않은 상태다. */
+  previewResult: DisplayVerticesResult | null;
+  onTogglePreview: (area: WorkArea) => void;
   onCorrect: (area: WorkArea) => void;
   onArchive: (area: WorkArea) => void;
 }) {
@@ -90,25 +110,55 @@ function WorkAreaCard({
         </p>
       )}
 
+      {/* 읽기 전용 미리보기 — 카드마다 지도를 두지 않고, 고른 구역 하나만 펼친다.
+          작은 화면에서도 열리므로 현장에서 "어디 범위인지"를 먼저 확인할 수 있다. */}
+      <button
+        type="button"
+        className="btn w-fit"
+        aria-expanded={previewOpen}
+        onClick={() => onTogglePreview(area)}
+      >
+        {previewOpen ? "범위 미리보기 닫기" : "범위 미리보기"}
+      </button>
+      {previewOpen &&
+        (previewResult !== null && previewResult.ok ? (
+          <AoiPolygonMap readOnly value={previewResult.vertices} />
+        ) : (
+          <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] break-keep text-ink-2">
+            {previewResult !== null && !previewResult.ok
+              ? previewResult.reason
+              : "이 구역의 모양을 지도에 올리지 못했습니다."}
+          </p>
+        ))}
+
+      {/* 변경 행동(다시 그리기·보관)은 노트북 이상의 화면에서만 — 작은 화면에서는
+          위 미리보기와 목록 위 인계 안내만 남는다. 안내는 카드마다 두지 않고
+          목록 위 `ResponsiveNotice` 하나로 둔다. */}
       {canWrite && area.status === "ACTIVE" && (
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="btn w-fit"
-            disabled={disabled || correcting}
-            onClick={() => onCorrect(area)}
-          >
-            {correcting ? "위 폼에서 그리는 중…" : "다시 그리기(새 구역으로 대체)"}
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger w-fit"
-            disabled={disabled}
-            onClick={() => onArchive(area)}
-          >
-            {archiving ? "보관하는 중…" : "보관(삭제 아님)"}
-          </button>
-        </div>
+        <ResponsiveActionBoundary
+          action="SITE_DEVICE_TRANSITION"
+          inlineNotice={false}
+          reason="작업구역 변경은 노트북 이상의 화면에서 진행합니다."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="btn w-fit"
+              disabled={disabled || correcting}
+              onClick={() => onCorrect(area)}
+            >
+              {correcting ? "위 폼에서 그리는 중…" : "다시 그리기(새 구역으로 대체)"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-danger w-fit"
+              disabled={disabled}
+              onClick={() => onArchive(area)}
+            >
+              {archiving ? "보관하는 중…" : "보관(삭제 아님)"}
+            </button>
+          </div>
+        </ResponsiveActionBoundary>
       )}
     </li>
   );
@@ -139,6 +189,16 @@ export function WorkAreaPanel({
   /** null 이 아니면 "이 구역을 대신할 새 구역"을 그리는 중이다(제출 시 supersedes). */
   const [correcting, setCorrecting] = useState<WorkArea | null>(null);
   /**
+   * 정정 폼이 기존 구역의 모양을 지도에 올려 두었는가.
+   *
+   * `toDisplayVertices` 가 실패하면(알 수 없는 기하·좌표계) 폼은 빈 지도에서
+   * 새로 그리는 자리가 된다 — 원래 구역은 그대로 남아 있고, "그만두기"로
+   * unrelated 새 구역 등록으로 돌아갈 수 있다.
+   */
+  const [correctionReady, setCorrectionReady] = useState(false);
+  /** 읽기 전용 미리보기를 펼친 구역 — 한 번에 하나만(카드마다 지도를 두지 않는다). */
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  /**
    * 지도를 통째로 다시 마운트하기 위한 열쇠.
    *
    * `AoiPolygonMap` 의 그리기 컨트롤은 **마운트 시점의 value 만** 초기값으로 읽는다
@@ -151,29 +211,48 @@ export function WorkAreaPanel({
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-
   const { active, archived } = useMemo(() => partitionWorkAreas(workAreas), [workAreas]);
   const busy = submitting || archivingId !== null;
+  const previewResult = useMemo<DisplayVerticesResult | null>(() => {
+    if (previewId === null) return null;
+    const target = workAreas.find((area) => area.workAreaId === previewId) ?? null;
+    if (target === null) return null;
+    return toDisplayVertices(target.polygon, target.crs);
+  }, [previewId, workAreas]);
+
+  function togglePreview(area: WorkArea) {
+    setPreviewId((current) => (current === area.workAreaId ? null : area.workAreaId));
+  }
 
   function resetForm() {
     setName("");
     setVertices([]);
     setCorrecting(null);
+    setCorrectionReady(false);
     setMapKey((key) => key + 1);
   }
 
   function startCorrection(area: WorkArea) {
-    const existing = polygonToVertices(area.polygon);
+    // U02 — 등록된 CRS 그대로 표시 변환한다. 투영좌표(m)를 위경도(°)로 잘못
+    // 읽으면 지도가 수평선이 되고, 사용자는 엉뚱한 범위를 고쳐 그리게 된다.
+    // 변환이 안 되면 빈 지도에서 새로 그린다 — 원래 구역은 그대로 남는다.
+    //
+    // 다음 행동 안내는 여기서 붙인다. 헬퍼의 reason은 읽기 전용 미리보기와
+    // 공유하는 기하·CRS 사실이므로, "다시 그리기" 문구는 이 호출자의 몫이다.
+    const display = toDisplayVertices(area.polygon, area.crs);
     setCorrecting(area);
     setName(area.name);
-    setVertices(existing);
+    if (display.ok) {
+      setVertices(display.vertices);
+      setCorrectionReady(true);
+      setError(null);
+    } else {
+      setVertices([]);
+      setCorrectionReady(false);
+      setError(`${display.reason} ${CORRECTION_RETRY_HINT}`);
+    }
     setMapKey((key) => key + 1);
     setNotice(null);
-    setError(
-      existing.length >= 3
-        ? null
-        : "이 구역의 기하를 지도에 옮기지 못했습니다 — 대신할 범위를 처음부터 그려 주세요.",
-    );
   }
 
   async function refreshList(): Promise<WorkArea[] | null> {
@@ -214,6 +293,10 @@ export function WorkAreaPanel({
           polygon,
           // 지도가 내는 좌표는 WGS84 경위도다 — 현장 좌표계(siteCrs)로 적으면
           // 서버가 그 좌표계로 읽어 구역이 엉뚱한 곳에 놓인다.
+          //
+          // CRS 선택 기록: 대체 등록도 WGS84로 낸다. 지도 출력을 원래 구역의
+          // 투영좌표계로 되돌리면 이중 변환 오차가 들어가고, 원래 구역·CRS는
+          // supersede+보관으로 그대로 남으므로 되돌릴 이유가 없다.
           crs: COMPARISON_ZONE_CRS,
           supersedes,
         }),
@@ -298,7 +381,22 @@ export function WorkAreaPanel({
         </p>
       )}
 
+      {/* U03 — 변경 행동의 작은 화면 인계는 이 하나로 둔다. 등록 폼과 카드
+          버튼은 아래 `SITE_DEVICE_TRANSITION` 경계 안에 있어 작은 화면에서
+          가려지고, 목록·미리보기는 읽기 전용으로 남는다. */}
+      {canWrite && (
+        <ResponsiveNotice
+          action="SITE_DEVICE_TRANSITION"
+          reason="작업구역 등록·다시 그리기·보관은 노트북 이상의 화면에서 진행합니다. 작은 화면에서는 아래 목록에서 범위를 확인한 뒤, 노트북에서 같은 현장 화면을 열어 이어가세요."
+        />
+      )}
+
       {canWrite ? (
+        <ResponsiveActionBoundary
+          action="SITE_DEVICE_TRANSITION"
+          inlineNotice={false}
+          reason="작업구역 등록과 다시 그리기는 노트북 이상의 화면에서 진행합니다."
+        >
         <section className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-4">
           <h2 className="text-[13px] font-bold tracking-tight break-keep text-ink-2">
             {correcting ? "구역 다시 그리기" : "새 작업구역 등록"}
@@ -308,8 +406,11 @@ export function WorkAreaPanel({
             <div className="flex flex-col gap-2 rounded-md border border-dashed border-line-strong bg-sunk px-3 py-2">
               <p className="text-[12.5px] break-keep text-ink-2">
                 <strong className="font-bold">{correcting.name}</strong>을 대신할 새 구역을
-                그립니다 — 지도에 그 구역의 지금 모양을 올려 두었습니다. 등록하면 새 구역이
-                생기고 이전 구역은 자동으로 보관되며,{" "}
+                그립니다 —{" "}
+                {correctionReady
+                  ? "지도에 그 구역의 지금 모양을 올려 두었습니다."
+                  : "그 구역의 모양을 지도에 올리지 못해 빈 지도에서 새로 그립니다(원래 구역은 그대로 남아 있습니다)."}
+                등록하면 새 구역이 생기고 이전 구역은 자동으로 보관되며,{" "}
                 <strong className="font-bold">이미 낸 리포트는 이전 구역의 범위를 그대로</strong>{" "}
                 가리킵니다.
               </p>
@@ -369,6 +470,7 @@ export function WorkAreaPanel({
             {submitting ? "등록하는 중…" : correcting ? "대신할 구역으로 등록" : "등록"}
           </button>
         </section>
+        </ResponsiveActionBoundary>
       ) : (
         <p className="text-[12.5px] break-keep text-ink-muted">
           작업구역을 등록하거나 보관하려면 현장 등록 권한(SITES_WRITE)이 필요합니다. 아래
@@ -407,6 +509,9 @@ export function WorkAreaPanel({
                 archiving={archivingId === area.workAreaId}
                 disabled={busy}
                 correcting={correcting?.workAreaId === area.workAreaId}
+                previewOpen={previewId === area.workAreaId}
+                previewResult={previewId === area.workAreaId ? previewResult : null}
+                onTogglePreview={togglePreview}
                 onCorrect={startCorrection}
                 onArchive={(target) => void handleArchive(target)}
               />
@@ -436,6 +541,9 @@ export function WorkAreaPanel({
                 archiving={false}
                 disabled={busy}
                 correcting={false}
+                previewOpen={previewId === area.workAreaId}
+                previewResult={previewId === area.workAreaId ? previewResult : null}
+                onTogglePreview={togglePreview}
                 onCorrect={startCorrection}
                 onArchive={(target) => void handleArchive(target)}
               />

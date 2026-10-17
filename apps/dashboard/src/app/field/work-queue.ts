@@ -106,7 +106,7 @@ export function workOrderActionLabel(
   status: ObservationWorkOrderView["status"],
   executionMode: ObservationWorkOrderExecutionMode | null = null,
 ): string {
-  if (status === "APPROVED" && executionMode === "EXTERNAL_RECONSTRUCTION") return "산출물 등록 준비";
+  if (status === "APPROVED" && executionMode === "EXTERNAL_RECONSTRUCTION") return "자료 등록·검사 확인";
   if (status === "AWAITING_APPROVAL" || status === "DRAFT") return "작업 범위 검토";
   if (status === "REOBSERVATION_PENDING") return "재관측 제안 검토";
   if (status === "REVIEW_READY") return "결과와 근거 검토";

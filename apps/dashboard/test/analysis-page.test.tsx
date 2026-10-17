@@ -39,7 +39,7 @@ describe("analysis deep link", () => {
     expect(screen.getByText("analysis-old:analysis-old:analysis-recent")).toBeTruthy();
   });
 
-  it("shows start guidance from exact loaded records and labels the bounded analysis page", async () => {
+  it("shows start guidance from exact loaded records while no analysis exists yet", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [
       { workAreaId: "area-1", name: "1구역" },
       { workAreaId: "area-2", name: "2구역" },
@@ -52,15 +52,31 @@ describe("analysis deep link", () => {
       { workOrderId: "work-1", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] },
       { workOrderId: "work-2", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-2"] },
     ]);
-    mocked.list.mockResolvedValue({ siteId: "site-1", items: [{ analysisId: "analysis-1" }], nextCursor: "older-records" });
+    mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
     expect(screen.getByRole("heading", { name: "분석 시작 안내" })).toBeTruthy();
     expect(screen.getByText("2개 확인됨")).toBeTruthy();
     expect(screen.getByText("2개 표시됨")).toBeTruthy();
-    expect(screen.getByText("1개 표시됨")).toBeTruthy();
-    expect(screen.getByText(/최근 페이지의 일부 기록/)).toBeTruthy();
+    expect(screen.getByText("표시된 기록 없음")).toBeTruthy();
+    expect(screen.getByText(/등록은 검증이나 정량 사용 가능 판정이 아닙니다/)).toBeTruthy();
+    expect(document.body.textContent).not.toMatch(/분석 준비 완료|분석 가능/);
+  });
+
+  it("omits start guidance once analyses exist so results lead", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역" }] });
+    mocked.observations.mockResolvedValue([
+      { selector: { workOrderId: "work-1", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 }, observationEpochId: "epoch-1", captureStartedAt: "2026-09-01T00:00:00Z", captureEndedAt: "2026-09-01T00:30:00Z" },
+    ]);
+    mocked.workOrders.mockResolvedValue([
+      { workOrderId: "work-1", siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] },
+    ]);
+    mocked.list.mockResolvedValue({ siteId: "site-1", items: [{ analysisId: "analysis-1" }], nextCursor: null });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.queryByRole("heading", { name: "분석 시작 안내" })).toBeNull();
   });
 
   it("passes only Site-verified WorkArea attribution to the analysis selector and counts unknown links", async () => {

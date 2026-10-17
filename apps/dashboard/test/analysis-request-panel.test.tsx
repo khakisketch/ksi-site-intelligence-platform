@@ -201,7 +201,7 @@ describe("analysis V2 panel", () => {
     expect(baseline.value).toBe("");
     expect(current.value).toBe("");
     expect(baseline.disabled).toBe(true);
-    expect(screen.getByText("가능한 경우 현재 관측보다 앞서 끝난 가장 최근 관측을 기준으로 제안합니다. 기준은 수정할 수 있고, 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
+    expect(screen.getByText("기준이 비어 있을 때만 현재 관측보다 앞서 끝난 가장 최근 관측을 제안합니다. 직접 고른 기준은 현재를 바꿔도 유지됩니다. 분석 요청은 직접 눌러야 합니다.")).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText("작업구역"), { target: { value: "area-1" } });
     expect(baseline.options[1]?.textContent).toContain("기준 작업");

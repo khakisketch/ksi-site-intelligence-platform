@@ -3769,3 +3769,55 @@ main CI 비빌드, 경계 테스트 2종). 이번 지시로 남은 잔여물 중
 - **정본 보고**: `docs/audit/CONSOLE_UI_UX_INDEPENDENT_AUDIT_2026-10-17.md`.
   원본 보고/스크립트/JSON/PNG는 `/tmp/opencode/ksi-ux-audit-20261017/`에 보존. 기존 데이터·포트·
   원본 자료·이전 미추적 PNG는 보존하고 검수용 브라우저는 소유 세션만 닫는다.
+
+### 2026-10-17 후속 — Human 승인 U01–U11 개선 구현·로컬 수용
+
+- **승인·소유**: Human "그래 개선 순서대로 해봐"에 따라 같은 감사의 U01–U11을 순서대로
+  구현했다. Design Architect가 통합/실제 렌더 수용을 소유하고 General에 좌표/구역,
+  Site 작업공간, 분석/복구 단위를 직접 위임했다. 새로운 제품 원장이나 승인 게이트는 만들지 않았다.
+- **요구/경계**: SDP-REQ-01/02/04/05/06/07, INV-020/051/053/060/061. Dashboard만 변경.
+  Core/API/schema/RBAC/계산/멱등성/보류 selector·원본·파생물/native-grid 크롭/AI 반출 동의는 불변.
+  기존 proj4 정의·Leaflet·UI 토큰/라이선스만 재사용, 새 의존성·외부 영상 없음. HIL 불필요.
+  롤백은 본 UI 변경 커밋과 goldens를 함께 되돌리는 방식; 기존 standalone 빌드도 보존했다.
+- **U01–04**: 전체 Site AOI 없는 상태에서도 현재 등록 폼으로 연결; 기존 작업이 있는 UNMAPPED
+  현장을 Home 초기 설정으로 재분류하지 않음. 선택적 AOI는 실제 작업 탭/anchor로 연결.
+  알려진 CRS만 화면용 WGS84 변환; 미지원/구멍/비정상/과다/퇴화 기하는 추정하지 않음.
+  대체 등록은 새 WGS84 범위+supersedes이며 이전 구역/CRS/계보는 불변. compact AOI/작업구역
+  변경은 노트북 안내, 읽기 미리보기는 유지. 구역 설정이 계획 대비 진척을 증명한다는 문구 제거.
+- **U05–07**: Site 기본 화면에 선택 구역의 실제 경계·인가된 검사 footprint·축/단위/축척과
+  촬영 시점·자료 선택을 배치. 기본 구역은 실제 작업 결속→분석 결속→등록 시각 순;
+  query가 우선하며 조회 범위 밖 명시 대상은 대체 표시 이유를 알린다. 선택 파일과
+  표시 범위/촬영 구간/metadata deep link가 일치, 키보드·GET 선택·뒤로가기 확인.
+  파일/구역 이름 충돌에만 실제 full identity로 구분. 작은 구역은 원본 좌표 평면을 우선하고
+  배경지도는 별도 펼침. 큰 위성사진/정사영상으로 가장하지 않는다. 작업 승인만 보고 미제출을
+  단정하던 목록 표현 제거; Core 분석과 외부 비교 이력은 별개 기록임을 명확화했다.
+- **U08–11**: 명시 기준 선택을 현재 변경 시 보존, 구역 변경/미선택/시간 역전/겹침을 구체 안내;
+  known-bad 새 조합은 버튼과 submit 양쪽에서 POST/새 key 생성 전 차단. 보류 요청 재시도는
+  원래 key/selector 유지. 넓은 선택 공간과 전체 선택 확인 유지. 기존 분석/근거를 먼저 보여 주고
+  새 폼은 직접 anchor로 이동; 미완료 시도 안내 유지. 등록 진입은 실제 capability/mode와 일치,
+  Team 401/403/404/5xx의 안내/수동 복구와 복귀 제공; 중복 H1·상세 오류 문구의 대비 보완.
+- **렌더 후 교정**: 첫 빌드 26렌더에서 촬영 시점이 긴 aside 아래로 묻히고 새 분석 폼이 결과보다
+  먼저 노출되는 문제를 확인, 단일 구조 보정으로 해결. 실제 20cm 합성 구역의 수정 벡터가 CRS는
+  맞아도 zoom18에서 폭0px로 남아 vector zoom26/배경 native zoom19 상한을 적용, 108×108px로
+  표시되며 포인터 편집도 확인했다. 이는 표시 확대이지 원본 영상 해상도/계산의 변경이 아니다.
+  마지막 혼합 조회 실패/좌표계 불일치 상태에서 두 문구가 부재/overlay를 과장해, 별도 기능 회귀로
+  조건 분기를 수정하고 그 두 상태만 재검증했다(추가 시각 취향 수정 없음).
+- **검증**: 최종 Dashboard **1045/1045 (133 files)**, TypeScript, 최종 standalone build 통과;
+  ESLint 0 errors/기존 역사 캡처 JS warning1. Console E2E 4폭 **51 passed/5 intentional skipped**.
+  Home golden은 승인된 큰 캐러셀/구조를 유지한 채 기존 작업 현장의 잘못된 초기 설정 제거와
+  capability 진입을 반영; 4폭 원본/실제 이미지를 직접 대조 후 교체, 비교 임계값을 늘리지 않음.
+  기존 default-Site 회귀는 실제 공간 선택·geometry로 대체, 권한 없는 등록 링크를 기대하던 회귀는
+  기존 정본 capability 판정과 일치하도록 강화. 원본 이미지는 Git과 증거 goldens-before에 보존.
+- **현재 증거**: 최종 구조 26 live 렌더 + empty/unknown/catalog-denied/unsupported 8 합성 상태에서
+  가로 넘침·남은 busy·JS errors·serious/critical axe 0. 마지막 두 문구 분기의 영향 상태 4렌더를
+  추가 확인하고, 바뀌지 않은 나머지 UI/E2E 증거는 재사용했다. 실제 역할 열람자, 키보드 자료 선택,
+  뒤로가기, GET 구역 선택, client-only 도형 편집, synthesized-touch 44px 표본 확인. 실제 새 분석·
+  업로드·검토·보관·구역 등록 저장은 실행하지 않음; 그런 Core 계약의 이전 검증을 새로 승격하지 않는다.
+- **증거·환경**: `/tmp/opencode/ksi-ux-improve-20261017/` README, round1, render-checks,
+  interactions/final-flow, states/state-guard, build/test/lint/E2E logs, PNG, source hashes.
+  현재 http://localhost:3241 → `.next-ux-spatial` standalone → 직접 F-03 Core :8092/OIDC :9041.
+  GET simulation proxy :8078 종료, use-fixture 제거. 소유 브라우저만 종료, 기존 미추적 PNG 보존.
+- **완료 범위·남은 경계**: 승인 U01–U11의 내부 UI 개선 단위는 로컬 수용. 실고객 자료·Terra/정량·
+  실제 사람/실폰/SR/WAN·대용량·운영 배포 수용은 별도 미검증/외부 경계다. 카탈로그는 여전히
+  metadata-only이며 실제 정사영상 사진/전후 영상 비교를 새로 제공하지 않는다. 표시용 footprint는
+  같은 CRS 단순 링만 겹친다; 미지원/불일치는 범위/단위 미확인 상태와 원본 metadata로 남긴다.

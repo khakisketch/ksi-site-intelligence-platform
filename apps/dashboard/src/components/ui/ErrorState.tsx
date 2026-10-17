@@ -57,7 +57,7 @@ export function ErrorState({
       className={`flex flex-col items-start gap-2 rounded-lg border px-4 py-3 text-[13px] ${TONE_CLASS[tone]}`}
     >
       <p className="font-semibold break-keep">{message}</p>
-      {detail && <p className="break-keep opacity-80">{detail}</p>}
+      {detail && <p className="break-keep">{detail}</p>}
       {action && (
         <Link href={action.href} className="btn mt-1 bg-surface">
           {action.label}

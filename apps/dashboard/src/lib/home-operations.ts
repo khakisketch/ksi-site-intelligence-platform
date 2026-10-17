@@ -103,8 +103,16 @@ export function selectHomeAnalysisReviewSources(records: readonly HomeAnalysisRe
   });
 }
 
-export function selectHomeInitialSetupSites(sites: readonly SiteView[], limit = 3): SiteView[] {
-  return sites.filter((site) => site.status === "UNMAPPED")
+export function selectHomeInitialSetupSites(
+  sites: readonly SiteView[],
+  limit = 3,
+  context?: { workOrders: readonly ObservationWorkOrderView[]; known: boolean },
+): SiteView[] {
+  // Legacy Site state alone does not prove that an already-used Site needs setup.
+  // Unknown work reads must not be interpreted as "no observations yet".
+  if (context && !context.known) return [];
+  const usedSiteIds = new Set(context?.workOrders.map((order) => order.siteId) ?? []);
+  return sites.filter((site) => site.status === "UNMAPPED" && !usedSiteIds.has(site.siteId))
     .toSorted((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.siteId.localeCompare(b.siteId))
     .slice(0, limit);
 }

@@ -38,7 +38,7 @@ describe("SiteStartGuidance", () => {
     expect(guide.getAllByText("확인 불가")).toHaveLength(2);
     expect(guide.getByText("0개 목록됨")).toBeTruthy();
     expect(guide.getByText(/작업구역 목록을 확인할 수 없습니다/)).toBeTruthy();
-    expect(guide.getByRole("link", { name: "공간 자산 현황 확인" }).getAttribute("href")).toBe("/sites/site-1?section=spatial-assets");
+    expect(guide.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
     expect(guide.queryByRole("link", { name: /등록|생성|새 관측/ })).toBeNull();
   });
 
