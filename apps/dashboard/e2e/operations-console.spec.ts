@@ -308,7 +308,7 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   }
   // 대표 이미지가 없는데 지도 조각을 그리지 않는다 — 행은 이름·상태·다음 할 일로 읽는다.
   await expect(page.locator("[data-site-thumbnail]")).toHaveCount(0);
-  await expect(siteLink).toBeVisible();
+  await expect(page.locator('main a[href^="/sites/"]:not([href="/sites/new"]) >> visible=true').first()).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link
     // that the exact registration-mode check rejects after navigation.

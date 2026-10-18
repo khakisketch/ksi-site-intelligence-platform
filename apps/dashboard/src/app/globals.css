@@ -285,7 +285,10 @@ body {
 }
 
 /* 긴 앱 내비게이션을 매번 통과하지 않아도 되도록 본문 앵커를 제공한다. 평소에는
-   화면을 차지하지 않고, 키보드로 포커스를 받았을 때만 상단에 나타난다. */
+   화면을 차지하지 않고, 키보드로 포커스를 받았을 때만 나타난다. 나타나는 자리는
+   **본문 칸의 왼쪽 위**다 — 사이드바 위에 겹쳐 뜨면 "본문으로 건너뛰기"라는 말과
+   어긋나고, 문서 흐름에 끼어들면(position: static) 포커스할 때마다 본문이 밀린다.
+   왼쪽 오프셋은 앱 셸 그리드(lg: 176px / xl: 232px)와 같은 값이다. */
 .skip-link {
   position: fixed;
   z-index: 50;
@@ -300,8 +303,12 @@ body {
   font-weight: 700;
   transition: transform 0.12s ease;
 }
-/* 포커스를 받으면 제자리에서 내려온다 — `position: static`으로 바꾸면 문서 흐름에
-   끼어들어 본문이 아래로 밀린다(포커스할 때마다 화면이 흔들린다). */
+@media (min-width: 1024px) {
+  .skip-link { left: 184px; }
+}
+@media (min-width: 1280px) {
+  .skip-link { left: 240px; }
+}
 .skip-link:focus {
   transform: translateY(0);
 }
