@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import Link from "next/link";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
@@ -12,7 +13,7 @@ import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { siteTabHref, type SiteHeaderScope } from "@/lib/operator-journey";
 
 
-/** 탭을 옮겨도 고른 시점을 잃지 않는다 — 직접 라우트 두 개는 검증된 범위만 싣는다. */
+/** 탭을 옮겨도 고른 시점·구역을 잃지 않는다 — 검증된 범위만 싣는다. */
 function hrefWith(
   siteId: string,
   current: { section?: string; epoch?: string },
@@ -20,15 +21,18 @@ function hrefWith(
   scope: SiteHeaderScope,
 ): string {
   const merged = { ...current, ...patch };
-  return siteTabHref(siteId, merged.section ?? "observations", { epoch: merged.epoch }, scope);
+  return siteTabHref(siteId, merged.section ?? "overview", { epoch: merged.epoch }, scope);
 }
 
 /**
- * 현장 상세 머리 — 정체(상태·식별자)·행동·시간축·탭이 스크롤 위에 함께 있는 자리.
+ * 현장 상세 머리 — 정체(상태·식별자)·행동·시간축·메뉴가 스크롤 위에 함께 있는 자리.
  *
- * 시안의 "조사 주기" 선택과 "내 현장 고정"은 넣지 않았다. 이 시스템에 조사 주기라는
- * 값은 없고(현장이 가진 것은 모델 노후 판정 기준일 뿐이라 주기로 바꿔 부르면 없는
- * 약속을 만든다), 고정은 저장할 곳이 없어 새로고침하면 사라지는 버튼이 된다.
+ * 현장 안의 화면들(현황·자료·분석·검토·작업·관리)이 같은 머리를 쓴다. 그래서
+ * 자료·분석 화면에 들어가도 현장과 구역, 그리고 다른 영역으로 가는 길이 사라지지
+ * 않는다. 시안의 "조사 주기" 선택과 "내 현장 고정"은 넣지 않았다 — 이 시스템에
+ * 조사 주기라는 값은 없고(현장이 가진 것은 모델 노후 판정 기준일 뿐이라 주기로
+ * 바꿔 부르면 없는 약속을 만든다), 고정은 저장할 곳이 없어 새로고침하면 사라지는
+ * 버튼이 된다.
  */
 export function SiteHeader({
   site,
@@ -44,8 +48,9 @@ export function SiteHeader({
   site: SiteView;
   selectedEpochId: string | null;
   tab: SiteTabKey;
-  latestExternalReportAt: string | null;
-  latestExternalReportKnown: boolean;
+  /** 이 화면이 외부 비교 이력을 실제로 읽었을 때만 넘긴다 — 안 읽은 화면은 줄 자체를 만들지 않는다. */
+  latestExternalReportAt?: string | null;
+  latestExternalReportKnown?: boolean;
   canCreateWorkOrder: boolean;
   canEditAoi: boolean;
   /** 루트가 검증한 현행 승인 구역 — 원문 쿼리를 그대로 두지 않는다. 없으면 범위 없이 간다. */
@@ -70,9 +75,9 @@ export function SiteHeader({
     && scope.workAreaId
     ? { ...preparationAction, href: `${preparationAction.href}?workAreaId=${encodeURIComponent(scope.workAreaId)}` }
     : preparationAction;
-  // The observations panel owns this same action on its default tab; keep one
+  // The overview panel owns this same action on its default tab; keep one
   // entry point there while the mobile panel remains the direct action surface.
-  const primaryAction = tab === "observations" ? null : scopedPreparationAction;
+  const primaryAction = tab === "overview" ? null : scopedPreparationAction;
   return (
     <header className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 sm:px-5">
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
@@ -84,18 +89,19 @@ export function SiteHeader({
         <details className="text-[12px] text-ink-2">
           <summary className="tap-target cursor-pointer">현장 등록 정보</summary>
           <dl className="my-2 grid gap-1">
-            <div><dt className="font-semibold">등록된 현장명</dt><dd className="break-words">{site.name}</dd></div>
             <div><dt className="font-semibold">현장 관리 상태</dt><dd>{status.label}</dd></div>
             <div><dt className="font-semibold">현장 식별자</dt><dd className="break-all font-mono">{site.siteId}</dd></div>
           </dl>
-        <p className="text-[11.5px] break-keep text-ink-2">
-          최근 외부 비교 보고{" "}
-          {!latestExternalReportKnown
-            ? "알 수 없음"
-            : latestExternalReportAt
-              ? formatKoreanDate(latestExternalReportAt)
-              : "아직 없음"}
-        </p>
+        {latestExternalReportKnown !== undefined && (
+          <p className="text-[11.5px] break-keep text-ink-2">
+            최근 외부 비교 보고{" "}
+            {!latestExternalReportKnown
+              ? "알 수 없음"
+              : latestExternalReportAt
+                ? formatKoreanDate(latestExternalReportAt)
+                : "아직 없음"}
+          </p>
+        )}
         {site.resumeTarget && (
           <span className="text-[11.5px] break-keep text-ink-2">
             복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
@@ -103,7 +109,7 @@ export function SiteHeader({
         )}
         </details>
         <Link
-          href={`/sites/${encodeURIComponent(site.siteId)}?section=work-orders#site-aoi`}
+          href={`/sites/${encodeURIComponent(site.siteId)}?section=manage#site-aoi`}
           className="tap-target text-[11.5px] break-keep underline text-ink-2"
         >
           현장 전체 범위 보기
@@ -144,18 +150,22 @@ export function SiteHeader({
         {SITE_TABS.map((option) => {
           const active = option.key === tab;
           return (
-            <Link
-              key={option.key}
-              href={hrefWith(site.siteId, current, { section: option.key }, scope)}
-              aria-current={active ? "page" : undefined}
-              className={`tap-target inline-flex items-center border-b-2 px-3 text-[13px] break-keep transition-colors ${
-                active
-                  ? "border-b-ink-1 font-bold"
-                  : "border-b-transparent text-ink-2 hover:text-ink-1"
-              }`}
-            >
-              {option.label}
-            </Link>
+            <Fragment key={option.key}>
+              {option.key === "manage" && (
+                <span aria-hidden="true" className="mx-1.5 h-4 self-center bg-line px-px" />
+              )}
+              <Link
+                href={hrefWith(site.siteId, current, { section: option.key }, scope)}
+                aria-current={active ? "page" : undefined}
+                className={`tap-target inline-flex items-center border-b-2 px-3 text-[13px] break-keep transition-colors ${
+                  active
+                    ? "border-b-ink-1 font-bold"
+                    : "border-b-transparent text-ink-2 hover:text-ink-1"
+                }`}
+              >
+                {option.label}
+              </Link>
+            </Fragment>
           );
         })}
       </nav>

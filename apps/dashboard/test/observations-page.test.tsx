@@ -30,18 +30,26 @@ beforeEach(() => {
     principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR",
     role: "FIELD_OPERATOR", deviceId: null, permissions: ["SITES_READ"],
   } });
-  mocked.site.mockResolvedValue({ name: "권한 확인된 현장" });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "권한 확인된 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.history.mockResolvedValue({ items: [], nextCursor: null });
 });
 afterEach(cleanup);
 
 function expectKnownContext() {
-  expect(screen.getByText("권한 확인된 현장")).toBeTruthy();
+  expect(screen.getAllByText("권한 확인된 현장").length).toBeGreaterThan(0);
   expect(screen.getByRole("heading", { name: "외부 비교 기록" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
-  expect(screen.getByRole("link", { name: "변화 분석" }).getAttribute("href")).toBe("/sites/site-1/analysis");
-  expect(screen.getByRole("link", { name: "등록 자료" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+  // 공통 현장 틀 유지 — 분석·검토 안의 하위 목록에서도 현장 메뉴와 구역 범위를 잃지 않는다.
+  for (const [label, href] of [
+    ["현황", "/sites/site-1"],
+    ["분석·검토", "/sites/site-1/analysis"],
+    ["자료", "/sites/site-1/spatial-assets"],
+  ] as const) {
+    const links = screen.getAllByRole("link", { name: label });
+    expect(links.length).toBeGreaterThan(0);
+    expect(links.every((link) => link.getAttribute("href") === href)).toBe(true);
+  }
+  expect(screen.queryByRole("link", { name: "현장으로 돌아가기" })).toBeNull();
 }
 
 it("keeps verified Site context and does not offer futile retry for denied history", async () => {

@@ -119,20 +119,25 @@ describe("같은 날 겹치는 시점", () => {
 describe("탭", () => {
   it("현장 업무 다섯 갈래다", () => {
     expect(SITE_TABS.map((t) => t.key)).toEqual([
-      "observations",
+      "overview",
+      "materials",
       "analysis",
-      "spatial-assets",
       "work-orders",
-      "external-results",
+      "manage",
     ]);
   });
 
   it("surviving platform tabs are canonical and retired tabs map to a safe surface", () => {
     expect(normalizeSiteTab("analysis")).toBe("analysis");
-    expect(normalizeSiteTab("data")).toBe("spatial-assets");
+    expect(normalizeSiteTab("materials")).toBe("materials");
+    expect(normalizeSiteTab("manage")).toBe("manage");
+    expect(normalizeSiteTab("data")).toBe("materials");
+    expect(normalizeSiteTab("spatial-assets")).toBe("materials");
+    expect(normalizeSiteTab("observations")).toBe("overview");
     expect(normalizeSiteTab("records")).toBe("work-orders");
-    expect(normalizeSiteTab("reports")).toBe("external-results");
-    expect(normalizeSiteTab("없는탭")).toBe("observations");
-    expect(normalizeSiteTab(undefined)).toBe("observations");
+    expect(normalizeSiteTab("reports")).toBe("analysis");
+    expect(normalizeSiteTab("external-results")).toBe("analysis");
+    expect(normalizeSiteTab("없는탭")).toBe("overview");
+    expect(normalizeSiteTab(undefined)).toBe("overview");
   });
 });

@@ -9,6 +9,7 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 
 import { ExternalObservationHistory } from "./ExternalObservationHistory";
 
@@ -56,17 +57,24 @@ export default async function SiteObservationHistoryPage({
     retryAfterSeconds = error instanceof CoreApiError ? error.retryAfterSeconds : undefined;
   }
   const names = new Map(loaded?.areas.workAreas.map((area) => [area.workAreaId, area.name]));
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
-      <div>
-        <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        <h2 className="mt-1 text-[22px] font-bold tracking-tight">외부 비교 기록</h2>
-        <p className="mt-1 text-[13px] leading-5 text-ink-2">별도로 등록된 외부 비교 결과입니다. 시스템에서 계산한 지형 변화는 변화 분석에서 확인하세요. 두 기록은 서로 다른 결과입니다.</p>
-      </div>
-      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/analysis`} className="btn">변화 분석</Link><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-assets`} className="btn">등록 자료</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
-    </header>
-    {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
-      <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
-    {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
+  return <div className="flex flex-col">
+    <SiteHeader
+      site={site}
+      selectedEpochId={null}
+      tab="analysis"
+      canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+      canEditAoi={session.principal.permissions.includes("SITES_WRITE")}
+    />
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+        <div>
+          <h2 className="mt-1 text-[22px] font-bold tracking-tight">외부 비교 기록</h2>
+          <p className="mt-1 text-[13px] leading-5 text-ink-2">별도로 등록된 외부 비교 결과입니다. 시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 두 기록은 서로 다른 결과입니다.</p>
+        </div>
+      </header>
+      {loaded ? <ExternalObservationHistory siteId={siteId} items={loaded.history.items} workAreaNames={names} /> :
+        <ErrorState message={denied ? "외부 비교 기록을 조회할 권한이 없습니다. 현장 담당자에게 조회 권한을 요청하세요." : "외부 비교 기록을 불러오지 못했습니다."} tone={denied ? "high" : "crit"} retryable={!denied} retryAfterSeconds={retryAfterSeconds} />}
+      {loaded?.history.nextCursor && <Link className="btn w-fit" href={`/sites/${encodeURIComponent(siteId)}/observations?after=${encodeURIComponent(loaded.history.nextCursor)}`}>이전 결과 더 보기</Link>}
+    </div>
   </div>;
 }

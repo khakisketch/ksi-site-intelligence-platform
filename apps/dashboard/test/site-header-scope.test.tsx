@@ -12,7 +12,7 @@ function headerHtml(props: Partial<Parameters<typeof SiteHeader>[0]> = {}) {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="observations"
+      tab="overview"
       latestExternalReportAt={null}
       latestExternalReportKnown={false}
       canCreateWorkOrder={false}
@@ -26,45 +26,46 @@ describe("siteTabHref", () => {
   it("goes direct to actual routes without scope", () => {
     const scope = { workAreaId: null, assetRef: null };
     expect(siteTabHref("site-1", "analysis", {}, scope)).toBe("/sites/site-1/analysis");
-    expect(siteTabHref("site-1", "spatial-assets", {}, scope)).toBe("/sites/site-1/spatial-assets");
-    expect(siteTabHref("site-1", "observations", {}, scope)).toBe("/sites/site-1");
+    expect(siteTabHref("site-1", "materials", {}, scope)).toBe("/sites/site-1/spatial-assets");
+    expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1");
     expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe("/sites/site-1?section=work-orders");
-    expect(siteTabHref("site-1", "external-results", {}, scope)).toBe("/sites/site-1?section=external-results");
+    expect(siteTabHref("site-1", "manage", {}, scope)).toBe("/sites/site-1?section=manage");
   });
 
   it("carries a validated scope and scopes assetRef to the same catalog only", () => {
     const scope = { workAreaId: "wa-a", assetRef: "asset-1" };
     expect(siteTabHref("site-1", "analysis", {}, scope)).toBe("/sites/site-1/analysis?workAreaId=wa-a");
-    expect(siteTabHref("site-1", "spatial-assets", {}, scope)).toBe(
+    expect(siteTabHref("site-1", "materials", {}, scope)).toBe(
       "/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=asset-1",
     );
-    expect(siteTabHref("site-1", "observations", {}, scope)).toBe("/sites/site-1?workAreaId=wa-a");
+    expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1?workAreaId=wa-a");
     expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe(
       "/sites/site-1?section=work-orders&workAreaId=wa-a",
     );
   });
 
   it("drops assetRef without its work area", () => {
-    expect(siteTabHref("site-1", "spatial-assets", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
+    expect(siteTabHref("site-1", "materials", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
       "/sites/site-1/spatial-assets",
     );
   });
 });
 
 describe("SiteHeader scoped navigation", () => {
-  it("links analysis and catalog direct with scope in both desktop and mobile navs", () => {
+  it("links analysis and materials direct with scope in both desktop and mobile navs", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a", scopedAssetRef: "asset-1" });
     // Desktop + mobile navs render the same destinations.
     expect(html.match(/\/sites\/site-1\/analysis\?workAreaId=wa-a/g)?.length).toBe(2);
     expect(html.match(/\/sites\/site-1\/spatial-assets\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(2);
     expect(html).not.toContain("section=analysis");
-    expect(html).not.toContain("section=spatial-assets");
+    expect(html).not.toContain("section=materials");
   });
 
-  it("keeps in-page sections and old deep-URL compat for the other tabs", () => {
+  it("keeps in-page sections and old deep-URL compat for work and manage", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a" });
     expect(html).toContain("/sites/site-1?section=work-orders&amp;workAreaId=wa-a");
-    expect(html).toContain("/sites/site-1?section=external-results&amp;workAreaId=wa-a");
+    expect(html).toContain("/sites/site-1?section=manage&amp;workAreaId=wa-a");
+    expect(html).toContain("/sites/site-1?section=manage#site-aoi");
   });
 
   it("never leaks an unverified scope (page maps it to null)", () => {

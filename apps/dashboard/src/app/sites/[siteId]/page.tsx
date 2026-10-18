@@ -51,8 +51,8 @@ function SectionCard({ title, children }: { title: string; children: React.React
 function tabHref(tab: SiteTabKey): string {
   switch (tab) {
     case "analysis": return "analysis";
-    case "spatial-assets": return "spatial-assets";
-    default: return "observations";
+    case "materials": return "spatial-assets";
+    default: return "";
   }
 }
 
@@ -111,11 +111,11 @@ export default async function SiteDetailPage({
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
   const status = SITE_STATUS_LABEL[site.status];
 
-  // 기본 탭의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
+  // 기본 탭(현황)의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
   // Core 분석 목록 50건 1회, 선택 구역의 공간 자산 20건 1회. 둘 다 실패해도
   // unknown으로 두고 빈 목록으로 단정하지 않는다. 다른 탭에서는 읽지 않는다.
   // 선택 구역은 이미 읽은 관측 작업·분석 목록의 묶임으로 고른다(추가 조회 없음).
-  const wantSpatial = tab === "observations";
+  const wantSpatial = tab === "overview";
   const analysesResult = wantSpatial
     ? await listAnalyses(site.siteId, { limit: 50 }).then(
       (page) => ({ ok: true as const, page }),
@@ -189,7 +189,7 @@ export default async function SiteDetailPage({
       scopedAssetRef={headerAssetRef}
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      {tab === "observations" && <div className="flex flex-col gap-4">
+      {tab === "overview" && <div className="flex flex-col gap-4">
         <SiteSpatialOverview
           sitePath={sitePath}
           areas={areasResult.status === "fulfilled" ? areasResult.value.workAreas : []}
@@ -217,25 +217,40 @@ export default async function SiteDetailPage({
         />
       </div>}
 
-      {tab === "analysis" && <SiteTabLink siteId={site.siteId} tab="analysis" label="변화 분석" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." href={headerWorkAreaId ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : `${sitePath}/analysis`} />}
+      {tab === "analysis" && <div className="flex flex-col gap-4">
+        <SiteTabLink siteId={site.siteId} tab="analysis" label="분석·검토" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." href={headerWorkAreaId ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : `${sitePath}/analysis`} />
+        {/* 외부 비교 기록은 시스템이 계산한 변화 분석과 다른 출처의 별도 목록이다 —
+            한 카드 안에서 합치지 않고 구분된 하위 기록으로만 둔다. */}
+        <SectionCard title="외부 비교 기록">
+          <p className="text-[12.5px] leading-5 text-ink-2">별도로 등록된 외부 비교 결과입니다. 시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 두 기록은 서로 다른 결과입니다.</p>
+          {historyResult.status === "rejected" ? <ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /> : historyResult.value.items.length === 0 ? <EmptyState title="조회된 외부 비교 기록이 없습니다" description="시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 이 목록은 별도로 등록된 비교 기록입니다." action={{ label: "분석·검토 열기", href: `${sitePath}/analysis` }} /> : <ExternalObservationHistory siteId={site.siteId} items={historyResult.value.items} workAreaNames={areaNames} />}
+          <div className="mt-3"><Link href={`${sitePath}/observations`} className="btn">외부 비교 기록 열기</Link></div>
+        </SectionCard>
+      </div>}
 
-      {tab === "spatial-assets" && <div className="flex flex-col gap-4">
+      {tab === "materials" && <SiteTabLink siteId={site.siteId} tab="materials" label="자료" detail="자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인합니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다." href={`${sitePath}/spatial-assets${headerWorkAreaId ? `?workAreaId=${encodeURIComponent(headerWorkAreaId)}${headerAssetRef ? `&assetRef=${encodeURIComponent(headerAssetRef)}` : ""}` : ""}`} />}
+
+      {tab === "manage" && <div className="flex flex-col gap-4">
         <SectionCard title="작업구역">
           {areasResult.status === "rejected" ? <ErrorState message="작업구역을 불러오지 못했습니다." retryable /> : areas.length === 0 ? <EmptyState title="등록된 작업구역이 없습니다" description="자료를 연결할 작업구역을 먼저 확인하세요." action={{ label: "작업구역 확인", href: `${sitePath}/work-areas` }} /> : <ul className="divide-y divide-line">{areas.map((area) => <li key={area.workAreaId} className="py-3 text-[13px]">
             <p className="break-words font-semibold">{area.name || "이름을 확인할 수 없는 구역"}</p>
             <p className="mt-1 text-[12px] text-ink-2">등록 {formatKoreanDateTime(area.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
             <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">구역 식별 정보</summary><p className="break-all font-mono">{area.workAreaId}</p></details>
           </li>)}</ul>}
-          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">등록 자료 보기</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 자료 준비</Link></div>
+          <div className="mt-3 flex flex-wrap gap-2"><Link href={`${sitePath}/work-areas`} className="btn">작업구역 관리</Link><Link href={`${sitePath}/spatial-assets`} className="btn">자료 보기</Link><Link href={`${sitePath}/spatial-data-requests`} className="btn">구역 자료 준비</Link></div>
         </SectionCard>
-      </div>}
-
-      {tab === "work-orders" && <div className="flex flex-col gap-4">
         <SectionCard title="현장 전체 경계 · 선택 설정">
           <div id="site-aoi" className="scroll-mt-5">
           {site.aoi ? <AoiPolygonMap value={site.aoi.vertices} readOnly /> : site.status === "UNMAPPED" && canTransition ? <ResponsiveActionBoundary action="SITE_DEVICE_TRANSITION" reason={`${site.name}의 전체 경계 편집은 노트북에서 진행하세요. 이 설정 없이도 작업구역의 관측 자료를 확인할 수 있습니다.`}><SiteAoiEditor siteId={site.siteId} siteFrame={site.siteFrame} /></ResponsiveActionBoundary> : <EmptyState compact title="현장 전체 경계는 아직 설정하지 않았습니다" description="전체 경계는 선택 설정입니다. 관측 자료는 각 작업구역에 연결해 사용합니다." />}
           </div>
         </SectionCard>
+        <SectionCard title={`현장 상태 · ${status.label}`}>
+          {canTransition ? <details><summary className="tap-target cursor-pointer text-[13px] font-semibold">관리자 상태 전이</summary><div className="mt-3"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></details> : <p className="text-[12px] text-ink-muted">현장 상태를 전이하려면 현장 등록 권한이 필요합니다.</p>}
+          <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-[12px] sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl>
+        </SectionCard>
+      </div>}
+
+      {tab === "work-orders" && <div className="flex flex-col gap-4">
         <SectionCard title="관측 작업">
           {ordersResult.status === "rejected" ? <ErrorState message="관측 작업을 불러오지 못했습니다." retryable /> : ordersResult.value.length === 0 ? <EmptyState title="등록된 관측 작업이 없습니다" description="새 관측 작업이 생성되면 이 목록에 표시됩니다." /> : <ul className="divide-y divide-line">{ordersResult.value.map((order) => {
             const presentation = presentWorkOrder(order.status, order.executionMode);
@@ -249,16 +264,7 @@ export default async function SiteDetailPage({
             </li>;
           })}</ul>}
         </SectionCard>
-        <SectionCard title={`현장 상태 · ${status.label}`}>
-          {canTransition ? <details><summary className="tap-target cursor-pointer text-[13px] font-semibold">관리자 상태 전이</summary><div className="mt-3"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></details> : <p className="text-[12px] text-ink-muted">현장 상태를 전이하려면 현장 등록 권한이 필요합니다.</p>}
-          <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-[12px] sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl>
-        </SectionCard>
       </div>}
-
-      {tab === "external-results" && <SectionCard title="외부 비교 기록">
-        {historyResult.status === "rejected" ? <ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /> : historyResult.value.items.length === 0 ? <EmptyState title="조회된 외부 비교 기록이 없습니다" description="시스템에서 계산한 지형 변화는 변화 분석에서 확인하세요. 이 목록은 별도로 등록된 비교 기록입니다." action={{ label: "변화 분석 보기", href: `${sitePath}/analysis` }} /> : <ExternalObservationHistory siteId={site.siteId} items={historyResult.value.items} workAreaNames={areaNames} />}
-        <div className="mt-3"><Link href={`${sitePath}/observations`} className="btn">외부 비교 기록 열기</Link></div>
-      </SectionCard>}
     </div>
   </div>;
 }

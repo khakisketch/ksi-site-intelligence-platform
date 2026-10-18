@@ -99,12 +99,16 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 설명하고 링크 하나를 주는 안내판이었다. 탭은 그 안내를 **일 단위**로 접는다:
 // 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
 
+// 메뉴는 "무엇을 하러 오는가"로 나눈다: 지금 상태(현황) · 등록된 자료(자료) ·
+// 결과와 확인(분석·검토) · 이어서 할 일(작업) · 구역·경계·상태 설정(관리).
+// 외부 비교 기록 같은 별도 목록은 분석·검토 안의 하위 보기로 두고, KSI 계산
+// 결과와 출처를 섞지 않는다.
 export const SITE_TABS = [
-  { key: "observations", label: "자료·시점" },
-  { key: "analysis", label: "변화 분석" },
-  { key: "spatial-assets", label: "등록 자료" },
-  { key: "work-orders", label: "관측 작업" },
-  { key: "external-results", label: "외부 비교 기록" },
+  { key: "overview", label: "현황" },
+  { key: "materials", label: "자료" },
+  { key: "analysis", label: "분석·검토" },
+  { key: "work-orders", label: "작업" },
+  { key: "manage", label: "관리" },
 ] as const;
 
 export type SiteTabKey = (typeof SITE_TABS)[number]["key"];
@@ -112,9 +116,11 @@ export type SiteTabKey = (typeof SITE_TABS)[number]["key"];
 export function normalizeSiteTab(raw: string | null | undefined): SiteTabKey {
   const hit = SITE_TABS.find((tab) => tab.key === raw);
   if (hit) return hit.key;
-  // Retired acquisitions-era tabs resolve to the nearest surviving platform surface.
+  // 이전 URL·다른 화면의 옛 키는 가장 가까운 현재 영역으로만 옮긴다 — 원문 키를
+  // 화면에 다시 노출하지 않는다. 기본 진입은 현황(overview)이다.
+  if (raw === "observations") return "overview";
+  if (raw === "spatial-assets" || raw === "data" || raw === "volume" || raw === "design") return "materials";
   if (raw === "work" || raw === "records") return "work-orders";
-  if (raw === "data" || raw === "volume" || raw === "design") return "spatial-assets";
-  if (raw === "reports" || raw === "review-items") return "external-results";
-  return "observations";
+  if (raw === "external-results" || raw === "reports" || raw === "review-items") return "analysis";
+  return "overview";
 }

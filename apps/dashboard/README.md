@@ -1,9 +1,12 @@
 # apps/dashboard
 
-KSI Operations Console: Home, Sites and the existing five-tab Site workspace
-(overview, observations, assets, analysis, work). P4 removed Mission/flight/Edge/managed
-acquisition screens and actions; S3's older mission/event/fleet scope is historical only.
-Auth, scoped external registration, work operations, result/evidence and unavailable states remain.
+KSI Operations Console: Home, Sites and the five-area Site workspace
+(현황 overview · 자료 materials · 분석·검토 analysis/review · 작업 work · 관리 manage).
+관리 owns work-area setup, the optional site-wide boundary and site-state transitions;
+external comparison records stay a distinct sub-list inside 분석·검토. P4 removed
+Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/event/fleet
+scope is historical only. Auth, scoped external registration, work operations,
+result/evidence and unavailable states remain.
 
 P4 local technical evidence is in [`p4-cleanup-evidence/verification/receipt.md`](p4-cleanup-evidence/verification/receipt.md)
 and the design-owned [`p4-cleanup-final-render-review.md`](p4-cleanup-final-render-review.md).

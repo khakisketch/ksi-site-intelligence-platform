@@ -5,8 +5,8 @@ export function contextPaletteItems(items: readonly PaletteItem[], pathname: str
   const site = items.find((item) => item.group === "현장" && (pathname === item.href || pathname.startsWith(`${item.href}/`)));
   if (!site) return [];
   return [
-    { key: `${site.key}:analysis`, label: "변화 분석", group: "현재 현장", hint: site.label, href: `${site.href}/analysis`, keywords: "비교 기준 결과 근거 검토" },
-    { key: `${site.key}:data`, label: "등록 자료", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-assets`, keywords: "촬영 사진 정사영상 높이 DSM 파일" },
+    { key: `${site.key}:analysis`, label: "분석·검토", group: "현재 현장", hint: site.label, href: `${site.href}/analysis`, keywords: "비교 기준 결과 근거 검토" },
+    { key: `${site.key}:data`, label: "자료", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-assets`, keywords: "촬영 사진 정사영상 높이 DSM 파일" },
     { key: `${site.key}:prepare`, label: "구역 자료 준비", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-data-requests`, keywords: "내보내기 받기 다운로드 요청" },
   ];
 }

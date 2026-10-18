@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -237,11 +238,13 @@ function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection })
   </section>;
 }
 
-function AssetDetail({ item, workName, areaName, headline }: {
+function AssetDetail({ item, workName, areaName, headline, compareHref }: {
   item: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
   headline: string;
+  /** 분석 요청 권한이 있고 이 자료의 관측 작업을 실제로 지목할 수 있을 때만 넘긴다. */
+  compareHref: string | null;
 }) {
   return <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/50 p-3 sm:p-4">
     <header>
@@ -249,6 +252,10 @@ function AssetDetail({ item, workName, areaName, headline }: {
       <p className="mt-1 break-words text-[13.5px] font-semibold">{headline}</p>
       <p className="mt-1 text-[12px] text-ink-2">촬영 시점은 제출자가 입력한 정보 기준입니다.</p>
       <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
+      {compareHref && <div className="mt-2">
+        <Link href={compareHref} className="btn w-fit">이 자료를 현재 관측으로 선택</Link>
+        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">분석·검토 화면에서 이 관측이 비교 후보인지와 기준 관측 선택을 확인합니다. 여기서 분석을 실행하지 않습니다.</p>
+      </div>}
     </header>
     <FactStatus item={item} />
     <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">제출자 입력 정보 상세</summary><DeclaredFacts item={item} /></details>
@@ -345,77 +352,92 @@ export default async function SpatialAssetsPage({
   const businessTitleFor = (item: SpatialAssetCatalogItem): string =>
     businessTitles.get(item.assetRef) ?? assetBusinessTitle(item);
   const areaDisplayName = selectedArea?.name ?? workAreaId ?? "";
+  const canRequestAnalysis = session.principal.permissions.includes("SITES_WRITE");
+  const compareHref = canRequestAnalysis && workAreaId && selectedArea && detail?.workOrderId
+    ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(workAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
+    : null;
 
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
-      <div>
-        <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
-        <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
-      </div>
-      <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link><Link href={`/sites/${encodeURIComponent(siteId)}`} className="btn">현장으로 돌아가기</Link></div>
-    </header>
+  return <div className="flex flex-col">
+    <SiteHeader
+      site={site}
+      selectedEpochId={null}
+      tab="materials"
+      canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+      canEditAoi={canRequestAnalysis}
+      scopedWorkAreaId={workAreaId && selectedArea ? workAreaId : null}
+      scopedAssetRef={detail && assetRef && detail.assetRef === assetRef ? assetRef : null}
+    />
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+        <div>
+          <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
+          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
+        </div>
+        <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link></div>
+      </header>
 
-    <section className="rounded-lg border border-line bg-surface px-4 py-3">
-      <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
-        <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-work-area">작업구역 선택
-          <select id="spatial-work-area" name="workAreaId" className="input" defaultValue={workAreaId ?? ""} required>
-            <option value="" disabled>작업구역을 선택하세요</option>
-            {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
-          </select>
-        </label>
-            <button className="btn btn-primary" type="submit">등록 자료 보기</button>
-      </form>
-      {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
-      {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.</p>}
-      {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
-    </section>
+      <section className="rounded-lg border border-line bg-surface px-4 py-3">
+        <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
+          <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-work-area">작업구역 선택
+            <select id="spatial-work-area" name="workAreaId" className="input" defaultValue={workAreaId ?? ""} required>
+              <option value="" disabled>작업구역을 선택하세요</option>
+              {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
+            </select>
+          </label>
+              <button className="btn btn-primary" type="submit">등록 자료 보기</button>
+        </form>
+        {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
+        {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.</p>}
+        {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
+      </section>
 
-    {pageError !== null && <div>{errorView(pageError, "catalog", siteId)}</div>}
-    {page && <>
-      {page.workAreaId !== workAreaId || page.siteId !== siteId ? <ErrorState message="Core 응답의 현장·작업구역 범위가 요청과 일치하지 않아 자산을 표시하지 않았습니다." tone="high" /> : <>
-        <p className="rounded-lg border border-line bg-sunk px-4 py-2 text-[11.5px] leading-5 text-ink-muted">한 작업구역에만 연결된 작업 지시의 자료를 표시합니다. 여러 작업구역에 함께 연결된 기록은 여기서 조회하지 않습니다.</p>
-        {assetRef && detailError && <div>{errorView(detailError, "detail", siteId)}</div>}
-        {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== workAreaId)
-          ? <ErrorState message="Core 응답 자산의 ID 또는 현장·작업구역 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />
-          : null}
-        {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === workAreaId
-          ? isMetadataOnly(detail)
-            ? <AssetDetail
-              item={detail}
-              workName={resolveWorkName(detail.workOrderId, workOrderNames)}
-              areaName={areaDisplayName}
-              headline={businessTitleFor(detail)}
-            />
-            : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
-          : null}
-        <section className="flex flex-col gap-3">
-          <header><h2 className="text-[16px] font-bold">등록 자료 목록</h2><p className="mt-1 text-[12px] text-ink-muted">파일의 등록 정보만 보여줍니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다.</p></header>
-          {page.assets.length === 0
-            ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
-            : page.assets.map((item) => {
-              if (item.siteId !== siteId || item.workAreaId !== workAreaId) {
-                return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;
-              }
-              if (!isMetadataOnly(item)) {
-                return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
-              }
-              return <AssetSummary
-                key={item.assetRef}
-                item={item}
-                siteId={siteId}
-                workName={resolveWorkName(item.workOrderId, workOrderNames)}
+      {pageError !== null && <div>{errorView(pageError, "catalog", siteId)}</div>}
+      {page && <>
+        {page.workAreaId !== workAreaId || page.siteId !== siteId ? <ErrorState message="Core 응답의 현장·작업구역 범위가 요청과 일치하지 않아 자산을 표시하지 않았습니다." tone="high" /> : <>
+          <p className="rounded-lg border border-line bg-sunk px-4 py-2 text-[11.5px] leading-5 text-ink-muted">한 작업구역에만 연결된 작업 지시의 자료를 표시합니다. 여러 작업구역에 함께 연결된 기록은 여기서 조회하지 않습니다.</p>
+          {assetRef && detailError && <div>{errorView(detailError, "detail", siteId)}</div>}
+          {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== workAreaId)
+            ? <ErrorState message="Core 응답 자산의 ID 또는 현장·작업구역 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />
+            : null}
+          {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === workAreaId
+            ? isMetadataOnly(detail)
+              ? <AssetDetail
+                item={detail}
+                workName={resolveWorkName(detail.workOrderId, workOrderNames)}
                 areaName={areaDisplayName}
-                headline={businessTitleFor(item)}
-                nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
-              />;
-            })}
-        </section>
-        <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
-          {cursor && <Link className="btn" href={pageHref(siteId, workAreaId!)}>처음부터 보기</Link>}
-          {page.hasMore && page.nextCursor && <Link className="btn btn-primary" href={pageHref(siteId, workAreaId!, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
-        </nav>
+                headline={businessTitleFor(detail)}
+                compareHref={compareHref}
+              />
+              : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
+            : null}
+          <section className="flex flex-col gap-3">
+            <header><h2 className="text-[16px] font-bold">등록 자료 목록</h2><p className="mt-1 text-[12px] text-ink-muted">파일의 등록 정보만 보여줍니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다.</p></header>
+            {page.assets.length === 0
+              ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
+              : page.assets.map((item) => {
+                if (item.siteId !== siteId || item.workAreaId !== workAreaId) {
+                  return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;
+                }
+                if (!isMetadataOnly(item)) {
+                  return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
+                }
+                return <AssetSummary
+                  key={item.assetRef}
+                  item={item}
+                  siteId={siteId}
+                  workName={resolveWorkName(item.workOrderId, workOrderNames)}
+                  areaName={areaDisplayName}
+                  headline={businessTitleFor(item)}
+                  nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
+                />;
+              })}
+          </section>
+          <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
+            {cursor && <Link className="btn" href={pageHref(siteId, workAreaId!)}>처음부터 보기</Link>}
+            {page.hasMore && page.nextCursor && <Link className="btn btn-primary" href={pageHref(siteId, workAreaId!, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
+          </nav>
+        </>}
       </>}
-    </>}
+    </div>
   </div>;
 }

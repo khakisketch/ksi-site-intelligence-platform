@@ -29,8 +29,8 @@ describe("동적 경로", () => {
     expect(resolvePageTitle("/sites/SITE-1/observations/new")).toBe("관측 자료 등록");
     expect(resolvePageTitle("/sites/SITE-1/observations")).toBe("외부 비교 기록");
     expect(resolvePageTitle("/sites/SITE-1/observations/external-relative-volume-report-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")).toBe("외부 비교 결과");
-    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("변화 분석");
-    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("변화 분석");
+    expect(resolvePageTitle("/sites/SITE-1/analysis")).toBe("분석·검토");
+    expect(resolvePageTitle("/sites/SITE-1/analysis/")).toBe("분석·검토");
     expect(resolvePageTitle("/sites/SITE-1/ai")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/surveys/new")).toBe("");
     expect(resolvePageTitle("/sites/SITE-1/design")).toBe("");
@@ -42,8 +42,8 @@ describe("동적 경로", () => {
   });
 
   it("공간 자산 화면도 접근 가능한 상태와 현장 거부 상태에서 같은 제목을 유지한다", () => {
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("등록 자료");
-    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("등록 자료");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets")).toBe("자료");
+    expect(resolvePageTitle("/sites/SITE-1/spatial-assets/")).toBe("자료");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests")).toBe("구역 자료 준비");
     expect(resolvePageTitle("/sites/SITE-1/spatial-data-requests/")).toBe("구역 자료 준비");
   });

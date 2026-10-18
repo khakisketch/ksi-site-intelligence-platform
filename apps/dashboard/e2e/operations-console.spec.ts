@@ -226,12 +226,12 @@ test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 AP
   const siteHref = `/sites/${encodeURIComponent(syntheticSiteId)}`;
   await page.goto(`${siteHref}?section=analysis`);
 
-  const openAnalysis = page.getByRole("link", { name: "변화 분석 열기", exact: true });
+  const openAnalysis = page.getByRole("link", { name: "분석·검토 열기", exact: true });
   await expect(openAnalysis).toBeVisible();
   await openAnalysis.click();
 
   await expect(page).toHaveURL(`${siteHref}/analysis`);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "변화 분석", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "분석·검토", exact: true })).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
   const analysisError = page.getByRole("main").getByRole("alert");
@@ -365,37 +365,39 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
 
   await page.goto(`${siteHref}/spatial-assets`);
   await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "등록 자료", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "자료", exact: true })).toBeVisible();
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 등록 자료", exact: true })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
-  const returnToSite = page.getByRole("main").getByRole("link", { name: "현장으로 돌아가기", exact: true });
-  await expect(returnToSite).toHaveCount(1);
-  await expect(returnToSite).toBeVisible();
-  await expect(returnToSite).toHaveAttribute("href", siteHref!);
-  await returnToSite.click();
+  // 공통 현장 틀: 이 화면에서도 현장 메뉴가 남아 있고, 현황으로 돌아가는 길이 그 안에 있다.
+  if (testInfo.project.name.startsWith("desktop")) {
+    await page.getByRole("navigation", { name: "현장 상세 화면" }).getByRole("link", { name: "현황", exact: true }).click();
+  } else {
+    await page.locator("details summary").filter({ hasText: "현장 메뉴 ·" }).click();
+    await page.getByRole("navigation", { name: "현장 메뉴" }).getByRole("link", { name: "현황", exact: true }).click();
+  }
   await expect(page).toHaveURL(siteHref!);
 
-  const labels = ["자료·시점", "변화 분석", "등록 자료", "관측 작업", "외부 비교 기록"];
+  const labels = ["현황", "자료", "분석·검토", "작업", "관리"];
   if (testInfo.project.name.startsWith("desktop")) {
     const siteNavigation = page.getByRole("navigation", { name: "현장 상세 화면" });
     await expect(siteNavigation).toBeVisible();
     for (const label of labels) {
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
-    await expect(siteNavigation.getByRole("link", { name: "변화 분석", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-    await expect(siteNavigation.getByRole("link", { name: "등록 자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "분석·검토", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
   } else {
-    const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 자료·시점" });
+    const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 현황" });
     await expect(disclosure).toBeVisible();
     await disclosure.click();
     const siteNavigation = page.getByRole("navigation", { name: "현장 메뉴" });
     for (const label of labels) {
       await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
     }
-    await expect(siteNavigation.getByRole("link", { name: "변화 분석", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-    await expect(siteNavigation.getByRole("link", { name: "등록 자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "분석·검토", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
+    await expect(siteNavigation.getByRole("link", { name: "자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
     await expect(page.getByText("노트북에서 계속", { exact: true })).toHaveCount(0);
-    await siteNavigation.getByRole("link", { name: "관측 작업", exact: true }).click();
+    await siteNavigation.getByRole("link", { name: "작업", exact: true }).click();
     await expect(page).toHaveURL(/section=work-orders/);
   }
   await page.goto(`${siteHref}?section=work-orders`);

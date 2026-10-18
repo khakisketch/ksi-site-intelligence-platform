@@ -30,8 +30,8 @@ export function resolvePageTitle(pathname: string | null): string {
   if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "관측 자료 등록";
   if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 비교 결과";
   if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 비교 기록";
-  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "변화 분석";
-  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "등록 자료";
+  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석·검토";
+  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "자료";
   if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";

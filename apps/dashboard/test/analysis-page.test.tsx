@@ -21,7 +21,7 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 beforeEach(() => {
   mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ"] } });
-  mocked.site.mockResolvedValue({ name: "접근 확인된 현장" });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "접근 확인된 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.observations.mockResolvedValue([]);
   mocked.workOrders.mockResolvedValue([]);
@@ -123,7 +123,7 @@ describe("analysis deep link", () => {
 
   it("keeps accessible Site context when an optional analysis child returns 404", async () => {
     const calls: string[] = [];
-    mocked.site.mockImplementation(async () => { calls.push("site"); return { name: "접근 확인된 현장" }; });
+    mocked.site.mockImplementation(async () => { calls.push("site"); return { siteId: "site-1", name: "접근 확인된 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" }; });
     mocked.areas.mockImplementation(async () => { calls.push("areas"); return { workAreas: [] }; });
     mocked.observations.mockImplementation(async () => { calls.push("observations"); throw new CoreApiError(404, { detail: "route unavailable" }); });
     mocked.list.mockImplementation(async () => { calls.push("analyses"); return { siteId: "site-1", items: [], nextCursor: null }; });
@@ -131,7 +131,7 @@ describe("analysis deep link", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
     expect(calls[0]).toBe("site");
-    expect(screen.getByText("접근 확인된 현장")).toBeTruthy();
+    expect(screen.getAllByText("접근 확인된 현장").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toMatch(/현장 변화 분석/);
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
@@ -155,7 +155,7 @@ describe("analysis deep link", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
 
-    expect(screen.getByText("접근 확인된 현장")).toBeTruthy();
+    expect(screen.getAllByText("접근 확인된 현장").length).toBeGreaterThan(0);
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: /다시 시도/ })).toBeTruthy();
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();

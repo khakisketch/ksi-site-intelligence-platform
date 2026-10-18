@@ -191,7 +191,7 @@ describe("site observation pages", () => {
   beforeEach(() => {
     vi.resetAllMocks();
     mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["WORK_ORDERS_WRITE"] } });
-    mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1" });
+    mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
     mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "야적장 1" }] });
   });
 

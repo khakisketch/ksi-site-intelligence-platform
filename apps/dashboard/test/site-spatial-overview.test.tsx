@@ -400,10 +400,10 @@ describe("Site spatial overview honesty", () => {
     expect(actions.getByRole("link", { name: "외부 비교 기록" })).toBeTruthy();
   });
 
-  it("links the header to the preserved AOI anchor on the work tab", async () => {
+  it("links the header to the preserved AOI anchor on the manage tab", async () => {
     await renderDefaultTab({});
     expect(screen.getByRole("link", { name: "현장 전체 범위 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1?section=work-orders#site-aoi");
+      .toBe("/sites/site-1?section=manage#site-aoi");
   });
 
   function grantPermissions(...perms: string[]) {

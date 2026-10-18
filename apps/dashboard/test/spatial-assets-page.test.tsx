@@ -94,7 +94,7 @@ const callPage = (query: Record<string, string | string[] | undefined> = {}) => 
 beforeEach(() => {
   vi.resetAllMocks();
   mocked.session.mockResolvedValue({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ"] } });
-  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1" });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [workArea] });
   mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset()], nextCursor: null, hasMore: false });
   mocked.detail.mockResolvedValue(asset());
@@ -140,6 +140,21 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain("지표면 높이 자료(DSM) · image/tiff");
     expect(html).toContain("이 화면은 파일의 등록 정보만 제공합니다.");
     expect(html).toContain("분석 적합성은 평가되지 않았습니다.");
+  });
+
+  it("offers the selected observation to the comparison form only with analysis permission", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SITES_WRITE"] } });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(html).toContain("이 자료를 현재 관측으로 선택");
+    expect(html).toContain("/sites/site-1/analysis?workAreaId=area-1&amp;currentWorkOrderId=order-1#new-analysis-request");
+    expect(html).toContain("여기서 분석을 실행하지 않습니다.");
+  });
+
+  it("does not offer a comparison handoff to readers or without a selected detail", async () => {
+    const readerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(readerHtml).not.toContain("이 자료를 현재 관측으로 선택");
+    const listOnlyHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(listOnlyHtml).not.toContain("이 자료를 현재 관측으로 선택");
   });
 
   it("connects the list rows to work name, area, capture window and version", async () => {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
@@ -107,42 +108,51 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         hasAnalysisDeepLink: hasDeepLink,
       })
     : { currentWorkOrderId: null, notice: null };
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
-      <div>
-        <p className="text-[12.5px] text-ink-2">{site.name}</p>
-        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 변화 분석</h2>
-        <p className="mt-1 text-[13px] leading-5 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
-      </div>
-      <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
-    </header>
-    {loaded ? <>
-      {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
-      {loaded.analyses.items.length === 0 && <AnalysisStartGuide
-        siteId={siteId}
-        workAreaCount={loaded.areas.workAreas.length}
-        observationCount={loaded.attributedObservations.length}
-        analysisCount={loaded.analyses.items.length}
-        hasMoreAnalyses={loaded.analyses.nextCursor !== null}
-        canCreate={canCreate}
-      />}
-      <AnalysisRequestPanel
-        siteId={siteId}
-        organizationId={session.principal.organizationId}
-        principalId={session.principal.principalId}
-        workAreas={loaded.areas.workAreas}
-        observations={loaded.attributedObservations}
-        unattributedObservationCount={loaded.unattributedObservationCount}
-        workOrderNames={loaded.workOrderNames}
-        initialPage={loaded.analyses}
-        initialSelectedDetail={loaded.selectedDetail}
-        canCreate={canCreate}
-        initialAnalysisId={analysisId ?? null}
-        initialWorkAreaId={effectiveWorkAreaId}
-        initialCurrentWorkOrderId={currentHint.currentWorkOrderId}
-        scopeNotice={journeyScope.scopeNotice}
-        currentHintNotice={currentHint.notice}
-      />
-    </> : <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
-  </div>;
+  return <>
+    <SiteHeader
+      site={site}
+      selectedEpochId={null}
+      tab="analysis"
+      canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+      canEditAoi={canCreate}
+      scopedWorkAreaId={effectiveWorkAreaId || null}
+    />
+    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
+        <div>
+          <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 변화 분석</h2>
+          <p className="mt-1 text-[13px] leading-5 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
+        </div>
+        <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
+      </header>
+      {loaded ? <>
+        {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
+        {loaded.analyses.items.length === 0 && <AnalysisStartGuide
+          siteId={siteId}
+          workAreaCount={loaded.areas.workAreas.length}
+          observationCount={loaded.attributedObservations.length}
+          analysisCount={loaded.analyses.items.length}
+          hasMoreAnalyses={loaded.analyses.nextCursor !== null}
+          canCreate={canCreate}
+        />}
+        <AnalysisRequestPanel
+          siteId={siteId}
+          organizationId={session.principal.organizationId}
+          principalId={session.principal.principalId}
+          workAreas={loaded.areas.workAreas}
+          observations={loaded.attributedObservations}
+          unattributedObservationCount={loaded.unattributedObservationCount}
+          workOrderNames={loaded.workOrderNames}
+          initialPage={loaded.analyses}
+          initialSelectedDetail={loaded.selectedDetail}
+          canCreate={canCreate}
+          initialAnalysisId={analysisId ?? null}
+          initialWorkAreaId={effectiveWorkAreaId}
+          initialCurrentWorkOrderId={currentHint.currentWorkOrderId}
+          scopeNotice={journeyScope.scopeNotice}
+          currentHintNotice={currentHint.notice}
+        />
+      </> : <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
+    </div>
+  </>;
 }

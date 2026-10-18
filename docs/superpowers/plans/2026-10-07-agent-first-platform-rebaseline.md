@@ -3967,3 +3967,58 @@ V2 변화 분석 링크가 없으며 planning binding 때만 나타난다. 등�
   실제 DJI Terra/field/survey·정량/고객 수용, production host/domain/TLS/IdP·실데이터 복구,
   현재 LLM401·준비파일 실제 전달의 기존 외부/미검증 경계는 그대로다. 이 local 완료는 플랫폼 전체,
   production 배포 또는 고객 정확도 수용 완료가 아니며 그 경계를 통과했다고 기록하지 않는다.
+
+### 2026-10-18 — 현장 작업공간 메뉴·이동 재편 (Human 승인, local 검증 완료)
+
+Human이 "현장 속 메뉴 구성 흐름 이동 등 사용 흐름"을 요청했고, 제안한 방향 — 공통 현장 틀을
+유지하고 **현황 / 자료 / 분석·검토 / 작업**으로 역할을 분리하며 구역 관리·현장 전체 경계·상태를
+**관리**로 빼는 안 — 에 "그렇게 해줘"로 승인했다. 앞선 실무 언어·시연 과제의 재분류가 아닌,
+그 위에 얹는 새 bounded UI 과제다.
+
+```text
+Requirement IDs: REQ-UX-101, REQ-INT-101..104, REQ-OPS-102, SDP-REQ-01/05; INV-020/024/051/053/060/061 유지
+Owner module: apps/dashboard Operator UX (Core/API/schema/RBAC/계산/반출 변경 없음)
+Acceptance criteria: 다섯 영역이 실제 라우트로 바로 이어지고, 모든 현장 화면이 같은 현장 머리(이름+메뉴)를 유지한다; 이동에는 검증된 구역·자산 범위만 실린다; 외부 비교 기록은 분석·검토 안의 구분된 하위 목록으로 남는다; 구역·경계·상태 설정은 관리로 분리된다; 자료 상세에서 "이 자료를 현재 관측으로 선택"이 분석 요청 폼으로 이어지되 자동 실행하지 않는다
+Contracts affected: 없음. 표시 의도 쿼리와 href만 변경; wire/schema/calculation/authorization 무변경
+Reference assets: 1cbfef8a·a649d537 실제 캡처/소스, 기존 SITE_TABS·hrefWith·사이트 루트 섹션
+Adoption decisions: 기존 시각체계·컴포넌트 유지; 탭 키를 overview/materials/analysis/work-orders/manage로 재정의하고 옛 키(observations·spatial-assets·external-results 등)는 normalizeSiteTab이 흡수; 관리 탭은 구분선으로 분리 표시
+Files to change: lib/site-epochs.ts, lib/operator-journey.ts, SiteHeader.tsx, sites/[siteId]/page.tsx, analysis/page.tsx, spatial-assets/page.tsx, observations/page.tsx, nav/page-title.ts, console/context-palette.ts + 관련 unit/E2E
+Tests: Dashboard 1144/1144(143 files), tsc·standalone build 통과, ESLint 0 errors/기존 warning 1, Console E2E 51 pass/5 intentional skip, 실제 :3241 신규 빌드 렌더·키보드·범위 확인
+HIL or real-device assumptions: 없음. 합성 시연 환경의 소프트웨어 검증이며 물리 입력·사람 연구·현장 정확도 아님
+License/data implications: 없음 (기존 합성 환경만 사용, 새 의존성·외부 서비스·고객 자료 없음)
+Rollback: commit revert; 직전 `.next-practical-journey-verified` 빌드/서버로 복귀 가능
+```
+
+- **메뉴 재편**: 현장 머리 메뉴를 현황 · 자료 · 분석·검토 · 작업 · 관리로 바꿨다. 자료·분석·검토는
+  `/spatial-assets`·`/analysis` 실제 라우트로 바로 가고, 현황은 루트 기본, 작업·관리는 루트 섹션이다.
+  옛 깊은 URL(`?section=observations|spatial-assets|external-results|…`)은 normalize가 가장 가까운
+  현재 영역으로 옮긴다 — 원문 키를 화면에 다시 노출하지 않는다. 관리 탭은 데스크톱 메뉴에서
+  구분선으로 분리해 일상 업무와 설정이 섞이지 않게 했다.
+- **공통 현장 틀**: 분석·검토, 자료, 외부 비교 기록 화면이 각자 만든 머리 대신 같은 현장 머리
+  (현장명·등록 정보·메뉴·검증된 범위)를 쓴다. 그래서 화면을 옮겨도 현장·구역·다른 영역으로 가는
+  길이 사라지지 않는다. 각 화면의 중복 사이트명 줄과 "현장으로 돌아가기" 버튼은 메뉴가 대신하므로
+  뺐고, SiteHeader 안에서 이름이 h2와 상세 dl에 두 번 나오던 중복도 제거했다(이름은 h2가 소유).
+  "최근 외부 비교 보고" 줄은 그 이력을 실제로 읽은 화면에만 둔다.
+- **섹션 정리**: 루트의 작업 섹션은 관측 작업 목록만 남기고, 현장 전체 경계(선택 설정)와 현장 상태
+  전이는 관리로 옮겼다. 관리에는 작업구역 목록·작업구역 관리·자료 보기·구역 자료 준비 링크가 함께
+  있다. 외부 비교 기록은 분석·검토 섹션 안의 별도 카드로 옮겨, KSI 계산 결과와 출처가 다른 기록임을
+  문구로 유지한 채 한 영역에서 찾을 수 있게 했다.
+- **이동 의미**: 자료 상세에 "이 자료를 현재 관측으로 선택"을 추가했다(분석 요청 권한이 있을 때만).
+  목적지는 `/analysis?workAreaId=…&currentWorkOrderId=…#new-analysis-request`이며 분석을 자동
+  실행하지 않는다 — 후보 여부와 기준 관측 선택은 분석·검토 화면이 실제 목록으로 판정한다. 읽기
+  전용 사용자에게는 이 버튼을 만들지 않는다.
+- **검증**: Dashboard **1144/1144(143 files)**, `tsc --noEmit`, standalone build, ESLint
+  0 errors/기존 warning 1, Console E2E **51 passed/5 intentional skipped**(golden/tolerance 무변경).
+  실제 :3241 신규 빌드에서 1440/390 두 폭으로 현황·자료(상세)·분석·검토·작업·관리·외부 비교 기록을
+  확인하고 이미지를 직접 읽었다: 메뉴 5개와 활성 표시, 자료→분석 링크가 같은 구역을 유지, 관리의
+  `#site-aoi` 앵커, 외부 비교 기록의 분석·검토 활성, 키보드로 메뉴 이동 후에도 구역 유지, overflow/
+  busy/JS error/serious·critical axe 0, 쓰기 시도 0(GET 가드). 범위·라벨 계약은 unit으로 고정했다
+  (siteTabHref 5영역, 옛 키 정규화, 헤더 범위 누수 없음, 자료 상세 비교 진입은 권한 보유 시에만).
+- **알려진 기존 실패(이 변경과 무관, 손대지 않음)**: `e2e/empty-organization.spec.ts` 4개 테스트는
+  a649d537 시점에도 이미 낡아 있었다 — 페이지 제목 "현장 분석"/"현장 공간 자산"(정본은 변화 분석/
+  등록 자료), `/field` 빈 상태 문구 "새 관측 작업을 시작할 수 있습니다."(정본은 관측 자료 등록),
+  그리고 Home·/sites 등록 CTA를 기대하지만 로컬 빈 조직 계정은 registry-scoped 등록 모드에서
+  DENIED로 해석된다. 통과를 위해 단언을 약화하지 않고 그대로 두고 여기에 기록한다. 등록 모드/시드
+  판단이 필요한 별도 결정이다.
+- **경계**: production/고객 자료/Terra 호환/현장 정확도/사람 연구 경계는 그대로다. 이 완료는
+  로컬 UI 수용이며 플랫폼 전체 수용이 아니다. 증거는 `/tmp/opencode/ksi-site-ia-20261018/`.
