@@ -225,6 +225,8 @@ export default async function HomePage() {
 
     {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
     {sites.length > 0 && <HomeRecentUpdates items={recentItems} />}
-    {sites.length > 0 && <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12px] leading-5 break-keep text-ink-2"><p>조회된 원장 기준의 요약이며, 확인 필요 건수는 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다.</p><Link href="/sites" className="tap-target inline-flex items-center font-semibold hover:underline">현장 자료·작업 보기</Link></footer>}
+    {/* 닫는 안내문은 두지 않는다 — 상단의 건수와 각 카드가 이미 "조회된 범위" 기준임을 말하고,
+        같은 취지의 문장을 페이지 끝에 한 번 더 두면 매번 읽어야 하는 잔소리가 된다. */}
+    {sites.length > 0 && <footer className="flex justify-end border-t border-line pt-3 text-[12px]"><Link href="/sites" className="tap-target inline-flex items-center font-semibold hover:underline">현장 자료·작업 보기</Link></footer>}
   </div>;
 }
