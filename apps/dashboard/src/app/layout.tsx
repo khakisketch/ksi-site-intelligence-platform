@@ -13,7 +13,6 @@ import { ShellLayoutMode, ShellOnly } from "@/components/nav/ShellPathBoundary";
 import { TopBar } from "@/components/nav/TopBar";
 import { resolvePageTitle } from "@/components/nav/page-title";
 import { CommandPalette } from "@/components/console/CommandPalette";
-import { SyntheticDemoNotice } from "@/components/console/SyntheticDemoNotice";
 import { SessionRefresh } from "@/components/auth/SessionRefresh";
 import { buildPaletteItems } from "@/components/console/palette-source";
 import { getDashboardAuthRuntime } from "@/lib/auth/runtime";
@@ -102,7 +101,6 @@ export default async function RootLayout({
             className="flex-1 pb-[var(--mobile-bottom-nav-clearance)] lg:min-h-0 lg:overflow-y-auto lg:pb-0"
           >
             {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
-            {!chromeless && <SyntheticDemoNotice deploymentProfile={authRuntime.deploymentProfile} marker={process.env.KSI_DASHBOARD_SYNTHETIC_DEMO} />}
             {children}
           </main>
         </div>

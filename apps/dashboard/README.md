@@ -18,14 +18,6 @@ and [first-flow gap map](../../docs/audit/PHYSICAL_SITE_REBASELINE_INTEGRATED_VE
 
 ## Local development
 
-An intentionally isolated synthetic rehearsal can set
-`KSI_DASHBOARD_SYNTHETIC_DEMO=1` with the `LOCAL` deployment profile. The Console then
-labels its measurements as synthetic, for screen/workflow checks only. Do not enable
-this marker for customer/real data: it neither sanitizes records nor grants authority,
-activates policies, bypasses inspection, or changes any API/analysis/review behavior.
-External deployments ignore this display marker. The current approved task ledger
-owns the actual rehearsal, data location and verification evidence.
-
 1. Start the standard local stack:
 
    Commands below describe the existing workflow, not permission to install, alter Tailscale,
