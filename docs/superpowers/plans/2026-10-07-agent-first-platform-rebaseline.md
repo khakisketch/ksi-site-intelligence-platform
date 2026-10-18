@@ -4022,3 +4022,17 @@ Rollback: commit revert; 직전 `.next-practical-journey-verified` 빌드/서버
   판단이 필요한 별도 결정이다.
 - **경계**: production/고객 자료/Terra 호환/현장 정확도/사람 연구 경계는 그대로다. 이 완료는
   로컬 UI 수용이며 플랫폼 전체 수용이 아니다. 증거는 `/tmp/opencode/ksi-site-ia-20261018/`.
+
+**테일넷 공개(같은 날, Human 요청 "외부에서 볼 수 있게 켜줘봐")**
+
+- Dashboard `https://dgx-spark-1.tailda9552.ts.net:10010`, issuer `…:10011`을 **tailnet-only**
+  Tailscale Serve로 열었다(loopback 프로세스는 그대로). Dashboard는 `AUTH_URL`/issuer/공개 origin을
+  테일넷으로 재기동했고, Core8096은 `KSI_CORE_OIDC_ISSUER`=테일넷 issuer + `JWKS`=127.0.0.1:9042로
+  재기동했으며, 보호 registry의 subject issuer도 테일넷으로 갱신했다(0600 유지, 백업 보관).
+  기존 localhost issuer(9041)는 **원래 구성으로 복원**해 F03 rollback 재료를 깨지 않았고, 합성
+  배너는 LOCAL profile로 유지된다. worker loop는 새 12h 창으로 재시작했다.
+- 실제 테일넷 origin에서 로그인→현황→자료→분석·검토 1440/390 두 폭을 확인했고 서버 액션 POST도
+  통과했다. **공용 인터넷(Funnel)은 켜지 않았다** — 개발용 issuer의 테스트 계정으로 관리자 로그인이
+  가능해 실제 IdP 결정 없이는 노출할 수 없다. 원격 파일 업로드는 브라우저가 loopback presigned
+  URL로 직접 PUT하는 구조라 이 기기 밖에서 불가(조회·분석 요청·검토는 same-origin BFF라 동작).
+  되돌리기 절차와 증거는 `/tmp/opencode/ksi-site-ia-20261018/README.md`에 있다.
