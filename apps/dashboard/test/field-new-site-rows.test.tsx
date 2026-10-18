@@ -43,7 +43,7 @@ describe("field/new site rows", () => {
   it("differentiates rows by each site's own status instead of repeating one sentence", async () => {
     render(await FieldNewObservationPage());
     expect(screen.queryByText("이 현장에서 외부 산출물 등록 또는 비행 계획을 시작합니다.")).toBeNull();
-    expect(screen.getByText("미매핑")).toBeTruthy();
+    expect(screen.getByText("경계 미설정")).toBeTruthy();
     expect(screen.getByText("순찰 준비 완료")).toBeTruthy();
   });
 

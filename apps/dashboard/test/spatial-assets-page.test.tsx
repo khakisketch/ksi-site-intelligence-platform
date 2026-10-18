@@ -157,6 +157,18 @@ describe("spatial asset catalog page", () => {
     expect(listOnlyHtml).not.toContain("이 자료를 현재 관측으로 선택");
   });
 
+  it("offers the file-preparation request only with the data-request permission", async () => {
+    const readerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(readerHtml).toContain("자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다");
+    expect(readerHtml).not.toContain("받기 요청 만들기");
+
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_REQUEST"] } });
+    const writerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(writerHtml).toContain("받기 요청 만들기");
+    expect(writerHtml).toContain("준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다");
+    expect(writerHtml).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+  });
+
   it("connects the list rows to work name, area, capture window and version", async () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("등록된 관측 작업명 · 북측 1차 관측");

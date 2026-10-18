@@ -37,10 +37,10 @@ export function ExternalReportSafeDerivativeComparison({ pair }: { pair: ExactRe
   return <section className="rounded-xl border border-line bg-surface p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h2 className="text-[16px] font-bold tracking-tight">기준·현재 정제 정사영상</h2>
+        <h2 className="text-[16px] font-bold tracking-tight">기준·현재 표시용 정사영상</h2>
         <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">보고서에 보관된 기준과 현재 관측에 다시 결속된 표시용 파생본만 나란히 확인할 수 있습니다. 이 화면은 공간 차이·열지도·새 물량 수치를 만들지 않습니다.</p>
       </div>
-      {pair.state === "READY" && <button className="btn w-fit" onClick={() => setVisible((current) => !current)}>{visible ? "정제 정사영상 닫기" : "기준·현재 정제 정사영상 보기"}</button>}
+      {pair.state === "READY" && <button className="btn w-fit" onClick={() => setVisible((current) => !current)}>{visible ? "표시용 정사영상 닫기" : "기준·현재 표시용 정사영상 보기"}</button>}
     </div>
     {pair.state === "UNAVAILABLE" ? <p role="status" className="mt-3 rounded-lg border border-line bg-sunk px-3 py-2 text-[13px] leading-5 text-ink-2">{pair.reason} 원본 파일이나 추정 표시를 대신 열지 않습니다.</p> : visible && <div className="mt-3 grid gap-3 xl:grid-cols-2"><SafeDerivative label="기준 관측" subject={pair.baseline} onDismiss={() => setVisible(false)} /><SafeDerivative label="현재 관측" subject={pair.current} onDismiss={() => setVisible(false)} /></div>}
   </section>;

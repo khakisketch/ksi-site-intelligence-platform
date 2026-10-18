@@ -156,7 +156,7 @@ export function ExternalObservationCreateForm({
           <Link href={`/sites/${encodeURIComponent(siteId)}/work-areas`} className="btn mt-3 inline-flex">작업구역 만들기</Link>
         </section>
       ) : (
-        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason={`노트북에서 같은 계정으로 이 현장 화면(${siteName} · /sites/${siteId}/observations/new)을 열어 등록을 이어가세요.`}>
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 현장의 '관측 자료 등록' 화면을 열어 이어가세요.">
           <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
             <div>
               <h2 className="text-[16px] font-bold">외부 산출물 등록</h2>

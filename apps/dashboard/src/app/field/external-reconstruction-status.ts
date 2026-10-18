@@ -96,7 +96,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
     case "INSPECTION_FAILED_INCOMPLETE":
       return presentation(
         "파일 검사 불완료",
-        "검사 보고가 완결되지 않았습니다. 수치나 정제 표시를 준비된 것으로 표시하지 않습니다.",
+        "검사 보고가 완결되지 않았습니다. 수치나 표시용 정사영상을 준비된 것으로 표시하지 않습니다.",
         outcomeReasons(view).length > 0
           ? "아래 산출물별 사유를 확인한 뒤 필요한 파일 또는 선언을 보완하세요."
           : "완결된 사유가 아직 제공되지 않았습니다. 상태를 새로고침하고 계속되면 관리자에게 문의하세요.",
@@ -119,23 +119,23 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
     case "PENDING_INSPECTION":
     case "PENDING_POLICY":
       return presentation(
-        "검사 보고 완료 · 정제 표시 준비 대기",
-        "파일 검사 보고는 기록됐지만 정제 정사영상 표시 준비가 아직 시작되지 않았습니다.",
+        "검사 보고 완료 · 표시용 정사영상 준비 대기",
+        "파일 검사 보고는 기록됐지만 표시용 정사영상 준비가 아직 시작되지 않았습니다.",
         "표시 준비 상태를 새로고침하세요. 이 화면은 원본 산출물을 열지 않습니다.",
         { autoRefresh: true, displayReady: false },
         outcomeReasons(view),
       );
     case "NOT_REQUIRED":
       return presentation(
-        "검사 보고 완료 · 정제 표시 미발급",
-        "현재 결과에는 정제 정사영상 표시가 발급되지 않았습니다.",
+        "검사 보고 완료 · 표시용 정사영상 미발급",
+        "현재 결과에는 표시용 정사영상이 발급되지 않았습니다.",
         "검사 보고는 확인할 수 있지만 원본 또는 대체 표시를 만들지 않습니다.",
         { autoRefresh: false, displayReady: false },
         outcomeReasons(view),
       );
     case "QUEUED":
       return presentation(
-        "정제 정사영상 준비 대기열",
+        "표시용 정사영상 준비 대기열",
         "검사 보고는 완료됐고 안전한 표시 파생본 생성이 대기열에 있습니다.",
         "대기열이 처리될 때까지 기다리거나 상태를 새로고침하세요.",
         { autoRefresh: true, displayReady: false },
@@ -143,7 +143,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       );
     case "RUNNING":
       return presentation(
-        "정제 정사영상 준비 중",
+        "표시용 정사영상 준비 중",
         "검사 보고에 결속된 안전한 표시 파생본을 만들고 있습니다.",
         "준비가 끝날 때까지 기다리거나 상태를 새로고침하세요.",
         { autoRefresh: true, displayReady: false },
@@ -151,7 +151,7 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
       );
     case "RETRY_EXHAUSTED":
       return presentation(
-        "정제 정사영상 준비 실패",
+        "표시용 정사영상 준비 실패",
         "검사 보고는 남아 있지만 안전한 표시 파생본을 현재 발급할 수 없습니다.",
         "상태를 새로고침해 현재 보관 사실을 확인하세요. 원본 표시나 성공 상태로 바꾸지 않습니다.",
         { autoRefresh: false, displayReady: false },
@@ -160,15 +160,15 @@ export function presentExternalInspectionStatus(view: ExternalArtifactInspection
     case "SEALED":
       if (typeof view.display.sanitizedDisplayRef === "string" && typeof view.display.receiptDigest === "string") {
         return presentation(
-          "정제 정사영상 표시 가능",
+          "표시용 정사영상 열람 가능",
           "검사 보고와 현재 표시 영수증에 결속된 파생본만 열 수 있습니다.",
-          "정제 정사영상을 열어 현재 표시 권한을 다시 확인하세요.",
+          "표시용 정사영상을 열어 현재 열람 권한을 다시 확인하세요.",
           { autoRefresh: false, displayReady: true },
           outcomeReasons(view),
         );
       }
       return presentation(
-        "정제 표시 영수증 확인 필요",
+        "표시용 정사영상 영수증 확인 필요",
         "표시 상태는 봉인으로 기록됐지만 현재 표시 식별자 또는 영수증이 없습니다.",
         "상태를 새로고침해 현재 표시 영수증을 확인하세요.",
         { autoRefresh: false, displayReady: false },

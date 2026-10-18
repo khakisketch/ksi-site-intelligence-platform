@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
+
+import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -15,6 +17,7 @@ import {
   type SpatialAssetInspectedRasterFacts,
 } from "@/lib/core-api/spatial-assets";
 import { getSite } from "@/lib/core-api/sites";
+import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
@@ -263,7 +266,7 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
     <InspectionFacts inspection={item.inspection} />
     <section className="rounded-lg border border-high/30 bg-high-bg px-4 py-3 text-[12px] leading-5 text-high-ink">
       <p className="font-semibold">데이터 사용 제한</p>
-      <p className="mt-1">이 화면은 파일의 등록 정보만 제공합니다. 파일이 필요하면 구역 자료 준비에서 요청하세요.</p>
+      <p className="mt-1">이 화면은 파일의 등록 정보만 제공합니다. 파일이 필요하면 아래에서 받기 요청을 만들고, 준비 상태는 구역 자료 준비에서 확인하세요.</p>
       <p className="mt-1">분석 적합성은 평가되지 않았습니다. 이 자산을 분석 입력으로 사용할 수 있다고 판단하지 않습니다.</p>
       {item.lifecycleState !== "SEALED" && <p className="mt-1">현재 제출 상태가 {assetLifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
     </section>
@@ -353,6 +356,9 @@ export default async function SpatialAssetsPage({
     businessTitles.get(item.assetRef) ?? assetBusinessTitle(item);
   const areaDisplayName = selectedArea?.name ?? workAreaId ?? "";
   const canRequestAnalysis = session.principal.permissions.includes("SITES_WRITE");
+  const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
+  const inspectedRaster = detail?.inspection.raster ?? null;
+  const dataRequestBounds = inspectedRaster ? nativeBoundsFromInspection(inspectedRaster) : null;
   const compareHref = canRequestAnalysis && workAreaId && selectedArea && detail?.workOrderId
     ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(workAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
     : null;
@@ -401,13 +407,25 @@ export default async function SpatialAssetsPage({
             : null}
           {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === workAreaId
             ? isMetadataOnly(detail)
-              ? <AssetDetail
-                item={detail}
-                workName={resolveWorkName(detail.workOrderId, workOrderNames)}
-                areaName={areaDisplayName}
-                headline={businessTitleFor(detail)}
-                compareHref={compareHref}
-              />
+              ? <>
+                <AssetDetail
+                  item={detail}
+                  workName={resolveWorkName(detail.workOrderId, workOrderNames)}
+                  areaName={areaDisplayName}
+                  headline={businessTitleFor(detail)}
+                  compareHref={compareHref}
+                />
+                {dataRequestBounds && inspectedRaster && (
+                  <SpatialDataRequestAction
+                    siteId={siteId}
+                    workAreaId={workAreaId!}
+                    assetRef={detail.assetRef}
+                    requestedBounds={dataRequestBounds}
+                    observedCrsDigest={inspectedRaster.observedCrsDigest}
+                    canRequest={canRequestData}
+                  />
+                )}
+              </>
               : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
             : null}
           <section className="flex flex-col gap-3">

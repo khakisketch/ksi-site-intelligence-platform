@@ -462,7 +462,7 @@ export default async function SpatialDataRequestsPage({
           <span className="text-[11px] text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
         </header>
         {scopedItems.length === 0
-          ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 자료 준비 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "등록 자료 화면에서 요청을 시작하면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
+          ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 자료 준비 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "등록 자료에서 이 자료 받기 요청을 만들면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
           : <>
             <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부</span><span>처리 사유</span></div>
             <ul className="divide-y divide-line">

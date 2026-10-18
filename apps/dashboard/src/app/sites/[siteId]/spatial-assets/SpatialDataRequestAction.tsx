@@ -1,0 +1,154 @@
+"use client";
+
+import Link from "next/link";
+import { useState } from "react";
+
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { isSpatialDataExecutionState, type SpatialDataBounds } from "@/lib/core-api/spatial-data-types";
+
+const STATE_LABEL: Record<string, string> = {
+  QUEUED: "대기",
+  RUNNING: "처리 중",
+  COMPLETED: "완료",
+  FAILED: "실패",
+  CANCELED: "취소됨",
+  EXPIRED: "기한 만료",
+};
+
+/** Core가 돌려주는 typed 사유를 그대로 옮긴다 — 판정을 새로 만들지 않는다. */
+const REASON_COPY: Record<string, string> = {
+  PERMISSION_DENIED: "이 자료를 요청할 권한이 없습니다. 권한 있는 담당자에게 요청하세요.",
+  NOT_FOUND: "자료를 찾을 수 없거나 현재 접근할 수 없습니다.",
+  GRANT_REQUIRED: "이 자료에 대한 명시적 사용 권리가 아직 없습니다. 관리자에게 권리 설정을 요청하세요.",
+  AMBIGUOUS_GRANT: "같은 자료에 적용할 권리가 둘 이상입니다. 관리자에게 확인을 요청하세요.",
+  ACCESS_REVOKED: "이 자료의 사용 권리가 회수되었습니다. 관리자에게 확인하세요.",
+  ACCESS_EXPIRED: "이 자료의 사용 권리가 만료되었습니다. 관리자에게 확인하세요.",
+  ACTIVATION_UNAVAILABLE: "자료 준비 작업이 이 환경에서 활성화되어 있지 않습니다. 관리자에게 확인하세요.",
+  POLICY_UNAVAILABLE: "자료 준비 정책을 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
+  SOURCE_UNSEALED: "제출이 마무리되지 않은 자료입니다. 검사 기록이 있는 봉인 자료만 요청할 수 있습니다.",
+  SOURCE_NOT_MEASURED: "파일 검사 결과가 있는 자료만 요청할 수 있습니다.",
+  SOURCE_UNAVAILABLE: "원본 자료를 현재 사용할 수 없습니다. 등록 상태를 확인하세요.",
+  UNSUPPORTED_ARTIFACT_KIND: "이 자료 종류는 준비 요청을 지원하지 않습니다.",
+  UNSUPPORTED_SOURCE_PROFILE: "이 파일 형식은 준비 요청을 지원하지 않습니다.",
+  INVALID_REQUEST_BOUNDS: "요청 범위가 자료의 네이티브 격자와 맞지 않습니다. 화면을 새로 고쳐 다시 확인하세요.",
+  REQUEST_OUTSIDE_SOURCE: "요청 범위가 자료 범위를 벗어납니다.",
+  OUTPUT_OUTSIDE_GRANT: "요청 범위가 허용된 권리 범위를 벗어납니다. 관리자에게 확인하세요.",
+  CRS_MISMATCH: "좌표 기준이 맞지 않아 준비할 수 없습니다.",
+  VERTICAL_REFERENCE_MISMATCH: "수직 기준이 맞지 않아 준비할 수 없습니다.",
+  UNSUPPORTED_GRID: "지원하지 않는 격자입니다.",
+  EMPTY_PIXEL_WINDOW: "요청 범위 안에 사용할 수 있는 셀이 없습니다.",
+  EMPTY_VALID_WINDOW: "요청 범위 안에 유효한 값이 없습니다.",
+  RESOURCE_LIMIT_EXCEEDED: "조직의 준비 한도를 넘었습니다. 기존 요청을 정리한 뒤 다시 시도하세요.",
+  RETAINED_HISTORY_LIMIT_EXCEEDED: "보관 한도를 넘어 새 요청을 만들 수 없습니다. 기존 요청을 정리하세요.",
+  INTEGRITY_MISMATCH: "파일 무결성 확인이 맞지 않아 준비할 수 없습니다.",
+  AUDIT_UNAVAILABLE: "감사 기록을 확인할 수 없어 요청을 만들지 않았습니다.",
+  STORAGE_UNAVAILABLE: "저장소 상태로 요청을 만들지 못했습니다. 잠시 후 다시 시도하세요.",
+  CURRENTNESS_UNAVAILABLE: "현재 권리 상태를 확인할 수 없습니다. 잠시 후 다시 시도하세요.",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/**
+ * 선택한 자료의 정확한 네이티브 사각형으로 "받기 요청"을 만든다.
+ *
+ * - 같은 화면에서 다시 눌러도 같은 Idempotency-Key를 쓴다 — 같은 요청이 두 번
+ *   만들어지지 않는다(성공한 뒤에는 새 요청을 만들지 않고 상태만 알린다).
+ * - 권리·정책·활성화 판단은 Core가 한다. 여기서는 사유를 사람 말로 옮기기만 한다.
+ * - 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않는다는 문구를 유지한다.
+ */
+export function SpatialDataRequestAction({
+  siteId,
+  workAreaId,
+  assetRef,
+  requestedBounds,
+  observedCrsDigest,
+  canRequest,
+}: {
+  siteId: string;
+  workAreaId: string;
+  assetRef: string;
+  requestedBounds: SpatialDataBounds;
+  observedCrsDigest: string;
+  canRequest: boolean;
+}) {
+  const [attemptKey] = useState(() => `sdreq-${crypto.randomUUID()}`);
+  const [busy, setBusy] = useState(false);
+  const [accepted, setAccepted] = useState<{ jobId: string; state: string } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const requestsHref = `/sites/${encodeURIComponent(siteId)}/spatial-data-requests?workAreaId=${encodeURIComponent(workAreaId)}`;
+
+  const request = async () => {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch(
+        `/api/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/spatial-data-requests`,
+        {
+          method: "POST",
+          cache: "no-store",
+          headers: { "Content-Type": "application/json", "Idempotency-Key": attemptKey, Accept: "application/json" },
+          body: JSON.stringify({
+            assetRef,
+            requestedBounds,
+            observedCrsDigest,
+            resolutionMode: "NATIVE",
+            purpose: "GENERAL_DATA_USE",
+          }),
+        },
+      );
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const reason = isRecord(body) && typeof body.reason === "string"
+          ? body.reason
+          : isRecord(body) && typeof body.code === "string" ? body.code : null;
+        setMessage(
+          (reason && REASON_COPY[reason])
+          ?? (response.status === 404
+            ? "이 환경에서는 자료 준비 기능이 연결되어 있지 않거나 대상을 찾을 수 없습니다. 관리자에게 확인하세요."
+            : null)
+          ?? (isRecord(body) && typeof body.message === "string" ? body.message : null)
+          ?? "받기 요청을 만들지 못했습니다. 현재 상태를 다시 확인하세요.",
+        );
+        return;
+      }
+      if (!isRecord(body) || typeof body.jobId !== "string" || !isSpatialDataExecutionState(body.executionState)) {
+        setMessage("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+        return;
+      }
+      setAccepted({ jobId: body.jobId, state: body.executionState });
+      setMessage(`받기 요청을 만들었습니다 · 상태 ${STATE_LABEL[body.executionState] ?? body.executionState}. 준비가 끝나면 구역 자료 준비에서 받을 수 있습니다.`);
+    } catch {
+      setMessage("Core 응답을 받지 못했습니다. 구역 자료 준비에서 현재 상태를 다시 확인하세요.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!canRequest) {
+    return <section className="rounded-lg border border-line bg-surface px-4 py-3">
+      <h3 className="text-[13px] font-semibold">이 자료 받기 요청</h3>
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 파일과 용도를 담당자에게 알려 주세요.</p>
+    </section>;
+  }
+
+  return <section className="rounded-lg border border-line bg-surface px-4 py-3">
+    <h3 className="text-[13px] font-semibold">이 자료 받기 요청</h3>
+    <p className="mt-1 text-[12px] leading-5 text-ink-2">
+      검사된 네이티브 범위 그대로 준비를 요청합니다. Core가 현재 명시된 사용 권리와 범위를 확인한 뒤에만 작업을 만듭니다.
+    </p>
+    <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+      준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다. AI 반출 용도는 별도 동의 절차가 필요합니다.
+    </p>
+    <ResponsiveActionBoundary action="SPATIAL_DATA_REQUEST" reason="자료 받기 요청은 노트북 이상의 화면에서 진행하세요. 준비 상태는 모바일에서도 확인할 수 있습니다.">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" className="btn btn-primary min-h-11" disabled={busy || accepted !== null} onClick={() => void request()}>
+          {busy ? "요청 만드는 중…" : accepted ? "요청 만듦" : "받기 요청 만들기"}
+        </button>
+        <Link href={requestsHref} className="btn min-h-11">구역 자료 준비에서 확인</Link>
+      </div>
+    </ResponsiveActionBoundary>
+    {message && <p role="status" aria-live="polite" className="mt-3 rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2">{message}</p>}
+  </section>;
+}

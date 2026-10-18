@@ -218,7 +218,7 @@ export default async function SitesPage({
                 <label className="grid gap-1 text-[12px] font-medium text-ink-2">
                   정렬
                   <select name="sort" defaultValue={sort} className="input h-11 w-full text-[13px]">
-                    <option value="attention">조사 필요 순</option>
+                    <option value="attention">확인 필요 순</option>
                     <option value="updated">최근 갱신 순</option>
                     <option value="name">이름 순</option>
                   </select>
@@ -281,7 +281,7 @@ export default async function SitesPage({
                   aria-label="정렬 기준"
                   className="input h-9 w-32 min-w-0 text-[12.5px]"
                 >
-                  <option value="attention">조사 필요 순</option>
+                  <option value="attention">확인 필요 순</option>
                   <option value="updated">최근 갱신 순</option>
                   <option value="name">이름 순</option>
                 </select>

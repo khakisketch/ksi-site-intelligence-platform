@@ -31,7 +31,7 @@ export const SITE_PROGRESS_STAGES: readonly {
   /** 막대에 붙는 접근성 이름 — 화면에는 막대만 보이므로 읽어주는 쪽엔 이 말이 간다. */
   label: string;
 }[] = [
-  { status: "UNMAPPED", label: "미매핑" },
+  { status: "UNMAPPED", label: "경계 미설정" },
   { status: "BASELINE_MAPPING", label: "초기 매핑" },
   { status: "MODEL_PROCESSING", label: "모델 처리" },
   { status: "MODEL_VALIDATION", label: "모델 검증" },
@@ -162,7 +162,7 @@ export const PREPARING_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStat
 
 export const SITE_GROUPS = [
   { key: "all", label: "전체", statuses: null },
-  { key: "attention", label: "조사 필요", statuses: ATTENTION_SITE_STATUSES },
+  { key: "attention", label: "확인 필요", statuses: ATTENTION_SITE_STATUSES },
   { key: "preparing", label: "준비 중", statuses: PREPARING_SITE_STATUSES },
   { key: "patrol", label: "순찰 가능", statuses: PATROLLABLE_SITE_STATUSES },
   { key: "suspended", label: "운영 중단", statuses: new Set<SiteStatus>(["SUSPENDED"]) },

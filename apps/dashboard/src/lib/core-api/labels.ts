@@ -17,7 +17,7 @@ import type {
 export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 
 export const SITE_STATUS_LABEL: Record<SiteStatus, { label: string; tone: Tone }> = {
-  UNMAPPED: { label: "미매핑", tone: "neutral" },
+  UNMAPPED: { label: "경계 미설정", tone: "neutral" },
   BASELINE_MAPPING: { label: "초기 매핑 중", tone: "progress" },
   MODEL_PROCESSING: { label: "모델 처리 중", tone: "progress" },
   MODEL_VALIDATION: { label: "모델 검증 중", tone: "progress" },

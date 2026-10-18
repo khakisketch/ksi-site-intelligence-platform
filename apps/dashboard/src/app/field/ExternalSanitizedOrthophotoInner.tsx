@@ -46,10 +46,10 @@ function SanitizedRasterLayer({
           `/api/observation-work-orders/${encodeURIComponent(workOrderId)}/external-reconstruction-submissions/${encodeURIComponent(submissionRef)}/revisions/${revision}/display-artifacts/${encodeURIComponent(sanitizedDisplayRef)}/download`,
           { cache: "no-store", signal: controller.signal },
         );
-        if (!capabilityResponse.ok) throw new Error(`정제 표시 권한 발급 실패: HTTP ${capabilityResponse.status}`);
+        if (!capabilityResponse.ok) throw new Error(`표시용 정사영상 권한 발급 실패: HTTP ${capabilityResponse.status}`);
         const capability: unknown = await capabilityResponse.json();
         if (!isExternalSanitizedDisplayCapability(capability) || capability.sanitizedDisplayRef !== sanitizedDisplayRef || capability.receiptDigest !== receiptDigest) {
-          throw new Error("현재 검사 영수증과 다른 정제 표시 권한을 거부했습니다.");
+          throw new Error("현재 검사 영수증과 다른 표시용 정사영상 권한을 거부했습니다.");
         }
         const arrayBuffer = await fetchVerifiedSanitizedDisplay(capability, controller.signal);
         if (cancelled) return;

@@ -53,7 +53,7 @@ describe("ExternalReconstructionPanel", () => {
     expect(await screen.findByText("아직 등록된 관측 자료가 없습니다.")).toBeTruthy();
     expect(oldInspectionSignal?.aborted).toBe(true);
     resolveOldInspection?.({ ok: true, json: async () => ({ registrationState: "SEALED", sealState: "SEALED", inspection: { state: "INSPECTION_REPORTED" }, display: { state: "SEALED", sanitizedDisplayRef: "sda-v1-old", receiptDigest: `sha256:${"e".repeat(64)}` } }) });
-    await waitFor(() => expect(screen.queryByRole("button", { name: "정제 정사영상 표시" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "표시용 정사영상 열기" })).toBeNull());
   });
 
   it("shows registration, inspection, and sanitized-display status separately without displaying numeric analysis", async () => {
@@ -72,7 +72,7 @@ describe("ExternalReconstructionPanel", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
     expect(await screen.findByText(/자료 등록됨 · 파일 제출 마무리 필요/)).toBeTruthy();
     expect(screen.getByText(/파일 검사 준비 중/)).toBeTruthy();
-    expect(screen.getByText(/정제 정사영상 표시 가능/)).toBeTruthy();
+    expect(screen.getByText(/표시용 정사영상 열람 가능/)).toBeTruthy();
     expect(screen.queryByText(/RMSE|절토|성토|순토/)).toBeNull();
   });
 
@@ -91,15 +91,15 @@ describe("ExternalReconstructionPanel", () => {
       return Promise.resolve({ ok: true, json: async () => ({ items: [] }) });
     });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
-    expect(await screen.findByText(/정제 정사영상 표시 가능/)).toBeTruthy();
+    expect(await screen.findByText(/표시용 정사영상 열람 가능/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "검사 상태 새로고침" }));
     expect(await screen.findByText("마지막으로 확인한 검사 상태를 유지한 채 업데이트를 확인하고 있습니다.")).toBeTruthy();
-    expect(screen.getByText(/정제 정사영상 표시 가능/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "정제 정사영상 표시" })).toBeTruthy();
+    expect(screen.getByText(/표시용 정사영상 열람 가능/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "표시용 정사영상 열기" })).toBeTruthy();
     rejectRefresh?.(new Error("offline"));
     expect(await screen.findByText("검사 상태 업데이트를 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요.")).toBeTruthy();
-    expect(screen.getByText(/정제 정사영상 표시 가능/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "정제 정사영상 표시" })).toBeTruthy();
+    expect(screen.getByText(/표시용 정사영상 열람 가능/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "표시용 정사영상 열기" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "검사 상태 새로고침" }) as HTMLButtonElement).disabled).toBe(false);
   });
 

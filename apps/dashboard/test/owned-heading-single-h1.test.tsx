@@ -43,8 +43,8 @@ describe("owned single-h1 hierarchy", () => {
       workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
     /></main>);
     const notice = screen.getByText(/노트북에서 같은 계정으로/);
-    expect(notice.textContent).toContain("A 현장");
-    expect(notice.textContent).toContain("/sites/site-1/observations/new");
+    expect(notice.textContent).toContain("관측 자료 등록");
+    expect(notice.textContent).not.toContain("/sites/site-1/observations/new");
   });
 
   it("keeps one shell h1 and a contextual h2 on field/new", async () => {

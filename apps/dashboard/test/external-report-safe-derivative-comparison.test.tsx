@@ -28,7 +28,7 @@ describe("exact report safe derivative comparison", () => {
     expect(screen.queryAllByTestId("safe-derivative")).toHaveLength(0);
     expect(screen.getByText(/열지도/)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "기준·현재 정제 정사영상 보기" }));
+    fireEvent.click(screen.getByRole("button", { name: "기준·현재 표시용 정사영상 보기" }));
 
     expect(screen.getAllByTestId("safe-derivative").map((item) => item.textContent)).toEqual([
       "baseline-order:sda-v1-baseline",
@@ -39,6 +39,6 @@ describe("exact report safe derivative comparison", () => {
   it("does not create a substitute display when exact retained bindings are unavailable", () => {
     render(<ExternalReportSafeDerivativeComparison pair={{ state: "UNAVAILABLE", reason: "결속을 확인하지 못했습니다." }} />);
     expect(screen.getByRole("status").textContent).toMatch(/원본 파일이나 추정 표시/);
-    expect(screen.queryByRole("button", { name: /정제 정사영상 보기/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /표시용 정사영상 보기/ })).toBeNull();
   });
 });

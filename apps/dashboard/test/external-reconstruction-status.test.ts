@@ -22,9 +22,9 @@ describe("external reconstruction inspection presentation", () => {
     expect(policy.nextAction).toMatch(/관리자/);
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_QUEUED", phase: "INSPECTION", outcome: null, request: null, report: null } })).title).toBe("파일 검사 대기열");
     expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_RUNNING", phase: "INSPECTION", outcome: null, request: null, report: null } })).title).toBe("파일 검사 중");
-    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "QUEUED", sanitizedDisplayRef: null, receiptDigest: null } })).title).toBe("정제 정사영상 준비 대기열");
-    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "RUNNING", sanitizedDisplayRef: null, receiptDigest: null } })).title).toBe("정제 정사영상 준비 중");
-    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "SEALED", sanitizedDisplayRef: "sda-v1-ready", receiptDigest: `sha256:${"a".repeat(64)}` } })).title).toBe("정제 정사영상 표시 가능");
+    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "QUEUED", sanitizedDisplayRef: null, receiptDigest: null } })).title).toBe("표시용 정사영상 준비 대기열");
+    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "RUNNING", sanitizedDisplayRef: null, receiptDigest: null } })).title).toBe("표시용 정사영상 준비 중");
+    expect(presentExternalInspectionStatus(inspection({ inspection: { state: "INSPECTION_REPORTED", phase: "COMPLETE", outcome: [], request: null, report: null }, display: { state: "SEALED", sanitizedDisplayRef: "sda-v1-ready", receiptDigest: `sha256:${"a".repeat(64)}` } })).title).toBe("표시용 정사영상 열람 가능");
   });
 
   it("keeps artifact failure reasons specific and marks only live server states for bounded refresh", () => {

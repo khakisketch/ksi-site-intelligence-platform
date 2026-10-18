@@ -28,12 +28,14 @@ describe("Operations Console responsive action matrix", () => {
     "SOURCE_MEDIA_MUTATION",
     "RECOVERY_ACTION",
     "EXTERNAL_RECONSTRUCTION_MUTATION",
+    "ANALYSIS_REQUEST",
+    "SPATIAL_DATA_REQUEST",
   ] as const)("%s 는 1024px 미만에서 노트북 안내로 대체한다", (action) => {
     expect(isCompactActionAllowed(action)).toBe(false);
   });
 
   it("모든 공개 action을 빠짐없이 판정한다", () => {
-    expect(RESPONSIVE_ACTIONS).toHaveLength(13);
+    expect(RESPONSIVE_ACTIONS).toHaveLength(15);
     expect(RESPONSIVE_ACTIONS.every((action) => typeof isCompactActionAllowed(action) === "boolean"))
       .toBe(true);
   });

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatBytesKo, formatCountKo, formatNumberKo, formatSignificantKo } from "@/lib/number-format";
 import type {
   AnalysisEvidenceItem,
@@ -1505,6 +1506,7 @@ export function AnalysisRequestPanel({
     {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
     {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
       <h2 className="text-[16px] font-bold">새 변화 분석 요청</h2>
+      <ResponsiveActionBoundary action="ANALYSIS_REQUEST" reason="변화 분석 요청은 노트북 이상의 화면에서 진행하세요. 모바일에서는 결과와 근거 검토를 이어갈 수 있습니다.">
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
       <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
       {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
@@ -1570,6 +1572,7 @@ export function AnalysisRequestPanel({
           {!busy && !attempt && workAreaId === "" && baselineIndex === "" && currentIndex === "" && <p className="text-[12px] leading-5 text-ink-2">작업구역과 서로 다른 기준·현재 관측을 고르면 요청할 수 있습니다.</p>}
         </div>
       </form>
+      </ResponsiveActionBoundary>
       {justCreatedId && !attempt && (
         <p role="status" className="mt-3 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[12.5px] leading-5 text-ink-2">
           요청이 접수됐습니다. 결과는 위 이력 맨 앞에 있습니다.{" "}
