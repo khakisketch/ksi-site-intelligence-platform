@@ -15,7 +15,8 @@ export interface HomeAttentionCardView {
   href: string;
   actionLabel: string;
   image: { src: string; alt: string } | null;
-  imageFallback: { label: string; detail: string };
+  /** 관측 이미지가 없을 때 자리 표시 — 짧은 한 줄이면 충분하다(장식 표시가 뜻을 보탠다). */
+  imageFallbackLabel: string;
   /** 접어 두는 기술 참조(분석·구역 ID 등). 있을 때만 키보드로 펼칠 수 있게 둔다. */
   technicalRef?: string;
 }
@@ -137,10 +138,9 @@ export function HomeAttentionCarousel({
                 {/* 관측 이미지가 없으면 기본 표시를 자동으로 깐다(장식 등고선, 데이터처럼
                     보이는 격자·경계·측정점 없음). 승인된 시각 영역 비율은 그대로다. */}
                 <DefaultSiteVisual seed={item.key} className="absolute inset-0 size-full" />
-                <div className="absolute top-3 left-3 max-w-[calc(100%-24px)] rounded-md border border-line bg-surface px-3 py-2">
-                  <span className="text-[11px] font-bold text-ink-1">{item.imageFallback.label}</span>
-                  <p className="mt-0.5 text-[11.5px] leading-5 break-keep text-ink-2">{item.imageFallback.detail}</p>
-                </div>
+                <span className="absolute top-3 left-3 rounded border border-line bg-surface/90 px-2 py-1 text-[10.5px] font-semibold text-ink-2 backdrop-blur-sm">
+                  {item.imageFallbackLabel}
+                </span>
 
                 <div className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-1 border-t border-line px-4 py-3 text-ink-2">
                   <span className="text-[12px] font-semibold break-keep">{item.siteName}</span>

@@ -108,14 +108,14 @@ function attentionWorkOrderDetail(source: Extract<HomeAttentionSource, { kind: "
 }
 
 function fallback() {
-  return { label: "표시할 관측 이미지 없음", detail: "이 현장에는 아직 화면에 표시할 관측 이미지가 없습니다. 등록 자료는 자료 화면에서 확인하세요." };
+  return { label: "표시할 관측 이미지 없음" };
 }
 
 function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeAttentionCardView {
   const siteName = siteById.get(source.siteId)?.name ?? "이름을 확인할 수 없는 현장";
   if (source.kind === "EXTERNAL_DECISION") {
     const card = externalDecisionCardText(source.decision);
-    return { key: source.key, siteName, label: card.label, title: card.title, detail: card.detail, observedAt: observedAt(source.observedAt), href: card.href, actionLabel: card.actionLabel, image: null, imageFallback: fallback() };
+    return { key: source.key, siteName, label: card.label, title: card.title, detail: card.detail, observedAt: observedAt(source.observedAt), href: card.href, actionLabel: card.actionLabel, image: null, imageFallbackLabel: fallback().label };
   }
   if (source.kind === "ANALYSIS_REVIEW") {
     const analysis = source.analysis;
@@ -131,18 +131,18 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
       href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}`,
       actionLabel: "분석 결과 검토",
       image: null,
-      imageFallback: fallback(),
+      imageFallbackLabel: fallback().label,
       technicalRef: formatHomeReviewTechnicalRef(analysis.analysisId, analysis.workAreaId),
     };
   }
   if (source.kind === "WORK_ORDER") {
     const order = source.workOrder;
     const presentation = presentWorkOrder(order.status, order.executionMode);
-    return { key: source.key, siteName, label: presentation.label, title: order.name, detail: attentionWorkOrderDetail(source), observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(order.workOrderId)}`, actionLabel: order.status === "REVIEW_READY" ? "결과와 근거 보기" : "작업 맥락 보기", image: null, imageFallback: fallback() };
+    return { key: source.key, siteName, label: presentation.label, title: order.name, detail: attentionWorkOrderDetail(source), observedAt: observedAt(source.observedAt), href: `/field/work-orders/${encodeURIComponent(order.workOrderId)}`, actionLabel: order.status === "REVIEW_READY" ? "결과와 근거 보기" : "작업 맥락 보기", image: null, imageFallbackLabel: fallback().label };
   }
   const status = SITE_STATUS_LABEL[source.site.status];
   const title = source.site.status === "UNMAPPED" ? "초기 관측 범위를 준비해야 합니다." : source.site.status === "REMAP_REQUIRED" ? "새 기준 관측이 필요합니다." : "최근 현장 상태를 다시 관측해야 합니다.";
-  return { key: source.key, siteName, label: status.label, title, detail: "현장 상태와 조사할 공사 구역을 확인한 뒤 필요한 관측 범위를 결정할 수 있습니다.", observedAt: observedAt(source.observedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 맥락 보기", image: null, imageFallback: fallback() };
+  return { key: source.key, siteName, label: status.label, title, detail: "현장 상태와 조사할 공사 구역을 확인한 뒤 필요한 관측 범위를 결정할 수 있습니다.", observedAt: observedAt(source.observedAt), href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 맥락 보기", image: null, imageFallbackLabel: fallback().label };
 }
 
 function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<string, SiteView>): HomeRecentUpdateView {
@@ -158,7 +158,7 @@ function recentUpdateView(source: HomeRecentUpdateSource, siteById: ReadonlyMap<
 
 function recentSiteView(source: HomeRecentSiteSource): HomeAttentionCardView {
   const status = SITE_STATUS_LABEL[source.site.status];
-  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `현장 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "작업구역을 고르고 촬영 자료·비교 결과·다음 작업을 확인할 수 있습니다.", observedAt: `현장 갱신 ${observedAt(source.site.updatedAt)}`, href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null, imageFallback: fallback() };
+  return { key: source.key, siteName: source.site.name, label: source.site.status === "UNMAPPED" ? "등록 자료 확인" : `현장 관리 상태 · ${status.label}`, title: "현장의 자료와 분석 기록을 확인하세요.", detail: "작업구역을 고르고 촬영 자료·비교 결과·다음 작업을 확인할 수 있습니다.", observedAt: `현장 갱신 ${observedAt(source.site.updatedAt)}`, href: `/sites/${encodeURIComponent(source.siteId)}`, actionLabel: "현장 보기", image: null, imageFallbackLabel: fallback().label };
 }
 
 export default async function HomePage() {

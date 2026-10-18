@@ -17,7 +17,7 @@ function card(overrides: Partial<HomeAttentionCardView> = {}): HomeAttentionCard
     href: "/sites/site-1",
     actionLabel: "현장 열기",
     image: null,
-    imageFallback: { label: "관측 이미지 없음", detail: "현장 상태는 기록되어 있습니다." },
+    imageFallbackLabel: "관측 이미지 없음",
     ...overrides,
   };
 }
@@ -25,12 +25,13 @@ function card(overrides: Partial<HomeAttentionCardView> = {}): HomeAttentionCard
 describe("HomeAttentionCarousel", () => {
   it("applies a decorative default visual when no observation image exists", () => {
     render(<HomeAttentionCarousel items={[card()]} />);
-    const positioningWrapper = screen.getByText("관측 이미지 없음").closest("div")?.parentElement;
+    const positioningWrapper = screen.getByText("관측 이미지 없음").closest("div");
     expect(positioningWrapper?.className).not.toContain("place-items-center");
     // Approved height stays; the notice remains a corner badge, not a box over the area.
     expect(positioningWrapper?.className).toContain("lg:min-h-[330px]");
-    // 기본 표시는 장식이다 — 이름을 따로 붙이지 않고(같은 말을 두 번 읽지 않음),
-    // 데이터로 오인될 측정점·경계 폴리곤을 그리지 않는다.
+    // 자리 표시는 짧은 한 줄이면 충분하다(설명 문단 없음). 기본 표시는 장식이다 —
+    // 이름을 따로 붙이지 않고(같은 말을 두 번 읽지 않음), 측정점·경계 폴리곤도 없다.
+    expect(positioningWrapper?.querySelector("p")).toBeNull();
     const visual = positioningWrapper?.querySelector("svg");
     expect(visual).not.toBeNull();
     expect(visual?.parentElement?.getAttribute("aria-hidden")).toBe("true");
