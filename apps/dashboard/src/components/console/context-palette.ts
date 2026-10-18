@@ -5,8 +5,11 @@ export function contextPaletteItems(items: readonly PaletteItem[], pathname: str
   const site = items.find((item) => item.group === "현장" && (pathname === item.href || pathname.startsWith(`${item.href}/`)));
   if (!site) return [];
   return [
+    { key: `${site.key}:overview`, label: "현황", group: "현재 현장", hint: site.label, href: site.href, keywords: "지도 구역 촬영 시점 최근 변화 상태" },
+    { key: `${site.key}:data`, label: "자료", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-assets`, keywords: "촬영 사진 정사영상 높이 DSM 파일 등록" },
     { key: `${site.key}:analysis`, label: "분석·검토", group: "현재 현장", hint: site.label, href: `${site.href}/analysis`, keywords: "비교 기준 결과 근거 검토" },
-    { key: `${site.key}:data`, label: "자료", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-assets`, keywords: "촬영 사진 정사영상 높이 DSM 파일" },
+    { key: `${site.key}:work`, label: "작업", group: "현재 현장", hint: site.label, href: `${site.href}?section=work-orders`, keywords: "관측 작업 담당 기한 이어서" },
+    { key: `${site.key}:manage`, label: "관리", group: "현재 현장", hint: site.label, href: `${site.href}?section=manage`, keywords: "작업구역 경계 현장 상태 설정" },
     { key: `${site.key}:prepare`, label: "구역 자료 준비", group: "현재 현장", hint: site.label, href: `${site.href}/spatial-data-requests`, keywords: "내보내기 받기 다운로드 요청" },
   ];
 }

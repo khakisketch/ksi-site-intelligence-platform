@@ -108,7 +108,7 @@ function attentionWorkOrderDetail(source: Extract<HomeAttentionSource, { kind: "
 }
 
 function fallback() {
-  return { label: "연결된 이미지 없음", detail: "이 현장에 연결된 관측 이미지가 없습니다." };
+  return { label: "표시할 관측 이미지 없음", detail: "이 현장에는 아직 화면에 표시할 관측 이미지가 없습니다. 등록 자료는 자료 화면에서 확인하세요." };
 }
 
 function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string, SiteView>, areaNameBySite: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map()): HomeAttentionCardView {

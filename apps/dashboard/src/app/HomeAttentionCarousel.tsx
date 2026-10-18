@@ -132,6 +132,8 @@ export function HomeAttentionCarousel({
               </div>
             ) : (
               <div className="relative min-h-[208px] overflow-hidden bg-sunk sm:min-h-[270px] lg:min-h-[330px]">
+                {/* 표시할 이미지가 없을 때 가짜 지형·차트를 그리지 않는다 — 데이터처럼
+                    읽히는 그림은 "무엇이 없는지"를 흐린다. 조용한 자리 표시만 둔다. */}
                 <svg
                   aria-hidden="true"
                   viewBox="0 0 640 360"
@@ -139,10 +141,7 @@ export function HomeAttentionCarousel({
                   className="absolute inset-0 size-full"
                 >
                   <rect width="640" height="360" fill="var(--sunk)" />
-                  <path d="M0 72h640M0 144h640M0 216h640M0 288h640M128 0v360M256 0v360M384 0v360M512 0v360" stroke="var(--line)" />
-                  <path d="m70 272 82-116 112 33 68-102 110 41 126-70" fill="none" stroke="var(--line-strong)" strokeWidth="2" />
-                  <path d="m105 276 82-78 86 25 61-73 102 35 89-51 42 79-104 74-126-20-94 38Z" fill="var(--surface)" fillOpacity="0.66" stroke="var(--line-strong)" strokeDasharray="8 8" />
-                  <circle cx="337" cy="221" r="8" fill="var(--accent)" />
+                  <path d="M0 72h640M0 144h640M0 216h640M0 288h640M128 0v360M256 0v360M384 0v360M512 0v360" stroke="var(--line)" opacity="0.5" />
                 </svg>
 
                 {/* 코너 배지 — 불가 안내가 근거 영역 전체를 덮는 큰 흰 박스가 되지

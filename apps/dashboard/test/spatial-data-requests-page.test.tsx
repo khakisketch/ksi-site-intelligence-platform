@@ -97,7 +97,7 @@ beforeEach(() => {
     principalId: "operator-1", organizationId: "org-1", kind: "OPERATOR", role: "ADMIN",
     permissions: ["SITES_READ", "SPATIAL_DATA_READ", "SPATIAL_DATA_REQUEST"],
   } });
-  mocked.site.mockResolvedValue({ siteId: "site-1", name: "Floreat 검증 현장" });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "Floreat 검증 현장", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [area] });
   mocked.list.mockResolvedValue({ items: [job()], nextCursor: null });
   mocked.detail.mockResolvedValue(job());

@@ -24,7 +24,7 @@ const callPage = () => SiteWorkAreasPage({ params: Promise.resolve({ siteId: "si
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", siteFrame: { crs: "EPSG:4326" } });
+  mocked.site.mockResolvedValue({ siteId: "site-1", name: "현장 1", status: "BASELINE_MAPPING", aoi: null, resumeTarget: null, siteFrame: { crs: "EPSG:5186", transformVersion: "v1" }, registeredAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z" });
   mocked.areas.mockResolvedValue({ workAreas: [] });
   mocked.permissions.mockResolvedValue(false);
 });

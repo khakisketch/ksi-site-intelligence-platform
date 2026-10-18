@@ -18,6 +18,7 @@ import {
   type SpatialDataReceipt,
 } from "@/lib/core-api/spatial-data-requests";
 import { getSite } from "@/lib/core-api/sites";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -430,7 +431,17 @@ export default async function SpatialDataRequestsPage({
     selectedArea?.name ?? workAreaId ?? "",
   );
 
-  return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
+  const frame = <SiteHeader
+    site={site}
+    selectedEpochId={null}
+    tab="materials"
+    canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+    canEditAoi={session.principal.permissions.includes("SITES_WRITE")}
+    scopedWorkAreaId={workAreaId ?? null}
+  />;
+  return <div className="flex flex-col">
+    {frame}
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
     {header(workAreaId)}
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -478,5 +489,6 @@ export default async function SpatialDataRequestsPage({
         {page.nextCursor && <Link className="btn btn-primary min-h-11" href={pageHref(siteId, workAreaId, { cursor: page.nextCursor })}>다음 요청 보기</Link>}
       </nav>
     </>}
+    </div>
   </div>;
 }

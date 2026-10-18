@@ -6,8 +6,17 @@ const items = [{ key: "site:one", label: "남측 현장", group: "현장", href:
 
 describe("current Site task vocabulary", () => {
   it("offers human tasks only for a known authorized Site, not a pathname guess", () => {
-    expect(contextPaletteItems(items, "/sites/site-1").map((i) => i.label)).toEqual(["분석·검토", "자료", "구역 자료 준비"]);
-    expect(contextPaletteItems(items, "/sites/site-1/analysis")[0].href).toBe("/sites/site-1/analysis");
+    expect(contextPaletteItems(items, "/sites/site-1").map((i) => i.label)).toEqual([
+      "현황",
+      "자료",
+      "분석·검토",
+      "작업",
+      "관리",
+      "구역 자료 준비",
+    ]);
+    const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
+    expect(hrefs).toContain("/sites/site-1/analysis");
+    expect(hrefs).toContain("/sites/site-1?section=manage");
     expect(contextPaletteItems(items, "/sites/site-10")).toEqual([]);
     expect(contextPaletteItems([], "/sites/site-1")).toEqual([]);
     expect(contextPaletteItems(items, "/")).toEqual([]);

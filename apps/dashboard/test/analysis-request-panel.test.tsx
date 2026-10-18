@@ -162,7 +162,7 @@ describe("analysis V2 panel", () => {
   it("renders compact metric definitions without a forced-width horizontal table", () => {
     renderPanel();
 
-    const metricsRegion = screen.getByRole("region", { name: "계산 결과" });
+    const metricsRegion = screen.getByRole("region", { name: /^계산 결과/ });
     expect(metricsRegion.querySelector("table")).toBeNull();
     expect(metricsRegion.querySelector("dl")?.className).toContain("sm:grid-cols-3");
     expect([...metricsRegion.querySelectorAll("[class]")].some((element) => element.getAttribute("class")?.includes("min-w-[24rem]") ?? false)).toBe(false);
@@ -411,7 +411,7 @@ describe("analysis V2 panel", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     renderPanel();
     expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
-    expect(screen.getByRole("region", { name: "계산 결과" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: /^계산 결과/ })).toBeTruthy();
     expect(screen.getByText("result-core-1")).toBeTruthy();
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
     expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();

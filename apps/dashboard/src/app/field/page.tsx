@@ -23,7 +23,7 @@ export const metadata = { title: "작업 · KSI" };
 
 const GROUPS = [
   ["decisionRequired", "결정 필요", "범위 검토와 결과 확인이 필요한 작업"],
-  ["inFlight", "진행 중", "수집·전송·처리 중인 작업"],
+  ["inFlight", "진행 중", "등록·검사·처리가 아직 끝나지 않은 작업"],
   ["operationsUnavailable", "운영 상태 확인 필요", "담당·기한 상태를 확인할 작업"],
   ["completed", "완료", "완료되거나 종료된 작업"],
 ] as const;

@@ -1,10 +1,10 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
 import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { getSite } from "@/lib/core-api/sites";
+import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { ErrorState } from "@/components/ui/ErrorState";
 import type { SiteView, WorkArea } from "@/lib/core-api/types";
@@ -80,25 +80,29 @@ export default async function SiteWorkAreasPage({
   // 목록·권한 조회는 서로 독립이다 — 목록이 실패해도 등록 폼은 살아 있어야 한다.
   // 보관된 것까지 함께 읽는다: 이 화면은 "고를 수 있는 것"을 고르는 자리가 아니라
   // 현장의 구역 이력을 관리하는 자리다(무엇이 무엇을 대신했는지가 여기 남는다).
-  const [workAreasResult, canWriteResult] = await Promise.allSettled([
+  const [workAreasResult, canWriteResult, canCreateWorkOrderResult] = await Promise.allSettled([
     listWorkAreas(site.siteId, { includeArchived: true }),
     hasAllPermissions("SITES_WRITE"),
+    hasAllPermissions("WORK_ORDERS_WRITE"),
   ]);
   const workAreas: WorkArea[] =
     workAreasResult.status === "fulfilled" ? workAreasResult.value.workAreas : [];
   const workAreaError =
     workAreasResult.status === "rejected" ? workAreaListFailure(workAreasResult.reason) : null;
   const canWrite = canWriteResult.status === "fulfilled" && canWriteResult.value;
+  const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
 
   return (
-    <div className="flex flex-col gap-5 p-4 sm:p-5">
+    <div className="flex flex-col">
+      <SiteHeader
+        site={site}
+        selectedEpochId={null}
+        tab="manage"
+        canCreateWorkOrder={canCreateWorkOrder}
+        canEditAoi={canWrite}
+      />
+      <div className="flex flex-col gap-5 p-4 sm:p-5">
       <div className="flex flex-col gap-1">
-        <Link
-          href={`/sites/${encodeURIComponent(site.siteId)}`}
-          className="text-[12.5px] font-semibold break-keep text-accent-text hover:underline"
-        >
-          ← {site.name}
-        </Link>
         <h2 className="break-keep text-[19px] font-bold tracking-tight">작업구역</h2>
         <p className="max-w-2xl text-[12.5px] break-keep text-ink-2">
           비교할 범위를 이름과 함께 등록합니다. 이후 관측 자료를 같은 구역에 연결해 변화를 확인할 수 있습니다.
@@ -116,6 +120,7 @@ export default async function SiteWorkAreasPage({
         initialWorkAreas={workAreas}
         workAreaListError={workAreaError}
       />
+      </div>
     </div>
   );
 }

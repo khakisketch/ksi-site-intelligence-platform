@@ -661,7 +661,19 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         <details className="mt-1 text-[12px] text-ink-2"><summary>파일 정보 · 처리 상세</summary><div className="mt-1 break-all"><p>제출 상태: {submissionStateLabel(revision.state)} ({revision.state})</p><p>제출 식별자: {revision.submissionRef}</p>{revision.submission.observationEpochId && <p>촬영 기록: {revision.submission.observationEpochId}</p>}{revision.submission.artifacts?.map((artifact) => <p key={artifact.artifactId}>산출물: {artifact.kind} · {artifact.fileName} · {artifact.declaredSizeBytes}바이트 · 확인값(해시) {artifact.declaredSha256}</p>)}{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
     })}</ul>}
-  </section><ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} /><ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} /></>;
+  </section>
+  {/* 이전(V1) 비교 흐름의 기록이다. 제품의 현재 경로는 검사 결과 → 분석·검토이므로,
+      두 흐름이 같은 무게로 섞여 보이지 않게 한 묶음으로 제목을 달아 둔다.
+      (앵커 #external-volume·#external-result가 이 안을 가리키므로 접지 않는다.) */}
+  <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/40 px-4 py-4" aria-label="이전 비교 흐름 기록">
+    <div>
+      <h2 className="text-[13px] font-bold text-ink-2">이전 비교 흐름(V1) 기록</h2>
+      <p className="mt-1 text-[12px] leading-5 text-ink-muted">검사점 증거·상대 물량처럼 이전 흐름에서 쓰던 기록입니다. 새 변화 분석은 현장의 분석·검토에서 진행합니다.</p>
+    </div>
+    <ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} />
+    <ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} />
+  </section>
+  </>;
 }
 
 export function ExternalReconstructionPanel(props: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>> }) {

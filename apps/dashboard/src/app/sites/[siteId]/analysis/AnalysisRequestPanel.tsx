@@ -303,7 +303,10 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
   const result = detail?.result;
   const metrics = result?.metrics ?? summary.metrics;
   if (!metrics) return null;
-  return <section className="border-t border-line px-4 py-3" aria-label="계산 결과">
+  // 같은 날 여러 기록이 있어도 랜드마크 이름이 겹치지 않게 생성 시각을 붙인다
+  // (같은 이름의 랜드마크가 둘 이상이면 화면 낭독기에서 구분할 수 없다).
+  const label = `계산 결과 · ${formatKoreanDateTime(summary.createdAt, { dateStyle: "medium", timeStyle: "short" })}`;
+  return <section className="border-t border-line px-4 py-3" aria-label={label}>
     <h3 className="text-[13px] font-bold">계산 결과</h3>
     <dl className="mt-2 grid gap-2 border-t border-line pt-2 sm:grid-cols-3 sm:gap-3">
       <div className="min-w-0"><dt className="text-[12px] font-semibold text-ink-muted">절토</dt><dd className="num mt-1 break-words text-[16px] font-bold">{formatNumber(metrics.cutM3, "m³")}</dd></div>
@@ -432,7 +435,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   return <article id={`analysis-${summary.analysisId}`} className={`scroll-mt-5 rounded-lg border bg-surface ${selected ? "border-accent" : "border-line"}`}>
     <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
-        <p className="text-[14px] font-bold">{analysisResultTitle(summary.createdAt)}</p>
+        <p className="text-[14px] font-bold">{analysisResultTitle(summary.createdAt)} · {formatKoreanDateTime(summary.createdAt, { timeStyle: "short" })}</p>
         <p className="mt-1 text-[12px] text-ink-2">{workAreaName} · {formatKoreanDateTime(summary.createdAt, { dateStyle: "medium", timeStyle: "short" })} 변화 분석 기록 생성</p>
         {scopeLine && <p className="mt-0.5 text-[12px] text-ink-2">{scopeLine}</p>}
         <details className="mt-1 text-[11px] text-ink-muted">
