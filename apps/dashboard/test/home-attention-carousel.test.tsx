@@ -23,14 +23,19 @@ function card(overrides: Partial<HomeAttentionCardView> = {}): HomeAttentionCard
 }
 
 describe("HomeAttentionCarousel", () => {
-  it("shows the unavailable-image notice as a corner badge, not a box covering the evidence area", () => {
+  it("applies a decorative default visual when no observation image exists", () => {
     render(<HomeAttentionCarousel items={[card()]} />);
     const positioningWrapper = screen.getByText("관측 이미지 없음").closest("div")?.parentElement;
-    expect(positioningWrapper?.className).not.toContain("inset-0");
     expect(positioningWrapper?.className).not.toContain("place-items-center");
-    // Missing imagery must not look like a map or a darkened photo. Approved height stays.
-    expect(positioningWrapper?.querySelector("svg, img")).toBeNull();
+    // Approved height stays; the notice remains a corner badge, not a box over the area.
     expect(positioningWrapper?.className).toContain("lg:min-h-[330px]");
+    // 기본 표시는 장식이다 — 이름을 따로 붙이지 않고(같은 말을 두 번 읽지 않음),
+    // 데이터로 오인될 측정점·경계 폴리곤을 그리지 않는다.
+    const visual = positioningWrapper?.querySelector("svg");
+    expect(visual).not.toBeNull();
+    expect(visual?.parentElement?.getAttribute("aria-hidden")).toBe("true");
+    expect(visual?.parentElement?.getAttribute("role")).toBeNull();
+    expect(visual?.querySelector("circle, polygon, line")).toBeNull();
     expect(positioningWrapper?.textContent).toContain("A 현장");
     expect(positioningWrapper?.textContent).toContain("9.17. 09:00");
   });

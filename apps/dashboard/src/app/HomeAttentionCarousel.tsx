@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+
+import { DefaultSiteVisual } from "@/components/site/DefaultSiteVisual";
 import { useEffect, useRef, useState } from "react";
 
 export interface HomeAttentionCardView {
@@ -132,8 +134,9 @@ export function HomeAttentionCarousel({
               </div>
             ) : (
               <div className="relative min-h-[208px] overflow-hidden bg-sunk sm:min-h-[270px] lg:min-h-[330px]">
-                {/* 이미지가 없을 때 격자·가짜 지형·사진용 암부를 만들지 않는다.
-                    승인된 시각 영역 비율은 유지하면서, 등록 자료가 없다는 뜻과 구분한다. */}
+                {/* 관측 이미지가 없으면 기본 표시를 자동으로 깐다(장식 등고선, 데이터처럼
+                    보이는 격자·경계·측정점 없음). 승인된 시각 영역 비율은 그대로다. */}
+                <DefaultSiteVisual seed={item.key} className="absolute inset-0 size-full" />
                 <div className="absolute top-3 left-3 max-w-[calc(100%-24px)] rounded-md border border-line bg-surface px-3 py-2">
                   <span className="text-[11px] font-bold text-ink-1">{item.imageFallback.label}</span>
                   <p className="mt-0.5 text-[11.5px] leading-5 break-keep text-ink-2">{item.imageFallback.detail}</p>
