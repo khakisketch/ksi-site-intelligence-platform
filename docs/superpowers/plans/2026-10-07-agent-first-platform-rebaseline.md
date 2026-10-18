@@ -4036,3 +4036,30 @@ Rollback: commit revert; 직전 `.next-practical-journey-verified` 빌드/서버
   가능해 실제 IdP 결정 없이는 노출할 수 없다. 원격 파일 업로드는 브라우저가 loopback presigned
   URL로 직접 PUT하는 구조라 이 기기 밖에서 불가(조회·분석 요청·검토는 same-origin BFF라 동작).
   되돌리기 절차와 증거는 `/tmp/opencode/ksi-site-ia-20261018/README.md`에 있다.
+
+### 2026-10-18 — UI/UX 심층 감사와 순차 개선 (Human 승인 "순차적으로 진행")
+
+Human이 "전반적으로 개선 필요한 UI/UX를 심층 식별"을 요청해 실제 테일넷 빌드에서 22개 라우트 ×
+1440/390 두 폭 + axe/오버플로/JS 오류/키보드/compact 게이트/폼 검증 프로브로 감사하고
+(`docs/audit/UI_UX_DEEP_AUDIT_2026-10-18.md`), 이어 "순차적으로 진행" 승인으로 P1→P2→P3 순서대로
+반영했다. 커밋 `918bcbbb`(문구·게이트·자료 요청 경로)와 `0558dea9`(legacy 묶음·큐/분석 카피·공통 틀).
+
+- **실제 결함 수정**: ① "정제 정사영상" 같은 내부 용어가 운영자 화면에 그대로 노출(45곳) → 표시용
+  정사영상으로 통일, ② 휴대폰 등록 안내가 raw 라우트 경로를 노출, ③ 변화 분석 요청만 compact에서
+  게이트되지 않아 390px에서 생성 mutation 가능(다른 mutation은 모두 게이트), ④ 자료 상세가
+  "구역 자료 준비에서 요청하세요"라고 안내하지만 Console에 생성 경로가 아예 없었음(계약에는
+  `POST …/spatial-data-requests` 존재), ⑤ 작업 큐가 검사 대기/완료 작업을 "수집·전송·처리 중"으로
+  표기, ⑥ 같은 날 분석 3건이 동일 제목이고 `계산 결과` 랜드마크가 중복(axe moderate), ⑦ legacy V1
+  패널이 V2 경로와 같은 무게로 노출, ⑧ 구역 자료 준비·작업구역에 공통 현장 틀 없음, ⑨ 검색 팔레트가
+  새 IA 미반영, ⑩ skip link가 포커스 시 레이아웃을 밀어냄.
+- **추가한 것**: BFF `POST /api/sites/{id}/work-areas/{area}/spatial-data-requests`(모양 검증 +
+  Idempotency-Key), 네이티브 사각형 순수 헬퍼(`nativeBoundsFromInspection` — 회전·비정상 격자는
+  null), 권한 인지 자료 받기 요청 액션(Core typed 사유 한국어 매핑, 성공 시 잠금, 실패 시 같은 키로
+  재시도), compact 게이트 id 2종(`ANALYSIS_REQUEST`, `SPATIAL_DATA_REQUEST`).
+- **검증**: Dashboard **1166/1166 (146 files)**, tsc/standalone build 통과, ESLint 0 errors(기존
+  warning 1), 테일넷 실제 화면에서 새 프레임·큐 문구·분석 제목(03:24/03:12/03:09)·팔레트 6항목·
+  홈 폴백 문구 확인, 분석 페이지 axe serious/critical/moderate 0, 페이지 오류 0. 자료 받기 요청은
+  실측 404(Core spatial-data 배선 없음)였고 **작업이 생성되지 않음**을 요청 목록으로 확인했다.
+- **남은 일**: 등록 폼 이름 통일(카피 결정), 구역 자료 준비 자동 조회, 현장 목록 필터 행 정리,
+  `/more` legacy 항목·홈 공백 등 P3, 그리고 **Core spatial-data 배선(권리·정책·활성화) 결정** —
+  이 환경에서 자료 준비 API가 마운트되지 않은 것은 런타임 구성 사실이며 데이터 권리 결정이 필요하다.
