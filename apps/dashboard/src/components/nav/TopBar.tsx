@@ -6,6 +6,7 @@ import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
 import { BackButton } from "./BackButton";
 import { PageTitle } from "./PageTitle";
+import { TopBarSearchTrigger } from "./TopBarSearchTrigger";
 import { resolvePageTitle } from "./page-title";
 
 function TopBarFrame({ title, children }: { title: string; children?: React.ReactNode }) {
@@ -60,5 +61,12 @@ export async function TopBar() {
     );
   }
 
-  return <TopBarFrame title={title} />;
+  // 세션이 살아 있는 정상 분기 — 사이드바가 숨는 lg 미만에서는 상단바가
+  // 팔레트의 유일한 터치 입구다(⌘K 단축키가 없는 터치 기기를 위해).
+  // 만료 분기에는 두지 않는다 — 검색 결과가 있어도 만료 세션에서는 열 수 없다.
+  return (
+    <TopBarFrame title={title}>
+      <TopBarSearchTrigger />
+    </TopBarFrame>
+  );
 }

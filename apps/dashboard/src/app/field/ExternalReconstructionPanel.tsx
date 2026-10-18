@@ -124,6 +124,21 @@ function exactBindingsMatch(expected: NonNullable<Revision["submission"]["artifa
 
 function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEpochId, canWrite, permissions, initialReport, requiresCaptureInterval = false, newIntentAllowed = true, workAreaNames }: { workOrderId: string; siteId?: string; expectedEpochId: string | null; canWrite: boolean; permissions?: readonly string[]; initialReport?: TrustedExternalResultLink; requiresCaptureInterval?: boolean; newIntentAllowed?: boolean; workAreaNames?: Readonly<Record<string, string>> }) {
   const router = useRouter();
+  const legacyDetails = useRef<HTMLDetailsElement>(null);
+  // V1은 보존 기능이지 현재 분석 진입점이 아니다. 기본은 접되 기존 결과·제안
+  // 딥링크는 초기 진입과 같은 페이지 이동 모두에서 내용을 드러내야 한다.
+  useEffect(() => {
+    const revealLegacyTarget = () => {
+      const hash = window.location.hash;
+      if ((hash === "#external-volume" || hash === "#external-result") && legacyDetails.current) {
+        legacyDetails.current.open = true;
+        document.getElementById(hash.slice(1))?.scrollIntoView?.({ block: "start" });
+      }
+    };
+    revealLegacyTarget();
+    window.addEventListener("hashchange", revealLegacyTarget);
+    return () => window.removeEventListener("hashchange", revealLegacyTarget);
+  }, []);
   const workers = useRef(new Set<Worker>());
   const scope = useRef(0);
   const listAbort = useRef<AbortController | null>(null);
@@ -572,7 +587,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     {listState === "loading" && <p role="status" className="text-ink-2">등록 목록을 불러오는 중입니다.</p>}
     {listState === "error" && <div role="alert" className="flex flex-col items-start gap-2 text-ink-2"><p>등록 목록을 불러오지 못했습니다.</p><button className="btn w-fit" onClick={() => void load()}>목록 다시 시도</button></div>}
     {listState === "ready" && <ul className="flex flex-col gap-2 text-ink-2">{revisions.length === 0 ? <li><span>아직 등록된 관측 자료가 없습니다.</span>{" "}자료를 등록하면 파일 제출과 검사 상태를 이곳에서 확인할 수 있습니다.</li> : null}</ul>}
-    <details open={collapseNewForm ? undefined : true}>
+    {!canWrite && <p className="text-ink-2">조회 전용 계정입니다. 등록 자료와 검사 상태를 확인할 수 있습니다.</p>}
+    {canWrite && <details open={collapseNewForm ? undefined : true}>
       <summary className="tap-target cursor-pointer font-semibold">새 산출물 등록</summary>
       <div className="mt-3 flex flex-col gap-3">
     {canWrite && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 정사영상·DSM 등록을 이어가세요.">
@@ -635,9 +651,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         {message && <p role="status" className="text-ink-2">{message}</p>}
       </div>
     </ResponsiveActionBoundary>}
-    {!canWrite && <p className="text-ink-2">조회 전용 계정입니다.</p>}
       </div>
-    </details>
+    </details>}
     {listState === "ready" && revisions.length > 0 && <ul className="flex flex-col gap-2 text-ink-2">{revisions.map((revision) => {
       const key = inspectionKey(revision);
       const inspection = inspectionByRevision.get(key);
@@ -651,28 +666,25 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
         }
         : null;
       return <li key={key} className="rounded-lg border border-line px-3 py-2"><p>{describeArtifactKinds(revision.submission.artifacts)} · {formatRegistrationVersion(revision.submission.revision)} · {presentation?.title ?? (inspection?.phase === "error" ? "검사 상태를 불러오지 못했습니다." : "검사 상태 확인 중")}</p>
-        <p className="mt-1 break-all text-[12px] text-ink-2">{revision.submission.artifacts?.map((item) => item.fileName).join(", ") || "외부 산출물"}{revision.submission.producerDeclaration?.softwareName ? ` · ${revision.submission.producerDeclaration.softwareName}${revision.submission.producerDeclaration.softwareVersion ? ` ${revision.submission.producerDeclaration.softwareVersion}` : ""}` : ""}</p>
         {presentation && <><p className="mt-1 text-[12px] leading-5 text-ink-2">{presentation.detail}</p><p className="mt-1 text-[12px] leading-5 text-ink-muted">다음: {presentation.nextAction}</p>{presentation.artifactReasons.length > 0 && <ul className="mt-1 list-disc pl-5 text-[12px] leading-5 text-high-ink">{presentation.artifactReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>}</>}
         {inspection?.phase === "loading" && inspectionView !== null && <p role="status" className="mt-1 text-[12px] text-ink-2">마지막으로 확인한 검사 상태를 유지한 채 업데이트를 확인하고 있습니다.</p>}
         {inspection?.phase === "error" && inspectionView !== null && <p role="alert" className="mt-1 text-[12px] text-high-ink">검사 상태 업데이트를 확인하지 못했습니다. 마지막으로 확인한 상태를 표시합니다. 새로고침으로 다시 시도하세요.</p>}
         {inspectionAutoRefreshStopped && presentation?.autoRefresh && <p role="status" className="mt-1 text-[12px] text-ink-2">자동 상태 확인을 멈췄습니다. 마지막으로 확인한 검사 상태를 표시합니다. 새로고침으로 다시 확인하세요.</p>}
         <div className="mt-2 flex flex-wrap gap-2"><button className="btn" onClick={() => { inspectionAutoRefreshBudget.current = 0; setInspectionAutoRefreshStopped(false); void loadInspection(revision); }}>검사 상태 새로고침</button>{display && <button className="btn" onClick={() => setVisibleDisplay((current) => current === key ? null : key)}>{visibleDisplay === key ? "표시용 정사영상 닫기" : "표시용 정사영상 열기"}</button>}{canWrite && revision.state === "REGISTERED" && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" reason="등록 중인 외부 산출물을 다시 이어가는 일은 노트북 이상의 화면에서만 진행합니다."><button className="btn" onClick={() => selectResume(revision)}>등록 이어하기</button></ResponsiveActionBoundary>}</div>
         {display && visibleDisplay === key && <ExternalSanitizedOrthophoto workOrderId={workOrderId} submissionRef={revision.submissionRef} revision={revision.submission.revision} sanitizedDisplayRef={display.sanitizedDisplayRef} receiptDigest={display.receiptDigest} onDismiss={() => setVisibleDisplay(null)} />}
-        <details className="mt-1 text-[12px] text-ink-2"><summary>파일 정보 · 처리 상세</summary><div className="mt-1 break-all"><p>제출 상태: {submissionStateLabel(revision.state)} ({revision.state})</p><p>제출 식별자: {revision.submissionRef}</p>{revision.submission.observationEpochId && <p>촬영 기록: {revision.submission.observationEpochId}</p>}{revision.submission.artifacts?.map((artifact) => <p key={artifact.artifactId}>산출물: {artifact.kind} · {artifact.fileName} · {artifact.declaredSizeBytes}바이트 · 확인값(해시) {artifact.declaredSha256}</p>)}{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
+        <details className="mt-1 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer">파일 정보 · 처리 상세</summary><div className="mt-1 break-all"><p>제출 상태: {submissionStateLabel(revision.state)} ({revision.state})</p><p>제출 식별자: {revision.submissionRef}</p>{revision.submission.producerDeclaration?.softwareName && <p>재구성 소프트웨어: {revision.submission.producerDeclaration.softwareName}{revision.submission.producerDeclaration.softwareVersion ? ` ${revision.submission.producerDeclaration.softwareVersion}` : ""}</p>}{revision.submission.observationEpochId && <p>촬영 기록: {revision.submission.observationEpochId}</p>}{revision.submission.artifacts?.map((artifact) => <p key={artifact.artifactId}>산출물: {artifact.kind} · {artifact.fileName} · {artifact.declaredSizeBytes}바이트 · 확인값(해시) {artifact.declaredSha256}</p>)}{inspectionView !== null && <><p>검사 상태: {inspectionView.inspection.state}</p><p>표시 상태: {inspectionView.display.state}</p>{inspectionView.inspection.outcome?.map((outcome) => <p key={`${outcome.artifactId}:${outcome.outcome}:${outcome.reason ?? ""}`}>산출물 기록: {outcome.artifactId} · {outcome.outcome}{outcome.reason ? ` · 사유 코드/기록: ${outcome.reason}` : ""}</p>)}</>}</div></details>
       </li>;
     })}</ul>}
   </section>
-  {/* 이전(V1) 비교 흐름의 기록이다. 제품의 현재 경로는 검사 결과 → 분석·검토이므로,
-      두 흐름이 같은 무게로 섞여 보이지 않게 한 묶음으로 제목을 달아 둔다.
-      (앵커 #external-volume·#external-result가 이 안을 가리키므로 접지 않는다.) */}
-  <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/40 px-4 py-4" aria-label="이전 비교 흐름 기록">
-    <div>
-      <h2 className="text-[13px] font-bold text-ink-2">이전 비교 흐름(V1) 기록</h2>
-      <p className="mt-1 text-[12px] leading-5 text-ink-muted">검사점 증거·상대 물량처럼 이전 흐름에서 쓰던 기록입니다. 새 변화 분석은 현장의 분석·검토에서 진행합니다.</p>
-    </div>
+  {/* 자식은 계속 마운트해 보존된 조회·시도 상태를 버리지 않는다. */}
+  <details ref={legacyDetails} open={initialReport ? true : undefined} className="rounded-xl border border-line bg-sunk/40" aria-label="이전 비교 흐름 기록">
+    <summary className="tap-target cursor-pointer px-4 py-3 text-[13px] font-bold text-ink-2">이전 비교 흐름(V1) · 검사점·물량·재관측</summary>
+    <div className="flex flex-col gap-3 border-t border-line p-4">
+      <p className="text-[12px] leading-5 text-ink-muted">이전 흐름의 기록 조회와 요청 기능입니다. 새 변화 분석과 결과 검토는 현장의 분석·검토에서 진행합니다.</p>
     <ExternalEvidencePanel workOrderId={workOrderId} siteId={siteId} revisions={revisions} canWrite={canWrite} newIntentAllowed={newIntentAllowed} onRelativeVolumeDecisionChange={receiveRelativeVolumeDecision} onSingleVolumeDecisionChange={receiveSingleVolumeDecision} />
     <ExternalResultWorkflowPanel workOrderId={workOrderId} siteId={siteId} decision={relativeVolumeDecision} singleVolumeDecision={singleVolumeDecision} initialReport={initialReport} permissions={permissions ?? (canWrite ? ["SITES_WRITE"] : [])} workAreaNames={workAreaNames} newIntentAllowed={newIntentAllowed} />
-  </section>
+    </div>
+  </details>
   </>;
 }
 

@@ -13,7 +13,7 @@ export default function MorePage() {
       <div>
         <h2 className="text-[17px] font-bold tracking-tight">운영 지원</h2>
         <p className="mt-1 text-[12.5px] break-keep text-ink-2">
-          운영 지원 범위와 아직 실장비 검증 전인 기능을 안내합니다.
+          현재 제품의 지원 경계를 안내합니다. 장비 운용 기능은 제공하지 않습니다.
         </p>
       </div>
       <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface">
@@ -32,7 +32,7 @@ export default function MorePage() {
                   </span>
                 )}
               </span>
-              {!item.implemented && <StateBadge label="실장비 검증 전" tone="neutral" />}
+              {!item.implemented && <StateBadge label="제품 범위 밖" tone="neutral" />}
             </Link>
           </li>
         ))}

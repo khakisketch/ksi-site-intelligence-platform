@@ -34,6 +34,32 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("ExternalReconstructionPanel", () => {
+  it("keeps V1 secondary without unmounting its capabilities and reveals both retained deep links", async () => {
+    const { unmount } = render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    const legacy = screen.getByText("이전 비교 흐름(V1) · 검사점·물량·재관측").closest("details") as HTMLDetailsElement;
+    expect(legacy.open).toBe(false);
+    expect(legacy.querySelector("#external-volume")).not.toBeNull();
+    for (const hash of ["#external-volume", "#external-result"]) {
+      legacy.open = false;
+      act(() => { window.history.replaceState(null, "", hash); window.dispatchEvent(new HashChangeEvent("hashchange")); });
+      expect(legacy.open).toBe(true);
+    }
+    unmount();
+    // Initial fragment navigation must reveal V1 too (not just an in-page jump).
+    render(<ExternalReconstructionPanel workOrderId="work-2" expectedEpochId="epoch-2" canWrite={false} />);
+    expect(screen.getByText("이전 비교 흐름(V1) · 검사점·물량·재관측").closest("details")?.open).toBe(true);
+    window.history.replaceState(null, "", window.location.pathname);
+  });
+
+  it("gives a viewer read guidance rather than a new-registration disclosure", async () => {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect(screen.getByText("조회 전용 계정입니다. 등록 자료와 검사 상태를 확인할 수 있습니다.")).toBeTruthy();
+    expect(screen.queryByText("새 산출물 등록")).toBeNull();
+    expect(screen.queryByRole("button", { name: "자료 등록 마치기" })).toBeNull();
+  });
+
   it("aborts an obsolete inspection request and never applies it to a newly selected WorkOrder", async () => {
     let oldInspectionSignal: AbortSignal | undefined;
     let resolveOldInspection: ((value: unknown) => void) | undefined;
@@ -181,7 +207,7 @@ describe("ExternalReconstructionPanel", () => {
   it("keeps a viewer read-only and fails closed when the inspection payload is malformed", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "SEALED", submission: { revision: 1 } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite={false} />);
-    expect(await screen.findByText("조회 전용 계정입니다.")).toBeTruthy();
+    expect(await screen.findByText("조회 전용 계정입니다. 등록 자료와 검사 상태를 확인할 수 있습니다.")).toBeTruthy();
     expect(screen.queryByLabelText("정사영상 GeoTIFF")).toBeNull();
     expect(screen.queryByRole("button", { name: "자료 등록 마치기" })).toBeNull();
     expect(await screen.findByText(/검사 상태를 불러오지 못했습니다\./)).toBeTruthy();
@@ -230,7 +256,12 @@ describe("ExternalReconstructionPanel", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     const resumeButton = await screen.findByRole("button", { name: "등록 이어하기" });
     expect(resumeButton.closest("div[class*='hidden'][class*='lg:contents']")).not.toBeNull();
-    expect(screen.getByText("ortho.tif · ODM 1")).toBeTruthy();
+    // 원문은 폐쇄된 파일 정보에 보존하고, 행의 주 표시는 종류·등록 버전으로 둔다.
+    const metadata = screen.getByText("파일 정보 · 처리 상세").closest("details");
+    expect(metadata?.open).toBe(false);
+    expect(metadata?.textContent).toContain("ortho.tif");
+    expect(metadata?.textContent).toContain("재구성 소프트웨어: ODM 1");
+    expect(metadata?.parentElement?.querySelector("p")?.textContent).not.toContain("ortho.tif");
     expect(screen.getByText(/검사 상태를 불러오지 못했습니다\./)).toBeTruthy();
   });
 
@@ -395,7 +426,7 @@ describe("ExternalReconstructionPanel", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "SEALED", submission: { revision: 1 } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     // 유지된 revision 행이 폼보다 먼저 보인다.
-    expect(await screen.findByText(/외부 산출물/)).toBeTruthy();
+    expect(await within(document.getElementById("external-submissions") as HTMLElement).findByText(/산출물 · 등록 버전 1/)).toBeTruthy();
     const disclosure = screen.getByText("새 산출물 등록").closest("details");
     expect(disclosure?.open).toBe(false);
     // 폼은 DOM에 그대로 있어 상태·재시도 맥락을 잃지 않는다.

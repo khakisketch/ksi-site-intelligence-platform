@@ -5,7 +5,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
-import { SiteThumbnail } from "@/components/site/SiteThumbnail";
+import { SiteListSort } from "@/components/site/SiteListSort";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
@@ -183,8 +183,8 @@ export default async function SitesPage({
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      {/* 조작줄 — 칩·검색·정렬·등록이 한 줄에 있고, 스크롤해도 표 머리 위에 남는다. */}
-      <div className="flex flex-wrap items-center gap-2">
+      {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색만 제출하며 정렬은 즉시 적용한다. */}
+      <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
           <>
             <details className="w-full rounded-lg border border-line bg-surface lg:hidden">
@@ -199,25 +199,26 @@ export default async function SitesPage({
                 {status && <input type="hidden" name="status" value={status} />}
                 <label className="grid gap-1 text-[12px] font-medium text-ink-2">
                   현장 상태
-                  <select name="group" defaultValue={group} className="input h-11 w-full text-[13px]">
+                  <select key={group} name="group" defaultValue={group} className="input h-11 w-full text-[13px]">
                     {SITE_GROUPS.map((option) => (
                       <option key={option.key} value={option.key}>{option.label}</option>
                     ))}
                   </select>
                 </label>
                 <label className="grid gap-1 text-[12px] font-medium text-ink-2">
-                  현장명
+                  현장명·ID 검색
                   <input
+                    key={params.q ?? ""}
                     name="q"
                     type="search"
                     defaultValue={params.q ?? ""}
-                    placeholder="현장명 검색"
+                    placeholder="현장명 또는 ID"
                     className="input h-11 w-full min-w-0 text-[13px]"
                   />
                 </label>
                 <label className="grid gap-1 text-[12px] font-medium text-ink-2">
                   정렬
-                  <select name="sort" defaultValue={sort} className="input h-11 w-full text-[13px]">
+                  <select key={sort} name="sort" defaultValue={sort} className="input h-11 w-full text-[13px]">
                     <option value="attention">확인 필요 순</option>
                     <option value="updated">최근 갱신 순</option>
                     <option value="name">이름 순</option>
@@ -230,7 +231,8 @@ export default async function SitesPage({
               </form>
             </details>
 
-            <div className="hidden flex-wrap items-center gap-2 lg:flex">
+            <div className="hidden w-full flex-col gap-3 lg:flex">
+              <div className="flex flex-wrap items-center gap-2" role="group" aria-label="현장 상태 필터">
               {SITE_GROUPS.map((option) => {
                 const active = option.key === group;
                 const count =
@@ -264,34 +266,35 @@ export default async function SitesPage({
                 </Link>
               )}
 
-              <form action="/sites" className="flex items-center gap-2">
+                <span className="ml-auto"><RegisterSiteAction canRegisterSite={canRegisterSite} /></span>
+              </div>
+
+              <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line pt-3">
+              <form action="/sites" className="flex items-end gap-2">
                 {group !== "all" && <input type="hidden" name="group" value={group} />}
                 {status && <input type="hidden" name="status" value={status} />}
+                <input type="hidden" name="sort" value={sort} />
+                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
+                  현장명·ID 검색
                 <input
+                  key={params.q ?? ""}
                   name="q"
                   type="search"
                   defaultValue={params.q ?? ""}
                   aria-label="현장 찾기"
-                  placeholder="현장명 검색"
-                  className="input h-9 w-44 min-w-0 text-[12.5px]"
+                  placeholder="현장명 또는 ID"
+                  className="input h-11 w-56 min-w-0 text-[12.5px]"
                 />
-                <select
-                  name="sort"
-                  defaultValue={sort}
-                  aria-label="정렬 기준"
-                  className="input h-9 w-32 min-w-0 text-[12.5px]"
-                >
-                  <option value="attention">확인 필요 순</option>
-                  <option value="updated">최근 갱신 순</option>
-                  <option value="name">이름 순</option>
-                </select>
-                <button type="submit" className="btn tap-target">적용</button>
+                </label>
+                <button type="submit" className="btn tap-target">검색</button>
                 {hasFilter && <Link href="/sites" className="btn tap-target">초기화</Link>}
               </form>
+              <SiteListSort sort={sort} query={params.q} group={group === "all" ? undefined : group} status={status} />
+              </div>
             </div>
           </>
         )}
-        {(sites === null || sites.length > 0) && (
+        {sites === null && (
           <span className="ml-auto hidden items-center gap-2 lg:flex">
             <RegisterSiteAction canRegisterSite={canRegisterSite} />
           </span>
@@ -323,18 +326,7 @@ export default async function SitesPage({
                 const nextLabel = primaryAction?.label ?? next.label;
                 return (
                   <li key={site.siteId} className="flex gap-3 px-3 py-3.5 sm:px-4 lg:flex-col lg:gap-0 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-0 lg:only:col-span-2">
-                    <Link
-                      href={`/sites/${encodeURIComponent(site.siteId)}`}
-                      aria-label={`${site.name} 현장 열기`}
-                      className="block w-28 shrink-0 self-stretch overflow-hidden rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:w-36 lg:aspect-[16/9] lg:w-full lg:rounded-none"
-                    >
-                      <SiteThumbnail
-                        siteId={site.siteId}
-                        siteName={site.name}
-                        image={null}
-                        className="h-full min-h-24 w-full lg:min-h-0"
-                      />
-                    </Link>
+                    {/* 대표 이미지 계약이 없으므로 가짜 지도 대신 실제 현장 요약에 폭을 쓴다. */}
                     <div className="flex min-w-0 flex-1 flex-col gap-3 lg:p-4">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -395,19 +387,6 @@ export default async function SitesPage({
                 return (
                   <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
                 <div className="flex min-w-0 items-center gap-3">
-                  <Link
-                    href={`/sites/${encodeURIComponent(site.siteId)}`}
-                    aria-label={`${site.name} 현장 열기`}
-                    className="block h-11 w-16 shrink-0 overflow-hidden rounded-md border border-line focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                  >
-                    <SiteThumbnail
-                      siteId={site.siteId}
-                      siteName={site.name}
-                      image={null}
-                      compact
-                      className="size-full"
-                    />
-                  </Link>
                   <div className="min-w-0">
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}`}

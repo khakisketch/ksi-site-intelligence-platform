@@ -57,6 +57,20 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("Field work list page", () => {
+  it("does not describe an unknown operations state as an inspection task", async () => {
+    render(await FieldWorkListPage());
+    const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
+    expect(task.textContent).toContain("담당·기한 상태 확인");
+    expect(task.textContent).not.toContain("자료 등록·검사 확인");
+    expect(screen.getByText("등록·검사 상태와 다음 분석을 확인할 작업")).toBeTruthy();
+  });
+
+  it("lets a closed operation lead to history even when its retained observation is approved", async () => {
+    mocked.operations.mockResolvedValueOnce([{ workOrderId: "obs-work-opaque-0001", workflowStatus: "CLOSED" }]);
+    render(await FieldWorkListPage());
+    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ }).textContent).toContain("이력 보기");
+  });
+
   it("summarizes all four queue groups and keeps opaque IDs out of task rows", async () => {
     render(await FieldWorkListPage());
 

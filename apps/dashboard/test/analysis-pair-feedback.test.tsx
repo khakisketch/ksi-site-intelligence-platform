@@ -216,7 +216,7 @@ describe("analysis pair feedback", () => {
     });
     const summary = screen.getByLabelText("최근 변화 분석 요약");
     const request = screen.getByText("새 변화 분석 요청");
-    expect(summary.textContent).toContain("최근: 실행 완료");
+    expect(summary.textContent).toContain("최근 실행 상태: 실행 완료. 적합성 상태: 평가 근거 있음.");
     expect(summary.textContent).toContain("정확도 보증이 아닙니다");
     expect(summary.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const history = screen.getByRole("region", { name: "변화 분석 이력" });

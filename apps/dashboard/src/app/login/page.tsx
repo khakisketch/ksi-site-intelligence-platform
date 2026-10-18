@@ -34,6 +34,7 @@ export default async function LoginPage({
         <div className="rounded-lg border border-line bg-surface p-6">
           <div className="mb-6 flex flex-col gap-1">
             <h1 className="text-lg font-medium break-keep">KSI Site Intelligence</h1>
+            <p className="text-sm leading-6 break-keep text-ink-2">현장 자료와 변화 분석 결과를 확인하고 검토 기록을 남기는 업무 화면입니다.</p>
             <p className="break-keep text-sm text-ink-muted">
               {localIdentity
                 ? "기본 개발 계정으로 KSI Operations Console을 시작하세요."
@@ -54,14 +55,14 @@ export default async function LoginPage({
             <form action={oidcLogin}>
               <input type="hidden" name="next" value={next ?? "/"} />
               {localIdentity && <input type="hidden" name="intent" value="default" />}
-              <button type="submit" className="btn btn-primary w-full">
+              <button type="submit" className="btn btn-primary tap-target w-full">
                 {localIdentity ? "개발 Operations Console 시작" : "조직 계정으로 로그인"}
               </button>
             </form>
           )}
           {runtime.oidc && localIdentity && (
             <details className="mt-5 border-t border-line pt-4 text-sm">
-              <summary className="cursor-pointer font-medium text-ink-muted">
+              <summary className="tap-target cursor-pointer content-center font-medium text-ink-muted">
                 권한별 화면 테스트
               </summary>
               <p className="mt-2 break-keep text-sm text-ink-muted">

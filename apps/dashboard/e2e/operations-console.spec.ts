@@ -87,7 +87,7 @@ test("더보기는 현재 운영 지원 범위를 정확히 안내한다", async
   const supportLink = page.getByRole("main").getByRole("link", { name: /Dock·Edge 지원 범위/ });
   await expect(supportLink).toHaveCount(1);
   await expect(supportLink).toHaveAttribute("href", "/coming-soon/fleet");
-  await expect(supportLink).toContainText("실장비 검증 전 기능은 사용할 수 없습니다.");
+  await expect(supportLink).toContainText("장비 운용은 현 제품 범위 밖입니다. 기존 경로의 안내만 유지합니다.");
   await expect(page.getByText("비행 임무·장비 연결·복구처럼 기술 운영에 필요한 화면입니다.", { exact: true })).toHaveCount(0);
 });
 
@@ -306,7 +306,9 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
     await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
   }
-  await expect(page.locator("[data-site-thumbnail]:visible").first()).toBeVisible();
+  // 대표 이미지가 없는데 지도 조각을 그리지 않는다 — 행은 이름·상태·다음 할 일로 읽는다.
+  await expect(page.locator("[data-site-thumbnail]")).toHaveCount(0);
+  await expect(siteLink).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link
     // that the exact registration-mode check rejects after navigation.

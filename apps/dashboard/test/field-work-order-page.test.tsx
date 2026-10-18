@@ -264,5 +264,15 @@ describe("관측 작업 페이지 follow-up", () => {
       .toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
     expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).getAttribute("href"))
       .toBe("/sites/site-1/analysis?workAreaId=area-1&currentWorkOrderId=order-1#new-analysis-request");
+    // 현재 경로는 상태와 같은 묶음에서 유일한 primary로 이어진다.
+    expect(continuation.getByRole("link", { name: "변화 분석에서 비교하기" }).className).toContain("btn-primary");
+    expect(screen.getByText("플랫폼 작업 상태").closest("section")?.contains(continuation.getByText("등록 자료 다음 확인"))).toBe(true);
+  });
+
+  it("does not promise laptop mutation access to a viewer", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { principalId: "viewer-1", organizationId: "org-1", permissions: [] } });
+    await renderPage();
+    expect(screen.queryByTestId("responsive-notice")).toBeNull();
+    expect(screen.getByRole("link", { name: "자료 등록·검사 기록으로 이동" }).getAttribute("href")).toBe("#external-submissions");
   });
 });

@@ -132,26 +132,14 @@ export function HomeAttentionCarousel({
               </div>
             ) : (
               <div className="relative min-h-[208px] overflow-hidden bg-sunk sm:min-h-[270px] lg:min-h-[330px]">
-                {/* 표시할 이미지가 없을 때 가짜 지형·차트를 그리지 않는다 — 데이터처럼
-                    읽히는 그림은 "무엇이 없는지"를 흐린다. 조용한 자리 표시만 둔다. */}
-                <svg
-                  aria-hidden="true"
-                  viewBox="0 0 640 360"
-                  preserveAspectRatio="xMidYMid slice"
-                  className="absolute inset-0 size-full"
-                >
-                  <rect width="640" height="360" fill="var(--sunk)" />
-                  <path d="M0 72h640M0 144h640M0 216h640M0 288h640M128 0v360M256 0v360M384 0v360M512 0v360" stroke="var(--line)" opacity="0.5" />
-                </svg>
-
-                {/* 코너 배지 — 불가 안내가 근거 영역 전체를 덮는 큰 흰 박스가 되지
-                    않는다(B7). 아래 배경 SVG가 계속 보인다. */}
-                <div className="absolute top-3 left-3 max-w-[calc(100%-24px)] rounded-lg border border-line-strong bg-surface/95 px-3 py-2 shadow-sm backdrop-blur-sm">
+                {/* 이미지가 없을 때 격자·가짜 지형·사진용 암부를 만들지 않는다.
+                    승인된 시각 영역 비율은 유지하면서, 등록 자료가 없다는 뜻과 구분한다. */}
+                <div className="absolute top-3 left-3 max-w-[calc(100%-24px)] rounded-md border border-line bg-surface px-3 py-2">
                   <span className="text-[11px] font-bold text-ink-1">{item.imageFallback.label}</span>
                   <p className="mt-0.5 text-[11.5px] leading-5 break-keep text-ink-2">{item.imageFallback.detail}</p>
                 </div>
 
-                <div className="absolute right-0 bottom-0 left-0 flex items-end justify-between gap-3 bg-linear-to-t from-black/65 to-transparent px-4 pt-12 pb-3 text-white">
+                <div className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-1 border-t border-line px-4 py-3 text-ink-2">
                   <span className="text-[12px] font-semibold break-keep">{item.siteName}</span>
                   <span className="num shrink-0 text-[10.5px]">{item.observedAt}</span>
                 </div>

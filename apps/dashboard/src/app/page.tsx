@@ -221,9 +221,10 @@ export default async function HomePage() {
     {operationsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다.</p>}
     {decisionsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
 
-    {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "새로 확인할 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 KSI 원장 기준이며 현장 전체의 정상이나 안전을 보증하지 않습니다. 최근 현장을 선택해 관측 맥락을 살펴보세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
+    {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
 
     {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
     {sites.length > 0 && <HomeRecentUpdates items={recentItems} />}
+    {sites.length > 0 && <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-[12px] leading-5 break-keep text-ink-2"><p>조회된 원장 기준의 요약이며, 확인 필요 건수는 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다.</p><Link href="/sites" className="tap-target inline-flex items-center font-semibold hover:underline">현장 자료·작업 보기</Link></footer>}
   </div>;
 }

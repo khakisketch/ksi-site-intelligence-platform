@@ -25,6 +25,15 @@ describe("TeamRosterPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "팀원 정보 저장" }));
     await waitFor(() => expect(JSON.parse(fetchMock.mock.calls[2]?.[1]?.body).expectedRevision).toBe(2));
   });
+  it("keeps viewer and manager empty states distinct without implying an account grant", () => {
+    const { unmount } = render(<TeamRosterPanel initialMembers={[]} canManage currentPrincipalId="admin" />);
+    expect(screen.getByText(/추가할 수 있습니다/)).toBeTruthy();
+    unmount();
+    cleanup();
+    render(<TeamRosterPanel initialMembers={[]} canManage={false} currentPrincipalId="operator-a" />);
+    expect(screen.getByText(/등록된 팀원 정보가 없습니다/)).toBeTruthy();
+    expect(document.body.textContent).not.toContain("추가할 수 있습니다");
+  });
   it("keeps the roster draft and exact idempotency key for an uncertain save retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({}) })

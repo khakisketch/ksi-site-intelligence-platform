@@ -48,7 +48,9 @@
     ".next-ui-verification/types/**/*.ts",
     ".next-ui-verification/dev/types/**/*.ts",
     ".next-operator-language/types/**/*.ts",
-    ".next-operator-language/dev/types/**/*.ts"
+    ".next-operator-language/dev/types/**/*.ts",
+    ".next-site-ia/types/**/*.ts",
+    ".next-site-ia/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

@@ -23,7 +23,9 @@ export async function buildPaletteItems(): Promise<PaletteItem[]> {
     label: item.label,
     group: "화면",
     href: item.href,
-    pending: !item.implemented,
+    // retained acquisition 안내를 '준비 중' 기능으로 오인시키지 않는다(ADR-039).
+    pending: !item.implemented && item.key !== "fleet",
+    hint: item.description,
   }));
 
   const sites = await listSitesCached().catch(() => null);

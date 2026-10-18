@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /** 현장 진행 단계·상태 묶음의 **판정 로직** 회귀(Console v2 §2).
  *
  * 여기서 고정하는 것은 화면 모양이 아니라 세 가지 주장이다: 본선 순서가 도메인
@@ -5,7 +6,11 @@
  * 필터에서 새지 않는가. 셋 다 눈으로 보면 멀쩡해 보이는 종류의 회귀다.
  */
 
-import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { SiteListSort } from "@/components/site/SiteListSort";
 
 import {
   PATROLLABLE_SITE_STATUSES,
@@ -18,6 +23,32 @@ import {
   siteProgress,
 } from "../src/lib/core-api/site-progress";
 import { SITE_STATUSES } from "../src/lib/core-api/types";
+
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+
+describe("현장 목록 정렬", () => {
+  it("정렬 변경은 별도 적용 없이 GET으로 제출하고 이미 적용된 필터를 보존한다", () => {
+    render(createElement(SiteListSort, { sort: "attention", query: "서쪽", group: "attention", status: "UNMAPPED" }));
+    const select = screen.getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement;
+    const submit = vi.spyOn(select.form!, "requestSubmit").mockImplementation(() => {});
+    fireEvent.change(select, { target: { value: "name" } });
+    expect(submit).toHaveBeenCalledOnce();
+    expect(select.form?.getAttribute("action")).toBe("/sites");
+    expect(Object.fromEntries(new FormData(select.form!))).toEqual({ q: "서쪽", group: "attention", status: "UNMAPPED", sort: "name" });
+  });
+
+  it("조건이 없으면 빈 숨은 조건을 추가하지 않는다", () => {
+    render(createElement(SiteListSort, { sort: "updated" }));
+    const select = screen.getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement;
+    expect(Object.fromEntries(new FormData(select.form!))).toEqual({ sort: "updated" });
+  });
+
+  it("초기화·뒤로가기로 URL 정렬이 바뀌면 선택 표시도 같은 값으로 복원한다", () => {
+    const { rerender } = render(createElement(SiteListSort, { sort: "name" }));
+    rerender(createElement(SiteListSort, { sort: "attention" }));
+    expect((screen.getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement).value).toBe("attention");
+  });
+});
 
 describe("진행 단계 본선", () => {
   it("도메인 전이표의 본선 순서를 그대로 쓴다", () => {

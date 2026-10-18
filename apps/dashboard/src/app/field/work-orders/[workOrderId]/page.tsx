@@ -229,8 +229,17 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
   const operationsStateLabel = !operations
     ? "상태 확인 필요"
     : operations.workflowStatus === "CLOSED"
-      ? "업무 종료"
-      : operations.workflowStatus === "OPEN" ? "운영 중" : "운영 상태 확인 필요";
+       ? "업무 종료"
+       : operations.workflowStatus === "OPEN" ? "운영 중" : "운영 상태 확인 필요";
+  const canOperate = session.principal.permissions.includes("WORK_ORDERS_WRITE");
+  const canRegister = session.principal.permissions.includes("SITES_WRITE");
+  // 화면 폭 안내는 권한을 주지 않는다. 조회 전용이거나 일부 쓰기 권한만 있는
+  // 계정에 노트북으로 옮기면 모든 행동을 할 수 있다고 안내하지 않는다.
+  const compactWorkGuidance = canOperate && canRegister
+    ? "노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료와 산출물 등록을 이어가세요."
+    : canRegister
+      ? "노트북에서 같은 계정으로 이 작업 상세를 열어 산출물 등록을 이어가세요."
+      : "노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한 설정과 업무 종료를 이어가세요.";
 
   return (
     <div className="flex flex-col">
@@ -256,9 +265,32 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           {workOrder.statusReason && <p className="rounded-lg bg-high-bg px-3 py-2 text-[13px] text-high-ink">{workOrder.statusReason}</p>}
           {externalExecutionContext === "UNVERIFIED" && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">작업 실행 유형을 확인하지 못했습니다. 관리형 실행 상태나 장비 동작을 표시하지 않습니다.</p>}
           {!externalWorkflow && externalExecutionContext !== "UNVERIFIED" && <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 작업에는 현재 플랫폼이 제공하는 외부 산출물 등록 흐름이 없습니다.</p>}
+          {!planningBinding && externalExecutionContext === "EXTERNAL_INGRESS" && hasRetainedSubmissions && continuation && (() => {
+            const sitePath = `/sites/${encodeURIComponent(workOrder.siteId)}`;
+            const catalogHref = continuation.workAreaId
+              ? `${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
+              : `${sitePath}/spatial-assets`;
+            const analysisHref = continuation.workAreaId
+              ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(continuation.workAreaId)}&currentWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}#new-analysis-request`
+              : `${sitePath}/analysis#new-analysis-request`;
+            return <section className="flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3" aria-label="등록 자료 다음 확인">
+              <div className="min-w-0 flex-1">
+                <h2 className="text-[13px] font-bold">등록 자료 다음 확인</h2>
+                <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+                  {continuation.workAreaId
+                    ? "아래에서 파일 검사 결과를 확인한 뒤 분석·검토로 이동하세요. 분석에 사용할 수 있는 자료인지는 해당 화면에서 다시 확인합니다."
+                    : "이 작업은 여러 구역에 걸쳐 있어 구역을 자동으로 고르지 않았습니다. 목록에서 구역과 관측을 직접 선택하세요."}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Link className="btn" href={catalogHref}>등록 자료 목록 보기</Link>
+                <Link className="btn btn-primary" href={analysisHref}>변화 분석에서 비교하기</Link>
+              </div>
+            </section>;
+          })()}
         </section>
 
-        {externalWorkflow && <ResponsiveNotice action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료와 산출물 등록을 이어가세요." />}
+        {externalWorkflow && (canOperate || canRegister) && <ResponsiveNotice action="WORK_ORDERS_WRITE" reason={compactWorkGuidance} />}
 
         {reportLinkNotice && <p role="status" className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{reportLinkNotice} <Link className="font-semibold text-accent-text underline underline-offset-2" href={`/sites/${encodeURIComponent(workOrder.siteId)}/observations`}>외부 비교 기록</Link></p>}
 
@@ -275,36 +307,12 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           </div>
         </section>}
 
-        {!planningBinding && externalExecutionContext === "EXTERNAL_INGRESS" && hasRetainedSubmissions && continuation && (() => {
-          const sitePath = `/sites/${encodeURIComponent(workOrder.siteId)}`;
-          const catalogHref = continuation.workAreaId
-            ? `${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(continuation.workAreaId)}`
-            : `${sitePath}/spatial-assets`;
-          const analysisHref = continuation.workAreaId
-            ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(continuation.workAreaId)}&currentWorkOrderId=${encodeURIComponent(workOrder.workOrderId)}#new-analysis-request`
-            : `${sitePath}/analysis#new-analysis-request`;
-          return <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-surface px-4 py-3" aria-label="등록 자료 다음 확인">
-            <div className="min-w-0 flex-1">
-              <h2 className="text-[13px] font-bold">등록 자료 다음 확인</h2>
-              <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-                {continuation.workAreaId
-                  ? "이 작업 범위에서 등록 자료 목록과 변화 분석 요청으로 이어집니다. 분석 후보는 해당 화면의 실제 목록에서 확인합니다."
-                  : "이 작업은 여러 구역에 걸쳐 있어 구역을 자동으로 고르지 않았습니다. 목록에서 구역과 관측을 직접 선택하세요."}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link className="btn" href={catalogHref}>등록 자료 목록 보기</Link>
-              <Link className="btn" href={analysisHref}>변화 분석에서 비교하기</Link>
-            </div>
-          </section>;
-        })()}
-
         {(externalWorkflow || latestItem || pendingDrafts.length > 0) && (
-          <nav aria-label="다음 행동" className="flex flex-wrap gap-2 rounded-lg border border-line bg-sunk px-4 py-3">
-            {externalWorkflow && <Link className="btn" href="#external-submissions">{workflowClosed ? "자료 검사 기록으로 이동" : "자료 등록·검사 기록으로 이동"}</Link>}
-            {latestItem && <Link className="btn" href="#work-order-result">보존된 결과로 이동</Link>}
-            {pendingDrafts.length > 0 && <Link className="btn" href="#reobservation-drafts">재관측 제안으로 이동</Link>}
-            {externalWorkflow && <Link className="btn" href="#work-operations">작업 운영으로 이동</Link>}
+          <nav aria-label="작업 내 이동" className="flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] font-semibold text-ink-2">
+            {externalWorkflow && <Link className="tap-target hover:underline" href="#external-submissions">{workflowClosed ? "자료 검사 기록으로 이동" : "자료 등록·검사 기록으로 이동"}</Link>}
+            {latestItem && <Link className="tap-target hover:underline" href="#work-order-result">보존된 결과로 이동</Link>}
+            {pendingDrafts.length > 0 && <Link className="tap-target hover:underline" href="#reobservation-drafts">재관측 제안으로 이동</Link>}
+            {externalWorkflow && <Link className="tap-target hover:underline" href="#work-operations">작업 운영으로 이동</Link>}
           </nav>
         )}
         {unavailableRecords.length > 0 && <ErrorState tone="idle" message={`${unavailableRecords.join("·")} 확인 불가`} detail="해당 기록이 없다는 뜻이 아닙니다. 접근 권한과 서버 상태를 확인한 뒤 다시 시도하세요." retryable />}
@@ -313,7 +321,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
           workOrderId={workOrder.workOrderId}
           siteId={workOrder.siteId}
           expectedEpochId={externalContext?.expectedEpochId ?? null}
-          canWrite={session.principal.permissions.includes("SITES_WRITE")}
+          canWrite={canRegister}
           permissions={session.principal.permissions}
           requiresCaptureInterval={externalExecutionContext === "EXTERNAL_INGRESS"}
           newIntentAllowed={!workflowClosed}
@@ -338,7 +346,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
         /> : <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">보존된 외부 비교 결과 상세를 확인할 수 없습니다.</p>}</div> : null}
 
         {externalWorkflow && <details id="work-operations" className="scroll-mt-5 rounded-xl border border-line bg-surface">
-          <summary className="tap-target flex cursor-pointer items-center justify-between gap-3 px-4 py-3">
+          <summary className="tap-target flex flex-wrap cursor-pointer items-center justify-between gap-2 px-4 py-3">
             <span className="text-[15px] font-bold">작업 운영 · {operationsStateLabel}</span>
             <span className="flex items-center gap-2 text-[12px] font-semibold text-ink-2">담당·기한·업무 종료<svg aria-hidden="true" className="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="m6 9 6 6 6-6" /></svg></span>
           </summary>
@@ -347,7 +355,7 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
               workOrderId={workOrder.workOrderId}
               principalId={session.principal.principalId}
               initialOperations={operations}
-              canWrite={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+              canWrite={canOperate}
             />
           </div>
         </details>}

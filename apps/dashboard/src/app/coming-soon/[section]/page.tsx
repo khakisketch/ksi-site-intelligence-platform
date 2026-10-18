@@ -3,15 +3,9 @@ import { notFound } from "next/navigation";
 import { NAV_ITEMS } from "@/components/nav/nav-items";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-// PRD §7.1 taxonomy 자리는 유지하되 S3 비범위 항목은 정직하게 "준비 중"이라 밝힌다
-// (UX 목표 §6 — 링크를 숨기지 않는다, INV-040 과 같은 정신).
-//
-// 섹션별 한 줄 설명은 PRD §7.1 데스크톱 사이드 메뉴 taxonomy 의 항목명 자체가 뜻하는
-// 범위를 그대로 풀어 쓴 것이다 — 수치·일정·건수 등 API 가 안 주는 값은 넣지 않는다.
-//
-// Fleet scope remains an explicit placeholder until a supported operations surface exists.
+// 기존 deep link는 보존하되, ADR-KSI-039의 제품 책임 밖 기능을 출시 대기로 표현하지 않는다.
 const SECTION_BLURB: Record<string, string> = {
-  fleet: "기체·Edge 장비 상태를 관리하는 화면입니다.",
+  fleet: "비행·장비 제어·취득·고객 운영 재구성은 KSI Site Intelligence의 제품 범위 밖입니다. 이 경로는 기존 링크를 위한 범위 안내이며, 장비 운영 화면이나 향후 지원 약속이 아닙니다.",
   data: "수집 데이터와 AI 모델을 관리하는 화면입니다.",
 };
 
@@ -35,8 +29,8 @@ export default async function ComingSoonPage({
   return (
     <div className="p-4 sm:p-5">
       <EmptyState
-        title="준비 중인 기능입니다"
-        description={`${SECTION_BLURB[section] ?? `${item.label} 화면은 아직 준비 중입니다.`} 현재 이 기능의 운영 데이터와 제어 API는 대시보드에 연결되지 않았습니다.`}
+        title={section === "fleet" ? "장비 운용은 제품 범위 밖입니다" : "준비 중인 기능입니다"}
+        description={section === "fleet" ? SECTION_BLURB.fleet : `${SECTION_BLURB[section] ?? `${item.label} 화면은 아직 준비 중입니다.`} 현재 이 기능의 운영 데이터와 제어 API는 대시보드에 연결되지 않았습니다.`}
         action={nextAction}
       />
     </div>

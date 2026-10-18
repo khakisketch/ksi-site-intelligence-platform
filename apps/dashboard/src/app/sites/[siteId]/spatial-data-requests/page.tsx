@@ -35,6 +35,7 @@ import {
 } from "@/lib/operator-language";
 
 import { SpatialDataRequestActions } from "./SpatialDataRequestActions";
+import { WorkAreaHistorySelect } from "./WorkAreaHistorySelect";
 
 export const metadata = { title: "구역 자료 준비 · KSI" };
 
@@ -447,13 +448,14 @@ export default async function SpatialDataRequestsPage({
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
       <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
         <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-request-work-area">작업구역 선택
-          <select id="spatial-request-work-area" name="workAreaId" className="input" defaultValue={workAreaId ?? ""} required>
+          <WorkAreaHistorySelect key={workAreaId ?? ""} value={workAreaId ?? ""}>
             <option value="" disabled>작업구역을 선택하세요</option>
             {areas?.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
-          </select>
+          </WorkAreaHistorySelect>
         </label>
         <button className="btn btn-primary min-h-11" type="submit">요청 이력 불러오기</button>
       </form>
+      <p id="spatial-request-work-area-help" className="mt-2 text-[12px] leading-5 text-ink-muted">구역을 바꾸면 요청 이력을 불러옵니다. 자동으로 열리지 않으면 조회 버튼을 누르세요.</p>
       {areas?.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">요청 이력을 조회할 작업구역이 없습니다. 현장 담당자에게 작업구역 등록 여부를 확인하세요.</p>}
       {!workAreaId && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">작업구역을 선택해 해당 구역의 자료 준비 요청을 확인하세요.</p>}
       {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 페이지당 최대 50건</p>}

@@ -1,7 +1,11 @@
 import { NAV_ITEMS } from "@/components/nav/nav-items";
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import { resolvePageTitle } from "@/components/nav/page-title";
+import MorePage from "@/app/more/page";
+import ComingSoonPage from "@/app/coming-soon/[section]/page";
 
 // topbar 는 "지금 어디인가"를 말한다. 경로 패턴이 하나 빠지면 그 화면만 조용히
 // 제목을 잃는데, 타입체크·빌드로는 안 보인다(2026-08-04 렌더 확인에서 실제로
@@ -67,6 +71,15 @@ describe("모르는 경로", () => {
 });
 
 describe("운영 지원 섹션", () => {
+  it("보존한 장비 경로를 출시 대기 기능이 아닌 제품 범위 안내로 표시한다", async () => {
+    const more = renderToStaticMarkup(createElement(MorePage));
+    const scope = renderToStaticMarkup(await ComingSoonPage({ params: Promise.resolve({ section: "fleet" }) }));
+    expect(more).toContain('href="/coming-soon/fleet"');
+    expect(more).toContain("제품 범위 밖");
+    expect(scope).toContain("장비 운용은 제품 범위 밖입니다");
+    expect(scope).not.toContain("준비 중인 기능입니다");
+    expect(more).not.toContain("실장비 검증 전");
+  });
   it("retired top-level routes have no stale title mapping", () => {
     for (const path of ["/events", "/missions", "/settings", "/reports", "/assets", "/world"]) {
       expect(resolvePageTitle(path)).toBe("");

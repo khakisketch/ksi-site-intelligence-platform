@@ -23,8 +23,8 @@ export const metadata = { title: "작업 · KSI" };
 
 const GROUPS = [
   ["decisionRequired", "결정 필요", "범위 검토와 결과 확인이 필요한 작업"],
-  ["inFlight", "진행 중", "등록·검사·처리가 아직 끝나지 않은 작업"],
-  ["operationsUnavailable", "운영 상태 확인 필요", "담당·기한 상태를 확인할 작업"],
+  ["inFlight", "진행 중", "등록·검사 상태와 다음 분석을 확인할 작업"],
+  ["operationsUnavailable", "운영 상태 확인 필요", "담당·기한을 불러오지 못했거나 운영 상태가 정해지지 않은 작업"],
   ["completed", "완료", "완료되거나 종료된 작업"],
 ] as const;
 
@@ -98,7 +98,7 @@ export default async function FieldWorkListPage() {
       <div className="flex flex-col gap-4 p-4 sm:p-5">
         <header className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[12.5px] text-ink-2">플랫폼 작업 원장에 기록된 관측 작업과 외부 비교 흐름입니다.</p>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <Link href="/field/inbox" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">받은 업무</Link>
             <Link href="/field/team" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">팀 관리</Link>
             {canCreateObservation ? (
@@ -147,12 +147,12 @@ export default async function FieldWorkListPage() {
                         });
                         return (
                           <li key={order.workOrderId}>
-                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-wrap items-center justify-between gap-3 px-4 py-3 hover:bg-sunk">
+                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-col items-start justify-between gap-2 px-4 py-3 hover:bg-sunk sm:flex-row sm:items-center sm:gap-3">
                               <span className="min-w-0 flex-1">
-                                <span className="block break-keep text-[13px] font-semibold">{order.name}</span>
-                                <span className="mt-1 block truncate text-[12px] text-ink-2">{context}</span>
+                                <span className="block break-words break-keep text-[13px] font-semibold">{order.name}</span>
+                                <span className="mt-1 block break-words break-keep text-[12px] leading-5 text-ink-2">{context}</span>
                               </span>
-                              <StateBadge label={state.label} tone={state.tone} />
+                              <StateBadge label={key === "completed" ? "이력 보기" : key === "operationsUnavailable" ? "담당·기한 상태 확인" : state.label} tone={key === "completed" ? "neutral" : key === "operationsUnavailable" ? "warning" : state.tone} />
                             </Link>
                             {rowsNeedingTechnicalRef.has(order.workOrderId) && <details className="px-4 pb-2 text-[11.5px] text-ink-muted">
                               <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">파일 정보</summary>

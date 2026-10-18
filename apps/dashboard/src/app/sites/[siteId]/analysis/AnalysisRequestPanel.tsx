@@ -537,7 +537,7 @@ function isAnalysisReviewPage(value: unknown): value is AnalysisReviewPage & { t
 }
 
 function analysisReviewDecisionLabel(decision: AnalysisReviewDecision): string {
-  return decision === "ACKNOWLEDGED" ? "확인" : "후속 필요";
+  return decision === "ACKNOWLEDGED" ? "결과와 한계 확인" : "추가 확인·조치 필요";
 }
 
 function reviewResponseError(status: number): string {
@@ -619,7 +619,7 @@ function AnalysisReviewSection({
         : currentDecision === "ACKNOWLEDGED"
       ? { label: "확인됨", tone: "positive" as const }
       : currentDecision === "NEEDS_FOLLOW_UP"
-        ? { label: "후속 필요", tone: "caution" as const }
+        ? { label: "추가 확인·조치 필요", tone: "caution" as const }
         : { label: "미검토", tone: "neutral" as const };
   const commentLength = [...comment].length;
   const canSubmit = canReview
@@ -710,11 +710,11 @@ function AnalysisReviewSection({
         <legend className="mb-1 text-[12.5px] font-semibold">검토 결정 선택</legend>
         <label className="flex min-h-11 items-center gap-2 rounded-md border border-line px-3 py-2 text-[12.5px]">
           <input type="radio" name={`review-decision-${analysisId}`} value="ACKNOWLEDGED" checked={decision === "ACKNOWLEDGED"} onChange={() => { setDecision("ACKNOWLEDGED"); setActionError(null); }} />
-          확인
+          결과와 한계 확인
         </label>
         <label className="flex min-h-11 items-center gap-2 rounded-md border border-line px-3 py-2 text-[12.5px]">
           <input type="radio" name={`review-decision-${analysisId}`} value="NEEDS_FOLLOW_UP" checked={decision === "NEEDS_FOLLOW_UP"} onChange={() => { setDecision("NEEDS_FOLLOW_UP"); setActionError(null); }} />
-          후속 필요
+          추가 확인·조치 필요
         </label>
       </fieldset>
       <label className="text-[12.5px] font-semibold" htmlFor={`review-comment-${analysisId}`}>검토 의견 <span className="font-normal text-ink-muted">· 필수, 최대 1,000자</span>
@@ -1461,8 +1461,9 @@ export function AnalysisRequestPanel({
     {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
       <p className="text-[12.5px] leading-5 text-ink-2">
         <span className="font-bold text-ink-1">최근 변화 분석 요약</span>
-        {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""} · 최근: ${executionLabel(latestRow.executionState).label} · ${suitabilityLabel(latestRow.suitabilityState).label}`}
+        {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""}`}
       </p>
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">최근 실행 상태: {executionLabel(latestRow.executionState).label}. 적합성 상태: {suitabilityLabel(latestRow.suitabilityState).label}.</p>
       <p className="mt-1 text-[12px] leading-5 text-ink-2">{latestNextAction}</p>
       <div className="mt-1 flex flex-wrap gap-x-5">
         <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>

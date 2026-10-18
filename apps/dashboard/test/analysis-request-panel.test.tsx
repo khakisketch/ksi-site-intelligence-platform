@@ -466,7 +466,7 @@ describe("analysis V2 panel", () => {
     renderPanel({ canCreate: true }, async () => json(reviewPage()));
 
     await screen.findByText("미검토");
-    fireEvent.click(screen.getByLabelText("확인"));
+    fireEvent.click(screen.getByLabelText("결과와 한계 확인"));
     const comment = screen.getByLabelText(/검토 의견/) as HTMLTextAreaElement;
     const submit = screen.getByRole("button", { name: "검토 기록 추가" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
@@ -483,8 +483,11 @@ describe("analysis V2 panel", () => {
     expect(submit.disabled).toBe(true);
   });
 
-  it("submits a decision and required comment, then refreshes the current review state", async () => {
-    const saved = { ...reviewReceipt(), comment: "이번 주 결과를 확인했습니다." };
+  it.each([
+    ["ACKNOWLEDGED", "결과와 한계 확인", "확인됨"],
+    ["NEEDS_FOLLOW_UP", "추가 확인·조치 필요", "추가 확인·조치 필요"],
+  ] as const)("submits %s with a required comment, then refreshes the current review state", async (decision, label, status) => {
+    const saved = { ...reviewReceipt(), decision, comment: "이번 주 결과를 확인했습니다." };
     let reads = 0;
     const reviewFetch = vi.fn((url: string, init?: RequestInit) => {
       if (init?.method === "POST") return Promise.resolve(json(saved, 201));
@@ -495,16 +498,16 @@ describe("analysis V2 panel", () => {
     renderPanel({ canCreate: true }, reviewFetch);
 
     await screen.findByText("미검토");
-    fireEvent.click(screen.getByLabelText("확인"));
+    fireEvent.click(screen.getByLabelText(label));
     fireEvent.change(screen.getByLabelText(/검토 의견/), { target: { value: saved.comment } });
     expect((screen.getByRole("button", { name: "검토 기록 추가" }) as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "검토 기록 추가" }));
 
-    expect(await screen.findByText("확인됨")).toBeTruthy();
+    expect(await screen.findByText(status, { selector: "span" })).toBeTruthy();
     expect(screen.getByText("검토 기록을 저장하고 최신 상태를 다시 불러왔습니다.")).toBeTruthy();
     const post = reviewFetch.mock.calls.find(([, init]) => init?.method === "POST");
     expect(post?.[0]).toBe("/api/sites/site-1/analyses/analysis-1/reviews");
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ decision: "ACKNOWLEDGED", comment: saved.comment });
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ decision, comment: saved.comment });
     expect(post?.[1]?.headers).not.toHaveProperty("Idempotency-Key");
     expect(reviewFetch).toHaveBeenCalledTimes(3);
   });
@@ -520,7 +523,7 @@ describe("analysis V2 panel", () => {
     renderPanel({ canCreate: true }, reviewFetch);
 
     await screen.findByText("미검토");
-    fireEvent.click(screen.getByLabelText("확인"));
+    fireEvent.click(screen.getByLabelText("결과와 한계 확인"));
     fireEvent.change(screen.getByLabelText(/검토 의견/), { target: { value: "검토했습니다." } });
     fireEvent.click(screen.getByRole("button", { name: "검토 기록 추가" }));
 

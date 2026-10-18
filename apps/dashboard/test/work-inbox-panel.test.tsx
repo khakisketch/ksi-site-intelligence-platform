@@ -41,6 +41,22 @@ describe("WorkInboxPanel", () => {
     expect(screen.queryByText(/읽지 않은 받은 업무가 없습니다|받은 업무가 없습니다/)).toBeNull();
   });
 
+  it("offers a one-tap escape from an empty unread inbox to the full list", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ items: [], nextCursor: null }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "전체 목록 보기" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/work-inbox?unreadOnly=false", { cache: "no-store" }));
+    expect(await screen.findByRole("link", { name: "작업 목록으로 이동" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "전체" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("offers a work-queue escape when the full inbox is empty", () => {
+    render(<WorkInboxPanel initialUnreadOnly={false} initialNextCursor={null} initialItems={[]} />);
+    expect(screen.getByText(/받은 업무가 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "작업 목록으로 이동" }).getAttribute("href")).toBe("/field");
+  });
+
   it("renders only a typed Core target route for a shared report", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[{ notificationRef: "notice-1", kind: "EXTERNAL_REPORT_SHARED", target: { kind: "EXTERNAL_REPORT", siteId: "site-a", reportRef: "report-a" }, senderPrincipalId: "operator-a", createdAt: "2026-09-10T00:00:00Z", unread: true }]} />);
     expect(screen.getByRole("link", { name: "공유된 결과 열기" }).getAttribute("href")).toBe("/sites/site-a/observations/report-a");

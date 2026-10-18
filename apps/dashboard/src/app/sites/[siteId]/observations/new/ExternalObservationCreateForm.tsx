@@ -159,8 +159,7 @@ export function ExternalObservationCreateForm({
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 현장의 '관측 자료 등록' 화면을 열어 이어가세요.">
           <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
             <div>
-              <h2 className="text-[16px] font-bold">외부 산출물 등록</h2>
-              <p className="mt-1 text-[13px] leading-5 text-ink-2">이 작업은 파일 등록과 비교 확인을 위한 것입니다. 비행 또는 장비 제어는 시작하지 않습니다.</p>
+              <p className="text-[13px] leading-5 text-ink-2">비행 또는 장비 제어는 시작하지 않습니다.</p>
               {/* 반복 템플릿 공지는 실제 검증된 반복 진입에서만 page가 넘긴다. 범위 선택만으로 추론하지 않는다. */}
               {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : null}
               {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{scopeNotice}</p>}
@@ -184,7 +183,7 @@ export function ExternalObservationCreateForm({
             )}
             {attempt && <p className="rounded-lg bg-sunk px-3 py-2 text-[12.5px] text-ink-2">이 요청은 같은 내용으로 재시도합니다. 내용을 바꾸려면 새 요청으로 시작하세요.</p>}
             <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "작업 만들고 파일 등록으로 계속"}</button>
+              <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "관측 자료 등록 계속"}</button>
             </div>
             <p className="text-[12px] leading-5 text-ink-2">작업이 만들어지면 파일 제출·검사 화면으로 이동합니다. 파일 올리기는 그 화면에서 이어갑니다.</p>
             {!busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}

@@ -22,7 +22,7 @@ export const NAV_ITEMS: NavItem[] = [
     implemented: false,
     icon: "support",
     mobile: false,
-    description: "실장비 검증 전 기능은 사용할 수 없습니다.",
+    description: "장비 운용은 현 제품 범위 밖입니다. 기존 경로의 안내만 유지합니다.",
   },
 ];
 

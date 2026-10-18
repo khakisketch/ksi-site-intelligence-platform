@@ -28,6 +28,11 @@ describe("HomeAttentionCarousel", () => {
     const positioningWrapper = screen.getByText("관측 이미지 없음").closest("div")?.parentElement;
     expect(positioningWrapper?.className).not.toContain("inset-0");
     expect(positioningWrapper?.className).not.toContain("place-items-center");
+    // Missing imagery must not look like a map or a darkened photo. Approved height stays.
+    expect(positioningWrapper?.querySelector("svg, img")).toBeNull();
+    expect(positioningWrapper?.className).toContain("lg:min-h-[330px]");
+    expect(positioningWrapper?.textContent).toContain("A 현장");
+    expect(positioningWrapper?.textContent).toContain("9.17. 09:00");
   });
 
   it("gives exactly one pagination signal when several sites are shown", () => {

@@ -35,6 +35,13 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  // 포커스 복원용 — 팔레트를 연 시점에 포커스를 갖고 있던 트리거(사이드바·상단바 버튼,
+  // 단축키 입력 자리)를 닫을 때 되돌린다. 키보드 사용자가 "어디에 있는지"를 잃지 않게.
+  const restoreFocusRef = useRef<HTMLElement | null>(null);
+  const listboxId = "ksi-palette-listbox";
 
   const results = useMemo(() => filterPaletteItems([...contextPaletteItems(items, pathname ?? ""), ...items], query), [items, pathname, query]);
   const shortcutRows: Array<{ keys: string[]; desc: string }> = [
@@ -56,6 +63,8 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     setQuery("");
     setActive(0);
   }, []);
+
+  const isOpen = open || helpOpen;
 
   // 전역 단축키 — 판정은 순수 함수(shortcuts.ts)가 하고 여기서는 결과만 실행한다.
   useEffect(() => {
@@ -90,9 +99,85 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     return () => window.removeEventListener(PALETTE_OPEN_EVENT, onOpenRequest);
   }, [openPalette]);
 
+  // 열림 전환에만 트리거 포커스를 기억한다(닫힘→열림 경계). 팔레트 안에서 이동한
+  // 포커스를 덮어쓰면 닫을 때 언마운트된 노드로 복원하려 한다. 닫힘 전환에는
+  // 기억해 둔 트리거로 포커스를 되돌린다 — 키보드 사용자가 위치를 잃지 않게.
+  const prevOpenRef = useRef(false);
   useEffect(() => {
-    if (open) inputRef.current?.focus();
-  }, [open]);
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = isOpen;
+    if (isOpen && !wasOpen) {
+      restoreFocusRef.current =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    }
+    if (!isOpen && wasOpen) {
+      restoreFocusRef.current?.focus?.();
+      restoreFocusRef.current = null;
+    }
+  }, [isOpen]);
+
+  // 초기 포커스 — 검색 모드는 입력창, 도움말 모드는 닫기 버튼. 도움말은 목록이
+  // 없어 입력창에 두면 Tab 첫 정지가 허공이 된다.
+  useEffect(() => {
+    if (!isOpen) return;
+    if (helpOpen) closeButtonRef.current?.focus();
+    else inputRef.current?.focus();
+  }, [isOpen, helpOpen]);
+
+  // 배경 스크롤 잠금 — 모달이 열린 동안 뒷면이 밀리지 않게. body 만 잠그면
+  // 부족하다: 데스크톱(lg+)에서는 <main id="main-content"> 이 별도 스크롤
+  // 컨테이너라 그대로 밀린다(layout.tsx). 세 자리(body·html·main)의 이전 값을
+  // 기억해 복원한다. main 이 없으면(셸 밖 렌더) 조용히 건너뛴다.
+  useEffect(() => {
+    if (!isOpen) return;
+    const main = document.getElementById("main-content");
+    const targets = [document.body, document.documentElement, ...(main ? [main] : [])];
+    const prev = targets.map((node) => node.style.overflow);
+    targets.forEach((node) => {
+      node.style.overflow = "hidden";
+    });
+    return () => {
+      targets.forEach((node, index) => {
+        node.style.overflow = prev[index];
+      });
+    };
+  }, [isOpen]);
+
+  // 배경 비활성화 — 오버레이의 뒷면 형제(셸 본문)를 inert 로 잠가 뒷면으로의
+  // Tab·AT·프로그래밍 포커스와 포인터 조작을 막는다. 기존 inert 값을 기억해
+  // 닫을 때 그대로 복원한다(원래 inert 였던 형제는 inert 로 둔다).
+  useEffect(() => {
+    if (!isOpen) return;
+    const overlay = overlayRef.current;
+    const parent = overlay?.parentElement;
+    if (!parent) return;
+    const siblings = Array.from(parent.children).filter((node) => node !== overlay);
+    const prev = siblings.map((node) => (node as HTMLElement).inert);
+    siblings.forEach((node) => {
+      (node as HTMLElement).inert = true;
+    });
+    return () => {
+      siblings.forEach((node, index) => {
+        (node as HTMLElement).inert = prev[index];
+      });
+    };
+  }, [isOpen]);
+
+  // 포커스 회수 — inert 를 강제하지 않는 AT·오래된 브라우저에서 뒷면으로 간
+  // 포커스를 다이얼로그로 되돌린다. 닫힘 복원(trigger.focus)과는 겹치지 않는다:
+  // 이 리스너는 열린 동안만 살아있고, 복원은 닫힘 전환 효과에서 일어난다.
+  useEffect(() => {
+    if (!isOpen) return;
+    function onFocusIn(event: FocusEvent) {
+      const root = dialogRef.current;
+      if (!root) return;
+      if (event.target instanceof HTMLElement && !root.contains(event.target)) {
+        (helpOpen ? closeButtonRef.current : inputRef.current)?.focus();
+      }
+    }
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, [isOpen, helpOpen]);
 
   // 선택 항목이 보이는 자리에 있게 한다 — 키보드로만 훑을 때 화면 밖으로 나가면
   // "아무 일도 안 일어난다"로 읽힌다.
@@ -121,20 +206,61 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     }
   }
 
+  // Tab 트랩 — 모달이 열린 동안 Tab/Shift+Tab 이 뒷면으로 새지 않게 다이얼로그
+  // 안에서 순환시킨다. 정지 목록에 없는 곳에 포커스가 있으면(결과 버튼을 포인터로
+  // 눌러 tabindex -1 버튼에 포커스가 갔거나, 프로그래밍·AT 가 뒷면에 뒀거나)
+  // 방향에 맞는 첫/마지막 정지로 회수한다 — current===last 만 보는 검사는
+  // 그 경우를 놓치고 뒷면으로 샌다. 결과 버튼은 tabindex -1 로 정지에서
+  // 제외한다(콤보박스 패턴: 목록 이동은 ↑↓가 맡고 포커스는 입력창에 둔다).
+  function onDialogKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "Tab") return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const stops = Array.from(
+      root.querySelectorAll<HTMLElement>("button:not([disabled]), input, a[href]"),
+    ).filter((node) => node.tabIndex >= 0);
+    if (stops.length === 0) {
+      event.preventDefault();
+      return;
+    }
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    const index = stops.indexOf(document.activeElement as HTMLElement);
+    if (index === -1) {
+      event.preventDefault();
+      (event.shiftKey ? last : first).focus();
+      return;
+    }
+    if (event.shiftKey && index === 0) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && index === stops.length - 1) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  const activeId = results.length > 0 ? `ksi-palette-option-${active}` : undefined;
+
   if (!open && !helpOpen) return null;
 
   return (
     <div
-      className="print:hidden fixed inset-0 z-50 flex items-start justify-center bg-black/40 px-4 pt-[12vh]"
+      ref={overlayRef}
+      className="print:hidden fixed inset-0 z-50 flex max-h-dvh justify-center overflow-y-auto bg-black/40 px-4 py-[4dvh]"
       // 바깥을 누르면 닫힌다. 안쪽 클릭이 여기까지 올라오지 않게 컨테이너에서 멈춘다.
+      // 가상 키보드가 올라와 보이는 높이가 줄면 오버레이 자체가 스크롤되게 해
+      // 푸터가 화면 밖으로 잘려 닫을 수단을 잃지 않게 한다(my-auto + max-h-full).
       onMouseDown={close}
     >
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={helpOpen ? "단축키 도움말" : "검색 및 이동"}
-        className="ksi-rise w-full max-w-[560px] overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_24px_64px_rgba(0,0,0,.4)]"
+        className="ksi-rise my-auto max-h-full w-full max-w-[560px] flex-none overflow-hidden rounded-[10px] border border-line bg-surface shadow-[0_24px_64px_rgba(0,0,0,.4)]"
         onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
       >
         {helpOpen ? (
           <div className="p-4">
@@ -151,7 +277,12 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                 </li>
               ))}
             </ul>
-            <button type="button" onClick={close} className="btn mt-4 w-full">
+            <button
+              ref={closeButtonRef}
+              type="button"
+              onClick={close}
+              className="btn tap-target mt-4 min-h-11 w-full"
+            >
               닫기
             </button>
           </div>
@@ -181,23 +312,68 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                 onKeyDown={onInputKeyDown}
                 placeholder="화면 · 현장 검색"
                 aria-label="화면 또는 현장 검색"
+                role="combobox"
+                aria-expanded={results.length > 0}
+                aria-controls={listboxId}
+                aria-activedescendant={activeId}
+                aria-autocomplete="list"
                 className="min-h-11 w-full border-0 bg-transparent py-3 text-[14px] outline-none placeholder:text-ink-muted"
               />
+              {/* 보이는 닫기 — 백드롭 클릭만으로는 터치·키보드 사용자가 닫을 수단을
+                  찾기 어렵다. 44px 탭 타겟. */}
+              <button
+                ref={closeButtonRef}
+                type="button"
+                onClick={close}
+                aria-label="팔레트 닫기"
+                className="tap-target my-1 flex min-h-11 min-w-11 flex-none items-center justify-center rounded-md text-ink-2 hover:bg-sunk"
+              >
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                >
+                  <path d="M4 4l8 8M12 4l-8 8" />
+                </svg>
+              </button>
             </div>
+            {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름만 찾는다. 파일·작업
+                기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다). */}
+            <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-[11.5px] break-keep text-ink-muted">
+              화면·현장 이름 검색이며 파일·작업 기록은 각 현장에서 확인
+            </p>
 
-            {results.length === 0 ? (
-              <p className="px-4 py-8 text-center text-[13px] break-keep text-ink-muted">
-                일치하는 화면이나 현장이 없습니다.
-              </p>
-            ) : (
-              <ul ref={listRef} className="max-h-[46vh] overflow-y-auto py-1.5">
-                {results.map((item, index) => (
-                  <li key={item.key}>
+            {/* 결과 목록은 항상 렌더한다 — 0건일 때 목록을 치워버리면 입력창의
+                aria-controls 가 존재하지 않는 id 를 가리킨다. 빈 메시지는
+                리스트박스 안의 표현용 항목으로 둔다. */}
+            <ul
+              ref={listRef}
+              id={listboxId}
+              role="listbox"
+              aria-label="검색 결과"
+              className="max-h-[46dvh] overflow-y-auto py-1.5"
+            >
+              {results.length === 0 ? (
+                <li role="presentation" className="px-4 py-8 text-center text-[13px] break-keep text-ink-muted">
+                  일치하는 화면이나 현장이 없습니다.
+                </li>
+              ) : (
+                results.map((item, index) => (
+                  // li 는 표현용으로 투명화하고 버튼이 role=option 을 진다 —
+                  // li[option] 안에 button 을 넣으면 중첩 인터랙티브로 걸린다.
+                  <li key={item.key} role="presentation">
                     <button
                       type="button"
+                      id={`ksi-palette-option-${index}`}
+                      role="option"
+                      aria-selected={index === active}
+                      tabIndex={-1}
                       onMouseEnter={() => setActive(index)}
                       onClick={() => goTo(item)}
-                      aria-current={index === active ? "true" : undefined}
                       className={`tap-target flex w-full items-center gap-3 px-3.5 text-left text-[13px] ${
                         index === active ? "bg-accent-tint" : ""
                       }`}
@@ -218,9 +394,9 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
                       <span className="flex-none text-[11.5px] text-ink-muted">{item.group}</span>
                     </button>
                   </li>
-                ))}
-              </ul>
-            )}
+                ))
+              )}
+            </ul>
 
             <div className="flex items-center gap-2 border-t border-line bg-sunk px-3.5 py-2 text-[11.5px] text-ink-muted">
               <KeyCap>↑</KeyCap>
