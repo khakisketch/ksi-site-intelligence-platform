@@ -306,8 +306,11 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
     await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
   }
-  // 대표 이미지가 없는데 지도 조각을 그리지 않는다 — 행은 이름·상태·다음 할 일로 읽는다.
-  await expect(page.locator("[data-site-thumbnail]")).toHaveCount(0);
+  // Human follow-up: the same decorative default used on Home is visible in
+  // both list representations. It is labelled, not presented as site footage.
+  const defaultVisualLabels = page.getByRole("main").getByText("기본 이미지", { exact: true });
+  await expect(defaultVisualLabels.first()).toBeAttached();
+  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(true);
   await expect(page.locator('main a[href^="/sites/"]:not([href="/sites/new"]) >> visible=true').first()).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link

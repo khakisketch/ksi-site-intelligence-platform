@@ -68,6 +68,21 @@ support assertions ahead of the user-facing decision.
 - Prefer `Link` for URL-state navigation so deep links, browser back, and server rendering remain
   correct.
 
+### Site list controls and default visual (Human follow-up, 2026-10-19)
+
+Search and sort are one compact toolbar, not two differently labelled forms: a magnifier inside
+the search field, a native sort select, consistent control heights and accessible labels. Avoid a
+redundant visible search submit button when debounce + Enter provide the action. Do not navigate
+mid-IME composition or allow a pending search to override newer criteria/history navigation.
+Compact users must be able to reach search without opening an unrelated advanced-filter disclosure.
+
+The Site list may reuse the Home `DefaultSiteVisual` as a small **decorative default**, clearly labelled
+`기본 이미지`; it is not site footage or measured geography. Keep names/status/next action primary and
+retain the dense desktop comparison table. A genuine preview still requires a supported, scoped
+registered-artifact source; do not infer one from the existence of a Site/WorkArea/asset or fetch raw
+bytes as a thumbnail workaround. This supersedes the earlier text-only row choice, not media rights
+or the ban on fabricated site photography or geographic evidence.
+
 ### Action feedback (Human-approved, 2026-10-19)
 
 Choose the delivery surface by what the person must do next, not by treating every message as an alert:

@@ -186,3 +186,20 @@ Human 요청으로 전역 "합성 자료 시연" 배너를 제거했다 — `Syn
 실제 원장 writes는 가로챘으며 성공/실패 fixture와 native dialog/실제 페이지 popover/toast를 판독했다.
 권한 scope를 넓히지 않았고 실제고객·운영·물리touch·SR 검증을 주장하지 않는다.
 증거 `/tmp/opencode/ksi-permission-design-20261019/`.
+
+### 2026-10-19 — 현장 목록 검색·정렬·기본 표시 후속 (Human annotation, 로컬 완료)
+
+Human 지적대로 검색 위 라벨/44px 입력/36px 검색 버튼/정렬 좌측 라벨의 혼합을 없앴다.
+돋보기 입력+안쪽 아이콘의 네이티브 정렬을 같은 36px(desktop)/44px(compact)로 맞췄으며,
+검색은 300ms 자동 적용+Enter, 한글 조합/URL/back/필터·정렬 경합·초기화를 보존한다.
+compact에서도 검색이 메뉴 밖에 보이고, 활성 조건의 초기화는 추가 줄을 만들지 않는다.
+
+목록이 텍스트 전용이었던 것은 기술상 숨겨진 이미지가 있어서가 아니라 이전 선택이었다.
+이를 개정해 Home의 같은 **기본 장식**을 카드·표에 작게 표시한다. 표식은 `기본 이미지`이며
+실제 현장 사진·지리·측정 근거가 아니다. 현재 Home의 image:null 경로도 그대로이고,
+실제 관측 썸네일 API/미디어 권한을 새로 만들거나 원본으로 우회하지 않았다.
+
+1287 tests/151files, type/build/lint0err1기존warning, Console+feedback+Sites E2E87pass13의도적skip,
+최종4폭×3상태의 실제 렌더12개에서 axe serious/critical/moderate0·넘침0·오류0·mutation0.
+최종 캡처 직접 비교·판독. 새 Sites E2E30pass2compactskip, 기존 stale empty-org suite는 범위 밖.
+원장 10-19 후속에 상세 수용·경계, 증거 `/tmp/opencode/ksi-sites-controls-20261019/`에 원본/최신/로그가 있다.

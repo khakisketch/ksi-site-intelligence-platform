@@ -4141,3 +4141,62 @@ Primary Architect가 통합/새 렌더 수용을 소유하며 General 3개가 �
 - 되돌리기: 현재3241만 중지하고 이전 `/tmp/opencode/ksi-site-ia-20261018/serve-tailnet.sh`를 실행하면
   보존된 `.next-site-ia`로 돌아간다. 새 launcher는 위 evidence 경로의 `serve-feedback.sh`다.
   본 UI 요청은 로컬 완료이며 기존 실제 고객/자료 준비/production/IdP 등 제품 경계는 그대로다.
+
+### 2026-10-19 — 현장 목록 검색·정렬 일관성 + 기본 시각 표시 (Human 후속, IN PROGRESS)
+
+Human annotation: 검색/검색 버튼의 높이와 라벨 방향이 정렬 선택과 불일치하며, 돋보기 입력만으로
+간결하게 만들 수 있는지 질문했다. Home에는 시각 표시가 있는데 목록에서는 없는 이유도 지적했다.
+기존 text-first 선택을 영구 금지로 취급하지 않고 이 피드백에 맞춰 조정한다.
+
+- Requirement IDs: REQ-UX-101, REQ-SEC-101; INV-040(기본 장식≠관측 데이터), INV-060(기존 scoped
+  목록만 조회), INV-061(새 권한·미디어 반출 없음). ADR-KSI-025 D3/D6 Home 구조/실제 근거 규칙은 유지.
+- Owner module: Dashboard `/sites`, shared site controls/default visual; Core/API/RBAC 변경 없음.
+- Acceptance criteria: 별도 검색 버튼 없이 magnifier 입력+Enter/300ms debounce; 한글 IME 중 미적용;
+  검색·정렬 동일 높이/라벨 방식, filter/status/sort/q 보존·공유 URL·back/forward·빈 결과/초기화;
+  compact에서도 검색 바로 접근; 카드/비교표 모두 같은 truthful 기본 표시와 현장 열기 1개 유지.
+- Contracts affected: URL query 의미/권한/상태 분류는 불변; client interaction timing/표현만 변경.
+- Reference assets/adoption: 기존 DefaultSiteVisual ADOPT(홈의 장식이며 실제 이미지가 아님);
+  현재 Home은 image:null 경로로, 현장 목록의 실제 미리보기 resolver는 없으므로 연결/지원 주장 없음.
+- Files to change: sites/page.tsx, SiteListSort 또는 통합 controls/helper/default visual, focused tests,
+  E2E 검색·정렬·표시 검증, 기존 audit/ledger. General 한 명이 source 소유, primary가 통합/렌더 소유.
+- Tests: URL/IME/debounce/경합/길고 중복인 현장명 단위 검사, 실제 390/768/1024/1440 렌더·입력·키보드,
+  빈 결과·clear·scope 보존·back/forward·axe·overflow·전체 suite/type/build.
+- HIL or real-device assumptions: 없음; headless emulation을 물리 터치/고객 수용으로 부르지 않음.
+- License/data implications: 외부 사진/지도/새 의존성·실제 자료 접근 추가 없음, 원본·정량 의미 불변.
+- Rollback: 이번 UI 변경만 revert; 현재 `.next-feedback-final-20261019` 보존.
+
+증거 root `/tmp/opencode/ksi-sites-controls-20261019/`. Git baseline c5b125c0=origin/main, tracked clean.
+
+**로컬 수용 완료 — 현장 목록 후속 (위 IN PROGRESS를 대체)**
+
+- 검색의 별도 버튼·위 라벨을 제거하고 돋보기 입력 하나로 정리했다. 네이티브 정렬도 아이콘을
+  선택 상자 **안**에 두고 sr 라벨을 유지한다. 실제 390/768에서는 둘 다 **44px**, 1024/1440에서는
+  둘 다 **36px**이며 같은 top이다(이전 1024 검색44px/검색버튼36px의 8px 불일치 제거).
+- 300ms 자동 검색은 replace로 히스토리를 도배하지 않으며 Enter·정렬·지우기는 명시적 push다.
+  한글 조합 중 Enter/디바운스 미적용, 입력 중 정렬 시 최신 초안 동반, in-flight 응답의 타이핑
+  덮어쓰기 방어, q-only back/forward의 포커스·타이머 복구, 느린 RSC 전 필터/초기화 클릭 의도에
+  따른 예약 취소를 구현했다. 상태 칩은 **확정된 q**를 유지하며, 미확정 초안은 새 필터 선택을
+  덮지 않고 취소한다. native GET/noscript fallback은 유지하며 API/검색 의미는 불변이다.
+- compact 검색을 접힌 메뉴 밖으로 꺼냈다. 첫 렌더의 활성 조건에서는 초기화가 추가 줄을 만드는
+  것을 발견해 마지막 단일 보완에서 compact 전체 초기화를 상태 필터 안에 유지했다(검색×는 q만
+  지움). desktop 초기화는 같은 높이로 옆에 남겼다. 검색/정렬 상태는 현장 열기→뒤로가기에도 복원된다.
+- 목록 카드(80×64/96×72)와 넓은 비교표(64×48)에 기존 `DefaultSiteVisual`을 재사용하고 **기본 이미지**
+  작은 표식을 둔다. 이전 text-first 목록 선택을 이 Human 피드백으로 개정한 것이다. 가짜 지도·사진·
+  측정점은 없으며 Home 자체는 수정하지 않았다. **현재 Home도 image:null인 기본 장식**이고, 이번 작업은
+  실제 관측 미리보기·이미지 접근 계약을 추가한 것이 아니다. 등록된 정사영상이 없다고 단정하지 않는다.
+- 단일 General이 source와 focused tests를, primary Architect가 E2E/통합/렌더를 소유했다. 공유파일
+  동시 수정 없이 수정 session을 재사용했다. 기존 Site 조회/권한/이름·ID/상태/일반 action-column 계약,
+  `<1024` mutation 제한·원본·정량 의미·data/AI-egress는 바뀌지 않았다(INV-040/060/061).
+- 검증: Dashboard **1287/1287 (151 files)**, tsc/build 통과, lint 0err/기존warning1, 소스 detector `[]`.
+  Console+feedback+새 Sites E2E **87 passed / 13 skipped**. 새 Sites만은 **30 passed / 2 compact chip-link
+  skips**이며 검색+정렬 경합, 700ms 필터/초기화 지연, focused q-only 뒤로가기, IME 이벤트+Enter,
+  빈 결과·clear·reset, 찾은 현장 열기→back의 조건 복원, 높이·44px clear target을 검증했다.
+  기존 11skip과 stale empty-org 기대는 이전 한계 그대로이며 임계값/의미를 약화하지 않았다.
+- 실제 최종 빌드 `.next-sites-controls-final-20261019`가 tailnet10010→3241→기존 Core8096/issuer9042에서
+  실행 중이다. 390/768/1024/1440 × 기본/검색조건/빈 결과 **12 상태**에서 axe serious/critical/moderate0,
+  overflow0, pageerror0, API mutation 시도0. 원본과 최신 캡처를 직접 판독했고 추가 visual polish는 하지 않았다.
+  IME는 브라우저 이벤트 모의이며 물리 한국어 IME·touch·SR·고객/production 수용이 아니다.
+- 증거 `/tmp/opencode/ksi-sites-controls-20261019/`: before/after PNG, before-metrics, checks,
+  unit/type/lint/build/E2E logs, source-hashes, verification-summary. 직전 `.next-feedback-final-20261019`와
+  `/tmp/opencode/ksi-permission-design-20261019/serve-feedback.sh`를 rollback으로 보존했다. 새 launcher는
+  `serve-sites.sh`; Core/registry/issuer/worker/network 노출 설정 변경 없음. 본 요청은 로컬 UI 완료다.

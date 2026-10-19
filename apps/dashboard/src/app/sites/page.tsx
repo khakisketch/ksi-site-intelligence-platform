@@ -5,7 +5,11 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
-import { SiteListSort } from "@/components/site/SiteListSort";
+import { SiteListControls } from "@/components/site/SiteListControls";
+import { SiteListNavLink } from "@/components/site/SiteListNavLink";
+import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
+import { SiteListVisual } from "@/components/site/SiteListVisual";
+import { buildSiteListHref } from "@/components/site/site-list-query";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
@@ -69,19 +73,13 @@ function sortSites(sites: readonly SiteView[], sort: SortKey): SiteView[] {
   });
 }
 
-/** 링크를 유지한 채 한 파라미터만 바꾼다 — 칩을 눌러도 검색어·정렬을 잃지 않는다. */
+/** 링크를 유지한 채 한 파라미터만 바꾼다 — 칩을 눌러도 검색어·정렬을 잃지 않는다.
+ * 실제 조립은 `site-list-query.ts` 가 맡는다(클라이언트 검색·정렬과 같은 규칙). */
 function hrefWith(
   base: { q?: string; status?: string; sort?: string; group?: string },
   patch: Partial<Record<"q" | "status" | "sort" | "group", string | undefined>>,
 ): string {
-  const params = new URLSearchParams();
-  const merged = { ...base, ...patch };
-  for (const key of ["q", "status", "sort", "group"] as const) {
-    const value = merged[key];
-    if (value) params.set(key, value);
-  }
-  const search = params.toString();
-  return search ? `/sites?${search}` : "/sites";
+  return buildSiteListHref(base, patch);
 }
 
 
@@ -173,53 +171,51 @@ export default async function SitesPage({
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색만 제출하며 정렬은 즉시 적용한다. */}
+      {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색은 300ms 디바운스 자동 적용·ENTER 확정, 정렬은 즉시 적용한다. */}
       <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
           <>
             <details className="w-full rounded-lg border border-line bg-surface lg:hidden">
               <summary className="tap-target flex cursor-pointer items-center justify-between px-3 text-[13px] font-semibold">
-                <span>필터·정렬</span>
+                <span>상태 필터</span>
                 <span className="text-[11.5px] font-normal text-ink-muted">
                   {SITE_GROUPS.find((option) => option.key === group)?.label ?? "전체"}
                   {hasFilter ? " · 적용 중" : ""}
                 </span>
               </summary>
               <form action="/sites" className="grid gap-2 border-t border-line p-3">
+                {params.q && <input type="hidden" name="q" value={params.q} />}
+                <input type="hidden" name="sort" value={sort} />
                 {status && <input type="hidden" name="status" value={status} />}
                 <label className="grid gap-1 text-[12px] font-medium text-ink-2">
                   현장 상태
-                  <select key={group} name="group" defaultValue={group} className="input h-11 w-full text-[13px]">
+                  <select key={group} name="group" defaultValue={group} className="input tap-target w-full text-[13px]">
                     {SITE_GROUPS.map((option) => (
                       <option key={option.key} value={option.key}>{option.label}</option>
                     ))}
                   </select>
                 </label>
-                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
-                  현장명·ID 검색
-                  <input
-                    key={params.q ?? ""}
-                    name="q"
-                    type="search"
-                    defaultValue={params.q ?? ""}
-                    placeholder="현장명 또는 ID"
-                    className="input h-11 w-full min-w-0 text-[13px]"
-                  />
-                </label>
-                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
-                  정렬
-                  <select key={sort} name="sort" defaultValue={sort} className="input h-11 w-full text-[13px]">
-                    <option value="attention">확인 필요 순</option>
-                    <option value="updated">최근 갱신 순</option>
-                    <option value="name">이름 순</option>
-                  </select>
-                </label>
                 <div className="flex gap-2">
                   <button type="submit" className="btn btn-primary tap-target flex-1">적용</button>
-                  {hasFilter && <Link href="/sites" className="btn tap-target flex-1 justify-center">초기화</Link>}
+                  {hasFilter && <SiteListNavLink href="/sites" className="btn tap-target flex-1 justify-center">초기화</SiteListNavLink>}
                 </div>
               </form>
             </details>
+
+            <div className="w-full lg:hidden">
+              {/* 묶음·상태가 바뀌면 다시 만든다 — 입력 중 타이머가
+                  클릭한 필터를 옛날 조건으로 되돌리지 못하게 한다.
+                  정렬은 key에 넣지 않는다. 정렬 변경은 컨트롤 안에서
+                  타이머를 취소하고 push 하므로 리마운트 없이 포커스가 남는다. */}
+              <SiteListControls
+                key={`controls:${group}:${status ?? "-"}`}
+                query={params.q}
+                sort={sort}
+                group={group === "all" ? undefined : group}
+                status={status}
+                hasFilter={hasFilter}
+              />
+            </div>
 
             <div className="hidden w-full flex-col gap-3 lg:flex">
               <div className="flex flex-wrap items-center gap-2" role="group" aria-label="현장 상태 필터">
@@ -231,10 +227,10 @@ export default async function SitesPage({
                     : sites.filter((site) => option.statuses.has(site.status)).length;
                 if (!active && count === 0) return null;
                 return (
-                  <Link
+                  <SiteListNavLink
                     key={option.key}
                     href={hrefWith(params, { group: option.key === "all" ? undefined : option.key })}
-                    aria-current={active ? "true" : undefined}
+                    current={active}
                     className={`tap-target inline-flex items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] break-keep transition-colors ${
                       active
                         ? "border-line-strong bg-sunk font-bold"
@@ -243,44 +239,31 @@ export default async function SitesPage({
                   >
                     {option.label}
                     <span className="num text-[11px] text-ink-muted">{count}</span>
-                  </Link>
+                  </SiteListNavLink>
                 );
               })}
 
               {status && (
-                <Link
+                <SiteListNavLink
                   href={hrefWith(params, { status: undefined })}
                   className="tap-target inline-flex items-center rounded-md border border-line-strong bg-sunk px-2.5 text-[12.5px] break-keep"
                 >
                   {SITE_STATUS_LABEL[status].label} 필터 해제
-                </Link>
+                </SiteListNavLink>
               )}
 
                 <span className="ml-auto"><RegisterSiteAction availability={registrationAvailability} /></span>
               </div>
 
-              <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line pt-3">
-              <form action="/sites" className="flex items-end gap-2">
-                {group !== "all" && <input type="hidden" name="group" value={group} />}
-                {status && <input type="hidden" name="status" value={status} />}
-                <input type="hidden" name="sort" value={sort} />
-                <label className="grid gap-1 text-[12px] font-medium text-ink-2">
-                  현장명·ID 검색
-                <input
-                  key={params.q ?? ""}
-                  name="q"
-                  type="search"
-                  defaultValue={params.q ?? ""}
-                  aria-label="현장 찾기"
-                  placeholder="현장명 또는 ID"
-                  className="input h-11 w-56 min-w-0 text-[12.5px]"
-                />
-                </label>
-                <button type="submit" className="btn tap-target">검색</button>
-                {hasFilter && <Link href="/sites" className="btn tap-target">초기화</Link>}
-              </form>
-              <SiteListSort sort={sort} query={params.q} group={group === "all" ? undefined : group} status={status} />
-              </div>
+              <SiteListControls
+                key={`controls:${group}:${status ?? "-"}`}
+                query={params.q}
+                sort={sort}
+                group={group === "all" ? undefined : group}
+                status={status}
+                hasFilter={hasFilter}
+                className="w-full border-t border-line pt-3"
+              />
             </div>
           </>
         )}
@@ -296,11 +279,13 @@ export default async function SitesPage({
       ) : sites !== null && sites.length === 0 ? (
         <SiteOnboarding availability={registrationAvailability} />
       ) : visibleSites.length === 0 ? (
-        <EmptyState
-          title="조건에 맞는 현장이 없습니다"
-          description="검색어나 상태 묶음을 바꿔 다시 확인하세요."
-          action={hasFilter ? { label: "필터 초기화", href: "/sites" } : undefined}
-        />
+        <SiteListCancelBoundary>
+          <EmptyState
+            title="조건에 맞는 현장이 없습니다"
+            description="검색어나 상태 묶음을 바꿔 다시 확인하세요."
+            action={hasFilter ? { label: "필터 초기화", href: "/sites" } : undefined}
+          />
+        </SiteListCancelBoundary>
       ) : (
         <>
           <section className="flex flex-col gap-2 xl:hidden" aria-label="현장 목록">
@@ -315,9 +300,10 @@ export default async function SitesPage({
                 const statusLabel = SITE_STATUS_LABEL[site.status];
                 const nextLabel = primaryAction?.label ?? next.label;
                 return (
-                  <li key={site.siteId} className="flex gap-3 px-3 py-3.5 sm:px-4 lg:flex-col lg:gap-0 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-0 lg:only:col-span-2">
-                    {/* 대표 이미지 계약이 없으므로 가짜 지도 대신 실제 현장 요약에 폭을 쓴다. */}
-                    <div className="flex min-w-0 flex-1 flex-col gap-3 lg:p-4">
+                  <li key={site.siteId} className="flex gap-3 px-3 py-3.5 sm:px-4 lg:gap-4 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:only:col-span-2">
+                    <SiteListVisual siteId={site.siteId} className="mt-0.5 h-16 w-20 sm:h-[72px] sm:w-24" />
+                    {/* 목록용 미리보기 경로가 없으므로 기본 표시(작은 장식) + 실제 현장 요약에 폭을 쓴다. */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <Link
@@ -377,6 +363,7 @@ export default async function SitesPage({
                 return (
                   <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
                 <div className="flex min-w-0 items-center gap-3">
+                  <SiteListVisual siteId={site.siteId} className="h-12 w-16" />
                   <div className="min-w-0">
                   <Link
                     href={`/sites/${encodeURIComponent(site.siteId)}`}
