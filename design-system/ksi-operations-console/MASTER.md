@@ -101,6 +101,24 @@ Use the existing native disclosure rather than adding a modal/sheet for these lo
 The 640px threshold is a content-fit boundary, not an authorization boundary; existing 1024px operation
 gates remain independent.
 
+### Desktop Site presentations (Human-approved, 2026-10-19)
+
+At 1024px and above, offer `카드 | 목록` as two presentations of the same scoped records:
+
+- **Cards (default)**: two columns with broad, intentional typographic covers. A single Site occupies
+  one column, never stretches into a full-page hero. Make the real Site name prominent; without a
+  supported preview source, mark it `기본 표지` rather than enlarging an ambiguous miniature image.
+- **List**: dense aligned comparison rows with no decorative thumbnail. Keep identity/status/progress/
+  update/next action and one open action per row; fit the laptop content width where feasible.
+- One presentation is visible at a time. Switching is a local display choice, not a data operation;
+  it preserves query/filter/sort, pending search, focus and existing authority boundaries.
+- Remember only the validated mode in a first-party functional preference, with correct server-side
+  initial presentation. Do not store Site IDs, queries, auth data or analytics, or add a Core preference
+  endpoint. If persistence is unavailable, the current-tab choice should still work.
+
+Phone/tablet layouts and Home D6 remain as previously verified. This desktop decision supersedes the
+earlier small-default-thumb desktop layout, not evidence-image rights or the phone adaptation.
+
 ### Action feedback (Human-approved, 2026-10-19)
 
 Choose the delivery surface by what the person must do next, not by treating every message as an alert:

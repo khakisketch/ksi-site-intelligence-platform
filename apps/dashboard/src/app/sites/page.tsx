@@ -3,12 +3,14 @@ import Link from "next/link";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
-import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
-import { SiteProgressBar } from "@/components/site/SiteProgressBar";
 import { SiteListControls } from "@/components/site/SiteListControls";
 import { SiteListNavLink } from "@/components/site/SiteListNavLink";
 import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
 import { SiteListVisual } from "@/components/site/SiteListVisual";
+import { SiteListDesktopCards } from "@/components/site/SiteListDesktopCards";
+import { SiteListDenseList } from "@/components/site/SiteListDenseList";
+import { SiteListView } from "@/components/site/SiteListView";
+import { readSiteListView } from "@/components/site/site-list-view.server";
 import { buildSiteListHref } from "@/components/site/site-list-query";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -47,10 +49,6 @@ const ATTENTION_ORDER: Record<SiteStatus, number> = {
   PATROL_READY: 8,
   PATROL_ACTIVE: 9,
 };
-
-// 고정폭 합(438) + 간격(50) + 좌우 여백(32) + 현장 열 최소폭(200) = 720.
-const COLUMNS = "minmax(200px,1.5fr) 112px 92px 104px 112px 118px";
-const MIN_WIDTH = 720;
 
 function isSiteStatus(value: string | undefined): value is SiteStatus {
   return value !== undefined && (SITE_STATUSES as readonly string[]).includes(value);
@@ -108,6 +106,9 @@ export default async function SitesPage({
   const group = normalizeSiteGroup(params.group);
   const groupStatuses = siteGroupStatuses(group);
   const sort = isSortKey(params.sort) ? params.sort : "attention";
+  // 보기 방식은 표현 취향이라 URL에 두지 않는다 — 기능 쿠키로 기억하고
+  // 서버가 첫 렌더에 읽는다(깜빡임 없음, 공유·뒤로가기 불변).
+  const view = await readSiteListView();
 
   // 데이터 조회는 JSX 생성과 분리한다 — try/catch 안에서 JSX 를 만들면
   // eslint react-hooks/error-boundaries 가 걸린다(렌더는 즉시 실행되지 않아 실제로 못 잡는 에러다).
@@ -256,15 +257,31 @@ export default async function SitesPage({
                 <span className="ml-auto"><RegisterSiteAction availability={registrationAvailability} /></span>
               </div>
 
-              <SiteListControls
-                query={params.q}
-                sort={sort}
-                group={group === "all" ? undefined : group}
-                status={status}
-                hasFilter={hasFilter}
-                visibleCount={visibleSites.length}
-                totalCount={sites.length}
-                className="w-full border-t border-line pt-3"
+              <SiteListView
+                initialView={view}
+                toolbar={
+                  <SiteListControls
+                    query={params.q}
+                    sort={sort}
+                    group={group === "all" ? undefined : group}
+                    status={status}
+                    hasFilter={hasFilter}
+                    visibleCount={visibleSites.length}
+                    totalCount={sites.length}
+                    className="min-w-0 flex-1"
+                  />
+                }
+                // 걸린 행이 없으면 패널을 비운다 — 아래 EmptyState 하나만 말한다.
+                cards={siteRows.length > 0 ? <SiteListDesktopCards rows={siteRows} meta={`${visibleSites.length} / ${sites.length}곳 표시`} sameNameSites={sameNameSites} /> : null}
+                list={
+                  siteRows.length > 0 ? (
+                    <SiteListDenseList
+                      rows={siteRows}
+                      meta={`${visibleSites.length} / ${sites.length}곳 표시`}
+                      sameNameSites={sameNameSites}
+                    />
+                  ) : null
+                }
               />
             </div>
           </>
@@ -290,7 +307,7 @@ export default async function SitesPage({
         </SiteListCancelBoundary>
       ) : (
         <>
-          <section className="flex flex-col gap-2 xl:hidden" aria-label="현장 목록">
+          <section className="flex flex-col gap-2 lg:hidden" aria-label="현장 목록">
             {/* 폰에서는 검색 아래 건수+필터 행이 수를 말하므로 제목 줄을 두지 않는다. */}
             <div className="hidden items-baseline gap-2 px-1 sm:flex">
               <h2 className="text-[14px] font-bold">현장</h2>
@@ -342,75 +359,6 @@ export default async function SitesPage({
               })}
             </ul>
           </section>
-
-          <div className="hidden xl:block">
-            <TableShell
-              title="현장 상태"
-              meta={
-                sites !== null
-                  ? `${visibleSites.length} / ${sites.length}곳 표시`
-                  : undefined
-              }
-            >
-              <TableRow columns={COLUMNS} minWidth={MIN_WIDTH} head>
-                <span>현장</span>
-                <span>상태</span>
-                <span>진행 단계</span>
-                <span>갱신</span>
-                <span>다음 할 일</span>
-                <span className="text-right">바로가기</span>
-              </TableRow>
-
-              {siteRows.map(({ site, next, primaryAction }) => {
-                const statusLabel = SITE_STATUS_LABEL[site.status];
-                return (
-                  <TableRow key={site.siteId} columns={COLUMNS} minWidth={MIN_WIDTH}>
-                <div className="flex min-w-0 items-center gap-3">
-                  <SiteListVisual siteId={site.siteId} className="h-12 w-16" />
-                  <div className="min-w-0">
-                  <Link
-                    href={`/sites/${encodeURIComponent(site.siteId)}`}
-                    className="block break-words text-[13.5px] font-semibold hover:underline"
-                  >
-                    {site.name}
-                  </Link>
-                  {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
-                  </div>
-                </div>
-
-                <span>
-                  <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
-                </span>
-
-                <SiteProgressBar status={site.status} />
-
-                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
-                  {formatKoreanDate(site.updatedAt)}
-                </span>
-
-                <span
-                  className={`text-[11.5px] break-keep ${
-                    next.actionable ? "font-semibold" : "text-ink-muted"
-                  }`}
-                >
-                  {primaryAction?.label ?? next.label}
-                </span>
-
-                {/* 현장별 다음 행동 CTA는 SiteHeader.tsx가 현장 상세에서 이미 1차
-                    액션으로 보여준다(primaryAction/preparationAction) — 표 행에
-                    같은 버튼을 또 두면 좁은 열에서 줄바꿈된다(F08). 이 열은
-                    열람 동작 하나만 남긴다. */}
-                <span className="flex justify-end">
-                  <TableAction
-                    href={`/sites/${encodeURIComponent(site.siteId)}`}
-                    label="현장 열기"
-                  />
-                </span>
-              </TableRow>
-                );
-              })}
-            </TableShell>
-          </div>
         </>
       )}
     </div>

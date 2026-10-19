@@ -702,14 +702,15 @@ describe("sites page wiring", () => {
     expect(PAGE).not.toContain(">검색</button>");
   });
 
-  it("카드와 표에 같은 기본 표시를 쓴다", () => {
+  it("작은 기본 표시는 모바일·태블릿 카드에만 둔다", () => {
     const cardStart = PAGE.indexOf("<li key={site.siteId}");
     const cardEnd = PAGE.indexOf("</li>", cardStart);
     const card = PAGE.slice(cardStart, cardEnd);
     expect(card).toContain("SiteListVisual");
     expect(card.match(/현장 열기/g)).toHaveLength(1);
-    const tableStart = PAGE.indexOf("<TableRow key={site.siteId} columns={COLUMNS}");
-    expect(PAGE.slice(tableStart, tableStart + 2000)).toContain("SiteListVisual");
+    // 데스크톱은 갤러리 표지(SiteListDesktopCards) 또는 썸네일 없는 밀도표다.
+    expect(PAGE).toContain("SiteListDesktopCards");
+    expect(PAGE).toContain("SiteListDenseList");
   });
 
   it("가짜 현장 이미지를 약속하지 않는다", () => {

@@ -219,3 +219,18 @@ focus 소실은 안정된 인스턴스·명시적 기준 동기화로 고쳤으�
 axe serious/critical/moderate·넘침·JS오류·mutation0. Home golden 변경 없음. 물리 touch/OS IME/SR/
 고객·production 수용을 뜻하지 않는다. 상세는 기존 원장10-19 phone 항목,
 증거 `/tmp/opencode/ksi-sites-phone-20261019/`. 실제 자료/미디어 접근 계약·권한은 추가하지 않았다.
+
+### 2026-10-19 — Desktop 카드/목록 분리 (Human 승인, 로컬 완료)
+
+작은 기본 이미지가 애매하다는 지적에 1024px 이상을 두 표현으로 분리했다. 기본은 실제 현장명
+중심의 넓은 `기본 표지` 2열 카드(1개도 한 열 폭만), 목록은 장식 없는 dense 비교표다.
+검색·필터·정렬·초안·히스토리와 행 action1개를 보존하며 동일한 건수/자료를 사용한다.
+보기는 로컬 전환이며 검증된 cards/list 기능 쿠키만 기억한다(계정/ID/query/auth/추적 없음).
+서버 첫 화면·새로고침·cached 상세 왕복·저장 제한·invalid 값을 검증했다. 실제 사진/preview
+접근 기능을 추가한 것은 아니고 Home D6도 변경하지 않았다.
+
+1319 tests/152files, type/build/lint0err1기존warning/detector[], E2E4specs98pass22의도적skip.
+14개 실제 상태에서 axe serious/critical/moderate·넘침·pageerror·mutation0. 격리된5현장의
+2열/텍스트표와 실제1현장의 bounded card 모두 판독했고, phone390/tablet768은 직전 픽셀 동일.
+빈 검색의 중복 표/상태를 없애고 카드 결과 건수를 유지했다. Core/권한/미디어/정량/원본은 불변.
+증거 `/tmp/opencode/ksi-sites-desktop-views-20261019/`, 상세 수용은 기존 원장10-19 desktop 항목.

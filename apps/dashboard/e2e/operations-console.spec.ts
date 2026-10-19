@@ -298,7 +298,11 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   }
   if (!hasSite) await expect(siteLink).toBeVisible();
 
-  if (testInfo.project.name === "desktop-1440") {
+  if (testInfo.project.name.startsWith("desktop")) {
+    const views = page.getByRole("group", { name: "현장 보기 방식" });
+    await expect(views).toBeVisible();
+    await expect(views.getByRole("button", { name: "카드", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await views.getByRole("button", { name: "목록", exact: true }).click();
     await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
   } else {
     const compactList = page.getByRole("region", { name: "현장 목록" });
@@ -306,12 +310,11 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
     await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
   }
-  // Human follow-up: the same decorative default used on Home is visible in
-  // both list representations. It is labelled, not presented as site footage.
+  // Phone omits decorative images; tablet retains the existing small default.
+  // Desktop list mode is deliberately text-only (cards have a broad typographic cover).
   const defaultVisualLabels = page.getByRole("main").getByText("기본 이미지", { exact: true });
   await expect(defaultVisualLabels.first()).toBeAttached();
-  // Decorative defaults have no decision value on phones; the 640px+ list keeps them.
-  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(testInfo.project.name !== "mobile-390");
+  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(testInfo.project.name === "tablet-768");
   await expect(page.locator('main a[href^="/sites/"]:not([href="/sites/new"]) >> visible=true').first()).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link

@@ -4261,3 +4261,65 @@ Human은 작은 화면에 데스크톱 요소를 넣은 것이 억지스럽다�
   nonphone-comparison, verification-summary, source-hashes, unit/type/lint/build/E2E 로그.
   새 launcher `serve-phone.sh`; 되돌리기는 현재3241만 중지 후 보존한 직전
   `/tmp/opencode/ksi-sites-controls-20261019/serve-sites.sh`를 실행한다. 본 Human 요청은 로컬 UI 완료다.
+
+### 2026-10-19 — Desktop 현장 카드/목록 보기 (Human 승인, IN PROGRESS)
+
+Human은 desktop의 작고 애매한 기본 이미지가 이전보다 나쁘게 보인다고 지적하며 리스트 선호와
+Home 같은 시각적 보기 선호를 함께 제안했다. 두 가지 보기(카드/목록), desktop 카드 기본·마지막
+선택 유지·phone 유지 제안에 "그렇게 해보고 한 번 구성해봐"로 승인했다.
+
+- Requirement IDs: REQ-UX-101/SEC-101, INV-040/060/061; Home ADR025 D3/D6와 미디어·원본·정량은 불변.
+- Owner module: Dashboard `/sites` + owned site presentation/preference helpers. General 기존 source
+  session 재사용, primary가 E2E/통합/실제 렌더 소유. Core/API/schema/RBAC 변경 없음.
+- Acceptance criteria: >=1024 카드/목록 전환; 기본2열 넓은 typographic cover, 1건은 1열 폭만;
+  목록은 장식 없는 dense 표·행 action1개; query/filter/sort/입력 초안 유지; 마지막 모드 기억,
+  reload/현장 상세→back/저장 제한 graceful; <1024와 Home의 검증된 표현 유지.
+- Contracts affected: presentation preference only. UI cookie 권고(검증된 cards/list 값만, Sites path,
+  no IDs/query/auth/analytics; SSR 올바른 첫 화면/flash 방지). Core 계정 설정·새 endpoint 없음.
+- Reference assets/adoption: 기존 Home neutral default/ink-mono ADOPT; 작은 desktop thumb REMOVE;
+  실제 자료 source 없는 곳은 현장명 중심의 `기본 표지`, 사진/지도/previewUrl 지원을 꾸미지 않음.
+- Files to change: sites/page, site gallery/view-mode/pref helpers, SiteListControls toolbar slot 등 최소
+  연결, focused Page/helper tests, E2E/gallery/list/persistence, 기존 README/design guardrail/audit/ledger.
+- Tests: 실제 여러/한 현장 2열·single bounded, 목록 비교/이미지 없음, 두 모드 search/sort/race,
+  reload/SSR/cached-back/invalidpref/storageblocked; <1024/Home 회귀, axe/overflow/keyboard.
+- HIL or real-device assumptions: 없음. headless/브라우저 emulation을 물리 touch/SR/고객 수용으로 부르지 않음.
+- License/data implications: 외부 asset/dependency·미디어 접근·원본·계산·egress 없음; 선택한 표시 모드만 저장.
+- Rollback: 직전 `.next-sites-phone-20261019` + `serve-phone.sh` 보존; 이번 UI 변경만 revert.
+
+증거 `/tmp/opencode/ksi-sites-desktop-views-20261019/`; baseline f8617774=origin/main tracked clean.
+
+**로컬 수용 완료 — Desktop 카드/목록 (위 IN PROGRESS를 대체)**
+
+- >=1024px에 `카드 | 목록` 두 표현을 추가했다. 기본 카드는 실제 현장명을 크게 읽는 2열
+  typographic cover(1024에서180px, 1280+200px)와 상태/갱신/다음 행동/열기다. 한 현장도
+  한 열만 쓰며 실제398/498/578px(1024/1280/1440) 폭으로 확인했다. `기본 표지`는 관측 사진이나
+  지리가 아니라 기존 중립 장식+등록 이름이다. 작은 이미지를 억지로 확대하거나 실제 preview를 꾸미지 않았다.
+- 목록은 장식을 완전히 뺀 비교표이며, 현장명/상태/진행/갱신/다음 행동/열기1개를 유지한다.
+  min762/합리적 열 폭으로 1024에서도 본문에 맞는다. 필터 결과 건수는 두 표현이 같은
+  visible/total을 쓴다. 갤러리 h2/각 현장 h3로 탐색 가능하며 동일 이름의 기존 신원 disclosure도 유지했다.
+- 전환은 클라이언트 로컬 상태만 바꿔 URL/검색 초안/디바운스/IME/정렬/필터를 건드리지 않는다.
+  현재 보기만 DOM에 둔다. 보기 버튼은 type=button/aria-pressed, 클릭·Enter 뒤 focus 유지.
+  보기 선택 후 현장 상세→bare URL back, 검색 후 전환, 새로고침 모두 검증했다.
+- 기억은 **기능 쿠키 `ksi-sites-view=cards|list`** 하나만(Path=/sites, SameSite=Lax, 1년,
+  HTTPS Secure). ID/query/auth/analytics 없고 사용자 선택 때만 쓴다. 서버가 첫 화면에 읽으며
+  Client는 cached back의 최신 쿠키를 반영한다. 잘못된 값은 cards, 읽기/쓰기 차단은 현재 탭
+  전환을 막지 않는다. JS 없는 첫 응답에는 dead toggle 대신 서버가 선택한 표현을 읽을 수 있다.
+  Core 계정 설정·API·RBAC/schema/미디어·원본/계산·data/AI-egress 변경 없음(INV040/060/061).
+- 발견/정정: list 모드 빈 검색 결과에 빈 표와 EmptyState가 중복될 수 있어 결과 panel은 null로
+  유지하고 기존 EmptyState 하나만 남겼다. 쿠키 read getter SecurityError도 optional pref로 처리했다.
+  카드에 누락된 filtered/total 건수를 복원했다. 브라우저 테스트의 0-total은 실제 데이터가 아니라
+  streaming UI가 준비되기 전 count()였으며 default 카드 준비를 기다린 뒤 같은 강한 count 검증을 재실행했다.
+- 검증: Dashboard **1319/1319 (152 files)**, tsc/build 통과, lint0err/기존warning1, source detector `[]`.
+  Console+feedback+Sites+새 view-mode E2E **98 passed /22 skipped**(직전88/16 +새10/6), 마지막 전체
+  동시 실행 로그까지 확인했다. 서버 첫 응답 list·잘못된 pref·차단 모의·입력 중 전환·query 유지·
+  2열/1개 bounded·빈 결과 하나·단일 row action을 확인했다. Home 4폭 golden은 변경하지 않았다.
+- 실제 preview `.next-sites-desktop-views-20261019`: tailnet10010→3241→기존 Core8096/issuer9042.
+  390/768 및 1024/1280/1440의 card/list/filtered/empty **14 상태**에서 axe serious/critical/moderate0,
+  overflow0/pageerror0/API mutation0. 기존 isolated E2E5현장과 실제 시연1현장의 렌더를 모두 직접 판독했다.
+  phone390/tablet768 PNG는 직전과 **픽셀 완전 동일**; 전환/기억이 phone 표현을 강제하지 않는다.
+- 증거 `/tmp/opencode/ksi-sites-desktop-views-20261019/`: before/card/list/filtered/empty/multiple
+  PNG, checks/cookie flags, small-screen-comparison, source-hashes, verification-summary,
+  unit/type/lint/build/E2E 로그. physical touch/OS IME/SR/고객·production·실제 미디어 수용 아님.
+  기존 stale empty-org 및 다른 제품 외부 경계는 그대로다. 새 launcher `serve-views.sh`;
+  직전 `/tmp/opencode/ksi-sites-phone-20261019/serve-phone.sh`와 phone build를 rollback으로 보존했다.
+  이 Human UI 요청은 로컬 완료이며 전체 제품/고객 수용을 닫지 않는다.
