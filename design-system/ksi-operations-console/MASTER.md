@@ -83,6 +83,24 @@ registered-artifact source; do not infer one from the existence of a Site/WorkAr
 bytes as a thumbnail workaround. This supersedes the earlier text-only row choice, not media rights
 or the ban on fabricated site photography or geographic evidence.
 
+### Phone Site list adaptation (Human-approved, 2026-10-19)
+
+At widths below 640px, optimize for **find → choose a Site**, not a scaled desktop toolbar:
+
+- Keep search full-width and always visible. Use one quiet count/`필터·정렬` disclosure row below it;
+  expose status and sorting together on demand with an explicit Apply and whole reset.
+- Applying phone criteria uses the latest search draft and cancels any scheduled search. Selecting
+  controls alone must not apply them; closing discards unapplied choices. Search-only acknowledgements
+  must not erase in-progress filter choices. Apply closes the panel and restores focus.
+- Omit only the **decorative default** from phone cards so identity/status/next action/open action use
+  the available width. Do not reserve an empty image gutter. This is not a ban on useful real imagery.
+- At 640px and above, retain the existing tablet/desktop toolbar and default visuals. The Home hero's
+  approved D6 hierarchy and geometry are outside this refinement and remain unchanged.
+
+Use the existing native disclosure rather than adding a modal/sheet for these low-risk list choices.
+The 640px threshold is a content-fit boundary, not an authorization boundary; existing 1024px operation
+gates remain independent.
+
 ### Action feedback (Human-approved, 2026-10-19)
 
 Choose the delivery surface by what the person must do next, not by treating every message as an alert:

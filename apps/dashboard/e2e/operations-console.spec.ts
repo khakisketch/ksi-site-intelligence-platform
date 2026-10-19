@@ -310,7 +310,8 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   // both list representations. It is labelled, not presented as site footage.
   const defaultVisualLabels = page.getByRole("main").getByText("기본 이미지", { exact: true });
   await expect(defaultVisualLabels.first()).toBeAttached();
-  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(true);
+  // Decorative defaults have no decision value on phones; the 640px+ list keeps them.
+  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(testInfo.project.name !== "mobile-390");
   await expect(page.locator('main a[href^="/sites/"]:not([href="/sites/new"]) >> visible=true').first()).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link

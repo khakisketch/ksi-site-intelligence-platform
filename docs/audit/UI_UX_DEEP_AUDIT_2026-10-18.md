@@ -203,3 +203,19 @@ compact에서도 검색이 메뉴 밖에 보이고, 활성 조건의 초기화�
 최종4폭×3상태의 실제 렌더12개에서 axe serious/critical/moderate0·넘침0·오류0·mutation0.
 최종 캡처 직접 비교·판독. 새 Sites E2E30pass2compactskip, 기존 stale empty-org suite는 범위 밖.
 원장 10-19 후속에 상세 수용·경계, 증거 `/tmp/opencode/ksi-sites-controls-20261019/`에 원본/최신/로그가 있다.
+
+### 2026-10-19 — 휴대폰 현장 목록 적응 (Human 승인, 로컬 완료)
+
+"모바일은 억지스럽다"는 피드백으로 <640px에서 구조를 별도로 조정했다. 검색은 전체 폭,
+건수 옆 필터·정렬 하나를 펼쳐 두 기준을 고른 뒤 적용, 장식 이미지는 생략해 카드/열기 행동의
+전체 폭을 되찾는다. 640px 이상과 Home D6는 유지한다(768/1024/1440 이전·최신 픽셀 동일).
+실제390px 검색358×44/열기332×44, 320px에서도288×44/262×44다.
+
+중요한 연결 검증: 선택만으로 미적용, 검색 응답 중 선택 보존, 최신 초안과 Apply, 닫기 시 취소,
+초기화/같은 URL 미확정 초안 비우기, group 적용 후 summary focus를 확인했다. 발견한 리마운트
+focus 소실은 안정된 인스턴스·명시적 기준 동기화로 고쳤으며 기존 timer/URL/IME 보호는 보존했다.
+
+1298 tests/151files, type/build/lint0err1기존warning, E2E88pass16의도적skip, 실제7폭16상태
+axe serious/critical/moderate·넘침·JS오류·mutation0. Home golden 변경 없음. 물리 touch/OS IME/SR/
+고객·production 수용을 뜻하지 않는다. 상세는 기존 원장10-19 phone 항목,
+증거 `/tmp/opencode/ksi-sites-phone-20261019/`. 실제 자료/미디어 접근 계약·권한은 추가하지 않았다.

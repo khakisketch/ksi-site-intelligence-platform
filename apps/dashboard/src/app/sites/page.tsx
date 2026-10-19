@@ -175,7 +175,7 @@ export default async function SitesPage({
       <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
           <>
-            <details className="w-full rounded-lg border border-line bg-surface lg:hidden">
+            <details className="hidden w-full rounded-lg border border-line bg-surface sm:block lg:hidden">
               <summary className="tap-target flex cursor-pointer items-center justify-between px-3 text-[13px] font-semibold">
                 <span>상태 필터</span>
                 <span className="text-[11.5px] font-normal text-ink-muted">
@@ -203,17 +203,18 @@ export default async function SitesPage({
             </details>
 
             <div className="w-full lg:hidden">
-              {/* 묶음·상태가 바뀌면 다시 만든다 — 입력 중 타이머가
-                  클릭한 필터를 옛날 조건으로 되돌리지 못하게 한다.
-                  정렬은 key에 넣지 않는다. 정렬 변경은 컨트롤 안에서
-                  타이머를 취소하고 push 하므로 리마운트 없이 포커스가 남는다. */}
+              {/* 컨트롤은 리마운트하지 않는다 — 폰 적용 후 요약 포커스를 살린다.
+                  묶음·상태 prop 변화는 패널 셀렉트의 key가 따라가고,
+                  대기 타이머는 기준 링크 클릭 의도·주소창 대조·popstate가
+                  취소하므로 옛 기준으로 새 필터를 되돌리지 못한다. */}
               <SiteListControls
-                key={`controls:${group}:${status ?? "-"}`}
                 query={params.q}
                 sort={sort}
                 group={group === "all" ? undefined : group}
                 status={status}
                 hasFilter={hasFilter}
+                visibleCount={visibleSites.length}
+                totalCount={sites.length}
               />
             </div>
 
@@ -256,12 +257,13 @@ export default async function SitesPage({
               </div>
 
               <SiteListControls
-                key={`controls:${group}:${status ?? "-"}`}
                 query={params.q}
                 sort={sort}
                 group={group === "all" ? undefined : group}
                 status={status}
                 hasFilter={hasFilter}
+                visibleCount={visibleSites.length}
+                totalCount={sites.length}
                 className="w-full border-t border-line pt-3"
               />
             </div>
@@ -289,7 +291,8 @@ export default async function SitesPage({
       ) : (
         <>
           <section className="flex flex-col gap-2 xl:hidden" aria-label="현장 목록">
-            <div className="flex items-baseline gap-2 px-1">
+            {/* 폰에서는 검색 아래 건수+필터 행이 수를 말하므로 제목 줄을 두지 않는다. */}
+            <div className="hidden items-baseline gap-2 px-1 sm:flex">
               <h2 className="text-[14px] font-bold">현장</h2>
               <span className="text-[11.5px] text-ink-muted">
                 {sites !== null ? `${siteRows.length} / ${sites.length}곳 표시` : undefined}
@@ -301,7 +304,7 @@ export default async function SitesPage({
                 const nextLabel = primaryAction?.label ?? next.label;
                 return (
                   <li key={site.siteId} className="flex gap-3 px-3 py-3.5 sm:px-4 lg:gap-4 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:only:col-span-2">
-                    <SiteListVisual siteId={site.siteId} className="mt-0.5 h-16 w-20 sm:h-[72px] sm:w-24" />
+                    <SiteListVisual siteId={site.siteId} className="mt-0.5 hidden h-16 w-20 sm:block sm:h-[72px] sm:w-24" />
                     {/* 목록용 미리보기 경로가 없으므로 기본 표시(작은 장식) + 실제 현장 요약에 폭을 쓴다. */}
                     <div className="flex min-w-0 flex-1 flex-col gap-3">
                       <div className="flex items-start justify-between gap-3">

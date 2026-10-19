@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { buildSiteListHref, type SiteListParams } from "./site-list-query";
-import { SITE_LIST_CANCEL_EVENT } from "./SiteListNavLink";
+import { SITE_LIST_CANCEL_EVENT, SiteListNavLink } from "./SiteListNavLink";
+import { SITE_GROUPS } from "@/lib/core-api/site-progress";
 
 const DEBOUNCE_MS = 300;
 
@@ -63,12 +64,14 @@ function ClearIcon() {
  *   타이핑 중 텍스트를 지우지 않는다.
  * - JS가 없으면 네이티브 GET 폼으로 동작한다(ENTER 제출 + noscript 적용 버튼).
  *   검색 지우기는 q만, 초기화는 전체 조건을 되돌린다. POST 없음.
- * - 부모는 묶음·상태가 바뀌면 key를 바꿔 다시 만든다. 서버 렌더 링크
- *   (칩)를 먼저 누르고 타이머가 늦게 도는 경우, 옛날 기준으로 replace 해서
- *   새 필터를 되돌리는 일을 언마운트 정리로 막는다. 응답 전 공백(칩 클릭 직후
- *   300ms 안)은 예약 시점 조건표(ticket)와 주소창 대조, 그리고 클릭 의도
- *   이벤트(SITE_LIST_CANCEL_EVENT)로 버린다. 정렬은 key에 넣지 않는다 —
- *   정렬 변경은 안에서 타이머를 취소하고 push 하므로 리마운트 없이 끝난다.
+ * - 폰(<640)에서는 바깥 정렬 셀렉트를 숨기고(`sm:hidden` 패널이 유일한
+ *   보이는 정렬), 검색 아래 건수+`필터·정렬` 행을 둔다. 패널 적용은
+ *   묶음·정렬 선택과 최신 검색 초안을 함께 push 하고 닫은 뒤 요약으로
+ *   포커스를 돌린다. 적용 없이 닫으면 미확정 선택을 버린다.
+ * - 부모는 리마운트하지 않는다(폰 적용 후 요약 포커스를 살린다). 묶음·상태
+ *   prop 변화는 패널 셀렉트의 key가 따라가고, 대기 타이머는 기준 링크 클릭
+ *   의도 이벤트(SITE_LIST_CANCEL_EVENT)·예약 시점 조건표와 주소창 대조·
+ *   popstate가 취소하므로 옛 기준으로 새 필터를 되돌리지 못한다.
  */
 export function SiteListControls({
   query,
@@ -76,6 +79,8 @@ export function SiteListControls({
   group,
   status,
   hasFilter,
+  visibleCount,
+  totalCount,
   className = "",
 }: {
   query?: string;
@@ -83,19 +88,33 @@ export function SiteListControls({
   group?: string;
   status?: string;
   hasFilter: boolean;
+  /** 서버가 준 실제 건수 — 안전·정상 판단이 아니라 목록 수다. */
+  visibleCount: number;
+  totalCount: number;
   className?: string;
 }) {
   const router = useRouter();
   const searchId = useId();
   const sortId = useId();
+  const phoneGroupId = useId();
+  const phoneSortId = useId();
   const committedQuery = query ?? "";
+  const committedGroup = group ?? "all";
   const [draft, setDraft] = useState(committedQuery);
   const [pending, setPending] = useState(false);
   /** URL에 반영된 마지막 검색어 — 뒤로가기 판정과 히스토리 스팸 방지의 기준. */
   const appliedRef = useRef(committedQuery);
+  /** 마지막으로 본 묶음·상태 — q가 같아도 기준이 바뀌면 입력을 확정값으로 되돌린다. */
+  const criteriaRef = useRef({ group, status });
   const composingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const phoneDetailsRef = useRef<HTMLDetailsElement>(null);
+  const phoneSummaryRef = useRef<HTMLElement>(null);
+  const phoneGroupRef = useRef<HTMLSelectElement>(null);
+  const phoneSortRef = useRef<HTMLSelectElement>(null);
+  /** 적용 버튼으로 닫을 때는 닫힘 정리를 건너뛴다(적용한 값을 유지한다). */
+  const phoneAppliedRef = useRef(false);
   const base: SiteListParams = { q: query, status, sort, group };
 
   useEffect(() => {
@@ -145,6 +164,18 @@ export function SiteListControls({
     setDraft(committedQuery);
     setPending(false);
   }, [committedQuery]);
+
+  useEffect(() => {
+    // 기준(묶음·상태)이 바뀌면 q가 같아도 결과와 입력이 어긋난다 —
+    // 포커스 중이어도 대기 타이머를 버리고 확정 검색어로 되돌린다.
+    // q만 바뀌는 자체 ack(group/status 동일)는 여기서 손대지 않는다.
+    const prev = criteriaRef.current;
+    if (prev.group === group && prev.status === status) return;
+    criteriaRef.current = { group, status };
+    cancelPending();
+    appliedRef.current = committedQuery;
+    setDraft(committedQuery);
+  }, [group, status, committedQuery]);
 
   function commit(next: string, navigation: "replace" | "push") {
     if (timerRef.current) {
@@ -214,7 +245,66 @@ export function SiteListControls({
     inputRef.current?.focus();
   }
 
+  function closePhonePanel() {
+    phoneDetailsRef.current?.removeAttribute("open");
+    phoneSummaryRef.current?.focus();
+  }
+
+  function resetPhoneSelects(groupValue: string, sortValue: string) {
+    if (phoneGroupRef.current) phoneGroupRef.current.value = groupValue;
+    if (phoneSortRef.current) phoneSortRef.current.value = sortValue;
+  }
+
+  function handlePhoneToggle() {
+    const details = phoneDetailsRef.current;
+    if (!details || details.open) return;
+    // 적용으로 닫은 게 아니면 미확정 선택을 버리고 확정 조건으로 되돌린다.
+    if (phoneAppliedRef.current) {
+      phoneAppliedRef.current = false;
+      return;
+    }
+    resetPhoneSelects(committedGroup, sort);
+  }
+
+  function handlePhoneApply(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    // IME 조합 중 적용은 확정 취소가 아니라 조합 확정이므로 제출하지 않는다.
+    // 보통 탭하면 조합이 끝나지만, 키보드·프로그래밍 제출은 여기서 막는다.
+    if (composingRef.current) return;
+    // 패널 선택 + 최신 검색 초안을 원자적으로 확정한다. 숨은 q가 아니라
+    // 방금 타이핑한 draft를 쓴다 — 대기 타이머는 먼저 취소한다.
+    const data = new FormData(event.currentTarget);
+    const nextGroup = data.get("group");
+    const nextSort = data.get("sort");
+    cancelPending();
+    phoneAppliedRef.current = true;
+    appliedRef.current = draft;
+    setPending(false);
+    const href = buildSiteListHref(base, {
+      q: draft || undefined,
+      group:
+        typeof nextGroup === "string" && nextGroup !== "all" ? nextGroup : undefined,
+      sort: typeof nextSort === "string" && nextSort ? nextSort : undefined,
+    });
+    if (href !== `${window.location.pathname}${window.location.search}`) {
+      router.push(href, { scroll: false });
+    }
+    closePhonePanel();
+  }
+
+  function handlePhoneReset() {
+    // 전체 초기화는 확정 조건으로 되돌린다 — 패널이 열린 채 낡은 선택을 두지 않는다.
+    // URL이 이미 /sites 면 응답이 와도 q effect가 돌지 않으므로 초안도 여기서 비운다.
+    phoneAppliedRef.current = true;
+    cancelPending();
+    appliedRef.current = "";
+    setDraft("");
+    resetPhoneSelects("all", "attention");
+    closePhonePanel();
+  }
+
   return (
+    <>
     <form
       action="/sites"
       method="get"
@@ -270,7 +360,7 @@ export function SiteListControls({
           </button>
         )}
       </div>
-      <div className="relative">
+      <div className="relative hidden sm:block">
         <label htmlFor={sortId} className="sr-only">
           정렬 기준
         </label>
@@ -307,5 +397,73 @@ export function SiteListControls({
         {pending ? "검색어 적용 중" : ""}
       </p>
     </form>
+
+    {/* 폰(<640) 전용 건수+필터 행 — 검색 아래 같은 줄에 붙는다.
+        바깥 정렬 셀렉트는 폰에서 숨으므로(중복 포커스 방지) 묶음·정렬 선택은
+        여기서만 보인다. 폼을 나누어 중첩 폼을 만들지 않는다. */}
+    <details ref={phoneDetailsRef} onToggle={handlePhoneToggle} className="mt-2 sm:hidden">
+      <summary
+        ref={phoneSummaryRef}
+        className="flex cursor-pointer items-center justify-between gap-2 px-1 py-2 text-[12.5px]"
+      >
+        <span className="num text-ink-muted">
+          {visibleCount} / {totalCount}곳 표시
+        </span>
+        <span className="inline-flex items-center gap-1 font-semibold">
+          필터·정렬
+          <svg aria-hidden="true" viewBox="0 0 16 16" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="m4 6 4 4 4-4" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </summary>
+      <form
+        action="/sites"
+        method="get"
+        aria-label="현장 필터"
+        onSubmit={handlePhoneApply}
+        className="grid gap-2 rounded-lg border border-line bg-surface p-3"
+      >
+        {/* noJS 대체용. JS 적용은 최신 draft를 직접 쓰므로 낡은 값을 쓰지 않는다. */}
+        {committedQuery && <input type="hidden" name="q" value={committedQuery} />}
+        {status && <input type="hidden" name="status" value={status} />}
+        <label htmlFor={phoneGroupId} className="grid gap-1 text-[12px] font-medium text-ink-2">
+          현장 상태
+          <select
+            ref={phoneGroupRef}
+            key={committedGroup}
+            id={phoneGroupId}
+            name="group"
+            defaultValue={committedGroup}
+            className="input tap-target w-full text-[13px]"
+          >
+            {SITE_GROUPS.map((option) => (
+              <option key={option.key} value={option.key}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label htmlFor={phoneSortId} className="grid gap-1 text-[12px] font-medium text-ink-2">
+          정렬 기준
+          <select
+            ref={phoneSortRef}
+            key={sort}
+            id={phoneSortId}
+            name="sort"
+            defaultValue={sort}
+            className="input tap-target w-full text-[13px]"
+          >
+            <option value="attention">확인 필요 순</option>
+            <option value="updated">최근 갱신 순</option>
+            <option value="name">이름 순</option>
+          </select>
+        </label>
+        <div className="flex gap-2">
+          <button type="submit" className="btn btn-primary tap-target flex-1">적용</button>
+          <SiteListNavLink href="/sites" onClick={handlePhoneReset} className="btn tap-target flex-1 justify-center">
+            초기화
+          </SiteListNavLink>
+        </div>
+      </form>
+    </details>
+    </>
   );
 }

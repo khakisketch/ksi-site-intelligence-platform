@@ -4200,3 +4200,64 @@ Human annotation: 검색/검색 버튼의 높이와 라벨 방향이 정렬 선�
   unit/type/lint/build/E2E logs, source-hashes, verification-summary. 직전 `.next-feedback-final-20261019`와
   `/tmp/opencode/ksi-permission-design-20261019/serve-feedback.sh`를 rollback으로 보존했다. 새 launcher는
   `serve-sites.sh`; Core/registry/issuer/worker/network 노출 설정 변경 없음. 본 요청은 로컬 UI 완료다.
+
+### 2026-10-19 — 휴대폰 현장 목록 재구성 (Human 승인, IN PROGRESS)
+
+Human은 작은 화면에 데스크톱 요소를 넣은 것이 억지스럽다고 지적했고, full-width 검색/
+필터·정렬 disclosure/장식 이미지 생략 제안에 "한 번 개선해볼래"로 승인했다.
+
+- Requirement IDs: REQ-UX-101/SEC-101; INV-040/060/061. 모바일은 찾기→현장 선택 우선;
+  승인된 Home D6/미디어·권한·원본·정량·URL query 의미는 불변이다.
+- Owner module: Dashboard `/sites` + SiteListControls. General 기존 source session 재사용,
+  primary가 E2E/문서/빌드/렌더 수용 소유. Core/API/RBAC/schema 변경 없음.
+- Acceptance criteria: <640px 검색 전체 너비44px; 건수+필터·정렬의 조용한 단일 펼침;
+  펼치면 현장 상태/정렬을 고르고 최신 검색 초안과 Apply, 초기화/취소/뒤로가기 보호;
+  phone 장식만 숨겨 카드 정보/현장 열기 전체 폭, >=640 기존 UI/기본 표시/Home 유지.
+- Contracts affected: responsive disclosure/interaction presentation only. Debounce/IME/clear,
+  q/group/status/sort·동일 키 복구·compact mutation gate/권한 경계 유지.
+- Reference assets/adoption: f062f013 실제390/768 원본 재사용; existing native details/inputs/tokens ADOPT.
+  기본 이미지 생략은 phone Site list 한정이며 Home 또는 실제 미리보기의 보편 금지가 아니다.
+- Files to change: sites/page, SiteListControls 또는 작은 phone helper, focused tests,
+  e2e/sites-controls·operations-console, 기존 README/design guardrail/audit/ledger.
+- Tests: 선택만/Apply/초안/검색 ack 중 선택 유지/취소·초기화/히스토리/IME, 전체 suite/type/build;
+  실제320/390/639/640/768/1024/1440 render·선택·44target·overflow/axe·Home 회귀.
+- HIL or real-device assumptions: 없음; phone viewport/touch emulation ≠ 물리 touch/OS IME/SR.
+- License/data implications: 기존 자산만, 새 dependency/외부 asset/자료 접근/egress 없음.
+- Rollback: 직전 `.next-sites-controls-final-20261019`와 `serve-sites.sh` 보존, 이번 UI 변경만 revert.
+
+증거 `/tmp/opencode/ksi-sites-phone-20261019/`; baseline main f062f013=origin/main, tracked clean.
+
+**로컬 수용 완료 — 휴대폰 현장 목록 (위 IN PROGRESS를 대체)**
+
+- <640px는 **전체 너비 검색 → 실제 건수/필터·정렬의 조용한 summary → 전체 폭 현장 카드**다.
+  종전 상태 필터 바와 상시 정렬을 phone에서 분리/중복 노출하지 않는다. native details를 펼치면
+  현장 상태/정렬 기준 두 선택과 적용·초기화가 나타난다. 모달·bottom sheet·새 의존성은 없다.
+- 선택만 하면 URL/결과가 바뀌지 않고, 적용 시 **최신 검색 초안+선택 조건**을 함께 확정한다.
+  검색-only ack가 미확정 필터 선택을 지우지 않으며, 닫으면 미적용 선택을 버린다. Apply/전체
+  reset는 패널을 닫고 summary로 focus를 돌린다. clear는 q만, 전체 reset는 이미 `/sites`인 상태의
+  미확정 초안도 즉시 비운다. 기존 IME/디바운스/느린 RSC/히스토리/legacy status 보호는 유지된다.
+- 실제 브라우저에서 group Apply 후 서버 응답이 parent key를 바꿔 focus를 잃는 문제를 발견했다.
+  키 리마운트를 없애고 **안정된 인스턴스+명시적인 group/status prop 동기화**로 고쳤다. 동일 q의
+  외부 기준 이동도 초안을 URL에 맞추고 timer를 취소하며, q-only ack는 타이핑/미적용 선택을 보존한다.
+  IME 중 phone Apply도 제출하지 않는다. 초기 hidden 중복 locator 오류는 테스트 대상을 visible로
+  좁혀 진단했고, 실제 focus/URL/타이머 검증을 삭제하거나 약화하지 않았다.
+- phone의 장식용 기본 이미지만 숨겨 gutter를 없앴다. 실제 390px에서 검색358px/44px,
+  현장 열기332px/44px이며 320px에서도 검색288px/44px·열기262px/44px로 본문 폭을 쓴다.
+  >=640px의 이미지·검색/정렬 구조와 Home D6는 그대로다. **768/1024/1440px 원본 vs 최신 PNG는
+  픽셀 완전 동일**(동일 합성 원장/뷰포트/locale). 이미지 생략은 실제 미리보기의 보편 금지가 아니다.
+- 최종 `.next-sites-phone-20261019`를 기존 tailnet10010→3241→Core8096/issuer9042에서 실행 중이다.
+  source 변경은 Sites page/controls/NavLink와 focused tests뿐이며 Core/API/RBAC/schema/identity/media/
+  원본/계산/data·AI-egress/1024 mutation gate는 불변이다(INV-040/060/061).
+- 검증: Dashboard **1298/1298 (151 files)**, tsc/build 통과, lint 0err/기존warning1, source detector `[]`.
+  Console+feedback+Sites E2E **88 passed / 16 skipped**(종전13skip+새 phone-only test의 nonphone3).
+  새 phone 기능은 선택-only·닫기/재열기·검색 ack 중 선택 유지·초안 포함 적용·group 변경 후 focus·
+  같은 URL reset·뒤로가기·IME·현장 열기 복원을 browser에서 확인했다. 기존 stale empty-org는 수정/
+  완료 주장하지 않았다. Home 4폭 golden을 변경하지 않고 회귀 통과했다.
+- 실제320/390/639/640/768/1024/1440 + phone 펼침/적용/빈 결과 **16 상태**에서 axe serious/critical/
+  moderate0·가로 넘침0·pageerror0·API mutation 시도0. 캡처를 직접 판독하고 이전 모습과 비교했다.
+  native details/tap/keyboard는 브라우저 에뮬레이션이며 물리 touch/OS 한국어 IME/SR·고객·production
+  수용으로 부르지 않는다. 고객/자료 준비/production/IdP 등 기존 제품 외부 경계도 그대로다.
+- 증거 `/tmp/opencode/ksi-sites-phone-20261019/`: before/after/panel/applied/empty PNG, checks,
+  nonphone-comparison, verification-summary, source-hashes, unit/type/lint/build/E2E 로그.
+  새 launcher `serve-phone.sh`; 되돌리기는 현재3241만 중지 후 보존한 직전
+  `/tmp/opencode/ksi-sites-controls-20261019/serve-sites.sh`를 실행한다. 본 Human 요청은 로컬 UI 완료다.

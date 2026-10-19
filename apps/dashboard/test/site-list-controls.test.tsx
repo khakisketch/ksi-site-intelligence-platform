@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
@@ -30,6 +30,8 @@ function renderControls(props: {
   group?: string;
   status?: string;
   hasFilter?: boolean;
+  visibleCount?: number;
+  totalCount?: number;
 } = {}) {
   return render(
     <SiteListControls
@@ -38,6 +40,8 @@ function renderControls(props: {
       group={props.group}
       status={props.status}
       hasFilter={props.hasFilter ?? false}
+      visibleCount={props.visibleCount ?? 3}
+      totalCount={props.totalCount ?? 5}
     />,
   );
 }
@@ -46,8 +50,24 @@ function searchbox() {
   return screen.getByRole("searchbox", { name: "현장 찾기" }) as HTMLInputElement;
 }
 
+function searchForm() {
+  return screen.getByRole("search", { name: "현장 검색과 정렬" });
+}
+
+function phoneForm() {
+  return screen.getByRole("form", { name: "현장 필터" });
+}
+
 function sortSelect() {
-  return screen.getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement;
+  return within(searchForm()).getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement;
+}
+
+function phoneGroupSelect() {
+  return within(phoneForm()).getByRole("combobox", { name: "현장 상태" }) as HTMLSelectElement;
+}
+
+function phoneSortSelect() {
+  return within(phoneForm()).getByRole("combobox", { name: "정렬 기준" }) as HTMLSelectElement;
 }
 
 function hrefParams(href: string) {
@@ -170,7 +190,7 @@ describe("SiteListControls", () => {
     vi.useFakeTimers();
     setLocation("/sites?q=%EC%84%9C%EC%AA%BD&sort=attention");
     render(
-      <SiteListControls query="서쪽" sort="attention" hasFilter />,
+      <SiteListControls query="서쪽" sort="attention" hasFilter visibleCount={1} totalCount={1} />,
     );
     searchbox().focus();
     fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
@@ -191,7 +211,7 @@ describe("SiteListControls", () => {
     vi.useFakeTimers();
     setLocation("/sites?sort=attention");
     const { rerender } = render(
-      <SiteListControls query="" sort="attention" hasFilter={false} />,
+      <SiteListControls query="" sort="attention" hasFilter={false} visibleCount={3} totalCount={5} />,
     );
     searchbox().focus();
     fireEvent.change(searchbox(), { target: { value: "x" } });
@@ -202,7 +222,7 @@ describe("SiteListControls", () => {
     setLocation("/sites?q=x&sort=attention");
     fireEvent.change(searchbox(), { target: { value: "xy" } });
     // 커밋 전 상태의 늦은 응답 상당 — 입력 중이면 무시한다.
-    rerender(<SiteListControls query="" sort="attention" hasFilter={false} />);
+    rerender(<SiteListControls query="" sort="attention" hasFilter={false} visibleCount={3} totalCount={5} />);
     expect(searchbox().value).toBe("xy");
     act(() => {
       vi.advanceTimersByTime(300);
@@ -217,7 +237,7 @@ describe("SiteListControls", () => {
     fireEvent.change(sortSelect(), { target: { value: "name" } });
     expect(document.activeElement).toBe(sortSelect());
     // 정렬 응답 상당 — 리마운트 없이 값만 따라간다.
-    rerender(<SiteListControls sort="name" hasFilter={false} />);
+    rerender(<SiteListControls sort="name" hasFilter={false} visibleCount={3} totalCount={5} />);
     expect(document.activeElement).toBe(sortSelect());
     expect(sortSelect().value).toBe("name");
   });
@@ -238,12 +258,64 @@ describe("SiteListControls", () => {
     expect(searchbox().className).not.toContain("pr-11");
   });
 
+  it("기준이 바뀌면 같은 검색어라도 확정값으로 되돌리고 대기를 버린다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?q=%EC%84%9C%EC%AA%BD&group=attention&sort=attention");
+    const { rerender } = render(
+      <SiteListControls query="서쪽" sort="attention" group="attention" hasFilter visibleCount={1} totalCount={5} />,
+    );
+    searchbox().focus();
+    fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
+    // 칩 클릭 상당: 취소 의도 뒤 같은 q·새 묶음 응답이 온다.
+    act(() => {
+      window.dispatchEvent(new Event(SITE_LIST_CANCEL_EVENT));
+    });
+    rerender(
+      <SiteListControls query="서쪽" sort="attention" group="patrol" hasFilter visibleCount={1} totalCount={5} />,
+    );
+    expect(searchbox().value).toBe("서쪽");
+    expect(screen.getByRole("status").textContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(mocked.replace).not.toHaveBeenCalled();
+    expect(mocked.push).not.toHaveBeenCalled();
+  });
+
+  it("q만 바뀌는 응답은 패널의 미적용 선택을 유지한다", () => {
+    const { rerender } = render(
+      <SiteListControls query="서쪽" sort="attention" group="attention" hasFilter visibleCount={1} totalCount={5} />,
+    );
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
+    rerender(
+      <SiteListControls query="서쪽" sort="attention" group="attention" hasFilter visibleCount={1} totalCount={5} />,
+    );
+    expect(phoneGroupSelect().value).toBe("patrol");
+    expect(searchbox().value).toBe("서쪽x");
+  });
+
+  it("폰 초기화는 타이머와 미확정 검색어를 함께 비운다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites");
+    renderControls({ sort: "attention", hasFilter: false, visibleCount: 0, totalCount: 4 });
+    fireEvent.change(searchbox(), { target: { value: "서쪽" } });
+    fireEvent.click(within(phoneForm()).getByRole("link", { name: "초기화" }));
+    expect(searchbox().value).toBe("");
+    expect(screen.getByRole("status").textContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(mocked.replace).not.toHaveBeenCalled();
+    expect(mocked.push).not.toHaveBeenCalled();
+  });
+
   it("빈 상태 초기화 클릭 의도도 대기 타이머를 버린다", () => {
     vi.useFakeTimers();
     setLocation("/sites?q=%EC%84%9C%EC%AA%BD&sort=attention");
     render(
       <>
-        <SiteListControls query="서쪽" sort="attention" hasFilter />
+        <SiteListControls query="서쪽" sort="attention" hasFilter visibleCount={1} totalCount={1} />
         <SiteListCancelBoundary>
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a
@@ -347,18 +419,18 @@ describe("SiteListControls", () => {
   it("in-flight 응답 같은 props 로는 타이핑을 덮지 않는다", () => {
     vi.useFakeTimers();
     const { rerender } = render(
-      <SiteListControls query="서쪽" sort="attention" hasFilter />,
+      <SiteListControls query="서쪽" sort="attention" hasFilter visibleCount={1} totalCount={1} />,
     );
     fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
-    rerender(<SiteListControls query="서쪽" sort="attention" hasFilter />);
+    rerender(<SiteListControls query="서쪽" sort="attention" hasFilter visibleCount={1} totalCount={1} />);
     expect(searchbox().value).toBe("서쪽x");
   });
 
   it("뒤로·앞으로·공유로 URL이 바뀌면 초안을 따라간다", () => {
     const { rerender } = render(
-      <SiteListControls query="서쪽" sort="attention" hasFilter />,
+      <SiteListControls query="서쪽" sort="attention" hasFilter visibleCount={1} totalCount={1} />,
     );
-    rerender(<SiteListControls query="동쪽" sort="updated" hasFilter />);
+    rerender(<SiteListControls query="동쪽" sort="updated" hasFilter visibleCount={1} totalCount={1} />);
     expect(searchbox().value).toBe("동쪽");
     expect(sortSelect().value).toBe("updated");
   });
@@ -377,15 +449,17 @@ describe("SiteListControls", () => {
 
   it("초기화는 전체 조건을 되돌리고 조건이 없으면 보이지 않는다", () => {
     const { unmount } = renderControls({ query: "서쪽", hasFilter: true });
-    expect(screen.getByRole("link", { name: "초기화" }).getAttribute("href")).toBe("/sites");
+    expect(within(searchForm()).getByRole("link", { name: "초기화" }).getAttribute("href")).toBe("/sites");
     unmount();
     renderControls();
-    expect(screen.queryByRole("link", { name: "초기화" })).toBeNull();
+    // 바깥(데스크톱) 초기화는 조건이 없으면 없고, 폰 패널 초기화는 상시 있다.
+    expect(within(searchForm()).queryByRole("link", { name: "초기화" })).toBeNull();
+    expect(within(phoneForm()).getByRole("link", { name: "초기화" })).toBeTruthy();
   });
 
   it("독립 초기화는 데스크톱에서만 보인다 — 좁은 폭은 서랍 초기화가 맡는다", () => {
     renderControls({ query: "서쪽", hasFilter: true });
-    const reset = screen.getByRole("link", { name: "초기화" });
+    const reset = within(searchForm()).getByRole("link", { name: "초기화" });
     expect(reset.className).toContain("hidden");
     expect(reset.className).toContain("lg:inline-flex");
     expect(reset.className).toContain("tap-target");
@@ -411,7 +485,7 @@ describe("SiteListControls", () => {
   it("초기화·뒤로가기로 URL 정렬이 바뀌면 선택 표시도 같은 값으로 복원한다", () => {
     const { rerender } = renderControls({ sort: "name" });
     rerender(
-      <SiteListControls sort="attention" hasFilter={false} />,
+      <SiteListControls sort="attention" hasFilter={false} visibleCount={3} totalCount={5} />,
     );
     expect(sortSelect().value).toBe("attention");
   });
@@ -426,6 +500,138 @@ describe("SiteListControls", () => {
       vi.advanceTimersByTime(300);
     });
     expect(screen.getByRole("status").textContent).toBe("");
+  });
+});
+
+describe("SiteListControls phone panel", () => {
+  it("건수 행과 필터·정렬 여닫이를 두고 바깥 정렬은 폰에서 숨긴다", () => {
+    const { container } = renderControls({ visibleCount: 1, totalCount: 4 });
+    expect(screen.getByText("필터·정렬")).toBeTruthy();
+    expect(screen.getByText("1 / 4곳 표시")).toBeTruthy();
+    const outerSort = sortSelect().closest("div")!;
+    expect(outerSort.className).toContain("hidden");
+    expect(outerSort.className).toContain("sm:block");
+    expect(container.querySelector("details")?.className).toContain("sm:hidden");
+  });
+
+  it("적용은 선택한 묶음·정렬과 최신 초안을 함께 확정한다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?group=attention&sort=attention");
+    renderControls({ query: "서", group: "attention", sort: "attention", visibleCount: 2, totalCount: 5 });
+    fireEvent.change(searchbox(), { target: { value: "서쪽" } });
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
+    fireEvent.submit(phoneForm());
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+    const params = hrefParams(mocked.push.mock.calls[0][0]);
+    expect(params.get("q")).toBe("서쪽");
+    expect(params.get("group")).toBe("patrol");
+    expect(params.get("sort")).toBe("name");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    // 적용이 타이머를 대신했으므로 뒤늦은 replace 가 없다.
+    expect(mocked.replace).not.toHaveBeenCalled();
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+    expect(document.querySelector("details")?.hasAttribute("open")).toBe(false);
+    expect(document.activeElement?.textContent).toContain("필터·정렬");
+  });
+
+  it("그룹이 바뀌는 적용 후에도 요약 포커스가 남는다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?group=attention&sort=attention");
+    const { rerender } = render(
+      <SiteListControls query="서" sort="attention" group="attention" hasFilter visibleCount={5} totalCount={5} />,
+    );
+    fireEvent.change(searchbox(), { target: { value: "서쪽" } });
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
+    fireEvent.submit(phoneForm());
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+    const summary = screen.getByText("필터·정렬").closest("summary")!;
+    expect(document.activeElement).toBe(summary);
+    // 서버 응답 상당: 묶음·정렬 prop 갱신 — 리마운트 없이 같은 요약에 포커스 유지.
+    rerender(
+      <SiteListControls query="서쪽" sort="name" group="patrol" hasFilter visibleCount={1} totalCount={5} />,
+    );
+    expect(document.activeElement).toBe(summary);
+    expect(phoneGroupSelect().value).toBe("patrol");
+    expect(phoneSortSelect().value).toBe("name");
+    expect(searchbox().value).toBe("서쪽");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+  });
+
+  it("IME 조합 중 폰 적용도 확정하지 않는다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?group=attention&sort=attention");
+    renderControls({ group: "attention", sort: "attention" });
+    fireEvent.compositionStart(searchbox());
+    fireEvent.change(searchbox(), { target: { value: "서" } });
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    fireEvent.submit(phoneForm());
+    expect(mocked.push).not.toHaveBeenCalled();
+    expect(mocked.replace).not.toHaveBeenCalled();
+    expect(document.querySelector("details")?.hasAttribute("open")).toBe(false);
+    fireEvent.compositionEnd(searchbox());
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    // 조합 확정분은 검색만 예약대로 가고, 미적용 묶음 선택은 그대로 둔다.
+    expect(mocked.replace).toHaveBeenCalledTimes(1);
+    expect(hrefParams(mocked.replace.mock.calls[0][0]).get("q")).toBe("서");
+    expect(phoneGroupSelect().value).toBe("patrol");
+  });
+
+  it("적용 없이 닫으면 미확정 선택을 버린다", () => {
+    renderControls({ group: "attention", sort: "attention" });
+    const details = document.querySelector("details") as HTMLDetailsElement;
+    fireEvent.click(screen.getByText("필터·정렬"));
+    expect(details.open).toBe(true);
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
+    fireEvent.click(screen.getByText("필터·정렬"));
+    expect(details.open).toBe(false);
+    // jsdom 의 toggle 은 비동기로 올 수 있어 직접 한 번 더 알린다 — 멱등하다.
+    act(() => {
+      details.dispatchEvent(new Event("toggle", { bubbles: true }));
+    });
+    expect(phoneGroupSelect().value).toBe("attention");
+    expect(phoneSortSelect().value).toBe("attention");
+  });
+
+  it("뒤로가기는 포커스 중에도 패널 조건을 복원한다", () => {
+    const { rerender } = render(
+      <SiteListControls query="" sort="attention" group="attention" hasFilter={false} visibleCount={3} totalCount={5} />,
+    );
+    searchbox().focus();
+    fireEvent.change(phoneGroupSelect(), { target: { value: "patrol" } });
+    rerender(
+      <SiteListControls query="" sort="updated" group="patrol" hasFilter visibleCount={2} totalCount={5} />,
+    );
+    expect(phoneGroupSelect().value).toBe("patrol");
+    expect(phoneSortSelect().value).toBe("updated");
+    expect(document.activeElement).toBe(searchbox());
+  });
+
+  it("패널 초기화는 전체를 되돌리고 패널을 닫는다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?group=patrol&q=%EC%84%9C%EC%AA%BD&sort=name");
+    renderControls({ query: "서쪽", group: "patrol", sort: "name", hasFilter: true, visibleCount: 0, totalCount: 4 });
+    fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
+    const details = document.querySelector("details") as HTMLDetailsElement;
+    details.open = true;
+    fireEvent.change(phoneGroupSelect(), { target: { value: "attention" } });
+    fireEvent.click(within(phoneForm()).getByRole("link", { name: "초기화" }));
+    expect(details.hasAttribute("open")).toBe(false);
+    expect(phoneGroupSelect().value).toBe("all");
+    expect(phoneSortSelect().value).toBe("attention");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(mocked.replace).not.toHaveBeenCalled();
   });
 });
 
@@ -458,6 +664,7 @@ describe("SiteListVisual", () => {
 });
 
 const PAGE = readFileSync(join(process.cwd(), "src/app/sites/page.tsx"), "utf8");
+const CONTROLS = readFileSync(join(process.cwd(), "src/components/site/SiteListControls.tsx"), "utf8");
 
 describe("sites page wiring", () => {
   it("검색·정렬을 새 컨트롤 하나로 묶고 옛 정렬 폼을 남기지 않는다", () => {
@@ -465,11 +672,10 @@ describe("sites page wiring", () => {
     expect(PAGE).not.toContain("SiteListSort");
   });
 
-  it("기준 칩은 클릭 의도를 먼저 알리고 정렬은 리마운트하지 않는다", () => {
+  it("기준 칩은 클릭 의도를 먼저 알리고 컨트롤을 리마운트하지 않는다", () => {
     expect(PAGE).toContain("SiteListNavLink");
     expect(PAGE).toContain("SiteListCancelBoundary");
-    expect(PAGE).toContain('key={`controls:${group}:${status ?? "-"}`}');
-    expect(PAGE).not.toContain(":${sort}");
+    expect(PAGE).not.toContain("controls:${group}");
   });
 
   it("서랍 초기화도 기준 링크로 대기 타이머를 취소한다", () => {
@@ -481,6 +687,15 @@ describe("sites page wiring", () => {
     expect(PAGE).toContain("목록용 미리보기 경로가 없으므로");
     expect(PAGE).not.toContain("검색만 제출하며");
     expect(PAGE).not.toContain("실측 이미지가 없으므로");
+  });
+
+  it("폰 구조는 검색→건수·필터 행→썸네일 없는 카드다", () => {
+    expect(PAGE).toContain('visibleCount={visibleSites.length}');
+    expect(PAGE).toContain('totalCount={sites.length}');
+    expect(PAGE).toMatch(/<details className="[^"]*sm:block lg:hidden"/);
+    expect(CONTROLS).toContain('className="mt-2 sm:hidden"');
+    expect(PAGE).toContain('className="hidden items-baseline gap-2 px-1 sm:flex"');
+    expect(PAGE).toContain('className="mt-0.5 hidden h-16 w-20 sm:block sm:h-[72px] sm:w-24"');
   });
 
   it("보이는 검색 버튼을 두지 않는다", () => {

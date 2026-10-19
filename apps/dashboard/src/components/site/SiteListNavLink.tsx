@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 /**
  * 기준 이동 의도 알림 — 현장 목록 칩·상태 되돌리기가 누르기 전에 보낸다.
@@ -18,18 +18,24 @@ export function SiteListNavLink({
   current,
   className,
   children,
+  onClick,
 }: {
   href: string;
   current?: boolean;
   className?: string;
   children: ReactNode;
+  /** 이동 의도 알림 뒤에 덧붙일 정리(패널 닫기 등) — 이동 자체는 막지 않는다. */
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   return (
     <Link
       href={href}
       aria-current={current ? "true" : undefined}
       className={className}
-      onClick={() => window.dispatchEvent(new Event(SITE_LIST_CANCEL_EVENT))}
+      onClick={(event) => {
+        window.dispatchEvent(new Event(SITE_LIST_CANCEL_EVENT));
+        onClick?.(event);
+      }}
     >
       {children}
     </Link>
