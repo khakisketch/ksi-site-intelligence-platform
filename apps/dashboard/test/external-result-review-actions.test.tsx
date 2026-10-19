@@ -2,6 +2,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 import { ExternalResultReviewActions } from "@/components/external-results/ExternalResultReviewActions";
 import type { ExternalAnyResultReview, ExternalReobservationProposalView } from "@/lib/core-api/external-result-workflow";
 
@@ -186,10 +188,13 @@ it("renders the retained review through the family's own detail renderer", async
   expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
 });
 
-it("names the missing permission for each action without offering it", async () => {
+it("names the missing permission for each action in a popover without offering the write", async () => {
   const { rerender } = render(<ExternalResultReviewActions {...props({ hasReviewPermission: false })} />);
+  const reviewTrigger = await screen.findByRole("button", { name: "결과 검토 기록" });
+  expect(reviewTrigger.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(reviewTrigger);
   expect(await screen.findByText("결과 검토를 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "결과 검토 기록" })).toBeNull();
+  expect(fetchMock).not.toHaveBeenCalled();
 
   rerender(<ExternalResultReviewActions {...props({
     review: reviewReceipt(),
@@ -197,10 +202,15 @@ it("names the missing permission for each action without offering it", async () 
     hasReviewPermission: false,
     canApprovePermission: false,
   })} />);
+  const proposalTrigger = await screen.findByRole("button", { name: "이 작업구역으로 재관측 제안" });
+  expect(proposalTrigger.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(proposalTrigger);
   expect(await screen.findByText("재관측 제안을 기록할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
-  expect(screen.getByText("후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "이 작업구역으로 재관측 제안" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "재관측 후속 작업 승인" })).toBeNull();
+  const approvalTrigger = await screen.findByRole("button", { name: "재관측 후속 작업 승인" });
+  expect(approvalTrigger.hasAttribute("disabled")).toBe(false);
+  fireEvent.click(approvalTrigger);
+  expect(await screen.findByText("후속 작업을 승인할 권한이 없습니다. 현장 담당자에게 확인하세요.")).toBeTruthy();
+  expect(screen.queryByLabelText("재관측 제안 사유")).toBeNull();
   expect(fetchMock).not.toHaveBeenCalled();
 });
 

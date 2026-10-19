@@ -141,3 +141,24 @@ capability from `NOT_VERIFIED`.
 
 Built with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app)
 (Next.js App Router, TypeScript, Tailwind v4).
+
+## 피드백 기본형 (ActionUnavailable · ToastProvider · ConfirmDialog)
+
+소리 없이 막힌 화면을 만들지 않기 위한 세 가지 기본형이다.
+`src/components/ui/` 에 있으며, 용도를 바꾸지 않는다:
+
+- `ActionUnavailable({ label, description, retry? })` — 권한이 없어 눌 수 없는
+  동작의 사유를 **클릭해야 열리는 비모달 팝오버**로 보여준다. 상시 문구·title
+  툴팁·disabled 고정을 쓰지 않으며, `retry` 는 `router.refresh()` 읽기만 한다.
+  현장 등록 진입(`src/app/sites/RegisterSiteAction.tsx`)이 쓰는 형태다.
+- `ToastProvider` + `useToast()` — 단순 성공 한 마디만 띄운다. 최신 1개·최소
+  6초 유지·호버/포커스/숨김 탭에서 일시정지·`알림 닫기` 버튼·포커스 탈취 없음.
+  `layout.tsx` 가 앱 전체에 깔아 두므로 호출부는 `notify(message)` 만 쓴다.
+- `ConfirmDialog({ open, title, description, confirmLabel, onConfirm, onCancel, pending? })`
+  — 되돌리기 어려운 변경이나 작업 흐름을 멈추는 중요 결정용 모달(네이티브 `<dialog>`, 기본 포커스 취소,
+  확인 라벨은 동작 명시). 취소·배경 클릭은 절대 실행하지 않으며, `pending`
+  동안 중복 실행을 막는다.
+
+검증·복구는 각 화면의 인라인 상태가 맡고, 토스트·모달로 대신하지 않는다.
+권한 부족과 권한 확인 실패는 구분한다. 직접 진입한 권한 거부 페이지·조회 실패·처리 상태·
+정량 근거의 한계는 화면에 유지하며, 짧은 실행 불가 사유만 팝오버로 옮긴다.

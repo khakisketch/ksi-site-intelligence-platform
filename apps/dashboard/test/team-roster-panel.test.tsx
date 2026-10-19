@@ -6,7 +6,15 @@ import { TeamRosterPanel } from "@/app/field/team/TeamRosterPanel";
 
 vi.mock("@/components/responsive/ResponsiveActionBoundary", () => ({ ResponsiveActionBoundary: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+const notifyMock = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/ToastProvider", () => ({ useToast: () => ({ notify: notifyMock }) }));
+vi.mock("@/components/ui/ActionUnavailable", () => ({
+  ActionUnavailable: ({ label, description }: { label: string; description: string }) => (
+    <div><span>{label}</span><span>{description}</span></div>
+  ),
+}));
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); notifyMock.mockClear(); });
 
 describe("TeamRosterPanel", () => {
   it("reloads a conflicted member revision while preserving the edited draft", async () => {
@@ -62,5 +70,26 @@ describe("TeamRosterPanel", () => {
     expect((screen.getByLabelText("표시 이름") as HTMLInputElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "수정" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "같은 요청 다시 시도" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("toasts a confirmed save while keeping the registration-is-not-an-account context", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ principalId: "operator-b", displayName: "현장 담당", roleHint: "FIELD_OPERATOR", status: "ACTIVE", revision: 1, updatedAt: "2026-09-10T00:00:00Z", updatedBy: "admin" }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<TeamRosterPanel initialMembers={[]} canManage currentPrincipalId="admin" />);
+    fireEvent.change(screen.getByLabelText("사용자 ID"), { target: { value: "operator-b" } });
+    fireEvent.change(screen.getByLabelText("표시 이름"), { target: { value: "현장 담당" } });
+    fireEvent.click(screen.getByRole("button", { name: "팀원 정보 저장" }));
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("팀원 정보를 저장했습니다."));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByText(/계정 생성·로그인 초대·권한 부여는 여기서 하지 않습니다/)).toBeTruthy();
+  });
+
+  it("shows a click-blocked registration action when the roster itself stays read-only", () => {
+    render(<TeamRosterPanel initialMembers={[{ principalId: "operator-a", displayName: "기존 담당", roleHint: "FIELD_OPERATOR", status: "ACTIVE", revision: 1, updatedAt: "2026-09-10T00:00:00Z", updatedBy: "admin" }]} canManage={false} currentPrincipalId="operator-a" />);
+    expect(screen.getByText("기존 담당")).toBeTruthy();
+    expect(screen.getByText("팀원 등록/관리")).toBeTruthy();
+    expect(screen.getByText("팀 관리에는 관리자 권한이 필요합니다.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "팀원 정보 저장" })).toBeNull();
   });
 });

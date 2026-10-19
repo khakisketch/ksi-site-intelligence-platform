@@ -54,7 +54,6 @@ export function AnalysisStartGuide({
             : "변화 분석 요청에는 서로 다른 관측 두 개와 작업구역이 필요합니다. 필요한 등록·보완은 관측 담당자와 확인하세요. 후보 수는 적합성 판정이 아닙니다."}
       </p>
       {canChoosePair && canCreate && <Link href="#new-analysis-request" className="btn btn-primary shrink-0">변화 분석 요청으로 이동</Link>}
-      {!canCreate && <span className="text-[11.5px] text-ink-muted">새 요청은 권한 있는 담당자에게</span>}
     </div>
   </section>;
 }

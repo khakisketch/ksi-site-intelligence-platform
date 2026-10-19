@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatRegistrationVersion, zoneVersionLabel } from "@/app/field/registration-language";
 import { formatNumberKo } from "@/lib/number-format";
@@ -668,8 +669,10 @@ function SingleVolumeWorkflow({
             {busy ? "체적 측정 요청 중" : "단일 시점 체적 측정 요청"}
           </button>
         </ResponsiveActionBoundary>
+      ) : !newIntentAllowed ? (
+        <p className="text-ink-2">업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다.</p>
       ) : (
-        <p className="text-ink-2">{newIntentAllowed ? "단일 시점 체적 요청에는 SITES_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 단일 시점 체적 측정을 요청할 수 없습니다."}</p>
+        <ActionUnavailable label="단일 시점 체적 측정 요청" description="단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1117,8 +1120,10 @@ export function ExternalResultWorkflowPanel({
             {busy === "issue" ? "비교 요청 중" : "상대 물량 비교 요청"}
           </button>
         </ResponsiveActionBoundary>
+      ) : !newIntentAllowed ? (
+        <p className="text-ink-2">업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다.</p>
       ) : (
-        <p className="text-ink-2">{newIntentAllowed ? "상대 물량 요청에는 SITES_WRITE 권한이 필요합니다." : "업무 종료 상태에서는 새 상대 물량 비교를 요청할 수 없습니다."}</p>
+        <ActionUnavailable label="상대 물량 비교 요청" description="상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요." />
       )}
 
       <div className="rounded-lg border border-line p-3">

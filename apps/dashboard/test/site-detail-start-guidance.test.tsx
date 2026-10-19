@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -59,6 +59,16 @@ beforeEach(() => {
 });
 
 describe("Site detail start guidance", () => {
+  it("keeps the read-only manage tab quiet and reveals the state-change reason on click", async () => {
+    render(await SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ tab: "manage" }),
+    }));
+    expect(screen.queryByText(/현재 계정으로는 현장 상태를 변경할 수 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /현장 상태 변경/ }));
+    expect(screen.getByText(/현재 계정으로는 현장 상태를 변경할 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "상태 전이" })).toBeNull();
+  });
   it("appears on the default Site view with scoped records and bounded history", async () => {
     mocked.history.mockResolvedValue({
       items: Array.from({ length: 50 }, (_, index) => ({ reportRef: `report-${index + 1}`, result: null })),

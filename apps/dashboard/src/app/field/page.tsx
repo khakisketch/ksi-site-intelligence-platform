@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -104,7 +105,7 @@ export default async function FieldWorkListPage() {
             {canCreateObservation ? (
               <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
             ) : (
-              <p className="text-[12px] leading-5 text-ink-2">관측 자료 등록은 작업 등록 권한이 있는 계정에서 할 수 있습니다.</p>
+              <ActionUnavailable label="관측 자료 등록" description="현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요." />
             )}
           </div>
         </header>

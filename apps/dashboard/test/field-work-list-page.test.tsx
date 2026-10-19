@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -14,6 +14,7 @@ vi.mock("@/lib/core-api/observation-work-orders", () => ({
   listObservationWorkOrderOperations: mocked.operations,
 }));
 vi.mock("@/app/field/WorkQueueOperationsNotices", () => ({ WorkQueueOperationsNotices: () => null }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import FieldWorkListPage from "@/app/field/page";
 import type { ObservationWorkOrderView } from "@/lib/core-api/types";
@@ -57,6 +58,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("Field work list page", () => {
+  it("explains an unavailable registration action only on demand, without a registration link", async () => {
+    mocked.session.mockResolvedValueOnce({
+      kind: "ready",
+      principal: { kind: "OPERATOR", principalId: "viewer-1", organizationId: "org-1", permissions: [] },
+    });
+    render(await FieldWorkListPage());
+    expect(screen.queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
+    expect(screen.queryByText(/현재 계정으로는 관측 자료를 등록할 수 없습니다/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /관측 자료 등록/ }));
+    expect(screen.getByText(/현재 계정으로는 관측 자료를 등록할 수 없습니다/)).toBeTruthy();
+    expect(mocked.operations).not.toHaveBeenCalled();
+  });
   it("does not describe an unknown operations state as an inspection task", async () => {
     render(await FieldWorkListPage());
     const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });

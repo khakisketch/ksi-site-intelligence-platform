@@ -4,11 +4,20 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { TeamReportShare } from "@/components/external-results/TeamReportShare";
 
+const notifyMock = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/ToastProvider", () => ({ useToast: () => ({ notify: notifyMock }) }));
+vi.mock("@/components/ui/ActionUnavailable", () => ({
+  ActionUnavailable: ({ label, description }: { label: string; description: string }) => (
+    <div><span>{label}</span><span>{description}</span></div>
+  ),
+}));
+
 const share = <TeamReportShare reportRef="report-1" siteId="site-1" organizationId="org-1" principalId="operator-a" canWrite />;
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  notifyMock.mockClear();
 });
 
 describe("TeamReportShare", () => {
@@ -40,9 +49,18 @@ describe("TeamReportShare", () => {
     await screen.findByRole("option", { name: /현장 담당/ });
     fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-a" } });
     fireEvent.click(screen.getByRole("button", { name: "팀원에게 결과 공유" }));
-    await screen.findByText("받은 업무에 전달했습니다.");
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("받은 업무에 전달했습니다."));
+    expect(screen.queryByText("받은 업무에 전달했습니다.")).toBeNull();
     expect(fetchMock.mock.calls[1]?.[0]).toBe(`/api/external-single-volume-reports/${singleRef}/shares`);
     expect(JSON.parse(fetchMock.mock.calls[1]?.[1]?.body)).toEqual({ recipientPrincipalId: "operator-a" });
+  });
+
+  it("shows a click-blocked sharing action instead of a standalone denied paragraph", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<TeamReportShare reportRef="report-1" siteId="site-1" organizationId="org-1" principalId="operator-a" canWrite={false} />);
+    expect(screen.getAllByText("팀원에게 결과 공유")).toHaveLength(2);
+    expect(screen.getByText("이 계정에는 결과 공유 권한이 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("combobox", { name: "공유할 팀원" })).toBeNull();
   });
 
   it("does not claim delivery when Core returns a receipt for another report or recipient", async () => {
@@ -61,6 +79,7 @@ describe("TeamReportShare", () => {
     fireEvent.change(screen.getByLabelText("공유할 팀원"), { target: { value: "operator-b" } });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((screen.getByLabelText("공유할 팀원") as HTMLSelectElement).disabled).toBe(true);
+    expect(notifyMock).not.toHaveBeenCalled();
   });
 
   it("uses a synchronous lock to collapse rapid duplicate share clicks", async () => {

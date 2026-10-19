@@ -15,7 +15,10 @@ vi.mock("next/link", () => ({
   default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) =>
     createElement("a", { href, ...props }, children),
 }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); } }));
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
@@ -159,7 +162,8 @@ describe("spatial asset catalog page", () => {
 
   it("offers the file-preparation request only with the data-request permission", async () => {
     const readerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
-    expect(readerHtml).toContain("자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다");
+    expect(readerHtml).toContain("자료 받기 요청</button>");
+    expect(readerHtml).not.toContain("자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다");
     expect(readerHtml).not.toContain("받기 요청 만들기");
 
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_REQUEST"] } });

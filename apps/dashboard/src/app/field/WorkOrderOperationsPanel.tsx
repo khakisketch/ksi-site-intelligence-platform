@@ -4,6 +4,9 @@ import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/ToastProvider";
 import type { ObservationWorkOrderOperationsView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { seoulDateTimeLocalToUtc } from "@/lib/external-reconstruction-submission";
@@ -83,9 +86,11 @@ export function WorkOrderOperationsPanel({
   canWrite: boolean;
 }) {
   const router = useRouter();
+  const { notify } = useToast();
   const [operations, setOperations] = useState(initialOperations);
   const [dueAt, setDueAt] = useState(() => seoulDateTimeLocalValue(initialOperations?.dueAt ?? null));
   const [closeNote, setCloseNote] = useState("");
+  const [closeConfirm, setCloseConfirm] = useState<{ body: Record<string, unknown> } | null>(null);
   const [pending, setPending] = useState<PendingAttempt | null>(null);
   const [unresolvedRetry, setUnresolvedRetry] = useState<PendingAttempt | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -169,7 +174,8 @@ export function WorkOrderOperationsPanel({
       setCloseNote("");
       unresolvedRetryRef.current = null;
       setUnresolvedRetry(null);
-      setFeedback(kind === "close" ? "업무를 종료했습니다. 이미 진행 중인 등록과 측정은 계속 확인할 수 있습니다." : "운영 정보를 저장했습니다.");
+      setFeedback(null);
+      notify(kind === "close" ? "업무를 종료했습니다." : "운영 정보를 저장했습니다.");
       if (kind === "close" || kind === "reopen") router.refresh();
     } catch {
       unresolvedRetryRef.current = attempt;
@@ -239,8 +245,8 @@ export function WorkOrderOperationsPanel({
         </div>
 
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 담당·기한·업무 종료 변경을 이어가세요.">
+          {canWrite ? (
           <div className="flex flex-col gap-3 rounded-lg bg-sunk p-3">
-            {!canWrite && <p className="text-[13px] leading-5 text-ink-2">이 계정에는 작업 운영 정보를 변경할 권한이 없습니다.</p>}
             {unresolvedRetry && <div className="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] leading-5 text-ink-2">
               <p>이전 저장 요청의 응답을 확인하지 못했습니다. 같은 요청을 먼저 확인하세요.</p>
               <button className="btn mt-2" disabled={pending !== null} onClick={() => void mutate(unresolvedRetry.kind, unresolvedRetry.body)}>같은 요청 다시 시도</button>
@@ -273,9 +279,22 @@ export function WorkOrderOperationsPanel({
               <label className="flex flex-col gap-1 text-[13px] font-semibold">종료 메모 <span className="font-normal text-ink-muted">(선택)</span>
                 <textarea className="input min-h-20" maxLength={500} value={closeNote} disabled={!canWrite || pending !== null || retryPending} onChange={(event) => setCloseNote(event.target.value)} placeholder="예: 현장 확인과 결과 검토를 마쳤습니다." />
               </label>
-              <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("close", { expectedOperationsRevision: operations.operationsRevision, note: closeNote.trim() || null })}>
+              <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => setCloseConfirm({ body: { expectedOperationsRevision: operations.operationsRevision, note: closeNote.trim() || null } })}>
                 {pending?.kind === "close" ? "업무 종료 저장 중" : "업무 종료"}
               </button>
+              <ConfirmDialog
+                open={closeConfirm !== null}
+                title="업무를 종료할까요?"
+                description="종료하면 새 산출물 등록이 멈춥니다. 이미 진행 중인 등록·측정과 기존 결과는 계속 확인할 수 있으며, 필요하면 업무를 다시 열 수 있습니다."
+                confirmLabel="업무 종료"
+                pending={pending !== null}
+                onCancel={() => setCloseConfirm(null)}
+                onConfirm={() => {
+                  const target = closeConfirm;
+                  setCloseConfirm(null);
+                  if (target) void mutate("close", target.body);
+                }}
+              />
               <p className="text-[12.5px] leading-5 text-ink-2">종료하면 새 산출물 등록이 멈추고, 이미 등록한 기록과 결과는 계속 확인할 수 있습니다.</p>
             </>}
             {isClosed && <button className="btn btn-primary w-fit" disabled={!canWrite || pending !== null || retryPending} onClick={() => void mutate("reopen", { expectedOperationsRevision: operations.operationsRevision })}>
@@ -283,6 +302,9 @@ export function WorkOrderOperationsPanel({
             </button>}
             {feedback && <p role="status" className="text-[13px] leading-5 text-ink-2">{feedback}</p>}
           </div>
+          ) : (
+            <ActionUnavailable label="작업 운영 정보 변경" description="현재 계정으로는 담당·기한·업무 종료를 변경할 수 없습니다. 작업 담당자에게 문의하세요." />
+          )}
         </ResponsiveActionBoundary>
       </div>
     </section>

@@ -4074,3 +4074,70 @@ Human이 "전반적으로 개선 필요한 UI/UX를 심층 식별"을 요청해 
 팔레트 접근성·범위 안내, 홈 폴백·닫는 안내, `/more` 장비 범위 정직 표기. 검증은 Dashboard
 **1189/1189(147 files)**, tsc/build, ESLint 0 errors(기존 warning 1), 테일넷 실제 22셀에서
 axe serious/critical/moderate 0·넘침 0·오류 0, 이미지 직접 판독, E2E 단언 2곳 갱신.
+
+### 2026-10-19 — 권한·실행 결과 피드백 정리 (Human 승인, IN PROGRESS)
+
+Human은 현장 등록 버튼 아래의 상시 권한 문구가 버튼 높이/정렬을 망가뜨린다고 지적했고,
+제안한 상황별 피드백 기준 전체를 "그래 개선해줘 너의 권고대로"로 승인했다.
+
+- Requirement IDs: REQ-UX-101, REQ-SEC-101; INV-040(실패/미확인≠성공), INV-060(조직·현장 범위),
+  INV-061(새 권한/반출 없음). Core의 authorization과 기존 검사/영수증/미확정 재시도를 유지한다.
+- Owner module: `apps/dashboard/` UI 표현/상태; Core/API/schema/RBAC 변경 없음.
+- Acceptance criteria: 권한 버튼 높이가 정렬되고 클릭·키보드·터치로만 짧은 사유를 공개;
+  등록 허용/권한 부족/확인 실패 구분; 단순 성공만 토스트; 입력·조회·미확정 실패는 해당 영역에 유지;
+  보관·종료·취소는 명시적 확인 전 0 POST, 취소/Escape 0 POST, 확인 1회; compact 제한 유지.
+- Contracts affected: UI feedback component props only; authoritative registration modes unchanged.
+- Reference assets/adoption: 기존 ink-mono 토큰/`.btn`/ErrorState/ResponsiveActionBoundary ADOPT;
+  기존 상시 권한 helper REPLACE; 원본 화면 `/tmp/opencode/ksi-permission-design-20261019/sites-current.png`.
+- Files to change: shared ActionUnavailable/ToastProvider/ConfirmDialog, layout, registration permission
+  projection and entry, Site/Field blocked actions, analysis/materials/ops/team/WorkArea consumers,
+  focused tests, existing design guardrail. 범위별 파일 소유권을 worker prompts에 고정.
+- Tests: focused component/API permission projection tests; 전체 Dashboard suite/type/lint/build;
+  실제 새 빌드 desktop/mobile popover/modal/toast/inline recovery 렌더·키보드·레이아웃/axe 확인.
+- HIL or real-device assumptions: 없음. 합성 로컬 권한·브라우저 시뮬레이션이며 물리 터치/SR 연구가 아님.
+- License/data implications: 새 의존성/외부 asset/AI egress/데이터 권리 변경 없음; 합성 시연 원장 변경 금지.
+- Rollback: 이번 UI 커밋만 revert, 이전 standalone 빌드 보관; Core/journal/registry 수정 없음.
+
+Primary Architect가 통합/새 렌더 수용을 소유하며 General 3개가 공통 권한·피드백, 운영 소비자,
+분석·자료 소비자를 분담한다. 기존 실제고객/Terra/정량/production/IdP 경계는 그대로다.
+
+**로컬 수용 완료 — 2026-10-19 (위 IN PROGRESS를 대체)**
+
+- 공통 `ActionUnavailable`(비모달 native popover, viewport clamp/flip/scroll 추적), `ToastProvider`
+  (최신 1개, 6초, 닫기·hover/focus/숨김 탭 일시정지, 모바일 하단 nav 회피), `ConfirmDialog`
+  (native dialog, 취소 기본 포커스, 고유 title/description, 중복 실행 방어)를 실제 화면에 통합했다.
+- 현장 목록/빈 현장 온보딩/등록 직접 진입은 **allowed/denied/unavailable**로 구분한다. 기존
+  bootstrap·legacy 모드 판정과 API/RBAC는 불변이다. 실제 목록 버튼·필터는 모두 **36px, top 66.5px**로
+  맞아 원래 권한 helper의 56.5px 스택이 사라졌다. 실패는 재조회, 확정 거부는 문의로 안내한다.
+- 현장 관리·작업 목록·작업구역·팀·분석/검토·자료 받기·legacy 비교 요청의 짧은 권한 사유를
+  클릭형으로 정리했다. 직접 진입의 거부 페이지, 실제 조회 실패, 업무 종료 상태, 빈 상태,
+  정량 한계/근거는 유지했다. 모바일 분석 검토는 계속 가능하고 laptop mutation gate는 그대로다.
+- 주소 복사·팀 정보 저장·영수증 확인 공유·운영 저장·구역 등록/보관의 단순 성공은 토스트다.
+  입력 오류·목록 실패·미확정 쓰기/같은 키 재시도·부분 대체 등록의 확인 실패는 지속 인라인이다.
+  검토 기록은 onReviewed 검증/상태 갱신 전에 성공 토스트를 띄우지 않고 기존 durable 상태로 남겼다.
+- 구역 보관·자료 준비 취소·업무 종료에 실행 전 확인을 붙였다. **업무 종료는 다시 열 수 있음**을
+  명시했다(취소/중단/삭제로 혼동하지 않음). 실제 렌더에서 보관 실패가 큰 지도 위로 숨는 문제를
+  추가 발견해 **해당 구역 카드 안의 1개 오류 + 보관 다시 시도(재확인)**로 고쳤다.
+- 검증: Dashboard **1252/1252 (150 files)**, tsc/최종 standalone build 통과, lint 0 errors/기존 warning 1,
+  기계 소스 detector `[]`. Operations Console + 새 feedback E2E **57 passed / 11 skipped**:
+  기존 compact 5, 새 compact mutation 4, roster 실제 read403으로 save표면 없음 2. E2E의 조건/임계값은
+  약화하지 않았다. Home golden 4장은 이전 Human 승인(default visual/한 줄 칩/하단 문장 제거)이
+  아직 반영되지 않아 원본 Git 이미지를 보관·직접 비교 후 현재 승인된 화면으로 의도적으로 갱신했다.
+  `empty-organization.spec.ts`의 기존 stale 기대는 이번에도 수정/완료 주장하지 않았다.
+- 실제 새 빌드: tailnet `:10010` → loopback3241 `.next-feedback-final-20261019` → 기존 Core8096/issuer9042.
+  현장/Field/관리/분석/보관 모달·인라인 실패·토스트 **13개 상태** + 실제 소스 기반 격리 컴포넌트
+  harness **4개 상태**에서 axe serious/critical/moderate 0, 넘침 0, page error 0; 캡처 직접 판독.
+  Enter/Escape/닫기/바깥 클릭·모달 취소 0 POST·확인 1회·같은 키 재시도·6초/위치/타깃을 확인했다.
+  390px touch emulation의 열기/닫기/바깥 tap도 0 mutation, 44px 닫기 버튼으로 통과했다.
+- 검증 경계: **실제 원장 쓰기는 모두 가로챘다**. 보관 성공/실패는 실제 전달된 페이지에서 모의
+  응답, 팀 저장/업무 종료는 실제 Core의 registry-scope read403을 넓히지 않고 실제 소비자/공통
+  컴포넌트를 기존 셸 안에 로드한 격리 harness(라우터 refresh stub + 모의 응답)로 검증했다.
+  권한/IdP/registry/Core/journal/데이터 원본을 변경하지 않았다. 실고객/production/물리 터치/SR 수용이 아니다.
+- 증거: `/tmp/opencode/ksi-permission-design-20261019/` README, verification-summary, checks,
+  harness-checks, touch-emulation, source-hashes, logs/PNG. Native 첫 캡처는 visible-tab 제한으로 실패해
+  Playwright headless를 썼다. 긴 모바일 full-page 캡처의 offscreen fixed skip-link 중간 노출은 캡처
+  좌표 artifact(실제 rect y=-48.8px)였고, 최종 viewport 이미지를 별도로 판독했다.
+  한 번의 재캡처 로그인 timeout은 성공한 기존 최종 검증을 대체하지 않으며 새 context에서 재현되지 않았다.
+- 되돌리기: 현재3241만 중지하고 이전 `/tmp/opencode/ksi-site-ia-20261018/serve-tailnet.sh`를 실행하면
+  보존된 `.next-site-ia`로 돌아간다. 새 launcher는 위 evidence 경로의 `serve-feedback.sh`다.
+  본 UI 요청은 로컬 완료이며 기존 실제 고객/자료 준비/production/IdP 등 제품 경계는 그대로다.

@@ -9,7 +9,10 @@ import { SiteListSort } from "@/components/site/SiteListSort";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
-import { getSiteRegistrationMode, hasAllPermissions } from "@/lib/core-api/permissions";
+import {
+  getSiteRegistrationAvailability,
+  hasAllPermissions,
+} from "@/lib/core-api/permissions";
 import { listSitesCached } from "@/lib/core-api/cached";
 import {
   SITE_GROUPS,
@@ -22,6 +25,7 @@ import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { SITE_STATUSES, type SiteStatus, type SiteView } from "@/lib/core-api/types";
 
 import { SiteOnboarding } from "./SiteOnboarding";
+import { RegisterSiteAction } from "./RegisterSiteAction";
 
 export const metadata = { title: "현장 · KSI" };
 
@@ -80,25 +84,7 @@ function hrefWith(
   return search ? `/sites?${search}` : "/sites";
 }
 
-/** 권한이 없을 때 사유를 title 툴팁이 아니라 상시 텍스트로 노출한다(터치 기기엔 hover가
- * 없어 툴팁이 아무에게도 안 보인다 — UX 목표 §3.4 "어떤 권한인지 명시"). */
-function RegisterSiteAction({ canRegisterSite }: { canRegisterSite: boolean }) {
-  if (canRegisterSite) {
-    return (
-      <Link href="/sites/new" className="btn btn-primary tap-target">
-        현장 등록
-      </Link>
-    );
-  }
-  return (
-    <span className="flex flex-col items-end gap-0.5">
-      <span className="btn cursor-not-allowed text-ink-muted" aria-disabled="true">
-        현장 등록
-      </span>
-      <span className="text-[11px] break-keep text-ink-muted">현장 등록 권한이 필요합니다</span>
-    </span>
-  );
-}
+
 
 /**
  * 현장 목록 — 데스크톱 비교표와 모바일 현장 카드의 같은 projection.
@@ -138,12 +124,16 @@ export default async function SitesPage({
         : "요청을 처리하지 못했습니다.";
   }
 
-  const [registrationModeResult, canEditSiteResult, canCreateWorkOrderResult] = await Promise.allSettled([
-    getSiteRegistrationMode(),
+  const [registrationResult, canEditSiteResult, canCreateWorkOrderResult] = await Promise.allSettled([
+    getSiteRegistrationAvailability(),
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("WORK_ORDERS_WRITE"),
   ]);
-  const canRegisterSite = registrationModeResult.status === "fulfilled" && registrationModeResult.value !== "DENIED";
+  // 등록 게이트는 3상태를 한 번만 읽는다 — whoami 실패를 거부로 뭉뚱그리지 않는다.
+  const registrationAvailability =
+    registrationResult.status === "fulfilled"
+      ? registrationResult.value
+      : { status: "unavailable" as const };
   const canEditSite = canEditSiteResult.status === "fulfilled" && canEditSiteResult.value;
   const canCreateWorkOrder = canCreateWorkOrderResult.status === "fulfilled" && canCreateWorkOrderResult.value;
 
@@ -266,7 +256,7 @@ export default async function SitesPage({
                 </Link>
               )}
 
-                <span className="ml-auto"><RegisterSiteAction canRegisterSite={canRegisterSite} /></span>
+                <span className="ml-auto"><RegisterSiteAction availability={registrationAvailability} /></span>
               </div>
 
               <div className="flex flex-wrap items-end justify-between gap-3 border-t border-line pt-3">
@@ -296,7 +286,7 @@ export default async function SitesPage({
         )}
         {sites === null && (
           <span className="ml-auto hidden items-center gap-2 lg:flex">
-            <RegisterSiteAction canRegisterSite={canRegisterSite} />
+            <RegisterSiteAction availability={registrationAvailability} />
           </span>
         )}
       </div>
@@ -304,7 +294,7 @@ export default async function SitesPage({
       {errorMessage !== null ? (
         <ErrorState message={errorMessage} retryable />
       ) : sites !== null && sites.length === 0 ? (
-        <SiteOnboarding canRegisterSite={canRegisterSite} />
+        <SiteOnboarding availability={registrationAvailability} />
       ) : visibleSites.length === 0 ? (
         <EmptyState
           title="조건에 맞는 현장이 없습니다"

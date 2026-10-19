@@ -1,6 +1,19 @@
 import Link from "next/link";
 
-export function SiteOnboarding({ canRegisterSite }: { canRegisterSite: boolean }) {
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
+import type { SiteRegistrationAvailability } from "@/lib/core-api/permissions";
+
+/**
+ * 첫 실행 화면 — 등록된 현장이 0곳일 때만 나온다.
+ *
+ * 등록 진입은 RegisterSiteAction 과 같은 3상태 문구를 쓴다. 확인 실패를
+ * 거부로 속이지 않는다: unavailable 은 재시도 버튼과 함께 미확인으로 보인다.
+ */
+export function SiteOnboarding({
+  availability,
+}: {
+  availability: SiteRegistrationAvailability;
+}) {
   return (
     <section className="mx-auto flex w-full max-w-3xl flex-col items-center gap-5 py-10 text-center">
       <div className="flex flex-col items-center gap-1.5">
@@ -15,14 +28,21 @@ export function SiteOnboarding({ canRegisterSite }: { canRegisterSite: boolean }
         </p>
       </div>
 
-      {canRegisterSite ? (
+      {availability.status === "allowed" ? (
         <Link href="/sites/new" className="btn btn-primary tap-target">
           첫 현장 등록하기
         </Link>
+      ) : availability.status === "unavailable" ? (
+        <ActionUnavailable
+          label="첫 현장 등록하기"
+          description="등록 권한을 확인하지 못했습니다. 잠시 후 다시 확인하세요."
+          retry
+        />
       ) : (
-        <p className="text-[12.5px] break-keep text-ink-muted">
-          현장 등록은 현장 등록 권한을 가진 계정만 할 수 있습니다.
-        </p>
+        <ActionUnavailable
+          label="첫 현장 등록하기"
+          description="현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요."
+        />
       )}
     </section>
   );

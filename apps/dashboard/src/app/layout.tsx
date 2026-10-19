@@ -14,6 +14,7 @@ import { TopBar } from "@/components/nav/TopBar";
 import { resolvePageTitle } from "@/components/nav/page-title";
 import { CommandPalette } from "@/components/console/CommandPalette";
 import { SessionRefresh } from "@/components/auth/SessionRefresh";
+import { ToastProvider } from "@/components/ui/ToastProvider";
 import { buildPaletteItems } from "@/components/console/palette-source";
 import { getDashboardAuthRuntime } from "@/lib/auth/runtime";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
@@ -101,7 +102,7 @@ export default async function RootLayout({
             className="flex-1 pb-[var(--mobile-bottom-nav-clearance)] lg:min-h-0 lg:overflow-y-auto lg:pb-0"
           >
             {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
-            {children}
+            <ToastProvider>{children}</ToastProvider>
           </main>
         </div>
         <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />

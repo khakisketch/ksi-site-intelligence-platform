@@ -425,6 +425,9 @@ describe("analysis V2 panel", () => {
     expect(await screen.findByText("미검토")).toBeTruthy();
     expect(screen.getByText("현재 결과에 대한 검토 기록이 없습니다.")).toBeTruthy();
     expect(screen.queryByRole("radio")).toBeNull();
+    const blocked = screen.getByRole("button", { name: "검토 기록 추가" });
+    expect(blocked.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(blocked);
     expect(screen.getByText("검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요.")).toBeTruthy();
   });
 
@@ -755,7 +758,11 @@ describe("analysis V2 panel", () => {
   it("guides viewers in task language without exposing the permission token", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json(detail())));
     const first = renderPanel({ canCreate: false });
-    expect(screen.getByText("변화 분석 기록을 조회할 수 있습니다. 새 변화 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.")).toBeTruthy();
+    expect(screen.queryByText("변화 분석 기록을 조회할 수 있습니다.")).toBeNull();
+    const blocked = screen.getByRole("button", { name: "새 변화 분석 요청" });
+    expect(blocked.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(blocked);
+    expect(screen.getByText(/새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다/)).toBeTruthy();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
     first.unmount();
 

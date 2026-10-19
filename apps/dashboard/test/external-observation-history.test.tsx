@@ -5,6 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ExternalObservationHistory } from "@/app/sites/[siteId]/observations/ExternalObservationHistory";
 import type { ExternalResultSummaryView } from "@/lib/core-api/types";
 
+const notifyMock = vi.hoisted(() => vi.fn());
+vi.mock("@/components/ui/ToastProvider", () => ({ useToast: () => ({ notify: notifyMock }) }));
+
 const reportRef = `external-relative-volume-report-${"a".repeat(32)}`;
 const summary: ExternalResultSummaryView = {
   reportRef,
@@ -59,6 +62,7 @@ const summary: ExternalResultSummaryView = {
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  notifyMock.mockClear();
 });
 
 describe("외부 관측 이력 상세", () => {
@@ -165,6 +169,44 @@ describe("외부 관측 이력 상세", () => {
     expect(baselineLine).not.toContain("1970");
     expect(baselineLine).not.toContain("기준");
     expect(baselineLine).toContain("현재");
+  });
+
+  it("toasts a concise copy success instead of leaving success text under the button", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+    });
+    render(<ExternalObservationHistory
+      siteId="site-1"
+      items={[{ reportRef, state: "AVAILABLE", result: summary }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "결과 주소 복사" }));
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledWith("결과 주소를 복사했습니다. 로그인한 권한은 공유되지 않습니다."));
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByLabelText("복사할 결과 주소")).toBeNull();
+  });
+
+  it("clears a stale clipboard fallback after an eventual copy success", async () => {
+    const writeText = vi.fn()
+      .mockRejectedValueOnce(new Error("clipboard unavailable"))
+      .mockResolvedValueOnce(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(<ExternalObservationHistory
+      siteId="site-1"
+      items={[{ reportRef, state: "AVAILABLE", result: summary }]}
+      workAreaNames={new Map([["area-1", "동측 절토면"]])}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "결과 주소 복사" }));
+    await waitFor(() => expect(screen.getByLabelText("복사할 결과 주소")).toBeTruthy());
+    expect(notifyMock).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "결과 주소 복사" }));
+    await waitFor(() => expect(notifyMock).toHaveBeenCalledTimes(1));
+    expect(screen.queryByLabelText("복사할 결과 주소")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 
   it("offers the exact authenticated report URL when clipboard copying fails", async () => {

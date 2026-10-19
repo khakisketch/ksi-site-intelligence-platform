@@ -8,6 +8,7 @@ import {
   isSingleVolumeResult,
   SingleVolumeResult,
 } from "@/components/external-results/SingleVolumeResult";
+import { useToast } from "@/components/ui/ToastProvider";
 import type { ExternalVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
 import { formatNumberKo } from "@/lib/core-api/phase34-labels";
 import { formatKoreanDateTime } from "@/lib/datetime";
@@ -38,19 +39,19 @@ function compatibilityKey(item: ExternalVolumeHistoryItem): string | null {
 }
 
 function CopyLink({ href }: { href: string }) {
-  const [message, setMessage] = useState<string | null>(null);
+  const { notify } = useToast();
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   const copy = async () => {
     const exactUrl = new URL(href, window.location.origin).toString();
     try {
       await navigator.clipboard.writeText(exactUrl);
-      setMessage("이 결과 주소를 복사했습니다. 로그인한 권한은 공유되지 않습니다.");
+      setFallbackUrl(null);
+      notify("결과 주소를 복사했습니다. 로그인한 권한은 공유되지 않습니다.");
     } catch {
       setFallbackUrl(exactUrl);
-      setMessage("주소를 복사하지 못했습니다. 아래 주소를 선택해 복사하세요.");
     }
   };
-  return <span className="inline-flex flex-col items-end gap-1"><button className="btn print:hidden" onClick={() => void copy()}>결과 주소 복사</button>{message && <span role="status" className="max-w-72 text-right text-[11.5px] leading-4 text-ink-muted">{message}</span>}{fallbackUrl && <input aria-label="복사할 결과 주소" readOnly className="input w-72 max-w-full text-[11px]" value={fallbackUrl} onFocus={(event) => event.currentTarget.select()} />}</span>;
+  return <span className="inline-flex flex-col items-end gap-1"><button className="btn print:hidden" onClick={() => void copy()}>결과 주소 복사</button>{fallbackUrl && <span role="status" className="max-w-72 text-right text-[11.5px] leading-4 text-ink-muted">주소를 복사하지 못했습니다. 아래 주소를 선택해 복사하세요.</span>}{fallbackUrl && <input aria-label="복사할 결과 주소" readOnly className="input w-72 max-w-full text-[11px]" value={fallbackUrl} onFocus={(event) => event.currentTarget.select()} />}</span>;
 }
 
 function MetricRow({ item, workAreaName, siteId, detailMode }: {

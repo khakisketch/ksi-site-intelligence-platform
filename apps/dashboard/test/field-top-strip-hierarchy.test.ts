@@ -29,8 +29,9 @@ describe("field page top action strip (F18)", () => {
     expect(team).not.toContain("btn-primary");
   });
 
-  it("gates 관측 자료 등록 on WORK_ORDERS_WRITE with viewer guidance", () => {
+  it("gates 관측 자료 등록 on WORK_ORDERS_WRITE with on-demand viewer guidance", () => {
     expect(PAGE).toContain("WORK_ORDERS_WRITE");
-    expect(PAGE).toContain("관측 자료 등록은 작업 등록 권한이 있는 계정에서 할 수 있습니다.");
+    expect(PAGE).toContain('<ActionUnavailable label="관측 자료 등록"');
+    expect(PAGE).toContain("현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요.");
   });
 });

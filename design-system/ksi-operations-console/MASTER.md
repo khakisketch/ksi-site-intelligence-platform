@@ -68,6 +68,32 @@ support assertions ahead of the user-facing decision.
 - Prefer `Link` for URL-state navigation so deep links, browser back, and server rendering remain
   correct.
 
+### Action feedback (Human-approved, 2026-10-19)
+
+Choose the delivery surface by what the person must do next, not by treating every message as an alert:
+
+| Situation | Surface |
+|---|---|
+| Short reason an action cannot run (permission or capability) | Click-triggered, non-modal `ActionUnavailable` popover beside the action; no permanently stacked helper line |
+| A real additional choice or protected decision | Modal dialog; do not invent an access-request flow where none exists |
+| Verified copy/save/share success | Dismissible polite toast through `ToastProvider`; no focus theft or toolbar height change |
+| Missing or invalid form input | Beside the relevant field; preserve entered values |
+| Failed read, failed long-running task, or uncertain mutation response | Persistent feedback in the affected area with a valid retry/recovery path; never toast-only |
+| Destructive/no-undo action, or a consequential workflow stop (archive, close, cancel) | `ConfirmDialog` naming the object and real consequence before the existing mutation; cancel/Escape sends no request |
+
+An explanation trigger is a real keyboard/touch-accessible button, not an inert disabled span or a
+hover-only tooltip. Use a short label and lock icon; opening the explanation grants no permission and
+sends no mutation. Keep the popover within the viewport and close it with Escape, outside click, or
+its close control. Restore focus when dismissed by keyboard.
+
+Distinguish a confirmed permission denial from an unavailable permission lookup. Neither permits
+execution; only the latter should offer to retry the lookup. Direct denied routes, unavailable reads,
+empty states, ongoing progress, and quantitative evidence limitations still belong in the page.
+Compact-width operation restrictions remain `ResponsiveActionBoundary`'s responsibility, not a
+permission popover's. Routine explanation popovers must not become blocking dialogs.
+Do not call a reversible operation irreversible: work closure stops new submissions but the existing
+reopen action remains available under its original permissions.
+
 ## Prohibited patterns
 
 - Hero pages, marketing CTA ladders, email capture, social proof, or fake KPIs in the product shell.

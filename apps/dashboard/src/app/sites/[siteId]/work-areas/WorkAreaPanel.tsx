@@ -1,12 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import {
   ResponsiveActionBoundary,
   ResponsiveNotice,
 } from "@/components/responsive/ResponsiveActionBoundary";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
+import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
+import { useToast } from "@/components/ui/ToastProvider";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { COMPARISON_ZONE_CRS, toZonePolygon } from "@/lib/comparison-submit";
@@ -55,6 +58,7 @@ function WorkAreaCard({
   onTogglePreview,
   onCorrect,
   onArchive,
+  archiveError,
 }: {
   area: WorkArea;
   canWrite: boolean;
@@ -68,6 +72,8 @@ function WorkAreaCard({
   previewOpen: boolean;
   /** 열린 미리보기의 표시 변환 결과 — null이면 아직 고르지 않은 상태다. */
   previewResult: DisplayVerticesResult | null;
+  /** 이 구역의 보관 실패 메시지 — 해당 카드에만 둔다(한 복사본만). */
+  archiveError: string | null;
   onTogglePreview: (area: WorkArea) => void;
   onCorrect: (area: WorkArea) => void;
   onArchive: (area: WorkArea) => void;
@@ -164,6 +170,22 @@ function WorkAreaCard({
           </div>
         </ResponsiveActionBoundary>
       )}
+      {archiveError && (
+        <div
+          role="alert"
+          className="rounded-md bg-crit-bg px-3 py-2 text-[12px] break-keep text-crit-ink"
+        >
+          <p className="font-semibold leading-5">{archiveError}</p>
+          <button
+            type="button"
+            className="btn mt-2 w-fit"
+            disabled={disabled}
+            onClick={() => onArchive(area)}
+          >
+            보관 다시 시도
+          </button>
+        </div>
+      )}
     </li>
   );
 }
@@ -213,6 +235,10 @@ export function WorkAreaPanel({
   const [mapKey, setMapKey] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [archiveTarget, setArchiveTarget] = useState<WorkArea | null>(null);
+  const [archiveError, setArchiveError] = useState<{ areaId: string; message: string } | null>(null);
+  const archiveLock = useRef(false);
+  const { notify } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const { active, archived } = useMemo(() => partitionWorkAreas(workAreas), [workAreas]);
@@ -313,7 +339,7 @@ export function WorkAreaPanel({
       }
 
       let list: WorkArea[] | null = null;
-      let message = `작업구역을 등록했습니다: "${created.name}" — 이제 비교할 때 이 구역을 고를 수 있습니다.`;
+      let message = `작업구역 "${created.name}"을 등록했습니다.`;
       if (supersedes !== null) {
         // 대체 등록은 두 건을 바꾼다(새 구역 생성 + 이전 구역 보관). 응답은 앞의
         // 것만 싣고 오므로 뒤의 것은 짐작하지 않고 목록을 다시 읽는다.
@@ -321,13 +347,18 @@ export function WorkAreaPanel({
         message =
           list === null
             ? `새 구역을 등록했습니다: "${created.name}" — 다만 이전 구역이 보관됐는지는 확인하지 못했습니다(목록을 다시 읽지 못했습니다). 화면을 새로고침하면 확인할 수 있습니다.`
-            : `새 구역을 등록하고 이전 구역을 보관했습니다: "${created.name}" — 이미 낸 리포트는 이전 구역의 범위를 그대로 가리킵니다.`;
+            : "새 작업구역을 등록하고 이전 구역을 보관했습니다.";
       }
 
       setWorkAreas(
         (prev) => list ?? [created, ...prev.filter((a) => a.workAreaId !== created.workAreaId)],
       );
-      setNotice(message);
+      if (supersedes !== null && list === null) {
+        setNotice(message);
+      } else {
+        setNotice(null);
+        notify(message);
+      }
       resetForm();
     } catch {
       setError("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
@@ -337,7 +368,10 @@ export function WorkAreaPanel({
   }
 
   async function handleArchive(area: WorkArea) {
+    if (archiveLock.current) return;
+    archiveLock.current = true;
     setArchivingId(area.workAreaId);
+    setArchiveError(null);
     setError(null);
     setNotice(null);
     try {
@@ -348,21 +382,22 @@ export function WorkAreaPanel({
       const body = await parseJsonSafe<WorkAreaResponse>(response);
       const updated = body.workArea;
       if (!response.ok || !updated) {
-        setError(readableApiError(body, "작업구역 보관에 실패했습니다"));
+        setArchiveError({ areaId: area.workAreaId, message: readableApiError(body, "작업구역 보관에 실패했습니다") });
         return;
       }
       setWorkAreas((prev) =>
         prev.map((a) => (a.workAreaId === updated.workAreaId ? updated : a)),
       );
-      setNotice(
-        `보관했습니다: "${updated.name}" — 새 비교에서 고를 수 없게 됐을 뿐, 이미 낸 리포트는 그대로입니다.`,
-      );
+      setNotice(null);
+      setArchiveError(null);
+      notify(`"${updated.name}"을 보관했습니다.`);
       // 그 구역을 대신할 새 구역을 그리던 중이었다면 그 폼은 의미를 잃는다.
       if (correcting?.workAreaId === updated.workAreaId) resetForm();
     } catch {
-      setError("요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요.");
+      setArchiveError({ areaId: area.workAreaId, message: "요청을 처리하지 못했습니다. 네트워크 상태를 확인하세요." });
     } finally {
       setArchivingId(null);
+      archiveLock.current = false;
     }
   }
 
@@ -476,10 +511,7 @@ export function WorkAreaPanel({
         </section>
         </ResponsiveActionBoundary>
       ) : (
-        <p className="text-[12.5px] break-keep text-ink-muted">
-          작업구역을 등록하거나 보관하려면 현장 등록 권한(SITES_WRITE)이 필요합니다. 아래
-          목록은 읽기 전용입니다.
-        </p>
+        <ActionUnavailable label="작업구역 등록" description="현재 계정으로는 작업구역을 등록하거나 보관할 수 없습니다. 현장 담당자에게 문의하세요." />
       )}
 
       <section className="flex flex-col gap-3">
@@ -517,12 +549,27 @@ export function WorkAreaPanel({
                 previewResult={previewId === area.workAreaId ? previewResult : null}
                 onTogglePreview={togglePreview}
                 onCorrect={startCorrection}
-                onArchive={(target) => void handleArchive(target)}
+                onArchive={(target) => setArchiveTarget(target)}
+                archiveError={archiveError?.areaId === area.workAreaId ? archiveError.message : null}
               />
             ))}
           </ul>
         )}
       </section>
+
+      <ConfirmDialog
+        open={archiveTarget !== null}
+        title="구역을 보관할까요?"
+        description={archiveTarget ? <>“{archiveTarget.name}”을 보관하면 이 화면에서 되돌릴 수 없습니다. 새 비교에서 고를 수 없게 되며, 이미 낸 리포트는 그대로 유지됩니다.</> : null}
+        confirmLabel="구역 보관"
+        pending={archivingId !== null}
+        onCancel={() => setArchiveTarget(null)}
+        onConfirm={() => {
+          const target = archiveTarget;
+          setArchiveTarget(null);
+          if (target) void handleArchive(target);
+        }}
+      />
 
       {archived.length > 0 && (
         <section className="flex flex-col gap-3">
@@ -549,7 +596,8 @@ export function WorkAreaPanel({
                 previewResult={previewId === area.workAreaId ? previewResult : null}
                 onTogglePreview={togglePreview}
                 onCorrect={startCorrection}
-                onArchive={(target) => void handleArchive(target)}
+                onArchive={(target) => setArchiveTarget(target)}
+                archiveError={archiveError?.areaId === area.workAreaId ? archiveError.message : null}
               />
             ))}
           </ul>

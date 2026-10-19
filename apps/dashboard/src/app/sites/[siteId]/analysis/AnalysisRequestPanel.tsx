@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { formatBytesKo, formatCountKo, formatNumberKo, formatSignificantKo } from "@/lib/number-format";
 import type {
@@ -742,7 +743,7 @@ function AnalysisReviewSection({
         <button type="submit" className="btn btn-primary" disabled={!canSubmit}>{busy ? "검토 기록 중" : "검토 기록 추가"}</button>
         {!decision || comment.trim().length === 0 ? <p className="text-[11.5px] text-ink-muted">결정과 검토 의견을 입력하면 기록할 수 있습니다.</p> : null}
       </div>
-    </form> : <p className="mt-3 border-t border-line pt-3 text-[12px] leading-5 text-ink-2">검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요.</p>}
+    </form> : <div className="mt-3 border-t border-line pt-3"><ActionUnavailable label="검토 기록 추가" description="검토 기록 추가는 현장 쓰기 권한이 있는 담당자에게 요청하세요." /></div>}
   </section>;
 }
 
@@ -1471,7 +1472,7 @@ export function AnalysisRequestPanel({
       </div>
       {attempt && <p role="status" className="text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
     </section>}
-    {!canCreate && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] text-ink-2">변화 분석 기록을 조회할 수 있습니다. 새 변화 분석 요청은 권한 있는 현장 담당자에게 맡겨 주세요.</p>}
+    {!canCreate && <ActionUnavailable label="새 변화 분석 요청" description="새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다. 필요한 작업구역과 관측을 담당자에게 알려 주세요." />}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink">
       <span>{error.message}</span>
       {error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "변화 분석 상세 다시 불러오기"}</button>}

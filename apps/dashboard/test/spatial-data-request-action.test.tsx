@@ -7,6 +7,7 @@ vi.mock("next/link", () => ({
     <a href={href} {...props}>{children}</a>
   ),
 }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 import { SpatialDataRequestAction } from "@/app/sites/[siteId]/spatial-assets/SpatialDataRequestAction";
 
@@ -84,9 +85,15 @@ describe("spatial data request action", () => {
     expect(keys[0]).toBe(keys[1]);
   });
 
-  it("explains the permission requirement instead of showing a dead control", () => {
+  it("explains the permission requirement in a popover instead of a dead control", () => {
     renderAction({ canRequest: false });
+    const trigger = screen.getByRole("button", { name: "자료 받기 요청" });
+    expect(trigger.hasAttribute("disabled")).toBe(false);
+    expect(screen.queryByText(/자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다/)).toBeNull();
+    fireEvent.click(trigger);
     expect(screen.getByText(/자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "받기 요청 만들기" })).toBeNull();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText(/자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다/)).toBeNull();
   });
 });

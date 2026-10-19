@@ -1,6 +1,8 @@
 import "server-only";
 
 import { whoAmI } from "./auth";
+import { CoreApiError } from "./client";
+import { MissingSessionError } from "./session";
 import type { Permission, WhoAmIResponse } from "./types";
 
 /**
@@ -55,4 +57,37 @@ export async function getSiteRegistrationMode(): Promise<SiteRegistrationMode> {
   } catch {
     return "DENIED";
   }
+}
+
+/**
+ * 현장 등록 게이트의 3상태 읽기. INV-040(정직한 unavailable) — 예전에는 whoami
+ * 실패를 전부 DENIED 로 뭉뚱그려 "권한 없음"으로만 보였다.
+ *
+ * - `allowed` — 등록 가능 모드 그대로(MAPPED_BOOTSTRAP | LEGACY_SITE_ID).
+ * - `denied` — 확정된 거부: 권한 부족 판정, 401/403, 세션 없음. 진입을 닫는다.
+ * - `unavailable` — Core 5xx·네트워크 등 확인 자체가 실패. 거짓 거부가 아니라
+ *   재시도 가능한 미확인으로 보여준다.
+ *
+ * INV-060(fail-closed): 셋 중 어느 경우에도 쓰기 계약·RBAC 은 바뀌지 않으며,
+ * 이 함수는 읽기 판정만 한다. getSiteRegistrationMode 는 그대로 둔다(호환).
+ */
+export type SiteRegistrationAvailability =
+  | { status: "allowed"; mode: Exclude<SiteRegistrationMode, "DENIED"> }
+  | { status: "denied" }
+  | { status: "unavailable" };
+
+export async function getSiteRegistrationAvailability(): Promise<SiteRegistrationAvailability> {
+  let principal: WhoAmIResponse;
+  try {
+    principal = await whoAmI();
+  } catch (error) {
+    // 진짜 인증 실패(401/403·세션 없음)만 거부다. 나머지는 장애·미확인이다.
+    if (error instanceof MissingSessionError) return { status: "denied" };
+    if (error instanceof CoreApiError && (error.status === 401 || error.status === 403)) {
+      return { status: "denied" };
+    }
+    return { status: "unavailable" };
+  }
+  const mode = resolveSiteRegistrationMode(principal);
+  return mode === "DENIED" ? { status: "denied" } : { status: "allowed", mode };
 }

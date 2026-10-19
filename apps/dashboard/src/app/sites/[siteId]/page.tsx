@@ -12,6 +12,7 @@ import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActi
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
 import { ExternalObservationHistory } from "./observations/ExternalObservationHistory";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -245,7 +246,7 @@ export default async function SiteDetailPage({
           </div>
         </SectionCard>
         <SectionCard title={`현장 상태 · ${status.label}`}>
-          {canTransition ? <details><summary className="tap-target cursor-pointer text-[13px] font-semibold">관리자 상태 전이</summary><div className="mt-3"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></details> : <p className="text-[12px] text-ink-muted">현장 상태를 전이하려면 현장 등록 권한이 필요합니다.</p>}
+          {canTransition ? <details><summary className="tap-target cursor-pointer text-[13px] font-semibold">관리자 상태 전이</summary><div className="mt-3"><SiteTransitionActions siteId={site.siteId} status={site.status} resumeTarget={site.resumeTarget} canApproveAutonomy={canApproveAutonomy} /></div></details> : <ActionUnavailable label="현장 상태 변경" description="현재 계정으로는 현장 상태를 변경할 수 없습니다. 현장 쓰기 권한이 있는 담당자에게 문의하세요." />}
           <dl className="mt-3 grid gap-2 border-t border-line pt-3 text-[12px] sm:grid-cols-2"><div><dt className="text-ink-muted">등록</dt><dd>{formatKoreanDate(site.registeredAt)}</dd></div><div><dt className="text-ink-muted">최근 갱신</dt><dd>{formatKoreanDate(site.updatedAt)}</dd></div></dl>
           <details className="mt-2 text-[12px] text-ink-2"><summary className="tap-target cursor-pointer font-semibold">좌표계·변환 정보</summary><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">좌표계</dt><dd>{site.siteFrame.crs}</dd></div><div><dt className="text-ink-muted">변환 버전</dt><dd>{site.siteFrame.transformVersion}</dd></div></dl></details>
         </SectionCard>

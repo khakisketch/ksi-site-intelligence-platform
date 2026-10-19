@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
+import { useToast } from "@/components/ui/ToastProvider";
 import { isExternalSingleVolumeReportReference } from "@/lib/external-single-volume-references";
 
 type Member = {
@@ -34,6 +36,7 @@ function isVerifiedShareReceipt(value: unknown, { reportRef, recipientPrincipalI
 }
 
 export function TeamReportShare({ reportRef, siteId, organizationId, principalId, canWrite }: { reportRef: string; siteId: string; organizationId: string; principalId: string; canWrite: boolean }) {
+  const { notify } = useToast();
   const [members, setMembers] = useState<Member[] | null>(null);
   const [rosterError, setRosterError] = useState(false);
   const [rosterLoading, setRosterLoading] = useState(false);
@@ -110,7 +113,7 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
       }
       pendingRef.current = null;
       setUnresolved(null);
-      setFeedback("받은 업무에 전달했습니다.");
+      notify("받은 업무에 전달했습니다.");
     } catch {
       pendingRef.current = attempt;
       setUnresolved(attempt);
@@ -126,7 +129,7 @@ export function TeamReportShare({ reportRef, siteId, organizationId, principalId
       <section className="rounded-xl border border-line bg-surface px-4 py-3" aria-labelledby="team-report-share-heading">
         <h2 id="team-report-share-heading" className="text-[15px] font-bold">팀원에게 결과 공유</h2>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">로그인 및 현장 접근 권한이 있는 팀원만 결과를 볼 수 있습니다.</p>
-        {!canWrite ? <p className="mt-2 text-[13px] text-ink-2">이 계정에는 결과 공유 권한이 없습니다.</p> : (
+        {!canWrite ? <ActionUnavailable label="팀원에게 결과 공유" description="이 계정에는 결과 공유 권한이 없습니다." /> : (
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex min-w-56 flex-1 flex-col gap-1 text-[13px] font-semibold">공유할 팀원
               <select aria-label="공유할 팀원" className="input" value={recipientPrincipalId} disabled={members === null || pending !== null || unresolved !== null} onChange={(event) => setRecipientPrincipalId(event.target.value)}>

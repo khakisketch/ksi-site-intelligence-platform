@@ -313,9 +313,16 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     // This fixture has no Site-bootstrap capability. Do not advertise a link
     // that the exact registration-mode check rejects after navigation.
     await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toHaveCount(0);
-    await expect(page.getByText("현장 등록 권한이 필요합니다", { exact: true })).toBeVisible();
+    const unavailableAction = page.getByRole("button", { name: /현장 등록/ });
+    const reason = page.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true });
+    await expect(reason).toBeHidden();
+    await unavailableAction.click();
+    await expect(reason).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(reason).toBeHidden();
+    await expect(unavailableAction).toBeFocused();
   } else if (testInfo.project.name.startsWith("desktop")) {
-    await expect(page.getByRole("link", { name: "현장 등록", exact: true }).or(page.getByText("현장 등록 권한이 필요합니다", { exact: true }))).toBeVisible();
+    await expect(page.getByRole("link", { name: "현장 등록", exact: true }).or(page.getByRole("button", { name: /현장 등록/ }))).toBeVisible();
   } else {
     await expect(page.getByRole("link", { name: "현장 등록", exact: true })).toBeHidden();
   }

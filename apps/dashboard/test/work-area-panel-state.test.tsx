@@ -8,6 +8,12 @@ vi.mock("@/components/ui/ErrorState", () => ({
   ErrorState: ({ message, tone, retryable }: { message: string; tone: string; retryable: boolean }) =>
     createElement("div", { role: "alert", "data-tone": tone, "data-retryable": retryable }, message),
 }));
+vi.mock("@/components/ui/ToastProvider", () => ({ useToast: () => ({ notify: () => undefined }) }));
+vi.mock("@/components/ui/ConfirmDialog", () => ({ ConfirmDialog: () => createElement("div", null, null) }));
+vi.mock("@/components/ui/ActionUnavailable", () => ({
+  ActionUnavailable: ({ label, description }: { label: string; description: string }) =>
+    createElement("div", null, `${label}: ${description}`),
+}));
 
 import { WorkAreaPanel } from "@/app/sites/[siteId]/work-areas/WorkAreaPanel";
 

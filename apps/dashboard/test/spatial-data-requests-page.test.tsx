@@ -179,8 +179,9 @@ describe("spatial data request Console surface", () => {
     } });
     mocked.detail.mockResolvedValueOnce(job({ executionState: "RUNNING", availability: "NOT_READY", receipt: null }));
     const noCancelPermission = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
-    expect(noCancelPermission).not.toContain("요청 취소</button>");
-    expect(noCancelPermission).toContain("요청을 취소할 권한이 없습니다");
+    expect(noCancelPermission).toContain("요청 취소</button>");
+    expect(noCancelPermission).not.toContain("자료 준비 요청을 취소할까요?");
+    expect(noCancelPermission).not.toContain("요청을 취소할 권한이 없습니다");
     expect(noCancelPermission).not.toContain("SPATIAL_DATA_REQUEST");
   });
 

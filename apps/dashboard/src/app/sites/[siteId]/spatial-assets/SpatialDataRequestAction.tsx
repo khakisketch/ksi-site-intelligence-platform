@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { isSpatialDataExecutionState, type SpatialDataBounds } from "@/lib/core-api/spatial-data-types";
 
 const STATE_LABEL: Record<string, string> = {
@@ -129,7 +130,9 @@ export function SpatialDataRequestAction({
   if (!canRequest) {
     return <section className="rounded-lg border border-line bg-surface px-4 py-3">
       <h3 className="text-[13px] font-semibold">이 자료 받기 요청</h3>
-      <p className="mt-1 text-[12px] leading-5 text-ink-2">자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 파일과 용도를 담당자에게 알려 주세요.</p>
+      <div className="mt-2">
+        <ActionUnavailable label="자료 받기 요청" description="자료 받기 요청은 권한 있는 담당자가 만들 수 있습니다. 필요한 파일과 용도를 담당자에게 알려 주세요." />
+      </div>
     </section>;
   }
 

@@ -746,6 +746,27 @@ describe("SINGLE_VOLUME measurement", () => {
     expect(screen.queryByRole("button", { name: "단일 시점 체적 측정 요청" })).toBeNull();
   });
 
+  it("explains a denied issue in a popover without a raw permission token or a write", async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/relative-volume-requests") || url.endsWith("/single-volume-requests")) return response({ items: [] });
+      throw new Error(`unexpected fetch ${url}`);
+    });
+    render(<ExternalResultWorkflowPanel workOrderId="work-1" siteId="site-1" decision={decision} singleVolumeDecision={singleDecision} permissions={[]} />);
+
+    const relativeTrigger = await screen.findByRole("button", { name: "상대 물량 비교 요청" });
+    expect(relativeTrigger.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(relativeTrigger);
+    expect(await screen.findByText("상대 물량 비교 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
+
+    const singleTrigger = await screen.findByRole("button", { name: "단일 시점 체적 측정 요청" });
+    expect(singleTrigger.hasAttribute("disabled")).toBe(false);
+    fireEvent.click(singleTrigger);
+    expect(await screen.findByText("단일 시점 체적 측정 요청에는 현장 쓰기 권한이 필요합니다. 권한 있는 담당자에게 요청하세요.")).toBeTruthy();
+
+    expect(document.body.textContent).not.toContain("SITES_WRITE");
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+  });
+
   it("keeps a single-volume 404 neutral and allows manual recovery without polling", async () => {
     let available = false;
     fetchMock.mockImplementation(async (url: string) => {
