@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { useId } from "react";
+import { useId, type ReactNode } from "react";
 
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import type { OperatorNextAction } from "@/lib/operator-next-action";
@@ -18,23 +18,30 @@ export interface SiteListRow {
 }
 
 /**
- * 데스크톱 2열 갤러리(≥1024px). 작은 썸네일 대신 넓은 타이포 표지를 둔다.
+ * 데스크톱 갤러리(≥1024px) — 넓은 타이포 표지 카드의 격자.
  *
  * 표지는 실제 관측 이미지가 아니라 중립 장식(DefaultSiteVisual: 축·격자·
  * 폴리곤·측정점 없음) + 큰 현장명이다. 씨앗=siteId 라 같은 현장은 늘 같은
  * 모양이다. `기본 표지` 표식은 장식이 실제 모습이 아님을 밝힌다.
  * 이름은 시각적으로 자를 수 있지만(link line-clamp) DOM 문자열은 온전히
  * 두어 스크린리더·검색이 잃지 않는다. 이름은 표지에만 둔다(아래 반복 없음).
+ *
+ * 칸은 최대 440–480px에서 묶고(2열은 920px, 3열은 1350px 상한),
+ * 1440px 본문이 578px 두 장으로 늘어지지 않는다. 표지는 16:7 로 카드 폭을
+ * 따라간다. 본문 높이는 자연 그대로 두고 버튼 줄만 아래에 맞춘다(mt-auto).
  */
 export function SiteListDesktopCards({
   rows,
   meta,
   sameNameSites,
+  trailing,
 }: {
   rows: readonly SiteListRow[];
   /** 서버가 준 실제 건수 — 칩의 전체 수와 헷갈리지 않게 걸린 만큼만 말한다. */
   meta: string;
   sameNameSites: ReadonlySet<string>;
+  /** 마지막 줄 유틸리티(새 현장 추가) — 개수·정렬·페이지 계산 밖이다. */
+  trailing?: ReactNode;
 }) {
   const headingId = useId();
   return (
@@ -45,7 +52,7 @@ export function SiteListDesktopCards({
         </h2>
         <span className="text-[11.5px] text-ink-muted">{meta}</span>
       </div>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid w-full max-w-[920px] gap-3 lg:grid-cols-2 2xl:max-w-[1350px] 2xl:grid-cols-3">
       {rows.map(({ site, next, primaryAction }) => {
         const statusLabel = SITE_STATUS_LABEL[site.status];
         const nextLabel = primaryAction?.label ?? next.label;
@@ -55,7 +62,7 @@ export function SiteListDesktopCards({
             data-site-card={site.siteId}
             className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
           >
-            <div data-site-cover className="relative h-[180px] overflow-hidden bg-sunk xl:h-[200px]">
+            <div data-site-cover className="relative aspect-[16/7] overflow-hidden bg-sunk">
               <DefaultSiteVisual seed={site.siteId} className="absolute inset-0 size-full" />
               <span className="absolute top-3 left-3 rounded border border-line bg-surface/90 px-2 py-1 text-[10.5px] font-semibold text-ink-2">
                 기본 표지
@@ -87,7 +94,7 @@ export function SiteListDesktopCards({
                   이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
               <Link
                 href={`/sites/${encodeURIComponent(site.siteId)}`}
-                className="btn tap-target justify-center"
+                className="btn tap-target mt-auto justify-center"
               >
                 현장 열기
               </Link>
@@ -95,6 +102,7 @@ export function SiteListDesktopCards({
           </article>
         );
       })}
+      {trailing}
       </div>
     </section>
   );

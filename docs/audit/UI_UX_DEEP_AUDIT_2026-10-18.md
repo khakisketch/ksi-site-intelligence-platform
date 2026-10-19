@@ -234,3 +234,21 @@ axe serious/critical/moderate·넘침·JS오류·mutation0. Home golden 변경 �
 2열/텍스트표와 실제1현장의 bounded card 모두 판독했고, phone390/tablet768은 직전 픽셀 동일.
 빈 검색의 중복 표/상태를 없애고 카드 결과 건수를 유지했다. Core/권한/미디어/정량/원본은 불변.
 증거 `/tmp/opencode/ksi-sites-desktop-views-20261019/`, 상세 수용은 기존 원장10-19 desktop 항목.
+
+### 2026-10-19 — Desktop 페이지·카드 비율·등록 control (Human 승인, 로컬 완료)
+
+카드4실제현장/목록10행 번호 페이지를 적용했다. q/status/group/sort·back/reload·scope를 보존하고
+criteria/실제 mode 변경은1로, 활성 mode 재클릭은 그대로다. 번호는 확정 조건을 쓰고 미확정
+초안을 취소·동기화, mode switch는 초안/IME/자동 적용을 보존한다. 모드별 slice/meta/footer를
+분리해4/10이 cookie나 local state와 어긋나지 않게 했다.
+
+표지는16:7·카드폭480이하로 제한하고2열/아주 넓은3열을 왼쪽 정렬했다. 번호 footer도 같은폭과
+간격으로 맞췄다. 마지막 card page의 `+ 새 현장 추가`는 Site가 아닌 utility로 count/page 밖이며,
+상단과 동일한3상태 등록 판정이다. 실제 계정의 denied click은 설명만,0mutation이었다.
+
+1351 tests/152files, type/build/lint0err1기존warning/detector[], E2E5spec106pass30의도적skip.
+실제5Site4+1 workflow/1Site preview11상태, 별도가상23record List10/10/3 component3상태를
+판독했다. 모두 axe serious/critical/moderate·넘침·오류0, 실제Corewrites0. 가상fixture는 navigation
+stub이므로 종단/고객 수용이 아니다. phone390/tablet768 픽셀 동일, Home 변경 없음.
+Next event boundary와 stale query 문제는 실제 browser에서 발견·수정했다. 권한/미디어/원본/
+정량/egress/1024gate 불변. 증거 `/tmp/opencode/ksi-sites-pagination-20261019/`, 상세는 기존 원장.

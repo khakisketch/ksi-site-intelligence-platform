@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocked.push, repla
 
 import { SiteListControls } from "@/components/site/SiteListControls";
 import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
-import { SiteListNavLink, SITE_LIST_CANCEL_EVENT } from "@/components/site/SiteListNavLink";
+import { SiteListNavLink, SITE_LIST_CANCEL_EVENT, SITE_LIST_PAGE_EVENT } from "@/components/site/SiteListNavLink";
 import { SiteListVisual } from "@/components/site/SiteListVisual";
 import { buildSiteListHref, clearSearchHref } from "@/components/site/site-list-query";
 
@@ -75,6 +75,16 @@ function hrefParams(href: string) {
 }
 
 describe("site list query", () => {
+  it("현재 page를 포함한 서버 링크도 기준 변경 시 첫 페이지로 돌아간다", () => {
+    const base = { q: "서쪽", status: "UNMAPPED", sort: "name", group: "attention", page: "2" };
+    for (const patch of [{ q: "동쪽" }, { status: undefined }, { sort: "updated" }, { group: undefined }]) {
+      const href = buildSiteListHref(base, patch);
+      expect(new URL(href, "http://localhost").searchParams.has("page")).toBe(false);
+    }
+    const pager = new URL(buildSiteListHref(base, { page: "3" }), "http://localhost");
+    expect(pager.searchParams.get("page")).toBe("3");
+    expect(pager.searchParams.get("q")).toBe("서쪽");
+  });
   it("검색어를 바꾸면서 묶음·상태·정렬을 잃지 않는다", () => {
     const params = hrefParams(
       buildSiteListHref({ q: "서쪽", status: "UNMAPPED", sort: "name", group: "attention" }, { q: "동쪽" }),
@@ -416,6 +426,14 @@ describe("SiteListControls", () => {
     expect(mocked.push).toHaveBeenCalledTimes(1);
   });
 
+  it("정렬 변경은 페이지를 붙이지 않는다(1페이지로 돌아간다)", () => {
+    setLocation("/sites?sort=attention&page=3");
+    renderControls({ sort: "attention" });
+    fireEvent.change(sortSelect(), { target: { value: "name" } });
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+    expect(hrefParams(mocked.push.mock.calls[0][0]).get("page")).toBeNull();
+  });
+
   it("in-flight 응답 같은 props 로는 타이핑을 덮지 않는다", () => {
     vi.useFakeTimers();
     const { rerender } = render(
@@ -433,6 +451,26 @@ describe("SiteListControls", () => {
     rerender(<SiteListControls query="동쪽" sort="updated" hasFilter visibleCount={1} totalCount={1} />);
     expect(searchbox().value).toBe("동쪽");
     expect(sortSelect().value).toBe("updated");
+  });
+
+  it("페이지 이동 의도면 대기 검색을 버리고 확정 검색어로 되돌린다", () => {
+    vi.useFakeTimers();
+    setLocation("/sites?q=%EC%84%9C%EC%AA%BD&group=attention&sort=attention");
+    renderControls({ query: "서쪽", sort: "attention", group: "attention", hasFilter: true });
+    searchbox().focus();
+    fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
+    // 같은 q 페이지 이동: 취소 의도와 별개로 확정값으로 되돌린다.
+    act(() => {
+      window.dispatchEvent(new Event(SITE_LIST_PAGE_EVENT));
+    });
+    expect(searchbox().value).toBe("서쪽");
+    expect(screen.getByRole("status").textContent).toBe("");
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    // 늦은 타이머가 페이지를 되돌리지 않는다.
+    expect(mocked.replace).not.toHaveBeenCalled();
+    expect(mocked.push).not.toHaveBeenCalled();
   });
 
   it("검색어 지우기는 q만 되돌리고 포커스를 돌린다", () => {

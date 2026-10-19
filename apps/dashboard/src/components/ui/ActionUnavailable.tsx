@@ -28,6 +28,7 @@ import {
   useState,
   useTransition,
   type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import { useRouter } from "next/navigation";
 
@@ -94,11 +95,20 @@ export function ActionUnavailable({
   description,
   retry = false,
   className = "",
+  trigger,
+  triggerClassName,
 }: {
   label: string;
   description: string;
   retry?: boolean;
   className?: string;
+  /**
+   * 기본 잠금 버튼 대신 트리거 안에 둘 내용(예: 타일 전체).
+   * 버튼 요소·포커스 복귀·팝오버 위치는 그대로 두고 내용과 겉모양만 바꾼다.
+   * 접근 가능 이름은 label 로 고정한다.
+   */
+  trigger?: ReactNode;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [placed, setPlaced] = useState(false);
@@ -244,22 +254,27 @@ export function ActionUnavailable({
         type="button"
         aria-expanded={open}
         aria-controls={panelId}
+        aria-label={trigger ? label : undefined}
         onClick={onTriggerClick}
-        className="btn tap-target"
+        className={triggerClassName ?? "btn tap-target"}
       >
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 16 16"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          aria-hidden="true"
-        >
-          <rect x="3" y="7" width="10" height="6.5" rx="1.5" />
-          <path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" />
-        </svg>
-        {label}
+        {trigger ?? (
+          <>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              aria-hidden="true"
+            >
+              <rect x="3" y="7" width="10" height="6.5" rx="1.5" />
+              <path d="M5.5 7V5.2a2.5 2.5 0 0 1 5 0V7" />
+            </svg>
+            {label}
+          </>
+        )}
       </button>
       <div
         ref={panelRef}

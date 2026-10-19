@@ -9,9 +9,19 @@ import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary
 import { SiteListVisual } from "@/components/site/SiteListVisual";
 import { SiteListDesktopCards } from "@/components/site/SiteListDesktopCards";
 import { SiteListDenseList } from "@/components/site/SiteListDenseList";
+import { SiteListPager } from "@/components/site/SiteListPager";
+import { SiteListCreateTile } from "@/components/site/SiteListCreateTile";
 import { SiteListView } from "@/components/site/SiteListView";
 import { readSiteListView } from "@/components/site/site-list-view.server";
-import { buildSiteListHref } from "@/components/site/site-list-query";
+import {
+  buildSiteListHref,
+  clampPage,
+  normalizePageParam,
+  paginateRows,
+  pageRangeMeta,
+  SITE_LIST_CARDS_PER_PAGE,
+  SITE_LIST_LIST_PER_PAGE,
+} from "@/components/site/site-list-query";
 import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
@@ -96,7 +106,7 @@ function hrefWith(
 export default async function SitesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; sort?: string; group?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; sort?: string; group?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const query = normalizeQuery(params.q);
@@ -168,6 +178,27 @@ export default async function SitesPage({
       primaryAction,
     };
   });
+  // 데스크톱 페이지네이션 — 모드마다 크기가 달라 각각 계산한다.
+  // URL page 하나를 공유하지만 카드 4행·목록 10행 기준으로 따로 자르고
+  // 따로 보정한다(한쪽이 끝에 닿아도 다른 쪽 빈 페이지를 만들지 않는다).
+  // 폰·태블릿은 전체 목록(siteRows)을 그대로 쓴다.
+  const filteredTotal = visibleSites.length;
+  const totalCount = sites?.length ?? 0;
+  const cardsTotalPages = Math.max(1, Math.ceil(filteredTotal / SITE_LIST_CARDS_PER_PAGE));
+  const listTotalPages = Math.max(1, Math.ceil(filteredTotal / SITE_LIST_LIST_PER_PAGE));
+  const cardsPage = clampPage(normalizePageParam(params.page), cardsTotalPages);
+  const listPage = clampPage(normalizePageParam(params.page), listTotalPages);
+  const desktopCards = paginateRows(siteRows, cardsPage, SITE_LIST_CARDS_PER_PAGE);
+  const desktopList = paginateRows(siteRows, listPage, SITE_LIST_LIST_PER_PAGE);
+  const cardsMeta = pageRangeMeta(filteredTotal, totalCount, cardsPage, SITE_LIST_CARDS_PER_PAGE);
+  const listMeta = pageRangeMeta(filteredTotal, totalCount, listPage, SITE_LIST_LIST_PER_PAGE);
+  const pagerBase = {
+    q: params.q,
+    status,
+    sort,
+    group: group === "all" ? undefined : group,
+  };
+  const hasRows = siteRows.length > 0;
 
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
@@ -271,17 +302,41 @@ export default async function SitesPage({
                     className="min-w-0 flex-1"
                   />
                 }
+                total={filteredTotal}
                 // 걸린 행이 없으면 패널을 비운다 — 아래 EmptyState 하나만 말한다.
-                cards={siteRows.length > 0 ? <SiteListDesktopCards rows={siteRows} meta={`${visibleSites.length} / ${sites.length}곳 표시`} sameNameSites={sameNameSites} /> : null}
-                list={
-                  siteRows.length > 0 ? (
-                    <SiteListDenseList
-                      rows={siteRows}
-                      meta={`${visibleSites.length} / ${sites.length}곳 표시`}
-                      sameNameSites={sameNameSites}
-                    />
+                cards={
+                  hasRows ? (
+                    <div className="w-full max-w-[920px] 2xl:max-w-[1350px]">
+                      <SiteListDesktopCards
+                        rows={desktopCards}
+                        meta={cardsMeta}
+                        sameNameSites={sameNameSites}
+                        trailing={
+                          cardsPage === cardsTotalPages ? (
+                            <SiteListCreateTile availability={registrationAvailability} />
+                          ) : null
+                        }
+                      />
+                      <SiteListPager page={cardsPage} totalPages={cardsTotalPages} base={pagerBase} />
+                    </div>
                   ) : null
                 }
+                cardsPage={cardsPage}
+                cardsSummary={cardsMeta}
+                list={
+                  hasRows ? (
+                    <>
+                      <SiteListDenseList
+                        rows={desktopList}
+                        meta={listMeta}
+                        sameNameSites={sameNameSites}
+                      />
+                      <SiteListPager page={listPage} totalPages={listTotalPages} base={pagerBase} />
+                    </>
+                  ) : null
+                }
+                listPage={listPage}
+                listSummary={listMeta}
               />
             </div>
           </>

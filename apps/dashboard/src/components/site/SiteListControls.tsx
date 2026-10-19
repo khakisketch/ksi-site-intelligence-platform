@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { buildSiteListHref, type SiteListParams } from "./site-list-query";
-import { SITE_LIST_CANCEL_EVENT, SiteListNavLink } from "./SiteListNavLink";
+import { SITE_LIST_CANCEL_EVENT, SITE_LIST_PAGE_EVENT, SiteListNavLink } from "./SiteListNavLink";
 import { SITE_GROUPS } from "@/lib/core-api/site-progress";
 
 const DEBOUNCE_MS = 300;
@@ -146,13 +146,22 @@ export function SiteListControls({
     function handleCancelIntent() {
       cancelPending();
     }
+    // 페이지 번호의 클릭 의도 — 타이머를 버리고 확정 검색어로 되돌린다.
+    // 같은 q 응답은 입력 동기화를 일으키지 않으므로 여기서 맞춘다.
+    function handlePageIntent() {
+      cancelPending();
+      appliedRef.current = committedQuery;
+      setDraft(committedQuery);
+    }
     window.addEventListener("popstate", handlePopState);
     window.addEventListener(SITE_LIST_CANCEL_EVENT, handleCancelIntent);
+    window.addEventListener(SITE_LIST_PAGE_EVENT, handlePageIntent);
     return () => {
       window.removeEventListener("popstate", handlePopState);
       window.removeEventListener(SITE_LIST_CANCEL_EVENT, handleCancelIntent);
+      window.removeEventListener(SITE_LIST_PAGE_EVENT, handlePageIntent);
     };
-  }, []);
+  }, [committedQuery]);
 
   useEffect(() => {
     // 외부에서 URL이 바뀌었을 때(뒤로/앞으로·공유 링크) 초안을 따라간다.

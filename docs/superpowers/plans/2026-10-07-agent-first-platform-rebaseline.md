@@ -4323,3 +4323,86 @@ Home 같은 시각적 보기 선호를 함께 제안했다. 두 가지 보기(�
   기존 stale empty-org 및 다른 제품 외부 경계는 그대로다. 새 launcher `serve-views.sh`;
   직전 `/tmp/opencode/ksi-sites-phone-20261019/serve-phone.sh`와 phone build를 rollback으로 보존했다.
   이 Human UI 요청은 로컬 완료이며 전체 제품/고객 수용을 닫지 않는다.
+
+### 2026-10-19 — Desktop 페이지·카드 비율·새 현장 카드 (Human 승인, IN PROGRESS)
+
+Human은 카드4현장/목록10행 번호 pagination 권고를 승인하면서 폭에 맞는 카드 비율과
+`+ 새 현장 추가` 형태의 같은 카드 진입을 요청했다. 화면에 억지로 맞추지 않고 자연스러운
+스크롤을 남기는 앞선 권고를 보존한다.
+
+- Requirement IDs: REQ-UX-101/SEC-101, INV-040/060/061. UI 표현/URL state만 변경하며 HomeD6,
+  Core/API/schema/RBAC/미디어/원본/정량/data·AI-egress/1024 mutation gate는 불변.
+- Owner module: Dashboard Sites desktop. General 기존 source session 재사용; primary가 E2E/통합/
+  렌더 소유. phone/tablet은 앞서 승인된 단순 목록 유지(새 pagination은 desktop 두 보기만).
+- Acceptance criteria: cards4실제현장/list10행, 번호/이전/다음/한page생략; URL page bookmark/
+  reload/back·범위 clamp, criteria/mode reset1·q/status/group/sort 및 초안/IME 보호. 새 page는
+  결과 시작으로 이동/키보드 문맥 제공. 실제 records와 utility count를 섞지 않는다.
+- Cards: max 폭 제한·표지 aspect ratio로 과도한 가로 늘어남 방지, notebook2열/넓은 화면에서
+  content-fit 추가열 가능. 본문/열기 행동을 자르지 않으며 기존 factual identity 그대로.
+- Add tile: card-mode 마지막 page 끝에 별도 `새 현장 추가` control(현장건수/정렬/4실제record cap 제외).
+  또래 row에 stretch하고 홀로 남으면 낮은 min-height로 긴 빈 공간을 만들지 않는다. 실제4record가
+  꽉 찬 마지막 page에서는 utility만 추가 줄이 될 수 있으며 가짜 데이터 page를 만들지 않는다.
+  상단 등록 버튼 유지, allowed/denied/unavailable는 기존 registration availability와 완전히 동일.
+- Contracts affected: UI page query only, remembered mode cookie는 cards/list만 그대로. No new Core
+  endpoint/grant or raw-preview workaround. 마지막 page control은 fake SiteView record가 아니다.
+- Reference assets/adoption: 기존 neutral cover/native links/buttons/ActionUnavailable ADOPT;
+  custom tile trigger가 필요하면 ordinary caller와 backwards-compatible. 외부 asset/dependency 없음.
+- Files to change: page/view/renderers/query/paging/utility tile + 최소 controls/cancel 연결,
+  ActionUnavailable optional presentation, focused tests, existing E2E/docs/ledger.
+- Tests: math4/10/clamp, 실제5Site Card2pages, 10+List component fixture 필요 시 simulation 명시,
+  scope/history/draft/reset/mode, tile3permission·denied0POST, width/ratio/44coarse targets,
+  ordinarypopover·phone/tablet/Home regression, whole suite/type/build/axe/overflow.
+- HIL/real-device assumptions: 없음; browser/touch/IME simulation은 physical/SR/customer 수용 아님.
+- License/data implications: 기존 facts/owned assets만; 실제시연Core8096/registry/원본 수정 없음.
+- Rollback: 직전 `.next-sites-desktop-views-20261019`/serve-views.sh와 UI commit 보존.
+
+증거 `/tmp/opencode/ksi-sites-pagination-20261019/`; baseline7eb4a1c1=origin/main, tracked clean.
+
+**로컬 수용 완료 — 페이지·비율·등록 카드 (위 IN PROGRESS를 대체)**
+
+- Desktop 카드4실제현장/목록10행을 URL `page`로 나눈다. 번호·이전·다음·current aria 표시,
+  첫/끝 비실행·한page 푸터 생략·큰 page 수 window/ellipsis를 구현했다. 잘못된 번호는 실제
+  범위로 clamp해 가짜 빈 결과를 만들지 않는다. 검색/필터/정렬은1, 실제 모드 변경도1로 복귀;
+  이미 활성인 보기 재클릭은 페이지를 건드리지 않는다. 상세→back/reload로 원래 page가 남는다.
+- 번호 선택은 확정된 q/status/group/sort를 쓰며 미확정 검색을 취소·입력과 URL을 맞춘다.
+  모드 전환은 반대로 미확정 검색/IME를 취소하지 않고 자동 적용을 이어간다. 실제 브라우저에서
+  처음의 두 동작이 뒤섞이는 오류를 찾아 고쳤다. 같은 서버-cookie slice를 두 모드에 공용하지
+  않고 **카드/목록의 행·page/meta/footer를 독립 계산**해4/10 경계와 blocked-cookie도 정확하다.
+  모드 reset가 page를 제거할 때1회의 RSC 갱신은 허용하지만 새 Core endpoint/권한 변경은 없다.
+- 카드 표지는16:7, grid는 왼쪽 정렬·최대920px(2열)/1350px(아주 넓은 화면3열)로 묶었다.
+  실제 카드폭은 모든 검사 viewport에서480px 이하이며, 본문·열기 행동을 비율 때문에 자르지 않는다.
+  푸터는 카드의 제한된 폭에 맞춰 가운데 정렬하고16px 간격을 줘 카드에 붙지 않게 했다.
+- 마지막 card page에 점선 `+ 새 현장 추가` control을 넣었다. 실제 Site가 아니며 count/sort/page
+  계산에서 제외한다. 또래 row 높이로 stretch하고 홀로 남으면 min160으로 긴 빈 공간을 줄인다.
+  상단 등록 진입도 유지. allowed만 기존 /sites/new로, denied는 클릭 설명·Escape focus복귀만,
+  unavailable는 별도 사유와 lookup retry다. RoleADMIN으로 bootstrap을 추론하지 않는다.
+- 통합에서 발견한 Next server/client event boundary 오류는 pager를 client entry로 명시해 고쳤다.
+  unit/import만으로 수용하지 않고 실제 SSR/browser 경로로 재검증했다. `5 /5`로 모호했던 단일
+  마지막 record도 `5–5 /5`로 명시한다. custom trigger는 기존 ActionUnavailable의 ordinary
+  동작을 바꾸지 않고 내용/겉모양만 선택적으로 확장했다.
+- 검증: Dashboard **1351/1351 (152 files)**, tsc/최종 build 통과, lint0err/기존warning1,
+  source detector `[]`. Console/feedback/Sites/views/pagination E2E **106 passed /30 skipped**
+  (직전98/22+new paging8/8; desktop-only slots/기존 제한). 실제5Site 격리 fixture에서4+1 분할,
+  page2 생성control/count 제외, scope/timer/reset/mode/reload/detail-back/clamp/권한거부0writes,
+  ratio/폭과 footer 간격·가운데를 검증했다. 기존 stale empty-org 기대는 수정/완료 주장하지 않았다.
+- 실제 preview1Site는 그대로 두었고 records를 추가하지 않았다. 최종 `.next-sites-pagination-verified-20261019`
+  tailnet10010→3241→기존Core8096/issuer9042에서5폭(390/768/1024/1440/1920) **11상태**
+  axe serious/critical/moderate0·넘침0·pageerror0·API mutation0. 권한거부 control은 실제 계정에서
+  설명만 열었다. 실제 data가1page라 번호 푸터가 없는 것도 확인했다. phone390/tablet768 픽셀은
+  직전과 완전 동일, Home golden 변경 없음.
+- List10+ 경계는 별도23가상record actual-component browser fixture로10/10/3 및 back을 확인했다.
+  실제 source +현재 CSS +기존 shell을 사용했지만 navigation stub/가상 data이므로 Core/고객
+  종단 수용으로 부르지 않는다. 이 fixture3상태도 axe/넘침/error0, real Core writes0이다.
+  캡처를 직접 읽고 마지막 footer 간격/정렬 보완 후 최종 렌더를 확인했다.
+- Source는 Dashboard만; Core/API/schema/RBAC/registry/실제 data/원본/미디어/계산/AI-egress/
+  1024 mutation gate 불변(INV040/060/061). Cookie는 mode만, page는 URL만. physical touch/
+  OS IME/SR/고객/production 수용은 미검증이며 기존 외부 경계는 그대로다.
+- 증거 `/tmp/opencode/ksi-sites-pagination-20261019/`: before/live/page1/page2/simulated-list
+  PNG, live-checks/list-fixture-checks/small-screen-comparison/source-hashes/verification-summary,
+  unit/type/lint/build/E2E logs. 새 launcher serve-pagination.sh; 직전
+  `/tmp/opencode/ksi-sites-desktop-views-20261019/serve-views.sh`와 build를 rollback으로 보존했다.
+  본 Human UI 요청은 로컬 완료다.
+
+최종 추가 회귀: raw server `base`에 현재 page가 함께 전달되는 상태 칩도 criteria patch 시 page를
+명시적으로 제거하도록 중앙 URL helper를 보완했다. 이를 위한 단위1건과 page2→전체 상태 칩의
+실제 browser 회귀를 추가했다. 최종5spec 동시재검은106pass30skip, 1351unit/type/build 통과다.

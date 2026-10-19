@@ -52,6 +52,8 @@ test("데스크톱은 2열 카드와 장식 없는 목록, 작은 화면은 기�
   await expect(views.list).toBeFocused();
   await expect(page.locator("[data-site-cover]:visible")).toHaveCount(0);
   await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
+  const totalRows = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
+  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
   expect(await page.getByText("기본 이미지", { exact: true }).evaluateAll((nodes) => nodes.some((n) => n.getBoundingClientRect().width > 0))).toBe(false);
   await capture(page, `multiple-list-${testInfo.project.name}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
@@ -62,7 +64,7 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   await login(page);
   const views = viewButtons(page);
   await expect(views.cards).toHaveAttribute("aria-pressed", "true");
-  const total = await page.locator("[data-site-card]:visible").count();
+  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
   const firstHref = await page.locator("[data-site-card]:visible").first().getByRole("link", { name: "현장 열기", exact: true }).getAttribute("href");
   const id = decodeURIComponent(new URL(firstHref!, page.url()).pathname.split("/")[2]);
   await page.goto("/sites?group=attention&sort=updated");
@@ -85,7 +87,9 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   const mainBox = await page.getByRole("main").boundingBox();
   expect(cardBox!.width).toBeLessThan(mainBox!.width * 0.65);
   await expect(search).toHaveValue(id);
-  await expect(page.locator('[data-site-list-view="cards"]').getByText(new RegExp(`1\\s*/\\s*${total}곳\\s*표시`))).toBeVisible();
+  expect(total).toBeGreaterThanOrEqual(1);
+  await expect(page.locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-total", "1");
+  await expect(page.locator('[data-site-list-view="cards"]')).toHaveAttribute("data-site-page", "1");
   await capture(page, `filtered-card-${testInfo.project.name}`);
   await views.list.click();
   await search.fill("목록 보기에서 없는 현장");
@@ -129,6 +133,8 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
   test.skip(!testInfo.project.name.startsWith("desktop"), "표시 설정 실패와 desktop→phone 전환 검사입니다.");
   await login(page);
   const views = viewButtons(page);
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
+  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.evaluate(() => Object.defineProperty(document, "cookie", {
@@ -139,6 +145,7 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
   await views.list.click();
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(total, 10));
   expect(errors).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(views.group).toBeHidden();

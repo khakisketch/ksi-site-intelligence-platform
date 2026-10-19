@@ -119,6 +119,24 @@ At 1024px and above, offer `카드 | 목록` as two presentations of the same sc
 Phone/tablet layouts and Home D6 remain as previously verified. This desktop decision supersedes the
 earlier small-default-thumb desktop layout, not evidence-image rights or the phone adaptation.
 
+### Desktop paging, card proportions and creation entry (Human-approved, 2026-10-19)
+
+- Paginate actual Site records: cards four per page, dense list ten. Number/previous/next navigation
+  preserves applied query criteria and URL history; data-criterion changes and view-mode changes
+  return to page one. Do not show page controls for a single page or fake an empty result for a bad index.
+- Bound gallery card width and use a cover aspect ratio; never stretch cards indefinitely to fill a wide
+  workspace or crop content/actions to force a fixed overall ratio. Additional columns are appropriate
+  when content fits on very wide desktops. Explicit page navigation returns attention to the results start.
+- Append a distinct `새 현장 추가` utility tile on the last card page, after actual records. It is not a
+  Site, never participates in counts/sorting/page math, and must not manufacture an extra data page.
+  Stretch alongside a peer; when alone use a modest minimum height instead of a giant empty card.
+- The tile and toolbar entry use the exact same allowed/denied/unavailable registration availability.
+  A denied tile explains on click; unavailable can retry the lookup; only an allowed tile links to the
+  existing registration route. Never infer bootstrap capability from an Admin role or invent a grant flow.
+
+This pagination applies to the desktop presentations. The accepted phone/tablet collection and Home
+remain unchanged; viewport layout and creation affordances do not alter authorization or media rights.
+
 ### Action feedback (Human-approved, 2026-10-19)
 
 Choose the delivery surface by what the person must do next, not by treating every message as an alert:

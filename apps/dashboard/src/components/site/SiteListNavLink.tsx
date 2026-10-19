@@ -13,6 +13,15 @@ import type { MouseEvent, ReactNode } from "react";
  */
 export const SITE_LIST_CANCEL_EVENT = "site-list:cancel-pending";
 
+/**
+ * 페이지 이동 의도 알림 — pager 링크가 누르기 전에 보낸다.
+ *
+ * 취소와 달리 확정 검색어를 입력에 되돌린다. 미확정 초안을 URL 조건과
+ * 어긋난 채 두면, 같은 q 응답이 와도 입력이 덮이지 않기 때문이다.
+ * IME 조합·포커스는 건드리지 않는다.
+ */
+export const SITE_LIST_PAGE_EVENT = "site-list:page-navigate";
+
 export function SiteListNavLink({
   href,
   current,
@@ -21,7 +30,11 @@ export function SiteListNavLink({
   onClick,
 }: {
   href: string;
-  current?: boolean;
+  /**
+   * 현재 위치 표시. 칩은 불리언(aria-current="true"), 페이지 번호는
+   * "page"(aria-current="page")를 쓴다.
+   */
+  current?: boolean | "page";
   className?: string;
   children: ReactNode;
   /** 이동 의도 알림 뒤에 덧붙일 정리(패널 닫기 등) — 이동 자체는 막지 않는다. */
@@ -30,7 +43,7 @@ export function SiteListNavLink({
   return (
     <Link
       href={href}
-      aria-current={current ? "true" : undefined}
+      aria-current={current === "page" ? "page" : current ? "true" : undefined}
       className={className}
       onClick={(event) => {
         window.dispatchEvent(new Event(SITE_LIST_CANCEL_EVENT));
