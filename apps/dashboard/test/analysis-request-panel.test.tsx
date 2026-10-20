@@ -89,7 +89,7 @@ function detail(analysisId = "analysis-1", executionState: AnalysisView["executi
   };
 }
 
-function listItem(analysisId: string) {
+function listItem(analysisId: string, newerSiblingAnalysisIds: string[] = []) {
   return {
     analysisId,
     siteId: "site-1",
@@ -101,11 +101,20 @@ function listItem(analysisId: string) {
     metrics,
     limitationCount: result.limitationCodes.length,
     analysisHref: `/v2/sites/site-1/analyses/${analysisId}`,
+    newerSiblingAnalysisIds,
   };
 }
 
-function listPage(items: string[], nextCursor: string | null = null): AnalysisListPage {
-  return { siteId: "site-1", items: items.map(listItem), nextCursor };
+function listPage(
+  items: string[],
+  nextCursor: string | null = null,
+  siblings: Record<string, string[]> = {},
+): AnalysisListPage {
+  return {
+    siteId: "site-1",
+    items: items.map((analysisId) => listItem(analysisId, siblings[analysisId] ?? [])),
+    nextCursor,
+  };
 }
 
 function evidencePage(recordId: string, nextCursor: string | null): AnalysisEvidencePage {
@@ -173,6 +182,40 @@ describe("analysis V2 panel", () => {
     expect(within(metricsRegion).getByText("20 m³")).toBeTruthy();
     expect(within(metricsRegion).getByText("순변화")).toBeTruthy();
     expect(within(metricsRegion).getByText("8 m³")).toBeTruthy();
+  });
+
+  it("shows one neutral notice for a shared-epoch continuation when capture time is unavailable", () => {
+    // Core 목록의 공유 epoch 연결만 있고 관측 시각은 없는 경우다.
+    // 시간 파생 알림이 불가능해도 같은 자리에서 중립 한 줄로 알린다.
+    renderPanel({
+      observations: [],
+      siteObservations: [],
+      initialPage: listPage(["analysis-1"], null, { "analysis-1": ["analysis-2"] }),
+      initialSelectedDetail: detail("analysis-1"),
+      initialAnalysisId: "analysis-1",
+    });
+
+    const notice = screen.getByText(/이 작업구역에 이 기록의 현재 관측을 기준으로 삼은 새 분석이 있습니다/);
+    expect(notice).toBeTruthy();
+    expect(notice.textContent).toContain("이 기록의 수치·상태는 그대로 둡니다.");
+    expect(notice.textContent).not.toMatch(/대체됨|구버전|최신|신뢰할 수 없/);
+    const link = within(notice).getByRole("link", { name: "새 분석 결과 보기" });
+    expect(link.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=analysis-2");
+    // 두 번째 알림을 만들지 않는다.
+    expect(screen.queryByText(/더 새 관측이 있습니다/)).toBeNull();
+  });
+
+  it("shows no continuation notice when the Core list carries no shared-epoch link", () => {
+    renderPanel({
+      observations: [],
+      siteObservations: [],
+      initialPage: listPage(["analysis-1"]),
+      initialSelectedDetail: detail("analysis-1"),
+      initialAnalysisId: "analysis-1",
+    });
+
+    expect(screen.queryByText(/새 분석이 있습니다/)).toBeNull();
+    expect(screen.queryByText(/더 새 관측이 있습니다/)).toBeNull();
   });
 
   it("uses a true-empty message only after a successful list read", async () => {
