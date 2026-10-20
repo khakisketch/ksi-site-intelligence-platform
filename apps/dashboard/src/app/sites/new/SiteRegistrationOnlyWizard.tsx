@@ -418,6 +418,27 @@ export function SiteRegistrationOnlyWizard({
           ? "데이터 반출 여부에 따른 관할을 선택하세요."
           : undefined;
 
+  // 2단계도 같은 원칙이다(F16) — 2026-10-20 베타 참가자 드라이브에서, 경계만
+  // 그리고 좌표계·높이 기준을 비우면 "다음"이 **이유 없이** 비활성이라서
+  // 참가자가 무엇을 채워야 하는지 알 수 없었다. 비활성이면 무엇이 비었는지
+  // 한 가지로 말한다.
+  const step1DisabledReason = stepValid[1]
+    ? undefined
+    : form.aoi.length < 3
+      ? "지도에서 조사 구역을 그리세요(최소 3개 꼭짓점)."
+      : !isConvexPolygon(form.aoi)
+        ? "현재 조사 경로는 오목한 외곽을 지원하지 않습니다. 볼록한 외곽으로 다시 그려 주세요."
+        : !form.crs.trim()
+          ? "현장 좌표계를 입력하세요(국내 중부 현장은 보통 EPSG:5186)."
+          : !form.verticalDatum.trim()
+            ? "높이 기준을 입력하세요(예: KNGeoid2018)."
+            : !form.transformVersion.trim()
+              ? "좌표 설정 버전을 입력하세요."
+              : undefined;
+
+  const nextDisabledReason =
+    currentStep === 0 ? step0DisabledReason : currentStep === 1 ? step1DisabledReason : undefined;
+
   return (
     <WizardShell
       title="현장 등록"
@@ -427,7 +448,7 @@ export function SiteRegistrationOnlyWizard({
       onNext={handleNext}
       nextLabel={nextLabel}
       nextDisabled={!stepValid[currentStep]}
-      nextDisabledReason={currentStep === 0 ? step0DisabledReason : undefined}
+      nextDisabledReason={nextDisabledReason}
       nextPending={currentStep === 2 && submitPhase === "pending"}
       error={currentStep === 2 && submitError ? <ErrorState message={submitError} /> : undefined}
       exitHref="/sites"

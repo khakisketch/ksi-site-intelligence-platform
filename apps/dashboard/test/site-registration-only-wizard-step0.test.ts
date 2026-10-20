@@ -23,4 +23,14 @@ describe("site registration step 0 hierarchy (F16)", () => {
     expect(WIZARD).toContain("nextDisabledReason=");
     expect(WIZARD).toContain("현장 이름을 입력하세요");
   });
+
+  // 2026-10-20 베타 참가자 드라이브: 2단계에서 경계만 그리고 좌표계·높이 기준을
+  // 비우면 "다음"이 이유 설명 없이 비활성이었다. 같은 F16 원칙을 2단계에도 적용한다.
+  it("names what blocks the disabled next button on step 1", () => {
+    expect(WIZARD).toContain("step1DisabledReason");
+    expect(WIZARD).toContain("지도에서 조사 구역을 그리세요");
+    expect(WIZARD).toContain("현장 좌표계를 입력하세요");
+    expect(WIZARD).toContain("높이 기준을 입력하세요");
+    expect(WIZARD).toContain("currentStep === 1 ? step1DisabledReason");
+  });
 });
