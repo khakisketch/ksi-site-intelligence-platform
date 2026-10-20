@@ -842,6 +842,9 @@ function AnalysisBlockerItem({ blocker, siteId, workAreaId }: {
   return <li className="rounded-md border border-line bg-surface px-3 py-3 text-[12.5px] leading-5 text-ink-2">
     <p className="font-semibold text-ink-1">{guidance.label}{blocker.epoch ? ` · ${blocker.epoch === "BASELINE" ? "기준 관측" : "현재 관측"}` : ""}</p>
     <p className="mt-1">{guidance.nextStep}</p>
+    {guidance.selfServiceNextStep && (
+      <p className="mt-1">산출물 제공자가 직접 할 수 있는 것 · {guidance.selfServiceNextStep}</p>
+    )}
     <p className="mt-1 text-[11.5px] text-ink-muted">확인 담당 · {guidance.owner}</p>
     {destination && <Link className="mt-2 inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline" href={destination.href}>{destination.label}</Link>}
     <details className="mt-1">

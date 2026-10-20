@@ -355,8 +355,37 @@ describe("analysis V2 panel", () => {
     expect(technical?.textContent).toContain("checkpoint-ref-1");
   });
 
-  it("gives an honest fallback for unknown blocker codes without treating them as retryable", () => {
+  it("tells the artifact provider what they can do themselves, and only when they can", () => {
+    // 참가자는 산출물 제공자 본인이다(2026-10-20 베타). 원인이 산출물 쪽인
+    // 코드에는 직접 실행할 수 있는 조치가 붙고, 운영 조회로만 풀리는 코드에는
+    // 붙지 않아야 한다.
     const blocked = {
+      ...detail(),
+      suitabilityState: "BLOCKED" as const,
+      blockers: [{ code: "VERTICAL_REFERENCE_MISMATCH", message: null, epoch: "CURRENT" as const, evidenceRef: null, detail: null }],
+      result: null,
+    };
+    const page = listPage(["analysis-1"]);
+    page.items[0] = { ...page.items[0]!, suitabilityState: "BLOCKED", resultId: null, metrics: null, limitationCount: 1 };
+
+    renderPanel({ initialPage: page, initialSelectedDetail: blocked });
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    expect(selected.getByText(/산출물 제공자가 직접 할 수 있는 것/)).toBeTruthy();
+    expect(selected.getByText(/높이 기준이 기록된 값과 같은지 확인하세요/)).toBeTruthy();
+
+    cleanup();
+    const operatorOnly = {
+      ...detail(),
+      suitabilityState: "BLOCKED" as const,
+      blockers: [{ code: "REASSESSMENT_REQUIRED", message: null, epoch: null, evidenceRef: null, detail: null }],
+      result: null,
+    };
+    renderPanel({ initialPage: page, initialSelectedDetail: operatorOnly });
+    const other = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    expect(other.queryByText(/산출물 제공자가 직접 할 수 있는 것/)).toBeNull();
+  });
+
+  it("gives an honest fallback for unknown blocker codes without treating them as retryable", () => {    const blocked = {
       ...detail(),
       suitabilityState: "BLOCKED" as const,
       blockers: [{ code: "FUTURE_REASON_CODE", message: null, epoch: null, evidenceRef: null, detail: null }],

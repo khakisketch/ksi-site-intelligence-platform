@@ -9,6 +9,16 @@ export type AnalysisIssueGuidance = {
   owner: string;
   nextStep: string;
   destination?: AnalysisGuidanceDestination;
+  /**
+   * 산출물 제공자가 **직접** 실행할 수 있는 조치.
+   *
+   * 2026-10-20 베타: 참가자는 내부 "담당자"가 아니라 자기 산출물의 제공자다.
+   * 담당자에게 넘기는 안내만으로는 참가자가 아무것도 할 수 없다. 이 필드는
+   * 해당 코드의 원인이 산출물 쪽에 있을 때 — 즉 재-export·재등록·선택 변경으로
+   * 해소되는 성질의 문제일 때만 채운다. Core 기록·운영 조회로만 풀리는 문제는
+   * 비워 둔다(없는 행동을 만들지 않는다).
+   */
+  selfServiceNextStep?: string;
 };
 
 const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
@@ -68,24 +78,32 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     owner: "외부 관측 자료 담당자",
     nextStep: "선택한 제출본에서 분석에 필요한 자료를 확인할 수 없습니다. 담당자가 해당 제출 revision과 KSI 검사 상태를 확인하세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "제출본에 분석 입력이 들어 있는지 확인하세요. 상대 체적 비교에는 DSM 산출물이 필요하고, 정사영상 등록만으로는 대체되지 않습니다. 산출물을 다시 export·등록해 포함시키세요.",
   },
   RECONSTRUCTION_NOT_SEALED: {
     label: "등록된 재구성 결과 확인 필요",
     owner: "외부 관측 자료 담당자",
     nextStep: "선택한 재구성 결과가 분석 입력으로 확인되지 않습니다. 담당자가 정확한 제출 revision의 등록·검사 상태를 확인하세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "등록이 끝까지 완료된 제출 revision을 사용하세요. 재구성 결과 파일이 등록된 뒤 검사까지 끝나야 분석 입력으로 확인됩니다.",
   },
   SUBMISSION_NOT_SEALED: {
     label: "제출 revision 확인 필요",
     owner: "외부 관측 자료 담당자",
     nextStep: "선택한 제출 revision이 분석 입력으로 확인되지 않습니다. 담당자가 해당 revision의 등록 상태를 확인하세요. 다른 revision이나 원본으로 추정하지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "등록이 완료된 제출 revision을 선택하세요. 검사 전이거나 등록이 덜 끝난 revision은 분석 입력으로 확인되지 않습니다.",
   },
   NO_COMMON_ARTIFACT_FAMILY: {
     label: "두 관측에 공통 분석 자료가 없음",
     owner: "외부 관측 자료 담당자",
     nextStep: "두 선택 자료에 요청된 분석 입력 종류가 함께 있는지 확인하세요. 상대 물량 분석에는 지원되는 DSM 자료가 필요하며, 정사영상 등록만으로 대체되지 않습니다.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 관측에 공통으로 분석 가능한 자료 종류가 있는지 확인하세요. 상대 체적 분석에는 DSM 자료가 필요하고 정사영상만으로는 대체되지 않습니다.",
   },
   ANALYSIS_NOT_READY: {
     label: "관측 자료의 분석 준비가 확인되지 않음",
@@ -98,58 +116,78 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     owner: "재구성 자료 제공자",
     nextStep: "자료의 처리 프로필이 확인되지 않습니다. 제공자가 실제 처리 이력을 확인하고 정확한 출처 정보를 제출해야 합니다. 프로필을 추측하거나 재명명하지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "산출물을 export할 때 사용한 처리 설정을 함께 기록해 주세요. 프로필이 없으면 어떤 처리 결과인지 확인할 수 없습니다.",
   },
   PROCESSING_PROFILE_MISMATCH: {
     label: "두 관측의 처리 프로필이 다름",
     owner: "재구성 자료 제공자",
     nextStep: "두 관측이 호환되는 처리 프로필을 사용했는지 확인하세요. 서로 다르면 검증된 호환 근거가 있는 자료 조합을 담당자와 선택해야 합니다.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 관측을 같은 처리 설정으로 export했는지 확인하세요. 서로 다르면 검증된 호환 근거가 있는 자료 조합을 골라야 합니다.",
   },
   SOURCE_LINEAGE_GAP: {
     label: "자료 출처 계보가 불완전함",
     owner: "재구성 자료 제공자",
     nextStep: "파생 자료와 원본 사이의 출처 연결을 확인할 수 없습니다. 제공자가 정확한 계보 정보를 보완해야 하며 파일명만으로 출처를 추정하지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "파생 산출물과 원본의 연결을 기록해 주세요. 파일 이름만으로는 출처를 확인하지 않습니다.",
   },
   HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH: {
     label: "수평 좌표 기준을 확인할 수 없거나 서로 다름",
     owner: "공간 자료 담당자",
     nextStep: "작업구역과 두 관측의 기록된 좌표 기준을 확인하세요. 기준을 UI에서 임의로 바꾸거나 좌표를 추정해 맞추지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "자료를 export할 때 좌표 기준을 명시해 주세요(국내 중부 현장은 보통 EPSG:5186). 기준이 기록되지 않았거나 작업구역과 다르면 비교를 진행하지 않습니다.",
   },
   CRS_MISMATCH: {
     label: "관측 좌표 기준이 서로 다름",
     owner: "공간 자료 담당자",
     nextStep: "각 관측의 기록된 좌표 기준과 변환 근거를 확인하세요. 호환성이 확인될 때까지 수치 비교를 사용하지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 관측의 좌표 기준이 같은지 export 설정에서 확인하세요. 기준이 다르면 호환성이 확인될 때까지 수치 비교를 진행하지 않습니다.",
   },
   VERTICAL_REFERENCE_MISMATCH: {
     label: "높이 기준이 서로 다름",
     owner: "공간 자료 담당자",
     nextStep: "두 관측의 기록된 수직 기준과 단위를 담당자가 확인해야 합니다. 높이를 임의로 변환하거나 같은 기준으로 간주하지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 관측의 높이 기준이 기록된 값과 같은지 확인하세요. 기준이 서로 다르면 높이를 임의로 변환하지 않고 기준이 맞는 자료 조합을 선택하세요.",
   },
   EMPTY_COMMON_VALID_COVERAGE: {
     label: "두 관측에서 함께 유효한 범위 없음",
     owner: "공간 자료 담당자",
     nextStep: "확인된 자료에는 두 시점이 함께 유효한 범위가 없습니다. 담당자가 실제 관측 범위와 작업구역을 확인하고 다른 기록된 조합이 있는지 검토하세요. 좌표를 추정해 옮기지 마세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 시점이 함께 유효한 구역이 있는지 export 범위와 NoData 설정에서 확인하세요. 좌표를 옮겨 맞추지 않습니다.",
   },
   INSUFFICIENT_COMMON_VALID_COVERAGE: {
     label: "공통 유효 범위가 분석 조건에 미달함",
     owner: "공간 자료 담당자",
     nextStep: "공통으로 유효한 범위가 현재 분석 조건을 충족하지 않습니다. 담당자가 자료와 작업구역을 검토한 뒤 다른 관측 조합을 확인하세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "두 시점이 함께 유효한 범위가 현재 분석 조건에 얼마나 되는지 확인하고, 넓은 구역이 필요하면 더 넓게 export한 자료 조합을 검토하세요.",
   },
   EPOCH_SUBJECT_NOT_DISTINCT: {
     label: "기준·현재 관측이 서로 다르지 않음",
     owner: "분석 요청자",
     nextStep: "기준과 현재에 서로 다른 관측 제출본을 선택하세요. 날짜가 달라도 같은 제출 revision이면 서로 다른 관측으로 볼 수 없습니다.",
+    selfServiceNextStep:
+      "기준과 현재에 서로 다른 제출 revision을 선택하세요. 날짜가 달라도 같은 제출 revision이면 서로 다른 관측이 아닙니다.",
   },
   CAPTURE_CHRONOLOGY_INVALID: {
     label: "촬영 시점 순서를 확인할 수 없음",
     owner: "외부 관측 자료 담당자",
     nextStep: "촬영 구간이 겹치거나 기준·현재 순서가 유효하지 않습니다. 제공자가 기록된 촬영 시각을 확인한 뒤, 겹치지 않는 실제 관측을 선택하세요.",
+    selfServiceNextStep:
+      "촬영 구간이 겹치지 않는 두 관측을 선택하세요. 겹치는 구간은 유효한 순서로 인정되지 않습니다.",
   },
   EPOCH_SITE_MISMATCH: {
     label: "관측이 같은 현장에 속하지 않음",
@@ -198,6 +236,8 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     owner: "외부 관측 자료 담당자",
     nextStep: "자료 검사에서 확인되지 않은 조건이 있습니다. 해당 revision의 검사 결과와 제한 사항을 함께 확인하세요.",
     destination: "spatial-assets",
+    selfServiceNextStep:
+      "해당 revision의 검사 결과에서 확인되지 않은 조건을 먼저 보완하세요. 조건이 확인된 제출본을 다시 등록하면 됩니다.",
   },
 };
 

@@ -146,3 +146,41 @@ describe("analysis UI guidance", () => {
     expect(analysisEvidenceSummary({ kind: "AUTHORITY_REFERENCE", recordId: "authority-1", digest: `sha256:${"9".repeat(64)}`, limitationCodes: [], referenceName: "admissionId", sourceDigest: null })).toBe("분석 기준 기록 연결");
   });
 });
+
+// 2026-10-20 베타: 참가자는 산출물 제공자 본인이라 "담당자"에게 넘기는 안내만으로는
+// 아무것도 할 수 없다. 원인이 산출물 쪽에 있는 코드에는 직접 실행할 수 있는 조치가
+// 붙어야 하고, Core 기록·운영 조회로만 풀리는 문제에는 붙지 않아야 한다.
+describe("self-service remediation", () => {
+  it("names a provider action for artifact-side causes", () => {
+    for (const code of [
+      "ESSENTIAL_INPUT_UNAVAILABLE",
+      "HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH",
+      "VERTICAL_REFERENCE_MISMATCH",
+      "NO_COMMON_ARTIFACT_FAMILY",
+      "SUBMISSION_NOT_SEALED",
+      "RECONSTRUCTION_NOT_SEALED",
+      "PROCESSING_PROFILE_UNKNOWN",
+      "PROCESSING_PROFILE_MISMATCH",
+      "SOURCE_LINEAGE_GAP",
+      "EPOCH_SUBJECT_NOT_DISTINCT",
+    ]) {
+      const guidance = getAnalysisIssueGuidance(code);
+      expect(guidance.selfServiceNextStep, code).toBeTruthy();
+      expect(guidance.selfServiceNextStep!.length).toBeGreaterThan(10);
+    }
+  });
+
+  it("does not invent a provider action for operator-only causes", () => {
+    for (const code of [
+      "REASSESSMENT_REQUIRED",
+      "ASSESSMENT_RECOVERY_REQUIRED",
+      "CALCULATION_IDENTITY_MISMATCH",
+      "ANALYSIS_EXECUTION_FAILED",
+      "EXECUTION_RETRY_EXHAUSTED",
+      "SUBJECT_OUT_OF_SCOPE",
+      "PROVISIONAL_ACCURACY_UNVERIFIED",
+    ]) {
+      expect(getAnalysisIssueGuidance(code).selfServiceNextStep, code).toBeUndefined();
+    }
+  });
+});
