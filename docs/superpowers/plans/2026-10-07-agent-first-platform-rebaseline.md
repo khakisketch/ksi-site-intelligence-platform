@@ -4696,3 +4696,74 @@ Human 결정 "외부 소비 대조 코드 확장"을 실행했다. **제품 코�
 
 두 가지는 계약 테스트로 고정했다(홀든 결과 SKIPPED·per-execution digest 불일치가 링크를
 깨지 않음). 이 정리는 문서화되지 않은 추측을 제품 계약처럼 취급하지 않게 한다.
+
+### 2026-10-20 — Human redirects to design-first, populated demonstration
+
+Human: “무작정 기능 구현보다는 화면 UI UX 설계 사용 흐름 체계적으로 세우고 기능 개발 …
+실제 다운로드 혹은 외부에서든 간에 구한 것들로 자료 채워서 실제 그런 데모 … 남 보여줘도 이해”.
+Subsequent explicit audience answer: **일반 소개·사업 관계자**. Pause feature-first worker attachment;
+first establish scenario, information hierarchy and screen relationships. This changes the order of the
+active bounded work, not the product definition, milestone/slice acceptance or deployment authorization.
+
+- Selected subordinate proposal: `docs/design/DEMO_EXPERIENCE_BRIEF.md`; exact licensed material
+  identities in `docs/design/DEMO_MATERIALS.json`. `apps/dashboard/PRODUCT.md` is a design-tool
+  reading aid pointing to existing authority, not a competing product source. Proposed primary journey:
+  prepared case → real place/dated observations → same-place views → uses/limits → evidence/next step;
+  own-data registration remains a separate secondary journey. Existing site-local navigation retained.
+- Fresh actual UI evidence: authenticated private staging :10000 at source c0ece080. Main inspected
+  actual Native Home screenshot and Playwright 1440/390 site/material/analysis images (after streaming
+  skeletons settled). Home leads with missing dependency notices + E2E imagery placeholder; site mixes
+  a generic polygon and source list; analysis ends at unavailable runtime. Actual evidence under
+  `/tmp/opencode/ksi-demo-flow-20261020/ui/`. Scout's old goldens were not treated as current proof.
+- Real materials downloaded, licence verified from original DataWA CKAN records: Cambridge Coastcare
+  Floreat-f3 2021-08-17 / 2022-08-24 orthomosaics, CC BY 4.0; t0 GeoTIFF 265600312 B, t1 JP2
+  125122750 B. Same-site DSM originals already present. All 4 originals now read-only under
+  `.dev-data/public-geotiff/floreat-f3-2021-08-17_2022-08-24/`, ignored by Git.
+- Derived same-bounds RGB and shared-colour-scale DSM sheets visually inspected by main and previewed.
+  They are display derivatives, not product registration/inspection or geodetic/quantitative validation.
+  Preview/manifests under `.dev-data/demo-design-review/`; originals unchanged, SHA256 freshly computed
+  from local bytes (corrected transcription errors in the worker scratch manifest). Repository manifest
+  contains the fresh exact hashes and source/licence links.
+- No invented construction-site identity: Floreat is coastal observation material. No arbitrary volume
+  overlay; no fake validation/AI/customer account. Public DSM pair remains blocked for quantitative use.
+  2022 JPEG2000 is source/design material, not a claim of JP2 product ingress support. Any conversion
+  requires a separate derived identity; original identity/bytes remain unchanged.
+- Separately labelled synthetic computation/review example proposed to complete the business story;
+  never attach its numbers to real Floreat imagery. Real construction-site material is an alternative
+  primary story subject to source availability/licence. Design confirmation still pending.
+- This pass made **no product UI/backend/schema/runtime changes** and no data uploads/server changes.
+  Docs boundary/normalization 46 passed, repository validator PASS, diff check clean. This is design/data
+  preparation, not a populated live demo completion, public beta acceptance or production readiness.
+
+- Human confirmed the story/sequence proposal: **실제 해안 관측 + 별도 계산 예시**. General worker
+  `ses_ea677483cffeXajGdZLjKalH2k` owns design-only screen-study markup under
+  `.dev-data/demo-design-review/screen-study/`; main owns loopback preview3267 and browser review.
+  No application source, existing demo host, Core state or deployment is modified. First captured
+  structure pass found an actual hidden-layer CSS defect (both RGB and DSM visible) and excessive
+  reviewer chrome on390; one correction batch handed directly to same worker. Review still pending.
+
+#### Design-study delivery (same bounded design pass)
+
+- Delivered `docs/design/demo-screen-study.html`: standalone interactive **screen-design proposal**,
+  all four display images embedded, no server connection or remote subresource/analytics request.
+  Licence/source information and actual-data versus synthetic labels stay visible. Original source
+  downloads intentionally point to DataWA, not pretend Core endpoints. The original four source files
+  are not embedded in Git; the display crops' provenance/hashes are in DEMO_MATERIALS.json.
+- Five screens: prepared case → place/date selection → same-place RGB/DSM view → known facts and
+  quantitative limitations → source originals, separate synthetic snapshot and optional unsent notes.
+  Synthetic example is an actual saved Core read from the prior generated tiny grid (0.008m³), not a
+  fabricated business metric; no fake execute/store/review action. No Floreat image with those numbers.
+- Main reviewed captured latest desktop/mobile pixels and exercised next/back, keyboard Enter and
+  arrows, date/layer switches, 390 single-date visibility, hash reload and separate synthetic panel.
+  Found and fixed hidden-image CSS override; final desktop shows exactly2 selected-layer images,
+  mobile exactly1 when one date selected. Keyboard moves focus to labelled destination section.
+  Original 4 SHA256+sizes verified; legacy DSM write bits removed so all originals are owner-read-only.
+- Evidence `/tmp/opencode/ksi-demo-flow-20261020/study-final/`: settled 5×1440 + 5×390 screen captures,
+  synthetic/DSM states, packaged HTML checks. No measured horizontal overflow, JS errors or automatic
+  external requests in that coverage. Screen-reader/physical touch and new-viewer comprehension are
+  NOT tested. This is not current live Console UI or a production/beta acceptance claim.
+- Mechanical detector run once over the design HTML: only advisory em-dash cadence finding; source
+  captions/annotations retained. Boundary/normalization46 passed + repository validator PASS + diff clean.
+- Next integration boundary: Human review of screen composition, then implement the chosen representative
+  journey in the Console using actual scoped records/approved ingress; no routine worker-first expansion.
+  Existing live staging and :10010 were not modified by this design pass.

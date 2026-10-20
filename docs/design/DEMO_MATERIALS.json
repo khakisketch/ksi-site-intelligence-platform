@@ -1,0 +1,179 @@
+{
+  "status": "Design materials only; not mounted demo dataset or product acceptance",
+  "publisher": "Cambridge Coastcare",
+  "sourceCatalogue": "DataWA",
+  "case": "Floreat-f3 coastal observations, Western Australia; NOT a construction project",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Cambridge Coastcare / DataWA — Floreat-f3, 2021 and 2022. Preview crops, scaling, hillshade and labels by KSI; no endorsement implied.",
+  "hashBasis": "SHA256 freshly computed by main session from original local bytes",
+  "originals": [
+    {
+      "filename": "floreat-f3-2021_orthomosaic.tif",
+      "kind": "orthomosaic",
+      "captureDate": "2021-08-17",
+      "captureDateBasis": "publisher-declared, not independently verified",
+      "bytes": 265600312,
+      "sha256": "14646080960606bc11b4352a062bad403af3ba918e7edc6ce8308becd7c10d9b",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-orthomosaic-aug-2021",
+      "catalogueApi": "https://catalogue.data.wa.gov.au/api/3/action/package_show?id=c6b06d54-bf46-4bf1-9f3d-d27c14291813",
+      "originalDownloadUrl": "https://catalogue.data.wa.gov.au/dataset/c6b06d54-bf46-4bf1-9f3d-d27c14291813/resource/98fe5618-2a91-4f2a-ac24-9ad87e9cc1a3/download/floreat-f3-2021_orthomosaic.tif",
+      "localIgnoredOriginal": ".dev-data/public-geotiff/floreat-f3-2021-08-17_2022-08-24/floreat-f3-2021_orthomosaic.tif",
+      "observedHorizontalCrs": "EPSG:7850",
+      "productFormatSupportClaim": false
+    },
+    {
+      "filename": "floreat-f3-2022_transparent_mosaic.jp2",
+      "kind": "orthomosaic",
+      "captureDate": "2022-08-24",
+      "captureDateBasis": "publisher-declared, not independently verified",
+      "bytes": 125122750,
+      "sha256": "babd66f374f9092013bc62f55f8833d222d6886343980eca1ce2b5c7d132fb54",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-orthomosaic-aug-2022",
+      "catalogueApi": "https://catalogue.data.wa.gov.au/api/3/action/package_show?id=1cb371d3-9d09-481e-a3db-504c6872934e",
+      "originalDownloadUrl": "https://catalogue.data.wa.gov.au/dataset/1cb371d3-9d09-481e-a3db-504c6872934e/resource/e2654781-bf23-4a8d-8904-ace20e4373c4/download/floreat-f3-2022_transparent_mosaic.jp2",
+      "localIgnoredOriginal": ".dev-data/public-geotiff/floreat-f3-2021-08-17_2022-08-24/floreat-f3-2022_transparent_mosaic.jp2",
+      "observedHorizontalCrs": "EPSG:7850",
+      "productFormatSupportClaim": false
+    },
+    {
+      "filename": "floreat-f3-2021_10cm-dsm.tif",
+      "kind": "DSM",
+      "captureDate": "2021-08-17",
+      "captureDateBasis": "publisher-declared, not independently verified",
+      "bytes": 61735807,
+      "sha256": "170f98edac9869b768788132569df1c274082d967e21e9d2a6255f9cd12b9c5b",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-raster-dsm-geotiff-aug-2021",
+      "localIgnoredOriginal": ".dev-data/public-geotiff/floreat-f3-2021-08-17_2022-08-24/floreat-f3-2021_10cm-dsm.tif",
+      "observedHorizontalCrs": "EPSG:7850",
+      "observedVerticalReference": null,
+      "productNumericAdmission": "ESSENTIAL_INPUT_UNAVAILABLE; unsupported horizontal CRS is an additional downstream limitation"
+    },
+    {
+      "filename": "floreat-f3_2022_dsm.tif",
+      "kind": "DSM",
+      "captureDate": "2022-08-24",
+      "captureDateBasis": "publisher-declared, not independently verified",
+      "bytes": 181144647,
+      "sha256": "bfc5f43ebf576e6400046f5b840663879a38224880cf5efad4e1157eeb2edfb1",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-raster-dsm-geotiff-aug-2022",
+      "localIgnoredOriginal": ".dev-data/public-geotiff/floreat-f3-2021-08-17_2022-08-24/floreat-f3_2022_dsm.tif",
+      "observedHorizontalCrs": "EPSG:7850",
+      "observedVerticalReference": null,
+      "productNumericAdmission": "ESSENTIAL_INPUT_UNAVAILABLE; unsupported horizontal CRS is an additional downstream limitation"
+    }
+  ],
+  "previews": [
+    {
+      "filename": "floreat-f3_t0-t1_same-bounds_rgb_sheet.jpg",
+      "localIgnoredPreview": ".dev-data/demo-design-review/floreat-f3_t0-t1_same-bounds_rgb_sheet.jpg",
+      "sha256": "2ccf30b4bbdad99b349ffb18cad8a109e2afb154e6ad9d1b88781ff12fa8641c",
+      "modification": "Cropped to common bounds, downscaled/display alignment only; labels and attribution added; DSM shared palette and hillshade",
+      "productMeasurement": false
+    },
+    {
+      "filename": "floreat-f3_t0-t1_same-bounds_sheet.png",
+      "localIgnoredPreview": ".dev-data/demo-design-review/floreat-f3_t0-t1_same-bounds_sheet.png",
+      "sha256": "5362e2d6ab6a600afbadb5b75ac054fd753744a11dc59a4677ccd93f63a7a6c9",
+      "modification": "Cropped to common bounds, downscaled/display alignment only; labels and attribution added; DSM shared palette and hillshade",
+      "productMeasurement": false
+    }
+  ],
+  "futureIngressBoundary": "2022 JPEG2000 is a licensed source asset, not supported product ingress. Any conversion requires a separate derived identity and supported export/inspection.",
+  "screenStudyDerivatives": {
+    "derivation": "보기용 크롭 · 정량 비교 미수행",
+    "display_alignment": "원본 시트와 동일한 표시 맞춤; 제품 측정·재표본 아님",
+    "files": [
+      {
+        "crop_box": [
+          16,
+          120,
+          1116,
+          1105
+        ],
+        "derived_from": "floreat-f3_t0-t1_same-bounds_rgb_sheet.jpg",
+        "file": "rgb_t0_2021.jpg",
+        "label": "촬영 2021-08-17 정사영상 (표시용 크롭)",
+        "pixels": [
+          1100,
+          985
+        ],
+        "source_manifest": "floreat-f3_same-bounds_rgb_manifest.json",
+        "sha256": "c9164f39679cc521ae0df7e249542c2dfa23be7d1c134ee4233c09731e607585",
+        "attribution": "Cambridge Coastcare / DataWA, CC BY 4.0; KSI display crop derived from the source sheet"
+      },
+      {
+        "crop_box": [
+          1132,
+          120,
+          2232,
+          1105
+        ],
+        "derived_from": "floreat-f3_t0-t1_same-bounds_rgb_sheet.jpg",
+        "file": "rgb_t1_2022.jpg",
+        "label": "촬영 2022-08-24 정사영상 (표시용 크롭)",
+        "pixels": [
+          1100,
+          985
+        ],
+        "source_manifest": "floreat-f3_same-bounds_rgb_manifest.json",
+        "sha256": "f47c1a154872396a3babcdec0612f71c504778998d7505087a085f0ffef7fb92",
+        "attribution": "Cambridge Coastcare / DataWA, CC BY 4.0; KSI display crop derived from the source sheet"
+      },
+      {
+        "crop_box": [
+          16,
+          120,
+          1116,
+          1105
+        ],
+        "derived_from": "floreat-f3_t0-t1_same-bounds_sheet.png",
+        "file": "dsm_t0_2021.png",
+        "label": "촬영 2021-08-17 표면 형태 DSM (표시용 크롭, 공통 색상 척도)",
+        "pixels": [
+          1100,
+          985
+        ],
+        "source_manifest": "floreat-f3_same-bounds_sheet_manifest.json",
+        "sha256": "a10f834e93974dd644c888c429035b01d84091f9cb65236c999a9ffe3743eafd",
+        "attribution": "Cambridge Coastcare / DataWA, CC BY 4.0; KSI display crop derived from the source sheet"
+      },
+      {
+        "crop_box": [
+          1132,
+          120,
+          2232,
+          1105
+        ],
+        "derived_from": "floreat-f3_t0-t1_same-bounds_sheet.png",
+        "file": "dsm_t1_2022.png",
+        "label": "촬영 2022-08-24 표면 형태 DSM (표시용 크롭, 공통 색상 척도)",
+        "pixels": [
+          1100,
+          985
+        ],
+        "source_manifest": "floreat-f3_same-bounds_sheet_manifest.json",
+        "sha256": "40a5beec67a169e8da97ef894b05f175a50fd457294952479a56b28cfaa5f4fd",
+        "attribution": "Cambridge Coastcare / DataWA, CC BY 4.0; KSI display crop derived from the source sheet"
+      }
+    ],
+    "retained_from_sheets": "상·하단 안내 문구(귀속·날짜·정량 비교 미수행)는 시트 원본에 보존되며, 본 화면에서는 HTML 캡션으로 다시 명시함",
+    "sheet_sizes": {
+      "floreat-f3_t0-t1_same-bounds_rgb_sheet.jpg": [
+        2248,
+        1275
+      ],
+      "floreat-f3_t0-t1_same-bounds_sheet.png": [
+        2248,
+        1255
+      ]
+    }
+  },
+  "syntheticExample": {
+    "kind": "SYNTHETIC",
+    "source": "Existing F-03 Core rig snapshot read via HTTP; not connected to Floreat or live in this study",
+    "snapshotSha256": "be2f391225ffb3640f2b4cb9a7d1968aeeca2fdd395fcb319ff06f806f423a0f",
+    "resultId": "report-41f518868fe32802f6f47b882fa9b9ab",
+    "scope": "2x3 synthetic grid; 4 selected cells, 0.04 square metres; fill/net0.008 cubic metres; no field/settlement implication"
+  }
+}
