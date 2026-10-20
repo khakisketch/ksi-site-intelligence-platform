@@ -4627,3 +4627,72 @@ Human이 외부 공개 자료로 두 시점 비교가 가능한지 물었고, �
   재-export, 또는 정책·프로파일 영역의 결정)로 확보해야 한다. 제품의 최우선 실증은 ③의 반복 검증
   (두 번째 쌍이 와도 이전 결과·근거가 보존되고 관계가 일관되게 제공됨)이며 이는 이번에 실경로로
   입증됐다.
+
+### 2026-10-20 — 완성도 평가와 다음 착수 지점 결정 (Human)
+
+Human이 "총 완성도 어느정도야 이제 다 완성인가"를 물었다. 정본·실측 증거와 대조해
+축별로 답했다: **승인 범위의 로컬 소프트웨어는 완료**(계약 5,582 passed/33 skipped,
+Dashboard 1,379 passed, tsc 0, lint 0 errors, F-03 실브라우저 확인)지만 **제품 전체는
+아직 다 완성이 아니다**. 첫 플랫폼 수용 기준 P-AC-01..06 중 P-AC-04(실패·권한)·
+P-AC-05(반복·복구)는 로컬로 입증됐고 P-AC-03은 로컬 통과 후 외부 코드 대조가 남았으며
+P-AC-01·P-AC-02·P-AC-06은 고객·호스트가 필요하다. GAP-01..09 결정, SDP-01 고객 표본,
+SDP-02 상세 계약, EXT-VAL-06 릴리스 증거 게이트는 착수 전이다. 소프트웨어 축 ≈ 85~90%,
+제품 전체 ≈ 55~60% — 코드 품질이 아니라 외부 입력·결정이 남은 상태.
+
+**Human 결정 — 다음 착수 지점: "외부 소비 대조 코드 확장".** 세 선택지(① 외부 인증 수직
+근거 정책 프로파일 설계 / ② 허용 CRS 범위 결정 / ③ 외부 소비 대조 코드 확장) 중 ③을
+선택했다. 근거: ①·②는 제품 계약과 지원 범위 변경이라 결정·승인이 필요하고, ③은 지금
+로컬에서 바로 진행 가능하며 P-AC-03의 남은 절반("외부 코드가 출력 좌표·픽셀·범위·해시를
+대조한다")을 직접 입증한다.
+
+따라서 진행 중인 단위는 **`examples/analysis/result_contract_crosscheck.py`** — 제품 코드
+밖의 독립 소비자가 같은 분석을 Core HTTP API와 기존 Analysis MCP 어댑터로 **둘 다** 읽어
+공통 결과 계약 7요소(수치·영역·입력버전·계산설정·유효영역·품질지표·제한사항)를 대조하고,
+**Core 목록이 말하는 "이어지는 분석"을 불변 EPOCH_IDENTITY 기록에서 독립적으로 재도출해
+검증**하는 스크립트다. 제품 코드·계약·스키마·엔드포인트·MCP 도구는 바꾸지 않는다.
+
+### 2026-10-20 — 외부 소비 대조 코드(결정 ③) 구현과 실리그 검증
+
+Human 결정 "외부 소비 대조 코드 확장"을 실행했다. **제품 코드·계약·스키마·엔드포인트·MCP
+도구는 하나도 바꾸지 않았다.** 새 것은 제품 밖의 독립 소비자 스크립트와 그 계약 테스트뿐이다.
+
+- **`examples/analysis/result_contract_crosscheck.py`** (신규): 제품 밖 소비자가 한 분석을
+  Core HTTP API와 Analysis MCP stdio 어댑터 **둘 다** 읽어 공통 결과 계약 7요소(수치·영역·
+  입력버전·계산설정·유효영역·품질지표·제한사항)를 대조한다. stdlib+httpx만 import하고(`mcp`
+  SDK는 MCP 경로에서만 지연 import), GET만 하며, 토큰·자격증명 URL·응답 본문·래스터 바이트를
+  기록하지 않는다. stdout은 상태 요약, JSON 레코드는 `--out`에 안전한 식별자·digest·수치만.
+- **이어지는 분석 관계의 독립 재도출**: Core 목록이 말하는 "이어지는 분석"을 **불변
+  EPOCH_IDENTITY 기록에서 소비자가 직접 재도출해** 검증한다. 검증 불가한 힌트는 FAIL이다
+  (경고가 아니다). 목록 항목과 상세 투영도 서로 대조한다(resultId·metrics·limitationCount·
+  실행/적합성 상태·생성 시각).
+- **계약 테스트** `tests/contract/test_analysis_result_contract_crosscheck.py` (6건): 실제
+  Core lane + 실제 MCP stdio 세션 + 실제 검사 바이트로 양성, 변조 입력 FAIL, 닫힘 실패 코드
+  (토큰 미출력), import 순수성, MCP SKIPPED 표기. 제품 경로에는 손대지 않았다.
+
+#### 실리그 검증 (F-03 리그 데이터, 스크래치 Core 8093)
+
+리그 준비: F-03 리그 데이터와 외부 권위 디렉터리를 **사본**으로 복사해 8093에 올리고,
+사본에서만 해당 현장의 외부 AI 반출 동의를 켜고 `ANALYSIS_MCP_CLIENT` 전용 주체를 등록했다.
+**라이브 F-03 리그(8092)와 데이터·digest·계측값은 건드리지 않았다.** 증명 경로
+`/tmp/opencode/ksi-crosscheck-20261020/`.
+
+| 분석 | 상태 | 결과 |
+|---|---|---|
+| `analysis-v1-bd3a5290…` | COMPLETED / EVALUATED, 수치 결과 있음 | **11 PASS / 0 FAIL / 0 SKIPPED** |
+| `analysis-v1-1e323d5b…` | COMPLETED / REASSESSMENT_REQUIRED, 결과 withheld | **7 PASS / 0 FAIL / 4 SKIPPED** |
+| `analysis-v1-04f7d097…` | NOT_STARTED / BLOCKED | **7 PASS / 0 FAIL / 4 SKIPPED** |
+
+#### 실리그가 잡아낸 예제의 잘못된 가정 2건 (수정 후 재검증)
+
+1. **공유 epoch에서 `inputDigest`·`inspectionReportDigest`가 같아야 한다** — 틀렸다. 검사
+   보고서는 `reportId`·`requestId`·`workerInstanceId`·`leaseAcquisitionId`·`reportedAt`을
+   결속하므로 **분석마다 새로 생성**된다. 같은 관측 epoch을 공유하는 두 분석에서 이 두 digest는
+   정상적으로 다르다(`perExecutionFieldsEqual`로 **기록만** 한다). 같아야 하는 것은 **관측
+   동일성**(`observationEpochId`·`artifactId`·`observedSha256`·크기·CRS·수직기준·transform
+   digest)이다. Core의 `input_digest`가 `inspectionReport`를 포함하는 것도 같은 이유다.
+2. **수치 결과가 없으면 FAIL** — 틀렸다. 결과 withheld(not started·blocked·재평가 필요)는
+   **일관된 제품 상태**이지 계약 위반이 아니다. 결과 의존 요소(수치·영역·유효영역·coverage
+   자원)는 사유와 함께 **SKIPPED**로 기록한다. 실패도 아니고 조용한 PASS도 아니다.
+
+두 가지는 계약 테스트로 고정했다(홀든 결과 SKIPPED·per-execution digest 불일치가 링크를
+깨지 않음). 이 정리는 문서화되지 않은 추측을 제품 계약처럼 취급하지 않게 한다.

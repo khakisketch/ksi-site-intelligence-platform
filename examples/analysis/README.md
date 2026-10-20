@@ -119,6 +119,70 @@ times, producers, or vertical references.
   not cancellation or a hard wall-clock timeout for that request. No mutations
   are automatically retried.
 
+## Result contract cross-check (external consumer)
+
+`result_contract_crosscheck.py` is an independent external consumer that
+reads one analysis through BOTH consumption paths — Core HTTP and the
+Analysis MCP stdio adapter — and cross-checks the seven elements of the
+common result contract (numeric, region, input version, calculation
+settings, valid region, quality indicators, limitations), plus the
+shared-epoch continuation hint, the coverage byte resource, and HTTP/MCP
+list agreement. It imports only stdlib + `httpx` (the `mcp` SDK is loaded
+lazily for the MCP path only) and performs GET requests exclusively.
+
+```console
+$ python result_contract_crosscheck.py \
+    --core-origin http://127.0.0.1:8000 \
+    --site-id site-a \
+    --analysis-id analysis-v1-... \
+    --out /tmp/crosscheck.json \
+    --token <FIELD_OPERATOR_JWT> \
+    [--mcp-token-file /abs/path/to/mcp-token]
+```
+
+The token comes from `--token` or `KSI_CUSTOMER_TOKEN` (prefer the environment
+variable: a command-line token is visible in the process list). Without
+`--mcp-token-file` the MCP comparisons are reported as SKIPPED, not PASS.
+Exit 0 means no check FAILED, 1 means a check FAILED, 2 means a
+configuration/input problem with a fixed closed code on stderr (never the
+token or a response body). The JSON record at `--out` carries only safe
+identifiers, digests, numbers, and check outcomes.
+
+Three state rules the live rig fixed, so the consumer never reports a
+coherent state as a broken contract:
+
+* **A withheld numeric result is SKIPPED, not FAIL.** When Core shows no
+  numeric result (not started, blocked, reassessment required), the
+  result-scoped elements — numeric, region, valid region, coverage resource
+  — are SKIPPED with the reason. A missing number is never read as a
+  violated element and is never silently passed either.
+* **Only the observation identity has to match across a shared epoch.** The
+  inspection-report digest and the input digest are produced once per
+  analysis, so two analyses of the same observation legitimately differ
+  there; they are recorded in `perExecutionFieldsEqual`, never required to
+  match. The observation itself (`observationEpochId`, `artifactId`,
+  `observedSha256`, size, CRS, vertical reference, transform digest) must
+  match.
+* **A continuation is verified at the level its records reach.** When the
+  other pair has not produced epoch records yet, the shared epoch is
+  verified at the selector level (`evidenceLevel: "selector"`); when it
+  has, the observation identity is re-derived from the immutable records
+  (`evidenceLevel: "observation"`). A hint that shares no epoch selector is
+  a FAIL.
+
+The list item and the detail are reconciled too: the consumer checks the
+list's `resultId`, `metrics`, `limitationCount`, execution/suitability state
+and creation time against the detail, so a consumer can compare two
+projections of one record without trusting either.
+
+A PASS record proves the two projections present the same contract; it does
+NOT prove field accuracy, customer acceptance, or settlement fitness.
+
+```console
+$ umask 077
+$ PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m pytest -q tests/contract/test_analysis_result_contract_crosscheck.py
+```
+
 ## Isolated E2E proving this flow
 
 ```console
