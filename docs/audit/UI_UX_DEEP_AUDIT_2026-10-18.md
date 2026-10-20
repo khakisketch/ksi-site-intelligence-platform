@@ -252,3 +252,13 @@ criteria/실제 mode 변경은1로, 활성 mode 재클릭은 그대로다. 번�
 stub이므로 종단/고객 수용이 아니다. phone390/tablet768 픽셀 동일, Home 변경 없음.
 Next event boundary와 stale query 문제는 실제 browser에서 발견·수정했다. 권한/미디어/원본/
 정량/egress/1024gate 불변. 증거 `/tmp/opencode/ksi-sites-pagination-20261019/`, 상세는 기존 원장.
+
+### 2026-10-20 — 작업 진입 용어 정리 (Human 승인, 로컬 완료)
+
+Home에 작업이 없고 `/field`로만 있다는 지적에서, 홈 구조는 바꾸지 않고 용어만 정리했다.
+`받은 업무` → `받은 업무함`(할당·공유 결과의 함), 작업 화면 상단에 `관측 작업`(현장 기록
+단위)과의 관계를 명시했다. `TopUnattendedHeadline`은 0건/미확인/건수 구분(0과 미확인은 다른
+상태)을 유지한다. 내비게이션·딥링크·권한·Core 계약은 변경하지 않았다.
+
+153 files/1353 tests, type pass, lint0err1기존warning, feedback E2E 6pass6의도적skip.
+`git diff --check` 통과. 커밋 130174a8.
