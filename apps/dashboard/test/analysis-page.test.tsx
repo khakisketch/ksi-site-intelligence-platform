@@ -8,7 +8,7 @@ vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalysisObservations: mocked.observations, listAnalyses: mocked.list, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
-vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string> }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p></> }));
+vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p></> }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
   useRouter: () => ({ refresh: vi.fn() }),
@@ -169,5 +169,56 @@ describe("analysis deep link", () => {
     expect(screen.getByRole("alert").textContent).toContain("현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요.");
     expect(screen.queryByRole("button", { name: /다시 시도/ })).toBeNull();
     expect(screen.queryByText(/0건|분석 결과/)).toBeNull();
+  });
+
+  it("preselects the single ACTIVE area without an explicit query", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByTestId("panel-scope").textContent).toBe("area-1|선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.");
+  });
+
+  it("keeps the scope empty with several ACTIVE areas instead of guessing one", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [
+      { workAreaId: "area-1", name: "1구역", status: "ACTIVE" },
+      { workAreaId: "area-2", name: "2구역", status: "ACTIVE" },
+    ] });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByTestId("panel-scope").textContent).toBe("|");
+  });
+
+  it("offers same-area return links when analysis is environmentally unavailable without asserting file validity", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+    mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
+
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent).toContain("이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다.");
+    expect(alert.textContent).toContain("등록 자료 자체의 문제가 아닙니다.");
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    expect(document.body.textContent).not.toMatch(/유효|사용 가능|적합/);
+  });
+
+  it("keeps return links scopeless for a blank or multi-valued area hint instead of echoing it", async () => {
+    mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "   " }) }));
+
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
+
+    cleanup();
+
+    mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: ["area-1", "area-2"] }) }));
+
+    expect(screen.getByRole("link", { name: "등록 자료 보기" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+    expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 });

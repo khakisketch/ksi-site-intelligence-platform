@@ -105,11 +105,35 @@ beforeEach(() => {
 });
 
 describe("spatial asset catalog page", () => {
-  it("requires the operator to select a WorkArea before requesting its catalog", async () => {
+  it("auto-selects the single ACTIVE WorkArea on the bare route and keeps its scope in links", async () => {
     const html = renderToStaticMarkup(await callPage());
-    expect(html).toContain("작업구역 선택");
-    expect(html).toContain("북측 작업구역");
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
+    expect(html).toContain("현장에 등록된 작업구역이 하나뿐이라 해당 구역의 자료를 표시합니다.");
+    expect(html).toContain("선택: 북측 작업구역");
+    expect(html).toContain("?workAreaId=area-1&amp;assetRef=");
+  });
+
+  it("stays on an explicit prompt with multiple areas instead of guessing a scope", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [workArea, { workAreaId: "area-2", name: "남측 작업구역", status: "ACTIVE" }] });
+    const html = renderToStaticMarkup(await callPage());
     expect(mocked.catalog).not.toHaveBeenCalled();
+    expect(html).toContain("작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.");
+  });
+
+  it("fails closed on an unknown WorkArea instead of falling back to a known one", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "foreign-area" }));
+    expect(html).toContain("작업구역을 확인할 수 없거나 접근 권한이 없습니다.");
+    expect(mocked.catalog).not.toHaveBeenCalled();
+    expect(mocked.detail).not.toHaveBeenCalled();
+  });
+
+  it("carries the auto-selected single area into the detail request and the analysis handoff", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SITES_WRITE"] } });
+    const html = renderToStaticMarkup(await callPage({ assetRef }));
+    expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
+    expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
+    expect(html).toContain('href="/sites/site-1/analysis?workAreaId=area-1"');
+    expect(html).toContain("/sites/site-1/analysis?workAreaId=area-1&amp;currentWorkOrderId=order-1#new-analysis-request");
   });
 
   it("labels declarations, byte observations and inspection as separate facts", async () => {

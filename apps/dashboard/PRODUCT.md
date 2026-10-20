@@ -58,3 +58,8 @@ See `../../docs/design/DEMO_EXPERIENCE_BRIEF.md` and its material manifest for e
 
 Demo audience and primary real-coastal-plus-separate-synthetic story are Human-confirmed; screen composition remains under review, not a deployed feature. Retention, external identity,
 public exposure, third-party map use and real customer acceptance remain separately bounded.
+
+
+2026-10-20 clarification: the Human rejected a separate screen-study/demo as the delivery target.
+Use the actual Console with persisted sample records and actual permitted operations. Design documents
+are reference only; they cannot substitute for registration, worker results, guarded downloads or review.

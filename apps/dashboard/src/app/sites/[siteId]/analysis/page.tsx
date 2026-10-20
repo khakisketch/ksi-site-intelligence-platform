@@ -14,6 +14,7 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
 import { resolveAnalysisCurrentHint, resolveAnalysisScope } from "@/lib/operator-journey";
 import { AnalysisRequestPanel } from "./AnalysisRequestPanel";
+import { parseScopeId } from "../site-spatial";
 
 export const metadata = { title: "현장 변화 분석 · KSI" };
 
@@ -108,6 +109,12 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         hasAnalysisDeepLink: hasDeepLink,
       })
     : { currentWorkOrderId: null, notice: null };
+  // 목록을 읽지 못해 검증된 범위가 없을 때는 사용자가 가져온 쿼리를 그대로 믿지
+  // 않고 다듬은 값만 복귀 링크에 싣는다. 목적지(등록 자료)가 범위를 다시 검증해
+  // 닫히므로(모르는 구역은 실패 공지), 여기서 자료 유효성을 단정하지 않는다.
+  // 배열 쿼리는 단일 선택이 아니므로 싣지 않는다.
+  const rawWorkAreaId = typeof query.workAreaId === "string" ? query.workAreaId : undefined;
+  const fallbackScope = loaded ? effectiveWorkAreaId : (parseScopeId(rawWorkAreaId) ?? "");
   return <>
     <SiteHeader
       site={site}
@@ -153,7 +160,16 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           scopeNotice={journeyScope.scopeNotice}
           currentHintNotice={currentHint.notice}
         />
-      </> : <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />}
+      </> : <div className="flex flex-col gap-3">
+        <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다. 등록 자료 자체의 문제가 아닙니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />
+        {unavailable && <>
+          <p className="rounded-lg border border-line bg-surface px-4 py-2.5 text-[12px] leading-5 text-ink-2" role="status">분석 실행 환경이 준비되지 않아 계산 요청으로 이어지지 않습니다. 같은 구역의 등록 자료와 검사 상태는 확인할 수 있습니다.</p>
+          <nav className="flex flex-wrap gap-2" aria-label="분석 불가 시 다음 확인">
+            <Link className="btn" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/spatial-assets`}>등록 자료 보기</Link>
+            <Link className="btn" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}`}>현장 현황 보기</Link>
+          </nav>
+        </>}
+      </div>}
     </div>
   </>;
 }

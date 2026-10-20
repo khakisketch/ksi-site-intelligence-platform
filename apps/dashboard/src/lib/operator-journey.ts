@@ -110,7 +110,17 @@ export function resolveAnalysisScope(input: {
   const active = activeAreasOf(input.areas);
   const activeIds = new Set(active.map((area) => area.workAreaId));
   const parsed = trimmedSingleId(input.rawWorkAreaId, activeIds);
-  if (parsed.kind === "absent") return { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false };
+  if (parsed.kind === "absent") {
+    if (active.length === 1 && active[0]) {
+      return {
+        initialWorkAreaId: active[0].workAreaId,
+        scopeNotice:
+          "선택한 구역에서 시작합니다. 범위가 맞는지 확인하고 필요하면 바꾸세요.",
+        invalidRequested: false,
+      };
+    }
+    return { initialWorkAreaId: "", scopeNotice: null, invalidRequested: false };
+  }
   if (parsed.kind === "invalid" || !parsed.value || !activeIds.has(parsed.value)) {
     return {
       initialWorkAreaId: "",

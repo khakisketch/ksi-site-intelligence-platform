@@ -60,6 +60,15 @@ describe("operator journey scope", () => {
     ).toBe("");
   });
 
+  it("analysis scope preselects only single active area when no explicit request", () => {
+    const single = resolveAnalysisScope({ areas: [areas[0]!], rawWorkAreaId: undefined, hasPendingAttempt: false, hasAnalysisDeepLink: false });
+    expect(single.initialWorkAreaId).toBe("wa-a");
+    expect(single.scopeNotice).toMatch(/범위/);
+    const multi = resolveAnalysisScope({ areas, rawWorkAreaId: undefined, hasPendingAttempt: false, hasAnalysisDeepLink: false });
+    expect(multi.initialWorkAreaId).toBe("");
+    expect(multi.scopeNotice).toBeNull();
+  });
+
   it("analysis current hint requires exact single candidate in scope", () => {
     const candidates = [
       { selector: { workOrderId: "wo-1" }, workAreaIds: ["wa-a"] },

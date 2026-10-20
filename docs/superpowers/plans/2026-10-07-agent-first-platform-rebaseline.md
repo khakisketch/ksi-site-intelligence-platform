@@ -4767,3 +4767,45 @@ active bounded work, not the product definition, milestone/slice acceptance or d
 - Next integration boundary: Human review of screen composition, then implement the chosen representative
   journey in the Console using actual scoped records/approved ingress; no routine worker-first expansion.
   Existing live staging and :10010 were not modified by this design pass.
+
+
+### 2026-10-20 — Human correction: actual product workflow, not a demo substitute
+
+“내가 원하는 건 이러한 데모같은 게 아니라 실제 제품이 사용되는 그걸 원해”. The separate
+screen-study document does not satisfy the requested outcome; stop expanding it. Preserve it only
+as rejected-deliverable context, not the product's visual authority. Work returns to the **actual normal
+Console + Core + storage + existing isolated inspection/analysis paths**, populated through supported
+persisted records with actual sample bytes, not static HTML snapshots or fake actions. Existing audience
+and real-data/clearly-separated-synthetic choices do not authorize public exposure, identity/retention
+changes, fabricated geodetic facts or weakening quantity gates. Start with a representative connected
+workflow and fix actual dead ends/context losses. UI design stays part of implementation, not a separate
+prototype presented as completion. Current checks/blocks must be revalidated; Task5c host proof is
+already closed on the running authorized QEMU VM, while deployment/customer acceptance remains separate.
+
+#### Resume and explicit incomplete-metadata decision (2026-10-20)
+
+Server restart cancelled the prior question; it was not an approval. After Git/runtime revalidation
+(main7ae7358e + the same six pending Dashboard paths), Human answered the reissued question:
+**미상 정보를 구분해 접수**. Scope: preserve publisher date-only/unknown capture time and unknown
+producer/version honestly; allow supported registration/inspection/allowed viewing, **no quantitative
+criteria relaxation**. Do not invent time intervals, software versions, raw-retention facts or observed
+geodetic facts. Existing sealed V1/V2 history/contracts retain their meanings; an explicit evolved intake
+contract may carry the new metadata. This is a contract-change approval for intake, not production policy,
+new data rights, external identity or public beta authorization.
+
+Independent Console context unit locally verified before the restart and retained after it:
+- Single ACTIVE area auto-selects in materials/analysis; multi-area remains explicit; invalid area is
+  fail-closed; area context survives navigation/recovery. An unavailable analysis points back to actual
+  materials/overview and is not presented as a file verdict.
+- Main full Dashboard1391 passed + tsc0; implementer focused120+eslint clean. Actual Docker Dashboard
+  image0315b209… at :10000 uses these sources; Main inspected captured1440 materials/analysis and390
+  unavailable-recovery state. Both files/records and current environment failure remain truthful.
+- Saved evidence `/tmp/opencode/ksi-product-use-20261020/`; previous image f627ad35… retained by digest.
+  This is one implemented UI unit, **not completion of actual product-use outcome**.
+
+Next whole units now commissioned: General `ses_ea64c75ecffeOCnpkUsdeRBBMp` owns honest incomplete-
+metadata Core ingress contract/replay/schema compatibility and tests (no Dashboard/runtime edits);
+General `ses_ea64b30c4ffebqovMQZTR92GvD` owns a new isolated actual production-Core/VM-worker sample
+chain (no app source/old-server edits). Main owns integration and subsequent actual upload UI/runtime
+render. Plan read-only findings reused; no duplicate research. The real host-backed VM chain is available;
+static prototype and test UDS doubles are not serving-runtime substitutes.

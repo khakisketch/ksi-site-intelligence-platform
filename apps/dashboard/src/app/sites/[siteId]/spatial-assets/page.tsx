@@ -51,7 +51,7 @@ function pageHref(siteId: string, workAreaId: string, values: { cursor?: string;
   return `/sites/${encodeURIComponent(siteId)}/spatial-assets?${query.toString()}`;
 }
 
-function errorView(error: unknown, scope: "site" | "catalog" | "detail", siteId: string) {
+function errorView(error: unknown, scope: "site" | "catalog" | "detail", siteId: string, returnHref?: string) {
   if (error instanceof CoreApiError) {
     if (error.status === 404) {
       if (scope === "site") notFound();
@@ -60,7 +60,7 @@ function errorView(error: unknown, scope: "site" | "catalog" | "detail", siteId:
           ? "작업구역을 확인할 수 없거나 접근 권한이 없습니다."
           : "자산을 찾을 수 없거나 현재 조회할 수 없습니다."}
         tone="high"
-        action={{ label: "등록 자료 목록으로", href: `/sites/${encodeURIComponent(siteId)}/spatial-assets` }}
+        action={{ label: "등록 자료 목록으로", href: returnHref ?? `/sites/${encodeURIComponent(siteId)}/spatial-assets` }}
       />;
     }
     if (error.status === 403) {
@@ -313,26 +313,33 @@ export default async function SpatialAssetsPage({
     return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="작업구역을 하나만 선택하세요." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
   }
   const workAreaId = singleQueryValue(areaParam);
-  const selectedArea = areas.workAreas.find((area) => area.workAreaId === workAreaId);
+  // 작업구역이 하나뿐이면 같은 구역으로 이어간다. 여러 구역이면 직접 선택을 둔다.
+  const activeAreas = areas.workAreas.filter((area) => area.status === "ACTIVE");
+  const effectiveWorkAreaId = workAreaId
+    ?? (activeAreas.length === 1 && activeAreas[0] ? activeAreas[0].workAreaId : undefined);
+  const effectiveAreaNotice = !workAreaId && effectiveWorkAreaId
+    ? "현장에 등록된 작업구역이 하나뿐이라 해당 구역의 자료를 표시합니다."
+    : null;
+  const selectedArea = areas.workAreas.find((area) => area.workAreaId === effectiveWorkAreaId);
   const cursorParam = query.cursor;
   const assetRefParam = query.assetRef;
   if (workAreaId && !selectedArea) {
     return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="작업구역을 확인할 수 없거나 접근 권한이 없습니다." tone="high" action={{ label: "다른 작업구역 선택", href: basePath }} /></div>;
   }
   if (Array.isArray(cursorParam) || (typeof cursorParam === "string" && cursorParam.length > 1024)) {
-    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="페이지 커서가 올바르지 않습니다. 목록을 처음부터 다시 열어 주세요." tone="high" action={{ label: "처음부터 보기", href: workAreaId ? pageHref(siteId, workAreaId) : basePath }} /></div>;
+    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="페이지 커서가 올바르지 않습니다. 목록을 처음부터 다시 열어 주세요." tone="high" action={{ label: "처음부터 보기", href: effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : basePath }} /></div>;
   }
   if (Array.isArray(assetRefParam) || (typeof assetRefParam === "string" && !/^ksa-v1-[0-9a-f]{64}$/.test(assetRefParam))) {
-    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="자산 참조가 올바르지 않습니다." tone="high" action={{ label: "목록으로 돌아가기", href: workAreaId ? pageHref(siteId, workAreaId) : basePath }} /></div>;
+    return <div className="mx-auto max-w-5xl p-4 sm:p-5"><ErrorState message="자산 참조가 올바르지 않습니다." tone="high" action={{ label: "목록으로 돌아가기", href: effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : basePath }} /></div>;
   }
   const cursor = singleQueryValue(cursorParam);
   const assetRef = singleQueryValue(assetRefParam);
 
   let page: Awaited<ReturnType<typeof listSpatialAssets>> | null = null;
   let pageError: unknown = null;
-  if (workAreaId) {
+  if (effectiveWorkAreaId) {
     try {
-      page = await listSpatialAssets(siteId, workAreaId, { limit: 50, cursor });
+      page = await listSpatialAssets(siteId, effectiveWorkAreaId, { limit: 50, cursor });
     } catch (error) {
       pageError = error;
     }
@@ -340,9 +347,9 @@ export default async function SpatialAssetsPage({
 
   let detail: Awaited<ReturnType<typeof getSpatialAsset>> | null = null;
   let detailError: unknown = null;
-  if (assetRef && workAreaId && !pageError) {
+  if (assetRef && effectiveWorkAreaId && !pageError) {
     try {
-      detail = await getSpatialAsset(siteId, workAreaId, assetRef);
+      detail = await getSpatialAsset(siteId, effectiveWorkAreaId, assetRef);
     } catch (error) {
       detailError = error;
     }
@@ -354,13 +361,13 @@ export default async function SpatialAssetsPage({
   const businessTitles = page ? assetBusinessTitles(page.assets) : new Map<string, string>();
   const businessTitleFor = (item: SpatialAssetCatalogItem): string =>
     businessTitles.get(item.assetRef) ?? assetBusinessTitle(item);
-  const areaDisplayName = selectedArea?.name ?? workAreaId ?? "";
+  const areaDisplayName = selectedArea?.name ?? effectiveWorkAreaId ?? "";
   const canRequestAnalysis = session.principal.permissions.includes("SITES_WRITE");
   const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
   const inspectedRaster = detail?.inspection.raster ?? null;
   const dataRequestBounds = inspectedRaster ? nativeBoundsFromInspection(inspectedRaster) : null;
-  const compareHref = canRequestAnalysis && workAreaId && selectedArea && detail?.workOrderId
-    ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(workAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
+  const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detail?.workOrderId
+    ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
     : null;
 
   return <div className="flex flex-col">
@@ -370,7 +377,7 @@ export default async function SpatialAssetsPage({
       tab="materials"
       canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
       canEditAoi={canRequestAnalysis}
-      scopedWorkAreaId={workAreaId && selectedArea ? workAreaId : null}
+      scopedWorkAreaId={effectiveWorkAreaId && selectedArea ? effectiveWorkAreaId : null}
       scopedAssetRef={detail && assetRef && detail.assetRef === assetRef ? assetRef : null}
     />
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
@@ -379,13 +386,13 @@ export default async function SpatialAssetsPage({
           <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
           <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
         </div>
-        <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link></div>
+        <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link></div>
       </header>
 
       <section className="rounded-lg border border-line bg-surface px-4 py-3">
         <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
           <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-work-area">작업구역 선택
-            <select id="spatial-work-area" name="workAreaId" className="input" defaultValue={workAreaId ?? ""} required>
+            <select id="spatial-work-area" name="workAreaId" className="input" defaultValue={effectiveWorkAreaId ?? ""} required>
               <option value="" disabled>작업구역을 선택하세요</option>
               {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
             </select>
@@ -393,19 +400,20 @@ export default async function SpatialAssetsPage({
               <button className="btn btn-primary" type="submit">등록 자료 보기</button>
         </form>
         {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
-        {!workAreaId && <p className="mt-3 text-[12.5px] text-ink-2">작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.</p>}
-        {workAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
+        {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="mt-3 text-[12.5px] text-ink-2">작업구역을 선택해 해당 구역에 연결된 자료를 확인하세요.</p>}
+        {effectiveAreaNotice && <p className="mt-2 text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
+        {effectiveWorkAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">선택: {selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건을 표시합니다.</p>}
       </section>
 
-      {pageError !== null && <div>{errorView(pageError, "catalog", siteId)}</div>}
+      {pageError !== null && <div>{errorView(pageError, "catalog", siteId, effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
       {page && <>
-        {page.workAreaId !== workAreaId || page.siteId !== siteId ? <ErrorState message="Core 응답의 현장·작업구역 범위가 요청과 일치하지 않아 자산을 표시하지 않았습니다." tone="high" /> : <>
+        {page.workAreaId !== effectiveWorkAreaId || page.siteId !== siteId ? <ErrorState message="Core 응답의 현장·작업구역 범위가 요청과 일치하지 않아 자산을 표시하지 않았습니다." tone="high" /> : <>
           <p className="rounded-lg border border-line bg-sunk px-4 py-2 text-[11.5px] leading-5 text-ink-muted">한 작업구역에만 연결된 작업 지시의 자료를 표시합니다. 여러 작업구역에 함께 연결된 기록은 여기서 조회하지 않습니다.</p>
-          {assetRef && detailError && <div>{errorView(detailError, "detail", siteId)}</div>}
-          {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== workAreaId)
+          {assetRef && detailError && <div>{errorView(detailError, "detail", siteId, effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
+          {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== effectiveWorkAreaId)
             ? <ErrorState message="Core 응답 자산의 ID 또는 현장·작업구역 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />
             : null}
-          {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === workAreaId
+          {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === effectiveWorkAreaId
             ? isMetadataOnly(detail)
               ? <>
                 <AssetDetail
@@ -418,7 +426,7 @@ export default async function SpatialAssetsPage({
                 {dataRequestBounds && inspectedRaster && (
                   <SpatialDataRequestAction
                     siteId={siteId}
-                    workAreaId={workAreaId!}
+                    workAreaId={effectiveWorkAreaId!}
                     assetRef={detail.assetRef}
                     requestedBounds={dataRequestBounds}
                     observedCrsDigest={inspectedRaster.observedCrsDigest}
@@ -433,7 +441,7 @@ export default async function SpatialAssetsPage({
             {page.assets.length === 0
               ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
               : page.assets.map((item) => {
-                if (item.siteId !== siteId || item.workAreaId !== workAreaId) {
+                if (item.siteId !== siteId || item.workAreaId !== effectiveWorkAreaId) {
                   return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;
                 }
                 if (!isMetadataOnly(item)) {
@@ -451,8 +459,8 @@ export default async function SpatialAssetsPage({
               })}
           </section>
           <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
-            {cursor && <Link className="btn" href={pageHref(siteId, workAreaId!)}>처음부터 보기</Link>}
-            {page.hasMore && page.nextCursor && <Link className="btn btn-primary" href={pageHref(siteId, workAreaId!, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
+            {cursor && effectiveWorkAreaId && <Link className="btn" href={pageHref(siteId, effectiveWorkAreaId)}>처음부터 보기</Link>}
+            {page.hasMore && page.nextCursor && effectiveWorkAreaId && <Link className="btn btn-primary" href={pageHref(siteId, effectiveWorkAreaId, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
           </nav>
         </>}
       </>}
