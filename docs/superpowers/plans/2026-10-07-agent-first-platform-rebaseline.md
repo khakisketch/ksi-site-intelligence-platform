@@ -4589,3 +4589,41 @@ Human이 외부 공개 자료로 두 시점 비교가 가능한지 물었고, �
   허용되면 Core 실경로 등록·검사·계산·검토까지 갈 수 있고, 아니면 typed blocker가 정직한 답입니다.
 - 측정 가능한 사실: 공개 자료만으로는 **고객 자료 준비·검사·분석·반복 흐름의 물리 입력이 확보**됐다.
   화면/계약 변경 없음, Core·권한·원본 불변. Customer/field/Terra 호환성·정확도 수용은 여전히 미검증.
+
+
+### 2026-10-20 — 반복 관측 관계 노출(읽기 파생) + 공개 쌍 기준선 (Human 승인 계약 실행)
+
+확정 계약(2f7d4068)대로 ①~④를 진행했다. **이전 기록은 끝까지 바뀌지 않는다**가 최우선이었다.
+
+- **① 공개 쌍의 정직한 차단 회귀(신규)**: `tests/contract/test_public_floreat_pair_admission.py`(4 tests).
+  실제 검사기로 두 공개 Floreat-f3 DSM 바이트가 `MEASURED`·`EPSG:7850`이나
+  `observed_vertical_reference=None`임을, 그리고 그 결과 Core가 `ESSENTIAL_INPUT_UNAVAILABLE`
+  typed blocker로 막아 수치를 내지 않음을 고정한다. **바이트를 조작해 통과시키지 않았다.**
+  공개 파일은 untracked read-only이며 sha256이 그대로임을 테스트가 확인한다.
+- **②③ 실경로 반복·불변 증거**: 기존 `tests/contract/test_external_analysis_actual_weekly_reuse.py`
+  (실제 Core + 실제 검사기 lane + 실제 워커, ~19s)와 synthetic 3-epoch 픽스처가 이미
+  `t1→t2`의 기준 ≡ `t0→t1`의 현재(selector·artifactId·sha·inputDigest·검사 digest),
+  쌍별 authority 분리, **첫 결과·근거가 바이트 동일**, 재생 동일을 검증한다. 새로 만든 게 아니라
+  **기존 증거를 확인한 것**이며, 계약 테스트 5,582 passed / 33 skipped로 회귀 없음.
+- **④ 관계 노출(읽기 파생)**: `newerSiblingAnalysisIds`를 **분석 목록 항목에만** 추가했다
+  (a2e5e404). 동일 Site/WorkArea에서 이 기록의 현재 선택자와 정확히 같은 기준 선택자를 가진
+  분석을 읽기 시점에 파생하며, 쓰기 경로·저장 사실·새 상태 없음.
+  **설계 변경이 있었다**: 처음에는 detail/result에도 넣었더니, 나중 쌍이 생기면 **이전 분석의
+  detail/result 응답이 바뀌어** 기존 바이트 동일성 계약(ADR-KSI-037 D5, "이전 쌍의 결과는 재사용하지
+  않는다")과 어긋나는 회귀가 MCP 실경로 테스트에서 실제로 드러났다(`newerSiblingAnalysisIds[0]`만
+  변함). 목록 투영으로 옮겨 **이전 분석의 detail·result·evidence·evidenceDigest가 바이트 단위로
+  그대로**임을 보장했다. 기존 테스트는 수정하지 않았고 수정 없이 통과한다.
+- **Console**: 같은 자리에서 중립 한 줄 알림 — 시간 파생 알림이 우선이고, 그것이 불가능할 때
+  목록의 공유 epoch 연결로 같은 문구·링크를 낸다. 두 번째 알림을 만들지 않는다.
+  `대체됨`/`구버전`·적합성 주장 없음. 실제 F-03 리그 재기동 후 확인: 목록 9건 중 1건이
+  continuers 2건을 싣고, 이전 분석 카드에 중립 알림 1건, 대체어 0, 넘침 0, 페이지 오류 0.
+- **MCP**: 별도 도구를 만들지 않는다. `ksi_list_analyses`가 관계를 싣고 `ksi_get_analysis`는
+  이전 기록으로 안정적이며, MCP identity/stdio 테스트가 그대로 통과한다.
+- **계산 경로 재현성 범위 확인**: V2 두-epoch 경로는 `vertical_datum_from_epsg` 표(5019/5030/5193)를
+  쓰지 않고 **관측된 수직 reference의 digest 동일성**만 비교한다. 즉 "기계 판독 가능한 수직 근거"는
+  필요조건이지 충분조건이 아니며, 기준이 서로 다르면 거부된다 — 확정 계약 문장과 일치.
+- **남은 과제**: ②의 "실제 계산 가능한 검증 쌍"은 공개 자료로서는 수직 근거가 없어 불가능하다
+  (EPSG:7850은 한국 좌표계 화이트리스트 밖). 계약과 충돌하지 않는 경로(고객이 수직 근거를 포함한
+  재-export, 또는 정책·프로파일 영역의 결정)로 확보해야 한다. 제품의 최우선 실증은 ③의 반복 검증
+  (두 번째 쌍이 와도 이전 결과·근거가 보존되고 관계가 일관되게 제공됨)이며 이는 이번에 실경로로
+  입증됐다.
