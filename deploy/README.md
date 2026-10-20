@@ -208,3 +208,31 @@ stack과 다른 Serve port는 변경하지 않는다.
 tool/citation validation, timeout/provider failure 경로를 실행하기 위한 것이며 실제 외부 AI
 승인 증거가 아니다. 상세 수용 경계는
 `docs/acceptance/SYNTHETIC_CLOUD_AI_STAGING_ACCEPTANCE.md`에 기록한다.
+
+## Synthetic staging — 로컬에서 "실제 서비스"로 띄우기
+
+2026-10-20 기준으로 `deploy/bin/phase2-staging.sh start` 는 이 머신에서 다음처럼
+동작한다.
+
+```bash
+# 1) 공개 인증서 준비 — 컨테이너가 issuer 에 같은 URL·같은 token issuer 로 닿아야 한다
+tailscale cert "$(tailscale status --json | jq -r '.Self.DNSName' | sed 's/\.$//')"
+
+# 2) 컨테이너 → issuer 브리지 (게이트웨이 172.31.77.1 은 compose 의 고정 서브넷)
+deploy/bin/issuer-tls-bridge.py 172.31.77.1 10001 10001 \
+  ./<host>.ts.net.crt ./<host>.ts.net.key &
+
+# 3) 스택 기동 (이미지 build · 컨테이너 재생성 · TLS/OIDC smoke)
+deploy/bin/phase2-staging.sh start
+```
+
+이유: 로컬 OIDC issuer 는 loopback 에만 묶여 있고(issuer 도구의 의도된 규칙),
+tailscale serve 가 tailnet 인터페이스에서 TLS 를 끝내므로 브리지 네트워크 컨테이너는
+public https URL 로 issuer 에 닿지 못한다 — 컨테이너 안의 로그인 왕복이
+`fetch failed` 로 죽는다. 브리지는 게이트웨이에서 그 public 이름의 실제 인증서로
+TLS 를 끝내고 loopback issuer 로 넘긴다. compose 의 `extra_hosts` 가 그 이름을
+게이트웨이로 가리키게 하므로 컨테이너와 브라우저가 같은 issuer URL·같은 token
+issuer 를 본다.
+
+`phase2-staging.sh verify` 는 TLS·readiness·OIDC·객체 표면을 확인하고, 별도로
+백업/복원 드릴까지 수행한다.

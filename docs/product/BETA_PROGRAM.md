@@ -56,6 +56,33 @@ OIDC subject registry만 v2로 전환해 `SITE_BOOTSTRAP` capability를 부여�
 | G6 | **제품 결정** | 현장 상태 어휘와 진행 막대는 **취득(acquisition) 수명주기**다(초기 매핑 → 모델 처리 → 모델 검증 → 임시 자율운영 → 순찰 준비 → 순찰 중). 현 제품(자료+분석)은 이 수명주기를 진행하지 않는다(ADR-KSI-039). 참가자는 1단계에 영구히 머문다. 참가자에게 이 어휘를 그대로 보여줄지 결정이 필요하다. |
 | G7 | **외부 입력** | 공개 배포의 운영 입력이 남아 있다: 공개 VM·도메인·DNS, **OIDC만 허용하는** 사람 로그인(외부 VM), 보호된 subject registry, secret 파일, 원장/객체 저장소와 백업 복원. 템플릿과 준비 절차는 이미 문서화돼 있다([`docs/ops/VM_DEPLOYMENT_READINESS.md`](../ops/VM_DEPLOYMENT_READINESS.md), [`docs/ops/DEPLOYMENT.md`](../ops/DEPLOYMENT.md), [`docs/ops/RELEASE_EVIDENCE.md`](../ops/RELEASE_EVIDENCE.md)). |
 
+## 4-1. 2026-10-20 실제 서비스로 띄워 본 결과
+
+합성 스테이징 스택(`deploy/compose.synthetic-staging.yaml`)을 **현재 소스로 다시
+만들어** 실제 서비스 형태(Docker 컨테이너 · Tailnet HTTPS · 컨테이너 안의 OIDC
+로그인 · MinIO 객체 저장소 · presigned 업로드)로 띄우고, 참가자 계정으로 화면을
+직접 조작했다. 확인된 것:
+
+- 로그인 왕복 성공 (컨테이너 안의 NextAuth ↔ OIDC issuer ↔ Core whoami).
+- 신규 현장 등록 성공 (SITE_BOOTSTRAP capability), 작업구역 등록 성공(경계 폴리곤),
+  관측 작업 생성 성공.
+- 실제 파일 업로드 성공 — 427 바이트 정사영상이 presigned URL 로 MinIO에 들어갔고
+  등록 화면이 "파일 전송 완료"를Showing했다.
+- 제출 직후 상태는 정직했다: "이 봉인 파일에 적용할 검사 기준이 아직 준비되지
+  않았습니다" — 검증 완료를 뜻하지 않는다고 명시했다.
+
+**이 스택에 없는 것(중요)**: 독립 외부 검사/측정 워커와 그 보호된 활성화 설정이다.
+그래서 참가자가 낸 파일은 이 환경에서 검사·판정까지 진행되지 않는다. 정량 판정을
+끝까지 보여주려면 워커를 이 조합에 붙여야 하고, 그게 다음 작업이다.
+
+### 9. 스택을 못 다시 만들게 했던 두 가지 (수정 완료)
+
+| ID | 분류 | 내용 |
+|---|---|---|
+| G8 | **지금 가능(수정)** | OIDC 모드 Core 는 `KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE` 없이는 기동하지 않는다(기본값으로 넘어가지 않는다). 그런데 합성 스테이징 템플릿은 그 env를 넘기지 않아 **12일째 떠 있던 스택이 현재 코드로 재기동되지 않았다.** `prepare_state.py`가 issuer 의 개발 계정 목록을 읽어 v2 subject registry 를 생성하고, compose 가 그것을 Core 에 붙이도록 고쳤다. 계정 목록은 두 곳에 적지 않는다 — issuer 모듈에서 읽는다(계정이 어긋나면 로그인 자체가 401). |
+| G9 | **지금 가능(수정)** | 컨테이너 → OIDC issuer 도달성: issuer 는 loopback 전용이고 tailscale serve 가 tailnet 인터페이스에서만 TLS 를 끝내므로 브리지 네트워크 컨테이너는 public URL 로 닿지 못했다(컨테이너 안 로그인이 `fetch failed`). 고정 서브넷 + 게이트웨이 TLS 브리지(`deploy/bin/issuer-tls-bridge.py`) + `extra_hosts` 로 컨테이너와 브라우저가 같은 issuer URL·같은 token issuer 를 보게 했다. |
+
+
 ## 5. 측정 계획
 
 로드맵이 이미 정한 성과 지표를 그대로 쓴다(목표 수치는 참가자가 생긴 뒤 정하고 지금은 약속하지

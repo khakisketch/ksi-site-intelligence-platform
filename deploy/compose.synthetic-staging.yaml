@@ -19,6 +19,11 @@ services:
     <<: *core-image
     user: root
     command: ["/app/.venv/bin/python", "/app/deploy/synthetic-staging/prepare_state.py"]
+    # subject registry 의 issuer 를 정확히 적어야 Core 가 그 issuer 의 subject 를
+    # 받아들인다(2026-10-20: OIDC 모드 Core 는 registry 파일 없이는 기동하지 않는다).
+    environment:
+      KSI_STAGING_HOST: ${KSI_STAGING_HOST:?set KSI_STAGING_HOST}
+      KSI_STAGING_IDENTITY_PORT: ${KSI_STAGING_IDENTITY_PORT:?set KSI_STAGING_IDENTITY_PORT}
     volumes:
       - staging-data:/state/data
       - staging-identity:/state/identity
@@ -152,6 +157,8 @@ services:
 
   core:
     <<: [*core-image, *app-hardening]
+    extra_hosts:
+      - "${KSI_STAGING_HOST}:172.31.77.1"
     environment:
       KSI_CORE_DATA_DIR: /var/lib/ksi/data
       KSI_CORE_SIGNING_KEYS_DIR: /var/lib/ksi/signing-keys
@@ -167,6 +174,7 @@ services:
       KSI_CORE_OIDC_JWKS_URL: https://${KSI_STAGING_HOST}:${KSI_STAGING_IDENTITY_PORT}/jwks.json
       KSI_CORE_OIDC_ALLOWED_ALGORITHMS: RS256
       KSI_CORE_OIDC_JWKS_TTL_SECONDS: "60"
+      KSI_CORE_OIDC_SUBJECT_REGISTRY_FILE: /var/lib/ksi/identity/oidc-subject-registry.json
       KSI_COPILOT_ENABLED: "true"
       KSI_COPILOT_BASE_URL: http://synthetic-copilot:8080
       KSI_COPILOT_MODEL: ksi-phase2-synthetic-grounded-v1
@@ -181,6 +189,7 @@ services:
       - staging-data:/var/lib/ksi/data
       - staging-signing:/var/lib/ksi/signing-keys:ro
       - staging-secrets:/run/ksi-secrets:ro
+      - staging-identity:/var/lib/ksi/identity:ro
       - ./device-attestation-keys.example.json:/var/lib/ksi/device-attestation-keys.json:ro
     ports:
       - "127.0.0.1:${KSI_STAGING_API_PORT:?set KSI_STAGING_API_PORT}:8000"
@@ -204,6 +213,8 @@ services:
 
   dashboard:
     <<: *app-hardening
+    extra_hosts:
+      - "${KSI_STAGING_HOST}:172.31.77.1"
     image: ksi-phase2-dashboard:local
     build:
       context: ../apps/dashboard
@@ -242,6 +253,16 @@ services:
 networks:
   staging-private:
     driver: bridge
+    # 고정 서브넷: 컨테이너가 issuer 브리지에 닿을 때 쓰는 게이트웨이 주소가
+    # 결정적이어야 한다(2026-10-20). 로컬 OIDC issuer 는 loopback 에만 묶여
+    # 있고 tailscale serve 가 tailnet 인터페이스에서 TLS 를 끝내므로,
+    # 브리지 네트워크 컨테이너는 같은 public URL 로 issuer 에 닿지 못한다.
+    # 게이트웨이에 TLS 브리지를 세우고 아래 extra_hosts 로 같은 이름을 가리키게
+    # 하면 컨테이너와 브라우저가 같은 issuer URL·같은 token issuer 를 본다.
+    ipam:
+      config:
+        - subnet: 172.31.77.0/24
+          gateway: 172.31.77.1
 
 volumes:
   staging-data:
