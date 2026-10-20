@@ -140,7 +140,8 @@ function renderPanel(
     siteId="site-1"
     {...scope}
     workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
-    observations={observations}
+    observations={overrides.observations ?? observations}
+    siteObservations={overrides.siteObservations ?? overrides.observations ?? observations}
     initialPage={listPage([initial.analysisId])}
     initialSelectedDetail={initial}
     canCreate={false}
@@ -800,5 +801,127 @@ describe("analysis V2 panel", () => {
     const summary = notice.closest("summary");
     expect(summary).not.toBeNull();
     expect(summary!.closest("details")?.hasAttribute("open")).toBe(false);
+  });
+});
+
+describe("newer observation notice", () => {
+  const newerObservation: AnalysisObservationOption & { workAreaIds: string[] } = {
+    selector: selector("work-newer", "c"),
+    observationEpochId: "epoch-newer",
+    captureStartedAt: "2026-09-15T00:00:00Z",
+    captureEndedAt: "2026-09-15T00:30:00Z",
+    workAreaIds: ["area-1"],
+  };
+  const observationsWithNewer = [...observations, newerObservation];
+
+  function newerDetail(analysisId = "analysis-new"): AnalysisView {
+    return {
+      ...detail(analysisId),
+      baseline: observations[1]!.selector,
+      current: newerObservation.selector,
+      createdAt: "2026-09-15T01:00:00Z",
+    };
+  }
+
+  function stubDetailFetch(known: Record<string, AnalysisView>) {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (/\/reviews(?:\?|$)/.test(url)) return Promise.resolve(json(reviewPage()));
+      const match = url.match(/\/analyses\/([^\/?]+)/);
+      const found = match?.[1] ? known[match[1]] : undefined;
+      if (found) return Promise.resolve(json(found));
+      return Promise.resolve(json(detail()));
+    }));
+  }
+
+  it("states a newer observation plainly when its analysis has no loaded result", () => {
+    stubDetailFetch({ "analysis-1": detail() });
+    renderPanel({
+      observations: observationsWithNewer,
+      initialPage: listPage(["analysis-1", "analysis-new"]),
+      initialSelectedDetail: detail(),
+      initialAnalysisId: "analysis-1",
+    });
+
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    expect(selected.getByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeTruthy();
+    expect(selected.getByText(/새 관측 시각 2026\. 9\. 15\. 09:30/)).toBeTruthy();
+    expect(selected.getByText(/2026\. 9\. 8\. 09:30 관측 기준 기록/)).toBeTruthy();
+    expect(selected.getByText(/새 관측에 대한 분석 결과는 아직 없습니다/)).toBeTruthy();
+    expect(selected.queryByRole("link", { name: "새 분석 결과 보기" })).toBeNull();
+    expect(selected.queryByText(/대체됨|구버전/)).toBeNull();
+    // 이전 결과의 수치·적합성은 알림과 무관하게 그대로 둔다.
+    expect(selected.getByText("12 m³")).toBeTruthy();
+    expect(selected.getByText("정확도 미확인")).toBeTruthy();
+  });
+
+  it("links to the newer analysis only when its result was actually loaded", async () => {
+    const older = detail("analysis-1");
+    stubDetailFetch({ "analysis-1": older, "analysis-new": newerDetail() });
+    renderPanel({
+      observations: observationsWithNewer,
+      initialPage: listPage(["analysis-new", "analysis-1"]),
+      initialSelectedDetail: newerDetail(),
+      initialAnalysisId: "analysis-new",
+    });
+
+    // 가장 새 분석에는 알림이 없다.
+    expect(screen.queryByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
+    const notice = await screen.findByText(/이 작업구역에 더 새 관측이 있습니다/);
+    const olderCard = within(notice.closest("article")!);
+    const link = olderCard.getByRole("link", { name: "새 분석 결과 보기" });
+    expect(link.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=analysis-new");
+    expect(notice.textContent).toContain("2026. 9. 15. 09:30");
+    expect(notice.textContent).not.toContain("대체됨");
+    expect(notice.textContent).not.toContain("구버전");
+    expect(screen.getAllByText(/이 작업구역에 더 새 관측이 있습니다/)).toHaveLength(1);
+  });
+
+  it("finds the result epoch site-wide when it is not attributed to the area", () => {
+    // 실제 재현 귀속(F-03): 결과의 현재 epoch(epoch-current)은 구역 귀속
+    // 목록에 없고, 같은 구역에는 더 늦은 관측(epoch-newer)이 있다.
+    // 귀속 목록만으로는 시각을 알 수 없으므로 Site 범위 목록에서 찾는다.
+    const siteScoped = observationsWithNewer.map(({ selector, observationEpochId, captureStartedAt, captureEndedAt }) => ({
+      selector,
+      observationEpochId,
+      captureStartedAt,
+      captureEndedAt,
+    }));
+    const areaNewerOnly = observationsWithNewer.filter(
+      (option) => option.observationEpochId === "epoch-newer",
+    );
+    stubDetailFetch({ "analysis-1": detail() });
+    renderPanel({
+      observations: areaNewerOnly,
+      siteObservations: siteScoped,
+      initialPage: listPage(["analysis-1"]),
+      initialSelectedDetail: detail(),
+      initialAnalysisId: "analysis-1",
+    });
+
+    const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
+    expect(selected.getByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeTruthy();
+    expect(selected.getByText(/새 관측 시각 2026\. 9\. 15\. 09:30/)).toBeTruthy();
+    expect(selected.getByText(/2026\. 9\. 8\. 09:30 관측 기준 기록/)).toBeTruthy();
+    expect(selected.getByText(/새 관측에 대한 분석 결과는 아직 없습니다/)).toBeTruthy();
+    expect(selected.queryByText(/대체됨|구버전/)).toBeNull();
+  });
+
+  it("shows nothing when the result epoch is absent from the site-wide list", () => {
+    const areaNewerOnly = observationsWithNewer.filter(
+      (option) => option.observationEpochId === "epoch-newer",
+    );
+    stubDetailFetch({ "analysis-1": detail() });
+    renderPanel({
+      observations: areaNewerOnly,
+      siteObservations: [],
+      initialPage: listPage(["analysis-1"]),
+      initialSelectedDetail: detail(),
+      initialAnalysisId: "analysis-1",
+    });
+
+    expect(screen.queryByText(/이 작업구역에 더 새 관측이 있습니다/)).toBeNull();
   });
 });

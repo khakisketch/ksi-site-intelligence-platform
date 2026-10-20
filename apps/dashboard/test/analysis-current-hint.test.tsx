@@ -42,7 +42,8 @@ function renderPanel(overrides: Partial<Parameters<typeof AnalysisRequestPanel>[
     organizationId="org-1"
     principalId="operator-1"
     workAreas={workAreas}
-    observations={observations}
+    observations={overrides.observations ?? observations}
+    siteObservations={overrides.siteObservations ?? overrides.observations ?? observations}
     initialPage={emptyPage()}
     initialSelectedDetail={null}
     canCreate

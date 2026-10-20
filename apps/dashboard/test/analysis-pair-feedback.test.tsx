@@ -45,7 +45,8 @@ function renderPairPanel(overrides: Partial<Parameters<typeof AnalysisRequestPan
     organizationId="org-1"
     principalId="operator-1"
     workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
-    observations={threeEpochs}
+    observations={overrides.observations ?? threeEpochs}
+    siteObservations={overrides.siteObservations ?? overrides.observations ?? threeEpochs}
     initialPage={emptyPage()}
     initialSelectedDetail={null}
     canCreate

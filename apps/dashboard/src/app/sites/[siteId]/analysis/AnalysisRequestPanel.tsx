@@ -25,6 +25,11 @@ import type {
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { latestAnalysisReview, sameAnalysisReviewTarget } from "@/lib/analysis-review";
 import {
+  deriveNewerObservationNotice,
+  findEpochCaptureEndedAt,
+  type NewerAnalysisCandidate,
+} from "@/lib/analysis-newer-observation";
+import {
   analysisEvidenceKindLabel,
   analysisEvidenceReasonLine,
   analysisEvidenceSummary,
@@ -414,7 +419,49 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
   </section>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict }: {
+function NewerObservationNotice({ siteId, detail, observations, siteObservations, analyses }: {
+  siteId: string;
+  detail: AnalysisView;
+  observations: readonly AttributedAnalysisObservation[];
+  siteObservations: readonly AnalysisObservationOption[];
+  analyses: readonly NewerAnalysisCandidate[];
+}) {
+  const { current: currentSelector, workAreaId } = detail;
+  const resolved = useMemo(() => {
+    // 결과 자신의 epoch 시각은 Site 범위 목록에서 귀속과 무관하게 찾는다.
+    // 귀속 목록에만 있으면 귀속 없는 epoch의 결과에는 알림이 붙지 않는다.
+    const currentEndedAt = findEpochCaptureEndedAt(siteObservations, currentSelector);
+    if (!currentEndedAt) return null;
+    const notice = deriveNewerObservationNotice({
+      workAreaId,
+      currentSelector,
+      currentCaptureEndedAt: currentEndedAt,
+      observations,
+      analyses,
+    });
+    if (!notice) return null;
+    return { notice, currentEndedAt };
+  }, [currentSelector, workAreaId, observations, siteObservations, analyses]);
+  if (!resolved) return null;
+  const { notice, currentEndedAt } = resolved;
+  const newerTime = formatKoreanDateTime(notice.captureEndedAt, { dateStyle: "medium", timeStyle: "short" });
+  const currentTime = formatKoreanDateTime(currentEndedAt, { dateStyle: "medium", timeStyle: "short" });
+  return <p className="border-t border-line px-4 py-2 text-[12px] leading-5 text-ink-2">
+    이 작업구역에 더 새 관측이 있습니다. 새 관측 시각 {newerTime}. 이 결과는 {currentTime} 관측 기준 기록입니다.{" "}
+    {notice.analysisId ? (
+      <Link
+        className="font-semibold text-accent-text hover:underline"
+        href={`/sites/${encodeURIComponent(siteId)}/analysis?analysisId=${encodeURIComponent(notice.analysisId)}`}
+      >
+        새 분석 결과 보기
+      </Link>
+    ) : (
+      "새 관측에 대한 분석 결과는 아직 없습니다."
+    )}
+  </p>;
+}
+
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -430,6 +477,9 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   reviewError: string | null;
   onRefreshReview: (analysisId: string) => Promise<boolean>;
   onRefreshAfterReviewConflict: (analysisId: string) => Promise<boolean>;
+  observations: readonly AttributedAnalysisObservation[];
+  siteObservations: readonly AnalysisObservationOption[];
+  newerAnalyses: readonly NewerAnalysisCandidate[];
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
@@ -446,6 +496,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       </div>
       <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
     </div>
+    {detail && <NewerObservationNotice siteId={siteId} detail={detail} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
@@ -793,6 +844,7 @@ export function AnalysisRequestPanel({
   siteId,
   workAreas,
   observations,
+  siteObservations,
   unattributedObservationCount = 0,
   workOrderNames = {},
   initialPage,
@@ -809,6 +861,8 @@ export function AnalysisRequestPanel({
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
   observations: readonly AttributedAnalysisObservation[];
+  /** Site 범위 관측 목록(귀속 무관). 결과 epoch 시각 조회 전용, Core 추가 조회 없음. */
+  siteObservations: readonly AnalysisObservationOption[];
   unattributedObservationCount?: number;
   workOrderNames?: WorkOrderNameMap;
   initialPage: AnalysisListPage;
@@ -914,6 +968,16 @@ export function AnalysisRequestPanel({
     }
     return map;
   }, [observations]);
+  // 새 관측 알림의 링크 후보: 이미 불러온 상세 중 결과가 실제로 있는 분석만.
+  // 목록 요약에는 선택자가 없어 상세 없이는 새 관측과의 연결을 증명할 수
+  // 없으므로, 읽지 못한 분석에는 가짜 링크를 만들지 않는다.
+  const newerAnalyses = useMemo<NewerAnalysisCandidate[]>(() =>
+    [...details.values()].map((view) => ({
+      analysisId: view.analysisId,
+      workAreaId: view.workAreaId,
+      currentSelector: view.current,
+      hasResult: view.result !== null,
+    })), [details]);
   const scopeLineByAnalysisId = useMemo(() => {
     const lines = new Map<string, string>();
     for (const [analysisId, analysisDetail] of details) {
@@ -1499,6 +1563,9 @@ export function AnalysisRequestPanel({
         reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}
         onRefreshReview={loadReviewState}
         onRefreshAfterReviewConflict={refreshReviewAfterConflict}
+        observations={observations}
+        newerAnalyses={newerAnalyses}
+        siteObservations={siteObservations}
       />)}
       {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
       {rows.length === 0 && !listLoading && !listLoadError && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor

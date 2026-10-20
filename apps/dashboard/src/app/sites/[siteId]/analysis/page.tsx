@@ -141,6 +141,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           principalId={session.principal.principalId}
           workAreas={loaded.areas.workAreas}
           observations={loaded.attributedObservations}
+          siteObservations={loaded.observations}
           unattributedObservationCount={loaded.unattributedObservationCount}
           workOrderNames={loaded.workOrderNames}
           initialPage={loaded.analyses}
