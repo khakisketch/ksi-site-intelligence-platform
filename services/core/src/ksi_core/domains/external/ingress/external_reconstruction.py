@@ -24,10 +24,13 @@ from ksi_event_contracts.external_reconstruction import (
     ExternalReconstructionSubmission,
     ExternalReconstructionSubmissionV1,
     ExternalReconstructionSubmissionV2,
+    ExternalReconstructionSubmissionV3,
     external_reconstruction_manifest_wire_dict,
     external_reconstruction_submission_v2_wire_dict,
+    external_reconstruction_submission_v3_wire_dict,
     external_reconstruction_submission_wire_dict,
     parse_external_reconstruction_submission_v2,
+    parse_external_reconstruction_submission_v3,
 )
 from ksi_event_contracts.external_reobservation import ExternalPlanningOnlyWorkOrderBindingV1
 from ksi_event_contracts.observation_work_order import (
@@ -134,6 +137,8 @@ def _submission_wire_dict(submission: ExternalReconstructionSubmission) -> dict[
         return external_reconstruction_submission_wire_dict(submission)
     if isinstance(submission, ExternalReconstructionSubmissionV2):
         return external_reconstruction_submission_v2_wire_dict(submission)
+    if isinstance(submission, ExternalReconstructionSubmissionV3):
+        return external_reconstruction_submission_v3_wire_dict(submission)
     raise TypeError("unsupported external reconstruction submission version")
 
 
@@ -313,6 +318,8 @@ class ExternalReconstructionStore:
             )
         elif contract_version == "external-reconstruction-submission.v2":
             submission = parse_external_reconstruction_submission_v2(submission_payload)
+        elif contract_version == "external-reconstruction-submission.v3":
+            submission = parse_external_reconstruction_submission_v3(submission_payload)
         else:
             raise ValueError("unknown external reconstruction submission version")
         if submission.submission_digest is None:
@@ -1160,6 +1167,52 @@ def mount_external_reconstruction(
                 status_code=422,
                 detail="CAPTURE_INTERVAL_MUST_BE_POSITIVE_FOR_EXTERNAL_INGRESS",
             )
+        try:
+            with work_orders.guard_new_external_intent(
+                order.work_order_id,
+                organization_id=principal.organization_id,
+                is_durable_retry=lambda: store.is_registration_retry(submission, work_order=order),
+            ):
+                result = store.register(
+                    submission,
+                    work_order=order,
+                    registered_by=principal.principal_id,
+                    now=datetime.now(UTC),
+                )
+        except RuntimeError as exc:
+            if str(exc) == "EXTERNAL_WORKFLOW_CLOSED":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
+        _result_error(result)
+        assert result.revision is not None
+        return _view(result.revision)
+
+    @router.post(
+        base + "-v3",
+        response_model=ExternalReconstructionRevisionView,
+        status_code=201,
+    )
+    def register_v3(
+        work_order_id: str,
+        payload: dict[str, Any],
+        principal: Principal = Depends(write),  # noqa: B008
+    ) -> ExternalReconstructionRevisionView:
+        """Register a V3 declaration with honestly incomplete metadata.
+
+        Unlike the V1/V2 routes, this route does not require an exact capture
+        interval: ``captureBasis`` DATE_ONLY (single known calendar date) and
+        UNKNOWN (no timing at all) are accepted for registration, inspection,
+        and allowed viewing. An EXACT_INTERVAL is still strictly positive by
+        model validation. V3 epochs without exact UTC bounds stay ineligible
+        for quantitative analysis through the existing typed blockers; nothing
+        here invents times or weakens V1/V2 meanings.
+        """
+        order = _require_work_order(work_orders, work_order_id, principal)
+        _write_principal(principal)
+        try:
+            submission = parse_external_reconstruction_submission_v3(payload)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         try:
             with work_orders.guard_new_external_intent(
                 order.work_order_id,

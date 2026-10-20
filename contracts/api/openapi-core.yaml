@@ -5694,6 +5694,41 @@ paths:
         '503': { description: durable journal unavailable }
         '401': { description: authentication failed }
         '403': { description: SITES_WRITE or human authority required }
+  /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v3:
+    post:
+      summary: Register a V3 declaration with honestly incomplete metadata
+      description: >-
+        SITES_WRITE and human OPERATOR authority required. The V3 wire parser verifies
+        the complete declaration and canonical digest. Unknown producers stay typed nulls
+        under producerKnowledge UNKNOWN (PARTIAL keeps a known engine name with a null
+        version), a known single day stays date-only under captureBasis DATE_ONLY, and
+        unknown timing stays UNKNOWN; no exact interval or software version is invented.
+        The raw-photo locus is declared honestly (customer_workstation only when the
+        customer holds the originals, otherwise upstream_source or unknown with a
+        citation). The top-level executionResponsibility/executionLocus consts are the
+        intake responsibility boundary (customer-operated submission; KSI executed
+        nothing), not an assertion of where any upstream reconstruction ran.
+        Registration records a customer assertion; it does not observe bytes, establish
+        accuracy, validate reconstruction quality, or grant quantitative eligibility. Epochs without exact UTC capture bounds
+        stay analysis-ineligible through the existing typed blockers. Existing revision
+        GET, upload-grant, and seal operations use the returned submissionRef. V1/V2 wire
+        meanings, digests, and replay are unchanged.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: work_order_id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../schemas/external-reconstruction-submission.v3.json' }
+      responses:
+        '201': { description: REGISTERED or identical retry, content: { application/json: { schema: { $ref: '#/components/schemas/ExternalReconstructionRevisionView' } } } }
+        '404': { description: scoped WorkOrder not found }
+        '409': { description: conflicting revision or closed workflow }
+        '422': { description: incomplete, invalid, unknown-producer/date-only rule violation, or digest-mismatched declaration }
+        '503': { description: durable journal unavailable }
+        '401': { description: authentication failed }
+        '403': { description: SITES_WRITE or human authority required }
   /v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions/{submission_ref}/revisions/{revision}:
     get:
       summary: Read one scoped external reconstruction revision

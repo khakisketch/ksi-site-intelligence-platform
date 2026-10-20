@@ -2,6 +2,7 @@ import "server-only";
 
 import { coreFetch } from "./client";
 import type { ExternalSubmissionCandidate } from "../external-reconstruction-submission";
+import type { ExternalSubmissionCandidateV3 } from "../external-reconstruction-submission";
 
 export type ExternalRevisionView = {
   submissionRef: string;
@@ -77,6 +78,19 @@ export function registerExternalReconstructionSubmission(
   submission: ExternalSubmissionCandidate,
 ): Promise<ExternalRevisionView> {
   return coreFetch(base(workOrderId), { method: "POST", body: submission });
+}
+
+/**
+ * V3 missing-info intake (additive). Upload grants, seal, inspection, revision
+ * reads, and the revision list stay on the version-agnostic routes keyed by
+ * the server-issued opaque submissionRef — only registration is versioned.
+ * Auth rides the existing user session via coreFetch; no admin fallback.
+ */
+export function registerExternalReconstructionSubmissionV3(
+  workOrderId: string,
+  submission: ExternalSubmissionCandidateV3,
+): Promise<ExternalRevisionView> {
+  return coreFetch(`${base(workOrderId)}-v3`, { method: "POST", body: submission });
 }
 
 export async function requestExternalReconstructionUploadGrants(

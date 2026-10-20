@@ -697,6 +697,10 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2",
         ),
         (
+            "POST",
+            "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v3",
+        ),
+        (
             "GET",
             "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
         ),

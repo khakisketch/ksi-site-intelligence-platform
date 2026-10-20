@@ -204,6 +204,14 @@ describe("analysis deep link", () => {
     expect(document.body.textContent).not.toMatch(/유효|사용 가능|적합/);
   });
 
+  it("does not call a missing deep-linked record an unavailable analysis environment", async () => {
+    mocked.detail.mockRejectedValueOnce(new CoreApiError(404, { detail: "not found" }));
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ analysisId: "analysis-missing", workAreaId: "area-1" }) }));
+    expect(screen.getByRole("alert").textContent).toContain("선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다.");
+    expect(screen.queryByText(/이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다/)).toBeNull();
+    expect(screen.getByRole("link", { name: "분석 목록 보기" }).getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=area-1");
+  });
+
   it("keeps return links scopeless for a blank or multi-valued area hint instead of echoing it", async () => {
     mocked.observations.mockRejectedValueOnce(new CoreApiError(404, { detail: "route unavailable" }));
 

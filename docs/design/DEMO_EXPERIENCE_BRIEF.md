@@ -1,5 +1,10 @@
 # Design-first demonstration: place → observations → uses → evidence
 
+> Historical screen-study proposal. The Human subsequently rejected a separate demo/prototype as the
+> deliverable: the target is actual use of the existing Console with persisted data and real processing.
+> Do not expand or re-present this document/HTML as product completion. Resume the current named task
+> ledger for actual integration; the real licensed source files remain useful.
+
 Status: **primary story and five-step flow confirmed by Human**, 2026-10-20; screen composition remains a review proposal. No product UI implementation
 or server/data mutation in this design pass. Audience confirmed by Human: **일반 소개·사업 관계자**.
 This is a subordinate design brief selected by the current rebaseline task ledger, not a new

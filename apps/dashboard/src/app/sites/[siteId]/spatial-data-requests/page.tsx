@@ -35,6 +35,7 @@ import {
 } from "@/lib/operator-language";
 
 import { SpatialDataRequestActions } from "./SpatialDataRequestActions";
+import { SpatialDataReceiptPreview } from "./SpatialDataReceiptPreview";
 import { WorkAreaHistorySelect } from "./WorkAreaHistorySelect";
 
 export const metadata = { title: "구역 자료 준비 · KSI" };
@@ -227,6 +228,15 @@ function RequestDetail({
       : isCompleted && <p className="rounded-md border border-high/30 bg-high-bg px-3 py-2 text-[12px] leading-5 text-high-ink">
         현재 파일을 제공할 수 없습니다. {AVAILABILITY_LABEL[item.availability]} 상태입니다.
       </p>}
+
+    {hasReceipt && item.availability === "AVAILABLE" && <SpatialDataReceiptPreview
+      key={`${siteId}:${item.workAreaId}:${item.jobId}:${item.receipt!.receiptDigest ?? item.receipt!.outputSha256}`}
+      siteId={siteId}
+      workAreaId={item.workAreaId}
+      jobId={item.jobId}
+      receipt={item.receipt!}
+      fileHref={fileHref}
+    />}
 
     {active && <SpatialDataRequestActions siteId={siteId} workAreaId={item.workAreaId} requestId={item.jobId} canCancel={canCancel} />}
     <Link className="btn min-h-11 w-fit" href={backHref}>요청 목록으로 돌아가기</Link>

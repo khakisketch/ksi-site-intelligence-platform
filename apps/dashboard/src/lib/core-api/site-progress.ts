@@ -31,10 +31,9 @@ export const SITE_PROGRESS_STAGES: readonly {
   /** 막대에 붙는 접근성 이름 — 화면에는 막대만 보이므로 읽어주는 쪽엔 이 말이 간다. */
   label: string;
 }[] = [
-  // UNMAPPED 는 경계 유무가 아니라 "관측 시작 전"을 뜻한다(현장 등록은 AOI를
-  // 함께 받는다). 아래 단계들은 acquisition 수명주기라 현 제품에서는 진행되지
-  // 않는다 — ADR-KSI-039 참조.
-  { status: "UNMAPPED", label: "관측 시작 전" },
+  // 외부 관측 유무는 이 과거 취득 상태에서 추론하지 않는다. 아래 전이 순서는
+  // 보존하되, 최초 단계는 확인되는 현장 등록 사실만 말한다(ADR-KSI-039).
+  { status: "UNMAPPED", label: "현장 등록" },
   { status: "BASELINE_MAPPING", label: "초기 매핑" },
   { status: "MODEL_PROCESSING", label: "모델 처리" },
   { status: "MODEL_VALIDATION", label: "모델 검증" },

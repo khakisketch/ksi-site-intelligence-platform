@@ -39,9 +39,25 @@ describe("AnalysisStartGuide", () => {
     expect(screen.getByText("등록된 작업구역 없음")).toBeTruthy();
     expect(screen.getByText("1개 표시됨")).toBeTruthy();
     expect(screen.getByRole("link", { name: "작업구역 현황 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
-    expect(screen.getByRole("link", { name: "외부 비교 기록 확인" }).getAttribute("href")).toBe("/sites/site-1/observations");
+    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets");
     expect(screen.queryByRole("link", { name: "변화 분석 요청으로 이동" })).toBeNull();
     expect(document.body.textContent).not.toContain("SITES_WRITE");
+  });
+
+  it("explains absent comparison candidates without saying registered date-only materials are absent", () => {
+    render(<AnalysisStartGuide
+      siteId="site-1"
+      workAreaId="area-1"
+      workAreaCount={1}
+      observationCount={0}
+      analysisCount={0}
+      hasMoreAnalyses={false}
+      canCreate
+    />);
+    expect(screen.getByText(/촬영 날짜만 있거나 시각이 미상인 자료는 현재 시점 비교 후보에 포함되지 않습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "등록 자료·촬영 정보 확인" }).getAttribute("href")).toBe("/sites/site-1/spatial-assets?workAreaId=area-1");
+    expect(document.body.textContent).not.toContain("등록된 관측 자료가 없습니다");
+    expect(screen.queryByRole("link", { name: "변화 분석 요청으로 이동" })).toBeNull();
   });
 
   it("labels analysis history as a bounded page when older records remain", () => {

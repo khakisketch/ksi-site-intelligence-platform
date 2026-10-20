@@ -7,6 +7,7 @@ export function AnalysisStartGuide({
   analysisCount,
   hasMoreAnalyses,
   canCreate,
+  workAreaId,
 }: {
   siteId: string;
   workAreaCount: number;
@@ -14,6 +15,7 @@ export function AnalysisStartGuide({
   analysisCount: number;
   hasMoreAnalyses: boolean;
   canCreate: boolean;
+  workAreaId?: string | null;
 }) {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
   const canChoosePair = workAreaCount > 0 && observationCount >= 2;
@@ -34,7 +36,10 @@ export function AnalysisStartGuide({
         <p className="text-[11.5px] font-semibold text-ink-muted">2 · 관측 후보</p>
         <p className="mt-1 text-[13px] font-semibold">{observationCount > 0 ? `${observationCount}개 표시됨` : "표시된 후보 없음"}</p>
         <p className="mt-1 text-[11.5px] leading-4 text-ink-2">구분 기준과 등록 버전·관측 기록 표시는 아래 새 변화 분석 요청에 있습니다. 이 목록은 작업구역 적합성을 미리 판정하지 않습니다.</p>
-        {observationCount < 2 && <Link className="mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline" href={`${sitePath}/observations`}>외부 비교 기록 확인</Link>}
+        {observationCount < 2 && <>
+          <p className="mt-1 text-[11.5px] leading-5 text-ink-2">파일을 등록한 사실과 비교 후보 표시는 다릅니다. 촬영 날짜만 있거나 시각이 미상인 자료는 현재 시점 비교 후보에 포함되지 않습니다. 등록 자료에서 입력 정보와 검사 상태를 확인하세요.</p>
+          <Link className="mt-1 inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline" href={`${sitePath}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료·촬영 정보 확인</Link>
+        </>}
       </li>
       <li className="min-w-0">
         <p className="text-[11.5px] font-semibold text-ink-muted">3 · 변화 분석 기록</p>

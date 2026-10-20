@@ -152,6 +152,18 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain("정확도 평가");
     expect(html).toContain(`/api/sites/site-1/work-areas/area-1/spatial-data-requests/${requestId}/file`);
     expect(html).toContain("정확도 평가나 현장 적합성 판정이 아닙니다.");
+    expect(html).toContain('aria-label="준비된 출력 미리보기"');
+  });
+
+  it("does not offer a new preview fetch when the completed file is already unavailable", async () => {
+    mocked.detail.mockResolvedValueOnce(job({ availability: "ACCESS_REVOKED" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", requestId }));
+    expect(html).toContain("현재 파일을 제공할 수 없습니다.");
+    expect(html).not.toContain('aria-label="준비된 출력 미리보기"');
+    expect(html).not.toContain("준비된 파일 다운로드");
+    // The historical receipt is still readable; revoked access is not history deletion.
+    expect(html).toContain("준비된 출력 정보");
+    expect(html).toContain(digest("b"));
   });
 
   it("never renders receipt or download success from a non-COMPLETED state, even if receipt is present", async () => {

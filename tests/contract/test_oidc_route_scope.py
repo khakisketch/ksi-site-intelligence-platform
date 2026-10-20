@@ -78,6 +78,8 @@ def _install_oidc_v2(
     site_ids: list[str] | None,
     area_ids: list[str] | None,
     organization_id: str | None = None,
+    role: str = "FIELD_OPERATOR",
+    status: str = "ACTIVE",
 ) -> tuple[str, RSAPrivateKey]:
     """v2 registry(F-01) 로 매핑 신원을 세운다 — null scope 도 검토된 matrix 안이다."""
     key = generate_private_key(public_exponent=65537, key_size=2048)
@@ -92,8 +94,8 @@ def _install_oidc_v2(
                     "organizationId": (
                         organization_id if organization_id is not None else fixture.organization_id
                     ),
-                    "role": "FIELD_OPERATOR",
-                    "status": "ACTIVE",
+                    "role": role,
+                    "status": status,
                     "capabilities": capabilities,
                     "allowedSiteIds": site_ids,
                     "allowedWorkAreaIds": area_ids,
@@ -197,6 +199,10 @@ def test_mapped_oidc_is_limited_to_exact_reviewed_pilot_route_templates(tmp_path
             (
                 "GET",
                 "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions",
+            ),
+            (
+                "POST",
+                "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v3",
             ),
             ("GET", "/v1/work-inbox"),
             ("GET", "/v1/external-decisions/pending"),
@@ -345,9 +351,7 @@ def test_v2_null_scope_without_capability_stays_in_reviewed_matrix(tmp_path: Pat
     """명시 null(자기 조직 전체)은 opaque unscoped 처럼 미검토 route 로 새지 않는다."""
     fixture = build_local_analysis_api_fixture(tmp_path)
     try:
-        token, _key = _install_oidc_v2(
-            fixture, capabilities=[], site_ids=None, area_ids=None
-        )
+        token, _key = _install_oidc_v2(fixture, capabilities=[], site_ids=None, area_ids=None)
         client = TestClient(fixture.app)
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -401,9 +405,7 @@ def test_v2_capability_opens_only_conditional_bootstrap_route(tmp_path: Path) ->
         # 여전히 403 이다.
         assert client.get("/v1/organization-work-roster", headers=headers).status_code == 403
 
-        site = fixture.app.state.site_store.get_scoped(
-            fixture.site_id, fixture.organization_id
-        )
+        site = fixture.app.state.site_store.get_scoped(fixture.site_id, fixture.organization_id)
         assert site is not None
         request_id = "6f1c8f3a-4c1e-4c9e-8f0a-2b7d5e9a1c33"
         created = client.post(
@@ -592,9 +594,7 @@ def test_mapped_oidc_volume_detail_and_review_routes_reach_their_handlers(tmp_pa
         relative_detail = (
             f"/v1/observation-work-orders/{work_order_id}/relative-volume-requests/req-x"
         )
-        single_detail = (
-            f"/v1/observation-work-orders/{work_order_id}/single-volume-requests/req-x"
-        )
+        single_detail = f"/v1/observation-work-orders/{work_order_id}/single-volume-requests/req-x"
         relative_review = "/v1/external-relative-volume-reports/req-x/reviews"
         single_review = "/v1/external-single-volume-reports/req-x/reviews"
 
@@ -709,3 +709,179 @@ def test_scoped_work_order_guard_semantics() -> None:
     _require_scoped_work_order(None, legacy, "wo-1")  # legacy는 store 없이 조기 반환
 
     _require_single_volume_work_order(_Store(), scoped, "wo-1")  # 단일 체적 가드도 동일
+
+
+# ── 2026-10-20: V3 불완전 메타데이터 ingress 의 mapped 신원 경계 ─────────
+
+
+def test_mapped_oidc_v3_ingress_follows_v2_scope_matrix(tmp_path: Path) -> None:
+    """V3 등록·업로드·봉인은 V2와 같은 Site/WorkArea grant 가드 안에서만 열린다.
+
+    허용 목록은 정확한 V3 템플릿 하나만 추가한다(접두어 확장 없음). 매핑된
+    FIELD_OPERATOR는 같은 Site/WorkArea grant로 register→grants→seal을 마치지만,
+    외지 Site/area·교차 조직은 존재 여부를 드러내지 않고 404로 접히며 저널에
+    쓰지 않는다. VIEWER는 403, REVOKED 신원은 401로 fail-closed한다.
+    """
+    from test_external_reconstruction_v3_incomplete_metadata import _v3_wire
+
+    v3_route = (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v3",
+    )
+    assert v3_route in _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
+    assert (
+        "POST",
+        "/v1/observation-work-orders/{work_order_id}/external-reconstruction-submissions-v2",
+    ) in _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST
+    assert (
+        sum(1 for entry in _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST if "submissions-v3" in entry[1])
+        == 1
+    )
+
+    fixture = build_local_analysis_api_fixture(tmp_path, v2_dsm_only=True)
+    try:
+        client = TestClient(fixture.app)
+        order_id = fixture.baseline.work_order_id
+        epoch_id = fixture._baseline_revision.submission.observation_epoch_id
+        register_path = (
+            f"/v1/observation-work-orders/{order_id}/external-reconstruction-submissions-v3"
+        )
+
+        def journal_sizes() -> dict[str, int]:
+            return {
+                str(path.relative_to(tmp_path)): path.stat().st_size
+                for path in sorted(tmp_path.rglob("*.jsonl"))
+            }
+
+        token, _key = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+        )
+        headers = {"Authorization": f"Bearer {token}"}
+        wire = _v3_wire(
+            epoch_id=epoch_id,
+            submission_id="oidc-v3-allowed",
+            submitted_by="pilot-mapped-operator",
+        )
+        registered = client.post(register_path, headers=headers, json=wire)
+        assert registered.status_code == 201, registered.text
+        ref = registered.json()["submissionRef"]
+        revision_path = (
+            f"/v1/observation-work-orders/{order_id}/"
+            f"external-reconstruction-submissions/{ref}/revisions/1"
+        )
+        grants = client.post(revision_path + "/upload-grants", headers=headers)
+        assert grants.status_code == 200, grants.text
+        object_key = grants.json()["grants"][0]["objectKey"]
+        fixture.storage.put_bytes(
+            object_key, b"v3 ortho bytes", content_type="application/octet-stream"
+        )
+        sealed = client.post(revision_path + "/seal", headers=headers)
+        assert sealed.status_code == 200, sealed.text
+        assert sealed.json()["submission"]["contractVersion"] == (
+            "external-reconstruction-submission.v3"
+        )
+
+        before = journal_sizes()
+
+        # 외지 area grant: 같은 Site라도 WorkOrder area가 grant 밖이면 404.
+        foreign_area_token, _ = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=["wa-ungranted-0001"],
+        )
+        foreign_area = client.post(
+            register_path,
+            headers={"Authorization": f"Bearer {foreign_area_token}"},
+            json=_v3_wire(
+                epoch_id=epoch_id,
+                submission_id="oidc-v3-foreign-area",
+                submitted_by="pilot-mapped-operator",
+            ),
+        )
+        assert foreign_area.status_code == 404
+        assert journal_sizes() == before
+
+        # 외지 Site grant: area가 맞아도 Site가 다르면 404.
+        foreign_site_token, _ = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=["site-foreign-grant"],
+            area_ids=[fixture.work_area_id],
+        )
+        foreign_site = client.post(
+            register_path,
+            headers={"Authorization": f"Bearer {foreign_site_token}"},
+            json=_v3_wire(
+                epoch_id=epoch_id,
+                submission_id="oidc-v3-foreign-site",
+                submitted_by="pilot-mapped-operator",
+            ),
+        )
+        assert foreign_site.status_code == 404
+        assert journal_sizes() == before
+
+        # 교차 조직 신원: 이 조직의 WorkOrder를 해석하지 못한다(404 비노출).
+        cross_org_token, _ = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+            organization_id="other-organization",
+        )
+        cross_org = client.post(
+            register_path,
+            headers={"Authorization": f"Bearer {cross_org_token}"},
+            json=_v3_wire(
+                epoch_id=epoch_id,
+                submission_id="oidc-v3-cross-org",
+                submitted_by="pilot-mapped-operator",
+            ),
+        )
+        assert cross_org.status_code == 404
+        assert journal_sizes() == before
+
+        # VIEWER 매핑: route는 열려도 SITES_WRITE 핸들러 게이트가 403으로 막는다.
+        viewer_token, _ = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+            role="VIEWER",
+        )
+        viewer_denied = client.post(
+            register_path,
+            headers={"Authorization": f"Bearer {viewer_token}"},
+            json=_v3_wire(
+                epoch_id=epoch_id,
+                submission_id="oidc-v3-viewer",
+                submitted_by="pilot-mapped-operator",
+            ),
+        )
+        assert viewer_denied.status_code == 403
+        assert journal_sizes() == before
+
+        # REVOKED 매핑: 신원 자체가 해소되지 않아 401로 fail-closed한다.
+        revoked_token, _ = _install_oidc_v2(
+            fixture,
+            capabilities=[],
+            site_ids=[fixture.site_id],
+            area_ids=[fixture.work_area_id],
+            status="REVOKED",
+        )
+        revoked = client.post(
+            register_path,
+            headers={"Authorization": f"Bearer {revoked_token}"},
+            json=_v3_wire(
+                epoch_id=epoch_id,
+                submission_id="oidc-v3-revoked",
+                submitted_by="pilot-mapped-operator",
+            ),
+        )
+        assert revoked.status_code == 401
+        assert journal_sizes() == before
+    finally:
+        fixture.close()

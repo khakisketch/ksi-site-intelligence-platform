@@ -17,7 +17,6 @@ import {
   type SpatialAssetInspectedRasterFacts,
 } from "@/lib/core-api/spatial-assets";
 import { getSite } from "@/lib/core-api/sites";
-import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
@@ -365,7 +364,6 @@ export default async function SpatialAssetsPage({
   const canRequestAnalysis = session.principal.permissions.includes("SITES_WRITE");
   const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
   const inspectedRaster = detail?.inspection.raster ?? null;
-  const dataRequestBounds = inspectedRaster ? nativeBoundsFromInspection(inspectedRaster) : null;
   const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detail?.workOrderId
     ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
     : null;
@@ -423,16 +421,15 @@ export default async function SpatialAssetsPage({
                   headline={businessTitleFor(detail)}
                   compareHref={compareHref}
                 />
-                {dataRequestBounds && inspectedRaster && (
-                  <SpatialDataRequestAction
-                    siteId={siteId}
-                    workAreaId={effectiveWorkAreaId!}
-                    assetRef={detail.assetRef}
-                    requestedBounds={dataRequestBounds}
-                    observedCrsDigest={inspectedRaster.observedCrsDigest}
-                    canRequest={canRequestData}
-                  />
-                )}
+                <SpatialDataRequestAction
+                  siteId={siteId}
+                  workAreaId={effectiveWorkAreaId!}
+                  assetRef={detail.assetRef}
+                  inspectedRaster={inspectedRaster}
+                  observedCrsIdentifier={inspectedRaster?.observedCrsIdentifier ?? null}
+                  observedCrsDigest={inspectedRaster?.observedCrsDigest ?? null}
+                  canRequest={canRequestData}
+                />
               </>
               : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
             : null}

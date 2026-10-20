@@ -123,3 +123,78 @@ export function decisionUseLabel(use: string): string {
 export function decisionVerdictLabel(verdict: string): string {
   return VERDICT_LABELS[verdict] ?? verdict;
 }
+
+/**
+ * V3 미상 접수 표시. 발행자가 신고한 달력 날짜를 그대로 옮긴다 — Date 파싱·
+ * 시간대 변환·자정 시각 추정을 하지 않는다. 날짜가 확인된 기록에는
+ * '촬영시각없음'을 쓰지 않고 '촬영 시각 미상'을 쓴다.
+ */
+export function formatPublisherCalendarDate(value: string | null | undefined): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!Number.isSafeInteger(year) || !Number.isSafeInteger(month) || !Number.isSafeInteger(day)) return null;
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
+  return `${year}. ${month}. ${day}.`;
+}
+
+export type ReconstructionProducerView = {
+  producerKnowledge?: string | null;
+  softwareName?: string | null;
+  softwareVersion?: string | null;
+  sourceNote?: string | null;
+};
+
+export type ReconstructionCaptureView = {
+  captureBasis?: string | null;
+  captureStartedAt?: string | null;
+  captureEndedAt?: string | null;
+  captureDate?: string | null;
+};
+
+/** V3 producerKnowledge가 없으면 V1 기록으로 보고 기존 표시를 그대로 둔다. */
+export function describeProducerLine(producer: ReconstructionProducerView | null | undefined): string | null {
+  if (!producer) return null;
+  if (producer.producerKnowledge === undefined || producer.producerKnowledge === null) {
+    return producer.softwareName ? `재구성 소프트웨어: ${producer.softwareName}${producer.softwareVersion ? ` ${producer.softwareVersion}` : ""}` : null;
+  }
+  if (producer.producerKnowledge === "UNKNOWN") return "재구성 소프트웨어: 미상 (등록 시 확인되지 않음)";
+  if (producer.producerKnowledge === "PARTIAL") {
+    return producer.softwareName ? `재구성 소프트웨어: ${producer.softwareName} (버전 미상)` : "재구성 소프트웨어: 미상 (등록 시 확인되지 않음)";
+  }
+  return producer.softwareName && producer.softwareVersion
+    ? `재구성 소프트웨어: ${producer.softwareName} ${producer.softwareVersion}`
+    : "재구성 소프트웨어: 미상 (등록 시 확인되지 않음)";
+}
+
+/**
+ * V3 captureBasis 표시. 작업지시 제목 같은 다른 출처를 촬영 진실로 해석하지
+ * 않는다 — 입력 신고(inputDeclaration)에 있을 때만 표시하고, V1 기록(판정
+ * 없음)에는 아무것도 덧붙이지 않는다.
+ */
+export function describeCaptureLine(
+  input: (ReconstructionCaptureView & { originalRetentionLocus?: string | null; originalRetentionDetail?: string | null }) | null | undefined,
+  formatInterval: (startedAt: string, endedAt: string) => string,
+): string | null {
+  if (!input || input.captureBasis === undefined || input.captureBasis === null) return null;
+  if (input.captureBasis === "DATE_ONLY") {
+    const date = formatPublisherCalendarDate(input.captureDate);
+    return date ? `촬영 시점: ${date} · 촬영 시각 미상 (발행자 신고 날짜)` : "촬영 시점: 날짜 확인 필요";
+  }
+  if (input.captureBasis === "UNKNOWN") return "촬영 시점: 미상 (등록 시 확인되지 않음)";
+  if (input.captureStartedAt && input.captureEndedAt) return `촬영 시점: ${formatInterval(input.captureStartedAt, input.captureEndedAt)}`;
+  return "촬영 시점: 확인 필요";
+}
+
+const RETENTION_LOCUS_LABEL: Record<string, string> = {
+  customer_workstation: "고객 작업 장비",
+  upstream_source: "공개 출처(신고)",
+  unknown: "미상",
+};
+
+/** 원본 보관 위치 신고. 공개 출처라고 해서 원본 보유를 단정하지 않는다. */
+export function describeRetentionLine(input: { originalRetentionLocus?: string | null; originalRetentionDetail?: string | null } | null | undefined): string | null {
+  if (!input || input.originalRetentionLocus === undefined || input.originalRetentionLocus === null) return null;
+  const locus = RETENTION_LOCUS_LABEL[input.originalRetentionLocus] ?? "확인 필요";
+  return `원본 보관: ${locus}${input.originalRetentionDetail ? ` · ${input.originalRetentionDetail}` : ""} (원본 사진은 요청하지 않습니다)`;
+}

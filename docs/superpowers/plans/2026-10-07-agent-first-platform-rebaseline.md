@@ -4809,3 +4809,61 @@ General `ses_ea64b30c4ffebqovMQZTR92GvD` owns a new isolated actual production-C
 chain (no app source/old-server edits). Main owns integration and subsequent actual upload UI/runtime
 render. Plan read-only findings reused; no duplicate research. The real host-backed VM chain is available;
 static prototype and test UDS doubles are not serving-runtime substitutes.
+
+#### Public input preparation plan (local conversion, before writes)
+
+Requirement IDs: SDP-REQ-01/02/03/06; INV-040/051 original/derivative distinction and unknown geodetic facts.
+Owner module: tools/ (artifact converter, not independently operated service or product policy).
+Acceptance: four licensed source hashes unchanged; produce separately identified bounded GeoTIFF derivatives
+of the real common extent with horizontal CRS retained, no invented vertical CRS/time/producer; documented
+export tool/resampling/alpha-validity rule and source hashes. These outputs are inputs, not inspection facts.
+Contracts affected: none by converter; new ingress owner will accept provenance through its approved contract.
+Reference assets: exact four originals in DEMO_MATERIALS.json; Rasterio/GDAL already in locked environment.
+Adoption decisions: explicit offline format conversion/crop/resampling, not relabelling JP2/unsupported TIFF
+as the same original or claiming source observations were acquired by KSI. No source network fetching.
+Files to change: new bounded tools/prepare_public_floreat_inputs.py + focused tests; ignored output directory.
+Tests: original identity/no-overwrite/bounded pixels/no vertical fabrication + real converter run.
+HIL assumptions: none; no accuracy/settlement or actual-product inspection claim.
+License/data implications: CC BY4 source/attribution retained, original and derivative identities separate;
+no new tenant rights or AI-egress grant. Rollback: remove only newly generated derivative directory/tool;
+never touch original bytes, pre-existing outputs or service journals.
+
+#### Integration progress — actual use target, 2026-10-21
+
+- V3 Core unit complete (uncommitted): explicit date-only/unknown timing, DECLARED/PARTIAL/UNKNOWN producer,
+  unknown raw-photo retention, bounded safe source URI + separately declared derivative export. Exact scoped
+  OIDC route audited; cross-org/site/area denials preserve journals, VIEWER/revoked blocked. Old V1/V2
+  schema/digest/replay unchanged. Intake-identity execution consts retained under ADR036 D1/D2, never shown
+  as factual upstream run location. Latest focused V3 suite41 + broad252 passed in owner verification.
+- Actual registration UI unit complete (uncommitted): same ExternalReconstructionPanel and user-session BFF
+  use canonical V3 for new intake; ortho-only/DSM-only/both; date-only calendar field/no invented timestamps;
+  unknown/partial producer + source/retention/export disclosures; existing V1/V2 resume preserved. TS/Python
+  golden digests agree. Owner fullDashboard1495 + tsc/eslint clean; live new-Core registration still pending.
+- Native-window/preview unit corrects whole-file requests, small-grid/rectangular requests and receipt-bound
+  size+SHA guarded read, finite60s display timeout, NoData transparency. Additional Main review found
+  internal TIFF masks in actual native-worker output (`external_native_window.py` write_mask); same owner
+  is adding real-byte mask handling, not pretending finite values are valid. Parent preview now requires
+  AVAILABLE and keys by Site/Area/job/receipt so cached images cannot bleed between job contexts; revoked
+  receipt remains readable without offering file fetch. Main focused46 passed for page/NoData/preview.
+- Main prepared four real supported-format crop/export derivatives (about2.3–3MB each) through bounded
+  converter, original hashes unchanged; 9 converter tests + ruff/mypy clean. This is preparation, not
+  registered/inspected product evidence. Exact source/date/export metadata in ignored preparation.json
+  and intake-metadata.json; original capture remains day-only and upstream production/raw retention unknown.
+- Main Python contract+replay run completed: **5873 passed /33 skipped /98 warnings**, 865.98s. Reuse this
+  evidence; scope-run any changes after collection instead of duplicating the entire completed run.
+- Host node_modules drift was observed (installed Next16.4.2/Vitest4.1.12 vs lock Next16.3.3/Vitest4.1.11);
+  lockfiles unchanged. Locked Docker builder image24aaf550… successfully builds current Console. Final
+  delivery uses locked build/tests; no unapproved host dependency reinstall.
+- Real isolated Core/VM worker/public data chain remains owned by runtime General; no actual-product
+  completion claimed until same-service persistent records, permitted view/download and computation/
+  review are exercised. Standalone design artifact is not integration evidence and remains out of target.
+
+- Locked production build + locked dependency tests verified after all source units and Main corrections:
+  builder `sha256:5eb9609d…`, Next16.3.3/Vitest4.1.11 from unchanged npm lock, **158 files/1501 tests pass**
+  inside network-disabled container. Initial container run correctly found no tests because production
+  Dockerignore excludes them; mounted test inputs read-only, then ran unchanged suite (no skipped checks).
+  Host tests also1501pass/tsc0; scoped latest Python60pass and ruff/mypy clean. Reuse this evidence.
+- These source units are ready for actual runtime/browser integration, not accepted from test totals.
+  Source freeze for first actual-product render: V3 intake + scoped native-window display + truthful
+  registered-site label (UNMAPPED cannot infer observation absence), date-only candidate explanation,
+  missing deep-linked result distinguished from absent Analysis environment. No domain transition changed.

@@ -49,6 +49,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     selectedDetail: Awaited<ReturnType<typeof getAnalysis>> | null;
   } | null = null;
   let childError: unknown;
+  let childStage: "lists" | "detail" = "lists";
   try {
     const [areas, observations, listedAnalyses, workOrders] = await Promise.all([
       listWorkAreas(siteId),
@@ -56,9 +57,11 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       listAnalyses(siteId, { limit: 50 }),
       listObservationWorkOrders(siteId).catch(() => null),
     ]);
-    const detail = analysisId && !listedAnalyses.items.some((item) => item.analysisId === analysisId)
-      ? await getAnalysis(siteId, analysisId)
-      : null;
+    let detail: Awaited<ReturnType<typeof getAnalysis>> | null = null;
+    if (analysisId && !listedAnalyses.items.some((item) => item.analysisId === analysisId)) {
+      childStage = "detail";
+      detail = await getAnalysis(siteId, analysisId);
+    }
     const workAreasByOrder = new Map<string, string[]>();
     const workOrderNames: Record<string, string> = {};
     for (const order of workOrders ?? []) {
@@ -84,7 +87,8 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   } catch (error) {
     childError = error;
   }
-  const unavailable = childError instanceof CoreApiError && childError.status === 404;
+  const unavailable = childStage === "lists" && childError instanceof CoreApiError && childError.status === 404;
+  const missingDetail = childStage === "detail" && childError instanceof CoreApiError && childError.status === 404;
   const denied = childError instanceof CoreApiError && childError.status === 403;
   const retryAfterSeconds = childError instanceof CoreApiError ? childError.retryAfterSeconds : undefined;
   const canCreate = session.principal.permissions.includes("SITES_WRITE");
@@ -135,6 +139,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       {loaded ? <>
         {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
         {loaded.analyses.items.length === 0 && <AnalysisStartGuide
+          workAreaId={effectiveWorkAreaId || null}
           siteId={siteId}
           workAreaCount={loaded.areas.workAreas.length}
           observationCount={loaded.attributedObservations.length}
@@ -161,7 +166,8 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           currentHintNotice={currentHint.notice}
         />
       </> : <div className="flex flex-col gap-3">
-        <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다. 등록 자료 자체의 문제가 아닙니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable ? "idle" : "crit"} retryable={!denied && !unavailable} retryAfterSeconds={retryAfterSeconds} />
+        <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : missingDetail ? "선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다. 등록 자료 자체의 문제가 아닙니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable || missingDetail ? "idle" : "crit"} retryable={!denied && !unavailable && !missingDetail} retryAfterSeconds={retryAfterSeconds} />
+        {missingDetail && <Link className="btn w-fit" href={fallbackScope ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(fallbackScope)}` : `/sites/${encodeURIComponent(siteId)}/analysis`}>분석 목록 보기</Link>}
         {unavailable && <>
           <p className="rounded-lg border border-line bg-surface px-4 py-2.5 text-[12px] leading-5 text-ink-2" role="status">분석 실행 환경이 준비되지 않아 계산 요청으로 이어지지 않습니다. 같은 구역의 등록 자료와 검사 상태는 확인할 수 있습니다.</p>
           <nav className="flex flex-wrap gap-2" aria-label="분석 불가 시 다음 확인">
