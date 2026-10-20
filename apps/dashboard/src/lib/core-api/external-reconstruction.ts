@@ -110,6 +110,43 @@ export function sealExternalReconstructionSubmission(
   return coreFetch(`${base(workOrderId)}/${encodeURIComponent(submissionRef)}/revisions/${revision}/seal`, { method: "POST" });
 }
 
+export type ExternalRevisionDetailView = {
+  submissionRef: string;
+  /** Versioned wire dict (v1 or v3) — 반드시 호출부가 계약 버전을 확인하고 쓴다. */
+  submission: unknown;
+  state: "REGISTERED" | "SEALED";
+  manifest: unknown | null;
+};
+
+function assertRevisionPath(workOrderId: string, submissionRef: string, revision: number): void {
+  if (typeof workOrderId !== "string" || workOrderId.length < 1 || workOrderId.length > 255) {
+    throw new TypeError("workOrderId가 올바르지 않습니다");
+  }
+  if (!/^ers-v1-[0-9a-f]{64}$/.test(submissionRef)) {
+    throw new TypeError("submissionRef가 올바르지 않습니다");
+  }
+  if (!Number.isSafeInteger(revision) || revision < 1) {
+    throw new TypeError("revision이 올바르지 않습니다");
+  }
+}
+
+/**
+ * 선택한 자산 하나에 묶인 제출서 revision 1건을 읽는다 — 목록 N+1 조회가 아니다.
+ * Core의 기존 버전별 revision GET을 그대로 쓰며, 권한은 호출자의 운영자
+ * 세션으로 확인한다(관리자 대체 경로 없음). 반환된 submission의 계약 버전과
+ * 귀속은 호출부가 검증해야 한다.
+ */
+export function getExternalReconstructionSubmission(
+  workOrderId: string,
+  submissionRef: string,
+  revision: number,
+): Promise<ExternalRevisionDetailView> {
+  assertRevisionPath(workOrderId, submissionRef, revision);
+  return coreFetch<ExternalRevisionDetailView>(
+    `${base(workOrderId)}/${encodeURIComponent(submissionRef)}/revisions/${revision}`,
+  );
+}
+
 export function getExternalArtifactInspection(
   workOrderId: string,
   submissionRef: string,

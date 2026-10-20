@@ -151,6 +151,15 @@ describe("analysis UI guidance", () => {
 // 아무것도 할 수 없다. 원인이 산출물 쪽에 있는 코드에는 직접 실행할 수 있는 조치가
 // 붙어야 하고, Core 기록·운영 조회로만 풀리는 문제에는 붙지 않아야 한다.
 describe("self-service remediation", () => {
+  it("does not diagnose a broad input blocker as a missing DSM or advise a fabricated reference", () => {
+    const input = getAnalysisIssueGuidance("ESSENTIAL_INPUT_UNAVAILABLE").selfServiceNextStep!;
+    expect(input).toContain("DSM을 이미 제출했다면");
+    expect(input).toContain("촬영 구간");
+    expect(input).toContain("없는 값을 추정해 채우지 마세요");
+    const crs = getAnalysisIssueGuidance("HORIZONTAL_CRS_UNAVAILABLE_OR_MISMATCH").selfServiceNextStep!;
+    expect(crs).toContain("기준이 파일에 있어도 지원 정책과 다르면");
+    expect(crs).not.toContain("EPSG:5186");
+  });
   it("names a provider action for artifact-side causes", () => {
     for (const code of [
       "ESSENTIAL_INPUT_UNAVAILABLE",

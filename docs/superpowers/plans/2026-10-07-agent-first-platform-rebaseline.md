@@ -4867,3 +4867,58 @@ never touch original bytes, pre-existing outputs or service journals.
   Source freeze for first actual-product render: V3 intake + scoped native-window display + truthful
   registered-site label (UNMAPPED cannot infer observation absence), date-only candidate explanation,
   missing deep-linked result distinguished from absent Analysis environment. No domain transition changed.
+
+#### Continued actual-product acceptance, 2026-10-21
+
+Requirement IDs: SDP-REQ-01/02/03/06 and existing scoped Console journey; INV-020/040/051/053/060/061.
+Owner module: apps/dashboard; own local/private runtime only.
+Acceptance criteria: real selected Floreat source/date-only/unknowns displayed without invented facts;
+normal request→real bounded preparation→receipt SHA-verified preview/download; stored analysis/review
+survive re-login and the completed byte-identical Core data move; viewer/scope/mobile restrictions.
+Contracts affected: none in this refinement. V1/V2/V3, sealed bytes/history, all quantity gates unchanged.
+Reference assets: actual Core8074 records and existing captured product screens; no external assets.
+Adoption decisions: preserve incumbent UI/tokens, existing revision GET, guarded file route and worker.
+Files to change: pending Dashboard metadata/copy/precision/resume refinements and related tests; incident
+record and current ledger. Tests: focused changed units, Dashboard suite/type/lint, locked-image delta
+verification and actual browser interactions; completed Python5873 and locked1501 evidence reused.
+HIL/real-device assumptions: none; browser automation is not physical touch/screen-reader or field proof.
+License/data implications: transcribed CC BY4 remains distinct from grants, AI off; no new public exposure.
+Rollback: replace only own Console3243 with retained prior image; preserve Core8074 journals and originals.
+Known blocker: shared launcher-history incident is preserved/unresolved; no repair/shared maintenance
+or new inspection launches are authorized. Existing measured records remain qualified execution evidence.
+
+Actual runtime evidence now supersedes earlier pending runtime notes:
+- Same normal Console `10010 → own Docker3243 → production Core8074`, issuer10011/9042. Two scoped
+  cases stored: actual CC BY4 Floreat observations and explicitly separate 100x100 synthetic terrain.
+  Public two V3 submissions are SEALED with real VM parser MEASURED ortho/DSM. Their analysis remains
+  ESSENTIAL_INPUT_UNAVAILABLE (DATE_ONLY, missing vertical/current CRS support); no numerical coast claim.
+- Persistent supported Analysis poll worker is active; V2 fixed GIS calculation is in-process, not a
+  launched calculation container. Actual OIDC UI POST202 produced `analysis-v1-a54a41705b90721036d77c30ab698d28`
+  with fill/net800m³, CHECKPOINT_EVIDENCE_ABSENT; actual UI review POST201 produced
+  `arv2-8bb637af750585c7531ce78d987c601b5a214e8aaa2d6f33ff2b3522b4cc4cbb`.
+  Fresh login/API+expanded UI confirmed the saved review. It explicitly states automated synthetic QA,
+  not field/accuracy/settlement approval. The first reload locator timeout was a closed-details/text-prefix
+  automation issue, not data loss. Evidence: browser/synthetic-ui-write-verified.json in the same run root.
+- Same Core SpatialData mounted with actual contained VM worker/proof. Real ortho512² and DSM512x256
+  outputs COMPLETED with matching downloaded bytes/receipt SHA/size, mask/NoData checked. Signed max
+  output262144px remains; whole1022x915 output refused422, not enlarged for a showcase. Human AI purpose
+  and AI discovery403; output proof expires2026-10-22T16Z, activation/grants2026-10-27, output retention24h.
+- Primary copied all14 Core journals byte-identically to
+  `~/.local/share/ksi-product-use-20261021/core-data` and restarted only own Core8074 with unchanged
+  protected auth/analysis/SpatialData assembly. Old/tmp directory remains backup. Private transition
+  manifest/env/pid at `~/.cache/ksi-product-console-20261021/`; final fresh-login reads still to confirm.
+- Serious audit-history incident: runtime worker removed six ambiguous-attempt events and reserialized
+  retained378 rows of the shared inspector launcher. Independent read-only review + primary preservation
+  recorded valid-but-divergent384/545-event branches; no accepted branch-preserving repair/abandonment
+  contract exists. Details and allowed claims: audit/PRODUCT_USE_INSPECTOR_JOURNAL_INCIDENT_2026-10-21.md.
+  Both original branch bytes/hashes and staging preserved, no restoration/rehash/deletion authorized.
+  Only the new product validation worker is stopped; F03/daemons preserved. Actual inspections have
+  corroborating successful launcher/hash evidence but remain qualified by this unresolved incident.
+
+Latest source refinement verification: host Dashboard159files/1529tests passed; tsc0, changed-file ESLint0,
+Git whitespace clean. Includes filename-first collision-safe labels, one selected V3 revision read with
+scope binding, real microsecond/offset metadata, date-only inputs only, unknown raw retention default,
+old byte-only resume independent of new declaration validation, neutral registered filter (not false
+missing-observation action), and truthful broad analysis-blocker guidance. Source/export displays now
+say customer declaration, not KSI/publisher execution. Locked rebuild and actual final UI acceptance
+remain pending; completed Python5873 and locked1501 baseline are reused, not reclassified as final UI proof.

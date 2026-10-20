@@ -95,14 +95,57 @@ describe("operator language for registered materials", () => {
     expect(titles.get(`ksa-v1-${"b".repeat(64)}`)).toContain("등록 버전 2");
   });
 
-  it("falls back to the full asset reference only when kind, capture and version still collide", () => {
+  function undatedInput(overrides: { assetRef: string; revision?: number; fileName: string }) {
+    return {
+      assetRef: overrides.assetRef,
+      kind: "ortho",
+      revision: overrides.revision ?? 1,
+      declared: { fileName: overrides.fileName, captureStartedAt: null, captureEndedAt: null },
+    };
+  }
+
+  it("disambiguates with the declared file name before any opaque reference", () => {
     const first = `ksa-v1-${"a".repeat(64)}`;
     const second = `ksa-v1-${"b".repeat(64)}`;
     const titles = assetBusinessTitles([
-      businessInput({ assetRef: first, revision: 2 }),
-      businessInput({ assetRef: second, revision: 2 }),
+      undatedInput({ assetRef: first, fileName: "floreat-2021-ortho.tif" }),
+      undatedInput({ assetRef: second, fileName: "floreat-2022-ortho.tif" }),
     ]);
 
+    expect(titles.get(first)).not.toBe(titles.get(second));
+    expect(titles.get(first)).toContain("floreat-2021-ortho.tif");
+    expect(titles.get(second)).toContain("floreat-2022-ortho.tif");
+    expect(titles.get(first)).not.toContain(first);
+    expect(titles.get(second)).not.toContain(second);
+    // 파일명은 식별용일 뿐 촬영 사실로 해석하지 않는다.
+    expect(titles.get(first)).toContain("촬영 구간 미기재");
+    expect(titles.get(first)).not.toContain("2021. ");
+  });
+
+  it("falls back to a brief deterministic id only when file names also collide", () => {
+    const first = `ksa-v1-${"a".repeat(64)}`;
+    const second = `ksa-v1-${"b".repeat(64)}`;
+    const titles = assetBusinessTitles([
+      businessInput({ assetRef: first, revision: 2, fileName: "same-name.tif" }),
+      businessInput({ assetRef: second, revision: 2, fileName: "same-name.tif" }),
+    ]);
+
+    expect(titles.get(first)).not.toBe(titles.get(second));
+    expect(titles.get(first)).toContain("same-name.tif");
+    expect(titles.get(first)).toContain(`#${"a".repeat(8)}`);
+    expect(titles.get(second)).toContain(`#${"b".repeat(8)}`);
+    expect(titles.get(first)).not.toContain(first);
+    expect(titles.get(second)).not.toContain(second);
+    expect(titles.size).toBe(2);
+  });
+
+  it("does not merge distinct documents whose brief id suffixes also collide", () => {
+    const first = `ksa-v1-${"a".repeat(56)}deadbeef`;
+    const second = `ksa-v1-${"b".repeat(56)}deadbeef`;
+    const titles = assetBusinessTitles([
+      undatedInput({ assetRef: first, fileName: "same-name.tif" }),
+      undatedInput({ assetRef: second, fileName: "same-name.tif" }),
+    ]);
     expect(titles.get(first)).not.toBe(titles.get(second));
     expect(titles.get(first)).toContain(first);
     expect(titles.get(second)).toContain(second);

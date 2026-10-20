@@ -16,7 +16,7 @@ interface SiteActionPermissions {
   canCreateWorkOrder: boolean;
 }
 
-/** Returns only actions backed by mounted site and observation-work-order routes. */
+/** Returns mounted actions; a legacy registration state alone cannot prescribe a missing-data task. */
 export function resolveSiteOperatorNextAction(
   site: SiteView,
   permissions: SiteActionPermissions,
@@ -25,7 +25,7 @@ export function resolveSiteOperatorNextAction(
   const siteHref = `/sites/${encodeURIComponent(site.siteId)}`;
 
   if (
-    (site.status === "UNMAPPED" || site.status === "REMAP_REQUIRED" || site.status === "MODEL_STALE" || includeRoutineSurvey)
+    (site.status === "REMAP_REQUIRED" || site.status === "MODEL_STALE" || includeRoutineSurvey)
     && permissions.canCreateWorkOrder
   ) {
     return {
@@ -37,7 +37,7 @@ export function resolveSiteOperatorNextAction(
     };
   }
 
-  if (permissions.canEditSite && site.status === "UNMAPPED") {
+  if (includeRoutineSurvey && permissions.canEditSite && site.status === "UNMAPPED") {
     return {
       kind: "MANAGE_WORK_AREAS",
       label: "작업구역 설정",

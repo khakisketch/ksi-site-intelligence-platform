@@ -227,7 +227,7 @@ describe("Site spatial overview honesty", () => {
     expect([...options].map((o) => o.textContent)).toEqual(["같은 구역 · dup-1", "같은 구역 · dup-2"]);
   });
 
-  it("disambiguates colliding file labels with full refs and uses kind labels", async () => {
+  it("disambiguates colliding file labels with file names before opaque refs and uses kind labels", async () => {
     mocked.assets.mockResolvedValue({
       ...EMPTY_CATALOG,
       assets: [
@@ -236,14 +236,34 @@ describe("Site spatial overview honesty", () => {
       ],
     });
     await renderDefaultTab({});
-    const first = screen.getByRole("link", { name: /ref-aaa/ });
-    const second = screen.getByRole("link", { name: /ref-bbb/ });
-    expect(first.textContent).toContain("등록 버전 2");
-    expect(second.textContent).toContain("등록 버전 2");
-    expect(first.textContent).not.toContain("same.tif");
+    const links = screen.getAllByRole("link", { name: /same\.tif/ });
+    expect(links).toHaveLength(2);
+    expect(links[0].textContent).toContain("등록 버전 2");
+    expect(links[1].textContent).toContain("등록 버전 2");
+    // 파일명까지 겹치면 짧은 결정적 식별자로 가른다 — 전체 참조는 href에 남는다.
+    expect(links[0].textContent).toContain("#ref-aaa");
+    expect(links[1].textContent).toContain("#ref-bbb");
+    expect(links[0].getAttribute("href")).toContain("assetRef=ref-aaa");
+    expect(links[1].getAttribute("href")).toContain("assetRef=ref-bbb");
+    expect(screen.queryByText(/^\s*dsm\s*·/)).toBeNull();
+  });
+
+  it("prefers declared file names when captures are missing instead of opaque refs", async () => {
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [
+        { ...rasterAsset("ref-aaa"), declared: { ...rasterAsset("ref-aaa").declared, fileName: "floreat-2021.tif", captureStartedAt: null, captureEndedAt: null } },
+        { ...rasterAsset("ref-bbb"), declared: { ...rasterAsset("ref-bbb").declared, fileName: "floreat-2022.tif", captureStartedAt: null, captureEndedAt: null } },
+      ],
+    });
+    await renderDefaultTab({});
+    const first = screen.getByRole("link", { name: /floreat-2021\.tif/ });
+    const second = screen.getByRole("link", { name: /floreat-2022\.tif/ });
     expect(first.getAttribute("href")).toContain("assetRef=ref-aaa");
     expect(second.getAttribute("href")).toContain("assetRef=ref-bbb");
-    expect(screen.queryByText(/^\s*dsm\s*·/)).toBeNull();
+    // 파일명에서 촬영 연도를 추론하지 않는다 — 제목은 미기재 그대로 둔다.
+    expect(first.textContent).toContain("촬영 구간 미기재");
+    expect(first.textContent).not.toMatch(/2021\. /);
   });
 
   it("states unsupported CRS honestly and still draws the native plane from actual vertices", async () => {

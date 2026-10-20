@@ -188,7 +188,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
   const [captureEndedLocal, setCaptureEndedLocal] = useState("");
   const [captureDateLocal, setCaptureDateLocal] = useState("");
   const [captureIntervalTouched, setCaptureIntervalTouched] = useState(false);
-  const [retentionLocus, setRetentionLocus] = useState<ExternalV3RetentionLocus>("customer_workstation");
+  const [retentionLocus, setRetentionLocus] = useState<ExternalV3RetentionLocus>("unknown");
   const [retentionDetail, setRetentionDetail] = useState("");
   const [upstreamUri, setUpstreamUri] = useState("");
   const [upstreamSha, setUpstreamSha] = useState("");
@@ -641,7 +641,8 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
     setMessage("등록을 중단했습니다.");
   };
 
-  const canSubmit = hasFile && !busy && !hashing && !sealedComplete && !nameIssues.ortho && !nameIssues.dsm && metadataIssue === null && captureValid
+  const metadataReady = Boolean(resume) || (metadataIssue === null && captureValid);
+  const canSubmit = hasFile && !busy && !hashing && !sealedComplete && !nameIssues.ortho && !nameIssues.dsm && metadataReady
     && (Boolean(resume) || (!payloadRejected && (Boolean(frozenAttempt) || Boolean(newIntentAllowed && expectedEpochId))));
   const formIsFrozen = Boolean(frozenAttempt || resume);
 
@@ -686,6 +687,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
       <div className="mt-3 flex flex-col gap-3">
     {canWrite && <ResponsiveActionBoundary action="EXTERNAL_RECONSTRUCTION_MUTATION" inlineNotice={false} reason="노트북에서 같은 계정으로 이 작업 상세를 열어 정사영상·DSM 등록을 이어가세요.">
       <div className="flex flex-col gap-3">
+        {resume ? <div className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2"><p>선택한 제출본의 등록 정보를 그대로 사용합니다. 여기서는 같은 파일의 전송만 재개하며, 제작·촬영 정보는 다시 신고하거나 변경하지 않습니다.</p>{describeProducerLine(resume.submission.producerDeclaration) && <p className="mt-1">저장된 신고 · {describeProducerLine(resume.submission.producerDeclaration)}</p>}</div> : <>
         <fieldset className="grid gap-2 rounded-lg border border-line bg-sunk p-3" disabled={busy || hashing || formIsFrozen || !newIntentAllowed}>
           <legend className="px-1 font-semibold">재구성 소프트웨어</legend>
           <p className="text-[12px] text-ink-2">실제 재구성한 소프트웨어를 아는 대로 선택하세요. ‘unknown’이라고 쓰지 않습니다.</p>
@@ -706,7 +708,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           <label className="flex flex-col gap-1 font-semibold">출처 기록 (선택)<input className="input" aria-label="재구성 소프트웨어 출처 기록" value={sourceNote} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} maxLength={1000} onChange={(event) => setSourceNote(event.target.value)} /></label>
         </fieldset>
         <fieldset className="grid gap-2 rounded-lg border border-line bg-sunk p-3" disabled={busy || hashing || formIsFrozen || !newIntentAllowed}>
-          <legend className="px-1 font-semibold">촬영 시점 (한국 표준시)</legend>
+          <legend className="px-1 font-semibold">{captureBasis === "EXACT_INTERVAL" ? "촬영 시점 (한국 표준시)" : "촬영 시점"}</legend>
           <p className="text-[12px] text-ink-2">{requiresCaptureInterval ? "외부 관측 등록에는 촬영 구간 확인이 권장됩니다. 미상인 경우 그대로 등록되며, 이후 분석·비교 가능 여부는 별도로 확인합니다." : "촬영 방식을 선택하세요. 선택한 방식만 등록에 포함됩니다."}</p>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="촬영 시점 확인 방식">
             {(["EXACT_INTERVAL", "DATE_ONLY", "UNKNOWN"] as const).map((option) => (
@@ -716,23 +718,23 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
               </label>
             ))}
           </div>
-          <div className="grid gap-2 sm:grid-cols-2">
+          {captureBasis === "EXACT_INTERVAL" && <div className="grid gap-2 sm:grid-cols-2">
             <label className="flex flex-col gap-1">시작<input className="input" aria-label="촬영 시작 시각 (한국 표준시)" type="datetime-local" step="1" value={captureStartedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureStartedLocal(event.target.value); }} />
               {captureStartedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureStartedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
             </label>
             <label className="flex flex-col gap-1">종료<input className="input" aria-label="촬영 종료 시각 (한국 표준시)" type="datetime-local" step="1" value={captureEndedLocal} onChange={(event) => { setCaptureIntervalTouched(true); setCaptureEndedLocal(event.target.value); }} />
               {captureEndedAt && <span className="text-[12px] text-ink-muted">선택: {formatKoreanDateTime(captureEndedAt, { dateStyle: "short", timeStyle: "short" })}</span>}
             </label>
-          </div>
-          <label className="flex flex-col gap-1">촬영 날짜 (날짜만 아는 경우)<input className="input" aria-label="촬영 날짜 (YYYY-MM-DD)" type="date" value={captureDateLocal} onChange={(event) => setCaptureDateLocal(event.target.value)} />
+          </div>}
+          {captureBasis === "DATE_ONLY" && <label className="flex flex-col gap-1">촬영 날짜 (날짜만 아는 경우)<input className="input" aria-label="촬영 날짜 (YYYY-MM-DD)" type="date" value={captureDateLocal} onChange={(event) => setCaptureDateLocal(event.target.value)} />
             {captureBasis === "DATE_ONLY" && formatPublisherCalendarDate(captureDateLocal) && <span className="text-[12px] text-ink-muted">선택: {formatPublisherCalendarDate(captureDateLocal)} · 시각 미상</span>}
-          </label>
+          </label>}
           {captureBasis === "UNKNOWN" && <p className="text-[12px] text-ink-2">촬영 시점을 미상으로 등록합니다. 자정 시각 같은 추정값을 넣지 않습니다. 이후 분석·비교 가능 여부는 별도로 확인합니다.</p>}
           {captureBasis === "EXACT_INTERVAL" && captureIntervalTouched && !captureValid && <p role="alert" className="text-[12px] text-high-ink">시작과 종료를 모두 입력하고, 종료가 시작보다 늦은지 확인하세요.</p>}
         </fieldset>
         <fieldset className="grid gap-2 rounded-lg border border-line bg-sunk p-3" disabled={busy || hashing || formIsFrozen || !newIntentAllowed}>
-          <legend className="px-1 font-semibold">원본 보관 위치</legend>
-          <p className="text-[12px] text-ink-2">원본 사진은 요청하지 않습니다. 등록하는 파일의 원본이 어디에 있는지 아는 대로 선택하세요. 공개 출처에 원본이 있다고 단정하지 마세요.</p>
+          <legend className="px-1 font-semibold">촬영 원본 보관 위치</legend>
+          <p className="text-[12px] text-ink-2">제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치입니다. 원본 업로드는 요청하지 않습니다. 위치를 모르면 미상으로 두고, 공개 출처에 보관돼 있다고 추정하지 마세요.</p>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="원본 보관 위치">
             {(["customer_workstation", "upstream_source", "unknown"] as const).map((option) => (
               <label key={option} className="flex min-h-11 items-center gap-2 rounded-md border border-line px-3 py-2 text-[12px]">
@@ -764,6 +766,7 @@ function ExternalReconstructionPanelState({ workOrderId, siteId = "", expectedEp
           </div>
           <label className="mt-2 flex flex-col gap-1 font-semibold">내보내기 기록 (선택)<input className="input" aria-label="내보내기 기록" value={exportNote} disabled={busy || hashing || formIsFrozen || !newIntentAllowed} maxLength={1000} onChange={(event) => setExportNote(event.target.value)} /></label>
         </details>
+        </>}
         <FilePickerField
           label="정사영상 (선택)"
           ariaLabel="정사영상 GeoTIFF"

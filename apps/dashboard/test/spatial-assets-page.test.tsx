@@ -9,6 +9,7 @@ const mocked = vi.hoisted(() => ({
   catalog: vi.fn(),
   detail: vi.fn(),
   workOrders: vi.fn(),
+  revision: vi.fn(),
 }));
 
 vi.mock("next/link", () => ({
@@ -28,6 +29,9 @@ vi.mock("@/lib/core-api/spatial-assets", () => ({
 }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({
   listObservationWorkOrders: mocked.workOrders,
+}));
+vi.mock("@/lib/core-api/external-reconstruction", () => ({
+  getExternalReconstructionSubmission: mocked.revision,
 }));
 vi.mock("@/app/field/OperationsSessionFailure", () => ({
   OperationsSessionFailure: ({ verdict }: { verdict: { notice?: string } }) => createElement("p", null, verdict.notice ?? "로그인 필요"),
@@ -102,6 +106,7 @@ beforeEach(() => {
   mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset()], nextCursor: null, hasMore: false });
   mocked.detail.mockResolvedValue(asset());
   mocked.workOrders.mockResolvedValue([{ workOrderId: "order-1", siteId: "site-1", organizationId: "org-1", name: "북측 1차 관측", workAreaIds: ["area-1"] }]);
+  mocked.revision.mockRejectedValue(new Error("revision unavailable"));
 });
 
 describe("spatial asset catalog page", () => {
@@ -304,5 +309,184 @@ describe("spatial asset catalog page", () => {
     expect(renderToStaticMarkup(await callPage({ workAreaId: ["area-1", "area-2"] }))).toContain("작업구역을 하나만 선택하세요.");
     mocked.detail.mockRejectedValueOnce(new CoreApiError(404, {}));
     expect(renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }))).toContain("자산을 찾을 수 없거나 현재 조회할 수 없습니다.");
+  });
+});
+
+describe("selected asset registration history (V3 submission record)", () => {
+  const submissionRef = `ers-v1-${"b".repeat(64)}`;
+
+  function v3Submission(overrides: Record<string, unknown> = {}) {
+    return {
+      contractVersion: "external-reconstruction-submission.v3",
+      submissionId: "sub-1",
+      revision: 2,
+      organizationId: "org-1",
+      siteId: "site-1",
+      observationEpochId: "epoch-1",
+      submittedAt: "2026-09-30T01:00:00Z",
+      submittedBy: "operator-1",
+      executionResponsibility: "customer_operator",
+      executionLocus: "customer_workstation",
+      producerDeclaration: {
+        producerKnowledge: "UNKNOWN",
+        softwareName: null,
+        softwareVersion: null,
+        buildIdentifier: null,
+        producerRunIdentifier: null,
+        configurationDigest: null,
+        completedAt: null,
+        sourceNote: null,
+      },
+      inputDeclaration: {
+        rawMediaStoredByKsi: false,
+        originalRetentionLocus: "unknown",
+        originalRetentionDetail: null,
+        localInputManifestDigest: null,
+        imageCount: null,
+        captureStartedAt: null,
+        captureEndedAt: null,
+        captureDate: "2021-06-15",
+        captureBasis: "DATE_ONLY",
+        upstreamSource: {
+          sourceUri: "https://example.test/floreat-2021",
+          sourceSha256: "d".repeat(64),
+          licenceDeclaration: "CC BY 4.0",
+          retrievalNote: null,
+        },
+        derivativeExport: {
+          toolName: "KSI Export",
+          toolVersion: "1.0",
+          settingsDigest: null,
+          exportedAt: null,
+          exportNote: null,
+        },
+      },
+      artifacts: [],
+      ...overrides,
+    };
+  }
+
+  function v3Record(submission: unknown, overrides: Record<string, unknown> = {}) {
+    return {
+      submissionRef,
+      submission,
+      state: "REGISTERED",
+      manifest: null,
+      ...overrides,
+    };
+  }
+
+  it("reads one bounded revision for the selected asset and shows Core V3 date and provenance", async () => {
+    mocked.revision.mockResolvedValueOnce(v3Record(v3Submission()));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(mocked.revision).toHaveBeenCalledTimes(1);
+    expect(mocked.revision).toHaveBeenCalledWith("order-1", submissionRef, 2);
+    expect(html).toContain("등록 이력");
+    expect(html).toContain("2021. 6. 15.");
+    expect(html).toContain("촬영 시각 미상");
+    expect(html).toContain("재구성 소프트웨어: 미상");
+    expect(html).toContain("원본 보관: 미상");
+    expect(html).toContain("원자료 출처 (제출서 신고)");
+    expect(html).toContain("공개 라이선스 신고: CC BY 4.0");
+    expect(html).toContain("https://example.test/floreat-2021");
+    expect(html).toContain("KSI 접근·사용 권한 부여와는 별개입니다");
+    expect(html).toContain("제출 산출물 내보내기 (로컬 도구)");
+    expect(html).toContain("KSI Export 1.0");
+    expect(html).toContain("원자료의 재구성 소프트웨어나 KSI의 실행 사실을 뜻하지 않습니다");
+    expect(html).toContain("정확도 평가가 아닙니다");
+    expect(html).not.toContain("등록 이력(제출서)을 확인하지 못했습니다");
+  });
+
+  it("renders exact intervals and partial producers without inventing missing facts", async () => {
+    mocked.revision.mockResolvedValueOnce(v3Record(v3Submission({
+      producerDeclaration: {
+        producerKnowledge: "PARTIAL",
+        softwareName: "Terra",
+        softwareVersion: null,
+        buildIdentifier: null,
+        producerRunIdentifier: null,
+        configurationDigest: null,
+        completedAt: null,
+        sourceNote: null,
+      },
+      inputDeclaration: {
+        rawMediaStoredByKsi: false,
+        originalRetentionLocus: "customer_workstation",
+        originalRetentionDetail: null,
+        localInputManifestDigest: null,
+        imageCount: null,
+        captureStartedAt: "2022-03-04T01:00:00Z",
+        captureEndedAt: "2022-03-04T02:00:00Z",
+        captureDate: null,
+        captureBasis: "EXACT_INTERVAL",
+        upstreamSource: null,
+        derivativeExport: {
+          toolName: "KSI Export",
+          toolVersion: "2.0",
+          settingsDigest: `sha256:${"e".repeat(64)}`,
+          exportedAt: "2022-03-05T00:00:00Z",
+          exportNote: null,
+        },
+      },
+    })));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(html).toContain("2022. 3. 4.");
+    expect(html).toContain("재구성 소프트웨어: Terra (버전 미상)");
+    expect(html).toContain("원본 보관: 고객 작업 장비");
+    expect(html).toContain("KSI Export 2.0");
+    expect(html).not.toContain("원자료 출처 (제출서 신고)");
+  });
+
+  it("keeps V1 records on the old semantics without new sections or notes", async () => {
+    mocked.revision.mockResolvedValueOnce(v3Record({ ...v3Submission(), contractVersion: "external-reconstruction-submission.v1" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(mocked.revision).toHaveBeenCalledTimes(1);
+    expect(html).toContain("선택한 자료");
+    expect(html).not.toContain("등록 이력");
+    expect(html).not.toContain("등록 이력(제출서)을 확인하지 못했습니다");
+  });
+
+  it("does not render a binding-mismatched foreign record or leak its source", async () => {
+    mocked.revision.mockResolvedValueOnce(v3Record(v3Submission({ siteId: "site-9", organizationId: "org-9" })));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(html).toContain("선택한 자료");
+    expect(html).not.toContain("CC BY 4.0");
+    expect(html).not.toContain("https://example.test/floreat-2021");
+    expect(html).not.toContain("등록 이력 (제출서 기준)");
+    expect(html).toContain("등록 이력(제출서)을 확인하지 못했습니다");
+  });
+
+  it("keeps asset facts with a persistent note when the revision read fails", async () => {
+    mocked.revision.mockRejectedValueOnce(new Error("Core 403"));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+
+    expect(html).toContain("선택한 자료");
+    expect(html).toContain("north-dsm.tif");
+    expect(html).toContain("등록 이력(제출서)을 확인하지 못했습니다");
+    expect(html).not.toContain("Core 403");
+  });
+
+  it("does not fetch without a selection", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+
+    expect(mocked.revision).not.toHaveBeenCalled();
+    expect(html).toContain("등록 자료 목록");
+    expect(html).not.toContain("등록 이력");
+    expect(html).not.toContain("등록 이력(제출서)을 확인하지 못했습니다");
+  });
+
+  it("shows the verbatim file name in the list without inferring capture facts", async () => {
+    const dated = asset();
+    dated.declared.fileName = "Site_EPSG7850_2021-05-04_ortho.tif";
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [dated], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+
+    expect(html).toContain("파일명 · Site_EPSG7850_2021-05-04_ortho.tif");
+    expect(html).toContain("촬영 구간 미기재");
+    expect(html).not.toContain("2021. 5. 4. 촬영");
   });
 });

@@ -79,7 +79,7 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     nextStep: "선택한 제출본에서 분석에 필요한 자료를 확인할 수 없습니다. 담당자가 해당 제출 revision과 KSI 검사 상태를 확인하세요.",
     destination: "spatial-assets",
     selfServiceNextStep:
-      "제출본에 분석 입력이 들어 있는지 확인하세요. 상대 체적 비교에는 DSM 산출물이 필요하고, 정사영상 등록만으로는 대체되지 않습니다. 산출물을 다시 export·등록해 포함시키세요.",
+      "등록 자료에서 DSM 유무, 촬영 구간, 파일 검사로 확인된 공간 기준을 함께 확인하세요. DSM을 이미 제출했다면 파일을 반복 추가하기보다 미상인 시각·좌표·높이 근거가 있는지 출처를 확인하세요. 없는 값을 추정해 채우지 마세요.",
   },
   RECONSTRUCTION_NOT_SEALED: {
     label: "등록된 재구성 결과 확인 필요",
@@ -141,7 +141,7 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
     nextStep: "작업구역과 두 관측의 기록된 좌표 기준을 확인하세요. 기준을 UI에서 임의로 바꾸거나 좌표를 추정해 맞추지 마세요.",
     destination: "spatial-assets",
     selfServiceNextStep:
-      "자료를 export할 때 좌표 기준을 명시해 주세요(국내 중부 현장은 보통 EPSG:5186). 기준이 기록되지 않았거나 작업구역과 다르면 비교를 진행하지 않습니다.",
+      "파일과 작업구역의 실제 좌표 기준 및 현재 분석의 지원 범위를 확인하세요. 기준이 파일에 있어도 지원 정책과 다르면 계산되지 않습니다. 통과시키기 위해 좌표계 이름을 바꾸거나 추정해 맞추지 마세요.",
   },
   CRS_MISMATCH: {
     label: "관측 좌표 기준이 서로 다름",

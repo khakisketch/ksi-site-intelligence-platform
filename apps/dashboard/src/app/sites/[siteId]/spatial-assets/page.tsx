@@ -17,6 +17,9 @@ import {
   type SpatialAssetInspectedRasterFacts,
 } from "@/lib/core-api/spatial-assets";
 import { getSite } from "@/lib/core-api/sites";
+import { getExternalReconstructionSubmission } from "@/lib/core-api/external-reconstruction";
+import { validateRegistrationHistory } from "@/lib/registration-history";
+import { RegistrationHistoryFacts, RegistrationHistoryUnavailable } from "./RegistrationHistoryFacts";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { formatBytesKo, formatCountKo } from "@/lib/number-format";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
@@ -148,6 +151,7 @@ function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplic
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
         <h3 className="break-words text-[14px] font-semibold">{headline}</h3>
+        <p className="mt-1 break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
         <p className="mt-1 text-[12px] text-ink-2">{item.declared.format} · {exactByteCount(item.declared.sizeBytes)} (제출 정보 기준)</p>
         <p className={`mt-1 text-[12px] ${stateClass}`}>제출 상태: {assetLifecycleLabel(item.lifecycleState)}</p>
       </div>
@@ -364,6 +368,30 @@ export default async function SpatialAssetsPage({
   const canRequestAnalysis = session.principal.permissions.includes("SITES_WRITE");
   const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
   const inspectedRaster = detail?.inspection.raster ?? null;
+  const detailMatchesScope = detail !== null
+    && assetRef !== undefined
+    && detail.assetRef === assetRef
+    && detail.siteId === siteId
+    && detail.workAreaId === effectiveWorkAreaId;
+
+  // 선택한 자산 하나에 묶인 제출서 revision 1건만 읽는다 — 목록 N+1 조회가 아니다.
+  // Core revision GET을 운영자 세션으로 그대로 쓰며, 계약 버전·귀속은
+  // validateRegistrationHistory가 대조한다. 실패해도 파일 사실은 그대로 둔다.
+  let historyResult: ReturnType<typeof validateRegistrationHistory> | null = null;
+  if (detailMatchesScope && detail) {
+    try {
+      const record = await getExternalReconstructionSubmission(detail.workOrderId, detail.submissionRef, detail.revision);
+      historyResult = validateRegistrationHistory(record, {
+        submissionRef: detail.submissionRef,
+        revision: detail.revision,
+        siteId: detail.siteId,
+        organizationId: session.principal.organizationId,
+        observationEpochId: detail.observationEpochId,
+      });
+    } catch {
+      historyResult = { kind: "unavailable" };
+    }
+  }
   const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detail?.workOrderId
     ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
     : null;
@@ -421,6 +449,8 @@ export default async function SpatialAssetsPage({
                   headline={businessTitleFor(detail)}
                   compareHref={compareHref}
                 />
+                {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
+                {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
                 <SpatialDataRequestAction
                   siteId={siteId}
                   workAreaId={effectiveWorkAreaId!}

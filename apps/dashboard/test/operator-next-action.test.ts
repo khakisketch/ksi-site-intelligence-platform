@@ -24,13 +24,19 @@ describe("site operator next action", () => {
     expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
       canEditSite: true,
       canCreateWorkOrder: true,
-    })).toMatchObject({ href: "/sites/site-1/observations/new", label: "관측 자료 등록" });
+    }, { includeRoutineSurvey: true })).toMatchObject({ href: "/sites/site-1/observations/new", label: "관측 자료 등록" });
   });
 
   it("offers actual WorkArea management rather than a dead AOI anchor for an editor", () => {
     expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
       canEditSite: true, canCreateWorkOrder: false,
-    })).toMatchObject({ kind: "MANAGE_WORK_AREAS", href: "/sites/site-1/work-areas" });
+    }, { includeRoutineSurvey: true })).toMatchObject({ kind: "MANAGE_WORK_AREAS", href: "/sites/site-1/work-areas" });
+  });
+
+  it("does not prescribe registration or setup solely because external data keeps UNMAPPED", () => {
+    expect(resolveSiteOperatorNextAction(site("UNMAPPED", null), {
+      canEditSite: true, canCreateWorkOrder: true,
+    })).toBeNull();
   });
 
   it("never invents a write path for a reader without a Site boundary", () => {

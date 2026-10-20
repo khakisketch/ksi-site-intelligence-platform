@@ -236,7 +236,8 @@ describe("ExternalReconstructionPanel", () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ submissions: [{ submissionRef: "opaque", state: "REGISTERED", submission: { revision: 1, producerDeclaration: { softwareName: "ODM", softwareVersion: "1" }, artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }] } }] }) });
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
-    expect(screen.getByDisplayValue("ODM")).toBeTruthy();
+    expect(screen.getByText("저장된 신고 · 재구성 소프트웨어: ODM 1")).toBeTruthy();
+    expect(screen.queryByLabelText("재구성 소프트웨어 이름")).toBeNull();
     expect(screen.getByText("등록된 파일과 같은 파일을 다시 선택하세요.")).toBeTruthy();
   });
 
@@ -303,6 +304,7 @@ describe("ExternalReconstructionPanel", () => {
     expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("촬영 시작 시각 (한국 표준시)"), { target: { value: "2026-09-06T09:00:00" } });
     fireEvent.change(screen.getByLabelText("촬영 종료 시각 (한국 표준시)"), { target: { value: "2026-09-06T09:10:00" } });
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "원본 보관 위치" })).getByRole("radio", { name: "고객 작업 장비에 있음" }));
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect(registrations[0]).toMatchObject({
@@ -392,6 +394,37 @@ describe("ExternalReconstructionPanel", () => {
     fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
     await screen.findByText(/정사영상 1 KB 확인 완료/);
     expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("resumes accepted date-only bytes without revalidating or resubmitting a new exact-time declaration", async () => {
+    const registered = { submissionRef: "opaque", state: "REGISTERED", submission: {
+      contractVersion: "external-reconstruction-submission.v3", revision: 1,
+      producerDeclaration: { producerKnowledge: "UNKNOWN", softwareName: null, softwareVersion: null },
+      inputDeclaration: { captureBasis: "DATE_ONLY", captureDate: "2021-08-17", captureStartedAt: null, captureEndedAt: null },
+      artifacts: [{ artifactId: "ortho", kind: "ortho", fileName: "ortho.tif", declaredSha256: "a".repeat(64), declaredSizeBytes: 1 }],
+    } };
+    const posts: string[] = [];
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (!init?.method) return { ok: true, json: async () => ({ submissions: [registered] }) };
+      if (init.method === "POST") posts.push(url);
+      if (url.endsWith("/upload-grants")) return { ok: true, json: async () => ({ grants: [{ artifactId: "ortho", uploadUrl: "https://upload.test/ortho", requiredHeaders: {} }] }) };
+      return { ok: true, json: async () => ({}) };
+    });
+    vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
+      this.onmessage?.({ data: { id: request.id, sha256: "a".repeat(64), size: 1 } } as MessageEvent);
+    });
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId={null} canWrite requiresCaptureInterval />);
+    fireEvent.click(await screen.findByRole("button", { name: "등록 이어하기" }));
+    expect(screen.getByText(/같은 파일의 전송만 재개/)).toBeTruthy();
+    expect(screen.queryByRole("radiogroup", { name: "촬영 시점 확인 방식" })).toBeNull();
+    fireEvent.change(screen.getByLabelText("정사영상 GeoTIFF"), { target: { files: [new File(["x"], "ortho.tif")] } });
+    await screen.findByText(/정사영상 1 KB 확인 완료/);
+    expect((screen.getByRole("button", { name: "자료 등록 마치기" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
+    await screen.findByText("파일 등록을 확인했습니다. 파일 형식과 측정 적합성 확인은 아직 진행되지 않았습니다.");
+    expect(posts.some((url) => url.endsWith("/upload-grants"))).toBe(true);
+    expect(posts.some((url) => url.endsWith("/seal"))).toBe(true);
+    expect(posts.some((url) => /external-reconstruction-submissions(?:-v[23])?$/.test(url))).toBe(false);
   });
 
   it("uses a registered reference for an old epoch without a second declaration POST", async () => {
@@ -519,7 +552,9 @@ describe("ExternalReconstructionPanel header auto-recognition (AX-3)", () => {
     expect((screen.getByLabelText("재구성 소프트웨어 이름") as HTMLInputElement).value).toBe("Pix4Dmapper");
     expect((screen.getByLabelText("재구성 소프트웨어 버전") as HTMLInputElement).value).toBe("4.8.4");
     expect(screen.getByText(/2026-09-15 10:20:30 \(참고: 소프트웨어에 따라 촬영 시각 또는 파일 생성 시각\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "정확한 촬영 시각" }));
     expect((screen.getByLabelText("촬영 시작 시각 (한국 표준시)") as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 시점 미상" }));
     fireEvent.click(screen.getByRole("button", { name: "자료 등록 마치기" }));
     await waitFor(() => expect(registrations).toHaveLength(1));
     expect(registrations[0]).toMatchObject({ producerKnowledge: "DECLARED", softwareName: "Pix4Dmapper", softwareVersion: "4.8.4", captureBasis: "UNKNOWN", captureStartedAt: null });
@@ -818,6 +853,28 @@ describe("ExternalReconstructionPanel per-slot name issues", () => {
 });
 
 describe("ExternalReconstructionPanel V3 missing-info intake", () => {
+  it("only shows inputs for the selected timing precision and keeps calendar dates timezone-free", async () => {
+    render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
+    await screen.findByText("아직 등록된 관측 자료가 없습니다.");
+    expect((within(screen.getByRole("radiogroup", { name: "원본 보관 위치" })).getByRole("radio", { name: "미상" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByLabelText("촬영 날짜 (YYYY-MM-DD)")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "정확한 촬영 시각" }));
+    fireEvent.change(screen.getByLabelText("촬영 시작 시각 (한국 표준시)"), { target: { value: "2026-10-20T09:00:17" } });
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 날짜만 확인됨" }));
+    expect(screen.queryByLabelText("촬영 시작 시각 (한국 표준시)")).toBeNull();
+    expect(screen.queryByLabelText("촬영 종료 시각 (한국 표준시)")).toBeNull();
+    expect(screen.queryByText("촬영 시점 (한국 표준시)", { exact: true })).toBeNull();
+    fireEvent.change(screen.getByLabelText("촬영 날짜 (YYYY-MM-DD)"), { target: { value: "2021-08-17" } });
+    expect(screen.getByText(/2021\. 8\. 17\. · 시각 미상/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "촬영 시점 미상" }));
+    expect(screen.queryByLabelText("촬영 날짜 (YYYY-MM-DD)")).toBeNull();
+    expect(screen.queryByLabelText("촬영 시작 시각 (한국 표준시)")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "정확한 촬영 시각" }));
+    // Native datetime-local serialization may normalize fractional zeroes;
+    // compare the exact control value, not one particular textual spelling.
+    expect((screen.getByLabelText("촬영 시작 시각 (한국 표준시)") as HTMLInputElement).valueAsNumber).toBe(Date.UTC(2026, 9, 20, 9, 0, 17));
+  });
+
   function hashAs(sha256: string, size = 1) {
     return vi.spyOn(FakeWorker.prototype, "postMessage").mockImplementation(function (this: FakeWorker, request: { id: string }) {
       this.onmessage?.({ data: { id: request.id, sha256, size } } as MessageEvent);
@@ -936,7 +993,7 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
       captureEndedAt: null,
       captureDate: null,
     });
-    expect(JSON.stringify(posts[0])).not.toContain("unknown");
+    expect(posts[0]).toMatchObject({ softwareName: null, softwareVersion: null, originalRetentionLocus: "unknown" });
     expect(JSON.stringify(posts[0])).not.toContain("T00:00:00");
   });
 
@@ -977,7 +1034,8 @@ describe("ExternalReconstructionPanel V3 missing-info intake", () => {
     render(<ExternalReconstructionPanel workOrderId="work-1" expectedEpochId="epoch-1" canWrite />);
     await screen.findByText("아직 등록된 관측 자료가 없습니다.");
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(2);
-    expect(screen.getByText("원본 사진은 요청하지 않습니다. 등록하는 파일의 원본이 어디에 있는지 아는 대로 선택하세요. 공개 출처에 원본이 있다고 단정하지 마세요.")).toBeTruthy();
+    expect(screen.getByText(/제출할 GeoTIFF가 아니라 재구성에 사용한 원본 사진·관측 자료의 보관 위치/)).toBeTruthy();
+    expect(screen.getByText(/원본 업로드는 요청하지 않습니다/)).toBeTruthy();
     expect(screen.queryByLabelText(/원본 사진/)).toBeNull();
   });
 

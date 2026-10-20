@@ -133,7 +133,10 @@ export function formatPublisherCalendarDate(value: string | null | undefined): s
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const [year, month, day] = value.split("-").map(Number);
   if (!Number.isSafeInteger(year) || !Number.isSafeInteger(month) || !Number.isSafeInteger(day)) return null;
-  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (year < 1) return null;
+  const probe = new Date(0);
+  probe.setUTCFullYear(year, month - 1, day);
+  probe.setUTCHours(0, 0, 0, 0);
   if (probe.getUTCFullYear() !== year || probe.getUTCMonth() !== month - 1 || probe.getUTCDate() !== day) return null;
   return `${year}. ${month}. ${day}.`;
 }

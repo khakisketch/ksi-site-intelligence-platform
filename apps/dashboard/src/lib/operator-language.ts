@@ -119,7 +119,7 @@ export function capturePeriodTitle(
   return "촬영 구간 미기재";
 }
 
-/** 자산 목록·상세·Site 타임라인이 공유하는 제목 입력. 파일명·revision은 입력에 있지만 제목에 쓰지 않는다. */
+/** 자산 목록·상세·Site 타임라인이 공유하는 제목 입력. 파일명은 충돌 때만 식별용으로 원문 그대로 덧붙이며, 촬영 사실로는 해석하지 않는다. */
 export interface AssetBusinessTitleInput {
   kind: string;
   revision: number;
@@ -160,7 +160,10 @@ function findDuplicateValues(values: readonly string[]): Set<string> {
 /**
  * 충돌 안전한 자산 제목표. 분 단위 기본 제목이 겹치는 항목에만 먼저 실제
  * 초 단위 촬영 구간을 보여주고, 그래도 겹치는 항목에만 실제 등록 버전을
- * 덧붙이며, 그래도 겹치는 항목에만 전체 자산 참조를 덧붙인다.
+ * 덧붙이며, 그래도 겹치면 신고된 파일명 원문을 덧붙이고, 파일명까지 겹칠
+ * 때만 짧은 결정적 식별자(자산 참조 끝 8자리)를 덧붙인다. 파일명은
+ * 식별용으로만 그대로 옮기며 촬영 사실로 해석하지 않는다. 전체 자산 참조는
+ * '파일 정보' 펼침과 목록·상세 링크에 그대로 남는다.
  * 어떤 경우에도 항목을 조용히 합치지 않으며, assetRef 키는 모두 남긴다.
  */
 export function assetBusinessTitles(
@@ -183,12 +186,25 @@ export function assetBusinessTitles(
     if (!secondResidual.has(withSeconds[index]!)) return withSeconds[index]!;
     return `${base[index]} · ${registrationVersionLabel(asset.revision)}`;
   });
-  const residual = findDuplicateValues(withVersion);
+  const versionResidual = findDuplicateValues(withVersion);
+  const withFileName = assets.map((asset, index) => {
+    if (!versionResidual.has(withVersion[index]!)) return withVersion[index]!;
+    const fileName = asset.declared.fileName;
+    return fileName.length > 0 ? `${withVersion[index]} · ${fileName}` : withVersion[index]!;
+  });
+  const fileResidual = findDuplicateValues(withFileName);
+  const withBriefId = assets.map((asset, index) => {
+    const title = withFileName[index]!;
+    return fileResidual.has(title) ? `${title} · #${asset.assetRef.slice(-8)}` : title;
+  });
+  const briefResidual = findDuplicateValues(withBriefId);
   assets.forEach((asset, index) => {
-    const labeledTitle = withVersion[index]!;
+    // 짧은 참조도 겹칠 수 있으므로, 그때만 완전한 식별자로 구분한다.
     labeled.set(
       asset.assetRef,
-      residual.has(labeledTitle) ? `${labeledTitle} · ${asset.assetRef}` : labeledTitle,
+      briefResidual.has(withBriefId[index]!)
+        ? `${withFileName[index]} · ${asset.assetRef}`
+        : withBriefId[index]!,
     );
   });
   return labeled;

@@ -109,7 +109,7 @@ export interface SiteNextAction {
 }
 
 const NEXT_ACTION: Record<SiteStatus, SiteNextAction> = {
-  UNMAPPED: { label: "초기 조사 계획", survey: true, actionable: true },
+  UNMAPPED: { label: "자료·작업 확인", survey: false, actionable: false },
   REMAP_REQUIRED: { label: "재조사 계획", survey: true, actionable: true },
   MODEL_STALE: { label: "재조사 검토", survey: true, actionable: true },
   BASELINE_MAPPING: { label: "촬영·업로드 대기", survey: false, actionable: false },
@@ -148,9 +148,8 @@ export const PATROLLABLE_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteSt
   "PATROL_ACTIVE",
 ]);
 
-/** 기준 지도가 없거나 낡아 사람이 조사부터 걸어야 하는 상태. */
+/** 등록 상태만으로 외부 자료 부재나 조치 필요를 추론하지 않는다. */
 export const ATTENTION_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStatus>([
-  "UNMAPPED",
   "REMAP_REQUIRED",
   "MODEL_STALE",
 ]);
@@ -162,8 +161,12 @@ export const PREPARING_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStat
   "MODEL_VALIDATION",
 ]);
 
+/** External observations do not advance the historical acquisition lifecycle. */
+export const REGISTERED_SITE_STATUSES: ReadonlySet<SiteStatus> = new Set<SiteStatus>(["UNMAPPED"]);
+
 export const SITE_GROUPS = [
   { key: "all", label: "전체", statuses: null },
+  { key: "registered", label: "등록됨", statuses: REGISTERED_SITE_STATUSES },
   { key: "attention", label: "확인 필요", statuses: ATTENTION_SITE_STATUSES },
   { key: "preparing", label: "준비 중", statuses: PREPARING_SITE_STATUSES },
   { key: "patrol", label: "순찰 가능", statuses: PATROLLABLE_SITE_STATUSES },

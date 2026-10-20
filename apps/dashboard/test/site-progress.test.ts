@@ -84,7 +84,7 @@ describe("다음 할 일", () => {
   });
 
   it("조사부터 걸어야 하는 상태에만 조사 진입점을 준다", () => {
-    expect(siteNextAction("UNMAPPED").survey).toBe(true);
+    expect(siteNextAction("UNMAPPED")).toEqual({ label: "자료·작업 확인", survey: false, actionable: false });
     expect(siteNextAction("REMAP_REQUIRED").survey).toBe(true);
     // 시스템이 처리 중인 동안에는 사람이 걸 것이 없다 — 링크를 주면 막다른 길이다.
     expect(siteNextAction("MODEL_PROCESSING").survey).toBe(false);
@@ -121,14 +121,17 @@ describe("상태 묶음", () => {
     expect(normalizeSiteGroup("patrol")).toBe("patrol");
   });
 
-  it("칩은 다섯 개다 — 전체 + 운영자가 묻는 네 갈래", () => {
+  it("등록된 외부 관측 현장은 근거 없는 조치 필요 대신 중립 묶음에 둔다", () => {
     expect(SITE_GROUPS.map((g) => g.key)).toEqual([
       "all",
+      "registered",
       "attention",
       "preparing",
       "patrol",
       "suspended",
     ]);
     expect(SITE_GROUPS.find((group) => group.key === "attention")?.label).toBe("확인 필요");
+    expect(siteGroupStatuses("registered")?.has("UNMAPPED")).toBe(true);
+    expect(siteGroupStatuses("attention")?.has("UNMAPPED")).toBe(false);
   });
 });
