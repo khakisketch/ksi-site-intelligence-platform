@@ -2,6 +2,8 @@ import { headers } from "next/headers";
 import Link from "next/link";
 
 import { whoAmI } from "@/lib/core-api/auth";
+import { CoreApiError } from "@/lib/core-api/client";
+import { MissingSessionError } from "@/lib/core-api/session";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
 import { BackButton } from "./BackButton";
@@ -34,13 +36,22 @@ export async function TopBar() {
   // 뜻한다. 레일이 401 을 조용히 비우는 것과 역할을 나눈 결과다(SidebarUserBlock).
   try {
     await whoAmI();
-  } catch {
+  } catch (error) {
     // 로그인 화면 자체에서는 "다시 로그인하세요" 문구가 중복이니 숨긴다. 그 외
     // 화면에서는 조용히 숨기지 않는다 — proxy.ts 는 쿠키 "존재"만 보고 페이지 접근을
     // 허용하므로, 무효/만료 토큰을 쥔 사용자가 로그아웃 버튼도 없이 갇히는 데드락을
     // 막아야 한다(독립 재검토 1차 P1-A). /login 은 이제 세션 유무와 무관하게 항상
     // 도달 가능하다(proxy.ts 참조) — 그냥 링크로 충분하다.
     if (onLoginPage) return null;
+    const expired = error instanceof MissingSessionError || (error instanceof CoreApiError && error.status === 401);
+    const denied = error instanceof CoreApiError && error.status === 403;
+    if (!expired && !denied) {
+      return <TopBarFrame title={title}>
+        <span role="status" className="rounded-md bg-sunk px-2.5 py-1 text-[13px] break-keep text-ink-2">
+          서버 연결을 확인하지 못했습니다. 잠시 후 다시 시도하세요.
+        </span>
+      </TopBarFrame>;
+    }
     // UX 목표 §5 "401 — 재로그인 유도(원래 화면으로 복귀 가능해야 함)" — x-pathname 이
     // 이미 손에 있으니 next 로 실어 재로그인 후 원래 화면에 복귀시킨다(독립 재검토 2차 P3-1).
     const loginHref = currentPathname
@@ -49,13 +60,13 @@ export async function TopBar() {
     return (
       <TopBarFrame title={title}>
         <span className="rounded-md bg-high-bg px-2.5 py-1 text-[13px] break-keep text-high-ink">
-          세션이 만료되었습니다.
+          {denied ? "이 계정의 접근 권한을 확인하세요." : "세션이 만료되었습니다."}
         </span>
         <Link
           href={loginHref}
           className="tap-target flex min-h-11 items-center rounded-md border border-line-strong px-3 text-[13px] font-semibold hover:bg-sunk"
         >
-          다시 로그인
+          {denied ? "다른 계정으로 로그인" : "다시 로그인"}
         </Link>
       </TopBarFrame>
     );

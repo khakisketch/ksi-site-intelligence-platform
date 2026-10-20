@@ -4922,3 +4922,13 @@ old byte-only resume independent of new declaration validation, neutral register
 missing-observation action), and truthful broad analysis-blocker guidance. Source/export displays now
 say customer declaration, not KSI/publisher execution. Locked rebuild and actual final UI acceptance
 remain pending; completed Python5873 and locked1501 baseline are reused, not reclassified as final UI proof.
+
+Final acceptance found a concrete recovery defect: actual Core source-run process exited gracefully
+at02:15:28KST (cause not established), and TopBar caught the network error as “session expired” while
+the page correctly said server unreachable. Requirement: truthful connection/auth recovery (INV-040/060),
+Dashboard TopBar only, no auth-policy change. Preserve 401/missing-session re-login; distinguish 403 and
+network/5xx without revealing internals. Add focused server-render regressions, same tokens/layout,
+no extra whoami request/client bundle/global auth cache. This is the only remaining source correction,
+not an open-ended visual pass. Rollback single component/test. Own Core8074 was resumed from exact
+protected durable env (no config/schema change), all14journal SHA values identical before/after;
+current pid1227838. No shared inspection host intervention. Customer/production uptime not established.
