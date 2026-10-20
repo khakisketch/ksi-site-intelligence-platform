@@ -4448,3 +4448,80 @@ Human은 카드4현장/목록10행 번호 pagination 권고를 승인하면서 �
 최종 추가 회귀: raw server `base`에 현재 page가 함께 전달되는 상태 칩도 criteria patch 시 page를
 명시적으로 제거하도록 중앙 URL helper를 보완했다. 이를 위한 단위1건과 page2→전체 상태 칩의
 실제 browser 회귀를 추가했다. 최종5spec 동시재검은106pass30skip, 1351unit/type/build 통과다.
+
+### 2026-10-20 — 실행 중심 전환: 다음 작업의 정확한 경계 (읽기 전용 gap map, IN PROGRESS)
+
+정본 보강(a24a8afe) 뒤 개발 중심을 실행 증명으로 옮기기 위해 세 빈칸의 실제 경계를
+읽기 전용으로 대조했다. 코드·파일 수정은 없다.
+
+- **자료 준비 경로(Console `자료 받기 요청` → 404)**: 코드가 아니라 **운영자 구성 부재**다.
+  Dashboard BFF(`app/api/.../spatial-data-requests/route.ts`)·Core 라우터
+  (`domains/external/delivery/api.py` PUBLIC_BASE)·job store·grant/현재성·다운로드/감사/cleanup·
+  워커(`services/processing-controller/spatial_data_*`)·native-window primitive
+  (`packages/geo-spatial/.../external_native_window.py`)·OpenAPI/스키마가 모두 트리에 있다. Core는
+  `KSI_CORE_SPATIAL_DATA_CONFIG_FILE`이 없으면 **데이터 레인을 미장착**으로 둔다
+  (`composition/runtime_config.py:_spatial_data_config_path_env`, `routes/external.py:33-83`,
+  `platform_production.py:101-121,201-214`). 따라서 404는 "구현 없음"이 아니라 "보호 구성 부재"이며
+  구성은 sealed policy/runtime/activation+Ed25519 서명, rights(grant/revocation) 파일, S3 저장소,
+  `SPATIAL_DATA_WORKER` 신원 등 **운영자·고객 입력**이다(`docs/ops/SPATIAL_DATA_PRODUCTION_PROVISIONING.md`).
+  2026-10-14 검증호스트 체인(공개 실자료 COMPLETED→다운로드→독립 오라클 PASS)은 이미 실증됐고,
+  남은 것은 2차 호스트/주기 재현·고객·배포 게이트다.
+- **열람 vs 정량 판정**: 이미 **분리되어 있다**. 정량 적합성은
+  `domains/external/quantity/external_relative_volume_analysis.py`의 admission(REMEDIATION_REQUIRED/
+  BLOCKED/ADMIT_PROVISIONAL/ADMIT_EVALUATED)과 `external_quantitative_authority.py`가 결정하고, 열람은
+  `SITES_READ` 기반 카탈로그(`domains/external/ingress/spatial_asset_catalog.py`)·검사 사실/표시
+  다운로드(`external_artifact_inspections.py`, `external_display_artifacts.py`)·grant 범위 READ
+  (`domains/external/delivery/asset_discovery.py`, `source.py`, `jobs.py`)가 결정한다. 카탈로그는
+  `analysisStatus=NOT_EVALUATED`를 항상 유지한다. 정량 실패는 **수치 회수만** 막고 허용된 열람은
+  막지 않는다. 문제는 구현이 아니라 **양쪽을 한 자산에 대해 함께 고정하는 검증이 없다**는 점이다.
+- **반복 관측 `t0→t1→t2`·변경 영향**: 재사용 증거는 이미 있다(FPC-09A/B/C/D: 세 시점 두 쌍, 공유
+  `t1` 입력 digest, 쌍별 독립 authority, review→proposal→승인된 비실행 planning-only 후속 작업,
+  replay 동일성). **부족한 것은 "새 관측이 기존 결과에 미치는 영향"의 자동 전파**다. 결과·계산·
+  평가는 불변 가산 기록이므로 새 `t2`는 새 쌍 결과를 만들 뿐 `t0→t1` 결과를 갱신하지 않으며,
+  현재 존재하는 영향 장치는 **적합성 투영**(후행 실패 평가가 일반 수치 회수를 막고 이력은 읽을 수
+  있게 함)뿐이다. "superseded by new observation" 상태·차분·영향 기록은 없다. 이는 제품 결정이
+  필요해(영향의 정의) 지금 임의로 만들지 않는다.
+- **Human 결정 vs 지금 가능한 일**: GAP-02(실제 export 표본·권리), GAP-05(사용권·TTL·AI 동의 값),
+  SDP-01(첫 구매자·표본), GAP-08(호스트/OIDC/사용자), GAP-09(요금·수용 기준)는 **외부 입력/결정**이고,
+  GAP-03(부분 coverage/NoData 규칙 문구), GAP-04(자산/작업 모델·STAC/COG 채택), GAP-06(자원 상한
+  수치)는 **제품 결정 + 이미 있는 강제 코드**. 요청 경로의 남은 차단요인은 입력이며, 열람·정량
+  분리는 지금 고정할 수 있다.
+- **다음 bounded task**: `tests/contract/test_read_vs_quantity_separation.py` 하나로 **합성 자산
+  하나에 대해** (1) 카탈로그 열람 200 + `analysisStatus=NOT_EVALUATED`, (2) 검사 사실/표시 열람 200,
+  (3) 정량 경로는 평가된 수치를 제시하지 않음(ADMIT_PROVISIONAL 또는 typed BLOCKED — 실제 기록값을
+  그대로 단언), (4) grant READ는 통하고 PREPARE는 typed denial, (5) 실패 평가 주입 후 **수치만**
+  막히고 (1)(2)는 유지됨을 함께 고정한다. 제품 코드·계약·권한 변경 없이 외부 입력 0으로 만들 수
+  있고, RED가 나오면 경계 위반이므로 고치지 말고 보고한다.
+
+**다음 bounded task 실행 — 열람/정량 3층 경계 고정 (2026-10-20)**
+
+정본 보강으로 새로 확인한 제품 경계("열람 가능 ≠ 정량 적합")를 **한 자산에 대해 양쪽을 함께
+고정하는 검증**으로 옮겼다. 제품 코드·계약·권한 변경 없음.
+
+- `tests/contract/test_read_vs_quantity_separation.py` 신규(9 tests). 실제 Core 앱을 하나 mount하고
+  생성된 봉인 DSM 쌍(독립 측정 checkpoint 없음)으로 다음을 함께 고정한다.
+  1) 카탈로그 목록/상세 열람 200 + `analysisStatus=NOT_EVALUATED`(+ `dataAccess=NOT_AVAILABLE_FROM_CATALOG`,
+     supportedActions=VIEW_METADATA만).
+  2) 같은 바이트의 검사 사실/표시 열람이 SITES_READ로 200, 바이트 노출 없음, 없는 receipt 다운로드는
+     비노출 404.
+  3) 정량 경로는 평가된 수치를 제시하지 않는다 — V2 admission이 **ADMIT_PROVISIONAL**, suitability
+     `PROVISIONAL_ACCURACY_UNVERIFIED`, execution `QUEUED`, 응답에 cut/fill/net 없음, evidence의 두
+     epoch 모두 `UNASSESSED`/`CHECKPOINT_EVIDENCE_ABSENT`.
+  4) 공간데이터 레인은 grant 하 READ가 200이지만 PREPARE capability 없음은 typed 403, grant 회수 후
+     view는 `ACCESS_REVOKED`.
+  5) 같은 바이트에 실패 평가를 주입하면 신규 작업이 **REMEDIATION_REQUIRED**로 전환되고 수치만
+     억제되며 (1)(2) 열람은 계속 200(과거 잠정 기록도 조회 가능).
+  6) 스키마가 `analysisStatus`를 `NOT_EVALUATED` 상수로 못 박는지 + **변이 증명**(열람 게이트가 정량
+     적합성을 참조하도록 바꾸면 이 pin이 깨지는 것을 실제로 관측) + 모듈이 고객·현장 수용 주장이 아님을
+     문서로 고정.
+- **과정 중 발견한 기대 오류(제품 결함 아님)**: 공개 요청 경로(`select_current`)는 per-grant 사유를
+  노출하지 않고 `GRANT_REQUIRED`로 닫는다(`domains/external/delivery/grants.py:404-424` — 비노출
+  설계). `OUTPUT_OUTSIDE_GRANT`는 명시 grant 조회 경로(`require_current`, 같은 파일 :328)에서만
+  나온다. 기존 저장소도 이 구분을 고정한다(`tests/contract/test_spatial_data_current_grants.py:103`).
+  테스트 기대값이 공개 경로에 명시 grant 경로의 사유를 적용한 것이 원인이라, **공개 경로는
+  `GRANT_REQUIRED`로, 명시 grant 표면은 `OUTPUT_OUTSIDE_GRANT`로 각각 고정**하도록 교정했다.
+  제품 코드는 건드리지 않았다.
+- 검증: 신규 모듈 9 passed; grant/권한/카탈로그/API 회귀 137 passed; AI·계약·catalog·cleanup·consumer
+  회귀 452 passed; `ruff check` 통과, `ruff format` 적용 후 9 passed 재확인, `git diff --check` 통과.
+- 증거 성격: **로컬 소프트웨어 경계 증명**이다. 고객/현장/생산 수용이 아니고, Terra 호환성·절대
+  정확도·정산·승인을 증명하지 않는다. EXT-VAL·SDP-04/05/08·product-state 수용은 불변이다.
