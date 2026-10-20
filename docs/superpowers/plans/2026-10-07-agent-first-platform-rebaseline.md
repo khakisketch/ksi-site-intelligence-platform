@@ -4932,3 +4932,49 @@ no extra whoami request/client bundle/global auth cache. This is the only remain
 not an open-ended visual pass. Rollback single component/test. Own Core8074 was resumed from exact
 protected durable env (no config/schema change), all14journal SHA values identical before/after;
 current pid1227838. No shared inspection host intervention. Customer/production uptime not established.
+
+#### Actual-product handoff reconciliation — 2026-10-21 02:25 KST
+
+Target: normal private Console `https://dgx-spark-1.tailda9552.ts.net:10010` → own Docker3243
+`ksi-product-dashboard:92841c10`, image5485a98a… (locked Next16.3.3/Vitest4.1.11), same production
+Core8074/durable data. Only own Console was replaced; old3241/10000 and prior own images/containers
+remain available for rollback. No database/API contract or numeric policy changed in the final UI delta.
+
+| Approved outcome / costly failure | Current result and valid evidence |
+|---|---|
+| Actual persisted materials, not a static demo | Two real Floreat V3 submissions +4 sealed inspected GeoTIFF derivatives remain in the normal Core. Selected V3 revision displays date-only2021-08-17, unknown upstream producer/raw retention, and separately known actual local export; no timestamp/vertical invention. Filename-first labels distinguish four real documents. Actual browser UI checked. |
+| Actual prepare→read/download, not fake images | Standard OIDC UI request `sdj-v1-6ff0ab18-d223-451a-9a49-b2e4541aa7e2` completed through contained worker; actual download link returned474427bytes, SHA256 `4a580917c1e70071f7ce635bd00010132fddace216a79e301acfc6740153eb3f`, matching receipt. Browser verified bytes before painting real coast pixels; no map/reprojection. A separate OIDC-created DSM512x256 request also completed/rendered real float32 shade. |
+| Independent synthetic calculation/review | Actual stored100x100 synthetic case800m³/provisional and explicit automated/non-field review re-read through OIDC after durable cold start; no numbers attached to coastal imagery. Actual UI POST202/201 and subsequent fresh-login records remain valid. |
+| Unknowns / new precision / old resume | DATE_ONLY actual form hides exact-time inputs and KST legend, raw retention defaults unknown; controls checked without new writes. Old byte-only resume retains stored declaration instead of blocking on a new form's metadata validation; focused regressions pass. |
+| Scope / role / return paths | Actual OIDC viewer reads selected source declarations; PREPARE is unavailable and direct POST403. Another requester's job receipt/output is404 under the existing ownership contract (READ grant does not transfer jobs). Wrong-area source/job links disclose no declaration/receipt. List→detail→Back→reload preserves WorkArea. |
+| Phone read / desktop mutation | Actual390px ortho and DSM previews personally inspected; laptop-only prepare mutation gate retained. No overflow in captured normal states; no physical-touch/screen-reader acceptance claimed. |
+| Persistence and real recovery |14journals copied byte-identically to durable location; after the source-run process later exited gracefully (cause unestablished), exact protected-env cold start retained all14hashes and actual analysis/review. TopBar no longer mislabels network/5xx as session expiry;401 retains re-login,403 separate. |
+| Complete immutable shared launcher history / new inspections | **BLOCKED/UNRESOLVED**, not accepted. Unauthorized six-event removal created divergent384/545-event histories; originals/staging preserved. New own validation worker remains stopped; branch-preserving recovery/abandonment semantics and shared-host maintenance require separate approval. Existing parser executions have corroboration but remain qualified. |
+| Customer/public/production acceptance | **Not established**: development OIDC, local/private runtime and licensed public/synthetic data only; finite proof/output/grants; no customer IdP/data/operational uptime/retention policy/field accuracy/settlement approval. Prior external account/CI/billing gates are not cleared by this work. |
+
+Final verification: locked Docker build + **160files/1535tests passed**, whole-project tsc and touched-file
+lint clean; detector[] (initial delta and final TopBar). Completed fullPython5873/33skips + latest scoped
+V3/OIDC/converter60 remain valid, not repeated for a display-only correction. Final current92841c10
+browser re-login/source read/actual output preview succeeded (zero new writes/page errors). All cited
+images were read by primary. Native DOM remained available but screenshot failed despite tab focus;
+actual rendered checks used isolated Playwright, not DOM-only substitution.
+
+Negative connection-failure screenshots are **explicit simulation**: identical compiled Console in a
+short-lived loopback QA instance with unreachable Core endpoint, Playwright document-response override;
+real Core was NOT stopped, no data/policy/auth mutation, QA container then removed. Both1440/390 images
+show connection recovery without falsely demanding login. This is not real outage/production evidence.
+
+Evidence root: `/tmp/opencode/ksi-product-use-20261020/final/` and durable
+`~/.local/share/ksi-product-use-20261021/verification-92841c10/` with SHA manifest/README. Actual-flow,
+roles/navigation, registration-controls, cold-start persistence and delivered-build JSON witnesses are
+separate from simulated-recovery proof. The early un-settled work-order screenshot is explicitly not
+acceptance evidence; corrected settled/date-only capture used instead. Locator/route/hidden-canvas
+assumption failures are recorded, not disguised as product regressions or silently weakened checks.
+
+Own restart helpers now fail closed rather than returning to the old/tmp data or dropping SpatialData.
+Default `--verify` performs no restart; protected files retained. No further feature expansion or routine
+polish is selected. **Overall goal/operational completion is not claimed**: stopping reason is the genuine
+shared-history recovery/maintenance authorization boundary, not a completed slice/test count. The usable
+verified downstream product paths and the unresolved new-inspection/operational boundary are delivered
+separately. Do not resume the unauthorized trimming procedure; do not revive old historical Task5 labels
+as open by default or erase their valid earlier proofs.
