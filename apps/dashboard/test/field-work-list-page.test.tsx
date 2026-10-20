@@ -58,6 +58,17 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("Field work list page", () => {
+  it("names the work queue, inbox, and observation record consistently", async () => {
+    render(await FieldWorkListPage());
+    expect(
+      screen.getByText(
+        "현장에 속한 관측 작업을 처리하는 화면입니다. 받은 업무함은 할당·공유 결과이며, 관측 작업은 현장 기록 단위입니다.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "받은 업무함" }).getAttribute("href")).toBe(
+      "/field/inbox",
+    );
+  });
   it("explains an unavailable registration action only on demand, without a registration link", async () => {
     mocked.session.mockResolvedValueOnce({
       kind: "ready",

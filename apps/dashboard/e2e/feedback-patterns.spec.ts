@@ -43,7 +43,7 @@ test("읽기 전용 작업 등록 사유는 클릭·키보드로 열고 닫으�
   await expect(reason).toBeHidden();
   await action.click();
   await expect(reason).toBeVisible();
-  await page.getByRole("main").getByRole("link", { name: "받은 업무", exact: true }).click();
+  await page.getByRole("main").getByRole("link", { name: "받은 업무함", exact: true }).click();
   await expect(reason).toBeHidden();
   expect(mutations).toBe(0);
 });
