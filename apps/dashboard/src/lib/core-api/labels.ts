@@ -17,7 +17,11 @@ import type {
 export type Tone = "neutral" | "progress" | "caution" | "positive" | "warning";
 
 export const SITE_STATUS_LABEL: Record<SiteStatus, { label: string; tone: Tone }> = {
-  UNMAPPED: { label: "경계 미설정", tone: "neutral" },
+  // UNMAPPED 는 "경계 미설정"이 아니다 — 현장 등록은 AOI(경계)를 함께 받는다.
+  // 2026-10-20 베타 참가자 드라이브에서, 참가자가 경계를 직접 그렸는데도 카드가
+  // "경계 미설정"이라 말해 자기 데이터에 대해 거짓말을 했다. 이 상태는 실제로는
+  // "아직 관측이 시작되지 않았다"를 뜻한다(현장 등록 직후·관측 자료 등록 전).
+  UNMAPPED: { label: "관측 시작 전", tone: "neutral" },
   BASELINE_MAPPING: { label: "초기 매핑 중", tone: "progress" },
   MODEL_PROCESSING: { label: "모델 처리 중", tone: "progress" },
   MODEL_VALIDATION: { label: "모델 검증 중", tone: "progress" },
