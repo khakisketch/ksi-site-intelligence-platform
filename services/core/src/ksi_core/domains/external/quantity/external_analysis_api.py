@@ -897,6 +897,47 @@ class ExternalAnalysisFacade:
             raise AnalysisScopeNotFound("ANALYSIS_RESOURCE_NOT_FOUND")
         return view
 
+    @staticmethod
+    def _selector_link_key(selector: AnalysisObservationSelectorV1) -> tuple[str, str, int]:
+        return (selector.work_order_id, selector.submission_ref, selector.revision)
+
+    def _newer_sibling_index(
+        self, intents: Sequence[PublicAnalysisIntent]
+    ) -> dict[str, tuple[str, ...]]:
+        """Derive shared-epoch continuers read-side from already-scoped intents.
+
+        A newer sibling B of A shares site+workArea and satisfies
+        B.baseline == A.current by exact selector equality. The map is built
+        in one O(N) pass over the intent list the caller already holds; no
+        journal append, no capture-time inference, no suitability judgment.
+        Groups sort by (createdAt, analysisId) so output order is stable.
+        Only intents the caller already scoped appear, so no cross-grant leak.
+        """
+        groups: dict[tuple[str, str, tuple[str, str, int]], list[tuple[datetime, str]]] = {}
+        for intent in intents:
+            key = (
+                intent.site_id,
+                intent.work_area_id,
+                self._selector_link_key(intent.baseline),
+            )
+            groups.setdefault(key, []).append((intent.created_at, intent.analysis_id))
+        for members in groups.values():
+            members.sort()
+        index: dict[str, tuple[str, ...]] = {}
+        for intent in intents:
+            key = (
+                intent.site_id,
+                intent.work_area_id,
+                self._selector_link_key(intent.current),
+            )
+            candidates = groups.get(key, [])
+            index[intent.analysis_id] = tuple(
+                analysis_id
+                for _, analysis_id in candidates
+                if analysis_id != intent.analysis_id
+            )[:50]
+        return index
+
     def list_v2(
         self,
         *,
@@ -923,6 +964,7 @@ class ExternalAnalysisFacade:
             key=lambda intent: (intent.created_at, intent.analysis_id),
             reverse=True,
         )
+        sibling_index = self._newer_sibling_index(intents)
         if cursor is not None:
             payload = _decode_cursor(cursor)
             if set(payload) != {"createdAt", "analysisId"}:
@@ -967,6 +1009,7 @@ class ExternalAnalysisFacade:
                     limitation_count=len(view.blockers)
                     + (len(view.result.limitation_codes) if view.result is not None else 0),
                     analysis_href=f"/v2/sites/{site_id}/analyses/{view.analysis_id}",
+                    newer_sibling_analysis_ids=sibling_index.get(view.analysis_id, ()),
                 )
             )
         next_cursor = None

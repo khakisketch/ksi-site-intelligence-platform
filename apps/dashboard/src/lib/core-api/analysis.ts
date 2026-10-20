@@ -82,6 +82,7 @@ export type AnalysisListItem = {
   metrics: AnalysisMetrics | null;
   limitationCount: number;
   analysisHref: string;
+  newerSiblingAnalysisIds?: string[];
 };
 
 export type AnalysisListPage = {

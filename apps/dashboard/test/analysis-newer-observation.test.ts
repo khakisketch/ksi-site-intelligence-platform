@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveNewerObservationNotice,
   findEpochCaptureEndedAt,
+  selectCoreNewerSiblingId,
   type NewerAnalysisCandidate,
   type NewerObservationCandidate,
 } from "@/lib/analysis-newer-observation";
@@ -242,5 +243,26 @@ describe("findEpochCaptureEndedAt", () => {
   it("does not match a different revision of the same work order", () => {
     const otherRevision = { ...CURRENT, revision: 2 };
     expect(findEpochCaptureEndedAt(siteList, otherRevision)).toBeNull();
+  });
+});
+
+describe("selectCoreNewerSiblingId", () => {
+  it("returns null without sibling ids", () => {
+    expect(selectCoreNewerSiblingId([], "analysis-a")).toBeNull();
+    expect(selectCoreNewerSiblingId(null, "analysis-a")).toBeNull();
+    expect(selectCoreNewerSiblingId(undefined, "analysis-a")).toBeNull();
+  });
+
+  it("skips the record itself and keeps Core order", () => {
+    expect(selectCoreNewerSiblingId(["analysis-a", "analysis-b"], "analysis-a")).toBe(
+      "analysis-b",
+    );
+    expect(selectCoreNewerSiblingId(["analysis-b", "analysis-a"], "analysis-a")).toBe(
+      "analysis-b",
+    );
+  });
+
+  it("returns null when only the record itself is listed", () => {
+    expect(selectCoreNewerSiblingId(["analysis-a"], "analysis-a")).toBeNull();
   });
 });

@@ -17909,6 +17909,20 @@ components:
           pattern: ^/v2/[A-Za-z0-9._~/%?=&;:@,\-]+$
           title: Analysishref
           type: string
+        newerSiblingAnalysisIds:
+          default: []
+          description: Read-time derived continuers in the same Site/WorkArea whose
+            baseline selector exactly equals this item current selector, ordered by
+            (createdAt, analysisId). It names a shared-epoch link only; it never revises
+            a record's result, suitability, or history. Detail, result, and evidence
+            payloads of the earlier record stay byte-identical.
+          items:
+            maxLength: 255
+            minLength: 1
+            type: string
+          maxItems: 50
+          title: Newersiblinganalysisids
+          type: array
       required:
       - analysisId
       - siteId

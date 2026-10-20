@@ -187,6 +187,17 @@ class AnalysisListItemV2(_CamelModel):
         ),
     ]
     analysis_href: _Href
+    newer_sibling_analysis_ids: tuple[_Text, ...] = Field(
+        default=(),
+        max_length=50,
+        description=(
+            "Read-time derived continuers in the same Site/WorkArea whose baseline "
+            "selector exactly equals this item current selector, ordered by "
+            "(createdAt, analysisId). It names a shared-epoch link only; it never "
+            "revises a record's result, suitability, or history. Detail, result, "
+            "and evidence payloads of the earlier record stay byte-identical."
+        ),
+    )
 
     @field_validator("created_at")
     @classmethod

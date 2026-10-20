@@ -27,6 +27,7 @@ import { latestAnalysisReview, sameAnalysisReviewTarget } from "@/lib/analysis-r
 import {
   deriveNewerObservationNotice,
   findEpochCaptureEndedAt,
+  selectCoreNewerSiblingId,
   type NewerAnalysisCandidate,
 } from "@/lib/analysis-newer-observation";
 import {
@@ -227,6 +228,9 @@ function toListRow(analysis: AnalysisView): AnalysisListRow {
     resultId: analysis.result?.resultId ?? null,
     metrics: analysis.result?.metrics ?? null,
     limitationCount: analysis.blockers.length + (analysis.result?.limitationCodes.length ?? 0),
+    // 상세 투영은 continuer를 싣지 않는다(이전 기록 불변). 목록이 권위이므로
+    // 상세에서 만든 행은 빈 연결로 두고 가짜 링크를 만들지 않는다.
+    newerSiblingAnalysisIds: [],
   };
 }
 
@@ -243,6 +247,7 @@ function fromListPage(page: AnalysisListPage): AnalysisPageState {
       resultId: item.resultId,
       metrics: item.metrics,
       limitationCount: item.limitationCount,
+      newerSiblingAnalysisIds: item.newerSiblingAnalysisIds ?? [],
     })),
     nextCursor: page.nextCursor,
   };
@@ -419,9 +424,10 @@ function EvidenceSummary({ pages }: { pages: AnalysisEvidencePage[] }) {
   </section>;
 }
 
-function NewerObservationNotice({ siteId, detail, observations, siteObservations, analyses }: {
+function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observations, siteObservations, analyses }: {
   siteId: string;
   detail: AnalysisView;
+  summaryNewerSiblingIds: readonly string[] | null | undefined;
   observations: readonly AttributedAnalysisObservation[];
   siteObservations: readonly AnalysisObservationOption[];
   analyses: readonly NewerAnalysisCandidate[];
@@ -431,18 +437,39 @@ function NewerObservationNotice({ siteId, detail, observations, siteObservations
     // 결과 자신의 epoch 시각은 Site 범위 목록에서 귀속과 무관하게 찾는다.
     // 귀속 목록에만 있으면 귀속 없는 epoch의 결과에는 알림이 붙지 않는다.
     const currentEndedAt = findEpochCaptureEndedAt(siteObservations, currentSelector);
-    if (!currentEndedAt) return null;
-    const notice = deriveNewerObservationNotice({
-      workAreaId,
-      currentSelector,
-      currentCaptureEndedAt: currentEndedAt,
-      observations,
-      analyses,
-    });
-    if (!notice) return null;
-    return { notice, currentEndedAt };
-  }, [currentSelector, workAreaId, observations, siteObservations, analyses]);
+    if (currentEndedAt) {
+      const notice = deriveNewerObservationNotice({
+        workAreaId,
+        currentSelector,
+        currentCaptureEndedAt: currentEndedAt,
+        observations,
+        analyses,
+      });
+      if (notice) return { kind: "epoch" as const, notice, currentEndedAt };
+    }
+    // 시간 파생이 불가해도 목록 투영(Core 목록의 공유 epoch 연결)이 같은
+    // 작업구역의 continuers를 알면 같은 자리에서 중립 문구로 알린다.
+    // 상세·결과·근거 기록은 건드리지 않으며, 두 번째 알림을 만들지 않고
+    // 수치·적합성 판정이나 대체 표현을 쓰지 않는다.
+    const siblingId = selectCoreNewerSiblingId(
+      summaryNewerSiblingIds,
+      detail.analysisId,
+    );
+    if (!siblingId) return null;
+    return { kind: "sibling" as const, siblingId };
+  }, [currentSelector, workAreaId, observations, siteObservations, analyses, summaryNewerSiblingIds, detail.analysisId]);
   if (!resolved) return null;
+  if (resolved.kind === "sibling") {
+    return <p className="border-t border-line px-4 py-2 text-[12px] leading-5 text-ink-2">
+      이 작업구역에 이 기록의 현재 관측을 기준으로 삼은 새 분석이 있습니다. 이 기록의 수치·상태는 그대로 둡니다.{" "}
+      <Link
+        className="font-semibold text-accent-text hover:underline"
+        href={`/sites/${encodeURIComponent(siteId)}/analysis?analysisId=${encodeURIComponent(resolved.siblingId)}`}
+      >
+        새 분석 결과 보기
+      </Link>
+    </p>;
+  }
   const { notice, currentEndedAt } = resolved;
   const newerTime = formatKoreanDateTime(notice.captureEndedAt, { dateStyle: "medium", timeStyle: "short" });
   const currentTime = formatKoreanDateTime(currentEndedAt, { dateStyle: "medium", timeStyle: "short" });
@@ -496,7 +523,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       </div>
       <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
     </div>
-    {detail && <NewerObservationNotice siteId={siteId} detail={detail} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
+    {detail && <NewerObservationNotice siteId={siteId} detail={detail} summaryNewerSiblingIds={summary.newerSiblingAnalysisIds} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}

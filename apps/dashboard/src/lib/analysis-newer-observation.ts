@@ -51,6 +51,29 @@ export type NewerObservationNotice = {
   analysisId: string | null;
 };
 
+/**
+ * Core 읽기 투영의 공유 epoch 연결을 단일 중립 링크로 고른다.
+ *
+ * Core는 같은 작업구역에서 이 기록의 현재 선택자와 정확히 같은 기준
+ * 선택자를 가진 분석 ID를 `newerSiblingAnalysisIds`로 내놓는다(쓰기 없음,
+ * 수치·적합성 판단 없음). 시간 파생 알림이 불가할 때만 이 값을 써서 같은
+ * 자리에 한 줄로 알린다. 자기 자신은 제외하고, 결정적 순서(생성 시각,
+ * ID — Core가 이미 정렬해 전달)를 유지한다. 대체·구버전 표현을 만들지
+ * 않으며, 호출자는 이 ID로 새 분석 상세를 읽어 이동만 한다.
+ */
+export function selectCoreNewerSiblingId(
+  siblingIds: readonly string[] | null | undefined,
+  selfAnalysisId: string,
+): string | null {
+  if (!siblingIds) return null;
+  for (const candidate of siblingIds) {
+    if (typeof candidate !== "string" || candidate.length === 0) continue;
+    if (candidate === selfAnalysisId) continue;
+    return candidate;
+  }
+  return null;
+}
+
 function sameSelector(left: AnalysisSelector, right: AnalysisSelector): boolean {
   return (
     left.workOrderId === right.workOrderId &&

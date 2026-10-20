@@ -397,3 +397,255 @@ def test_v2_three_epoch_weekly_reuse_uses_fresh_pair_authority_and_replays_exact
             replay_fixture.close()
         if not fixture_closed:
             fixture.close()
+
+
+def _v2_detail(
+    client: httpx.Client, *, site_id: str, analysis_id: str, headers: dict[str, str]
+) -> JsonObject:
+    response = client.get(f"/v2/sites/{site_id}/analyses/{analysis_id}", headers=headers)
+    assert response.status_code == 200, response.text
+    return _json_object(response.json())
+
+
+def _v2_evidence_page(
+    client: httpx.Client, *, site_id: str, analysis_id: str, headers: dict[str, str]
+) -> JsonObject:
+    response = client.get(
+        f"/v2/sites/{site_id}/analyses/{analysis_id}/evidence",
+        params={"limit": 32},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return _json_object(response.json())
+
+
+def test_v2_newer_sibling_link_is_read_side_derived_and_history_immutable(
+    tmp_path: Path,
+) -> None:
+    """Second epoch arrival is visible on V2 list reads without touching history.
+
+    Uses the cheap synthetic three-epoch lane (v2_dsm_only + third epoch, real
+    GIS worker) rather than the ~19s actual-inspection lane; the projection
+    under test only reads intent selectors, so the inspection source does not
+    matter. The relation lives ONLY on the V2 list item: the earlier record's
+    own V2 detail/result/evidence payloads stay byte-identical by construction.
+    Asserts: (a) the earlier pair's V2 detail, V2 result/evidence page, and
+    evidenceDigest are byte-identical after the newer pair completes;
+    (b) the shared-epoch link (pair2.baseline == pair1.current) is
+    discoverable as newerSiblingAnalysisIds on the earlier V2 LIST item;
+    (c) the current suitability state stays a separate projection (both pairs
+    remain PROVISIONAL_ACCURACY_UNVERIFIED with numeric results); (d) no new
+    write path (only the two analysis POSTs, relation appears via GET) and no
+    superseded-style status word anywhere on the wire.
+    """
+    from ksi_event_contracts.external_analysis_api_v2 import (
+        AnalysisListItemV2,
+        AnalysisListPageV2,
+        AnalysisViewV2,
+    )
+
+    fixture = build_local_analysis_api_fixture(
+        tmp_path,
+        v2_dsm_only=True,
+        include_third_epoch=True,
+    )
+    assert fixture.third is not None
+    object_server: ThreadingHTTPServer | None = None
+    object_thread: Thread | None = None
+    core_server: uvicorn.Server | None = None
+    core_thread: Thread | None = None
+    core_socket: socket.socket | None = None
+    worker_client: ExternalAnalysisCoreClient | None = None
+    try:
+
+        class LoopbackObjectHandler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # noqa: N802
+                if not self.path.startswith("/objects/"):
+                    self.send_error(404)
+                    return
+                try:
+                    payload = fixture.storage.object_bytes(
+                        unquote(self.path.removeprefix("/objects/"))
+                    )
+                except KeyError:
+                    self.send_error(404)
+                    return
+                self.send_response(200)
+                self.send_header("Content-Type", "image/tiff")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        object_server = ThreadingHTTPServer(("127.0.0.1", 0), LoopbackObjectHandler)
+        object_thread = Thread(target=object_server.serve_forever, daemon=True)
+        object_thread.start()
+        object_origin = f"http://127.0.0.1:{object_server.server_port}"
+        fixture.set_loopback_object_origin(object_origin)
+
+        listen_socket = socket.socket()
+        core_socket = listen_socket
+        listen_socket.bind(("127.0.0.1", 0))
+        listen_socket.listen(128)
+        core_origin = f"http://127.0.0.1:{listen_socket.getsockname()[1]}"
+        server = uvicorn.Server(uvicorn.Config(fixture.app, log_level="warning", access_log=False))
+        core_server = server
+        core_thread = Thread(target=lambda: server.run(sockets=[listen_socket]), daemon=True)
+        core_thread.start()
+        for _ in range(100):
+            if core_server.started:
+                break
+            assert core_thread.is_alive(), "local Core server stopped during startup"
+            time.sleep(0.02)
+        assert core_server.started
+
+        runtime_facts = fixture.app.state.external_analysis_wiring.facade._assessments._runtime
+        envelope = fixture.app.state.external_analysis_wiring.calculations._resource_envelope
+        runtime = ProcessingWorkerRuntimeIdentityV1(
+            worker_executable_digest=runtime_facts.worker_executable_digest,
+            worker_build_digest=runtime_facts.worker_build_digest,
+            runtime_image_version=runtime_facts.runtime_image_version,
+            runtime_image_oci_digest=runtime_facts.runtime_image_oci_digest,
+            dependency_lock_digest=runtime_facts.dependency_lock_digest,
+        )
+        transport = ExternalObjectTransportPolicyV1(
+            endpoints=(TrustedObjectEndpointV1(origin=object_origin, addresses=("127.0.0.1",)),),
+            max_header_bytes=16_384,
+            max_object_bytes=envelope.max_input_bytes,
+            max_chunk_bytes=min(65_536, envelope.max_input_bytes),
+        )
+        headers = fixture.operator_headers()
+        analysis_url = f"/v1/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses"
+        t0_t1_body = _request_body(fixture.baseline, fixture.current)
+        assert fixture.third is not None
+        t1_t2_body = _request_body(fixture.current, fixture.third)
+
+        with httpx.Client(base_url=core_origin, trust_env=False) as operator:
+            first_created = operator.post(
+                analysis_url,
+                headers={**headers, "Idempotency-Key": "v2-sibling-t0-t1"},
+                json=t0_t1_body,
+            )
+            assert first_created.status_code == 202, first_created.text
+            first_id = first_created.json()["analysisId"]
+            worker_client = ExternalAnalysisCoreClient(
+                base_url=core_origin,
+                worker_token=fixture.worker_headers()["Authorization"].removeprefix("Bearer "),
+                worker_instance_id="v2-sibling-worker",
+            )
+            assert run_once(worker_client, runtime, transport)
+            first_detail, first_result, first_evidence = _completed_analysis(
+                operator,
+                site_id=fixture.site_id,
+                analysis_id=first_id,
+                headers=headers,
+            )
+            first_v2_before = _v2_detail(
+                operator, site_id=fixture.site_id, analysis_id=first_id, headers=headers
+            )
+            first_v2_evidence_before = _v2_evidence_page(
+                operator, site_id=fixture.site_id, analysis_id=first_id, headers=headers
+            )
+            # The earlier record's own detail carries no continuer hint: the
+            # relation lives on the list collection only, so this payload can
+            # never change when a later pair arrives.
+            assert "newerSiblingAnalysisIds" not in first_v2_before
+
+            second_created = operator.post(
+                analysis_url,
+                headers={**headers, "Idempotency-Key": "v2-sibling-t1-t2"},
+                json=t1_t2_body,
+            )
+            assert second_created.status_code == 202, second_created.text
+            second_id = second_created.json()["analysisId"]
+            assert second_id != first_id
+            assert run_once(worker_client, runtime, transport)
+            second_detail, second_result, second_evidence = _completed_analysis(
+                operator,
+                site_id=fixture.site_id,
+                analysis_id=second_id,
+                headers=headers,
+            )
+            assert not run_once(worker_client, runtime, transport)
+
+            # (a) Earlier history is untouched: V1 detail/result/evidence identical,
+            # and the earlier V2 detail/result/evidence payloads are byte-identical.
+            first_after = _completed_analysis(
+                operator, site_id=fixture.site_id, analysis_id=first_id, headers=headers
+            )
+            assert first_after == (first_detail, first_result, first_evidence)
+            first_v2_after = _v2_detail(
+                operator, site_id=fixture.site_id, analysis_id=first_id, headers=headers
+            )
+            first_v2_evidence_after = _v2_evidence_page(
+                operator, site_id=fixture.site_id, analysis_id=first_id, headers=headers
+            )
+            assert first_v2_after == first_v2_before
+            assert first_v2_evidence_after == first_v2_evidence_before
+            assert first_v2_after["evidenceDigest"] == first_v2_before["evidenceDigest"]
+            assert first_v2_after["result"] == first_v2_before["result"]
+
+            # (b) The shared-epoch link is discoverable on the V2 LIST item only.
+            # The earlier detail/result/evidence payloads above are unchanged.
+            second_v2 = _v2_detail(
+                operator, site_id=fixture.site_id, analysis_id=second_id, headers=headers
+            )
+            assert "newerSiblingAnalysisIds" not in second_v2
+            assert first_v2_after["current"] == second_v2["baseline"]
+            listed = operator.get(
+                f"/v2/sites/{fixture.site_id}/analyses",
+                params={"limit": 50},
+                headers=headers,
+            )
+            assert listed.status_code == 200, listed.text
+            items = {item["analysisId"]: item for item in listed.json()["items"]}
+            assert items[first_id]["newerSiblingAnalysisIds"] == [second_id]
+            assert items[second_id]["newerSiblingAnalysisIds"] == []
+
+            # (c) Suitability stays a separate projection; both keep numbers.
+            for v2 in (first_v2_after, second_v2):
+                assert v2["executionState"] == "COMPLETED"
+                assert v2["suitabilityState"] == "PROVISIONAL_ACCURACY_UNVERIFIED"
+                assert v2["result"] is not None
+            assert first_v2_after["suitabilityState"] == first_v2_before["suitabilityState"]
+
+            # (d) No new stored status word: the wire carries no supersede language
+            # and no new write endpoint was used (only the two analysis POSTs above;
+            # the link appeared through GET).
+            import json as _json
+
+            wire = _json.dumps(
+                [first_v2_after, second_v2, listed.json()], ensure_ascii=False
+            ).lower()
+            for forbidden in ("superseded", "supersede", "obsolete", "replaced", "replacement"):
+                assert forbidden not in wire, forbidden
+
+            # MCP parity: ksi_list_analyses carries the list-only relation while
+            # ksi_get_analysis / ksi_get_analysis_result stay byte-stable.
+            # No new tool was added.
+            from ksi_analysis_mcp.core_client import TOOL_RESULT_MODELS
+
+            assert TOOL_RESULT_MODELS["ksi_list_analyses"] is AnalysisListPageV2
+            assert TOOL_RESULT_MODELS["ksi_get_analysis"] is AnalysisViewV2
+            assert TOOL_RESULT_MODELS["ksi_get_analysis_result"] is AnalysisViewV2
+            assert "newer_sibling_analysis_ids" in AnalysisListItemV2.model_fields
+            assert "newer_sibling_analysis_ids" not in AnalysisViewV2.model_fields
+    finally:
+        if worker_client is not None:
+            worker_client.close()
+        if core_server is not None:
+            core_server.should_exit = True
+        if core_thread is not None:
+            core_thread.join(timeout=10)
+            assert not core_thread.is_alive()
+        if core_socket is not None:
+            core_socket.close()
+        if object_server is not None:
+            object_server.shutdown()
+            object_server.server_close()
+        if object_thread is not None:
+            object_thread.join(timeout=10)
+            assert not object_thread.is_alive()
+        fixture.close()
