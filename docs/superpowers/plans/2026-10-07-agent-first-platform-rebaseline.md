@@ -5315,3 +5315,73 @@ tile/window delivery with cache access rechecks and expiry, an explicit cross-ep
 transform + evidence, level-of-detail/validity semantics, and permission-scoped historical byte
 resolution. The shared launcher-history incident and its separate recovery contract are unchanged and
 unapproved; no inspection launch was performed, and no branch was declared canonical.
+
+#### Contracts for the formal display/LOD path and site entry (2026-10-21)
+
+Human directed the next phase to the DISPLAY/LOD contract (highest priority), with the site/area entry
+policy in parallel, historical result lookup later, and audit recovery on an independent, non-critical
+track. Binding directions taken verbatim into both designs: the temporary visualization adapter must NOT
+be scaled up (fix coordinate/registration/permission/cache meanings first, then implement); equal CRS is
+not registration (coordinate transform alone is insufficient — registration error and valid area are
+managed separately, and without registration evidence only independent viewing of two epochs is allowed);
+site entry combines automatic and explicit selection (one area auto-enter; several + saved context restore
+it; several + none → the site's area list/overview, not a forced chooser; an unauthorized or invalid
+context is never auto-restored, and no synthetic merged site map is built from area coordinates);
+display-derivative identity is SEPARATED from source-data identity (display tiles may be regenerated or
+evicted, but the original source version and the input identity referenced by an existing analysis result
+stay stable — changing display colour/LOD for the same DSM must not change the source version an old
+volume result refers to); audit recovery D1–D6 stays on its own track, and approving a recovery design
+must never auto-grant shared-host journal modification authority.
+
+Delivered as two subordinate design documents (design only; no source/contract/runtime/policy change, no
+commit of runtime state, no new Core job, no shared-host action, no inspection launch):
+- `docs/design/SPATIAL_DATA_DISPLAY_LOD_CONTRACT_PROPOSAL_2026-10-21.md` (488 lines) — the formal
+  display/LOD contract: SOURCE identity (stable, never evicted) vs DISPLAY-DERIVATIVE identity
+  (content-addressed `derivativeId`, regenerable, cacheable, evictable) with the explicit rule that
+  results bind SOURCE fields only, never `derivativeId`; native-grid window addressing with the
+  authoritative floor/ceil cell-edge rule and the tiling origin fixed at the source origin; composition
+  only from receipt-verified tiles with fail-closed gaps and no seam smoothing; viewport→minimal covering
+  tile set with per-key dedupe/in-flight join, hysteresis cancel and a per-interaction budget; a named
+  saturated-lane state (2 active / 8 pending) instead of a silent fallback; explicit `PairRegistrationV1`
+  (or NONE) so that equal CRS never implies registration and unregistered epochs allow independent viewing
+  only; cache re-checking rights currentness, revocation, purpose and requester ownership on every use,
+  with a cross-principal shared cache REFUSED under the current grant model (per-principal cache only);
+  epoch-switch extent continuity expressed once in a navigation display CRS and re-projected per epoch
+  (never reinterpreted); the Human entry policy; and the saved-work store declared a separate capability.
+  Open decisions needing owner approval (recorded, not invented): LOD pyramid table + kernels (GAP-03),
+  per-interaction budget N and queue order (GAP-06, after load measurement), `PairRegistrationV1`
+  acceptable methods/evidence and who may assert REGISTERED (no survey-grade inference pre-approved),
+  cache TTL vs delivery retention labelling and per-principal store placement, the display CRS for
+  navigation, style/validity policy registries, the durable saved-work store, and whether display vs
+  AI purposes need splitting (GAP-05 threat model). Numeric LOD/cache thresholds are explicitly OPEN
+  because no load measurement exists and guessing resource numbers is forbidden.
+- `docs/design/SITE_ENTRY_AND_CONTEXT_RESTORE_DESIGN.md` (246 lines) — the entry/context rules: a
+  precedence table (explicit > saved > ordinary) with E1/E2 explicit-valid/explicit-invalid (fail closed
+  with a failure class and a recovery choice, never a silent default and never completing half a broken
+  comparison), S1 zero-authorized-areas, A1/A2 single-area auto-enter vs honest area shell with the
+  server reason verbatim, S2/S3/S4 multi-area saved-context restore / area-list-not-chooser / per-area
+  reasons, and S5 saved-context-invalid (not restored, ordinary state plus a dismissible notice, never
+  auto-repaired by substituting a "closest" version). The honest site-overview substitute is specified
+  field by field (site identity once, authorized area list with per-area observation counts by capture
+  precision, per-area server `entryDefault` reason, per-area SEPARATE extents each with its CRS, latest
+  usable analyses with their area, per-area unavailable reasons) with the forbidden list stated: no merged
+  raster, no unioned "site extent", no recency-implied default, no capture-time synthesis. Saved task
+  context content, invalidation order (scope→area→epoch→exact version selectors→result degradability→
+  TTL), ownership/visibility, and the explicit statement that durable storage is a separate owner
+  decision and is never smuggled in as URL parameters; the context points at SOURCE identities, so a
+  display LOD change never invalidates it and a new source version never silently replaces it.
+  Open decisions: the site-scoped authorized-area summary, a site-level default-area decision with an
+  explicit reason (or declining it, making the area list universal), the saved-context store
+  shape/owner/TTL/quota/visibility, the historical result-access contract for restoring an analysisId,
+  and the display-track deliverables the overview depends on.
+
+Cross-check performed by primary: the two documents reference each other without conflict (the entry
+design depends on the display track for any site-wide representation and does not pre-empt it), both
+keep the three states separate, both forbid a composite ready/status/verified flag, and the entry design
+implements the Human's four entry cases literally (S5 explicitly forbids auto-repair by substitution).
+Next implementation step, in dependency order: (1) GAP-06 load measurement to fix the per-interaction
+budget and queue order with measured numbers, (2) owner approval of the §8 record shapes + LOD table,
+(3) Core delivery + geo-spatial binding/tiling/cache re-check implementation, (4) Dashboard replaces the
+temporary adapter against the approved contract, (5) the registration-method owner defines
+`PairRegistrationV1`, (6) GAP-05 security review for cache/purpose changes. Audit recovery remains
+outside this path.
