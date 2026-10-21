@@ -627,7 +627,10 @@ export function SiteMosaicViewport({
       {cover.ok && geometry && showViewport && (
         <>
           <div className="overflow-auto rounded border border-line bg-sunk/30">
-            <div className="relative inline-block" style={{ minWidth: "100%" }}>
+            <div
+              className="relative mx-auto w-full"
+              style={{ maxWidth: `min(100%, calc(52dvh * ${geometry.width / geometry.height}))` }}
+            >
               <canvas
                 ref={paintMosaicRef}
                 className="block h-auto w-full"

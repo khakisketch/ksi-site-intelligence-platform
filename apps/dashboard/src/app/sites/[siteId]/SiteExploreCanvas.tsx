@@ -68,7 +68,7 @@ export function SiteExploreCanvas({
           )}
         </form>
       ) : selected ? (
-        <p className="text-[13px] font-semibold break-keep">
+        <p className="truncate text-[13px] font-semibold" title={names.get(selected.workAreaId)?.label ?? selected.name}>
           작업구역 · {names.get(selected.workAreaId)?.label ?? selected.name}
           {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
         </p>
@@ -97,10 +97,10 @@ export function SiteExploreCanvas({
           <button type="submit" className="btn">보기</button>
         </form>
       )}
-      {coverageNote && (
-        <p className="break-words text-[12px] text-ink-2">{coverageNote}</p>
-      )}
     </div>
     {children}
+    {coverageNote && (
+      <p className="px-1 text-[12px] leading-5 text-ink-2">{coverageNote}</p>
+    )}
   </section>;
 }
