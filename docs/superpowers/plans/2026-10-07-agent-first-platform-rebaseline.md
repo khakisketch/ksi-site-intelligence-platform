@@ -5583,3 +5583,68 @@ context, two-tier browser/session + persistent server cache, rights re-check on 
 paths, the metric definitions, owners and open decisions) and, in parallel, the registration-ownership
 /purpose-binding rules and the GAP-05 purpose taxonomy with the reassembly control and ordinary-
 exploration protection.
+
+#### Display path: the four decisions fixed (cache, registration, purpose split) (2026-10-21)
+
+Two design documents committed with this entry, both subordinate to the display/LOD contract, the
+Constitution/PRD §1.1.2, ADR-KSI-036/037/038 and the domain invariants; no source/contract/runtime/
+policy change, no commit of runtime state, no new Core job, no shared-host action, no inspection launch.
+
+`docs/design/SPATIAL_DISPLAY_PERSISTENT_CACHE_AND_MEASUREMENT_PLAN_2026-10-21.md` — persistent display
+cache + measurement plan:
+- The cached artifact is the display-derivative prepared bytes at a stated tile size; the anonymous-blob
+  option is REJECTED. Content identity (`derivativeId`) stays SEPARATE from the CACHE KEY, because the
+  key must additionally bind the rights context (principal/org scope, grant and policy revisions, and
+  the activation-currency pin) — a hit may never cross a right boundary.
+- Representation is whole-tile bytes (512px first, 256px a candidate SIZE, never a LOD threshold), and
+  the seam-exactness guarantee is preserved by keeping the existing integer-edge placement.
+- The T1 browser/session tier (today's `MosaicPaintCache` / `DisplayWindowCache`) is kept as a LATENCY
+  optimization only and is never an authority: it re-validates before every paint. A T2 persistent server
+  tier is added for durability; it is also not an authority. Eviction cascades downward only.
+- EVERY hit runs an 8-step live re-check with the content hash checked LAST (grant live → not revoked →
+  purpose → requester ownership → expiry/retention → policy/activation currency → … → hash). This is the
+  Human's hard rule: a matching content hash does NOT mean the current requester may access it.
+- Display ≠ original/AI/export: per-principal and per-purpose retrieval budgets are proposed; the numeric
+  values are left to GAP-05 and the benchmark.
+- Measurement plan: M1 cache hit rate, M2 time to first valid pixel, M3 time to stabilise after a pan,
+  M4 429 occurrence rate, M5 memory usage — each with its definition, instrumentation that changes no
+  product semantics, and a pass/fail FORM whose numeric targets are set by the benchmark rather than
+  invented. A versioned R1–R5 reference exploration run (including a rights-flip pass) makes successive
+  runs comparable. Open decisions O-1..O-8 (record names, currency token, T2 placement — with no
+  deployment authorized, T1 freshness bound, retrieval budgets, tile-size evaluation, style/validity
+  registries, purpose split) and the candid undecidables (TTL/eviction/quota numbers, the shared-cache
+  threat model, LOD thresholds, any rights bypass — unspecifiable floor).
+
+`docs/design/REGISTRATION_ACCEPTANCE_AND_PURPOSE_SPLIT_CONTRACT_2026-10-21.md` — registration ownership
++ GAP-05 purpose split:
+- Registration ownership: the Core server-side spatial layer (delivery + ingress/inspection owners)
+  produces and VERIFIES; event-contracts owns the shapes/validators; geo-spatial owns the math only;
+  the Dashboard/MCP consume; the UI never computes or asserts registration. Owning the method is not
+  performing it — Core performs no registration today.
+- Acceptance starts at EXTERNAL_ATTESTATION: a record pinning both subject versions, the transform +
+  CRS + units + frame, the method + producer + evidence manifest, error metrics with pinned definitions,
+  the valid-area rule + geometry, and the comparison kind; 9 conjunctive Core checks with 9 typed
+  `REFUSE_*` reasons; a bare matrix is refused and in-place edits are forbidden.
+- Purpose binding: records are admitted per comparisonKind (VISUAL_SIDE_BY_SIDE < OVERLAY_ALIGNED <
+  DIFFERENCE_COLOURING < QUANTITATIVE_VOLUME) with 5 per-kind verdicts; a missing or wrong-purpose
+  registration yields INDEPENDENT VIEWING ONLY with mandatory wording and no composite flag.
+- Automated registration is a separate future decision with 5 gates; nothing is admitted now.
+- Purpose taxonomy (GAP-05, decided): DISPLAY_VIEW / ORIGINAL_DOWNLOAD / ANALYSIS_INPUT /
+  AI_EGRESS (= the existing EXTERNAL_AI gate, intact) / DATASET_EXPORT, each with what it permits, what
+  it must NOT permit, the operations granted, the outputs produced, the audit record left and the
+  expiry/limits. No implicit escalation and no gate weakened.
+- Reassembly control: a per-grant AGGREGATE tile-read budget (in source-pixel terms) plus separate
+  display/download budgets, a rate/anti-scraping guard, and an append-only tile-read audit. The numeric
+  factor F, the thresholds, the cache-hit weighting and the CDN/browser threat model are left to risk
+  assessment rather than invented.
+- Ordinary exploration protection: authorisation is per grant (not per tile), the budget is calibrated to
+  normal pan/zoom, limit states are typed and recoverable, and there are no per-tile approval prompts.
+- Contract changes: an ADDITIVE extension of the existing `PairRegistrationV1` (existing records keep
+  parsing; older REGISTERED shapes cannot authorize a kind-bound comparison until re-attested) plus a
+  new ComparisonKindV1, PairRegistrationVerdictV1, the new purpose members, DisplayTileReadAuditV1 and
+  typed reasons, with the contract/Core split stated.
+
+Cross-check by primary: both documents agree on the content-vs-rights separation, the no-composite-flag
+rule, the three-state separation, the "leave numbers to the benchmark/risk assessment" discipline, and the
+registration/purpose boundaries; the cache plan defers the purpose numbers to the GAP-05 taxonomy, so the
+two are consistent rather than competing.
