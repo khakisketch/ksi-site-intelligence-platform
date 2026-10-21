@@ -5491,3 +5491,42 @@ who may assert REGISTERED, the GAP-05 purpose split and cache threat model, and 
 store. The audit-recovery track remains untouched by product code (verified: no product module imports
 the recovery/incident artifacts), so approving the recovery design still grants no journal authority and
 nothing on this path depends on it.
+
+#### Display path unit 3 delivered: multi-window mosaic painted in the real product (2026-10-21)
+
+Unit 3 (multi-window mosaic) committed 92c04a92; own Console image 92c04a92 running. New pure lib
+`apps/dashboard/src/lib/spatial-display-mosaic.ts` + `apps/dashboard/src/app/sites/[siteId]/
+SiteMosaicViewport.tsx` (embedded in the windowed layer view) + 23 new tests; full Dashboard
+170 files/1643 tests, tsc and eslint clean.
+- Composition claims: edge-exact side-by-side placement of INDEPENDENTLY receipted windows in the
+  source's native plane. Paint offsets are computed from each receipt's own `pixelWindow`
+  (`rc0-originC0`, `rr0-originR0`) with an integer bounds guard; a mismatched receipt is skipped, never
+  stretched; `imageSmoothingEnabled=false` and `putImageData` only (no drawImage/alpha/filter). Overlaps
+  are reported as errors and never blended; a missing window becomes an explicit gap with its reason
+  (never interpolated). Labelled "검증된 준비 창의 나란한 배치 — 이음새 보정·재표본화 없음" plus the note
+  that it is not one validated dataset and not accuracy/survey/settlement evidence, and that the viewport
+  is display-only, not a measurement and not the calculation polygon.
+- Interaction: mounting/panning/zooming re-resolve only, with ZERO network on entry; an explicit
+  "이어 보기 채우기 (모자란 창 N개)" button gates every POST and GET. Missing windows go through the
+  existing 2-slot scheduler with stable keys, 429 back-off and supersede; progress shows
+  "그린 창 X / 전체 Y · 끝난 창부터 차례로 그립니다" plus the lane state
+  "준비 중 A개 · 기다리는 창 B개 · 순차 처리 중" and a 대기 취소 affordance. Pan-back repaints from the
+  cache with no new PREPARE.
+- Cache/rights: bytes only via `fetchVerifiedReceiptBytes` (size+SHA gate) → `decodeReceiptPreview`;
+  `MosaicPaintCache` re-checks the current receipt sha/size before every serve and evicts fail-closed
+  (RECEIPT_CHANGED / RIGHTS_UNAVAILABLE, the latter reusing the existing no-disclosure copy); the cache is
+  session-scoped and per-principal by construction, and a foreign owner token is refused and evicted.
+
+Real-product verification (main, screenshot read — `final/mosaic-filled-1440.png`): the mosaic canvas
+is exactly 1022×915 and painted 654,639 opaque / 654,250 non-white pixels of REAL coastal imagery.
+Three previously prepared windows were reused, so the re-check issued ZERO new PREPAREs; the state line
+read "그린 창 3 / 전체 4 · 끝난 창부터 차례로 그립니다 · EPSG:7850 네이티브 평면 1022 × 915 픽셀",
+and the missing top-left window is shown as an explicit "그리지 않음" area with the reason, not filled.
+The first fill attempt issued exactly 2 concurrent PREPAREs (the measured 2-slot limit) for the 3 missing
+windows and showed the rest as "준비 중" — the measured lane behaviour, not a fictional queue.
+
+Still open on this path (unchanged, unowned): the LOD pyramid table (GAP-03 — the resolver is level-0
+native only), a durable cache service and the TTL-vs-retention labelling, the `PairRegistrationV1`
+method owner and who may assert REGISTERED (so cross-epoch synchronized comparison stays refused), the
+GAP-05 purpose split and cache threat model, and the durable saved-work store. Audit recovery remains
+an independent, non-critical track with no product-code dependency.
