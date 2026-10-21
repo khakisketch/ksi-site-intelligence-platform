@@ -5530,3 +5530,56 @@ native only), a durable cache service and the TTL-vs-retention labelling, the `P
 method owner and who may assert REGISTERED (so cross-epoch synchronized comparison stays refused), the
 GAP-05 purpose split and cache threat model, and the durable saved-work store. Audit recovery remains
 an independent, non-critical track with no product-code dependency.
+
+#### Stage-1 direction: cache first, and the completion criterion is measured responsiveness (2026-10-21)
+
+Human adopted the four decisions IN PRINCIPLE with a changed implementation order, and set a new
+acceptance standard: the criterion is no longer "can we display the material" but "does it respond
+naturally while the user zooms, pans and switches epochs", and the completion condition is the
+MEASURED behaviour in the real product, not test counts.
+
+Decisions adopted (principle only; no numbers or implementation fixed yet):
+- LOD pyramid: tile-output size candidates 256px/512px (512 first, as the current cap), but the LOD
+  SWITCH must be driven by the SCREEN's required map resolution compared with the source resolution
+  (whole-site view → lower-resolution first; zoom in → higher), NOT by a fixed zoom-factor threshold;
+  the actual switch thresholds come from a benchmark, not from a guess.
+- Cache: a PERSISTENT display cache separated from the source, keeping content addressing, and the
+  requester must not re-pay the ~12 s on every pan. Structure: browser map → permission check + tile
+  lookup → persistent display cache (hit → immediate) → on miss → tile preparation job → verify →
+  store → deliver.
+- Registration ownership: the server-side spatial-information processing layer owns it; the UI only
+  consumes the result. Owning the method ≠ performing registration: start by accepting and VERIFYING
+  externally attested registration evidence; automated registration (GCP/feature-point/surface) is a
+  separate later step. A registration record must carry the exact baseline/compared versions, the
+  transform and CRS, the method and its evidence, the error/valid-area/suitability assessment, and the
+  producer + method version. `REGISTERED` must NOT follow merely from a transform matrix existing: it
+  requires the evidence and validation conditions for the INTENDED COMPARISON PURPOSE, so one
+  registration may suffice for a visual side-by-side and not for a quantitative volume comparison.
+- GAP-05: display use and AI egress are separated NOW. Display rights must not let anyone export the
+  original GeoTIFF, an AI-training corpus, or unbounded material. Display-tile reads, original
+  download, analysis execution, external AI processing and dataset export are DIFFERENT acts, and
+  repeated tile reads can reconstruct substantial source information, so unlimited tile download under
+  display rights needs its own risk assessment — while ordinary exploration must not be blocked by
+  unnecessary approval steps: request limits and access policy are designed around ordinary exploration
+  behaviour.
+
+Implementation order changed to: (1) persistent display cache + request scheduler; (2) LOD pyramid and
+continuous exploration; (3) registration-evidence acceptance and two-epoch comparison; (4) task-context
+restore and historical result lookup. Audit recovery stays an independent track.
+
+Stage-1 completion criteria are now MEASURED IN THE REAL PRODUCT, not test counts: cache hit rate, time
+to first valid pixel, time to stabilise after a pan, 429 occurrence rate, and memory usage — with the
+measurement method and a scripted pan/zoom run defined so successive runs are comparable, and numeric
+targets left to the benchmark rather than invented here.
+
+Also recorded as the design's hardest rule (Human): DATA INTEGRITY AND USER ACCESS RIGHT ARE SEPARATE.
+A matching content hash does NOT mean the current requester may access it; a cache hit must still
+verify access rights and apply the rights scope and expiry policy, in browser, CDN and server caches
+alike. Until the persistent cache service exists, the existing 2-slot concurrency limit stays, tile
+requests are deduplicated and off-screen requests are cancelled.
+
+Units commissioned: persistent display cache DESIGN + measurement plan (cache keying incl. the rights
+context, two-tier browser/session + persistent server cache, rights re-check on every hit, cold/hot
+paths, the metric definitions, owners and open decisions) and, in parallel, the registration-ownership
+/purpose-binding rules and the GAP-05 purpose taxonomy with the reassembly control and ordinary-
+exploration protection.
