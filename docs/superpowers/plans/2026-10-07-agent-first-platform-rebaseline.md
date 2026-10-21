@@ -5115,3 +5115,51 @@ Live runtime constraint confirmed for the workspace design (main, real Console +
 - `final/verify-spatial-workspace.mjs` therefore asserts observation/date/precision content, compare
   mode structure, result-first ordering, phone rendering and zero unexpected writes — it does not
   assert a raster that this runtime cannot honestly produce.
+
+#### Spatial workspace SWX-1/SWX-2 delivered and verified in the real product (2026-10-21)
+
+Human "진행해줘" approved implementation of the UX contract. Delivered and verified against the live
+normal Console (own Docker3243 → production Core8074, same private entry 10010):
+
+Core (owner unit, committed f0a27df2): new read-only, server-owned observation projection
+`GET /v1/sites/{site_id}/work_areas/{work_area_id}/spatial-workspace-observations`
+(SITES_READ, scope-bound cursor) + `contracts/schemas/site-spatial-workspace.v1.json` + OpenAPI +
+mapped-OIDC allowlist entry. It groups by the existing deterministic `observationEpochId`, carries the
+capture fact at its real precision (EXACT_INTERVAL / DATE_ONLY / UNKNOWN, with the V3 calendar
+`captureDate` read from the declared input declaration), per-version lifecycle/observed/inspection/
+display/chronology facts, and ONE server-owned `entryDefault` (LATEST_EXACT_VIEW_AVAILABLE or an
+explicit no/ambiguity reason) ordered by real capture end/start — never by submittedAt/registration,
+with ties reported as `CAPTURE_TIE_AMBIGUOUS` instead of a pick. No new eligibility computation, no
+byte/URL/key authority, `quantitativeEligibility` stays NOT_EVALUATED. The existing catalog item also
+gained an additive optional `declared.captureDate`, so the real observations finally show their dates.
+Tests: new 14-case contract module + catalog/OIDC/analysis/replay regressions (33+10+105 pass).
+
+Console (owner unit, committed 2e28bb85, then main corrections cd0c2631/17bf5723): typed entry resolver
+(server default only, explicit links restore exact selectors or fail closed, no client-side "latest",
+exact-interval-only comparison candidates, precision-aware copy), a single adapter bound to the new
+Core route, and a Site workspace with 탐색·비교·결과 modes: Explore keeps the incumbent spatial
+overview and now leads with the real observation list (2021-08-17 / 2022-08-24 date-only, "시각 미상"),
+Compare shows two equal-weight slots with the real candidates, the honest "date-only is not an
+orderable comparison candidate" note and no invented synchronization/alignment, Results shows the
+recorded cut/fill/net values with the accuracy/settlement limitation adjacent and before any new-request
+form. Main additionally reordered Explore so the default-selection note follows the real content (a
+site with data must not open with "없습니다") and separated "표시용 파생물이 아직 준비되지 않았습니다"
+from "자료가 없습니다" with a direct link to the working 구역 자료 준비 lane.
+
+Verified in the real product (main, screenshots read): `final/workspace-entry-1440.png`,
+`workspace-compare-1440.png`, `workspace-result-1440.png`, `workspace-entry-390.png`; automated actual
+check `final/verify-spatial-workspace.mjs` → ordinary entry shows real declared dates, Compare has two
+equal slots, Results leads with 800 m³ + its limitation, phone renders without overflow, zero
+unexpected writes, zero page errors. Dashboard 162 files/1569 tests, tsc clean, eslint clean, locked
+Next16.3.3/Vitest4.1.11 image built and running as the own Console. Core journals byte-identical
+across the own restart (14 files, only the spatial-data audit appended).
+
+Honest remaining limits (runtime-verified, not hidden): the public observations' inspector display
+derivative is absent (`PENDING_INSPECTION`, no sanitizedDisplayRef) because the inspection worker lane
+is stopped under the unresolved shared launcher-history incident, so the first viewport shows real
+measured extent/precision/version/validation facts and the truthful byte path rather than a raster;
+Compare slots render measured extents, not display-receipt bytes, because no multiresolution display
+delivery contract exists; work-area choice across areas still uses the incumbent bound/recency
+heuristic because the projection is per-area; `hasMore` pages are noted, not paged in the UI.
+Also unchanged: the shared launcher-history incident remains unresolved with no approved repair
+semantics, and no new inspection launch was performed.
