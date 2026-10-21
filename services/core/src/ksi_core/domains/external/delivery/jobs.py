@@ -82,7 +82,7 @@ from ksi_core.domains.external.delivery.storage_types import (
 )
 from ksi_core.foundation.currentness import ExternalAuthorityCurrentnessCoordinator
 from ksi_core.foundation.durable_journal import DurableJournal, JournalSealedError
-from ksi_core.identity.auth import Permission, Principal, PrincipalKind, Role, principal_permissions
+from ksi_core.identity.auth import Permission, Principal, PrincipalKind, principal_permissions
 
 
 class SpatialDataJobCurrentnessPort(Protocol):
@@ -347,9 +347,11 @@ class SpatialDataJobStore:
             raise SpatialDataDomainError("NOT_FOUND", 404)
         job = record.job
         self._scope(principal, job.site_id, job.work_area_id, permission=permission)
-        if job.requester_principal_id != principal.principal_id and not (
-            principal.kind is PrincipalKind.OPERATOR and principal.role is Role.ADMIN
-        ):
+        if job.requester_principal_id != principal.principal_id:
+            # Requester-owned visibility: even an organization ADMIN reads
+            # only its own jobs here, so the list and the single-job read
+            # agree and no foreign receipt/pixel-window metadata leaks.
+            # The byte path re-proves the same binding in require_download.
             raise SpatialDataDomainError("NOT_FOUND", 404)
         # Current Site/area visibility is checked by the genuine source participant without
         # requiring a grant/report (otherwise revoked jobs would disappear from history).
@@ -1100,8 +1102,6 @@ class SpatialDataJobStore:
                 job_id
                 for job_id in indexed
                 if self._records[job_id].job.requester_principal_id == principal.principal_id
-                or principal.kind is PrincipalKind.OPERATOR
-                and principal.role is Role.ADMIN
             )
             if principal.kind is PrincipalKind.SPATIAL_DATA_MCP_CLIENT:
                 # AI filtering precedes pagination: denied candidates are
@@ -1616,7 +1616,11 @@ class SpatialDataJobStore:
     def require_download(
         self, *, job_id: str, principal: Principal, now: datetime
     ) -> DownloadOutput:
-        """Fresh byte authority is separate from historic metadata or scoped ADMIN visibility."""
+        """Fresh byte authority re-proves requester ownership on every call.
+
+        Metadata (get/list) is requester-owned as well; this explicit
+        binding stays as defense in depth and never widens to ADMIN.
+        """
         with self._guard(now):
             record = self._history(job_id, principal)
             job = record.job

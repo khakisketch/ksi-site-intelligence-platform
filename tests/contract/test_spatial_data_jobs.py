@@ -9,6 +9,7 @@ from typing import Any, get_args
 
 import pytest
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
+from ksi_core.identity.auth import Role
 from ksi_event_contracts.spatial_data import SpatialDataReasonV1
 from ksi_event_contracts.spatial_data_authority import SpatialDataRevocationV1
 from spatial_data_job_fixture import (
@@ -685,3 +686,122 @@ def test_inspection_outage_closes_bytes_without_hiding_completed_history(tmp_pat
     current = store.get(job_id=job.job_id, principal=graph.principal, now=NOW)
     assert current.execution_state == "COMPLETED" and current.receipt == accepted.receipt
     assert current.availability == "UNAVAILABLE" and current.reason == "CURRENTNESS_UNAVAILABLE"
+
+
+def test_list_read_download_coherence_is_requester_owned(tmp_path: Path) -> None:
+    """LIST, READ, cancel and bytes agree: only the requesting principal sees its jobs.
+
+    An organization ADMIN sees neither foreign metadata in the list nor the
+    single-job view, so a window that exists but belongs to another principal
+    is reported as missing (never as a preparation FAILURE), and the byte
+    path stays requester-bound. Revocation/expiry, cross-tenant denial and
+    the list budget/cursor semantics are unchanged.
+    """
+    graph = job_graph(tmp_path)
+    store = job_store(graph)
+    first = issue(store, graph, key="a")
+    second = issue(store, graph, key="b")
+    other = replace(graph.principal, principal_id="other-operator")
+    admin = replace(graph.principal, principal_id="admin-a", role=Role.ADMIN)
+    foreign_tenant = replace(graph.principal, organization_id="other-org")
+
+    def list_ids(principal: object) -> tuple[str, ...]:
+        page = store.list(
+            site_id="site-1",
+            work_area_id=graph.area.work_area_id,
+            principal=principal,  # type: ignore[arg-type]
+            cursor=None,
+            limit=1,
+            now=NOW,
+        )
+        return tuple(item.job_id for item in page.items), page.next_cursor  # type: ignore[return-value]
+
+    # Coherence before completion: same-org foreigners see nothing, owner sees both.
+    for foreign in (other, admin):
+        for job_id in (first.job_id, second.job_id):
+            with pytest.raises(SpatialDataDomainError) as error:
+                store.get(job_id=job_id, principal=foreign, now=NOW)
+            assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+            with pytest.raises(SpatialDataDomainError) as error:
+                store.cancel(job_id=job_id, principal=foreign, now=NOW)
+            assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+            with pytest.raises(SpatialDataDomainError) as error:
+                store.require_download(job_id=job_id, principal=foreign, now=NOW)
+            assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+        items, cursor = list_ids(foreign)
+        assert items == () and cursor is None
+    # Cross-tenant stays denied at the scope gate (typed 404, never an empty leak).
+    for job_id in (first.job_id, second.job_id):
+        with pytest.raises(SpatialDataDomainError) as error:
+            store.get(job_id=job_id, principal=foreign_tenant, now=NOW)
+        assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+    with pytest.raises(SpatialDataDomainError) as error:
+        store.list(
+            site_id="site-1",
+            work_area_id=graph.area.work_area_id,
+            principal=foreign_tenant,
+            cursor=None,
+            limit=1,
+            now=NOW,
+        )
+    assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+    assert store.get(job_id=first.job_id, principal=graph.principal, now=NOW) == first
+    owner_ids, owner_cursor = list_ids(graph.principal)
+    assert len(owner_ids) == 1 and owner_ids[0] in (first.job_id, second.job_id)
+    assert owner_cursor is not None
+    owner_page2 = store.list(
+        site_id="site-1",
+        work_area_id=graph.area.work_area_id,
+        principal=graph.principal,
+        cursor=owner_cursor,
+        limit=1,
+        now=NOW,
+    )
+    assert {owner_ids[0], owner_page2.items[0].job_id} == {first.job_id, second.job_id}
+    assert owner_page2.next_cursor is None
+
+    # Byte path stays requester-bound after completion.
+    accepted = reserve_and_complete(store, graph, first, lease(store, graph, first))
+    assert accepted.completed.availability == "AVAILABLE"
+    assert (
+        store.require_download(job_id=first.job_id, principal=graph.principal, now=NOW).observation
+        == accepted.observation
+    )
+    for foreign in (other, admin, foreign_tenant):
+        with pytest.raises(SpatialDataDomainError) as error:
+            store.require_download(job_id=first.job_id, principal=foreign, now=NOW)
+        assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+        with pytest.raises(SpatialDataDomainError) as error:
+            store.get(job_id=first.job_id, principal=foreign, now=NOW)
+        assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+
+    # Revocation/expiry currentness is still honoured for the owner and never
+    # discloses a foreign job as revoked/expired.
+    graph.grants.revoke(
+        SpatialDataRevocationV1(
+            grant_id=graph.grant.grant_id,
+            revision=graph.grant.revision,
+            organization_id=graph.principal.organization_id,
+            grant_digest=graph.grant.grant_digest,
+            revoked_at=NOW,
+            reason="owner withdrew rights",
+        ).sealed()
+    )
+    revoked = store.get(job_id=first.job_id, principal=graph.principal, now=NOW)
+    assert revoked.execution_state == "COMPLETED" and revoked.availability == "ACCESS_REVOKED"
+    for foreign in (other, admin):
+        with pytest.raises(SpatialDataDomainError) as error:
+            store.get(job_id=first.job_id, principal=foreign, now=NOW)
+        assert (error.value.reason, error.value.status_code) == ("NOT_FOUND", 404)
+
+    # List budget enforcement is unchanged.
+    with pytest.raises(SpatialDataDomainError) as error:
+        store.list(
+            site_id="site-1",
+            work_area_id=graph.area.work_area_id,
+            principal=graph.principal,
+            cursor=None,
+            limit=200,
+            now=NOW,
+        )
+    assert (error.value.reason, error.value.status_code) == ("RESOURCE_LIMIT_EXCEEDED", 422)
