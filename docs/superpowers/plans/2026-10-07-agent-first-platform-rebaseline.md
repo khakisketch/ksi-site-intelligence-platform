@@ -5648,3 +5648,56 @@ Cross-check by primary: both documents agree on the content-vs-rights separation
 rule, the three-state separation, the "leave numbers to the benchmark/risk assessment" discipline, and the
 registration/purpose boundaries; the cache plan defers the purpose numbers to the GAP-05 taxonomy, so the
 two are consistent rather than competing.
+
+#### Stage-1 measurement corrects the stage-1 goal: the cost is preparation, not revisits (2026-10-21)
+
+`docs/audit/SPATIAL_DISPLAY_CACHE_MEASUREMENT_EVIDENCE_2026-10-21.md` (+ machine-readable
+`display-cache-measurement-results-2026-10-21.json`) measured the real product and CORRECTED the
+premise the stage-1 plan was built on. Recorded here so no later work inherits the wrong expectation.
+
+MEASURED stage attribution for one fresh full 1022×915 cover (n=4 windows, idle lane, real contained
+worker): POST issue 0.030–0.052 s; pickup first-of-pair 4.6–5.1 s and second-of-pair 10.6–10.8 s
+(the two "concurrent" slots are picked up on SERIAL ~5 s worker ticks, so a wave of 2 costs ~5 s +
+~10.7 s, not 2×5 s in parallel); execution 0.5–1.0 s per window; byte GET 0.11–0.16 s per window
+(TTFB-dominated); SHA-256 verify 0.0002–0.0003 s; decode ~3 ms warmed (PIL proxy, browser cost
+INFERRED same order); paint ms-scale (numpy proxy, browser NOT MEASURED). Time to first valid pixel
+≈ 5.8 s; all four windows painted ≈ 23.0 s.
+
+TWO CORRECTIONS TO WHAT WE BELIEVED:
+1. The full cover is **22.9–23.0 s, NOT ~12 s**. The earlier 12 s figure assumed parallel pickup; the
+   worker serves the two slots on serial ~5 s ticks. The 12 s number is superseded for capacity
+   reasoning.
+2. **Re-visits are already fast**: with the windows prepared and readable by the same principal, a
+   full 4-window re-GET + verify + decode costs 0.691 s, and a same-key + identical-body replay POST
+   returns the SAME job in 7 ms with zero new work. A fresh page load / "이어 보기 채우기" for an
+   already-prepared cover therefore costs ~0.7 s TODAY, not ~23 s, under stable-key discipline.
+
+CONSEQUENCES FOR THE STAGE-1 PLAN (the Human's stage-1 goal is re-based on measurement, not on the
+prior assumption):
+- A persistent server cache (T2) removes NOTHING on per-visit latency — the bytes are already stored as
+  owned outputs and a re-GET costs the same ~0.13 s/window either way. Its real, structural win is
+  DURABILITY past the 24 h retention expiry, when a full re-preparation (~23 s) would otherwise have to
+  be re-paid. It must not be justified on latency.
+- The only sub-100 ms path is the session tier of decoded pixels (T1), and it already exists in-session
+  (`MosaicPaintCache`); what is missing is a BOUND on it (it is currently an unbounded Map) plus
+  cross-session durability, not speed.
+- Therefore the real user-visible cost to attack is the FIRST payment — the ~23 s cold preparation per
+  principal per retention window — and the levers are (a) not paying it again after retention expiry
+  (durable cache), (b) not paying it for the same window twice (stable keys, already honoured), and
+  (c) making the first payment feel immediate and continuous (progressive first-pixel delivery, which
+  the mosaic already does) rather than making the first payment smaller by caching.
+- 429 behaviour confirmed: a 3-wide issue yields 2×201 + 1×429 in 52 ms (wire `{reason, retryable:true}`);
+  a deeper CLIENT queue changes nothing user-visible because the server has no queue, so the measured
+  discipline stays: max 2 concurrent + bounded retry + named waiting states. The 1–4 s back-off is
+  shorter than the ~5 s pickup tick, so a first retry typically re-429s once (harmless).
+- Memory measured: decoded RGBA per window 1,048,576 B; the 1022×915 canvas 3,740,520 B; a full-cover
+  session tier 7,934,824 B (~7.57 MiB); encoded bytes 2,265,338 B (~2.16 MiB). The unbounded
+  `MosaicPaintCache` Map must get a cap (M5 target: T1 ≤16 slots with eviction).
+- Irreducible floor: ~23 s per full cover per principal per retention window (~21–22 s pickup + ~2–4 s
+  execution). NO cache design removes the first payment; a durable cache only prevents paying it twice.
+Recommended M1–M5 targets (recommendations from THIS measurement, not authority): R2 revisit 100% T1 /
+0 PREPAREs; warm time-to-first-pixel ≤1 s (T1 ≤100 ms) with cold ≈6 s report-only; cold stabilise
+≤25 s; 429-by-construction 0 with FAILED-due-to-429 = 0; T1 ≤16 slots with eviction.
+- Not measured (and why): browser paint / geotiff.js timing (no browser launched — proxies only),
+  Console end-to-end page timings, post-retention and cross-session revisit, multi-actor contention,
+  OIDC-principal reads (respected, not probed), and the GAP-06 L3 outlier cause.

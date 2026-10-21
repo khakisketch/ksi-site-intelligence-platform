@@ -1,0 +1,361 @@
+{
+ "artifact": "display-cache-measurement-results-2026-10-21",
+ "measuredAt": "2026-10-21T07:14-07:15Z (cover), 2026-10-21T~07:0xZ (revisit)",
+ "lane": "own Core http://127.0.0.1:8074 (production factory), real contained worker",
+ "actor": "ps-admin (file-read token, never printed), purpose GENERAL_DATA_USE",
+ "asset": "ksa-v1-1ad55465af388c89c5d402962360393209e35a41dcd45dc605ede393a909aaa3 (2021 Floreat ortho, 1022x915, EPSG:7850, 0.25m north-up)",
+ "site": "prod-sample-floreat-01 / wa-prod-sample-floreat-01-0001",
+ "revisit": {
+  "part": "revisit-readonly",
+  "startedAt": "2026-10-21T07:13:47Z",
+  "fetches": [
+   {
+    "tag": "TL",
+    "run": 1,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.1114,
+    "t_first_to_last_byte_s": 0.0185,
+    "t_total_get_s": 0.1299,
+    "bytes": 474427,
+    "expected_bytes": 474427,
+    "sha_verify_s": 0.0002,
+    "sha_match": true,
+    "digest": "sha256:4a580917c1e70071...",
+    "decode_s": 0.034,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "TR",
+    "run": 1,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.1075,
+    "t_first_to_last_byte_s": 0.0227,
+    "t_total_get_s": 0.1301,
+    "bytes": 637695,
+    "expected_bytes": 637695,
+    "sha_verify_s": 0.0003,
+    "sha_match": true,
+    "digest": "sha256:ad19fd8d9aa01677...",
+    "decode_s": 0.0031,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "BL",
+    "run": 1,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.1088,
+    "t_first_to_last_byte_s": 0.0182,
+    "t_total_get_s": 0.1271,
+    "bytes": 526512,
+    "expected_bytes": 526512,
+    "sha_verify_s": 0.0002,
+    "sha_match": true,
+    "digest": "sha256:47627c78a1b753e9...",
+    "decode_s": 0.0026,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "BR",
+    "run": 1,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.109,
+    "t_first_to_last_byte_s": 0.0199,
+    "t_total_get_s": 0.1289,
+    "bytes": 626704,
+    "expected_bytes": 626704,
+    "sha_verify_s": 0.0003,
+    "sha_match": false,
+    "digest": "sha256:94e6ac01c72c3268...",
+    "decode_s": 0.003,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ],
+    "sha_match_corrected": true,
+    "note": "script-embedded expected sha was mis-transcribed; live bytes match receipt outputSha256 sha256:94e6ac01... (verified against GET view receipt)"
+   },
+   {
+    "tag": "TL",
+    "run": 2,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.1078,
+    "t_first_to_last_byte_s": 0.0192,
+    "t_total_get_s": 0.1271,
+    "bytes": 474427,
+    "expected_bytes": 474427,
+    "sha_verify_s": 0.0002,
+    "sha_match": true,
+    "digest": "sha256:4a580917c1e70071...",
+    "decode_s": 0.0036,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "TR",
+    "run": 2,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.11,
+    "t_first_to_last_byte_s": 0.0241,
+    "t_total_get_s": 0.1342,
+    "bytes": 637695,
+    "expected_bytes": 637695,
+    "sha_verify_s": 0.0003,
+    "sha_match": true,
+    "digest": "sha256:ad19fd8d9aa01677...",
+    "decode_s": 0.0031,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "BL",
+    "run": 2,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.1097,
+    "t_first_to_last_byte_s": 0.02,
+    "t_total_get_s": 0.1297,
+    "bytes": 526512,
+    "expected_bytes": 526512,
+    "sha_verify_s": 0.0002,
+    "sha_match": true,
+    "digest": "sha256:47627c78a1b753e9...",
+    "decode_s": 0.0027,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ]
+   },
+   {
+    "tag": "BR",
+    "run": 2,
+    "http_status": 200,
+    "contentType": "image/tiff",
+    "mode": "RGBA",
+    "t_issue_to_first_byte_s": 0.0964,
+    "t_first_to_last_byte_s": 0.0203,
+    "t_total_get_s": 0.1167,
+    "bytes": 626704,
+    "expected_bytes": 626704,
+    "sha_verify_s": 0.0003,
+    "sha_match": false,
+    "digest": "sha256:94e6ac01c72c3268...",
+    "decode_s": 0.003,
+    "decoded_shape": [
+     512,
+     512,
+     4
+    ],
+    "decoded_nbytes": 1048576,
+    "tiff_size": [
+     512,
+     512
+    ],
+    "sha_match_corrected": true,
+    "note": "script-embedded expected sha was mis-transcribed; live bytes match receipt outputSha256 sha256:94e6ac01... (verified against GET view receipt)"
+   }
+  ],
+  "replay": {
+   "http_status": 200,
+   "latency_s": 0.0048,
+   "jobId": "sdj-v1-70c6c3d8-3455-4a37-8861-613d1c65fe43",
+   "same_as_L1": true
+  }
+ },
+ "freshCover": {
+  "part": "fresh-cover",
+  "windows": {
+   "TL": {
+    "tag": "TL",
+    "jobId": "sdj-v1-5d50fdf1-5dde-42ad-9221-27f3311587f1",
+    "final": "COMPLETED",
+    "client_total_s": 5.617,
+    "client_to_running_s": 5.11,
+    "server_createdAt": "2026-10-21T07:14:17.872296Z",
+    "server_preparedAt": "2026-10-21T07:14:22.816942Z",
+    "outputSizeBytes": 474427,
+    "outputSha256": "sha256:4a580917c1e70071...",
+    "width": 512,
+    "height": 512
+   },
+   "TR": {
+    "tag": "TR",
+    "jobId": "sdj-v1-be08737d-dc53-4ac3-9677-3831c81a495a",
+    "final": "COMPLETED",
+    "client_total_s": 11.697,
+    "client_to_running_s": 10.684,
+    "server_createdAt": "2026-10-21T07:14:17.871962Z",
+    "server_preparedAt": "2026-10-21T07:14:28.624025Z",
+    "outputSizeBytes": 637695,
+    "outputSha256": "sha256:ad19fd8d9aa01677...",
+    "width": 512,
+    "height": 512
+   },
+   "BL": {
+    "tag": "BL",
+    "jobId": "sdj-v1-e5ecfbaa-1f14-407d-bd9d-c41ab6ef3d65",
+    "final": "COMPLETED",
+    "client_total_s": 11.202,
+    "client_to_running_s": 10.696,
+    "server_createdAt": "2026-10-21T07:14:29.573250Z",
+    "server_preparedAt": "2026-10-21T07:14:40.214058Z",
+    "outputSizeBytes": 526512,
+    "outputSha256": "sha256:47627c78a1b753e9...",
+    "width": 512,
+    "height": 512
+   },
+   "BR": {
+    "tag": "BR",
+    "jobId": "sdj-v1-39b9fdd3-c1d8-4174-9bae-7ad73a8fbe0e",
+    "final": "COMPLETED",
+    "client_total_s": 5.639,
+    "client_to_running_s": 4.618,
+    "server_createdAt": "2026-10-21T07:14:29.566354Z",
+    "server_preparedAt": "2026-10-21T07:14:34.416245Z",
+    "outputSizeBytes": 626704,
+    "outputSha256": "sha256:94e6ac01c72c3268...",
+    "width": 512,
+    "height": 512
+   }
+  },
+  "waves": {
+   "wave1": {
+    "admitted": 2,
+    "rejected429": 1,
+    "other": 0
+   },
+   "wave1_done_normally": true,
+   "wave2_issue_lag_s": 11.698
+  },
+  "startedAt": "2026-10-21T07:14:17Z",
+  "wave1_issues": [
+   {
+    "tag": "TL",
+    "key": "mcache-071417-TL",
+    "http_status": 201,
+    "issue_s": 0.0378,
+    "jobId": "sdj-v1-5d50fdf1-5dde-42ad-9221-27f3311587f1",
+    "code": null,
+    "retryable": null
+   },
+   {
+    "tag": "TR",
+    "key": "mcache-071417-TR",
+    "http_status": 201,
+    "issue_s": 0.0493,
+    "jobId": "sdj-v1-be08737d-dc53-4ac3-9677-3831c81a495a",
+    "code": null,
+    "retryable": null
+   },
+   {
+    "tag": "BL",
+    "key": "mcache-071417-BL",
+    "http_status": 429,
+    "issue_s": 0.0518,
+    "jobId": null,
+    "code": null,
+    "retryable": true
+   }
+  ],
+  "wave2_issues": [
+   {
+    "tag": "BL",
+    "key": "mcache-071417-BL",
+    "http_status": 201,
+    "issue_s": 0.0483,
+    "jobId": "sdj-v1-e5ecfbaa-1f14-407d-bd9d-c41ab6ef3d65",
+    "code": null,
+    "retryable": null
+   },
+   {
+    "tag": "BR",
+    "key": "mcache-071417-BR",
+    "http_status": 201,
+    "issue_s": 0.0301,
+    "jobId": "sdj-v1-39b9fdd3-c1d8-4174-9bae-7ad73a8fbe0e",
+    "code": null,
+    "retryable": null
+   }
+  ],
+  "cover_wall_s": 22.9
+ },
+ "composeProxy": {
+  "canvas": "1022x915 RGBA",
+  "compose_ms": 0.91,
+  "canvas_nbytes": 3740520,
+  "per_window_decoded_nbytes": 1048576,
+  "session_tier_total_nbytes": 7934824,
+  "four_window_get_plus_decode_s": 0.691
+ },
+ "corrections": {
+  "cover_wall_claim": "prior ~12 s assumed parallel pickup; this run measures 22.9 s (serial ~5 s worker ticks)",
+  "429_body_keys": "script recorded code/retryable nulls (wrong keys); wire shape is {reason, retryable} per api.py:40-44; status 429 + retryable:true per GAP-06 + jobs.py:1048"
+ }
+}
