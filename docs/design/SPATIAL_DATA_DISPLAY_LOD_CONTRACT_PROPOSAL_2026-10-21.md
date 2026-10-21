@@ -54,8 +54,10 @@ historical result lookup = later; audit recovery = independent track.
    `job_projection.py:173,193` — verified live: two adjacent windows of the same
    1022×915 EPSG:7850 source completed side by side
    (jobs `sdj-v1-1f42ba31…` cols 510-1022 and `sdj-v1-6ff0ab18…` cols 0-512).
-   Binding limits are request volume, `maxActiveJobsPerOrganization` 2, `maxQueueDepth` 8,
-   latency and cache policy — NOT an exploration-area cap.
+   Binding limits are request volume, `maxActiveJobsPerOrganization` 2, the EFFECTIVE request
+   buffer (measured: zero — a 3rd parallel issue is a fast retryable 429, and
+   `maxQueueDepth`/`maxPendingRecords` 8 are unreachable on this route), latency and cache
+   policy — NOT an exploration-area cap.
 3. Window geometry is the authoritative native-grid rule:
    `packages/geo-spatial/src/ksi_geo_spatial/external_native_window_geometry.py`
    `_plan` (floor/ceil to exact native cell edges `:73–76`, must sit inside the source
@@ -244,18 +246,26 @@ Viewport → window resolution (normative behaviour, wire shape in §8):
    fix — proposed 0.5 viewport) are cancelled via the existing job cancel path; tiles
    still covering any visible pixel run to completion. Pan-back within the retention
    window MUST be a cache hit, not a new PREPARE.
-4. Budget per interaction (proposed, owner to fix numbers): at most N new PREPARE issues
-   per discrete interaction (proposed N=4, tied to the 2-active/8-pending lane so one
-   gesture cannot wedge the queue); the covering set beyond N is queued by
-   visibility-centrality order and rendered progressively with explicit "loading tiles"
-   placeholders. Numbers are placeholders pending owner load measurement (GAP-06).
-5. Concurrency/queue UX (existing lane `jobs.py` guard + `maxActiveJobsPerOrganization=2`,
-   `maxQueueDepth=8`): when the lane is saturated the UI MUST show a named loading state
-   per tile-group ("2개 창 준비 중 · 3개 대기 중") with cancel affordance — never a blank
-   Site, never a silent latest-fallback, never a synthetic low-res fill presented as data
-   (INV-040; UX contract §5). A below-1024 viewport restriction is preserved: viewing an
-   existing representation must not silently issue an otherwise-forbidden PREPARE/analysis
-   POST (UX contract §4 responsive rule).
+4. Budget per interaction (MEASURED — GAP-06 load evidence, 2026-10-21): the lane
+   accepts at most **2 concurrent** preparations; a third parallel issue is rejected
+   with a fast, RETRYABLE `429 CONCURRENCY_LIMIT_EXCEEDED` and is **not parked**.
+   The effective request buffer is therefore **ZERO** — `maxQueueDepth`/
+   `maxPendingRecords` (8) have no reachable enforcement on this route — and there is
+   no server FIFO, so the CLIENT must sequence at most 2 at a time. A full 1022x915
+   cover at ≤512 px needs exactly 4 windows (512x512, 510x512, 512x403, 510x403) =
+   2 waves ≈ 12 s on an idle lane; a ~15 s per-interaction budget is the measured
+   recommendation. The client MUST issue at most 2 concurrently, dedupe by the stable
+   (assetRef, pixelWindow, purpose) key, back off and retry the retryable 429 with
+   bounded attempts, and render the covering set progressively with explicit
+   "준비 중인 창 N개" placeholders. Numbers above are measured, not placeholders.
+5. Concurrency/saturation UX (measured, superseding the earlier assumption of an
+   8-deep queue): when the lane is saturated the UI MUST show a named state per
+   tile-group ("창 2개 준비 중 · 다음 창은 순차 처리됩니다") with cancel affordance —
+   never a blank Site, never a silent latest-fallback, never a synthetic low-res fill
+   presented as data (INV-040; UX contract §5), and never a claim that windows are
+   "waiting in a queue" when the server actually rejects them. A below-1024 viewport
+   restriction is preserved: viewing an existing representation must not silently
+   issue an otherwise-forbidden PREPARE/analysis POST (UX contract §4 responsive rule).
 6. Demosaic/seam claim: screen composition of adjacent verified windows is allowed as
    edge-exact placement only (§3). The UI must label it as such (proposed wording:
    "검증된 준비 창의 나란한 배치 — 이음새 보정·재표본화 없음"). Any seam-hiding filter
@@ -403,7 +413,10 @@ Existing owner modules to inspect before edits (no change authorized here):
 Exact open decisions needing owner approval:
 
 1. LOD pyramid table (levels, thresholds, kernels for DSM vs ortho vs masks) — GAP-03.
-2. Per-interaction PREPARE budget N and queue ordering — GAP-06 load measurement first.
+2. Per-interaction PREPARE budget N and ordering — **ANSWERED BY MEASUREMENT** (GAP-06 evidence
+   2026-10-21): 2 concurrent, 2 waves for a full 1022×915 cover (4 windows), ~15 s per interaction,
+   client-sequenced (the server has no FIFO and no usable queue depth). Remaining sub-question: the
+   exact client-visible back-off schedule.
 3. `PairRegistrationV1` acceptable methods/evidence and who may assert REGISTERED — needs
    spatial + quantity owners; NO survey-grade inference is pre-approved.
 4. Display-cache TTL vs delivery `retention_seconds` labelling and per-principal store
@@ -433,9 +446,11 @@ Testable criteria (all against real bounded native-window lanes, never mocks alo
 2. **No duplicate requests:** a scripted zoom/pan gesture sequence issues exactly one
    PREPARE per distinct `(assetRef, pixelWindow, lod, style)` key; in-flight joins are
    logged; replay of the gesture from cache issues zero new PREPAREs.
-3. **Budget behaviour:** with the lane saturated (2 active / 8 pending), an interaction
-   exceeding budget shows named loading/queued states with cancel; no silent fallback,
-   no blank site, no synthetic fill.
+3. **Budget behaviour (measured):** the lane admits 2 concurrent preparations and
+   rejects a third with a retryable 429 (no queue). An interaction exceeding the
+   2-slot budget shows named "준비 중인 창 N개" states with cancel, retries the
+   retryable rejection with bounded back-off, and never claims a server-side wait
+   queue; no silent fallback, no blank site, no synthetic fill.
 4. **Cache re-check blocking:** after grant revocation or expiry, cached tiles for that
    grant stop serving on next use (test: revoke → re-request same tile → 404/403 +
    truthful UI state; other principal's tiles unaffected).
