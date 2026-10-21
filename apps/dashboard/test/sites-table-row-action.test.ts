@@ -35,6 +35,18 @@ describe("sites table row action column (F08)", () => {
     expect(DENSE).not.toContain("<img");
   });
 
+  it("names the stage column site management, never dataset or analysis progress", () => {
+    expect(DENSE).toContain("관리 단계");
+    expect(DENSE).not.toContain("진행 단계");
+    const bar = readFileSync(join(process.cwd(), "src/components/site/SiteProgressBar.tsx"), "utf8");
+    // 막대 본문·접근성 문구는 현장 관리 상태의 위치만 말한다 — 촬영 자료량·처리
+    // 진도·분석 진행률로 읽히지 않게 한다. 본선 순서·상태값·개수는 그대로다.
+    expect(bar).toContain("현장 관리 단계");
+    expect(bar).toContain("촬영 자료량·처리");
+    expect(bar).not.toMatch(/`진행 단계/);
+    expect(bar).toContain("SITE_PROGRESS_STAGES");
+  });
+
   it("keeps the desktop page on the view selector contract", () => {
     expect(PAGE).toContain("SiteListView");
     expect(PAGE).toContain("SiteListDenseList");

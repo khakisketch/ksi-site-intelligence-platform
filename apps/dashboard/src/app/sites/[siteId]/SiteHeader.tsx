@@ -78,7 +78,17 @@ export function SiteHeader({
   // entry point there while the mobile panel remains the direct action surface.
   const primaryAction = tab === "overview" ? null : scopedPreparationAction;
   return (
-    <header className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5">
+    <header
+      className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5"
+      // 서버 확인 범위의 읽기 전용 브리지 — 팔레트가 열릴 때 같은 목적지를
+      // 가리키게 한다. URL 쿼리에는 없는 bare deep link(분석 기록 직접 연결 등)의
+      // 실제 구역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,
+      // 받는 화면이 서버 목록과 재대조한다. 빈 값은 없음으로 읽는다.
+      data-site-nav="true"
+      data-site-id={site.siteId}
+      data-work-area-id={scopedWorkAreaId ?? ""}
+      data-asset-ref={scopedAssetRef ?? ""}
+    >
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은 그 하위
             맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.

@@ -8,7 +8,7 @@ import {
   moveActiveIndex,
   type PaletteItem,
 } from "./palette-items";
-import { parseScopedNavQuery } from "@/lib/operator-journey";
+import { parseScopedNavQuery, parseSiteNavBridge } from "@/lib/operator-journey";
 import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
 import { contextPaletteItems } from "./context-palette";
@@ -65,13 +65,58 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     setHelpOpen(false);
   }, []);
 
+  // 서버 확인 범위의 읽기 전용 브리지 — 현장 헤더가 싣는다. URL 쿼리에는
+  // 없는 bare deep link(분석 기록 직접 연결 등)에서도 헤더와 같은 목적지로
+  // 간다. 판정이 아니라 힌트이며, 받는 화면이 서버 목록과 재대조한다.
+  function readSiteNavBridge(): { siteId: string; workAreaId: string | null; assetRef: string | null } | null {
+    if (typeof document === "undefined") return null;
+    const root = document.querySelector('header[data-site-nav="true"]');
+    if (!(root instanceof HTMLElement)) return null;
+    return parseSiteNavBridge({
+      siteId: root.dataset.siteId,
+      workAreaId: root.dataset.workAreaId,
+      assetRef: root.dataset.assetRef,
+    });
+  }
+
   const openPalette = useCallback(() => {
     setHelpOpen(false);
     setOpen(true);
     setQuery("");
     setActive(0);
-    setScopeSearch(typeof window === "undefined" ? "" : window.location.search);
-  }, []);
+    const search = typeof window === "undefined" ? "" : window.location.search;
+    const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const explicitAreas = params.getAll("workAreaId");
+    const explicitAssets = params.getAll("assetRef");
+    const urlScope = parseScopedNavQuery(search);
+    // 명시된 URL 범위를 조용히 덮어쓰지 않는다 — 브리지는 빈칸만 메운다.
+    // - bare deep link(구역 없음): 서버 확인 브리지가 구역·관측을 모두 메운다.
+    // - 구역만 있고 관측 없음: 같은 구역의 헤더 확인 관측만 메운다. 명시된
+    //   관측(깨진 값·빈값·복수 포함)이 있으면 손대지 않고 도착 화면이 닫는다.
+    // - 다른 구역·사이트의 관측은 절대 가져오지 않는다.
+    const bridge = readSiteNavBridge();
+    const path = pathname ?? "";
+    const bridgeUsable = (() => {
+      if (!bridge || !bridge.workAreaId) return null;
+      const siteHref = `/sites/${encodeURIComponent(bridge.siteId)}`;
+      const authorized = items.some((item) => item.group === "현장" && item.href === siteHref);
+      if (!authorized) return null;
+      if (!(path === siteHref || path.startsWith(`${siteHref}/`))) return null;
+      return bridge;
+    })();
+    if (urlScope.workAreaId && explicitAssets.length === 0 && bridgeUsable?.workAreaId === urlScope.workAreaId && bridgeUsable.assetRef) {
+      setScopeSearch(`?workAreaId=${encodeURIComponent(urlScope.workAreaId)}&assetRef=${encodeURIComponent(bridgeUsable.assetRef)}`);
+      return;
+    }
+    if (!urlScope.workAreaId && explicitAreas.length === 0 && bridgeUsable?.workAreaId) {
+      const filled = new URLSearchParams();
+      filled.set("workAreaId", bridgeUsable.workAreaId);
+      if (bridgeUsable.assetRef) filled.set("assetRef", bridgeUsable.assetRef);
+      setScopeSearch(`?${filled.toString()}`);
+      return;
+    }
+    setScopeSearch(search);
+  }, [items, pathname]);
 
   const isOpen = open || helpOpen;
 

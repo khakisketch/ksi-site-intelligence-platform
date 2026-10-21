@@ -32,7 +32,7 @@ test("데스크톱은 장식 없는 밀도표가 기본, 카드는 명시적 전
   }
   // D7 기본값: 장식 표지 없는 밀도표 — 이름·상태·진행·갱신·다음 할 일이 먼저 보인다.
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
+  await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
   const totalRows = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) expect(totalRows).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));

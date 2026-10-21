@@ -69,10 +69,12 @@ describe("current Site task vocabulary", () => {
 
 // 아래는 렌더 회귀 — 순수 판정 위 describe 와 달리 모달 동작(포커스·키보드·배경 잠금)을
 // 본다. next/navigation 은 목으로, scrollIntoView 는 jsdom 에 없어 스텁한다.
+// 경로는 테스트마다 바꾼다 — bare deep link(URL 범위 없음)와 명시 범위를 가른다.
 const push = vi.hoisted(() => vi.fn());
+const navPath = vi.hoisted(() => ({ current: "/sites/site-1" }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
-  usePathname: () => "/sites/site-1",
+  usePathname: () => navPath.current,
 }));
 
 import { CommandPalette, PALETTE_OPEN_EVENT } from "@/components/console/CommandPalette";
@@ -93,6 +95,8 @@ describe("palette modal interaction", () => {
   afterEach(() => {
     cleanup();
     push.mockClear();
+    navPath.current = "/sites/site-1";
+    window.history.replaceState({}, "", "/");
     document.body.style.overflow = "";
     document.documentElement.style.overflow = "";
   });
@@ -226,6 +230,7 @@ describe("palette scoped cross-screen round trip", () => {
   afterEach(() => {
     cleanup();
     push.mockClear();
+    navPath.current = "/sites/site-1";
     window.history.replaceState({}, "", "/");
   });
 
@@ -276,5 +281,118 @@ describe("palette scoped cross-screen round trip", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+});
+
+describe("palette server-resolved scope bridge", () => {
+  const ref = `ksa-v1-${"e".repeat(64)}`;
+  afterEach(() => {
+    cleanup();
+    push.mockClear();
+    navPath.current = "/sites/site-1";
+    window.history.replaceState({}, "", "/");
+  });
+
+  function renderWithBridge(attrs: Record<string, string>) {
+    render(
+      h(
+        "div",
+        null,
+        h("header", { "data-site-nav": "true", ...attrs }),
+        h(CommandPalette, { items: paletteItems }),
+      ),
+    );
+  }
+
+  it("fills a bare analysis deep link with the header-resolved area (two-area parity)", () => {
+    // /analysis?analysisId=… 에는 구역이 없지만, 서버가 기록에서 확인한 구역을
+    // 헤더가 알고 있다. 팔레트는 헤더와 같은 목적지로 간다.
+    navPath.current = "/sites/site-1/analysis";
+    window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
+    openPalette();
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-b&assetRef=${ref}`);
+  });
+
+  it("never overwrites an explicit URL scope with the bridge", () => {
+    navPath.current = "/sites/site-1/analysis";
+    window.history.replaceState({}, "", "/sites/site-1/analysis?workAreaId=wa-a");
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
+    openPalette();
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+  });
+
+  it("fails closed on malformed or cross-site bridge values", () => {
+    // 깨진 참조는 버리고 구역만 싣는다.
+    navPath.current = "/sites/site-1/analysis";
+    window.history.replaceState({}, "", "/sites/site-1/analysis?analysisId=a9");
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": "bogus" });
+    openPalette();
+    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-b");
+    cleanup();
+
+    // 다른 현장의 브리지는 무시한다.
+    renderWithBridge({ "data-site-id": "site-2", "data-work-area-id": "wa-x", "data-asset-ref": ref });
+    openPalette();
+    scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets");
+  });
+
+  it("fills a missing asset only from the matching header area, never another area", () => {
+    // URL 구역이 있고 관측이 없을 때, 같은 구역의 헤더 확인 관측만 메운다.
+    navPath.current = "/sites/site-1";
+    window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a");
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
+    openPalette();
+    let scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);
+    cleanup();
+
+    // 다른 구역의 관측은 가져오지 않는다 — 명시 구역이 이긴다.
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-b", "data-asset-ref": ref });
+    openPalette();
+    scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+  });
+
+  it("leaves an explicitly present asset reference alone even when malformed", () => {
+    // 깨진·빈 관측 힌트가 있어도 브리지로 메우지 않는다 — 도착 화면이 닫는다.
+    navPath.current = "/sites/site-1";
+    for (const assetQuery of ["assetRef=bogus", "assetRef="]) {
+      window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&${assetQuery}`);
+      renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
+      openPalette();
+      const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+      fireEvent.click(scoped!);
+      expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a`);
+      cleanup();
+      push.mockClear();
+    }
+    // 복수 관측 힌트는 전체 범위를 버린다 — 일부만 믿고 싣지 않는다.
+    window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}&assetRef=${ref}`);
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a", "data-asset-ref": ref });
+    openPalette();
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets");
+  });
+
+  it("keeps no asset when the header itself has none", () => {
+    navPath.current = "/sites/site-1";
+    window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a");
+    renderWithBridge({ "data-site-id": "site-1", "data-work-area-id": "wa-a" });
+    openPalette();
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
   });
 });

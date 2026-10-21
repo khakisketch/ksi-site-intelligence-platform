@@ -203,6 +203,39 @@ export type SiteHeaderScope = {
   assetRef: string | null;
 };
 
+/**
+ * 서버 확인 범위 항해 브리지 — 헤더가 싣고 팔레트가 읽는 읽기 전용 힌트.
+ *
+ * - 값 자체는 호출 페이지가 이미 검증한 범위다(분석 상세는 기록에서 확인한
+ *   구역, 등록 자료는 카탈로그에서 확인한 참조). 팔레트는 그대로 목적지에만
+ *   싣고, 판정·최신 추측·임의 쿼리 전달을 하지 않는다. 받는 화면이 서버 목록과
+ *   재대조한다.
+ * - URL에 명시된 범위를 조용히 덮어쓰지 않는다 — 호출자가 합칠 때 명시 값이
+ *   있으면 그것을 쓴다.
+ * - assetRef는 항해 맥락일 뿐 분석 선택자가 아니다(INV-051/053).
+ */
+export type SiteNavBridge = {
+  siteId: string;
+  workAreaId: string | null;
+  assetRef: string | null;
+};
+
+export function parseSiteNavBridge(input: {
+  siteId?: unknown;
+  workAreaId?: unknown;
+  assetRef?: unknown;
+} | null | undefined): SiteNavBridge | null {
+  if (!input) return null;
+  const siteId = typeof input.siteId === "string" ? input.siteId.trim() : "";
+  if (siteId.length === 0 || siteId.length > MAX_JOURNEY_SCOPE_ID_LENGTH) return null;
+  const rawArea = typeof input.workAreaId === "string" ? input.workAreaId.trim() : "";
+  const workAreaId = rawArea.length > 0 && rawArea.length <= MAX_JOURNEY_SCOPE_ID_LENGTH ? rawArea : null;
+  if (!workAreaId) return null;
+  const rawAssetRef = typeof input.assetRef === "string" ? input.assetRef : "";
+  const assetRef = rawAssetRef && SCOPED_ASSET_REF_PATTERN.test(rawAssetRef) ? rawAssetRef : null;
+  return { siteId, workAreaId, assetRef };
+}
+
 /** 등록 자산 참조의 화면 이동용 엄격 모양 — 원문 쿼리를 그대로 믿지 않는다. */
 const SCOPED_ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
 

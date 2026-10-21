@@ -10,7 +10,7 @@ const SECTION_BLURB: Record<string, string> = {
 };
 
 const AVAILABLE_NEXT_ACTION: Record<string, { label: string; href: string }> = {
-  fleet: { label: "더보기", href: "/more" },
+  fleet: { label: "계정·도움말", href: "/more" },
   data: { label: "현장 상태 보기", href: "/sites" },
 };
 

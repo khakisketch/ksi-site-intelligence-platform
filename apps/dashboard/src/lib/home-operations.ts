@@ -79,6 +79,32 @@ export type HomeAnalysisReviewRecord = {
   reviews: readonly AnalysisReviewReceipt[];
 };
 
+/**
+ * Home 분석-검토 읽기의 현장별 판정 — 성공적 빈(empty)·보류(pending)와
+ * 미확인(unknown)을 구분한다. 실패·거부·범위 초과는 비어 있음도 검토 완료도
+ * 아니다(ADR-KSI-025 D1 unknown-not-0): 관찰하지 않은 나머지를 0이라
+ * 주장하지 않는다.
+ */
+export type HomeAnalysisReviewSiteRead =
+  | { status: "pending"; source: HomeAnalysisReviewSource }
+  | { status: "clear"; siteId: string }
+  | { status: "unknown"; siteId: string };
+
+/** 현장별 판정을 Home 표시용으로 접는다 — 보류는 그대로 보여주고, 미확인은
+ *  건수·무안건 결론에서 뺀다(표시는 남고 건수는 "—"가 된다). */
+export function summarizeHomeAnalysisReviewReads(
+  reads: readonly HomeAnalysisReviewSiteRead[],
+  outOfScopeSiteIds: readonly string[] = [],
+): { sources: HomeAnalysisReviewSource[]; unknownSiteIds: string[] } {
+  return {
+    sources: reads.flatMap((read) => (read.status === "pending" ? [read.source] : [])),
+    unknownSiteIds: [
+      ...outOfScopeSiteIds,
+      ...reads.flatMap((read) => (read.status === "unknown" ? [read.siteId] : [])),
+    ],
+  };
+}
+
 /** Select the newest completed analysis per Site with no review for its exact current result. */
 export function selectHomeAnalysisReviewSources(records: readonly HomeAnalysisReviewRecord[]): HomeAnalysisReviewSource[] {
   const pending = records.flatMap((record) => {

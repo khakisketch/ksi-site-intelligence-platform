@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   parseScopedNavQuery,
+  parseSiteNavBridge,
   resolveAnalysisCurrentHint,
   resolveAnalysisScope,
   resolveRegistrationScope,
@@ -186,5 +187,28 @@ describe("scoped nav query", () => {
     ]) {
       expect(parseScopedNavQuery(search)).toEqual({ workAreaId: null, assetRef: null });
     }
+  });
+});
+
+describe("server-resolved nav bridge", () => {
+  const ref = `ksa-v1-${"d".repeat(64)}`;
+  it("passes the header-resolved scope through", () => {
+    expect(parseSiteNavBridge({ siteId: "site-1", workAreaId: "wa-b", assetRef: ref })).toEqual({
+      siteId: "site-1",
+      workAreaId: "wa-b",
+      assetRef: ref,
+    });
+  });
+  it("fails closed on malformed bridge values without throwing", () => {
+    expect(parseSiteNavBridge(null)).toBeNull();
+    expect(parseSiteNavBridge({})).toBeNull();
+    expect(parseSiteNavBridge({ siteId: "  ", workAreaId: "wa-b" })).toBeNull();
+    expect(parseSiteNavBridge({ siteId: "site-1" })).toBeNull();
+    expect(parseSiteNavBridge({ siteId: "site-1", workAreaId: "wa-b", assetRef: "bogus" })).toEqual({
+      siteId: "site-1",
+      workAreaId: "wa-b",
+      assetRef: null,
+    });
+    expect(parseSiteNavBridge({ siteId: "site-1", workAreaId: "x".repeat(201) })).toBeNull();
   });
 });

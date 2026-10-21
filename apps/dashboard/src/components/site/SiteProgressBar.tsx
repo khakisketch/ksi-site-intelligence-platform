@@ -17,10 +17,12 @@ const CELL_CLASS: Record<SiteProgressCell, string> = {
 };
 
 /**
- * 진행 단계 막대(Console v2 §2) — 상태 하나를 본선 위 위치로 보여준다.
+ * 관리 단계 막대(Console v2 §2) — 현장의 관리 상태 하나를 본선 위 위치로 보여준다.
  *
  * 위치 판정은 `site-progress.ts` 가 도메인 전이표에서 가져온다. 이 컴포넌트는 그
  * 결과를 그리기만 한다 — 화면에서 순서를 다시 정의하면 두 곳이 갈라진다.
+ * 막대는 현장 관리 상태(등록·매핑·검증·순찰 준비 같은 운영 단계)를 그릴 뿐,
+ * 촬영 자료량·처리 진도·분석 진행률을 뜻하지 않는다.
  *
  * 막대는 색만으로 말하므로 스크린리더에는 문장을 준다(색맹·저시력 고려, UX 목표 §5).
  */
@@ -30,10 +32,10 @@ export function SiteProgressBar({ status }: { status: SiteStatus }) {
   const reworkIndex = cells.indexOf("rework");
   const spoken =
     currentIndex >= 0
-      ? `진행 단계 ${SITE_PROGRESS_STAGES.length}단계 중 ${currentIndex + 1}단계 · ${SITE_PROGRESS_STAGES[currentIndex].label}`
+      ? `현장 관리 단계 ${SITE_PROGRESS_STAGES.length}단계 중 ${currentIndex + 1}단계 · ${SITE_PROGRESS_STAGES[currentIndex].label}`
       : reworkIndex >= 0
-        ? `${SITE_PROGRESS_STAGES[reworkIndex].label} 단계로 되돌아감 · ${note}`
-        : `진행 단계 표시 없음 · ${note}`;
+        ? `현장 관리 ${SITE_PROGRESS_STAGES[reworkIndex].label} 단계로 되돌아감 · ${note}`
+        : `현장 관리 단계 표시 없음 · ${note}`;
 
   return (
     <span className="flex flex-col gap-1">

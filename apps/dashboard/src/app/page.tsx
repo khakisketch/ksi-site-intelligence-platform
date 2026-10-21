@@ -18,7 +18,7 @@ import { listWorkInbox } from "@/lib/core-api/work-collaboration";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { externalDecisionCardText } from "@/lib/home-external-decision";
-import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
+import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, summarizeHomeAnalysisReviewReads, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSiteRead, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
@@ -39,40 +39,59 @@ async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   }
 }
 
-async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promise<HomeAnalysisReviewSource[]> {
+async function loadHomeAnalysisReviewSources(siteIds: readonly string[]): Promise<{
+  sources: HomeAnalysisReviewSource[];
+  unknownSiteIds: string[];
+}> {
   // Bound the server-side read to 3 Home-context Sites × 5 analyses. Each completed
   // analysis checked uses one target and one review-list GET: at most 33 Core calls.
-  const boundedSiteIds = [...new Set(siteIds)].slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
-  const perSite = await Promise.all(boundedSiteIds.map(async (siteId) => {
+  // The bound is a scope limit, never a global verdict: a site whose list/target/
+  // review read fails, truncates, or falls outside the bound is unknown — failed or
+  // unobserved reads never become "no pending" or "reviewed" (ADR-KSI-025 D1 unknown-not-0).
+  const uniqueSiteIds = [...new Set(siteIds)];
+  const boundedSiteIds = uniqueSiteIds.slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
+  const outOfScopeSiteIds = uniqueSiteIds.slice(MAX_HOME_ANALYSIS_REVIEW_SITES);
+  const perSite = await Promise.all(boundedSiteIds.map(async (siteId): Promise<HomeAnalysisReviewSiteRead> => {
+    let analysesPage;
     try {
-      const page = await listAnalyses(siteId, { limit: MAX_HOME_ANALYSES_PER_SITE });
-      const completed = page.items
-        .filter((analysis) => analysis.siteId === siteId && analysis.executionState === "COMPLETED" && analysis.resultId !== null)
-        .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || a.analysisId.localeCompare(b.analysisId));
-      const records: HomeAnalysisReviewRecord[] = [];
-
-      for (const analysis of completed) {
-        try {
-          const [currentTarget, reviewPage] = await Promise.all([
-            getAnalysisReviewTarget(siteId, analysis.analysisId),
-            // Match the detail panel's bounded page; Core review pages are not newest-first.
-            listAnalysisReviews(siteId, analysis.analysisId, { limit: MAX_HOME_ANALYSIS_REVIEW_PAGE }),
-          ]);
-          records.push({ analysis, currentTarget, reviews: reviewPage.items });
-          const candidate = selectHomeAnalysisReviewSources(records)[0];
-          if (candidate) return candidate;
-        } catch {
-          // Without both current target and receipts the exact-review state is unknown.
-          return null;
-        }
-      }
+      analysesPage = await listAnalyses(siteId, { limit: MAX_HOME_ANALYSES_PER_SITE });
     } catch {
-      // Analysis is an optional Home source: a missing/denied Core read never breaks Home.
+      // List failure is not an empty list.
+      return { status: "unknown", siteId };
     }
-    return null;
+    const completed = analysesPage.items
+      .filter((analysis) => analysis.siteId === siteId && analysis.executionState === "COMPLETED" && analysis.resultId !== null)
+      .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || a.analysisId.localeCompare(b.analysisId));
+    const records: HomeAnalysisReviewRecord[] = [];
+
+    for (const analysis of completed) {
+      let currentTarget;
+      let reviewPage;
+      try {
+        [currentTarget, reviewPage] = await Promise.all([
+          getAnalysisReviewTarget(siteId, analysis.analysisId),
+          // Match the detail panel's bounded page; Core review pages are not newest-first.
+          listAnalysisReviews(siteId, analysis.analysisId, { limit: MAX_HOME_ANALYSIS_REVIEW_PAGE }),
+        ]);
+      } catch {
+        // Without both current target and receipts the exact-review state is unknown —
+        // never a successful empty, never a confirmed reviewed.
+        return { status: "unknown", siteId };
+      }
+      // A matching receipt may sit beyond this bounded review page, so a truncated
+      // page cannot clear — or pend — the analysis. Pending verdicts below only
+      // ever rest on complete reads.
+      if (reviewPage.nextCursor !== null) return { status: "unknown", siteId };
+      records.push({ analysis, currentTarget, reviews: reviewPage.items });
+      const candidate = selectHomeAnalysisReviewSources(records)[0];
+      if (candidate) return { status: "pending", source: candidate };
+    }
+    // Same completeness rule for the analyses list: the unobserved rest is not global zero.
+    if (analysesPage.nextCursor !== null) return { status: "unknown", siteId };
+    return { status: "clear", siteId };
   }));
 
-  return perSite.filter((source): source is HomeAnalysisReviewSource => source !== null);
+  return summarizeHomeAnalysisReviewReads(perSite, outOfScopeSiteIds);
 }
 
 /**
@@ -125,7 +144,7 @@ function attentionView(source: HomeAttentionSource, siteById: ReadonlyMap<string
       detail: card.detail,
       timeLabel: "분석 생성",
       observedAt: observedAt(source.observedAt),
-      href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}`,
+      href: `/sites/${encodeURIComponent(source.siteId)}/analysis?analysisId=${encodeURIComponent(analysis.analysisId)}&workAreaId=${encodeURIComponent(analysis.workAreaId)}`,
       actionLabel: "분석 결과 검토",
       image: null,
       technicalRef: formatHomeReviewTechnicalRef(analysis.analysisId, analysis.workAreaId),
@@ -179,13 +198,17 @@ export default async function HomePage() {
   const initialSetupSites = selectHomeInitialSetupSites(sites, 3, { workOrders, known: workOrdersResult.ok });
   const recentSiteSources = selectHomeRecentSiteSources(sites);
   const externalDecisionSiteIds = new Set(decisions.map((decision) => decision.siteId));
+  // 검토 읽기 범위를 3개 현장으로 묶는 slice 는 loader 가 맡는다 — 묶음 밖 현장은
+  // unknown 으로 보고하고 0으로 단정하지 않는다.
   const analysisReviewSiteIds = [...new Set([
     ...baseAttention
       .filter((source) => source.kind !== "EXTERNAL_DECISION" && !(source.kind === "SITE" && source.site.status === "UNMAPPED"))
       .map((source) => source.siteId),
     ...recentSiteSources.filter((source) => !externalDecisionSiteIds.has(source.siteId)).map((source) => source.siteId),
-  ])].slice(0, MAX_HOME_ANALYSIS_REVIEW_SITES);
-  const analysisReviewSources = await loadHomeAnalysisReviewSources(analysisReviewSiteIds);
+  ])];
+  const analysisReviewRead = await loadHomeAnalysisReviewSources(analysisReviewSiteIds);
+  const analysisReviewSources = analysisReviewRead.sources;
+  const analysisReviewsUnknown = analysisReviewRead.unknownSiteIds.length > 0;
   const reviewAreaNameById = await loadReviewWorkAreaNames(analysisReviewSources.map((source) => source.siteId));
   const allAttention = selectHomeAttentionSources({ workOrders, sites, operationsByWorkOrderId, externalDecisions: decisions, analysisReviews: analysisReviewSources }, Number.MAX_SAFE_INTEGER);
   const operationalAttention = allAttention.filter((source) => source.kind !== "SITE" || source.site.status !== "UNMAPPED");
@@ -202,7 +225,7 @@ export default async function HomePage() {
     return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
   });
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById));
-  const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable;
+  const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable && !analysisReviewsUnknown;
   const attentionCount = new Set(operationalAttention.map((source) => source.siteId)).size;
 
   return <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
@@ -216,6 +239,7 @@ export default async function HomePage() {
     {sites.length > 0 && !portfolioComplete && <section className="rounded-lg border border-line bg-sunk px-4 py-3"><p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p><Link href="/sites" className="mt-1 inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link></section>}
     {operationsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다.</p>}
     {decisionsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
+    {analysisReviewsUnknown && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
 
     {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
 
