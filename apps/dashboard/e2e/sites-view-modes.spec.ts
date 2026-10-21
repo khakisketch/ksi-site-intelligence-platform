@@ -49,10 +49,18 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
   const firstCard = cards.first();
   await expect(firstCard.getByRole("heading", { level: 3 })).toBeVisible();
   await expect(firstCard.getByRole("link", { name: "현장 열기", exact: true })).toBeVisible();
-  // 격리 픽스처에는 표시 가능한 준비 출력이 없으므로 정직한 없음 상태다 —
-  // 가짜 커버가 아니라 실제 조회 결과다.
+  // 격리 seed profile은 spatial-data 요청 목록을 마운트하지 않는다(404).
+  // 조회 불가를 성공한 빈 목록으로 바꾸면 안 된다. 실제 BFF의 unknown과
+  // 같은 카드의 안내를 함께 대조하고, 가짜 픽셀/확정 없음은 허용하지 않는다.
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
-    await expect(page.getByText("표시할 미리보기 없음", { exact: true }).first()).toBeVisible();
+    const siteId = await firstCard.getAttribute("data-site-card");
+    expect(siteId).toBeTruthy();
+    const lookup = await page.request.get(`/api/sites/${encodeURIComponent(siteId!)}/preview`);
+    expect(lookup.status()).toBe(200);
+    expect(await lookup.json()).toEqual({ available: false, reason: "unknown" });
+    await expect(firstCard.getByText(/미리보기를 확인하지 못함 — 등록 자료 현황을 뜻하지 않습니다/)).toBeVisible();
+    await expect(firstCard.getByText("표시할 미리보기 없음", { exact: true })).toHaveCount(0);
+    await expect(firstCard.locator("canvas")).toHaveCount(0);
   }
   await capture(page, `multiple-cards-${testInfo.project.name}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);

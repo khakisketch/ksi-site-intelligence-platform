@@ -142,6 +142,14 @@ describe("SitePreviewThumb", () => {
     expect(link.textContent).toContain("부분 범위");
     expect(link.textContent).toContain("제출 GSD 0.05m");
     expect(link.textContent).not.toMatch(/최신|전체 현장/);
+    // 사진 밝기와 무관한 명시적 토큰 쌍 + 좁은 화면에서 잘리지 않는 정보 줄.
+    const caption = link.querySelector("figcaption")!;
+    expect(caption.classList.contains("bg-accent")).toBe(true);
+    expect(caption.classList.contains("text-accent-on")).toBe(true);
+    expect(caption.className).not.toMatch(/gradient|linear-to|transparent/);
+    const precision = screen.getByText(/제출 GSD 0\.05m/);
+    expect(precision.classList.contains("min-w-0")).toBe(true);
+    expect(precision.classList.contains("shrink-0")).toBe(false);
     // Attribution is available OUTSIDE the link — hover-only title is not the path.
     expect(link.hasAttribute("title")).toBe(false);
     expect(link.querySelector("details,summary")).toBeNull();

@@ -229,13 +229,13 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
           >
             <figure className="relative size-full">
               <canvas ref={canvasRef} className="absolute inset-0 size-full object-cover" />
-              <figcaption className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-0.5 bg-linear-to-t from-black/75 to-transparent px-4 pt-8 pb-2 text-white">
+              <figcaption className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-0.5 bg-accent px-4 py-2 text-accent-on">
                 <span className="min-w-0 text-[12px] font-semibold break-keep">
                   {preview.link.workAreaName} · {kindLabel}
                   <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">부분 범위</span>
                   {preview.link.artifactKind === "dsm" && <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">상대 음영</span>}
                 </span>
-                <span className="num shrink-0 text-[10.5px]">
+                <span className="num w-full min-w-0 text-[10.5px] break-keep">
                   {captureLine(preview.link)}
                   {precisionLine(preview.link) ? ` · ${precisionLine(preview.link)}` : ""}
                 </span>
