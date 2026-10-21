@@ -5163,3 +5163,59 @@ delivery contract exists; work-area choice across areas still uses the incumbent
 heuristic because the projection is per-area; `hasMore` pages are noted, not paged in the UI.
 Also unchanged: the shared launcher-history incident remains unresolved with no approved repair
 semantics, and no new inspection launch was performed.
+
+#### Human direction: audit recovery design and pixel visualization proceed independently (2026-10-21)
+
+Human chose A+B in parallel but with two corrections to my framing, both accepted as binding:
+1. The audit-ledger recovery and the spatial-display work must NOT be coupled: an incident in the
+   inspection worker's audit history must not block spatial-data visualization development, and a
+   separate display path must not bypass or restate the existing validation state.
+2. A (audit recovery) does NOT by itself deliver whole-site visualization: that additionally needs
+   COG/tile-style progressive delivery, level-of-detail selection, NoData/mask/CRS handling,
+   permission+version-bound caching, and a separation of DSM height values from display color
+   mapping. Audit recovery only removes a blocker; it does not complete the feature.
+
+Human's ordered instruction: (1) stop all audit-ledger changes immediately — preserve BOTH the
+384-event original and the 378-event base branch as immutable evidence, verify the missing six
+events' content and order, and consider ADDING a separate recovery/correction record instead of
+overwriting the existing journal; declare NEITHER branch as the validated canonical for now.
+(2) Use B to connect actual spatial data to the screen — real ortho/DSM pixels on a map, verifying
+zoom/pan/layer switching/two-epoch synchronization — treated as a TEMPORARY visualization adapter
+that does not replace formal data validation. (3) Run the A recovery design and formal tile serving
+in parallel, with the recovery as a separately approved contract; no shared-host journal modification
+and no recovery rule decided on the spot.
+
+Human's architectural requirement, now binding: **audit integrity, data-validation suitability, and
+spatial-data viewability are three distinct states** and must never be collapsed into one READY-style
+flag, because that merge is what would reproduce this failure class. Each must keep its own vocabulary,
+its own owner and its own display.
+
+Verified fact answering the "is 512x512 a per-request or a whole-exploration limit" question: it is
+PER OUTPUT, not per exploration area. `max_output_pixels` (262144 in the live signed policy) is checked
+against the single requested window's pixel count (services/core/src/ksi_core/domains/external/delivery/
+jobs.py ~991, job_projection.py ~173/193); the window must lie inside the source footprint and inside the
+grant's `allowed_bounds` (packages/geo-spatial/src/ksi_geo_spatial/external_native_window_geometry.py
+`_plan`); the 512 figure is only the Console input cap (apps/dashboard/src/lib/spatial-data-request.ts
+`MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM`). So multiple windows over one source ARE possible and a tiled
+approach is architecturally open — subject to request volume, caching, server load and policy grants,
+which must be verified before relying on it. The prepared output stays requester-owned by existing
+contract (same principal reads it; another principal is denied), and Core already separates
+`SPATIAL_DATA_READ` (read an existing output) from `SPATIAL_DATA_REQUEST` (create a new bounded
+PREPARE) — services/core/src/ksi_core/domains/external/delivery/jobs.py:343/424/931/1092, mirrored by
+apps/dashboard/src/app/sites/[siteId]/spatial-assets/page.tsx:369.
+
+Units commissioned (background, no commits by workers, no shared-host writes, no inspection launch):
+- General `ses_ea32f0ae2ffe9GXTtzipGIKrdQ`: A-track. Read-only verification of both branches (missing
+  six events' exact content/order, divergence point) + a recovery CONTRACT design (separate append-only
+  recovery/correction stream, admission authority, replay semantics, proven-absence vs unknown-outcome
+  representation, fail-closed preservation) + the three-state separation mapped to current code +
+  the open decisions that need Human/owner approval. No repair implementation, no journal mutation.
+- General `ses_ea32e8a6fffefk3cL0ia0Bxobk`: B-track. Windowed actual-pixel viewer in the real workspace
+  (real prepared window bytes, native-plane honest placement, zoom/pan/adjacent window, layer switch,
+  two-epoch comparison with honest sync limits, READ vs REQUEST separation, no composite ready flag,
+  no external basemap/tiles, under-1024px mutation boundary preserved). Explicitly a temporary
+  visualization adapter, not a validation substitute.
+
+Main owns: integration, the real-product verification of B, the final Git/ledger record, and the
+separation of the three states in the delivered UI. No shared-host journal/daemon/cgroup/staging
+mutation, no new inspection launch, no policy/threshold/CRS/rights change.
