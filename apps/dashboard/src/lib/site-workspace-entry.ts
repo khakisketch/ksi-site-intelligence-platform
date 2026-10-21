@@ -37,17 +37,53 @@ export interface WorkspaceCaptureFacts {
 }
 
 /**
- * 서버가 준 관측 사실 하나. 어댑터(`site-workspace-server-facts.ts`)가 기존
- * Core 목록에서 옮긴다. `viewAvailable`은 서버 선언 가용성 자리이며, 권위
- * 프로젝션이 오기 전까지는 검사 래스터 사실의 전이적 옮김이다(어댑터 TODO 참조).
+ * 서버가 준 관측 버전 사실 하나. 어댑터(`site-workspace-server-facts.ts`)가
+ * SWX-1 프로젝션(`spatial-workspace-observations`)의 관측×버전을 펼친다.
+ * 관측 단위 판정(시간 순서 후보·표시 가용성)과 버전 단위 사실(정확한 선택자·
+ * 표시 준비)을 한 줄에 함께 두되, 어느 것도 클라이언트가 다시 계산하지 않는다.
+ * `viewAvailable`·`chronologyCandidate`·`entryDefault`는 서버 선언 그대로다.
  */
 export interface WorkspaceObservationFact extends WorkspaceCaptureFacts {
   observationEpochId: string;
   workAreaId: string;
+  workOrderId: string;
   assetRef: string;
-  kind: string;
+  submissionRef: string;
   revision: number;
+  kind: string;
+  /** 이 버전의 표시용 출력이 봉인되어 지금 보여줄 수 있는지(서버 선언). */
+  displayReady: boolean;
+  /** 검사 래스터 측정 범위가 있는지 — 범위 표시(display-only) 가능 여부. */
+  inspectedRasterAvailable: boolean;
+  /** 관측 단위: 정확한 구간 합의로 시간 순서를 매길 수 있는지(서버 선언). */
+  chronologyCandidate: boolean;
+  /** 관측 단위: 버전들이 포착 시점에 합의하는지(서버 선언). */
+  captureSourcesAgree: boolean;
+  /** 관측 단위: 표시 가능한 버전이 하나라도 있는지(서버 선언). */
   viewAvailable: boolean;
+  viewUnavailableReason: string | null;
+  /** 관측 단위: 서버가 고른 표시 버전. 명시적 버전 지시가 없을 때 이것만 쓴다. */
+  viewAssetRef: string | null;
+  newerRevisionPending: boolean;
+  newerRevisionState: string | null;
+}
+
+/** SWX-1 `entryDefault.reason` 그대로 + 프로젝션을 읽지 못한 지역 상태. */
+export type WorkspaceEntryStatus =
+  | "LATEST_EXACT_VIEW_AVAILABLE"
+  | "NO_OBSERVATIONS"
+  | "NO_VIEW_AVAILABLE_OBSERVATION"
+  | "NO_EXACT_CAPTURE_CANDIDATE"
+  | "CAPTURE_TIE_AMBIGUOUS"
+  | "NO_PROJECTION";
+
+export interface WorkspaceEntryDefault {
+  observationEpochId: string | null;
+  viewAssetRef: string | null;
+  reason: WorkspaceEntryStatus;
+  /** 서버 설명 — 화면은 한국어로 옮기고 원문은 펼침에 둔다. */
+  detail: string | null;
+  tiedObservationEpochIds: readonly string[];
 }
 
 export interface WorkspaceAnalysisSelector {
@@ -67,11 +103,12 @@ export interface WorkspaceServerFacts {
   siteId: string;
   authorizedWorkAreaIds: readonly string[];
   /**
-   * 권위 있는 Core 기본 관측. 프로젝션이 오기 전에는 null이며, null일 때
-   * 일반 진입은 `no-server-default`를 돌린다 — 클라이언트 정렬 대체가 아니라
-   * 호출자가 전이 선택을 명시적으로 맡는다.
+   * SWX-1 프로젝션의 `entryDefault` 그대로. 일반 진입은 이것만 쓴다.
+   * null(읽기 실패·미조회)이면 일반 진입은 `no-server-default`(사유
+   * `NO_PROJECTION`)를 돌린다 — 목록 정렬 대체가 아니라 호출자가 전이 선택을
+   * 명시적으로 맡는다.
    */
-  serverDefault: WorkspaceObservationFact | null;
+  entryDefault: WorkspaceEntryDefault | null;
   observations: readonly WorkspaceObservationFact[];
   analyses: readonly WorkspaceAnalysisRef[];
 }
@@ -97,24 +134,58 @@ export type OrdinaryEntryResolution =
       workAreaId: string;
       observation: WorkspaceObservationFact;
     }
-  | { status: "no-server-default" };
+  | {
+      status: "no-server-default";
+      reason: WorkspaceEntryStatus;
+      detail: string | null;
+      tiedObservationEpochIds: readonly string[];
+      /** 서버는 골랐으나 조회된 페이지에 없어 복원하지 못한 경우 true. */
+      defaultNotOnPage: boolean;
+    };
 
 /**
- * 일반 진입 — 서버 기본 관측만 쓴다. 서버 기본이 없거나 승인 범위를 벗어나면
- * `no-server-default`를 돌리고, 목록 순서·제출 시각으로 최신을 골라내지 않는다.
+ * 일반 진입 — 프로젝션의 `entryDefault`만 쓴다. 서버가 고른 관측·표시 버전이
+ * 승인 범위·조회된 사실에 정확히 있을 때만 `ready`다. 그 외에는 서버의
+ * 사유·설명 그대로 `no-server-default`를 돌리고, 목록 순서·제출 시각으로
+ * 최신을 골라내지 않는다.
  */
 export function resolveOrdinaryEntry(facts: WorkspaceServerFacts): OrdinaryEntryResolution {
-  const candidate = facts.serverDefault;
-  if (
-    candidate &&
-    facts.authorizedWorkAreaIds.includes(candidate.workAreaId) &&
-    facts.observations.some(
-      (item) => item.assetRef === candidate.assetRef && item.workAreaId === candidate.workAreaId,
-    )
-  ) {
-    return { status: "ready", basis: "server-default", workAreaId: candidate.workAreaId, observation: candidate };
+  const entry = facts.entryDefault;
+  if (entry && entry.reason === "LATEST_EXACT_VIEW_AVAILABLE" && entry.observationEpochId && entry.viewAssetRef) {
+    const match = facts.observations.find(
+      (item) =>
+        item.workAreaId &&
+        facts.authorizedWorkAreaIds.includes(item.workAreaId) &&
+        item.observationEpochId === entry.observationEpochId &&
+        item.assetRef === entry.viewAssetRef,
+    );
+    if (match && match.viewAvailable) {
+      return { status: "ready", basis: "server-default", workAreaId: match.workAreaId, observation: match };
+    }
+    return {
+      status: "no-server-default",
+      reason: entry.reason,
+      detail: entry.detail,
+      tiedObservationEpochIds: entry.tiedObservationEpochIds,
+      defaultNotOnPage: true,
+    };
   }
-  return { status: "no-server-default" };
+  if (entry) {
+    return {
+      status: "no-server-default",
+      reason: entry.reason,
+      detail: entry.detail,
+      tiedObservationEpochIds: entry.tiedObservationEpochIds,
+      defaultNotOnPage: false,
+    };
+  }
+  return {
+    status: "no-server-default",
+    reason: "NO_PROJECTION",
+    detail: null,
+    tiedObservationEpochIds: [],
+    defaultNotOnPage: false,
+  };
 }
 
 export type UnresolvableReason =
@@ -181,6 +252,8 @@ export type ExplicitObservationResolution =
 /**
  * 명시적 관측·버전 링크 — 정확히 일치하는 승인 관측만 받는다. 어긋나면 막고
  * (fail-closed) 기본 관측·목록 첫 항목으로 조용히 바꾸지 않는다.
+ * 버전 지시가 없으면 서버가 고른 표시 버전(`viewAssetRef`)만 쓴다 —
+ * 클라이언트가 첫 번째 표시 가능 항목을 골라내지 않는다.
  */
 export function resolveExplicitObservation(
   facts: WorkspaceServerFacts,
@@ -204,12 +277,14 @@ export function resolveExplicitObservation(
   if (assetRef !== null) {
     const exact = epochMatches.find((item) => item.assetRef === assetRef);
     if (!exact) return failClosed("observation", "unknown-asset");
-    if (!exact.viewAvailable) return failClosed("observation", "unavailable");
+    if (!exact.viewAvailable || !exact.displayReady) return failClosed("observation", "unavailable");
     return { status: "ready", basis: "explicit", workAreaId, observation: exact };
   }
-  const viewable = epochMatches.find((item) => item.viewAvailable) ?? null;
-  if (!viewable) return failClosed("observation", "unavailable");
-  return { status: "ready", basis: "explicit", workAreaId, observation: viewable };
+  const display = epochMatches.find(
+    (item) => item.viewAssetRef !== null && item.assetRef === item.viewAssetRef && item.displayReady,
+  ) ?? null;
+  if (!display) return failClosed("observation", "unavailable");
+  return { status: "ready", basis: "explicit", workAreaId, observation: display };
 }
 
 export type ExplicitComparisonResolution =
@@ -223,9 +298,10 @@ export type ExplicitComparisonResolution =
   | UnresolvableEntry;
 
 /**
- * 명시적 비교(저장된 비교·딥링크) — 같은 구역의 서로 다른 두 승인 관측을
- * 정확히 복원한다. 하나라도 어긋나면 전체를 막는다. 남은 한쪽·기본값으로
- * 이어 그리지 않는다.
+ * 명시적 비교(저장된 비교·딥링크) — 같은 구역의 서로 다른 두 승인 버전을
+ * 정확히 복원한다. 두 버전 모두 표시 준비(`displayReady`)되고 관측이 시간
+ * 순서 후보(`chronologyCandidate`)일 때만 이어 그린다. 하나라도 어긋나면
+ * 전체를 막는다. 남은 한쪽·기본값으로 이어 그리지 않는다.
  */
 export function resolveExplicitComparison(
   facts: WorkspaceServerFacts,
@@ -257,7 +333,10 @@ export function resolveExplicitComparison(
     );
     return failClosed("comparison", foreign ? "cross-area-comparison" : "unknown-asset");
   }
-  if (!baseline.viewAvailable || !current.viewAvailable) {
+  if (!baseline.viewAvailable || !current.viewAvailable || !baseline.displayReady || !current.displayReady) {
+    return failClosed("comparison", "unavailable");
+  }
+  if (!baseline.chronologyCandidate || !current.chronologyCandidate) {
     return failClosed("comparison", "unavailable");
   }
   return { status: "ready", basis: "explicit", workAreaId, baseline, current };
@@ -362,7 +441,7 @@ export function workspaceCaptureLine(
 }
 
 export interface CompareCandidateGroups {
-  /** 시간 순서 비교 후보 — 시작·종료가 모두 확인된 구간 관측만. */
+  /** 시간 순서 비교 후보 — 서버가 정한 순서 가능 관측만. 날짜 일부·미상은 제외. */
   comparable: WorkspaceObservationFact[];
   /** 구간 한쪽만 아는 관측 — 둘러보기는 되지만 순서 비교 후보가 아니다. */
   browsableDateOnly: WorkspaceObservationFact[];
@@ -371,24 +450,88 @@ export interface CompareCandidateGroups {
 }
 
 /**
- * 비교 후보 나눔 — 시간 순서 비교는 정확한 구간 관측끼리만. 날짜 일부·미상
- * 관측은 후보에서 빼되 목록에서 감추지 않는다(정밀도 그대로 표기).
+ * 비교 후보 나눔 — 시간 순서는 서버의 `chronologyCandidate`만 따른다.
+ * 날짜 일부·미상 관측은 후보에서 빼되 목록에서 감추지 않는다(정밀도 그대로
+ * 표기). 버전이 여럿인 관측은 표시 버전(`viewAssetRef`) 대표 한 줄로 둔다.
  */
 export function splitCompareCandidates(
   facts: WorkspaceServerFacts,
   workAreaId: string,
 ): CompareCandidateGroups {
-  const scoped = facts.observations.filter(
-    (item) => item.workAreaId === workAreaId && facts.authorizedWorkAreaIds.includes(item.workAreaId),
-  );
+  const perEpoch = representativeFacts(facts, workAreaId);
   const comparable: WorkspaceObservationFact[] = [];
   const browsableDateOnly: WorkspaceObservationFact[] = [];
   const browsableUnknown: WorkspaceObservationFact[] = [];
-  for (const item of scoped) {
+  for (const item of perEpoch) {
+    if (item.chronologyCandidate) {
+      comparable.push(item);
+      continue;
+    }
     const precision = observationPrecisionOf(item);
-    if (precision === "interval") comparable.push(item);
-    else if (precision === "date-only") browsableDateOnly.push(item);
+    if (precision === "date-only") browsableDateOnly.push(item);
     else browsableUnknown.push(item);
   }
   return { comparable, browsableDateOnly, browsableUnknown };
+}
+
+/**
+ * 관측별 대표 사실 — 표시 버전(`viewAssetRef`) 우선, 없으면 첫 버전.
+ * 목록·선택지가 버전 수만큼 불어나지 않게 한다.
+ */
+export function representativeFacts(
+  facts: WorkspaceServerFacts,
+  workAreaId: string,
+): WorkspaceObservationFact[] {
+  const scoped = facts.observations.filter(
+    (item) => item.workAreaId === workAreaId && facts.authorizedWorkAreaIds.includes(item.workAreaId),
+  );
+  const byEpoch = new Map<string, WorkspaceObservationFact[]>();
+  for (const item of scoped) {
+    const group = byEpoch.get(item.observationEpochId) ?? [];
+    group.push(item);
+    byEpoch.set(item.observationEpochId, group);
+  }
+  const out: WorkspaceObservationFact[] = [];
+  for (const group of byEpoch.values()) {
+    out.push(
+      group.find((item) => item.viewAssetRef !== null && item.assetRef === item.viewAssetRef) ?? group[0]!,
+    );
+  }
+  return out;
+}
+
+/**
+ * 비교 칸에 올릴 수 있는 관측 — 순서 가능 + 표시 준비된 버전이 있는 것만.
+ * 표시 준비가 안 된 순서 후보는 막되 감추지 않는다(호출자가 사유를 밝힌다).
+ */
+export function compareSlotCandidates(
+  facts: WorkspaceServerFacts,
+  workAreaId: string,
+): { eligible: WorkspaceObservationFact[]; blocked: WorkspaceObservationFact[] } {
+  const eligible: WorkspaceObservationFact[] = [];
+  const blocked: WorkspaceObservationFact[] = [];
+  for (const item of representativeFacts(facts, workAreaId)) {
+    if (!item.chronologyCandidate) continue;
+    if (item.displayReady && item.viewAvailable) eligible.push(item);
+    else blocked.push(item);
+  }
+  return { eligible, blocked };
+}
+
+/**
+ * 분석 기록의 원래 입력(기준·현재 선택자)을 현재 프로젝션 버전에서 찾는다.
+ * 제출 묶음·버전의 정확한 일치만 인정하며, 없으면 null로 둔다(기록은 그대로).
+ */
+export function matchAnalysisSelectors(
+  facts: WorkspaceServerFacts,
+  analysis: WorkspaceAnalysisRef,
+): { baseline: WorkspaceObservationFact | null; current: WorkspaceObservationFact | null } {
+  const find = (selector: WorkspaceAnalysisSelector): WorkspaceObservationFact | null =>
+    facts.observations.find(
+      (item) =>
+        item.workAreaId === analysis.workAreaId &&
+        item.submissionRef === selector.submissionRef &&
+        item.revision === selector.revision,
+    ) ?? null;
+  return { baseline: find(analysis.baseline), current: find(analysis.current) };
 }

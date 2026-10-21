@@ -3,7 +3,10 @@ import Link from "next/link";
 import type { AnalysisListItem, AnalysisView } from "@/lib/core-api/analysis";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { analysisResultTitle } from "@/lib/operator-language";
-import type { ExplicitResultResolution } from "@/lib/site-workspace-entry";
+import type { ExplicitResultResolution, WorkspaceServerFacts } from "@/lib/site-workspace-entry";
+import { matchAnalysisSelectors, workspaceCaptureLine } from "@/lib/site-workspace-entry";
+import { capturePeriodTitle } from "@/lib/operator-language";
+import { formatKoreanDate } from "@/lib/datetime";
 import { analysisStateLabel } from "./SiteSpatialOverview";
 
 function RecordCard({ item }: { item: AnalysisListItem }) {
@@ -39,6 +42,7 @@ export function SiteWorkspaceResults({
   analysesKnown,
   explicitResult,
   explicitDetail,
+  facts,
   canCreateAnalysis,
   scopedCompareHref,
 }: {
@@ -49,10 +53,28 @@ export function SiteWorkspaceResults({
   explicitResult: ExplicitResultResolution | null;
   /** 명시적 링크가 가리킨 실제 기록 — 준비 상태에서만 싣는다. 지어내지 않는다. */
   explicitDetail: AnalysisView | null;
+  facts: WorkspaceServerFacts;
   canCreateAnalysis: boolean;
   scopedCompareHref: string;
 }) {
   const explicitReady = explicitResult?.status === "ready" && explicitDetail ? explicitDetail : null;
+  // 원래 입력(기준·현재 선택자)을 현재 프로젝션 버전에서 찾는다 — 없으면
+  // 기록을 바꾸지 않고 그대로 둔다고 밝힌다.
+  const matched = explicitReady
+    ? matchAnalysisSelectors(facts, {
+      analysisId: explicitReady.analysisId,
+      workAreaId: explicitReady.workAreaId,
+      baseline: explicitReady.baseline,
+      current: explicitReady.current,
+    })
+    : null;
+  const matchedLine = (label: string, fact: { captureStartedAt: string | null; captureEndedAt: string | null; captureDate: string | null } | null) =>
+    fact
+      ? `${label} · ${workspaceCaptureLine(fact, {
+        intervalTitle: (startedAt, endedAt) => capturePeriodTitle(startedAt, endedAt),
+        calendarDate: (date) => formatKoreanDate(date),
+      })}`
+      : null;
   return <div className="flex flex-col gap-3">
     <h2 className="text-[14px] font-bold">결과와 근거{areaLabel ? ` · ${areaLabel}` : ""}</h2>
 
@@ -79,6 +101,18 @@ export function SiteWorkspaceResults({
         <p className="mt-1 text-[12px] leading-5 text-ink-2">
           링크의 원래 기록을 그대로 보여줍니다. 수치·선택 정보·근거는 분석 기록에 있으며, 다시 계산하지 않습니다.
         </p>
+        {matched && (() => {
+          const lines = [matchedLine("기준", matched.baseline), matchedLine("현재", matched.current)].filter((line): line is string => line !== null);
+          if (lines.length === 0) {
+            return <p className="mt-1 text-[12px] leading-5 text-ink-2">원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
+          }
+          return <p className="mt-1 text-[12px] leading-5 text-ink-2">
+            {lines.join(" · ")}
+            {lines.length === 2
+              ? " — 원래 입력 2건이 현재 관측 목록에 있습니다."
+              : " — 나머지 입력은 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다."}
+          </p>;
+        })()}
         <p className="mt-1">
           <Link href={`${sitePath}/analysis?analysisId=${encodeURIComponent(explicitReady.analysisId)}`} className="tap-target inline-block text-[12px] underline">분석 기록 열기</Link>
         </p>

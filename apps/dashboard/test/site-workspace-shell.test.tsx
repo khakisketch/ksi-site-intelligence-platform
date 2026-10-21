@@ -11,6 +11,7 @@ const mocked = vi.hoisted(() => ({
   analyses: vi.fn(),
   detail: vi.fn(),
   assets: vi.fn(),
+  workspace: vi.fn(),
 }));
 
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
@@ -20,6 +21,7 @@ vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOr
 vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolumeHistory: mocked.history }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalyses: mocked.analyses, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
+vi.mock("@/lib/core-api/spatial-workspace", () => ({ listSpatialWorkspaceObservations: mocked.workspace }));
 vi.mock("@/components/map/AoiPolygonMap", () => ({
   AoiPolygonMap: ({ value }: { value: unknown }) => (
     <div data-testid="aoi-map" data-vertices={JSON.stringify(value)} />
@@ -105,6 +107,86 @@ function rasterAsset(assetRef: string, declaredOverrides: Record<string, unknown
   };
 }
 
+function wireCapture(overrides: Record<string, unknown> = {}) {
+  return {
+    factClass: "DECLARED_CAPTURE",
+    precision: "EXACT_INTERVAL",
+    captureStartedAt: "2021-08-17T10:00:00Z",
+    captureEndedAt: "2021-08-17T11:00:00Z",
+    captureDate: null,
+    ...overrides,
+  };
+}
+
+function wireVersion(assetRef: string, overrides: Record<string, unknown> = {}) {
+  return {
+    assetRef,
+    submissionRef: `s-${assetRef}`,
+    revision: 1,
+    artifactId: `art-${assetRef}`,
+    kind: "dsm",
+    lifecycleState: "SEALED",
+    capture: wireCapture(),
+    declaredCrs: "EPSG:5186",
+    declaredVerticalReferencePresent: false,
+    declaredGsdM: null,
+    submittedAt: "2021-08-18T00:00:00Z",
+    observedSha256: null,
+    observedSizeBytes: null,
+    observedAt: null,
+    inspectionState: "COMPLETED",
+    inspectionOutcome: "MEASURED",
+    inspectionReason: null,
+    inspectedRasterAvailable: true,
+    displayState: "NOT_SEALED",
+    displayReady: false,
+    chronology: "EXACT_INTERVAL_CANDIDATE",
+    chronologyCandidate: true,
+    quantitativeEligibility: "NOT_EVALUATED",
+    ...overrides,
+  };
+}
+
+function wireObservation(epochId: string, assetRefs: string[], overrides: Record<string, unknown> = {}) {
+  const versions = assetRefs.map((ref) => wireVersion(ref));
+  return {
+    observationEpochId: epochId,
+    workOrderId: `w-${epochId}`,
+    capture: wireCapture(),
+    captureSourcesAgree: true,
+    versions,
+    viewAvailable: true,
+    viewUnavailableReason: null,
+    viewAssetRef: assetRefs[0],
+    newerRevisionPending: false,
+    newerRevisionState: null,
+    chronologyCandidate: true,
+    hasSealedVersion: true,
+    ...overrides,
+  };
+}
+
+function workspacePage(overrides: Record<string, unknown> = {}) {
+  return {
+    contractVersion: "site-spatial-workspace-page.v1",
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+    scopeNote: "",
+    observations: [],
+    entryDefault: {
+      observationEpochId: null,
+      viewAssetRef: null,
+      reason: "NO_OBSERVATIONS",
+      detail: "No observations are registered for this Site/WorkArea scope.",
+      tiedObservationEpochIds: [],
+    },
+    nextCursor: null,
+    hasMore: false,
+    ...overrides,
+  };
+}
+
 function areaFixture(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: "1.0",
@@ -156,6 +238,7 @@ beforeEach(() => {
   mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
   mocked.detail.mockRejectedValue(new CoreApiError(404, { detail: "not found" }));
   mocked.assets.mockResolvedValue(EMPTY_CATALOG);
+  mocked.workspace.mockResolvedValue(workspacePage());
 });
 
 async function renderOverview(searchParams: Record<string, string> = {}) {
@@ -176,23 +259,118 @@ describe("workspace shell structure", () => {
     expect(mocked.detail).not.toHaveBeenCalled();
   });
 
-  it("leads explore with real inspection-backed spatial content", async () => {
-    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
+  it("reads the projection once per selected area with a bounded limit", async () => {
     await renderOverview({});
-    expect(screen.getByRole("img", { name: /작업구역 경계/ })).toBeTruthy();
-    expect(screen.getByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeTruthy();
+    expect(mocked.workspace).toHaveBeenCalledTimes(1);
+    expect(mocked.workspace).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
   });
 
-  it("keeps the denied-catalog scope readable in explore without inventing emptiness", async () => {
-    mocked.assets.mockRejectedValue(new CoreApiError(403, { detail: "denied" }));
+  it("uses the server default display version for the first viewport", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["disp-2021"], { capture: wireCapture() }),
+        wireObservation("epoch-2022", ["disp-2022"], { capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }) }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2022",
+        viewAssetRef: "disp-2022",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("first-raster"), rasterAsset("disp-2022")] });
     await renderOverview({});
-    expect(screen.getByText(/등록 자료를 조회할 권한이 없습니다/)).toBeTruthy();
-    expect(screen.getByText("등록된 구역명 · 미세 분석 구역")).toBeTruthy();
+    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    expect(panel.textContent).toContain("보여주는 관측");
+    expect(panel.textContent).toContain("등록 순서로 고르지 않았습니다");
+    expect(panel.textContent).toContain("사유 코드 · LATEST_EXACT_VIEW_AVAILABLE");
+    const selected = screen.getByRole("link", { name: /선택 중/ });
+    expect(selected.getAttribute("href")).toContain("assetRef=disp-2022");
+  });
+
+  it("shows a truthful no-view state without calling anything latest", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["v1"], {
+        viewAvailable: false,
+        viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+        viewAssetRef: null,
+        versions: [wireVersion("v1")],
+      })],
+      entryDefault: {
+        observationEpochId: null,
+        viewAssetRef: null,
+        reason: "NO_VIEW_AVAILABLE_OBSERVATION",
+        detail: "Observations exist but none has a display-ready version.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
+    await renderOverview({});
+    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    expect(panel.textContent).toContain("표시할 수 있는 관측이 아직 없습니다");
+    expect(panel.textContent).toContain("표시용 출력의 봉인이 끝나지 않았습니다");
+    expect(panel.textContent).toContain("서버가 정한 기본 관측이 아닙니다");
+    expect(screen.queryByText(/최신/)).toBeNull();
+  });
+
+  it("shows registration guidance only for real absence", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
+    await renderOverview({});
+    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    expect(panel.textContent).toContain("등록된 관측이 없습니다");
+  });
+
+  it("states ambiguity with the tied candidates instead of picking one", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-a", ["va"], { capture: wireCapture() }),
+        wireObservation("epoch-b", ["vb"], { capture: wireCapture() }),
+      ],
+      entryDefault: {
+        observationEpochId: null,
+        viewAssetRef: null,
+        reason: "CAPTURE_TIE_AMBIGUOUS",
+        detail: "Two or more view-available observations share the same exact capture interval.",
+        tiedObservationEpochIds: ["epoch-a", "epoch-b"],
+      },
+    }));
+    await renderOverview({});
+    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    expect(panel.textContent).toContain("자동으로 고르지 않았습니다");
+    expect(panel.textContent).not.toContain("보여주는 관측");
   });
 });
 
 describe("workspace compare mode", () => {
+  function readyProjection() {
+    return workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["exact-1"], {
+          capture: wireCapture(),
+          versions: [wireVersion("exact-1", { displayReady: true, displayState: "SEALED" })],
+        }),
+        wireObservation("epoch-2022", ["date-only-2"], {
+          capture: wireCapture({ precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" }),
+          chronologyCandidate: false,
+          viewAvailable: false,
+          viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+          viewAssetRef: null,
+          versions: [wireVersion("date-only-2", { capture: wireCapture({ precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" }), chronologyCandidate: false })],
+        }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2021",
+        viewAssetRef: "exact-1",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    });
+  }
+
   it("renders two equal-weight map slots with an honest unavailable-sync notice", async () => {
+    mocked.workspace.mockResolvedValue(readyProjection());
     await renderOverview({ mode: "compare" });
     expect(screen.getByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeTruthy();
     expect(screen.getByRole("region", { name: "기준 자료" })).toBeTruthy();
@@ -204,50 +382,30 @@ describe("workspace compare mode", () => {
     );
   });
 
-  it("restores two exact versions and labels a calendar-only capture at its real precision", async () => {
+  it("lists orderable candidates and keeps date-only observations browsable at real precision", async () => {
+    mocked.workspace.mockResolvedValue(readyProjection());
     mocked.assets.mockResolvedValue({
       ...EMPTY_CATALOG,
-      assets: [
-        rasterAsset("exact-1"),
-        rasterAsset("date-only-2", { captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" }, "EPSG:5186"),
-      ],
+      assets: [rasterAsset("exact-1"), rasterAsset("date-only-2", { captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" })],
     });
-    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "date-only-2" });
-    expect(screen.queryByRole("alert")).toBeNull();
-    const baseline = within(screen.getByRole("region", { name: "기준 자료" }));
-    const current = within(screen.getByRole("region", { name: "비교 자료" }));
-    expect(baseline.getAllByText(/촬영/).length).toBeGreaterThan(0);
-    expect(current.getAllByText(/2021\. 8\. 17\./).length).toBeGreaterThan(0);
-    expect(current.getAllByText(/날짜만 확인 · 시각 미상/).length).toBeGreaterThan(0);
-    expect(current.queryByText(/10:00/)).toBeNull();
-  });
-
-  it("labels an unknown capture without rendering a date or time", async () => {
-    mocked.assets.mockResolvedValue({
-      ...EMPTY_CATALOG,
-      assets: [
-        rasterAsset("exact-1"),
-        rasterAsset("unknown-2", { captureStartedAt: null, captureEndedAt: null }),
-      ],
-    });
-    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "unknown-2" });
-    const current = within(screen.getByRole("region", { name: "비교 자료" }));
-    expect(current.getAllByText(/포착 시점을 확인할 수 없습니다/).length).toBeGreaterThan(0);
-  });
-
-  it("fails closed on an unknown explicit comparison without substituting another asset", async () => {
-    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1"), rasterAsset("asset-2")] });
-    await renderOverview({ mode: "compare", baselineAssetRef: "asset-1", currentAssetRef: "ghost-asset" });
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "ghost-asset" });
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("요청한 비교 대상을 확인할 수 없습니다");
     expect(alert.textContent).toContain("자동으로 다른 자료로 바꾸지 않았습니다");
-    expect(screen.getAllByText(/아직 고르지 않았습니다/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다/)).toBeTruthy();
+    expect(screen.getAllByText(/날짜만 확인 · 시각 미상/).length).toBeGreaterThan(0);
+  });
+
+  it("fails closed on an unknown explicit comparison without substituting another asset", async () => {
+    mocked.workspace.mockResolvedValue(readyProjection());
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "ghost-asset" });
     expect(screen.queryByText(/선택 중/)).toBeNull();
+    expect(screen.getAllByText(/아직 고르지 않았습니다/).length).toBeGreaterThan(0);
   });
 
   it("fails closed when both sides name the same version", async () => {
-    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
-    await renderOverview({ mode: "compare", baselineAssetRef: "asset-1", currentAssetRef: "asset-1" });
+    mocked.workspace.mockResolvedValue(readyProjection());
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-1" });
     expect(screen.getByRole("alert").textContent).toContain("요청한 비교 대상을 확인할 수 없습니다");
   });
 });
@@ -265,8 +423,14 @@ describe("workspace results mode", () => {
     expect(screen.getByText(/새 비교는 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
   });
 
-  it("restores an exact explicit result with its original record", async () => {
+  it("restores an exact explicit result with its original inputs matched to the projection", async () => {
     mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-base", ["base-v"], { workOrderId: "w1", versions: [wireVersion("base-v", { submissionRef: "s1", revision: 1 })] }),
+        wireObservation("epoch-cur", ["cur-v"], { workOrderId: "w2", versions: [wireVersion("cur-v", { submissionRef: "s2", revision: 1 })] }),
+      ],
+    }));
     mocked.detail.mockResolvedValue({
       analysisId: "a9",
       siteId: "site-1",
@@ -287,9 +451,33 @@ describe("workspace results mode", () => {
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "a9");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText(/링크의 원래 기록을 그대로 보여줍니다/)).toBeTruthy();
+    expect(screen.getByText(/원래 입력 2건이 현재 관측 목록에 있습니다/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "분석 기록 열기" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?analysisId=a9",
     );
+  });
+
+  it("keeps the record when its original inputs left the current list", async () => {
+    mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+    mocked.detail.mockResolvedValue({
+      analysisId: "a9",
+      siteId: "site-1",
+      workAreaId: "tiny-1",
+      baseline: { workOrderId: "w-gone", submissionRef: "s-gone", revision: 9 },
+      current: { workOrderId: "w-gone", submissionRef: "s-gone", revision: 9 },
+      executionState: "COMPLETED",
+      suitabilityState: "EVALUATED",
+      blockers: [],
+      result: null,
+      evidenceRevision: 1,
+      evidenceDigest: "ed",
+      evidenceHref: "/evidence",
+      coverageHref: null,
+      createdAt: "2026-10-13T00:00:00Z",
+    });
+    await renderOverview({ mode: "results", analysisId: "a9" });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByText(/원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다/)).toBeTruthy();
   });
 
   it("fails closed on an unknown explicit result without substituting the latest", async () => {

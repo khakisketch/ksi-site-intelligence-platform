@@ -7,9 +7,17 @@ import type { WorkArea } from "@/lib/core-api/types";
 import type {
   ExplicitComparisonResolution,
   ExplicitResultResolution,
+  OrdinaryEntryResolution,
   WorkspaceMode,
+  WorkspaceObservationFact,
   WorkspaceServerFacts,
 } from "@/lib/site-workspace-entry";
+import {
+  representativeFacts,
+  workspaceCaptureLine,
+} from "@/lib/site-workspace-entry";
+import { capturePeriodTitle } from "@/lib/operator-language";
+import { formatKoreanDate } from "@/lib/datetime";
 import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
@@ -20,6 +28,148 @@ const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
   { key: "compare", label: "비교" },
   { key: "results", label: "결과" },
 ];
+
+function entryCaptureLine(fact: WorkspaceObservationFact): string {
+  return workspaceCaptureLine(fact, {
+    intervalTitle: (startedAt, endedAt) => capturePeriodTitle(startedAt, endedAt),
+    calendarDate: (date) => formatKoreanDate(date),
+  });
+}
+
+function viewReasonLine(reason: string | null): string | null {
+  if (reason === "NO_DISPLAY_READY_VERSION") return "표시용 출력의 봉인이 끝나지 않았습니다.";
+  if (reason === "DISPLAY_NOT_CONFIGURED") return "표시 절차가 설정되지 않았습니다. 담당자에게 확인하세요.";
+  return null;
+}
+
+/**
+ * 일반 진입 선택 상태 — 서버의 `entryDefault` 사유를 사람 말로 옮긴다.
+ * 이유 코드 자체는 감추지 않고, 서버 설명 원문은 펼침에 둔다.
+ * 이 패널은 "최신"을 스스로 단언하지 않는다 — 서버가 고른 경우에만 그 규칙을 밝힌다.
+ */
+function SiteWorkspaceEntryPanel({
+  sitePath,
+  workAreaId,
+  ordinaryEntry,
+  projectionState,
+  facts,
+  canCreateWorkOrder,
+  transitional,
+}: {
+  sitePath: string;
+  workAreaId: string | null;
+  ordinaryEntry: OrdinaryEntryResolution;
+  projectionState: "ready" | "denied" | "unavailable" | "not-requested";
+  facts: WorkspaceServerFacts;
+  canCreateWorkOrder: boolean;
+  /** 서버 기본이 없어 전이 선택을 보여줄 때 true — 기본인 척하지 않는다. */
+  transitional: boolean;
+}) {
+  if (projectionState === "denied") {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">관측 목록을 조회할 권한이 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다.</p>
+    </section>;
+  }
+  if (projectionState === "unavailable" || projectionState === "not-requested") {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">관측 목록을 확인할 수 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">잠시 후 다시 확인하세요. 확인할 수 없는 동안 기본 관측을 정하지 않았습니다.</p>
+    </section>;
+  }
+  if (ordinaryEntry.status === "ready") {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">보여주는 관측 · {entryCaptureLine(ordinaryEntry.observation)}</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        표시 가능한 관측 중 실제 촬영 구간이 가장 나중인 관측입니다. 등록 순서로 고르지 않았습니다.
+      </p>
+      {ordinaryEntry.observation.newerRevisionPending && (
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">새로 제출된 버전이 있어 표시용 출력을 확인 중입니다. 지금 보는 버전을 바꾸지 않았습니다.</p>
+      )}
+      {facts.entryDefault?.detail && (
+        <details className="mt-1 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer">서버 결정 근거 확인</summary>
+          <p className="mt-1">사유 코드 · {facts.entryDefault.reason}</p>
+          <p className="mt-1 break-words">서버 설명 · {facts.entryDefault.detail}</p>
+        </details>
+      )}
+    </section>;
+  }
+  const reason = ordinaryEntry.reason;
+  if (ordinaryEntry.defaultNotOnPage) {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">서버가 정한 기본 관측이 조회된 목록에 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">다음 페이지를 확인하거나 담당자에게 문의하세요. 다른 관측으로 바꾸지 않았습니다.</p>
+    </section>;
+  }
+  if (reason === "NO_OBSERVATIONS") {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">등록된 관측이 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        {canCreateWorkOrder && workAreaId
+          ? "이 구역의 외부 관측이 등록되면 이 자리에서 확인할 수 있습니다."
+          : "외부 관측 등록은 담당자와 확인하세요."}
+      </p>
+      {canCreateWorkOrder && workAreaId && (
+        <p className="mt-2"><Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(workAreaId)}`} className="btn">관측 자료 등록</Link></p>
+      )}
+    </section>;
+  }
+  if (reason === "NO_VIEW_AVAILABLE_OBSERVATION") {
+    const reasons = [...new Set(
+      facts.observations.filter((item) => item.workAreaId === workAreaId).map((item) => item.viewUnavailableReason),
+    )];
+    const lines = reasons.map(viewReasonLine).filter((line): line is string => line !== null);
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">표시할 수 있는 관측이 아직 없습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        관측은 있지만 표시용 출력이 준비되지 않아 기본 관측을 정하지 않았습니다.{" "}
+        {lines.length > 0 ? lines.join(" ") : "언제 표시되는지는 담당자에게 확인하세요."}
+      </p>
+      {transitional && (
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">아래에는 확인할 수 있는 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
+      )}
+      <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
+        <Link href={`${sitePath}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
+      </p>
+    </section>;
+  }
+  if (reason === "NO_EXACT_CAPTURE_CANDIDATE") {
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">기본 관측을 정하지 않았습니다</p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        표시 가능한 관측은 있지만 실제 촬영 구간이 확인된 관측이 없어, 등록 순서로 대신 고르지 않았습니다.
+        날짜만 아는 관측·시점 미상 관측은 비교에서 직접 고르세요.
+      </p>
+      {workAreaId && (
+        <p className="mt-2"><Link href={`${sitePath}?mode=compare&workAreaId=${encodeURIComponent(workAreaId)}`} className="tap-target text-[12px] underline">비교에서 직접 고르기</Link></p>
+      )}
+    </section>;
+  }
+  if (reason === "CAPTURE_TIE_AMBIGUOUS") {
+    const tiedEpochs = ordinaryEntry.tiedObservationEpochIds;
+    const tiedFacts = workAreaId
+      ? representativeFacts(facts, workAreaId).filter((item) => tiedEpochs.includes(item.observationEpochId))
+      : [];
+    return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+      <p className="text-[13px] font-bold">같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다</p>
+      {tiedFacts.length > 0 && (
+        <ul className="mt-1 divide-y divide-line">
+          {tiedFacts.map((item) => (
+            <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{entryCaptureLine(item)} · 등록 버전 {item.revision}</li>
+          ))}
+        </ul>
+      )}
+      {workAreaId && (
+        <p className="mt-2"><Link href={`${sitePath}?mode=compare&workAreaId=${encodeURIComponent(workAreaId)}`} className="tap-target text-[12px] underline">비교에서 직접 고르기</Link></p>
+      )}
+    </section>;
+  }
+  return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+    <p className="text-[13px] font-bold">기본 관측을 정하지 않았습니다</p>
+    <p className="mt-1 text-[12.5px] leading-5 text-ink-2">관측 목록을 확인할 수 없어 기본 관측을 정하지 않았습니다. 잠시 후 다시 확인하세요.</p>
+  </section>;
+}
 
 function modeHref(
   sitePath: string,
@@ -61,6 +211,10 @@ export function SiteWorkspaceShell({
   canCreateAnalysis,
   scopeNotice,
   facts,
+  ordinaryEntry,
+  projectionState,
+  workspaceHasMore,
+  transitionalSelection,
   baselineRequestedRef,
   currentRequestedRef,
   comparison,
@@ -85,6 +239,11 @@ export function SiteWorkspaceShell({
   canCreateAnalysis: boolean;
   scopeNotice: boolean;
   facts: WorkspaceServerFacts;
+  ordinaryEntry: OrdinaryEntryResolution;
+  projectionState: "ready" | "denied" | "unavailable" | "not-requested";
+  workspaceHasMore: boolean;
+  /** 서버 기본 없이 전이 선택을 보여줄 때 true — 기본인 척하지 않는다. */
+  transitionalSelection: boolean;
   baselineRequestedRef: string | null;
   currentRequestedRef: string | null;
   comparison: ExplicitComparisonResolution | { status: "prompt" };
@@ -117,7 +276,16 @@ export function SiteWorkspaceShell({
       })}
     </nav>
 
-    {mode === "explore" && (
+    {mode === "explore" && (<>
+      <SiteWorkspaceEntryPanel
+        sitePath={sitePath}
+        workAreaId={selectedWorkAreaId}
+        ordinaryEntry={ordinaryEntry}
+        projectionState={projectionState}
+        facts={facts}
+        canCreateWorkOrder={canCreateWorkOrder}
+        transitional={transitionalSelection}
+      />
       <SiteSpatialOverview
         sitePath={sitePath}
         areas={areas}
@@ -135,14 +303,16 @@ export function SiteWorkspaceShell({
         canCreateAnalysis={canCreateAnalysis}
         scopeNotice={scopeNotice}
       />
-    )}
+    </>)}
 
     {mode === "compare" && areasKnown && (
       <SiteWorkspaceCompare
         sitePath={sitePath}
         areas={areas}
         selectedWorkAreaId={selectedWorkAreaId}
-        assetsState={assetsState}
+        catalogAssets={assetsState.status === "ready" ? assetsState.page.assets : []}
+        projectionState={projectionState === "not-requested" ? "unavailable" : projectionState}
+        workspaceHasMore={workspaceHasMore}
         baselineRequestedRef={baselineRequestedRef}
         currentRequestedRef={currentRequestedRef}
         resolution={comparison}
@@ -160,6 +330,7 @@ export function SiteWorkspaceShell({
         analysesKnown={analysesKnown}
         explicitResult={explicitResult}
         explicitDetail={explicitDetail}
+        facts={facts}
         canCreateAnalysis={canCreateAnalysis}
         scopedCompareHref={scopedCompareHref}
       />

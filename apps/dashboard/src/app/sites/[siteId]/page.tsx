@@ -25,13 +25,16 @@ import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-wo
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { getAnalysis, listAnalyses, type AnalysisView } from "@/lib/core-api/analysis";
+import { listSpatialWorkspaceObservations, type SpatialWorkspacePage } from "@/lib/core-api/spatial-workspace";
 import {
   parseWorkspaceMode,
   parseWorkspaceScopeId,
   resolveExplicitComparison,
   resolveExplicitResult,
+  resolveOrdinaryEntry,
   type ExplicitComparisonResolution,
   type ExplicitResultResolution,
+  type OrdinaryEntryResolution,
 } from "@/lib/site-workspace-entry";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
@@ -156,13 +159,66 @@ export default async function SiteDetailPage({
     if (assetsResult.ok) assetsState = { status: "ready", page: assetsResult.page };
     else if (!("skipped" in assetsResult)) assetsState = { status: assetsResult.denied ? "denied" : "unavailable" };
   }
-  const selectedAssetRef = assetsState.status === "ready"
-    ? resolveSelectedAssetRef(assetsState.page, firstValue(query.assetRef))
-      // 쿼리가 없거나 이번 페이지에 없으면 첫 검사 footprint 자료를 기본으로 둔다 —
-      // 어떤 footprint를 보여주는지 캡션과 선택 UI가 일치하게 한다.
-      ?? pickFootprintAsset(assetsState.page.assets, null)?.assetRef
-      ?? null
+  // SWX-1 프로젝션 읽기 — 선택 구역의 관측×버전 사실과 서버 기본 진입.
+  // 실패해도 unknown으로 두고 빈 목록으로 단정하지 않는다. 권한 거부는
+  // denied로만 둔다. 이 읽기는 바이트 권한을 만들지 않는다.
+  const workspaceResult = wantSpatial
+    ? await (selectedWorkAreaId
+      ? listSpatialWorkspaceObservations(site.siteId, selectedWorkAreaId, { limit: 50 }).then(
+        (page) => ({ ok: true as const, page }),
+        (error: unknown) => ({ ok: false as const, denied: error instanceof CoreApiError && error.status === 403 }),
+      )
+      : Promise.resolve({ ok: false as const, denied: false, skipped: true as const }))
+    : { ok: false as const, denied: false, skipped: true as const };
+  let workspacePage: SpatialWorkspacePage | null = null;
+  if (wantSpatial && selectedWorkAreaId && workspaceResult.ok) workspacePage = workspaceResult.page;
+  const projectionState = !wantSpatial || !selectedWorkAreaId
+    ? "not-requested" as const
+    : workspaceResult.ok
+      ? "ready" as const
+      : "skipped" in workspaceResult
+        ? "not-requested" as const
+        : workspaceResult.denied
+          ? "denied" as const
+          : "unavailable" as const;
+
+  // SWX-1 명시적 진입 — 일반 둘러보기 힌트(workAreaId/assetRef)와 달리,
+  // 비교·결과 지시는 정확히 복원하거나 막는다. 조용히 다른 대상으로 바꾸지 않는다.
+  const mode = wantSpatial ? parseWorkspaceMode(firstValue(query.mode)) : "explore" as const;
+  const facts = wantSpatial
+    ? buildWorkspaceServerFacts({
+      siteId: site.siteId,
+      areas: areasResult.status === "fulfilled" ? areasResult.value.workAreas : [],
+      projection: workspacePage
+        ? { status: "ready", page: workspacePage }
+        : projectionState === "denied"
+          ? { status: "denied" }
+          : { status: "unavailable" },
+      analyses: analysesPage?.items ?? null,
+      workAreaId: selectedWorkAreaId,
+    })
     : null;
+  const ordinaryEntry: OrdinaryEntryResolution = facts
+    ? resolveOrdinaryEntry(facts)
+    : { status: "no-server-default", reason: "NO_PROJECTION", detail: null, tiedObservationEpochIds: [], defaultNotOnPage: false };
+
+  // 선택 자료 — 명시 힌트가 있으면 그대로, 없으면 서버 기본의 표시 버전을
+  // 카탈로그에서 확인하고, 그것도 없으면 첫 검사 footprint(전이 선택)로 둔다.
+  // 전이 선택은 기본인 척하지 않는다(진입 패널이 밝힌다).
+  const hintedAssetRef = assetsState.status === "ready"
+    ? resolveSelectedAssetRef(assetsState.page, firstValue(query.assetRef))
+    : null;
+  const serverViewAssetRef = ordinaryEntry.status === "ready" ? ordinaryEntry.observation.viewAssetRef : null;
+  const serverViewInCatalog = serverViewAssetRef !== null && assetsState.status === "ready"
+    && assetsState.page.assets.some((item) => item.assetRef === serverViewAssetRef)
+    ? serverViewAssetRef
+    : null;
+  const selectedAssetRef = hintedAssetRef
+    ?? serverViewInCatalog
+    ?? (assetsState.status === "ready"
+      ? pickFootprintAsset(assetsState.page.assets, null)?.assetRef ?? null
+      : null);
+  const transitionalSelection = hintedAssetRef === null && serverViewInCatalog === null && selectedAssetRef !== null;
   // 명시된 workAreaId/assetRef가 조회 범위 안에 없으면 알린다 — 조용히 다른
   // 대상을 보여주지 않는다. 원문 id는 그대로 두지 않고(범위 밖 값) 공지만 둔다.
   const requestedWorkAreaId = wantSpatial ? parseScopeId(firstValue(query.workAreaId)) : null;
@@ -187,23 +243,14 @@ export default async function SiteDetailPage({
     ? selectedAssetRef
     : null;
 
-  // SWX-1 명시적 진입 — 일반 둘러보기 힌트(workAreaId/assetRef)와 달리,
-  // 비교·결과 지시는 정확히 복원하거나 막는다. 조용히 다른 대상으로 바꾸지 않는다.
-  const mode = wantSpatial ? parseWorkspaceMode(firstValue(query.mode)) : "explore" as const;
-  const facts = wantSpatial
-    ? buildWorkspaceServerFacts({
-      siteId: site.siteId,
-      areas: areasResult.status === "fulfilled" ? areasResult.value.workAreas : [],
-      assetsPage: assetsState.status === "ready" ? assetsState.page : null,
-      analyses: analysesPage?.items ?? null,
-    })
-    : null;
   const rawBaselineAssetRef = wantSpatial && mode === "compare" ? firstValue(query.baselineAssetRef) : undefined;
   const rawCurrentAssetRef = wantSpatial && mode === "compare" ? firstValue(query.currentAssetRef) : undefined;
   const baselineRequestedRef = parseWorkspaceScopeId(rawBaselineAssetRef ?? null);
   const currentRequestedRef = parseWorkspaceScopeId(rawCurrentAssetRef ?? null);
   let comparison: ExplicitComparisonResolution | { status: "prompt" } = { status: "prompt" };
-  if (facts && mode === "compare" && selectedWorkAreaId && assetsState.status === "ready") {
+  // 프로젝션 준비 여부와 무관하게 명시 지시는 판정한다 — 실패하면 막는다.
+  // 준비되지 않은 목록으로 조용히 바꾸지 않는다.
+  if (facts && mode === "compare" && selectedWorkAreaId) {
     if (rawBaselineAssetRef != null || rawCurrentAssetRef != null) {
       comparison = resolveExplicitComparison(facts, {
         workAreaId: selectedWorkAreaId,
@@ -274,7 +321,11 @@ export default async function SiteDetailPage({
           // canTransition은 SITES_WRITE 승인 — 분석 요청 진입에만 쓰고 등록 권한과 섞지 않는다.
           canCreateAnalysis={canTransition}
           scopeNotice={scopeNotice}
-          facts={facts ?? { siteId: site.siteId, authorizedWorkAreaIds: [], serverDefault: null, observations: [], analyses: [] }}
+          facts={facts ?? { siteId: site.siteId, authorizedWorkAreaIds: [], entryDefault: null, observations: [], analyses: [] }}
+          ordinaryEntry={ordinaryEntry}
+          projectionState={projectionState}
+          workspaceHasMore={workspacePage?.hasMore ?? false}
+          transitionalSelection={transitionalSelection}
           baselineRequestedRef={baselineRequestedRef}
           currentRequestedRef={currentRequestedRef}
           comparison={comparison}

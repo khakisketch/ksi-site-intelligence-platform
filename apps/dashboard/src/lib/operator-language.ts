@@ -122,8 +122,10 @@ export function capturePeriodTitle(
   const calendar = options?.captureDate ?? null;
   if (calendar) {
     const rendered = formatKoreanDate(calendar);
-    if (rendered === calendar) return `${calendar} (날짜만 확인 · 시각 미상)`;
-    return `${rendered} (날짜만 확인 · 시각 미상)`;
+    // 유효한 달력 날짜는 언제나 'Y. M. D.'로 바뀌어 원문과 달라진다.
+    // 파싱 불가면 원문이 그대로 돌아오므로 날짜로 그리지 않는다.
+    if (rendered !== calendar) return `${rendered} (날짜만 확인 · 시각 미상)`;
+    return "촬영 구간 확인 불가";
   }
   return "촬영 구간 미기재";
 }
