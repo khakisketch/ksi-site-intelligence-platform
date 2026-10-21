@@ -7,6 +7,7 @@ import {
   selectHomeDecisionWorkOrders,
   selectHomeInitialSetupSites,
   selectHomeRecentSiteSources,
+  selectHomeRecentUpdates,
 } from "@/lib/home-operations";
 import type { AnalysisListItem, AnalysisReviewReceipt, AnalysisReviewTarget } from "@/lib/core-api/analysis";
 import type { ExternalPendingDecision } from "@/lib/core-api/external-decisions";
@@ -130,5 +131,40 @@ describe("Home platform selectors", () => {
     expect(selected.map((item) => item.kind)).toEqual(["EXTERNAL_DECISION", "ANALYSIS_REVIEW"]);
     expect(selected.map((item) => item.siteId)).toEqual(["site-1", "site-2"]);
     expect(new Set(selected.map((item) => item.siteId)).size).toBe(selected.length);
+  });
+
+  it("최근 업데이트는 사용자 의미의 결과만 고르고 기술 이벤트를 채우지 않는다", () => {
+    const selected = selectHomeRecentUpdates({
+      workOrders: [
+        workOrder("REVIEW_READY", "ready", "2026-08-22T10:00:00Z", "site-1"),
+        workOrder("COMPLETED", "done", "2026-08-22T09:00:00Z", "site-2"),
+        // 진행 중·승인됨·취소됨 같은 기술/중간 상태는 홈 하단을 채우지 않는다.
+        workOrder("PROCESSING", "processing", "2026-08-22T11:00:00Z", "site-1"),
+        workOrder("APPROVED", "approved", "2026-08-22T12:00:00Z", "site-2"),
+        workOrder("CANCELLED", "cancelled", "2026-08-22T13:00:00Z", "site-1"),
+      ],
+      sites: [site("site-1"), site("site-2")],
+    }, 2);
+
+    expect(selected.map((item) => item.key)).toEqual(["work-order:ready", "work-order:done"]);
+    expect(selected.map((item) => ("kind" in item ? item.kind : null))).toEqual(["RESULT_READY", "OBSERVATION_COMPLETED"]);
+  });
+
+  it("상단 확인 영역의 현장은 하단 최근 업데이트에서 반복하지 않는다", () => {
+    const selected = selectHomeRecentUpdates({
+      workOrders: [workOrder("COMPLETED", "done", "2026-08-22T10:00:00Z", "site-1")],
+      sites: [site("site-1"), site("site-2")],
+      excludedSiteIds: new Set(["site-1"]),
+    }, 2);
+
+    expect(selected.map((item) => item.siteId)).toEqual(["site-2"]);
+    expect(selected[0]).toMatchObject({ kind: "CURRENT_LEDGER_CLEAR" });
+  });
+
+  it("조회된 작업이 없으면 실제 현장으로 진입점을 만들고 0건을 정상 판정으로 바꾸지 않는다", () => {
+    const selected = selectHomeRecentUpdates({ workOrders: [], sites: [site("site-1")] }, 2);
+
+    expect(selected).toHaveLength(1);
+    expect(selected[0]).toMatchObject({ kind: "CURRENT_LEDGER_CLEAR", siteId: "site-1" });
   });
 });

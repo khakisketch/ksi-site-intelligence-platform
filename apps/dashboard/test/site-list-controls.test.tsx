@@ -10,7 +10,6 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocked.push, repla
 import { SiteListControls } from "@/components/site/SiteListControls";
 import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
 import { SiteListNavLink, SITE_LIST_CANCEL_EVENT, SITE_LIST_PAGE_EVENT } from "@/components/site/SiteListNavLink";
-import { SiteListVisual } from "@/components/site/SiteListVisual";
 import { buildSiteListHref, clearSearchHref } from "@/components/site/site-list-query";
 
 afterEach(() => {
@@ -673,34 +672,6 @@ describe("SiteListControls phone panel", () => {
   });
 });
 
-describe("SiteListVisual", () => {
-  it("실측처럼 보이지 않는 기본 표시와 짧은 표식만 둔다", () => {
-    render(<SiteListVisual siteId="site-1" />);
-    expect(screen.getByText("기본 이미지")).toBeTruthy();
-    const root = screen.getByText("기본 이미지").closest("div")!;
-    expect(root.getAttribute("aria-hidden")).toBe("true");
-    // 장식 svg 하나뿐 — img·지도 요소·측정 도형이 없다.
-    expect(root.querySelector("img")).toBeNull();
-    expect(root.querySelector("polygon,polyline,image,circle")).toBeNull();
-    expect(root.querySelector("svg")).toBeTruthy();
-  });
-
-  it("같은 현장은 늘 같은 모양이다", () => {
-    const first = render(<SiteListVisual siteId="site-7" />);
-    const firstHtml = document.body.innerHTML;
-    first.unmount();
-    cleanup();
-    render(<SiteListVisual siteId="site-7" />);
-    expect(document.body.innerHTML).toBe(firstHtml);
-    expect(first).toBeTruthy();
-  });
-
-  it("크기는 호출부가 정한다", () => {
-    const { container } = render(<SiteListVisual siteId="site-7" className="h-16 w-20" />);
-    expect(container.firstElementChild?.className).toContain("h-16 w-20");
-  });
-});
-
 const PAGE = readFileSync(join(process.cwd(), "src/app/sites/page.tsx"), "utf8");
 const CONTROLS = readFileSync(join(process.cwd(), "src/components/site/SiteListControls.tsx"), "utf8");
 
@@ -720,33 +691,35 @@ describe("sites page wiring", () => {
     expect(PAGE).toContain('<SiteListNavLink href="/sites"');
   });
 
-  it("머리말과 썸네일 주석이 실제 동작·경로를 말한다", () => {
+  it("머리말 주석이 실제 동작·경로를 말한다", () => {
     expect(PAGE).toContain("300ms 디바운스");
-    expect(PAGE).toContain("목록용 미리보기 경로가 없으므로");
+    expect(PAGE).toContain("목록에 미리보기 경로가 없으므로");
     expect(PAGE).not.toContain("검색만 제출하며");
     expect(PAGE).not.toContain("실측 이미지가 없으므로");
   });
 
-  it("폰 구조는 검색→건수·필터 행→썸네일 없는 카드다", () => {
+  it("폰 구조는 검색→건수·필터 행→장식 없는 카드다", () => {
     expect(PAGE).toContain('visibleCount={visibleSites.length}');
     expect(PAGE).toContain('totalCount={sites.length}');
     expect(PAGE).toMatch(/<details className="[^"]*sm:block lg:hidden"/);
     expect(CONTROLS).toContain('className="mt-2 sm:hidden"');
     expect(PAGE).toContain('className="hidden items-baseline gap-2 px-1 sm:flex"');
-    expect(PAGE).toContain('className="mt-0.5 hidden h-16 w-20 sm:block sm:h-[72px] sm:w-24"');
+    expect(PAGE).not.toContain("SiteListVisual");
   });
 
   it("보이는 검색 버튼을 두지 않는다", () => {
     expect(PAGE).not.toContain(">검색</button>");
   });
 
-  it("작은 기본 표시는 모바일·태블릿 카드에만 둔다", () => {
+  it("모바일·태블릿 카드는 장식 없이 이름·상태·다음 행동·열기 하나만 둔다", () => {
     const cardStart = PAGE.indexOf("<li key={site.siteId}");
     const cardEnd = PAGE.indexOf("</li>", cardStart);
     const card = PAGE.slice(cardStart, cardEnd);
-    expect(card).toContain("SiteListVisual");
+    expect(card).not.toContain("SiteListVisual");
+    expect(card).not.toContain("<img");
+    expect(card).toContain("현장 열기");
     expect(card.match(/현장 열기/g)).toHaveLength(1);
-    // 데스크톱은 갤러리 표지(SiteListDesktopCards) 또는 썸네일 없는 밀도표다.
+    // 데스크톱은 장식 표지 없는 간결 카드 또는 밀도표다.
     expect(PAGE).toContain("SiteListDesktopCards");
     expect(PAGE).toContain("SiteListDenseList");
   });

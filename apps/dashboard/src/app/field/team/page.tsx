@@ -4,6 +4,7 @@ import { listOrganizationWorkRoster } from "@/lib/core-api/work-collaboration";
 
 import { OperationsSessionFailure } from "../OperationsSessionFailure";
 import { resolveFieldSession } from "../resolve-session";
+import { FieldWorkNav } from "../FieldWorkNav";
 import { TeamRosterPanel } from "./TeamRosterPanel";
 import { describeTeamReadError } from "./team-read-error";
 
@@ -23,5 +24,5 @@ export default async function FieldTeamPage() {
     }
     throw error;
   }
-  return <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 sm:p-5"><header><h2 className="text-[22px] font-bold tracking-tight">팀 관리</h2><p className="mt-1 text-[13px] leading-5 text-ink-2">작업 배정과 결과 공유에 사용할 조직 팀원 정보를 확인합니다.</p></header><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} /></div>;
+  return <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 sm:p-5"><FieldWorkNav active="team" showTeam /> <header><h2 className="text-[22px] font-bold tracking-tight">팀 관리</h2><p className="mt-1 text-[13px] leading-5 text-ink-2">작업 배정·공유에 쓰는 팀원 정보를 확인합니다. 조직 관리 화면이 아닙니다.</p></header><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} /></div>;
 }

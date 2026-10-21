@@ -35,8 +35,7 @@ export function HomeSituationList({
     <section aria-labelledby="home-situation-heading" className="flex min-w-0 flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-[11.5px] font-semibold tracking-[0.04em] text-accent uppercase">현장 준비</p>
-          <h2 id="home-situation-heading" className="mt-1 text-[20px] font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
+          <h2 id="home-situation-heading" className="text-[20px] font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
             {title}
           </h2>
           <p className="mt-1 max-w-3xl text-[12.5px] leading-5 break-keep text-ink-2">{description}</p>

@@ -23,8 +23,9 @@ export async function buildPaletteItems(): Promise<PaletteItem[]> {
     label: item.label,
     group: "화면",
     href: item.href,
-    // retained acquisition 안내를 '준비 중' 기능으로 오인시키지 않는다(ADR-039).
-    pending: !item.implemented && item.key !== "fleet",
+    // 주 메뉴에 없는 항목(제품 범위 밖 안내)은 팔레트 이동 대상으로 올리지
+    // 않는다(ADR-KSI-039). 범위 안내는 계정·도움말 화면에서 연결한다.
+    pending: !item.implemented,
     hint: item.description,
   }));
 

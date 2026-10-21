@@ -11,11 +11,11 @@ const items = [{ key: "site:one", label: "남측 현장", group: "현장", href:
 describe("current Site task vocabulary", () => {
   it("offers human tasks only for a known authorized Site, not a pathname guess", () => {
     expect(contextPaletteItems(items, "/sites/site-1").map((i) => i.label)).toEqual([
-      "현황",
-      "자료",
-      "분석·검토",
-      "작업",
-      "관리",
+      "공간자료",
+      "등록 자료",
+      "분석 기록·검토",
+      "현장 작업",
+      "현장 설정",
       "구역 자료 준비",
     ]);
     const hrefs = contextPaletteItems(items, "/sites/site-1/analysis").map((i) => i.href);
@@ -26,9 +26,44 @@ describe("current Site task vocabulary", () => {
     expect(contextPaletteItems(items, "/")).toEqual([]);
   });
   it("finds operator words and original identities without printing them as a hint", () => {
-    expect(filterPaletteItems(contextPaletteItems(items, "/sites/site-1"), "사진")[0].label).toBe("자료");
+    expect(filterPaletteItems(contextPaletteItems(items, "/sites/site-1"), "사진")[0].label).toBe("등록 자료");
     expect(filterPaletteItems(items, "opaque-source-1")).toEqual(items);
     expect(items[0].hint).not.toContain("opaque-source-1");
+  });
+
+  it("carries only allowlisted browse scope and never forwards arbitrary queries", () => {
+    const scoped = contextPaletteItems(items, "/sites/site-1", "?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    const hrefs = new Map(scoped.map((item) => [item.label, item.href]));
+    // 헤더 메뉴와 같은 목적지·같은 범위다. 현황으로 돌아가도 관측을 잃지 않는다.
+    expect(hrefs.get("공간자료")).toBe("/sites/site-1?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("등록 자료")).toBe("/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    // 분석 기록의 assetRef는 복귀용 항해 맥락일 뿐 선택자가 아니다.
+    expect(hrefs.get("분석 기록·검토")).toBe("/sites/site-1/analysis?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+  });
+
+  it("fails closed on malformed or foreign scope instead of echoing it", () => {
+    for (const search of [
+      "?workAreaId=wa-a&assetRef=not-a-ref",
+      "?workAreaId=wa-a&assetRef=ksa-v1-short",
+      "?workAreaId=&assetRef=ksa-v1-" + "b".repeat(64),
+      "?workAreaId=wa-a&workAreaId=wa-b",
+      "?analysisId=a1&currentWorkOrderId=w1",
+      "?workAreaId=" + "x".repeat(201),
+    ]) {
+      const hrefs = contextPaletteItems(items, "/sites/site-1", search).map((item) => item.href);
+      expect(hrefs.every((href) => !href.includes("assetRef"))).toBe(true);
+      expect(hrefs.every((href) => !href.includes("analysisId") && !href.includes("currentWorkOrderId"))).toBe(true);
+      expect(hrefs.every((href) => !href.includes("x".repeat(201)))).toBe(true);
+    }
+    // 구역 없는 단독 참조는 버린다.
+    const hrefs = contextPaletteItems(items, "/sites/site-1", "?assetRef=ksa-v1-" + "b".repeat(64)).map((item) => item.href);
+    expect(hrefs.every((href) => !href.includes("assetRef"))).toBe(true);
+  });
+
+  it("drops unknown scope without touching the frozen result inputs", () => {
+    // 모르는 구역도 조용히 다른 구역으로 바꾸지 않는다 — 목적지만 간다.
+    const hrefs = contextPaletteItems(items, "/sites/site-1", "?workAreaId=ghost-area").map((item) => item.href);
+    expect(hrefs).toContain("/sites/site-1?workAreaId=ghost-area");
   });
 });
 
@@ -183,5 +218,63 @@ describe("palette modal interaction", () => {
     // lg 미만 전용 래퍼 — 데스크톱 사이드바와 중복 노출되지 않는다.
     expect(opener.container.querySelector(".lg\\:hidden")).toBeTruthy();
     opener.unmount();
+  });
+});
+
+describe("palette scoped cross-screen round trip", () => {
+  const ref = `ksa-v1-${"c".repeat(64)}`;
+  afterEach(() => {
+    cleanup();
+    push.mockClear();
+    window.history.replaceState({}, "", "/");
+  });
+
+  it("carries the current browse scope into Site destinations and reads nothing new", () => {
+    window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}`);
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    // 같은 구역·관측으로 Header와 같은 목적지에 간다 — 새 읽기 없이 주소만 싣는다.
+    const options = screen.getAllByRole("option");
+    const labels = options.map((option) => option.textContent);
+    expect(labels.some((text) => text?.includes("공간자료"))).toBe(true);
+    const scoped = options.find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);
+    // 목적지로 이동하면 팔레트는 닫힌다.
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("announces the carried Site scope instead of implying a full index", () => {
+    window.history.replaceState({}, "", `/sites/site-1?workAreaId=wa-a&assetRef=${ref}`);
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    expect(screen.getByText(/현재 현장 범위를 함께 이동합니다/)).toBeTruthy();
+  });
+
+  it("drops a malformed query from destinations instead of echoing it", () => {
+    window.history.replaceState({}, "", "/sites/site-1?workAreaId=wa-a&assetRef=bogus");
+    render(h(CommandPalette, { items: paletteItems }));
+    openPalette();
+    const scoped = screen.getAllByRole("option").find((option) => option.textContent?.includes("등록 자료"));
+    fireEvent.click(scoped!);
+    expect(push).toHaveBeenCalledWith("/sites/site-1/spatial-assets?workAreaId=wa-a");
+  });
+
+  it("closes with Escape and returns focus to the trigger", () => {
+    render(
+      h(
+        "div",
+        null,
+        h("button", { type: "button" }, "열기 트리거"),
+        h(CommandPalette, { items: paletteItems }),
+      ),
+    );
+    const trigger = screen.getByRole("button", { name: "열기 트리거" });
+    trigger.focus();
+    openPalette();
+    expect(screen.queryByRole("dialog")).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 });

@@ -43,6 +43,14 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow.documentWidth).toBeLessThanOrEqual(overflow.viewportWidth + 1);
 }
 
+async function openSiteMenu(page: Page) {
+  const summary = page.locator("summary").filter({ hasText: "현장 메뉴" }).first();
+  if (!await summary.evaluate((node) => node.closest("details")?.open)) await summary.click();
+  const menu = page.getByRole("navigation", { name: "현장 업무 메뉴", exact: true });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
 async function expectNoSeriousAxeViolations(page: Page) {
   await page.addScriptTag({ path: axePath });
   const violations = await page.evaluate(async () => {
@@ -81,7 +89,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
-test("더보기는 현재 운영 지원 범위를 정확히 안내한다", async ({ page }) => {
+test("계정·도움말은 계정 행동과 기존 제품 지원 경계를 함께 제공한다", async ({ page }) => {
   await page.goto("/more");
 
   const supportLink = page.getByRole("main").getByRole("link", { name: /Dock·Edge 지원 범위/ });
@@ -89,6 +97,7 @@ test("더보기는 현재 운영 지원 범위를 정확히 안내한다", async
   await expect(supportLink).toHaveAttribute("href", "/coming-soon/fleet");
   await expect(supportLink).toContainText("장비 운용은 현 제품 범위 밖입니다. 기존 경로의 안내만 유지합니다.");
   await expect(page.getByText("비행 임무·장비 연결·복구처럼 기술 운영에 필요한 화면입니다.", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "로그아웃", exact: true }).first()).toBeAttached();
 });
 
 test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({ page }, testInfo) => {
@@ -99,13 +108,14 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
   await expect(navigation).toBeVisible();
 
   const expectedLinks = isDesktop
-    ? [["/", "홈"], ["/sites", "현장"], ["/field", "작업"]]
-    : [["/", "홈"], ["/sites", "현장"], ["/field", "작업"], ["/more", "더보기"]];
+    ? [["/", "홈"], ["/sites", "현장"], ["/field", "업무"]]
+    : [["/", "홈"], ["/sites", "현장"], ["/field", "업무"], ["/more", "계정"]];
   for (const [href, label] of expectedLinks) {
     const link = navigation.locator(`a[href="${href}"]`);
     await expect(link).toBeVisible();
     await expect(link).toContainText(label);
   }
+  await expect(navigation.locator('a[href="/coming-soon/fleet"]')).toHaveCount(0);
 
   if (!isDesktop) {
     for (const link of await navigation.getByRole("link").all()) {
@@ -128,7 +138,7 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
       // 합성 WorkOrder도 생성 시각을 Core 원장에 기록한다. 이미지 유무에 따라
       // shrink-0 클래스가 달라지는 구현 세부에 기대지 않고, 카드의 시간 표기 전체만
       // 마스크하여 레이아웃·대비·상호작용 변화는 계속 검출한다.
-      mask: [page.locator("article span.num")],
+      mask: [page.locator("article .num")],
       // Linux Chromium은 카드 내부 한국어 글꼴의 서브픽셀 안티앨리어싱만으로
       // 2,000~3,200px 차이를 낼 수 있다. 이 한계는 390px 화면의 약 1%이며,
       // 카드 구조·간격·색상 같은 실제 회귀는 그보다 크게 검출된다.
@@ -223,15 +233,13 @@ test("핵심 전역 화면은 populated 상태에서도 막히거나 가로로 �
 });
 
 test("현장 분석 목적지는 Site 접근은 유지하고 미구성 분석 API를 가용 오류로 표시한다", async ({ page }) => {
+  test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "미구성 분석·외부 기록은 격리된 로컬 fixture의 capability 조건입니다.");
   const siteHref = `/sites/${encodeURIComponent(syntheticSiteId)}`;
   await page.goto(`${siteHref}?section=analysis`);
 
-  const openAnalysis = page.getByRole("link", { name: "분석·검토 열기", exact: true });
-  await expect(openAnalysis).toBeVisible();
-  await openAnalysis.click();
-
+  // 옛 영역 링크는 중간 설명 버튼 대신 같은 실제 owner route로 간다.
   await expect(page).toHaveURL(`${siteHref}/analysis`);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "분석·검토", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: /분석.*검토/ })).toHaveCount(1);
   await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 변화 분석" })).toBeVisible();
   await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
   const analysisError = page.getByRole("main").getByRole("alert");
@@ -301,8 +309,7 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   if (testInfo.project.name.startsWith("desktop")) {
     const views = page.getByRole("group", { name: "현장 보기 방식" });
     await expect(views).toBeVisible();
-    await expect(views.getByRole("button", { name: "카드", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await views.getByRole("button", { name: "목록", exact: true }).click();
+    await expect(views.getByRole("button", { name: "목록", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
   } else {
     const compactList = page.getByRole("region", { name: "현장 목록" });
@@ -310,11 +317,12 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
     await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
   }
-  // Phone omits decorative images; tablet retains the existing small default.
-  // Desktop list mode is deliberately text-only (cards have a broad typographic cover).
+  // D7: 실제 Home/Site 미리보기가 없는 자리를 장식 이미지로 채우지 않는다.
+  // 대상 식별·상태·열기 동작은 모든 폭에서 그대로 남는다.
   const defaultVisualLabels = page.getByRole("main").getByText("기본 이미지", { exact: true });
-  await expect(defaultVisualLabels.first()).toBeAttached();
-  expect(await defaultVisualLabels.evaluateAll((nodes) => nodes.some((node) => node.getBoundingClientRect().width > 0))).toBe(testInfo.project.name === "tablet-768");
+  await expect(defaultVisualLabels).toHaveCount(0);
+  await expect(page.getByRole("main").getByText("기본 표지", { exact: true })).toHaveCount(0);
+  await expect(page.locator("[data-site-cover]")).toHaveCount(0);
   await expect(page.locator('main a[href^="/sites/"]:not([href="/sites/new"]) >> visible=true').first()).toBeVisible();
   if (testInfo.project.name.startsWith("desktop") && !process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     // This fixture has no Site-bootstrap capability. Do not advertise a link
@@ -336,7 +344,7 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   await expectNoHorizontalOverflow(page);
 });
 
-test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다", async ({ page }, testInfo) => {
+test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한다", async ({ page }) => {
   let siteHref: string | null = null;
 
   if (
@@ -365,56 +373,48 @@ test("현장 작업공간은 대상 맥락과 다섯 업무 영역을 유지한�
     await expect(page).toHaveTitle("E2E 현장 작업공간 · 현장 · KSI");
   }
   await expect(page.getByRole("heading", { level: 1, name: "현장 상세" })).toHaveCount(1);
-  await expect(page.getByRole("heading", { level: 2, name: "E2E 현장 작업공간" })).toBeVisible();
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    await expect(page.getByRole("heading", { level: 2, name: "E2E 현장 작업공간" })).toBeVisible();
+  }
   await expect(page.getByRole("link", { name: "현장으로 이동" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "선택 관측 화면", exact: true })).toBeVisible();
+  const workspaceModes = page.getByRole("navigation", { name: "공간 작업 방식", exact: true });
+  for (const label of ["탐색", "두 시점 보기", "결과 요약"]) {
+    await expect(workspaceModes.getByRole("link", { name: label, exact: true })).toBeVisible();
+  }
+  // 한 구역은 자동 선택한다. 불필요한 선택기나 좌표 변환을 요구하지 않고,
+  // 실제 검증된 구역이 목적지에 유지되는지를 확인한다.
+  const initialMenu = await openSiteMenu(page);
+  const materialHref = await initialMenu.getByRole("link", { name: "등록 자료", exact: true }).getAttribute("href");
+  const selectedWorkAreaId = new URL(materialHref!, page.url()).searchParams.get("workAreaId");
+  expect(selectedWorkAreaId).toBeTruthy();
+  await page.locator("summary").filter({ hasText: "현장 메뉴" }).first().click();
+  await page.locator("summary").filter({ hasText: "자료·범위 상세" }).click();
   const spatialPanel = page.getByRole("region", { name: "선택 구역 공간 확인", exact: true });
   await expect(spatialPanel).toBeVisible();
-  await expect(spatialPanel.getByRole("combobox", { name: "확인할 작업구역 선택" })).toBeVisible();
-  await expect(page.locator(".leaflet-container")).toBeVisible();
-  const nextAction = spatialPanel.getByRole("link", { name: "관측 자료 등록", exact: true });
-  await expect(page.getByRole("link", { name: "관측 자료 등록", exact: true })).toHaveCount(1);
-  await expect(nextAction).toBeVisible();
-  const selectedWorkAreaId = await spatialPanel.getByRole("combobox", { name: "확인할 작업구역 선택" }).inputValue();
-  expect(selectedWorkAreaId).not.toBe("");
-  await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-
-  await page.goto(`${siteHref}/spatial-assets`);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
-  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "자료", exact: true })).toBeVisible();
-  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 등록 자료", exact: true })).toBeVisible();
-  await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
-  // 공통 현장 틀: 이 화면에서도 현장 메뉴가 남아 있고, 현황으로 돌아가는 길이 그 안에 있다.
-  if (testInfo.project.name.startsWith("desktop")) {
-    await page.getByRole("navigation", { name: "현장 상세 화면" }).getByRole("link", { name: "현황", exact: true }).click();
-  } else {
-    await page.locator("details summary").filter({ hasText: "현장 메뉴 ·" }).click();
-    await page.getByRole("navigation", { name: "현장 메뉴" }).getByRole("link", { name: "현황", exact: true }).click();
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    const nextAction = spatialPanel.getByRole("link", { name: "관측 자료 등록", exact: true });
+    await expect(nextAction).toBeVisible();
+    await expect(nextAction).toHaveAttribute("href", `${siteHref}/observations/new?workAreaId=${encodeURIComponent(selectedWorkAreaId!)}`);
   }
-  await expect(page).toHaveURL(siteHref!);
 
-  const labels = ["현황", "자료", "분석·검토", "작업", "관리"];
-  if (testInfo.project.name.startsWith("desktop")) {
-    const siteNavigation = page.getByRole("navigation", { name: "현장 상세 화면" });
-    await expect(siteNavigation).toBeVisible();
-    for (const label of labels) {
-      await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
-    }
-    await expect(siteNavigation.getByRole("link", { name: "분석·검토", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-    await expect(siteNavigation.getByRole("link", { name: "자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-  } else {
-    const disclosure = page.locator("details summary").filter({ hasText: "현장 메뉴 · 현황" });
-    await expect(disclosure).toBeVisible();
-    await disclosure.click();
-    const siteNavigation = page.getByRole("navigation", { name: "현장 메뉴" });
-    for (const label of labels) {
-      await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
-    }
-    await expect(siteNavigation.getByRole("link", { name: "분석·검토", exact: true })).toHaveAttribute("href", `${siteHref}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-    await expect(siteNavigation.getByRole("link", { name: "자료", exact: true })).toHaveAttribute("href", `${siteHref}/spatial-assets?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`);
-    await expect(page.getByText("노트북에서 계속", { exact: true })).toHaveCount(0);
-    await siteNavigation.getByRole("link", { name: "작업", exact: true }).click();
-    await expect(page).toHaveURL(/section=work-orders/);
+  await page.goto(materialHref!);
+  await expect(page.getByRole("main").getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("main").getByRole("heading", { level: 1, name: "등록 자료", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("heading", { level: 2, name: "현장 등록 자료", exact: true })).toBeVisible();
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
+  // 모든 화면 폭에서 같은 현장 메뉴와 같은 범위의 복귀 목적지를 쓴다.
+  const materialMenu = await openSiteMenu(page);
+  await materialMenu.getByRole("link", { name: "공간자료", exact: true }).click();
+  await expect.poll(() => new URL(page.url()).pathname).toBe(new URL(siteHref!, page.url()).pathname);
+  const labels = ["공간자료", "등록 자료", "분석 기록·검토", "현장 작업", "현장 설정"];
+  const siteNavigation = await openSiteMenu(page);
+  for (const label of labels) await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
+  for (const [label, suffix] of [["분석 기록·검토", "analysis"], ["등록 자료", "spatial-assets"]]) {
+    const href = await siteNavigation.getByRole("link", { name: label, exact: true }).getAttribute("href");
+    expect(new URL(href!, page.url()).pathname).toBe(`${new URL(siteHref!, page.url()).pathname}/${suffix}`);
+    expect(new URL(href!, page.url()).searchParams.get("workAreaId")).toBe(selectedWorkAreaId);
   }
   await page.goto(`${siteHref}?section=work-orders`);
   await expect(page.getByText("E2E 외부 산출물 등록", { exact: true })).toBeVisible();

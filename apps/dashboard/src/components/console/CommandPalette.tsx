@@ -8,6 +8,7 @@ import {
   moveActiveIndex,
   type PaletteItem,
 } from "./palette-items";
+import { parseScopedNavQuery } from "@/lib/operator-journey";
 import { useCommandModifierLabel } from "./command-modifier";
 import { resolveShortcut } from "./shortcuts";
 import { contextPaletteItems } from "./context-palette";
@@ -33,6 +34,9 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const [helpOpen, setHelpOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
+  // 현재 현장 범위(작업구역·관측)는 열 때마다 주소창에서 읽는다. 브라우저
+  // 기록·localStorage에 남기지 않으며, 받는 화면이 서버 목록과 재대조한다.
+  const [scopeSearch, setScopeSearch] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -43,7 +47,11 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
   const restoreFocusRef = useRef<HTMLElement | null>(null);
   const listboxId = "ksi-palette-listbox";
 
-  const results = useMemo(() => filterPaletteItems([...contextPaletteItems(items, pathname ?? ""), ...items], query), [items, pathname, query]);
+  const results = useMemo(
+    () => filterPaletteItems([...contextPaletteItems(items, pathname ?? "", scopeSearch), ...items], query),
+    [items, pathname, query, scopeSearch],
+  );
+  const scopedSite = scopeSearch ? parseScopedNavQuery(scopeSearch) : null;
   const shortcutRows: Array<{ keys: string[]; desc: string }> = [
     { keys: [commandModifier, "K"], desc: "검색 · 이동 팔레트 열기" },
     { keys: ["?"], desc: "이 도움말 열기" },
@@ -62,6 +70,7 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
     setOpen(true);
     setQuery("");
     setActive(0);
+    setScopeSearch(typeof window === "undefined" ? "" : window.location.search);
   }, []);
 
   const isOpen = open || helpOpen;
@@ -342,9 +351,11 @@ export function CommandPalette({ items }: { items: PaletteItem[] }) {
               </button>
             </div>
             {/* 정직한 범위 — 팔레트는 셸이 쥔 화면·현장 이름만 찾는다. 파일·작업
-                기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다). */}
+                기록은 각 현장 화면에서 확인한다(없는 범위를 암시하지 않는다).
+                현재 현장 범위(작업구역·관측)가 있으면 같은 범위로 이동한다. */}
             <p className="border-b border-line bg-sunk px-3.5 py-1.5 text-[11.5px] break-keep text-ink-muted">
               화면·현장 이름 검색이며 파일·작업 기록은 각 현장에서 확인
+              {scopedSite?.workAreaId ? " · 현재 현장 범위를 함께 이동합니다" : ""}
             </p>
 
             {/* 결과 목록은 항상 렌더한다 — 0건일 때 목록을 치워버리면 입력창의

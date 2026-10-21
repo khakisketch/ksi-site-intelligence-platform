@@ -203,6 +203,36 @@ export type SiteHeaderScope = {
   assetRef: string | null;
 };
 
+/** 등록 자산 참조의 화면 이동용 엄격 모양 — 원문 쿼리를 그대로 믿지 않는다. */
+const SCOPED_ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
+
+/**
+ * 화면 이동용 범위 힌트 해석(URL 쿼리 → 허용 목록만).
+ *
+ * - 작업구역은 다듬은 단일 값만 받는다(배열·빈값·200자 초과는 버린다).
+ * - 자산 참조는 같은 작업구역과 함께 있고 엄격한 모양일 때만 싣는다.
+ * - 판정·조회·권한 확인을 하지 않는다 — 받는 화면이 서버 목록과 재대조한다.
+ * - 분석 선택자(analysisId·currentWorkOrderId)와 frozen 결과 입력은 이 값을
+ *   읽지 않는다. INV-051(원본 권위)/INV-060·061(범위·반출) 때문이다.
+ */
+export function parseScopedNavQuery(search: string | null | undefined): SiteHeaderScope {
+  if (!search) return { workAreaId: null, assetRef: null };
+  let params: URLSearchParams;
+  try {
+    params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+  } catch {
+    return { workAreaId: null, assetRef: null };
+  }
+  const workAreaIds = params.getAll("workAreaId");
+  const assetRefs = params.getAll("assetRef");
+  if (workAreaIds.length !== 1 || assetRefs.length > 1) return { workAreaId: null, assetRef: null };
+  const trimmed = (workAreaIds[0] ?? "").trim();
+  const workAreaId = trimmed.length > 0 && trimmed.length <= MAX_JOURNEY_SCOPE_ID_LENGTH ? trimmed : null;
+  const rawAssetRef = assetRefs[0] ?? null;
+  const assetRef = workAreaId && rawAssetRef && SCOPED_ASSET_REF_PATTERN.test(rawAssetRef) ? rawAssetRef : null;
+  return { workAreaId, assetRef };
+}
+
 /**
  * 현장 헤더 메뉴의 목적지. 판정은 하지 않고 이미 검증된 범위만 그대로 싣는다.
  *

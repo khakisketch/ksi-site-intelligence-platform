@@ -6,7 +6,6 @@ import type { OperatorNextAction } from "@/lib/operator-next-action";
 import type { SiteNextAction } from "@/lib/core-api/site-progress";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDate } from "@/lib/datetime";
-import { DefaultSiteVisual } from "@/components/site/DefaultSiteVisual";
 import { SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
 import { StateBadge } from "@/components/ui/StatusBadge";
 
@@ -18,17 +17,14 @@ export interface SiteListRow {
 }
 
 /**
- * 데스크톱 갤러리(≥1024px) — 넓은 타이포 표지 카드의 격자.
+ * 데스크톱 갤러리(≥1024px) — 장식 표지 없는 간결 텍스트 카드의 격자.
  *
- * 표지는 실제 관측 이미지가 아니라 중립 장식(DefaultSiteVisual: 축·격자·
- * 폴리곤·측정점 없음) + 큰 현장명이다. 씨앗=siteId 라 같은 현장은 늘 같은
- * 모양이다. `기본 표지` 표식은 장식이 실제 모습이 아님을 밝힌다.
- * 이름은 시각적으로 자를 수 있지만(link line-clamp) DOM 문자열은 온전히
- * 두어 스크린리더·검색이 잃지 않는다. 이름은 표지에만 둔다(아래 반복 없음).
+ * 현장별 실제 관측 미리보기를 보여주는 계약이 목록에 없으므로(ADR-KSI-025 D7)
+ * 큰 표지·대체 그림 칸을 두지 않는다. 현장명·실제 상태·갱신일·다음 할 일이
+ * 카드의 전부이며, 씨앗 장식·측량처럼 보이는 도형은 쓰지 않는다.
  *
- * 칸은 최대 440–480px에서 묶고(2열은 920px, 3열은 1350px 상한),
- * 1440px 본문이 578px 두 장으로 늘어지지 않는다. 표지는 16:7 로 카드 폭을
- * 따라간다. 본문 높이는 자연 그대로 두고 버튼 줄만 아래에 맞춘다(mt-auto).
+ * 칸은 최대 폭을 제한한 2열/아주 넓은 화면 3열이다. 본문 높이는 자연 그대로
+ * 두고 버튼 줄만 아래에 맞춘다(mt-auto).
  */
 export function SiteListDesktopCards({
   rows,
@@ -60,45 +56,39 @@ export function SiteListDesktopCards({
           <article
             key={site.siteId}
             data-site-card={site.siteId}
-            className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
+            className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-4"
           >
-            <div data-site-cover className="relative aspect-[16/7] overflow-hidden bg-sunk">
-              <DefaultSiteVisual seed={site.siteId} className="absolute inset-0 size-full" />
-              <span className="absolute top-3 left-3 rounded border border-line bg-surface/90 px-2 py-1 text-[10.5px] font-semibold text-ink-2">
-                기본 표지
-              </span>
-              <Link
-                href={`/sites/${encodeURIComponent(site.siteId)}`}
-                className="absolute inset-x-0 bottom-0 block p-4 hover:underline xl:p-5"
-              >
-                <h3 className="line-clamp-3 block text-[22px] leading-snug font-bold tracking-[-0.02em] break-words xl:text-[26px]">
-                  {site.name}
+            <div className="flex min-w-0 flex-col gap-2">
+              <div className="flex items-start justify-between gap-3">
+                <h3 className="min-w-0 flex-1 text-[17px] leading-snug font-bold tracking-[-0.015em] break-words">
+                  <Link
+                    href={`/sites/${encodeURIComponent(site.siteId)}`}
+                    className="hover:underline"
+                  >
+                    {site.name}
+                  </Link>
                 </h3>
-              </Link>
-            </div>
-            <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-              <div className="flex items-center justify-between gap-3">
                 <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
-                <span className="num text-[11.5px] whitespace-nowrap text-ink-2">
-                  최근 갱신 {formatKoreanDate(site.updatedAt)}
-                </span>
               </div>
-              <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
-                <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
-                <span className={`shrink-0 text-[11.5px] font-bold ${next.actionable ? "text-accent" : "text-ink-muted"}`}>
-                  {next.actionable ? "조치 필요" : "상태 확인"}
-                </span>
-              </div>
-              {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
-              {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
-                  이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
-              <Link
-                href={`/sites/${encodeURIComponent(site.siteId)}`}
-                className="btn tap-target mt-auto justify-center"
-              >
-                현장 열기
-              </Link>
+              <p className="num text-[11.5px] text-ink-2">
+                최근 갱신 {formatKoreanDate(site.updatedAt)}
+              </p>
             </div>
+            <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
+              <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
+              <span className={`shrink-0 text-[11.5px] font-bold ${next.actionable ? "text-accent" : "text-ink-muted"}`}>
+                {next.actionable ? "조치 필요" : "상태 확인"}
+              </span>
+            </div>
+            {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
+            {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
+                이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
+            <Link
+              href={`/sites/${encodeURIComponent(site.siteId)}`}
+              className="btn tap-target mt-auto justify-center"
+            >
+              현장 열기
+            </Link>
           </article>
         );
       })}

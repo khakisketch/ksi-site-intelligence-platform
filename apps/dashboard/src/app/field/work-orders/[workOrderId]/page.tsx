@@ -21,6 +21,7 @@ import { ExternalReconstructionPanel } from "@/app/field/ExternalReconstructionP
 import type { TrustedExternalResultLink } from "@/app/field/ExternalResultWorkflowPanel";
 import { WorkOrderOperationsPanel } from "@/app/field/WorkOrderOperationsPanel";
 import { OperationsWorkHeader } from "@/app/field/OperationsWorkHeader";
+import { FieldWorkNav } from "@/app/field/FieldWorkNav";
 import { deriveExternalWorkOrderStage } from "@/app/field/external-work-order-stage";
 import { presentWorkOrder } from "@/app/field/work-order-stage";
 import { resolveWorkOrderContinuation } from "@/lib/operator-journey";
@@ -256,6 +257,10 @@ export default async function FieldWorkOrderPage({ params, searchParams }: {
       </OperationsWorkHeader>
 
       <div className="flex flex-col gap-4 p-4 pb-24 lg:p-5">
+        <FieldWorkNav
+          active="orders"
+          showTeam={session.principal.role === "ADMIN" || session.principal.permissions.includes("WORK_ORDERS_WRITE")}
+        />
         <section className="flex flex-col gap-3 rounded-xl border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-[12px] font-semibold text-ink-muted">플랫폼 작업 상태</h2>

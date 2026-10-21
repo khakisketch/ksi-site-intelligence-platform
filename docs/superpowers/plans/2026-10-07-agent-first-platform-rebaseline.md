@@ -6174,3 +6174,56 @@ unit should define global vs Site-local vs object-detail ownership and user-task
 consistent entry/return/search/support across connected screens, preserving Core scope/semantics and
 legacy deep links. Not another isolated Site polish or automatic new global capability/index/schema.
 Evidence /tmp/opencode/ksi-console-ia-assessment-20261021/; real customer participants still0.
+
+### 2026-10-21 — Human approves whole-Console task/IA improvement
+
+Latest Human “그렇다면 개선해봅시다” follows the whole-Console maturity/menu assessment, and explicitly
+broadens this UI unit beyond the former Site-only boundary. Deliver actual Console global→Site→object
+workflow coherence, not another isolated view polish or standalone demo. The change remains a UI/UX
+improvement, not a new platform capability, global data authority/index, acquisition or production gate.
+
+Requirement IDs: REQ-UX-101; SDP-REQ-01/02/05/06/07; accepted ADR-025/026 responsibilities under039;
+existing research findings plus latest whole-IA assessment. Owner module: apps/dashboard. Acceptance:
+clear global Home/Sites/업무 and supporting account/help, legacy Dock/Edge links retained but removed
+from primary task priority; distinguish received assignments/shares from observation records without
+changing Core meanings; coherent Site/record/task labels; Header/palette/direct links preserve exact
+scoped navigation and frozen result inputs; current account/logout reachable on phone; Home/Sites use
+actual meaningful facts/actions rather than large empty covers; search/filter/paging, roles and
+unavailable states remain honest and usable; actual whole-product390/768/1024/1440 renders/flows.
+
+Contracts affected: no API/schema/data/permission/retention change. ADR-025 D7 records the latest Human
+Home visual-structure approval, superseding only D6's fixed empty/large-cover ratio; original D6 retained.
+D1 priority/dedup, D2 manual mobile navigation/reduced-motion and D3 image rights/D4 update semantics
+remain. INV-020/024/040/051/053/060/061 enforced by unchanged Core/guarded-byte paths, truthful metadata,
+scope resolver/navigation tests and real no-write workflows. No SiteStatus semantics/accuracy/approval
+inference, other-requester bytes, AI grant, unsupported new global search/index or derivative authority.
+
+Reference assets: previous real4595 Site proofs, historical normal Home/Sites captures, current static
+global-menu renders, official Propeller navigation/home and DroneDeploy compare originals. No repeat
+generic research/new external assets. Adoption: preserve current mono/tokens and working spatial display;
+global vs Site vs object responsibilities; task-first Home/Sites; labelled secondary account/help;
+one shared allowlisted UI navigation context, no persistent browse journal. Files: nav/shell/palette/
+SiteHeader and related owner pages/helpers; field/inbox/team presentation; Home/Sites presentation and
+focused projections/tests; nearest README/reading-aid updates only where needed. No backend code/schema.
+Tests: owner targeted/full Dashboard regressions, tsc/eslint, locked image build; real authorized
+Home→Site→date/DSM→context-search→materials/result→review→workflow/account, old deep links and roles;
+four Home viewport/state checks mandated by025. HIL: none; physical touch/SR/customer research unverified.
+License/data: existing CC BY attribution, no new fonts/basemaps/image egress or thumbnail pipeline.
+Rollback: prior owned frontend4595e1ea; retain images and old visual evidence.
+
+Runtime prerequisite: own source-run Core8074 has no listener; bounded log tail shows graceful shutdown
+at22:02, cause unknown, not an observed journal/parser failure. Primary may resume ONLY the existing
+task-owned Core8074 with exact preserved env/config and durable core-data via its existing runner;
+preflight snapshot/hash and no replacement/repair/permission widening. All durable journal contents,
+S3/originals, external auth/activation, shared inspector branches/staging/daemon/cgroups and all other
+processes protected. Do not start a worker/inspection/job or alter service/security settings. If replay/
+configuration fails, preserve evidence and stop that path; no repair disguised as UI work. This is not
+permission to recover the separate shared inspector audit incident. Main owns runtime/browser/docs/Git.
+
+Two cohesive independent implementation owners will run with exclusive files: A navigation/work/account/
+scoped-context; B Home/Sites task presentation. Shared labels/semantics contract: global `홈/현장/업무`,
+supporting `계정·도움말` on existing/more; `받은 업무` vs `관측 작업` remain distinct; Site current `공간자료`,
+`등록 자료`, `분석 기록·검토`, `현장 작업`, `현장 설정` (keys/routes unchanged), spatial results-mode is a
+summary, not a competing history/review authority. A owns shared navigation constants/helpers; B reuses
+paths/labels and cannot edit A files. Neither owns servers/browser/docs/commits/host operations. Primary
+integrates and judges the rendered whole journey, not isolated child success or test counts.

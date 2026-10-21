@@ -237,7 +237,7 @@ describe("browse source return scope", () => {
 
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
     const plainScope = screen.getByTestId("panel-scope").textContent;
-    const [plainHome] = screen.getAllByRole("link", { name: "현황" });
+    const [plainHome] = screen.getAllByRole("link", { name: "공간자료" });
     expect(plainHome?.getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
     cleanup();
 
@@ -245,7 +245,7 @@ describe("browse source return scope", () => {
     // 분석 선택은 그대로 — assetRef는 분석 선택자(analysisId·currentWorkOrderId)가 아니다.
     expect(screen.getByTestId("panel-scope").textContent).toBe(plainScope);
     // 헤더 복귀 링크에는 탐색 출처(구역·관측)가 그대로 실린다.
-    expect(screen.getAllByRole("link", { name: "현황" })[0]?.getAttribute("href")).toBe(
+    expect(screen.getAllByRole("link", { name: "공간자료" })[0]?.getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=area-1&assetRef=browse-asset-1",
     );
     expect(screen.getAllByRole("link", { name: "등록 자료" })[0]?.getAttribute("href")).toBe(
@@ -259,7 +259,7 @@ describe("browse source return scope", () => {
     render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "ghost-area", assetRef: "browse-asset-1" }) }));
 
     expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
-    expect(screen.getAllByRole("link", { name: "현황" })[0]?.getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getAllByRole("link", { name: "공간자료" })[0]?.getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getAllByRole("link", { name: "등록 자료" })[0]?.getAttribute("href")).toBe("/sites/site-1/spatial-assets");
   });
 });

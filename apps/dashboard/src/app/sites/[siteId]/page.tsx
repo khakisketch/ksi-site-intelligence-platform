@@ -268,6 +268,12 @@ export default async function SiteDetailPage({
   // `?section=materials|analysis` 깊은 링크는 범위를 그대로 실어 실제 목적지로
   // 보낸다(두 번째 클릭을 두는 중간 진입 화면을 두지 않는다). 외부 비교 기록은
   // observations 경로와 분석 화면의 기존 버튼에서 그대로 둔다.
+  // 옛 `?section=external-results`는 외부 비교 기록(observations) 전용 진입이었다.
+  // KSI 계산 기록(analysis)과 섞지 않고, 기존 observations 경로로 보낸다.
+  // observations 화면은 구역 필터를 받지 않으므로 범위 쿼리를 그대로 싣지 않는다.
+  if (firstValue(query.section) === "external-results") {
+    redirect(`${sitePath}/observations`);
+  }
   if (tab === "materials") {
     const target = new URLSearchParams();
     if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);

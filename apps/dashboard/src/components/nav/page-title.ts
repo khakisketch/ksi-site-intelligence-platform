@@ -9,8 +9,8 @@ const STATIC_TITLES: Record<string, string> = {
   "/": "홈",
   "/sites": "현장",
   "/sites/new": "현장 등록",
-  "/more": "더보기",
-  "/field": "작업",
+  "/more": "계정·도움말",
+  "/field": "업무",
   "/field/new": "관측 자료 등록",
   "/field/inbox": "받은 업무",
   "/field/team": "팀 관리",
@@ -30,8 +30,8 @@ export function resolvePageTitle(pathname: string | null): string {
   if (/^\/sites\/[^/]+\/observations\/new\/?$/.test(pathname)) return "관측 자료 등록";
   if (/^\/sites\/[^/]+\/observations\/[^/]+\/?$/.test(pathname)) return "외부 비교 결과";
   if (/^\/sites\/[^/]+\/observations\/?$/.test(pathname)) return "외부 비교 기록";
-  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석·검토";
-  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "자료";
+  if (/^\/sites\/[^/]+\/analysis\/?$/.test(pathname)) return "분석 기록·검토";
+  if (/^\/sites\/[^/]+\/spatial-assets\/?$/.test(pathname)) return "등록 자료";
   if (/^\/sites\/[^/]+\/spatial-data-requests\/?$/.test(pathname)) return "구역 자료 준비";
   if (/^\/sites\/[^/]+\/work-areas\/?$/.test(pathname)) return "작업구역";
   if (/^\/sites\/[^/]+\/?$/.test(pathname)) return "현장 상세";

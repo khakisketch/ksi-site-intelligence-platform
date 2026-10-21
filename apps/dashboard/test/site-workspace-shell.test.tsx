@@ -254,7 +254,7 @@ describe("workspace shell structure", () => {
     await renderOverview({});
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
     const modeLinks = within(modeNav).getAllByRole("link");
-    expect(modeLinks.map((link) => link.textContent)).toEqual(["탐색", "두 시점 보기", "분석 결과"]);
+    expect(modeLinks.map((link) => link.textContent)).toEqual(["탐색", "두 시점 보기", "결과 요약"]);
     expect(within(modeNav).getByRole("link", { name: "탐색" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(mocked.detail).not.toHaveBeenCalled();
@@ -760,10 +760,10 @@ describe("browse source round trip", () => {
     expect(screen.getByRole("link", { name: "등록 자료" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "분석·검토 기록" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "분석 기록·검토" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "현황" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "공간자료" }).getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=tiny-1&assetRef=disp-2022",
     );
     // 선택 중인 관측·층·등록 버전은 title hover 없이 그대로 읽힌다.

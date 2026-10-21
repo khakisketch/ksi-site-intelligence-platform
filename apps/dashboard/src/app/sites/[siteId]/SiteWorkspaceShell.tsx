@@ -39,7 +39,7 @@ import {
 const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
   { key: "explore", label: "탐색" },
   { key: "compare", label: "두 시점 보기" },
-  { key: "results", label: "분석 결과" },
+  { key: "results", label: "결과 요약" },
 ];
 
 function entryCaptureLine(fact: WorkspaceObservationFact): string {

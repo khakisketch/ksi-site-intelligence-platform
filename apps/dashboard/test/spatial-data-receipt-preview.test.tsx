@@ -117,8 +117,11 @@ describe("spatial data receipt preview", () => {
     const canvas = frame.querySelector("canvas")!;
     const controls = screen.getByRole("group", { name: "부분 출력 확대·이동" });
     expect(canvas.classList.contains("w-full")).toBe(true);
-    expect(canvas.width).toBe(2);
-    expect(canvas.height).toBe(2);
+    await waitFor(() => {
+      expect(canvas.width).toBe(2);
+      expect(canvas.height).toBe(2);
+      expect(paint).toHaveBeenCalled();
+    });
     expect(controls.parentElement).toBe(frame.parentElement);
     expect(controls.classList.contains("sticky")).toBe(true);
     const painted = paint.mock.calls.length;

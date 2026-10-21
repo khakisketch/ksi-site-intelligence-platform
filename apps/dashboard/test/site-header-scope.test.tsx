@@ -73,8 +73,11 @@ describe("SiteHeader scoped navigation", () => {
     expect(html).not.toContain("section=materials");
     // 지원하는 다섯 영역이 라벨과 함께 보인다 — 이름 없는 아이콘-only 진입 금지.
     expect(html).toContain("현장 메뉴");
+    expect(html).toContain("공간자료");
+    expect(html).toContain("현장 작업");
+    expect(html).toContain("현장 설정");
     expect(html).toContain("등록 자료");
-    expect(html).toContain("분석·검토 기록");
+    expect(html).toContain("분석 기록·검토");
     expect(html).toContain('aria-current="page"');
   });
 

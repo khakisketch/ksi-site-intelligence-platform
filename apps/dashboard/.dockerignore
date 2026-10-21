@@ -1,5 +1,7 @@
-.next
+.next*
 node_modules
 .env.local
 npm-debug.log*
 test
+test-results
+playwright-report

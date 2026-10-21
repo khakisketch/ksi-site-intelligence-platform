@@ -33,14 +33,12 @@ describe("DESKTOP_NAV_GROUPS", () => {
     expect(grouped).toHaveLength(new Set(grouped).size);
   });
 
-  it("고객의 네 가지 전역 업무 뒤에 운영 지원만 온다", () => {
+  it("[핵심][회귀] 범위 밖 장비 안내는 주 메뉴 그룹에 들어가지 않는다", () => {
     const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    expect(grouped).toEqual([
-      "home",
-      "sites",
-      "work",
-      "fleet",
-    ]);
+    expect(grouped).toEqual(["home", "sites", "work"]);
+    expect(grouped).not.toContain("fleet");
+    // 옛날 링크는 살아 있다 — 우선순위에서만 뺀다.
+    expect(NAV_ITEMS.find((item) => item.key === "fleet")?.href).toBe("/coming-soon/fleet");
   });
 
   it("모든 항목이 비어 있지 않고 서로 겹치지 않는 이름을 갖는다", () => {
@@ -64,12 +62,12 @@ describe("DESKTOP_NAV_GROUPS", () => {
 });
 
 describe("MOBILE_TAB_ITEMS", () => {
-  it("모바일은 고객 업무 네 가지와 더보기다", () => {
+  it("모바일은 세 가지 전역 업무와 계정 탭이다", () => {
     expect(MOBILE_TAB_ITEMS.map((i) => i.label)).toEqual([
       "홈",
       "현장",
-      "작업",
-      "더보기",
+      "업무",
+      "계정",
     ]);
   });
 

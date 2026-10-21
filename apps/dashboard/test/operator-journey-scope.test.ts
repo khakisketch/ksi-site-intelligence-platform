@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  parseScopedNavQuery,
   resolveAnalysisCurrentHint,
   resolveAnalysisScope,
   resolveRegistrationScope,
@@ -159,5 +160,31 @@ describe("operator journey long known IDs", () => {
     });
     expect(unknown.currentWorkOrderId).toBeNull();
     expect(unknown.notice).toMatch(/직접 선택/);
+  });
+});
+
+describe("scoped nav query", () => {
+  const ref = `ksa-v1-${"b".repeat(64)}`;
+  it("passes an allowlisted work area and asset reference through", () => {
+    expect(parseScopedNavQuery("?workAreaId=wa-a&assetRef=" + ref)).toEqual({ workAreaId: "wa-a", assetRef: ref });
+    expect(parseScopedNavQuery("?workAreaId=wa-a")).toEqual({ workAreaId: "wa-a", assetRef: null });
+  });
+  it("fails closed on malformed, multi-valued or foreign input without throwing", () => {
+    // 자산 참조가 깨졌어도 작업구역까지 버리지 않는다 — 참조만 뺀다.
+    expect(parseScopedNavQuery("?workAreaId=wa-a&assetRef=nope")).toEqual({ workAreaId: "wa-a", assetRef: null });
+    expect(parseScopedNavQuery("?workAreaId=wa-a&assetRef=ksa-v1-short")).toEqual({ workAreaId: "wa-a", assetRef: null });
+    for (const search of [
+      null,
+      "",
+      "?workAreaId=&assetRef=" + ref,
+      "?workAreaId=wa-a&workAreaId=wa-b",
+      "?workAreaId=wa-a&assetRef=" + ref + "&assetRef=" + ref,
+      "?analysisId=a1&currentWorkOrderId=w1",
+      "?workAreaId=" + "x".repeat(201),
+      "?assetRef=" + ref,
+      "%%%::",
+    ]) {
+      expect(parseScopedNavQuery(search)).toEqual({ workAreaId: null, assetRef: null });
+    }
   });
 });

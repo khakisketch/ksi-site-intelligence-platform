@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { logout } from "@/app/login/actions";
 import { whoAmI } from "@/lib/core-api/auth";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
@@ -35,9 +37,12 @@ export async function SidebarUserBlock() {
         {initial}
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[12.5px] font-semibold">
+        <Link
+          href="/more"
+          className="tap-target block truncate text-[12.5px] font-semibold hover:underline"
+        >
           {principal.principalId}
-        </span>
+        </Link>
         <span className="block truncate text-[11px] text-sidebar-muted">{roleLabel}</span>
       </span>
       <form action={logout} className="flex-none">

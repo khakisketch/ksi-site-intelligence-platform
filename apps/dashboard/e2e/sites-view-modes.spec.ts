@@ -22,7 +22,7 @@ async function capture(page: Page, name: string) {
   if (dir) await page.screenshot({ path: join(dir, `${name}.png`), animations: "disabled" });
 }
 
-test("데스크톱은 2열 카드와 장식 없는 목록, 작은 화면은 기존 목록을 제공한다", async ({ page }, testInfo) => {
+test("데스크톱은 장식 없는 밀도표가 기본, 카드는 명시적 전환으로 제공한다", async ({ page }, testInfo) => {
   await login(page);
   const views = viewButtons(page);
   if (!testInfo.project.name.startsWith("desktop")) {
@@ -30,7 +30,23 @@ test("데스크톱은 2열 카드와 장식 없는 목록, 작은 화면은 기�
     await expect(page.getByRole("region", { name: "현장 목록" })).toBeVisible();
     return;
   }
+  // D7 기본값: 장식 표지 없는 밀도표 — 이름·상태·진행·갱신·다음 할 일이 먼저 보인다.
+  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
+  const totalRows = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) expect(totalRows).toBeGreaterThanOrEqual(2);
+  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
+  await expect(page.locator("[data-site-cover]:visible")).toHaveCount(0);
+  await expect(page.getByText("기본 표지", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("기본 이미지", { exact: true })).toHaveCount(0);
+  await capture(page, `multiple-list-${testInfo.project.name}`);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
+
+  // 명시적 카드 전환: 간결 텍스트 카드 2열 — 표지 커버 없이 현장 식별 정보가 먼저 읽힌다.
+  await views.cards.focus();
+  await page.keyboard.press("Enter");
   await expect(views.cards).toHaveAttribute("aria-pressed", "true");
+  await expect(views.cards).toBeFocused();
   const cards = page.locator("[data-site-card]:visible");
   const count = await cards.count();
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) expect(count).toBeGreaterThanOrEqual(2);
@@ -40,22 +56,11 @@ test("데스크톱은 2열 카드와 장식 없는 목록, 작은 화면은 기�
     expect(first!.y).toBe(second!.y);
     expect(second!.x).toBeGreaterThan(first!.x + first!.width);
   }
-  const cover = await page.locator("[data-site-cover]:visible").first().boundingBox();
-  expect(cover!.height).toBeGreaterThanOrEqual(150);
-  expect(cover!.width).toBeGreaterThanOrEqual(320);
-  await expect(page.getByText("기본 표지", { exact: true }).first()).toBeVisible();
-  await capture(page, `multiple-cards-${testInfo.project.name}`);
-
-  await views.list.focus();
-  await page.keyboard.press("Enter");
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
-  await expect(views.list).toBeFocused();
   await expect(page.locator("[data-site-cover]:visible")).toHaveCount(0);
-  await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
-  const totalRows = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
-  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(totalRows, 10));
-  expect(await page.getByText("기본 이미지", { exact: true }).evaluateAll((nodes) => nodes.some((n) => n.getBoundingClientRect().width > 0))).toBe(false);
-  await capture(page, `multiple-list-${testInfo.project.name}`);
+  const firstCard = cards.first();
+  await expect(firstCard.getByRole("heading", { level: 3 })).toBeVisible();
+  await expect(firstCard.getByRole("link", { name: "현장 열기", exact: true })).toBeVisible();
+  await capture(page, `multiple-cards-${testInfo.project.name}`);
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 1)).toBe(false);
 });
 
@@ -63,16 +68,16 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   test.skip(!testInfo.project.name.startsWith("desktop"), "두 보기 전환은 desktop 전용입니다.");
   await login(page);
   const views = viewButtons(page);
-  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
-  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
-  const firstHref = await page.locator("[data-site-card]:visible").first().getByRole("link", { name: "현장 열기", exact: true }).getAttribute("href");
+  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  const total = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
+  const firstHref = await page.locator('[data-site-list-view="list"] a[href^="/sites/"]:visible').first().getAttribute("href");
   const id = decodeURIComponent(new URL(firstHref!, page.url()).pathname.split("/")[2]);
   await page.goto("/sites?group=attention&sort=updated");
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   const before = page.url();
   await search.fill(id);
-  await views.list.click();
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  await views.cards.click();
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
   // A presentation switch is not an implicit form submission or a new URL criterion.
   expect(new URL(page.url()).searchParams.has("view")).toBe(false);
   expect(new URL(before).searchParams.get("sort")).toBe("updated");
@@ -80,8 +85,7 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   expect(new URL(page.url()).searchParams.get("group")).toBe("attention");
   expect(new URL(page.url()).searchParams.get("sort")).toBe("updated");
   await expect(search).toHaveValue(id);
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
-  await views.cards.click();
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-site-card]:visible")).toHaveCount(1);
   const cardBox = await page.locator("[data-site-card]:visible").boundingBox();
   const mainBox = await page.getByRole("main").boundingBox();
@@ -107,34 +111,36 @@ test("마지막 보기는 새로고침·현장 상세 왕복·서버 첫 응답�
   page.on("console", (message) => {
     if (message.type() === "error" && /hydrat|did not match|server rendered/i.test(message.text())) hydrationErrors.push(message.text());
   });
-  await views.list.click();
+  // D7 기본값은 목록이다 — 명시적 카드 선택이 저장·복원되는지 확인한다.
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
-  const preference = (await page.context().cookies(page.url())).find((cookie) => cookie.value === "list" && cookie.path === "/sites");
+  await views.cards.click();
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
+  const preference = (await page.context().cookies(page.url())).find((cookie) => cookie.value === "cards" && cookie.path === "/sites");
   expect(preference).toBeTruthy();
   expect(preference!.httpOnly).toBe(false); // Functional display setting, never an auth cookie.
   const open = page.getByRole("link", { name: "현장 열기", exact: true }).first();
   await open.click();
   await expect.poll(() => new URL(page.url()).pathname).not.toBe("/sites");
   await page.goBack();
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
   await page.reload();
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator("[data-site-cover]:visible")).toHaveCount(0);
   const html = await (await page.request.get("/sites")).text();
-  expect(html).toContain('data-site-list-view="list"');
+  expect(html).toContain('data-site-list-view="cards"');
   expect(hydrationErrors).toEqual([]);
 
   await page.context().addCookies([{ ...preference!, value: "not-a-valid-view" }]);
   await page.reload();
-  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
+  await expect(views.list).toHaveAttribute("aria-pressed", "true");
 });
 
 test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배치는 강제하지 않는다", async ({ page }, testInfo) => {
   test.skip(!testInfo.project.name.startsWith("desktop"), "표시 설정 실패와 desktop→phone 전환 검사입니다.");
   await login(page);
   const views = viewButtons(page);
-  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
-  const total = Number(await page.locator('[data-site-list-view="cards"]').getAttribute("data-site-total"));
+  await expect(views.list).toHaveAttribute("aria-pressed", "true");
+  const total = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.evaluate(() => Object.defineProperty(document, "cookie", {
@@ -142,18 +148,21 @@ test("설정 저장이 제한돼도 현재 탭 전환은 동작하고 phone 배�
     get() { throw new DOMException("Storage is blocked", "SecurityError"); },
     set() { throw new DOMException("Storage is blocked", "SecurityError"); },
   }));
-  await views.list.click();
-  await expect(views.list).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "현장 열기", exact: true })).toHaveCount(Math.min(total, 10));
+  await views.cards.click();
+  await expect(views.cards).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("[data-site-card]:visible")).toHaveCount(Math.min(total, 4));
+  const firstCard = page.locator("[data-site-card]:visible").first();
+  await expect(firstCard.getByRole("heading", { level: 3 })).toBeVisible();
+  await expect(firstCard.getByRole("link", { name: "현장 열기", exact: true })).toBeVisible();
+  await expect(page.locator("[data-site-cover]:visible")).toHaveCount(0);
   expect(errors).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(views.group).toBeHidden();
   const searchBox = await page.getByRole("searchbox", { name: "현장 찾기" }).boundingBox();
   expect(searchBox!.width).toBeGreaterThanOrEqual(350);
   await expect(page.getByText("필터·정렬", { exact: true }).filter({ visible: true })).toBeVisible();
-  expect(await page.getByText("기본 이미지", { exact: true }).evaluateAll((nodes) => nodes.some((n) => n.getBoundingClientRect().width > 0))).toBe(false);
+  await expect(page.getByText("기본 이미지", { exact: true })).toHaveCount(0);
   await page.setViewportSize({ width: 768, height: 1000 });
   await expect(views.group).toBeHidden();
-  expect(await page.getByText("기본 이미지", { exact: true }).evaluateAll((nodes) => nodes.some((n) => n.getBoundingClientRect().width > 0))).toBe(true);
+  await expect(page.getByText("기본 이미지", { exact: true })).toHaveCount(0);
 });

@@ -64,9 +64,18 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
   }
   await firstSiteId(page);
   const desktop = testInfo.project.name.startsWith("desktop");
-  const visualLabel = main.getByText(desktop ? "기본 표지" : "기본 이미지", { exact: true });
-  await expect(visualLabel.first()).toBeAttached();
-  expect(await visualLabel.evaluateAll((nodes) => nodes.some((n) => n.getBoundingClientRect().width > 0))).toBe(!phone);
+  if (desktop) {
+    // D7 기본값은 장식 없는 밀도표다 — 이름·상태·진행·갱신·다음 할 일이 먼저 보인다.
+    await expect(main.getByText("진행 단계", { exact: true })).toBeVisible();
+    await expect(main.getByRole("link", { name: "현장 열기", exact: true }).first()).toBeVisible();
+  } else {
+    await expect(page.getByRole("region", { name: "현장 목록" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "현장 열기", exact: true }).first()).toBeVisible();
+  }
+  // 장식 표지·기본 이미지 문구가 없다 — 카드의 전부는 식별 정보와 다음 행동이다.
+  await expect(main.getByText("기본 표지", { exact: true })).toHaveCount(0);
+  await expect(main.getByText("기본 이미지", { exact: true })).toHaveCount(0);
+  await expect(main.locator("[data-site-cover]")).toHaveCount(0);
   if (phone) {
     const open = page.getByRole("link", { name: "현장 열기", exact: true }).first();
     const actionBox = await open.boundingBox();

@@ -1,12 +1,25 @@
 # apps/dashboard
 
-KSI Operations Console: Home, Sites and the five-area Site workspace
-(현황 overview · 자료 materials · 분석·검토 analysis/review · 작업 work · 관리 manage).
-관리 owns work-area setup, the optional site-wide boundary and site-state transitions;
-external comparison records stay a distinct sub-list inside 분석·검토. P4 removed
+KSI Operations Console: 홈 · 현장 · 업무, with supporting 계정·도움말 on `/more`.
+The Site workspace owns 공간자료 (overview), 등록 자료 (materials), 분석 기록·검토 (analysis),
+현장 작업 (work-orders), and 현장 설정 (manage). The keys and existing deep routes remain compatible.
+현장 설정 owns work-area setup, the optional site-wide boundary and site-state transitions;
+external comparison records stay distinct from KSI calculations. P4 removed
 Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/event/fleet
 scope is historical only. Auth, scoped external registration, work operations,
 result/evidence and unavailable states remain.
+
+전역 `업무`는 조직의 `관측 작업`(`/field`)과 배정·공유된 `받은 업무`(`/field/inbox`)를
+구분한다. 팀 관리·계정·도움말은 지원 동선이며 권한이나 업무 기록 의미를 바꾸지 않는다.
+`계정·도움말`은 실제 계정/역할과 기존 로그아웃을 제공하고, 서버 오류 때 신원을 만들지 않는다.
+범위 밖 Dock·Edge 안내는 주 메뉴에서 빼되 기존 `/coming-soon/fleet` 링크는 유지한다.
+
+Home은 [ADR-KSI-025 D7](../../docs/architecture/ADR-KSI-025-evidence-first-portfolio-home.md)에 따라
+실제 안건·현장·시점·행동을 먼저 둔다. 허용된 연결 이미지가 없으면 큰 장식 표지로 채우지 않는다.
+현장별 우선순위·중복 제외, 미확인을0으로 만들지 않는 규칙, 이미지 접근 및 최근 업데이트의
+의미는 유지한다. 검색 팔레트는 화면·현장 이동 수단이지 새로운 전체 자료 검색 인덱스가 아니다.
+현재 현장 이동은 헤더와 같은 허용 목록의 구역·자산 URL 맥락을 싣고, 목적지에서 권한과 대상을
+다시 확인한다. 이 자산 참조는 분석 입력이나 frozen 결과 선택자를 대체하지 않는다.
 
 P4 local technical evidence is in [`p4-cleanup-evidence/verification/receipt.md`](p4-cleanup-evidence/verification/receipt.md)
 and the design-owned [`p4-cleanup-final-render-review.md`](p4-cleanup-final-render-review.md).
@@ -173,29 +186,28 @@ Built with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/cre
 
 640px 미만 휴대폰 폭에서는 검색만 전체 너비로 두고, 건수 옆 `필터·정렬`을 펼쳐 두 조건을
 고른 뒤 적용한다. 적용은 최신 검색 초안을 함께 사용하고, 선택만 하거나 닫으면 조건을 바꾸지
-않는다. 이 구간의 현장 카드에서는 장식용 기본 이미지만 생략하며 정보와 열기 행동이 전체 폭을
-쓴다. 640px 이상과 Home 시각 영역은 기존 구성을 유지한다.
+않는다. 작은 화면의 현장 항목은 실제 식별 정보·상태·열기 행동에 폭을 쓴다.
 
-태블릿 목록의 작은 `SiteListVisual`은 Home과 같은 **기본 장식**이며 실제 현장 사진이나 지도는 아니다.
-현재 Site 목록에 지원되는 실제 관측 이미지 미리보기 경로가 없어 `기본 이미지`로 표시한다.
+현재 Site 목록에 지원되는 실제 관측 이미지 미리보기 경로가 없어, 휴대폰·태블릿·Desktop 모두
+장식용 기본 이미지나 큰 빈 표지를 두지 않는다.
 실제 썸네일을 지원하려면 별도의 scoped 등록 근거 경로가 필요하며, raw 바이트나 임의 URL로
 대체하지 않는다. 이 UI 변경은 미디어 접근 권한을 추가하지 않는다.
 
-1024px 이상에서는 `카드 | 목록`을 전환한다. 기본 카드는 현장명이 크게 읽히는 2열 기본 표지이며,
-1건만 있어도 한 열의 폭을 유지한다. 목록은 장식 없는 비교표다. 두 보기는 같은 scoped 자료를 쓰며,
+1024px 이상에서는 `카드 | 목록`을 전환한다. 저장된 선택이 없으면 밀도표인 `목록`이 기본이다.
+카드는 표지 없이 현장 식별·현재 관리 상태·실제 갱신일·다음 행동을 둔다. 두 보기는 같은 scoped 자료를 쓰며,
 전환은 로컬 표현 상태만 바꿔 검색·정렬·미확정 검색 초안을 건드리지 않는다.
 
 마지막 선택은 `ksi-sites-view=cards|list` 기능 쿠키에만 기억한다(`Path=/sites`, `SameSite=Lax`,
 1년, HTTPS에서 `Secure`). ID·검색어·계정·권한·추적값은 저장하지 않고 Core 설정 API도 없다.
-서버가 첫 화면에 읽으며, 저장이 제한돼도 현재 탭 전환은 동작한다. 실제 관측 이미지 지원을
-추가한 것은 아니며 표지에 `기본 표지`로 구분한다. 휴대폰·태블릿·Home 구성은 유지한다.
+서버가 첫 화면에 읽으며, 저장이 제한돼도 현재 탭 전환은 동작한다. 기존 사용자의 선택은 새
+기본값보다 우선한다. 실제 관측 이미지 지원이나 미디어 접근 권한을 추가한 것은 아니다.
 
 Desktop은 실제 현장 카드 4개/목록 10행씩 나누고 URL `page`로 번호·이전·다음을 제공한다.
 잘못된 번호는 실제 범위로 보정하며 한 페이지면 푸터를 숨긴다. 검색·필터·정렬 또는 보기 변경은
 1페이지로 돌아가되 검색 초안/IME와 충돌하지 않는다. 번호 이동은 확정 검색 조건을 사용하고
 대기 초안을 취소·동기화한다. 현장 상세 왕복은 URL의 원래 페이지를 복원한다.
 
-카드는 최대 폭을 제한한 2열/아주 넓은 화면 3열이며 표지는 16:7 비율로 폭을 따른다.
+카드는 최대 폭을 제한한 2열/아주 넓은 화면 3열이며 높이는 실제 콘텐츠에 따른다.
 마지막 카드 페이지에는 `새 현장 추가` 유틸리티를 둔다(현장 건수·정렬·페이지 수 제외).
 상단 등록 버튼과 동일한 allowed/denied/unavailable 판정을 사용하며, 거부·미확인은 클릭형
 안내일 뿐 권한이나 등록 API를 우회하지 않는다. Phone/tablet은 기존 전체 목록을 유지한다.

@@ -60,14 +60,12 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 describe("Field work list page", () => {
   it("names the work queue, inbox, and observation record consistently", async () => {
     render(await FieldWorkListPage());
-    expect(
-      screen.getByText(
-        "현장에 속한 관측 작업을 처리하는 화면입니다. 받은 업무함은 할당·공유 결과이며, 관측 작업은 현장 기록 단위입니다.",
-      ),
-    ).toBeTruthy();
-    expect(screen.getByRole("link", { name: "받은 업무함" }).getAttribute("href")).toBe(
-      "/field/inbox",
-    );
+    // 보기 전환은 탭으로, 한 줄 목적만 둔다(설명벽을 주 내비로 쓰지 않는다).
+    const nav = screen.getByRole("navigation", { name: "업무 보기 방식" });
+    expect(nav).toBeTruthy();
+    expect(screen.getByText("현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "관측 작업" }).getAttribute("href")).toBe("/field");
+    expect(screen.getByRole("link", { name: "받은 업무" }).getAttribute("href")).toBe("/field/inbox");
   });
   it("explains an unavailable registration action only on demand, without a registration link", async () => {
     mocked.session.mockResolvedValueOnce({

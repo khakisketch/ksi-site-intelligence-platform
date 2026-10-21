@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 
-import { DefaultSiteVisual } from "@/components/site/DefaultSiteVisual";
 import { useEffect, useRef, useState } from "react";
 
 export interface HomeAttentionCardView {
@@ -11,12 +10,20 @@ export interface HomeAttentionCardView {
   label: string;
   title: string;
   detail: string;
+  /** 표시 시점의 실제 의미(분석 생성·작업 갱신·현장 갱신·결과 보고).
+   *  원장 필드마다 뜻이 달라 라벨 없이 시각만 두면 다른 시점으로 오독된다 —
+   *  page.tsx가 구조화된 출처 분기로 정하고 문자열 추론은 하지 않는다. */
+  timeLabel: string;
   observedAt: string;
   href: string;
   actionLabel: string;
+  /**
+   * 승인된 실제 등록 근거 이미지(만료 제한 presigned URL)만 담는다. 합성·고정
+   * placeholder·다른 현장 사진은 절대 넣지 않는다(ADR-KSI-025 D3). 조회하지
+   * 않은 미리보기의 부재는 이미지 없음이 아니라 null 로 둔다 — null 은 빈 칸이
+   * 아니라 텍스트 브리핑이며, 등록 자료의 부재를 뜻하지 않는다.
+   */
   image: { src: string; alt: string } | null;
-  /** 관측 이미지가 없을 때 자리 표시 — 짧은 한 줄이면 충분하다(장식 표시가 뜻을 보탠다). */
-  imageFallbackLabel: string;
   /** 접어 두는 기술 참조(분석·구역 ID 등). 있을 때만 키보드로 펼칠 수 있게 둔다. */
   technicalRef?: string;
 }
@@ -29,6 +36,16 @@ function ArrowIcon({ direction }: { direction: "left" | "right" }) {
   );
 }
 
+/**
+ * 확인할 현장 브리핑 — 내용 우선, 고정 큰 시각 없음(ADR-KSI-025 D7).
+ *
+ * 이미지 prop 이 null 이면 장식 표지·빈 사진 칸을 두지 않고 현장명·안건·근거
+ * 시점·행동을 텍스트로 읽힌다. 실제 연결된 허용 이미지가 있을 때만 경계가
+ * 있는 작은 figure 로 함께 보여주며, 그때도 카드 높이는 내용이 정한다.
+ * 1024px 미만에서는 한 장씩 수동으로 넘기는 snap 캐러셀(D2: 이전·다음 버튼,
+ * 현재 위치 점, 키보드, reduced-motion, 자동 넘김 없음)이고, 데스크톱에서는
+ * 여러 안건을 한 번에 이해하도록 순서대로 전부 펼친다.
+ */
 export function HomeAttentionCarousel({
   items,
   title = "확인이 필요한 현장",
@@ -75,14 +92,13 @@ export function HomeAttentionCarousel({
     <section aria-labelledby="home-attention-heading" className="flex min-w-0 flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
         <div>
-          <p className="text-[11.5px] font-semibold tracking-[0.04em] text-accent uppercase">현장 인텔리전스</p>
-          <h2 id="home-attention-heading" className="mt-1 text-[22px] leading-tight font-bold tracking-[-0.03em] break-keep sm:text-[26px]">
+          <h2 id="home-attention-heading" className="text-[22px] leading-tight font-bold tracking-[-0.03em] break-keep sm:text-[26px]">
             {title}
           </h2>
           {description && <p className="mt-1 max-w-3xl text-[12.5px] leading-5 break-keep text-ink-2">{description}</p>}
         </div>
         {items.length > 1 && (
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 gap-2 lg:hidden">
             <button
               type="button"
               aria-label="이전 현장"
@@ -110,62 +126,50 @@ export function HomeAttentionCarousel({
         role="region"
         aria-label={regionLabel}
         onScroll={updateActiveIndex}
-        className="home-carousel-track flex snap-x snap-mandatory overflow-x-auto"
+        className="home-carousel-track flex snap-x snap-mandatory gap-3 overflow-x-auto lg:grid lg:grid-cols-1 lg:overflow-visible"
       >
-        {items.map((item, index) => (
+        {items.map((item) => (
           <article
             key={item.key}
-            className="grid min-w-full snap-start overflow-hidden rounded-lg border border-line bg-surface lg:grid-cols-[minmax(0,1.25fr)_minmax(300px,0.75fr)]"
+            className="min-w-full snap-start overflow-hidden rounded-lg border border-line bg-surface lg:min-w-0"
           >
-            {item.image ? (
-              <div className="relative min-h-[208px] overflow-hidden bg-sunk sm:min-h-[270px] lg:min-h-[330px]">
+            {item.image && (
+              <figure className="border-b border-line bg-sunk">
                 {/* Presigned evidence URLs are short-lived and cannot use the static next/image host allowlist. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={item.image.src}
                   alt={item.image.alt}
-                  loading={index === 0 ? "eager" : "lazy"}
+                  loading="lazy"
                   referrerPolicy="no-referrer"
-                  className="absolute inset-0 size-full object-cover"
+                  className="max-h-56 w-full object-cover"
                 />
-                <div className="absolute right-0 bottom-0 left-0 flex items-end justify-between gap-3 bg-linear-to-t from-black/75 to-transparent px-4 pt-12 pb-3 text-white">
+                <figcaption className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-4 py-2">
                   <span className="text-[12px] font-semibold break-keep">{item.siteName}</span>
-                  <span className="num shrink-0 text-[10.5px]">{item.observedAt}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="relative min-h-[208px] overflow-hidden bg-sunk sm:min-h-[270px] lg:min-h-[330px]">
-                {/* 관측 이미지가 없으면 기본 표시를 자동으로 깐다(장식 등고선, 데이터처럼
-                    보이는 격자·경계·측정점 없음). 승인된 시각 영역 비율은 그대로다. */}
-                <DefaultSiteVisual seed={item.key} className="absolute inset-0 size-full" />
-                <span className="absolute top-3 left-3 rounded border border-line bg-surface/90 px-2 py-1 text-[10.5px] font-semibold text-ink-2 backdrop-blur-sm">
-                  {item.imageFallbackLabel}
-                </span>
-
-                <div className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-1 border-t border-line px-4 py-3 text-ink-2">
-                  <span className="text-[12px] font-semibold break-keep">{item.siteName}</span>
-                  <span className="num shrink-0 text-[10.5px]">{item.observedAt}</span>
-                </div>
-              </div>
+                  <span className="num text-[10.5px] text-ink-2">{item.timeLabel} {item.observedAt}</span>
+                </figcaption>
+              </figure>
             )}
 
-            <div className="flex min-w-0 flex-col justify-between gap-5 p-4 sm:p-5 lg:p-6">
-              <div>
-                <p className="text-[11.5px] font-bold tracking-[0.03em] text-accent">{item.label}</p>
-                <h3 className="mt-2 text-[19px] leading-snug font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
-                  {item.title}
-                </h3>
-                <p className="mt-3 text-[13px] leading-6 break-keep text-ink-2">{item.detail}</p>
-                {item.technicalRef && (
-                  <details className="mt-2 text-[11.5px] text-ink-muted">
-                    <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">
-                      기술 참조 정보
-                    </summary>
-                    <p className="mt-1 break-all">{item.technicalRef}</p>
-                  </details>
-                )}
+            <div className="flex min-w-0 flex-col gap-2 p-4 sm:p-5">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                <p className="min-w-0 text-[13px] font-bold break-keep">{item.siteName}</p>
+                <p className="num shrink-0 text-[11px] text-ink-muted">{item.timeLabel} {item.observedAt}</p>
               </div>
-              <Link href={item.href} className="btn btn-primary w-full justify-between sm:w-fit sm:min-w-44">
+              <p className="text-[11.5px] font-bold tracking-[0.03em] text-accent">{item.label}</p>
+              <h3 className="text-[19px] leading-snug font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
+                {item.title}
+              </h3>
+              <p className="text-[13px] leading-6 break-keep text-ink-2">{item.detail}</p>
+              {item.technicalRef && (
+                <details className="text-[11.5px] text-ink-muted">
+                  <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">
+                    기술 참조 정보
+                  </summary>
+                  <p className="mt-1 break-all">{item.technicalRef}</p>
+                </details>
+              )}
+              <Link href={item.href} className="btn btn-primary mt-2 w-full justify-between sm:w-fit sm:min-w-44">
                 {item.actionLabel}
                 <ArrowIcon direction="right" />
               </Link>
@@ -175,7 +179,7 @@ export function HomeAttentionCarousel({
       </div>
 
       {items.length > 1 && (
-        <div className="flex min-h-9 items-center justify-between gap-4" aria-live="polite">
+        <div className="flex min-h-9 items-center justify-between gap-4 lg:hidden" aria-live="polite">
           <div className="flex items-center gap-2" aria-label={`${items.length}개 현장 중 ${activeIndex + 1}번째`}>
             {items.map((item, index) => (
               <button

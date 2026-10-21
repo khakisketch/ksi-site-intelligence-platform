@@ -161,6 +161,22 @@ describe("Site detail start guidance", () => {
     })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/spatial-assets\?workAreaId=area-1&assetRef=asset-9/);
   });
 
+  it("sends the legacy external-results section to the external history route, not the analysis workspace", async () => {
+    // 외부 비교 기록은 KSI 계산 기록과 다른 출처의 별도 목록이다 — 섞지 않는다.
+    await expect(SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ section: "external-results" }),
+    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/observations/);
+  });
+
+  it("does not forward unused scope into the external history route", async () => {
+    // observations 화면은 구역 필터를 받지 않으므로, 못 쓰는 범위를 싣지 않는다.
+    await expect(SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ section: "external-results", workAreaId: "area-1" }),
+    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/observations;307/);
+  });
+
   it("uses archived area names for retained tasks without counting them as active areas", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [
       { workAreaId: "old-area", name: "남측 절토 구역", status: "ARCHIVED" },

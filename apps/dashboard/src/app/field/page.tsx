@@ -15,6 +15,7 @@ import {
 } from "@/lib/core-api/observation-work-orders";
 import { resolveFieldSession } from "./resolve-session";
 import { OperationsSessionFailure } from "./OperationsSessionFailure";
+import { FieldWorkNav } from "./FieldWorkNav";
 import { WorkQueueOperationsNotices } from "./WorkQueueOperationsNotices";
 import { deriveWorkQueueOperationalNotices, summarizeWorkQueue } from "./work-queue";
 import { presentWorkOrder } from "./work-order-stage";
@@ -94,14 +95,14 @@ export default async function FieldWorkListPage() {
     ? deriveWorkQueueOperationalNotices(workOrders, byId, session.principal.principalId, new Date())
     : [];
   const canCreateObservation = session.principal.permissions.includes("WORK_ORDERS_WRITE");
+  const showTeam = session.principal.role === "ADMIN" || canCreateObservation;
 
   return (
       <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[12.5px] text-ink-2">현장에 속한 관측 작업을 처리하는 화면입니다. 받은 업무함은 할당·공유 결과이며, 관측 작업은 현장 기록 단위입니다.</p>
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <Link href="/field/inbox" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">받은 업무함</Link>
-            <Link href="/field/team" className="tap-target text-[13px] font-semibold text-ink-2 hover:underline">팀 관리</Link>
+        <header className="flex flex-col gap-2">
+          <FieldWorkNav active="orders" showTeam={showTeam} />
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <p className="text-[12.5px] text-ink-2">현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.</p>
             {canCreateObservation ? (
               <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
             ) : (
