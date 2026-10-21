@@ -20,6 +20,14 @@ import {
   type PixelWindowSelection,
 } from "@/lib/spatial-data-request";
 import {
+  DisplayPrepareIssueError,
+  DisplayPrepareScheduler,
+  stableIdempotencyKey,
+  stablePrepareKey,
+  type DisplaySchedulerSnapshot,
+  type ScheduledDisplayWindow,
+} from "@/lib/spatial-display-scheduler";
+import {
   AUDIT_STATE_NOTE,
   DSM_RELATIVE_LEGEND_LABEL,
   DSM_RELATIVE_SHADING_NOTE,
@@ -188,7 +196,69 @@ function WindowedLayerView({
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ jobId: string; state: string } | null>(null);
-  const [attemptKey] = useState(() => `sdreq-${crypto.randomUUID()}`);
+  const [lane, setLane] = useState<DisplaySchedulerSnapshot | null>(null);
+  /**
+   * 창 준비 발행 스케줄러 — 임시 어댑터의 요청 경로를 계약 규칙으로
+   * 바꾼 자리다. 최대 2개 동시 발행·안정 키 중복 제거·재시도 가능
+   * 429의 bounded back-off를 맡고, 권리·격자·영수증 판단은 Core가
+   * 그대로 소유한다. 같은 창의 반복 요청은 새 PREPARE 없이 합류한다.
+   */
+  const schedulerRef = useRef<DisplayPrepareScheduler | null>(null);
+  if (schedulerRef.current === null) {
+    schedulerRef.current = new DisplayPrepareScheduler(
+      async (target: ScheduledDisplayWindow, signal: AbortSignal) => {
+        const response = await fetch(
+          `/api/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/spatial-data-requests`,
+          {
+            method: "POST",
+            cache: "no-store",
+            headers: {
+              "Content-Type": "application/json",
+              "Idempotency-Key": stableIdempotencyKey(target.assetRef, target.pixelWindow, target.purpose),
+              Accept: "application/json",
+            },
+            body: JSON.stringify({
+              assetRef: target.assetRef,
+              requestedBounds: target.requestedBounds,
+              observedCrsDigest: target.observedCrsDigest,
+              resolutionMode: "NATIVE",
+              purpose: target.purpose,
+            }),
+            signal,
+          },
+        );
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok) {
+          const reason =
+            body !== null && typeof body === "object" && "reason" in body && typeof (body as { reason: unknown }).reason === "string"
+              ? (body as { reason: string }).reason
+              : body !== null && typeof body === "object" && "code" in body && typeof (body as { code: unknown }).code === "string"
+                ? (body as { code: string }).code
+                : null;
+          if (response.status === 429) {
+            throw new DisplayPrepareIssueError(
+              "동시 요청이 많아 순차 처리 중입니다. 자동으로 다시 시도합니다.",
+              { status: response.status, code: reason, retryable: true },
+            );
+          }
+          throw new DisplayPrepareIssueError(
+            (reason && SPATIAL_DATA_REQUEST_REASON_COPY[reason]) ??
+              (response.status === 404
+                ? "이 환경에서는 자료 준비 기능이 연결되어 있지 않거나 대상을 찾을 수 없습니다. 관리자에게 확인하세요."
+                : null) ??
+              "받기 요청을 만들지 못했습니다. 현재 상태를 다시 확인하세요.",
+            { status: response.status, code: reason, retryable: false },
+          );
+        }
+        const record = body as Record<string, unknown>;
+        if (typeof record.jobId !== "string" || typeof record.executionState !== "string") {
+          throw new DisplayPrepareIssueError("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+        }
+        return { jobId: record.jobId, executionState: record.executionState };
+      },
+      { listener: (snapshot) => setLane(snapshot) },
+    );
+  }
   const [draft, setDraft] = useState(() => {
     const seed = grid ? initialPixelWindowDims(grid.width, grid.height) : null;
     return seed
@@ -304,54 +374,51 @@ function WindowedLayerView({
 
   const createRequest = async () => {
     if (!resolution.ok || !layer.observedCrsDigest) return;
+    const scheduler = schedulerRef.current;
+    if (!scheduler) return;
+    // 안정 키는 (assetRef, pixelWindow, purpose)의 순수 함수다 — 같은 창의
+    // 반복 요청은 같은 키가 되어 새 PREPARE 없이 합류·재입장한다.
+    const [col, row, width, height] = resolution.value.window;
+    const pixelWindow: [number, number, number, number] = [col, col + width, row, row + height];
+    const target: ScheduledDisplayWindow = {
+      key: stablePrepareKey(layer.assetRef, pixelWindow, "GENERAL_DATA_USE"),
+      assetRef: layer.assetRef,
+      pixelWindow,
+      requestedBounds: resolution.value.requestedBounds,
+      observedCrsDigest: layer.observedCrsDigest,
+      purpose: "GENERAL_DATA_USE",
+    };
     setRequestBusy(true);
     setRequestMessage(null);
     try {
-      const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteId)}/work-areas/${encodeURIComponent(workAreaId)}/spatial-data-requests`,
-        {
-          method: "POST",
-          cache: "no-store",
-          headers: { "Content-Type": "application/json", "Idempotency-Key": attemptKey, Accept: "application/json" },
-          body: JSON.stringify({
-            assetRef: layer.assetRef,
-            requestedBounds: resolution.value.requestedBounds,
-            observedCrsDigest: layer.observedCrsDigest,
-            resolutionMode: "NATIVE",
-            purpose: "GENERAL_DATA_USE",
-          }),
-        },
-      );
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) {
-        const reason =
-          body !== null && typeof body === "object" && "reason" in body && typeof (body as { reason: unknown }).reason === "string"
-            ? (body as { reason: string }).reason
-            : body !== null && typeof body === "object" && "code" in body && typeof (body as { code: unknown }).code === "string"
-              ? (body as { code: string }).code
-              : null;
+      setLane(scheduler.ensure([target]));
+      const already = scheduler.completedResult(target.key);
+      if (already && !scheduler.join(target.key)) {
+        setAccepted({ jobId: already.jobId, state: already.executionState });
         setRequestMessage(
-          (reason && SPATIAL_DATA_REQUEST_REASON_COPY[reason]) ??
-            (response.status === 404
-              ? "이 환경에서는 자료 준비 기능이 연결되어 있지 않거나 대상을 찾을 수 없습니다. 관리자에게 확인하세요."
-              : null) ??
-            "받기 요청을 만들지 못했습니다. 현재 상태를 다시 확인하세요.",
+          `같은 창의 준비 요청이 이미 있습니다 · 상태 ${already.executionState}. 처리가 끝나면 아래 목록 또는 구역 자료 준비에서 받을 수 있습니다.`,
         );
         return;
       }
-      const record = body as Record<string, unknown>;
-      if (typeof record.jobId !== "string" || typeof record.executionState !== "string") {
-        setRequestMessage("Core 응답의 요청 식별자 또는 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
+      const joined = scheduler.join(target.key);
+      if (!joined) {
+        setRequestMessage("창 준비 요청 상태를 확인할 수 없습니다. 구역 자료 준비에서 확인하세요.");
         return;
       }
-      setAccepted({ jobId: record.jobId, state: record.executionState });
+      const result = await joined;
+      setAccepted({ jobId: result.jobId, state: result.executionState });
       setRequestMessage(
-        `받기 요청을 만들었습니다 · 상태 ${record.executionState}. 처리가 끝나면 아래 목록 또는 구역 자료 준비에서 받을 수 있습니다.`,
+        `받기 요청을 만들었습니다 · 상태 ${result.executionState}. 처리가 끝나면 아래 목록 또는 구역 자료 준비에서 받을 수 있습니다.`,
       );
-    } catch {
+    } catch (error) {
+      if (error instanceof DisplayPrepareIssueError) {
+        setRequestMessage(error.message);
+        return;
+      }
       setRequestMessage("Core 응답을 받지 못했습니다. 구역 자료 준비에서 현재 상태를 다시 확인하세요.");
     } finally {
       setRequestBusy(false);
+      setLane(scheduler.snapshot());
     }
   };
 
@@ -559,6 +626,12 @@ function WindowedLayerView({
                 {requestBusy ? "요청 만드는 중…" : accepted ? "요청 만듦" : "받기 요청 만들기"}
               </button>
             </div>
+            {lane?.laneCopy && (
+              <p role="status" className="mt-1 text-[12px] leading-5 text-ink-2">{lane.laneCopy}</p>
+            )}
+            {lane?.retryCopy && (
+              <p role="status" className="mt-1 text-[12px] leading-5 text-ink-2">{lane.retryCopy}</p>
+            )}
           </ResponsiveActionBoundary>
         )}
         {requestMessage && <p role="status" aria-live="polite" className="mt-1 rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">{requestMessage}</p>}
