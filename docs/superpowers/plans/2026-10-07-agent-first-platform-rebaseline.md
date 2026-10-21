@@ -6227,3 +6227,117 @@ supporting `계정·도움말` on existing/more; `받은 업무` vs `관측 작�
 summary, not a competing history/review authority. A owns shared navigation constants/helpers; B reuses
 paths/labels and cannot edit A files. Neither owns servers/browser/docs/commits/host operations. Primary
 integrates and judges the rendered whole journey, not isolated child success or test counts.
+
+#### Whole-Console integration review — 2026-10-21/22
+
+Primary resumed only the existing owned8074 source runner after verifying exact preserved env/config
+and no listener. All14 original journal byte prefixes were checked unchanged; no repair, new worker,
+inspection, S3 or security setting change. Normal baseline4595 Home/Sites captured at390/768/1024/1440
+after resumption, plus actual observation queue and Inbox. Runtime cause of earlier graceful shutdown
+remains unknown; this does not establish production service management.
+
+First integrated7f4d45b1 passed locked178files/1720tests/type/lint, and actual four-viewport Home/Sites,
+view preference/search/Back and healthy whole journey checks. Primary read all4 Home originals, default
+list, work/Inbox/account desktop/phone. The profile/scoped palette input is an ARIA combobox; an initial
+test used textbox and was corrected without changing the product. Loading Inbox capture was retained
+as loading evidence and later awaited to a settled state rather than called an empty/error result.
+
+Selective independent Plan review of the approved scope found two material uncovered cases. They were
+returned directly to the same unit owners and implemented, not dismissed because happy checks passed:
+- A: bare analysis deep links can have a server-resolved WorkArea absent from URL. Header now exports
+  its own allowlisted navigation hints; palette consumes them only for the matching currently authorized
+  Site/path and missing fields. Explicit URL area is never overwritten; missing asset can be filled only
+  from a matching Header area; explicit malformed/empty/duplicate asset presence is not backfilled.
+  It is a UI navigation hint, never analysis selection or byte authority. Two-area/malformed/cross-site
+  regressions and actual bare/area-only entry paths were checked. No extra API/provider/browse journal.
+- B: failed list/target/review reads and bounded/truncated review coverage no longer become empty arrays
+  followed by `확인 필요0곳`. Existing bounded reads now retain unknown Site IDs; current-target receipt
+  matching remains unchanged. Known pending actions still display, incomplete counts/recovery stay
+  unknown. Successful empty reads remain distinct. Nine fault/truncation/projection regressions cover
+  this without writing real records or deliberately stopping the product Core for error screenshots.
+
+New default dense table labels its existing ordinal SiteStatus visualization `관리 단계`, not dataset/
+capture/processing/analysis progress. Canonical state/index/resolver unchanged. Primary also fixed the
+new account unknown branch's invalid p/form nesting and kept team shortcut visibility consistent with
+known Work navigation authority; logout remains available in unknown/expired state. Generated .next*/
+test-results/playwright-report are excluded from the frontend build context, including test credentials.
+
+Corrected source5063b515: locked179files/1738tests/type/lint passed. Normal private frontend updated;
+actual `portfolio.json`, `whole-journey.json`, `roles-display-a11y.json` all build5063b515/oktrue/zero
+intercepted product writes/page errors. Actual checks include four Home/Sites viewports, preference and
+filter/Back, Home→its exact priority record, current2022DSM palette→materials/analysis→Header return,
+bare-record server scope and area-only resolved-source parity, saved synthetic800m3→exact review,
+observation vs received-work navigation, account/logout and secondary legacy boundary, external-results
+history alias, wrong-scope nondisclosure, real viewer/phone logout and retained guarded display gestures
+with no extra byte reads. Shared inspector history remains untouched and unresolved.
+
+Limited axe checks: no automated A/AA-tag violations in Home390/account390/Sites1440/work1440. One Home
+contrast incomplete rule was manually inspected: an aria-hidden decorative middle dot, not information,
+state or required text. It is labelled as a reviewed non-text separator, not suppressed to fake an
+unqualified checker pass. Physical touch/SR/customer comprehension still unverified.
+
+Existing E2E regression cases were preserved and updated for legitimate labels/list default/direct
+routes/disclosures/D7 visuals. Four old repository Home goldens copied before rebaseline; actual private
+renders remain separate product proof. A task-local existing local-seed E2E run is pending, with
+3230/8032/9030 preflight-free, fresh runtime directories, production credential env scrubbed, UV no-sync/
+offline and no Tailscale configuration. It targets neither Core8074 nor S3. Initial runner used an
+unexported CLI subpath and failed before starting any service; it was corrected to the already installed
+project CLI. No dependency installation or check weakening. Regression results/golden review remain
+to close before final acceptance; source/witnesses are in /tmp/opencode/ksi-console-ia-delivery-20261021/.
+
+#### Whole-Console IA/UX — delivered acceptance, 2026-10-22
+
+Latest Human-approved scope is the whole-Console navigation/task improvement, not only Site entry.
+Final frontend **860eeced** is running on the existing private10010 → owned labelled Docker3243 →
+owned8074 Core with the same preserved data/config. Actual readiness/private login return ready/200.
+No new Core API/schema/index, numerical policy, permission, retention, source/derivative authority,
+AI grant, external provider, worker/inspection/job, public exposure or customer production change.
+The separate shared inspector audit incident was not repaired/rebased; branches/staging remain protected.
+
+| Approved outcome | Implemented and verified result |
+|---|---|
+| Global responsibilities, not a legacy support tab | Primary Home/Sites/업무 and phone 계정. Actual account/role and existing logout work on phone; current-role help links remain bounded. Legacy Dock·Edge notice is secondary and its old route/return remain honest, not a future feature promise. |
+| Work that people can distinguish | Observation records and received assignments/shares have named, active sibling navigation, with known-authority team entry. Organizational records are not relabeled personal tasks and Core statuses/counts are unchanged. |
+| Meaningful Home entry | Actual Site, typed pending action, why, source-appropriate record time and exact working CTA precede any optional image. Large empty decorative cover removed. Priority/per-Site dedup/current-target matching/image access/update meaning preserved; no imagery or capture time invented. |
+| Home failed/partial reads | Bounded/truncated/unavailable analysis-review reads retain unknown rather than0; successful empty and current reviewed cases remain distinct. One recovery notice + closed specific reasons keeps known actions usable; per-result numerical limits are still persistent near their value. Eleven fault-state regressions, plus actual isolated partial-capability renders reviewed in4 widths. |
+| Sites used to find a place | Dense list default with compact optional cards, no empty/fictional cover. Existing user preference wins; actual search/sort/filter/pagination/draft-cancel/IME/duplicate-name/Back and creation permission checks preserved. Existing ordinal state bar is explicitly management stage, not dataset/analysis progress. |
+| Coherent Site/object ownership | Five Site areas have consistent task labels and retained keys/deep routes. Result summary is distinct from original analysis record/review; external history stays a separate owner. Old external-results alias reaches that history, not KSI calculations. |
+| Context across all entry types | Header/palette share allowed UI context, including server-resolved bare analysis link and area-only source resolution. Explicit area/asset/malformed/multi-value precedence is conservative; bridge must match current authorized Site/path. Actual2022DSM→palette/materials/analysis→Header roundtrip, bare and area-only paths and wrong-scope closure passed; two-area parity is separately regression-tested. No selector/input/authority substitution. |
+| Preserve working real data experience | Existing guarded ortho/partial DSM display, local zoom/drag/reset and exact raw-buffer integrity remain. Actual display gestures add no byte reads or automatic PREPARE/calculation. Synthetic800m3 and stored non-field review remain exact and separate from real coastal imagery. Viewer sees truthful own-output availability without another actor's bytes or mutator shortcut. |
+
+Final actual product witnesses all identify **860eeced**, `ok=true`, zero intercepted product-write
+attempts and zero browser errors: `portfolio.json`, `whole-journey.json`, `roles-display-a11y.json`.
+Primary personally read current4 Home widths390/768/1024/1440, dense Sites, work/Inbox, account/Viewer
+and related context/material/result/review renders; changed workflows were exercised, not just paths
+saved. Unknown/fault projection tests and isolated test-state images are labelled separately from
+normal private-product data. Real participants=0; no competitor equivalence, physical touch/SR or
+field/accuracy/settlement/production acceptance is claimed.
+
+Final locked Next16.3.3/Vitest4.1.11 image build + **179files/1740tests** passed; host tsc/changed ESLint
+clean; mechanical detector[]. Existing isolated local-seed browser regressions: **100passed,24expected
+viewport/fixture skips,0failed** across4 specs/124cases. Tests retained exact one-card/filter/race/
+scope/role/no-write assertions: failed preconditions were corrected to real nonempty group membership,
+not skipped, relaxed, assigned a longer timeout or satisfied by changing fixture/product statuses.
+All fixture3230/8032/9030 listeners were removed on teardown, and credential env was scrubbed; no
+product8074/S3 or shared runtime was used. Four old repository Home goldens were preserved before
+ADR025D7 rebaseline; primary read all4 new partial-state goldens and kept source-specific reasons
+discoverable. Next's generated AGENTS change was Markdown heading depth only, not instruction content.
+
+Limited final automated a11y checks found no A/AA-tag violations in Home390/account390/Sites1440/
+work1440. One Home incomplete contrast rule is an aria-hidden decorative middle dot, manually inspected
+and not a required text/state signal; it is recorded as such, not silently filtered to claim blanket
+certification. Physical assistive/input-device and customer comprehension checks remain unverified.
+
+Visual/task trade-off: Home no longer reserves a large empty image rectangle; real typed action and
+Site identity are earlier. Dense list is the new-user default while saved gallery choice remains.
+The supporting account/help route replaces the formerly unproductive primary More tab; legacy support
+content is not deleted. Exact scope/rights/unknown semantics were chosen over blanket READY or a fake
+map/gallery. The result is a coherent implemented improvement, not a claim of mature commercial UX.
+
+Evidence root `/tmp/opencode/ksi-console-ia-delivery-20261021/`; durable copy
+`~/.local/share/ksi-product-use-20261021/console-ia-delivery-860eeced/` with README + SHA manifest.
+Core's original14 journal prefixes are rechecked; normal product runtime stays available and prior
+owned frontend images remain for rollback. Only user-owned untracked.playwright-cli is excluded.
+No concrete in-scope implementation or verified-target blocker remains. The approved whole-Console
+IA/UX unit is complete; no further feature/LOD/cache work, new customer study or unrelated redesign
+is silently selected. Future customer-comprehension/scale/device evidence remains separate, not invented.
