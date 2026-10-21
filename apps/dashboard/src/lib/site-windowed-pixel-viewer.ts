@@ -6,10 +6,12 @@ import type {
 } from "@/lib/core-api/spatial-data-types";
 import {
   MAX_SPATIAL_DATA_PIXEL_WINDOW_DIM,
+  nativeBoundsFromInspection,
   resolveBoundedPixelWindow,
   type InspectedRasterGrid,
   type PixelWindowSelection,
 } from "@/lib/spatial-data-request";
+import { resolveViewportWindows } from "@/lib/spatial-display-viewport";
 import { sameDisplayPlane } from "@/app/sites/[siteId]/site-spatial";
 
 /**
@@ -101,6 +103,21 @@ export function readableWindowJobs(
       job.receipt !== null &&
       job.receipt.jobId === job.jobId,
   );
+}
+
+/** 이미 준비된 부분 출력도 보여준다. 타일망과 다르다고 자료가 없는 것은 아니다. */
+export function preparedWindowFallback(
+  grid: InspectedRasterGrid | null,
+  jobs: readonly PreparedWindowJob[],
+  assetRef: string,
+): PreparedWindowJob | null {
+  const readable = readableWindowJobs(jobs, assetRef);
+  const bounds = grid ? nativeBoundsFromInspection(grid) : null;
+  const cover = bounds ? resolveViewportWindows(grid, bounds) : null;
+  if (cover?.ok && readable.some((job) => cover.windows.some((window) =>
+    window.pixelWindow.every((value, index) => value === job.receipt!.pixelWindow[index]),
+  ))) return null;
+  return readable[0] ?? null;
 }
 
 /** 창 선택기의 사람이 읽는 한 줄 — 픽셀 크기와 네이티브 범위만 둔다. */

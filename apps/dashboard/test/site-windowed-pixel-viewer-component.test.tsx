@@ -292,9 +292,11 @@ describe("site windowed pixel viewer", () => {
     })} />);
 
     fireEvent.click(screen.getByRole("button", { name: "지표면 높이 자료(DSM)" }));
+    // 부분 출력은 모자이크 타일과 다르더라도 먼저 자동으로 읽어 표시한다.
+    // 이 읽기가 끝난 다음 낱창 도구를 검증한다(테스트 decoder 모사 직렬화).
+    await screen.findByText(/출력 2 × 2 픽셀/);
     fireEvent.click(screen.getByRole("button", { name: "이 창 보기" }));
-    await screen.findByText(/화면용 상대 음영/);
-    expect(screen.getByText("어두움 — 밝음 · 상대 음영이며 측정값이 아님")).toBeTruthy();
+    await screen.findByText("어두움 — 밝음 · 상대 음영이며 측정값이 아님");
     // 창별 늘이기 정직 문구는 한 창 보기와 이어 보기 모두에 그대로 있다.
     expect(screen.getAllByText(/창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요/)).toHaveLength(2);
     expect(screen.queryByText(/검증 완료/)).toBeNull();

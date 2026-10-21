@@ -323,7 +323,10 @@ describe("usability-first explore", () => {
     expect(canvas.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // 실제 화면 자리가 기술 벽보다 먼저다.
     const text = document.body.textContent ?? "";
-    const mosaic = text.indexOf("이어 보기 — 여러 창의 나란한 배치");
+    // 타일망 전체 보기와 이미 준비된 부분 보기 모두 실제 표시 경로다.
+    const mosaic = text.includes("이어 보기 — 여러 창의 나란한 배치")
+      ? text.indexOf("이어 보기 — 여러 창의 나란한 배치")
+      : text.indexOf("준비된 일부 범위");
     const conditions = text.indexOf("표시 조건·근거");
     expect(mosaic).toBeGreaterThanOrEqual(0);
     expect(conditions).toBeGreaterThan(mosaic);

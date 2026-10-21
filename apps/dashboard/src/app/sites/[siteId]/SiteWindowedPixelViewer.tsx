@@ -44,6 +44,7 @@ import {
   formatNativeWindowExtent,
   inspectionOutcomeLabel,
   readableWindowJobs,
+  preparedWindowFallback,
   sharedPlaneForCompare,
   windowOptionLabel,
   type PreparedWindowJob,
@@ -51,6 +52,7 @@ import {
 } from "@/lib/site-windowed-pixel-viewer";
 import { REASON_COPY as SPATIAL_DATA_REQUEST_REASON_COPY } from "@/app/sites/[siteId]/spatial-assets/SpatialDataRequestAction";
 import { SiteMosaicViewport } from "@/app/sites/[siteId]/SiteMosaicViewport";
+import { SpatialDataReceiptPreview } from "./spatial-data-requests/SpatialDataReceiptPreview";
 
 /**
  * 창 단위 실제픽셀 보기 — 임시 시각화 어댑터 (SWX-2 B 단위).
@@ -278,6 +280,7 @@ function WindowedLayerView({
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
   const readable = readableWindowJobs(jobs, layer.assetRef);
+  const existingCrop = preparedWindowFallback(grid, jobs, layer.assetRef);
   const pending = jobs.filter(
     (job) =>
       job.assetRef === layer.assetRef &&
@@ -444,7 +447,22 @@ function WindowedLayerView({
     <div className="flex flex-col gap-2">
       {/* 실제 화면이 먼저다. 이어 보기는 진입 시 이미 준비된 창만 읽는다(읽기 전용).
           새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
-      {grid && (
+      {existingCrop?.receipt ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] leading-5 text-ink-2">준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다.</p>
+          <SpatialDataReceiptPreview
+            key={existingCrop.jobId}
+            siteId={siteId}
+            workAreaId={workAreaId}
+            jobId={existingCrop.jobId}
+            receipt={existingCrop.receipt}
+            fileHref={fileHrefFor(siteId, workAreaId, existingCrop.jobId)}
+            autoLoad
+            compact
+          />
+          {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
+        </div>
+      ) : grid && (
         <SiteMosaicViewport
           siteId={siteId}
           workAreaId={workAreaId}

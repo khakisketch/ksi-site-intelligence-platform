@@ -11,6 +11,7 @@ import {
   adjacentWindowSelection,
   formatNativeWindowExtent,
   readableWindowJobs,
+  preparedWindowFallback,
   sharedPlaneForCompare,
   toPreparedWindowJob,
   windowOptionLabel,
@@ -60,6 +61,16 @@ function receiptFor(jobId: string, pixelWindow: [number, number, number, number]
 }
 
 describe("site windowed pixel viewer helpers", () => {
+  it("uses an existing partial crop rather than treating a different window shape as missing data", () => {
+    const record = jobView();
+    const crop = toPreparedWindowJob({ ...record, receipt: { ...receiptFor(record.jobId, [256, 768, 128, 384]), height: 256 } });
+    expect(preparedWindowFallback(grid, [crop], record.assetRef)).toBe(crop);
+    expect(preparedWindowFallback(grid, [{ ...crop, availability: "ACCESS_REVOKED" }], record.assetRef)).toBeNull();
+    expect(preparedWindowFallback(grid, [crop], `ksa-v1-${"f".repeat(64)}`)).toBeNull();
+    const tile = { ...crop, receipt: receiptFor(record.jobId, [0, 512, 0, 512]) };
+    expect(preparedWindowFallback(grid, [tile], record.assetRef)).toBeNull();
+  });
+
   it("moves to an adjacent window and clamps at the grid edge", () => {
     const current = { width: 512, height: 512, col: 255, row: 201 };
     const right = adjacentWindowSelection(grid, current, 1, 0);

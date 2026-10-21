@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { SpatialDataReceipt } from "@/lib/core-api/spatial-data-types";
 import {
@@ -82,14 +82,18 @@ export function SpatialDataReceiptPreview({
   jobId,
   receipt,
   fileHref,
+  autoLoad = false,
+  compact = false,
 }: {
   siteId: string;
   workAreaId: string;
   jobId: string;
   receipt: SpatialDataReceipt;
   fileHref: string;
+  autoLoad?: boolean;
+  compact?: boolean;
 }) {
-  const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const [phase, setPhase] = useState<Phase>(() => ({ name: autoLoad ? "loading" : "idle" }));
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -117,9 +121,8 @@ export function SpatialDataReceiptPreview({
     abortRef.current?.abort();
   };
 
-  const load = async () => {
-    if (phase.name === "loading") return;
-    abortRef.current?.abort();
+  const load = useCallback(async () => {
+    if (abortRef.current) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setPhase({ name: "loading" });
@@ -146,17 +149,28 @@ export function SpatialDataReceiptPreview({
     } finally {
       if (abortRef.current === controller) abortRef.current = null;
     }
-  };
+  }, [receipt, jobId, fileHref]);
 
-  return <section aria-label="준비된 출력 미리보기" className="border-t border-line pt-4">
-    <div className="flex flex-wrap items-start justify-between gap-2">
+  useEffect(() => {
+    if (!autoLoad) return;
+    let mounted = true;
+    // 표시 자리를 먼저 확보하고 읽기를 시작한다. 진입이 취소되면 미시작 읽기도 버린다.
+    queueMicrotask(() => { if (mounted) void load(); });
+    return () => {
+      mounted = false;
+      abortRef.current?.abort();
+    };
+  }, [autoLoad, load]);
+
+  return <section aria-label="준비된 출력 미리보기" className={compact ? "" : "border-t border-line pt-4"}>
+    {!compact && <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <h3 className="text-[15px] font-bold">준비된 출력 미리보기</h3>
         <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
           Core 준비 기록과 바이트 전체가 일치할 때만 화면에 표시합니다. 미리보기도 다운로드와 같은 권한·보관 확인을 거칩니다.
         </p>
       </div>
-    </div>
+    </div>}
     {phase.name === "idle" && (
       <button type="button" className="btn min-h-11 mt-3" onClick={() => void load()}>
         미리보기 불러오기
