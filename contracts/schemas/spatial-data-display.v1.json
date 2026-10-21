@@ -1,0 +1,624 @@
+{
+  "$defs": {
+    "DisplayDerivativeBindingV1": {
+      "additionalProperties": false,
+      "description": "Core-projected typed facts about one derivative (no composite flag).\n\nDeliberately flat and narrow: the derivative id, the SOURCE identity an\nexisting analysis result references, the bounded job/receipt that produced\nthe bytes, and the representation state. No ready/status/verified roll-up,\nno suitability restatement.",
+      "properties": {
+        "derivativeId": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Derivativeid",
+          "type": "string"
+        },
+        "prepareJobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Preparejobid",
+          "type": "string"
+        },
+        "receiptDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Receiptdigest",
+          "type": "string"
+        },
+        "sourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcedigest",
+          "type": "string"
+        },
+        "spatialView": {
+          "$ref": "#/$defs/DisplaySpatialViewV1"
+        }
+      },
+      "required": [
+        "derivativeId",
+        "sourceDigest",
+        "prepareJobId",
+        "receiptDigest",
+        "spatialView"
+      ],
+      "title": "DisplayDerivativeBindingV1",
+      "type": "object"
+    },
+    "DisplayDerivativeSourceV1": {
+      "additionalProperties": false,
+      "description": "Stable SOURCE pins, borrowed field-for-field from existing contracts.",
+      "properties": {
+        "assetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "inspectionReportDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionreportdigest",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "observedSha256": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "revision": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "assetRef",
+        "observedSha256",
+        "observedCrsDigest",
+        "revision",
+        "inspectionReportDigest"
+      ],
+      "title": "DisplayDerivativeSourceV1",
+      "type": "object"
+    },
+    "DisplayDerivativeV1": {
+      "additionalProperties": false,
+      "description": "Content-addressed identity of one regenerable display derivative.\n\nIdentical pinned inputs reproduce an identical ``derivativeId``; any\nchanged pin (source bytes, revision, CRS digest, window, LOD, style,\nvalidity, registration, permission) yields a different id. Results bind\nSOURCE fields only, never this id.",
+      "properties": {
+        "derivativeId": {
+          "anyOf": [
+            {
+              "maxLength": 71,
+              "minLength": 71,
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Derivativeid"
+        },
+        "lod": {
+          "$ref": "#/$defs/DisplayLodV1"
+        },
+        "permission": {
+          "$ref": "#/$defs/DisplayPermissionV1"
+        },
+        "provenance": {
+          "$ref": "#/$defs/DisplayProvenanceV1"
+        },
+        "registration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PairRegistrationV1"
+            },
+            {
+              "$ref": "#/$defs/PairRegistrationNoneV1"
+            }
+          ],
+          "title": "Registration"
+        },
+        "source": {
+          "$ref": "#/$defs/DisplayDerivativeSourceV1"
+        },
+        "style": {
+          "$ref": "#/$defs/DisplayStyleV1"
+        },
+        "validity": {
+          "$ref": "#/$defs/DisplayValidityV1"
+        },
+        "window": {
+          "$ref": "#/$defs/DisplayDerivativeWindowV1"
+        }
+      },
+      "required": [
+        "source",
+        "window",
+        "lod",
+        "style",
+        "validity",
+        "registration",
+        "permission",
+        "provenance"
+      ],
+      "title": "DisplayDerivativeV1",
+      "type": "object"
+    },
+    "DisplayDerivativeWindowV1": {
+      "additionalProperties": false,
+      "description": "Native-grid window, copied from a verified receipt (never re-rounded).",
+      "properties": {
+        "actualBounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Actualbounds",
+          "type": "array"
+        },
+        "gridTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            },
+            {
+              "maximum": 1.7976931348623157e+308,
+              "minimum": -1.7976931348623157e+308,
+              "type": "number"
+            }
+          ],
+          "title": "Gridtransform",
+          "type": "array"
+        },
+        "pixelWindow": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "maximum": 9223372036854775807,
+              "minimum": 0,
+              "type": "integer"
+            }
+          ],
+          "title": "Pixelwindow",
+          "type": "array"
+        }
+      },
+      "required": [
+        "pixelWindow",
+        "actualBounds",
+        "gridTransform"
+      ],
+      "title": "DisplayDerivativeWindowV1",
+      "type": "object"
+    },
+    "DisplayLodV1": {
+      "additionalProperties": false,
+      "description": "Pinned level-of-detail selection (pins only; no pyramid table here).",
+      "properties": {
+        "level": {
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "title": "Level",
+          "type": "integer"
+        },
+        "lodTableVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Lodtableversion",
+          "type": "string"
+        },
+        "resamplingKernelId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Resamplingkernelid",
+          "type": "string"
+        },
+        "targetMetresPerPixel": {
+          "exclusiveMinimum": 0,
+          "title": "Targetmetresperpixel",
+          "type": "number"
+        }
+      },
+      "required": [
+        "level",
+        "lodTableVersion",
+        "resamplingKernelId",
+        "targetMetresPerPixel"
+      ],
+      "title": "DisplayLodV1",
+      "type": "object"
+    },
+    "DisplayPermissionV1": {
+      "additionalProperties": false,
+      "description": "Rights binding every display byte remains under (no new purpose).",
+      "properties": {
+        "grantDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Grantdigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "preparedForPrincipalHash": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Preparedforprincipalhash",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/SpatialDataPurposeV1"
+        }
+      },
+      "required": [
+        "grantDigest",
+        "policyDigest",
+        "purpose",
+        "preparedForPrincipalHash"
+      ],
+      "title": "DisplayPermissionV1",
+      "type": "object"
+    },
+    "DisplayProvenanceV1": {
+      "additionalProperties": false,
+      "description": "Which bounded preparation produced these bytes (identity only).",
+      "properties": {
+        "prepareJobId": {
+          "maxLength": 43,
+          "minLength": 43,
+          "pattern": "^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+          "title": "Preparejobid",
+          "type": "string"
+        },
+        "preparedAt": {
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|\\+00:00)$",
+          "title": "Preparedat",
+          "type": "string"
+        },
+        "receiptDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Receiptdigest",
+          "type": "string"
+        },
+        "workerBuildDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerbuilddigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "prepareJobId",
+        "receiptDigest",
+        "preparedAt",
+        "workerBuildDigest"
+      ],
+      "title": "DisplayProvenanceV1",
+      "type": "object"
+    },
+    "DisplaySpatialViewV1": {
+      "description": "Representation fact ONLY: never a validation-suitability statement.",
+      "enum": [
+        "AVAILABLE",
+        "NOT_READY",
+        "UNRENDERABLE"
+      ],
+      "title": "DisplaySpatialViewV1",
+      "type": "string"
+    },
+    "DisplayStyleV1": {
+      "additionalProperties": false,
+      "description": "Pinned colour/validity presentation policy (pins only; no registry here).",
+      "properties": {
+        "bandMappingId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Bandmappingid",
+          "type": "string"
+        },
+        "colourRampId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Colourrampid",
+          "type": "string"
+        },
+        "colourRampVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Colourrampversion",
+          "type": "integer"
+        },
+        "noDataMaskRuleId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Nodatamaskruleid",
+          "type": "string"
+        },
+        "stretchId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Stretchid",
+          "type": "string"
+        },
+        "stretchVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Stretchversion",
+          "type": "integer"
+        },
+        "unitLabelId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Unitlabelid",
+          "type": "string"
+        },
+        "verticalBasisStatementId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Verticalbasisstatementid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bandMappingId",
+        "colourRampId",
+        "colourRampVersion",
+        "stretchId",
+        "stretchVersion",
+        "noDataMaskRuleId",
+        "unitLabelId",
+        "verticalBasisStatementId"
+      ],
+      "title": "DisplayStyleV1",
+      "type": "object"
+    },
+    "DisplayValidityV1": {
+      "additionalProperties": false,
+      "description": "Pinned valid-area/mask policy versions governing on-screen semantics.",
+      "properties": {
+        "excludedRuleVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Excludedruleversion",
+          "type": "string"
+        },
+        "maskSourceDigest": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Masksourcedigest",
+          "type": "string"
+        },
+        "validAreaRuleVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Validarearuleversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "maskSourceDigest",
+        "validAreaRuleVersion",
+        "excludedRuleVersion"
+      ],
+      "title": "DisplayValidityV1",
+      "type": "object"
+    },
+    "PairRegistrationNoneV1": {
+      "additionalProperties": false,
+      "description": "Explicit, non-optional marker for \"no registration evidence\".\n\nAbsent registration is a TYPED record here, never a missing field or a\nnull: a derivative always states either its registration or NONE, so\n\"equal CRS\" can never be misread as registered.",
+      "properties": {
+        "registrationKind": {
+          "const": "NONE",
+          "default": "NONE",
+          "title": "Registrationkind",
+          "type": "string"
+        },
+        "statement": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Statement",
+          "type": "string"
+        }
+      },
+      "required": [
+        "statement"
+      ],
+      "title": "PairRegistrationNoneV1",
+      "type": "object"
+    },
+    "PairRegistrationStatusV1": {
+      "description": "Closed registration claim vocabulary.\n\nThere is deliberately NO member meaning \"registered without evidence\":\nREGISTERED is only constructible with non-empty ``evidenceDigests``\n(fail-closed validator on ``PairRegistrationV1``).",
+      "enum": [
+        "REGISTERED",
+        "UNREGISTERED"
+      ],
+      "title": "PairRegistrationStatusV1",
+      "type": "string"
+    },
+    "PairRegistrationV1": {
+      "additionalProperties": false,
+      "description": "Asserted cross-epoch pair registration with its own evidence binding.\n\nThis record ASSERTS a registration claim; it performs no registration\nmethod and no survey-grade inference. Equal CRS alone never satisfies\nthis record: construction requires explicit evidence for REGISTERED.",
+      "properties": {
+        "baselineAssetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Baselineassetref",
+          "type": "string"
+        },
+        "currentAssetRef": {
+          "maxLength": 71,
+          "minLength": 71,
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Currentassetref",
+          "type": "string"
+        },
+        "evidenceDigests": {
+          "default": [],
+          "items": {
+            "maxLength": 71,
+            "minLength": 71,
+            "pattern": "^sha256:[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Evidencedigests",
+          "type": "array"
+        },
+        "methodId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Methodid",
+          "type": "string"
+        },
+        "methodVersion": {
+          "exclusiveMinimum": 0,
+          "maximum": 9223372036854775807,
+          "title": "Methodversion",
+          "type": "integer"
+        },
+        "registrationErrorMetres": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Registrationerrormetres"
+        },
+        "status": {
+          "$ref": "#/$defs/PairRegistrationStatusV1"
+        },
+        "transformParameters": {
+          "items": {
+            "maximum": 1.7976931348623157e+308,
+            "minimum": -1.7976931348623157e+308,
+            "type": "number"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Transformparameters",
+          "type": "array"
+        },
+        "validAreaRuleVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Validarearuleversion",
+          "type": "string"
+        }
+      },
+      "required": [
+        "baselineAssetRef",
+        "currentAssetRef",
+        "methodId",
+        "methodVersion",
+        "transformParameters",
+        "validAreaRuleVersion",
+        "status"
+      ],
+      "title": "PairRegistrationV1",
+      "type": "object"
+    },
+    "SpatialDataPurposeV1": {
+      "enum": [
+        "GENERAL_DATA_USE",
+        "EXTERNAL_AI"
+      ],
+      "title": "SpatialDataPurposeV1",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

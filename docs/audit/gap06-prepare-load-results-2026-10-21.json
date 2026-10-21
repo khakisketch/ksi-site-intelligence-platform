@@ -1,0 +1,526 @@
+{
+ "startedAt": "2026-10-21T05:50:19.607061+00:00",
+ "phases": {
+  "latency_sequential": [
+   {
+    "tag": "L1-o21-tl",
+    "asset": "ksa-v1-1ad554...",
+    "window": [
+     0,
+     512,
+     0,
+     512
+    ],
+    "key": "gap06-L1-o21-tl-62e3b27d",
+    "http_status": 201,
+    "http_s": 0.038,
+    "issued_at": "2026-10-21T05:50:19.645293+00:00",
+    "jobId": "sdj-v1-70c6c3d8-3455-4a37-8861-613d1c65fe43",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 4.598,
+    "completed_lag_s": 5.366,
+    "exec_s": 0.768,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      0,
+      512,
+      0,
+      512
+     ],
+     "outputSizeBytes": 474427,
+     "outputSha256": "sha256:4a580917c1e70071f7ce635bd00010132fddace216a79e301acfc6740153eb3f",
+     "bandCount": 4,
+     "dtype": "uint8",
+     "validPixelCount": 229774,
+     "preparedAt": "2026-10-21T05:50:24.492640Z",
+     "requestedBounds": [
+      382261.7296,
+      6467413.575,
+      382389.7296,
+      6467541.575
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:19.622544Z"
+   },
+   {
+    "tag": "L2-o21-tr",
+    "asset": "ksa-v1-1ad554...",
+    "window": [
+     510,
+     1022,
+     0,
+     512
+    ],
+    "key": "gap06-L2-o21-tr-092970a6",
+    "http_status": 201,
+    "http_s": 0.015,
+    "issued_at": "2026-10-21T05:50:25.026270+00:00",
+    "jobId": "sdj-v1-0e33bd17-c0a6-499c-97c1-642f4abe693f",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 5.087,
+    "completed_lag_s": 5.871,
+    "exec_s": 0.784,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      510,
+      1022,
+      0,
+      512
+     ],
+     "outputSizeBytes": 637695,
+     "outputSha256": "sha256:ad19fd8d9aa0167795560bc3a0e3413f9ce0f693b45c99b4fbef9a7fa77d7b6c",
+     "bandCount": 4,
+     "dtype": "uint8",
+     "validPixelCount": 260666,
+     "preparedAt": "2026-10-21T05:50:30.261498Z",
+     "requestedBounds": [
+      382389.2296,
+      6467413.575,
+      382517.2296,
+      6467541.575
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:25.012713Z"
+   },
+   {
+    "tag": "L3-o21-bl",
+    "asset": "ksa-v1-1ad554...",
+    "window": [
+     0,
+     512,
+     403,
+     915
+    ],
+    "key": "gap06-L3-o21-bl-ace8a536",
+    "http_status": 201,
+    "http_s": 0.023,
+    "issued_at": "2026-10-21T05:50:30.920494+00:00",
+    "jobId": "sdj-v1-679e2ad4-3ad4-4bb4-bc68-41d4e8cbe57c",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 4.85,
+    "completed_lag_s": 10.718,
+    "exec_s": 5.868,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      0,
+      512,
+      403,
+      915
+     ],
+     "outputSizeBytes": 526512,
+     "outputSha256": "sha256:47627c78a1b753e95273db5c42cdfd090ad6012fab73287cf118ab0965f9cf58",
+     "bandCount": 4,
+     "dtype": "uint8",
+     "validPixelCount": 249513,
+     "preparedAt": "2026-10-21T05:50:36.043699Z",
+     "requestedBounds": [
+      382261.7296,
+      6467312.825,
+      382389.7296,
+      6467440.825
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:30.898740Z"
+   },
+   {
+    "tag": "L4-o21-br",
+    "asset": "ksa-v1-1ad554...",
+    "window": [
+     510,
+     1022,
+     403,
+     915
+    ],
+    "key": "gap06-L4-o21-br-38cafb75",
+    "http_status": 201,
+    "http_s": 0.033,
+    "issued_at": "2026-10-21T05:50:41.671281+00:00",
+    "jobId": "sdj-v1-bbea9816-3463-4968-bfa6-90afc15d8622",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 4.871,
+    "completed_lag_s": 5.648,
+    "exec_s": 0.777,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      510,
+      1022,
+      403,
+      915
+     ],
+     "outputSizeBytes": 626704,
+     "outputSha256": "sha256:94e6ac01c72c326803ebe7995b6aea4c76447e43e04ac07d6553327a4f668671",
+     "bandCount": 4,
+     "dtype": "uint8",
+     "validPixelCount": 252090,
+     "preparedAt": "2026-10-21T05:50:46.824260Z",
+     "requestedBounds": [
+      382389.2296,
+      6467312.825,
+      382517.2296,
+      6467440.825
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:41.639961Z"
+   },
+   {
+    "tag": "L5-d21-tl",
+    "asset": "ksa-v1-3434d3...",
+    "window": [
+     0,
+     512,
+     0,
+     512
+    ],
+    "key": "gap06-L5-d21-tl-f243ca7d",
+    "http_status": 201,
+    "http_s": 0.024,
+    "issued_at": "2026-10-21T05:50:47.343052+00:00",
+    "jobId": "sdj-v1-78bb011b-7595-4928-b9ba-65fcb84c00dd",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 5.121,
+    "completed_lag_s": 5.895,
+    "exec_s": 0.774,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      0,
+      512,
+      0,
+      512
+     ],
+     "outputSizeBytes": 577639,
+     "outputSha256": "sha256:871bfca1f8abccfe642559c2f0279f06f505436608764c03d566ea45f6cf7ab7",
+     "bandCount": 1,
+     "dtype": "float32",
+     "validPixelCount": 229839,
+     "preparedAt": "2026-10-21T05:50:52.648703Z",
+     "requestedBounds": [
+      382261.7296,
+      6467413.575,
+      382389.7296,
+      6467541.575
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:47.320131Z"
+   },
+   {
+    "tag": "L6-d21-br",
+    "asset": "ksa-v1-3434d3...",
+    "window": [
+     510,
+     1022,
+     403,
+     915
+    ],
+    "key": "gap06-L6-d21-br-3c1d7131",
+    "http_status": 201,
+    "http_s": 0.022,
+    "issued_at": "2026-10-21T05:50:53.260068+00:00",
+    "jobId": "sdj-v1-f1f46ee0-ef89-40d4-8cf2-fd8bb1fa6c75",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 4.867,
+    "completed_lag_s": 5.635,
+    "exec_s": 0.768,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      510,
+      1022,
+      403,
+      915
+     ],
+     "outputSizeBytes": 664582,
+     "outputSha256": "sha256:2d50d3db6e7ed60f6b4ed6582632c0a9ea29bfb94c4695178ed6df19f210d830",
+     "bandCount": 1,
+     "dtype": "float32",
+     "validPixelCount": 252145,
+     "preparedAt": "2026-10-21T05:50:58.445315Z",
+     "requestedBounds": [
+      382389.2296,
+      6467312.825,
+      382517.2296,
+      6467440.825
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:53.239043Z"
+   },
+   {
+    "tag": "L7-o22-mid",
+    "asset": "ksa-v1-3a1e2a...",
+    "window": [
+     255,
+     767,
+     201,
+     713
+    ],
+    "key": "gap06-L7-o22-mid-1acffc1e",
+    "http_status": 201,
+    "http_s": 0.024,
+    "issued_at": "2026-10-21T05:50:58.919082+00:00",
+    "jobId": "sdj-v1-2f43fa8e-003d-4b1b-b547-dabb91321006",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 5.116,
+    "completed_lag_s": 5.888,
+    "exec_s": 0.772,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      255,
+      767,
+      201,
+      713
+     ],
+     "outputSizeBytes": 644023,
+     "outputSha256": "sha256:a69d5fe734e11d1dd4efb23b8752ad57b0a8276e729e5ed87c5d3538409762c7",
+     "bandCount": 4,
+     "dtype": "uint8",
+     "validPixelCount": 262144,
+     "preparedAt": "2026-10-21T05:51:04.250616Z",
+     "requestedBounds": [
+      382325.4796,
+      6467363.325,
+      382453.4796,
+      6467491.325
+     ]
+    },
+    "createdAt": "2026-10-21T05:50:58.895644Z"
+   },
+   {
+    "tag": "L8-d22-mid",
+    "asset": "ksa-v1-46ae5e...",
+    "window": [
+     255,
+     767,
+     201,
+     713
+    ],
+    "key": "gap06-L8-d22-mid-1ba83953",
+    "http_status": 201,
+    "http_s": 0.033,
+    "issued_at": "2026-10-21T05:51:04.840757+00:00",
+    "jobId": "sdj-v1-62f1a239-7c3d-45d7-be94-9d6942583687",
+    "created": true,
+    "initialState": "QUEUED",
+    "firstRunning_lag_s": 4.86,
+    "completed_lag_s": 5.628,
+    "exec_s": 0.768,
+    "finalState": "COMPLETED",
+    "receipt": {
+     "width": 512,
+     "height": 512,
+     "pixelWindow": [
+      255,
+      767,
+      201,
+      713
+     ],
+     "outputSizeBytes": 698270,
+     "outputSha256": "sha256:b897e80375e0d8eb8b2728ef3f494074c90d8c7944ad55974822594301e60e1b",
+     "bandCount": 1,
+     "dtype": "float32",
+     "validPixelCount": 262144,
+     "preparedAt": "2026-10-21T05:51:10.020665Z",
+     "requestedBounds": [
+      382325.4796,
+      6467363.325,
+      382453.4796,
+      6467491.325
+     ]
+    },
+    "createdAt": "2026-10-21T05:51:04.808225Z"
+   }
+  ],
+  "concurrency_burst": {
+   "wall_s": 11.632,
+   "jobs": [
+    {
+     "tag": "C1-o22-tl",
+     "window": [
+      0,
+      512,
+      0,
+      512
+     ],
+     "key": "gap06-C1-o22-tl-a0d0c718",
+     "http_status": 429,
+     "http_s": 0.085,
+     "burst_offset_s": 0.086,
+     "error": {
+      "reason": "CONCURRENCY_LIMIT_EXCEEDED",
+      "message": "Spatial data request unavailable.",
+      "retryable": true,
+      "remediation": [
+       "CONTACT_OPERATOR"
+      ]
+     }
+    },
+    {
+     "tag": "C2-o22-tr",
+     "window": [
+      510,
+      1022,
+      0,
+      512
+     ],
+     "key": "gap06-C2-o22-tr-e809143d",
+     "http_status": 201,
+     "http_s": 0.045,
+     "burst_offset_s": 0.045,
+     "jobId": "sdj-v1-6d023bbe-9a28-4573-8558-de9027ffc128",
+     "initialState": "QUEUED",
+     "firstRunning_lag_s": 5.167,
+     "completed_lag_s": 5.936,
+     "exec_s": 0.769,
+     "finalState": "COMPLETED",
+     "outputSizeBytes": 641250,
+     "outputSha256": "sha256:e140dbe6ca93bc59e38ddbfd801635862419a40c9c7813f6d27a637ee330192a",
+     "width": 512,
+     "height": 512
+    },
+    {
+     "tag": "C3-o22-bl",
+     "window": [
+      0,
+      512,
+      403,
+      915
+     ],
+     "key": "gap06-C3-o22-bl-3054c828",
+     "http_status": 429,
+     "http_s": 0.092,
+     "burst_offset_s": 0.093,
+     "error": {
+      "reason": "CONCURRENCY_LIMIT_EXCEEDED",
+      "message": "Spatial data request unavailable.",
+      "retryable": true,
+      "remediation": [
+       "CONTACT_OPERATOR"
+      ]
+     }
+    },
+    {
+     "tag": "C4-o22-br",
+     "window": [
+      510,
+      1022,
+      403,
+      915
+     ],
+     "key": "gap06-C4-o22-br-bca46c00",
+     "http_status": 429,
+     "http_s": 0.09,
+     "burst_offset_s": 0.091,
+     "error": {
+      "reason": "CONCURRENCY_LIMIT_EXCEEDED",
+      "message": "Spatial data request unavailable.",
+      "retryable": true,
+      "remediation": [
+       "CONTACT_OPERATOR"
+      ]
+     }
+    },
+    {
+     "tag": "C5-d22-tl",
+     "window": [
+      0,
+      512,
+      0,
+      512
+     ],
+     "key": "gap06-C5-d22-tl-3aa4069e",
+     "http_status": 201,
+     "http_s": 0.082,
+     "burst_offset_s": 0.083,
+     "jobId": "sdj-v1-909c5980-0d2c-4b99-8fc2-a785cb32655a",
+     "initialState": "QUEUED",
+     "firstRunning_lag_s": 10.773,
+     "completed_lag_s": 11.549,
+     "exec_s": 0.776,
+     "finalState": "COMPLETED",
+     "outputSizeBytes": 599041,
+     "outputSha256": "sha256:a769820a70696911e35fa865bdbff2deaea6e3b9d0cefc519e99686d71a16f33",
+     "width": 512,
+     "height": 512
+    },
+    {
+     "tag": "C6-d22-tr",
+     "window": [
+      510,
+      1022,
+      0,
+      512
+     ],
+     "key": "gap06-C6-d22-tr-725f7881",
+     "http_status": 429,
+     "http_s": 0.087,
+     "burst_offset_s": 0.089,
+     "error": {
+      "reason": "CONCURRENCY_LIMIT_EXCEEDED",
+      "message": "Spatial data request unavailable.",
+      "retryable": true,
+      "remediation": [
+       "CONTACT_OPERATOR"
+      ]
+     }
+    }
+   ]
+  },
+  "idempotency": {
+   "I1_same_key_same_body": {
+    "http_status": 200,
+    "http_s": 0.005,
+    "same_job": true,
+    "jobId": "sdj-v1-70c6c3d8-3455-4a37-8861-613d1c65fe43",
+    "error": null
+   },
+   "I2_same_key_diff_body": {
+    "http_status": 409,
+    "http_s": 0.003,
+    "reason": "IDEMPOTENCY_CONFLICT",
+    "jobId": null
+   },
+   "I3_fresh_key_same_window": {
+    "http_status": 201,
+    "http_s": 0.025,
+    "jobId": "sdj-v1-aafe379a-a766-495a-9fad-c491fcc031b3",
+    "new_job": true,
+    "completed_lag_s": 5.879,
+    "bytes_identical_to_L1": true,
+    "finalState": "COMPLETED"
+   }
+  },
+  "whole_source": {
+   "http_status": 422,
+   "http_s": 0.004,
+   "reason": "OUTPUT_PIXEL_LIMIT_EXCEEDED",
+   "jobId": null,
+   "requested_px": 935130
+  }
+ },
+ "finishedAt": "2026-10-21T05:51:28.015938+00:00"
+}

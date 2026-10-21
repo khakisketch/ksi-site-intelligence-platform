@@ -5385,3 +5385,67 @@ budget and queue order with measured numbers, (2) owner approval of the §8 reco
 temporary adapter against the approved contract, (5) the registration-method owner defines
 `PairRegistrationV1`, (6) GAP-05 security review for cache/purpose changes. Audit recovery remains
 outside this path.
+
+#### Display/LOD contract implemented (unit 1) and GAP-06 load measured (2026-10-21)
+
+Unit 1 — display-derivative IDENTITY layer (new files only; ZERO existing files modified):
+`packages/event-contracts/src/ksi_event_contracts/spatial_data_display.py` +
+`contracts/schemas/spatial-data-display.v1.json` +
+`services/core/src/ksi_core/domains/external/delivery/display_derivative.py` +
+`tests/contract/test_spatial_data_display_derivative.py` (24 tests).
+- `DisplayDerivativeV1` (sealed, `derivative_id = sha256(canonical)`): SOURCE pins (assetRef,
+  observedSha256, observedCrsDigest, revision, inspectionReportDigest — borrowed field names) + window +
+  LOD pins (level, lodTableVersion, resamplingKernelId, targetMetresPerPixel) + style pins (band
+  mapping, colour ramp, stretch, NoData mask rule, unit label, vertical basis statement) + validity pins
+  (mask source digest, valid-area/excluded rule versions) + a REQUIRED registration (never null) +
+  permission (grantDigest, policyDigest, existing purpose, preparedForPrincipalHash) + provenance
+  (prepareJobId, receiptDigest, preparedAt, workerBuildDigest).
+- `PairRegistrationV1` (status REGISTERED|UNREGISTERED) with fail-closed validators — REGISTERED
+  requires ≥1 evidence digest, UNREGISTERED requires exactly 0, self-pair refused — so "registered
+  without evidence" is inexpressible; `PairRegistrationNoneV1` is the explicit typed "no registration"
+  record, so equal CRS can never be read as registration; `DisplaySpatialViewV1`
+  (AVAILABLE|NOT_READY|UNRENDERABLE) is a representation fact only; `DisplayDerivativeBindingV1` is flat
+  and carries NO composite ready/status/verified flag (test-enforced across both schemas).
+- Core binding is PURE FUNCTIONS ONLY: `project_display_derivative()` copies SOURCE/window/permission/
+  provenance pins from the frozen job + sealed receipt (re-verifying digests and the receipt↔job
+  binding) and seals the new record, mutating nothing; `display_binding_for()` re-verifies pin agreement;
+  `pair_is_registered()` is true only for evidence-backed REGISTERED (CRS equality never consulted).
+  Deliberately NOT added: no tile endpoint, no cache service, no LOD table, no budget, no preparation
+  mode, no route, no state mutation, no purpose change, and no change to jobs.py/job_projection.py.
+- Source-identity stability proven: changing any LOD/style/validity pin yields a DIFFERENT
+  derivativeId while the SOURCE sub-record and the job source digest / receipt digest strings stay
+  byte-identical; a corrective source revision yields a different source digest and can never be
+  silently substituted. Existing spatial-data behaviour is unchanged (440 targeted + 42 replay + 1371
+  broader contract tests pass); ruff/format/mypy clean.
+
+GAP-06 load evidence (measured, not estimated) — `docs/audit/GAP-06_SPATIAL_PREPARE_LOAD_EVIDENCE_2026-10-21.md`
++ machine-readable `docs/audit/gap06-prepare-load-results-2026-10-21.json` (11 real jobs, no secrets):
+- Latency: one bounded 512x512 PREPARE→COMPLETED = 5.4–5.9 s total (10/11 samples; one 10.7 s
+  outlier whose server-side time was normal 5.15 s, cause undetermined and reported as such). Cost is
+  worker PICKUP ~4.6–5.1 s; EXECUTION is ~0.77 s for every window, ortho or DSM. Server
+  createdAt→preparedAt 4.9–5.4 s.
+- Concurrency: 6 parallel issues → exactly 2×201 and 4×429 CONCURRENCY_LIMIT_EXCEEDED (retryable) in
+  <25 ms. THE LANE DOES NOT QUEUE PAST 2 ACTIVE — IT REJECTS (jobs.py:1044-1048). `QUEUED` means
+  issued-but-unleased, not parked. Therefore `maxQueueDepth 8` / `maxPendingRecords 8` have NO reachable
+  enforcement on this route, and a client must treat the buffer as 0 + 429-with-retry, NOT as 8 waiting
+  slots. A client must sequence 2 at a time; there is no server FIFO.
+- Idempotency: same key+body → 200 with the SAME job in 5 ms; same key+different body → 409; a FRESH
+  key for the same window → 201 with a NEW job and a FULL RE-EXECUTION, byte-identical output (sha
+  match) — the lane does the work twice, so a stable per-(assetRef, window, purpose) key is what makes
+  re-entry free.
+- Cost: ortho 512² 474–644 KB (uint8 4-band), DSM 512² 578–698 KB (float32 1-band); a whole-source
+  request (935,130 px) → 422 OUTPUT_PIXEL_LIMIT_EXCEEDED in 4 ms with ZERO worker cost, so the PER-OUTPUT
+  cap is exactly what forces tiling.
+- Coverage math (exact, cell-edge): 1022x915 at ≤512 px = exactly 4 windows (512x512 + 510x512 +
+  512x403 + 510x403) ≈ 2.27 MB, i.e. a full viewport needs 2 waves of 2 ≈ 12 s on an idle lane.
+- Recommendation (labelled as recommendation, not authority): ≤2 concurrent, ~15 s per full-viewport
+  interaction budget, 429 back-off, verify by outputSha256.
+- Not measurable today: queue depth >1 (unreachable by design), multi-client contention (single actor),
+  the download lane (no /file GETs by design), the L3 outlier cause, retry/retention/lease behaviour, the
+  synthetic EPSG:5186 pair, and any viewer/LOD mapping (this was the delivery lane only).
+CONSEQUENCE FOR THE CONTRACT: the client's request budget is NOT a queue depth but a 2-slot pipeline
+with 429-retry; the contract's §4 wording about a "saturated lane (2 active / 8 pending)" must be read as
+2 active and a ZERO-depth buffer, and the "budget N" open decision is now answered by measurement
+(N=2 concurrent; 4 windows / 2 waves for a full 1022x915 cover). The LOD pyramid table (GAP-03), the
+registration-method owner, the cache service/TTL, the durable saved-work store and the GAP-05 purpose
+split remain open and unowned.
