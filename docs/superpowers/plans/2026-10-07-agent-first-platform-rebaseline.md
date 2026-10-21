@@ -5701,3 +5701,65 @@ Recommended M1–M5 targets (recommendations from THIS measurement, not authorit
 - Not measured (and why): browser paint / geotiff.js timing (no browser launched — proxies only),
   Console end-to-end page timings, post-retention and cross-session revisit, multi-actor contention,
   OIDC-principal reads (respected, not probed), and the GAP-06 L3 outlier cause.
+
+#### Stage-1 package scoped by measurement; two owner decisions surfaced (2026-10-21)
+
+`docs/design/SPATIAL_DISPLAY_FIRST_PAYMENT_REDUCTION_DESIGN_2026-10-21.md` (design only) re-based
+stage 1 on the measured cost model instead of the earlier assumption.
+
+ROOT CAUSE OF THE ~23 s FIRST PAYMENT (verified in code, not inferred): the worker's own loop, not the
+Core's admission limit. services/processing-controller/src/ksi_processing_controller/spatial_data_runner.py
+runs `run_once` (ONE bounded poll/launch), closes the sandbox, then `stop.wait(config.poll_interval_seconds)`
+before the next poll — so the second window waits for the next ~5 s tick. The two "concurrent" Core slots
+(2 active, fast retryable 429 beyond, jobs.py:1044-1048) are therefore served SERIALLY by this worker.
+
+LEVER VERDICTS:
+- Worker parallelism (P-A: N concurrent `run_once` per tick) is the only parallelism lever that moves
+  the number (projected ceiling 6–8 s) and it is NOT viable inside the existing contract: it touches the
+  worker, the containment/launcher model, the resource envelope (spatial_data_authority.py:32–77) and
+  the signed policy. `maxActiveJobsPerOrganization` is ORGANIZATION-WIDE, so raising it widens every
+  tenant; a per-principal/per-tenant cap would be a NEW contract field (event-contracts + Core
+  delivery + policy owners). Deferred as S6, gated on multi-tenant load evidence.
+- LOD overview is the CHEAPEST structural first-payment fix (one pickup cycle, ~5–6 s projected) but it
+  is a NEW ARTIFACT KIND under the current contract, not a permitted window: the worker verifies an
+  exact NATIVE crop (spatial_data_worker.py:264-275 against `max_output_pixels`/`max_output_bytes`),
+  and any resampling is a new transformation needing its own kernel registry, containment proof, receipt
+  binding and Core admission — all GAP-03 territory. The identity layer already supports it: the LOD/style/
+  validity pins are part of `DisplayDerivativeV1`, so a coarse tile and a native tile of the same ground
+  area are DIFFERENT derivatives by construction (different `derivativeId`). Deferred as S5, gated on
+  the GAP-03 table + kernels + containment proof.
+- Progressive delivery is viable TODAY (the mosaic already paints on arrival; first valid pixel
+  ≈5.8 s measured) and is S1.
+- The cache's real win is DURABILITY (surviving the 24 h retention expiry, when ~23 s would otherwise be
+  re-paid), NOT per-visit latency — the T2 plan must not be justified on latency.
+
+STAGE-1 PACKAGE (dependency order): S1 progressive-first-view discipline (centre-first issue order,
+paint-on-verify, partial-cover labelling, off-screen drop with PINNED HYSTERESIS) → S2 T1 session-tier
+conformance (rights-bearing key, re-validate before every paint, and a BOUND — `MosaicPaintCache` is
+currently an unbounded Map, which the measurement flagged) → S3 T2 persistent tier for durability
+(placement decision separate; NO deployment authorized) → S4 the versioned R1–R5 reference run and the
+M1–M5 gauges → S5 the LOD-overview preparation path (the real first-payment cut; needs GAP-03) →
+S6 worker parallelism/admission ONLY if S5 proves insufficient and multi-tenant evidence exists.
+Measured basis for the acceptance form: cold first pixel ≈5.8 s, cold stabilise ≈23.0 s, warm revisit
+≈0.691 s, T1 target ≤100 ms, 429 zero-by-construction with FAILED-due-to-429 = 0, session-tier memory
+≈7.57 MiB for a full 1022×915 cover. Targets stay open until the benchmark sets them; no "instant"
+first-payment claim is made (the floor is one pickup cycle).
+
+TWO OWNER DECISIONS NOW SURFACED (neither can be taken by the implementation):
+1. GAP-03 (S5): the LOD pyramid table, its level definition, the per-level thresholds as a function of
+   viewport metres-per-pixel × device pixel ratio × source GSD, the kernel per data kind (mean for DSM
+   elevation? nearest for masks?), the DSM-vs-ortho rule differences, the coarse-level valid-area/mask
+   behaviour, and the containment proof for in-containment resampling — plus the table/version pin that
+   enters `DisplayDerivativeV1`. No level/threshold/kernel may be invented.
+2. The stage-1 ADMISSION question (S6): whether `maxActiveJobsPerOrganization` stays organization-wide
+   (and at what value) or a per-principal/per-tenant cap is introduced, and what multi-tenant load
+   evidence is required before either moves. `maxQueueDepth`/`maxPendingRecords` (8) were found to have
+   NO reachable enforcement on this route, so the "queue depth" concept itself may need re-specification
+   rather than a number.
+
+A REAL PRODUCT DEFECT WAS ALSO FOUND AND IS BEING FIXED SEPARATELY: Core's job LIST included other
+principals' jobs for an organization ADMIN (jobs.py:1102-1104) while the per-job READ denies a
+non-requester admin with 404 (jobs.py:350-352). The list/read disagreement made the real Console list
+windows it can never open and report them as "준비에 실패한 요청" — a false failure, since those jobs are
+COMPLETED/AVAILABLE and simply belong to another principal. The byte path stays requester-bound; the fix
+makes the projections coherent and is under way.
