@@ -423,6 +423,26 @@ describe("workspace results mode", () => {
     expect(screen.getByText(/새 비교는 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
   });
 
+  it("shows the recorded quantities with their limitation on the first results screen", async () => {
+    mocked.analyses.mockResolvedValue({
+      siteId: "site-1",
+      items: [analysisItem({
+        metrics: { cutM3: 0, fillM3: 800, netM3: 800, thresholdM: 0, uncertaintyM3: null },
+        suitabilityState: "PROVISIONAL_ACCURACY_UNVERIFIED",
+        limitationCount: 1,
+      })],
+      nextCursor: null,
+    });
+    await renderOverview({ mode: "results" });
+    const filled = screen.getByText("성토").closest("div");
+    expect(filled?.textContent).toContain("800 m³");
+    const net = screen.getByText("순변화").closest("div");
+    expect(net?.textContent).toContain("800 m³");
+    // 수치 옆에 한계가 함께 있어야 한다 — 값만 떼어 내지 않는다.
+    expect(screen.getByText(/정확도 평가는 아직 확인되지 않았습니다/)).toBeTruthy();
+    expect(screen.getByText(/물량 정확도 보증·측량 승인·정산 근거가 아닙니다/)).toBeTruthy();
+  });
+
   it("restores an exact explicit result with its original inputs matched to the projection", async () => {
     mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
     mocked.workspace.mockResolvedValue(workspacePage({

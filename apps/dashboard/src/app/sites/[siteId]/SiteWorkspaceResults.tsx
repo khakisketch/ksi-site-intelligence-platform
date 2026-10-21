@@ -7,9 +7,14 @@ import type { ExplicitResultResolution, WorkspaceServerFacts } from "@/lib/site-
 import { matchAnalysisSelectors, workspaceCaptureLine } from "@/lib/site-workspace-entry";
 import { capturePeriodTitle } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
+import { formatNumberKo } from "@/lib/number-format";
 import { analysisStateLabel } from "./SiteSpatialOverview";
 
 function RecordCard({ item }: { item: AnalysisListItem }) {
+  // 결과 모드의 첫 화면은 "무엇이 얼마나 바뀌었나"다. 수치는 이미 Core가
+  // 결정해 기록한 값이므로 그대로 옮기고 그 옆에 한계를 함께 둔다. 여기서
+  // 다시 계산하거나 수치를 새로 만들지 않는다.
+  const metrics = item.metrics;
   return <article className="rounded-lg border border-line px-4 py-3">
     <h3 className="text-[13.5px] font-bold">{analysisResultTitle(item.createdAt)}</h3>
     <p className="mt-1 text-[12px] font-semibold">{analysisStateLabel(item)}</p>
@@ -17,8 +22,35 @@ function RecordCard({ item }: { item: AnalysisListItem }) {
       기록 {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}
       {item.limitationCount > 0 ? ` · 제한 ${item.limitationCount}건` : " · 기록된 제한 없음"}
     </p>
+    {metrics ? (
+      <dl className="mt-2 grid grid-cols-3 gap-2 border-y border-line py-2">
+        <div>
+          <dt className="text-[11px] text-ink-muted">절토</dt>
+          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.cutM3)} m³</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-ink-muted">성토</dt>
+          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.fillM3)} m³</dd>
+        </div>
+        <div>
+          <dt className="text-[11px] text-ink-muted">순변화</dt>
+          <dd className="text-[15px] font-bold">{formatNumberKo(metrics.netM3)} m³</dd>
+        </div>
+      </dl>
+    ) : (
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">
+        이 기록에는 확정된 수치가 없습니다. 확인된 조건과 근거는 분석 기록에서 확인하세요.
+      </p>
+    )}
+    {metrics && (
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">
+        {metrics.uncertaintyM3 === null
+          ? "정확도 평가는 아직 확인되지 않았습니다. 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다."
+          : `불확도는 ±${formatNumberKo(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+      </p>
+    )}
     <p className="mt-1 text-[12px] leading-5 text-ink-2">
-      수치와 근거는 각 기록에 있습니다. 이 목록은 기록의 현재 상태를 옮긴 것이며, 다시 계산하지 않습니다.
+      이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
     </p>
     <p className="mt-1">
       <Link href={item.analysisHref} className="tap-target inline-block text-[12px] underline">분석 기록 열기</Link>
