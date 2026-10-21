@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
@@ -29,19 +28,14 @@ import {
   type ScheduledDisplayWindow,
 } from "@/lib/spatial-display-scheduler";
 import {
-  DISPLAY_GESTURE_HINT,
-  displayGestureKeyAction,
-  displayWheelReady,
-  isDisplayZoomWheelIntent,
-} from "@/lib/spatial-display-gesture";
-import {
-  displayDragFractions,
-  displayViewTransform,
   displayZoomPercent,
   isDisplayViewMoved,
-  useDisplayViewState,
 } from "@/lib/spatial-display-view";
-import { DisplayControlStrip, type DisplayControlAction } from "./DisplayControlStrip";
+import {
+  useDirectViewport,
+  ViewportGestureHint,
+  ViewportResetButton,
+} from "./DirectDisplayViewport";
 import {
   AUDIT_STATE_NOTE,
   DSM_RELATIVE_LEGEND_LABEL,
@@ -212,10 +206,10 @@ function WindowedLayerView({
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [phase, setPhase] = useState<PaintPhase>({ name: "idle" });
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
-  // ── 낱창 표시 뷰 — 같은 버퍼의 CSS 표시만 바꾼다. 네트워크·준비 요청 없음 ──
-  const display = useDisplayViewState();
-  const view = display.view;
-  const [viewNote, setViewNote] = useState<string | null>(null);
+  // ── 낱창 직접 조작 — 같은 훅 하나로 같은 규칙을 탄다 ──
+  // 진입·낱창 보기·준비 요청은 읽기만 하며, 어떤 경우에도 새 준비를 만들지 않는다.
+  const viewport = useDirectViewport();
+  const view = viewport.view;
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ jobId: string; state: string } | null>(null);
@@ -291,104 +285,6 @@ function WindowedLayerView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // ── 낱창 표시 제스처 — CSS 변환만이며 네트워크·준비 요청을 만들지 않는다 ──
-  const singleViewWrapRef = useRef<HTMLDivElement | null>(null);
-  const singleDragRef = useRef<{ x: number; y: number } | null>(null);
-  const singleWheelLastRef = useRef(0);
-
-  const singleEdgeNote = (kind: "pan" | "zoom") => {
-    setViewNote(
-      kind === "pan"
-        ? "불러온 창 끝이라 더 이상 옮길 수 없습니다. 원래 보기로 돌아가세요."
-        : "표시 확대 한계입니다. 원래 보기로 돌아가세요.",
-    );
-  };
-
-  const onSingleControlAction = (action: DisplayControlAction) => {
-    switch (action) {
-      case "pan-left": if (display.pan(-0.25, 0)) setViewNote(null); else singleEdgeNote("pan"); return;
-      case "pan-right": if (display.pan(0.25, 0)) setViewNote(null); else singleEdgeNote("pan"); return;
-      case "pan-up": if (display.pan(0, -0.25)) setViewNote(null); else singleEdgeNote("pan"); return;
-      case "pan-down": if (display.pan(0, 0.25)) setViewNote(null); else singleEdgeNote("pan"); return;
-      case "zoom-in": if (display.zoom(1)) setViewNote(null); else singleEdgeNote("zoom"); return;
-      case "zoom-out": if (display.zoom(-1)) setViewNote(null); else singleEdgeNote("zoom"); return;
-      case "reset": display.reset(); setViewNote(null); return;
-    }
-  };
-
-  const onSingleViewKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    const action = displayGestureKeyAction(event.key);
-    if (!action) return;
-    event.preventDefault();
-    if (action.kind === "pan") {
-      if (display.pan(action.dCol, -action.dRow)) setViewNote(null);
-      else singleEdgeNote("pan");
-    } else if (action.kind === "zoom") {
-      if (display.zoom(action.factor < 1 ? 1 : -1)) setViewNote(null);
-      else singleEdgeNote("zoom");
-    } else {
-      display.reset();
-      setViewNote(null);
-    }
-  };
-
-  const onSingleViewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    // 터치 드래그는 세로 스크롤을 위해 건드리지 않는다. 합성 환경의
-    // button 미지정(언어 명세상 주 버튼)은 주 버튼으로 간주한다.
-    if (event.pointerType === "touch") return;
-    if (event.button !== undefined && event.button !== 0) return;
-    singleDragRef.current = { x: event.clientX, y: event.clientY };
-    if (typeof event.currentTarget.setPointerCapture === "function") {
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-        // 캡처 실패해도 같은 요소 위의 이동·종료는 그대로 처리한다.
-      }
-    }
-  };
-
-  const onSingleViewPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = singleDragRef.current;
-    if (!start) return;
-    const wrap = singleViewWrapRef.current;
-    const rect = wrap?.getBoundingClientRect();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    const fractions = displayDragFractions(
-      event.clientX - start.x,
-      event.clientY - start.y,
-      rect.width,
-      rect.height,
-    );
-    if (!fractions) return;
-    if (display.pan(fractions.fx, fractions.fy)) setViewNote(null);
-    else singleEdgeNote("pan");
-    singleDragRef.current = { x: event.clientX, y: event.clientY };
-  };
-
-  const onSingleViewPointerEnd = () => {
-    singleDragRef.current = null;
-  };
-
-  useEffect(() => {
-    const wrap = singleViewWrapRef.current;
-    if (!wrap) return;
-    const onWheel = (event: WheelEvent) => {
-      const focused = wrap.contains(document.activeElement);
-      if (!isDisplayZoomWheelIntent({ focused, ctrlKey: event.ctrlKey })) return;
-      event.preventDefault();
-      const now = Date.now();
-      if (!displayWheelReady(singleWheelLastRef.current, now)) return;
-      singleWheelLastRef.current = now;
-      if (display.zoom(event.deltaY > 0 ? -1 : 1)) setViewNote(null);
-      else singleEdgeNote("zoom");
-    };
-    wrap.addEventListener("wheel", onWheel, { passive: false });
-    return () => {
-      wrap.removeEventListener("wheel", onWheel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const readable = readableWindowJobs(jobs, layer.assetRef);
   const existingCrop = preparedWindowFallback(grid, jobs, layer.assetRef);
@@ -446,7 +342,7 @@ function WindowedLayerView({
     abortRef.current = controller;
     setPhase({ name: "loading" });
     setImage(null);
-    display.reset();
+    viewport.reset();
     try {
       const target = job.receipt;
       if (!target || target.jobId !== job.jobId) {
@@ -652,27 +548,15 @@ function WindowedLayerView({
       )}
       {phase.name === "ready" && receipt && (
         <div className="flex flex-col gap-2">
-          <div className="relative flex flex-col gap-2">
           <div
-            ref={singleViewWrapRef}
-            tabIndex={0}
-            role="group"
-            aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키로 확대합니다. 휠은 그림을 선택한 후, 또는 Ctrl과 함께 사용하세요. Home 키는 원래 보기로 돌아갑니다.`}
-            onPointerDown={onSingleViewPointerDown}
-            onPointerMove={onSingleViewPointerMove}
-            onPointerUp={onSingleViewPointerEnd}
-            onPointerCancel={onSingleViewPointerEnd}
-            onKeyDown={onSingleViewKeyDown}
-            className="overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
-            style={{ touchAction: "pan-y" }}
+            {...viewport.frameProps}
+            aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다.`}
+            className="relative mx-auto cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
+            style={{ maxWidth: `min(100%, calc(52dvh * ${receipt.width / receipt.height}))` }}
           >
             <div
-              className="relative mx-auto w-full"
-              style={{
-                maxWidth: `min(100%, calc(52dvh * ${receipt.width / receipt.height}))`,
-                transform: displayViewTransform(view),
-                transformOrigin: "0 0",
-              }}
+              {...viewport.contentProps}
+              className="relative h-full w-full"
             >
               <canvas ref={canvasRef} className="block h-auto w-full" style={{ imageRendering: "pixelated" }} role="img"
                 aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`} />
@@ -682,19 +566,12 @@ function WindowedLayerView({
                 </svg>
               )}
             </div>
+            <ViewportResetButton onReset={viewport.reset} />
           </div>
-          {/* 확대·이동 도구는 그림 바로 옆에 둔다 — 기술 문단 아래가 아니라. */}
-          <DisplayControlStrip
-            groupLabel="화면 확대·이동"
-            onAction={onSingleControlAction}
-            zoomInDisabled={view.zoom >= 4}
-            zoomOutDisabled={view.zoom <= 1}
-          />
-          </div>
-          {viewNote && (
-            <p className="text-[12px] leading-5 text-ink-2" role="status">{viewNote}</p>
+          {viewport.note && (
+            <p className="text-[12px] leading-5 text-ink-2" role="status">{viewport.note}</p>
           )}
-          <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
+          <ViewportGestureHint />
           {isDisplayViewMoved(view) && (
             <p className="text-[12px] leading-5 text-ink-2" role="status">
               표시 확대 {displayZoomPercent(view)}%

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
 import { SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
+import { SitePreviewThumb } from "@/components/site/SitePreviewThumb";
 import { SiteProgressBar } from "@/components/site/SiteProgressBar";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { TableAction, TableRow, TableShell } from "@/components/ui/TableShell";
@@ -45,7 +46,9 @@ export function SiteListDenseList({
         const statusLabel = SITE_STATUS_LABEL[site.status];
         return (
           <TableRow key={site.siteId} columns={DENSE_COLUMNS} minWidth={DENSE_MIN_WIDTH}>
-            <div className="min-w-0">
+            <div className="flex min-w-0 items-start gap-2">
+              <SitePreviewThumb siteId={site.siteId} size="row" />
+              <div className="min-w-0 flex-1">
               <Link
                 href={`/sites/${encodeURIComponent(site.siteId)}`}
                 className="block break-words text-[13.5px] font-semibold hover:underline"
@@ -53,6 +56,7 @@ export function SiteListDenseList({
                 {site.name}
               </Link>
               {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
+              </div>
             </div>
 
             <span>

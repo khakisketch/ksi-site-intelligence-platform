@@ -309,7 +309,10 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
   if (testInfo.project.name.startsWith("desktop")) {
     const views = page.getByRole("group", { name: "현장 보기 방식" });
     await expect(views).toBeVisible();
-    await expect(views.getByRole("button", { name: "목록", exact: true })).toHaveAttribute("aria-pressed", "true");
+    // Human의 시각 식별 피드백: 새 사용자는 카드로, 저장된 목록 선호는 별도
+    // view-modes 회귀에서 보존한다. 기본 표지 대신 실제 허용된 미리보기만 쓴다.
+    await expect(views.getByRole("button", { name: "카드", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await views.getByRole("button", { name: "목록", exact: true }).click();
     await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
   } else {
     const compactList = page.getByRole("region", { name: "현장 목록" });

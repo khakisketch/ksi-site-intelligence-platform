@@ -3,9 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   DISPLAY_GESTURE_HINT,
   displayGestureKeyAction,
-  displayWheelReady,
-  DISPLAY_WHEEL_THROTTLE_MS,
-  isDisplayZoomWheelIntent,
 } from "@/lib/spatial-display-gesture";
 
 describe("display gesture rules", () => {
@@ -16,7 +13,7 @@ describe("display gesture rules", () => {
     expect(displayGestureKeyAction("ArrowDown")).toEqual({ kind: "pan", dCol: 0, dRow: -0.25 });
   });
 
-  it("maps plus/minus to the same zoom steps and Home to full view", () => {
+  it("maps plus/minus to zoom steps and Home to full view", () => {
     expect(displayGestureKeyAction("+")).toEqual({ kind: "zoom", factor: 0.5 });
     expect(displayGestureKeyAction("=")).toEqual({ kind: "zoom", factor: 0.5 });
     expect(displayGestureKeyAction("-")).toEqual({ kind: "zoom", factor: 2 });
@@ -30,24 +27,12 @@ describe("display gesture rules", () => {
     }
   });
 
-  it("zooms by wheel only with focus or Ctrl, never trapping a plain scroll", () => {
-    expect(isDisplayZoomWheelIntent({ focused: true, ctrlKey: false })).toBe(true);
-    expect(isDisplayZoomWheelIntent({ focused: false, ctrlKey: true })).toBe(true);
-    expect(isDisplayZoomWheelIntent({ focused: false, ctrlKey: false })).toBe(false);
-  });
-
-  it("throttles wheel zoom so one flick does not cascade", () => {
-    const now = 1_000;
-    expect(displayWheelReady(now - DISPLAY_WHEEL_THROTTLE_MS, now)).toBe(true);
-    expect(displayWheelReady(now - DISPLAY_WHEEL_THROTTLE_MS + 1, now)).toBe(false);
-  });
-
-  it("hints only supported gestures — no pinch or touch-drag promise", () => {
-    expect(DISPLAY_GESTURE_HINT).toContain("마우스");
+  it("hints only implemented gestures", () => {
+    expect(DISPLAY_GESTURE_HINT).toContain("끌어서");
+    expect(DISPLAY_GESTURE_HINT).toContain("휠");
+    expect(DISPLAY_GESTURE_HINT).toContain("두 손가락");
+    expect(DISPLAY_GESTURE_HINT).toContain("두 번 두드리기");
     expect(DISPLAY_GESTURE_HINT).toContain("방향키");
-    expect(DISPLAY_GESTURE_HINT).toContain("또는 Ctrl과 함께");
-    expect(DISPLAY_GESTURE_HINT).not.toContain("핀치");
-    expect(DISPLAY_GESTURE_HINT).not.toContain("터치");
     expect(DISPLAY_GESTURE_HINT).toContain("측정값이 아닙니다");
   });
 });

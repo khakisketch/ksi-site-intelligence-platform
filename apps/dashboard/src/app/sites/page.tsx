@@ -7,6 +7,7 @@ import { SiteListControls } from "@/components/site/SiteListControls";
 import { SiteListNavLink } from "@/components/site/SiteListNavLink";
 import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
 import { SiteListDesktopCards } from "@/components/site/SiteListDesktopCards";
+import { SitePreviewThumb } from "@/components/site/SitePreviewThumb";
 import { SiteListDenseList } from "@/components/site/SiteListDenseList";
 import { SiteListPager } from "@/components/site/SiteListPager";
 import { SiteListCreateTile } from "@/components/site/SiteListCreateTile";
@@ -374,9 +375,10 @@ export default async function SitesPage({
                 const statusLabel = SITE_STATUS_LABEL[site.status];
                 const nextLabel = primaryAction?.label ?? next.label;
                 return (
-                  <li key={site.siteId} className="px-3 py-3.5 sm:px-4 lg:gap-4 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:only:col-span-2">
-                    {/* 목록에 미리보기 경로가 없으므로 장식 칸을 두지 않고 실제 현장 요약에 폭을 쓴다. */}
-                    <div className="flex min-w-0 flex-1 flex-col gap-3">
+                  <li key={site.siteId} className="overflow-hidden px-3 py-3.5 sm:px-4 lg:gap-4 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:only:col-span-2">
+                    {/* 실제 준비된 출력 미리보기를 카드 커버로 — 장식 칸을 두지 않는다. */}
+                    <SitePreviewThumb siteId={site.siteId} size="card" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-3 pt-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <Link

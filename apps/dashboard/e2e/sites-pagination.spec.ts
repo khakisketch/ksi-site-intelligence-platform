@@ -22,9 +22,6 @@ test.beforeEach(async ({ page }, testInfo) => {
 
 test("카드는 실제 현장4개씩 나누고 마지막 페이지 생성 카드는 건수에서 뺀다", async ({ page }, testInfo) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "다섯 개의 명시적 격리 fixture로 페이지 경계를 확인합니다.");
-  // D7 기본값은 밀도표이므로 카드 페이지 경계는 명시적 카드 보기에서 확인한다.
-  await page.getByRole("group", { name: "현장 보기 방식" }).getByRole("button", { name: "카드", exact: true }).click();
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "cards");
   await expect(root(page)).toHaveAttribute("data-site-total", "5");
   await expect(root(page)).toHaveAttribute("data-site-page", "1");
   await expect(cards(page)).toHaveCount(4);
@@ -60,11 +57,7 @@ test("카드는 실제 현장4개씩 나누고 마지막 페이지 생성 카드
 test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 검색 타이머를 실행하지 않는다", async ({ page }) => {
   await page.goto("/sites?q=e2e-site&sort=name");
   await expect(root(page)).toHaveAttribute("data-site-total", "5");
-  // D7 기본값은 밀도표다 — 페이지 경계는 명시적 카드 보기에서 확인한다.
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "list");
   const modes = page.getByRole("group", { name: "현장 보기 방식" });
-  await modes.getByRole("button", { name: "카드", exact: true }).click();
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "cards");
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   await search.fill("아직 적용되지 않은 검색");
   await pager(page).getByRole("link", { name: "2", exact: true }).click();
@@ -92,15 +85,14 @@ test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 �
 });
 
 test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 생성 카드는 설명만 연다", async ({ page }) => {
-  await page.goto("/sites?page=9999");
-  await expect(root(page)).toHaveAttribute("data-site-total", "5");
-  // 기본값 밀도표(10행)에서는 5행이 한 페이지에 든다.
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "list");
-  await expect(root(page)).toHaveAttribute("data-site-page", "1");
-  // 카드 보기(4행)에서는 같은 URL이 실제 마지막 페이지로 보정된다.
+  // 기본 카드를 바꾸더라도 저장 가능한 목록의 별도 페이지 경계도 보존한다.
   const modes = page.getByRole("group", { name: "현장 보기 방식" });
+  await modes.getByRole("button", { name: "목록", exact: true }).click();
+  await page.goto("/sites?page=9999");
+  await expect(root(page)).toHaveAttribute("data-site-list-view", "list");
+  await expect(root(page)).toHaveAttribute("data-site-total", "5");
+  await expect(root(page)).toHaveAttribute("data-site-page", "1");
   await modes.getByRole("button", { name: "카드", exact: true }).click();
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "cards");
   await page.goto("/sites?page=9999");
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   await expect(root(page)).toHaveAttribute("data-site-total", "5");
@@ -127,9 +119,6 @@ test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 
 });
 
 test("카드 폭은 제한되고 장식 없이 현장 식별 정보가 먼저 읽힌다", async ({ page }) => {
-  // D7 기본값은 밀도표이므로 카드 치수는 명시적 카드 보기에서 확인한다.
-  await page.getByRole("group", { name: "현장 보기 방식" }).getByRole("button", { name: "카드", exact: true }).click();
-  await expect(root(page)).toHaveAttribute("data-site-list-view", "cards");
   for (const width of [1024, 1440, 1920]) {
     await page.setViewportSize({ width, height: 1000 });
     const first = cards(page).first();

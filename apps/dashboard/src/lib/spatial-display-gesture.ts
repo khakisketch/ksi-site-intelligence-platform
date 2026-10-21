@@ -38,24 +38,6 @@ export function displayGestureKeyAction(key: string): DisplayGestureKeyAction | 
   }
 }
 
-/**
- * 휠 확대 의도 판정 — 포커스된 보기 안의 휠이거나 Ctrl(핀치 확대 제스처)과
- * 함께일 때만 true. 그 밖의 휠은 페이지 스크롤로 둔다(스크롤 가로채기 금지).
- */
-export function isDisplayZoomWheelIntent(input: {
-  focused: boolean;
-  ctrlKey: boolean;
-}): boolean {
-  return input.focused || input.ctrlKey;
-}
-
-/** 휠 연속 확대 폭주 방지 — 마지막 적용 시각과의 최소 간격(ms)을 둔다. */
-export const DISPLAY_WHEEL_THROTTLE_MS = 120;
-
-export function displayWheelReady(lastAppliedAt: number, now: number): boolean {
-  return now - lastAppliedAt >= DISPLAY_WHEEL_THROTTLE_MS;
-}
-
-/** 지원하는 제스처 안내 한 줄 — 없는 제스처(핀치·터치 드래그)는 적지 않는다. */
+/** 지원하는 제스처 안내 한 줄 — 구현된 것만 적는다. */
 export const DISPLAY_GESTURE_HINT =
-  "마우스로 끌거나 방향키로 이동하고, + − 키로 확대합니다. 휠은 그림을 선택한 후, 또는 Ctrl과 함께 사용하세요. 화면 이동·확대는 표시용이며 측정값이 아닙니다.";
+  "그림을 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기 또는 + − 키로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다. 화면 이동·확대는 표시용이며 측정값이 아닙니다.";

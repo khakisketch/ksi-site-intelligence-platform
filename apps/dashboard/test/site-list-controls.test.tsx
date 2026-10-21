@@ -693,7 +693,7 @@ describe("sites page wiring", () => {
 
   it("머리말 주석이 실제 동작·경로를 말한다", () => {
     expect(PAGE).toContain("300ms 디바운스");
-    expect(PAGE).toContain("목록에 미리보기 경로가 없으므로");
+    expect(PAGE).toContain("실제 준비된 출력 미리보기를 카드 커버로");
     expect(PAGE).not.toContain("검색만 제출하며");
     expect(PAGE).not.toContain("실측 이미지가 없으므로");
   });
@@ -711,15 +711,16 @@ describe("sites page wiring", () => {
     expect(PAGE).not.toContain(">검색</button>");
   });
 
-  it("모바일·태블릿 카드는 장식 없이 이름·상태·다음 행동·열기 하나만 둔다", () => {
+  it("모바일·태블릿 카드는 실제 미리보기와 이름·상태·다음 행동·열기 하나만 둔다", () => {
     const cardStart = PAGE.indexOf("<li key={site.siteId}");
     const cardEnd = PAGE.indexOf("</li>", cardStart);
     const card = PAGE.slice(cardStart, cardEnd);
     expect(card).not.toContain("SiteListVisual");
     expect(card).not.toContain("<img");
+    expect(card).toContain('<SitePreviewThumb siteId={site.siteId} size="card" />');
     expect(card).toContain("현장 열기");
     expect(card.match(/현장 열기/g)).toHaveLength(1);
-    // 데스크톱은 장식 표지 없는 간결 카드 또는 밀도표다.
+    // 데스크톱은 실제 미리보기 카드 또는 밀도표다.
     expect(PAGE).toContain("SiteListDesktopCards");
     expect(PAGE).toContain("SiteListDenseList");
   });

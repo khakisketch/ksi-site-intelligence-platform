@@ -106,7 +106,7 @@ function stubGeotiffSingleBand() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); fromArrayBufferMock.mockReset(); });
 
 describe("spatial data receipt preview", () => {
-  it("fits the whole prepared crop before local zoom and keeps its controls within the image section", async () => {
+  it("fits the whole prepared crop before local zoom and keeps one reset control in the frame", async () => {
     const bytes = new Uint8Array([7, 7, 7, 7]);
     const paint = stubCanvas();
     stubGeotiffRgb();
@@ -115,22 +115,31 @@ describe("spatial data receipt preview", () => {
     await screen.findByText(/실제 픽셀 색상을 그대로 표시합니다/);
     const frame = screen.getByRole("group", { name: /^부분 출력 2 × 2 픽셀/ });
     const canvas = frame.querySelector("canvas")!;
-    const controls = screen.getByRole("group", { name: "부분 출력 확대·이동" });
     expect(canvas.classList.contains("w-full")).toBe(true);
     await waitFor(() => {
       expect(canvas.width).toBe(2);
       expect(canvas.height).toBe(2);
       expect(paint).toHaveBeenCalled();
     });
-    expect(controls.parentElement).toBe(frame.parentElement);
-    expect(controls.classList.contains("sticky")).toBe(true);
+    // 7버튼 띠는 없다 — 모서리의 전체 보기 하나만 둔다.
+    const reset = screen.getByRole("button", { name: "전체 보기" });
+    expect(reset.closest("[role=group]")).toBe(frame);
+    expect(reset.className).toContain("h-11");
+    expect(screen.queryByRole("button", { name: "확대" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "축소" })).toBeNull();
     const painted = paint.mock.calls.length;
-    fireEvent.keyDown(frame, { key: "+" });
-    expect(canvas.parentElement!.style.transform).toContain("scale(2)");
+    // 프레임에 직접 포커스 없이도 휠로 확대된다.
+    const content = canvas.parentElement!;
+    Object.defineProperty(content, "offsetWidth", { value: 400, configurable: true });
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 400, height: 300, x: 0, y: 0, top: 0, left: 0, right: 400, bottom: 300, toJSON: () => {},
+    } as unknown as DOMRect);
+    fireEvent.wheel(frame, { deltaY: -100, clientX: 10, clientY: 10 });
+    await waitFor(() => expect(content.style.transform).toContain("scale(1.4"));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(paint).toHaveBeenCalledTimes(painted);
-    fireEvent.click(screen.getByRole("button", { name: "전체 보기" }));
-    expect(canvas.parentElement!.style.transform).toContain("scale(1)");
+    fireEvent.click(reset);
+    expect(content.style.transform).toContain("scale(1)");
   });
 
   it("renders verified RGB pixels without reinterpretation claims", async () => {

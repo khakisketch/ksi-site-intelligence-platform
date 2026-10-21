@@ -35,6 +35,12 @@ describe("sites table row action column (F08)", () => {
     expect(DENSE).not.toContain("<img");
   });
 
+  it("이름 셀은 작은 실제 미리보기를 곁들이고 이미지를 약속하지 않는다", () => {
+    expect(DENSE).toContain('<SitePreviewThumb siteId={site.siteId} size="row" />');
+    expect(DENSE).not.toContain("<img");
+    expect(DENSE).not.toContain("next/image");
+  });
+
   it("names the stage column site management, never dataset or analysis progress", () => {
     expect(DENSE).toContain("관리 단계");
     expect(DENSE).not.toContain("진행 단계");

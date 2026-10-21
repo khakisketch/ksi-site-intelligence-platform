@@ -87,14 +87,14 @@ function siteFixture(siteId: string, name: string, status: "UNMAPPED" | "PATROL_
 }
 
 describe("site list view preference", () => {
-  it("모르는 값·빈 값은 목록 기본값으로 떨어진다", () => {
-    expect(SITE_LIST_VIEW_DEFAULT).toBe("list");
+  it("모르는 값·빈 값은 카드 기본값으로 떨어진다", () => {
+    expect(SITE_LIST_VIEW_DEFAULT).toBe("cards");
     expect(parseSiteListView("cards")).toBe("cards");
     expect(parseSiteListView("list")).toBe("list");
-    expect(parseSiteListView("gallery")).toBe("list");
-    expect(parseSiteListView("")).toBe("list");
-    expect(parseSiteListView(undefined)).toBe("list");
-    expect(parseSiteListView(null)).toBe("list");
+    expect(parseSiteListView("gallery")).toBe("cards");
+    expect(parseSiteListView("")).toBe("cards");
+    expect(parseSiteListView(undefined)).toBe("cards");
+    expect(parseSiteListView(null)).toBe("cards");
   });
 
   it("쿠키는 보기 값만 담고 /sites 로 좁히며 장기 보관한다", () => {
@@ -529,8 +529,9 @@ describe("sites desktop view wiring", () => {
     expect(VIEW).toContain("data-site-list-view={view}");
   });
 
-  it("간결 카드는 장식 표지 없이 테스트 훅을 둔다", () => {
+  it("간결 카드는 실제 미리보기 영역을 두고 장식 표지는 두지 않는다", () => {
     expect(CARDS).toContain("data-site-card");
+    expect(CARDS).toContain("SitePreviewThumb");
     expect(CARDS).not.toContain("data-site-cover");
     expect(CARDS).not.toContain("기본 표지");
     expect(CARDS).not.toContain("DefaultSiteVisual");
@@ -582,15 +583,19 @@ describe("sites page initial view", () => {
     expect(screen.getByRole("button", { name: "목록" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("쿠키가 없으면 목록으로 시작한다", async () => {
+  it("쿠키가 없으면 명시적 비주얼 카드로 시작한다", async () => {
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
     expect(screen.queryByText("기본 표지")).toBeNull();
-    expect(screen.getByRole("heading", { name: "현장 상태" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "목록" }).getAttribute("aria-pressed")).toBe("true");
-    const list = document.querySelector('[data-site-list-view="list"]') as HTMLElement;
-    expect(within(list).getByRole("heading", { name: "현장 상태" })).toBeTruthy();
-    expect(within(list).getByText("2 / 2곳 표시")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "현장 상태" })).toBeNull();
+    expect(screen.getByRole("button", { name: "카드" }).getAttribute("aria-pressed")).toBe("true");
+    const gallery = document.querySelector('[data-site-list-view="cards"]') as HTMLElement;
+    expect(within(gallery).getByRole("heading", { name: "현장" })).toBeTruthy();
+    expect(within(gallery).getByText("2 / 2곳 표시")).toBeTruthy();
+    expect(within(gallery).getAllByRole("heading", { level: 3 }).map((h) => h.textContent)).toEqual([
+      "첫째 현장",
+      "둘째 현장",
+    ]);
   });
 
   it("저장된 카드 선택은 유지된다", async () => {
@@ -607,12 +612,12 @@ describe("sites page initial view", () => {
     ]);
   });
 
-  it("깨진 쿠키 값은 목록으로 떨어진다", async () => {
+  it("깨진 쿠키 값은 카드로 떨어진다", async () => {
     mockedCookies.value = "gallery";
     mockSites();
     render(await SitesPage({ searchParams: Promise.resolve({}) }));
     expect(screen.queryByText("기본 표지")).toBeNull();
-    expect(screen.getByRole("button", { name: "목록" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "카드" }).getAttribute("aria-pressed")).toBe("true");
   });
 
   it("걸린 행이 없으면 목록 모드도 표 없이 빈 상태 하나만 말한다", async () => {
