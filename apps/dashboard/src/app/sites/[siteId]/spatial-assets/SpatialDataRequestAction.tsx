@@ -24,8 +24,9 @@ const STATE_LABEL: Record<string, string> = {
   EXPIRED: "기한 만료",
 };
 
-/** Core가 돌려주는 typed 사유를 그대로 옮긴다 — 판정을 새로 만들지 않는다. */
-const REASON_COPY: Record<string, string> = {
+/** Core가 돌려주는 typed 사유를 그대로 옮긴다 — 판정을 새로 만들지 않는다.
+ * 창 단위 픽셀 보기(임시 시각화 어댑터)가 같은 문구를 재사용한다. */
+export const REASON_COPY: Record<string, string> = {
   PERMISSION_DENIED: "이 자료를 요청할 권한이 없습니다. 권한 있는 담당자에게 요청하세요.",
   NOT_FOUND: "자료를 찾을 수 없거나 현재 접근할 수 없습니다.",
   GRANT_REQUIRED: "이 자료에 대한 명시적 사용 권리가 아직 없습니다. 관리자에게 권리 설정을 요청하세요.",

@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import type { AnalysisListItem, AnalysisView } from "@/lib/core-api/analysis";
 import type { ExternalRelativeVolumeHistoryItem } from "@/lib/core-api/external-result-workflow";
+import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 import type { ObservationWorkOrderView } from "@/lib/core-api/types";
 import type { WorkArea } from "@/lib/core-api/types";
 import type {
@@ -16,12 +17,22 @@ import {
   representativeFacts,
   workspaceCaptureLine,
 } from "@/lib/site-workspace-entry";
-import { capturePeriodTitle } from "@/lib/operator-language";
+import type {
+  PreparedWindowJob,
+  WindowedViewerLayer,
+} from "@/lib/site-windowed-pixel-viewer";
+import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
 import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
-import { analysesForArea, disambiguatedAreaNames } from "./site-spatial";
+import { SiteWindowedPixelCompare, SiteWindowedPixelViewer } from "./SiteWindowedPixelViewer";
+import {
+  analysesForArea,
+  disambiguatedAreaNames,
+  extractSimpleRing,
+  selectableGeometry,
+} from "./site-spatial";
 
 const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
   { key: "explore", label: "탐색" },
@@ -191,6 +202,49 @@ function modeHref(
 }
 
 /**
+ * 같은 관측의 창 보기 레이어 — 정사영상·DSM만 싣는다. 카탈로그 사실의
+ * 옮김이며, 표시 순서를 정하거나 버전을 고르지 않는다(첫 항목이 ortho).
+ */
+function viewerLayersForEpoch(
+  catalogAssets: readonly SpatialAssetCatalogItem[],
+  observationEpochId: string,
+): WindowedViewerLayer[] {
+  const layers: WindowedViewerLayer[] = [];
+  for (const item of catalogAssets) {
+    if (item.observationEpochId !== observationEpochId) continue;
+    if (item.kind !== "ortho" && item.kind !== "dsm") continue;
+    layers.push({
+      assetRef: item.assetRef,
+      observationEpochId: item.observationEpochId,
+      kind: item.kind,
+      kindLabel: dataKindLabel(item.kind),
+      isDsm: item.kind === "dsm",
+      fileName: item.declared.fileName,
+      revision: item.revision,
+      submissionRef: item.submissionRef,
+      inspectedRaster: item.inspection.raster
+        ? {
+            transform: [...item.inspection.raster.transform],
+            width: item.inspection.raster.width,
+            height: item.inspection.raster.height,
+          }
+        : null,
+      observedCrsIdentifier: item.inspection.raster?.observedCrsIdentifier ?? null,
+      observedCrsDigest: item.inspection.raster?.observedCrsDigest ?? null,
+      inspectionOutcome: item.inspection.outcome,
+      verticalReference: item.inspection.raster?.observedVerticalReference
+        ? `${item.inspection.raster.observedVerticalReference.identifier} · ${item.inspection.raster.observedVerticalReference.basis}`
+        : null,
+    });
+  }
+  return layers.sort((a, b) => (a.isDsm === b.isDsm ? 0 : a.isDsm ? 1 : -1));
+}
+
+function viewerHeadingFor(fact: WorkspaceObservationFact): string {
+  return `${dataKindLabel(fact.kind)} · ${entryCaptureLine(fact)} · 등록 버전 ${fact.revision}`;
+}
+
+/**
  * 현장 공간 작업공간 겉틀 (SWX-2 구조) — 탐색·비교·결과의 작업 방식만 나눈다.
  *
  * - 다섯 영역(현황·자료·분석·검토·작업·관리)과 Console 정체·머리는 그대로 둔다.
@@ -227,6 +281,10 @@ export function SiteWorkspaceShell({
   explicitResult,
   explicitDetail,
   scopedCompareHref,
+  preparedJobs,
+  jobsState,
+  canReadData,
+  canRequestData,
 }: {
   sitePath: string;
   mode: WorkspaceMode;
@@ -256,6 +314,14 @@ export function SiteWorkspaceShell({
   explicitResult: ExplicitResultResolution | null;
   explicitDetail: AnalysisView | null;
   scopedCompareHref: string;
+  /** 현재 계정이 읽을 수 있는 준비 기록(범위 확인된 것만 호출자가 싣는다). */
+  preparedJobs?: readonly PreparedWindowJob[];
+  /** 준비 목록 읽기 상태 — 실패를 빈 목록으로 단정하지 않는다. */
+  jobsState?: "ready" | "denied" | "unavailable" | "not-requested";
+  /** SPATIAL_DATA_READ — 이미 준비된 창 보기. */
+  canReadData?: boolean;
+  /** SPATIAL_DATA_REQUEST — 새 창 준비 요청(쓰기). */
+  canRequestData?: boolean;
 }) {
   const scope = { workAreaId: selectedWorkAreaId, assetRef: selectedAssetRef };
   const selected = areas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null;
@@ -263,6 +329,30 @@ export function SiteWorkspaceShell({
     ? (disambiguatedAreaNames(areas).get(selected.workAreaId)?.label ?? selected.workAreaId)
     : null;
   const areaAnalyses = selected ? analysesForArea(analyses, selected.workAreaId) : null;
+  const catalogAssets = assetsState.status === "ready" ? assetsState.page.assets : [];
+  const jobs = preparedJobs ?? [];
+  const viewerJobsState = jobsState ?? "not-requested";
+  const viewerCanRead = canReadData ?? false;
+  const viewerCanRequest = canRequestData ?? false;
+  const requestsHref = selected
+    ? `${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`
+    : `${sitePath}/spatial-data-requests`;
+  const selectedGeometry = selected ? selectableGeometry(selected) : null;
+  const workAreaRing = selectedGeometry ? extractSimpleRing(selectedGeometry.polygon) : null;
+  const workAreaCrs = selectedGeometry?.crs ?? "확인 불가";
+  const exploreFact = selectedAssetRef
+    ? (facts.observations.find((item) => item.assetRef === selectedAssetRef) ?? null)
+    : null;
+  const exploreEpochId = exploreFact?.observationEpochId
+    ?? (ordinaryEntry.status === "ready" ? ordinaryEntry.observation.observationEpochId : null);
+  const exploreLayers = exploreEpochId ? viewerLayersForEpoch(catalogAssets, exploreEpochId) : [];
+  const exploreHeading = exploreFact
+    ? viewerHeadingFor(exploreFact)
+    : ordinaryEntry.status === "ready"
+      ? viewerHeadingFor(ordinaryEntry.observation)
+      : null;
+  const baselineFact = comparison.status === "ready" ? comparison.baseline : null;
+  const currentFact = comparison.status === "ready" ? comparison.current : null;
   return <div className="flex flex-col gap-3">
     <nav aria-label="공간 작업 방식" className="flex flex-wrap gap-1">
       {WORKSPACE_MODES.map((option) => {
@@ -311,9 +401,27 @@ export function SiteWorkspaceShell({
         canCreateWorkOrder={canCreateWorkOrder}
         transitional={transitionalSelection}
       />
+      {/* 탐색의 창 단위 픽셀 보기 — 임시 시각화 어댑터. 기하 개요를 바꾸지 않고
+          실제 파일의 준비된 창을 같은 평면에 둔다. */}
+      {selected && viewerJobsState !== "not-requested" && (
+        <SiteWindowedPixelViewer
+          siteId={facts.siteId}
+          workAreaId={selected.workAreaId}
+          layers={exploreLayers}
+          jobs={[...jobs]}
+          jobsState={viewerJobsState}
+          canRead={viewerCanRead}
+          canRequest={viewerCanRequest}
+          requestsHref={requestsHref}
+          workAreaRing={workAreaRing}
+          workAreaCrs={workAreaCrs}
+          observationHeading={exploreHeading}
+          idPrefix="windowed-explore"
+        />
+      )}
     </>)}
 
-    {mode === "compare" && areasKnown && (
+    {mode === "compare" && areasKnown && (<>
       <SiteWorkspaceCompare
         sitePath={sitePath}
         areas={areas}
@@ -328,7 +436,28 @@ export function SiteWorkspaceShell({
         scopedCompareHref={scopedCompareHref}
         facts={facts}
       />
-    )}
+      {/* 비교의 창 단위 픽셀 보기 — 두 칸은 독립된 어댑터다. 동기화 비교가
+          아니라 각 창의 실제 픽셀을 같은 평면에 둔다. */}
+      {selected && comparison.status === "ready" && baselineFact && currentFact && viewerJobsState !== "not-requested" && (
+        <SiteWindowedPixelCompare
+          siteId={facts.siteId}
+          workAreaId={selected.workAreaId}
+          baselineHeading={viewerHeadingFor(baselineFact)}
+          currentHeading={viewerHeadingFor(currentFact)}
+          baselineLayers={viewerLayersForEpoch(catalogAssets, baselineFact.observationEpochId)}
+          currentLayers={viewerLayersForEpoch(catalogAssets, currentFact.observationEpochId)}
+          baselineCrs={catalogAssets.find((item) => item.assetRef === baselineFact.assetRef)?.inspection.raster?.observedCrsIdentifier ?? null}
+          currentCrs={catalogAssets.find((item) => item.assetRef === currentFact.assetRef)?.inspection.raster?.observedCrsIdentifier ?? null}
+          jobs={[...jobs]}
+          jobsState={viewerJobsState}
+          canRead={viewerCanRead}
+          canRequest={viewerCanRequest}
+          requestsHref={requestsHref}
+          workAreaRing={workAreaRing}
+          workAreaCrs={workAreaCrs}
+        />
+      )}
+    </>)}
 
     {mode === "results" && (
       <SiteWorkspaceResults

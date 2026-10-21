@@ -25,6 +25,7 @@ import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-wo
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { getAnalysis, listAnalyses, type AnalysisView } from "@/lib/core-api/analysis";
+import { listSpatialDataRequests } from "@/lib/core-api/spatial-data-requests";
 import { listSpatialWorkspaceObservations, type SpatialWorkspacePage } from "@/lib/core-api/spatial-workspace";
 import {
   parseWorkspaceMode,
@@ -36,6 +37,7 @@ import {
   type ExplicitResultResolution,
   type OrdinaryEntryResolution,
 } from "@/lib/site-workspace-entry";
+import { toPreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
@@ -99,10 +101,12 @@ export default async function SiteDetailPage({
     return <div className="flex flex-col gap-4 p-4 sm:p-5"><ErrorState message={message} retryable /></div>;
   }
 
-  const [canTransitionResult, canCreateResult, canApproveResult, areasResult, ordersResult, historyResult] = await Promise.allSettled([
+  const [canTransitionResult, canCreateResult, canApproveResult, canReadDataResult, canRequestDataResult, areasResult, ordersResult, historyResult] = await Promise.allSettled([
     hasAllPermissions("SITES_WRITE"),
     hasAllPermissions("WORK_ORDERS_WRITE"),
     hasAllPermissions("SITES_AUTONOMY_APPROVE"),
+    hasAllPermissions("SPATIAL_DATA_READ"),
+    hasAllPermissions("SPATIAL_DATA_REQUEST"),
     listWorkAreas(site.siteId, { includeArchived: true }),
     listObservationWorkOrders(site.siteId),
     listSiteExternalVolumeHistory(site.siteId, { limit: 50 }),
@@ -110,6 +114,8 @@ export default async function SiteDetailPage({
   const canTransition = canTransitionResult.status === "fulfilled" && canTransitionResult.value;
   const canCreateWorkOrder = canCreateResult.status === "fulfilled" && canCreateResult.value;
   const canApproveAutonomy = canApproveResult.status === "fulfilled" && canApproveResult.value;
+  const canReadData = canReadDataResult.status === "fulfilled" && canReadDataResult.value;
+  const canRequestData = canRequestDataResult.status === "fulfilled" && canRequestDataResult.value;
   const allAreas = areasResult.status === "fulfilled" ? areasResult.value.workAreas : [];
   const areas = allAreas.filter((area) => area.status === "ACTIVE");
   const areaNames = new Map(allAreas.map((area) => [area.workAreaId, area.name]));
@@ -181,6 +187,33 @@ export default async function SiteDetailPage({
         : workspaceResult.denied
           ? "denied" as const
           : "unavailable" as const;
+
+  // 창 단위 픽셀 보기(임시 시각화 어댑터)의 준비 기록 — 현재 계정이 읽을 수
+  // 있을 때만 최대 50건을 읽는다. 읽기 실패는 denied/unavailable로만 두고
+  // 빈 목록으로 단정하지 않는다. 이 읽기는 바이트 권한을 만들지 않으며,
+  // 새 준비 요청을 만들지도 않는다.
+  const preparedJobsResult = wantSpatial && selectedWorkAreaId && canReadData
+    ? await listSpatialDataRequests(site.siteId, selectedWorkAreaId, { limit: 50 }).then(
+      (page) => ({ ok: true as const, page }),
+      (error: unknown) => ({ ok: false as const, denied: error instanceof CoreApiError && error.status === 403 }),
+    )
+    : { ok: false as const, denied: false, skipped: true as const };
+  const preparedJobsState = !wantSpatial || !selectedWorkAreaId
+    ? "not-requested" as const
+    : !canReadData
+      ? "denied" as const
+      : preparedJobsResult.ok
+        ? "ready" as const
+        : "skipped" in preparedJobsResult
+          ? "not-requested" as const
+          : preparedJobsResult.denied
+            ? "denied" as const
+            : "unavailable" as const;
+  const preparedJobs = preparedJobsResult.ok
+    ? preparedJobsResult.page.items
+      .filter((item) => item.siteId === site.siteId && item.workAreaId === selectedWorkAreaId)
+      .map(toPreparedWindowJob)
+    : [];
 
   // SWX-1 명시적 진입 — 일반 둘러보기 힌트(workAreaId/assetRef)와 달리,
   // 비교·결과 지시는 정확히 복원하거나 막는다. 조용히 다른 대상으로 바꾸지 않는다.
@@ -332,6 +365,10 @@ export default async function SiteDetailPage({
           explicitResult={explicitResult}
           explicitDetail={explicitDetail}
           scopedCompareHref={selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId) ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}` : `${sitePath}/analysis`}
+          preparedJobs={preparedJobs}
+          jobsState={preparedJobsState}
+          canReadData={canReadData}
+          canRequestData={canRequestData}
         />
         <SiteStartGuidance
           siteId={site.siteId}
