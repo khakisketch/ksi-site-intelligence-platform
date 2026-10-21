@@ -5998,3 +5998,141 @@ human usability benchmark, physical touch/SR, field or production acceptance cla
 The requested desk research/expert assessment is complete; a future design/implementation pass and
 real participant study are explicitly not reported as completed. Next goal-relevant verification
 would compare actual task access/comprehension while preserving exact WorkArea/source/result context.
+
+### 2026-10-21 — Human approves improving the researched UI/UX
+
+Latest Human “개선해줘” selects implementation of the preceding systematic research outcomes. This
+supersedes the last research-only checkpoint for this bounded unit, not the product authority. Target
+the actual normal Console, not an independent demo, new processing feature or new architecture contract.
+
+Requirement IDs: SDP-REQ-01/02/05/06/07; existing Site workspace UX contract and research F1–F6.
+Owner module: apps/dashboard, Site navigation/spatial workspace/viewer/connected record presentation.
+Acceptance criteria: one legible primary spatial-task navigation, supporting Site areas remain reachable;
+actual Materials/analysis records reachable without the extra gateway; capture/layer/exact-version/scope
+continuity; working pointer/wheel plus button/keyboard alternatives for the existing native display,
+controls visible with the image on390/1440, no automatic preparation/calculation; independent observation
+viewing vs conditional pair display vs quantitative request clearly named; read/loading/missing/failed
+states truthful; selected revision discoverable without hover; results keep original input/limits and
+evidence/review route. Verify actual renders/tasks including permissions and Back/reload.
+Contracts affected: none; existing Core selectors/routes, admission/chronology/registration, rights,
+requester ownership, size/SHA, originals and <1024 write boundaries unchanged. No new source/derivative,
+LOD/cache policy, basemap, analysis, report/export capability or data/AI grant. INV-020/024/040/051/053/
+060/061 enforced by unchanged server/guarded-byte paths and new presentation/navigation regressions;
+display gesture changes only display viewport, never WorkArea polygon or frozen analysis inputs.
+Reference assets: research originals/current screenshots and official-source matrix; existing Console
+tokens/components. Adoption decisions: refine incumbent identity; primary spatial task controls and
+on-demand supporting Site navigation; map-adjacent controls, truthful loading, comparison disclosure;
+no always-open3pane, borrowed brand assets or simulated heatmap. Existing route compatibility retained.
+Files to change: SiteHeader/navigation href helper, Site workspace/Explore/Compare/Results, mosaic and
+existing receipt viewer if shared interaction consistency requires; actual analysis record presentation
+only if needed; related Dashboard tests. No global Home redesign, backend/schema/security/runtime files.
+Tests: targeted navigation/SSR/gesture/loading/identity/permissions/no-POST tests, full Dashboard suite,
+tsc/eslint, locked image build and actual normal-product390/1440 workflows. Existing unchanged backend
+evidence reused. HIL/real-device assumptions: none; emulated pointer/touch not physical touch/SR/customer
+usability acceptance. License/data implications: existing assets/CC BY attribution; no new egress/assets.
+Rollback: replace only own labelled Console3243 image with retained35d2ded0; original Core8074 data/env,
+S3, inspector journal branches/staging/worker/daemon/cgroups and all other services protected.
+Gitf46cdf67 revalidated; tracked clean except user-owned.playwright-cli. Primary owns design, browser,
+runtime, docs and Git; one General owner implements the cohesive UI unit with exclusive shared files.
+
+First actual UI review, source3b318e6d: locked175files/1690tests/build/type/lint passed, but actual UX
+acceptance did not. Primary read desktop/phone Explore, failed gesture, no-candidate Compare, Results
+and viewer originals. Native-viewport zoom invalidated the match to the currently prepared full-view
+tile windows; actual '+' turned all previously visible pixels into `표시 준비 필요`. This is not a
+license to issue more preparation, weaken eligibility, mock pixels or accept tests as delivery. Phone
+zoom-out/reset also wrapped to y790–834 behind the fixed bottom nav; the side-by-side mobile area/date
+form reduced the capture dropdown to about90px. No-option Compare still exposed an oversized pair/
+quantitative guidance block. The same implementer received one coordinated necessary correction batch.
+
+Revised design hypothesis: ordinary display gestures/buttons crop/scale/translate the already verified
+pixel buffer locally within a bounded viewport, without redefining the source cover/receipt or preparing
+new tiles. Source dimensions and display zoom are separate facts; bytes/rights/currentness gates and
+source-change cleanup remain. This is not a new derivative, LOD/cache policy, coordinate transformation,
+measurement or server contract. Actual acceptance will inspect visible pixels plus view transform/state
+and reset, not require changing the immutable source-buffer dimensions to prove a zoom occurred.
+
+Valid first-unit actual outcomes preserved: direct Materials/Analysis and Header return to exact2022DSM,
+reload and legacy section redirects, same-area/source comparison recovery, existing512x256 partial DSM,
+synthetic800m3 result→exact record→saved non-field review, wrong-scope nondisclosure and real viewer
+permissions, zero API POST/page errors. Those do not excuse the failed map task. Primary restored only
+the owned frontend to35d2ded0 while correcting the regression; stopped3b318e6d container retained for
+evidence/rollback. Core8074/issuer/journals/S3/worker/security/shared-host state unchanged.
+
+Correction unit returned: one shared local display-view rule (zoom1/2/4, normalized pan/edge clamp/reset)
+and44px SVG control strip now serve the already-guarded mosaic, single-window and partial receipt view.
+Native source cover/receipt/grid remain fixed during gestures; display enlargement has a separate status.
+Normal mobile date selection stacks full-width; version/precision caption avoids repeating the whole
+capture/kind label; long area names have a labelled non-hover disclosure. No-candidate comparison folds
+inapplicable pair/numeric guidance into a closed secondary disclosure; ready pair geometry is secondary.
+Full host176files/1693tests/type/lint clean; new full-four-tile test checks preserved decoded paint with
+no extra GET/POST during local zoom/pan/reset. Locked build and actual corrected render are pending;
+these counts alone still do not establish the approved UX outcome.
+
+Actual corrected8cecb0cb checks: all workspace/navigation/result/permission tasks passed. Keyboard zoom,
+mouse drag, focus-intent wheel and reset retain source1022x915/884413opaque pixels and unchanged raw-buffer
+hash1436974531; CSS image rectangle changes and the actual image remains visible. **Additional display
+GET0 and API POST0** across gestures, not newly prepared tiles or replayed fixture images. Real phone-width
+zoom/reset clicks, partial-DSM controls, Back/Forward and sticky-tool containment also passed.
+
+Row compaction alone had not fixed the phone tool's vertical position in the previousfc0604ec render
+(y823–867 behind fixed nav). Primary's tightly coupled finish uses existing mobile-bottom-nav clearance
+for sticky tools contained strictly within the picture+tool section, not floating over unrelated record
+details. Final measured phone tools y738–782, all7targets44x44 and unobstructed. The whole512x256 crop
+now fits the default phone frame (322x161 display) rather than an implicit intrinsic-width clip; guarded
+native buffer/SHA/relative-shading meaning unchanged. A focused regression covers fit/reset, image-section
+containment and no extra GET/repaint. Current locked176files/1694tests/type/lint passed.
+
+Explicit visual trade-off: mobile readable full-width capture control257px, visible revision/unknown
+precision and long-name disclosure take more top space: first image y526/h288 versus earlier35d y443.5/
+h265. The image still appears in the first viewport; a contained tool strip overlays its lower part so
+all controls remain accessible instead of being behind global nav. This is not claimed as an image-y or
+cold-performance improvement. Desktop image y391/h520 and all controls fit1440x1000. Category-familiar
+interaction and source findability improve while retaining the monochrome identity and five Site areas.
+
+Automated limited axe scans found no A/AA-tag violations but flagged a paragraph aria-label for manual
+review. Primary removed the redundant prohibited paragraph name (visible native text/full-name disclosure
+remain); the semantic-only final build and final current-build witnesses are the remaining closing step.
+
+#### Researched spatial UI improvement — delivered acceptance, 2026-10-21
+
+Final frontend **4595e1ea** is served by the normal private Console10010 → owned labelled Docker3243 →
+unchanged Core8074. Only the owned frontend was replaced; retained prior containers/images allow rollback.
+Core readiness/private login return200/ready. No backend, schema, worker, journal repair, source byte,
+permission/policy/grant/retention/AI-egress, basemap, LOD/cache authority or deployment exposure change.
+
+| Research issue / user task | Delivered actual outcome |
+|---|---|
+| F1 overlapping navigation and gateway | One primary `탐색 / 두 시점 보기 / 분석 결과` navigation. The five supporting Site areas remain in a labelled keyboard-operable menu. Registered materials and analysis records link directly to existing owner routes; legacy section links redirect compatibly. Real2022DSM→Materials/Analysis→Header return retains exact source/area. |
+| F2 familiar display operation | Local CSS display zoom1/2/4/pan/reset on the already guarded buffer; mouse drag, focus-or-Ctrl wheel, keys and buttons share the rule. Actual zoom/drag/reset preserves1022x915 source hash1436974531 and884413 opaque pixels; the rendered rectangle changes, image stays visible. Additional display GET0 / API POST0 during gestures. No new preparation to make a pretty screen work. |
+| F2 mobile control access | At390x844 all7buttons are44x44, y738–782, unobstructed above fixed bottom nav. Actual mobile-width button clicks work. Sticky containment is limited to picture+controls and was exercised when scrolling to technical details. Default partial DSM shows its whole512x256 buffer fitted322x161; actual partial zoom/reset works. |
+| F3 meaning and recovery | No-candidate Floreat view has one typed reason and actual same-area/source exploration recovery. Inapplicable pair/analysis/preparation guidance is in a closed secondary disclosure. Existing chronology/registration/quantitative gates stay fail-closed; no synchronized/heatmap or fake coastal quantities. |
+| F4 read vs prepare | Guarded GET/decode is `자료 읽는 중`; actual server preparation remains `준비 중`; missing own output/window is distinct from missing registered data and from failure. No merged verified/READY badge. Targeted state tests retained along with rights/SHA failure checks. |
+| F5 original/version orientation | Full-width mobile capture selector257px, selected registered revision and unknown precision readable without hover; real date/layer, reload and browser Back/Forward retain exact2022 ortho/DSM identity. Unknown/date-only facts are not converted into full timestamps. |
+| F6 result/evidence continuity | Actual synthetic800m3 record keeps10/6→10/13 inputs, limits and exact result/area link. Real click reaches saved non-field review; human target/opinion/limits precede technical refs. Synthetic quantities remain separate from real coastal imagery; review is not official approval. |
+| Permission/recovery regression | Real viewer has metadata/own-output-unavailable state and no preparation capability. Explicit wrong scope exposes no substituted picture or800m3 result. Preserved size/SHA/currentness/ownership/phone write gates; no automatic API writes in any tested path. |
+
+All final actual witnesses identify **build4595e1ea**, `ok=true`, zero intercepted write attempts and
+zero browser errors: `workspace.json`, `records-permissions.json`, `input-accessibility.json` under
+`/tmp/opencode/ksi-spatial-ux-improvement-20261021/`. Primary read latest actual default/zoomed phone,
+desktop exploration, no-candidate comparison and affected partial/review captures; this is not code-only
+or a separate demo. Failed3b review and fc phone-placement evidence are separately labelled, not final
+acceptance. Temporary sticky DOM study was explicitly a layout experiment, not delivered-product proof.
+
+Final locked Next16.3.3/Vitest4.1.11 build and **176files/1694tests** passed, host tsc/changed ESLint clean,
+mechanical detector[] on changed surfaces. Limited final axe WCAG2/2.1 A/AA-tag scans at390 and1440:
+zero automated violations and zero incomplete rules. The paragraph name was removed while native text
+remains. These checks are not WCAG certification or physical SR/touch/customer usability research.
+
+Visual identity/first-view trade-off described above remains explicit: the full-width date, readable
+revision and long area orientation consume more top space on phone than35d, while actual imagery is
+still in the first viewport and all controls are now available there. This is a task-access improvement,
+not a claim of faster cold loading, a larger source, continuous map streaming or a new GIS analysis.
+No public/customer beta, field accuracy/settlement, retention, shared inspector recovery or full-platform
+completion gate is implied. Existing audit branches remain protected/unresolved and new inspection
+worker remains stopped; neither is a dependency of these accepted display/navigation reads.
+
+Durable evidence: `~/.local/share/ksi-product-use-20261021/ux-improvement-4595e1ea/`, README + SHA manifest.
+This closes the latest approved researched UI/UX improvement unit. No concrete in-scope functional or
+rendered blocker remains in the verified target conditions. Real participant comprehension, physical
+touch/SR and unobserved datasets/device conditions remain separate unverified acceptance, not invented
+success. Further feature/LOD/cache or general redesign work is not silently selected at this close.
