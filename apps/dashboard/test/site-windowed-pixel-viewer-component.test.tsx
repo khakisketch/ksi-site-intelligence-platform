@@ -198,7 +198,9 @@ describe("site windowed pixel viewer", () => {
     expect(screen.getByText(/EPSG:7850 · \[0, 0, 2, 2\]/)).toBeTruthy();
     expect(screen.getByText(/지도 재투영이 아닙니다/)).toBeTruthy();
     expect(screen.getByText(/같은 좌표 평면의 작업구역 경계/)).toBeTruthy();
-    expect(screen.getByText(/측정값이 아닙니다/)).toBeTruthy();
+    // 한 창 보기와 이어 보기 모두 표시용임을 밝힌다 — 같은 문구가 두 자리에 있다.
+    expect(screen.getByText(/확대·이동은 화면 표시용이며 측정값이 아닙니다/)).toBeTruthy();
+    expect(screen.getByText(/이 보기의 이동·확대는 화면 표시용이며 측정값이 아닙니다/)).toBeTruthy();
     // 같은 출처 상대 경로로만 읽는다 — 외부 타일·절대 URL이 없다.
     expect(calls.length).toBeGreaterThan(0);
     for (const call of calls) expect(call.url.startsWith("/api/")).toBe(true);
@@ -256,7 +258,8 @@ describe("site windowed pixel viewer", () => {
     fireEvent.click(screen.getByRole("button", { name: "이 창 보기" }));
     await screen.findByText(/화면용 상대 음영/);
     expect(screen.getByText("어두움 — 밝음 · 상대 음영이며 측정값이 아님")).toBeTruthy();
-    expect(screen.getByText(/창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요/)).toBeTruthy();
+    // 창별 늘이기 정직 문구는 한 창 보기와 이어 보기 모두에 그대로 있다.
+    expect(screen.getAllByText(/창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요/)).toHaveLength(2);
     expect(screen.queryByText(/검증 완료/)).toBeNull();
   });
 

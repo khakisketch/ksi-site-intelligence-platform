@@ -50,6 +50,7 @@ import {
   type WindowedViewerLayer,
 } from "@/lib/site-windowed-pixel-viewer";
 import { REASON_COPY as SPATIAL_DATA_REQUEST_REASON_COPY } from "@/app/sites/[siteId]/spatial-assets/SpatialDataRequestAction";
+import { SiteMosaicViewport } from "@/app/sites/[siteId]/SiteMosaicViewport";
 
 /**
  * 창 단위 실제픽셀 보기 — 임시 시각화 어댑터 (SWX-2 B 단위).
@@ -479,6 +480,21 @@ function WindowedLayerView({
       <p className="text-[11.5px] leading-5 text-ink-muted">
         같은 계정이 준비한 창만 볼 수 있습니다. 목록 새로고침은 읽기만 하며 새 요청을 만들지 않습니다.
       </p>
+
+      {grid && (
+        <SiteMosaicViewport
+          siteId={siteId}
+          workAreaId={workAreaId}
+          assetRef={layer.assetRef}
+          grid={grid}
+          observedCrsDigest={layer.observedCrsDigest}
+          observedCrsIdentifier={layer.observedCrsIdentifier}
+          isDsm={layer.isDsm}
+          jobs={jobs}
+          canRequest={canRequest}
+          requestsHref={requestsHref}
+        />
+      )}
 
       {phase.name === "loading" && (
         <div className="flex flex-wrap items-center gap-2">
