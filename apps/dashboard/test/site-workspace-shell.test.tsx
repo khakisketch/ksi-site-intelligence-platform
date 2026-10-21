@@ -214,7 +214,7 @@ function analysisItem(overrides: Record<string, unknown> = {}) {
     resultId: "res-1",
     metrics: null,
     limitationCount: 1,
-    analysisHref: "/sites/site-1/analysis?analysisId=a1",
+    analysisHref: "/v2/sites/site-1/analyses/a1",
     ...overrides,
   };
 }
@@ -489,7 +489,8 @@ describe("workspace results mode", () => {
     expect(screen.getByText("사용 조건 재확인 필요")).toBeTruthy();
     expect(screen.getByText(/제한 1건/)).toBeTruthy();
     const openLink = screen.getByRole("link", { name: "자료·근거와 검토 보기" });
-    expect(openLink.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1");
+    // Core의 API href가 아니라 실제 Console의 정확한 구역·결과 화면으로 간다.
+    expect(openLink.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
     expect(screen.getByRole("heading", { name: "새 비교 요청" })).toBeTruthy();
     expect(screen.getByText(/새 비교는 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
   });

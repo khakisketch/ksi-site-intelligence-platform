@@ -159,7 +159,7 @@ export function SiteSpatialOverview({
     ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selected.workAreaId)}`
     : `${sitePath}/analysis`;
   const primaryAction = latestAnalysis
-    ? { href: latestAnalysis.analysisHref, label: "이 구역의 최근 분석 확인" }
+    ? { href: `${sitePath}/analysis?workAreaId=${encodeURIComponent(latestAnalysis.workAreaId)}&analysisId=${encodeURIComponent(latestAnalysis.analysisId)}`, label: "이 구역의 최근 분석 확인" }
     : { href: canRegisterHere ? scopedRegisterHref : scopedAnalysisListHref, label: canRegisterHere ? "관측 자료 등록" : "변화 분석 보기" };
   // 보조 등록은 주 행동과 같은 목적지면 숨긴다 — 등록 진입 자체는 둔다.
   const secondaryRegisterHref = canRegisterHere && primaryAction.href !== scopedRegisterHref

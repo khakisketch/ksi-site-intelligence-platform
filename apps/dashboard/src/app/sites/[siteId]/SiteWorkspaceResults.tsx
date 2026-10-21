@@ -28,8 +28,9 @@ function suitabilityLimitCopy(item: Pick<AnalysisListItem, "suitabilityState">):
   }
 }
 
-function RecordCard({ item, lead = false, pairLine = null, pairUnknown = false }: {
+function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown = false }: {
   item: AnalysisListItem;
+  sitePath: string;
   lead?: boolean;
   /** 첫 기록의 실제 비교 구간 한 줄 — 없으면 두지 않는다(추측 금지). */
   pairLine?: string | null;
@@ -89,7 +90,7 @@ function RecordCard({ item, lead = false, pairLine = null, pairUnknown = false }
       이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
     </p>
     <p className="mt-1">
-      <Link href={item.analysisHref} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
+      <Link href={`${sitePath}/analysis?workAreaId=${encodeURIComponent(item.workAreaId)}&analysisId=${encodeURIComponent(item.analysisId)}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
     </p>
   </article>;
 }
@@ -216,12 +217,12 @@ export function SiteWorkspaceResults({
     ) : (
       <div className="flex flex-col gap-2">
         {/* 첫 화면은 가장 최근 기록 하나다. 나머지는 겹쳐 두지 않고 펼침에 둔다. */}
-        <RecordCard item={areaAnalyses[0]!} lead pairLine={leadPairLine} pairUnknown={leadPairUnknown} />
+        <RecordCard item={areaAnalyses[0]!} sitePath={sitePath} lead pairLine={leadPairLine} pairUnknown={leadPairUnknown} />
         {areaAnalyses.length > 1 && (
           <details className="rounded-lg border border-line px-4 py-3">
             <summary className="tap-target cursor-pointer text-[13px] font-semibold">이전 기록 {areaAnalyses.length - 1}건</summary>
             <div className="mt-2 flex flex-col gap-2">
-              {areaAnalyses.slice(1).map((item) => <RecordCard key={item.analysisId} item={item} />)}
+              {areaAnalyses.slice(1).map((item) => <RecordCard key={item.analysisId} item={item} sitePath={sitePath} />)}
             </div>
           </details>
         )}

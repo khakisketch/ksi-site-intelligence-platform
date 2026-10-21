@@ -373,7 +373,7 @@ describe("usability-first results", () => {
     expect(screen.getByText("이전 기록 2건")).toBeTruthy();
     // 최신 기록의 근거 링크는 원래 선택자 그대로다.
     expect(screen.getAllByRole("link", { name: "자료·근거와 검토 보기" })[0]!.getAttribute("href")).toBe(
-      "/sites/site-1/analysis?analysisId=a3",
+      "/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a3",
     );
   });
 

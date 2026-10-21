@@ -364,7 +364,7 @@ describe("Site spatial overview honesty", () => {
     await renderDefaultTab({});
     const v2 = within(screen.getByRole("heading", { name: "이 구역의 최근 분석" }).closest("div") as HTMLElement);
     expect(v2.getByText("분석 조건 확인 결과 있음")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "이 구역의 최근 분석 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1");
+    expect(screen.getByRole("link", { name: "이 구역의 최근 분석 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
     expect(screen.queryByText("외부 관측 결과가 없습니다")).toBeNull();
   });
 
