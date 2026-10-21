@@ -25,10 +25,12 @@ import {
   MosaicPaintCache,
   mosaicCanvasGeometry,
   mosaicCellView,
+  mosaicCoverStatusCopy,
   mosaicIssueTargets,
   mosaicPlacements,
-  mosaicProgressCopy,
+  orderCoverByVisibilityCentrality,
   resolveMosaicCover,
+  selectHysteresisRetainedKeys,
   type DisplayGapReason,
 } from "@/lib/spatial-display-mosaic";
 import { VIEWPORT_RESOLVE_COPY, type DisplayViewportBounds } from "@/lib/spatial-display-viewport";
@@ -143,7 +145,7 @@ export function SiteMosaicViewport({
   const activeViewport = viewport ?? footprint;
   const cover = useMemo(() => resolveMosaicCover(grid, activeViewport), [grid, activeViewport]);
   const coverKey = cover.ok
-    ? cover.windows.map((plan) => plan.pixelWindow.join(",")).join(";")
+    ? `${cover.windows.map((plan) => plan.pixelWindow.join(",")).join(";")}|${activeViewport.join(",")}`
     : `blocked:${cover.reason}`;
   const jobsKey = jobs.map((job) => `${job.jobId}:${job.executionState}:${job.availability}`).join(";");
 
@@ -248,6 +250,22 @@ export function SiteMosaicViewport({
     [cover, geometry],
   );
 
+  // S2 — paint 전 재검증에 쓰는 세션 보유 권리 사실. readable 존재 자체가
+  // Core 목록 응답의 현행 grant·회수·용도·소유 판정이며, Core 현행 상태가
+  // 주인이다. 부실 허용 한계(freshness bound)는 TBD(O-4) — 지어내지 않는다.
+  const currentFor = (receipt: {
+    outputSha256: string;
+    outputSizeBytes: number;
+    observedCrsDigest: string;
+  }) => ({
+    outputSha256: receipt.outputSha256,
+    outputSizeBytes: receipt.outputSizeBytes,
+    assetRef,
+    purpose: "GENERAL_DATA_USE" as const,
+    observedCrsDigest: receipt.observedCrsDigest,
+    rights: { grantLive: true, notRevoked: true, purposeAllowed: true },
+  });
+
   // 모자란 창을 스케줄러에 건다. 같은 집합의 반복은 새 PREPARE 없이
   // 합류·재입장하며, 뷰포트가 바뀌면 새 집합 밖의 대기열은 버린다.
   // 진입·이동·확대만으로는 나가지 않으며, "채우기"를 눌렀을 때만 간다.
@@ -268,11 +286,7 @@ export function SiteMosaicViewport({
           mosaicCache.evict(key);
           return false;
         }
-        const served = mosaicCache.serve(
-          key,
-          { outputSha256: receipt.outputSha256, outputSizeBytes: receipt.outputSizeBytes },
-          ownerToken,
-        );
+        const served = mosaicCache.serve(key, currentFor(receipt), ownerToken);
         return served.ok;
       });
       if (valid.length !== paintedKeysRef.current.length) syncPaintedKeys(valid);
@@ -291,8 +305,10 @@ export function SiteMosaicViewport({
       });
       if (fillTick === 0) return;
       if (canRequest && observedCrsDigest) {
+        // S1 — 중심 가시성 순서로 발행한다(서버 FIFO가 없으므로 클라이언트가 만든다).
+        const orderedPlans = orderCoverByVisibilityCentrality(cover.windows, activeViewport);
         const targets = mosaicIssueTargets(
-          cover.windows,
+          orderedPlans,
           assetRef,
           observedCrsDigest,
           "GENERAL_DATA_USE",
@@ -303,7 +319,14 @@ export function SiteMosaicViewport({
             !scheduler.completedResult(target.key),
         );
         // 이미 읽을 수 있는 창은 준비 요청하지 않는다 — ensure에는 모자란 집합만 건다.
-        setLane(scheduler.ensure(missing));
+        // S1 — 핀 고정 히스테리시스: 다음 커버 근처의 대기열은 유지한다.
+        const retainKeys = selectHysteresisRetainedKeys(
+          targets
+            .filter((target) => scheduler.snapshot().queued.includes(target.key))
+            .map((target) => ({ key: target.key, pixelWindow: target.pixelWindow })),
+          cover.windows,
+        );
+        setLane(scheduler.ensure(missing, { retainKeys }));
         if (missing.length > 0) {
           setRequestBusy(true);
           const settled = await Promise.allSettled(
@@ -326,13 +349,13 @@ export function SiteMosaicViewport({
           }
         }
       }
-      for (const plan of cover.windows) {
+      for (const plan of orderCoverByVisibilityCentrality(cover.windows, activeViewport)) {
         if (!alive) return;
         const key = pixelKeyOf(plan.pixelWindow);
         const match = readableMap.get(key);
         const receipt = match?.receipt;
         if (!match || !receipt || receipt.jobId !== match.jobId) continue;
-        const current = { outputSha256: receipt.outputSha256, outputSizeBytes: receipt.outputSizeBytes };
+        const current = currentFor(receipt);
         if (mosaicCache.serve(key, current, ownerToken).ok) continue;
         if (activeFetches.has(key)) continue;
         const controller = new AbortController();
@@ -358,6 +381,9 @@ export function SiteMosaicViewport({
               width: decoded.width,
               height: decoded.height,
               pixels: decoded.pixels,
+              assetRef,
+              purpose: "GENERAL_DATA_USE",
+              observedCrsDigest: receipt.observedCrsDigest,
             },
             ownerToken,
           );
@@ -429,12 +455,20 @@ export function SiteMosaicViewport({
           if (!receipt) continue;
           const served = mosaicCache.serve(
             key,
-            { outputSha256: receipt.outputSha256, outputSizeBytes: receipt.outputSizeBytes },
+            {
+              outputSha256: receipt.outputSha256,
+              outputSizeBytes: receipt.outputSizeBytes,
+              assetRef,
+              purpose: "GENERAL_DATA_USE",
+              observedCrsDigest: receipt.observedCrsDigest,
+              rights: { grantLive: true, notRevoked: true, purposeAllowed: true },
+            },
             ownerToken,
           );
           if (!served.ok) continue;
           // 위치는 영수증의 픽셀 창에서 직접 둔다. 계획과 키가 맞아야만
           // 여기까지 오므로, 어긋난 영수증은 그려지지 않는다.
+          // S2 — 매 paint 전 재검증: 재검증 불가 적중은 MISS이며 그리지 않는다.
           const dx = receipt.pixelWindow[0] - geometry.originC0;
           const dy = receipt.pixelWindow[2] - geometry.originR0;
           if (
@@ -454,7 +488,7 @@ export function SiteMosaicViewport({
         setPaintError("이 브라우저에서 이어 보기를 그릴 수 없습니다. 다운로드는 그대로 받을 수 있습니다.");
       }
     },
-    [cover, geometry, readableMap, mosaicCache, ownerToken, paintedKeys],
+    [cover, geometry, readableMap, mosaicCache, ownerToken, paintedKeys, assetRef],
   );
 
   const clampViewport = (next: DisplayViewportBounds): DisplayViewportBounds | null => {
@@ -613,7 +647,7 @@ export function SiteMosaicViewport({
             </div>
           </div>
           <p className="text-[12px] leading-5 text-ink-2" role="status">
-            {mosaicProgressCopy(paintedCount, cells.length)}
+            {mosaicCoverStatusCopy(paintedCount, cells.length)}
             {observedCrsIdentifier ? ` · ${observedCrsIdentifier} 네이티브 평면 ${geometry.width} × ${geometry.height} 픽셀` : null}
           </p>
           {isDsm && (

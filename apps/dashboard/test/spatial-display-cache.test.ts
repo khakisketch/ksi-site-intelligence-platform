@@ -24,6 +24,16 @@ function cached(overrides: Partial<CachedDisplayWindow> = {}): CachedDisplayWind
     policyDigest: POLICY,
     purpose: "GENERAL_DATA_USE",
     preparedForPrincipalHash: PRINCIPAL_A,
+    beneficiaryPrincipalId: "beneficiary-a",
+    organizationId: "org-a",
+    allowedBoundsDigest: `sha256:${"a".repeat(64)}`,
+    observedCrsDigest: `sha256:${"b".repeat(64)}`,
+    grantRevision: "3",
+    policyRevision: "7",
+    activationDigest: `sha256:${"c".repeat(64)}`,
+    tileSize: 512,
+    lodTableVersion: "NONE",
+    kernelId: "NONE",
     ...overrides,
   };
 }
@@ -99,6 +109,15 @@ describe("DisplayWindowCache", () => {
     expect(cache.size).toBe(2);
     cache.serve(cached(), { ...LIVE, grantLive: false });
     // A의 슬롯만 지워지고 B의 슬롯은 남는다.
+    expect(cache.size).toBe(1);
+  });
+
+  it("keys another organization into a separate slot", () => {
+    const cache = new DisplayWindowCache();
+    cache.store(cached());
+    cache.store(cached({ organizationId: "org-b" }));
+    expect(cache.size).toBe(2);
+    cache.serve(cached(), { ...LIVE, grantLive: false });
     expect(cache.size).toBe(1);
   });
 });

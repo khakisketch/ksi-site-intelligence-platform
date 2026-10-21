@@ -25,6 +25,24 @@ export interface CachedDisplayWindow {
   policyDigest: string;
   purpose: DisplayCachePurpose;
   preparedForPrincipalHash: string;
+  /**
+   * S2 — 설계 §1.3 권리·통화·범위 핀. 현재 권리-무관 조회(`stableKey`만)로는
+   * 경계를 넘나드는 조회를 막을 수 없어 키에 그대로 반복한다. 순서는
+   * §3과 같다: 범위(수혜자·조직) → grant 유효 → 회수 없음 → 용도 →
+   * 요청자 소유 → 영수증. grant·정책 회전은 키를 바꾸고 픽셀은 바꾸지
+   * 않는다. LOD 핀은 S5(GAP-03)가 열리기 전까지 `NONE`(네이티브 잘라내기만,
+   * 재표본화 없음)을 truthfully 둔다 — LOD 값을 지어내지 않는다.
+   */
+  beneficiaryPrincipalId: string;
+  organizationId: string;
+  allowedBoundsDigest: string;
+  observedCrsDigest: string;
+  grantRevision: string;
+  policyRevision: string;
+  activationDigest: string;
+  tileSize: number;
+  lodTableVersion: string;
+  kernelId: string;
 }
 
 export interface DisplayRightsRecheck {
@@ -62,6 +80,16 @@ function cacheSlot(entry: CachedDisplayWindow): string {
     entry.policyDigest,
     entry.purpose,
     entry.preparedForPrincipalHash,
+    entry.beneficiaryPrincipalId,
+    entry.organizationId,
+    entry.allowedBoundsDigest,
+    entry.observedCrsDigest,
+    entry.grantRevision,
+    entry.policyRevision,
+    entry.activationDigest,
+    String(entry.tileSize),
+    entry.lodTableVersion,
+    entry.kernelId,
   ].join("|");
 }
 

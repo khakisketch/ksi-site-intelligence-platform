@@ -272,18 +272,142 @@ export function mosaicProgressCopy(painted: number, total: number): string {
   return `그린 창 ${painted} / 전체 ${total} · 끝난 창부터 차례로 그립니다`;
 }
 
+/**
+ * S1 — 부분 커버의 정직한 라벨. 부분은 항상 부분으로 말한다(전체·완료
+ * 표현 금지). 전체가 다 그려졌을 때만 진행 문구 그대로 둔다. 첫지불
+ * 설계 §3.1의 진행-copy 규칙을 기존 문구로 합성한 것이며, 새로운 상태
+ * 어휘를 만들지 않는다.
+ */
+export const MOSAIC_PARTIAL_COVER_LABEL = "부분 보기";
+
+export function mosaicPartialCoverCopy(painted: number, total: number): string {
+  return `${MOSAIC_PARTIAL_COVER_LABEL} · ${mosaicProgressCopy(painted, total)} · 나머지는 준비 중 (빈칸을 메우거나 늘이지 않음)`;
+}
+
+export function mosaicCoverStatusCopy(painted: number, total: number): string {
+  if (painted >= total) return mosaicProgressCopy(painted, total);
+  return mosaicPartialCoverCopy(painted, total);
+}
+
+/**
+ * S1 — 가시성-중심성 순서(visibility-centrality). 뷰포트 중심에 가까운
+ * 창부터 발행·수집한다. 서버 FIFO가 없으므로(GAP-06) 순서는 클라이언트가
+ * 만든다. 거리 동률은 안정 정렬로 커버 순서를 유지한다. 실제 픽셀
+ * 중심(actualBounds 중심)으로 재며, 정수 픽셀 창 자체는 바꾸지 않는다.
+ */
+export function orderCoverByVisibilityCentrality(
+  cover: readonly DisplayWindowPlan[],
+  viewport: DisplayViewportBounds,
+): DisplayWindowPlan[] {
+  const cx = (viewport[0] + viewport[2]) / 2;
+  const cy = (viewport[1] + viewport[3]) / 2;
+  const distanceSquared = (plan: DisplayWindowPlan): number => {
+    const [minx, miny, maxx, maxy] = plan.actualBounds;
+    const px = (minx + maxx) / 2 - cx;
+    const py = (miny + maxy) / 2 - cy;
+    return px * px + py * py;
+  };
+  return [...cover].sort((a, b) => distanceSquared(a) - distanceSquared(b));
+}
+
+/**
+ * S1 — 대기열 핀 고정 히스테리시스(PINNED HYSTERESIS). 1픽셀 팬 같은
+ * 미세 이동이 진행 중인 대기열을 버리고 다시 발행하게 두지 않는다.
+ * 다음 커버의 어떤 창과도 경계 간격이 hysteresisPx보다 멀리 떨어진
+ * 대기열만 버린다. 8px은 셀 경계 바로 밖의 경미한 이동까지 유지하고,
+ * 실제 범위 이동은 버리게 하는 고정값이다(LOD 제안의 0.5 뷰포트와 달리
+ * 작게 고정 — 1픽셀 팬은 커버 자체가 바뀌지 않아 버려지지 않는다).
+ */
+export const PINNED_QUEUE_HYSTERESIS_PIXELS = 8;
+
+function rangesGap(a0: number, a1: number, b0: number, b1: number): number {
+  if (a0 < b1 && b0 < a1) return 0;
+  if (a1 <= b0) return b0 - a1;
+  return a0 - b1;
+}
+
+/** 두 픽셀 창의 경계 간격 — 겹치거나 맞닿으면 0이다. */
+export function pixelWindowEdgeGap(
+  a: readonly [number, number, number, number],
+  b: readonly [number, number, number, number],
+): number {
+  const columnGap = rangesGap(a[0], a[1], b[0], b[1]);
+  const rowGap = rangesGap(a[2], a[3], b[2], b[3]);
+  if (columnGap === 0 || rowGap === 0) return Math.max(columnGap, rowGap);
+  return Math.hypot(columnGap, rowGap);
+}
+
+/**
+ * 다음 커버 근처에 머무는 대기열 키만 유지한다. 구조를 모르는 키(과거
+ * 형식 등)는 근접을 증명할 수 없어 유지하지 않는다 — 기존 버리기 동작과
+ * 같다.
+ */
+export function selectHysteresisRetainedKeys(
+  queued: readonly {
+    key: string;
+    pixelWindow: readonly [number, number, number, number];
+  }[],
+  nextCover: readonly DisplayWindowPlan[],
+  hysteresisPx: number = PINNED_QUEUE_HYSTERESIS_PIXELS,
+): string[] {
+  return queued
+    .filter((item) =>
+      nextCover.some(
+        (plan) =>
+          pixelWindowEdgeGap(item.pixelWindow, plan.pixelWindow) <= hysteresisPx,
+      ),
+    )
+    .map((item) => item.key);
+}
+
 export { saturatedLaneCopy };
 
 /** 세션 보관 거부의 종류 — 실패하면 보관분을 지우고 내놓지 않는다. */
-export type MosaicServeRefusal = "RECEIPT_CHANGED" | "RIGHTS_UNAVAILABLE" | "FOREIGN_PRINCIPAL";
+export type MosaicServeRefusal =
+  | "GRANT_EXPIRED"
+  | "REVOKED"
+  | "PURPOSE_MISMATCH"
+  | "RECEIPT_CHANGED"
+  | "RIGHTS_UNAVAILABLE"
+  | "FOREIGN_PRINCIPAL";
 
 export interface MosaicPaintSlot {
+  /** 슬롯 주소 — 같은 세션 주인의 같은 픽셀 창. 권리 경계는 아래 핀 동등성으로 닫는다. */
   key: string;
   outputSha256: string;
   outputSizeBytes: number;
   width: number;
   height: number;
   pixels: Uint8ClampedArray<ArrayBuffer>;
+  /**
+   * S2 — Console이 합법적으로 쥔 권리 핀(설계 §1.3 중 세션 보유분).
+   * assetRef·purpose·observedCrsDigest는 발행·영수증에서 직접 오며,
+   * 같은 픽셀 창이라도 시점·용도·위치기준이 다르면 다른 슬롯이다.
+   * grant/policy 다이제스트·수혜자·회전 핀은 Core가 소유하므로
+   * Console이 지어내지 않는다 — 그 검사는 Core 목록 응답의 읽기 가능
+   * 존재(readable 존재 = Core의 현행 grant·회수·용도·소유 판정)와
+   * ownerToken 동등성으로 닫고, 전체 DisplayCacheKeyV1은 T2(S3·별도
+   * 승인)에서 바인딩한다. LOD 핀은 S5(GAP-03) 전까지 NONE이다.
+   */
+  assetRef: string;
+  purpose: DisplayPreparePurpose;
+  observedCrsDigest: string | null;
+}
+
+export interface MosaicPaintRights {
+  /** Core 목록 응답에서 유도한 세션 보유 사실 — Core 현행 상태가 주인이다. */
+  grantLive: boolean;
+  notRevoked: boolean;
+  purposeAllowed: boolean;
+}
+
+export interface MosaicPaintCurrent {
+  outputSha256: string;
+  outputSizeBytes: number;
+  assetRef: string;
+  purpose: DisplayPreparePurpose;
+  observedCrsDigest: string | null;
+  rights: MosaicPaintRights;
 }
 
 export type MosaicServeResult =
@@ -291,6 +415,12 @@ export type MosaicServeResult =
   | { ok: false; reason: MosaicServeRefusal };
 
 export const MOSAIC_CACHE_REFUSAL_COPY: Record<MosaicServeRefusal, string> = {
+  GRANT_EXPIRED:
+    "창을 볼 권한의 유효 기간이 지나 이 창을 더는 표시하지 않습니다. 담당자에게 권한 확인을 요청하세요.",
+  REVOKED:
+    "창을 볼 권한이 회수되어 이 창을 더는 표시하지 않습니다. 담당자에게 권한 확인을 요청하세요.",
+  PURPOSE_MISMATCH:
+    "이 창의 사용 용도가 달라 표시하지 않습니다. 용도에 맞는 창을 새로 요청하세요.",
   RECEIPT_CHANGED: "받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다.",
   RIGHTS_UNAVAILABLE:
     "요청을 찾을 수 없거나 현재 조회할 수 없습니다. 다른 계정이 준비한 창은 이 화면에서 열 수 없습니다.",
@@ -299,32 +429,59 @@ export const MOSAIC_CACHE_REFUSAL_COPY: Record<MosaicServeRefusal, string> = {
 };
 
 /**
+ * S2 — T1 세션-tier 상한(고정, 측정 유도 — 임의 상수가 아님).
+ *
+ * 측정 근거(`docs/audit/SPATIAL_DISPLAY_CACHE_MEASUREMENT_EVIDENCE_2026-10-21.md` §5):
+ * - 디코드 슬롯당 512×512×4 = 1,048,576 B (≈1 MiB, MEASURED).
+ * - 전체 1022×915 커버 세션 상주 7,934,824 B ≈ 7.57 MiB (슬롯 4개 + 캔버스, MEASURED).
+ * 작업집합 근거(R1–R5 기준 탐색): R1 전체 커버 4슬롯 + R3 팬워크 프린지
+ * ~8슬롯 = 12슬롯이면 R1으로의 복귀가 적중한다. 12 × ≈1 MiB ≈ 12 MiB
+ * 디코드 + 캔버스 ≈ 3.6 MiB → 최악 ≈ 15.6 MiB로, 증거 §7의 상한(≤16슬롯)
+ * 안에 든다. 초과분은 충돌이 아니라 LRU 방출이다. 숫자 변경은 벤치마크
+ * 소유이며, 이 문서가 근거가 아니다.
+ */
+export const MOSAIC_T1_MAX_SLOTS = 12;
+
+/**
  * 같은 세션 안의 그린 창 보관 — pan-back을 새 PREPARE 없이 돌려준다.
  *
  * - 같은 탭·같은 세션의 주인 표식(ownerToken)이 맞아야 내놓는다.
  *   다른 주인의 표식으로는 존재를 드러내지 않는 같은 문구로 닫는다.
- * - 내놓을 때마다 지금 볼 수 있는 영수증 사실(sha/size)과 대조한다.
- *   어긋나면 보관분을 지우고 내놓지 않는다.
+ * - 내놓을 때마다(매 paint 전) 권리 핀(assetRef·purpose·observedCrsDigest
+ *   동등성 + 세션 보유 grant·회수·용도 사실)과 영수증 사실(sha/size)을
+ *   다시 대조한다. 어긋나면 보관분을 지우고 내놓지 않는다 — 재검증
+ *   불가 적중은 MISS이며, 조용 적중은 없다.
  * - 이 보관은 어떤 독립 권한도 만들지 않는다. 읽을 수 있는 창 목록과
  *   Core의 세션 검사(BFF→Core 매 호출 재확인)가 권리를 그대로 소유한다.
+ * - 상한 초과 시 가장 오래된 슬롯부터 방출한다(LRU, 충돌 아님).
  */
 export class MosaicPaintCache {
   private readonly ownerToken: string;
+  private readonly maxSlots: number;
   private readonly slots = new Map<string, MosaicPaintSlot>();
 
-  constructor(ownerToken: string) {
+  constructor(ownerToken: string, maxSlots: number = MOSAIC_T1_MAX_SLOTS) {
     this.ownerToken = ownerToken;
+    this.maxSlots = maxSlots;
   }
 
   store(slot: MosaicPaintSlot, ownerToken: string): boolean {
     if (ownerToken !== this.ownerToken) return false;
+    // LRU: 같은 키는 최신으로, 상한 초과분은 가장 오래된 것부터 방출한다.
+    this.slots.delete(slot.key);
+    while (this.slots.size >= this.maxSlots && this.maxSlots > 0) {
+      const oldest = this.slots.keys().next();
+      if (oldest.done) break;
+      this.slots.delete(oldest.value);
+    }
+    if (this.maxSlots <= 0) return false;
     this.slots.set(slot.key, slot);
     return true;
   }
 
   serve(
     key: string,
-    current: { outputSha256: string; outputSizeBytes: number } | null,
+    current: MosaicPaintCurrent | null,
     ownerToken: string,
   ): MosaicServeResult {
     if (ownerToken !== this.ownerToken) {
@@ -337,6 +494,28 @@ export class MosaicPaintCache {
     }
     const stored = this.slots.get(key);
     if (!stored) return { ok: false, reason: "RECEIPT_CHANGED" };
+    // 범위 핀 동등성(설계 §3-1): 다른 시점·용도·위치기준의 조회는
+    // 존재를 드러내지 않고 닫는다.
+    if (
+      stored.assetRef !== current.assetRef ||
+      stored.purpose !== current.purpose ||
+      stored.observedCrsDigest !== current.observedCrsDigest
+    ) {
+      this.slots.delete(key);
+      return { ok: false, reason: "FOREIGN_PRINCIPAL" };
+    }
+    if (!current.rights.grantLive) {
+      this.slots.delete(key);
+      return { ok: false, reason: "GRANT_EXPIRED" };
+    }
+    if (!current.rights.notRevoked) {
+      this.slots.delete(key);
+      return { ok: false, reason: "REVOKED" };
+    }
+    if (!current.rights.purposeAllowed) {
+      this.slots.delete(key);
+      return { ok: false, reason: "PURPOSE_MISMATCH" };
+    }
     if (
       stored.outputSha256 !== current.outputSha256 ||
       stored.outputSizeBytes !== current.outputSizeBytes
@@ -344,6 +523,9 @@ export class MosaicPaintCache {
       this.slots.delete(key);
       return { ok: false, reason: "RECEIPT_CHANGED" };
     }
+    // 적중도 최근 사용으로 갱신한다(LRU).
+    this.slots.delete(key);
+    this.slots.set(key, stored);
     return { ok: true, slot: stored };
   }
 
@@ -357,6 +539,15 @@ export class MosaicPaintCache {
 
   get size(): number {
     return this.slots.size;
+  }
+
+  /** M5 게이지 — 디코드 상주 바이트 합(슬롯 × 너비×높이×4). */
+  get residencyBytes(): number {
+    let total = 0;
+    for (const slot of this.slots.values()) {
+      total += slot.width * slot.height * 4;
+    }
+    return total;
   }
 }
 

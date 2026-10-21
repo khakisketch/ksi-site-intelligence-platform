@@ -370,6 +370,37 @@ describe("mosaic scheduler behaviour under the measured budget", () => {
 describe("MosaicPaintCache rights and receipt re-check", () => {
   const TOKEN_A = "session-owner-a";
   const TOKEN_B = "session-owner-b";
+  const ASSET = `ksa-v1-${"b".repeat(64)}`;
+  const OTHER_ASSET = `ksa-v1-${"d".repeat(64)}`;
+  const CRS = `sha256:${"c".repeat(64)}`;
+
+  function currentFor(
+    sha = `sha256:${"f".repeat(64)}`,
+    size = 474427,
+    overrides: Partial<{
+      assetRef: string;
+      purpose: "GENERAL_DATA_USE" | "EXTERNAL_AI";
+      observedCrsDigest: string | null;
+      grantLive: boolean;
+      notRevoked: boolean;
+      purposeAllowed: boolean;
+    }> = {},
+  ) {
+    return {
+      outputSha256: sha,
+      outputSizeBytes: size,
+      assetRef: overrides.assetRef ?? ASSET,
+      purpose: overrides.purpose ?? ("GENERAL_DATA_USE" as const),
+      // null은 명시적 다른 값이다 — ??가 삼키지 않게 `in`으로 본다.
+      observedCrsDigest:
+        "observedCrsDigest" in overrides ? (overrides.observedCrsDigest as string | null) : CRS,
+      rights: {
+        grantLive: overrides.grantLive ?? true,
+        notRevoked: overrides.notRevoked ?? true,
+        purposeAllowed: overrides.purposeAllowed ?? true,
+      },
+    };
+  }
 
   function slotFor(key: string, sha = `sha256:${"f".repeat(64)}`, size = 474427) {
     return {
@@ -379,6 +410,9 @@ describe("MosaicPaintCache rights and receipt re-check", () => {
       width: 512,
       height: 512,
       pixels: syntheticTile(2, 2, 10),
+      assetRef: ASSET,
+      purpose: "GENERAL_DATA_USE" as const,
+      observedCrsDigest: CRS,
     };
   }
 
@@ -386,12 +420,11 @@ describe("MosaicPaintCache rights and receipt re-check", () => {
     const cache = new MosaicPaintCache(TOKEN_A);
     const key = "0,512,0,512";
     expect(cache.store(slotFor(key), TOKEN_A)).toBe(true);
-    const current = { outputSha256: `sha256:${"f".repeat(64)}`, outputSizeBytes: 474427 };
-    expect(cache.serve(key, current, TOKEN_A).ok).toBe(true);
+    expect(cache.serve(key, currentFor(), TOKEN_A).ok).toBe(true);
     // 영수증이 바뀌면 내놓지 않고 보관분을 지운다.
     const changed = cache.serve(
       key,
-      { outputSha256: `sha256:${"e".repeat(64)}`, outputSizeBytes: 474427 },
+      currentFor(`sha256:${"e".repeat(64)}`),
       TOKEN_A,
     );
     expect(changed).toEqual({ ok: false, reason: "RECEIPT_CHANGED" });
@@ -412,8 +445,49 @@ describe("MosaicPaintCache rights and receipt re-check", () => {
     const key = "0,512,0,512";
     expect(cache.store(slotFor(key), TOKEN_B)).toBe(false);
     cache.store(slotFor(key), TOKEN_A);
-    const current = { outputSha256: `sha256:${"f".repeat(64)}`, outputSizeBytes: 474427 };
-    expect(cache.serve(key, current, TOKEN_B)).toEqual({ ok: false, reason: "FOREIGN_PRINCIPAL" });
+    expect(cache.serve(key, currentFor(), TOKEN_B)).toEqual({ ok: false, reason: "FOREIGN_PRINCIPAL" });
+    expect(cache.size).toBe(0);
+  });
+
+  it("treats another asset, purpose, or CRS on the same pixels as a miss", () => {
+    const cache = new MosaicPaintCache(TOKEN_A);
+    const key = "0,512,0,512";
+    cache.store(slotFor(key), TOKEN_A);
+    expect(
+      cache.serve(key, currentFor(undefined, undefined, { assetRef: OTHER_ASSET }), TOKEN_A),
+    ).toEqual({ ok: false, reason: "FOREIGN_PRINCIPAL" });
+    expect(cache.size).toBe(0);
+    cache.store(slotFor(key), TOKEN_A);
+    expect(
+      cache.serve(key, currentFor(undefined, undefined, { purpose: "EXTERNAL_AI" }), TOKEN_A),
+    ).toEqual({ ok: false, reason: "FOREIGN_PRINCIPAL" });
+    expect(cache.size).toBe(0);
+    cache.store(slotFor(key), TOKEN_A);
+    expect(
+      cache.serve(key, currentFor(undefined, undefined, { observedCrsDigest: null }), TOKEN_A),
+    ).toEqual({ ok: false, reason: "FOREIGN_PRINCIPAL" });
+    expect(cache.size).toBe(0);
+  });
+
+  it("stops serving on expired, revoked, or purpose-mismatched rights", () => {
+    const cache = new MosaicPaintCache(TOKEN_A);
+    const key = "0,512,0,512";
+    cache.store(slotFor(key), TOKEN_A);
+    expect(cache.serve(key, currentFor(undefined, undefined, { grantLive: false }), TOKEN_A)).toEqual({
+      ok: false,
+      reason: "GRANT_EXPIRED",
+    });
+    expect(cache.size).toBe(0);
+    cache.store(slotFor(key), TOKEN_A);
+    expect(cache.serve(key, currentFor(undefined, undefined, { notRevoked: false }), TOKEN_A)).toEqual({
+      ok: false,
+      reason: "REVOKED",
+    });
+    expect(cache.size).toBe(0);
+    cache.store(slotFor(key), TOKEN_A);
+    expect(
+      cache.serve(key, currentFor(undefined, undefined, { purposeAllowed: false }), TOKEN_A),
+    ).toEqual({ ok: false, reason: "PURPOSE_MISMATCH" });
     expect(cache.size).toBe(0);
   });
 });

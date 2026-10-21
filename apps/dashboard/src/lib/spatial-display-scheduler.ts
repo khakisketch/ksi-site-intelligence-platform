@@ -221,9 +221,21 @@ export class DisplayPrepareScheduler {
   /**
    * 새 집합을 스케줄한다. 새 집합에 없는 대기열은 버리고(포기),
    * 진행(active)·재시도 대기는 끝까지 둔다. 같은 키 중복은 합류한다.
+   *
+   * S1 — 핀 고정 히스테리시스: `retainKeys`에 든 대기열 키는 새 집합에
+   * 없어도 유지한다. 호출자가 `selectHysteresisRetainedKeys`로 다음 커버
+   * 근처의 대기열만 골라 넘긴다 — 1픽셀 팬 같은 미세 이동이 진행 중인
+   * 대기열을 버리고 다시 발행하게 두지 않는다. 생략 시 기존 동작(버리기)
+   * 그대로다.
    */
-  ensure(windows: readonly ScheduledDisplayWindow[]): DisplaySchedulerSnapshot {
+  ensure(
+    windows: readonly ScheduledDisplayWindow[],
+    options: { retainKeys?: readonly string[] } = {},
+  ): DisplaySchedulerSnapshot {
     const keep = new Set(windows.map((item) => item.key));
+    for (const retained of options.retainKeys ?? []) {
+      if (this.queued.has(retained)) keep.add(retained);
+    }
     for (const key of [...this.queued]) {
       if (!keep.has(key)) {
         this.queued.delete(key);
