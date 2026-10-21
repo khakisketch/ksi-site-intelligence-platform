@@ -436,6 +436,23 @@ function WindowedLayerView({
 
   return (
     <div className="flex flex-col gap-2">
+      {/* 실제 화면이 먼저다. 이어 보기는 진입 시 이미 준비된 창만 읽는다(읽기 전용).
+          새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
+      {grid && (
+        <SiteMosaicViewport
+          siteId={siteId}
+          workAreaId={workAreaId}
+          assetRef={layer.assetRef}
+          grid={grid}
+          observedCrsDigest={layer.observedCrsDigest}
+          observedCrsIdentifier={layer.observedCrsIdentifier}
+          isDsm={layer.isDsm}
+          jobs={jobs}
+          canRequest={canRequest}
+          requestsHref={requestsHref}
+        />
+      )}
+
       <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
       {readable.length === 0 && pending.length === 0 && (
         <p className="text-[12.5px] leading-5 text-ink-2">
@@ -478,23 +495,8 @@ function WindowedLayerView({
         </Link>
       </p>
       <p className="text-[11.5px] leading-5 text-ink-muted">
-        같은 계정이 준비한 창만 볼 수 있습니다. 목록 새로고침은 읽기만 하며 새 요청을 만들지 않습니다.
+        같은 계정이 준비한 창만 볼 수 있습니다. 목록 새로고침·낱창 보기는 읽기만 하며 새 요청을 만들지 않습니다.
       </p>
-
-      {grid && (
-        <SiteMosaicViewport
-          siteId={siteId}
-          workAreaId={workAreaId}
-          assetRef={layer.assetRef}
-          grid={grid}
-          observedCrsDigest={layer.observedCrsDigest}
-          observedCrsIdentifier={layer.observedCrsIdentifier}
-          isDsm={layer.isDsm}
-          jobs={jobs}
-          canRequest={canRequest}
-          requestsHref={requestsHref}
-        />
-      )}
 
       {phase.name === "loading" && (
         <div className="flex flex-wrap items-center gap-2">
@@ -686,17 +688,9 @@ export function SiteWindowedPixelViewer({
       className="flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3"
     >
       <header>
-        <h3 className="text-[14px] font-bold">{WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
-        {observationHeading && <p className="mt-0.5 break-words text-[12.5px] font-semibold text-ink-1">{observationHeading}</p>}
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">{WINDOWED_VIEWER_ADAPTER_NOTE}</p>
-        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
+        <h3 className="break-words text-[14px] font-bold">{observationHeading ?? WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">실제 파일의 준비된 창을 그대로 둡니다. 지도 재투영·보정을 하지 않습니다.</p>
       </header>
-
-      <div className="grid gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] leading-5 text-ink-2">
-        <p><span className="font-semibold">감사 추적</span> · {AUDIT_STATE_NOTE}</p>
-        <p><span className="font-semibold">데이터 검증 적합성</span> · {VALIDATION_STATE_NOTE}</p>
-        <p><span className="font-semibold">공간 표시 가능 여부</span> · {VIEWABILITY_STATE_NOTE}</p>
-      </div>
 
       {layers.length > 1 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label="자료 층 전환">
@@ -714,21 +708,6 @@ export function SiteWindowedPixelViewer({
             </button>
           ))}
         </div>
-      )}
-
-      {layer && (
-        <details className="text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer font-semibold">Core 확인 사실(이 화면이 다시 판정하지 않음)</summary>
-          <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3">
-            <div><dt className="font-semibold text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(layer.inspectionOutcome)}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">관측 위치 기준</dt><dd className="break-all font-mono">{layer.observedCrsIdentifier ?? "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">관측 수직 기준</dt><dd className="break-all">{layer.verticalReference ?? "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">검사 격자</dt><dd>{grid ? `${grid.width} × ${grid.height} 네이티브 픽셀` : "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">등록 파일명</dt><dd className="break-all">{layer.fileName}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">등록 버전</dt><dd>revision {layer.revision} · 제출 묶음 {layer.submissionRef}</dd></div>
-          </dl>
-          <p className="mt-1 text-[11.5px] text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
-        </details>
       )}
 
       {!layer && (
@@ -771,6 +750,27 @@ export function SiteWindowedPixelViewer({
           idPrefix={`${idPrefix}-${layer.assetRef === layers[0]?.assetRef ? "first" : "second"}`}
         />
       )}
+
+      {/* 기술 벽은 실제 화면 뒤다. 정보는 지우지 않고 펼침에 둔다. */}
+      <details id="windowed-display-conditions" className="scroll-mt-5 text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
+        <p className="mt-1">{WINDOWED_VIEWER_ADAPTER_LABEL} — {WINDOWED_VIEWER_ADAPTER_NOTE}</p>
+        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
+        <p className="mt-1"><span className="font-semibold">감사 추적</span> · {AUDIT_STATE_NOTE}</p>
+        <p className="mt-1"><span className="font-semibold">데이터 검증 적합성</span> · {VALIDATION_STATE_NOTE}</p>
+        <p className="mt-1"><span className="font-semibold">공간 표시 가능 여부</span> · {VIEWABILITY_STATE_NOTE}</p>
+        {layer && (
+          <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3">
+            <div><dt className="font-semibold text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(layer.inspectionOutcome)}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">관측 위치 기준</dt><dd className="break-all font-mono">{layer.observedCrsIdentifier ?? "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">관측 수직 기준</dt><dd className="break-all">{layer.verticalReference ?? "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">검사 격자</dt><dd>{grid ? `${grid.width} × ${grid.height} 네이티브 픽셀` : "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">등록 파일명</dt><dd className="break-all">{layer.fileName}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">등록 버전</dt><dd>revision {layer.revision} · 제출 묶음 {layer.submissionRef}</dd></div>
+          </dl>
+        )}
+        <p className="mt-1 text-[11.5px] text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
+      </details>
     </section>
   );
 }

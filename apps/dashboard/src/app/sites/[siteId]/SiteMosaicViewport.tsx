@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
+
 import {
   decodeReceiptPreview,
   fetchVerifiedReceiptBytes,
@@ -176,10 +178,10 @@ export function SiteMosaicViewport({
   const [paintError, setPaintError] = useState<string | null>(null);
   const [requestNote, setRequestNote] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
-  // 이어 보기의 읽기와 준비 요청은 작업자의 명시적 "채우기"에서만 나간다.
-  // 진입·이동·확대만으로는 어떤 쓰기·읽기도 만들지 않는다.
+  // 이미 준비된 창의 읽기(GET)는 진입 시 바로 나간다 — 같은 guarded GET+SHA
+  // 경로이며 새 바이트 권한을 만들지 않는다. 준비 요청(POST)은 작업자의
+  // 명시적 "채우기"에서만 나가며, 진입·이동·확대만으로는 쓰기가 나가지 않는다.
   const [fillTick, setFillTick] = useState(0);
-
   const schedulerRef = useRef<DisplayPrepareScheduler | null>(null);
   if (schedulerRef.current === null) {
     schedulerRef.current = new DisplayPrepareScheduler(
@@ -303,8 +305,9 @@ export function SiteMosaicViewport({
         }
         return changed ? next : previous;
       });
-      if (fillTick === 0) return;
-      if (canRequest && observedCrsDigest) {
+      // 쓰기(PREPARE POST)는 명시적 "채우기"에서만 나간다. 읽기는 진입 시에도
+      // 나가며, 모자란 창의 준비 요청은 아래 집합에만 건다.
+      if (fillTick > 0 && canRequest && observedCrsDigest) {
         // S1 — 중심 가시성 순서로 발행한다(서버 FIFO가 없으므로 클라이언트가 만든다).
         const orderedPlans = orderCoverByVisibilityCentrality(cover.windows, activeViewport);
         const targets = mosaicIssueTargets(
@@ -656,14 +659,17 @@ export function SiteMosaicViewport({
               <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>
             </>
           )}
-          <ul className="flex flex-col gap-1">
-            {cells.map((cell) => (
-              <li key={cell.key} className="text-[12px] leading-5 text-ink-2">
-                <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
-                {` · ${cell.detail}`}
-              </li>
-            ))}
-          </ul>
+          <details className="text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">창별 상태 {paintedCount}/{cells.length}</summary>
+            <ul className="mt-1 flex flex-col gap-1">
+              {cells.map((cell) => (
+                <li key={cell.key} className="text-[12px] leading-5 text-ink-2">
+                  <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
+                  {` · ${cell.detail}`}
+                </li>
+              ))}
+            </ul>
+          </details>
           {paintError && (
             <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
               {paintError}
@@ -699,14 +705,19 @@ export function SiteMosaicViewport({
         </p>
       )}
       <p className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="btn btn-primary min-h-11"
-          onClick={() => setFillTick((tick) => tick + 1)}
-          disabled={!canFillNow || requestBusy}
+        <ResponsiveActionBoundary
+          action="SPATIAL_DATA_REQUEST"
+          reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요. 준비된 창 보기는 모바일에서도 할 수 있습니다."
         >
-          {missingCount > 0 ? `이어 보기 채우기 (모자란 창 ${missingCount}개)` : "이어 보기 채우기"}
-        </button>
+          <button
+            type="button"
+            className="btn btn-primary min-h-11"
+            onClick={() => setFillTick((tick) => tick + 1)}
+            disabled={!canFillNow || requestBusy}
+          >
+            {missingCount > 0 ? `이어 보기 채우기 (모자란 창 ${missingCount}개)` : "이어 보기 채우기"}
+          </button>
+        </ResponsiveActionBoundary>
         <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
           준비 상태 다시 확인
         </button>

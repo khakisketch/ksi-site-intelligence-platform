@@ -80,6 +80,7 @@ export function SiteSpatialOverview({
   canCreateWorkOrder,
   canCreateAnalysis,
   scopeNotice,
+  hideAreaForm = false,
 }: {
   sitePath: string;
   areas: WorkArea[];
@@ -98,6 +99,8 @@ export function SiteSpatialOverview({
   canCreateAnalysis: boolean;
   /** 명시된 workAreaId/assetRef 쿼리가 조회 범위 안에 없을 때 한 번만 공지한다. */
   scopeNotice: boolean;
+  /** 탐색 첫 화면의 작업 막대가 구역 선택을 맡을 때 true — 중복 상자를 숨긴다. */
+  hideAreaForm?: boolean;
 }) {
   if (!areasKnown) {
     return <section aria-label="선택 구역 공간 확인" className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -171,7 +174,7 @@ export function SiteSpatialOverview({
         요청한 대상을 확인할 수 없어 조회 가능한 구역을 표시합니다. 선택 대상을 확인하세요.
       </p>
     )}
-    {areas.length > 0 ? (
+    {areas.length > 0 ? (hideAreaForm ? null : (
       <form method="get" action={sitePath} className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface px-4 py-3">
         <div className="min-w-0 flex-1 basis-56">
         <label htmlFor="site-spatial-area" className="block text-[12px] font-semibold">확인할 작업구역 선택</label>
@@ -194,7 +197,7 @@ export function SiteSpatialOverview({
           <p className="w-full text-[12px] text-ink-2">현재 고를 수 있는(ACTIVE) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
         )}
       </form>
-    ) : (
+    )) : (
       <EmptyState
         title="등록된 작업구역이 없습니다"
         description="작업구역이 등록되면 이 자리에서 모양과 자료 범위를 확인할 수 있습니다."

@@ -254,7 +254,7 @@ export function SiteWorkspaceCompare({
       </form>
     )}
 
-    {selected && <div className="grid gap-4 md:grid-cols-2">
+    {selected && resolution.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
       <CompareSlot
         slotLabel="기준 자료"
         sitePath={sitePath}
@@ -281,9 +281,19 @@ export function SiteWorkspaceCompare({
       />
     </div>}
 
+    {selected && resolution.status !== "ready" && resolution.status !== "unresolvable" && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
+        아직 나란히 둘 비교를 고르지 않았습니다. 위에서 기준·비교 자료를 고르면 같은 크기로 둡니다.
+        {" "}고르기 전에 둘러보려면{" "}
+        <Link href={sitePath} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
+        하세요.
+      </p>
+    )}
+
     {selected && projectionState === "ready" && (blocked.length > 0 || (groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0)) || tiedFacts.length > 0) && (
-      <div className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[13px] font-bold">비교 후보에 오르지 않은 관측</h3>
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-bold">둘러볼 수 있는 관측 · 비교 불가 사유</summary>
+        <div className="mt-1">
         {blocked.length > 0 && (
           <div className="mt-1">
             <p className="text-[12.5px] leading-5 text-ink-2">시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 칸에 올리지 않았습니다.</p>
@@ -314,7 +324,8 @@ export function SiteWorkspaceCompare({
             </ul>
           </div>
         )}
-      </div>
+        </div>
+      </details>
     )}
 
     {selected && <div className="rounded-lg border border-line bg-surface px-4 py-3">

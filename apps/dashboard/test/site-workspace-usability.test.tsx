@@ -1,0 +1,339 @@
+/** @vitest-environment jsdom */
+import { cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocked = vi.hoisted(() => ({
+  site: vi.fn(),
+  permissions: vi.fn(),
+  areas: vi.fn(),
+  orders: vi.fn(),
+  history: vi.fn(),
+  analyses: vi.fn(),
+  detail: vi.fn(),
+  assets: vi.fn(),
+  workspace: vi.fn(),
+  prepared: vi.fn(),
+}));
+
+vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
+vi.mock("@/lib/core-api/permissions", () => ({ hasAllPermissions: mocked.permissions }));
+vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
+vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.orders }));
+vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolumeHistory: mocked.history }));
+vi.mock("@/lib/core-api/analysis", () => ({ listAnalyses: mocked.analyses, getAnalysis: mocked.detail }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
+vi.mock("@/lib/core-api/spatial-workspace", () => ({ listSpatialWorkspaceObservations: mocked.workspace }));
+vi.mock("@/lib/core-api/spatial-data-requests", () => ({ listSpatialDataRequests: mocked.prepared }));
+vi.mock("@/components/map/AoiPolygonMap", () => ({
+  AoiPolygonMap: ({ value }: { value: unknown }) => (
+    <div data-testid="aoi-map" data-vertices={JSON.stringify(value)} />
+  ),
+}));
+vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) }));
+
+import SiteDetailPage from "@/app/sites/[siteId]/page";
+import { CoreApiError } from "@/lib/core-api/client";
+
+const TINY_5186 = {
+  type: "Polygon",
+  coordinates: [[[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]]],
+};
+
+function areaFixture(workAreaId: string, name: string) {
+  return {
+    schemaVersion: "1.0",
+    siteId: "site-1",
+    workAreaId,
+    name,
+    polygon: TINY_5186,
+    crs: "EPSG:5186",
+    status: "ACTIVE",
+    supersedes: null,
+    createdAt: "2026-10-10T00:00:00Z",
+  };
+}
+
+function declared(overrides: Record<string, unknown> = {}) {
+  return {
+    factClass: "DECLARED",
+    fileName: "tile.tif",
+    format: "GeoTIFF",
+    contentType: "image/tiff",
+    sha256: "aa",
+    sizeBytes: 10,
+    crs: "EPSG:5186",
+    verticalReference: null,
+    gsdM: null,
+    submittedAt: "2026-10-11T00:00:00Z",
+    producerCompletedAt: null,
+    captureStartedAt: "2021-08-17T10:00:00Z",
+    captureEndedAt: "2021-08-17T11:00:00Z",
+    ...overrides,
+  };
+}
+
+function rasterAsset(assetRef: string) {
+  return {
+    assetRef,
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    workOrderId: "w1",
+    observationEpochId: "epoch-2021",
+    submissionRef: "s1",
+    revision: 2,
+    artifactId: "art-1",
+    kind: "dsm",
+    lifecycleState: "SEALED",
+    declared: declared(),
+    observed: null,
+    inspection: {
+      state: "COMPLETED",
+      reportDigest: null,
+      outcome: "MEASURED",
+      reason: null,
+      inspectorReportDigest: null,
+      raster: {
+        factClass: "INSPECTED",
+        sourceReportDigest: "rr",
+        observedCrsIdentifier: "EPSG:5186",
+        observedCrsWkt: null,
+        observedCrsDigest: "dd",
+        observedVerticalReference: null,
+        transform: [200000, 10, 0, 550010, 0, -10],
+        footprintWkt: "POLYGON ((200000 550000, 200010 550000, 200010 550010, 200000 550000))",
+        footprintDigest: "fd",
+        width: 100,
+        height: 100,
+      },
+    },
+    dataAccess: "NOT_AVAILABLE_FROM_CATALOG",
+    analysisStatus: "NOT_EVALUATED",
+    supportedActions: ["VIEW_METADATA"],
+  };
+}
+
+function wireCapture() {
+  return {
+    factClass: "DECLARED_CAPTURE",
+    precision: "EXACT_INTERVAL",
+    captureStartedAt: "2021-08-17T10:00:00Z",
+    captureEndedAt: "2021-08-17T11:00:00Z",
+    captureDate: null,
+  };
+}
+
+function workspaceReadyPage() {
+  return {
+    contractVersion: "site-spatial-workspace-page.v1",
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+    scopeNote: "",
+    observations: [{
+      observationEpochId: "epoch-2021",
+      workOrderId: "w1",
+      capture: wireCapture(),
+      captureSourcesAgree: true,
+      versions: [{
+        assetRef: "disp-2022",
+        submissionRef: "s1",
+        revision: 1,
+        artifactId: "art-1",
+        kind: "dsm",
+        lifecycleState: "SEALED",
+        capture: wireCapture(),
+        declaredCrs: "EPSG:5186",
+        declaredVerticalReferencePresent: false,
+        declaredGsdM: null,
+        submittedAt: "2021-08-18T00:00:00Z",
+        observedSha256: null,
+        observedSizeBytes: null,
+        observedAt: null,
+        inspectionState: "COMPLETED",
+        inspectionOutcome: "MEASURED",
+        inspectionReason: null,
+        inspectedRasterAvailable: true,
+        displayState: "SEALED",
+        displayReady: true,
+        chronology: "EXACT_INTERVAL_CANDIDATE",
+        chronologyCandidate: true,
+        quantitativeEligibility: "NOT_EVALUATED",
+        viewAssetRef: "disp-2022",
+        viewAvailable: true,
+        viewUnavailableReason: null,
+      }],
+      viewAvailable: true,
+      viewUnavailableReason: null,
+      viewAssetRef: "disp-2022",
+      newerRevisionPending: false,
+      newerRevisionState: null,
+      chronologyCandidate: true,
+      hasSealedVersion: true,
+    }],
+    entryDefault: {
+      observationEpochId: "epoch-2021",
+      viewAssetRef: "disp-2022",
+      reason: "LATEST_EXACT_VIEW_AVAILABLE",
+      detail: "Latest view-available observation by exact capture interval.",
+      tiedObservationEpochIds: [],
+    },
+    nextCursor: null,
+    hasMore: false,
+  };
+}
+
+function preparedJobView() {
+  const pixelWindow: [number, number, number, number] = [0, 100, 0, 100];
+  return {
+    jobId: "sdj-v1-00000000-0000-0000-000000000011",
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    assetRef: "disp-2022",
+    executionState: "COMPLETED",
+    availability: "AVAILABLE",
+    createdAt: "2026-10-21T00:00:00Z",
+    receipt: {
+      jobId: "sdj-v1-00000000-0000-0000-000000000011",
+      receiptDigest: null,
+      artifactKind: "dsm",
+      outputSizeBytes: 30000,
+      outputSha256: `sha256:${"a".repeat(64)}`,
+      requestedBounds: [200000, 549010, 201000, 550010],
+      actualBounds: [200000, 549010, 201000, 550010],
+      pixelWindow,
+      width: 100,
+      height: 100,
+      observedCrsIdentifier: "EPSG:5186",
+      observedCrsDigest: "dd",
+      accuracyAssessed: false,
+      attribution: "attr",
+      modificationNotice: "mod",
+      limitations: [],
+      preparedAt: "2026-10-21T00:00:00Z",
+    },
+  };
+}
+
+function analysisItem(analysisId: string, createdAt: string) {
+  return {
+    analysisId,
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    executionState: "COMPLETED",
+    suitabilityState: "PROVISIONAL_ACCURACY_UNVERIFIED",
+    createdAt,
+    resultId: "res-1",
+    metrics: { cutM3: 0, fillM3: 800, netM3: 800, thresholdM: 0, uncertaintyM3: null },
+    limitationCount: 1,
+    analysisHref: `/sites/site-1/analysis?analysisId=${analysisId}`,
+  };
+}
+
+afterEach(() => { cleanup(); vi.resetAllMocks(); });
+
+beforeEach(() => {
+  mocked.site.mockResolvedValue({
+    siteId: "site-1",
+    name: "현장 하나",
+    status: "BASELINE_MAPPING",
+    aoi: null,
+    resumeTarget: null,
+    siteFrame: { crs: "EPSG:5186", transformVersion: "v1" },
+    registeredAt: "2026-10-01T00:00:00Z",
+    updatedAt: "2026-10-01T00:00:00Z",
+  });
+  mocked.permissions.mockResolvedValue(true);
+  mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 구역")] });
+  mocked.orders.mockResolvedValue([]);
+  mocked.history.mockResolvedValue({ items: [], nextCursor: null });
+  mocked.analyses.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
+  mocked.detail.mockRejectedValue(new CoreApiError(404, { detail: "not found" }));
+  mocked.assets.mockResolvedValue({
+    contractVersion: "spatial-asset-catalog-page.v1",
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+    scopeNote: "",
+    assets: [rasterAsset("disp-2022")],
+    nextCursor: null,
+    hasMore: false,
+  });
+  mocked.workspace.mockResolvedValue(workspaceReadyPage());
+  mocked.prepared.mockResolvedValue({
+    siteId: "site-1",
+    workAreaId: "tiny-1",
+    items: [preparedJobView()],
+    nextCursor: null,
+  });
+});
+
+async function renderOverview(searchParams: Record<string, string> = {}) {
+  render(await SiteDetailPage({
+    params: Promise.resolve({ siteId: "site-1" }),
+    searchParams: Promise.resolve(searchParams),
+  }));
+}
+
+describe("usability-first explore", () => {
+  it("shows the actual canvas before the technical disclosure", async () => {
+    await renderOverview({});
+    const canvas = screen.getByRole("region", { name: "선택 관측 화면" });
+    const detail = screen.getByText("자료·범위 상세").closest("details")!;
+    expect(canvas.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 실제 화면 자리가 기술 벽보다 먼저다.
+    const text = document.body.textContent ?? "";
+    const mosaic = text.indexOf("이어 보기 — 여러 창의 나란한 배치");
+    const conditions = text.indexOf("표시 조건·근거");
+    expect(mosaic).toBeGreaterThanOrEqual(0);
+    expect(conditions).toBeGreaterThan(mosaic);
+  });
+
+  it("keeps dates, layers and scope on the first task bar", async () => {
+    await renderOverview({});
+    expect(screen.getByText(/보여주는 자료/)).toBeTruthy();
+    expect(screen.getByText(/층 1개/)).toBeTruthy();
+    expect(screen.getByText(/작업구역 · 미세 분석 구역/)).toBeTruthy();
+  });
+
+  it("shows one area as fact without a chooser, and a chooser for several", async () => {
+    await renderOverview({});
+    expect(screen.queryByLabelText("작업구역")).toBeNull();
+
+    mocked.areas.mockResolvedValue({
+      workAreas: [areaFixture("tiny-1", "첫 구역"), areaFixture("tiny-2", "둘째 구역")],
+    });
+    cleanup();
+    await renderOverview({});
+    expect(screen.getByLabelText("작업구역")).toBeTruthy();
+  });
+
+  it("keeps the compact header to one site name without a redundant label", async () => {
+    await renderOverview({});
+    expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
+    expect(screen.queryByText("현장명")).toBeNull();
+    expect(screen.getByText("현장 정보·범위")).toBeTruthy();
+  });
+});
+
+describe("usability-first results", () => {
+  it("leads with the latest record and folds older ones into history", async () => {
+    mocked.analyses.mockResolvedValue({
+      siteId: "site-1",
+      items: [
+        analysisItem("a3", "2026-10-14T00:00:00Z"),
+        analysisItem("a2", "2026-10-13T00:00:00Z"),
+        analysisItem("a1", "2026-10-12T00:00:00Z"),
+      ],
+      nextCursor: null,
+    });
+    await renderOverview({ mode: "results" });
+    const filled = screen.getAllByText("성토")[0]!.closest("div");
+    expect(filled?.textContent).toContain("800 m³");
+    expect(screen.getAllByText(/정확도 평가는 아직 확인되지 않았습니다/)[0]).toBeTruthy();
+    expect(screen.getByText("이전 기록 2건")).toBeTruthy();
+    // 최신 기록의 근거 링크는 원래 선택자 그대로다.
+    expect(screen.getAllByRole("link", { name: "분석 기록 열기" })[0]!.getAttribute("href")).toBe(
+      "/sites/site-1/analysis?analysisId=a3",
+    );
+  });
+});

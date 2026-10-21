@@ -24,6 +24,7 @@ import type {
 import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
 import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
+import { SiteExploreCanvas } from "./SiteExploreCanvas";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
 import { SiteWindowedPixelCompare, SiteWindowedPixelViewer } from "./SiteWindowedPixelViewer";
@@ -373,52 +374,80 @@ export function SiteWorkspaceShell({
     </nav>
 
     {mode === "explore" && (<>
-      <SiteSpatialOverview
+      {/* 탐색 첫 화면은 실제 화면이 먼저다. 측정 전 2042자(390px 기준)가
+          앞을 막던 기하 개요·등록 수·행동벽은 아래 '자료·범위 상세'에 둔다. */}
+      <SiteExploreCanvas
         sitePath={sitePath}
         areas={areas}
-        areasKnown={areasKnown}
-        orders={orders}
-        analyses={analyses}
-        analysesKnown={analysesKnown}
-        analysesHasMore={analysesHasMore}
-        legacy={legacy}
-        legacyHasMore={legacyHasMore}
-        assetsState={assetsState}
         selectedWorkAreaId={selectedWorkAreaId}
-        selectedAssetRef={selectedAssetRef}
-        canCreateWorkOrder={canCreateWorkOrder}
-        canCreateAnalysis={canCreateAnalysis}
-        scopeNotice={scopeNotice}
-      />
-      {/* 기본 관측 선택 상태는 실제 내용 뒤에 둔다 — 화면 첫머리가 "없습니다"로
-          시작하면, 자료가 있는 현장도 없는 현장처럼 읽힌다. */}
-      <SiteWorkspaceEntryPanel
-        sitePath={sitePath}
-        workAreaId={selectedWorkAreaId}
-        ordinaryEntry={ordinaryEntry}
-        projectionState={projectionState}
-        facts={facts}
-        canCreateWorkOrder={canCreateWorkOrder}
-        transitional={transitionalSelection}
-      />
-      {/* 탐색의 창 단위 픽셀 보기 — 임시 시각화 어댑터. 기하 개요를 바꾸지 않고
-          실제 파일의 준비된 창을 같은 평면에 둔다. */}
-      {selected && viewerJobsState !== "not-requested" && (
-        <SiteWindowedPixelViewer
-          siteId={facts.siteId}
-          workAreaId={selected.workAreaId}
-          layers={exploreLayers}
-          jobs={[...jobs]}
-          jobsState={viewerJobsState}
-          canRead={viewerCanRead}
-          canRequest={viewerCanRequest}
-          requestsHref={requestsHref}
-          workAreaRing={workAreaRing}
-          workAreaCrs={workAreaCrs}
-          observationHeading={exploreHeading}
-          idPrefix="windowed-explore"
-        />
-      )}
+        captureHeadline={exploreHeading}
+        layerSummary={exploreLayers.length > 0
+          ? `층 ${exploreLayers.length}개 · ${exploreLayers.map((item) => item.kindLabel).join(" · ")}${exploreLayers.length > 1 ? " — 화면에서 전환" : ""}`
+          : null}
+        coverageNote={selected && viewerJobsState !== "not-requested"
+          ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
+          : null}
+      >
+        {selected && viewerJobsState !== "not-requested" ? (
+          <SiteWindowedPixelViewer
+            siteId={facts.siteId}
+            workAreaId={selected.workAreaId}
+            layers={exploreLayers}
+            jobs={[...jobs]}
+            jobsState={viewerJobsState}
+            canRead={viewerCanRead}
+            canRequest={viewerCanRequest}
+            requestsHref={requestsHref}
+            workAreaRing={workAreaRing}
+            workAreaCrs={workAreaCrs}
+            observationHeading={exploreHeading}
+            idPrefix="windowed-explore"
+          />
+        ) : (
+          <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
+            {!selected
+              ? "작업구역을 확인할 수 없어 화면을 고르지 않았습니다. 아래 상세에서 목록을 확인하세요."
+              : viewerJobsState === "denied"
+                ? "준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요."
+                : "준비 기록을 불러오지 못했습니다. 잠시 후 아래 상세에서 다시 확인하세요."}
+          </p>
+        )}
+      </SiteExploreCanvas>
+      {/* 기하 개요·등록 수·행동벽은 두 번째 자리다. 정보는 지우지 않고 펼침에 둔다. */}
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">자료·범위 상세</summary>
+        <div className="mt-2 flex flex-col gap-3">
+          <SiteSpatialOverview
+            sitePath={sitePath}
+            areas={areas}
+            areasKnown={areasKnown}
+            orders={orders}
+            analyses={analyses}
+            analysesKnown={analysesKnown}
+            analysesHasMore={analysesHasMore}
+            legacy={legacy}
+            legacyHasMore={legacyHasMore}
+            assetsState={assetsState}
+            selectedWorkAreaId={selectedWorkAreaId}
+            selectedAssetRef={selectedAssetRef}
+            canCreateWorkOrder={canCreateWorkOrder}
+            canCreateAnalysis={canCreateAnalysis}
+            scopeNotice={scopeNotice}
+            hideAreaForm
+          />
+          {/* 기본 관측 선택 상태는 실제 내용 뒤에 둔다 — 화면 첫머리가 "없습니다"로
+              시작하면, 자료가 있는 현장도 없는 현장처럼 읽힌다. */}
+          <SiteWorkspaceEntryPanel
+            sitePath={sitePath}
+            workAreaId={selectedWorkAreaId}
+            ordinaryEntry={ordinaryEntry}
+            projectionState={projectionState}
+            facts={facts}
+            canCreateWorkOrder={canCreateWorkOrder}
+            transitional={transitionalSelection}
+          />
+        </div>
+      </details>
     </>)}
 
     {mode === "compare" && areasKnown && (<>

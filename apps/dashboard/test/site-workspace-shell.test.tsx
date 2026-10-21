@@ -375,17 +375,48 @@ describe("workspace compare mode", () => {
     });
   }
 
-  it("renders two equal-weight map slots with an honest unavailable-sync notice", async () => {
+  it("renders one coherent prompt with an honest unavailable-sync notice", async () => {
     mocked.workspace.mockResolvedValue(readyProjection());
     await renderOverview({ mode: "compare" });
     expect(screen.getByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeTruthy();
-    expect(screen.getByRole("region", { name: "기준 자료" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "비교 자료" })).toBeTruthy();
+    // 고르기 전에는 빈 칸 두 개를並べ지 않는다 — 한 개의 안내만 둔다.
+    expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
+    expect(screen.getByText(/탐색에서 날짜·층별로 확인/)).toBeTruthy();
     expect(screen.getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
     expect(screen.getByText(/나란히 보기 안내/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-data-requests?workAreaId=tiny-1",
     );
+  });
+
+  it("renders two equal-weight map slots once both inputs are chosen", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["exact-1"], {
+          capture: wireCapture(),
+          versions: [wireVersion("exact-1", { displayReady: true, displayState: "SEALED" })],
+        }),
+        wireObservation("epoch-2022", ["exact-2"], {
+          capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+          versions: [wireVersion("exact-2", {
+            capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+            displayReady: true,
+            displayState: "SEALED",
+          })],
+        }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2022",
+        viewAssetRef: "exact-2",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
+    expect(screen.getByRole("region", { name: "기준 자료" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "비교 자료" })).toBeTruthy();
   });
 
   it("lists orderable candidates and keeps date-only observations browsable at real precision", async () => {
@@ -406,7 +437,10 @@ describe("workspace compare mode", () => {
     mocked.workspace.mockResolvedValue(readyProjection());
     await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "ghost-asset" });
     expect(screen.queryByText(/선택 중/)).toBeNull();
-    expect(screen.getAllByText(/아직 고르지 않았습니다/).length).toBeGreaterThan(0);
+    // 빈 칸 두 개+경고 쌓기가 아니라 하나의 막힘 안내만 둔다.
+    expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
+    expect(screen.getByRole("alert")).toBeTruthy();
   });
 
   it("fails closed when both sides name the same version", async () => {

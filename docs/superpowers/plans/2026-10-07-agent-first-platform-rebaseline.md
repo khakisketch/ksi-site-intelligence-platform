@@ -5821,3 +5821,36 @@ continued preparing — progressive delivery confirmed in the real product.
 NOT done (and not claimed): S5 the LOD-overview preparation path (needs the GAP-03 table, kernels and
 containment proof), S6 worker parallelism/admission (needs the policy decision and multi-tenant
 evidence), and the T2 persistent tier (placement decision separate, no deployment authorized).
+
+### 2026-10-21 — Human shifts the active task to usability-first composition
+
+Latest Human: “UI UX 그리고 사용성 중심으로 설계가 되어야하지 않을까 기능이나 이런건 이제 충분하니?”
+then approved “그래 그렇게 구성해봐”. Pause new feature/LOD/cache/registration-contract development for
+this bounded task. The approved outcome is the actual normal Console's readable first view and three
+coherent tasks: see the Site's observations → inspect another capture/layer → understand result/limits.
+No standalone demo, no new platform capability, no routine technical approval questions.
+
+Requirement IDs: SDP-REQ-01/02/05/06/07; existing Site workspace journey; INV-020/024/040/051/053/060/061.
+Owner module: apps/dashboard only. Acceptance: real authorized spatial content or one clear truthful
+recovery action in the first viewport; compact Site identity and capture/layer controls; technical
+window/coordinate/audit/processing details discoverable on demand, not walls before the task; compare
+retains exact inputs/scope and does not fake registration; results show comparison context, quantities,
+limits and a useful next step; Back/reload/mobile/keyboard and permission boundaries retained.
+Contracts affected: none; no Core/worker/schema/authority/byte-access changes. Existing data and results
+stay immutable; zero PREPARE/analysis writes on entry. Guarded GET of already available own outputs is a
+normal read, not new preparation or validation. Reference assets: incumbent tokens/components and actual
+before captures at /tmp/opencode/ksi-usability-first-20261021/{before-*,baseline.json} (6387567f image).
+Primary personally inspected mobile Explore/Results and desktop Compare: empty geometry dominates;
+mode tabs are added above duplicate navigation; actual viewer is buried behind technical scaffolding.
+Adoption: preserve useful Console identity; replace first-view hierarchy, reuse existing guarded mosaic
+and byte path; no external assets/dependencies/basemaps. Files: SiteHeader, Site workspace shell/overview/
+compare/results, window viewer/mosaic presentation and focused tests as required; connected analysis route
+only if necessary. Tests: focused UI/render/interaction tests, Dashboard suite/type/lint/locked build,
+actual 390/1440 product flows with existing records; no repeat of unchanged Python suites.
+HIL: none; automation ≠ physical touch/customer usability/field approval. License/data: existing CC BY4
+attribution retained; no new egress or rights. Rollback: replace only own Console3243 with previous image.
+Protected resources: ALL Core8074 journals and protected env/config; S3 objects; every other server;
+shared inspector journal branches/staging/daemon/cgroup; all original assets. No host changes, no new jobs,
+no recovery or policy changes. Core8074 currently ready/listening; no restart required for UI-only work.
+Native desktop screenshot failed despite focus before restart; six settled first-view captures already
+saved by isolated Playwright and remain valid. Reuse that evidence; do not repeat initial research.

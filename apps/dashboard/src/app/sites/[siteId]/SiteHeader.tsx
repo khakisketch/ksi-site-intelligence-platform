@@ -79,21 +79,29 @@ export function SiteHeader({
   // entry point there while the mobile panel remains the direct action surface.
   const primaryAction = tab === "overview" ? null : scopedPreparationAction;
   return (
-    <header className="flex flex-col gap-3 border-b border-line bg-surface px-4 pt-3 sm:px-5">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-2">
+    <header className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은 그 하위
-            맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다. */}
-        <span className="text-[12px] text-ink-2">현장명</span>
-        <h2 className="text-[17px] font-bold tracking-tight break-keep">{site.name}</h2>
+            맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
+            현장명은 한 번만 보인다. 앞의 "현장명" 라벨과 별도 큰 머리글은 두지 않는다. */}
+        <h2 className="text-[16px] font-bold tracking-tight break-keep">{site.name}</h2>
         {site.status === "SUSPENDED" && <StateBadge label={status.label} tone={status.tone} />}
         <details className="text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer">현장 등록 정보</summary>
-          <dl className="my-2 grid gap-1">
+          <summary className="tap-target cursor-pointer underline decoration-dotted">현장 정보·범위</summary>
+          <dl className="my-1.5 grid gap-1">
             <div><dt className="font-semibold">현장 관리 상태</dt><dd>{status.label}</dd></div>
             <div><dt className="font-semibold">현장 식별자</dt><dd className="break-all font-mono">{site.siteId}</dd></div>
           </dl>
+        <p>
+          <Link
+            href={`/sites/${encodeURIComponent(site.siteId)}?section=manage#site-aoi`}
+            className="tap-target text-[11.5px] break-keep underline text-ink-2"
+          >
+            현장 전체 범위 보기
+          </Link>
+        </p>
         {latestExternalReportKnown !== undefined && (
-          <p className="text-[11.5px] break-keep text-ink-2">
+          <p className="mt-1 text-[11.5px] break-keep text-ink-2">
             최근 외부 비교 보고{" "}
             {!latestExternalReportKnown
               ? "알 수 없음"
@@ -103,17 +111,11 @@ export function SiteHeader({
           </p>
         )}
         {site.resumeTarget && (
-          <span className="text-[11.5px] break-keep text-ink-2">
+          <span className="mt-1 block text-[11.5px] break-keep text-ink-2">
             복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
           </span>
         )}
         </details>
-        <Link
-          href={`/sites/${encodeURIComponent(site.siteId)}?section=manage#site-aoi`}
-          className="tap-target text-[11.5px] break-keep underline text-ink-2"
-        >
-          현장 전체 범위 보기
-        </Link>
 
         <span className="ml-auto hidden flex-wrap items-center gap-1.5 lg:flex">
           {primaryAction && (
@@ -128,7 +130,7 @@ export function SiteHeader({
       </div>
 
       <details className="-mb-px lg:hidden">
-        <summary className="tap-target flex cursor-pointer items-center justify-between border-t border-line py-2 text-[13px] font-semibold">
+        <summary className="tap-target flex cursor-pointer items-center justify-between border-t border-line py-1.5 text-[13px] font-semibold">
           현장 메뉴 · {SITE_TABS.find((option) => option.key === tab)?.label}
           <span className="text-[11.5px] font-normal text-ink-muted">열기</span>
         </summary>

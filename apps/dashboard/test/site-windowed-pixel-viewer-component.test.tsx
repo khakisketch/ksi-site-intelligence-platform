@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("geotiff", () => ({
@@ -53,8 +53,7 @@ const dsmLayer: WindowedViewerLayer = {
   ...layer({ assetRef: dsmRef, kind: "dsm", kindLabel: "지표면 높이 자료(DSM)", isDsm: true, fileName: "floreat_2021_dsm.tif", inspectionOutcome: "MEASURED", verticalReference: "확인 불가" }),
 };
 
-function receiptFor(jobId: string, ref: string, pixelWindow: [number, number, number, number]) {
-  return {
+function receiptFor(jobId: string, ref: string, pixelWindow: [number, number, number, number]) {  return {
     jobId,
     receiptDigest: null,
     artifactKind: "ortho" as const,
@@ -83,7 +82,7 @@ function jobsFor(): PreparedWindowJob[] {
       executionState: "COMPLETED",
       availability: "AVAILABLE",
       createdAt: "2026-10-21T00:00:00Z",
-      receipt: receiptFor("sdj-v1-00000000-0000-0000-0000-000000000011", assetRef, [0, 0, 512, 512]),
+      receipt: receiptFor("sdj-v1-00000000-0000-0000-0000-000000000011", assetRef, [0, 512, 0, 512]),
     },
     {
       jobId: "sdj-v1-00000000-0000-0000-0000-000000000022",
@@ -166,21 +165,27 @@ afterEach(() => {
 });
 
 describe("site windowed pixel viewer", () => {
-  it("renders the adapter frame without fetching or preparing on entry", () => {
-    const fetchMock = vi.fn(async () => new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 }));
+  it("issues no writes on entry while authorized reads use the same guarded path", async () => {
+    const posts: string[] = [];
+    const gets: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") posts.push(String(url));
+      else gets.push(String(url));
+      return new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     render(<SiteWindowedPixelViewer {...propsFor()} />);
 
-    expect(screen.getByText("임시 시각화 어댑터 · 실제 파일의 준비된 창")).toBeTruthy();
-    expect(screen.getByText(/이 화면은 감사 판정을 하지 않습니다/)).toBeTruthy();
-    expect(screen.getByText(/볼 수 있다는 뜻이 쓸 수 있다는 뜻이 아닙니다/)).toBeTruthy();
-    expect(screen.getByText(/그릴 수 있는지만 말합니다/)).toBeTruthy();
-    expect(screen.getByText(/종합 판정.*두지 않습니다/)).toBeTruthy();
+    // 기술 벽이 먼저가 아니라 실제 화면 자리가 먼저다.
+    expect(screen.getByRole("heading", { name: /2021 포착/ })).toBeTruthy();
     expect(screen.getByText("이미 준비된 창 보기")).toBeTruthy();
-    expect(screen.getByText("이 구역의 창 준비 요청")).toBeTruthy();
-    // 진입 시 쓰기·읽기 모두 나가지 않는다.
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.getByText("이어 보기 — 여러 창의 나란한 배치")).toBeTruthy();
     expect(screen.queryByText(/검증 완료/)).toBeNull();
+    // 진입 시 쓰기(POST)는 나가지 않는다. 이미 준비된 창의 읽기(GET)는
+    // 같은 세션 경로로만 나가며, SHA·크기 대조는 그대로 둔다.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(posts).toHaveLength(0);
+    for (const url of gets) expect(url.startsWith("/api/")).toBe(true);
   });
 
   it("paints a SHA-verified window in the native plane without geographic claims", async () => {
@@ -193,6 +198,10 @@ describe("site windowed pixel viewer", () => {
     }));
     render(<SiteWindowedPixelViewer {...propsFor()} />);
 
+    // 이어 보기 자동 읽기가 먼저 끝난 뒤에 낱창을 연다. 같은 geotiff
+    // 모듈을 동시에 처음 읽으면 테스트 러너의 모듈 모사가 갈라져
+    // 디코딩이 실패한다(실제 브라우저의 모듈 등록소는 단일 인스턴스다).
+    await screen.findByText(/그린 창 · 512 × 512/);
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
     await screen.findByText(/실제 파일 · 준비된 창 · 2 × 2 픽셀/);
     expect(screen.getByText(/EPSG:7850 · \[0, 0, 2, 2\]/)).toBeTruthy();
@@ -214,8 +223,11 @@ describe("site windowed pixel viewer", () => {
     )));
     render(<SiteWindowedPixelViewer {...propsFor()} />);
 
+    // 자동 읽기와 동시에 디코딩하면 테스트 모듈 모사가 갈라진다. 먼저
+    // 이어 보기가 끝난 뒤에 낱창을 연다(실 브라우저는 단일 인스턴스다).
+    await screen.findByText(/받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다/);
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
-    await screen.findByText(/받은 바이트가 Core 준비 기록.*달라/);
+    await screen.findByText(/출력 크기·파일 확인값/);
   });
 
   it("maps a foreign or expired window to one message without existence disclosure", async () => {
@@ -227,8 +239,11 @@ describe("site windowed pixel viewer", () => {
         new Response(JSON.stringify({ code: "NOT_FOUND" }), { status, headers: { "content-type": "application/json" } })
       )));
       render(<SiteWindowedPixelViewer {...propsFor()} />);
-      fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
+      // 자동 읽기가 끝난 뒤에 낱창을 연다(테스트 모듈 모사 직렬화).
+      // 모자이크 칸과 낱창이 같은 문구를 쓰므로 건수로 가른다.
       await screen.findByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/);
+      fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
+      await waitFor(() => expect(screen.getAllByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/).length).toBe(2));
       cleanup();
     }
   });
@@ -267,6 +282,10 @@ describe("site windowed pixel viewer", () => {
     stubCanvas();
     const posts: Array<{ url: string; body: Record<string, unknown>; key: string | null }> = [];
     vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") !== "POST") {
+        // 진입 시 자동 읽기(GET)는 새 테스트 의도다 — 쓰기만 센다.
+        return new Response(new Uint8Array([7, 7, 7, 7]), { status: 200, headers: { "content-type": "image/tiff" } });
+      }
       const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
       const headers = new Headers(init?.headers);
       posts.push({ url, body, key: headers.get("Idempotency-Key") });
@@ -284,8 +303,7 @@ describe("site windowed pixel viewer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "받기 요청 만들기" }));
     await screen.findByText(/받기 요청을 만들었습니다/);
-    expect(posts).toHaveLength(1);
-    expect(posts[0]!.url).toBe("/api/sites/site-1/work-areas/area-1/spatial-data-requests");
+    expect(posts).toHaveLength(1);    expect(posts[0]!.url).toBe("/api/sites/site-1/work-areas/area-1/spatial-data-requests");
     expect(posts[0]!.body.assetRef).toBe(assetRef);
     expect(posts[0]!.body.resolutionMode).toBe("NATIVE");
     expect(posts[0]!.body.purpose).toBe("GENERAL_DATA_USE");
@@ -293,13 +311,19 @@ describe("site windowed pixel viewer", () => {
     expect(typeof posts[0]!.key).toBe("string");
   });
 
-  it("shows the honest unavailable state for a reader who may not prepare", () => {
-    const fetchMock = vi.fn(async () => new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 }));
+  it("shows the honest unavailable state for a reader who may not prepare", async () => {
+    const posts: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") posts.push(String(url));
+      return new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     render(<SiteWindowedPixelViewer {...propsFor({ canRequest: false })} />);
     // 권한 없음 트리거만 보인다 — 사유는 눌러야 열리는 팝오버에 있다(기존 동작).
     expect(screen.getByRole("button", { name: "이 구역의 창 준비 요청" })).toBeTruthy();
-    expect(fetchMock).not.toHaveBeenCalled();
+    // 준비 요청 권한이 없어도 이미 준비된 창 읽기는 나간다. 쓰기만 막는다.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(posts).toHaveLength(0);
   });
 
   it("shows the honest unavailable state for a viewer who may not read", () => {

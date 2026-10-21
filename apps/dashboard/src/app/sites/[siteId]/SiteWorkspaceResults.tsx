@@ -10,13 +10,13 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { formatNumberKo } from "@/lib/number-format";
 import { analysisStateLabel } from "./SiteSpatialOverview";
 
-function RecordCard({ item }: { item: AnalysisListItem }) {
+function RecordCard({ item, lead = false }: { item: AnalysisListItem; lead?: boolean }) {
   // 결과 모드의 첫 화면은 "무엇이 얼마나 바뀌었나"다. 수치는 이미 Core가
   // 결정해 기록한 값이므로 그대로 옮기고 그 옆에 한계를 함께 둔다. 여기서
   // 다시 계산하거나 수치를 새로 만들지 않는다.
   const metrics = item.metrics;
-  return <article className="rounded-lg border border-line px-4 py-3">
-    <h3 className="text-[13.5px] font-bold">{analysisResultTitle(item.createdAt)}</h3>
+  return <article className={`rounded-lg border px-4 py-3 ${lead ? "border-line-strong bg-surface" : "border-line"}`}>
+    <h3 className={`${lead ? "text-[15px]" : "text-[13.5px]"} font-bold`}>{analysisResultTitle(item.createdAt)}</h3>
     <p className="mt-1 text-[12px] font-semibold">{analysisStateLabel(item)}</p>
     <p className="mt-0.5 text-[12px] text-ink-2">
       기록 {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}
@@ -159,7 +159,16 @@ export function SiteWorkspaceResults({
       </p>
     ) : (
       <div className="flex flex-col gap-2">
-        {areaAnalyses.map((item) => <RecordCard key={item.analysisId} item={item} />)}
+        {/* 첫 화면은 가장 최근 기록 하나다. 나머지는 겹쳐 두지 않고 펼침에 둔다. */}
+        <RecordCard item={areaAnalyses[0]!} lead />
+        {areaAnalyses.length > 1 && (
+          <details className="rounded-lg border border-line px-4 py-3">
+            <summary className="tap-target cursor-pointer text-[13px] font-semibold">이전 기록 {areaAnalyses.length - 1}건</summary>
+            <div className="mt-2 flex flex-col gap-2">
+              {areaAnalyses.slice(1).map((item) => <RecordCard key={item.analysisId} item={item} />)}
+            </div>
+          </details>
+        )}
       </div>
     )}
 

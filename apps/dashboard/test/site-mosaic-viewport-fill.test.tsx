@@ -93,17 +93,27 @@ function renderMosaic(jobs: PreparedWindowJob[]) {
 }
 
 describe("site mosaic viewport fill gate", () => {
-  it("issues no reads or writes on entry", () => {
+  it("issues no writes on entry while authorized reads load automatically", async () => {
     stubCanvas();
-    const fetchMock = vi.fn(async () => new Response(BYTES, { status: 200 }));
+    const posts: string[] = [];
+    const gets: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "POST") posts.push(url);
+      else gets.push(String(url));
+      return new Response(BYTES, { status: 200 });
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderMosaic([readableJob()]);
 
     expect(screen.getByText("이어 보기 — 여러 창의 나란한 배치")).toBeTruthy();
     expect(screen.getByText(/이음새 보정·재표본화 없음/)).toBeTruthy();
     expect(screen.getByText(/계산 다각형이 아닙니다/)).toBeTruthy();
-    // 진입만으로는 어떤 읽기·쓰기도 나가지 않는다.
-    expect(fetchMock).not.toHaveBeenCalled();
+    // 진입만으로는 준비 요청(POST)이 나가지 않는다 — 쓰기는 명시적 채우기에서만 나간다.
+    // 이미 준비된 창의 읽기(GET)는 같은 세션 경로로 진입 시 나간다.
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(posts).toHaveLength(0);
+    expect(gets.length).toBeGreaterThan(0);
+    for (const url of gets) expect(url.startsWith("/api/")).toBe(true);
   });
 
   it("fills only missing windows on explicit action with exact native bounds", async () => {
