@@ -76,7 +76,7 @@ export function SiteExploreCanvas({
           </form>
         ) : selected && selectedName ? (
           <div className="min-w-0 flex-1 sm:basis-56">
-            <p className="line-clamp-2 break-words text-[13px] font-semibold" aria-label={`작업구역 · ${selectedName}`}>
+            <p className="line-clamp-2 break-words text-[13px] font-semibold">
               작업구역 · {selectedName}
               {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
             </p>
