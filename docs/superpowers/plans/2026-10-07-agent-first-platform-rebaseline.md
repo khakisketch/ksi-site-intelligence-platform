@@ -5219,3 +5219,48 @@ Units commissioned (background, no commits by workers, no shared-host writes, no
 Main owns: integration, the real-product verification of B, the final Git/ledger record, and the
 separation of the three states in the delivered UI. No shared-host journal/daemon/cgroup/staging
 mutation, no new inspection launch, no policy/threshold/CRS/rights change.
+
+#### A-track design delivered; B-track tile feasibility proven on live data (2026-10-21)
+
+A-track (read-only verification + recovery-contract DESIGN, no repair, no journal mutation):
+`docs/audit/INSPECTOR_JOURNAL_RECOVERY_CONTRACT_PROPOSAL_2026-10-21.md` (new, 454 lines, audit-ledger
+sibling of the incident doc). Verified independently from the preserved copies: both branches match their
+recorded hashes (pre-trim 384 events `bdce3eed…`, active 545 events `b56465cf…`) and both validate as
+independent hash chains; the first 378 parsed events are identical; the divergence is exact — pre-trim
+line 379 is `INTENDED 511774dc…` while active line 379 is `INTENDED 303e2092…`, both descending from
+the same anchor (line 378 = `CLEANED 602ef037…`, digest `sha256:79777bd1…`). The missing six events
+were recovered in content and order (`INTENDED` → `STAGING_ALLOCATED` (marker ino 264876, dir ino
+524294, artifact ino 524295) → `INPUT_BOUND` (same artifact inode, 80,418 bytes, observedSha256
+`9319a3ff…`) → `RUNTIME_PARENT_CREATING` → `CLEANUP_REQUIRED(RUNTIME_PARENT_CREATE_AMBIGUOUS)` →
+`CLEANUP_FAILED(EXACT_CREATE_OUTCOME_UNAVAILABLE)`), all digests recomputing, terminal state
+cleanup-failed/unknown-outcome. The proposal (a) adds a SEPARATE append-only recovery stream
+(`journal/recovery-records.jsonl`, never interleaved with V1) carrying a `external-inspector-recovery.v1`
+record with the removed-branch pointer, retained-branch divergence pointer, staging linkage, evidence
+block, an `outcomeClaim` enum (`UNKNOWN_HISTORICAL_OUTCOME` / `PROVEN_ABSENCE_AS_OF` /
+`RETIRED_AFTER_PROOF`), an explicit `currentness{asOf, guarantee: NONE}` and an approval binding with
+explicit `forbids`; (b) makes replay dual-branch with a labeled gap marker while V1 startup recovery keeps
+failing closed on the removed nonce; (c) adds no new lifecycle transition. The proposal also fixes the
+three-state vocabulary the Human required — `launcherHistory` (S1 audit integrity),
+`measurementSuitability(<purpose>)` (S2 per-purpose validation), `spatialView` (S3 viewability) — and
+FORBIDS any composite `ready`/`status`/`operational`/`healthy`/`verified` field that merges them, with
+the existing conflation sites named (launcher admission latch, `INPUT_READY`, `NOT_READY`, and dropping
+the incident qualifier from Core reports). Open decisions D1–D6 and limits L1–L5 are recorded as
+UNdecided/UNverified (the live journal is not re-readable as `ubuntu`; retained staging was not
+re-observed; no daemon/systemd source was read in that pass; no conflation audit of every READY string;
+no signature design). No branch is declared canonical and nothing is claimed repaired.
+
+B-track live feasibility proof (main, real Core + real contained worker, real sealed bytes): the
+`max_output_pixels` cap is PER OUTPUT, so a SECOND ADJACENT window of the SAME 2021 Floreat ortho
+derivative was requested and completed — job `sdj-v1-1f42ba31-4561-425f-a08c-36f6070b71e3`, native
+pixel cols 510..1022 / rows 0..512, bounds [382389.2296, 6467413.575, 382517.2296, 6467541.575],
+receipt pixelWindow [510,1022,0,512], 512x512, 637,695 bytes, sha256:ad19fd8d9aa0167795560bc…, COMPLETED
+/AVAILABLE — alongside the existing left-half window `sdj-v1-6ff0ab18…` (cols 0..512, 474,427 bytes,
+sha256:4a580917…). The two windows tile the 1022-wide top half of the 1022x915 EPSG:7850 source, so
+tiling a larger source IS possible under the existing per-output policy; the binding limits are request
+volume, per-organization active/queue depth (maxActiveJobsPerOrganization 2, maxQueueDepth 8), latency
+and cache policy — NOT a whole-exploration-area cap. Coordinate trap recorded for the implementation: the
+native transform tuple is (xScale, rot, xOrigin, rot, yScale, yOrigin), so yScale is t[4] and yOrigin
+t[5]; misreading it yields a wrong bound and a truthful `REQUEST_OUTSIDE_SOURCE` 422 (observed twice
+before the correct derivation, then succeeded). Window bounds must be derived from the inspected native
+transform using the authoritative floor/ceil cell-edge rule
+(packages/geo-spatial/src/ksi_geo_spatial/external_native_window_geometry.py `_plan`).
