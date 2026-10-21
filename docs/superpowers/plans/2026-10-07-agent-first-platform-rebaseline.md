@@ -5949,3 +5949,52 @@ operational/production/customer/retention approval limits remain unchanged and i
 No further routine feature expansion or preference-only polishing is selected for this task. The next
 goal-relevant integrated outcome is delivered and verified: open real Site→see prepared observation→
 change capture/layer→understand Compare restriction or result→follow exact result/evidence/review.
+
+### 2026-10-21 — Human requests systematic UI/UX research, not another implementation pass
+
+Human asked whether familiar competitor screens/interaction patterns should inform KSI, then explicitly
+requested “UI UX 조사 등 체계적으로”. Current bounded task is research and design recommendations.
+Git3f60abe7/main=origin revalidated; frontend35d2ded0 remains served, unchanged. No feature/LOD/cache/
+contract/host-recovery work resumes through this request. Earlier usability implementation acceptance
+remains valid for its bounded task; it is not end-user comprehension or category-familiarity proof.
+
+Research delivered in [CONSOLE_SPATIAL_UX_RESEARCH_2026-10-21.md](../../audit/CONSOLE_SPATIAL_UX_RESEARCH_2026-10-21.md):
+task questions/costly failures, T1–T9 workflow matrix, actual screen/interaction evidence, two-competitor
+official-reference matrix, ranked findings with observation vs inference, alternative structures and
+trade-offs, scoped design/user-study protocol and evidence/limitations. This is an audit artifact, not
+a new task ledger, normative contract or implementation approval. Requirements SDP-REQ-01/02/05/06/07
+and existing UX contract guide the analysis; INV-020/024/040/051/053/060/061 remain constraints only.
+
+Primary performed actual read-only Home/Sites/Explore/Compare/Results/Materials desktop/mobile review,
+settled follow-up, real Site-card entry and comparison recovery; reused same-build prior verified
+date/layer/Back/reload/viewer/result/evidence/review proofs. An independent fresh-context assessment
+and public-reference scout were used; primary read adopted original screens/sources and rejected
+unsupported interpretations. Initial streaming captures are labelled, not accepted as loaded screens.
+Native DOM connected but focused screenshot still failed visible-tab; isolated Playwright renders used.
+Only own research tab/browser sessions were closed; no other user tabs or workers were managed.
+
+Material observations: stacked areas/modes overlap semantically; Materials tab adds an intermediate
+‘자료 열기’ gateway; pointer drag/wheel do not change the current image geometry while buttons do
+(1022x915→512x459→1022x915); phone controls starty813.5/865.5 beneath the image/first viewport;
+existing-output GET/decode uses ‘준비 중’ wording despite no new preparation. These do not prove user
+confusion rates or policy violations. Current numeric limits/exact source bindings and partial-view/
+no-own-output distinctions remain strengths. No fake aligned coast comparison or heatmap is proposed.
+
+Priorities: F1 navigation/task structure, F2 map-control access and verified interaction behaviour,
+F3 visual/calculate comparison meaning; then F4 loading semantics, F5 corrective-version clarity and
+F6 result-to-evidence reading continuity. A task-surface plus one on-demand panel is a hypothesis to
+compare against minimal incumbent refinement, not a mandatory always-open three-pane editor.
+No permission, new source/inspection, export capability, quantitative condition or API change follows.
+
+Evidence root /tmp/opencode/ksi-ux-research-20261021/; durable copy at
+~/.local/share/ksi-product-use-20261021/ux-research-20261021/ with source/capture SHA manifest. New
+walkthrough blocked zero product-write attempts and had zero page errors. Installed axe-core scans
+of Explore1440/Results390 found no automated A/AA-tag violations, but Explore contrast4nodes remain
+manual-review/incomplete; no overall accessibility claim. No code change means no full product suites,
+build or deployment repeated. External reference images retained locally for research only, not
+redistributed as licensed implementation assets. Actual customer participants=0; no competitor login,
+human usability benchmark, physical touch/SR, field or production acceptance claimed.
+
+The requested desk research/expert assessment is complete; a future design/implementation pass and
+real participant study are explicitly not reported as completed. Next goal-relevant verification
+would compare actual task access/comprehension while preserving exact WorkArea/source/result context.
