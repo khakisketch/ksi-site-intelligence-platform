@@ -308,10 +308,16 @@ describe("workspace shell structure", () => {
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderOverview({});
     const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
-    expect(panel.textContent).toContain("표시할 수 있는 관측이 아직 없습니다");
+    // "자료가 없다"가 아니라 "표시용 파생물이 아직 없다"로 구분한다 — 확인된
+    // 관측이 있는 현장인데도 없는 것처럼 읽히면 안 된다.
+    expect(panel.textContent).toContain("표시용 파생물이 아직 준비되지 않았습니다");
+    expect(panel.textContent).toContain("확인된 관측은 1건입니다");
+    expect(panel.textContent).toContain("구역 자료 준비에서 직접 요청하세요");
     expect(panel.textContent).toContain("표시용 출력의 봉인이 끝나지 않았습니다");
     expect(panel.textContent).toContain("서버가 정한 기본 관측이 아닙니다");
     expect(screen.queryByText(/최신/)).toBeNull();
+    // 자료가 있는 현장에서 "관측이 없습니다"로 읽히면 안 된다.
+    expect(panel.textContent).not.toContain("관측이 없습니다");
   });
 
   it("shows registration guidance only for real absence", async () => {

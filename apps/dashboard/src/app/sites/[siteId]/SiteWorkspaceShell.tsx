@@ -116,21 +116,27 @@ function SiteWorkspaceEntryPanel({
     </section>;
   }
   if (reason === "NO_VIEW_AVAILABLE_OBSERVATION") {
-    const reasons = [...new Set(
-      facts.observations.filter((item) => item.workAreaId === workAreaId).map((item) => item.viewUnavailableReason),
-    )];
+    const scopeFacts = facts.observations.filter((item) => item.workAreaId === workAreaId);
+    const reasons = [...new Set(scopeFacts.map((item) => item.viewUnavailableReason))];
     const lines = reasons.map(viewReasonLine).filter((line): line is string => line !== null);
+    const observationCount = new Set(scopeFacts.map((item) => item.observationEpochId)).size;
     return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
-      <p className="text-[13px] font-bold">표시할 수 있는 관측이 아직 없습니다</p>
+      <p className="text-[13px] font-bold">표시용 파생물이 아직 준비되지 않았습니다</p>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-        관측은 있지만 표시용 출력이 준비되지 않아 기본 관측을 정하지 않았습니다.{" "}
-        {lines.length > 0 ? lines.join(" ") : "언제 표시되는지는 담당자에게 확인하세요."}
+        {observationCount > 0
+          ? `확인된 관측은 ${observationCount}건입니다. `
+          : "확인된 관측이 없습니다. "}
+        {"파일을 보려면 아래의 구역 자료 준비에서 직접 요청하세요. 준비가 끝나면 실제 파일을 받을 수 있습니다."}
+      </p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        {lines.length > 0 ? lines.join(" ") : "언제 준비되는지는 담당자에게 확인하세요."}
       </p>
       {transitional && (
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">아래에는 확인할 수 있는 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
       )}
       <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
         <Link href={`${sitePath}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
+        <Link href={`${sitePath}/spatial-data-requests${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`} className="tap-target underline">구역 자료 준비</Link>
       </p>
     </section>;
   }
@@ -277,15 +283,6 @@ export function SiteWorkspaceShell({
     </nav>
 
     {mode === "explore" && (<>
-      <SiteWorkspaceEntryPanel
-        sitePath={sitePath}
-        workAreaId={selectedWorkAreaId}
-        ordinaryEntry={ordinaryEntry}
-        projectionState={projectionState}
-        facts={facts}
-        canCreateWorkOrder={canCreateWorkOrder}
-        transitional={transitionalSelection}
-      />
       <SiteSpatialOverview
         sitePath={sitePath}
         areas={areas}
@@ -302,6 +299,17 @@ export function SiteWorkspaceShell({
         canCreateWorkOrder={canCreateWorkOrder}
         canCreateAnalysis={canCreateAnalysis}
         scopeNotice={scopeNotice}
+      />
+      {/* 기본 관측 선택 상태는 실제 내용 뒤에 둔다 — 화면 첫머리가 "없습니다"로
+          시작하면, 자료가 있는 현장도 없는 현장처럼 읽힌다. */}
+      <SiteWorkspaceEntryPanel
+        sitePath={sitePath}
+        workAreaId={selectedWorkAreaId}
+        ordinaryEntry={ordinaryEntry}
+        projectionState={projectionState}
+        facts={facts}
+        canCreateWorkOrder={canCreateWorkOrder}
+        transitional={transitionalSelection}
       />
     </>)}
 
