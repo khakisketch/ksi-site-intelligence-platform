@@ -322,6 +322,7 @@ export function SpatialDataReceiptPreview({
       <div className="mt-3 flex flex-col gap-2">
         {gestureControls ? (
           <>
+            <div className="relative flex flex-col gap-2">
             <div
               ref={receiptViewWrapRef}
               tabIndex={0}
@@ -336,10 +337,14 @@ export function SpatialDataReceiptPreview({
               style={{ touchAction: "pan-y" }}
             >
               <div
-                className="inline-block"
-                style={{ transform: displayViewTransform(view), transformOrigin: "0 0" }}
+                className="mx-auto w-full"
+                style={{
+                  maxWidth: `min(100%, calc(52dvh * ${phase.width / phase.height}))`,
+                  transform: displayViewTransform(view),
+                  transformOrigin: "0 0",
+                }}
               >
-                <canvas ref={canvasRef} className="block max-w-none" style={{ imageRendering: "pixelated" }} />
+                <canvas ref={canvasRef} className="block h-auto w-full" style={{ imageRendering: "pixelated" }} />
               </div>
             </div>
             <DisplayControlStrip
@@ -348,6 +353,7 @@ export function SpatialDataReceiptPreview({
               zoomInDisabled={view.zoom >= 4}
               zoomOutDisabled={view.zoom <= 1}
             />
+            </div>
             {viewNote && (
               <p className="text-[11.5px] leading-5 text-ink-2" role="status">{viewNote}</p>
             )}

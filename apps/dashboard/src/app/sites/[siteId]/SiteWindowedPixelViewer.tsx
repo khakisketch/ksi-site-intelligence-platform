@@ -652,6 +652,7 @@ function WindowedLayerView({
       )}
       {phase.name === "ready" && receipt && (
         <div className="flex flex-col gap-2">
+          <div className="relative flex flex-col gap-2">
           <div
             ref={singleViewWrapRef}
             tabIndex={0}
@@ -666,10 +667,14 @@ function WindowedLayerView({
             style={{ touchAction: "pan-y" }}
           >
             <div
-              className="relative inline-block"
-              style={{ transform: displayViewTransform(view), transformOrigin: "0 0" }}
+              className="relative mx-auto w-full"
+              style={{
+                maxWidth: `min(100%, calc(52dvh * ${receipt.width / receipt.height}))`,
+                transform: displayViewTransform(view),
+                transformOrigin: "0 0",
+              }}
             >
-              <canvas ref={canvasRef} className="block max-w-none" style={{ imageRendering: "pixelated" }} role="img"
+              <canvas ref={canvasRef} className="block h-auto w-full" style={{ imageRendering: "pixelated" }} role="img"
                 aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`} />
               {ringPoints && samePlane && (
                 <svg viewBox={`0 0 ${receipt.width} ${receipt.height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
@@ -685,6 +690,7 @@ function WindowedLayerView({
             zoomInDisabled={view.zoom >= 4}
             zoomOutDisabled={view.zoom <= 1}
           />
+          </div>
           {viewNote && (
             <p className="text-[12px] leading-5 text-ink-2" role="status">{viewNote}</p>
           )}

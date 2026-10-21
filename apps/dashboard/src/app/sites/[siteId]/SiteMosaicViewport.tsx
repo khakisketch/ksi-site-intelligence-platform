@@ -696,6 +696,7 @@ export function SiteMosaicViewport({
       )}
       {cover.ok && geometry && showViewport && (
         <>
+          <div className="relative flex flex-col gap-2">
           <div
             ref={viewWrapRef}
             tabIndex={0}
@@ -760,6 +761,7 @@ export function SiteMosaicViewport({
             zoomInDisabled={view.zoom >= 4}
             zoomOutDisabled={view.zoom <= 1}
           />
+          </div>
           {viewportNote && (
             <p className="text-[12px] leading-5 text-ink-2" role="status">{viewportNote}</p>
           )}

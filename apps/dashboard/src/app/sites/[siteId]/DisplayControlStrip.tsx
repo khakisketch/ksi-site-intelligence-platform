@@ -92,7 +92,11 @@ export function DisplayControlStrip({
     { action: "reset" },
   ];
   return (
-    <div className="flex flex-nowrap items-center gap-0.5" role="group" aria-label={groupLabel}>
+    <div
+      className="sticky bottom-[calc(var(--mobile-bottom-nav-clearance)+0.25rem)] z-10 flex w-fit flex-nowrap items-center gap-0.5 rounded-md border border-line bg-surface lg:static"
+      role="group"
+      aria-label={groupLabel}
+    >
       {actions.map((item) => (
         <button
           key={item.action}

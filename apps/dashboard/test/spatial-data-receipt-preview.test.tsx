@@ -58,6 +58,7 @@ function renderPreview(bytes: Uint8Array | null, overrides: Record<string, unkno
       jobId={(overrides.jobId as string) ?? requestId}
       receipt={receipt}
       fileHref={fileHref}
+      gestureControls={overrides.gestureControls === true}
     />,
   );
   return { fetchMock, fileHref };
@@ -105,6 +106,30 @@ function stubGeotiffSingleBand() {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); fromArrayBufferMock.mockReset(); });
 
 describe("spatial data receipt preview", () => {
+  it("fits the whole prepared crop before local zoom and keeps its controls within the image section", async () => {
+    const bytes = new Uint8Array([7, 7, 7, 7]);
+    const paint = stubCanvas();
+    stubGeotiffRgb();
+    const { fetchMock } = renderPreview(bytes, { gestureControls: true });
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 불러오기" }));
+    await screen.findByText(/실제 픽셀 색상을 그대로 표시합니다/);
+    const frame = screen.getByRole("group", { name: /^부분 출력 2 × 2 픽셀/ });
+    const canvas = frame.querySelector("canvas")!;
+    const controls = screen.getByRole("group", { name: "부분 출력 확대·이동" });
+    expect(canvas.classList.contains("w-full")).toBe(true);
+    expect(canvas.width).toBe(2);
+    expect(canvas.height).toBe(2);
+    expect(controls.parentElement).toBe(frame.parentElement);
+    expect(controls.classList.contains("sticky")).toBe(true);
+    const painted = paint.mock.calls.length;
+    fireEvent.keyDown(frame, { key: "+" });
+    expect(canvas.parentElement!.style.transform).toContain("scale(2)");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(paint).toHaveBeenCalledTimes(painted);
+    fireEvent.click(screen.getByRole("button", { name: "전체 보기" }));
+    expect(canvas.parentElement!.style.transform).toContain("scale(1)");
+  });
+
   it("renders verified RGB pixels without reinterpretation claims", async () => {
     const bytes = new Uint8Array([7, 7, 7, 7]);
     stubCanvas();

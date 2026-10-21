@@ -406,7 +406,9 @@ export function SiteWorkspaceShell({
   const selectedCaption = captionFact
     ? observationPrecisionOf(captionFact) === "interval"
       ? `등록 버전 ${captionFact.revision}`
-      : `등록 버전 ${captionFact.revision} · ${entryCaptureLine(captionFact)}`
+      : observationPrecisionOf(captionFact) === "date-only"
+        ? `등록 버전 ${captionFact.revision} · 날짜만 확인 · 시각 미상`
+        : `등록 버전 ${captionFact.revision} · 촬영 시점 미상`
     : null;
   // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
   // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
