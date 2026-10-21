@@ -5763,3 +5763,61 @@ non-requester admin with 404 (jobs.py:350-352). The list/read disagreement made 
 windows it can never open and report them as "준비에 실패한 요청" — a false failure, since those jobs are
 COMPLETED/AVAILABLE and simply belong to another principal. The byte path stays requester-bound; the fix
 makes the projections coherent and is under way.
+
+#### Stage-1 S1–S4 delivered; the list/read ownership defect fixed and verified (2026-10-21)
+
+DEFECT FIX (committed 6664ba80) — the real product defect found during stage-1 verification. Core's job
+LIST admitted another principal's jobs to an organization ADMIN (jobs.py list(), ~1101-1107) and the
+single-job metadata read carried the same bypass, while the byte path was (and remains) strictly
+requester-owned. The consequence in the real Console: the OIDC operator saw `ps-admin`'s prepared
+windows in the list, could read their receipts/pixel windows, then got 404 on the byte GET — so the
+mosaic painted 3 of 4 windows and reported the fourth as "준비에 실패한 요청" — a FALSE failure, since
+those jobs are COMPLETED/AVAILABLE and simply belong to another principal. Resolution: fail-closed
+requester-only visibility for list, read, cancel AND bytes (the same rule in each place), so the
+projections agree and no foreign receipt metadata leaks; `cancel()` inherited the same bypass and was
+closed with the same change; the byte path is unchanged and still re-proves requester ownership. A new
+owner test covers list/read/download coherence, admin vs requester behaviour, cross-tenant denial,
+revocation/expiry still honoured for the owner (and 404 for foreigners), and the unchanged
+`max_list_records` budget. Sweep found no other `Role.ADMIN` bypass in the delivery owner; the
+asset/evidence/audit paths are either coherent or a different class (org-scoped event tracks).
+Re-verified in the real product after an own-Core restart (all 14 journal hashes unchanged): the false
+"준비에 실패한 요청" claim is GONE, no foreign window is listed, missing windows read "아직 준비하지 않은
+창이라 비워 둡니다. 빈칸을 메우거나 늘이지 않습니다", and the SAME account's own 4 windows compose to a
+complete 1022×915 picture (884,413 opaque pixels) with ZERO new PREPAREs.
+OWNER DECISION SURFACED: if operations genuinely needs admins to SEE other principals' jobs, that needs
+an explicit, separately authorized admin-visibility path (new endpoint/permission + a Console
+"not mine" vs "failed" distinction). It was deliberately NOT built; until then admin oversight of
+foreign jobs is unavailable by design.
+
+STAGE-1 S1–S4 (committed 6387567f, Console image 6387567f running):
+- S1 progressive first view: windows are issued in VISIBILITY-CENTRALITY order (centre distance to the
+  viewport centre, stable on ties — the server has no FIFO so the client sequences), each window is
+  painted as soon as its bytes are receipt-verified, a PARTIAL cover is always labelled partial
+  ("부분 보기 · 그린 창 n/전체 N · 나머지는 준비 중 (빈칸을 메우거나 늘이지 않음)"), and off-screen
+  windows drop with PINNED HYSTERESIS (8 px edge gap) so a 1-px pan never discards an in-progress
+  window and a just-left abutting window is kept as a pan-back halo.
+- S2 T1 session tier: the browser tier now keys on the rights-bearing pins it can honestly hold
+  (assetRef·purpose·observedCrsDigest), re-validates owner token → scope pins → grant live → not
+  revoked → purpose allowed → sha/size on EVERY paint (a stale/foreign window is a MISS and is evicted),
+  and is BOUND: `MOSAIC_T1_MAX_SLOTS = 12`, derived from the MEASURED 1,048,576 B per decoded window
+  (~12 MiB) plus the ~3.6 MiB canvas, inside the evidence ceiling of ≤16 slots, with the working set
+  being R1 (4) + R3 fringe (~8) so a pan-back to R1 hits. LRU eviction with a residency (M5) gauge. The
+  Core-held pins (grantDigest, policyDigest, beneficiary, organization, revision, activation) are NOT
+  fabricated by the Console — they land with the T2 tier; the Console derives its session facts from
+  Core's live list responses.
+- S4 reference run + gauges: a versioned R1–R5 sequence (R1 cold, R2 revisit, R3 pan walk, R4 zoom,
+  R5 rights flip) and counters/marks for M1 hit rate, M2 time to first valid pixel, M3 stabilise after a
+  pan, M4 429 rate and M5 memory, with `deriveM1M5` as a pure function and every numeric threshold
+  left `TBD_BY_BENCHMARK` (measured basis cited: cold first pixel ≈5.8 s, cold stabilise ≈23 s, warm
+  revisit ≈0.7 s, T1 target ≤100 ms). The gauges are collectable in-product but are NOT wired into the
+  default path, so product behaviour is unchanged.
+- Honest cold/warm reporting only from measured values; no "instant" or "latest" claim.
+Verification: Dashboard 171 files/1657 tests, tsc clean, eslint 0 errors/warnings; Core 104 delivery
+tests + 205 related + 67 current-grant/replay tests pass; ruff clean. Real-product measurement on the
+delivered build: with the current account's own 4 windows already prepared, the full 1022×915 cover
+composes in 1.1 s with 0 new PREPAREs, and during a genuine cold fill the UI showed "이어 보기 채우기
+(모자란 창 4개)" then "부분 보기 · 그린 창 0/전체 4" and painted 3 of 4 within 1.1 s while the last window
+continued preparing — progressive delivery confirmed in the real product.
+NOT done (and not claimed): S5 the LOD-overview preparation path (needs the GAP-03 table, kernels and
+containment proof), S6 worker parallelism/admission (needs the policy decision and multi-tenant
+evidence), and the T2 persistent tier (placement decision separate, no deployment authorized).
