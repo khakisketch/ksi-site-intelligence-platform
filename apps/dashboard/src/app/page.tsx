@@ -227,6 +227,13 @@ export default async function HomePage() {
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById));
   const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable && !analysisReviewsUnknown;
   const attentionCount = new Set(operationalAttention.map((source) => source.siteId)).size;
+  // 부분 읽기 복구는 하나의 간결한 안내로 묶는다 — 사유별 문구는 그대로 두되
+  // 접힌 `확인하지 못한 항목` 안에만 둔다. 알려진 안건 카드·건수 표시는 가리지 않는다.
+  const unknownReasons = [
+    ...(operationsUnavailable ? [{ key: "operations", message: "외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다." }] : []),
+    ...(decisionsUnavailable ? [{ key: "decisions", message: "외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
+    ...(analysisReviewsUnknown ? [{ key: "analysis-reviews", message: "분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
+  ];
 
   return <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
     <header className="flex items-center justify-between gap-4 border-b border-line pb-3">
@@ -236,10 +243,18 @@ export default async function HomePage() {
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
     {sitesResult.ok && sites.length === 0 && <EmptyState title="아직 등록된 현장이 없습니다" description={canRegisterSite ? "첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다." : "현장 등록 권한이 있는 계정에서 시작할 수 있습니다."} action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : undefined} />}
-    {sites.length > 0 && !portfolioComplete && <section className="rounded-lg border border-line bg-sunk px-4 py-3"><p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p><Link href="/sites" className="mt-1 inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link></section>}
-    {operationsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다. 해당 작업을 확인 필요나 진행 중으로 분류하지 않았습니다.</p>}
-    {decisionsUnavailable && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
-    {analysisReviewsUnknown && <p className="rounded-lg border border-line bg-sunk px-4 py-3 text-[12.5px] leading-5 break-keep text-ink-2">분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다.</p>}
+    {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다" className="rounded-lg border border-line bg-sunk px-4 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-[12.5px] leading-5 break-keep text-ink-2">일부 현장 또는 작업 원장을 불러오지 못해 확인 필요 건수를 추측하지 않습니다.</p>
+        <Link href="/sites" className="tap-target inline-flex min-h-11 items-center font-semibold text-ink-1 underline underline-offset-2">현장 전체를 열어 직접 확인하세요.</Link>
+      </div>
+      {unknownReasons.length > 0 && <details className="mt-1 border-t border-line pt-1">
+        <summary className="tap-target inline-flex cursor-pointer items-center text-[12.5px] font-semibold text-ink-2">확인하지 못한 항목 {unknownReasons.length}건</summary>
+        <ul className="mt-1 flex flex-col gap-1">
+          {unknownReasons.map((reason) => <li key={reason.key} className="text-[12.5px] leading-5 break-keep text-ink-2">{reason.message}</li>)}
+        </ul>
+      </details>}
+    </section>}
 
     {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
 

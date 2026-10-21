@@ -186,15 +186,19 @@ test("느린 필터 응답 중 이전 검색 타이머가 선택한 묶음을 �
   await page.goto("/sites");
   const id = await firstSiteId(page);
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
-  await page.route((url) => url.pathname === "/sites" && url.searchParams.get("group") === "attention", async (route) => {
+  // Zero-count groups render no chip (attention is 0 in the isolated fixture):
+  // race the slow response against a chip that actually exists in this ledger.
+  const chip = page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
+  const chipGroup = new URL((await chip.getAttribute("href"))!, page.url()).searchParams.get("group")!;
+  await page.route((url) => url.pathname === "/sites" && url.searchParams.get("group") === chipGroup, async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 700)); // Deliberately slower than the search debounce.
     await route.continue();
   });
   await search.fill(id);
-  await page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /확인 필요/ }).click();
-  await expect.poll(() => new URL(page.url()).searchParams.get("group")).toBe("attention");
+  await chip.click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("group")).toBe(chipGroup);
   await page.waitForTimeout(450);
-  expect(new URL(page.url()).searchParams.get("group")).toBe("attention");
+  expect(new URL(page.url()).searchParams.get("group")).toBe(chipGroup);
   expect(new URL(page.url()).searchParams.has("q")).toBe(false);
   await expect(search).toHaveValue("");
 });

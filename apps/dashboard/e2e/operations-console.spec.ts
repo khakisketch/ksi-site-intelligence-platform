@@ -310,12 +310,12 @@ test("현장 목록은 폭에 맞는 비교 표현과 현장 진입을 유지한
     const views = page.getByRole("group", { name: "현장 보기 방식" });
     await expect(views).toBeVisible();
     await expect(views.getByRole("button", { name: "목록", exact: true })).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByText("진행 단계", { exact: true })).toBeVisible();
+    await expect(page.getByText("관리 단계", { exact: true })).toBeVisible();
   } else {
     const compactList = page.getByRole("region", { name: "현장 목록" });
     await expect(compactList).toBeVisible();
     await expect(compactList.getByRole("link", { name: "현장 열기" }).first()).toBeVisible();
-    await expect(page.getByText("진행 단계", { exact: true })).toBeHidden();
+    await expect(page.getByText("관리 단계", { exact: true })).toBeHidden();
   }
   // D7: 실제 Home/Site 미리보기가 없는 자리를 장식 이미지로 채우지 않는다.
   // 대상 식별·상태·열기 동작은 모든 폭에서 그대로 남는다.

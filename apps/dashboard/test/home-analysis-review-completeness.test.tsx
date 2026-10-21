@@ -271,4 +271,72 @@ describe("Home 분석-검토 읽기 완전성 (D1 unknown-not-0)", () => {
     expect(screen.getByText("확인 필요 —")).toBeTruthy();
     expect(screen.getByText(/분석 결과의 검토 대기 여부를 확인할 수 없습니다/)).toBeTruthy();
   });
+
+  it("부분 읽기 복구는 하나의 간결한 안내와 접힌 항목 상자에 사유를 모은다", async () => {
+    mockWorld([site("site-1"), site("site-2")]);
+    mockedCore.listAnalyses.mockImplementation(async (siteId: string) => {
+      if (siteId === "site-2") throw new Error("Core unavailable");
+      return {
+        siteId,
+        items: siteId === "site-1" ? [analysis("a1", "site-1", "2026-10-15T10:00:00Z")] : [],
+        nextCursor: null,
+      };
+    });
+    mockedCore.getAnalysisReviewTarget.mockImplementation(async (_siteId: string, analysisId: string) => reviewTarget(analysisId));
+    mockedCore.listAnalysisReviews.mockResolvedValue({ items: [], nextCursor: null });
+
+    render(await HomePage());
+
+    // 알려진 보류 카드는 그대로 보이고, 진단 패널은 하나뿐이다.
+    expect(screen.getByRole("link", { name: "분석 결과 검토" })).toBeTruthy();
+    expect(screen.getAllByText(/확인 필요 건수를 추측하지 않습니다/).map((node) => node.closest("section"))).toHaveLength(1);
+    // 복구 동선은 그대로, 사유는 접힌 상자 안에 발견 가능하다.
+    expect(screen.getByRole("link", { name: "현장 전체를 열어 직접 확인하세요." })).toBeTruthy();
+    const summary = screen.getByText("확인하지 못한 항목 1건");
+    expect(summary.closest("details")?.hasAttribute("open")).toBe(false);
+    expect(summary.closest("details")?.textContent).toContain("분석 결과의 검토 대기 여부를 확인할 수 없습니다");
+  });
+
+  it("겹친 미확인(외부 결정·분석 검토)은 사유별로 접힌 상자에 모두 담는다", async () => {
+    mockWorld([site("site-1")]);
+    mockedCore.listObservationWorkOrdersForOrganization.mockResolvedValue([
+      {
+        schemaVersion: "1.0",
+        workOrderId: "ext-1",
+        organizationId: "org-local",
+        siteId: "site-1",
+        purpose: "PROGRESS_QUANTITY",
+        name: "외부 작업",
+        workAreaIds: [],
+        scheduleId: null,
+        executionMode: "EXTERNAL_RECONSTRUCTION",
+        cycleNumber: 1,
+        status: "PROCESSING",
+        statusReason: null,
+        missionIds: [],
+        processingJobIds: [],
+        reportRefs: [],
+        version: 1,
+        createdAt: "2026-10-18T00:00:00Z",
+        updatedAt: "2026-10-18T00:00:00Z",
+        createdBy: "operator",
+        approvedAt: null,
+        approvedBy: null,
+      },
+    ]);
+    mockedCore.listObservationWorkOrderOperations.mockRejectedValue(new Error("Core unavailable"));
+    mockedCore.listExternalPendingDecisions.mockRejectedValue(new Error("Core unavailable"));
+    mockAnalysisReads({ failList: true });
+
+    render(await HomePage());
+
+    expect(screen.getByText("확인 필요 —")).toBeTruthy();
+    expect(screen.getAllByText(/확인 필요 건수를 추측하지 않습니다/).map((node) => node.closest("section"))).toHaveLength(1);
+    expect(screen.getByText("확인하지 못한 항목 3건")).toBeTruthy();
+    const details = screen.getByText("확인하지 못한 항목 3건").closest("details")!;
+    expect(details.hasAttribute("open")).toBe(false);
+    expect(details.textContent).toContain("외부 작업의 담당·마감·업무 종료 상태를 확인할 수 없습니다");
+    expect(details.textContent).toContain("외부 결과의 검토·승인 대기 여부를 확인할 수 없습니다");
+    expect(details.textContent).toContain("분석 결과의 검토 대기 여부를 확인할 수 없습니다");
+  });
 });

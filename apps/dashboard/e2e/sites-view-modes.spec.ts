@@ -70,9 +70,15 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   const views = viewButtons(page);
   await expect(views.list).toHaveAttribute("aria-pressed", "true");
   const total = Number(await page.locator('[data-site-list-view="list"]').getAttribute("data-site-total"));
+  // Fixture/external ledgers differ on which group is nonempty (attention is 0 in
+  // the isolated fixture): derive the precondition from a group that actually has
+  // members instead of hardcoding one.
+  const memberChip = page.getByRole("group", { name: "현장 상태 필터" }).getByRole("link", { name: /등록됨|준비 중|순찰 가능|확인 필요|운영 중단/ }).first();
+  const memberGroup = new URL((await memberChip.getAttribute("href"))!, page.url()).searchParams.get("group")!;
+  await memberChip.click();
   const firstHref = await page.locator('[data-site-list-view="list"] a[href^="/sites/"]:visible').first().getAttribute("href");
   const id = decodeURIComponent(new URL(firstHref!, page.url()).pathname.split("/")[2]);
-  await page.goto("/sites?group=attention&sort=updated");
+  await page.goto(`/sites?group=${encodeURIComponent(memberGroup)}&sort=updated`);
   const search = page.getByRole("searchbox", { name: "현장 찾기" });
   const before = page.url();
   await search.fill(id);
@@ -82,7 +88,7 @@ test("보기 전환은 입력 중 검색과 정렬을 유지하고 한 현장 �
   expect(new URL(page.url()).searchParams.has("view")).toBe(false);
   expect(new URL(before).searchParams.get("sort")).toBe("updated");
   await expect.poll(() => new URL(page.url()).searchParams.get("q")).toBe(id);
-  expect(new URL(page.url()).searchParams.get("group")).toBe("attention");
+  expect(new URL(page.url()).searchParams.get("group")).toBe(memberGroup);
   expect(new URL(page.url()).searchParams.get("sort")).toBe("updated");
   await expect(search).toHaveValue(id);
   await expect(views.cards).toHaveAttribute("aria-pressed", "true");
