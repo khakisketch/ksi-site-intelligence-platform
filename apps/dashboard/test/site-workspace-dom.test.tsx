@@ -158,6 +158,7 @@ describe("site workspace SSR paragraph nesting", () => {
         currentRequestedRef={null}
         resolution={{ status: "prompt" }}
         canCreateAnalysis
+        canCreateWorkOrder={false}
         scopedCompareHref="/x"
         exploreHref="/y"
         facts={facts as never}

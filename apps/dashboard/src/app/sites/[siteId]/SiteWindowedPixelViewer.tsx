@@ -35,6 +35,14 @@ import {
   isDisplayZoomWheelIntent,
 } from "@/lib/spatial-display-gesture";
 import {
+  displayDragFractions,
+  displayViewTransform,
+  displayZoomPercent,
+  isDisplayViewMoved,
+  useDisplayViewState,
+} from "@/lib/spatial-display-view";
+import { DisplayControlStrip, type DisplayControlAction } from "./DisplayControlStrip";
+import {
   AUDIT_STATE_NOTE,
   DSM_RELATIVE_LEGEND_LABEL,
   DSM_RELATIVE_SHADING_NOTE,
@@ -175,10 +183,7 @@ function nativeToBacking(
   return [px, py];
 }
 
-const ZOOM_STEPS = [1, 2, 4] as const;
-
-/**
- * 한 층의 보기 — 층이 바뀌면 호출자가 `key`로 다시 만든다. 층 전환에 effect로
+/** 한 층의 보기 — 층이 바뀌면 호출자가 `key`로 다시 만든다. 층 전환에 effect로
  * 상태를 되돌리지 않는다.
  */
 function WindowedLayerView({
@@ -207,8 +212,10 @@ function WindowedLayerView({
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [phase, setPhase] = useState<PaintPhase>({ name: "idle" });
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
-  const [zoomIndex, setZoomIndex] = useState(0);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // ── 낱창 표시 뷰 — 같은 버퍼의 CSS 표시만 바꾼다. 네트워크·준비 요청 없음 ──
+  const display = useDisplayViewState();
+  const view = display.view;
+  const [viewNote, setViewNote] = useState<string | null>(null);
   const [requestMessage, setRequestMessage] = useState<string | null>(null);
   const [requestBusy, setRequestBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ jobId: string; state: string } | null>(null);
@@ -289,15 +296,24 @@ function WindowedLayerView({
   const singleDragRef = useRef<{ x: number; y: number } | null>(null);
   const singleWheelLastRef = useRef(0);
 
-  const zoomStep = (direction: 1 | -1) => {
-    setZoomIndex((index) => Math.min(Math.max(index + direction, 0), ZOOM_STEPS.length - 1));
+  const singleEdgeNote = (kind: "pan" | "zoom") => {
+    setViewNote(
+      kind === "pan"
+        ? "불러온 창 끝이라 더 이상 옮길 수 없습니다. 원래 보기로 돌아가세요."
+        : "표시 확대 한계입니다. 원래 보기로 돌아가세요.",
+    );
   };
-  const panBy = (dx: number, dy: number) => {
-    setPan((previous) => ({ x: previous.x + dx, y: previous.y + dy }));
-  };
-  const resetSingleView = () => {
-    setZoomIndex(0);
-    setPan({ x: 0, y: 0 });
+
+  const onSingleControlAction = (action: DisplayControlAction) => {
+    switch (action) {
+      case "pan-left": if (display.pan(-0.25, 0)) setViewNote(null); else singleEdgeNote("pan"); return;
+      case "pan-right": if (display.pan(0.25, 0)) setViewNote(null); else singleEdgeNote("pan"); return;
+      case "pan-up": if (display.pan(0, -0.25)) setViewNote(null); else singleEdgeNote("pan"); return;
+      case "pan-down": if (display.pan(0, 0.25)) setViewNote(null); else singleEdgeNote("pan"); return;
+      case "zoom-in": if (display.zoom(1)) setViewNote(null); else singleEdgeNote("zoom"); return;
+      case "zoom-out": if (display.zoom(-1)) setViewNote(null); else singleEdgeNote("zoom"); return;
+      case "reset": display.reset(); setViewNote(null); return;
+    }
   };
 
   const onSingleViewKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -305,9 +321,16 @@ function WindowedLayerView({
     const action = displayGestureKeyAction(event.key);
     if (!action) return;
     event.preventDefault();
-    if (action.kind === "pan") panBy(-action.dCol * 160, action.dRow * 160);
-    else if (action.kind === "zoom") zoomStep(action.factor < 1 ? 1 : -1);
-    else resetSingleView();
+    if (action.kind === "pan") {
+      if (display.pan(action.dCol, -action.dRow)) setViewNote(null);
+      else singleEdgeNote("pan");
+    } else if (action.kind === "zoom") {
+      if (display.zoom(action.factor < 1 ? 1 : -1)) setViewNote(null);
+      else singleEdgeNote("zoom");
+    } else {
+      display.reset();
+      setViewNote(null);
+    }
   };
 
   const onSingleViewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -328,7 +351,18 @@ function WindowedLayerView({
   const onSingleViewPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const start = singleDragRef.current;
     if (!start) return;
-    panBy(event.clientX - start.x, event.clientY - start.y);
+    const wrap = singleViewWrapRef.current;
+    const rect = wrap?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const fractions = displayDragFractions(
+      event.clientX - start.x,
+      event.clientY - start.y,
+      rect.width,
+      rect.height,
+    );
+    if (!fractions) return;
+    if (display.pan(fractions.fx, fractions.fy)) setViewNote(null);
+    else singleEdgeNote("pan");
     singleDragRef.current = { x: event.clientX, y: event.clientY };
   };
 
@@ -346,17 +380,16 @@ function WindowedLayerView({
       const now = Date.now();
       if (!displayWheelReady(singleWheelLastRef.current, now)) return;
       singleWheelLastRef.current = now;
-      setZoomIndex((index) =>
-        Math.min(Math.max(index + (event.deltaY > 0 ? -1 : 1), 0), ZOOM_STEPS.length - 1),
-      );
+      if (display.zoom(event.deltaY > 0 ? -1 : 1)) setViewNote(null);
+      else singleEdgeNote("zoom");
     };
     wrap.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       wrap.removeEventListener("wheel", onWheel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
   const readable = readableWindowJobs(jobs, layer.assetRef);
   const existingCrop = preparedWindowFallback(grid, jobs, layer.assetRef);
   const pending = jobs.filter(
@@ -413,8 +446,7 @@ function WindowedLayerView({
     abortRef.current = controller;
     setPhase({ name: "loading" });
     setImage(null);
-    setZoomIndex(0);
-    setPan({ x: 0, y: 0 });
+    display.reset();
     try {
       const target = job.receipt;
       if (!target || target.jobId !== job.jobId) {
@@ -624,46 +656,45 @@ function WindowedLayerView({
             ref={singleViewWrapRef}
             tabIndex={0}
             role="group"
-            aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키 또는 휠(선택 후·Ctrl과 함께)로 확대합니다. Home 키는 원래 보기로 돌아갑니다.`}
+            aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키로 확대합니다. 휠은 그림을 선택한 후, 또는 Ctrl과 함께 사용하세요. Home 키는 원래 보기로 돌아갑니다.`}
             onPointerDown={onSingleViewPointerDown}
             onPointerMove={onSingleViewPointerMove}
             onPointerUp={onSingleViewPointerEnd}
             onPointerCancel={onSingleViewPointerEnd}
             onKeyDown={onSingleViewKeyDown}
-            className="overflow-auto rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{ touchAction: "pan-y" }}
           >
             <div
               className="relative inline-block"
-              style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "top left" }}
+              style={{ transform: displayViewTransform(view), transformOrigin: "0 0" }}
             >
               <canvas ref={canvasRef} className="block max-w-none" style={{ imageRendering: "pixelated" }} role="img"
                 aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`} />
               {ringPoints && samePlane && (
                 <svg viewBox={`0 0 ${receipt.width} ${receipt.height}`} className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden="true">
-                  <polygon points={ringPoints} fill="none" stroke="currentColor" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+                  <polygon points={ringPoints} fill="none" stroke="currentColor" strokeWidth={2 / view.zoom} strokeDasharray={`${6 / view.zoom} ${4 / view.zoom}`} />
                 </svg>
               )}
             </div>
           </div>
           {/* 확대·이동 도구는 그림 바로 옆에 둔다 — 기술 문단 아래가 아니라. */}
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="화면 확대·이동">
-            <button type="button" className="btn min-h-11" disabled={zoomIndex >= ZOOM_STEPS.length - 1} onClick={() => zoomStep(1)}>
-              확대 ×{ZOOM_STEPS[Math.min(zoomIndex + 1, ZOOM_STEPS.length - 1)]}
-            </button>
-            <button type="button" className="btn min-h-11" disabled={zoomIndex <= 0} onClick={() => zoomStep(-1)}>
-              축소
-            </button>
-            <button type="button" className="btn min-h-11" onClick={resetSingleView}>
-              원래대로
-            </button>
-            <button type="button" className="btn min-h-11" aria-label="왼쪽으로 이동" onClick={() => panBy(40, 0)}>←</button>
-            <button type="button" className="btn min-h-11" aria-label="오른쪽으로 이동" onClick={() => panBy(-40, 0)}>→</button>
-            <button type="button" className="btn min-h-11" aria-label="위쪽으로 이동" onClick={() => panBy(0, 40)}>↑</button>
-            <button type="button" className="btn min-h-11" aria-label="아래쪽으로 이동" onClick={() => panBy(0, -40)}>↓</button>
-            <span className="text-[11.5px] text-ink-muted">표시 배율 ×{zoom} · 불러온 창 안에서만 움직입니다.</span>
-          </div>
+          <DisplayControlStrip
+            groupLabel="화면 확대·이동"
+            onAction={onSingleControlAction}
+            zoomInDisabled={view.zoom >= 4}
+            zoomOutDisabled={view.zoom <= 1}
+          />
+          {viewNote && (
+            <p className="text-[12px] leading-5 text-ink-2" role="status">{viewNote}</p>
+          )}
           <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
+          {isDisplayViewMoved(view) && (
+            <p className="text-[12px] leading-5 text-ink-2" role="status">
+              표시 확대 {displayZoomPercent(view)}%
+              {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+            </p>
+          )}
           <p className="text-[12px] leading-5 text-ink-2">
             {`실제 파일 · 준비된 창 · ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`}
           </p>

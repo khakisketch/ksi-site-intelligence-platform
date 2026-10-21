@@ -16,6 +16,14 @@ import {
   displayWheelReady,
   isDisplayZoomWheelIntent,
 } from "@/lib/spatial-display-gesture";
+import {
+  displayDragFractions,
+  displayViewTransform,
+  displayZoomPercent,
+  isDisplayViewMoved,
+  useDisplayViewState,
+} from "@/lib/spatial-display-view";
+import { DisplayControlStrip, type DisplayControlAction } from "../DisplayControlStrip";
 
 /**
  * 준비된 출력의 브라우저 미리보기 — 요청 상세 화면의 일부다.
@@ -107,13 +115,10 @@ export function SpatialDataReceiptPreview({
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // ── 부분 출력의 화면 표시 제스처 — CSS 변환만이며 새 요청을 만들지 않는다 ──
-  const receiptViewWrapRef = useRef<HTMLDivElement | null>(null);
-  const receiptDragRef = useRef<{ x: number; y: number } | null>(null);
-  const receiptWheelLastRef = useRef(0);
-  const [receiptZoom, setReceiptZoom] = useState(0);
-  const [receiptPan, setReceiptPan] = useState({ x: 0, y: 0 });
-  const receiptScale = [1, 2, 4][receiptZoom] ?? 1;
+  // ── 부분 출력의 화면 표시 뷰 — 같은 버퍼의 CSS 표시만 바꾼다. 새 요청 없음 ──
+  const display = useDisplayViewState();
+  const view = display.view;
+  const [viewNote, setViewNote] = useState<string | null>(null);
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -179,6 +184,19 @@ export function SpatialDataReceiptPreview({
     };
   }, [autoLoad, load]);
 
+  // ── 부분 출력의 화면 표시 제스처 — CSS 변환만이며 새 요청을 만들지 않는다 ──
+  const receiptViewWrapRef = useRef<HTMLDivElement | null>(null);
+  const receiptDragRef = useRef<{ x: number; y: number } | null>(null);
+  const receiptWheelLastRef = useRef(0);
+
+  const receiptEdgeNote = (kind: "pan" | "zoom") => {
+    setViewNote(
+      kind === "pan"
+        ? "부분 출력 끝이라 더 이상 옮길 수 없습니다. 원래 보기로 돌아가세요."
+        : "표시 확대 한계입니다. 원래 보기로 돌아가세요.",
+    );
+  };
+
   useEffect(() => {
     if (!gestureControls) return;
     const wrap = receiptViewWrapRef.current;
@@ -190,13 +208,27 @@ export function SpatialDataReceiptPreview({
       const now = Date.now();
       if (!displayWheelReady(receiptWheelLastRef.current, now)) return;
       receiptWheelLastRef.current = now;
-      setReceiptZoom((index) => Math.min(Math.max(index + (event.deltaY > 0 ? -1 : 1), 0), 2));
+      if (display.zoom(event.deltaY > 0 ? -1 : 1)) setViewNote(null);
+      else receiptEdgeNote("zoom");
     };
     wrap.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       wrap.removeEventListener("wheel", onWheel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- display 액션은 ref 거울로 최신 상태를 쓰므로 리스너를 다시 달지 않는다
   }, [gestureControls, phase]);
+
+  const onReceiptControlAction = (action: DisplayControlAction) => {
+    switch (action) {
+      case "pan-left": if (display.pan(-0.25, 0)) setViewNote(null); else receiptEdgeNote("pan"); return;
+      case "pan-right": if (display.pan(0.25, 0)) setViewNote(null); else receiptEdgeNote("pan"); return;
+      case "pan-up": if (display.pan(0, -0.25)) setViewNote(null); else receiptEdgeNote("pan"); return;
+      case "pan-down": if (display.pan(0, 0.25)) setViewNote(null); else receiptEdgeNote("pan"); return;
+      case "zoom-in": if (display.zoom(1)) setViewNote(null); else receiptEdgeNote("zoom"); return;
+      case "zoom-out": if (display.zoom(-1)) setViewNote(null); else receiptEdgeNote("zoom"); return;
+      case "reset": display.reset(); setViewNote(null); return;
+    }
+  };
 
   const onReceiptKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.nativeEvent.isComposing) return;
@@ -204,12 +236,14 @@ export function SpatialDataReceiptPreview({
     if (!action) return;
     event.preventDefault();
     if (action.kind === "pan") {
-      setReceiptPan((previous) => ({ x: previous.x - action.dCol * 160, y: previous.y + action.dRow * 160 }));
+      if (display.pan(action.dCol, -action.dRow)) setViewNote(null);
+      else receiptEdgeNote("pan");
     } else if (action.kind === "zoom") {
-      setReceiptZoom((index) => Math.min(Math.max(index + (action.factor < 1 ? 1 : -1), 0), 2));
+      if (display.zoom(action.factor < 1 ? 1 : -1)) setViewNote(null);
+      else receiptEdgeNote("zoom");
     } else {
-      setReceiptZoom(0);
-      setReceiptPan({ x: 0, y: 0 });
+      display.reset();
+      setViewNote(null);
     }
   };
 
@@ -231,9 +265,18 @@ export function SpatialDataReceiptPreview({
   const onReceiptPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const start = receiptDragRef.current;
     if (!start) return;
-    const dx = event.clientX - start.x;
-    const dy = event.clientY - start.y;
-    setReceiptPan((previous) => ({ x: previous.x + dx, y: previous.y + dy }));
+    const wrap = receiptViewWrapRef.current;
+    const rect = wrap?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const fractions = displayDragFractions(
+      event.clientX - start.x,
+      event.clientY - start.y,
+      rect.width,
+      rect.height,
+    );
+    if (!fractions) return;
+    if (display.pan(fractions.fx, fractions.fy)) setViewNote(null);
+    else receiptEdgeNote("pan");
     receiptDragRef.current = { x: event.clientX, y: event.clientY };
   };
 
@@ -283,35 +326,38 @@ export function SpatialDataReceiptPreview({
               ref={receiptViewWrapRef}
               tabIndex={0}
               role="group"
-              aria-label={`부분 출력 ${phase.width} × ${phase.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키 또는 휠(선택 후·Ctrl과 함께)로 확대합니다. Home 키는 원래 보기로 돌아갑니다.`}
+              aria-label={`부분 출력 ${phase.width} × ${phase.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키로 확대합니다. 휠은 그림을 선택한 후, 또는 Ctrl과 함께 사용하세요. Home 키는 원래 보기로 돌아갑니다.`}
               onPointerDown={onReceiptPointerDown}
               onPointerMove={onReceiptPointerMove}
               onPointerUp={onReceiptPointerEnd}
               onPointerCancel={onReceiptPointerEnd}
               onKeyDown={onReceiptKeyDown}
-              className="overflow-auto rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
+              className="overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
               style={{ touchAction: "pan-y" }}
             >
               <div
                 className="inline-block"
-                style={{ transform: `translate(${receiptPan.x}px, ${receiptPan.y}px) scale(${receiptScale})`, transformOrigin: "top left" }}
+                style={{ transform: displayViewTransform(view), transformOrigin: "0 0" }}
               >
                 <canvas ref={canvasRef} className="block max-w-none" style={{ imageRendering: "pixelated" }} />
               </div>
             </div>
-            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="부분 출력 확대·이동">
-              <button type="button" className="btn min-h-11" disabled={receiptZoom >= 2} onClick={() => setReceiptZoom((index) => Math.min(index + 1, 2))}>
-                확대 ×{[1, 2, 4][Math.min(receiptZoom + 1, 2)]}
-              </button>
-              <button type="button" className="btn min-h-11" disabled={receiptZoom <= 0} onClick={() => setReceiptZoom((index) => Math.max(index - 1, 0))}>
-                축소
-              </button>
-              <button type="button" className="btn min-h-11" onClick={() => { setReceiptZoom(0); setReceiptPan({ x: 0, y: 0 }); }}>
-                원래대로
-              </button>
-              <span className="text-[11.5px] text-ink-muted">표시 배율 ×{receiptScale} · 화면 표시용입니다.</span>
-            </div>
+            <DisplayControlStrip
+              groupLabel="부분 출력 확대·이동"
+              onAction={onReceiptControlAction}
+              zoomInDisabled={view.zoom >= 4}
+              zoomOutDisabled={view.zoom <= 1}
+            />
+            {viewNote && (
+              <p className="text-[11.5px] leading-5 text-ink-2" role="status">{viewNote}</p>
+            )}
             <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
+            {isDisplayViewMoved(view) && (
+              <p className="text-[12px] leading-5 text-ink-2" role="status">
+                표시 확대 {displayZoomPercent(view)}%
+                {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+              </p>
+            )}
           </>
         ) : (
           <canvas ref={canvasRef} className="max-w-full rounded border border-line" style={{ imageRendering: "pixelated" }} />

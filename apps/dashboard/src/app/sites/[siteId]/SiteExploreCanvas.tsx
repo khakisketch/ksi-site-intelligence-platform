@@ -45,11 +45,14 @@ export function SiteExploreCanvas({
   const names = disambiguatedAreaNames(areas);
   const activeCount = areas.filter((area) => area.status === "ACTIVE").length;
   const selectedOption = captureOptions.find((option) => option.selected) ?? null;
+  const selectedName = selected ? (names.get(selected.workAreaId)?.label ?? selected.name) : null;
+  // 긴 구역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
+  const showFullName = selectedName !== null && [...selectedName].length > 40;
   return <section aria-label="선택 관측 화면" className="flex flex-col gap-2">
     <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-2.5">
-      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-x-3">
         {areas.length > 1 ? (
-          <form method="get" action={sitePath} className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-56">
+          <form method="get" action={sitePath} className="flex w-full min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-56">
             <div className="min-w-0 flex-1">
               <label htmlFor="explore-canvas-area" className="block text-[12px] font-semibold">작업구역</label>
               <select
@@ -71,16 +74,24 @@ export function SiteExploreCanvas({
               <p className="w-full text-[12px] text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
             )}
           </form>
-        ) : selected ? (
-          <p className="min-w-0 flex-1 break-words text-[13px] font-semibold sm:basis-56" aria-label={`작업구역 · ${names.get(selected.workAreaId)?.label ?? selected.name}`}>
-            작업구역 · {names.get(selected.workAreaId)?.label ?? selected.name}
-            {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
-          </p>
+        ) : selected && selectedName ? (
+          <div className="min-w-0 flex-1 sm:basis-56">
+            <p className="line-clamp-2 break-words text-[13px] font-semibold" aria-label={`작업구역 · ${selectedName}`}>
+              작업구역 · {selectedName}
+              {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
+            </p>
+            {showFullName && (
+              <details className="text-[12px] text-ink-2">
+                <summary className="tap-target cursor-pointer underline decoration-dotted">구역 전체 이름 확인</summary>
+                <p className="mt-1 break-words">{selectedName}</p>
+              </details>
+            )}
+          </div>
         ) : (
           <p className="text-[12.5px] text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
         )}
         {captureOptions.length > 0 && selected && (
-          <form method="get" action={sitePath} className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-64">
+          <form method="get" action={sitePath} className="flex w-full min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-64">
             <input type="hidden" name="workAreaId" value={selected.workAreaId} />
             <div className="min-w-0 flex-1">
               <label htmlFor="explore-canvas-capture" className="block text-[12px] font-semibold">촬영 시점</label>

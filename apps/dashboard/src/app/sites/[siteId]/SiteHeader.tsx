@@ -132,7 +132,7 @@ export function SiteHeader({
         현장 업무 메뉴 — 다섯 영역을 한 곳에서 여닫는다. 데스크톱·모바일 구분 없이
         같은 disclosure를 쓰므로, 다섯 영역 바와 공간 작업 방식이 동시에 나열돼
         서로 경쟁하지 않는다. label 없는 아이콘-only 진입은 두지 않으며, 현재
-        영역은 aria-current로 밝힌다. 키보드 Enter/Space로 여닫고 види focus를 둔다.
+        영역은 aria-current로 밝힌다. 키보드로 여닫고 포커스 표시를 둔다.
         펼침 안의 nav가 잘리지 않도록 조상에는 overflow hidden을 두지 않는다.
       */}
       <details className="-mb-px">

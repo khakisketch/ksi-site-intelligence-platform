@@ -36,14 +36,22 @@ import {
   selectHysteresisRetainedKeys,
   type DisplayGapReason,
 } from "@/lib/spatial-display-mosaic";
-import { VIEWPORT_RESOLVE_COPY, type DisplayViewportBounds } from "@/lib/spatial-display-viewport";
+import { VIEWPORT_RESOLVE_COPY } from "@/lib/spatial-display-viewport";
+import type { DisplayViewportBounds } from "@/lib/spatial-display-viewport";
 import {
   DISPLAY_GESTURE_HINT,
   displayGestureKeyAction,
   displayWheelReady,
-  dragToViewportFractions,
   isDisplayZoomWheelIntent,
 } from "@/lib/spatial-display-gesture";
+import {
+  displayDragFractions,
+  displayViewTransform,
+  displayZoomPercent,
+  isDisplayViewMoved,
+  useDisplayViewState,
+} from "@/lib/spatial-display-view";
+import { DisplayControlStrip, type DisplayControlAction } from "./DisplayControlStrip";
 import {
   DSM_RELATIVE_SHADING_NOTE,
   DSM_WINDOW_STRETCH_NOTE,
@@ -150,12 +158,17 @@ export function SiteMosaicViewport({
     const [a, , c, , e, f] = grid.transform;
     return [c, f + e * grid.height, c + a * grid.width, f];
   }, [grid]);
-  const [viewport, setViewport] = useState<DisplayViewportBounds | null>(null);
+  // 표시 뷰 상태 — 이미 그린 버퍼의 CSS 표시만 바꾼다. 준비·커버·영수증·
+  // 원본 격자는 그대로 두며, 새 타일 해석·새 네트워크 요청을 만들지 않는다.
+  const display = useDisplayViewState();
+  const view = display.view;
   const [viewportNote, setViewportNote] = useState<string | null>(null);
-  const activeViewport = viewport ?? footprint;
+  // 타일 해석은 전체 범위에서 한 번만 둔다. 표시 이동·확대는 커버를 다시
+  // 해석하지 않으므로, 준비된 창과 모자란 창이 바뀌지 않는다.
+  const activeViewport = footprint;
   const cover = useMemo(() => resolveMosaicCover(grid, activeViewport), [grid, activeViewport]);
   const coverKey = cover.ok
-    ? `${cover.windows.map((plan) => plan.pixelWindow.join(",")).join(";")}|${activeViewport.join(",")}`
+    ? cover.windows.map((plan) => plan.pixelWindow.join(",")).join(";")
     : `blocked:${cover.reason}`;
   const jobsKey = jobs.map((job) => `${job.jobId}:${job.executionState}:${job.availability}`).join(";");
 
@@ -502,81 +515,30 @@ export function SiteMosaicViewport({
     [cover, geometry, readableMap, mosaicCache, ownerToken, paintedKeys, assetRef],
   );
 
-  const clampViewport = (next: DisplayViewportBounds): DisplayViewportBounds | null => {
-    const ix0 = Math.max(next[0], footprint[0]);
-    const iy0 = Math.max(next[1], footprint[1]);
-    const ix1 = Math.min(next[2], footprint[2]);
-    const iy1 = Math.min(next[3], footprint[3]);
-    if (!(ix0 < ix1) || !(iy0 < iy1)) return null;
-    return [ix0, iy0, ix1, iy1];
+  // ── 표시 이동·확대 — 같은 버퍼의 CSS 표시만 바꾼다 ──
+  // - 버튼·키·드래그·휠이 useDisplayViewState 하나로 같은 규칙을 탄다.
+  // - 준비·커버·영수증은 그대로 두며, 어떤 경우에도 새 타일 해석·새 준비·
+  //   새 GET 버스트를 만들지 않는다(진입·채우기의 읽기와 같다).
+  const edgeNote = (kind: "pan" | "zoom-in" | "zoom-out") => {
+    setViewportNote(
+      kind === "pan"
+        ? "격자 끝이라 더 이상 옮길 수 없습니다. 전체 보기로 돌아가세요."
+        : "표시 확대 한계입니다. 전체 보기로 돌아가세요.",
+    );
   };
 
-  // 이동은 뷰포트 크기를 유지한 채 격자 안에 둔다 — 가장자리에서
-  // 크기가 줄어들지 않으며, 이미 끝에 닿아 더 갈 곳이 없으면 그대로 둔다.
-  const clampPan = (next: DisplayViewportBounds): DisplayViewportBounds => {
-    const width = next[2] - next[0];
-    const height = next[3] - next[1];
-    const x0 = Math.min(Math.max(next[0], footprint[0]), footprint[2] - width);
-    const y0 = Math.min(Math.max(next[1], footprint[1]), footprint[3] - height);
-    return [x0, y0, x0 + width, y0 + height];
-  };
+  const clearEdgeNote = () => setViewportNote(null);
 
-  const shiftViewport = (dCol: number, dRow: number) => {
-    const width = activeViewport[2] - activeViewport[0];
-    const height = activeViewport[3] - activeViewport[1];
-    const clamped = clampPan([
-      activeViewport[0] + dCol * width,
-      activeViewport[1] + dRow * height,
-      activeViewport[2] + dCol * width,
-      activeViewport[3] + dRow * height,
-    ]);
-    if (
-      clamped[0] === activeViewport[0] &&
-      clamped[1] === activeViewport[1] &&
-      clamped[2] === activeViewport[2] &&
-      clamped[3] === activeViewport[3]
-    ) {
-      setViewportNote("격자 끝이라 더 이상 옮길 수 없습니다. 전체 보기로 돌아가세요.");
-      return;
+  const onControlAction = (action: DisplayControlAction) => {
+    switch (action) {
+      case "pan-left": if (display.pan(-0.25, 0)) clearEdgeNote(); else edgeNote("pan"); return;
+      case "pan-right": if (display.pan(0.25, 0)) clearEdgeNote(); else edgeNote("pan"); return;
+      case "pan-up": if (display.pan(0, -0.25)) clearEdgeNote(); else edgeNote("pan"); return;
+      case "pan-down": if (display.pan(0, 0.25)) clearEdgeNote(); else edgeNote("pan"); return;
+      case "zoom-in": if (display.zoom(1)) clearEdgeNote(); else edgeNote("zoom-in"); return;
+      case "zoom-out": if (display.zoom(-1)) clearEdgeNote(); else edgeNote("zoom-out"); return;
+      case "reset": display.reset(); clearEdgeNote(); return;
     }
-    setViewportNote(null);
-    setViewport(clamped);
-    // 새 범위는 다시 채우기 전에는 읽지 않는다 — 진입 규칙과 같다.
-    setFillTick(0);
-  };
-
-  const zoomViewport = (factor: number) => {
-    const [a, , , , e] = grid.transform;
-    const width = activeViewport[2] - activeViewport[0];
-    const height = activeViewport[3] - activeViewport[1];
-    const nextWidth = width * factor;
-    const nextHeight = height * factor;
-    if (nextWidth < Math.abs(a) || nextHeight < Math.abs(e)) {
-      setViewportNote("더 이상 확대할 수 없습니다. 한 픽셀보다 좁게 볼 수 없습니다.");
-      return;
-    }
-    const centerX = (activeViewport[0] + activeViewport[2]) / 2;
-    const centerY = (activeViewport[1] + activeViewport[3]) / 2;
-    const clamped = clampViewport([
-      centerX - nextWidth / 2,
-      centerY - nextHeight / 2,
-      centerX + nextWidth / 2,
-      centerY + nextHeight / 2,
-    ]);
-    if (!clamped) {
-      setViewportNote("격자 끝이라 더 이상 범위를 바꿀 수 없습니다. 전체 보기로 돌아가세요.");
-      return;
-    }
-    setViewportNote(null);
-    const fullWidth = footprint[2] - footprint[0];
-    const fullHeight = footprint[3] - footprint[1];
-    if (nextWidth >= fullWidth && nextHeight >= fullHeight) {
-      setViewport(null);
-      setFillTick(0);
-      return;
-    }
-    setViewport(clamped);
-    setFillTick(0);
   };
 
   const cancelLoading = () => {
@@ -588,31 +550,13 @@ export function SiteMosaicViewport({
     setRequestNote("대기 중인 창 요청을 버리고 받는 중이던 바이트를 끊었습니다. 그린 창은 그대로 둡니다.");
   };
 
-  // ── 표시 제스처(드래그·휠·키보드) — 같은 격자의 표시 뷰포트만 움직인다 ──
-  // - 버튼과 같은 clampViewport/shiftViewport/zoomViewport 규칙을 쓴다.
-  // - 드래그는 pointerup에 커밋하며, 그 전까지는 CSS 미리보기만 둔다.
-  //   이동 중에는 새 네트워크 요청을 만들지 않는다.
+  // ── 표시 제스처(드래그·휠·키보드) — 같은 표시 뷰 상태를 쓴다 ──
+  // - 드래그는 이동 중에 CSS만 바꾸고(버퍼 다시 읽기 없음), 끝내도 새 요청 없음.
   // - 터치 드래그는 페이지 세로 스크롤을 위해 건드리지 않는다(마우스·펜만).
   // - 휠은 포커스된 보기 안이거나 Ctrl과 함께일 때만 확대한다.
   const viewWrapRef = useRef<HTMLDivElement | null>(null);
-  const dragPreviewRef = useRef<HTMLDivElement | null>(null);
   const dragRef = useRef<{ x: number; y: number } | null>(null);
   const wheelLastRef = useRef(0);
-
-  const resetView = () => {
-    setViewport(null);
-    setViewportNote(null);
-    setFillTick(0);
-  };
-
-  const commitDrag = (dxCss: number, dyCss: number) => {
-    const wrap = viewWrapRef.current;
-    if (!wrap || (Math.abs(dxCss) < 4 && Math.abs(dyCss) < 4)) return;
-    const rect = wrap.getBoundingClientRect();
-    const fractions = dragToViewportFractions(dxCss, dyCss, rect.width, rect.height);
-    if (!fractions) return;
-    shiftViewport(fractions.dCol, fractions.dRow);
-  };
 
   const onViewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     // 터치 드래그는 세로 스크롤을 위해 건드리지 않는다. 합성 환경의
@@ -632,18 +576,24 @@ export function SiteMosaicViewport({
 
   const onViewPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const start = dragRef.current;
-    const preview = dragPreviewRef.current;
-    if (!start || !preview) return;
-    preview.style.transform = `translate(${event.clientX - start.x}px, ${event.clientY - start.y}px)`;
+    if (!start) return;
+    const wrap = viewWrapRef.current;
+    const rect = wrap?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const fractions = displayDragFractions(
+      event.clientX - start.x,
+      event.clientY - start.y,
+      rect.width,
+      rect.height,
+    );
+    if (!fractions) return;
+    if (display.pan(fractions.fx, fractions.fy)) clearEdgeNote();
+    else edgeNote("pan");
+    dragRef.current = { x: event.clientX, y: event.clientY };
   };
 
-  const endViewPointer = (event: ReactPointerEvent<HTMLDivElement>) => {
-    const start = dragRef.current;
+  const onViewPointerUp = () => {
     dragRef.current = null;
-    const preview = dragPreviewRef.current;
-    if (preview) preview.style.transform = "";
-    if (!start) return;
-    if (event.type === "pointerup") commitDrag(event.clientX - start.x, event.clientY - start.y);
   };
 
   const onViewKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -651,9 +601,16 @@ export function SiteMosaicViewport({
     const action = displayGestureKeyAction(event.key);
     if (!action) return;
     event.preventDefault();
-    if (action.kind === "pan") shiftViewport(action.dCol, action.dRow);
-    else if (action.kind === "zoom") zoomViewport(action.factor);
-    else resetView();
+    if (action.kind === "pan") {
+      if (display.pan(action.dCol, -action.dRow)) clearEdgeNote();
+      else edgeNote("pan");
+    } else if (action.kind === "zoom") {
+      if (display.zoom(action.factor < 1 ? 1 : -1)) clearEdgeNote();
+      else edgeNote(action.factor < 1 ? "zoom-in" : "zoom-out");
+    } else {
+      display.reset();
+      clearEdgeNote();
+    }
   };
 
   // 휠 확대는 non-passive 리스너에서만 preventDefault할 수 있다. 포커스·Ctrl
@@ -668,14 +625,15 @@ export function SiteMosaicViewport({
       const now = Date.now();
       if (!displayWheelReady(wheelLastRef.current, now)) return;
       wheelLastRef.current = now;
-      zoomViewport(event.deltaY > 0 ? 2 : 0.5);
+      if (display.zoom(event.deltaY > 0 ? -1 : 1)) clearEdgeNote();
+      else edgeNote(event.deltaY > 0 ? "zoom-out" : "zoom-in");
     };
     wrap.addEventListener("wheel", onWheel, { passive: false });
     return () => {
       wrap.removeEventListener("wheel", onWheel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoomViewport는 뷰포트 스냅샷을 닫는다. 최신 스냅샷의 동작을 리스너에 태운다
-  }, [cover.ok, activeViewport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cover.ok]);
 
   const cells = cover.ok
     ? cover.windows.map((plan) => {
@@ -721,7 +679,7 @@ export function SiteMosaicViewport({
   );
 
   return (
-    <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2">
+    <div className="flex flex-col gap-2">
       <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
 
       {!cover.ok && (
@@ -742,19 +700,22 @@ export function SiteMosaicViewport({
             ref={viewWrapRef}
             tabIndex={0}
             role="group"
-            aria-label="이어 보기 화면. 마우스로 끌거나 방향키로 이동하고, + − 키 또는 휠(선택 후·Ctrl과 함께)로 확대합니다. Home 키는 전체 보기로 돌아갑니다."
+            aria-label="이어 보기 화면. 마우스로 끌거나 방향키로 이동하고, + − 키로 확대합니다. 휠은 그림을 선택한 후, 또는 Ctrl과 함께 사용하세요. Home 키는 전체 보기로 돌아갑니다."
             onPointerDown={onViewPointerDown}
             onPointerMove={onViewPointerMove}
-            onPointerUp={endViewPointer}
-            onPointerCancel={endViewPointer}
+            onPointerUp={onViewPointerUp}
+            onPointerCancel={onViewPointerUp}
             onKeyDown={onViewKeyDown}
-            className="overflow-auto rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
+            className="overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
             style={{ touchAction: "pan-y" }}
           >
             <div
-              ref={dragPreviewRef}
               className="relative mx-auto w-full"
-              style={{ maxWidth: `min(100%, calc(52dvh * ${geometry.width / geometry.height}))` }}
+              style={{
+                maxWidth: `min(100%, calc(52dvh * ${geometry.width / geometry.height}))`,
+                transform: displayViewTransform(view),
+                transformOrigin: "0 0",
+              }}
             >
               <canvas
                 ref={paintMosaicRef}
@@ -793,15 +754,12 @@ export function SiteMosaicViewport({
             </div>
           </div>
           {/* 이동·확대 도구는 그림 바로 옆에 둔다 — 기술 문단 아래가 아니라. */}
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="이어 보기 화면 이동·확대">
-            <button type="button" className="btn min-h-11" aria-label="왼쪽으로 이동" onClick={() => shiftViewport(-0.25, 0)}>←</button>
-            <button type="button" className="btn min-h-11" aria-label="오른쪽으로 이동" onClick={() => shiftViewport(0.25, 0)}>→</button>
-            <button type="button" className="btn min-h-11" aria-label="위쪽으로 이동" onClick={() => shiftViewport(0, 0.25)}>↑</button>
-            <button type="button" className="btn min-h-11" aria-label="아래쪽으로 이동" onClick={() => shiftViewport(0, -0.25)}>↓</button>
-            <button type="button" className="btn min-h-11" onClick={() => zoomViewport(0.5)}>확대</button>
-            <button type="button" className="btn min-h-11" onClick={() => zoomViewport(2)}>축소</button>
-            <button type="button" className="btn min-h-11" onClick={resetView}>전체 보기</button>
-          </div>
+          <DisplayControlStrip
+            groupLabel="이어 보기 화면 이동·확대"
+            onAction={onControlAction}
+            zoomInDisabled={view.zoom >= 4}
+            zoomOutDisabled={view.zoom <= 1}
+          />
           {viewportNote && (
             <p className="text-[12px] leading-5 text-ink-2" role="status">{viewportNote}</p>
           )}
@@ -810,6 +768,12 @@ export function SiteMosaicViewport({
             {mosaicCoverStatusCopy(paintedCount, cells.length)}
             {observedCrsIdentifier ? ` · ${observedCrsIdentifier} 네이티브 평면 ${geometry.width} × ${geometry.height} 픽셀` : null}
           </p>
+          {isDisplayViewMoved(view) && (
+            <p className="text-[12px] leading-5 text-ink-2" role="status">
+              표시 확대 {displayZoomPercent(view)}%
+              {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+            </p>
+          )}
           {isDsm && (
             <>
               <p className="text-[12px] leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>

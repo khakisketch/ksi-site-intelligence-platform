@@ -384,10 +384,13 @@ describe("workspace compare mode", () => {
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
     expect(screen.getByText(/탐색에서 날짜·층별로 확인/)).toBeTruthy();
-    // 긴 동기화 경고는 펼침에 둔다 — 짧은 한 줄만 첫 화면에 둔다.
-    expect(screen.getByText(/같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다/)).toBeTruthy();
+    // 비어 있는 두 지도 안내 카드는 두지 않는다 — 조건·다른 작업은 펼침에 둔다.
+    expect(screen.queryByText(/나란히 보기 안내/)).toBeNull();
+    expect(screen.getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
+    // 동기화 불가 고지는 펼침 안에서 그대로 둔다.
+    // 동기화 불가 고지는 펼침 안에서 그대로 둔다.
+    expect(screen.getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
     expect(screen.getByText("지원하지 않는 동기화 비교")).toBeTruthy();
-    expect(screen.getByText(/나란히 보기 안내/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-data-requests?workAreaId=tiny-1",
     );
@@ -419,6 +422,11 @@ describe("workspace compare mode", () => {
     expect(screen.queryByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeNull();
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
+    // 빈 지도 안내·경쟁 분석 버튼 없이 조건 펼침만 둔다.
+    expect(screen.queryByText(/나란히 보기 안내/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "변화량 분석" })).toBeNull();
+    expect(screen.getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
+    expect(screen.getByText(/수치가 필요할 때만/)).toBeTruthy();
   });
 
   it("renders two equal-weight map slots once both inputs are chosen", async () => {

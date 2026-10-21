@@ -77,36 +77,42 @@ function CompareSlot({
     ) : (<>
       <p className="break-words text-[13px] font-semibold">{candidateLabel(fact)}</p>
       <p className="text-[12px] text-ink-2">{spatialAssetKindLabel(fact.kind)} · {fact.assetRef === fact.viewAssetRef ? "이 관측의 표시 버전" : "이전 표시 버전(명시적 선택)"}</p>
-      {ring ? (
-        <SiteNativeExtentSvg
-          boundary={ring}
-          footprint={overlaid && footprintRing ? footprintRing : null}
-          crsLabel={areaCrs}
-          footprintLabel={overlaid ? candidateLabel(fact) : null}
-          planeUnit={planeUnit}
-          vertexCount={ring.length}
-          coincident={footprintRing ? coincident(footprintRing) : false}
-        />
-      ) : (
-        <p className="text-[12.5px] leading-5 text-ink-2">구역 기하를 읽지 못해 범위를 그리지 않았습니다.</p>
-      )}
-      {!catalogItem && (
-        <p className="text-[12px] leading-5 text-ink-2">측정 범위 정보를 조회하지 못해 관측 범위를 겹쳐 표시하지 않았습니다. 선택한 버전 자체는 그대로 둡니다.</p>
-      )}
-      {footprintRing && !overlaid && (
-        <p className="text-[12px] leading-5 text-ink-2">위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다.</p>
-      )}
       {!fact.captureSourcesAgree && (
         <p className="text-[12px] leading-5 text-ink-2">이 관측의 버전들이 서로 다른 촬영 시점을 가리켜 시간 순서 비교 후보에서 제외됩니다.</p>
       )}
       {fact.newerRevisionPending && (
         <p className="text-[12px] leading-5 text-ink-2">새로 제출된 버전이 있어 표시용 출력을 확인 중입니다. 지금 보는 버전을 바꾸지 않았습니다.</p>
       )}
-      <dl className="grid gap-1 text-[12px] text-ink-2">
-        <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">자료 격자</dt><dd className="text-right">{raster ? `${raster.width} × ${raster.height}` : "확인 불가"}</dd></div>
-        <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">관측 위치 기준</dt><dd className="break-words text-right">{raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
-        <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">수직 기준</dt><dd className="text-right">{raster?.observedVerticalReference ? raster.observedVerticalReference.identifier : "확인 불가"}</dd></div>
-      </dl>
+      {/* 측정 범위 도형은 펼침에 둔다 — 실제 화면(아래 창 단위 픽셀 보기)이 먼저다. */}
+      <details className="text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">측정 범위·격자 확인</summary>
+        <div className="mt-1 flex flex-col gap-2">
+          {ring ? (
+            <SiteNativeExtentSvg
+              boundary={ring}
+              footprint={overlaid && footprintRing ? footprintRing : null}
+              crsLabel={areaCrs}
+              footprintLabel={overlaid ? candidateLabel(fact) : null}
+              planeUnit={planeUnit}
+              vertexCount={ring.length}
+              coincident={footprintRing ? coincident(footprintRing) : false}
+            />
+          ) : (
+            <p className="text-[12.5px] leading-5 text-ink-2">구역 기하를 읽지 못해 범위를 그리지 않았습니다.</p>
+          )}
+          {!catalogItem && (
+            <p className="text-[12px] leading-5 text-ink-2">측정 범위 정보를 조회하지 못해 관측 범위를 겹쳐 표시하지 않았습니다. 선택한 버전 자체는 그대로 둡니다.</p>
+          )}
+          {footprintRing && !overlaid && (
+            <p className="text-[12px] leading-5 text-ink-2">위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다.</p>
+          )}
+          <dl className="grid gap-1 text-[12px] text-ink-2">
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">자료 격자</dt><dd className="text-right">{raster ? `${raster.width} × ${raster.height}` : "확인 불가"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">관측 위치 기준</dt><dd className="break-words text-right">{raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">수직 기준</dt><dd className="text-right">{raster?.observedVerticalReference ? raster.observedVerticalReference.identifier : "확인 불가"}</dd></div>
+          </dl>
+        </div>
+      </details>
       <details className="text-[12px] text-ink-2">
         <summary className="tap-target cursor-pointer">선택 버전 정보</summary>
         <p className="mt-1">등록 버전 · {fact.revision}</p>
@@ -141,6 +147,7 @@ export function SiteWorkspaceCompare({
   currentRequestedRef,
   resolution,
   canCreateAnalysis,
+  canCreateWorkOrder: canCreateWorkOrderHere,
   scopedCompareHref,
   exploreHref,
   facts,
@@ -155,6 +162,8 @@ export function SiteWorkspaceCompare({
   currentRequestedRef: string | null;
   resolution: ExplicitComparisonResolution | { status: "prompt" };
   canCreateAnalysis: boolean;
+  /** 관측 자료 등록(쓰기) 가능 여부 — 펼침의 등록 경로 안내에만 쓴다. */
+  canCreateWorkOrder: boolean;
   scopedCompareHref: string;
   /** 비교할 후보가 없을 때 돌아갈 탐색 주소 — 같은 구역·선택 자료 그대로 둔다. */
   exploreHref: string;
@@ -312,66 +321,82 @@ export function SiteWorkspaceCompare({
       />
     </div>}
 
-    {selected && projectionState === "ready" && (blocked.length > 0 || (groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0)) || tiedFacts.length > 0) && (
+    {selected && projectionState === "ready" && resolution.status !== "ready" && (
       <details className="rounded-lg border border-line bg-surface px-4 py-3">
-        <summary className="tap-target cursor-pointer text-[13px] font-bold">둘러볼 수 있는 관측 · 비교 불가 사유</summary>
-        <div className="mt-1">
-        {blocked.length > 0 && (
-          <div className="mt-1">
-            <p className="text-[12.5px] leading-5 text-ink-2">시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 칸에 올리지 않았습니다.</p>
-            <ul className="mt-1 divide-y divide-line">
-              {blocked.map((item) => (
-                <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
-              ))}
-            </ul>
+        <summary className="tap-target cursor-pointer text-[13px] font-bold">비교 조건과 다른 작업 확인</summary>
+        <div className="mt-1 flex flex-col gap-2 text-[12.5px] leading-5 text-ink-2">
+          {blocked.length > 0 && (
+            <div>
+              <p>시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 칸에 올리지 않았습니다.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {blocked.map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {tiedFacts.length > 0 && (
+            <div>
+              <p>같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다. 직접 고르세요.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {tiedFacts.map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0) && (
+            <div>
+              <p>시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다. 정밀도 그대로 둡니다.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {[...groups.browsableDateOnly, ...groups.browsableUnknown].map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p>시간 순서가 확인된 관측이 2개 이상 있어야 나란히 둘 수 있습니다. 날짜만 아는 관측은 순서 후보가 아닙니다.</p>
+          <div>
+            <p className="font-semibold">지원하지 않는 동기화 비교</p>
+            <p className="mt-1">
+              동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+              두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+            </p>
           </div>
-        )}
-        {tiedFacts.length > 0 && (
-          <div className="mt-1">
-            <p className="text-[12.5px] leading-5 text-ink-2">같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다. 직접 고르세요.</p>
-            <ul className="mt-1 divide-y divide-line">
-              {tiedFacts.map((item) => (
-                <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0) && (
-          <div className="mt-1">
-            <p className="text-[12.5px] leading-5 text-ink-2">시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다. 정밀도 그대로 둡니다.</p>
-            <ul className="mt-1 divide-y divide-line">
-              {[...groups.browsableDateOnly, ...groups.browsableUnknown].map((item) => (
-                <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+          <p>
+            수치가 필요할 때만{" "}
+            {canCreateAnalysis ? (
+              <Link href={scopedCompareHref} className="tap-target underline">변화량 분석</Link>
+            ) : (
+              <span>변화량 분석 — 현재 계정으로는 요청할 수 없어 권한 있는 담당자에게 문의하세요.</span>
+            )}
+            을 요청하세요. 준비를 더 한다고 시간 순서·표시 조건이 생기지는 않습니다.
+          </p>
+          <p>
+            <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+            <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
+          </p>
+          <p>
+            {canCreateWorkOrderHere ? (
+              <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">관측 자료 등록</Link>
+            ) : (
+              <span>관측 자료 등록 — 외부 관측 등록은 권한 있는 담당자와 확인하세요.</span>
+            )}
+            <span className="text-ink-muted"> 새 관측이 등록되면 같은 구역의 두 시점을 나란히 둘 수 있습니다.</span>
+          </p>
         </div>
       </details>
     )}
 
-    {selected && <div className="rounded-lg border border-line bg-surface px-4 py-3">
+    {selected && resolution.status === "ready" && <div className="rounded-lg border border-line bg-surface px-4 py-3">
       <h3 className="text-[13px] font-bold">나란히 보기 안내</h3>
-      {resolution.status === "ready" ? (<>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-          두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
-          두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
-        </p>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-          화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 높낮이 차이로 읽지 마세요. 측정 범위 표시이며 정확도를 보증하지 않습니다.
-        </p>
-      </>) : (<>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-          두 지도는 같은 크기로 둡니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.
-        </p>
-        <details className="mt-1 text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer font-semibold">지원하지 않는 동기화 비교</summary>
-          <p className="mt-1 text-[12.5px] leading-5">
-            동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
-            두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
-          </p>
-        </details>
-      </>)}
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+        두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+      </p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 높낮이 차이로 읽지 마세요. 측정 범위 표시이며 정확도를 보증하지 않습니다.
+      </p>
       <div className="mt-2 border-t border-line pt-2">
         <p className="text-[12.5px] font-semibold leading-5">수치 계산이 필요할 때 — 변화량 분석</p>
         <p className="mt-1 text-[12px] leading-5 text-ink-2">

@@ -17,6 +17,7 @@ import {
   representativeFacts,
   workspaceCaptureLine,
 } from "@/lib/site-workspace-entry";
+import { observationPrecisionOf } from "@/lib/site-workspace-entry";
 import type {
   PreparedWindowJob,
   WindowedViewerLayer,
@@ -398,6 +399,15 @@ export function SiteWorkspaceShell({
     : ordinaryEntry.status === "ready"
       ? viewerHeadingFor(ordinaryEntry.observation)
       : null;
+  // 선택 줄은 짧게 둔다 — 날짜는 선택 상자에, 층은 층 전환에 이미 있다.
+  // 버전과 미상 정밀도만 여기에 남기고, 파일명 파싱·새 ID를 만들지 않는다.
+  const captionFact = exploreFact
+    ?? (ordinaryEntry.status === "ready" ? ordinaryEntry.observation : null);
+  const selectedCaption = captionFact
+    ? observationPrecisionOf(captionFact) === "interval"
+      ? `등록 버전 ${captionFact.revision}`
+      : `등록 버전 ${captionFact.revision} · ${entryCaptureLine(captionFact)}`
+    : null;
   // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
   // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
   // 대표 층으로 두되 바꾼 뜻을 밝힌다. 최신 단언·날짜 추측을 하지 않는다.
@@ -447,7 +457,7 @@ export function SiteWorkspaceShell({
         areas={areas}
         selectedWorkAreaId={selectedWorkAreaId}
         captureOptions={captureOptions}
-        selectedCaption={exploreHeading}
+        selectedCaption={selectedCaption}
         coverageNote={selected && viewerJobsState !== "not-requested"
           ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
           : null}
@@ -529,6 +539,7 @@ export function SiteWorkspaceShell({
         currentRequestedRef={currentRequestedRef}
         resolution={comparison}
         canCreateAnalysis={canCreateAnalysis}
+        canCreateWorkOrder={canCreateWorkOrder}
         scopedCompareHref={scopedCompareHref}
         exploreHref={exploreHref}
         facts={facts}
