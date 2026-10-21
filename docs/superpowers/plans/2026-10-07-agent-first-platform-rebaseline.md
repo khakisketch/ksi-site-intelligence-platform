@@ -6136,3 +6136,41 @@ This closes the latest approved researched UI/UX improvement unit. No concrete i
 rendered blocker remains in the verified target conditions. Real participant comprehension, physical
 touch/SR and unobserved datasets/device conditions remain separate unverified acceptance, not invented
 success. Further feature/LOD/cache or general redesign work is not silently selected at this close.
+
+### 2026-10-21 — Human questions whole-Console UX maturity and menu structure
+
+Latest Human asks comparative level against other UX/competitors and points beyond Site entry to menu
+structure. This is assessment, not a new implementation approval. Earlier4595e1ea completion is the
+bounded researched Site task, NOT mature whole-product IA/customer usability. Previous global Home/nav
+exclusion is a dated implementation boundary, not a permanent rejection of improving those surfaces.
+
+Git7fc81eb6/main=origin revalidated. Reviewed current global/nav/more/palette/Work/Inbox source, current
+static More/support renders and previously captured normal Home/Sites plus current4595 Site evidence.
+Official Propeller navigation/home support image and prior DroneDeploy compare sources remain references,
+not logged-in competitive testing. Newly fetched Propeller home original is SVG despite an extensionless
+attachment; primary converted/read it and did not infer the UI from metadata. No code/build/ops changes.
+
+Confirmed whole-IA gaps: mobile More occupies a primary tab for only an out-of-product Dock/Edge boundary
+notice; desktop exposes the same legacy notice persistently. Work mixes observation records with entry
+to assigned/shared Inbox and team controls, requiring users to learn internal distinctions. Site area's
+`현황` plus spatial modes and `분석 결과` vs `분석·검토 기록` still need a product-wide naming/responsibility
+model even after hiding the competing row. Palette current-Site routes are pathname-only and omit the
+source/WorkArea context now preserved by Header (code evidence; not reproduced live in this pass).
+Previous normal Home/Sites have large generic covers/registration-oriented summaries; those captures
+are structure evidence, NOT proof of today's mutable data state. No arbitrary maturity %/SUS score or
+unverified competitor superiority in accuracy/permissions is claimed.
+
+Material runtime observation at22:18KST: owned frontend4595e1ea still running/health200, but Core8074
+loopback readiness connection failed and no listener was present; Home rendered honest connection/error
+state. Normal full-flow re-observation is blocked. Root cause/data state unknown; NO Core/service/journal/
+credential/shared-host restart or repair attempted during an assessment question. Current static More/
+support renders have this connection banner and are labelled accordingly. Earlier successful4595
+witnesses remain historical as-of-run evidence, not current service availability. Native focus screenshot
+again failed visible-tab; only own new tab closed and isolated Playwright used.
+
+Assessment direction: functional early product with partially improved Site interactions; whole-Console
+task/IA coherence is unfinished compared with published mature spatial-workspace patterns. Next design
+unit should define global vs Site-local vs object-detail ownership and user-task labels together, then
+consistent entry/return/search/support across connected screens, preserving Core scope/semantics and
+legacy deep links. Not another isolated Site polish or automatic new global capability/index/schema.
+Evidence /tmp/opencode/ksi-console-ia-assessment-20261021/; real customer participants still0.
