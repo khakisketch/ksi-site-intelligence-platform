@@ -4978,3 +4978,60 @@ shared-history recovery/maintenance authorization boundary, not a completed slic
 verified downstream product paths and the unresolved new-inspection/operational boundary are delivered
 separately. Do not resume the unauthorized trimming procedure; do not revive old historical Task5 labels
 as open by default or erase their valid earlier proofs.
+
+### 2026-10-21 — Human-confirmed spatial-workspace UX clarification (design only)
+
+Human accepted the spatial-first direction and specified four pre-implementation constraints:
+1. Observation is not an asset version: shared ortho/DSM observation and corrected versions retain
+   `Observation → Asset Version → Validation → Analysis Run → Result` links; no silent result changes.
+2. Explore/Compare/Results share one workspace but not fixed panel proportions; Compare gives both
+   maps equal weight, with supported common coordinates, synchronized viewport and legend.
+3. Immutable result lookup is distinct from computation reproduction. MVP workspace acceptance first
+   verifies stable result identity/input versions/conditions/validation across Web/API; existing
+   Constitution/ADR037/SDP-REQ-04 provenance and reproducibility obligations/tests are NOT removed.
+4. Ordinary entry defaults to the latest view-available observation; explicitly reopened work restores
+   its exact saved inputs/context, never silently replacing baseline/current with latest data.
+
+Requirement IDs: SDP-REQ-01/02/03/04/05/06/07/08; INV-020/024/040/051/053/060/061.
+Owner: docs/design spatial-workspace UX contract; existing Dashboard/Core/worker owner paths are future
+implementation targets only. Acceptance now: implementable interaction/identity/entry/state rules,
+separate result-read vs reproduction evidence, explicit technical contract gaps, integrated work units.
+Contracts affected: design mapping only; no wire schema, endpoint, policy, source/result history or
+permissions change authorized by this note. Reference assets: actual user mobile screenshots, existing
+Console source/verified records and earlier official reference observations; no third-party assets/code
+incorporated. Adoption: reuse current identities/guards/immutable analysis; replace file-first composition
+with proposed shared spatial shell. Files: docs/design/SITE_SPATIAL_WORKSPACE_UX_CONTRACT.md + this ledger;
+checkpoint continuity only. Tests: document/source-link/decision consistency checks, not runtime suites.
+HIL: none. License/data implications: no new bytes/egress/assets. Rollback: revert these documentation
+changes; live application, journals, shared audit branches/staging and existing owner tests untouched.
+
+The selected document is subordinate to applicable authority and records confirmed UX decisions plus
+technical proposals/gaps; it is not a new product authority or implementation/deployment approval.
+Current shared launcher-history recovery remains blocked under its existing separate approval boundary.
+A read-only Plan compatibility check is scoped to current identity/chronology/reproducibility contracts;
+primary owns final synthesis. No new task ledger, prototype service or code implementation selected here.
+
+Read-only compatibility check completed and primary inspected the relevant original sources. The
+[UX contract](../../design/SITE_SPATIAL_WORKSPACE_UX_CONTRACT.md) now records the confirmed behavior
+and proposed SWX-1..5 implementation units with their integrated acceptance cases. Material findings:
+- Existing contiguous corrective submission revisions retain the epoch witness; revision is submission-
+  wide. Catalog assetRefs change even for an unchanged sibling; no invented per-kind counters or
+  timestamp-based observation merging. Exact-selector reuse links two analyses without rewriting history.
+- Existing visual-use receipts do not prove pairwise display registration/georeferencing. Spatial
+  synchronization/legend needs a specified compatible display contract, not a new browser alignment guess.
+- Current catalog ordering/SUPERSEDED state is not a latest-viewable policy (newer unsealed revisions
+  exist). Ordinary-entry availability/chronology and frozen-link resolution need distinct typed rules.
+- Analysis ID/intent, resolved calculation identity, report/result ID/digests and current assessment are
+  separate. evidenceRevision alone is not a full evidence snapshot; exact per-epoch identities/digests
+  remain bound. Provenance digests can differ across executions while source/spatial facts are consistent.
+- Ordinary current Analysis lookup can withhold numbers. Existing retained-history storage is not itself
+  a public historical-result resolution contract; authorized history/evidence access must be specified
+  separately from current-use assessment before promising Web/API re-query parity. No admin fallback.
+- Re-query acceptance and reproduction verification are separate tracks; reproduction remains required
+  under current authority and existing tests/bindings. No old acceptance criterion is weakened.
+
+Documentation checks: local links/source paths, required four decisions, whitespace and documentation-only
+Git scope checked; no app/schema/runtime/permission changes, no server actions and no tests reclassified
+as viewer proof. No standalone prototype was created. The requested pre-implementation clarification and
+work decomposition are complete; spatial-workspace implementation and existing operational recovery
+remain unexecuted/unresolved, not product completion. This does not restart shared inspection work.
