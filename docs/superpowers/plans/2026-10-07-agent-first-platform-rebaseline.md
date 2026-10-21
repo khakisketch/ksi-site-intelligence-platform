@@ -5264,3 +5264,54 @@ t[5]; misreading it yields a wrong bound and a truthful `REQUEST_OUTSIDE_SOURCE`
 before the correct derivation, then succeeded). Window bounds must be derived from the inspected native
 transform using the authoritative floor/ceil cell-edge rule
 (packages/geo-spatial/src/ksi_geo_spatial/external_native_window_geometry.py `_plan`).
+
+#### B-track delivered: real prepared windows painted in the product (2026-10-21)
+
+B unit (committed 3ed69a6d, Console image 3ed69a6d running as the own Console): a windowed
+ACTUAL-PIXEL viewer inside the real site workspace, explicitly labelled a temporary visualization
+adapter. `apps/dashboard/src/lib/site-windowed-pixel-viewer.ts` (pure rules) +
+`apps/dashboard/src/app/sites/[siteId]/SiteWindowedPixelViewer.tsx` (client viewer/compare), mounted from
+the workspace shell; the site page reads the current account's existing prepared jobs (read-only, no new
+request on entry).
+
+Design decisions, verified in the real product:
+- NO basemap, no proj4/WGS84 placement, no tile host, no leaflet: `geotiff-overlay.ts:37,67` rejects
+  EPSG:7850 and no 7850 unit exists, so the raster is painted in its NATIVE plane with the WorkArea ring
+  overlaid in the same native coordinates (only when the WorkArea CRS equals the observed CRS, else an
+  honest "not overlaid" note). CRS and extent are captioned; no geographic placement is implied.
+- Bytes are drawn only through the existing authorized path: `fetchVerifiedReceiptBytes` (size+SHA-256
+  gate before decode) → `decodeReceiptPreview` (real TIFF NoData + internal mask IFDs) → canvas 1:1.
+  Browser-side zoom/pan is labelled display-only and never a measurement; the DSM layer is relative
+  shading with a gradient legend and a per-window-stretch warning, never absolute elevation.
+- Windows come only from the inspected native transform via the existing `resolveBoundedPixelWindow`
+  helper; adjacency is a draft the operator activates, and the POST uses the existing BFF body,
+  `resolutionMode NATIVE` and a per-attempt Idempotency-Key. No auto-PREPARE, no auto-poll.
+- READ vs REQUEST kept apart: Core already separates `SPATIAL_DATA_READ` (read an existing output) from
+  `SPATIAL_DATA_REQUEST` (create a new bounded PREPARE) — services/core/src/ksi_core/domains/external/
+  delivery/jobs.py:343/424/931/1092; the viewer renders "이미 준비된 창 보기" (READ) and "이 구역의 창
+  준비 요청" (REQUEST) separately, the latter inside the existing under-1024px mutation boundary, and a
+  foreign/expired window yields one no-disclosure message for both 403 and 404.
+- The three states the Human required are separate on screen: 감사 추적 ("이 화면은 감사 판정을 하지
+  않습니다"), 데이터 검증 적합성 ("볼 수 있다는 뜻이 쓸 수 있다는 뜻이 아닙니다"), 공간 표시 가능 여부
+  ("이 창의 바이트를 지금 그릴 수 있는지만 말합니다"), plus an explicit refusal of a composite
+  "준비됨·검증됨" flag. No new readiness/verified field was introduced.
+
+Real-product verification (main, screenshots read): the OIDC operator prepared a window through the
+product's own control (job `sdj-v1-f5452c85-13b6-4d33-97eb-08029002be83` → COMPLETED, 512x512, 653,717 B,
+sha256:179aaa822eb0bc805de…, pixelWindow [255,767,201,713]) and then the workspace painted REAL coastal
+pixels: canvas 512x512, 262,144 opaque pixels of which 261,702 are non-white actual imagery
+(`final/window-viewer-painted-1440.png` shows the coast/dune/vegetation). Requester ownership held exactly:
+the ps-admin-owned window returned 404 for the OIDC operator while the operator's own window returned
+200 and painted. Phone 390px: the prepared window stays readable, no horizontal overflow, and the
+prepare-request control is absent (0 buttons) — the existing mutation boundary is preserved. Zero
+unexpected writes and zero page errors during the read checks. Dashboard 164 files/1587 tests, tsc and
+eslint clean; all earlier workspace checks still pass (entry dates, compare slots, result-first, phone).
+
+Remaining limits (recorded, not hidden): no LOD/pyramid delivery — a large source is viewable
+window-by-window only; no cross-epoch display-registration geometry, so two-epoch spatial
+synchronization stays explicitly refused (the contract's §4 rule); no durable saved-work persistence;
+canvas accessibility is caption-based. A production display/LOD contract would still need bounded
+tile/window delivery with cache access rechecks and expiry, an explicit cross-epoch registration
+transform + evidence, level-of-detail/validity semantics, and permission-scoped historical byte
+resolution. The shared launcher-history incident and its separate recovery contract are unchanged and
+unapproved; no inspection launch was performed, and no branch was declared canonical.
