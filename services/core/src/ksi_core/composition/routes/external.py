@@ -149,6 +149,20 @@ def mount_external_routes(
                 )
             )
 
+            from ksi_core.domains.external.ingress.site_spatial_workspace import (
+                build_site_spatial_workspace_router,
+            )
+
+            app.include_router(
+                build_site_spatial_workspace_router(
+                    reconstruction=external_reconstruction_store,
+                    work_orders=observation_work_order_store,
+                    sites=site_store,
+                    work_areas=work_area_store,
+                    inspections=external_artifact_inspection_store,
+                )
+            )
+
     if external_evidence_store is not None:
         from ksi_core.external_evidence import mount_external_evidence
 

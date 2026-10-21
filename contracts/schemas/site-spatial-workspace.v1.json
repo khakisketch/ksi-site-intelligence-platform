@@ -1,0 +1,548 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "site-spatial-workspace.v1.json",
+  "$defs": {
+    "ProcessingArtifactKind": {
+      "description": "산출물 종류. ADR-KSI-003 원칙상 POINT_CLOUD/CAMERA_POSES가 원본,\nORTHO/DSM/DTM/MESH/TILES_3D가 파생 서빙 계층, REPORT가 파생 분석 산출물이다 —\n실제 계보는 이 값이 아니라 ``lineage.authority``가 밝힌다.",
+      "enum": [
+        "point_cloud",
+        "camera_poses",
+        "ortho",
+        "dsm",
+        "dtm",
+        "mesh",
+        "tiles_3d",
+        "report"
+      ],
+      "title": "ProcessingArtifactKind",
+      "type": "string"
+    },
+    "WorkspaceAssetVersionViewV1": {
+      "additionalProperties": false,
+      "description": "One exact artifact version with separately typed disposition facts.",
+      "properties": {
+        "assetRef": {
+          "pattern": "^ksa-v1-[0-9a-f]{64}$",
+          "title": "Assetref",
+          "type": "string"
+        },
+        "submissionRef": {
+          "pattern": "^ers-v1-[0-9a-f]{64}$",
+          "title": "Submissionref",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ProcessingArtifactKind"
+        },
+        "lifecycleState": {
+          "enum": [
+            "UNSEALED",
+            "SEALED",
+            "SUPERSEDED"
+          ],
+          "title": "Lifecyclestate",
+          "type": "string"
+        },
+        "capture": {
+          "$ref": "#/$defs/WorkspaceCaptureFactsV1"
+        },
+        "declaredCrs": {
+          "anyOf": [
+            {
+              "maxLength": 8192,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Declaredcrs"
+        },
+        "declaredVerticalReferencePresent": {
+          "title": "Declaredverticalreferencepresent",
+          "type": "boolean"
+        },
+        "declaredGsdM": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Declaredgsdm"
+        },
+        "submittedAt": {
+          "format": "date-time",
+          "title": "Submittedat",
+          "type": "string"
+        },
+        "observedSha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedsha256"
+        },
+        "observedSizeBytes": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedsizebytes"
+        },
+        "observedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observedat"
+        },
+        "inspectionState": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Inspectionstate",
+          "type": "string"
+        },
+        "inspectionOutcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "MEASURED",
+                "NOT_APPLICABLE",
+                "REJECTED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inspectionoutcome"
+        },
+        "inspectionReason": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inspectionreason"
+        },
+        "inspectedRasterAvailable": {
+          "title": "Inspectedrasteravailable",
+          "type": "boolean"
+        },
+        "displayState": {
+          "$ref": "#/$defs/WorkspaceDisplayStateV1"
+        },
+        "displayReady": {
+          "title": "Displayready",
+          "type": "boolean"
+        },
+        "chronology": {
+          "$ref": "#/$defs/WorkspaceChronologyReasonV1"
+        },
+        "chronologyCandidate": {
+          "title": "Chronologycandidate",
+          "type": "boolean"
+        },
+        "quantitativeEligibility": {
+          "const": "NOT_EVALUATED",
+          "default": "NOT_EVALUATED",
+          "title": "Quantitativeeligibility",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assetRef",
+        "submissionRef",
+        "revision",
+        "artifactId",
+        "kind",
+        "lifecycleState",
+        "capture",
+        "declaredVerticalReferencePresent",
+        "submittedAt",
+        "inspectionState",
+        "inspectedRasterAvailable",
+        "displayState",
+        "displayReady",
+        "chronology",
+        "chronologyCandidate"
+      ],
+      "title": "WorkspaceAssetVersionViewV1",
+      "type": "object"
+    },
+    "WorkspaceCaptureFactsV1": {
+      "additionalProperties": false,
+      "description": "Declared capture timing at its real precision; never synthesized.",
+      "properties": {
+        "factClass": {
+          "const": "DECLARED_CAPTURE",
+          "default": "DECLARED_CAPTURE",
+          "title": "Factclass",
+          "type": "string"
+        },
+        "precision": {
+          "$ref": "#/$defs/WorkspaceCapturePrecisionV1"
+        },
+        "captureStartedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturestartedat"
+        },
+        "captureEndedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Captureendedat"
+        },
+        "captureDate": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capturedate"
+        }
+      },
+      "required": [
+        "precision"
+      ],
+      "title": "WorkspaceCaptureFactsV1",
+      "type": "object"
+    },
+    "WorkspaceCapturePrecisionV1": {
+      "enum": [
+        "EXACT_INTERVAL",
+        "DATE_ONLY",
+        "UNKNOWN"
+      ],
+      "title": "WorkspaceCapturePrecisionV1",
+      "type": "string"
+    },
+    "WorkspaceChronologyReasonV1": {
+      "enum": [
+        "EXACT_INTERVAL_CANDIDATE",
+        "DATE_ONLY_NOT_ORDERABLE",
+        "UNKNOWN_CAPTURE_NOT_ORDERABLE",
+        "CAPTURE_CONFLICT_NOT_ORDERABLE"
+      ],
+      "title": "WorkspaceChronologyReasonV1",
+      "type": "string"
+    },
+    "WorkspaceDisplayStateV1": {
+      "enum": [
+        "SEALED",
+        "NOT_SEALED",
+        "NOT_CONFIGURED"
+      ],
+      "title": "WorkspaceDisplayStateV1",
+      "type": "string"
+    },
+    "WorkspaceEntryDefaultReasonV1": {
+      "enum": [
+        "LATEST_EXACT_VIEW_AVAILABLE",
+        "NO_OBSERVATIONS",
+        "NO_VIEW_AVAILABLE_OBSERVATION",
+        "NO_EXACT_CAPTURE_CANDIDATE",
+        "CAPTURE_TIE_AMBIGUOUS"
+      ],
+      "title": "WorkspaceEntryDefaultReasonV1",
+      "type": "string"
+    },
+    "WorkspaceEntryDefaultV1": {
+      "additionalProperties": false,
+      "description": "The single server-decided ordinary-entry observation, or an explicit reason.",
+      "properties": {
+        "observationEpochId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observationepochid"
+        },
+        "viewAssetRef": {
+          "anyOf": [
+            {
+              "pattern": "^ksa-v1-[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewassetref"
+        },
+        "reason": {
+          "$ref": "#/$defs/WorkspaceEntryDefaultReasonV1"
+        },
+        "detail": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "tiedObservationEpochIds": {
+          "default": [],
+          "items": {
+            "maxLength": 255,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Tiedobservationepochids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "reason",
+        "detail"
+      ],
+      "title": "WorkspaceEntryDefaultV1",
+      "type": "object"
+    },
+    "WorkspaceObservationViewV1": {
+      "additionalProperties": false,
+      "description": "One observation (one exact epoch identity) with its asset versions.",
+      "properties": {
+        "observationEpochId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observationepochid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "capture": {
+          "$ref": "#/$defs/WorkspaceCaptureFactsV1"
+        },
+        "captureSourcesAgree": {
+          "title": "Capturesourcesagree",
+          "type": "boolean"
+        },
+        "versions": {
+          "items": {
+            "$ref": "#/$defs/WorkspaceAssetVersionViewV1"
+          },
+          "maxItems": 400,
+          "minItems": 1,
+          "title": "Versions",
+          "type": "array"
+        },
+        "viewAvailable": {
+          "title": "Viewavailable",
+          "type": "boolean"
+        },
+        "viewUnavailableReason": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewunavailablereason"
+        },
+        "viewAssetRef": {
+          "anyOf": [
+            {
+              "pattern": "^ksa-v1-[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Viewassetref"
+        },
+        "newerRevisionPending": {
+          "title": "Newerrevisionpending",
+          "type": "boolean"
+        },
+        "newerRevisionState": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Newerrevisionstate"
+        },
+        "chronologyCandidate": {
+          "title": "Chronologycandidate",
+          "type": "boolean"
+        },
+        "hasSealedVersion": {
+          "title": "Hassealedversion",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "observationEpochId",
+        "workOrderId",
+        "capture",
+        "captureSourcesAgree",
+        "versions",
+        "viewAvailable",
+        "newerRevisionPending",
+        "chronologyCandidate",
+        "hasSealedVersion"
+      ],
+      "title": "WorkspaceObservationViewV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "contractVersion": {
+      "const": "site-spatial-workspace-page.v1",
+      "default": "site-spatial-workspace-page.v1",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "siteId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Siteid",
+      "type": "string"
+    },
+    "workAreaId": {
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Workareaid",
+      "type": "string"
+    },
+    "scopePolicy": {
+      "const": "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+      "default": "SINGLE_WORK_AREA_WORK_ORDERS_ONLY",
+      "title": "Scopepolicy",
+      "type": "string"
+    },
+    "scopeNote": {
+      "const": "Register one WorkOrder per WorkArea for workspace attribution; multi-area records are omitted.",
+      "default": "Register one WorkOrder per WorkArea for workspace attribution; multi-area records are omitted.",
+      "title": "Scopenote",
+      "type": "string"
+    },
+    "observations": {
+      "items": {
+        "$ref": "#/$defs/WorkspaceObservationViewV1"
+      },
+      "maxItems": 50,
+      "title": "Observations",
+      "type": "array"
+    },
+    "entryDefault": {
+      "$ref": "#/$defs/WorkspaceEntryDefaultV1"
+    },
+    "nextCursor": {
+      "anyOf": [
+        {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Nextcursor"
+    },
+    "hasMore": {
+      "title": "Hasmore",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "siteId",
+    "workAreaId",
+    "observations",
+    "entryDefault",
+    "hasMore"
+  ],
+  "title": "SiteSpatialWorkspacePageV1",
+  "type": "object"
+}

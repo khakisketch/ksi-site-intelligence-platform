@@ -7469,6 +7469,34 @@ paths:
         '403': { description: SITES_READ permission required }
         '404': { description: Site, WorkArea or asset is absent or outside the caller grant }
         '503': { description: A projected response would exceed the structured response budget }
+  /v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations:
+    get:
+      tags: [spatial-asset-catalog]
+      summary: List Site WorkArea observation/version availability projection
+      description: >-
+        Read-only observation grouping for ordinary entry: what observations exist,
+        which asset versions each carries at real capture precision, what is
+        view-available, and which observation is the entry default. Grouped by the
+        existing observationEpochId only; distinct WorkOrders are never merged by date.
+        This route does not grant file bytes, signed URLs, object keys, or analysis eligibility.
+      operationId: list_observations_v1_sites__site_id__work_areas__work_area_id__spatial_workspace_observations_get
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { name: site_id, in: path, required: true, schema: { type: string } }
+        - { name: work_area_id, in: path, required: true, schema: { type: string } }
+        - { name: limit, in: query, required: false, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: cursor, in: query, required: false, schema: { type: string, minLength: 1, maxLength: 1024 }, description: Scope-bound navigation only; authorization is rechecked on every request. }
+      responses:
+        '200':
+          description: Bounded observation page with the server-decided entry default; declaration, observation, inspection and display facts are separate.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SiteSpatialWorkspacePageV1' }
+        '400': { description: Invalid or out-of-scope continuation cursor }
+        '401': { description: Authentication required }
+        '403': { description: SITES_READ permission required }
+        '404': { description: Site or WorkArea is absent or outside the caller grant }
+        '503': { description: A projected response would exceed the structured response budget }
   /v1/sites/{site_id}/analysis-observations:
     get:
       tags:
@@ -11147,6 +11175,12 @@ components:
             format: date-time
           - type: 'null'
           title: Captureendedat
+        captureDate:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Capturedate
       additionalProperties: false
       type: object
       required:
@@ -11249,6 +11283,360 @@ components:
       - contentType
       title: SpatialAssetObservedFactsV1
       description: Core-sealed byte observations; storage paths and capabilities are excluded.
+    SiteSpatialWorkspacePageV1:
+      properties:
+        contractVersion:
+          type: string
+          const: site-spatial-workspace-page.v1
+          title: Contractversion
+          default: site-spatial-workspace-page.v1
+        siteId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Siteid
+        workAreaId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workareaid
+        scopePolicy:
+          type: string
+          const: SINGLE_WORK_AREA_WORK_ORDERS_ONLY
+          title: Scopepolicy
+          default: SINGLE_WORK_AREA_WORK_ORDERS_ONLY
+        scopeNote:
+          type: string
+          const: Register one WorkOrder per WorkArea for workspace attribution; multi-area
+            records are omitted.
+          title: Scopenote
+          default: Register one WorkOrder per WorkArea for workspace attribution; multi-area
+            records are omitted.
+        observations:
+          items:
+            $ref: '#/components/schemas/WorkspaceObservationViewV1'
+          type: array
+          maxItems: 50
+          title: Observations
+        entryDefault:
+          $ref: '#/components/schemas/WorkspaceEntryDefaultV1'
+        nextCursor:
+          anyOf:
+          - type: string
+            maxLength: 1024
+            minLength: 1
+          - type: 'null'
+          title: Nextcursor
+        hasMore:
+          type: boolean
+          title: Hasmore
+      additionalProperties: false
+      type: object
+      required:
+      - siteId
+      - workAreaId
+      - observations
+      - entryDefault
+      - hasMore
+      title: SiteSpatialWorkspacePageV1
+    WorkspaceAssetVersionViewV1:
+      properties:
+        assetRef:
+          type: string
+          pattern: ^ksa-v1-[0-9a-f]{64}$
+          title: Assetref
+        submissionRef:
+          type: string
+          pattern: ^ers-v1-[0-9a-f]{64}$
+          title: Submissionref
+        revision:
+          type: integer
+          minimum: 1.0
+          title: Revision
+        artifactId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Artifactid
+        kind:
+          $ref: '#/components/schemas/ProcessingArtifactKind'
+        lifecycleState:
+          type: string
+          enum:
+          - UNSEALED
+          - SEALED
+          - SUPERSEDED
+          title: Lifecyclestate
+        capture:
+          $ref: '#/components/schemas/WorkspaceCaptureFactsV1'
+        declaredCrs:
+          anyOf:
+          - type: string
+            maxLength: 8192
+          - type: 'null'
+          title: Declaredcrs
+        declaredVerticalReferencePresent:
+          type: boolean
+          title: Declaredverticalreferencepresent
+        declaredGsdM:
+          anyOf:
+          - type: number
+            exclusiveMinimum: 0.0
+          - type: 'null'
+          title: Declaredgsdm
+        submittedAt:
+          type: string
+          format: date-time
+          title: Submittedat
+        observedSha256:
+          anyOf:
+          - type: string
+            pattern: ^[0-9a-f]{64}$
+          - type: 'null'
+          title: Observedsha256
+        observedSizeBytes:
+          anyOf:
+          - type: integer
+            minimum: 1.0
+          - type: 'null'
+          title: Observedsizebytes
+        observedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Observedat
+        inspectionState:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Inspectionstate
+        inspectionOutcome:
+          anyOf:
+          - type: string
+            enum:
+            - MEASURED
+            - NOT_APPLICABLE
+            - REJECTED
+          - type: 'null'
+          title: Inspectionoutcome
+        inspectionReason:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Inspectionreason
+        inspectedRasterAvailable:
+          type: boolean
+          title: Inspectedrasteravailable
+        displayState:
+          $ref: '#/components/schemas/WorkspaceDisplayStateV1'
+        displayReady:
+          type: boolean
+          title: Displayready
+        chronology:
+          $ref: '#/components/schemas/WorkspaceChronologyReasonV1'
+        chronologyCandidate:
+          type: boolean
+          title: Chronologycandidate
+        quantitativeEligibility:
+          type: string
+          const: NOT_EVALUATED
+          title: Quantitativeeligibility
+          default: NOT_EVALUATED
+      additionalProperties: false
+      type: object
+      required:
+      - assetRef
+      - submissionRef
+      - revision
+      - artifactId
+      - kind
+      - lifecycleState
+      - capture
+      - declaredVerticalReferencePresent
+      - submittedAt
+      - inspectionState
+      - inspectedRasterAvailable
+      - displayState
+      - displayReady
+      - chronology
+      - chronologyCandidate
+      title: WorkspaceAssetVersionViewV1
+      description: One exact artifact version with separately typed disposition facts.
+    WorkspaceCaptureFactsV1:
+      properties:
+        factClass:
+          type: string
+          const: DECLARED_CAPTURE
+          title: Factclass
+          default: DECLARED_CAPTURE
+        precision:
+          $ref: '#/components/schemas/WorkspaceCapturePrecisionV1'
+        captureStartedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Capturestartedat
+        captureEndedAt:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+          title: Captureendedat
+        captureDate:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+          title: Capturedate
+      additionalProperties: false
+      type: object
+      required:
+      - precision
+      title: WorkspaceCaptureFactsV1
+      description: Declared capture timing at its real precision; never synthesized.
+    WorkspaceCapturePrecisionV1:
+      type: string
+      enum:
+      - EXACT_INTERVAL
+      - DATE_ONLY
+      - UNKNOWN
+      title: WorkspaceCapturePrecisionV1
+    WorkspaceChronologyReasonV1:
+      type: string
+      enum:
+      - EXACT_INTERVAL_CANDIDATE
+      - DATE_ONLY_NOT_ORDERABLE
+      - UNKNOWN_CAPTURE_NOT_ORDERABLE
+      - CAPTURE_CONFLICT_NOT_ORDERABLE
+      title: WorkspaceChronologyReasonV1
+    WorkspaceDisplayStateV1:
+      type: string
+      enum:
+      - SEALED
+      - NOT_SEALED
+      - NOT_CONFIGURED
+      title: WorkspaceDisplayStateV1
+    WorkspaceEntryDefaultReasonV1:
+      type: string
+      enum:
+      - LATEST_EXACT_VIEW_AVAILABLE
+      - NO_OBSERVATIONS
+      - NO_VIEW_AVAILABLE_OBSERVATION
+      - NO_EXACT_CAPTURE_CANDIDATE
+      - CAPTURE_TIE_AMBIGUOUS
+      title: WorkspaceEntryDefaultReasonV1
+    WorkspaceEntryDefaultV1:
+      properties:
+        observationEpochId:
+          anyOf:
+          - type: string
+            maxLength: 255
+            minLength: 1
+          - type: 'null'
+          title: Observationepochid
+        viewAssetRef:
+          anyOf:
+          - type: string
+            pattern: ^ksa-v1-[0-9a-f]{64}$
+          - type: 'null'
+          title: Viewassetref
+        reason:
+          $ref: '#/components/schemas/WorkspaceEntryDefaultReasonV1'
+        detail:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Detail
+        tiedObservationEpochIds:
+          items:
+            type: string
+            maxLength: 255
+            minLength: 1
+          type: array
+          title: Tiedobservationepochids
+          default: []
+      additionalProperties: false
+      type: object
+      required:
+      - reason
+      - detail
+      title: WorkspaceEntryDefaultV1
+      description: The single server-decided ordinary-entry observation, or an explicit
+        reason.
+    WorkspaceObservationViewV1:
+      properties:
+        observationEpochId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Observationepochid
+        workOrderId:
+          type: string
+          maxLength: 255
+          minLength: 1
+          title: Workorderid
+        capture:
+          $ref: '#/components/schemas/WorkspaceCaptureFactsV1'
+        captureSourcesAgree:
+          type: boolean
+          title: Capturesourcesagree
+        versions:
+          items:
+            $ref: '#/components/schemas/WorkspaceAssetVersionViewV1'
+          type: array
+          maxItems: 400
+          minItems: 1
+          title: Versions
+        viewAvailable:
+          type: boolean
+          title: Viewavailable
+        viewUnavailableReason:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Viewunavailablereason
+        viewAssetRef:
+          anyOf:
+          - type: string
+            pattern: ^ksa-v1-[0-9a-f]{64}$
+          - type: 'null'
+          title: Viewassetref
+        newerRevisionPending:
+          type: boolean
+          title: Newerrevisionpending
+        newerRevisionState:
+          anyOf:
+          - type: string
+            maxLength: 128
+            minLength: 1
+          - type: 'null'
+          title: Newerrevisionstate
+        chronologyCandidate:
+          type: boolean
+          title: Chronologycandidate
+        hasSealedVersion:
+          type: boolean
+          title: Hassealedversion
+      additionalProperties: false
+      type: object
+      required:
+      - observationEpochId
+      - workOrderId
+      - capture
+      - captureSourcesAgree
+      - versions
+      - viewAvailable
+      - newerRevisionPending
+      - chronologyCandidate
+      - hasSealedVersion
+      title: WorkspaceObservationViewV1
+      description: One observation (one exact epoch identity) with its asset versions.
     VerticalDatum:
       type: string
       enum:

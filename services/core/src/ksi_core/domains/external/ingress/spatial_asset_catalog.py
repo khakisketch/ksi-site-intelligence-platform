@@ -248,6 +248,7 @@ class SpatialAssetCatalog:
                     producer_completed_at=(submission.producer_declaration.completed_at),
                     capture_started_at=submission.input_declaration.capture_started_at,
                     capture_ended_at=submission.input_declaration.capture_ended_at,
+                    capture_date=getattr(submission.input_declaration, "capture_date", None),
                 ),
                 observed=observed_facts,
                 inspection=SpatialAssetInspectionV1(state="INSPECTION_NOT_QUERIED"),

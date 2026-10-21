@@ -94,11 +94,14 @@ function shortClock(iso: string, seconds: boolean): string | null {
  * 연도를 생략하지 않는다. 한쪽만 있거나 파싱이 안 되면 있는 그대로 말한다.
  * seconds가 true면 초 단위까지 표시한다. 분 단위 제목이 겹치는 선택지를
  * 가를 때만 쓴다.
+ * 구간이 없고 달력 날짜(`captureDate`)만 있으면 날짜 + '날짜만 확인 ·
+ * 시각 미상'으로 말한다. 시각을 붙이지 않으며, 제출·관측·등록 시각에서
+ * 날짜를 유도하지 않는다. 둘 다 없으면 '촬영 구간 미기재' 그대로다.
  */
 export function capturePeriodTitle(
   startedAt: string | null,
   endedAt: string | null,
-  options?: { seconds?: boolean },
+  options?: { seconds?: boolean; captureDate?: string | null },
 ): string {
   const seconds = options?.seconds ?? false;
   if (startedAt && endedAt) {
@@ -116,6 +119,12 @@ export function capturePeriodTitle(
     if (!known) return "촬영 구간 확인 불가";
     return `${known} 촬영 (${startedAt ? "종료 미기재" : "시작 미기재"})`;
   }
+  const calendar = options?.captureDate ?? null;
+  if (calendar) {
+    const rendered = formatKoreanDate(calendar);
+    if (rendered === calendar) return `${calendar} (날짜만 확인 · 시각 미상)`;
+    return `${rendered} (날짜만 확인 · 시각 미상)`;
+  }
   return "촬영 구간 미기재";
 }
 
@@ -127,6 +136,8 @@ export interface AssetBusinessTitleInput {
     fileName: string;
     captureStartedAt: string | null;
     captureEndedAt: string | null;
+    /** V3 DATE_ONLY 달력 날짜. 없으면 미상으로 둔다(유도하지 않는다). */
+    captureDate?: string | null;
   };
 }
 
@@ -140,7 +151,7 @@ export function assetBusinessTitle(
   asset: AssetBusinessTitleInput,
   options?: { seconds?: boolean },
 ): string {
-  return `${dataKindLabel(asset.kind)} · ${capturePeriodTitle(asset.declared.captureStartedAt, asset.declared.captureEndedAt, options)}`;
+  return `${dataKindLabel(asset.kind)} · ${capturePeriodTitle(asset.declared.captureStartedAt, asset.declared.captureEndedAt, { ...options, captureDate: asset.declared.captureDate ?? null })}`;
 }
 
 export interface AssetBusinessTitleItem extends AssetBusinessTitleInput {

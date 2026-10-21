@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Final, Literal
 
@@ -44,6 +44,7 @@ class SpatialAssetDeclaredFactsV1(_CamelModel):
     producer_completed_at: datetime | None = None
     capture_started_at: datetime | None = None
     capture_ended_at: datetime | None = None
+    capture_date: date | None = None
 
 
 class SpatialAssetObservedFactsV1(_CamelModel):

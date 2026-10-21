@@ -5035,3 +5035,83 @@ Git scope checked; no app/schema/runtime/permission changes, no server actions a
 as viewer proof. No standalone prototype was created. The requested pre-implementation clarification and
 work decomposition are complete; spatial-workspace implementation and existing operational recovery
 remain unexecuted/unresolved, not product completion. This does not restart shared inspection work.
+
+#### Spatial workspace implementation start (2026-10-21, Human "진행해줘")
+
+Human approved implementation of the confirmed [UX contract](../../design/SITE_SPATIAL_WORKSPACE_UX_CONTRACT.md).
+Git revalidated main 426eeafd before this pass; tracked tree clean except the user's untracked
+.playwright-cli. No new ledger; the same rebaseline ledger owns this work.
+
+Runtime revalidation for this pass: the own Core8074 source-run had exited (cause not established) and
+was resumed from the exact preserved protected env via the durable launcher; ready=true. All 14 Core
+journals are byte-identical except `spatial-data-audit.jsonl`, which only grew by append (prefix
+preserved against the retained backup) from the live SpatialData/Analysis worker activity. The
+persistent Analysis poll worker reconnected and kept polling after the restart. Actual data intact:
+two Floreat V3 submissions (DATE_ONLY 2021-08-17 / 2022-08-24, UNKNOWN producer, unknown raw-photo
+retention) with 4 SEALED MEASURED assets (1022x915, EPSG:7850, no vertical reference), plus the
+separate synthetic case assets (EPSG:5186) and its stored 800m3/provisional analysis and review.
+Both public revisions' `display` state is PENDING_INSPECTION with no sanitized display reference, so
+no inspector-display derivative exists for the public case; the only real byte path remains the
+existing SpatialData bounded-window prepare/receipt/download lane.
+
+Observed gap that drives unit order: Core currently projects **per-artifact** catalog items only
+(lifecycle SEALED/UNSEALED/SUPERSEDED, declared/observed/inspection facts). There is no Core-owned
+observation-level projection giving capture precision, versions, view-availability and an ordinary-entry
+default; the catalog orders by assetRef and SUPERSEDED can mean a higher but unsealed revision. A
+client-side "latest" ranking would be exactly the fabricated quality ranking the contract forbids.
+Therefore SWX-1 Core projection is the first unit, and the Dashboard shell depends on it behind a
+typed adapter.
+
+Units commissioned (background, no commits by workers, no server ops):
+- General `ses_ea3573817ffeTYb9sLrwgpKXp1`: Core observation-level projection + schema/OpenAPI +
+  contract/replay tests, exact existing-identity mapping, explicit ambiguity and no fabricated default.
+- General `ses_ea356f8ddffeMEdt0p4XZjLb2b`: Dashboard typed entry resolver (no silent latest fallback,
+  fail-closed explicit links) + Explore/Compare/Results workspace shell over the incumbent native
+  extent/vector idiom, honest states, existing guarded byte path preserved as the only byte viewer.
+
+Main owns: runtime/browser/integration, the durable Core restart path, the actual-product verification
+script (`final/verify-spatial-workspace.mjs`) and final Git/ledger records. Worker-sourced claims are
+not accepted until rendered in the real Console against the real Core records.
+
+Constraints held: no new inspection launches (shared launcher-history incident unresolved, own
+validation worker stopped, both branches/staging preserved); no threshold/CRS/admission/rights change;
+no external basemap traffic; no separate demo artifact; existing V1/V2/V3 semantics, journal history and
+regression suites unchanged.
+
+Live finding driving the Core/Dashboard unit split: the spatial-asset catalog projection carries only
+`captureStartedAt`/`captureEndedAt`, so the V3 calendar-only `captureDate` (DATE_ONLY) never reaches
+the Console and the real public observations render as "촬영 구간 미기재" with no real date. The
+observation-level projection must therefore carry the capture fact at its real precision (EXACT_INTERVAL /
+DATE_ONLY / UNKNOWN) with the calendar date read from the declared input declaration, never from
+submittedAt/observedAt/registration time. Core owner now extends the projection (and decides additively
+whether the existing catalog item also gains the optional calendar date); Dashboard owner binds the
+precision-aware display behind its typed adapter. Until the Core side lands, the live first viewport
+cannot show a real observation date — this is the concrete mechanism behind the Human's "머리가 하얘질까"
+complaint, and it is a data-projection gap, not a copy problem.
+
+Baseline captured for before/after comparison (real Console, real Core records, main-read):
+`final/baseline-entry-1440.png` (현황 first viewport: "선택 구역 지도" empty extent box, no observation
+date) and `final/baseline-analysis-1440.png` (analysis page: the new-request form appears at text
+index 284 while the actual 800m3 result appears at 533 — the result is below the form). Workspace
+verification script `final/verify-spatial-workspace.mjs` asserts the delivered product against the same
+real records, with zero unexpected writes and no mocked Core data.
+
+Live runtime constraint confirmed for the workspace design (main, real Console + real Core):
+- The only real byte path for the public observations is the SpatialData bounded-window lane
+  (PREPARE → receipt → guarded GET), which is **requester-owned**: the same OIDC account that
+  created the request reads its output (verified: 200 + receipt bytes for `sdj-v1-6ff0ab18…`), while
+  another principal receives 404 for the same job. This is existing ownership behavior and must not be
+  widened to make a shared workspace viewable.
+- The inspector-produced sanitized display derivative path is `PENDING_INSPECTION` with no
+  `sanitizedDisplayRef` for every public revision and for the synthetic revisions, because that
+  derivative is produced by the inspection worker lane, which is stopped under the unresolved shared
+  launcher-history incident. Therefore a first-viewport **raster** for the public case is not
+  available today without a new inspection launch, which is not authorized.
+- Consequence for the delivered first slice: the workspace's honest first-viewport content is the
+  real *measured* extent plus real capture precision, real kind/version, real validation state and
+  the truthful path to bytes ("이 자료 받기 요청" on desktop, or the existing prepared output of the
+  current account). The workspace must not fake a raster, a map tile, an external basemap or a
+  synthetic preview, and must say plainly when pixels are not available and why.
+- `final/verify-spatial-workspace.mjs` therefore asserts observation/date/precision content, compare
+  mode structure, result-first ordering, phone rendering and zero unexpected writes — it does not
+  assert a raster that this runtime cannot honestly produce.

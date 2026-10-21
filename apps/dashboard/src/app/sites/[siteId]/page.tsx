@@ -5,7 +5,9 @@ import { cache } from "react";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
 import { SiteHeader } from "./SiteHeader";
-import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
+import type { SiteSpatialAssetsState } from "./SiteSpatialOverview";
+import { SiteWorkspaceShell } from "./SiteWorkspaceShell";
+import { buildWorkspaceServerFacts } from "./site-workspace-server-facts";
 import { SiteStartGuidance } from "./SiteStartGuidance";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -22,7 +24,15 @@ import { hasAllPermissions } from "@/lib/core-api/permissions";
 import { listSiteExternalVolumeHistory } from "@/lib/core-api/external-result-workflow";
 import { getSite } from "@/lib/core-api/sites";
 import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
-import { listAnalyses } from "@/lib/core-api/analysis";
+import { getAnalysis, listAnalyses, type AnalysisView } from "@/lib/core-api/analysis";
+import {
+  parseWorkspaceMode,
+  parseWorkspaceScopeId,
+  resolveExplicitComparison,
+  resolveExplicitResult,
+  type ExplicitComparisonResolution,
+  type ExplicitResultResolution,
+} from "@/lib/site-workspace-entry";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
@@ -69,7 +79,7 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[] }>;
+  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const firstValue = (value: string | string[] | undefined): string | undefined =>
@@ -177,6 +187,61 @@ export default async function SiteDetailPage({
     ? selectedAssetRef
     : null;
 
+  // SWX-1 명시적 진입 — 일반 둘러보기 힌트(workAreaId/assetRef)와 달리,
+  // 비교·결과 지시는 정확히 복원하거나 막는다. 조용히 다른 대상으로 바꾸지 않는다.
+  const mode = wantSpatial ? parseWorkspaceMode(firstValue(query.mode)) : "explore" as const;
+  const facts = wantSpatial
+    ? buildWorkspaceServerFacts({
+      siteId: site.siteId,
+      areas: areasResult.status === "fulfilled" ? areasResult.value.workAreas : [],
+      assetsPage: assetsState.status === "ready" ? assetsState.page : null,
+      analyses: analysesPage?.items ?? null,
+    })
+    : null;
+  const rawBaselineAssetRef = wantSpatial && mode === "compare" ? firstValue(query.baselineAssetRef) : undefined;
+  const rawCurrentAssetRef = wantSpatial && mode === "compare" ? firstValue(query.currentAssetRef) : undefined;
+  const baselineRequestedRef = parseWorkspaceScopeId(rawBaselineAssetRef ?? null);
+  const currentRequestedRef = parseWorkspaceScopeId(rawCurrentAssetRef ?? null);
+  let comparison: ExplicitComparisonResolution | { status: "prompt" } = { status: "prompt" };
+  if (facts && mode === "compare" && selectedWorkAreaId && assetsState.status === "ready") {
+    if (rawBaselineAssetRef != null || rawCurrentAssetRef != null) {
+      comparison = resolveExplicitComparison(facts, {
+        workAreaId: selectedWorkAreaId,
+        baselineAssetRef: rawBaselineAssetRef,
+        currentAssetRef: rawCurrentAssetRef,
+      });
+    }
+  }
+  const rawAnalysisId = wantSpatial && mode === "results" ? firstValue(query.analysisId) : undefined;
+  let explicitResult: ExplicitResultResolution | null = null;
+  let explicitDetail: AnalysisView | null = null;
+  if (facts && rawAnalysisId != null) {
+    // 목록 항목에는 정확한 선택자가 없어 상세(Core 기존 경로)로 복원한다.
+    // 실패하면 막는다 — 최신·다른 기록으로 바꾸지 않는다.
+    try {
+      const parsed = parseWorkspaceScopeId(rawAnalysisId);
+      if (!parsed) {
+        explicitResult = resolveExplicitResult({ ...facts, analyses: [] }, { analysisId: rawAnalysisId });
+      } else {
+        const detail = await getAnalysis(site.siteId, parsed);
+        explicitDetail = detail;
+        explicitResult = resolveExplicitResult({
+          ...facts,
+          analyses: [{
+            analysisId: detail.analysisId,
+            workAreaId: detail.workAreaId,
+            baseline: detail.baseline,
+            current: detail.current,
+          }],
+        }, { analysisId: parsed });
+        if (explicitResult.status !== "ready") explicitDetail = null;
+      }
+    } catch {
+      explicitResult = resolveExplicitResult({ ...facts, analyses: [] }, { analysisId: rawAnalysisId });
+      explicitDetail = null;
+    }
+  }
+
   return <div className="flex flex-col">
     <SiteHeader
       site={site}
@@ -191,8 +256,9 @@ export default async function SiteDetailPage({
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       {tab === "overview" && <div className="flex flex-col gap-4">
-        <SiteSpatialOverview
+        <SiteWorkspaceShell
           sitePath={sitePath}
+          mode={mode}
           areas={areasResult.status === "fulfilled" ? areasResult.value.workAreas : []}
           areasKnown={areasResult.status === "fulfilled"}
           orders={ordersResult.status === "fulfilled" ? ordersResult.value : null}
@@ -208,6 +274,13 @@ export default async function SiteDetailPage({
           // canTransition은 SITES_WRITE 승인 — 분석 요청 진입에만 쓰고 등록 권한과 섞지 않는다.
           canCreateAnalysis={canTransition}
           scopeNotice={scopeNotice}
+          facts={facts ?? { siteId: site.siteId, authorizedWorkAreaIds: [], serverDefault: null, observations: [], analyses: [] }}
+          baselineRequestedRef={baselineRequestedRef}
+          currentRequestedRef={currentRequestedRef}
+          comparison={comparison}
+          explicitResult={explicitResult}
+          explicitDetail={explicitDetail}
+          scopedCompareHref={selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId) ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}` : `${sitePath}/analysis`}
         />
         <SiteStartGuidance
           siteId={site.siteId}

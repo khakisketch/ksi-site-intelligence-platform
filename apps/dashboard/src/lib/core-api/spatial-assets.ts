@@ -26,6 +26,11 @@ export interface SpatialAssetDeclaredFacts {
   producerCompletedAt: string | null;
   captureStartedAt: string | null;
   captureEndedAt: string | null;
+  /**
+   * V3 DATE_ONLY 달력 날짜(`YYYY-MM-DD`). V1/V2 기록·미기재는 null이다.
+   * submittedAt/observedAt/등록 시각에서 유도하지 않는다.
+   */
+  captureDate?: string | null;
 }
 
 export interface SpatialAssetObservedFacts {

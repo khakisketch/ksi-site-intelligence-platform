@@ -324,6 +324,18 @@
             }
           ],
           "title": "Captureendedat"
+        },
+        "captureDate": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Capturedate"
         }
       },
       "additionalProperties": false,

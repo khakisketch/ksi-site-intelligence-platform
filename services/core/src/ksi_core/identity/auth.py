@@ -666,6 +666,10 @@ _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
             "GET",
             "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-assets/{asset_ref}",
         ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations",
+        ),
         ("POST", "/v1/sites/{site_id}/work-areas"),
         ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/archive"),
         ("POST", "/v1/sites/{site_id}/observation-schedules"),

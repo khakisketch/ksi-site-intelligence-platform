@@ -41,7 +41,7 @@ function assetSelectionHref(sitePath: string, workAreaId: string, assetRef: stri
 }
 
 /** 서버 상태 코드를 사람 말로만 옮긴다 — 원 코드를 바꾸거나 판정하지 않는다. */
-function analysisStateLabel(item: AnalysisListItem): string {
+export function analysisStateLabel(item: Pick<AnalysisListItem, "executionState" | "suitabilityState">): string {
   if (item.executionState === "FAILED") return "처리 실패";
   if (item.executionState === "RUNNING") return "처리 중";
   if (item.executionState === "QUEUED") return "처리 대기 중";
