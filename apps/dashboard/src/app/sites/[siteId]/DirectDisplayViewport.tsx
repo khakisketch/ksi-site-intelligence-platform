@@ -98,7 +98,9 @@ export function useDirectViewport() {
   // 여기서 캡처·드래그를 시작하면 pointerup/click이 프레임으로 재지정돼
   // 단추가 눌리지 않게 된다. 키보드도 가로채지 않는다.
   const isInteractiveTarget = (target: unknown): boolean => {
-    if (!(target instanceof HTMLElement)) return false;
+    // SVG 아이콘/path도 실제 단추의 자식이다. HTMLElement로 제한하면 SVG를
+    // 누를 때만 프레임이 포인터를 캡처해 native click을 가로채게 된다.
+    if (!(target instanceof Element)) return false;
     return target.closest("button,a[href],input,select,textarea,summary,[role='button']") !== null;
   };
 

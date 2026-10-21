@@ -343,16 +343,23 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
     const reset = screen.getByRole("button", { name: "전체 보기" });
-    // 단추 위의 포인터는 프레임 제스처로 가로채지 않는다 — 클릭이 산다.
+    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const capture = vi.fn();
+    Object.defineProperty(view, "setPointerCapture", { configurable: true, value: capture });
+    fireEvent.keyDown(view, { key: "+" });
+    expect(screen.getByText(/표시 확대 200%/)).toBeTruthy();
+    const icon = reset.querySelector("path")!;
+    // SVG 자식에 닿은 포인터도 단추 동작이다 — 프레임 캡처가 없어야 한다.
     act(() => {
       const down = new Event("pointerdown", { bubbles: true, cancelable: true });
       Object.assign(down, { pointerType: "mouse", button: 0, clientX: 10, clientY: 10, pointerId: 9 });
-      reset.dispatchEvent(down);
+      icon.dispatchEvent(down);
       const up = new Event("pointerup", { bubbles: true, cancelable: true });
       Object.assign(up, { pointerType: "mouse", button: 0, clientX: 10, clientY: 10, pointerId: 9 });
-      reset.dispatchEvent(up);
+      icon.dispatchEvent(up);
     });
-    fireEvent.click(reset);
+    expect(capture).not.toHaveBeenCalled();
+    fireEvent.click(icon);
     expect(screen.queryByText(/표시 확대/)).toBeNull();
     expect(gets).toHaveLength(jobs.length);
     expect(posts).toHaveLength(0);
