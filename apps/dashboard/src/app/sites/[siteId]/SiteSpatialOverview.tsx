@@ -391,7 +391,7 @@ export function SiteSpatialOverview({
               )}
               {secondaryCompareHref && (
                 <Link href={secondaryCompareHref} className="btn w-fit">
-                  이 구역 변화 비교
+                  변화량 분석
                 </Link>
               )}
             </p>

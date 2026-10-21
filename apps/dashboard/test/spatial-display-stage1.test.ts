@@ -196,9 +196,20 @@ describe("S1 — paint-on-verify and partial-cover labelling", () => {
       preparing: true,
       failure: null,
     });
-    // 검증 전에는 그리지 않는다 — waiting은 빈칸이다.
+    // 검증 전에는 그리지 않는다 — waiting은 빈칸이다. 바이트 수신은 '자료 읽는 중',
+    // 서버 대기열은 '준비 중'이다.
     expect(waiting.phase).toBe("waiting");
-    expect(waiting.detail).toMatch(/준비 중/);
+    expect(waiting.detail).toMatch(/자료 읽는 중/);
+    const queued = mosaicCellView({
+      key: "k",
+      plan: plan!,
+      painted: false,
+      fetching: false,
+      preparing: true,
+      failure: null,
+    });
+    expect(queued.phase).toBe("waiting");
+    expect(queued.detail).toMatch(/준비 중/);
     // 부분 커버는 항상 부분으로 말한다.
     expect(mosaicCoverStatusCopy(1, 4)).toMatch(new RegExp(MOSAIC_PARTIAL_COVER_LABEL));
     expect(mosaicCoverStatusCopy(1, 4)).toMatch(/그린 창 1 \/ 전체 4/);

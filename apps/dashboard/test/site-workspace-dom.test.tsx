@@ -140,6 +140,7 @@ describe("site workspace SSR paragraph nesting", () => {
         areas={[area as never]}
         selectedWorkAreaId="tiny-1"
         captureOptions={[{ assetRef: "a1", label: "정사영상 · 2021 포착", title: "t", selected: true }]}
+        selectedCaption="정사영상 · 2021 포착 · 등록 버전 1"
         coverageNote="부분 보기"
       >
         <div>canvas</div>

@@ -254,7 +254,7 @@ describe("workspace shell structure", () => {
     await renderOverview({});
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
     const modeLinks = within(modeNav).getAllByRole("link");
-    expect(modeLinks.map((link) => link.textContent)).toEqual(["탐색", "비교", "결과"]);
+    expect(modeLinks.map((link) => link.textContent)).toEqual(["탐색", "두 시점 보기", "분석 결과"]);
     expect(within(modeNav).getByRole("link", { name: "탐색" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(mocked.detail).not.toHaveBeenCalled();
@@ -491,8 +491,8 @@ describe("workspace results mode", () => {
     const openLink = screen.getByRole("link", { name: "자료·근거와 검토 보기" });
     // Core의 API href가 아니라 실제 Console의 정확한 구역·결과 화면으로 간다.
     expect(openLink.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
-    expect(screen.getByRole("heading", { name: "새 비교 요청" })).toBeTruthy();
-    expect(screen.getByText(/새 비교는 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "새 변화량 분석 요청" })).toBeTruthy();
+    expect(screen.getByText(/새 변화량 분석은 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
   });
 
   it("shows the recorded quantities with their limitation on the first results screen", async () => {
@@ -724,5 +724,51 @@ describe("explore capture options", () => {
       selectedEpochId: null,
     });
     expect(options.map((option) => option.assetRef)).toEqual(["x-2022", "x-2021"]);
+  });
+});
+
+describe("browse source round trip", () => {
+  function readySelection() {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["disp-2021"], { capture: wireCapture() }),
+        wireObservation("epoch-2022", ["disp-2022"], { capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }) }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2022",
+        viewAssetRef: "disp-2022",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("disp-2021"), rasterAsset("disp-2022")] });
+  }
+
+  it("preserves the explicit browse source in header links for the return trip", async () => {
+    readySelection();
+    await renderOverview({ workAreaId: "tiny-1", assetRef: "disp-2022" });
+    // 같은 구역·관측을 가리키는 직접 목적지 — 돌아올 때 정확한 관측을 잃지 않는다.
+    expect(screen.getByRole("link", { name: "등록 자료" }).getAttribute("href")).toBe(
+      "/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022",
+    );
+    expect(screen.getByRole("link", { name: "분석·검토 기록" }).getAttribute("href")).toBe(
+      "/sites/site-1/analysis?workAreaId=tiny-1&assetRef=disp-2022",
+    );
+    expect(screen.getByRole("link", { name: "현황" }).getAttribute("href")).toBe(
+      "/sites/site-1?workAreaId=tiny-1&assetRef=disp-2022",
+    );
+    // 선택 중인 관측·층·등록 버전은 title hover 없이 그대로 읽힌다.
+    expect(screen.getByText(/선택 중 ·/).textContent).toContain("등록 버전");
+  });
+
+  it("announces an unknown browse hint instead of quietly substituting another observation", async () => {
+    readySelection();
+    await renderOverview({ workAreaId: "tiny-1", assetRef: "ghost-asset" });
+    expect(screen.getByText(/요청한 대상을 확인할 수 없어/)).toBeTruthy();
+    // 모르는 참조는 그대로 돌려주지 않는다 — 공지된 서버 기본(검증값)으로 돌아간다.
+    const materialsHref = screen.getByRole("link", { name: "등록 자료" }).getAttribute("href");
+    expect(materialsHref).toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022");
+    expect(materialsHref).not.toContain("ghost-asset");
   });
 });

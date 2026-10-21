@@ -24,7 +24,10 @@ vi.mock("@/components/map/AoiPolygonMap", () => ({
     <div data-testid="aoi-map" data-vertices={JSON.stringify(value)} />
   ),
 }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) }));
+vi.mock("next/navigation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("next/navigation")>();
+  return { ...actual, notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) };
+});
 
 import SiteDetailPage from "@/app/sites/[siteId]/page";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -189,11 +192,14 @@ describe("Site spatial overview data bounds", () => {
     expect(screen.getByText("등록된 구역명 · 기록 있는 구역")).toBeTruthy();
   });
 
-  it("skips extra reads on non-default tabs", async () => {
-    render(await SiteDetailPage({
+  it("sends legacy area sections to real routes without extra reads", async () => {
+    // '등록 자료'·'분석·검토 기록' 영역은 실제 라우트가 주인이다 — 중간 진입
+    // 화면을 두지 않고 범위만 실어 보낸다. 추가 카탈로그 읽기 없음.
+    const error = await SiteDetailPage({
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({ section: "analysis" }),
-    }));
+    }).catch((thrown: unknown) => thrown);
+    expect(String((error as { digest?: unknown }).digest)).toContain("/sites/site-1/analysis");
     expect(mocked.analyses).not.toHaveBeenCalled();
     expect(mocked.assets).not.toHaveBeenCalled();
   });
@@ -462,7 +468,7 @@ describe("Site spatial overview honesty", () => {
     mocked.analyses.mockResolvedValue(analysisResultFixture());
     await renderDefaultTab({});
     const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
-    expect(actions.queryByRole("link", { name: "이 구역 변화 비교" })).toBeNull();
+    expect(actions.queryByRole("link", { name: "변화량 분석" })).toBeNull();
     const listLink = screen.getByRole("link", { name: "현장 분석 기록 보기" });
     expect(listLink.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1");
     expect(listLink.getAttribute("href")).not.toContain("#new-analysis-request");
@@ -475,7 +481,7 @@ describe("Site spatial overview honesty", () => {
     await renderDefaultTab({});
     const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
     expect(actions.queryByRole("link", { name: "이 구역 자료 등록" })).toBeNull();
-    const compare = actions.getByRole("link", { name: "이 구역 변화 비교" });
+    const compare = actions.getByRole("link", { name: "변화량 분석" });
     expect(compare.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1#new-analysis-request");
   });
 
@@ -486,7 +492,7 @@ describe("Site spatial overview honesty", () => {
     const actions = within(screen.getByRole("navigation", { name: "선택 구역 다음 확인" }));
     expect(actions.getByRole("link", { name: "이 구역 자료 등록" }).getAttribute("href"))
       .toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
-    expect(actions.getByRole("link", { name: "이 구역 변화 비교" }).getAttribute("href"))
+    expect(actions.getByRole("link", { name: "변화량 분석" }).getAttribute("href"))
       .toBe("/sites/site-1/analysis?workAreaId=tiny-1#new-analysis-request");
     expect(actions.queryByRole("link", { name: "이 구역 분석 기록 보기" })).toBeNull();
   });

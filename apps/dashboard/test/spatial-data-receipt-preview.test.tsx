@@ -200,7 +200,7 @@ describe("spatial data receipt preview", () => {
     const { fetchMock } = renderPreview(null);
 
     fireEvent.click(screen.getByRole("button", { name: "미리보기 불러오기" }));
-    await screen.findByText(/불러오는 중/);
+    await screen.findByText(/자료 읽는 중/);
     fireEvent.click(screen.getByRole("button", { name: "불러오기 취소" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "미리보기 불러오기" })).toBeTruthy());
     expect(fetchMock).toHaveBeenCalledTimes(1);

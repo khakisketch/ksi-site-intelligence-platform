@@ -20,7 +20,7 @@ export const metadata = { title: "현장 변화 분석 · KSI" };
 
 export default async function SiteAnalysisPage({ params, searchParams }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[] }>;
+  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[]; assetRef?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const single = (value: string | string[] | undefined): string | undefined =>
@@ -119,6 +119,12 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   // 배열 쿼리는 단일 선택이 아니므로 싣지 않는다.
   const rawWorkAreaId = typeof query.workAreaId === "string" ? query.workAreaId : undefined;
   const fallbackScope = loaded ? effectiveWorkAreaId : (parseScopeId(rawWorkAreaId) ?? "");
+  // 탐색에서 들고 온 관측 참조는 헤더 복귀용으로만 둔다. 분석 선택
+  // (analysisId·currentWorkOrderId)과 frozen 결과 입력은 이 값을 읽지 않는다.
+  // 현황으로 돌아가면 탐색 진입이 카탈로그와 재대조해 모르는 참조를 공지만 둔다.
+  const headerAssetRef = effectiveWorkAreaId
+    ? parseScopeId(typeof query.assetRef === "string" ? query.assetRef : undefined)
+    : null;
   return <>
     <SiteHeader
       site={site}
@@ -127,6 +133,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
       canEditAoi={canCreate}
       scopedWorkAreaId={effectiveWorkAreaId || null}
+      scopedAssetRef={headerAssetRef}
     />
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">

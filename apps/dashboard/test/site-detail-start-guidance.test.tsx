@@ -22,7 +22,15 @@ vi.mock("@/lib/core-api/analysis", () => ({ listAnalyses: mocked.analyses }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
 vi.mock("@/app/sites/[siteId]/SiteHeader", () => ({ SiteHeader: mocked.header }));
 vi.mock("@/app/sites/[siteId]/observations/ExternalObservationHistory", () => ({ ExternalObservationHistory: () => <div /> }));
-vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) }));
+vi.mock("next/navigation", () => ({
+  notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
+  useRouter: () => ({ refresh: () => {} }),
+  redirect: (url: string) => {
+    const error = new Error(`NEXT_REDIRECT;replace;${url};307;`);
+    (error as Error & { digest: string }).digest = `NEXT_REDIRECT;replace;${url};307;`;
+    throw error;
+  },
+}));
 
 import SiteDetailPage from "@/app/sites/[siteId]/page";
 import { CoreApiError } from "@/lib/core-api/client";
@@ -137,13 +145,20 @@ describe("Site detail start guidance", () => {
   });
 
   it("does not duplicate entry guidance on other Site tabs", async () => {
-    render(await SiteDetailPage({
+    // 옛 ?section=analysis 진입은 실제 분석 화면으로 보낸다 — 중간 안내 화면 없음.
+    await expect(SiteDetailPage({
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({ section: "analysis" }),
-    }));
+    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/analysis/);
 
     expect(screen.queryByRole("region", { name: "현장 시작 안내" })).toBeNull();
-    expect(screen.getByText("같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다.")).toBeTruthy();
+  });
+
+  it("sends the legacy materials section to the real catalog with its scope", async () => {
+    await expect(SiteDetailPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ section: "materials", workAreaId: "area-1", assetRef: "asset-9" }),
+    })).rejects.toThrow(/NEXT_REDIRECT.*\/sites\/site-1\/spatial-assets\?workAreaId=area-1&assetRef=asset-9/);
   });
 
   it("uses archived area names for retained tasks without counting them as active areas", async () => {

@@ -52,7 +52,7 @@ export const DISPLAY_ASSEMBLY_NOTE =
   "각 창은 Core 준비 기록과 바이트가 일치할 때만 그린 독립 영수증의 화면 배치입니다. 하나의 검증된 자료가 아니며, 정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.";
 
 export const DISPLAY_GAP_COPY: Record<DisplayGapReason, string> = {
-  NOT_REQUESTED: "아직 준비하지 않은 창이라 비워 둡니다. 빈칸을 메우거나 늘이지 않습니다.",
+  NOT_REQUESTED: "표시 준비 필요 · 아직 준비된 출력이 없어 비워 둡니다. 빈칸을 메우거나 늘이지 않습니다.",
   PREPARE_FAILED: "창 준비가 끝나지 않아 비워 둡니다. 준비가 끝나면 그때 그립니다.",
   RECEIPT_MISMATCH: "받은 바이트가 Core 준비 기록과 달라 그리지 않고 비워 둡니다.",
   RIGHTS_UNAVAILABLE: "요청을 찾을 수 없거나 현재 조회할 수 없습니다. 다른 계정이 준비한 창은 이 화면에서 열 수 없습니다.",

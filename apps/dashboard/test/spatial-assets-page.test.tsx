@@ -137,7 +137,8 @@ describe("spatial asset catalog page", () => {
     const html = renderToStaticMarkup(await callPage({ assetRef }));
     expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
-    expect(html).toContain('href="/sites/site-1/analysis?workAreaId=area-1"');
+    // 헤더의 분석 목적지에도 검증된 관측 출처가 실린다 — 돌아올 때 잃지 않는다.
+    expect(html).toContain(`href="/sites/site-1/analysis?workAreaId=area-1&amp;assetRef=${assetRef}"`);
     expect(html).toContain("/sites/site-1/analysis?workAreaId=area-1&amp;currentWorkOrderId=order-1#new-analysis-request");
   });
 

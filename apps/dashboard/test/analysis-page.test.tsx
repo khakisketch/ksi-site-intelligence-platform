@@ -230,3 +230,36 @@ describe("analysis deep link", () => {
     expect(screen.getByRole("link", { name: "현장 현황 보기" }).getAttribute("href")).toBe("/sites/site-1");
   });
 });
+
+describe("browse source return scope", () => {
+  it("keeps a browse assetRef as header-only return context without changing analysis selection", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1" }) }));
+    const plainScope = screen.getByTestId("panel-scope").textContent;
+    const [plainHome] = screen.getAllByRole("link", { name: "현황" });
+    expect(plainHome?.getAttribute("href")).toBe("/sites/site-1?workAreaId=area-1");
+    cleanup();
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "area-1", assetRef: "browse-asset-1" }) }));
+    // 분석 선택은 그대로 — assetRef는 분석 선택자(analysisId·currentWorkOrderId)가 아니다.
+    expect(screen.getByTestId("panel-scope").textContent).toBe(plainScope);
+    // 헤더 복귀 링크에는 탐색 출처(구역·관측)가 그대로 실린다.
+    expect(screen.getAllByRole("link", { name: "현황" })[0]?.getAttribute("href")).toBe(
+      "/sites/site-1?workAreaId=area-1&assetRef=browse-asset-1",
+    );
+    expect(screen.getAllByRole("link", { name: "등록 자료" })[0]?.getAttribute("href")).toBe(
+      "/sites/site-1/spatial-assets?workAreaId=area-1&assetRef=browse-asset-1",
+    );
+  });
+
+  it("drops a browse assetRef outside the validated work area", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "1구역", status: "ACTIVE" }] });
+
+    render(await SiteAnalysisPage({ params: Promise.resolve({ siteId: "site-1" }), searchParams: Promise.resolve({ workAreaId: "ghost-area", assetRef: "browse-asset-1" }) }));
+
+    expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
+    expect(screen.getAllByRole("link", { name: "현황" })[0]?.getAttribute("href")).toBe("/sites/site-1");
+    expect(screen.getAllByRole("link", { name: "등록 자료" })[0]?.getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+  });
+});

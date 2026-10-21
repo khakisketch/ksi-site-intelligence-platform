@@ -231,6 +231,7 @@ export function SiteWorkspaceCompare({
     {resolution.status === "prompt" && selected && hasOptions && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
         비교할 기준 자료와 비교 자료를 아래에서 고르세요. 자동으로 고르지 않았습니다.
+        먼저 둘러보려면 <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>하세요.
       </p>
     )}
 
@@ -311,15 +312,6 @@ export function SiteWorkspaceCompare({
       />
     </div>}
 
-    {selected && resolution.status === "prompt" && hasOptions && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
-        아직 나란히 둘 비교를 고르지 않았습니다. 위에서 기준·비교 자료를 고르면 같은 크기로 둡니다.
-        {" "}고르기 전에 둘러보려면{" "}
-        <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
-        하세요.
-      </p>
-    )}
-
     {selected && projectionState === "ready" && (blocked.length > 0 || (groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0)) || tiedFacts.length > 0) && (
       <details className="rounded-lg border border-line bg-surface px-4 py-3">
         <summary className="tap-target cursor-pointer text-[13px] font-bold">둘러볼 수 있는 관측 · 비교 불가 사유</summary>
@@ -380,13 +372,22 @@ export function SiteWorkspaceCompare({
           </p>
         </details>
       </>)}
-      <p className="mt-2 flex flex-wrap gap-2">
-        {canCreateAnalysis ? (
-          <Link href={scopedCompareHref} className="btn">이 구역 변화 비교</Link>
-        ) : (
-          <span className="text-[12px] text-ink-2">현재 계정으로는 비교를 요청할 수 없습니다. 권한 있는 담당자에게 문의하세요.</span>
-        )}
-        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn">구역 자료 준비</Link>
+      <div className="mt-2 border-t border-line pt-2">
+        <p className="text-[12.5px] font-semibold leading-5">수치 계산이 필요할 때 — 변화량 분석</p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">
+          나란히 두는 독립 열람과 별개로, 두 시점의 변화량을 계산 요청할 때만 씁니다. 위 기록은 바뀌지 않습니다.
+        </p>
+        <p className="mt-2">
+          {canCreateAnalysis ? (
+            <Link href={scopedCompareHref} className="btn">변화량 분석</Link>
+          ) : (
+            <span className="text-[12px] text-ink-2">현재 계정으로는 변화량 분석을 요청할 수 없습니다. 권한 있는 담당자에게 문의하세요.</span>
+          )}
+        </p>
+      </div>
+      <p className="mt-2 text-[12px] leading-5">
+        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+        <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
       </p>
       <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">실제 파일은 권한 확인 뒤 준비·다운로드로만 받습니다. 이 화면에서 바이트를 직접 열지 않습니다.</p>
     </div>}

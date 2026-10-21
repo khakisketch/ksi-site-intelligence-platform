@@ -100,7 +100,7 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
  *
  * - 명시적 기록 링크는 원래 기록 그대로(정확한 입력·구역) 보여주거나 막는다.
  *   모르면 최신으로 바꾸지 않는다.
- * - 새 비교 요청은 기록 목록 "다음"에 둔다. 새 요청이 열람 중인 기록을
+ * - 새 변화량 분석 요청은 기록 목록 "다음"에 둔다. 새 요청이 열람 중인 기록을
  *   바꾸지 않는다고 밝힌다.
  * - V2 계산 기록과 외부 비교 기록을 한 카드에 합치지 않는다.
  */
@@ -230,15 +230,15 @@ export function SiteWorkspaceResults({
     )}
 
     <div className="rounded-lg border border-line bg-surface px-4 py-3">
-      <h3 className="text-[13px] font-bold">새 비교 요청</h3>
+      <h3 className="text-[13px] font-bold">새 변화량 분석 요청</h3>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-        새 비교는 기준·현재 두 시점을 다시 고릅니다. 위 기록은 바뀌지 않습니다.
+        새 변화량 분석은 기준·현재 두 시점을 다시 고릅니다. 위 기록은 바뀌지 않습니다.
       </p>
       <p className="mt-2">
         {canCreateAnalysis ? (
-          <Link href={scopedCompareHref} className="btn">이 구역 변화 비교</Link>
+          <Link href={scopedCompareHref} className="btn">변화량 분석</Link>
         ) : (
-          <span className="text-[12px] text-ink-2">현재 계정으로는 비교를 요청할 수 없습니다. 권한 있는 담당자에게 문의하세요.</span>
+          <span className="text-[12px] text-ink-2">현재 계정으로는 변화량 분석을 요청할 수 없습니다. 권한 있는 담당자에게 문의하세요.</span>
         )}
       </p>
     </div>

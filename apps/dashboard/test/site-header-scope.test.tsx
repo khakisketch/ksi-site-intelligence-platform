@@ -34,13 +34,19 @@ describe("siteTabHref", () => {
 
   it("carries a validated scope and scopes assetRef to the same catalog only", () => {
     const scope = { workAreaId: "wa-a", assetRef: "asset-1" };
-    expect(siteTabHref("site-1", "analysis", {}, scope)).toBe("/sites/site-1/analysis?workAreaId=wa-a");
+    expect(siteTabHref("site-1", "analysis", {}, scope)).toBe(
+      "/sites/site-1/analysis?workAreaId=wa-a&assetRef=asset-1",
+    );
     expect(siteTabHref("site-1", "materials", {}, scope)).toBe(
       "/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=asset-1",
     );
-    expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1?workAreaId=wa-a");
+    // 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록 현황·작업·관리에도 싣는다.
+    expect(siteTabHref("site-1", "overview", {}, scope)).toBe("/sites/site-1?workAreaId=wa-a&assetRef=asset-1");
     expect(siteTabHref("site-1", "work-orders", {}, scope)).toBe(
-      "/sites/site-1?section=work-orders&workAreaId=wa-a",
+      "/sites/site-1?section=work-orders&workAreaId=wa-a&assetRef=asset-1",
+    );
+    expect(siteTabHref("site-1", "manage", {}, scope)).toBe(
+      "/sites/site-1?section=manage&workAreaId=wa-a&assetRef=asset-1",
     );
   });
 
@@ -48,17 +54,28 @@ describe("siteTabHref", () => {
     expect(siteTabHref("site-1", "materials", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
       "/sites/site-1/spatial-assets",
     );
+    expect(siteTabHref("site-1", "analysis", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
+      "/sites/site-1/analysis",
+    );
+    expect(siteTabHref("site-1", "overview", {}, { workAreaId: null, assetRef: "asset-1" })).toBe(
+      "/sites/site-1",
+    );
   });
 });
 
 describe("SiteHeader scoped navigation", () => {
-  it("links analysis and materials direct with scope in both desktop and mobile navs", () => {
+  it("links analysis and materials direct with scope in the single labelled disclosure", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a", scopedAssetRef: "asset-1" });
-    // Desktop + mobile navs render the same destinations.
-    expect(html.match(/\/sites\/site-1\/analysis\?workAreaId=wa-a/g)?.length).toBe(2);
-    expect(html.match(/\/sites\/site-1\/spatial-assets\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(2);
+    // 데스크톱·모바일 구분 없는 disclosure 하나에 같은 목적지를 둔다.
+    expect(html.match(/\/sites\/site-1\/analysis\?workAreaId=wa-a/g)?.length).toBe(1);
+    expect(html.match(/\/sites\/site-1\/spatial-assets\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(1);
     expect(html).not.toContain("section=analysis");
     expect(html).not.toContain("section=materials");
+    // 지원하는 다섯 영역이 라벨과 함께 보인다 — 이름 없는 아이콘-only 진입 금지.
+    expect(html).toContain("현장 메뉴");
+    expect(html).toContain("등록 자료");
+    expect(html).toContain("분석·검토 기록");
+    expect(html).toContain('aria-current="page"');
   });
 
   it("keeps in-page sections and old deep-URL compat for work and manage", () => {

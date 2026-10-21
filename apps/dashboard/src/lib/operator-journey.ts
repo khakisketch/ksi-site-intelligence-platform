@@ -206,12 +206,15 @@ export type SiteHeaderScope = {
 /**
  * 현장 헤더 메뉴의 목적지. 판정은 하지 않고 이미 검증된 범위만 그대로 싣는다.
  *
- * - 분석·검토와 자료는 실제 라우트로 바로 간다. 루트 `?section=` 경유와 두 번째
- *   클릭을 두지 않는다. 작업구역이 있으면 함께 싣고, 자료에는 같은 목록에서
+ * - 분석·검토와 등록 자료는 실제 라우트로 바로 간다. 루트 `?section=` 경유와 두 번째
+ *   클릭을 두지 않는다. 작업구역이 있으면 함께 싣고, 등록 자료에는 같은 목록에서
  *   확인한 자산 참조까지 싣는다(원문 쿼리를 그대로 믿지 않는다 — 호출자가 검증된
  *   값만 넘긴다).
- * - 현황은 루트 기본 화면이다(섹션 파라미터 없음). 작업·관리는 기존 루트 섹션을
- *   쓴다(옛 깊은 URL도 같은 화면으로 해석된다).
+ * - 현황·작업·관리는 기존 루트 섹션을 쓴다(옛 깊은 URL도 같은 화면으로 해석된다).
+ * - 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록, 작업구역이 검증된 상태에서는
+ *   자산 참조도 함께 싣는다. 현황은 카탈로그와 대조해 모르는 참조를 공지만 두고
+ *   조용히 다른 관측으로 바꾸지 않는다. 분석 선택(analysisId·currentWorkOrderId)은
+ *   이 참조를 읽지 않으며, frozen 결과 입력도 대체하지 않는다.
  * - 범위 없이도 항상 실제 목적지를 가리킨다. 모르는 값이면 범위를 뺀다.
  */
 export function siteTabHref(
@@ -222,19 +225,26 @@ export function siteTabHref(
 ): string {
   const base = `/sites/${encodeURIComponent(siteId)}`;
   const workAreaId = scope.workAreaId;
+  // 자산 참조는 같은 작업구역이 검증된 때만 싣는다 — 구역 없는 단독 참조는 버린다.
+  const assetRef = workAreaId && scope.assetRef ? scope.assetRef : null;
   if (tab === "analysis") {
-    return workAreaId ? `${base}/analysis?workAreaId=${encodeURIComponent(workAreaId)}` : `${base}/analysis`;
+    const query = new URLSearchParams();
+    if (workAreaId) query.set("workAreaId", workAreaId);
+    if (assetRef) query.set("assetRef", assetRef);
+    const search = query.toString();
+    return search ? `${base}/analysis?${search}` : `${base}/analysis`;
   }
   if (tab === "materials") {
     const query = new URLSearchParams();
     if (workAreaId) query.set("workAreaId", workAreaId);
-    if (workAreaId && scope.assetRef) query.set("assetRef", scope.assetRef);
+    if (assetRef) query.set("assetRef", assetRef);
     const search = query.toString();
     return search ? `${base}/spatial-assets?${search}` : `${base}/spatial-assets`;
   }
   const params = new URLSearchParams();
   if (tab !== "overview") params.set("section", tab);
   if (workAreaId) params.set("workAreaId", workAreaId);
+  if (assetRef) params.set("assetRef", assetRef);
   if (current.epoch) params.set("epoch", current.epoch);
   const search = params.toString();
   return search ? `${base}?${search}` : base;

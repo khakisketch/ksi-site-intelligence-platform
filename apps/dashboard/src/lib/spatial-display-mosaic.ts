@@ -85,8 +85,10 @@ export function mosaicWaitingCopy(
   kind: "fetching" | "preparing",
 ): string {
   const area = `[${plan.pixelWindow.join(", ")}]`;
+  // 바이트 GET·해독 중은 '준비 중'이 아니라 '자료 읽는 중'이다 — 새 연산이 아니다.
+  // 서버 대기열(QUEUED/RUNNING)은 '준비 중' 그대로 둔다.
   return kind === "fetching"
-    ? `준비 중 · ${area} 창의 바이트를 받고 있습니다. 가짜 내용을 채우지 않습니다.`
+    ? `자료 읽는 중 · ${area} 창의 바이트를 받고 있습니다. 가짜 내용을 채우지 않습니다.`
     : `준비 중 · ${area} 창의 준비를 기다립니다. 빈칸을 메우거나 늘이지 않습니다.`;
 }
 
@@ -112,11 +114,13 @@ export function mosaicCellView(input: MosaicCellInput): MosaicCellView {
   if (preparing) {
     return { key, plan, phase: "waiting", detail: mosaicWaitingCopy(plan, "preparing"), gapReason: null };
   }
+  // 준비된 출력이 아직 없는 창 — '자료 없음'이 아니라 '표시 준비 필요'다.
+  // 진입·이동·확대만으로는 새 준비를 만들지 않는다(명시적 채우기에서만).
   return {
     key,
     plan,
     phase: "gap",
-    detail: "아직 준비하지 않은 창이라 비워 둡니다. 빈칸을 메우거나 늘이지 않습니다.",
+    detail: "표시 준비 필요 · 아직 준비된 출력이 없어 비워 둡니다. 빈칸을 메우거나 늘이지 않습니다.",
     gapReason: "NOT_REQUESTED",
   };
 }
@@ -281,7 +285,7 @@ export function mosaicProgressCopy(painted: number, total: number): string {
 export const MOSAIC_PARTIAL_COVER_LABEL = "부분 보기";
 
 export function mosaicPartialCoverCopy(painted: number, total: number): string {
-  return `${MOSAIC_PARTIAL_COVER_LABEL} · ${mosaicProgressCopy(painted, total)} · 나머지는 준비 중 (빈칸을 메우거나 늘이지 않음)`;
+  return `${MOSAIC_PARTIAL_COVER_LABEL} · ${mosaicProgressCopy(painted, total)} · 나머지는 아직 표시하지 않습니다 (빈칸을 메우거나 늘이지 않음)`;
 }
 
 export function mosaicCoverStatusCopy(painted: number, total: number): string {

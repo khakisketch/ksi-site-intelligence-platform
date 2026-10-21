@@ -518,6 +518,11 @@ describe("analysis V2 panel", () => {
     expect(audit?.textContent).toContain(review.receiptDigest);
     expect(audit?.textContent).toContain(review.comment);
     expect(audit?.textContent).toContain(review.target.reportDigest);
+    // 사람용 맥락(대상·의견·한계)이 확인값 목록보다 먼저 나온다.
+    const body = audit?.textContent ?? "";
+    expect(body.indexOf("검토 대상")).toBeLessThan(body.indexOf("검토 기록 확인값"));
+    expect(body.indexOf("검토 의견")).toBeLessThan(body.indexOf("보고서 확인값"));
+    expect(body.indexOf("검토 한계")).toBeLessThan(body.indexOf("수치 결과 확인값"));
   });
 
   it("treats a review with a different current-evaluation identity as 미검토", async () => {

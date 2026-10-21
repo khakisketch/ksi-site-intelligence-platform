@@ -646,17 +646,19 @@ function AnalysisReviewAuditDetail({ review }: { review: AnalysisReviewReceipt }
   return <details className="mt-2 rounded-md border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
     <summary className="tap-target flex cursor-pointer flex-wrap items-center gap-x-2 font-semibold">검토 기록 <span className="min-w-0 break-all font-normal text-ink-muted">· {analysisReviewDecisionLabel(review.decision)} · {review.reviewRef}</span></summary>
     <div className="mt-2 flex flex-col gap-1 break-all border-t border-line pt-2">
-      <p>검토 기록 확인값 · {review.receiptDigest}</p>
-      <p>검토 의견 · {review.comment}</p>
+      {/* 사람용 맥락을 먼저 둔다. 확인값 목록은 그 다음에 그대로 둔다. */}
       <p>검토 대상 · {target.resultId} · 결과 버전 {target.resultRevision}</p>
+      <p>검토 의견 · {review.comment}</p>
+      <p className="text-ink-muted">검토 한계 · 정확도 검증, 현장·비행 권한, 정산·완료 증명을 뜻하지 않습니다.</p>
+      {target.evaluations.map((evaluation) => <p key={evaluation.epoch}>
+        {evaluation.epoch === "BASELINE" ? "기준" : "현재"} 평가 · {evaluation.evaluationId} · 평가 버전 {evaluation.revision} · {evaluation.evaluationDigest}
+      </p>)}
+      <p className="mt-1 text-ink-muted">아래는 기록 대조용 확인값입니다.</p>
+      <p>검토 기록 확인값 · {review.receiptDigest}</p>
       <p>보고서 확인값 · {target.reportDigest}</p>
       <p>수치 결과 확인값 · {target.numericResultIdentityDigest}</p>
       <p>계산 기록 확인값 · {target.calculationIdentityDigest}</p>
       <p>admission 확인값 · {target.admissionDigest}</p>
-      {target.evaluations.map((evaluation) => <p key={evaluation.epoch}>
-        {evaluation.epoch === "BASELINE" ? "기준" : "현재"} 평가 · {evaluation.evaluationId} · 평가 버전 {evaluation.revision} · {evaluation.evaluationDigest}
-      </p>)}
-      <p className="mt-1 text-ink-muted">검토 한계 · 정확도 검증, 현장·비행 권한, 정산·완료 증명을 뜻하지 않습니다.</p>
     </div>
   </details>;
 }

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
@@ -27,6 +28,12 @@ import {
   type DisplaySchedulerSnapshot,
   type ScheduledDisplayWindow,
 } from "@/lib/spatial-display-scheduler";
+import {
+  DISPLAY_GESTURE_HINT,
+  displayGestureKeyAction,
+  displayWheelReady,
+  isDisplayZoomWheelIntent,
+} from "@/lib/spatial-display-gesture";
 import {
   AUDIT_STATE_NOTE,
   DSM_RELATIVE_LEGEND_LABEL,
@@ -277,6 +284,77 @@ function WindowedLayerView({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreenRef = useRef<HTMLCanvasElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // ── 낱창 표시 제스처 — CSS 변환만이며 네트워크·준비 요청을 만들지 않는다 ──
+  const singleViewWrapRef = useRef<HTMLDivElement | null>(null);
+  const singleDragRef = useRef<{ x: number; y: number } | null>(null);
+  const singleWheelLastRef = useRef(0);
+
+  const zoomStep = (direction: 1 | -1) => {
+    setZoomIndex((index) => Math.min(Math.max(index + direction, 0), ZOOM_STEPS.length - 1));
+  };
+  const panBy = (dx: number, dy: number) => {
+    setPan((previous) => ({ x: previous.x + dx, y: previous.y + dy }));
+  };
+  const resetSingleView = () => {
+    setZoomIndex(0);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const onSingleViewKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const action = displayGestureKeyAction(event.key);
+    if (!action) return;
+    event.preventDefault();
+    if (action.kind === "pan") panBy(-action.dCol * 160, action.dRow * 160);
+    else if (action.kind === "zoom") zoomStep(action.factor < 1 ? 1 : -1);
+    else resetSingleView();
+  };
+
+  const onSingleViewPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // 터치 드래그는 세로 스크롤을 위해 건드리지 않는다. 합성 환경의
+    // button 미지정(언어 명세상 주 버튼)은 주 버튼으로 간주한다.
+    if (event.pointerType === "touch") return;
+    if (event.button !== undefined && event.button !== 0) return;
+    singleDragRef.current = { x: event.clientX, y: event.clientY };
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // 캡처 실패해도 같은 요소 위의 이동·종료는 그대로 처리한다.
+      }
+    }
+  };
+
+  const onSingleViewPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = singleDragRef.current;
+    if (!start) return;
+    panBy(event.clientX - start.x, event.clientY - start.y);
+    singleDragRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const onSingleViewPointerEnd = () => {
+    singleDragRef.current = null;
+  };
+
+  useEffect(() => {
+    const wrap = singleViewWrapRef.current;
+    if (!wrap) return;
+    const onWheel = (event: WheelEvent) => {
+      const focused = wrap.contains(document.activeElement);
+      if (!isDisplayZoomWheelIntent({ focused, ctrlKey: event.ctrlKey })) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (!displayWheelReady(singleWheelLastRef.current, now)) return;
+      singleWheelLastRef.current = now;
+      setZoomIndex((index) =>
+        Math.min(Math.max(index + (event.deltaY > 0 ? -1 : 1), 0), ZOOM_STEPS.length - 1),
+      );
+    };
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      wrap.removeEventListener("wheel", onWheel);
+    };
+  }, []);
 
   const zoom = ZOOM_STEPS[zoomIndex] ?? 1;
   const readable = readableWindowJobs(jobs, layer.assetRef);
@@ -459,6 +537,7 @@ function WindowedLayerView({
             fileHref={fileHrefFor(siteId, workAreaId, existingCrop.jobId)}
             autoLoad
             compact
+            gestureControls
           />
           {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
         </div>
@@ -491,7 +570,7 @@ function WindowedLayerView({
         <ul className="flex flex-col gap-1">
           {pending.map((job) => (
             <li key={job.jobId} className="text-[12px] leading-5 text-ink-2">
-              처리 중 · 상태 {job.executionState} — 끝난 뒤에 볼 수 있습니다.
+              준비 중 · 상태 {job.executionState} — 끝난 뒤에 볼 수 있습니다.
             </li>
           ))}
         </ul>
@@ -528,7 +607,7 @@ function WindowedLayerView({
 
       {phase.name === "loading" && (
         <div className="flex flex-wrap items-center gap-2">
-          <p className="text-[12px] text-ink-2" role="status">준비된 파일을 불러오는 중…</p>
+          <p className="text-[12px] text-ink-2" role="status">자료 읽는 중…</p>
           <button type="button" className="btn min-h-11" onClick={() => abortRef.current?.abort()}>
             불러오기 취소
           </button>
@@ -541,7 +620,19 @@ function WindowedLayerView({
       )}
       {phase.name === "ready" && receipt && (
         <div className="flex flex-col gap-2">
-          <div className="overflow-auto rounded border border-line bg-sunk/30">
+          <div
+            ref={singleViewWrapRef}
+            tabIndex={0}
+            role="group"
+            aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키 또는 휠(선택 후·Ctrl과 함께)로 확대합니다. Home 키는 원래 보기로 돌아갑니다.`}
+            onPointerDown={onSingleViewPointerDown}
+            onPointerMove={onSingleViewPointerMove}
+            onPointerUp={onSingleViewPointerEnd}
+            onPointerCancel={onSingleViewPointerEnd}
+            onKeyDown={onSingleViewKeyDown}
+            className="overflow-auto rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
+            style={{ touchAction: "pan-y" }}
+          >
             <div
               className="relative inline-block"
               style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, transformOrigin: "top left" }}
@@ -555,6 +646,24 @@ function WindowedLayerView({
               )}
             </div>
           </div>
+          {/* 확대·이동 도구는 그림 바로 옆에 둔다 — 기술 문단 아래가 아니라. */}
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="화면 확대·이동">
+            <button type="button" className="btn min-h-11" disabled={zoomIndex >= ZOOM_STEPS.length - 1} onClick={() => zoomStep(1)}>
+              확대 ×{ZOOM_STEPS[Math.min(zoomIndex + 1, ZOOM_STEPS.length - 1)]}
+            </button>
+            <button type="button" className="btn min-h-11" disabled={zoomIndex <= 0} onClick={() => zoomStep(-1)}>
+              축소
+            </button>
+            <button type="button" className="btn min-h-11" onClick={resetSingleView}>
+              원래대로
+            </button>
+            <button type="button" className="btn min-h-11" aria-label="왼쪽으로 이동" onClick={() => panBy(40, 0)}>←</button>
+            <button type="button" className="btn min-h-11" aria-label="오른쪽으로 이동" onClick={() => panBy(-40, 0)}>→</button>
+            <button type="button" className="btn min-h-11" aria-label="위쪽으로 이동" onClick={() => panBy(0, 40)}>↑</button>
+            <button type="button" className="btn min-h-11" aria-label="아래쪽으로 이동" onClick={() => panBy(0, -40)}>↓</button>
+            <span className="text-[11.5px] text-ink-muted">표시 배율 ×{zoom} · 불러온 창 안에서만 움직입니다.</span>
+          </div>
+          <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
           <p className="text-[12px] leading-5 text-ink-2">
             {`실제 파일 · 준비된 창 · ${receipt.width} × ${receipt.height} 픽셀 · ${formatNativeWindowExtent(receipt.actualBounds, receipt.observedCrsIdentifier)}`}
           </p>
@@ -584,22 +693,6 @@ function WindowedLayerView({
           <p className="text-[11.5px] leading-5 text-ink-muted">
             정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다. 확대·이동은 화면 표시용이며 측정값이 아닙니다.
           </p>
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label="화면 확대·이동">
-            <button type="button" className="btn min-h-11" disabled={zoomIndex >= ZOOM_STEPS.length - 1} onClick={() => setZoomIndex((i) => Math.min(i + 1, ZOOM_STEPS.length - 1))}>
-              확대 ×{ZOOM_STEPS[Math.min(zoomIndex + 1, ZOOM_STEPS.length - 1)]}
-            </button>
-            <button type="button" className="btn min-h-11" disabled={zoomIndex <= 0} onClick={() => setZoomIndex((i) => Math.max(i - 1, 0))}>
-              축소
-            </button>
-            <button type="button" className="btn min-h-11" onClick={() => { setZoomIndex(0); setPan({ x: 0, y: 0 }); }}>
-              원래대로
-            </button>
-            <button type="button" className="btn min-h-11" aria-label="왼쪽으로 이동" onClick={() => setPan((p) => ({ ...p, x: p.x + 40 }))}>←</button>
-            <button type="button" className="btn min-h-11" aria-label="오른쪽으로 이동" onClick={() => setPan((p) => ({ ...p, x: p.x - 40 }))}>→</button>
-            <button type="button" className="btn min-h-11" aria-label="위쪽으로 이동" onClick={() => setPan((p) => ({ ...p, y: p.y + 40 }))}>↑</button>
-            <button type="button" className="btn min-h-11" aria-label="아래쪽으로 이동" onClick={() => setPan((p) => ({ ...p, y: p.y - 40 }))}>↓</button>
-            <span className="text-[11.5px] text-ink-muted">표시 배율 ×{zoom} · 불러온 창 안에서만 움직입니다.</span>
-          </div>
         </div>
       )}
 

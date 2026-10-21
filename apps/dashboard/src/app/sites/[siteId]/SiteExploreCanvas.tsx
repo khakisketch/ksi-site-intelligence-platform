@@ -26,6 +26,7 @@ export function SiteExploreCanvas({
   areas,
   selectedWorkAreaId,
   captureOptions,
+  selectedCaption,
   coverageNote,
   children,
 }: {
@@ -34,6 +35,8 @@ export function SiteExploreCanvas({
   selectedWorkAreaId: string | null;
   /** 같은 구역 관측들의 정확한 선택지 — 없으면 선택 상자를 두지 않는다. */
   captureOptions: readonly ExploreCaptureOption[];
+  /** 선택 중인 관측·층·등록 버전 한 줄 — title hover 없이 그대로 읽힌다. */
+  selectedCaption: string | null;
   /** 부분 보기 등 범위 한계 한 줄 — 없으면 null. */
   coverageNote: string | null;
   children: React.ReactNode;
@@ -44,58 +47,63 @@ export function SiteExploreCanvas({
   const selectedOption = captureOptions.find((option) => option.selected) ?? null;
   return <section aria-label="선택 관측 화면" className="flex flex-col gap-2">
     <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-2.5">
-      {areas.length > 1 ? (
-        <form method="get" action={sitePath} className="flex flex-wrap items-end gap-2">
-          <div className="min-w-0 flex-1 basis-48">
-            <label htmlFor="explore-canvas-area" className="block text-[12px] font-semibold">작업구역</label>
-            <select
-              id="explore-canvas-area"
-              name="workAreaId"
-              defaultValue={selected?.workAreaId ?? ""}
-              className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
-            >
-              {areas.map((area) => {
-                const naming = names.get(area.workAreaId) ?? { label: area.name || area.workAreaId, disambiguated: false };
-                return <option key={area.workAreaId} value={area.workAreaId} title={naming.disambiguated ? naming.label : (area.name || area.workAreaId)}>
-                  {naming.disambiguated ? naming.label : displayName(naming.label)}{area.status === "ARCHIVED" ? " · 보관됨" : ""}
-                </option>;
-              })}
-            </select>
-          </div>
-          <button type="submit" className="btn">보기</button>
-          {activeCount === 0 && (
-            <p className="w-full text-[12px] text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
-          )}
-        </form>
-      ) : selected ? (
-        <p className="truncate text-[13px] font-semibold" title={names.get(selected.workAreaId)?.label ?? selected.name}>
-          작업구역 · {names.get(selected.workAreaId)?.label ?? selected.name}
-          {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
-        </p>
-      ) : (
-        <p className="text-[12.5px] text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
-      )}
-      {captureOptions.length > 0 && selected && (
-        <form method="get" action={sitePath} className="flex flex-wrap items-end gap-2">
-          <input type="hidden" name="workAreaId" value={selected.workAreaId} />
-          <div className="min-w-0 flex-1 basis-48">
-            <label htmlFor="explore-canvas-capture" className="block text-[12px] font-semibold">촬영 시점</label>
-            <select
-              id="explore-canvas-capture"
-              name="assetRef"
-              defaultValue={selectedOption?.assetRef ?? ""}
-              className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
-            >
-              {selectedOption === null && <option value="">촬영 시점 선택</option>}
-              {captureOptions.map((option) => (
-                <option key={option.assetRef} value={option.assetRef} title={option.title}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button type="submit" className="btn">보기</button>
-        </form>
+      <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+        {areas.length > 1 ? (
+          <form method="get" action={sitePath} className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-56">
+            <div className="min-w-0 flex-1">
+              <label htmlFor="explore-canvas-area" className="block text-[12px] font-semibold">작업구역</label>
+              <select
+                id="explore-canvas-area"
+                name="workAreaId"
+                defaultValue={selected?.workAreaId ?? ""}
+                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
+              >
+                {areas.map((area) => {
+                  const naming = names.get(area.workAreaId) ?? { label: area.name || area.workAreaId, disambiguated: false };
+                  return <option key={area.workAreaId} value={area.workAreaId} title={naming.disambiguated ? naming.label : (area.name || area.workAreaId)}>
+                    {naming.disambiguated ? naming.label : displayName(naming.label)}{area.status === "ARCHIVED" ? " · 보관됨" : ""}
+                  </option>;
+                })}
+              </select>
+            </div>
+            <button type="submit" className="btn">보기</button>
+            {activeCount === 0 && (
+              <p className="w-full text-[12px] text-ink-2">고를 수 있는(사용 중) 구역이 없습니다. 보관된 구역의 기록은 그대로 둡니다.</p>
+            )}
+          </form>
+        ) : selected ? (
+          <p className="min-w-0 flex-1 break-words text-[13px] font-semibold sm:basis-56" aria-label={`작업구역 · ${names.get(selected.workAreaId)?.label ?? selected.name}`}>
+            작업구역 · {names.get(selected.workAreaId)?.label ?? selected.name}
+            {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
+          </p>
+        ) : (
+          <p className="text-[12.5px] text-ink-2" role="status">작업구역을 확인할 수 없습니다. 아래 상세에서 목록을 확인하세요.</p>
+        )}
+        {captureOptions.length > 0 && selected && (
+          <form method="get" action={sitePath} className="flex min-w-0 flex-1 flex-wrap items-end gap-2 sm:basis-64">
+            <input type="hidden" name="workAreaId" value={selected.workAreaId} />
+            <div className="min-w-0 flex-1">
+              <label htmlFor="explore-canvas-capture" className="block text-[12px] font-semibold">촬영 시점</label>
+              <select
+                id="explore-canvas-capture"
+                name="assetRef"
+                defaultValue={selectedOption?.assetRef ?? ""}
+                className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]"
+              >
+                {selectedOption === null && <option value="">촬영 시점 선택</option>}
+                {captureOptions.map((option) => (
+                  <option key={option.assetRef} value={option.assetRef} title={option.title}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button type="submit" className="btn">보기</button>
+          </form>
+        )}
+      </div>
+      {selectedCaption && (
+        <p className="break-words text-[12px] leading-5 text-ink-2">선택 중 · {selectedCaption}</p>
       )}
     </div>
     {children}

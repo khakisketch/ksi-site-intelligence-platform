@@ -1,4 +1,3 @@
-import { Fragment } from "react";
 import Link from "next/link";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
@@ -129,48 +128,31 @@ export function SiteHeader({
         </span>
       </div>
 
-      <details className="-mb-px lg:hidden">
-        <summary className="tap-target flex cursor-pointer items-center justify-between border-t border-line py-1.5 text-[13px] font-semibold">
-          현장 메뉴 · {SITE_TABS.find((option) => option.key === tab)?.label}
+      {/*
+        현장 업무 메뉴 — 다섯 영역을 한 곳에서 여닫는다. 데스크톱·모바일 구분 없이
+        같은 disclosure를 쓰므로, 다섯 영역 바와 공간 작업 방식이 동시에 나열돼
+        서로 경쟁하지 않는다. label 없는 아이콘-only 진입은 두지 않으며, 현재
+        영역은 aria-current로 밝힌다. 키보드 Enter/Space로 여닫고 види focus를 둔다.
+        펼침 안의 nav가 잘리지 않도록 조상에는 overflow hidden을 두지 않는다.
+      */}
+      <details className="-mb-px">
+        <summary className="tap-target flex cursor-pointer items-center justify-between gap-2 border-t border-line py-1.5 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
+          <span>현장 메뉴 · {SITE_TABS.find((option) => option.key === tab)?.label}</span>
           <span className="text-[11.5px] font-normal text-ink-muted">열기</span>
         </summary>
-        <nav className="grid grid-cols-2 gap-1 pb-2" aria-label="현장 메뉴">
+        <nav className="grid grid-cols-2 gap-1 pb-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="현장 업무 메뉴">
           {SITE_TABS.map((option) => (
             <Link
               key={option.key}
               href={hrefWith(site.siteId, current, { section: option.key }, scope)}
               aria-current={option.key === tab ? "page" : undefined}
-              className={`tap-target flex items-center rounded-md px-3 text-[13px] ${option.key === tab ? "bg-sunk font-bold" : "text-ink-2"}`}
+              className={`tap-target flex items-center rounded-md px-3 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 ${option.key === tab ? "bg-sunk font-bold" : "text-ink-2"}`}
             >
               {option.label}
             </Link>
           ))}
         </nav>
       </details>
-
-      <nav className="-mb-px hidden gap-0.5 lg:flex" aria-label="현장 상세 화면">
-        {SITE_TABS.map((option) => {
-          const active = option.key === tab;
-          return (
-            <Fragment key={option.key}>
-              {option.key === "manage" && (
-                <span aria-hidden="true" className="mx-1.5 h-4 self-center bg-line px-px" />
-              )}
-              <Link
-                href={hrefWith(site.siteId, current, { section: option.key }, scope)}
-                aria-current={active ? "page" : undefined}
-                className={`tap-target inline-flex items-center border-b-2 px-3 text-[13px] break-keep transition-colors ${
-                  active
-                    ? "border-b-ink-1 font-bold"
-                    : "border-b-transparent text-ink-2 hover:text-ink-1"
-                }`}
-              >
-                {option.label}
-              </Link>
-            </Fragment>
-          );
-        })}
-      </nav>
     </header>
   );
 }

@@ -192,10 +192,10 @@ describe("placeWindowPixels", () => {
 });
 
 describe("mosaic cell states", () => {
-  it("shows every uncovered window as a named waiting placeholder", () => {
+  it("names byte reads as reads, queued preparation as preparation, and missing output as needing display preparation", () => {
     const cover = coverPlans();
     for (const plan of cover) {
-      const cell = mosaicCellView({
+      const reading = mosaicCellView({
         key: plan.pixelWindow.join(","),
         plan,
         painted: false,
@@ -203,24 +203,32 @@ describe("mosaic cell states", () => {
         preparing: true,
         failure: null,
       });
-      expect(cell.phase).toBe("waiting");
-      expect(cell.detail).toMatch(/준비 중/);
-      expect(cell.detail).toContain(`[${plan.pixelWindow.join(", ")}]`);
+      expect(reading.phase).toBe("waiting");
+      // GET·해독 중은 새 연산이 아니므로 '준비 중'이 아니라 '자료 읽는 중'이다.
+      expect(reading.detail).toMatch(/자료 읽는 중/);
+      expect(reading.detail).toContain(`[${plan.pixelWindow.join(", ")}]`);
+      const queued = mosaicCellView({
+        key: plan.pixelWindow.join(","),
+        plan,
+        painted: false,
+        fetching: false,
+        preparing: true,
+        failure: null,
+      });
+      expect(queued.phase).toBe("waiting");
+      expect(queued.detail).toMatch(/준비 중/);
+      const missing = mosaicCellView({
+        key: plan.pixelWindow.join(","),
+        plan,
+        painted: false,
+        fetching: false,
+        preparing: false,
+        failure: null,
+      });
+      expect(missing.phase).toBe("gap");
+      expect(missing.gapReason).toBe("NOT_REQUESTED");
+      expect(missing.detail).toMatch(/표시 준비 필요/);
     }
-  });
-
-  it("shows an unrequested window as an explicit NOT_REQUESTED gap", () => {
-    const [plan] = coverPlans();
-    const cell = mosaicCellView({
-      key: plan!.pixelWindow.join(","),
-      plan: plan!,
-      painted: false,
-      fetching: false,
-      preparing: false,
-      failure: null,
-    });
-    expect(cell.phase).toBe("gap");
-    expect(cell.gapReason).toBe("NOT_REQUESTED");
   });
 
   it("shows a failed or unavailable window as a gap with its reason", () => {

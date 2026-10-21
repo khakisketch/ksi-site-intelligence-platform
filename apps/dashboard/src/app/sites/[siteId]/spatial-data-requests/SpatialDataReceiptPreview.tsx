@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 
 import type { SpatialDataReceipt } from "@/lib/core-api/spatial-data-types";
 import {
@@ -9,6 +10,12 @@ import {
   SpatialDataPreviewError,
   type DecodedReceiptPreview,
 } from "@/lib/spatial-data-preview";
+import {
+  DISPLAY_GESTURE_HINT,
+  displayGestureKeyAction,
+  displayWheelReady,
+  isDisplayZoomWheelIntent,
+} from "@/lib/spatial-display-gesture";
 
 /**
  * 준비된 출력의 브라우저 미리보기 — 요청 상세 화면의 일부다.
@@ -84,6 +91,7 @@ export function SpatialDataReceiptPreview({
   fileHref,
   autoLoad = false,
   compact = false,
+  gestureControls = false,
 }: {
   siteId: string;
   workAreaId: string;
@@ -92,11 +100,20 @@ export function SpatialDataReceiptPreview({
   fileHref: string;
   autoLoad?: boolean;
   compact?: boolean;
+  /** 탐색 폴백의 부분 보기처럼, 같은 바이트의 화면 표시 제스처를 둘 때 true. */
+  gestureControls?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>(() => ({ name: autoLoad ? "loading" : "idle" }));
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // ── 부분 출력의 화면 표시 제스처 — CSS 변환만이며 새 요청을 만들지 않는다 ──
+  const receiptViewWrapRef = useRef<HTMLDivElement | null>(null);
+  const receiptDragRef = useRef<{ x: number; y: number } | null>(null);
+  const receiptWheelLastRef = useRef(0);
+  const [receiptZoom, setReceiptZoom] = useState(0);
+  const [receiptPan, setReceiptPan] = useState({ x: 0, y: 0 });
+  const receiptScale = [1, 2, 4][receiptZoom] ?? 1;
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -162,6 +179,68 @@ export function SpatialDataReceiptPreview({
     };
   }, [autoLoad, load]);
 
+  useEffect(() => {
+    if (!gestureControls) return;
+    const wrap = receiptViewWrapRef.current;
+    if (!wrap) return;
+    const onWheel = (event: WheelEvent) => {
+      const focused = wrap.contains(document.activeElement);
+      if (!isDisplayZoomWheelIntent({ focused, ctrlKey: event.ctrlKey })) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (!displayWheelReady(receiptWheelLastRef.current, now)) return;
+      receiptWheelLastRef.current = now;
+      setReceiptZoom((index) => Math.min(Math.max(index + (event.deltaY > 0 ? -1 : 1), 0), 2));
+    };
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      wrap.removeEventListener("wheel", onWheel);
+    };
+  }, [gestureControls, phase]);
+
+  const onReceiptKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const action = displayGestureKeyAction(event.key);
+    if (!action) return;
+    event.preventDefault();
+    if (action.kind === "pan") {
+      setReceiptPan((previous) => ({ x: previous.x - action.dCol * 160, y: previous.y + action.dRow * 160 }));
+    } else if (action.kind === "zoom") {
+      setReceiptZoom((index) => Math.min(Math.max(index + (action.factor < 1 ? 1 : -1), 0), 2));
+    } else {
+      setReceiptZoom(0);
+      setReceiptPan({ x: 0, y: 0 });
+    }
+  };
+
+  const onReceiptPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    // 터치 드래그는 세로 스크롤을 위해 건드리지 않는다. 합성 환경의
+    // button 미지정(언어 명세상 주 버튼)은 주 버튼으로 간주한다.
+    if (event.pointerType === "touch") return;
+    if (event.button !== undefined && event.button !== 0) return;
+    receiptDragRef.current = { x: event.clientX, y: event.clientY };
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // 캡처 실패해도 같은 요소 위의 이동·종료는 그대로 처리한다.
+      }
+    }
+  };
+
+  const onReceiptPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = receiptDragRef.current;
+    if (!start) return;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    setReceiptPan((previous) => ({ x: previous.x + dx, y: previous.y + dy }));
+    receiptDragRef.current = { x: event.clientX, y: event.clientY };
+  };
+
+  const onReceiptPointerEnd = () => {
+    receiptDragRef.current = null;
+  };
+
   return <section aria-label="준비된 출력 미리보기" className={compact ? "" : "border-t border-line pt-4"}>
     {!compact && <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
@@ -178,7 +257,7 @@ export function SpatialDataReceiptPreview({
     )}
     {phase.name === "loading" && (
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <p className="text-[12px] text-ink-2" role="status">준비된 파일을 불러오는 중…</p>
+        <p className="text-[12px] text-ink-2" role="status">자료 읽는 중…</p>
         <button type="button" className="btn min-h-11" onClick={cancel}>
           불러오기 취소
         </button>
@@ -198,7 +277,45 @@ export function SpatialDataReceiptPreview({
     )}
     {phase.name === "ready" && (
       <div className="mt-3 flex flex-col gap-2">
-        <canvas ref={canvasRef} className="max-w-full rounded border border-line" style={{ imageRendering: "pixelated" }} />
+        {gestureControls ? (
+          <>
+            <div
+              ref={receiptViewWrapRef}
+              tabIndex={0}
+              role="group"
+              aria-label={`부분 출력 ${phase.width} × ${phase.height} 픽셀. 마우스로 끌거나 방향키로 이동하고, + − 키 또는 휠(선택 후·Ctrl과 함께)로 확대합니다. Home 키는 원래 보기로 돌아갑니다.`}
+              onPointerDown={onReceiptPointerDown}
+              onPointerMove={onReceiptPointerMove}
+              onPointerUp={onReceiptPointerEnd}
+              onPointerCancel={onReceiptPointerEnd}
+              onKeyDown={onReceiptKeyDown}
+              className="overflow-auto rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={{ touchAction: "pan-y" }}
+            >
+              <div
+                className="inline-block"
+                style={{ transform: `translate(${receiptPan.x}px, ${receiptPan.y}px) scale(${receiptScale})`, transformOrigin: "top left" }}
+              >
+                <canvas ref={canvasRef} className="block max-w-none" style={{ imageRendering: "pixelated" }} />
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2" role="group" aria-label="부분 출력 확대·이동">
+              <button type="button" className="btn min-h-11" disabled={receiptZoom >= 2} onClick={() => setReceiptZoom((index) => Math.min(index + 1, 2))}>
+                확대 ×{[1, 2, 4][Math.min(receiptZoom + 1, 2)]}
+              </button>
+              <button type="button" className="btn min-h-11" disabled={receiptZoom <= 0} onClick={() => setReceiptZoom((index) => Math.max(index - 1, 0))}>
+                축소
+              </button>
+              <button type="button" className="btn min-h-11" onClick={() => { setReceiptZoom(0); setReceiptPan({ x: 0, y: 0 }); }}>
+                원래대로
+              </button>
+              <span className="text-[11.5px] text-ink-muted">표시 배율 ×{receiptScale} · 화면 표시용입니다.</span>
+            </div>
+            <p className="text-[11.5px] leading-5 text-ink-muted">{DISPLAY_GESTURE_HINT}</p>
+          </>
+        ) : (
+          <canvas ref={canvasRef} className="max-w-full rounded border border-line" style={{ imageRendering: "pixelated" }} />
+        )}
         <p className="text-[12px] leading-5 text-ink-2">
           출력 {phase.width} × {phase.height} 픽셀 ·{" "}
           {phase.color

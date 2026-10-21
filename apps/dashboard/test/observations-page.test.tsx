@@ -42,8 +42,8 @@ function expectKnownContext() {
   // 공통 현장 틀 유지 — 분석·검토 안의 하위 목록에서도 현장 메뉴와 구역 범위를 잃지 않는다.
   for (const [label, href] of [
     ["현황", "/sites/site-1"],
-    ["분석·검토", "/sites/site-1/analysis"],
-    ["자료", "/sites/site-1/spatial-assets"],
+    ["분석·검토 기록", "/sites/site-1/analysis"],
+    ["등록 자료", "/sites/site-1/spatial-assets"],
   ] as const) {
     const links = screen.getAllByRole("link", { name: label });
     expect(links.length).toBeGreaterThan(0);

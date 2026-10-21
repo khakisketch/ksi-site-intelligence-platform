@@ -37,8 +37,8 @@ import {
 
 const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
   { key: "explore", label: "탐색" },
-  { key: "compare", label: "비교" },
-  { key: "results", label: "결과" },
+  { key: "compare", label: "두 시점 보기" },
+  { key: "results", label: "분석 결과" },
 ];
 
 function entryCaptureLine(fact: WorkspaceObservationFact): string {
@@ -447,6 +447,7 @@ export function SiteWorkspaceShell({
         areas={areas}
         selectedWorkAreaId={selectedWorkAreaId}
         captureOptions={captureOptions}
+        selectedCaption={exploreHeading}
         coverageNote={selected && viewerJobsState !== "not-requested"
           ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
           : null}

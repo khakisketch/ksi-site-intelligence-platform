@@ -105,8 +105,8 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 결과와 출처를 섞지 않는다.
 export const SITE_TABS = [
   { key: "overview", label: "현황" },
-  { key: "materials", label: "자료" },
-  { key: "analysis", label: "분석·검토" },
+  { key: "materials", label: "등록 자료" },
+  { key: "analysis", label: "분석·검토 기록" },
   { key: "work-orders", label: "작업" },
   { key: "manage", label: "관리" },
 ] as const;

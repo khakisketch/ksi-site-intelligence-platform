@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { cache } from "react";
 
 import { SiteAoiEditor } from "./SiteAoiEditor";
@@ -12,7 +12,6 @@ import { SiteStartGuidance } from "./SiteStartGuidance";
 import { SiteTransitionActions } from "./SiteTransitionActions";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { AoiPolygonMap } from "@/components/map/AoiPolygonMap";
-import { ExternalObservationHistory } from "./observations/ExternalObservationHistory";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
 import { ErrorState } from "@/components/ui/ErrorState";
@@ -41,7 +40,7 @@ import { toPreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
 import { siteDetailDocumentTitle } from "@/lib/site-detail-title";
-import { normalizeSiteTab, type SiteTabKey } from "@/lib/site-epochs";
+import { normalizeSiteTab } from "@/lib/site-epochs";
 import { presentWorkOrder } from "@/app/field/work-order-stage";
 import { parseScopeId, pickFootprintAsset, resolveSelectedAssetRef, resolveSelectedWorkAreaId } from "./site-spatial";
 
@@ -62,21 +61,6 @@ function SectionCard({ title, children }: { title: string; children: React.React
     <div className="border-b border-line px-4 py-2.5"><h2 className="text-[13.5px] font-bold tracking-tight break-keep">{title}</h2></div>
     <div className="px-4 py-3">{children}</div>
   </section>;
-}
-
-function tabHref(tab: SiteTabKey): string {
-  switch (tab) {
-    case "analysis": return "analysis";
-    case "materials": return "spatial-assets";
-    default: return "";
-  }
-}
-
-function SiteTabLink({ siteId, tab, label, detail, href }: { siteId: string; tab: SiteTabKey; label: string; detail: string; href?: string }) {
-  return <SectionCard title={label}>
-    <p className="text-[12.5px] leading-5 break-keep text-ink-2">{detail}</p>
-    <Link href={href ?? `/sites/${encodeURIComponent(siteId)}/${tabHref(tab)}`} className="btn mt-3 w-fit">{label} 열기</Link>
-  </SectionCard>;
 }
 
 export default async function SiteDetailPage({
@@ -263,6 +247,8 @@ export default async function SiteDetailPage({
   // 헤더 직접 링크용 검증 범위 — 어느 탭에서도 추가 조회 없이 승인된 현행
   // 활성 구역만 싣는다. 원문 쿼리를 그대로 두지 않고, 조용히 다른 구역으로
   // 바꾸지도 않는다. 공간 탭에서는 이미 고른 선택을 그대로 쓴다.
+  // 탐색으로 돌아갈 때 정확한 관측을 잃지 않도록, 자산 참조도 작업구역과
+  // 함께일 때만 형식 한계 안에서 싣는다(탐색 진입에서 카탈로그와 재대조한다).
   const activeWorkAreaIds = new Set(allAreas.filter((area) => area.status === "ACTIVE").map((area) => area.workAreaId));
   const spatialSelectedValid = wantSpatial && selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId)
     ? selectedWorkAreaId
@@ -272,9 +258,34 @@ export default async function SiteDetailPage({
     return raw && activeWorkAreaIds.has(raw) ? raw : null;
   })();
   const headerWorkAreaId = spatialSelectedValid ?? explicitScopeValid;
-  const headerAssetRef = wantSpatial && headerWorkAreaId && selectedWorkAreaId === headerWorkAreaId
-    ? selectedAssetRef
-    : null;
+  const headerAssetRef = !headerWorkAreaId
+    ? null
+    : wantSpatial && selectedWorkAreaId === headerWorkAreaId && selectedAssetRef
+      ? selectedAssetRef
+      : parseScopeId(firstValue(query.assetRef));
+
+  // '등록 자료'·'분석·검토 기록' 영역은 실제 라우트가 주인이다. 옛
+  // `?section=materials|analysis` 깊은 링크는 범위를 그대로 실어 실제 목적지로
+  // 보낸다(두 번째 클릭을 두는 중간 진입 화면을 두지 않는다). 외부 비교 기록은
+  // observations 경로와 분석 화면의 기존 버튼에서 그대로 둔다.
+  if (tab === "materials") {
+    const target = new URLSearchParams();
+    if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);
+    if (headerAssetRef) target.set("assetRef", headerAssetRef);
+    const search = target.toString();
+    redirect(search
+      ? `${sitePath}/spatial-assets?${search}`
+      : `${sitePath}/spatial-assets`);
+  }
+  if (tab === "analysis") {
+    const target = new URLSearchParams();
+    if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);
+    if (headerAssetRef) target.set("assetRef", headerAssetRef);
+    const search = target.toString();
+    redirect(search
+      ? `${sitePath}/analysis?${search}`
+      : `${sitePath}/analysis`);
+  }
 
   const rawBaselineAssetRef = wantSpatial && mode === "compare" ? firstValue(query.baselineAssetRef) : undefined;
   const rawCurrentAssetRef = wantSpatial && mode === "compare" ? firstValue(query.currentAssetRef) : undefined;
@@ -397,19 +408,6 @@ export default async function SiteDetailPage({
           hasWorkspaceActions={selectedWorkAreaId !== null}
         />
       </div>}
-
-      {tab === "analysis" && <div className="flex flex-col gap-4">
-        <SiteTabLink siteId={site.siteId} tab="analysis" label="분석·검토" detail="같은 구역의 기준 자료와 비교할 자료를 고르고, 계산 결과와 담당자 검토 상태를 확인합니다." href={headerWorkAreaId ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(headerWorkAreaId)}` : `${sitePath}/analysis`} />
-        {/* 외부 비교 기록은 시스템이 계산한 변화 분석과 다른 출처의 별도 목록이다 —
-            한 카드 안에서 합치지 않고 구분된 하위 기록으로만 둔다. */}
-        <SectionCard title="외부 비교 기록">
-          <p className="text-[12.5px] leading-5 text-ink-2">별도로 등록된 외부 비교 결과입니다. 시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 두 기록은 서로 다른 결과입니다.</p>
-          {historyResult.status === "rejected" ? <ErrorState message="외부 비교 기록을 불러오지 못했습니다." retryable /> : historyResult.value.items.length === 0 ? <EmptyState title="조회된 외부 비교 기록이 없습니다" description="시스템에서 계산한 지형 변화는 분석·검토에서 확인하세요. 이 목록은 별도로 등록된 비교 기록입니다." action={{ label: "분석·검토 열기", href: `${sitePath}/analysis` }} /> : <ExternalObservationHistory siteId={site.siteId} items={historyResult.value.items} workAreaNames={areaNames} />}
-          <div className="mt-3"><Link href={`${sitePath}/observations`} className="btn">외부 비교 기록 열기</Link></div>
-        </SectionCard>
-      </div>}
-
-      {tab === "materials" && <SiteTabLink siteId={site.siteId} tab="materials" label="자료" detail="자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인합니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다." href={`${sitePath}/spatial-assets${headerWorkAreaId ? `?workAreaId=${encodeURIComponent(headerWorkAreaId)}${headerAssetRef ? `&assetRef=${encodeURIComponent(headerAssetRef)}` : ""}` : ""}`} />}
 
       {tab === "manage" && <div className="flex flex-col gap-4">
         <SectionCard title="작업구역">
