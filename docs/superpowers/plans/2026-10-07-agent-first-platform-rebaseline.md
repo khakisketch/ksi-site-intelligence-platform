@@ -5854,3 +5854,98 @@ shared inspector journal branches/staging/daemon/cgroup; all original assets. No
 no recovery or policy changes. Core8074 currently ready/listening; no restart required for UI-only work.
 Native desktop screenshot failed despite focus before restart; six settled first-view captures already
 saved by isolated Playwright and remain valid. Reuse that evidence; do not repeat initial research.
+
+Usability implementation review (not final acceptance): source60c063ce first unit built with unchanged
+locked dependencies and172files/1663tests passed. Actual390px render proved the guarded pixel reads
+worked (1022x915 canvas,884413opaque/883713nonwhite) but photo still started at y778 rather than y3552.5.
+It therefore did NOT meet the first-viewport task outcome. Primary read the settled phone/desktop
+captures: compacting some chrome left duplicated capture/layer text and three mosaic paragraphs before
+the image; no visible capture selector; Compare repeated prompts with no actual selectable candidates;
+Results had one lead/history but no actual compared-period context. Real browser also exposed React418
+from invalid paragraph/block nesting. One coordinated correction batch was sent to the same UI owner.
+
+Corrected source: capture date GET selector with exact existing assetRef/WorkArea; mosaic immediately
+after controls, engineering text/window state/manual requests behind disclosure; no-options Compare one
+reason plus same-scope exploration action; one bounded existing getAnalysis read for lead-result pair
+context, validated Site/area/id; no inference of missing accuracy evidence from null volume uncertainty;
+SSR nesting fixed. Primary additionally pinned the Explore layer into its normal GET navigation so a
+DSM selection, changing observation, Back and reload refer to the same selected layer/version (Compare
+pane-local toggles remain local and cannot rewrite frozen pair inputs). With no own prepared output and
+no actual job, the display is a concise truthful state rather than a large apparently pending empty map.
+Focused regressions + full hostDashboard173files/1673tests, tsc and changed-file ESLint passed. Final
+locked image and actual confirmation are pending; no user task is accepted from these counts alone.
+No Core/schema/policy/data/rights/worker changes and no PREPARE/analysis POST on entry were introduced.
+
+Actual second-pass interaction checks on81f43151 and bounded-view19cd047b succeeded: visible real capture
+selector2021/2022, selected DSM retained when changing capture, Back/reload exact scope, keyboard evidence
+disclosure, viewer read-only state and no preparation control, saved synthetic800m3 result+explicit non-field
+review still accessible. Zero API POST and zero browser errors. Bounded CSS keeps the same source pixel
+buffer and native placement; it does not resample or create a new derivative. On19cd047b the phone photo
+y443.5,height265 and desktop y399.5,height519.98 (before y3552.5 on phone).
+
+An additional affected-layer check found a genuine presentation gap, not a reason to create more data:
+the current account has a real prepared DSM512x256 crop, but it does not match the full-view tile grid.
+The mosaic therefore displayed0/4 pending forever instead of showing the already readable crop. UI fix
+reuses existing SpatialDataReceiptPreview (same guarded GET, full-size/SHA gate and NoData/mask decoder),
+selecting an already prepared same-asset crop only when no matching mosaic tile is present. It explicitly
+labels the output as an existing partial range, preserves relative DSM/vertical and per-window-stretch
+limitations, and issues no new preparation. Ordinary job-detail preview remains explicit unless its new
+presentation-only autoLoad option is supplied by the Site fallback; unmount/source-change cancels it.
+No Core, endpoint, grant, policy, source bytes or quantitative contract changed. Added exact coverage/
+revocation/foreign-asset selection regressions; retained integrity/ownership/no-POST assertions. Latest
+host173files/1674tests/type/lint passed; final locked build and actual crop read still pending.
+
+Final read-task exercise also caught a pre-existing dead-end: Core list `analysisHref` is an API path
+(`/v2/sites/.../analyses/...`), but the result card and secondary overview action used it as a Console
+href. Actual pointer navigation therefore landed on the frontend's nonexistent API-shaped page instead
+of the record. UI links now construct the existing Console analysis route from the exact result ID and
+WorkArea (no new endpoint or data transformation). Added a Core-shaped API-href fixture and retained
+exact-target assertions; the final acceptance clicks through the real link and opens the saved review,
+not just a direct API GET. This is closing the approved user flow, not a platform feature expansion.
+
+#### Usability-first Site composition — actual delivered acceptance, 2026-10-21
+
+Delivered frontend source35d2ded0, normal private Console10010→own Docker3243→UNCHANGED Core8074.
+Only labelled own frontend container replaced; prior containers/images retained for rollback. No new
+public route, dependency, source raster, inspection launch, policy, grant, shared host or backend change.
+This closes the latest Human's bounded UI/UX composition request, NOT whole-platform/operational gates.
+Feature/LOD/cache/new-contract work remains paused by the latest user direction.
+
+| User task / previous obstacle | Delivered outcome and actual evidence |
+|---|---|
+| Enter Site and recognize the observation | Capture/layer controls and actual authorized pixels precede the empty geometry/diagnostic scaffold. Phone390x844 first image y443.5,height265 instead of baseline y3552.5; desktop1440x1000 image y399.5,height519.98, fitted to working viewport. Full own prepared ortho1022x915 paints884413 valid opaque pixels after guarded reads; no new preparation. |
+| Change date and layer without losing context | Visible actual2021/2022 GET selector; date-only precision retained. Actual DSM switch then date change keeps available DSM source. Reload and Back retain exact assetRef/WorkArea; mode links preserve browse source, not just area. No client-side latest ranking. |
+| Read an existing partial DSM | A real own512x256 crop paints131072 opaque pixels on the first view, explicitly labelled partial and relative shading. It is not mistaken for absent data or stretched into a full observation. No new jobs/source/LOD transformation. |
+| Know why a comparison is unavailable and where to go | One typed no-candidate explanation and same-scope exploration link instead of multiple repeated warning/empty-slot cards. Detailed unsupported synchronization and date-only restrictions remain accessible; no registered pair/quantitative eligibility is invented. |
+| Understand result and reach supporting evidence | One lead record shows actual baseline2026-10-06/current2026-10-13 capture intervals, WorkArea, Core-recorded800m3 synthetic result and its accuracy/use limits. Older records are expandable; null volume uncertainty no longer implies absent checkpoint evaluation. Actual click on '자료·근거와 검토 보기' reaches exact Console analysisID/area, then opens the persisted non-field automated review. |
+| Access details without being forced to read them first | Source/extent/registration data, independent audit/validation/viewability explanations, receipt/window diagnostics and manual preparation remain in labelled disclosures. Keyboard Enter opens/closes evidence disclosure; information is not deleted or merged into a verified badge. |
+| Viewer/mobile permissions and missing-output state | Real development OIDC viewer reads capture facts, gets a concise own-display-unavailable explanation instead of a blank map, and has no accessible preparation action. Existing phone/laptop mutation restriction, ownership/currentness/size/SHA checks and failure states preserved. |
+
+Final current-build verification files (all `build=35d2ded0`, `ok=true`, zero API POSTs, zero page errors):
+- usability-verification.json: actual first-pixel canvas/viewport checks390+1440, result/review lookup,
+  results/compare renders and wrong-scope nondisclosure;
+- task-flow-verification.json: real visible date control, DSM/date continuity, reload/Back, keyboard
+  details, viewer read-only state and no horizontal overflow;
+- stable-pixel-verification.json: fully painted actual ortho and partial DSM, not an early skeleton;
+- evidence-link-verification.json: pointer clicks through result→exact UI record→expanded saved review,
+  and older-history disclosure. A raw API read is not substituted for link functionality.
+
+All final representative original images were read by primary, including shipped-ortho390/1440,
+shipped-dsm390, after-results390/1440, after-compare390 and after-viewer390. Primary did not accept the
+first unit from test counts; actual rendering exposed and corrected the y778 obstruction and hydration
+error, and later actual task exercises closed the non-tile-crop and API-shaped evidence-link gaps.
+Final locked Next16.3.3/Vitest4.1.11 Docker build and173files/1674tests passed; host tsc and touched-file
+ESLint clean; mechanical detector[] on initial targets and changed affected components. Existing
+Python/Core evidence reused because no backend code/contract changed; no unrelated suite repetition.
+
+Evidence: /tmp/opencode/ksi-usability-first-20261021/ and durable
+~/.local/share/ksi-product-use-20261021/verification-usability-35d2ded0/ (README + SHA manifest). Earlier
+failed/stale captures are labelled separately and are not final acceptance. Native desktop screenshot
+failed despite focus before restart; actual rendered evidence uses isolated Playwright, not DOM-only
+substitution. This is pointer/keyboard/viewport automation, not physical touch/screen-reader/customer
+usability research or field/accuracy/settlement acceptance. Existing shared audit incident and all
+operational/production/customer/retention approval limits remain unchanged and independent.
+
+No further routine feature expansion or preference-only polishing is selected for this task. The next
+goal-relevant integrated outcome is delivered and verified: open real Site→see prepared observation→
+change capture/layer→understand Compare restriction or result→follow exact result/evidence/review.
