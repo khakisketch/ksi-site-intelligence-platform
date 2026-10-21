@@ -105,7 +105,8 @@ describe("site mosaic viewport fill gate", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderMosaic([readableJob()]);
 
-    expect(screen.getByText("이어 보기 — 여러 창의 나란한 배치")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(screen.getByText("이어 보기 조건·창별 상태")).toBeTruthy();
     expect(screen.getByText(/이음새 보정·재표본화 없음/)).toBeTruthy();
     expect(screen.getByText(/계산 다각형이 아닙니다/)).toBeTruthy();
     // 진입만으로는 준비 요청(POST)이 나가지 않는다 — 쓰기는 명시적 채우기에서만 나간다.

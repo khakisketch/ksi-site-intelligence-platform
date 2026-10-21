@@ -142,6 +142,7 @@ export function SiteWorkspaceCompare({
   resolution,
   canCreateAnalysis,
   scopedCompareHref,
+  exploreHref,
   facts,
 }: {
   sitePath: string;
@@ -155,6 +156,8 @@ export function SiteWorkspaceCompare({
   resolution: ExplicitComparisonResolution | { status: "prompt" };
   canCreateAnalysis: boolean;
   scopedCompareHref: string;
+  /** 비교할 후보가 없을 때 돌아갈 탐색 주소 — 같은 구역·선택 자료 그대로 둔다. */
+  exploreHref: string;
   facts: WorkspaceServerFacts;
 }) {
   const selected = areas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null;
@@ -170,8 +173,7 @@ export function SiteWorkspaceCompare({
 
   const { eligible, blocked } = selected ? compareSlotCandidates(facts, selected.workAreaId) : { eligible: [], blocked: [] };
   const groups = selected ? splitCompareCandidates(facts, selected.workAreaId) : null;
-  const representatives = selected ? representativeFacts(facts, selected.workAreaId) : [];
-  const tiedEpochs = facts.entryDefault?.reason === "CAPTURE_TIE_AMBIGUOUS"
+  const representatives = selected ? representativeFacts(facts, selected.workAreaId) : [];  const tiedEpochs = facts.entryDefault?.reason === "CAPTURE_TIE_AMBIGUOUS"
     ? (facts.entryDefault.tiedObservationEpochIds ?? [])
     : [];
   const tiedFacts = tiedEpochs
@@ -180,6 +182,30 @@ export function SiteWorkspaceCompare({
   const baselineFact = resolution.status === "ready" ? resolution.baseline : null;
   const currentFact = resolution.status === "ready" ? resolution.current : null;
   const formAction = selected ? `${sitePath}?` : sitePath;
+  const hasOptions = eligible.length > 0;
+  const showNoOptionBox = selected !== null
+    && projectionState === "ready"
+    && !hasOptions
+    && resolution.status !== "ready"
+    && resolution.status !== "unresolvable";
+  // 선택지가 하나도 없을 때의 한 줄 사유 — 기존 typed 사실에서만 고른다.
+  const noOptionReason = (() => {
+    if (!showNoOptionBox || !selected) return null;
+    if (representatives.length === 0) {
+      return "이 구역에 확인된 관측이 없습니다. 관측이 등록되면 같은 구역의 두 시점을 나란히 둘 수 있습니다.";
+    }
+    const browsableCount = (groups?.browsableDateOnly.length ?? 0) + (groups?.browsableUnknown.length ?? 0);
+    if (blocked.length > 0 && browsableCount === 0 && tiedFacts.length === 0) {
+      return "시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 나란히 둘 후보가 없습니다.";
+    }
+    if (browsableCount > 0 && blocked.length === 0 && tiedFacts.length === 0) {
+      return "시간 순서가 확인된 관측이 없어 나란히 둘 후보가 없습니다. 날짜만 아는 관측은 둘러볼 수 있습니다.";
+    }
+    if (tiedFacts.length > 0 && blocked.length === 0 && browsableCount === 0) {
+      return "같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다.";
+    }
+    return "나란히 둘 수 있는 비교 후보가 아직 없습니다.";
+  })();
 
   return <div className="flex flex-col gap-3">
     {selected === null && (
@@ -202,7 +228,7 @@ export function SiteWorkspaceCompare({
         </p>
       </div>
     )}
-    {resolution.status === "prompt" && selected && (
+    {resolution.status === "prompt" && selected && hasOptions && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
         비교할 기준 자료와 비교 자료를 아래에서 고르세요. 자동으로 고르지 않았습니다.
       </p>
@@ -219,10 +245,14 @@ export function SiteWorkspaceCompare({
       </p>
     )}
 
-    {selected && projectionState === "ready" && eligible.length === 0 && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
-        나란히 둘 수 있는 비교 후보가 아직 없습니다. 표시용 출력이 봉인된 관측이 생기면 이 자리에서 고를 수 있습니다.
-      </p>
+    {showNoOptionBox && (
+      <div className="rounded-lg border border-line bg-surface px-4 py-3" role="status">
+        <p className="text-[13px] font-bold">{noOptionReason}</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          같은 구역의 실제 관측부터 둘러보세요.{" "}
+          <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
+        </p>
+      </div>
     )}
 
     {selected && projectionState === "ready" && eligible.length > 0 && (
@@ -281,11 +311,11 @@ export function SiteWorkspaceCompare({
       />
     </div>}
 
-    {selected && resolution.status !== "ready" && resolution.status !== "unresolvable" && (
+    {selected && resolution.status === "prompt" && hasOptions && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
         아직 나란히 둘 비교를 고르지 않았습니다. 위에서 기준·비교 자료를 고르면 같은 크기로 둡니다.
         {" "}고르기 전에 둘러보려면{" "}
-        <Link href={sitePath} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
+        <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
         하세요.
       </p>
     )}
@@ -330,15 +360,26 @@ export function SiteWorkspaceCompare({
 
     {selected && <div className="rounded-lg border border-line bg-surface px-4 py-3">
       <h3 className="text-[13px] font-bold">나란히 보기 안내</h3>
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-        두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
-        두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
-      </p>
-      {resolution.status === "ready" && (
+      {resolution.status === "ready" ? (<>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+          두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+        </p>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
           화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 높낮이 차이로 읽지 마세요. 측정 범위 표시이며 정확도를 보증하지 않습니다.
         </p>
-      )}
+      </>) : (<>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          두 지도는 같은 크기로 둡니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.
+        </p>
+        <details className="mt-1 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">지원하지 않는 동기화 비교</summary>
+          <p className="mt-1 text-[12.5px] leading-5">
+            동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+            두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+          </p>
+        </details>
+      </>)}
       <p className="mt-2 flex flex-wrap gap-2">
         {canCreateAnalysis ? (
           <Link href={scopedCompareHref} className="btn">이 구역 변화 비교</Link>

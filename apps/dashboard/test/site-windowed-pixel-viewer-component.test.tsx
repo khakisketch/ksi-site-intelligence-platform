@@ -12,7 +12,8 @@ vi.mock("next/link", () => ({
     <a href={href} {...props}>{children}</a>
   ),
 }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+const pushRoute = vi.hoisted(() => vi.fn());
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn(), push: pushRoute }) }));
 
 import { fromArrayBuffer } from "geotiff";
 import {
@@ -165,6 +166,27 @@ afterEach(() => {
 });
 
 describe("site windowed pixel viewer", () => {
+  it("explains missing own display output instead of showing a blank map or preparing it automatically", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SiteWindowedPixelViewer {...propsFor({ jobs: [], canRequest: false })} />);
+    expect(screen.getByText(/현재 계정에 준비된 표시 자료가 없습니다/)).toBeTruthy();
+    expect(screen.queryByRole("img", { name: /이어 보기/ })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the exact Explore URL layer and preserves that layer in date/reload navigation", () => {
+    pushRoute.mockClear();
+    const href = "/sites/site-1?workAreaId=area-1";
+    const view = render(<SiteWindowedPixelViewer {...propsFor({ canRead: false, selectedAssetRef: dsmRef, layerSelectionHref: href })} />);
+    expect(screen.getByRole("button", { name: /DSM/ }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "정사영상" }));
+    expect(pushRoute).toHaveBeenCalledWith(`${href}&assetRef=${assetRef}`);
+    view.rerender(<SiteWindowedPixelViewer {...propsFor({ canRead: false, selectedAssetRef: assetRef, layerSelectionHref: href })} />);
+    expect(screen.getByRole("button", { name: "정사영상" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: /DSM/ }).getAttribute("aria-pressed")).toBe("false");
+  });
+
   it("issues no writes on entry while authorized reads use the same guarded path", async () => {
     const posts: string[] = [];
     const gets: string[] = [];
@@ -178,8 +200,8 @@ describe("site windowed pixel viewer", () => {
 
     // 기술 벽이 먼저가 아니라 실제 화면 자리가 먼저다.
     expect(screen.getByRole("heading", { name: /2021 포착/ })).toBeTruthy();
-    expect(screen.getByText("이미 준비된 창 보기")).toBeTruthy();
-    expect(screen.getByText("이어 보기 — 여러 창의 나란한 배치")).toBeTruthy();
+    expect(screen.getByText("낱창 보기 · 새 창 준비")).toBeTruthy();
+    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     expect(screen.queryByText(/검증 완료/)).toBeNull();
     // 진입 시 쓰기(POST)는 나가지 않는다. 이미 준비된 창의 읽기(GET)는
     // 같은 세션 경로로만 나가며, SHA·크기 대조는 그대로 둔다.

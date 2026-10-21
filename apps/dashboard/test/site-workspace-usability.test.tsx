@@ -169,6 +169,47 @@ function workspaceReadyPage() {
       newerRevisionState: null,
       chronologyCandidate: true,
       hasSealedVersion: true,
+    },
+    {
+      observationEpochId: "epoch-2022",
+      workOrderId: "w2",
+      capture: { factClass: "DECLARED_CAPTURE", precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2022-08-24" },
+      captureSourcesAgree: true,
+      versions: [{
+        assetRef: "disp-2022b",
+        submissionRef: "s2",
+        revision: 1,
+        artifactId: "art-2",
+        kind: "dsm",
+        lifecycleState: "SEALED",
+        capture: { factClass: "DECLARED_CAPTURE", precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2022-08-24" },
+        declaredCrs: "EPSG:5186",
+        declaredVerticalReferencePresent: false,
+        declaredGsdM: null,
+        submittedAt: "2022-08-25T00:00:00Z",
+        observedSha256: null,
+        observedSizeBytes: null,
+        observedAt: null,
+        inspectionState: "COMPLETED",
+        inspectionOutcome: "MEASURED",
+        inspectionReason: null,
+        inspectedRasterAvailable: true,
+        displayState: "SEALED",
+        displayReady: false,
+        chronology: "DATE_ONLY",
+        chronologyCandidate: false,
+        quantitativeEligibility: "NOT_EVALUATED",
+        viewAssetRef: "disp-2022b",
+        viewAvailable: false,
+        viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+      }],
+      viewAvailable: false,
+      viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+      viewAssetRef: "disp-2022b",
+      newerRevisionPending: false,
+      newerRevisionState: null,
+      chronologyCandidate: false,
+      hasSealedVersion: true,
     }],
     entryDefault: {
       observationEpochId: "epoch-2021",
@@ -288,23 +329,19 @@ describe("usability-first explore", () => {
     expect(conditions).toBeGreaterThan(mosaic);
   });
 
-  it("keeps dates, layers and scope on the first task bar", async () => {
+  it("switches capture from the first task bar with actual refs and precision", async () => {
     await renderOverview({});
-    expect(screen.getByText(/보여주는 자료/)).toBeTruthy();
-    expect(screen.getByText(/층 1개/)).toBeTruthy();
-    expect(screen.getByText(/작업구역 · 미세 분석 구역/)).toBeTruthy();
-  });
-
-  it("shows one area as fact without a chooser, and a chooser for several", async () => {
-    await renderOverview({});
-    expect(screen.queryByLabelText("작업구역")).toBeNull();
-
-    mocked.areas.mockResolvedValue({
-      workAreas: [areaFixture("tiny-1", "첫 구역"), areaFixture("tiny-2", "둘째 구역")],
-    });
-    cleanup();
-    await renderOverview({});
-    expect(screen.getByLabelText("작업구역")).toBeTruthy();
+    const select = screen.getByLabelText("촬영 시점") as HTMLSelectElement;
+    const options = Array.from(select.options).map((option) => option.textContent);
+    // 실제 관측 선택지이며 날짜만 아는 정밀도 그대로 둔다.
+    expect(options.some((text) => text?.includes("날짜만 확인"))).toBe(true);
+    // 값은 정확한 assetRef이며, 선택 상태가 현재 선택을 가리킨다.
+    expect(select.value).toBe("disp-2022");
+    // 폼은 같은 GET 경로에 구역 범위를 함께 싣는다 — Back/새로고침이 의도를 살린다.
+    const form = select.closest("form")!;
+    expect(form.getAttribute("method")).toBe("get");
+    expect(form.querySelector('input[name="workAreaId"]')).toBeTruthy();
+    expect(form.querySelector('select[name="assetRef"]')).toBeTruthy();
   });
 
   it("keeps the compact header to one site name without a redundant label", async () => {
@@ -332,8 +369,56 @@ describe("usability-first results", () => {
     expect(screen.getAllByText(/정확도 평가는 아직 확인되지 않았습니다/)[0]).toBeTruthy();
     expect(screen.getByText("이전 기록 2건")).toBeTruthy();
     // 최신 기록의 근거 링크는 원래 선택자 그대로다.
-    expect(screen.getAllByRole("link", { name: "분석 기록 열기" })[0]!.getAttribute("href")).toBe(
+    expect(screen.getAllByRole("link", { name: "자료·근거와 검토 보기" })[0]!.getAttribute("href")).toBe(
       "/sites/site-1/analysis?analysisId=a3",
     );
+  });
+
+  it("shows the lead record's actual comparison period from its original selectors", async () => {
+    mocked.analyses.mockResolvedValue({
+      siteId: "site-1",
+      items: [analysisItem("a3", "2026-10-14T00:00:00Z")],
+      nextCursor: null,
+    });
+    mocked.detail.mockResolvedValue({
+      analysisId: "a3",
+      siteId: "site-1",
+      workAreaId: "tiny-1",
+      baseline: { workOrderId: "w1", submissionRef: "s1", revision: 1 },
+      current: { workOrderId: "w2", submissionRef: "s2", revision: 1 },
+      executionState: "COMPLETED",
+      suitabilityState: "EVALUATED",
+      blockers: [],
+      result: null,
+      evidenceRevision: 1,
+      evidenceDigest: "ed",
+      evidenceHref: "/evidence",
+      coverageHref: null,
+      createdAt: "2026-10-14T00:00:00Z",
+    });
+    await renderOverview({ mode: "results" });
+    expect(mocked.detail).toHaveBeenCalledWith("site-1", "a3");
+    // 실제 포착 구간(10/6→10/13이 아니라 픽스처의 2021/2022)을 그대로 둔다.
+    const text = document.body.textContent ?? "";
+    expect(text).toContain("2021");
+    expect(text).toContain("2022");
+    expect(text).toContain("기준");
+    expect(text).toContain("현재");
+  });
+
+  it("does not infer unevaluated accuracy from a null volume uncertainty", async () => {
+    // EVALUATED + 불확도 null — "미확인"으로 읽으면 안 된다.
+    mocked.analyses.mockResolvedValue({
+      siteId: "site-1",
+      items: [{
+        ...analysisItem("a9", "2026-10-15T00:00:00Z"),
+        suitabilityState: "EVALUATED",
+        metrics: { cutM3: 0, fillM3: 800, netM3: 800, thresholdM: 0, uncertaintyM3: null },
+      }],
+      nextCursor: null,
+    });
+    await renderOverview({ mode: "results" });
+    expect(screen.getByText(/분석 조건 확인 결과가 있습니다/)).toBeTruthy();
+    expect(screen.queryByText(/정확도 평가는 아직 확인되지 않았습니다/)).toBeNull();
   });
 });

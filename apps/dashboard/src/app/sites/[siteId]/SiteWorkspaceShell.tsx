@@ -24,7 +24,7 @@ import type {
 import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
 import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
-import { SiteExploreCanvas } from "./SiteExploreCanvas";
+import { SiteExploreCanvas, type ExploreCaptureOption } from "./SiteExploreCanvas";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
 import { SiteWindowedPixelCompare, SiteWindowedPixelViewer } from "./SiteWindowedPixelViewer";
@@ -197,7 +197,7 @@ function modeHref(
   const query = new URLSearchParams();
   if (mode !== "explore") query.set("mode", mode);
   if (scope.workAreaId) query.set("workAreaId", scope.workAreaId);
-  if (mode === "explore" && scope.assetRef) query.set("assetRef", scope.assetRef);
+  if (scope.assetRef) query.set("assetRef", scope.assetRef);
   const search = query.toString();
   return search ? `${sitePath}?${search}` : sitePath;
 }
@@ -246,6 +246,49 @@ function viewerHeadingFor(fact: WorkspaceObservationFact): string {
 }
 
 /**
+ * 탐색 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄의 순수 선택 규칙.
+ *
+ * - 순서는 서버 프로젝션 그대로 두며, 최신 단언·날짜 추측을 하지 않는다.
+ * - 목표 층(`currentKind`)이 그 관측에 있으면 유지하고, 없으면 그 관측의
+ *   대표 층으로 두되 바꾼 뜻을 밝힌다. 카탈로그에 층이 없으면 표시 버전
+ *   사실을 그대로 쓴다.
+ * - 선택 표시는 정확한 `assetRef` 일치이거나, 같은 관측(선택 epoch)일 때만 둔다.
+ */
+export function buildExploreCaptureOptions({
+  facts,
+  workAreaId,
+  catalogAssets,
+  selectedAssetRef,
+  currentKind,
+  selectedEpochId,
+}: {
+  facts: WorkspaceServerFacts;
+  workAreaId: string;
+  catalogAssets: readonly SpatialAssetCatalogItem[];
+  selectedAssetRef: string | null;
+  currentKind: string | null;
+  selectedEpochId: string | null;
+}): ExploreCaptureOption[] {
+  return representativeFacts(facts, workAreaId).map((fact) => {
+    const epochLayers = viewerLayersForEpoch(catalogAssets, fact.observationEpochId);
+    const target = (currentKind ? epochLayers.find((item) => item.kind === currentKind) : undefined)
+      ?? epochLayers[0]
+      ?? null;
+    const targetRef = target?.assetRef ?? fact.viewAssetRef ?? fact.assetRef;
+    const targetCatalog = catalogAssets.find((item) => item.assetRef === targetRef) ?? null;
+    const kindChanged = target !== null && currentKind !== null && target.kind !== currentKind;
+    return {
+      assetRef: targetRef,
+      label: `${entryCaptureLine(fact)}${kindChanged ? ` · ${target.kindLabel}으로 둠` : ""}`,
+      title: targetCatalog
+        ? `${entryCaptureLine(fact)} · 등록 버전 ${fact.revision} · ${targetCatalog.declared.fileName}`
+        : `${entryCaptureLine(fact)} · 등록 버전 ${fact.revision}`,
+      selected: targetRef === selectedAssetRef || fact.observationEpochId === selectedEpochId,
+    };
+  });
+}
+
+/**
  * 현장 공간 작업공간 겉틀 (SWX-2 구조) — 탐색·비교·결과의 작업 방식만 나눈다.
  *
  * - 다섯 영역(현황·자료·분석·검토·작업·관리)과 Console 정체·머리는 그대로 둔다.
@@ -281,6 +324,7 @@ export function SiteWorkspaceShell({
   comparison,
   explicitResult,
   explicitDetail,
+  leadDetail,
   scopedCompareHref,
   preparedJobs,
   jobsState,
@@ -314,6 +358,8 @@ export function SiteWorkspaceShell({
   comparison: ExplicitComparisonResolution | { status: "prompt" };
   explicitResult: ExplicitResultResolution | null;
   explicitDetail: AnalysisView | null;
+  /** 결과 목록 첫 기록의 상세(선택자 복원용, 1건만) — 없으면 조용히 둔다. */
+  leadDetail?: AnalysisView | null;
   scopedCompareHref: string;
   /** 현재 계정이 읽을 수 있는 준비 기록(범위 확인된 것만 호출자가 싣는다). */
   preparedJobs?: readonly PreparedWindowJob[];
@@ -352,6 +398,26 @@ export function SiteWorkspaceShell({
     : ordinaryEntry.status === "ready"
       ? viewerHeadingFor(ordinaryEntry.observation)
       : null;
+  // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
+  // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
+  // 대표 층으로 두되 바꾼 뜻을 밝힌다. 최신 단언·날짜 추측을 하지 않는다.
+  const currentKind = catalogAssets.find((item) => item.assetRef === selectedAssetRef)?.kind
+    ?? exploreLayers[0]?.kind
+    ?? null;
+  const captureOptions = selected
+    ? buildExploreCaptureOptions({
+      facts,
+      workAreaId: selected.workAreaId,
+      catalogAssets,
+      selectedAssetRef,
+      currentKind,
+      selectedEpochId: exploreFact?.observationEpochId ?? null,
+    })
+    : [];
+  // 비교 빈손 회복용 돌아가기 — 같은 구역·선택 자료 그대로 탐색으로 둔다.
+  const exploreHref = selectedWorkAreaId
+    ? `${sitePath}?workAreaId=${encodeURIComponent(selectedWorkAreaId)}${selectedAssetRef ? `&assetRef=${encodeURIComponent(selectedAssetRef)}` : ""}`
+    : sitePath;
   const baselineFact = comparison.status === "ready" ? comparison.baseline : null;
   const currentFact = comparison.status === "ready" ? comparison.current : null;
   return <div className="flex flex-col gap-3">
@@ -380,10 +446,7 @@ export function SiteWorkspaceShell({
         sitePath={sitePath}
         areas={areas}
         selectedWorkAreaId={selectedWorkAreaId}
-        captureHeadline={exploreHeading}
-        layerSummary={exploreLayers.length > 0
-          ? `층 ${exploreLayers.length}개 · ${exploreLayers.map((item) => item.kindLabel).join(" · ")}${exploreLayers.length > 1 ? " — 화면에서 전환" : ""}`
-          : null}
+        captureOptions={captureOptions}
         coverageNote={selected && viewerJobsState !== "not-requested"
           ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
           : null}
@@ -402,6 +465,9 @@ export function SiteWorkspaceShell({
             workAreaCrs={workAreaCrs}
             observationHeading={exploreHeading}
             idPrefix="windowed-explore"
+            slimHeader
+            selectedAssetRef={selectedAssetRef}
+            layerSelectionHref={`${sitePath}?workAreaId=${encodeURIComponent(selected.workAreaId)}`}
           />
         ) : (
           <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
@@ -463,6 +529,7 @@ export function SiteWorkspaceShell({
         resolution={comparison}
         canCreateAnalysis={canCreateAnalysis}
         scopedCompareHref={scopedCompareHref}
+        exploreHref={exploreHref}
         facts={facts}
       />
       {/* 비교의 창 단위 픽셀 보기 — 두 칸은 독립된 어댑터다. 동기화 비교가
@@ -496,6 +563,7 @@ export function SiteWorkspaceShell({
         analysesKnown={analysesKnown}
         explicitResult={explicitResult}
         explicitDetail={explicitDetail}
+        leadDetail={leadDetail ?? null}
         facts={facts}
         canCreateAnalysis={canCreateAnalysis}
         scopedCompareHref={scopedCompareHref}

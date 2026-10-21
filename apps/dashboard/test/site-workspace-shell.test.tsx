@@ -30,6 +30,7 @@ vi.mock("@/components/map/AoiPolygonMap", () => ({
 vi.mock("next/navigation", () => ({ notFound: () => { throw new Error("NEXT_NOT_FOUND"); }, useRouter: () => ({ refresh: () => {} }) }));
 
 import SiteDetailPage from "@/app/sites/[siteId]/page";
+import { buildExploreCaptureOptions } from "@/app/sites/[siteId]/SiteWorkspaceShell";
 import { CoreApiError } from "@/lib/core-api/client";
 
 const TINY_5186 = {
@@ -383,11 +384,41 @@ describe("workspace compare mode", () => {
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
     expect(screen.getByText(/탐색에서 날짜·층별로 확인/)).toBeTruthy();
-    expect(screen.getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
+    // 긴 동기화 경고는 펼침에 둔다 — 짧은 한 줄만 첫 화면에 둔다.
+    expect(screen.getByText(/같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다/)).toBeTruthy();
+    expect(screen.getByText("지원하지 않는 동기화 비교")).toBeTruthy();
     expect(screen.getByText(/나란히 보기 안내/)).toBeTruthy();
     expect(screen.getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-data-requests?workAreaId=tiny-1",
     );
+  });
+
+  it("gives one reason and one way back when no comparison candidates exist", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["v1"], {
+        viewAvailable: false,
+        viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+        viewAssetRef: null,
+        versions: [wireVersion("v1")],
+      })],
+      entryDefault: {
+        observationEpochId: null,
+        viewAssetRef: null,
+        reason: "NO_VIEW_AVAILABLE_OBSERVATION",
+        detail: "Observations exist but none has a display-ready version.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    await renderOverview({ mode: "compare" });
+    // 경고 카드 쌓기가 아니라 한 개의 사유 + 한 개의 돌아가기다.
+    expect(screen.getByText(/표시용 출력이 봉인되지 않아 나란히 둘 후보가 없습니다/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /탐색에서 날짜·층별로 확인/ }).getAttribute("href")).toBe(
+      "/sites/site-1?workAreaId=tiny-1",
+    );
+    // 선택지가 없으면 고르기 폼을 두지 않는다.
+    expect(screen.queryByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeNull();
+    expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
   });
 
   it("renders two equal-weight map slots once both inputs are chosen", async () => {
@@ -457,7 +488,7 @@ describe("workspace results mode", () => {
     expect(screen.getByRole("heading", { name: /결과와 근거/ })).toBeTruthy();
     expect(screen.getByText("사용 조건 재확인 필요")).toBeTruthy();
     expect(screen.getByText(/제한 1건/)).toBeTruthy();
-    const openLink = screen.getByRole("link", { name: "분석 기록 열기" });
+    const openLink = screen.getByRole("link", { name: "자료·근거와 검토 보기" });
     expect(openLink.getAttribute("href")).toBe("/sites/site-1/analysis?analysisId=a1");
     expect(screen.getByRole("heading", { name: "새 비교 요청" })).toBeTruthy();
     expect(screen.getByText(/새 비교는 기준·현재 두 시점을 다시 고릅니다/)).toBeTruthy();
@@ -512,7 +543,7 @@ describe("workspace results mode", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.getByText(/링크의 원래 기록을 그대로 보여줍니다/)).toBeTruthy();
     expect(screen.getByText(/원래 입력 2건이 현재 관측 목록에 있습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "분석 기록 열기" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "자료·근거와 검토 보기" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?analysisId=a9",
     );
   });
@@ -547,5 +578,150 @@ describe("workspace results mode", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("요청한 분석 기록을 확인할 수 없습니다");
     expect(alert.textContent).toContain("자동으로 최근 기록으로 바꾸지 않았습니다");
+  });
+});
+
+describe("explore capture options", () => {
+  function fact(overrides: Record<string, unknown> = {}) {
+    return {
+      observationEpochId: "epoch-2021",
+      workAreaId: "tiny-1",
+      workOrderId: "w1",
+      assetRef: "dsm-2021",
+      submissionRef: "s1",
+      revision: 1,
+      kind: "dsm",
+      displayReady: true,
+      inspectedRasterAvailable: true,
+      chronologyCandidate: true,
+      captureSourcesAgree: true,
+      viewAvailable: true,
+      viewUnavailableReason: null,
+      viewAssetRef: "dsm-2021",
+      newerRevisionPending: false,
+      newerRevisionState: null,
+      captureStartedAt: "2021-08-17T10:00:00Z",
+      captureEndedAt: "2021-08-17T11:00:00Z",
+      captureDate: null,
+      ...overrides,
+    };
+  }
+
+  function catalogItem(overrides: Record<string, unknown> = {}) {
+    return {
+      assetRef: "dsm-2021",
+      siteId: "site-1",
+      workAreaId: "tiny-1",
+      workOrderId: "w1",
+      observationEpochId: "epoch-2021",
+      submissionRef: "s1",
+      revision: 1,
+      artifactId: "art-1",
+      kind: "dsm",
+      lifecycleState: "SEALED",
+      declared: { fileName: "tile-2021.tif" },
+      observed: null,
+      inspection: {
+        outcome: "MEASURED",
+        raster: {
+          transform: [0, 1, 0, 10, 0, -1],
+          width: 100,
+          height: 100,
+          observedCrsIdentifier: "EPSG:5186",
+          observedCrsDigest: "dd",
+          observedVerticalReference: null,
+        },
+      },
+      ...overrides,
+    };
+  }
+
+  function factsFor(observations: ReturnType<typeof fact>[]) {
+    return {
+      siteId: "site-1",
+      authorizedWorkAreaIds: ["tiny-1"],
+      entryDefault: null,
+      observations,
+      analyses: [],
+    };
+  }
+
+  it("preserves the selected kind at another observation and keeps date-only precision verbatim", () => {
+    const observations = [
+      fact({ observationEpochId: "epoch-2021", assetRef: "dsm-2021", viewAssetRef: "dsm-2021" }),
+      fact({
+        observationEpochId: "epoch-2022",
+        assetRef: "dsm-2022",
+        viewAssetRef: "dsm-2022",
+        chronologyCandidate: false,
+        captureStartedAt: null,
+        captureEndedAt: null,
+        captureDate: "2022-08-24",
+      }),
+    ];
+    const catalog = [
+      catalogItem({ assetRef: "dsm-2021", observationEpochId: "epoch-2021" }),
+      catalogItem({ assetRef: "ortho-2021", kind: "ortho", observationEpochId: "epoch-2021", declared: { fileName: "o-2021.tif" } }),
+      catalogItem({ assetRef: "dsm-2022", observationEpochId: "epoch-2022", submissionRef: "s2", declared: { fileName: "tile-2022.tif" } }),
+      catalogItem({ assetRef: "ortho-2022", kind: "ortho", observationEpochId: "epoch-2022", submissionRef: "s2", declared: { fileName: "o-2022.tif" } }),
+    ];
+    const options = buildExploreCaptureOptions({
+      facts: factsFor(observations) as never,
+      workAreaId: "tiny-1",
+      catalogAssets: catalog as never,
+      selectedAssetRef: "dsm-2021",
+      currentKind: "dsm",
+      selectedEpochId: "epoch-2021",
+    });
+    expect(options.map((option) => option.assetRef)).toEqual(["dsm-2021", "dsm-2022"]);
+    // 날짜만 아는 관측은 정밀도 그대로 둔다 — 시각을 붙이지 않는다.
+    expect(options[1]!.label).toContain("날짜만 확인");
+    expect(options[1]!.label).toContain("시각 미상");
+  });
+
+  it("falls back to the observation representative with an honest note when the kind is absent", () => {
+    const observations = [
+      fact({ observationEpochId: "epoch-2021", assetRef: "dsm-2021", viewAssetRef: "dsm-2021" }),
+      fact({
+        observationEpochId: "epoch-2022",
+        assetRef: "ortho-2022",
+        viewAssetRef: "ortho-2022",
+        kind: "ortho",
+        chronologyCandidate: false,
+        captureStartedAt: null,
+        captureEndedAt: null,
+        captureDate: "2022-08-24",
+      }),
+    ];
+    const catalog = [
+      catalogItem({ assetRef: "dsm-2021", observationEpochId: "epoch-2021" }),
+      catalogItem({ assetRef: "ortho-2022", kind: "ortho", observationEpochId: "epoch-2022", declared: { fileName: "o-2022.tif" } }),
+    ];
+    const options = buildExploreCaptureOptions({
+      facts: factsFor(observations) as never,
+      workAreaId: "tiny-1",
+      catalogAssets: catalog as never,
+      selectedAssetRef: "dsm-2021",
+      currentKind: "dsm",
+      selectedEpochId: "epoch-2021",
+    });
+    expect(options[1]!.assetRef).toBe("ortho-2022");
+    expect(options[1]!.label).toContain("으로 둠");
+  });
+
+  it("keeps the server order instead of ranking a latest", () => {
+    const observations = [
+      fact({ observationEpochId: "epoch-2022", assetRef: "x-2022", viewAssetRef: "x-2022" }),
+      fact({ observationEpochId: "epoch-2021", assetRef: "x-2021", viewAssetRef: "x-2021" }),
+    ];
+    const options = buildExploreCaptureOptions({
+      facts: factsFor(observations) as never,
+      workAreaId: "tiny-1",
+      catalogAssets: [],
+      selectedAssetRef: null,
+      currentKind: null,
+      selectedEpochId: null,
+    });
+    expect(options.map((option) => option.assetRef)).toEqual(["x-2022", "x-2021"]);
   });
 });

@@ -85,6 +85,12 @@ export interface WindowedPixelViewerProps {
   observationHeading: string | null;
   /** 같은 화면 id 충돌 방지용 접두사(비교 모드의 두 칸 등). */
   idPrefix: string;
+  /** 탐색 첫 화면용 — 포착 표제·안내를 바깥 작업 막대가 맡을 때 true. */
+  slimHeader?: boolean;
+  /** 탐색 URL이 가리키는 정확한 층. 비교·낱창 보기의 로컬 선택과 구분한다. */
+  selectedAssetRef?: string | null;
+  /** 탐색에서 층을 바꿀 때 날짜 선택·Back·reload도 같은 원본을 가리키게 한다. */
+  layerSelectionHref?: string;
 }
 
 type PaintPhase =
@@ -453,6 +459,10 @@ function WindowedLayerView({
         />
       )}
 
+      {/* 낱창 도구·수동 설정은 펼침에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
+      <details className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">낱창 보기 · 새 창 준비</summary>
+        <div className="mt-2 flex flex-col gap-2">
       <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
       {readable.length === 0 && pending.length === 0 && (
         <p className="text-[12.5px] leading-5 text-ink-2">
@@ -659,6 +669,8 @@ function WindowedLayerView({
           </p>
         )}
       </div>
+        </div>
+      </details>
     </div>
   );
 }
@@ -676,10 +688,14 @@ export function SiteWindowedPixelViewer({
   workAreaCrs,
   observationHeading,
   idPrefix,
+  slimHeader = false,
+  selectedAssetRef = null,
+  layerSelectionHref,
 }: WindowedPixelViewerProps) {
-  const activeLayer = layers[0] ?? null;
+  const router = useRouter();
+  const activeLayer = layers.find((item) => item.assetRef === selectedAssetRef) ?? layers[0] ?? null;
   const [layerOverride, setLayerOverride] = useState<string | null>(null);
-  const layer = layers.find((item) => item.assetRef === layerOverride) ?? activeLayer;
+  const layer = layerSelectionHref ? activeLayer : layers.find((item) => item.assetRef === layerOverride) ?? activeLayer;
   const grid = layer?.inspectedRaster ?? null;
 
   return (
@@ -687,10 +703,12 @@ export function SiteWindowedPixelViewer({
       aria-label={`${WINDOWED_VIEWER_ADAPTER_LABEL}${observationHeading ? ` · ${observationHeading}` : ""}`}
       className="flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3"
     >
-      <header>
-        <h3 className="break-words text-[14px] font-bold">{observationHeading ?? WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">실제 파일의 준비된 창을 그대로 둡니다. 지도 재투영·보정을 하지 않습니다.</p>
-      </header>
+      {!slimHeader && (
+        <header>
+          <h3 className="break-words text-[14px] font-bold">{observationHeading ?? WINDOWED_VIEWER_ADAPTER_LABEL}</h3>
+          <p className="mt-1 text-[12px] leading-5 text-ink-2">실제 파일의 준비된 창을 그대로 둡니다. 지도 재투영·보정을 하지 않습니다.</p>
+        </header>
+      )}
 
       {layers.length > 1 && (
         <div className="flex flex-wrap gap-1" role="group" aria-label="자료 층 전환">
@@ -699,7 +717,14 @@ export function SiteWindowedPixelViewer({
               key={item.assetRef}
               type="button"
               aria-pressed={item.assetRef === layer?.assetRef}
-              onClick={() => setLayerOverride(item.assetRef)}
+              onClick={() => {
+                if (layerSelectionHref) {
+                  if (item.assetRef === layer?.assetRef) return;
+                  router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
+                } else {
+                  setLayerOverride(item.assetRef);
+                }
+              }}
               className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${
                 item.assetRef === layer?.assetRef ? "bg-sunk font-bold" : "text-ink-2"
               }`}
@@ -848,6 +873,7 @@ export function SiteWindowedPixelCompare({
             workAreaCrs={workAreaCrs}
             observationHeading={baselineHeading}
             idPrefix="windowed-baseline"
+            slimHeader
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
@@ -865,6 +891,7 @@ export function SiteWindowedPixelCompare({
             workAreaCrs={workAreaCrs}
             observationHeading={currentHeading}
             idPrefix="windowed-current"
+            slimHeader
           />
         </div>
       </div>

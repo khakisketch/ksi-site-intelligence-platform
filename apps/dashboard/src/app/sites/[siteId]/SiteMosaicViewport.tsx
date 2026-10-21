@@ -602,19 +602,29 @@ export function SiteMosaicViewport({
   const canFillNow =
     cover.ok &&
     (pendingFetchCount > 0 || (canRequest !== false && observedCrsDigest !== null && missingCount > 0));
+  // 준비된 출력도 실제 작업도 없으면 거대한 빈 지도 대신 현재 열람 상태를 말한다.
+  // 이는 표시 자리의 유무일 뿐, 자료 검사·감사·정량 적합성 판정이 아니다.
+  const showViewport = readable.length > 0 || fillTick > 0 || jobs.some((job) =>
+    job.assetRef === assetRef && (job.executionState === "QUEUED" || job.executionState === "RUNNING"),
+  );
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2">
-      <h4 className="text-[13px] font-bold">{MOSAIC_ASSEMBLY_HEADING}</h4>
-      <p className="text-[12px] leading-5 text-ink-2">{MOSAIC_ASSEMBLY_LABEL}</p>
-      <p className="text-[11.5px] leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
-      <p className="text-[11.5px] leading-5 text-ink-muted">{MOSAIC_VIEWPORT_NOTE}</p>
+      <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
 
       {!cover.ok && (
         <p className="text-[12px] leading-5 text-ink-2" role="status">{VIEWPORT_RESOLVE_COPY[cover.reason]}</p>
       )}
 
-      {cover.ok && geometry && (
+      {cover.ok && geometry && !showViewport && (
+        <p role="status" className="rounded-md border border-line bg-surface px-3 py-4 text-[12.5px] leading-5 text-ink-2">
+          현재 계정에 준비된 표시 자료가 없습니다. 등록 자료가 없다는 뜻은 아닙니다.
+          {canRequest
+            ? " 아래에서 표시할 자료의 준비를 요청할 수 있습니다."
+            : " 표시 준비는 권한 있는 담당자에게 요청하세요. 자료 정보는 아래 상세에서 확인할 수 있습니다."}
+        </p>
+      )}
+      {cover.ok && geometry && showViewport && (
         <>
           <div className="overflow-auto rounded border border-line bg-sunk/30">
             <div className="relative inline-block" style={{ minWidth: "100%" }}>
@@ -659,17 +669,7 @@ export function SiteMosaicViewport({
               <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>
             </>
           )}
-          <details className="text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer font-semibold">창별 상태 {paintedCount}/{cells.length}</summary>
-            <ul className="mt-1 flex flex-col gap-1">
-              {cells.map((cell) => (
-                <li key={cell.key} className="text-[12px] leading-5 text-ink-2">
-                  <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
-                  {` · ${cell.detail}`}
-                </li>
-              ))}
-            </ul>
-          </details>
+          <p className="text-[11.5px] leading-5 text-ink-muted">{MOSAIC_VIEWPORT_NOTE}</p>
           {paintError && (
             <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
               {paintError}
@@ -704,20 +704,22 @@ export function SiteMosaicViewport({
           {`준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요. 실패한 창은 빈칸으로 둡니다.`}
         </p>
       )}
-      <p className="flex flex-wrap gap-2">
-        <ResponsiveActionBoundary
-          action="SPATIAL_DATA_REQUEST"
-          reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요. 준비된 창 보기는 모바일에서도 할 수 있습니다."
-        >
-          <button
-            type="button"
-            className="btn btn-primary min-h-11"
-            onClick={() => setFillTick((tick) => tick + 1)}
-            disabled={!canFillNow || requestBusy}
+      <div className="flex flex-wrap gap-2">
+        {canFillNow && (
+          <ResponsiveActionBoundary
+            action="SPATIAL_DATA_REQUEST"
+            reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요. 준비된 창 보기는 모바일에서도 할 수 있습니다."
           >
-            {missingCount > 0 ? `이어 보기 채우기 (모자란 창 ${missingCount}개)` : "이어 보기 채우기"}
-          </button>
-        </ResponsiveActionBoundary>
+            <button
+              type="button"
+              className="btn btn-primary min-h-11"
+              onClick={() => setFillTick((tick) => tick + 1)}
+              disabled={requestBusy}
+            >
+              {missingCount > 0 ? `이어 보기 채우기 (모자란 창 ${missingCount}개)` : "이어 보기 채우기"}
+            </button>
+          </ResponsiveActionBoundary>
+        )}
         <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
           준비 상태 다시 확인
         </button>
@@ -729,7 +731,7 @@ export function SiteMosaicViewport({
         >
           대기 취소
         </button>
-      </p>
+      </div>
       {(!canRequest || !observedCrsDigest) && (
         <p className="text-[12px] leading-5 text-ink-2">
           새 창 준비 요청을 만들 권한 또는 위치 기준 확인값이 없어 이미 준비된 창만 이어 봅니다. 필요한 창과 용도를 담당자에게 알려 주세요.
@@ -749,6 +751,22 @@ export function SiteMosaicViewport({
         <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
         {". 이어 붙인 화면은 하나의 검증된 자료가 아니며, 정확도 평가·측량·정산 근거가 아닙니다."}
       </p>
+      <details className="text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">이어 보기 조건·창별 상태</summary>
+        <div className="mt-1 flex flex-col gap-1">
+          <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
+          <p className="leading-5">{MOSAIC_ASSEMBLY_LABEL}</p>
+          <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
+          <ul className="mt-1 flex flex-col gap-1">
+            {cells.map((cell) => (
+              <li key={cell.key} className="text-[12px] leading-5">
+                <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
+                {` · ${cell.detail}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </details>
     </div>
   );
 }

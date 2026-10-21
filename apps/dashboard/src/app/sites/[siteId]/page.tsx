@@ -295,6 +295,24 @@ export default async function SiteDetailPage({
   const rawAnalysisId = wantSpatial && mode === "results" ? firstValue(query.analysisId) : undefined;
   let explicitResult: ExplicitResultResolution | null = null;
   let explicitDetail: AnalysisView | null = null;
+  // 결과 모드의 첫 기록이 '무엇과 무엇을 비교했나'를 말할 수 있게, 목록에
+  // 없는 정확한 선택자를 기존 상세 경로로 한 건만 읽는다. N+1 전체 조회를
+  // 하지 않으며, 실패·불일치는 조용히 내려놓고 목록 렌더로 둔다(막지 않는다).
+  let leadDetail: AnalysisView | null = null;
+  if (facts && mode === "results" && rawAnalysisId == null && selectedWorkAreaId) {
+    const areaItems = analysesPage?.items.filter((item) => item.workAreaId === selectedWorkAreaId) ?? [];
+    const leadId = areaItems[0]?.analysisId ?? null;
+    if (leadId) {
+      try {
+        const detail = await getAnalysis(site.siteId, leadId);
+        if (detail.analysisId === leadId && detail.siteId === site.siteId && detail.workAreaId === selectedWorkAreaId) {
+          leadDetail = detail;
+        }
+      } catch {
+        leadDetail = null;
+      }
+    }
+  }
   if (facts && rawAnalysisId != null) {
     // 목록 항목에는 정확한 선택자가 없어 상세(Core 기존 경로)로 복원한다.
     // 실패하면 막는다 — 최신·다른 기록으로 바꾸지 않는다.
@@ -364,6 +382,7 @@ export default async function SiteDetailPage({
           comparison={comparison}
           explicitResult={explicitResult}
           explicitDetail={explicitDetail}
+          leadDetail={leadDetail}
           scopedCompareHref={selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId) ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}` : `${sitePath}/analysis`}
           preparedJobs={preparedJobs}
           jobsState={preparedJobsState}

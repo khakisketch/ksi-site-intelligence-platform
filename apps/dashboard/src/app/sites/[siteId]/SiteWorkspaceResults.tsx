@@ -10,7 +10,32 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { formatNumberKo } from "@/lib/number-format";
 import { analysisStateLabel } from "./SiteSpatialOverview";
 
-function RecordCard({ item, lead = false }: { item: AnalysisListItem; lead?: boolean }) {
+function suitabilityLimitCopy(item: Pick<AnalysisListItem, "suitabilityState">): string {
+  // 불확도 null에서 정확도 상태를 추론하지 않는다. Core의 적합성 판정 그대로 둔다.
+  switch (item.suitabilityState) {
+    case "PROVISIONAL_ACCURACY_UNVERIFIED":
+      return "정확도 평가는 아직 확인되지 않았습니다.";
+    case "EVALUATED":
+      return "분석 조건 확인 결과가 있습니다.";
+    case "BLOCKED":
+      return "분석을 진행할 수 없는 조건입니다.";
+    case "REMEDIATION_REQUIRED":
+      return "자료 보완이 필요합니다.";
+    case "REASSESSMENT_REQUIRED":
+      return "사용 조건 재확인이 필요합니다.";
+    default:
+      return "분석 조건 확인이 필요합니다.";
+  }
+}
+
+function RecordCard({ item, lead = false, pairLine = null, pairUnknown = false }: {
+  item: AnalysisListItem;
+  lead?: boolean;
+  /** 첫 기록의 실제 비교 구간 한 줄 — 없으면 두지 않는다(추측 금지). */
+  pairLine?: string | null;
+  /** 원래 입력을 현재 목록에서 확인하지 못했을 때 true. */
+  pairUnknown?: boolean;
+}) {
   // 결과 모드의 첫 화면은 "무엇이 얼마나 바뀌었나"다. 수치는 이미 Core가
   // 결정해 기록한 값이므로 그대로 옮기고 그 옆에 한계를 함께 둔다. 여기서
   // 다시 계산하거나 수치를 새로 만들지 않는다.
@@ -22,6 +47,12 @@ function RecordCard({ item, lead = false }: { item: AnalysisListItem; lead?: boo
       기록 {formatKoreanDateTime(item.createdAt, { dateStyle: "medium", timeStyle: "short" })}
       {item.limitationCount > 0 ? ` · 제한 ${item.limitationCount}건` : " · 기록된 제한 없음"}
     </p>
+    {pairLine && (
+      <p className="mt-1 break-words text-[12px] leading-5 text-ink-1">{pairLine}</p>
+    )}
+    {pairUnknown && (
+      <p className="mt-1 text-[12px] leading-5 text-ink-2">원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>
+    )}
     {metrics ? (
       <dl className="mt-2 grid grid-cols-3 gap-2 border-y border-line py-2">
         <div>
@@ -43,17 +74,22 @@ function RecordCard({ item, lead = false }: { item: AnalysisListItem; lead?: boo
       </p>
     )}
     {metrics && (
-      <p className="mt-1 text-[12px] leading-5 text-ink-2">
-        {metrics.uncertaintyM3 === null
-          ? "정확도 평가는 아직 확인되지 않았습니다. 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다."
-          : `불확도는 ±${formatNumberKo(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
-      </p>
+      <>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">
+          {suitabilityLimitCopy(item)} 이 값은 물량 정확도 보증·측량 승인·정산 근거가 아닙니다.
+        </p>
+        {metrics.uncertaintyM3 !== null && (
+          <p className="mt-1 text-[12px] leading-5 text-ink-2">
+            {`불확도는 ±${formatNumberKo(metrics.uncertaintyM3)} m³로 기록되어 있습니다.`}
+          </p>
+        )}
+      </>
     )}
     <p className="mt-1 text-[12px] leading-5 text-ink-2">
       이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
     </p>
     <p className="mt-1">
-      <Link href={item.analysisHref} className="tap-target inline-block text-[12px] underline">분석 기록 열기</Link>
+      <Link href={item.analysisHref} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
     </p>
   </article>;
 }
@@ -74,6 +110,7 @@ export function SiteWorkspaceResults({
   analysesKnown,
   explicitResult,
   explicitDetail,
+  leadDetail,
   facts,
   canCreateAnalysis,
   scopedCompareHref,
@@ -85,6 +122,8 @@ export function SiteWorkspaceResults({
   explicitResult: ExplicitResultResolution | null;
   /** 명시적 링크가 가리킨 실제 기록 — 준비 상태에서만 싣는다. 지어내지 않는다. */
   explicitDetail: AnalysisView | null;
+  /** 결과 목록 첫 기록의 상세(선택자 복원용, 1건만) — 없으면 조용히 둔다. */
+  leadDetail: AnalysisView | null;
   facts: WorkspaceServerFacts;
   canCreateAnalysis: boolean;
   scopedCompareHref: string;
@@ -107,6 +146,23 @@ export function SiteWorkspaceResults({
         calendarDate: (date) => formatKoreanDate(date),
       })}`
       : null;
+  // 목록 첫 기록의 실제 비교 구간 — 상세의 원래 선택자를 현재 목록에서
+  // 찾는다. 없으면 추측하지 않고 그대로 둔다고만 밝힌다.
+  const leadItem = !explicitReady && areaAnalyses && areaAnalyses.length > 0 ? areaAnalyses[0]! : null;
+  const leadMatched = leadItem && leadDetail && leadDetail.analysisId === leadItem.analysisId
+    ? matchAnalysisSelectors(facts, {
+      analysisId: leadDetail.analysisId,
+      workAreaId: leadDetail.workAreaId,
+      baseline: leadDetail.baseline,
+      current: leadDetail.current,
+    })
+    : null;
+  const leadPairLine = leadMatched
+    ? [matchedLine("기준", leadMatched.baseline), matchedLine("현재", leadMatched.current)]
+      .filter((line): line is string => line !== null)
+      .join(" · ") || null
+    : null;
+  const leadPairUnknown = Boolean(leadItem && leadDetail && leadDetail.analysisId === leadItem.analysisId && leadPairLine === null);
   return <div className="flex flex-col gap-3">
     <h2 className="text-[14px] font-bold">결과와 근거{areaLabel ? ` · ${areaLabel}` : ""}</h2>
 
@@ -146,7 +202,7 @@ export function SiteWorkspaceResults({
           </p>;
         })()}
         <p className="mt-1">
-          <Link href={`${sitePath}/analysis?analysisId=${encodeURIComponent(explicitReady.analysisId)}`} className="tap-target inline-block text-[12px] underline">분석 기록 열기</Link>
+          <Link href={`${sitePath}/analysis?analysisId=${encodeURIComponent(explicitReady.analysisId)}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
         </p>
       </article>
     ) : !analysesKnown || areaAnalyses === null ? (
@@ -160,7 +216,7 @@ export function SiteWorkspaceResults({
     ) : (
       <div className="flex flex-col gap-2">
         {/* 첫 화면은 가장 최근 기록 하나다. 나머지는 겹쳐 두지 않고 펼침에 둔다. */}
-        <RecordCard item={areaAnalyses[0]!} lead />
+        <RecordCard item={areaAnalyses[0]!} lead pairLine={leadPairLine} pairUnknown={leadPairUnknown} />
         {areaAnalyses.length > 1 && (
           <details className="rounded-lg border border-line px-4 py-3">
             <summary className="tap-target cursor-pointer text-[13px] font-semibold">이전 기록 {areaAnalyses.length - 1}건</summary>
