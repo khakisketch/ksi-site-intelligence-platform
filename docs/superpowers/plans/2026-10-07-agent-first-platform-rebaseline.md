@@ -5449,3 +5449,45 @@ with 429-retry; the contract's §4 wording about a "saturated lane (2 active / 8
 (N=2 concurrent; 4 windows / 2 waves for a full 1022x915 cover). The LOD pyramid table (GAP-03), the
 registration-method owner, the cache service/TTL, the durable saved-work store and the GAP-05 purpose
 split remain open and unowned.
+
+#### Display/LOD implementation units 1–2 delivered (identity + viewport/scheduler) (2026-10-21)
+
+Unit 1 (identity layer) committed in 99d3cda1 — see the earlier entry for the contract names, the
+pure-function Core binding, the source-identity stability proof and the no-composite-flag test.
+Unit 2 (Console viewport→window resolution + scheduler + composition planner + cache) committed
+d40f0bf7. New pure libs: apps/dashboard/src/lib/spatial-display-viewport.ts (viewport→window set),
+spatial-display-scheduler.ts (≤2 concurrent, stable keys, 429 back-off, cancel-on-supersede),
+spatial-display-composition.ts (receipt-verified assembly + gap states), spatial-display-cache.ts
+(per-principal cache with rights re-check on every serve) + 4 test files (33 focused tests).
+- Resolution guarantees: viewport ∩ source footprint (outside → typed NO_COVERAGE, never guessed);
+  cell-exact pixel range using the same stable-index rule as Core's `_plan`; the split lines are fixed
+  at the SOURCE ORIGIN (never viewport-snapped) so the same area always resolves to the same set;
+  per-window `actualBounds` from integer indices. Measured 1022×915 at ≤512 resolves to EXACTLY
+  (0,512,0,512), (512,1022,0,512), (0,512,512,915), (512,1022,512,915) — shared integer edges, pixel
+  sum 935,130, each ≤262,144 px (otherwise OVER_PIXEL_CAP). One real bug was found and fixed during
+  testing: split lines computed with `ceil(c0/maxDim)` collapsed when `c0` sat exactly on a multiple
+  (full cover returned 1 window) — now `floor(c0/maxDim)*maxDim + maxDim`.
+- Scheduler honours the MEASURED lane behaviour, not the contract's earlier queue wording: ≤2
+  concurrent issues; an in-flight key is JOINED (no duplicate POST); a completed key replays from the
+  cached result with no new PREPARE; the retryable 429 gets bounded back-off (1s·2^attempt ≤8s,
+  maxRetries 3) with the named state "재시도 중(n/m) · 순차 처리 중"; a non-empty set shows
+  "준비 중 A개 · 기다리는 창 B개 · 순차 처리 중"; queued keys outside the new set are abandoned while
+  active ones finish and stay cached (pan-back is a cache hit). Stable keys are
+  `stablePrepareKey(assetRef,[c0,c1,r0,r1],purpose)` and `stableIdempotencyKey` (`sdisp-v1-` + 32 hex,
+  inside the BFF's allowed pattern). `yScale=t[4]`, `yOrigin=t[5]` throughout.
+- Composition places ONLY receipt-verified windows (unverified → a `RECEIPT_MISMATCH` gap), reports
+  overlaps as errors (never blends), and turns absent cover into explicit reasoned gaps; it is labelled
+  "검증된 준비 창의 나란한 배치 — 이음새 보정·재표본화 없음" with the display-assembly-not-dataset
+  note and `imageSmoothingEnabled=false`.
+- Cache is per (stableKey, grant, policy, purpose, principalHash) and EVERY serve re-checks
+  grant-live → not-revoked → purpose → same-principal → receipt-match, evicting on any failure; a
+  foreign principal maps to the exact existing no-disclosure copy.
+- Verification: Dashboard 168 files/1620 tests pass, tsc clean, eslint 0 errors (1 pre-existing warning
+  in unrelated p4-cleanup-evidence). No product backend/contract/policy/worker change in this unit.
+Remaining for the display path: the LOD pyramid table (GAP-03, no thresholds invented), the multi-window
+PAINT (the resolver/scheduler/composition planner exist; the viewer still paints one window — the next
+unit), a durable cache service + TTL-vs-retention labelling, the `PairRegistrationV1` method owner and
+who may assert REGISTERED, the GAP-05 purpose split and cache threat model, and the durable saved-work
+store. The audit-recovery track remains untouched by product code (verified: no product module imports
+the recovery/incident artifacts), so approving the recovery design still grants no journal authority and
+nothing on this path depends on it.
