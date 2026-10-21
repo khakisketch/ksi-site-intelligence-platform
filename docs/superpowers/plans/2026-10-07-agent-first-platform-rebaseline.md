@@ -6341,3 +6341,203 @@ owned frontend images remain for rollback. Only user-owned untracked.playwright-
 No concrete in-scope implementation or verified-target blocker remains. The approved whole-Console
 IA/UX unit is complete; no further feature/LOD/cache work, new customer study or unrelated redesign
 is silently selected. Future customer-comprehension/scale/device evidence remains separate, not invented.
+
+### 2026-10-22 — Human reports loss of uploaded-data thumbnails at Site entry
+
+Human: “왜 업로드한 자료 썸네일? 그게 없어졌어 현장 볼 때”. This corrects the prior interpretation
+that text-first default/no image region was sufficient. Preserve visual recognition of actual data;
+removing an empty decorative cover was not permission to remove meaningful preview access. Do not
+turn this feedback into a universal preference for giant images or restore fake covers as real uploads.
+
+Read-only current860eeced observation: /sites defaults to dense table, no img/canvas; card source has no
+image region. Site bare/explicit2021 entry still draws actual Floreat pixels through the existing
+guarded output path (initial captures are progressive loading, not missing uploads). Core8074 ready/
+running, source-data deletion not observed. Existing catalog remains metadata-only and grants no bytes.
+
+Requirement IDs: REQ-UX-101; SDP-REQ-01/03/06; latest visual-recognition feedback. Owner module:
+apps/dashboard Site entry/list/card and bounded read-only preview presentation. Acceptance: real,
+currently authorized prepared data visible as a thumbnail/preview on Site entry where available;
+fresh-user cards/visual entry default, explicit saved list preference preserved; compact actual cue in
+list/mobile; thumbnail click opens exact WorkArea/asset/date version; no decorative fake photo/full-Site
+coverage/accuracy or invented latest capture; no available own output means honest preview-unavailable,
+not missing registered data. Preserve search/sort/paging/draft/roles, existing Site viewer and no auto jobs.
+Contracts affected: no Core API/schema, new derivative producer, persisted cache/thumbnail pipeline,
+permission/grant/retention change. Reuse existing currently requester-owned COMPLETED/AVAILABLE prepared
+output metadata and SAME guarded file GET+size/SHA/decoder. Catalog alone never authorizes bytes; don't
+read raw sealed artifacts/object keys or borrow another requester's window for display. No PREPARE/
+inspection/analysis POST or worker start merely to populate thumbnails. Bound metadata fanout/visible
+page/decodes; no source/coordinate/WorkArea calculation changes. INV-020/024/040/051/053/060/061 preserved.
+Reference assets: current observations /tmp/opencode/ksi-site-preview-feedback-20261022/; existing real
+prepared-output preview/Mosaic decoder and source/date/version helpers, no new external assets.
+Adoption: visual recognition restored with actual lawful pixels, no placeholder map/stock photo;
+partial outputs labelled partial; viewer/denied/unavailable remain distinct. Files: Site list entry,
+cards/dense/mobile, small bounded server-preview selector/client renderer and focused tests; existing
+receipt renderer may gain a narrowly scoped thumbnail presentation only if needed. Home D3 image
+authority is unchanged and not automatically broadened. No global redesign/LOD/producer or Core change.
+Tests: metadata selection/budget/own-source/scope/no-output, guarded bytes/SHA/403/404/auto-write0,
+card/list prefs/query/links, actual private default card/list/mobile and exact preview→Site transition,
+type/lint/full Dashboard/locked image and related existing E2E. HIL: none; physical inputs/SR/customer
+study separate. License/data: existing public-data attribution; no new egress/storage. Rollback:
+owned frontend860eeced; preserve current UI/context work, journals/env/S3/inspector state and user files.
+
+Additional read-only fact at this feedback: settled Site now paints3/4, not the older verification's4/4.
+Existing own request detail identifies top-left job `sdj-v1-6ff0ab18-d223-451a-9a49-b2e4541aa7e2` as
+COMPLETED / **RETENTION_EXPIRED**, while the other3 original grid jobs remain AVAILABLE. This is a
+separate finite prepared-output lifecycle event, not upload deletion or authority to extend retention.
+Current metadata observation is `current-window-availability.json`; first min-pixel captures were
+progressive and must not be called full coverage. Preview selector must exclude expired outputs and
+label any surviving partial window honestly. No re-preparation/TTL change/cache retention to force a
+thumbnail. An always-available, cross-requester registered-asset thumbnail producer/access contract is
+not silently created by this UI correction; report that capability limit if it remains necessary.
+
+### 2026-10-22 — Human rejects the button-first spatial interaction
+
+Human says the UI is still difficult and asks why the up/down/left/right and plus/minus buttons are
+there, saying button operation is hard/unfamiliar. This corrects the prior focus on fitting all7buttons
+into the viewport. They were fallback controls, not a reason to make people learn an unusual primary
+interaction. Do not generalize this into a ban on every map zoom control; direct manipulation must be
+the default and alternatives discoverable without dominating or obscuring actual data.
+
+Requirement IDs: REQ-UX-101; SDP-REQ-01/02/05/06; latest direct-manipulation feedback. Owner module:
+Dashboard shared prepared-pixel viewport (mosaic/single-window/receipt display). Acceptance: source
+follows a desktop drag continuously at pointer speed; mouse/trackpad wheel over the picture zooms
+without prerequisite focus/Ctrl or2x jumps and preserves the point under the pointer; familiar tested
+touch pan/pinch where implemented; visible fit/reset/large-view affordance but no primary7-arrow/zoom
+strip; focused keyboard alternative retained; concise truthful guidance. Page scroll outside the
+picture and browser accessibility not globally disabled. Full/partial data, source/date/version,
+rights/size/SHA, masks/NoData and frozen calculation/WorkArea untouched; every gesture/root control
+uses already-lawfully decoded buffers and causes no file preparation, byte fetch burst or API writes.
+Contracts affected: none; display geometry only, not geographic/measurement/flight coordinates or
+new raster/LOD/producer authority. INV-020/024/040/051/053/060/061 preserved through source-bound
+presentation and current Core guards. Reference assets: current860 viewport/UI evidence plus direct
+feedback; existing installed interaction libraries/patterns only, no new font/icon/tile/remote assets.
+Adoption: direct mouse/touch manipulation first, concise on-demand help and keyboard fallback; no
+invented empty pixels, fake basemap, unimplemented gesture hints or hidden focusable viewer controls.
+Files: display-view/gesture helper and shared viewport/control presentation; Mosaic/Windowed/Receipt
+view integration and focused regressions. Home/global nav/list preview UI source ownership separate.
+Tests: continuous drag BEFORE pointer-up,1:1 motion, anchored wheel from unfocused hover, clamp/reset/
+pointercancel, automated touch/pinch if supported (not physical touch evidence), keyboard, no extra
+GET/POST/polygon/input changes; actual private desktop/mobile renders and whole-flow regression.
+HIL: none; physical touch/SR/customer testing remains separate. License/data: reuse current packages
+after license compatibility check; no new egress/storage. Rollback: ownedfrontend860; preserve all
+protected journals/env/S3/inspector state, byte-policy expiry and user files.
+
+Independent owner A now exclusively owns shared interaction files while existing B continues Site
+thumbnail/entry correction. B must not edit Mosaic/Windowed/Receipt/control/display-state modules;
+A must not edit Sites/card/list/preview route/descriptor. Main integrates both current feedback units
+and reviews actual combined renders. Retention-expired outputs stay unavailable; no jobs/TTL changes
+to make the interaction or thumbnail look complete.
+
+Current input baseline was measured on real860 data: unfocused wheel over the picture leaves rendered
+width580.8 unchanged; after explicit zoom, dragging100CSSpx moves the image51.2CSSpx during the gesture
+because the wide gray frame1134px was used instead of fitted picture580.8px. Existing code did update
+during pointermove; the defect was normalization plus a hidden focus/Ctrl prerequisite, not total absence
+of drag. A owns a shared direct viewport and source-bound tests; Main flagged fitted-anchor/pinch-centroid
+geometry and overlay-button capture for correction before accepting actual renders.
+
+B returned a standalone passive Site preview unit using the existing guarded prepared-output file BFF,
+with default cards (saved list retained), compact row cues and exact source/area links. Primary source
+review required explicit partial-window labels, DTO/job/receipt/site/area binding validation, metadata+
+decode chain concurrency/abort bounds and accessible attribution. Successful descriptor caching was
+removed; primary also removed same-Site shared in-flight lookup reuse so a new mount/session never
+inherits another mount's abort or old current-rights result. A regression forces an old canceled lookup
+to finish after a new mount and verifies fresh current metadata/no inherited bytes. Declared GSD is
+labelled submitted, not measured. No persistent thumbnail/rights cache or source-byte authority added.
+All representative prepared windows are labelled partial; absent preview is not absence of registered
+data. A and B own separate files and have no permission to start jobs, change retention or recover the
+shared inspector incident. Combined rendered acceptance remains pending, not established by unit counts.
+
+Final-regression correction plan (same requirements/owner/invariants above): isolated four-spec run
+returned98pass/24expectedskip/2fail. Both failures were the newly added assertion treating the seed
+profile's unmounted spatial-data-requests route as a successful empty lookup. Original trace and Core
+log show404 for that route and actual BFF200 `{available:false,reason:"unknown"}`; rendered cards
+correctly say the preview could not be checked, not that data or output is absent. Keep the product
+and fixture unchanged. Change only `e2e/sites-view-modes.spec.ts` to require the exact BFF unknown
+response plus the same card's unknown explanation, no confirmed-empty copy and no fabricated canvas.
+Preserve all124 cases, fixture/viewport skips and empty-success unit coverage. Rerun the existing
+isolated suite with credential scrub/no-sync/offline, then confirm3230/8032/9030 teardown. No Core,
+contract, license/data, HIL, security, retention or runtime change; rollback is this assertion diff.
+
+Incomplete-rule follow-up found a real caption issue, not a clean accessibility certification:
+same-build axe cannot resolve three photo-gradient contrast nodes. Primary read actual390/768/1024/
+1440 renders and sampled text-free backgrounds over each actual text range. Conservative white-text
+minimum contrast is2.38–4.14 for source/partial captions (date lines mostly exceed4.5); the gradient
+is not reliable over bright imagery, and the `shrink-0` metadata line clips on phone. This affects
+required source/partial/date recognition, so fix it rather than suppress the incomplete nodes.
+
+Requirement IDs: REQ-UX-101, SDP-REQ-01/03/06 (same approved correction). Owner module: Dashboard
+passive Site preview caption. Acceptance: source/partial/date/submitted precision stay readable on real
+photo at all four target widths, contrast>=4.5:1, no clipped metadata or fake pixels; exact link,
+permissions and no-auto-job behavior unchanged. Contracts affected: none. Reference assets: current
+94925ba4 renders and `contrast-observations.json`/`contrast-samples.json`, not an unrelated visual style.
+Adoption: use the existing solid `bg-accent`/`text-accent-on` pair for the compact caption instead of a photo-dependent
+gradient, allow metadata to wrap; no new components/assets/fonts/dependencies or effects. Files to
+change: SitePreviewThumb.tsx and its focused regression only. Tests: focused/full Dashboard, type/lint,
+locked build, actual current card/list/phone/link and contrast/a11y check; unaffected direct-input and
+whole-journey witnesses remain valid by unchanged-source comparison. HIL: none. License/data: no new
+access/storage/egress. INV-020/024/040/051/053/060/061 enforcement unchanged through the same exact
+guarded read/source labels; this is caption CSS only. Rollback: owned94925ba4 image/inverse CSS diff.
+Wait for the active source-reading isolated regression to finish before editing its live source.
+No new inspection/preparation worker, retention extension or shared-audit repair is authorized.
+
+#### Combined feedback — delivered actual-target verification, 2026-10-22
+
+Final code **bd40df2a** is running on the existing private10010 → task-owned labelled frontend3243 →
+durable Core8074/issuer9042. Source commits: b0830257 (real visual entry/shared direct viewport),
+94925ba4 (native SVG reset guard), bd40df2a (reliable caption contrast/wrapping and exact unknown-state
+regression). Only the owned frontend was replaced; Core ready=true, private login200 and prior owned
+images are retained for rollback. No product schema/API, source/accuracy authority, grant, retention,
+AI egress, external tiles/CRS, worker, shared inspector repair or customer production change.
+
+| Approved task outcome | Current implemented result / evidence |
+|---|---|
+| Recognize a Site from actual data | Fresh cards default, explicit saved list choice retained; actual guarded pixels on card/list/phone. Current decoded window510×512/259642opaque pixels displays452×254,54×42 and332×186 respectively. Synthetic Site never borrows coast imagery; viewer never borrows another requester's output. |
+| Open the previewed observation | Click targets its exact workAreaId+assetRef. Partial window, date-only/unknown time, revision, submitted GSD and accessible attribution remain tied to that source; no whole-Site/accuracy/latest-capture inference. |
+| Familiar direct manipulation | No primary7-arrow/+-strip. One shared fitted viewport for Mosaic/Single/Receipt, direct live mouse/pen/touch geometry, unfocused cursor-anchored wheel, on-demand help/focused keyboard and a small corner fit button. Actual60px drag moves image59.98px before mouseup (old100px moved51.2). Actual SVG-button reset works. |
+| Preserve the data while exploring | Off-center wheel anchor stays within2CSSpx, source dimensions/hash unchanged, extra byte reads0 and automatic write attempts0. Existing partial/NoData/mask, rights/lifecycle, WorkArea and frozen calculation selectors remain separate from display transforms. |
+| Read the preview information | Gradient's real2.38–4.14 contrast issue corrected with existing solid accent/on pair; all4actual widths390/768/1024/1440 have uncut text ranges. Sampled minimum8.45:1 (normal16.14). Real photographic cue remains visible; no new decorative asset. |
+| Keep working product context | Final bd40 actual whole-journey checks preserve Home→exact priority record,2022DSM+WorkArea palette/Header roundtrip, search cancellation/focus, bare/area-only links, separate synthetic800m3 and saved non-field review, observation vs received work, account/logout, external-history alias and invalid-scope closure. |
+
+Final actual `direct-input.json`, `previews.json`, `page-gestures.json`, `whole-journey.json`,
+`contrast-observations.json` and `a11y-details.json` all identify bd40df2a,oktrue,zero intercepted
+product-write attempts and zero browser errors. Primary personally opened final card/list/phone,
+four-width captions, desktop wheel and phone pinch/fit, exact stored review and settled2022DSM
+materials images. The first materials capture was a transition skeleton, not accepted settled evidence;
+its replacement waits for actual registered-list/selected-data headings and2022 content before capture.
+Older949 four-viewports and unaccepted b083 diagnostics remain labelled, never relabelled final.
+
+Touch pan/pinch/double-tap2x, outside-image page scroll0→285 and native-selection keyboard handling
+passed CDP input simulation. This is not physical touch, SR or real-customer research. Final limited
+axe A/AA-tag checks: Sites0violations/0incomplete; settled Space0violations/one canvas-backed
+contrast incomplete. Primary manually reviewed the actual missing-cell label: RGB78/83/89 on sampled
+RGB250/250/250 is7.44:1. The original incomplete is retained, not suppressed into blanket compliance.
+
+Final locked image build and **182files/1797tests** pass; host tsc/changed ESLint clean; mechanical
+detector[]. Final four-spec existing isolated browser suite on committed bd40: **100passed,
+24expected viewport/fixture skips,0failed**, no automatic golden updates. The original2failed
+assertions and screenshots are preserved. Exact BFFunknown+same-card explanation/no-fake-canvas
+replace the incorrect successful-empty assumption; successful-empty coverage remains in unit tests.
+All124 cases, bounds/scope/rights/race/search/paging/no-write intent remain. Credentials scrubbed,
+UV no-sync/offline, fresh seed state;3230/8032/9030 listeners absent after teardown. No product8074/S3
+or protected shared runtime used by the fixture suite. All14original Core journal hash prefixes
+rechecked intact; legitimate append-only current-state/audit events are not rewritten or truncated.
+
+Evidence root `/tmp/opencode/ksi-visual-direct-entry-20261022/`; durable copy with original feedback,
+input baseline, actual final witnesses, rejected/diagnostic states and SHA manifest:
+`~/.local/share/ksi-product-use-20261021/visual-direct-entry-bd40df2a/`. This is verification evidence,
+not a thumbnail serving cache or a source-byte grant. User-owned untracked.playwright-cli is untouched.
+
+**Explicit remaining limits:** current prepared source is3/4 because the top-left job is retention-
+expired, not because the uploaded artifact was deleted. No job is automatically recreated, TTL/grant
+extended or another actor's pixels substituted. The real canonical sanitized-display references remain
+null/pending in both Floreat submissions; an always-present/all-actor upload-thumbnail producer is
+**not implemented or verified** by this correction. The separate shared inspector audit incident stays
+unresolved/protected, its new worker stopped. Producer work/recovery is a genuine separate boundary,
+not quietly authorized by UI feedback. Physical input/SR/customer studies, real customer IdP/data,
+public production/TLS and field/settlement accuracy remain unverified/external as before.
+
+The bounded UI correction is implemented and verified in the actual product within current output
+availability; no further concrete UI defect remains from this review. This does not close the product
+slice, certify mature commercial UX/competitor equivalence, establish stable preview production or
+declare the whole platform/customer/field gates complete. Stop this refinement rather than silently
+selecting a new producer, LOD/cache, unrelated redesign or shared-runtime repair.
