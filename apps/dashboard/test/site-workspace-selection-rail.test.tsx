@@ -57,14 +57,14 @@ describe("workspace selection rail", () => {
 
   it("keeps work-area management in the shared rail in every viewer mode", () => {
     for (const mode of ["explore", "compare", "results"] as const) {
-      const { container, unmount } = render(canvas({ mode }));
+      const { unmount } = render(canvas({ mode }));
       const rail = screen.getByRole("complementary", { name: "공간 보기 선택" });
       const link = rail.querySelector('a[href*="/work-areas"]')!;
       expect(link.textContent).toBe("작업구역 관리");
       expect(link.getAttribute("href")).toBe("/sites/site-1/work-areas?workAreaId=area-1");
       expect(rail.textContent!.indexOf("작업구역")).toBeLessThan(rail.textContent!.indexOf("관측 시점"));
       expect(rail.textContent!.indexOf("관측 시점")).toBeLessThan(rail.textContent!.indexOf("표시 레이어"));
-      expect(container.querySelector('[aria-label="공간자료 뷰어"]')).toBeTruthy();
+      expect(screen.getByRole("region", { name: "공간자료 뷰어" })).toBeTruthy();
       unmount();
     }
   });

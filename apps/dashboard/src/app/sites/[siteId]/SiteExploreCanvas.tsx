@@ -151,7 +151,7 @@ export function SiteExploreCanvas({
       </div>
       {actions && <div className="min-w-0 border-t border-line pt-3 [&>nav]:flex-row [&>nav]:flex-wrap [&>nav]:items-center lg:[&>nav]:flex-col lg:[&>nav]:items-start">{actions}</div>}
     </aside>
-    <div aria-label="공간자료 뷰어" className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface lg:col-start-2 lg:row-start-1">
+    <div role="region" aria-label="공간자료 뷰어" className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface lg:col-start-2 lg:row-start-1">
       {toolbar && <div className="border-b border-line bg-surface p-2">{toolbar}</div>}
       <div className="flex min-h-64 min-w-0 flex-col gap-3 p-3 lg:min-h-[60dvh]">{children}</div>
     {coverageNote && (
