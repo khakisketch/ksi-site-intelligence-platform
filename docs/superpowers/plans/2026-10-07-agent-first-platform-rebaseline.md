@@ -6669,3 +6669,55 @@ always-available all-actor upload-thumbnail producer** — that is a producer/re
 a UI one, and remains an explicit capability limit. The shared inspector audit incident stays
 unresolved and protected; no worker was started. Physical touch/SR, real customer studies, customer
 IdP/data, public production/TLS and field/settlement accuracy remain unverified/external.
+
+#### Core storage-child defect and the composed tile's real extent — 2026-10-22
+
+**What was found while verifying the UI work.** The real product stopped serving prepared
+output bytes: every read of a prepared window returned 503. The data was healthy the whole
+time — the bucket, the object, the credentials and the byte digest all matched. The cause was
+in Core, not in the Console: the storage child was `os.fork()`ed out of the running ASGI
+server. A forked child of a THREADED process inherits only the calling thread while the
+parent's other threads keep holding their locks, and the child's own descriptor sweep races
+the parent's threads. Under real load the child could not finish its SDK work, so the
+request failed as `STORAGE_UNAVAILABLE` — a storage outage that was not one. The refusal was
+also reported as a generic 503, which HID the real reason.
+
+**The fix (Core, `services/core/src/ksi_core/domains/external/delivery/`).** The child is now
+a FRESH interpreter (`exec`): it inherits no parent thread, no parent lock and no parent
+descriptor. The work crosses the boundary as PLAIN DATA — an operation name plus its exact
+parameters — never a callable, closure, SDK client or credential object; the child rebuilds its
+own bounded client and refuses one that would exceed the policy (single attempt, SigV4,
+timeouts within the deadline). The parent re-proves the child's answer, keeps capacity until
+the OS confirms the reap, and treats a failure frame as TERMINAL so a caller never waits for
+a reply that cannot arrive. The in-process `fork()` path is removed: the product had exactly
+one caller and it now uses the exec child.
+
+**Verified against the real product.** The same read that returned 503 now returns its
+ACTUAL state: `RETENTION_EXPIRED` (410). The prepared output had genuinely expired on its
+24-hour retention at 06:32 today; the defect was hiding that. Nothing was deleted, no
+retention was extended, no output was re-prepared, no grant was widened. The composed tile
+now carries the truth for such a site instead of a generic failure.
+
+**Contract evidence.** `tests/contract/test_spatial_data_storage.py` (66 cases),
+`test_spatial_data_storage_supervision.py` (7), `test_spatial_data_storage_threaded_parent.py`
+(3) and `test_spatial_data_storage_types.py` all pass; the whole `tests/contract/` suite is
+5675 passed / 33 skipped with 6 pre-existing `test_core_module_migration.py` failures that
+reproduce identically on the unmodified tree (verified by stashing this change). ruff and mypy
+are clean for the delivery package. The supervision tests were rewritten to the exec child
+while keeping their INTENT: a real separate process, bounded framing, a stall killed within
+the total deadline, and capacity released only after the OS confirms the reap.
+
+**Composed tile, second step.** The composed tile drew only the work-area boundary, and every
+sample boundary is a rectangle, so two different sites looked identical. It now ALSO draws the
+extent an INSPECTED raster actually covers, taken from that raster's own measured transform,
+in its own plane — real coverage, never an invented one, and nothing is drawn when the file
+was not inspected or its extent is in a different plane. The work-area boundary stays the
+outline; the file extent is the shaded area inside it. No reprojection, no basemap, no
+invented coverage; the tile still says `범위 도식 · 사진 아님`.
+
+**Scope held.** No Core API/schema/producer/grant/retention/AI-egress change, no new
+dependency, no bytes beyond the existing guarded path, no dashboard/server change for the
+Core fix, no change to the existing contract suite's intent, and the shared inspector
+incident, journals, protected config and S3 objects were not touched. The owned Core was
+restarted on the same durable data directory and the same preserved environment; all 14
+journal prefixes were verified intact (only append) before and after.
