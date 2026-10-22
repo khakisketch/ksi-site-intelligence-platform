@@ -99,16 +99,17 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 설명하고 링크 하나를 주는 안내판이었다. 탭은 그 안내를 **일 단위**로 접는다:
 // 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
 
-// 메뉴는 "무엇을 하러 오는가"로 나눈다: 공간자료(공간자료)·등록된 자료(등록 자료)·
-// 결과와 확인(분석 기록·검토)·이어서 할 일(현장 작업)·구역·경계·상태 설정(현장 설정).
-// 외부 비교 기록 같은 별도 목록은 분석 기록·검토 안의 하위 보기로 두고, KSI 계산
-// 결과와 출처를 섞지 않는다.
+// 메뉴는 "무엇을 하러 오는가"로 나눈다: 공간 보기(overview)·자료(materials)·
+// 분석·결과(analysis)·설정(manage)을 머리에서 바로 보인다. 관측 작업 기록
+// (work-orders) 키는 옛 URL(?section=work-orders) 호환을 위해 남기되,
+// 최상위 메뉴가 아니라 자료 안의 하위 길로 둔다. 외부 비교 기록 같은 별도
+// 목록은 분석·결과 안의 하위 보기로 두고, KSI 계산 결과와 출처를 섞지 않는다.
 export const SITE_TABS = [
-  { key: "overview", label: "공간자료" },
-  { key: "materials", label: "등록 자료" },
-  { key: "analysis", label: "분석 기록·검토" },
-  { key: "work-orders", label: "현장 작업" },
-  { key: "manage", label: "현장 설정" },
+  { key: "overview", label: "공간 보기" },
+  { key: "materials", label: "자료" },
+  { key: "analysis", label: "분석·결과" },
+  { key: "work-orders", label: "관측 작업 기록" },
+  { key: "manage", label: "설정" },
 ] as const;
 
 export type SiteTabKey = (typeof SITE_TABS)[number]["key"];

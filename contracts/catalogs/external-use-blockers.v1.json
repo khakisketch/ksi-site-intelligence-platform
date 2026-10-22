@@ -27,7 +27,7 @@
     "SELECT_ACTIVE_VOLUME_ZONE": {"step": "현장의 활성 구역 중 하나를 선택해 다시 요청하세요.", "owner": "OPERATOR", "target": "ZONE"},
     "VALIDATE_INDEPENDENT_EVIDENCE": {"step": "두 시점 모두에 체크포인트 CSV 증거를 등록·봉인하고 검증이 끝날 때까지 기다리세요.", "owner": "CUSTOMER", "target": "EVIDENCE"},
     "ATTEST_INDEPENDENT_EVIDENCE": {"step": "관리자에게 독립 측량 확인이 담긴 증거 컨텍스트 등록을 요청한 뒤 증거 검증과 매핑을 다시 진행하세요.", "owner": "ADMIN", "target": "EVIDENCE"},
-    "SELECT_DISTINCT_EPOCHS": {"step": "서로 다른 촬영 시점의 산출물을 기준과 현재로 선택하세요.", "owner": "OPERATOR", "target": "SUBJECT"},
+    "SELECT_DISTINCT_EPOCHS": {"step": "서로 다른 관측 시점의 산출물을 기준과 현재로 선택하세요.", "owner": "OPERATOR", "target": "SUBJECT"},
     "AUTHORIZE_SINGLE_VOLUME_MAPPING": {"step": "관리자에게 이 산출물과 구역에 대한 단일 시점 체적 매핑 등록을 요청하세요.", "owner": "ADMIN", "target": "MAPPING"},
     "RESOLVE_EXTERNAL_USE_BLOCKER": {"step": "전문가 정보의 사유 코드를 확인하고 운영자에게 문의하세요.", "owner": "OPERATOR", "target": "GENERAL"}
   }

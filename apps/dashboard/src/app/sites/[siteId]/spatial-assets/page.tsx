@@ -1,3 +1,4 @@
+import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -256,7 +257,7 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
     <header>
       <h2 className="text-[16px] font-bold">선택한 자료</h2>
       <p className="mt-1 break-words text-[13.5px] font-semibold">{headline}</p>
-      <p className="mt-1 text-[12px] text-ink-2">촬영 시점은 제출자가 입력한 정보 기준입니다.</p>
+      <p className="mt-1 text-[12px] text-ink-2">관측 시점은 제출자가 입력한 정보 기준입니다.</p>
       <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
       {compareHref && <div className="mt-2">
         <Link href={compareHref} className="btn w-fit">이 자료를 현재 관측으로 선택</Link>
@@ -410,9 +411,25 @@ export default async function SpatialAssetsPage({
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
         <div>
           <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
-          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 촬영 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
+          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">자료 종류와 관측 시점으로 파일을 찾고, 제출·파일 검사 상태를 확인하세요. 제출자가 입력한 정보와 파일에서 확인한 결과는 구분해 표시합니다.</p>
         </div>
-        <div className="flex flex-wrap gap-2"><Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`} className="btn">구역 자료 준비</Link><Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link></div>
+        <div className="flex flex-wrap gap-2">
+          {/* 자료 메뉴의 역할은 등록·원본/버전 관리·출처와 검증 상태 확인이다.
+              등록으로 들어가는 길이 이 화면에 있어야 자료만 보고 있는 사람이
+              다음 행동을 찾을 수 있다(공간 보기의 다음 행동만으로는 놓친다). */}
+          {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
+            <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
+            <Link
+              href={`/sites/${encodeURIComponent(siteId)}/observations/new${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}
+              className="btn"
+            >
+              관측 자료 등록
+            </Link>
+            </ResponsiveActionBoundary>
+          )}
+          <Link href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`} className="btn">구역 자료 준비</Link>
+          <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
+        </div>
       </header>
 
       <section className="rounded-lg border border-line bg-surface px-4 py-3">

@@ -62,7 +62,7 @@ export function analysisStateLabel(item: Pick<AnalysisListItem, "executionState"
  * 현장 기본 탭의 읽기 전용 공간 확인 — 선택한 구역 하나를 눈으로 검증하는 자리.
  *
  * 왼쪽 넓은 칸에 실제 기하(작으면 원본 평면이 먼저, 크면 배경 지도가 먼저)와
- * 바로 아래 촬영 시점·자료 선택 목록을 둔다. 오른쪽 좁은 칸에는 선택 범위·선택
+ * 바로 아래 관측 시점·자료 선택 목록을 둔다. 오른쪽 좁은 칸에는 선택 범위·선택
  * 파일·최신 분석 하나·다음 행동만 둔다. 바꾸는 조작은 없다.
  */
 export function SiteSpatialOverview({
@@ -259,9 +259,9 @@ export function SiteSpatialOverview({
         </>}
 
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <h2 className="text-[13px] font-bold">촬영 시점 · 자료 선택</h2>
+          <h2 className="text-[13px] font-bold">관측 시점 · 자료 선택</h2>
           {!assetsPage && !areaLegacy ? (
-            <p className="mt-1 text-[12px] leading-5 text-ink-2">촬영 시점·출처를 확인할 수 없습니다.</p>
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">관측 시점·출처를 확인할 수 없습니다.</p>
           ) : (<>
             {captureEntries.length === 0 && (
               <p className="mt-1 text-[12px] leading-5 text-ink-2">{assetsPage && areaLegacy

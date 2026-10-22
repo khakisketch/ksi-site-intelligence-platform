@@ -334,7 +334,7 @@ describe("usability-first explore", () => {
 
   it("switches capture from the first task bar with actual refs and precision", async () => {
     await renderOverview({});
-    const select = screen.getByLabelText("촬영 시점") as HTMLSelectElement;
+    const select = screen.getByLabelText("관측 시점") as HTMLSelectElement;
     const options = Array.from(select.options).map((option) => option.textContent);
     // 실제 관측 선택지이며 날짜만 아는 정밀도 그대로 둔다.
     expect(options.some((text) => text?.includes("날짜만 확인"))).toBe(true);

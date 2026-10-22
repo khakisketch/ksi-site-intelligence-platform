@@ -426,8 +426,9 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    expect(await screen.findAllByText("그리지 않음")).not.toHaveLength(0);
+    await waitFor(() => expect(screen.getByText(/이어 보기 조건·창별 상태/).closest("details")?.textContent).toContain("받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다."));
     const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    expect(view.textContent).not.toContain("그리지 않음");
     view.focus();
     fireEvent.keyDown(view, { key: "+" });
     fireEvent.keyDown(view, { key: "ArrowRight" });
@@ -445,8 +446,9 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     stubReads([jobForWindow(first, 0)], posts, gets);
     renderMosaic([jobForWindow(first, 0)]);
 
-    // 읽을 수 없는 창은 '표시 준비 필요'로 둔다 — 자동 준비 없음.
-    expect((await screen.findAllByText("표시 준비 필요")).length).toBeGreaterThan(0);
+    // 준비되지 않은 창의 이유는 상세에만 둔다 — 지도에 문구·가짜 픽셀 없음.
+    expect(screen.getByText(/이어 보기 조건·창별 상태/).closest("details")?.textContent).toContain("표시 준비 필요");
+    expect(screen.getByRole("group", { name: /직접 끌어서 보고/ }).textContent).not.toContain("표시 준비 필요");
     expect(posts).toHaveLength(0);
   });
 });

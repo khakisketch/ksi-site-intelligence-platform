@@ -248,14 +248,14 @@ describe("explore declutter: primary action leads the side column", () => {
 });
 
 describe("explore declutter: identity and five-area navigation stay reachable", () => {
-  it("keeps one site-name heading and all five labelled areas", async () => {
+  it("keeps one site-name heading and all four labelled areas", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.getByText("현장 정보·범위")).toBeTruthy();
     const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
     const links = within(menu).getAllByRole("link");
-    expect(links).toHaveLength(5);
-    for (const label of ["공간자료", "등록 자료", "분석 기록·검토", "현장 작업", "현장 설정"]) {
+    expect(links).toHaveLength(4);
+    for (const label of ["공간 보기", "자료", "분석·결과", "설정"]) {
       expect(within(menu).getByRole("link", { name: label })).toBeTruthy();
     }
     expect(within(menu).getAllByRole("link", { current: "page" })).toHaveLength(1);
@@ -326,7 +326,7 @@ describe("explore declutter: selectors keep exact values and routes", () => {
     expect(Array.from(areaSelect.options).map((o) => o.value)).toEqual(["w-1", "w-2"]);
     expect(areaSelect.closest("form")?.getAttribute("action")).toBe("/sites/site-1");
     expect(areaSelect.closest("form")?.getAttribute("method")).toBe("get");
-    const captureSelect = screen.getByLabelText("촬영 시점") as HTMLSelectElement;
+    const captureSelect = screen.getByLabelText("관측 시점") as HTMLSelectElement;
     expect(Array.from(captureSelect.options).map((o) => o.value)).toEqual(["a-1", "a-2"]);
     expect(captureSelect.value).toBe("a-1");
     const captureForm = captureSelect.closest("form")!;

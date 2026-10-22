@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -39,14 +39,14 @@ afterEach(cleanup);
 function expectKnownContext() {
   expect(screen.getAllByText("권한 확인된 현장").length).toBeGreaterThan(0);
   expect(screen.getByRole("heading", { name: "외부 비교 기록" })).toBeTruthy();
-  // 현장 메뉴는 라벨 있는 펼침이다 — 열어야 다섯 영역 링크가 보인다.
-  // (summary 요소는 이 테스트 스택에서 button 역할로 잡히지 않으므로 텍스트로 연다.)
-  fireEvent.click(screen.getByText(/현장 메뉴/));
-  // 공통 현장 틀 유지 — 분석 기록·검토 안의 하위 목록에서도 현장 메뉴와 구역 범위를 잃지 않는다.
+  // 공통 현장 틀 유지 — 네 영역을 펼침 없이 바로 보인다. 분석·결과 안의 하위
+  // 목록에서도 현장 업무 메뉴와 구역 범위를 잃지 않는다.
+  const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
+  expect(menu).toBeTruthy();
   for (const [label, href] of [
-    ["공간자료", "/sites/site-1"],
-    ["분석 기록·검토", "/sites/site-1/analysis"],
-    ["등록 자료", "/sites/site-1/spatial-assets"],
+    ["공간 보기", "/sites/site-1"],
+    ["분석·결과", "/sites/site-1/analysis"],
+    ["자료", "/sites/site-1/spatial-assets"],
   ] as const) {
     const links = screen.getAllByRole("link", { name: label });
     expect(links.length).toBeGreaterThan(0);

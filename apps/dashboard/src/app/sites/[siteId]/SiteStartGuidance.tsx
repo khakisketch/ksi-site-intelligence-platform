@@ -43,7 +43,7 @@ export function SiteStartGuidance({
         ? "관측 작업 상태를 확인할 수 없습니다. 작업 현황을 확인한 뒤 분석 후보를 살펴보세요."
         : observationWorkOrderCount === 0
           ? "현재 조회된 관측 작업이 없습니다. 필요한 외부 관측은 자료 담당자와 확인하세요."
-          : "촬영 시점을 골라 기준 자료와 비교할 자료를 확인하세요. 비교 가능 여부는 요청할 때 확인합니다.";
+          : "관측 시점을 골라 기준 자료와 비교할 자료를 확인하세요. 비교 가능 여부는 요청할 때 확인합니다.";
   const nextStepAction = workAreaCount === null || workAreaCount === 0
     ? { href: `${sitePath}/work-areas`, label: "작업구역 확인" }
     : observationWorkOrderCount === null || observationWorkOrderCount === 0

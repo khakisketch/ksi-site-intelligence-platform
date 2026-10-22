@@ -6721,3 +6721,45 @@ Core fix, no change to the existing contract suite's intent, and the shared insp
 incident, journals, protected config and S3 objects were not touched. The owned Core was
 restarted on the same durable data directory and the same preserved environment; all 14
 journal prefixes were verified intact (only append) before and after.
+
+#### Human-directed viewer-first workspace restructure — 2026-10-22 (P0 integration)
+
+The current Human request supersedes the earlier checkpoint's “no new redesign” limit for this
+bounded UI unit: simplify site navigation, give spatial data the primary workspace, make observation
+selection immediate, and move repeated per-tile status to a legend/details. It does not approve
+re-preparation, new retained previews, wider grants, worker/inspector recovery, reconstruction,
+quantitative rule changes, or whole-platform/field acceptance. Existing PRODUCT.md's five-area
+summary is subordinate and stale for this new navigation request; historical records stay intact.
+
+Requirement IDs: Human P0 (menu/header, viewer proportions, observation selection, blank-map states),
+SDP-REQ-01/02/03/05; INV-020/024/040/051/060/061.
+Owner module: apps/dashboard (Console presentation only).
+Acceptance criteria: four directly visible site sections; same-frame single/compare/results modes;
+area/observation/layer rail; scoped immediate GET selection with no-JS fallback; native geometry or
+verified pixels lead; conditional detail panel; no per-tile status overlay; unknown/denied/expired/
+NoData and quantitative suitability remain distinct; 390/768/1024/1440 real renders and interaction
+checks; existing four-spec isolated regressions, unit/type/lint and locked build preserved.
+Contracts affected: no API/schema/data/admission change. One existing blocker-catalog guidance
+sentence uses 관측 시점 instead of 촬영 시점; keys/owner/target unchanged and generated copy synced.
+Reference assets: incumbent Console/components/tokens, actual before images under
+/tmp/opencode/ksi-first-reader-20261022/layout-before-*.png, user's PIX4Dcloud/DroneDeploy/Propeller
+layout observations (pattern references, not code/assets), isolated component images explicitly
+labelled /tmp/opencode/ksi-workspace-unit-20261022/latest-*.png.
+Adoption decisions: adapt the existing native viewer, GET forms and scoped navigation; no external
+code/font/basemap. Correct delegated routing hypothesis: section=work-orders is an observation-work
+record list, not WorkArea management. Label it 관측 작업 기록 and preserve its old URL; 작업구역 관리
+must point at the actual /work-areas owner page. Four primary sections stay as requested.
+Files to change: current Dashboard SiteHeader/Workspace/Explore/selection/legend/viewer files,
+site-epochs/context labels, connected materials/work-area presentation, their tests and existing
+operations-console E2E; this same ledger/checkpoint. No new task ledger.
+Tests: full Dashboard Vitest, tsc, changed ESLint; blocker-catalog sync contract; locked image build;
+existing isolated operations-console/sites-view-modes/sites-controls/sites-pagination specs; read-only
+private Console journeys and multi-width renders. Component fixtures are not product acceptance.
+HIL or real-device assumptions: none. Physical touch/native Korean IME/screen-reader acceptance is
+not inferred from Chromium/CDP/jsdom; real pixels unavailable under current prepared-output retention.
+License/data implications: unchanged CC BY attribution and synthetic labels, no new external assets,
+bytes or egress. Geometry fallback uses inspected native file extent, not valid-pixel/accuracy claims.
+Rollback: retain preceding owned frontend image/container cf985644; revert only this UI commit set.
+Protected resources: all Core durable journals/config/credentials, S3, shared inspector incident and
+all unrelated containers/ports. Only existing task-owned frontend3243/private10010 may be replaced
+using its retained rollback. No Core restart or preparation/inspection/analysis issuance for this UI.

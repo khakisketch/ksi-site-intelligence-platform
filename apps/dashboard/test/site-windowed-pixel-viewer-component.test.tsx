@@ -370,6 +370,23 @@ describe("site windowed pixel viewer", () => {
 });
 
 describe("site windowed pixel compare", () => {
+  it("hosts local layer controls in the rail after client mode entry without changing comparison selectors", () => {
+    pushRoute.mockClear();
+    const { container, rerender } = render(<div>다른 모드</div>);
+    rerender(<><aside id="test-comparison-layer-rail" /><SiteWindowedPixelViewer {...propsFor({
+      canRead: false, jobs: [], hideLayerControls: true,
+      layerControlsTargetId: "test-comparison-layer-rail", selectedAssetRef: dsmRef,
+    })} /></>);
+    const rail = container.querySelector("#test-comparison-layer-rail")!;
+    const ortho = rail.querySelector('button[aria-pressed="false"]')!;
+    expect(ortho.textContent).toBe("정사영상");
+    expect(container.querySelector('section [role="group"][aria-label="자료 층 전환"]')).toBeNull();
+    fireEvent.click(ortho);
+    expect(ortho.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("표시 중 · 정사영상")).toBeTruthy();
+    expect(pushRoute).not.toHaveBeenCalled();
+  });
+
   it("warns honestly when the two epochs share no display plane", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 })));
     render(

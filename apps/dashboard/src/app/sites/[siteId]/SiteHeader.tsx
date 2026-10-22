@@ -77,6 +77,13 @@ export function SiteHeader({
   // The overview panel owns this same action on its default tab; keep one
   // entry point there while the mobile panel remains the direct action surface.
   const primaryAction = tab === "overview" ? null : scopedPreparationAction;
+  // 최상위 메뉴는 네 영역만 바로 보인다. 관측 작업 기록(work-orders) 키는 옛
+  // URL(?section=work-orders) 호환을 위해 SITE_TABS·normalizeSiteTab에 남기되,
+  // 최상위 nav가 아니라 자료 맥락의 하위 길로 둔다.
+  const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders");
+  const workOrdersTab = SITE_TABS.find((option) => option.key === "work-orders");
+  const showRecordsContext = tab === "materials" || tab === "work-orders";
+  const activeTab = tab === "work-orders" ? "materials" : tab;
   return (
     <header
       className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5"
@@ -94,7 +101,7 @@ export function SiteHeader({
             맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
             현장명은 한 번만 보인다. 앞의 "현장명" 라벨과 별도 큰 머리글은 두지 않는다. */}
         <h2 className="text-[16px] font-bold tracking-tight break-keep">{site.name}</h2>
-        {site.status === "SUSPENDED" && <StateBadge label={status.label} tone={status.tone} />}
+        <StateBadge label={status.label} tone={status.tone} />
         <details className="text-[12px] text-ink-2">
           <summary className="tap-target cursor-pointer underline decoration-dotted">현장 정보·범위</summary>
           <dl className="my-1.5 grid gap-1">
@@ -139,30 +146,35 @@ export function SiteHeader({
       </div>
 
       {/*
-        현장 업무 메뉴 — 다섯 영역을 한 곳에서 여닫는다. 데스크톱·모바일 구분 없이
-        같은 disclosure를 쓰므로, 다섯 영역 바와 공간 작업 방식이 동시에 나열돼
-        서로 경쟁하지 않는다. label 없는 아이콘-only 진입은 두지 않으며, 현재
-        영역은 aria-current로 밝힌다. 키보드로 여닫고 포커스 표시를 둔다.
-        펼침 안의 nav가 잘리지 않도록 조상에는 overflow hidden을 두지 않는다.
+        현장 업무 메뉴 — 네 영역을 펼침 없이 바로 보인다. label 없는 아이콘-only
+        진입은 두지 않으며, 현재 영역은 aria-current로 밝힌다. 관측 작업 기록
+        (옛 ?section=work-orders)는 최상위에 두지 않고 자료 맥락의 하위 길로
+        둔다. 키보드로 이동하고 포커스 표시를 둔다.
       */}
-      <details className="-mb-px">
-        <summary className="tap-target flex cursor-pointer items-center justify-between gap-2 border-t border-line py-1.5 text-[13px] font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
-          <span>현장 메뉴 · {SITE_TABS.find((option) => option.key === tab)?.label}</span>
-          <span className="text-[11.5px] font-normal text-ink-muted">열기</span>
-        </summary>
-        <nav className="grid grid-cols-2 gap-1 pb-2 sm:grid-cols-3 lg:grid-cols-5" aria-label="현장 업무 메뉴">
-          {SITE_TABS.map((option) => (
-            <Link
-              key={option.key}
-              href={hrefWith(site.siteId, current, { section: option.key }, scope)}
-              aria-current={option.key === tab ? "page" : undefined}
-              className={`tap-target flex items-center rounded-md px-3 text-[13px] focus-visible:outline-2 focus-visible:outline-offset-2 ${option.key === tab ? "bg-sunk font-bold" : "text-ink-2"}`}
-            >
-              {option.label}
-            </Link>
-          ))}
-        </nav>
-      </details>
+      <nav className="grid grid-cols-4 gap-1 pb-2" aria-label="현장 업무 메뉴">
+        {headerTabs.map((option) => (
+          <Link
+            key={option.key}
+            href={hrefWith(site.siteId, current, { section: option.key }, scope)}
+            aria-current={option.key === activeTab ? "page" : undefined}
+            className={`tap-target flex items-center justify-center rounded-md px-2 text-[12.5px] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 sm:justify-start sm:px-3 sm:text-[13px] ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
+          >
+            {option.label}
+          </Link>
+        ))}
+      </nav>
+      {showRecordsContext && workOrdersTab ? (
+        <p className="pb-2 text-[12px] text-ink-2">
+          <span>자료 · </span>
+          <Link
+            href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
+            aria-current={tab === "work-orders" ? "page" : undefined}
+            className="tap-target underline decoration-dotted focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            {workOrdersTab.label}
+          </Link>
+        </p>
+      ) : null}
     </header>
   );
 }

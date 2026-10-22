@@ -78,7 +78,7 @@ function CompareSlot({
       <p className="break-words text-[13px] font-semibold">{candidateLabel(fact)}</p>
       <p className="text-[12px] text-ink-2">{spatialAssetKindLabel(fact.kind)} · {fact.assetRef === fact.viewAssetRef ? "이 관측의 표시 버전" : "이전 표시 버전(명시적 선택)"}</p>
       {!fact.captureSourcesAgree && (
-        <p className="text-[12px] leading-5 text-ink-2">이 관측의 버전들이 서로 다른 촬영 시점을 가리켜 시간 순서 비교 후보에서 제외됩니다.</p>
+        <p className="text-[12px] leading-5 text-ink-2">이 관측의 버전들이 서로 다른 관측 시점을 가리켜 시간 순서 비교 후보에서 제외됩니다.</p>
       )}
       {fact.newerRevisionPending && (
         <p className="text-[12px] leading-5 text-ink-2">새로 제출된 버전이 있어 표시용 출력을 확인 중입니다. 지금 보는 버전을 바꾸지 않았습니다.</p>
@@ -151,6 +151,7 @@ export function SiteWorkspaceCompare({
   scopedCompareHref,
   exploreHref,
   facts,
+  presentation = "full",
 }: {
   sitePath: string;
   areas: WorkArea[];
@@ -168,6 +169,8 @@ export function SiteWorkspaceCompare({
   /** 비교할 후보가 없을 때 돌아갈 탐색 주소 — 같은 구역·선택 자료 그대로 둔다. */
   exploreHref: string;
   facts: WorkspaceServerFacts;
+  /** Same comparison logic, with its observation controls hosted by the workspace rail. */
+  presentation?: "full" | "controls" | "viewer";
 }) {
   const selected = areas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null;
   const areaLabel = selected
@@ -182,7 +185,8 @@ export function SiteWorkspaceCompare({
 
   const { eligible, blocked } = selected ? compareSlotCandidates(facts, selected.workAreaId) : { eligible: [], blocked: [] };
   const groups = selected ? splitCompareCandidates(facts, selected.workAreaId) : null;
-  const representatives = selected ? representativeFacts(facts, selected.workAreaId) : [];  const tiedEpochs = facts.entryDefault?.reason === "CAPTURE_TIE_AMBIGUOUS"
+  const representatives = selected ? representativeFacts(facts, selected.workAreaId) : [];
+  const tiedEpochs = facts.entryDefault?.reason === "CAPTURE_TIE_AMBIGUOUS"
     ? (facts.entryDefault.tiedObservationEpochIds ?? [])
     : [];
   const tiedFacts = tiedEpochs
@@ -210,7 +214,9 @@ export function SiteWorkspaceCompare({
       return "시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 나란히 둘 후보가 없습니다.";
     }
     if (browsableCount > 0 && blocked.length === 0 && tiedFacts.length === 0) {
-      return "이 구역의 관측은 촬영 시각 대신 날짜만 확인되어, 두 시점의 순서를 확정할 수 없습니다.";
+      return (groups?.browsableUnknown.length ?? 0) > 0
+        ? "촬영 시각을 확인하지 못한 관측이 있어, 두 시점의 순서를 확정할 수 없습니다. 날짜만 확인된 관측과 시점 미상 관측은 상세에서 구분합니다."
+        : "이 구역의 관측은 촬영 시각 대신 날짜만 확인되어, 두 시점의 순서를 확정할 수 없습니다.";
     }
     if (tiedFacts.length > 0 && blocked.length === 0 && browsableCount === 0) {
       return "같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다.";
@@ -218,7 +224,30 @@ export function SiteWorkspaceCompare({
     return "나란히 둘 수 있는 비교 후보가 아직 없습니다.";
   })();
 
-  return <div className="flex flex-col gap-3">
+  const comparisonForm = selected && projectionState === "ready" && eligible.length > 0 ? (
+    <form method="get" action={formAction} className="flex min-w-0 flex-col gap-3">
+      <input type="hidden" name="mode" value="compare" />
+      <input type="hidden" name="workAreaId" value={selected.workAreaId} />
+      <div className="min-w-0">
+        <label htmlFor="workspace-compare-baseline" className="block text-[12px] font-semibold">기준 자료</label>
+        <select id="workspace-compare-baseline" name="baselineAssetRef" required defaultValue={baselineRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+          <option value="">기준 자료 선택</option>
+          {eligible.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+        </select>
+      </div>
+      <div className="min-w-0">
+        <label htmlFor="workspace-compare-current" className="block text-[12px] font-semibold">비교 자료</label>
+        <select id="workspace-compare-current" name="currentAssetRef" required defaultValue={currentRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+          <option value="">비교 자료 선택</option>
+          {eligible.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+        </select>
+      </div>
+      <button type="submit" className="btn">나란히 보기</button>
+      {workspaceHasMore && <p className="text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
+    </form>
+  ) : null;
+  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{comparisonForm ?? <p className="text-[12px] leading-5 text-ink-2">{projectionState === "ready" ? "비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 확인하지 못했습니다. 뷰어에서 조회 상태를 확인하세요."}</p>}</div>;
+  return <div className="flex min-w-0 flex-col gap-3">
     {selected === null && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
         비교할 작업구역이 없습니다. 작업구역이 등록되면 같은 구역의 두 자료를 나란히 둘 수 있습니다.
@@ -241,7 +270,7 @@ export function SiteWorkspaceCompare({
     )}
     {resolution.status === "prompt" && selected && hasOptions && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
-        비교할 기준 자료와 비교 자료를 아래에서 고르세요. 자동으로 고르지 않았습니다.
+        비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요. 자동으로 고르지 않았습니다.
         먼저 둘러보려면 <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>하세요.
       </p>
     )}
@@ -269,7 +298,7 @@ export function SiteWorkspaceCompare({
             필요할 때의 수치 계산 경로와 새 관측 등록을 함께 제시한다. */}
         <p className="mt-2 border-t border-line pt-2 text-[12px] leading-5 text-ink-2">
           나란히 두려면 <span className="font-semibold text-ink-1">촬영 시간이 정확히 기록된 관측 2개</span>가
-          같은 구역에 있어야 합니다. 현재 자료는 날짜만 확인되어 순서를 확정할 수 없습니다.
+          같은 구역에 있어야 합니다. 각 관측의 표시 조건도 별도로 확인해야 합니다.
         </p>
         <p className="mt-1.5 flex flex-wrap gap-2 text-[12px]">
           {canCreateWorkOrderHere && (
@@ -286,34 +315,7 @@ export function SiteWorkspaceCompare({
       </div>
     )}
 
-    {selected && projectionState === "ready" && eligible.length > 0 && (
-      <form method="get" action={formAction} className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface px-4 py-3">
-        <input type="hidden" name="mode" value="compare" />
-        <input type="hidden" name="workAreaId" value={selected.workAreaId} />
-        <div className="min-w-0 flex-1 basis-56">
-          <label htmlFor="workspace-compare-baseline" className="block text-[12px] font-semibold">기준 자료</label>
-          <select id="workspace-compare-baseline" name="baselineAssetRef" required defaultValue={baselineRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
-            <option value="">기준 자료 선택</option>
-            {eligible.map((item) => (
-              <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>
-            ))}
-          </select>
-        </div>
-        <div className="min-w-0 flex-1 basis-56">
-          <label htmlFor="workspace-compare-current" className="block text-[12px] font-semibold">비교 자료</label>
-          <select id="workspace-compare-current" name="currentAssetRef" required defaultValue={currentRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
-            <option value="">비교 자료 선택</option>
-            {eligible.map((item) => (
-              <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>
-            ))}
-          </select>
-        </div>
-        <button type="submit" className="btn">나란히 보기</button>
-        {workspaceHasMore && (
-          <p className="w-full text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>
-        )}
-      </form>
-    )}
+    {presentation !== "viewer" && comparisonForm}
 
     {selected && resolution.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
       <CompareSlot

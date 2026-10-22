@@ -339,7 +339,7 @@ export interface AreaCaptureEntry {
 }
 
 /**
- * 선택 구역의 실제 촬영 시점·출처 목록 — 새로 계산하지 않고 신고·관측 값만 옮긴다.
+ * 선택 구역의 실제 관측 시점·출처 목록 — 새로 계산하지 않고 신고·관측 값만 옮긴다.
  * 자산 신고와 legacy 행을 한 줄에 합치지 않고 출처별로 그대로 둔다.
  * 어느 한쪽 조회가 실패해도 아는 쪽은 그대로 둔다(unknown은 별도 공지로만 둔다).
  */
@@ -389,7 +389,7 @@ export function buildAreaCaptureEntries({
       headline: `외부 비교 결과 · ${capturePeriodTitle(result.currentCapturedFrom, result.currentCapturedTo)}`,
       detail: result.baselineCapturedFrom && result.baselineCapturedTo
         ? `비교 기준 · ${capturePeriodTitle(result.baselineCapturedFrom, result.baselineCapturedTo)}`
-        : "비교 기준의 촬영 시점 미기재",
+        : "비교 기준의 관측 시점 미기재",
       capturedFrom: result.currentCapturedFrom,
       capturedTo: result.currentCapturedTo,
       reportedAt: result.reportedAt,

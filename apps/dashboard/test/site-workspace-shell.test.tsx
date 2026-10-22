@@ -250,12 +250,29 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 }
 
 describe("workspace shell structure", () => {
+  it("does not call an unavailable work-area list an empty comparison", async () => {
+    mocked.areas.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
+    await renderOverview({ mode: "compare" });
+    expect(screen.getByText("작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.")).toBeTruthy();
+    expect(screen.queryByText("비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요.")).toBeNull();
+  });
+  it.each([
+    ["explore", "단일 시점"], ["compare", "두 시점 비교"], ["results", "분석 결과"],
+  ])("keeps %s inside the same viewer and rail with one current mode", async (mode, label) => {
+    await renderOverview({ mode });
+    const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
+    expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeTruthy();
+    expect(within(modeNav).getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
+    expect(modeNav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    expect(screen.getByRole("complementary", { name: "공간 보기 선택" })).toBeTruthy();
+  });
   it("shows each mode once without duplicating the site-name heading", async () => {
     await renderOverview({});
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
     const modeLinks = within(modeNav).getAllByRole("link");
-    expect(modeLinks.map((link) => link.textContent)).toEqual(["탐색", "두 시점 보기", "결과 요약"]);
-    expect(within(modeNav).getByRole("link", { name: "탐색" }).getAttribute("aria-current")).toBe("page");
+    expect(modeLinks.map((link) => link.textContent)).toEqual(["단일 시점", "두 시점 비교", "분석 결과"]);
+    expect(within(modeNav).getByRole("link", { name: "단일 시점" }).getAttribute("aria-current")).toBe("page");
+    expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeTruthy();
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(mocked.detail).not.toHaveBeenCalled();
   });
@@ -379,7 +396,7 @@ describe("workspace compare mode", () => {
   it("renders one coherent prompt with an honest unavailable-sync notice", async () => {
     mocked.workspace.mockResolvedValue(readyProjection());
     await renderOverview({ mode: "compare" });
-    expect(screen.getByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeTruthy();
+    expect(screen.getByText(/비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요/)).toBeTruthy();
     // 고르기 전에는 빈 칸 두 개를並べ지 않는다 — 한 개의 안내만 둔다.
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
@@ -394,6 +411,20 @@ describe("workspace compare mode", () => {
     expect(screen.getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-data-requests?workAreaId=tiny-1",
     );
+  });
+
+  it("does not call unknown observation time date-only when no candidates exist", async () => {
+    const capture = wireCapture({ precision: "UNKNOWN", captureStartedAt: null, captureEndedAt: null, captureDate: null });
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-unknown", ["unknown-1"], {
+        capture, chronologyCandidate: false, viewAvailable: false, viewAssetRef: null,
+        versions: [wireVersion("unknown-1", { capture, chronologyCandidate: false })],
+      })],
+      entryDefault: { observationEpochId: null, viewAssetRef: null, reason: "NO_EXACT_CAPTURE_CANDIDATE", detail: "No exact time", tiedObservationEpochIds: [] },
+    }));
+    await renderOverview({ mode: "compare" });
+    expect(screen.getByText(/촬영 시각을 확인하지 못한 관측이 있어/)).toBeTruthy();
+    expect(screen.queryByText(/이 구역의 관측은 촬영 시각 대신 날짜만 확인되어/)).toBeNull();
   });
 
   it("gives one reason and one way back when no comparison candidates exist", async () => {
@@ -419,7 +450,7 @@ describe("workspace compare mode", () => {
       "/sites/site-1?workAreaId=tiny-1",
     );
     // 선택지가 없으면 고르기 폼을 두지 않는다.
-    expect(screen.queryByText(/비교할 기준 자료와 비교 자료를 아래에서 고르세요/)).toBeNull();
+    expect(screen.queryByText(/비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요/)).toBeNull();
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
     // 빈 지도 안내·경쟁 분석 버튼 없이 조건 펼침만 둔다.
@@ -757,13 +788,13 @@ describe("browse source round trip", () => {
     readySelection();
     await renderOverview({ workAreaId: "tiny-1", assetRef: "disp-2022" });
     // 같은 구역·관측을 가리키는 직접 목적지 — 돌아올 때 정확한 관측을 잃지 않는다.
-    expect(screen.getByRole("link", { name: "등록 자료" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "자료" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "분석 기록·검토" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "분석·결과" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "공간자료" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=tiny-1&assetRef=disp-2022",
     );
     // 선택 중인 관측·층·등록 버전은 title hover 없이 그대로 읽힌다.
@@ -775,7 +806,7 @@ describe("browse source round trip", () => {
     await renderOverview({ workAreaId: "tiny-1", assetRef: "ghost-asset" });
     expect(screen.getByText(/요청한 대상을 확인할 수 없어/)).toBeTruthy();
     // 모르는 참조는 그대로 돌려주지 않는다 — 공지된 서버 기본(검증값)으로 돌아간다.
-    const materialsHref = screen.getByRole("link", { name: "등록 자료" }).getAttribute("href");
+    const materialsHref = screen.getByRole("link", { name: "자료" }).getAttribute("href");
     expect(materialsHref).toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022");
     expect(materialsHref).not.toContain("ghost-asset");
   });

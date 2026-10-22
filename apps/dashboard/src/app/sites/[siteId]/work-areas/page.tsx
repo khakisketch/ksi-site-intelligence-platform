@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { parseScopeId } from "../site-spatial";
 
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError } from "@/lib/core-api/labels";
@@ -52,10 +53,13 @@ function workAreaListFailure(error: unknown): WorkAreaListFailure {
  */
 export default async function SiteWorkAreasPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ siteId: string }>;
+  searchParams?: Promise<{ workAreaId?: string | string[] }>;
 }) {
-  const { siteId } = await params;
+  const [{ siteId }, query] = await Promise.all([params, searchParams ?? Promise.resolve({})]);
+  const requestedArea = parseScopeId("workAreaId" in query && typeof query.workAreaId === "string" ? query.workAreaId : null);
 
   let site: SiteView | null = null;
   let errorMessage: string | null = null;
@@ -98,6 +102,7 @@ export default async function SiteWorkAreasPage({
         site={site}
         selectedEpochId={null}
         tab="manage"
+        scopedWorkAreaId={workAreas.some((area) => area.workAreaId === requestedArea) ? requestedArea : null}
         canCreateWorkOrder={canCreateWorkOrder}
         canEditAoi={canWrite}
       />

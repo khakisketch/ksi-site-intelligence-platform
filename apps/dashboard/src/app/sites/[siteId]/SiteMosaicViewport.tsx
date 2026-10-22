@@ -37,6 +37,9 @@ import {
 } from "@/lib/spatial-display-mosaic";
 import { VIEWPORT_RESOLVE_COPY } from "@/lib/spatial-display-viewport";
 import type { DisplayViewportBounds } from "@/lib/spatial-display-viewport";
+import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
+import { planeUnitForCrs, sameDisplayPlane } from "./site-spatial";
+import { SiteMosaicAbsentDiagram } from "./SiteMosaicAbsentDiagram";
 import {
   displayZoomPercent,
   isDisplayViewMoved,
@@ -81,6 +84,10 @@ export interface MosaicViewportProps {
   jobs: PreparedWindowJob[];
   canRequest: boolean;
   requestsHref: string;
+  /** 같은 네이티브 평면의 작업구역 링 — 같은 평면일 때만 범위 도식에 겹친다. */
+  workAreaRing?: Array<[number, number]> | null;
+  /** 작업구역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
+  workAreaCrs?: string | null;
 }
 
 type MosaicFailure = { reason: DisplayGapReason; message: string };
@@ -145,6 +152,8 @@ export function SiteMosaicViewport({
   jobs,
   canRequest,
   requestsHref,
+  workAreaRing = null,
+  workAreaCrs = null,
 }: MosaicViewportProps) {
   const router = useRouter();
   const ownerToken = useId();
@@ -261,10 +270,6 @@ export function SiteMosaicViewport({
   const geometry = useMemo(
     () => (cover.ok ? mosaicCanvasGeometry(cover.windows) : null),
     [cover],
-  );
-  const placements = useMemo(
-    () => (cover.ok && geometry ? mosaicPlacements(cover.windows, geometry) : []),
-    [cover, geometry],
   );
 
   // S2 — paint 전 재검증에 쓰는 세션 보유 권리 사실. readable 존재 자체가
@@ -561,6 +566,85 @@ export function SiteMosaicViewport({
     job.assetRef === assetRef && (job.executionState === "QUEUED" || job.executionState === "RUNNING"),
   );
 
+  // 픽셀이 없을 때의 범위 도식 사실 — Core 검사 격자에서 유도한 파일 전체
+  // 사각형과 같은 평면의 작업구역 링만 둔다. 재투영·유효 픽셀 단정을 하지
+  // 않으며, 사각형은 파일 끝을 잰 값일 뿐 빈틈 없는 범위가 아니다.
+  const absentFileBounds = nativeBoundsFromInspection(grid);
+  const absentFileRing: Array<[number, number]> | null = absentFileBounds
+    ? [
+        [absentFileBounds[0], absentFileBounds[1]],
+        [absentFileBounds[2], absentFileBounds[1]],
+        [absentFileBounds[2], absentFileBounds[3]],
+        [absentFileBounds[0], absentFileBounds[3]],
+      ]
+    : null;
+  const absentOverlaid =
+    workAreaRing !== null &&
+    workAreaRing.length >= 3 &&
+    observedCrsIdentifier !== null &&
+    workAreaCrs !== null &&
+    sameDisplayPlane(workAreaCrs, observedCrsIdentifier);
+  const absentOverlayNote = !workAreaRing || workAreaRing.length < 3
+    ? "작업구역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
+    : !observedCrsIdentifier || !workAreaCrs
+      ? "위치 기준을 확인하지 못해 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+      : !absentOverlaid
+        ? "위치 기준이 달라 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+        : null;
+  const absentCrsLabel = observedCrsIdentifier ?? "확인 불가";
+
+  // 같은 관측(같은 assetRef)의 현재 작업 기록에서만 상태를 말한다. 한 층의
+  // 만료로 다른 층까지 만료되었다고 말하지 않는다.
+  const assetJobs = jobs.filter((job) => job.assetRef === assetRef);
+  const hasRetentionExpired = assetJobs.some(
+    (job) => job.availability === "RETENTION_EXPIRED",
+  );
+  const hasRightsBlock = assetJobs.some(
+    (job) => job.availability === "ACCESS_REVOKED" || job.availability === "ACCESS_EXPIRED",
+  );
+  const hasCanceled = assetJobs.some((job) => job.executionState === "CANCELED");
+  const hasDeadlineExpired = assetJobs.some((job) => job.executionState === "EXPIRED");
+  const hasFailed = assetJobs.some((job) => job.executionState === "FAILED");
+  const hasUnknownOutput = assetJobs.some(
+    (job) => job.availability === "UNAVAILABLE" || job.availability === "NOT_READY",
+  );
+  const absentKind: "expired" | "rights" | "failed" | "canceled" | "deadline" | "unavailable" | "empty" =
+    hasRetentionExpired ? "expired"
+      : hasRightsBlock ? "rights"
+        : hasFailed ? "failed"
+          : hasCanceled ? "canceled"
+            : hasDeadlineExpired ? "deadline"
+          : hasUnknownOutput ? "unavailable"
+            : "empty";
+  const absentCopy: { headline: string; detail: string } =
+    absentKind === "expired"
+      ? {
+          headline: "이 관측의 준비된 표시 자료가 보관 기한을 지났습니다.",
+          detail: "등록 자료가 없다는 뜻은 아닙니다. 이 관측의 파일 검사·등록 정보는 아래 상세에서 확인할 수 있습니다.",
+        }
+      : absentKind === "rights"
+        ? { headline: "이 관측의 준비된 창을 현재 조회할 수 없습니다.", detail: FOREIGN_WINDOW_COPY }
+        : absentKind === "failed"
+          ? {
+              headline: "이 관측의 준비 요청이 실패했습니다.",
+              detail: "등록 자료가 없다는 뜻은 아닙니다. 사유는 구역 자료 준비에서 확인하세요.",
+            }
+          : absentKind === "canceled"
+            ? { headline: "이 관측의 표시 준비 요청이 취소됐습니다.", detail: "등록 자료는 그대로입니다. 구역 자료 준비에서 요청 이력을 확인하세요." }
+          : absentKind === "deadline"
+            ? { headline: "이 관측의 표시 준비 요청이 처리 기한을 넘겼습니다.", detail: "출력의 보관 만료와는 다릅니다. 구역 자료 준비에서 요청 이력을 확인하세요." }
+          : absentKind === "unavailable"
+            ? {
+                headline: "이 관측의 준비된 출력 상태를 확인할 수 없습니다.",
+                detail: "빈 목록으로 단정하지 않습니다. 준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
+              }
+            : {
+                headline: "현재 계정에 준비된 표시 자료가 없습니다.",
+                detail: `등록 자료가 없다는 뜻은 아닙니다.${canRequest
+                  ? " 아래에서 표시할 자료의 준비를 요청할 수 있습니다."
+                  : " 표시 준비는 권한 있는 담당자에게 요청하세요. 자료 정보는 아래 상세에서 확인할 수 있습니다."}`,
+              };
+
   return (
     <div className="flex flex-col gap-2">
       <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
@@ -570,20 +654,31 @@ export function SiteMosaicViewport({
       )}
 
       {cover.ok && geometry && !showViewport && (
-        <p role="status" className="rounded-md border border-line bg-surface px-3 py-4 text-[12.5px] leading-5 text-ink-2">
-          현재 계정에 준비된 표시 자료가 없습니다. 등록 자료가 없다는 뜻은 아닙니다.
-          {canRequest
-            ? " 아래에서 표시할 자료의 준비를 요청할 수 있습니다."
-            : " 표시 준비는 권한 있는 담당자에게 요청하세요. 자료 정보는 아래 상세에서 확인할 수 있습니다."}
-        </p>
+        <div className="flex w-full flex-col gap-2">
+          <p role="status" className="text-[12.5px] leading-5 text-ink-2">
+            {absentCopy.headline} {absentCopy.detail}
+          </p>
+          {absentFileRing && (
+            <SiteMosaicAbsentDiagram
+              fileRing={absentFileRing}
+              workAreaRing={workAreaRing}
+              overlaid={absentOverlaid}
+              overlayNote={absentOverlayNote}
+              crsLabel={absentCrsLabel}
+              planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+              filePixelSize={{ width: grid.width, height: grid.height }}
+              fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
+            />
+          )}
+        </div>
       )}
       {cover.ok && geometry && showViewport && (
         <>
           <div
             {...viewport.frameProps}
             aria-label="이어 보기 화면. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다."
-            className="relative mx-auto cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
-            style={{ maxWidth: `min(100%, calc(52dvh * ${geometry.width / geometry.height}))` }}
+            className="relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
+            style={{ ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}` }}
           >
             <div
               {...viewport.contentProps}
@@ -596,33 +691,6 @@ export function SiteMosaicViewport({
                 role="img"
                 aria-label={`이어 보기 ${geometry.width} × ${geometry.height} 픽셀 · ${observedCrsIdentifier ?? "위치 기준 확인 불가"}`}
               />
-              {placements.map(({ plan, dx, dy }) => {
-                const key = pixelKeyOf(plan.pixelWindow);
-                if (paintedKeys.includes(key)) return null;
-                const failure = failures[key] ?? null;
-                const fetching = fetchingKeys.includes(key);
-                const scheduled =
-                  (lane?.active.includes(key) ?? false) ||
-                  (lane?.queued.includes(key) ?? false) ||
-                  (lane?.done.includes(key) ?? false);
-                return (
-                  <div
-                    key={key}
-                    className="pointer-events-none absolute border border-dashed border-ink-muted/60"
-                    style={{
-                      left: `${(dx / geometry.width) * 100}%`,
-                      top: `${(dy / geometry.height) * 100}%`,
-                      width: `${(plan.width / geometry.width) * 100}%`,
-                      height: `${(plan.height / geometry.height) * 100}%`,
-                    }}
-                    aria-hidden="true"
-                  >
-                    <span className="absolute inset-0 flex items-center justify-center px-1 text-center text-[11px] leading-4 text-ink-2">
-                      {failure ? "그리지 않음" : fetching ? "자료 읽는 중" : scheduled ? "준비 중" : "표시 준비 필요"}
-                    </span>
-                  </div>
-                );
-              })}
             </div>
             <ViewportResetButton onReset={viewport.reset} />
           </div>

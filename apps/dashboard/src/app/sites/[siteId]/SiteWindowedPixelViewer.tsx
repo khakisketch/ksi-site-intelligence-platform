@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
@@ -102,6 +103,10 @@ export interface WindowedPixelViewerProps {
   selectedAssetRef?: string | null;
   /** 탐색에서 층을 바꿀 때 날짜 선택·Back·reload도 같은 원본을 가리키게 한다. */
   layerSelectionHref?: string;
+  /** Workspace hosts the layer selector in its persistent rail. */
+  hideLayerControls?: boolean;
+  /** Local comparison-layer controls may be hosted in the shared rail without changing selectors. */
+  layerControlsTargetId?: string;
 }
 
 type PaintPhase =
@@ -481,6 +486,8 @@ function WindowedLayerView({
           jobs={jobs}
           canRequest={canRequest}
           requestsHref={requestsHref}
+          workAreaRing={workAreaRing}
+          workAreaCrs={workAreaCrs}
         />
       )}
 
@@ -551,8 +558,8 @@ function WindowedLayerView({
           <div
             {...viewport.frameProps}
             aria-label={`준비된 창 ${receipt.width} × ${receipt.height} 픽셀. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다.`}
-            className="relative mx-auto cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
-            style={{ maxWidth: `min(100%, calc(52dvh * ${receipt.width / receipt.height}))` }}
+            className="relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
+            style={{ ...viewport.frameProps.style, aspectRatio: `${receipt.width} / ${receipt.height}` }}
           >
             <div
               {...viewport.contentProps}
@@ -716,17 +723,39 @@ export function SiteWindowedPixelViewer({
   slimHeader = false,
   selectedAssetRef = null,
   layerSelectionHref,
+  hideLayerControls = false,
+  layerControlsTargetId,
 }: WindowedPixelViewerProps) {
   const router = useRouter();
   const activeLayer = layers.find((item) => item.assetRef === selectedAssetRef) ?? layers[0] ?? null;
   const [layerOverride, setLayerOverride] = useState<string | null>(null);
   const layer = layerSelectionHref ? activeLayer : layers.find((item) => item.assetRef === layerOverride) ?? activeLayer;
   const grid = layer?.inspectedRaster ?? null;
+  const [controlsTarget, setControlsTarget] = useState<HTMLElement | null>(null);
+  // Resolve the sibling slot after DOM commit (also works on client-side mode navigation).
+  const attachControlsSlot = useCallback((node: HTMLSpanElement | null) => {
+    setControlsTarget(node && layerControlsTargetId ? document.getElementById(layerControlsTargetId) : null);
+  }, [layerControlsTargetId]);
+  const layerControls = layers.length > 1 ? (
+    <div className="flex flex-wrap gap-1 lg:flex-col" role="group" aria-label="자료 층 전환">
+      {layers.map((item) => <button key={item.assetRef} type="button"
+        aria-pressed={item.assetRef === layer?.assetRef}
+        onClick={() => {
+          if (layerSelectionHref) {
+            if (item.assetRef === layer?.assetRef) return;
+            router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
+          } else setLayerOverride(item.assetRef);
+        }}
+        className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${item.assetRef === layer?.assetRef ? "bg-sunk font-bold" : "text-ink-2"}`}>
+        {item.kindLabel}
+      </button>)}
+    </div>
+  ) : null;
 
   return (
     <section
       aria-label={`${WINDOWED_VIEWER_ADAPTER_LABEL}${observationHeading ? ` · ${observationHeading}` : ""}`}
-      className="flex flex-col gap-3 rounded-xl border border-line bg-surface px-4 py-3"
+      className={`flex min-w-0 flex-col gap-3 ${hideLayerControls ? "" : "rounded-xl border border-line bg-surface px-4 py-3"}`}
     >
       {!slimHeader && (
         <header>
@@ -735,30 +764,9 @@ export function SiteWindowedPixelViewer({
         </header>
       )}
 
-      {layers.length > 1 && (
-        <div className="flex flex-wrap gap-1" role="group" aria-label="자료 층 전환">
-          {layers.map((item) => (
-            <button
-              key={item.assetRef}
-              type="button"
-              aria-pressed={item.assetRef === layer?.assetRef}
-              onClick={() => {
-                if (layerSelectionHref) {
-                  if (item.assetRef === layer?.assetRef) return;
-                  router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
-                } else {
-                  setLayerOverride(item.assetRef);
-                }
-              }}
-              className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${
-                item.assetRef === layer?.assetRef ? "bg-sunk font-bold" : "text-ink-2"
-              }`}
-            >
-              {item.kindLabel}
-            </button>
-          ))}
-        </div>
-      )}
+      {hideLayerControls && layer && <p className="text-[12px] font-semibold text-ink-2">표시 중 · {layer.kindLabel}</p>}
+      {layerControlsTargetId && <span hidden ref={attachControlsSlot} />}
+      {controlsTarget ? createPortal(layerControls, controlsTarget) : !hideLayerControls && !layerControlsTargetId ? layerControls : null}
 
       {!layer && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
@@ -848,6 +856,10 @@ export function SiteWindowedPixelCompare({
   requestsHref,
   workAreaRing,
   workAreaCrs,
+  hideLayerControls = false,
+  baselineAssetRef,
+  currentAssetRef,
+  layerControlsInRail = false,
 }: {
   siteId: string;
   workAreaId: string;
@@ -864,6 +876,10 @@ export function SiteWindowedPixelCompare({
   requestsHref: string;
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
+  hideLayerControls?: boolean;
+  baselineAssetRef?: string;
+  currentAssetRef?: string;
+  layerControlsInRail?: boolean;
 }) {
   const verdict = sharedPlaneForCompare(baselineCrs, currentCrs);
   return (
@@ -899,6 +915,9 @@ export function SiteWindowedPixelCompare({
             observationHeading={baselineHeading}
             idPrefix="windowed-baseline"
             slimHeader
+            hideLayerControls={hideLayerControls}
+            selectedAssetRef={baselineAssetRef}
+            layerControlsTargetId={layerControlsInRail ? "workspace-baseline-layer-controls" : undefined}
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
@@ -917,6 +936,9 @@ export function SiteWindowedPixelCompare({
             observationHeading={currentHeading}
             idPrefix="windowed-current"
             slimHeader
+            hideLayerControls={hideLayerControls}
+            selectedAssetRef={currentAssetRef}
+            layerControlsTargetId={layerControlsInRail ? "workspace-current-layer-controls" : undefined}
           />
         </div>
       </div>

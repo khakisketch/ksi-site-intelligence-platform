@@ -30,6 +30,20 @@ beforeEach(() => {
 });
 
 describe("work area list load state", () => {
+  it("returns to the validated work-area scope without promoting an unknown query", async () => {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "동측", status: "ACTIVE" }] });
+    const html = renderToStaticMarkup(await SiteWorkAreasPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ workAreaId: "area-1" }),
+    }));
+    expect(html).toContain('/sites/site-1?workAreaId=area-1');
+    const foreign = renderToStaticMarkup(await SiteWorkAreasPage({
+      params: Promise.resolve({ siteId: "site-1" }),
+      searchParams: Promise.resolve({ workAreaId: "foreign" }),
+    }));
+    expect(foreign).not.toContain('workAreaId=foreign');
+  });
+
   it("keeps a successful empty list distinct from a rejected list read", async () => {
     const empty = renderToStaticMarkup(await callPage());
     expect(empty).toContain("data-area-count=\"0\"");

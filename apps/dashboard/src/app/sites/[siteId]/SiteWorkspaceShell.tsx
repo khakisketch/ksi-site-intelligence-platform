@@ -28,6 +28,7 @@ import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialO
 import { SiteAreaNextActionNav, resolveSiteAreaNextAction } from "./SiteAreaNextAction";
 import { SiteExploreCanvas, type ExploreCaptureOption } from "./SiteExploreCanvas";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
+import { SiteDisplayLegend } from "./SiteDisplayLegend";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
 import { SiteWindowedPixelCompare, SiteWindowedPixelViewer } from "./SiteWindowedPixelViewer";
 import {
@@ -38,9 +39,9 @@ import {
 } from "./site-spatial";
 
 const WORKSPACE_MODES: ReadonlyArray<{ key: WorkspaceMode; label: string }> = [
-  { key: "explore", label: "탐색" },
-  { key: "compare", label: "두 시점 보기" },
-  { key: "results", label: "결과 요약" },
+  { key: "explore", label: "단일 시점" },
+  { key: "compare", label: "두 시점 비교" },
+  { key: "results", label: "분석 결과" },
 ];
 
 function entryCaptureLine(fact: WorkspaceObservationFact): string {
@@ -293,7 +294,7 @@ export function buildExploreCaptureOptions({
 /**
  * 현장 공간 작업공간 겉틀 (SWX-2 구조) — 탐색·비교·결과의 작업 방식만 나눈다.
  *
- * - 다섯 영역(현황·자료·분석·검토·작업·관리)과 Console 정체·머리는 그대로 둔다.
+ * - 네 현장 영역 아래 하나의 선택 레일·뷰어 프레임을 공유한다.
  *   이 겉틀은 현장명을 다시 쓰지 않는다(중복 제목 금지).
  * - 탐색은 기존 읽기 전용 공간 확인을 그대로 싣는다(첫 뷰포트: 실제 관측 범위).
  * - 비교는 두 개의 동등한 지도 자리 + 미지원 고지다. 동기화·정합을 지어내지 않는다.
@@ -409,7 +410,7 @@ export function SiteWorkspaceShell({
       ? `등록 버전 ${captionFact.revision}`
       : observationPrecisionOf(captionFact) === "date-only"
         ? `등록 버전 ${captionFact.revision} · 날짜만 확인 · 시각 미상`
-        : `등록 버전 ${captionFact.revision} · 촬영 시점 미상`
+        : `등록 버전 ${captionFact.revision} · 관측 시점 미상`
     : null;
   // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
   // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
@@ -450,8 +451,55 @@ export function SiteWorkspaceShell({
         : null,
     })
     : null;
-  return <div className="flex flex-col gap-3">
-    <nav aria-label="공간 작업 방식" className="flex flex-wrap gap-1">
+  const selectedCatalog = mode === "explore" ? catalogAssets.find((item) => item.assetRef === selectedAssetRef) ?? null : null;
+  const compareProps = {
+    sitePath, areas, selectedWorkAreaId, catalogAssets,
+    projectionState: projectionState === "not-requested" ? "unavailable" as const : projectionState,
+    workspaceHasMore, baselineRequestedRef, currentRequestedRef, resolution: comparison,
+    canCreateAnalysis, canCreateWorkOrder, scopedCompareHref, exploreHref, facts,
+  };
+  return <div className="flex min-w-0 flex-col gap-3">
+    <SiteExploreCanvas
+      sitePath={sitePath} areas={areas} selectedWorkAreaId={selectedWorkAreaId}
+      captureOptions={captureOptions} selectedCaption={mode === "explore" ? selectedCaption : null}
+      coverageNote={mode === "explore" && selected && viewerJobsState !== "not-requested"
+        ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다." : null}
+      compareHref={mode === "explore" && selected ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}` : null}
+      mode={mode}
+      actions={selected && exploreNextAction ? (
+        <SiteAreaNextActionNav sitePath={sitePath} workAreaId={selected.workAreaId}
+          action={exploreNextAction} archived={selected.status === "ARCHIVED"}
+          canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
+          label="탐색 다음 행동" compact />
+      ) : undefined}
+      observationControls={mode === "compare" && areasKnown ? <SiteWorkspaceCompare {...compareProps} presentation="controls" /> : undefined}
+      layers={mode === "explore" && exploreLayers.length > 0 ? <nav aria-label="자료 층 전환" className="flex flex-col gap-1">
+        {exploreLayers.map((item) => <Link key={item.assetRef}
+          href={`${sitePath}?workAreaId=${encodeURIComponent(selectedWorkAreaId!)}&assetRef=${encodeURIComponent(item.assetRef)}`}
+          aria-current={item.assetRef === (selectedAssetRef ?? exploreLayers[0]?.assetRef) ? "true" : undefined}
+          className={`tap-target rounded-md px-2 py-2 text-[12.5px] ${item.assetRef === (selectedAssetRef ?? exploreLayers[0]?.assetRef) ? "bg-sunk font-bold" : "text-ink-2"}`}>
+          {item.kindLabel}
+        </Link>)}
+      </nav> : mode === "compare" && baselineFact && currentFact ? <div className="flex flex-col gap-3">
+        {([{ label: "기준 자료", fact: baselineFact, id: "workspace-baseline-layer-controls" }, { label: "비교 자료", fact: currentFact, id: "workspace-current-layer-controls" }] as const).map((slot) => <nav key={slot.id} aria-label={`${slot.label} 표시 레이어`} className="flex flex-col gap-1">
+          <p className="text-[12px] text-ink-muted">{slot.label}</p>
+          <div id={slot.id} />
+          {viewerLayersForEpoch(catalogAssets, slot.fact.observationEpochId).length === 1 && <p className="text-[12px]">{dataKindLabel(slot.fact.kind)}</p>}
+          <noscript><p className="text-[12px]">레이어 전환은 JavaScript가 필요합니다. 원본 정보는 비교 자료·조건에서 확인할 수 있습니다.</p></noscript>
+        </nav>)}
+      </div> : undefined}
+      detail={selectedCatalog ? <>
+        <p className="break-words font-semibold">{exploreHeading ?? dataKindLabel(selectedCatalog.kind)}</p>
+        <dl className="grid gap-2">
+          <div><dt className="text-ink-muted">등록 파일명</dt><dd className="break-all">{selectedCatalog.declared.fileName}</dd></div>
+          <div><dt className="text-ink-muted">관측 위치 기준</dt><dd>{selectedCatalog.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
+          <div><dt className="text-ink-muted">수직 기준</dt><dd>{selectedCatalog.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"}</dd></div>
+          <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "미평가 · 지도 표시 준비와 별개입니다." : "분석 기록에서 확인하세요."}</dd></div>
+        </dl>
+        <Link className="tap-target underline" href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selectedCatalog.workAreaId)}&assetRef=${encodeURIComponent(selectedCatalog.assetRef)}`}>원본 메타데이터 확인</Link>
+        <details><summary className="tap-target cursor-pointer">버전·식별 정보</summary><p className="break-all">등록 버전 {selectedCatalog.revision} · {selectedCatalog.submissionRef}</p><p className="break-all">{selectedCatalog.assetRef}</p></details>
+      </> : undefined}
+      toolbar={<nav aria-label="공간 작업 방식" className="inline-flex max-w-full flex-wrap gap-1 rounded-lg bg-sunk p-1">
       {WORKSPACE_MODES.map((option) => {
         const active = option.key === mode;
         return (
@@ -460,46 +508,21 @@ export function SiteWorkspaceShell({
             href={modeHref(sitePath, option.key, scope)}
             aria-current={active ? "page" : undefined}
             className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[13px] break-keep ${
-              active ? "bg-sunk font-bold" : "text-ink-2"
+              active ? "bg-surface font-bold" : "text-ink-2"
             }`}
           >
             {option.label}
           </Link>
         );
       })}
-    </nav>
+      </nav>}
+    >
 
     {mode === "explore" && (<>
       {/* 탐색 첫 화면은 실제 화면이 먼저다. 측정 전 2042자(390px 기준)가
           앞을 막던 기하 개요·등록 수·행동벽은 아래 '자료·범위 상세'에 둔다. */}
       {/* 다음 행동은 그림보다 위 — 그림이 길어 아래로 밀리면 처음 보는
           사람은 무엇을 할 수 있는지 화면을 끝까지 스크롤해야 안다. */}
-      {selected && exploreNextAction && (
-        <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <SiteAreaNextActionNav
-            sitePath={sitePath}
-            workAreaId={selected.workAreaId}
-            action={exploreNextAction}
-            archived={selected.status === "ARCHIVED"}
-            canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
-            label="탐색 다음 행동"
-            compact
-          />
-        </div>
-      )}
-      <SiteExploreCanvas
-        sitePath={sitePath}
-        areas={areas}
-        selectedWorkAreaId={selectedWorkAreaId}
-        captureOptions={captureOptions}
-        selectedCaption={selectedCaption}
-        coverageNote={selected && viewerJobsState !== "not-requested"
-          ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
-          : null}
-        compareHref={selected
-          ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}`
-          : null}
-      >
         {selected && viewerJobsState !== "not-requested" ? (
           <SiteWindowedPixelViewer
             siteId={facts.siteId}
@@ -515,6 +538,7 @@ export function SiteWorkspaceShell({
             observationHeading={exploreHeading}
             idPrefix="windowed-explore"
             slimHeader
+            hideLayerControls
             selectedAssetRef={selectedAssetRef}
             layerSelectionHref={`${sitePath}?workAreaId=${encodeURIComponent(selected.workAreaId)}`}
           />
@@ -527,7 +551,7 @@ export function SiteWorkspaceShell({
                 : "준비 기록을 불러오지 못했습니다. 잠시 후 아래 상세에서 다시 확인하세요."}
           </p>
         )}
-      </SiteExploreCanvas>
+      <SiteDisplayLegend />
       {/* 기하 개요·등록 수·행동벽은 두 번째 자리다. 정보는 지우지 않고 펼침에 둔다. */}
       <details className="rounded-lg border border-line bg-surface px-4 py-3">
         <summary className="tap-target cursor-pointer text-[13px] font-semibold">자료·범위 상세</summary>
@@ -565,23 +589,9 @@ export function SiteWorkspaceShell({
       </details>
     </>)}
 
+    {mode === "compare" && !areasKnown && <p role="status" className="text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
     {mode === "compare" && areasKnown && (<>
-      <SiteWorkspaceCompare
-        sitePath={sitePath}
-        areas={areas}
-        selectedWorkAreaId={selectedWorkAreaId}
-        catalogAssets={assetsState.status === "ready" ? assetsState.page.assets : []}
-        projectionState={projectionState === "not-requested" ? "unavailable" : projectionState}
-        workspaceHasMore={workspaceHasMore}
-        baselineRequestedRef={baselineRequestedRef}
-        currentRequestedRef={currentRequestedRef}
-        resolution={comparison}
-        canCreateAnalysis={canCreateAnalysis}
-        canCreateWorkOrder={canCreateWorkOrder}
-        scopedCompareHref={scopedCompareHref}
-        exploreHref={exploreHref}
-        facts={facts}
-      />
+      {comparison.status !== "ready" && <SiteWorkspaceCompare {...compareProps} presentation="viewer" />}
       {/* 비교의 창 단위 픽셀 보기 — 두 칸은 독립된 어댑터다. 동기화 비교가
           아니라 각 창의 실제 픽셀을 같은 평면에 둔다. */}
       {selected && comparison.status === "ready" && baselineFact && currentFact && viewerJobsState !== "not-requested" && (
@@ -601,8 +611,17 @@ export function SiteWorkspaceShell({
           requestsHref={requestsHref}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
+          hideLayerControls
+          baselineAssetRef={baselineFact.assetRef}
+          currentAssetRef={currentFact.assetRef}
+          layerControlsInRail
         />
       )}
+      {comparison.status === "ready" && <details className="rounded-lg border border-line p-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">비교 자료·조건 확인</summary>
+        <div className="mt-2"><SiteWorkspaceCompare {...compareProps} presentation="viewer" /></div>
+      </details>}
+      <SiteDisplayLegend />
     </>)}
 
     {mode === "results" && (
@@ -619,5 +638,6 @@ export function SiteWorkspaceShell({
         scopedCompareHref={scopedCompareHref}
       />
     )}
+    </SiteExploreCanvas>
   </div>;
 }

@@ -183,7 +183,7 @@ const ISSUE_GUIDANCE: Record<string, AnalysisIssueGuidance> = {
       "기준과 현재에 서로 다른 제출 revision을 선택하세요. 날짜가 달라도 같은 제출 revision이면 서로 다른 관측이 아닙니다.",
   },
   CAPTURE_CHRONOLOGY_INVALID: {
-    label: "촬영 시점 순서를 확인할 수 없음",
+    label: "관측 시점 순서를 확인할 수 없음",
     owner: "외부 관측 자료 담당자",
     nextStep: "촬영 구간이 겹치거나 기준·현재 순서가 유효하지 않습니다. 제공자가 기록된 촬영 시각을 확인한 뒤, 겹치지 않는 실제 관측을 선택하세요.",
     selfServiceNextStep:
