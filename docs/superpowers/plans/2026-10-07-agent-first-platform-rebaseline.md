@@ -7308,3 +7308,17 @@ preserves/query-loads full and unfinished history and Core metadata while refusi
 before side effects. Old-code rollback remains possible only before beyond-legacy admissions. No
 journal snapshot restore/cap increase is an acceptable downgrade. Same implementer received this
 constraint before activation; no live Core changes or restart occurred.
+
+Parallel thumbnail eligibility correction (Primary-owned Dashboard files; no overlap with Core
+implementer): actual metadata-only preview lookup still returns unknown before byte reading. Read-
+only exact-scope/requester counts show12own requests; valid9a is lexicographic position10. Core V1
+list order/cursors are lexical and unchanged; the thumbnail BFF only looked at page1/8. Thus audit
+recovery alone would not restore the actual thumbnail. Do not change Core list/cursor contracts or
+increase read caps: reuse the same overall six request-page calls /48scanned-record worst-case budget
+as the previous six-areas×eight-rows pass, allocating unused calls to opaque continuations round-
+robin after initial area pages. Maximum areas6/page-size8/global calls6 remain; unscanned/failed/
+repeated/malformed cursor remains unknown, not absence. No byte authority/cache/producer change.
+ReqIDs same Human actual-photo restoration; owner Dashboard preview BFF/pure limits +focused tests;
+files preview/route.ts, site-preview.ts and route tests; noAPI/schema/license/HIL change. Tests cover
+page2validjob with exactlink, multi-area fairness, repeatedcursor/failure/oversizedpage, sameglobal
+budget+unknown at exhaustion, explicit requester/scopedjob filtering. Rollback source-only.

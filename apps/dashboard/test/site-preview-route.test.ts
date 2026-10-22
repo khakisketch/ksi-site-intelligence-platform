@@ -131,6 +131,60 @@ describe("site preview BFF aggregate", () => {
     mocked.listSpatialDataRequests.mockResolvedValue({ items: [], nextCursor: "next-page" });
 
     expect(await (await get("site-1")).json()).toEqual({ available: false, reason: "unknown" });
+    expect(mocked.listSpatialDataRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it("finds an existing allowed output after page one without increasing the global lookup budget", async () => {
+    mocked.listSpatialDataRequests
+      .mockResolvedValueOnce({ items: [job("old", { availability: "RETENTION_EXPIRED" })], nextCursor: "opaque-page-2" })
+      .mockResolvedValueOnce({ items: [job("sdj-v1-00000000-0000-0000-0000-000000000001")], nextCursor: null });
+    mocked.getSpatialAsset.mockResolvedValue(asset());
+    const body = await (await get("site-1")).json();
+    expect(body.available).toBe(true);
+    expect(body.requestId).toBe("sdj-v1-00000000-0000-0000-0000-000000000001");
+    expect(mocked.listSpatialDataRequests).toHaveBeenNthCalledWith(2, "site-1", "area-1", {limit:8,cursor:"opaque-page-2"});
+    expect(mocked.getSpatialAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it("checks initial pages of other areas before spending unused calls on a continuation", async () => {
+    mocked.listWorkAreas.mockResolvedValue({workAreas:[{workAreaId:"area-1",name:"서측"},{workAreaId:"area-2",name:"동측"}]});
+    mocked.listSpatialDataRequests.mockImplementation(async (_siteId:string,workAreaId:string,query:{cursor?:string}) => {
+      if(workAreaId==="area-1")return {items:[],nextCursor:query.cursor?null:"opaque-west"};
+      return {items:[job("sdj-v1-00000000-0000-0000-0000-000000000001",{workAreaId:"area-2"})],nextCursor:null};
+    });
+    mocked.getSpatialAsset.mockResolvedValue({...asset(),workAreaId:"area-2"});
+    const body=await(await get("site-1")).json();
+    expect(body.available).toBe(true);
+    expect(body.workAreaId).toBe("area-2");
+    expect(mocked.listSpatialDataRequests).toHaveBeenCalledTimes(2);
+    expect(mocked.listSpatialDataRequests.mock.calls[1]![1]).toBe("area-2");
+  });
+
+  it("never exceeds the original six request calls / forty-eight rows across continuations", async () => {
+    let calls=0;
+    mocked.listSpatialDataRequests.mockImplementation(async()=>({items:Array.from({length:8},()=>job("expired",{availability:"RETENTION_EXPIRED"})),nextCursor:`opaque-${++calls}`}));
+    expect(await(await get("site-1")).json()).toEqual({available:false,reason:"unknown"});
+    expect(mocked.listSpatialDataRequests).toHaveBeenCalledTimes(6);
+    expect(mocked.listSpatialDataRequests.mock.calls.every((call)=>call[2].limit===8)).toBe(true);
+    expect(mocked.getSpatialAsset).not.toHaveBeenCalled();
+  });
+
+  it("reports known absence only after every allowed continuation has ended", async () => {
+    mocked.listSpatialDataRequests.mockResolvedValueOnce({items:[],nextCursor:"opaque-2"}).mockResolvedValueOnce({items:[],nextCursor:null});
+    expect(await(await get("site-1")).json()).toEqual({available:false,reason:"no-output"});
+    expect(mocked.listSpatialDataRequests).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["", "x".repeat(2049), ["not-a-cursor"]])("does not follow an invalid opaque cursor: %j", async(nextCursor)=>{
+    mocked.listSpatialDataRequests.mockResolvedValue({items:[],nextCursor});
+    expect(await(await get("site-1")).json()).toEqual({available:false,reason:"unknown"});
+    expect(mocked.listSpatialDataRequests).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not consume an oversized metadata page beyond the row budget", async()=>{
+    mocked.listSpatialDataRequests.mockResolvedValue({items:Array.from({length:9},()=>job("sdj-v1-00000000-0000-0000-0000-000000000001")),nextCursor:null});
+    expect(await(await get("site-1")).json()).toEqual({available:false,reason:"unknown"});
+    expect(mocked.getSpatialAsset).not.toHaveBeenCalled();
   });
 
   it("reports unknown when an area list read fails", async () => {

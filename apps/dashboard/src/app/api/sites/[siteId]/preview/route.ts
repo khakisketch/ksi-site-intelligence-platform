@@ -12,6 +12,7 @@ import {
   buildSitePreviewDescriptor,
   pickAreaPreviewJob,
   SITE_PREVIEW_MAX_AREAS,
+  SITE_PREVIEW_MAX_REQUEST_PAGES,
   SITE_PREVIEW_REQUESTS_PER_AREA,
   type SitePreviewLookup,
 } from "@/lib/site-preview";
@@ -45,15 +46,32 @@ export async function GET(
     const scannedAreas = areas.workAreas.slice(0, SITE_PREVIEW_MAX_AREAS);
     // 묶음 밖 구역은 훑지 않으므로, 후보가 없어도 없음이 아니라 미확인이다.
     let sawUnknown = areas.workAreas.length > scannedAreas.length;
-    for (const area of scannedAreas) {
+    const pending = scannedAreas.map((area) => ({ area, cursor: undefined as string | undefined, seen: new Set<string>() }));
+    for (let calls = 0; pending.length > 0 && calls < SITE_PREVIEW_MAX_REQUEST_PAGES; calls += 1) {
+      const scan = pending.shift()!;
+      const { area } = scan;
       let jobs: SpatialDataJobView[];
-      let truncated: boolean;
       try {
         const page = await listSpatialDataRequests(siteId, area.workAreaId, {
           limit: SITE_PREVIEW_REQUESTS_PER_AREA,
+          ...(scan.cursor ? { cursor: scan.cursor } : {}),
         });
+        if (!Array.isArray(page.items) || page.items.length > SITE_PREVIEW_REQUESTS_PER_AREA) {
+          sawUnknown = true;
+          continue;
+        }
         jobs = page.items;
-        truncated = page.nextCursor !== null;
+        if (page.nextCursor !== null) {
+          if (typeof page.nextCursor !== "string" || page.nextCursor.length === 0
+            || page.nextCursor.length > 2048 || scan.seen.has(page.nextCursor)) {
+            sawUnknown = true;
+          } else {
+            scan.seen.add(page.nextCursor);
+            // Existing area pages go first; unused calls then follow opaque Core
+            // continuations. Never decode/forge cursors or expand the total budget.
+            pending.push({ ...scan, cursor: page.nextCursor });
+          }
+        }
       } catch {
         // 이 구역의 목록을 못 읽으면 다음 구역으로 — 전체 판정은 unknown이다.
         sawUnknown = true;
@@ -61,8 +79,6 @@ export async function GET(
       }
       const job = pickAreaPreviewJob(jobs, { siteId, workAreaId: area.workAreaId });
       if (!job || !job.receipt) {
-        // 잘린 범위에서 못 찾은 것은 없음이 아니다.
-        if (truncated) sawUnknown = true;
         continue;
       }
       let asset = null;
@@ -100,7 +116,7 @@ export async function GET(
       });
     }
 
-    const lookup: SitePreviewLookup = sawUnknown
+    const lookup: SitePreviewLookup = sawUnknown || pending.length > 0
       ? { available: false, reason: "unknown" }
       : { available: false, reason: "no-output" };
     return NextResponse.json(lookup, {

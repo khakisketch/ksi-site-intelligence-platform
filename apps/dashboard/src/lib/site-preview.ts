@@ -30,8 +30,11 @@ import type { SpatialDataJobView, SpatialDataReceipt } from "./core-api/spatial-
 /** 한 번의 목록 진입에서 훑는 작업구역 수 상한 — N+1 팬아웃 방지. */
 export const SITE_PREVIEW_MAX_AREAS = 6;
 
-/** 구역당 훑는 준비 요청 수 상한 — 같은 bound 안에서 고른다. */
+/** 한 요청 페이지의 행 수 — 구역 간/이어지는 페이지에 같은 크기를 쓴다. */
 export const SITE_PREVIEW_REQUESTS_PER_AREA = 8;
+
+/** 기존 6구역 × 1페이지의 총 호출/행 예산을 유지하며 남는 호출만 이어 읽는다. */
+export const SITE_PREVIEW_MAX_REQUEST_PAGES = SITE_PREVIEW_MAX_AREAS;
 
 export interface SitePreviewAreaInput {
   workAreaId: string;
