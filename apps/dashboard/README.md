@@ -1,10 +1,20 @@
 # apps/dashboard
 
 KSI Operations Console: 홈 · 현장 · 업무, with supporting 계정·도움말 on `/more`.
-The Site workspace owns 공간자료 (overview), 등록 자료 (materials), 분석 기록·검토 (analysis),
-현장 작업 (work-orders), and 현장 설정 (manage). The keys and existing deep routes remain compatible.
-현장 설정 owns work-area setup, the optional site-wide boundary and site-state transitions;
-external comparison records stay distinct from KSI calculations. P4 removed
+The Site workspace has four direct sections: 공간 보기 (overview), 자료 (materials),
+분석·결과 (analysis), 설정 (manage). 단일 시점 / 두 시점 비교 / 분석 결과 are modes of the
+same viewer-led workspace. The retained `work-orders` deep route is 관측 작업 기록 under the
+자료 context, not WorkArea management. 설정 owns work-area setup (`/work-areas`), the optional
+site-wide boundary and site-state transitions; external comparison records stay distinct from KSI
+calculations. Existing keys/deep routes remain compatible.
+
+Explicit A/B browsing preserves exact material/layer references through related data/analysis/result
+navigation; date-only independent viewing does not establish chronology, registration or quantitative
+eligibility. Analysis drafts preselect only an exact current candidate triple; browsing cannot replace
+a stored result's inputs. Existing-record lineage/reuse details require matching loaded evidence.
+Synchronized spatial navigation remains unavailable without pair-display authority/geometry; expired
+prepared outputs are not silently regenerated. See the current task ledger for actual evidence and
+unverified input/data/host boundaries. P4 removed
 Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/event/fleet
 scope is historical only. Auth, scoped external registration, work operations,
 result/evidence and unavailable states remain.

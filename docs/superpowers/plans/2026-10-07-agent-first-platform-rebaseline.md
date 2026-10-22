@@ -6956,3 +6956,57 @@ options put literal capture precision/date first; tablet remains two-column and 
 kind/version. This is date recognition/containment, not another visual-world/polish pass. P2 long
 locator screenshots may include sticky-chrome capture artifacts; use settled viewport top/profile/
 reference images, not the malformed full-element1440 capture, as visual evidence.
+
+##### P1/P2 integrated outcome — 87b1c14f, 2026-10-22
+
+**Reconciled against the whole current Human workspace request (not just test counts):**
+
+| Outcome | Current evidence / boundary |
+| --- | --- |
+| Four direct site sections, viewer-led single/compare/result modes, conditional details and honest map states (P0) | Implemented; actual01c74afd five-width/admin+viewer evidence retained and final regression preserved. Same native coordinates, mask/hash/rights checks; no decorative photograph restored. |
+| Explicit two-observation independent inspection, including date-only/unknown precision (P1) | Implemented; exact same-area catalog/projection identity/revision binding, no silent substitution, no fabricated chronology or display-ready pixel verdict. Actual coastal A/B and A DSM link verified. |
+| Selection continuity through related screens | Implemented; portalled layer → materials/detail → rail recent record → modes/reload/BackForward → conditions/result → return preserves exact A/B. One WorkArea key; repeated/foreign intent refused. Dirty native selects now match canonical URL state. |
+| Exact analysis condition handoff | Implemented; only an exact server candidate triple can preselect. Coastal candidate count0 leaves both unset with a reason. Synthetic reversed A/B seeds exact reversed triples but chronology disables the request. Draft/mismatch entry shows conditions before history in DOM; deep results retain result/history first. No new analysis issued. |
+| Existing record inputs versus browsing | Implemented; original synthetic baseline6Oct/current13Oct, cut0/fill800/net800m3, result ID/report digest unchanged while reversed browsing context remains separately recoverable. No recalculation/reproduction/accuracy claim. |
+| Existing-record lineage/reuse (P2) | Implemented; exact original inputs, result/evidence revision/digest, matching loaded profile/runtime/area-definition witness, permission-rechecked canonical record link. Link opens same record without draft hints. API/MCP reference only; dedicated identity/consent/host execution not activated or implied. |
+| Synchronized spatial navigation / shared crosshairs / difference colouring | **BLOCKED, not implemented:** no applicable purpose-bound pair-display geometry/registration evidence. Equal CRS/grid/CSS is not a substitute. |
+| Current new-layout real-pixel comparison | **UNVERIFIED:** lawful requester-owned prepared outputs expired. Inspected native extent diagrams are not photographs, NoData-free coverage or field alignment. No reprepare/TTL/grant/cache/producer changes. |
+| Full no-JS / physical input / external host | Existing hidden streamed-Suspense no-JS blocker remains; only form SSR fallback verified. Physical touch/native Korean IME/SR and external MCP-host execution remain untested. |
+
+**Actual final render/interaction proof.** `journey-verification.json` and supplemental
+`responsive-reuse.json` identify87b1c14f and pass. Primary personally read current390/768/1024/1440
+comparison, conditions entry, frozen-result distinction, closed/open lineage and phone/tablet
+profile/reference images. Phone comparison rail434px/viewer top668; tablet295px/viewer top505,
+compared with the preserved first-render oversized selection panel. Desktop260px rail uses full-width
+one-per-row/date-first A/B controls; mobile keeps one extra disclosure action for layers so primary
+observation choices and the viewing frame appear earlier. Full identities/precision remain by panes.
+The geometry is honest expired-output evidence, not live-pixel or independent-camera input proof.
+
+Late failures were acted on, not hidden: dirty native-select state was a product defect; hash-only
+condition entry was insufficient and its structural approach was revised. Later automation-only
+fixes use the real material heading/implicit combobox names, await canonical navigation completion,
+and accept an already-open evidence disclosure on same-page record navigation. Exact scope,
+identities, chronology, frozen result and no-write requirements remain asserted. Malformed long
+locator captures with sticky-chrome artifacts were not used as whole-screen acceptance; settled
+viewport captures replace them, and initial/failed originals remain separate history.
+
+**Final gates/protected resources.** Committed lockfile image193files/1916tests; host tsc/changed
+ESLint clean; full + affected-followup mechanical scans[]. Existing isolated four-spec regression
+on87b1c14f:100pass/24expectedskip/code0, no3230/8032/9030 listeners. Actual paired workspace and plain
+analysis main axe0violations/0incomplete; no suppression. Actual journeys/supplemental captures:
+product writes0/pageerrors0. All14 protected journal prefixes AND lengths unchanged,0appended bytes.
+Core8074 remains ready/not restarted; issuer9042/S3/config/grants/retention/shared-inspector incident
+untouched. Only task-owned frontend87b1c14f replaced, with retained prior containers/images. Both
+original stashes and user/unowned Playwright+pnpm files remain; no new stash/reset/cleanup operation.
+
+Durable evidence with SHA256 manifest:
+`~/.local/share/ksi-product-use-20261021/workspace-journey-87b1c14f/` (actual renders, labelled mobile
+before/after, verification/runtime JSON, locked/E2E logs, scripts and separated failure history).
+Runtime/code revision:87b1c14f1fd5718080e2f58a741e020211271ca1; a following docs-only commit does not
+replace that runtime provenance. P0 durable evidence remains under workspace-layout-01c74afd.
+
+**Stop reason / no false closure.** Feasible approved P0/P1/P2 UI implementation and relevant
+verification are satisfied; independent review found no further unblocked material unit after these
+corrections. Remaining blueprint operations require genuinely absent pair authority/current pixels,
+not another routine UI edit. Do not call synchronized comparison, whole platform/product slice,
+customer/production/field/settlement acceptance complete. No product-state/slice transition is made.
