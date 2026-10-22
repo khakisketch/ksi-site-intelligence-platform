@@ -205,6 +205,9 @@ describe("compare selection rail (viewer-first compact)", () => {
     expect(within(controls).queryByRole("heading", { name: "독립 보기 — 정합 근거 없음" })).toBeNull();
     expect(selectA.className).toContain("tap-target");
     expect(selectB.className).toContain("tap-target");
+    // A wide viewport still has a 260px rail: keep each date selector full width.
+    expect(selectA.parentElement!.parentElement!.className).toContain("lg:grid-cols-1");
+    expect(selectA.options[1]!.textContent).toMatch(/^2026\./);
     const apply = within(controls).getByRole("button", { name: "독립 보기로 나란히 두기" });
     expect(apply.className).toContain("tap-target");
     const form = selectA.closest("form")!;

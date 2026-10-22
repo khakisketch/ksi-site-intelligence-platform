@@ -38,8 +38,10 @@ function precisionNote(fact: WorkspaceObservationFact): string {
 }
 
 /** 선택지·칸 제목 — 서버 사실의 정밀도 그대로. 날짜만 알면 날짜+시각 미상, 미상은 날짜를 그리지 않는다. */
-function candidateLabel(fact: WorkspaceObservationFact): string {
-  return `${dataKindLabel(fact.kind)} · ${precisionNote(fact)} · 등록 버전 ${fact.revision}`;
+function candidateLabel(fact: WorkspaceObservationFact, dateFirst = false): string {
+  const identity = dateFirst ? `${precisionNote(fact)} · ${dataKindLabel(fact.kind)}`
+    : `${dataKindLabel(fact.kind)} · ${precisionNote(fact)}`;
+  return `${identity} · 등록 버전 ${fact.revision}`;
 }
 
 function CompareSlot({
@@ -273,13 +275,13 @@ export function SiteWorkspaceCompare({
     <form key={`${selected.workAreaId}:${visualARequestedRef ?? ""}:${visualBRequestedRef ?? ""}`} method="get" action={formAction} className="flex min-w-0 flex-col gap-2">
       <input type="hidden" name="mode" value="compare" />
       <input type="hidden" name="workAreaId" value={selected.workAreaId} />
-      <div className="grid min-w-0 gap-2 min-[420px]:grid-cols-2">
+      <div className="grid min-w-0 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-1">
         <div className="min-w-0">
           <label htmlFor="workspace-visual-a" className="block text-[12px] font-semibold">관측 A</label>
           <select id="workspace-visual-a" name="visualAAssetRef" required defaultValue={visualARequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
             <option value="">관측 A 선택</option>
-            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
-              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0], true) : group.observationEpochId}>
+              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item, true)}</option>)}
             </optgroup>)}
           </select>
         </div>
@@ -287,8 +289,8 @@ export function SiteWorkspaceCompare({
           <label htmlFor="workspace-visual-b" className="block text-[12px] font-semibold">관측 B</label>
           <select id="workspace-visual-b" name="visualBAssetRef" required defaultValue={visualBRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
             <option value="">관측 B 선택</option>
-            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
-              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0], true) : group.observationEpochId}>
+              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item, true)}</option>)}
             </optgroup>)}
           </select>
         </div>

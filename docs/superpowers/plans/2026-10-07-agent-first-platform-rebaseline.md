@@ -6945,3 +6945,14 @@ return and mismatch explanation remain outside compact mutation gating. No new r
 Tests assert both entry orders and one form. The actual gate checks that the condition heading is
 visible in the first viewport and precedes history, not an arbitrary200px coordinate. Retained
 anchor failure image/JSON in `conditions-anchor-failure-85781dfd/`; final193files/1916host tests pass.
+
+Actual55789992 full journey passed after correcting only automation assumptions (the real material
+heading is 선택한 자료; implicit combobox names include option text; same-page canonical record
+navigation can preserve an already-open evidence disclosure). Requirements were retained: one scope,
+exact A/B, no approximation, first-viewport condition entry, unchanged frozen record and no writes.
+Final image reading found a container-breakpoint error: a wide viewport's260px rail still used two
+half-width A/B selects, clipping both dates. Desktop now uses one full-width select per row and visual
+options put literal capture precision/date first; tablet remains two-column and panes retain full
+kind/version. This is date recognition/containment, not another visual-world/polish pass. P2 long
+locator screenshots may include sticky-chrome capture artifacts; use settled viewport top/profile/
+reference images, not the malformed full-element1440 capture, as visual evidence.
