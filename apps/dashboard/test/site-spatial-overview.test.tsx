@@ -370,7 +370,13 @@ describe("Site spatial overview honesty", () => {
     await renderDefaultTab({});
     const v2 = within(screen.getByRole("heading", { name: "이 구역의 최근 분석" }).closest("div") as HTMLElement);
     expect(v2.getByText("분석 조건 확인 결과 있음")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "이 구역의 최근 분석 확인" }).getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
+    // 같은 구역의 다음 행동은 탐색 첫 화면과 상세 화면에 함께 있다 —
+    // 한 구역에 서로 다른 주 행동이 생기면 안 된다.
+    const recentLinks = screen.getAllByRole("link", { name: "이 구역의 최근 분석 확인" });
+    expect(recentLinks.length).toBeGreaterThanOrEqual(1);
+    for (const link of recentLinks) {
+      expect(link.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
+    }
     expect(screen.queryByText("외부 관측 결과가 없습니다")).toBeNull();
   });
 
@@ -414,7 +420,13 @@ describe("Site spatial overview honesty", () => {
       nextCursor: null,
     });
     await renderDefaultTab({});
-    expect(screen.getAllByRole("link", { name: "이 구역의 최근 분석 확인" })).toHaveLength(1);
+    // '이 구역의 최근 분석 확인'은 탐색 첫 화면과 상세 화면에 함께 있다.
+    // 어느 자리에서도 하나만 있어야 한다 — 카드 더미가 아니라 하나의 주 행동.
+    const recentLinks = screen.getAllByRole("link", { name: "이 구역의 최근 분석 확인" });
+    expect(recentLinks.length).toBeGreaterThanOrEqual(1);
+    for (const link of recentLinks) {
+      expect(link.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1&analysisId=a1");
+    }
     expect(screen.getByRole("link", { name: "현장 분석 기록 보기" })).toBeTruthy();
   });
 
@@ -424,6 +436,11 @@ describe("Site spatial overview honesty", () => {
     expect(actions.getByRole("link", { name: "변화 분석 보기" }).className).toContain("btn-primary");
     expect(actions.getByRole("link", { name: "등록 자료 보기" })).toBeTruthy();
     expect(actions.getByRole("link", { name: "외부 비교 기록" })).toBeTruthy();
+    // 탐색 첫 화면도 같은 행동을 제시한다 — 펼침을 열어야 보이면 처음
+    // 보는 사람은 무엇을 할 수 있는지 모른다.
+    const exploreActions = within(screen.getByRole("navigation", { name: "탐색 다음 행동" }));
+    expect(exploreActions.getByRole("link", { name: "변화 분석 보기" }).getAttribute("href"))
+      .toBe(actions.getByRole("link", { name: "변화 분석 보기" }).getAttribute("href"));
   });
 
   it("links the header to the preserved AOI anchor on the manage tab", async () => {

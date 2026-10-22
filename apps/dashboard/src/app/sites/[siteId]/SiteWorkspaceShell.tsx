@@ -25,6 +25,7 @@ import type {
 import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
 import { formatKoreanDate } from "@/lib/datetime";
 import { SiteSpatialOverview, type SiteSpatialAssetsState } from "./SiteSpatialOverview";
+import { SiteAreaNextActionNav, resolveSiteAreaNextAction } from "./SiteAreaNextAction";
 import { SiteExploreCanvas, type ExploreCaptureOption } from "./SiteExploreCanvas";
 import { SiteWorkspaceCompare } from "./SiteWorkspaceCompare";
 import { SiteWorkspaceResults } from "./SiteWorkspaceResults";
@@ -432,6 +433,23 @@ export function SiteWorkspaceShell({
     : sitePath;
   const baselineFact = comparison.status === "ready" ? comparison.baseline : null;
   const currentFact = comparison.status === "ready" ? comparison.current : null;
+  // 탐색 첫 화면의 다음 행동 — 구역 상세 화면과 같은 계산을 공유한다.
+  // 자료·범위 상세(펼침) 안에만 있으면 처음 보는 사람은 무엇을 할 수
+  // 있는지 펼치기 전까지 모른다.
+  const exploreAreaAnalyses = selected ? analysesForArea(analyses, selected.workAreaId) : null;
+  const exploreLatestAnalysis = exploreAreaAnalyses?.[0] ?? null;
+  const exploreNextAction = selected
+    ? resolveSiteAreaNextAction({
+      sitePath,
+      workAreaId: selected.workAreaId,
+      workAreaStatus: selected.status,
+      canCreateWorkOrder,
+      canCreateAnalysis,
+      latestAnalysis: exploreLatestAnalysis
+        ? { workAreaId: exploreLatestAnalysis.workAreaId, analysisId: exploreLatestAnalysis.analysisId }
+        : null,
+    })
+    : null;
   return <div className="flex flex-col gap-3">
     <nav aria-label="공간 작업 방식" className="flex flex-wrap gap-1">
       {WORKSPACE_MODES.map((option) => {
@@ -492,6 +510,20 @@ export function SiteWorkspaceShell({
           </p>
         )}
       </SiteExploreCanvas>
+      {/* 다음 행동은 그림 바로 아래, 첫 화면에 둔다 — 펼침을 열어야 보이면
+          처음 보는 사람은 무엇을 할 수 있는지 모른다. */}
+      {selected && exploreNextAction && (
+        <div className="rounded-lg border border-line bg-surface px-4 py-3">
+          <SiteAreaNextActionNav
+            sitePath={sitePath}
+            workAreaId={selected.workAreaId}
+            action={exploreNextAction}
+            archived={selected.status === "ARCHIVED"}
+            canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
+            label="탐색 다음 행동"
+          />
+        </div>
+      )}
       {/* 기하 개요·등록 수·행동벽은 두 번째 자리다. 정보는 지우지 않고 펼침에 둔다. */}
       <details className="rounded-lg border border-line bg-surface px-4 py-3">
         <summary className="tap-target cursor-pointer text-[13px] font-semibold">자료·범위 상세</summary>

@@ -14,6 +14,7 @@ import { spatialAssetKindLabel } from "@/lib/human-labels";
 import { assetBusinessTitles, assetLifecycleLabel, registrationVersionLabel } from "@/lib/operator-language";
 
 import { SiteNativeExtentSvg } from "./SiteNativeExtentSvg";
+import { SiteAreaNextActionNav, resolveSiteAreaNextAction } from "./SiteAreaNextAction";
 import {
   analysesForArea,
   buildAreaCaptureEntries,
@@ -149,24 +150,20 @@ export function SiteSpatialOverview({
   const latestAnalysis = areaAnalyses?.[0] ?? null;
   const canRegisterHere = canCreateWorkOrder && selected?.status === "ACTIVE";
   const canCompareHere = canCreateAnalysis && selected?.status === "ACTIVE";
-  const scopedRegisterHref = selected
-    ? `${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`
-    : `${sitePath}/observations/new`;
-  const scopedCompareHref = selected
-    ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selected.workAreaId)}#new-analysis-request`
-    : `${sitePath}/analysis#new-analysis-request`;
-  const scopedAnalysisListHref = selected?.status === "ACTIVE"
-    ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selected.workAreaId)}`
-    : `${sitePath}/analysis`;
-  const primaryAction = latestAnalysis
-    ? { href: `${sitePath}/analysis?workAreaId=${encodeURIComponent(latestAnalysis.workAreaId)}&analysisId=${encodeURIComponent(latestAnalysis.analysisId)}`, label: "이 구역의 최근 분석 확인" }
-    : { href: canRegisterHere ? scopedRegisterHref : scopedAnalysisListHref, label: canRegisterHere ? "관측 자료 등록" : "변화 분석 보기" };
-  // 보조 등록은 주 행동과 같은 목적지면 숨긴다 — 등록 진입 자체는 둔다.
-  const secondaryRegisterHref = canRegisterHere && primaryAction.href !== scopedRegisterHref
-    ? scopedRegisterHref
+  // 다음 행동 계산은 탐색 첫 화면과 공유한다 — 같은 구역에서 서로 다른
+  // 행동을 제안하지 않는다.
+  const nextAction = selected
+    ? resolveSiteAreaNextAction({
+      sitePath,
+      workAreaId: selected.workAreaId,
+      workAreaStatus: selected.status,
+      canCreateWorkOrder,
+      canCreateAnalysis,
+      latestAnalysis: latestAnalysis
+        ? { workAreaId: latestAnalysis.workAreaId, analysisId: latestAnalysis.analysisId }
+        : null,
+    })
     : null;
-  // 읽기 전용·보관 구역에는 새 분석을 시작하는 닻을 달지 않는다.
-  const secondaryCompareHref = canCompareHere ? scopedCompareHref : null;
 
   return <section aria-label="선택 구역 공간 확인" className="flex flex-col gap-3">
     {scopeNotice && (
@@ -305,32 +302,13 @@ export function SiteSpatialOverview({
 
       <aside className="flex min-w-0 flex-col gap-3" aria-label="선택 범위 상태">
         {/* 다음 행동이 칸의 첫 자리다 — 개수·식별자는 아래 펼침에 둔다. */}
-        <nav className="flex flex-col gap-2" aria-label="선택 구역 다음 확인">
-          <Link href={primaryAction.href} className="btn btn-primary w-fit">{primaryAction.label}</Link>
-          {(secondaryRegisterHref || secondaryCompareHref) && (
-            <p className="flex flex-wrap gap-2">
-              {secondaryRegisterHref && (
-                <Link
-                  href={secondaryRegisterHref}
-                  className="btn w-fit"
-                >
-                  이 구역 자료 등록
-                </Link>
-              )}
-              {secondaryCompareHref && (
-                <Link href={secondaryCompareHref} className="btn w-fit">
-                  변화량 분석
-                </Link>
-              )}
-            </p>
-          )}
-          <p className="flex flex-wrap gap-x-3 text-[12px]">
-            <Link href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">등록 자료 보기</Link>
-            <Link href={`${sitePath}/observations`} className="tap-target underline">외부 비교 기록</Link>
-          </p>
-          {(canRegisterHere || canCompareHere) && <p className="text-[11.5px] leading-5 text-ink-muted">자료 등록 뒤에는 파일 제출·검사를 같은 작업 화면에서 이어갑니다. 비교는 기준·현재 두 시점을 고른 뒤 요청합니다.</p>}
-          {selected.status === "ARCHIVED" && <p className="text-[12px] text-ink-2">보관된 구역입니다. 기존 자료와 결과를 확인할 수 있으며, 새 자료 등록과 비교는 활성 구역에서 시작하세요.</p>}
-        </nav>
+        <SiteAreaNextActionNav
+          sitePath={sitePath}
+          workAreaId={selected.workAreaId}
+          action={nextAction ?? { primary: { href: sitePath, label: "변화 분석 보기" }, secondaryRegisterHref: null, secondaryCompareHref: null }}
+          archived={selected.status === "ARCHIVED"}
+          canRegisterOrCompare={canRegisterHere || canCompareHere}
+        />
 
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
           <h3 className="text-[13px] font-bold">선택된 자료</h3>
@@ -382,7 +360,14 @@ export function SiteSpatialOverview({
             <p className="mt-1 text-[12px] font-semibold">{analysisStateLabel(latestAnalysis)}</p>
             <p className="mt-0.5 text-[12px] text-ink-2">기록 {formatKoreanDateTime(latestAnalysis.createdAt, { dateStyle: "medium", timeStyle: "short" })}{latestAnalysis.limitationCount > 0 ? ` · 제한 ${latestAnalysis.limitationCount}건` : ""}</p>
             <p className="mt-1 flex flex-wrap gap-x-3 text-[12px]">
-              <Link href={scopedAnalysisListHref} className="tap-target inline-block underline">현장 분석 기록 보기</Link>
+              <Link
+                href={selected.status === "ACTIVE"
+                  ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selected.workAreaId)}`
+                  : `${sitePath}/analysis`}
+                className="tap-target inline-block underline"
+              >
+                현장 분석 기록 보기
+              </Link>
             </p>
           </>)}
         </div>
