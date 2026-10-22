@@ -169,6 +169,14 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it.each([null, "analysis-1"])("orders the exact draft before history, but keeps a fixed result first (%s)", (initialAnalysisId) => {
+    renderPanel({canCreate:true,initialAnalysisId,initialWorkAreaId:"area-1",initialBaselineSelector:observations[0]!.selector,initialCurrentSelector:observations[1]!.selector});
+    const request = document.getElementById("new-analysis-request")!;
+    const history = document.getElementById("analysis-history")!;
+    expect(Boolean(request.compareDocumentPosition(history) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(initialAnalysisId === null);
+    expect(document.querySelectorAll('#new-analysis-request')).toHaveLength(1);
+  });
+
   it("retains a read-only return path even without a result or request permission", () => {
     vi.stubGlobal("fetch", vi.fn());
     const context = {workAreaId:"area-1",visualAAssetRef:`ksa-v1-${"a".repeat(64)}`,visualBAssetRef:`ksa-v1-${"b".repeat(64)}`};
@@ -190,6 +198,7 @@ describe("analysis V2 panel", () => {
     expect(message.closest(".hidden")).toBeNull();
     expect(screen.getByRole("button", {name:"변화 분석 요청",hidden:true}).closest(".hidden")).not.toBeNull();
     expect(document.getElementById("new-analysis-request")?.className).toContain("scroll-mt-20");
+    expect(document.getElementById("new-analysis-request")!.compareDocumentPosition(document.getElementById("analysis-history")!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders compact metric definitions without a forced-width horizontal table", () => {

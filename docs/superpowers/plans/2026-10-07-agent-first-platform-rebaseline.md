@@ -6936,3 +6936,12 @@ navigation afterwards. Added a dirty-select/rerender/history regression; retaine
 capture and JSON under `canonical-select-failure-01df0c42/`. No quantitative/data/permission change.
 01df0c42 locked193/1913 and existing4spec100pass/24expectedskip passed but were not sufficient for
 this outcome; corrected source must pass its own built actual journey before acceptance.
+
+Conditions entry strategy revised from actual failure evidence: a hash-only navigation on85781dfd
+still left the streamed page showing history before the form. The correct response is not repeated
+scroll retries or weakening the check. Exact draft/mismatch entry now places its ONE request/condition
+section before history in DOM; fixed analysis deep links retain result/history first. Read-only
+return and mismatch explanation remain outside compact mutation gating. No new request is issued.
+Tests assert both entry orders and one form. The actual gate checks that the condition heading is
+visible in the first viewport and precedes history, not an arbitrary200px coordinate. Retained
+anchor failure image/JSON in `conditions-anchor-failure-85781dfd/`; final193files/1916host tests pass.
