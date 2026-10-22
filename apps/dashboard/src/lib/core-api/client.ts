@@ -64,6 +64,14 @@ export class CoreApiError extends Error {
         serverMessage = extracted.message;
       }
     }
+    // SpatialDataErrorV1 uses `reason`, not `verdict`. Preserve only its typed
+    // refusal envelope; arbitrary `reason` prose must not become a decision code.
+    if (!code && typeof parsed.reason === "string" && /^[A-Z][A-Z0-9_]{2,127}$/.test(parsed.reason)
+      && typeof parsed.message === "string" && typeof parsed.retryable === "boolean"
+      && Array.isArray(parsed.remediation) && parsed.remediation.length >= 1 && parsed.remediation.length <= 16
+      && parsed.remediation.every((item) => typeof item === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(item))) {
+      code = parsed.reason;
+    }
 
     super(`Core API ${status}: ${code ?? serverMessage ?? "unknown error"}`);
     this.status = status;

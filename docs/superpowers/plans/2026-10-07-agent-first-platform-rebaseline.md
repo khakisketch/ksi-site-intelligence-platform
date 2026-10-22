@@ -7151,3 +7151,63 @@ Durable actual images/scripts/runtime/E2E/prefix/provenance evidence and SHA man
 `~/.local/share/ksi-product-use-20261021/text-thumbnails-afe78a1a/`. The UI goal is delivered where
 feasible; actual photographs remain blocked by guarded read failure and are not accepted as restored.
 No platform/slice/customer/field/production completion follows from this correction.
+
+#### Human-authorized existing-photo read recovery (2026-10-22)
+
+Human selected “사진 복구까지” in the explicit scope card: investigate/fix existing guarded-file503,
+allow task-owned Core code correction and a limited restart if needed. This supersedes the UI-only
+no-Core-restart restriction ONLY for that resource/path. It does NOT authorize preparation jobs,
+TTL/grant/storage/security policy changes, S3 mutation, data/journal repair, or starting/stopping the
+protected inspector. Prior unattributed job9a01caaf is retained as an existing input, not recreated.
+
+Requirement IDs: Human photo-thumbnail restoration; existing SDP-REQ-01/02/03/05,
+INV-020/024/040/051/053/060/061.
+Owner module: Core external delivery read/storage supervision; Dashboard only if existing BFF
+read mapping is causally defective. No schema/new endpoint/format/source/analysis contract.
+Acceptance criteria: diagnose503 from evidence (not assumed expiry/storage outage); authorized GET
+of an existing currently-readable output returns its exact recorded bytes, size/hash and scope;
+actual Sites photo and selected spatial view decode/render those bytes through unchanged guarded
+paths. Expired/revoked/foreign/integrity-mismatched output remains refused. No new producer/job or
+access widening. Preserve current UI cleanup and exact A/B/analysis/frozen-result journey.
+Allowed resources: source owner/tests and task-local copies under /tmp/opencode/
+ksi-preview-read-recovery-20261022; existing private Console frontend3243/10010 for read-only
+acceptance; existing task-owned Core127.0.0.1:8074 code and its exact preserved-env restart only.
+Protected state: issuer9042, all other ports/containers, credentials and mapped principal scope,
+Core durable journals (append-only; no rewriting/backdating/repair), S3 objects/config/policies,
+TTL/grants/resource-admission/sandbox settings, shared inspector384/545/missing6 and stopped worker.
+Never weaken a resource/permission/integrity check to obtain200. If recovery needs any excluded
+change, preserve evidence, stop that affected execution path and return the specific decision.
+Reference assets: same existing public-coastal derived artifact and job9a01caaf; readonly503
+witness/log and previous storage-child fix source/evidence. No new assets/dependencies/vendor claim.
+Adoption decisions: repair the actual reader fault within retained supervision/spool boundaries;
+do not reinterpret preparation success/metadata as byte success, use synthetic bytes, copy old
+screenshots into product, or create a new thumbnail/cache lane.
+Files to change: causally necessary services/core/domains/external/delivery owner source + existing
+contract/unit/replay tests, minimal BFF read error mapping only if causal; same ledger/checkpoint.
+Tests: exact read/refusal/restart/spool/child protocol/timeout and cleanup contracts; relevant replay/
+owner suites plus existing Dashboard regressions; actual authenticated byte/hash/render verification
+and pre/post journal-prefix/resource proof. Primary owns live commands; implementer uses local
+fixtures only, never production credentials or shared listeners.
+HIL or real-device assumptions: none; software recovery does not prove field accuracy.
+License/data implications: existing CC BY attribution/current rights remain; no new egress or data
+retention. Rollback: revert only this code set and restart only owned8074 with unchanged original
+launcher/environment, preserving all current journal additions/objects. Backups are evidence, not
+authorization to roll state back. No process-wide/security workaround.
+
+Read-recovery investigation update: isolated source-copy worker found no local reader failure in
+459 owner tests plus healthy real exec-child/spool/hash fixtures; this narrows hypotheses but is not
+proof that all repository paths are fault-free. No source was changed in that copy or live Core.
+Core PID starts after the storage-child fix source/commit; a stale-code explanation is not established.
+Main confirmed the Dashboard CoreApiError parser discarded SpatialDataErrorV1's safe `reason`
+envelope (it understood verdict/detail only), leaving a generic503 message. Minimal client mapping
+now preserves only a well-formed uppercase reason/retryable/remediation envelope and never forwards
+arbitrary reason prose; old verdict/detail priority and rights remain. Seven focused contract cases
+added. This is diagnostic parity, not a claim the underlying503 is repaired.
+
+Before any restart, Main attempted a network/listener-free factory replay against private journal
+copies with an audit hook denying shared writes/spawns/network. The hook correctly refused an
+external authority-journal path still referenced by private configuration. Original journals were
+not written and live Core was not stopped. This is an isolation/config-relocation limitation, NOT
+proof of corrupted journals or permission to change the shared directory/locks. Resolve task-local
+physical paths or report the prerequisite before risking the only running Core. No journal repair,
+S3 mutation, new jobs, TTL/grant/security change or forced restart has occurred.

@@ -32,6 +32,26 @@ describe("처리 자원 한도 하위 사유", () => {
   });
 });
 
+describe("typed spatial-data refusal envelope", () => {
+  const envelope = { reason: "PRIVATE_WORKSPACE_UNAVAILABLE", message: "Spatial data request unavailable.",
+    retryable: true, remediation: ["CONTACT_OPERATOR"] };
+  it("preserves Core's safe refusal reason without forwarding arbitrary message text", () => {
+    const error = new CoreApiError(503, envelope);
+    expect(error.code).toBe("PRIVATE_WORKSPACE_UNAVAILABLE");
+    expect(error.status).toBe(503);
+    expect(error.serverMessage).toBeUndefined();
+  });
+  it("does not override an existing verdict", () => {
+    expect(new CoreApiError(503, { ...envelope, verdict: "CURRENTNESS_UNAVAILABLE" }).code).toBe("CURRENTNESS_UNAVAILABLE");
+  });
+  it.each([
+    { reason: "not a decision code" }, { retryable: "true" }, { remediation: [] },
+    { remediation: ["https://outside.test/repair"] }, { message: null },
+  ])("does not infer a code from an untyped/invalid reason payload: %j", (patch) => {
+    expect(new CoreApiError(503, { ...envelope, ...patch }).code).toBeUndefined();
+  });
+});
+
 describe("detail 하나에만 코드를 싣는 응답(Mission Records/Plans API)", () => {
   it("코드 단독", () => {
     const error = new CoreApiError(404, { detail: "UNKNOWN_SITE" });
