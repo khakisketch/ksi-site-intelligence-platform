@@ -179,7 +179,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     for (const url of gets) expect(url.startsWith("/api/")).toBe(true);
     expect(posts).toHaveLength(0);
     // 원본 버퍼 라벨은 소스 그대로 둔다.
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     expect(screen.getByText(/그린 창 4 \/ 전체 4/)).toBeTruthy();
     expect(screen.queryByText("표시 준비 필요")).toBeNull();
     const painted = putImageData.mock.calls.length;
@@ -190,12 +190,12 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     const reset = screen.getByRole("button", { name: "전체 보기" });
     expect(reset.className).toContain("h-11");
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     view.focus();
     // 확대: 표시만 200%가 되고, 바이트를 다시 읽지도 새로 그리지 않는다.
     fireEvent.keyDown(view, { key: "+" });
     expect(screen.getByText(/표시 확대 200%/)).toBeTruthy();
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     expect(gets).toHaveLength(jobs.length);
     expect(posts).toHaveLength(0);
     expect(putImageData.mock.calls.length).toBe(painted);
@@ -208,7 +208,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     // 전체 보기: 표시만 원점으로 돌아간다.
     fireEvent.click(reset);
     expect(screen.queryByText(/표시 확대/)).toBeNull();
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     expect(gets).toHaveLength(jobs.length);
     expect(posts).toHaveLength(0);
     expect(putImageData.mock.calls.length).toBe(painted);
@@ -223,13 +223,13 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     mockFittedSize(view, 400, 300);
     view.focus();
     // 전체 보기에서도 같은 방향으로 계속 밀면 보이는 끝에서 멈춘다.
     for (let i = 0; i < 10; i += 1) fireEvent.keyDown(view, { key: "ArrowRight" });
     expect(screen.getByText(/표시 범위의 끝입니다/)).toBeTruthy();
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(await screen.findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     expect(gets).toHaveLength(jobs.length);
     expect(posts).toHaveLength(0);
   });
@@ -243,7 +243,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     const content = mockFittedSize(view, 400, 300);
     // 바깥 프레임이 1134px이어도 보이는 그림 400px 기준으로 1:1로 간다.
     pointerOn(view, "pointerdown", 200, 150);
@@ -270,7 +270,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     mockFittedSize(view, 400, 300);
     // 포커스 없이 휠만으로 확대된다 — 예전의 선택·Ctrl 전제와 다르다.
     // 한 노치는 반 스텝이다(2배 점프·120ms 드롭 없음).
@@ -301,7 +301,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     mockFittedSize(view, 400, 300);
     fireEvent.doubleClick(view, { clientX: 100, clientY: 75 });
     expect(screen.getByText(/표시 확대 200%/)).toBeTruthy();
@@ -318,7 +318,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     mockFittedSize(view, 400, 300);
     const tap = (x: number, y: number, id: number) => {
       pointerOn(view, "pointerdown", x, y, { pointerType: "touch", pointerId: id });
@@ -343,7 +343,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
     const reset = screen.getByRole("button", { name: "전체 보기" });
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     const capture = vi.fn();
     Object.defineProperty(view, "setPointerCapture", { configurable: true, value: capture });
     fireEvent.keyDown(view, { key: "+" });
@@ -374,7 +374,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     renderMosaic(jobs);
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     const content = mockFittedSize(view, 400, 300);
     // 한 손가락 이동.
     pointerOn(view, "pointerdown", 200, 150, { pointerType: "touch", pointerId: 11 });
@@ -427,7 +427,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     await waitFor(() => expect(gets).toHaveLength(jobs.length));
 
     await waitFor(() => expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다."));
-    const view = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const view = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     expect(view.textContent).not.toContain("그리지 않음");
     view.focus();
     fireEvent.keyDown(view, { key: "+" });
@@ -435,6 +435,24 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
     mockFittedSize(view, 400, 300);
     fireEvent.wheel(view, { deltaY: -100 });
     expect(gets).toHaveLength(jobs.length);
+    expect(posts).toHaveLength(0);
+  });
+
+  it("shows verified partial paint with truthful partial scope, never a full-canvas claim", async () => {
+    stubCanvas(vi.fn());
+    const plans = coverPlans();
+    expect(plans.length).toBeGreaterThan(1);
+    const jobs = [jobForWindow(plans[0]!, 0)];
+    const posts: string[] = [];
+    const gets: string[] = [];
+    stubReads(jobs, posts, gets);
+    renderMosaic(jobs);
+
+    // One decoded tile wins the actual canvas; the rest stay honest gaps.
+    await screen.findByRole("img", { name: /이어 보기/ });
+    expect(screen.getByText(new RegExp(`그린 창 1 / 전체 ${plans.length}`))).toBeTruthy();
+    expect(screen.queryByText(/전체 완료/)).toBeNull();
+    expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("표시 준비 필요");
     expect(posts).toHaveLength(0);
   });
 
@@ -448,7 +466,7 @@ describe("mosaic direct manipulation keeps verified buffers", () => {
 
     // 준비되지 않은 창의 이유는 상세에만 둔다 — 지도에 문구·가짜 픽셀 없음.
     expect(screen.getByText(/준비 과정·상세 상태/).closest("details")?.textContent).toContain("표시 준비 필요");
-    expect(screen.getByRole("group", { name: /직접 끌어서 보고/ }).textContent).not.toContain("표시 준비 필요");
+    expect((await screen.findByRole("group", { name: /직접 끌어서 보고/ })).textContent).not.toContain("표시 준비 필요");
     expect(posts).toHaveLength(0);
   });
 });

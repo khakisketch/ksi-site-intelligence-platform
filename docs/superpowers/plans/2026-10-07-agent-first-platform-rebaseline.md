@@ -7080,3 +7080,34 @@ heading in single view so mobile users do not need to open layer details just to
 kind. Compact failure labels explicitly say 미리보기 rather than implying the entire Site is denied.
 Full193files/1916tests +type/changedlint pass; no scheduler/byte/domain helper edits. Built actual
 Console comparison still required; these source checks do not overrule the Human's UX feedback.
+
+First built correction a52b4e24: actual Sites no-image strips are35px (no SVG/canvas schematic), both
+site identities/open actions fit the phone. Initial correction automation passed and actual main
+axe0/0, but Primary rejected the Explore render: a giant unpainted canvas still appeared with0/4
+painted windows. Existing showViewport relied on receipt/job availability rather than verified
+painted bytes; loading/read failures therefore masqueraded as an empty spatial view. Same General
+owns only MosaicViewport+focused mosaic tests and the two stale E2E wording assertions for this
+necessary correction. Main separately consolidates advanced single-window controls + supporting
+metadata under one native 보기 상세 disclosure and suppresses the duplicated compare helper when
+mode navigation already exists; no scheduler/byte path or data operation changes.
+
+Live settled observation after network idle confirmed one guarded file GET503 for existing request
+sdj-v1-9a01caaf-479b-49c3-bce0-3836829baaab,0painted/4, visible1022×915 empty canvas, product writes0.
+Core8074 access log independently records the same GET503. Core PID919034/start17:01:51 remains
+unchanged; no restart/config/permission/storage operation was performed. The response code/cause was
+not established (only503), and an unmounted BFF request-detail GET404 is not a job-status witness.
+Do not claim that storage is down, the previous storage-child defect recurred, or all previews are
+merely expired. Prior expiry-only wording was corrected to the Human. Actual photo restoration is
+not established by this UI correction; the guarded file-read failure remains a separate genuine
+availability/operational boundary. Evidence: preview-read-observation.json / read-refusal.json.
+
+Second correction integrated: large canvas now requires at least one successfully decoded/current
+paint slot, not queued/running/receipt availability. Until then loading/preparing/read/hash/rights/
+paint failure is compact and distinct from absence/retention/job failure. Partial successful paint
+still wins; verified all-NoData transparent bytes remain valid, not a read failure. Guarded fetch/
+cache/scheduler/native aspect/ownership/explicit-only POST behavior unchanged. Added deferred-load,
+guarded500/403, valid-zero and partial-paint coverage. Main grouped supporting metadata with the
+existing advanced tools (single native 보기 상세 entry); current-layer identity remains visible.
+Full193files/1921tests +type/lint clean. E2E's obsolete long-copy literal was replaced by compact
+unknown plus not-known-empty/compact-height checks, retaining actual BFF200/unknown/no fake canvas,
+site headings/actions/keyboard and all fixtures/permissions/skips. Actual built verification follows.

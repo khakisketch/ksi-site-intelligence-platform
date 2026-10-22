@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
@@ -198,6 +198,7 @@ function WindowedLayerView({
   workAreaRing,
   workAreaCrs,
   idPrefix,
+  supportingDetails,
 }: {
   siteId: string;
   workAreaId: string;
@@ -208,6 +209,7 @@ function WindowedLayerView({
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
   idPrefix: string;
+  supportingDetails?: ReactNode;
 }) {
   const router = useRouter();
   const grid = layer.inspectedRaster;
@@ -496,8 +498,10 @@ function WindowedLayerView({
 
       {/* 낱창 도구·수동 설정은 펼침에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
       <details className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">낱창 보기 · 새 창 준비</summary>
+        <summary className="tap-target cursor-pointer font-semibold">보기 상세</summary>
         <div className="mt-2 flex flex-col gap-2">
+          {supportingDetails}
+          <h4 className="text-[13px] font-semibold">낱창 보기 · 새 창 준비</h4>
       <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_READ_LABEL}</h4>
       {readable.length === 0 && pending.length === 0 && (
         <p className="text-[12.5px] leading-5 text-ink-2">
@@ -773,6 +777,28 @@ export function SiteWindowedPixelViewer({
     </div>
   ) : null;
 
+  const supportingDetails = (
+    <details id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-[12px] text-ink-2">
+        <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
+        <p className="mt-1">{WINDOWED_VIEWER_ADAPTER_LABEL} — {WINDOWED_VIEWER_ADAPTER_NOTE}</p>
+        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
+        <p className="mt-1"><span className="font-semibold">감사 추적</span> · {AUDIT_STATE_NOTE}</p>
+        <p className="mt-1"><span className="font-semibold">데이터 검증 적합성</span> · {VALIDATION_STATE_NOTE}</p>
+        <p className="mt-1"><span className="font-semibold">공간 표시 가능 여부</span> · {VIEWABILITY_STATE_NOTE}</p>
+        {layer && (
+          <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3">
+            <div><dt className="font-semibold text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(layer.inspectionOutcome)}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">관측 위치 기준</dt><dd className="break-all font-mono">{layer.observedCrsIdentifier ?? "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">관측 수직 기준</dt><dd className="break-all">{layer.verticalReference ?? "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">검사 격자</dt><dd>{grid ? `${grid.width} × ${grid.height} 네이티브 픽셀` : "확인 불가"}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">등록 파일명</dt><dd className="break-all">{layer.fileName}</dd></div>
+            <div><dt className="font-semibold text-ink-muted">등록 버전</dt><dd>revision {layer.revision} · 제출 묶음 {layer.submissionRef}</dd></div>
+          </dl>
+        )}
+        <p className="mt-1 text-[11.5px] text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
+      </details>
+  );
+
   return (
     <section
       aria-label={`${WINDOWED_VIEWER_ADAPTER_LABEL}${observationHeading ? ` · ${observationHeading}` : ""}`}
@@ -826,29 +852,11 @@ export function SiteWindowedPixelViewer({
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
           idPrefix={`${idPrefix}-${layer.assetRef === layers[0]?.assetRef ? "first" : "second"}`}
+          supportingDetails={supportingDetails}
         />
       )}
 
-      {/* 기술 벽은 실제 화면 뒤다. 정보는 지우지 않고 펼침에 둔다. */}
-      <details id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
-        <p className="mt-1">{WINDOWED_VIEWER_ADAPTER_LABEL} — {WINDOWED_VIEWER_ADAPTER_NOTE}</p>
-        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
-        <p className="mt-1"><span className="font-semibold">감사 추적</span> · {AUDIT_STATE_NOTE}</p>
-        <p className="mt-1"><span className="font-semibold">데이터 검증 적합성</span> · {VALIDATION_STATE_NOTE}</p>
-        <p className="mt-1"><span className="font-semibold">공간 표시 가능 여부</span> · {VIEWABILITY_STATE_NOTE}</p>
-        {layer && (
-          <dl className="mt-1 grid gap-1 border-l-2 border-line pl-3">
-            <div><dt className="font-semibold text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(layer.inspectionOutcome)}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">관측 위치 기준</dt><dd className="break-all font-mono">{layer.observedCrsIdentifier ?? "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">관측 수직 기준</dt><dd className="break-all">{layer.verticalReference ?? "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">검사 격자</dt><dd>{grid ? `${grid.width} × ${grid.height} 네이티브 픽셀` : "확인 불가"}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">등록 파일명</dt><dd className="break-all">{layer.fileName}</dd></div>
-            <div><dt className="font-semibold text-ink-muted">등록 버전</dt><dd>revision {layer.revision} · 제출 묶음 {layer.submissionRef}</dd></div>
-          </dl>
-        )}
-        <p className="mt-1 text-[11.5px] text-ink-muted">볼 수 있다는 뜻이 분석에 쓸 수 있다는 뜻이 아닙니다. 적합성은 검사·평가·검토 기록이 말합니다.</p>
-      </details>
+      {!(layer && jobsState === "ready" && canRead) && supportingDetails}
     </section>
   );
 }

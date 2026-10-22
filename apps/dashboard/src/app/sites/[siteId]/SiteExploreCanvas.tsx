@@ -139,7 +139,7 @@ export function SiteExploreCanvas({
       )}
       {/* 두 시점 보기는 이 화면의 모드 탭에만 있다. 자료를 보다가 "이전
           촬영과 비교"를 직접 찾게 하지 않고, 자료 자리 옆에 둔다. */}
-      {compareHref && (
+      {compareHref && !toolbar && (
         <p className="hidden text-[12px] lg:block">
           <Link href={compareHref} className="tap-target underline">이전 촬영과 비교</Link>
           <span className="sr-only text-ink-muted lg:not-sr-only"> · 같은 구역의 두 시점을 나란히 봅니다</span>

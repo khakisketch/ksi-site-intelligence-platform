@@ -201,7 +201,9 @@ describe("site windowed pixel viewer", () => {
     // 기술 벽이 먼저가 아니라 실제 화면 자리가 먼저다.
     expect(screen.getByRole("heading", { name: /2021 포착/ })).toBeTruthy();
     expect(screen.getByText("낱창 보기 · 새 창 준비")).toBeTruthy();
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    // A receipt alone is not painted pixels: no large blank frame before verified decode.
+    expect(screen.queryByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeNull();
+    expect(screen.getByText("표시 조건·근거").closest("details")?.parentElement?.closest("details")?.open).toBe(false);
     expect(screen.queryByText(/검증 완료/)).toBeNull();
     // 진입 시 쓰기(POST)는 나가지 않는다. 이미 준비된 창의 읽기(GET)는
     // 같은 세션 경로로만 나가며, SHA·크기 대조는 그대로 둔다.
@@ -224,6 +226,7 @@ describe("site windowed pixel viewer", () => {
     // 모듈을 동시에 처음 읽으면 테스트 러너의 모듈 모사가 갈라져
     // 디코딩이 실패한다(실제 브라우저의 모듈 등록소는 단일 인스턴스다).
     await screen.findByText(/그린 창 · 512 × 512/);
+    fireEvent.click(screen.getByText("보기 상세"));
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
     await screen.findByText(/실제 파일 · 준비된 창 · 2 × 2 픽셀/);
     expect(screen.getByText(/EPSG:7850 · \[0, 0, 2, 2\]/)).toBeTruthy();
@@ -247,9 +250,11 @@ describe("site windowed pixel viewer", () => {
 
     // 자동 읽기와 동시에 디코딩하면 테스트 모듈 모사가 갈라진다. 먼저
     // 이어 보기가 끝난 뒤에 낱창을 연다(실 브라우저는 단일 인스턴스다).
-    await screen.findByText(/받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다/);
+    await screen.findAllByText(/받은 바이트가 Core 준비 기록과 달라 화면에 표시하지 않습니다/);
+    expect(screen.queryByRole("img", {name:/이어 보기/})).toBeNull();
+    fireEvent.click(screen.getByText("보기 상세"));
     fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
-    await screen.findByText(/출력 크기·파일 확인값/);
+    await waitFor(() => expect(screen.getByText("보기 상세").closest("details")!.querySelector('[role="alert"]')?.textContent).toMatch(/출력 크기·파일 확인값/));
   });
 
   it("maps a foreign or expired window to one message without existence disclosure", async () => {
@@ -262,10 +267,13 @@ describe("site windowed pixel viewer", () => {
       )));
       render(<SiteWindowedPixelViewer {...propsFor()} />);
       // 자동 읽기가 끝난 뒤에 낱창을 연다(테스트 모듈 모사 직렬화).
-      // 모자이크 칸과 낱창이 같은 문구를 쓰므로 건수로 가른다.
-      await screen.findByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/);
+      // Both entry reading and explicit single-window reading retain the opaque refusal;
+      // count is not identity, since diagnostic detail may repeat the same refusal.
+      await screen.findAllByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/);
+      expect(screen.queryByRole("img", {name:/이어 보기/})).toBeNull();
+      fireEvent.click(screen.getByText("보기 상세"));
       fireEvent.click(screen.getAllByRole("button", { name: "이 창 보기" })[0]!);
-      await waitFor(() => expect(screen.getAllByText(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/).length).toBe(2));
+      await waitFor(() => expect(screen.getByText("보기 상세").closest("details")!.querySelector('[role="alert"]')?.textContent).toMatch(/다른 계정이 준비한 창은 이 화면에서 열 수 없습니다/));
       cleanup();
     }
   });

@@ -95,6 +95,17 @@ function renderMosaic(jobs: PreparedWindowJob[]) {
 describe("site mosaic viewport fill gate", () => {
   it("issues no writes on entry while authorized reads load automatically", async () => {
     stubCanvas();
+    fromArrayBufferMock.mockResolvedValue({
+      getImageCount: async () => 1,
+      getImage: async () => ({
+        getWidth: () => 512,
+        getHeight: () => 512,
+        getSamplesPerPixel: () => 3,
+        getBitsPerSample: () => 8,
+        getGDALNoData: () => null,
+        readRasters: async () => BYTES,
+      }),
+    });
     const posts: string[] = [];
     const gets: string[] = [];
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -105,7 +116,7 @@ describe("site mosaic viewport fill gate", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderMosaic([readableJob()]);
 
-    expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    await screen.findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ });
     expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
     expect(screen.getByText(/이음새 보정·재표본화 없음/)).toBeTruthy();
     expect(screen.getByText(/계산 다각형이 아닙니다/)).toBeTruthy();
@@ -147,7 +158,7 @@ describe("site mosaic viewport fill gate", () => {
     renderMosaic([readableJob()]);
 
     // 읽을 수 있는 한 창을 빼고 세 창이 모자라다.
-    fireEvent.click(screen.getByRole("button", { name: /미리보기 다시 준비/ }));
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 준비" }));
     await screen.findByText(/창 3개의 준비 요청을 만들었습니다/);
 
     expect(posts).toHaveLength(3);

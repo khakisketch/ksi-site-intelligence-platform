@@ -9,6 +9,7 @@ vi.mock("geotiff", () => ({
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
+import { fromArrayBuffer } from "geotiff";
 import { SiteMosaicViewport } from "@/app/sites/[siteId]/SiteMosaicViewport";
 import type { PreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 
@@ -17,6 +18,21 @@ const crsDigest = `sha256:${"c".repeat(64)}`;
 const grid = { transform: [1, 0, 0, 0, -1, 915], width: 1022, height: 915 };
 const BYTES = new Uint8Array(512 * 512 * 3).fill(7);
 const digestOf = (bytes: Uint8Array): string => `sha256:${bytesToHex(sha256(bytes))}`;
+const fromArrayBufferMock = fromArrayBuffer as unknown as ReturnType<typeof vi.fn>;
+
+function stubGeotiffRgb() {
+  fromArrayBufferMock.mockResolvedValue({
+    getImageCount: async () => 1,
+    getImage: async () => ({
+      getWidth: () => 512,
+      getHeight: () => 512,
+      getSamplesPerPixel: () => 3,
+      getBitsPerSample: () => 8,
+      getGDALNoData: () => null,
+      readRasters: async () => BYTES,
+    }),
+  });
+}
 
 function readableJob(): PreparedWindowJob {
   return {
@@ -84,15 +100,17 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  fromArrayBufferMock.mockReset();
 });
 
 describe("site mosaic clean map", () => {
   it("renders canvas-only map frame without per-tile status or dashed boundaries", async () => {
     stubCanvas();
+    stubGeotiffRgb();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(BYTES, { status: 200 })));
     renderMosaic([readableJob()]);
 
-    const frame = screen.getByRole("group", { name: /직접 끌어서 보고/ });
+    const frame = await screen.findByRole("group", { name: /직접 끌어서 보고/ });
     // Valid canvas pixels only — no per-window status sentences inside the map.
     expect(within(frame).queryByText("그리지 않음")).toBeNull();
     expect(within(frame).queryByText("표시 준비 필요")).toBeNull();
@@ -102,7 +120,7 @@ describe("site mosaic clean map", () => {
     expect(frame.querySelector(".border-dashed")).toBeNull();
     expect(frame.querySelector("[aria-hidden='true'].absolute")).toBeNull();
     // Canvas itself remains with native pixel label.
-    expect(within(frame).getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
+    expect(await within(frame).findByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     // Aggregate honesty stays outside the map.
     expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
     expect(screen.getAllByText(/그린 창|부분 보기/).length).toBeGreaterThan(0);
@@ -110,10 +128,11 @@ describe("site mosaic clean map", () => {
 
   it("frames full width with pixel-proportion aspect ratio and no max-width cap", async () => {
     stubCanvas();
+    stubGeotiffRgb();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(BYTES, { status: 200 })));
     renderMosaic([readableJob()]);
 
-    const frame = screen.getByRole("group", { name: /직접 끌어서 보고/ }) as HTMLElement;
+    const frame = (await screen.findByRole("group", { name: /직접 끌어서 보고/ })) as HTMLElement;
     expect(frame.className).toContain("w-full");
     expect(frame.className).not.toContain("mx-auto");
     expect(frame.style.maxWidth).toBe("");

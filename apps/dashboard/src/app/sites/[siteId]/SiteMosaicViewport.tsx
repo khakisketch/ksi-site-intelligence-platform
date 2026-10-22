@@ -560,11 +560,9 @@ export function SiteMosaicViewport({
   const canFillNow =
     cover.ok &&
     (pendingFetchCount > 0 || (canRequest !== false && observedCrsDigest !== null && missingCount > 0));
-  // 준비된 출력도 실제 작업도 없으면 거대한 빈 지도 대신 현재 열람 상태를 말한다.
-  // 이는 표시 자리의 유무일 뿐, 자료 검사·감사·정량 적합성 판정이 아니다.
-  const showViewport = readable.length > 0 || fillTick > 0 || jobs.some((job) =>
-    job.assetRef === assetRef && (job.executionState === "QUEUED" || job.executionState === "RUNNING"),
-  );
+  // 아래 compact/showCanvas 분기는 디코딩된 바이트 유무로만 가른다. 준비
+  // 기록·작업 상태는 바이트가 아니며, 자료 검사·정량 적합성 판정도 아니다.
+
 
   // 픽셀이 없을 때의 범위 도식 사실 — Core 검사 격자에서 유도한 파일 전체
   // 사각형과 같은 평면의 작업구역 링만 둔다. 재투영·유효 픽셀 단정을 하지
@@ -654,6 +652,85 @@ export function SiteMosaicViewport({
                   : "표시 준비는 권한 있는 담당자에게 요청하세요.",
               };
 
+  // 큰 화면은 실제로 디코딩된 바이트가 있을 때만 둔다. 준비 기록·작업
+  // 상태(available/queued)는 바이트가 아니다 — 같은 guarded GET+SHA 경로로
+  // 받고 디코딩·캐시까지 통과한 창이 하나라도 있어야 캔버스를 펼친다.
+  // 그 전까지는 빈 캔버스를 두지 않고 짧은 현재 상태만 둔다. NoData 투명
+  // 타일은 정상 디코딩이면 그린 것으로 보며, 알파 0으로 실패를 단정하지 않는다.
+  const hasPaintedPixels = paintedCount > 0 && paintError === null;
+  const showCanvas = cover.ok && geometry !== null && hasPaintedPixels;
+  // 현재 커버에 남은 읽기 실패 — 보관 만료·준비 작업 실패와 섞지 않고
+  // 따로 말한다. 한 창의 실패를 모든 출력의 실패로 단정하지 않는다.
+  const currentFailedKeys = cover.ok
+    ? cover.windows
+        .map((plan) => pixelKeyOf(plan.pixelWindow))
+        .filter((key) => failures[key])
+    : [];
+  const firstReadFailure =
+    currentFailedKeys.length > 0 ? (failures[currentFailedKeys[0]!] ?? null) : null;
+  const hasQueuedOrRunning =
+    jobs.some(
+      (job) => job.assetRef === assetRef && (job.executionState === "QUEUED" || job.executionState === "RUNNING"),
+    ) ||
+    (lane?.active.length ?? 0) > 0 ||
+    (lane?.queued.length ?? 0) > 0 ||
+    requestBusy;
+  const isReading = fetchingKeys.length > 0 || pendingFetchCount > 0;
+  const compactKind: "paintFailure" | "loading" | "readFailure" | "preparing" | "absent" =
+    paintError !== null
+      ? "paintFailure"
+      : isReading
+        ? "loading"
+        : firstReadFailure !== null
+          ? "readFailure"
+          : hasQueuedOrRunning
+            ? "preparing"
+            : "absent";
+  const compactCopy: { headline: string; recovery: string; detail: string | null } =
+    compactKind === "paintFailure"
+      ? {
+          headline: "이어 보기를 그리지 못했습니다.",
+          recovery: "준비 상태 다시 확인을 눌러 다시 시도하세요.",
+          detail: paintError,
+        }
+      : compactKind === "loading"
+        ? {
+            headline: "자료 읽는 중…",
+            recovery: "준비된 창의 바이트를 받고 있습니다.",
+            detail: null,
+          }
+        : compactKind === "readFailure" && firstReadFailure !== null
+          ? firstReadFailure.reason === "RIGHTS_UNAVAILABLE"
+            ? {
+                headline: "이 관측의 준비된 창을 볼 권한이 없습니다.",
+                recovery: "필요한 창과 용도를 담당자에게 알려 주세요.",
+                detail: firstReadFailure.message,
+              }
+            : firstReadFailure.reason === "RECEIPT_MISMATCH"
+              ? {
+                  headline:
+                    currentFailedKeys.length > 1
+                      ? `창 ${currentFailedKeys.length}개를 표시하지 않습니다.`
+                      : "창을 표시하지 않습니다.",
+                  recovery: "받은 자료가 준비 기록과 다릅니다. 구역 자료 준비에서 다운로드로 다시 받으세요.",
+                  detail: firstReadFailure.message,
+                }
+              : {
+                  headline:
+                    currentFailedKeys.length > 1
+                      ? `창 ${currentFailedKeys.length}개를 읽지 못했습니다.`
+                      : "창을 읽지 못했습니다.",
+                  recovery: "준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
+                  detail: firstReadFailure.message,
+                }
+          : compactKind === "preparing"
+            ? {
+                headline: "표시 자료를 준비 중입니다.",
+                recovery: "준비가 끝나면 준비 상태 다시 확인을 누르세요.",
+                detail: null,
+              }
+            : { headline: absentCopy.headline, recovery: absentCopy.recovery, detail: null };
+
   const hasActiveWait = fetchingKeys.length > 0 || (lane?.queuedCount ?? 0) > 0;
   const supportCopy = requestNote ?? (failedJobs.length > 0
     ? `준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요.`
@@ -667,12 +744,15 @@ export function SiteMosaicViewport({
         <p className="text-[12px] leading-5 text-ink-2" role="status">{VIEWPORT_RESOLVE_COPY[cover.reason]}</p>
       )}
 
-      {cover.ok && geometry && !showViewport && (
+      {cover.ok && geometry && !showCanvas && (
         <div className="flex w-full flex-col gap-2">
           <p role="status" className="text-[12.5px] leading-5 font-semibold text-ink-1">
-            {absentCopy.headline}
+            {compactCopy.headline}
           </p>
-          <p className="text-[12px] leading-5 text-ink-2">{absentCopy.recovery}</p>
+          {compactCopy.detail !== null && (
+            <p className="text-[12px] leading-5 text-ink-2">{compactCopy.detail}</p>
+          )}
+          <p className="text-[12px] leading-5 text-ink-2">{compactCopy.recovery}</p>
           <div className="flex flex-wrap gap-2">
             {canFillNow && (
               <ResponsiveActionBoundary
@@ -755,7 +835,7 @@ export function SiteMosaicViewport({
           </details>
         </div>
       )}
-      {cover.ok && geometry && showViewport && (
+      {showCanvas && (
         <>
           <div
             {...viewport.frameProps}
