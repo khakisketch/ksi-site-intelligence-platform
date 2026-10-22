@@ -170,7 +170,7 @@ describe("site windowed pixel viewer", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<SiteWindowedPixelViewer {...propsFor({ jobs: [], canRequest: false })} />);
-    expect(screen.getByText(/현재 계정에 준비된 표시 자료가 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/준비된 표시 자료가 없습니다/)).toBeTruthy();
     expect(screen.queryByRole("img", { name: /이어 보기/ })).toBeNull();
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -383,7 +383,8 @@ describe("site windowed pixel compare", () => {
     expect(container.querySelector('section [role="group"][aria-label="자료 층 전환"]')).toBeNull();
     fireEvent.click(ortho);
     expect(ortho.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByText("표시 중 · 정사영상")).toBeTruthy();
+    // 레일·관측 표제가 같은 층을 이미 말하므로 본문에 '표시 중' 중복을 두지 않는다.
+    expect(screen.queryByText("표시 중 · 정사영상")).toBeNull();
     expect(pushRoute).not.toHaveBeenCalled();
   });
 

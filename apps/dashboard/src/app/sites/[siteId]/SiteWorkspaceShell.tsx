@@ -516,8 +516,7 @@ export function SiteWorkspaceShell({
     <SiteExploreCanvas
       sitePath={sitePath} areas={areas} selectedWorkAreaId={selectedWorkAreaId}
       captureOptions={captureOptions} selectedCaption={mode === "explore" ? selectedCaption : null}
-      coverageNote={mode === "explore" && selected && viewerJobsState !== "not-requested"
-        ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다." : null}
+      coverageNote={null}
       compareHref={mode === "explore" && selected ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}${visualContext ? `&visualAAssetRef=${encodeURIComponent(visualContext.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(visualContext.visualBAssetRef)}` : ""}` : null}
       mode={mode}
       actions={selected && exploreNextAction ? (
@@ -584,6 +583,7 @@ export function SiteWorkspaceShell({
     >
 
     {mode === "explore" && (<>
+      {selectedCatalog && <h3 className="text-[13px] font-semibold">{dataKindLabel(selectedCatalog.kind)}</h3>}
       {/* 탐색 첫 화면은 실제 화면이 먼저다. 측정 전 2042자(390px 기준)가
           앞을 막던 기하 개요·등록 수·행동벽은 아래 '자료·범위 상세'에 둔다. */}
       {/* 다음 행동은 그림보다 위 — 그림이 길어 아래로 밀리면 처음 보는

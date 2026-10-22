@@ -111,7 +111,9 @@ describe("mosaic absent-pixel state from current jobs", () => {
       { ...readableJob(), assetRef: otherRef, jobId: "sdj-v1-00000000-0000-0000-0000-000000000099" },
     ]);
 
-    expect(screen.getByText(/이 관측의 준비된 표시 자료가 보관 기한을 지났습니다/)).toBeTruthy();
+    expect(screen.getByText(/미리보기 보관 기간이 끝났습니다/)).toBeTruthy();
+    // 범위 도식은 닫힌 펼침 뒤에만 둔다 — 사진 행세를 하지 않는다.
+    expect(screen.getByText("자료 범위 보기").closest("details")?.open).toBe(false);
     expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
     // Scoped to this observation: no blanket claim about every artifact.
     expect(screen.queryByText(/모든 자료/)).toBeNull();
@@ -123,8 +125,8 @@ describe("mosaic absent-pixel state from current jobs", () => {
     stubCanvas();
     vi.stubGlobal("fetch", vi.fn());
     renderMosaic([baseJob({ executionState: "EXPIRED", availability: "NOT_READY" })]);
-    expect(screen.getByText(/처리 기한을 넘겼습니다/)).toBeTruthy();
-    expect(screen.queryByText(/보관 기한을 지났습니다/)).toBeNull();
+    expect(screen.getByText(/기한을 넘겼습니다/)).toBeTruthy();
+    expect(screen.queryByText(/보관 기간이 끝났습니다/)).toBeNull();
   });
 
   it("describes a cancellation as cancellation rather than failure", () => {
@@ -150,7 +152,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(BYTES, { status: 200 })));
     renderMosaic([baseJob({ executionState: "QUEUED", availability: "NOT_READY" })]);
 
-    expect(screen.queryByText(/보관 기한을 지났습니다/)).toBeNull();
+    expect(screen.queryByText(/보관 기간이 끝났습니다/)).toBeNull();
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
     expect(screen.getByRole("group", { name: /직접 끌어서 보고/ })).toBeTruthy();
   });
@@ -161,7 +163,7 @@ describe("mosaic absent-pixel state from current jobs", () => {
     renderMosaic([baseJob({ executionState: "COMPLETED", availability: "UNAVAILABLE" })]);
 
     expect(screen.getByText(/준비된 출력 상태를 확인할 수 없습니다/)).toBeTruthy();
-    expect(screen.queryByText(/보관 기한을 지났습니다/)).toBeNull();
+    expect(screen.queryByText(/보관 기간이 끝났습니다/)).toBeNull();
     expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
   });
 

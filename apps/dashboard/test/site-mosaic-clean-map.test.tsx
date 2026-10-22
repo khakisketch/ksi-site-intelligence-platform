@@ -104,7 +104,7 @@ describe("site mosaic clean map", () => {
     // Canvas itself remains with native pixel label.
     expect(within(frame).getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
     // Aggregate honesty stays outside the map.
-    expect(screen.getByText("이어 보기 조건·창별 상태")).toBeTruthy();
+    expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
     expect(screen.getAllByText(/그린 창|부분 보기/).length).toBeGreaterThan(0);
   });
 
@@ -147,7 +147,7 @@ describe("site mosaic clean map", () => {
     expect(screen.queryByText(/디버그/i)).toBeNull();
     expect(screen.queryByText(/diagnostic/i)).toBeNull();
     // No oversized empty hero remains.
-    const statusBox = screen.getByText(/현재 계정에 준비된 표시 자료가 없습니다/).closest("div");
+    const statusBox = screen.getByText(/준비된 표시 자료가 없습니다/).closest("div");
     expect(statusBox?.className ?? "").not.toContain("min-h-64");
     expect(statusBox?.className ?? "").not.toContain("lg:min-h-[55dvh]");
     // Same-plane work area is overlaid; the diagram is labelled as a sketch, not a photo.
@@ -161,7 +161,7 @@ describe("site mosaic clean map", () => {
     expect(screen.getByText("0 – 915")).toBeTruthy();
     expect(screen.getByText(/1022 × 915 네이티브 픽셀/)).toBeTruthy();
     // Aggregate honesty stays outside the map.
-    expect(screen.getByText("이어 보기 조건·창별 상태")).toBeTruthy();
+    expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
   });
 
   it("does not overlay the work area across differing planes and says so", () => {

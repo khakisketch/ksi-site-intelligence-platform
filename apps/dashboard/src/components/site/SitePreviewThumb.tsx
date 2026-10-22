@@ -4,17 +4,12 @@ import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { capturePeriodTitle, dataKindLabel } from "@/lib/operator-language";
-import {
-  acquirePreviewSlot,
-  sanitizeSitePreviewDescriptor,
-  type SitePreviewDescriptor,
-} from "@/lib/site-preview";
+import { acquirePreviewSlot, sanitizeSitePreviewDescriptor, type SitePreviewDescriptor } from "@/lib/site-preview";
 import {
   decodeReceiptPreview,
   fetchVerifiedReceiptBytes,
   type DecodedReceiptPreview,
 } from "@/lib/spatial-data-preview";
-import { SiteVisualTile, useSiteVisualTile } from "@/components/site/SiteVisualTile";
 
 /**
  * 현장 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
@@ -29,21 +24,20 @@ import { SiteVisualTile, useSiteVisualTile } from "@/components/site/SiteVisualT
  *   취소한다. 대기 중 취소는 큐에서 즉시 빠진다.
  * - 기술서를 다른 마운트와 공유하지 않는다. 각 마운트가 자기 취소 신호와
  *   현재 세션으로 새로 조회한다(진행 중 조회도 계정 간에 섞지 않는다).
- * - 원인을 알 때(읽기 실패·미확인)는 '확인하지 못함'으로, 권한 거부(403)는
- *   '볼 권한이 없음'으로, 완전히 읽고 없음이 확정될 때만 '표시할 미리보기
- *   없음'으로 구분한다. 어느 쪽도 등록 자료 부재로 말하지 않는다.
+ * - '미리보기 없음'은 완전히 읽고 없음이 확정될 때만, '확인하지 못함'은
+ *   원인을 알 때(읽기 실패·미확인), '열람 권한 없음'은 권한 거부(403)일 때만 둔다.
+ *   어느 쪽도 등록 자료 부재로 말하지 않는다.
  * - 클릭은 기술서가 가리킨 정확한 구역·자산·버전의 현장 주소로 간다.
- * - 실제 픽셀이 없을 때는 현장 목록 페이지가 같은 세션으로 집계한 합성
- *   기술서(`SiteVisualTileProvider`)가 있으면, 검증 뒤 범위 도식을 대신
- *   그린다(사진이 아님을 밝힌다). 합성 기술서가 없어도 기존의 '없음·미확인'
- *   문구는 그대로다 — 픽셀이 합성을 이긴다.
+ * - 실제 픽셀이 없을 때는 기하 도식을 썸네일 대신 그리지 않는다(사진 행세를
+ *   하는 큰 사각형이 모든 현장에서 똑같이 보인다). 사진 칸을 접고 짧은
+ *   한 줄 상태로 둔다 — 픽셀이 합성을 이긴다.
  * - 조작(확대·이동·폼·스케줄러)이 없다. 링크 안에는 캔버스+설명만 둔다.
  *   출처·변경 안내는 링크 밖 접힌 정보(카드)나 접근성 설명(목록행)으로 둔다.
  * - 대표 미리보기는 언제나 부분 범위다. 단일 준비 창으로 전체 현장·전체
  *   자산을 주장하지 않는다.
  */
 
-type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "composed" } | { name: "unknown" } | { name: "refused" } | { name: "empty" };
+type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "unknown" } | { name: "refused" } | { name: "empty" };
 
 type LookupOutcome =
   | { status: "ready"; link: SitePreviewDescriptor }
@@ -98,12 +92,6 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rowDescriptionId = useId();
-  // 합성 기술서 — 픽셀이 없을 때만 쓰는 대체 타일. 기술서 조회(fetch)·바이트
-  // 읽기를 새로 하지 않으며, 그리기 전에 모양을 다시 검증한다.
-  const composedTile = useSiteVisualTile(siteId);
-  // effect 의존성은 참조가 아니라 존재 여부만 본다. 검증된 기술서 객체가
-  // 렌더마다 새 참조로 생겨도 조회가 다시 시작되지 않는다(무한 재시작 방지).
-  const hasComposedTile = composedTile !== null;
 
   useEffect(() => {
     const box = boxRef.current;
@@ -120,11 +108,6 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
         const outcome = await fetchPreviewDescriptor(siteId, controller.signal);
         if (cancelled || controller.signal.aborted) return;
         if (outcome.status !== "ready") {
-          // 픽셀이 이긴다 — 합성은 픽셀이 없을 때만 대신 그린다.
-          if (hasComposedTile) {
-            setPhase({ name: "composed" });
-            return;
-          }
           if (outcome.status === "empty") setPhase({ name: "empty" });
           else if (outcome.status === "refused") setPhase({ name: "refused" });
           else setPhase({ name: "unknown" });
@@ -174,7 +157,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       controller.abort();
       observer.disconnect();
     };
-  }, [siteId, hasComposedTile]);
+  }, [siteId]);
 
   useEffect(() => {
     if (phase.name !== "ready" || preview === null) return;
@@ -210,6 +193,14 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
     : null;
 
   if (size === "row") {
+    const rowLabel =
+      phase.name === "loading" || phase.name === "pending"
+        ? "미리보기 불러오는 중"
+        : phase.name === "refused"
+          ? "미리보기 권한 없음"
+          : phase.name === "unknown"
+            ? "미리보기 확인 불가"
+            : "미리보기 없음";
     return (
       <div ref={boxRef} data-site-preview="row" className="h-11 w-14 shrink-0 overflow-hidden rounded border border-line bg-sunk">
         {phase.name === "ready" && preview !== null ? (
@@ -226,31 +217,25 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               {rowFactsText}
             </span>
           </>
-        ) : phase.name === "composed" && composedTile !== null ? (
-          <SiteVisualTile tile={composedTile} size="row" />
+        ) : phase.name === "loading" || phase.name === "pending" ? (
+          <span role="img" aria-label={rowLabel} className="block size-full animate-pulse bg-line/40" />
         ) : (
           <span
             role="img"
-            aria-label={
-              phase.name === "loading" || phase.name === "pending"
-                ? "미리보기 불러오는 중"
-                : phase.name === "refused"
-                  ? "이 현장의 미리보기를 볼 권한이 없음"
-                  : phase.name === "unknown"
-                    ? "미리보기를 확인하지 못함"
-                    : "표시할 미리보기 없음"
-            }
-            className="block size-full"
-          />
+            aria-label={rowLabel}
+            className="flex size-full items-center justify-center px-1 text-center text-[10px] font-semibold break-keep text-ink-2"
+          >
+            {rowLabel}
+          </span>
         )}
       </div>
     );
   }
 
-  return (
-    <div>
-      <div ref={boxRef} data-site-preview="card" className="relative aspect-[16/9] overflow-hidden bg-sunk">
-        {phase.name === "ready" && preview !== null ? (
+  if (phase.name === "ready" && preview !== null) {
+    return (
+      <div>
+        <div ref={boxRef} data-site-preview="card" className="relative aspect-[16/9] overflow-hidden bg-sunk">
           <Link
             href={preview.link.siteHref}
             aria-label={figureLabel ?? undefined}
@@ -267,29 +252,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               </figcaption>
             </figure>
           </Link>
-        ) : phase.name === "composed" && composedTile !== null ? (
-          <SiteVisualTile tile={composedTile} size="card" />
-        ) : phase.name === "loading" || phase.name === "pending" ? (
-          <>
-            <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-line/40" />
-            <span className="sr-only" role="status">미리보기 불러오는 중</span>
-          </>
-        ) : (
-          <p className="flex h-full items-center justify-center px-4 py-3 text-center text-[12px] break-keep text-ink-2">
-            {phase.name === "refused"
-              ? "이 현장의 미리보기를 볼 권한이 없음"
-              : phase.name === "unknown"
-                ? "미리보기를 확인하지 못함"
-                : "표시할 미리보기 없음"}
-            <span className="sr-only">
-              {phase.name === "refused"
-                ? " — 미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
-                : " — 등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요."}
-            </span>
-          </p>
-        )}
-      </div>
-      {phase.name === "ready" && preview !== null && (
+        </div>
         <details className="border-t border-line px-4 py-1">
           <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
             자료 정보
@@ -308,7 +271,32 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
             ) : null}
           </div>
         </details>
-      )}
+      </div>
+    );
+  }
+
+  // 실제 픽셀이 없으면 큰 사진 칸을 접는다 — 기하 도식을 썸네일 행세로
+  // 두지 않고, 카드 본문(현장명·상태·열기)이 먼저 읽힌다.
+  if (phase.name === "loading" || phase.name === "pending") {
+    return (
+      <div ref={boxRef} data-site-preview="card-loading" className="border-b border-line px-4 py-2">
+        <span aria-hidden="true" className="block h-2 animate-pulse rounded bg-line/40" />
+        <span className="sr-only" role="status">미리보기 불러오는 중</span>
+      </div>
+    );
+  }
+  const emptyLabel =
+    phase.name === "refused" ? "미리보기 권한 없음" : phase.name === "unknown" ? "미리보기 확인 불가" : "미리보기 없음";
+  return (
+    <div ref={boxRef} data-site-preview="card-empty" className="border-b border-line px-4 py-2">
+      <p className="text-[12px] break-keep text-ink-2">
+        {emptyLabel}
+        <span className="sr-only">
+          {phase.name === "refused"
+            ? " — 미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
+            : " — 등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요."}
+        </span>
+      </p>
     </div>
   );
 }

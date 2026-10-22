@@ -106,7 +106,7 @@ describe("site mosaic viewport fill gate", () => {
     renderMosaic([readableJob()]);
 
     expect(screen.getByRole("img", { name: /이어 보기 1022 × 915 픽셀/ })).toBeTruthy();
-    expect(screen.getByText("이어 보기 조건·창별 상태")).toBeTruthy();
+    expect(screen.getByText("준비 과정·상세 상태")).toBeTruthy();
     expect(screen.getByText(/이음새 보정·재표본화 없음/)).toBeTruthy();
     expect(screen.getByText(/계산 다각형이 아닙니다/)).toBeTruthy();
     // 진입만으로는 준비 요청(POST)이 나가지 않는다 — 쓰기는 명시적 채우기에서만 나간다.
@@ -147,7 +147,7 @@ describe("site mosaic viewport fill gate", () => {
     renderMosaic([readableJob()]);
 
     // 읽을 수 있는 한 창을 빼고 세 창이 모자라다.
-    fireEvent.click(screen.getByRole("button", { name: /이어 보기 채우기 \(모자란 창 3개\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: /미리보기 다시 준비/ }));
     await screen.findByText(/창 3개의 준비 요청을 만들었습니다/);
 
     expect(posts).toHaveLength(3);

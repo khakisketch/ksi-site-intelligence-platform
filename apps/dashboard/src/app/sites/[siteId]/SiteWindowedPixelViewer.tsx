@@ -677,7 +677,8 @@ function WindowedLayerView({
         ) : (
           <ResponsiveActionBoundary
             action="SPATIAL_DATA_REQUEST"
-            reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요. 준비 상태 확인은 모바일에서도 할 수 있습니다."
+            reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요."
+            inlineNotice={false}
           >
             <div className="mt-1 flex flex-wrap items-center gap-2">
               <button
@@ -784,7 +785,6 @@ export function SiteWindowedPixelViewer({
         </header>
       )}
 
-      {hideLayerControls && layer && <p className="text-[12px] font-semibold text-ink-2">표시 중 · {layer.kindLabel}</p>}
       {layerControlsTargetId && <span hidden ref={attachControlsSlot} />}
       {controlsTarget ? createPortal(layerControls, controlsTarget) : !hideLayerControls && !layerControlsTargetId ? layerControls : null}
 

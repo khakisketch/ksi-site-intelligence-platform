@@ -367,7 +367,7 @@ export function SiteMosaicViewport({
             );
           } else {
             setRequestNote(
-              `창 ${okCount}개의 준비 요청을 만들었습니다. 처리가 끝나면 준비 상태 다시 확인을 눌러 이어 보기를 채우세요. 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.`,
+              `창 ${okCount}개의 준비 요청을 만들었습니다. 처리가 끝나면 준비 상태 다시 확인을 눌러 미리보기를 채우세요.`,
             );
           }
         }
@@ -616,34 +616,48 @@ export function SiteMosaicViewport({
             : hasDeadlineExpired ? "deadline"
           : hasUnknownOutput ? "unavailable"
             : "empty";
-  const absentCopy: { headline: string; detail: string } =
+  const absentCopy: { headline: string; recovery: string } =
     absentKind === "expired"
       ? {
-          headline: "이 관측의 준비된 표시 자료가 보관 기한을 지났습니다.",
-          detail: "등록 자료가 없다는 뜻은 아닙니다. 이 관측의 파일 검사·등록 정보는 아래 상세에서 확인할 수 있습니다.",
+          headline: "미리보기 보관 기간이 끝났습니다.",
+          recovery: "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
         }
       : absentKind === "rights"
-        ? { headline: "이 관측의 준비된 창을 현재 조회할 수 없습니다.", detail: FOREIGN_WINDOW_COPY }
+        ? {
+            headline: "이 관측의 준비된 창을 볼 권한이 없습니다.",
+            recovery: "필요한 창과 용도를 담당자에게 알려 주세요.",
+          }
         : absentKind === "failed"
           ? {
-              headline: "이 관측의 준비 요청이 실패했습니다.",
-              detail: "등록 자료가 없다는 뜻은 아닙니다. 사유는 구역 자료 준비에서 확인하세요.",
+              headline: "창 준비에 실패했습니다.",
+              recovery: "구역 자료 준비에서 사유를 확인한 뒤 다시 준비하세요.",
             }
           : absentKind === "canceled"
-            ? { headline: "이 관측의 표시 준비 요청이 취소됐습니다.", detail: "등록 자료는 그대로입니다. 구역 자료 준비에서 요청 이력을 확인하세요." }
+            ? {
+                headline: "표시 준비 요청이 취소됐습니다.",
+                recovery: "다시 준비하거나, 구역 자료 준비에서 요청 이력을 확인하세요.",
+              }
           : absentKind === "deadline"
-            ? { headline: "이 관측의 표시 준비 요청이 처리 기한을 넘겼습니다.", detail: "출력의 보관 만료와는 다릅니다. 구역 자료 준비에서 요청 이력을 확인하세요." }
+            ? {
+                  headline: "표시 준비 요청이 기한을 넘겼습니다.",
+                  recovery: "다시 준비하거나, 구역 자료 준비에서 요청 이력을 확인하세요.",
+                }
           : absentKind === "unavailable"
             ? {
-                headline: "이 관측의 준비된 출력 상태를 확인할 수 없습니다.",
-                detail: "빈 목록으로 단정하지 않습니다. 준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
+                headline: "준비된 출력 상태를 확인할 수 없습니다.",
+                recovery: "준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
               }
             : {
-                headline: "현재 계정에 준비된 표시 자료가 없습니다.",
-                detail: `등록 자료가 없다는 뜻은 아닙니다.${canRequest
-                  ? " 아래에서 표시할 자료의 준비를 요청할 수 있습니다."
-                  : " 표시 준비는 권한 있는 담당자에게 요청하세요. 자료 정보는 아래 상세에서 확인할 수 있습니다."}`,
+                headline: "준비된 표시 자료가 없습니다.",
+                recovery: canRequest
+                  ? "아래에서 미리보기를 준비할 수 있습니다."
+                  : "표시 준비는 권한 있는 담당자에게 요청하세요.",
               };
+
+  const hasActiveWait = fetchingKeys.length > 0 || (lane?.queuedCount ?? 0) > 0;
+  const supportCopy = requestNote ?? (failedJobs.length > 0
+    ? `준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요.`
+    : null);
 
   return (
     <div className="flex flex-col gap-2">
@@ -655,21 +669,90 @@ export function SiteMosaicViewport({
 
       {cover.ok && geometry && !showViewport && (
         <div className="flex w-full flex-col gap-2">
-          <p role="status" className="text-[12.5px] leading-5 text-ink-2">
-            {absentCopy.headline} {absentCopy.detail}
+          <p role="status" className="text-[12.5px] leading-5 font-semibold text-ink-1">
+            {absentCopy.headline}
           </p>
-          {absentFileRing && (
-            <SiteMosaicAbsentDiagram
-              fileRing={absentFileRing}
-              workAreaRing={workAreaRing}
-              overlaid={absentOverlaid}
-              overlayNote={absentOverlayNote}
-              crsLabel={absentCrsLabel}
-              planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
-              filePixelSize={{ width: grid.width, height: grid.height }}
-              fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
-            />
+          <p className="text-[12px] leading-5 text-ink-2">{absentCopy.recovery}</p>
+          <div className="flex flex-wrap gap-2">
+            {canFillNow && (
+              <ResponsiveActionBoundary
+                action="SPATIAL_DATA_REQUEST"
+                reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요."
+                inlineNotice={false}
+              >
+                <button
+                  type="button"
+                  className="btn btn-primary min-h-11"
+                  onClick={() => setFillTick((tick) => tick + 1)}
+                  disabled={requestBusy}
+                >
+                  {hasRetentionExpired ? "미리보기 다시 준비" : "미리보기 준비"}
+                </button>
+              </ResponsiveActionBoundary>
+            )}
+            <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
+              준비 상태 다시 확인
+            </button>
+            {hasActiveWait && (
+              <button type="button" className="btn min-h-11" onClick={cancelLoading}>
+                대기 취소
+              </button>
+            )}
+          </div>
+          {canFillNow && (
+            <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
           )}
+          {requestBusy && (
+            <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
+          )}
+          {supportCopy && (
+            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
+              {supportCopy}
+            </p>
+          )}
+          {absentFileRing && (
+            <details className="rounded-lg border border-line bg-sunk/40 px-3 py-2 text-[12px] text-ink-2">
+              <summary className="tap-target cursor-pointer font-semibold">자료 범위 보기</summary>
+              <div className="mt-2">
+                <SiteMosaicAbsentDiagram
+                  fileRing={absentFileRing}
+                  workAreaRing={workAreaRing}
+                  overlaid={absentOverlaid}
+                  overlayNote={absentOverlayNote}
+                  crsLabel={absentCrsLabel}
+                  planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+                  filePixelSize={{ width: grid.width, height: grid.height }}
+                  fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
+                />
+              </div>
+            </details>
+          )}
+          <details className="text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">준비 과정·상세 상태</summary>
+            <div className="mt-1 flex flex-col gap-1">
+              {lane?.laneCopy && <p role="status" className="leading-5">{lane.laneCopy}</p>}
+              {lane?.retryCopy && <p role="status" className="leading-5">{lane.retryCopy}</p>}
+              {(!canRequest || !observedCrsDigest) && (
+                <p className="leading-5">새 창 준비 요청을 만들 권한 또는 위치 기준 확인값이 없어 이미 준비된 창만 이어 봅니다.</p>
+              )}
+              <p className="leading-5">
+                {"같은 계정이 준비한 창만 봅니다. "}
+                <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
+                {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
+              </p>
+              <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
+              <p className="leading-5">{MOSAIC_ASSEMBLY_LABEL}</p>
+              <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {cells.map((cell) => (
+                  <li key={cell.key} className="text-[12px] leading-5">
+                    <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
+                    {` · ${cell.detail}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
         </div>
       )}
       {cover.ok && geometry && showViewport && (
@@ -694,112 +777,93 @@ export function SiteMosaicViewport({
             </div>
             <ViewportResetButton onReset={viewport.reset} />
           </div>
-          {viewport.note && (
-            <p className="text-[12px] leading-5 text-ink-2" role="status">{viewport.note}</p>
-          )}
-          <ViewportGestureHint />
           <p className="text-[12px] leading-5 text-ink-2" role="status">
             {mosaicCoverStatusCopy(paintedCount, cells.length)}
             {observedCrsIdentifier ? ` · ${observedCrsIdentifier} 네이티브 평면 ${geometry.width} × ${geometry.height} 픽셀` : null}
           </p>
-          {isDisplayViewMoved(view) && (
-            <p className="text-[12px] leading-5 text-ink-2" role="status">
-              표시 확대 {displayZoomPercent(view)}%
-              {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
-            </p>
-          )}
           {isDsm && (
-            <>
-              <p className="text-[12px] leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>
-              <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>
-            </>
+            <p className="text-[12px] leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>
           )}
-          <p className="text-[11.5px] leading-5 text-ink-muted">{MOSAIC_VIEWPORT_NOTE}</p>
           {paintError && (
             <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
               {paintError}
             </p>
           )}
-          <p className="text-[11.5px] leading-5 text-ink-muted">
-            화면의 이동·확대는 같은 격자의 같은 영역을 같은 창 집합으로 다시 찾습니다. 뒤로 돌아오면 새 준비 요청 없이 그린 창을 둡니다.
-          </p>
+          <div className="flex flex-wrap gap-2">
+            {canFillNow && (
+              <ResponsiveActionBoundary
+                action="SPATIAL_DATA_REQUEST"
+                reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요."
+                inlineNotice={false}
+              >
+                <button
+                  type="button"
+                  className="btn btn-primary min-h-11"
+                  onClick={() => setFillTick((tick) => tick + 1)}
+                  disabled={requestBusy}
+                >
+                  미리보기 다시 준비
+                </button>
+              </ResponsiveActionBoundary>
+            )}
+            <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
+              준비 상태 다시 확인
+            </button>
+            {hasActiveWait && (
+              <button type="button" className="btn min-h-11" onClick={cancelLoading}>
+                대기 취소
+              </button>
+            )}
+          </div>
+          {canFillNow && (
+            <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
+          )}
+          {requestBusy && (
+            <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
+          )}
+          {supportCopy && (
+            <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
+              {supportCopy}
+            </p>
+          )}
+          <details className="text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">준비 과정·상세 상태</summary>
+            <div className="mt-1 flex flex-col gap-1">
+              {isDisplayViewMoved(view) && (
+                <p className="leading-5" role="status">
+                  표시 확대 {displayZoomPercent(view)}%
+                  {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+                </p>
+              )}
+              {viewport.note && <p className="leading-5" role="status">{viewport.note}</p>}
+              <ViewportGestureHint />
+              {isDsm && <p className="leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
+              <p className="leading-5 text-ink-muted">{MOSAIC_VIEWPORT_NOTE}</p>
+              {lane?.laneCopy && <p role="status" className="leading-5">{lane.laneCopy}</p>}
+              {lane?.retryCopy && <p role="status" className="leading-5">{lane.retryCopy}</p>}
+              {(!canRequest || !observedCrsDigest) && (
+                <p className="leading-5">새 창 준비 요청을 만들 권한 또는 위치 기준 확인값이 없어 이미 준비된 창만 이어 봅니다.</p>
+              )}
+              <p className="leading-5 text-ink-muted">
+                {"같은 계정이 준비한 창만 봅니다. "}
+                <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
+                {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
+              </p>
+              <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
+              <p className="leading-5">{MOSAIC_ASSEMBLY_LABEL}</p>
+              <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {cells.map((cell) => (
+                  <li key={cell.key} className="text-[12px] leading-5">
+                    <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
+                    {` · ${cell.detail}`}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
         </>
       )}
-
-      {lane?.laneCopy && (
-        <p role="status" className="text-[12px] leading-5 text-ink-2">{lane.laneCopy}</p>
-      )}
-      {lane?.retryCopy && (
-        <p role="status" className="text-[12px] leading-5 text-ink-2">{lane.retryCopy}</p>
-      )}
-      {failedJobs.length > 0 && (
-        <p className="text-[12px] leading-5 text-ink-2" role="status">
-          {`준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요. 실패한 창은 빈칸으로 둡니다.`}
-        </p>
-      )}
-      <div className="flex flex-wrap gap-2">
-        {canFillNow && (
-          <ResponsiveActionBoundary
-            action="SPATIAL_DATA_REQUEST"
-            reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요. 준비된 창 보기는 모바일에서도 할 수 있습니다."
-          >
-            <button
-              type="button"
-              className="btn btn-primary min-h-11"
-              onClick={() => setFillTick((tick) => tick + 1)}
-              disabled={requestBusy}
-            >
-              {missingCount > 0 ? `이어 보기 채우기 (모자란 창 ${missingCount}개)` : "이어 보기 채우기"}
-            </button>
-          </ResponsiveActionBoundary>
-        )}
-        <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
-          준비 상태 다시 확인
-        </button>
-        <button
-          type="button"
-          className="btn min-h-11"
-          onClick={cancelLoading}
-          disabled={fetchingKeys.length === 0 && (lane?.queuedCount ?? 0) === 0}
-        >
-          대기 취소
-        </button>
-      </div>
-      {(!canRequest || !observedCrsDigest) && (
-        <p className="text-[12px] leading-5 text-ink-2">
-          새 창 준비 요청을 만들 권한 또는 위치 기준 확인값이 없어 이미 준비된 창만 이어 봅니다. 필요한 창과 용도를 담당자에게 알려 주세요.
-        </p>
-      )}
-      {requestBusy && (
-        <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
-      )}
-      {requestNote && (
-        <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
-          {requestNote}
-          {" 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
-        </p>
-      )}
-      <p className="text-[11.5px] leading-5 text-ink-muted">
-        {"같은 계정이 준비한 창만 봅니다. "}
-        <a href={requestsHref} className="tap-target underline">구역 자료 준비에서 확인</a>
-        {". 이어 붙인 화면은 하나의 검증된 자료가 아니며, 정확도 평가·측량·정산 근거가 아닙니다."}
-      </p>
-      <details className="text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">이어 보기 조건·창별 상태</summary>
-        <div className="mt-1 flex flex-col gap-1">
-          <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
-          <p className="leading-5">{MOSAIC_ASSEMBLY_LABEL}</p>
-          <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
-          <ul className="mt-1 flex flex-col gap-1">
-            {cells.map((cell) => (
-              <li key={cell.key} className="text-[12px] leading-5">
-                <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
-                {` · ${cell.detail}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </details>
     </div>
   );
 }

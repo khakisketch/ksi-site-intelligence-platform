@@ -133,7 +133,7 @@ export function SiteExploreCanvas({
             </div>
           </SiteSelectionForm>
         ) : <div className="text-[12px] text-ink-2"><p className="font-semibold">관측 시점</p><p className="mt-1">{mode === "compare" ? "비교할 관측 목록을 확인하세요." : mode === "results" ? "결과에 연결된 관측과 근거를 확인하세요." : "선택할 관측은 자료·범위 상세에서 확인하세요."}</p></div>)}
-      {mode === "explore" && captureOptions.length > 0 && <p id="explore-selection-help" className="sr-only text-[12px] leading-5 text-ink-muted lg:not-sr-only">관측을 선택하면 지도가 바뀝니다.</p>}
+      {mode === "explore" && captureOptions.length > 0 && <p id="explore-selection-help" className="sr-only">관측을 선택하면 표시가 바뀝니다.</p>}
       {selectedCaption && (
         <p className="break-words text-[12px] leading-5 text-ink-2">선택 중 · {selectedCaption}</p>
       )}
@@ -165,7 +165,9 @@ export function SiteExploreCanvas({
     </aside>
     <div role="region" aria-label="공간자료 뷰어" className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface lg:col-start-2 lg:row-start-1">
       {toolbar && <div className="border-b border-line bg-surface p-2">{toolbar}</div>}
-      <div className="flex min-h-64 min-w-0 flex-col gap-3 p-3 lg:min-h-[60dvh]">{children}</div>
+      {/* 실제 화면은 자료의 종횡비를 유지한다. 픽셀이 없을 때의 안내에
+          큰 빈 화면 높이를 강제하지 않는다. */}
+      <div className="flex min-w-0 flex-col gap-3 p-3">{children}</div>
     {coverageNote && (
       <p className="border-t border-line px-3 py-2 text-[12px] leading-5 text-ink-2">{coverageNote}</p>
     )}

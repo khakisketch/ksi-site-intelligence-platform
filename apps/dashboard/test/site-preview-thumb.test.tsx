@@ -277,7 +277,7 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId={siteId} size="card" />);
     fireVisible();
-    await screen.findByText("표시할 미리보기 없음");
+    await screen.findByText("미리보기 없음");
     // Descriptor only — no byte read attempted.
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole("link")).toBeNull();
@@ -297,9 +297,9 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId="site-4" size="card" />);
     fireVisible();
-    await screen.findByText("이 현장의 미리보기를 볼 권한이 없음");
-    expect(screen.queryByText("표시할 미리보기 없음")).toBeNull();
-    expect(screen.queryByText("미리보기를 확인하지 못함")).toBeNull();
+    await screen.findByText("미리보기 권한 없음");
+    expect(screen.queryByText("미리보기 없음")).toBeNull();
+    expect(screen.queryByText("미리보기 확인 불가")).toBeNull();
     // 권한 거부는 자료 부재가 아니다 — 경쟁 행동 버튼도 새로 달지 않는다.
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
@@ -315,18 +315,18 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId="site-4b" size="card" />);
     fireVisible();
-    await screen.findByText("미리보기를 확인하지 못함");
-    expect(screen.queryByText("표시할 미리보기 없음")).toBeNull();
-    expect(screen.queryByText("이 현장의 미리보기를 볼 권한이 없음")).toBeNull();
+    await screen.findByText("미리보기 확인 불가");
+    expect(screen.queryByText("미리보기 없음")).toBeNull();
+    expect(screen.queryByText("미리보기 권한 없음")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
     expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("keeps a composed tile from restarting the preview lookup on every render", async () => {
-    // 회귀: 합성 기술서 검증기가 매 렌더 새 객체를 만들면 이 조회가 무한히
-    // 재시작되어 카드가 '불러오는 중'에서 멈춘다. 한 번만 조회해야 한다.
+  it("shows a compact honest empty state without a schematic stand-in", async () => {
+    // Human correction: 기하 도식을 썸네일 행세로 두지 않는다. 픽셀이 없을
+    // 때는 사진 칸을 접고 짧은 한 줄 상태로 둔다. 조회는 한 번만 돈다.
     stubObserver();
     const siteId = "site-composed";
     const fetchMock = vi.fn(async (url: string) => {
@@ -337,40 +337,19 @@ describe("SitePreviewThumb", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const tiles = {
-      [siteId]: {
-        available: true,
-        siteId,
-        workAreaId: "area-1",
-        workAreaName: "합성 도식 구역",
-        crs: "EPSG:5186",
-        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
-        vertexCount: 4,
-        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
-        scannedAssetCount: 1,
-        hasMoreAssets: false,
-        siteHref: `/sites/${siteId}?workAreaId=area-1`,
-      },
-    };
-
-    render(
-      <SiteVisualTileProvider tiles={tiles}>
-        <SitePreviewThumb siteId={siteId} size="card" />
-      </SiteVisualTileProvider>,
-    );
+    render(<SitePreviewThumb siteId={siteId} size="card" />);
     fireVisible();
-    await screen.findByText("범위 도식 · 사진 아님");
-    // 합성 타일이 있어도 미리보기 조회는 한 번만 — 무한 재시작이 없다.
+    await screen.findByText("미리보기 없음");
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 합성 타일은 사진이 아니다 — 실제로 픽셀을 읽지 않는다.
+    // 사진도 도식도 두지 않는다 — 바이트 읽기가 나가지 않는다.
     expect(document.querySelector("canvas")).toBeNull();
-    expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
+    expect(document.querySelector("svg")).toBeNull();
+    expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
   });
 
   it("keeps the composed-tile descriptor referentially stable across renders", async () => {
-    // 브라우저에서 재현된 무한 재시작의 근본 원인: 검증기가 매 렌더 새
-    // 객체를 만들면 소비자의 effect 의존성이 계속 바뀐다. 같은 기술서에서
-    // 같은 참조가 나오는지 직접 본다(경고 없이 무한 루프가 되는 것을 막는다).
+    // 합성 타일 검증기가 매 렌더 새 객체를 만들면 소비자의 effect 의존성이
+    // 계속 바뀐다. 같은 기술서에서 같은 참조가 나오는지 직접 본다.
     const siteId = "site-stable";
     const tiles = {
       [siteId]: {
@@ -403,8 +382,6 @@ describe("SitePreviewThumb", () => {
       </SiteVisualTileProvider>,
     );
     expect(seen.length).toBeGreaterThanOrEqual(2);
-    // 렌더가 반복돼도 같은 기술서는 같은 참조여야 한다 — effect 의존성이
-    // 계속 바뀌면 조회·디코딩이 무한히 다시 시작된다.
     expect(seen[0]).toBe(seen[seen.length - 1]);
   });
 
@@ -467,37 +444,21 @@ describe("SitePreviewThumb", () => {
     expect(link.querySelector("details,summary,input,button")).toBeNull();
   });
 
-  it("keeps the composed diagram winning over a refused lookup", async () => {
+  it("states a refused lookup honestly without a schematic stand-in", async () => {
     stubObserver();
     const siteId = "site-refused-composed";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: "denied" }), { status: 403 }));
     vi.stubGlobal("fetch", fetchMock);
 
-    const tiles = {
-      [siteId]: {
-        available: true,
-        siteId,
-        workAreaId: "area-1",
-        workAreaName: "합성 도식 구역",
-        crs: "EPSG:5186",
-        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
-        vertexCount: 4,
-        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
-        scannedAssetCount: 1,
-        hasMoreAssets: false,
-        siteHref: `/sites/${siteId}?workAreaId=area-1`,
-      },
-    };
-
-    render(
-      <SiteVisualTileProvider tiles={tiles}>
-        <SitePreviewThumb siteId={siteId} size="card" />
-      </SiteVisualTileProvider>,
-    );
+    render(<SitePreviewThumb siteId={siteId} size="card" />);
     fireVisible();
-    await screen.findByText("범위 도식 · 사진 아님");
-    expect(screen.queryByText("이 현장의 미리보기를 볼 권한이 없음")).toBeNull();
+    await screen.findByText("미리보기 권한 없음");
+    expect(screen.queryByText("미리보기 없음")).toBeNull();
+    expect(screen.queryByText("미리보기 확인 불가")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
+    expect(document.querySelector("svg")).toBeNull();
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
   });
 
   it("does not share an old in-flight descriptor or abort signal with a new mount", async () => {
@@ -525,7 +486,7 @@ describe("SitePreviewThumb", () => {
     expect(oldSignal?.aborted).toBe(true);
     render(<SitePreviewThumb siteId="site-8" size="card" />);
     fireVisible();
-    await screen.findByText("표시할 미리보기 없음");
+    await screen.findByText("미리보기 없음");
     expect(lookups).toBe(2);
     finishOld(new Response(JSON.stringify(descriptor({ siteId: "site-8" })), { status: 200 }));
     await waitFor(() => expect(screen.queryByRole("link")).toBeNull());

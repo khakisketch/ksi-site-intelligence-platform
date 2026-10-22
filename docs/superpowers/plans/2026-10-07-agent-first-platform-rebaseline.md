@@ -7010,3 +7010,73 @@ verification are satisfied; independent review found no further unblocked materi
 corrections. Remaining blueprint operations require genuinely absent pair authority/current pixels,
 not another routine UI edit. Do not call synchronized comparison, whole platform/product slice,
 customer/production/field/settlement acceptance complete. No product-state/slice transition is made.
+
+#### Human correction — unnecessary text and strange thumbnails (2026-10-22)
+
+New Human feedback: “오히려 좀 이상해지지 않았나? 현장에서 불필요해보이는 텍스트도 많이보이고,
+그리고 썸네일이라 하는 것도 이상…”. This overrides our adopted presentation hypotheses (large
+geometric fallback as a site thumbnail; always-visible operational explanations), not source/rights/
+quantitative contracts. The preceding technical pass is historical evidence, not a UX veto on this
+feedback. No product-state task is selected and no new operational execution is authorized.
+
+Observed actual87b1c14f: both Sites cards show near-identical oversized rectangle diagrams rather
+than recognizable images, with a dense native metadata caption. Site explore repeats expiry,
+registration/non-accuracy/process explanations around a large extent rectangle, three preparation
+controls (including idle disabled cancel), and multiple supporting disclosures. The user's task is
+to recognize a site/observation and inspect its material, not manage tile jobs on every first view.
+Native screenshot still failed visible-tab capture after focus; actual task-owned Playwright used.
+Initial blank Sites screenshots were loading states and rejected; settled image originals and JSON
+are `/tmp/opencode/ksi-text-thumbnails-20261022/before-*` and baseline.json. No product writes/errors.
+
+Requirement IDs: Human text/thumbnail correction; retain P0/P1/P2, SDP-REQ-01/02/03/05 and
+INV-020/024/040/051/053/060/061.
+Owner module: apps/dashboard presentation, existing preview/guarded-window flows only.
+Acceptance criteria: actual authorized pixels still win as real thumbnails; when none are available,
+no big schematic pretending to be a thumbnail and no giant blank reserved photo slot. Compact honest
+empty/unknown/denied states retain distinction and the site-opening action. Site first view leads
+with current observation/layer and one short actionable availability message; repeated process and
+non-claim prose plus native geometry/diagnostics stay discoverable on demand, not in the viewing
+foreground. Critical date precision, partial coverage/DSM relative shading, no-registration and
+quantitative limitation facts stay at their relevant decision point. Four menus, exact URL selection,
+Back/return, immutable inputs, explicit preparation and cancellation behavior remain.
+Contracts affected: none. Do not manufacture photos, broaden byte routes/grants, reprepare, extend
+TTL, add a cache/thumbnail producer or restart any worker to make the UI look better.
+Reference assets: current real before images, existing pixel-thumbnail path and compact-card intent,
+current tokens/components and incumbent pre-regression screen evidence. No external asset/code/font.
+Adoption decisions: withdraw site-card geometry-as-photo fallback; do not ban native geometry where
+it answers an explicit range question. No-pixel viewport uses a concise reason/recovery and optional
+extent view, not a fake photo. User-facing labels describe preview work, not tile internals.
+Files to change: SitePreviewThumb/associated site-card presentation; SiteMosaicViewport,
+SiteWindowedPixelViewer, SiteMosaicAbsentDiagram, SiteExploreCanvas/Shell/Compare as necessary for
+repeated copy/disclosure only; focused tests and existing E2E labels as justified. Keep byte/geometry/
+scheduler/domain libraries unchanged; primary owns docs/Git/actual browser and integration.
+Tests: state-specific no-image/ready-pixel priority; no hidden refusal; explicit-only preparation,
+active cancel/recovery, unchanged masks/coordinates/identity/layer/pair-return gates; type/lint/full
+Vitest/locked build/existing regression; actual desktop+phone and one middle viewport render/task
+check and screenshot comparison. Fixtures do not certify current expired real pixels.
+HIL or real-device assumptions: none; current real-image restoration remains blocked by expired
+prepared outputs, not silently accepted. Physical inputs/SR/no-JS boundaries retained.
+License/data implications: unchanged attribution/source-vs-derived and requester scope. No new data
+or egress. Accurate state copy and guarded reads enforce the touched invariants.
+Rollback: UI commit set only; retain87b1c14f frontend image/container. Core/issuer/S3/journals/config/
+retention/grants/shared-inspector incident and unowned files/stashes protected.
+
+Live prerequisite read (same account, no byte/prepare access): preview descriptor returns Floreat
+200/available:false/reason:unknown and synthetic200/reason:no-output. The selected Floreat viewer
+separately reports retention expiry. Do not turn that into a claim that every site output was
+exhaustively checked/expired: the descriptor intentionally uses bounded scans. A metadata probe to
+the existing BFF request-collection URL returned405 (no mounted GET); it is not proof of empty jobs
+or the cause of preview unavailability. No endpoint was added and no retry broadened authorization.
+Historical actual-photo card image `.../ksi-visual-direct-entry-20261022/actual-preview-cards-1440.png`
+was inspected as prior visual-reference evidence only, not current readable pixels or cache authority.
+
+Implementation handback integrated (not yet rendered acceptance): real-pixel preview path retained;
+composed schematic fallback removed and unavailable states collapse to one line; native extent now
+behind closed 자료 범위 보기; repeated preparation/account/assembly copy grouped; idle cancel hidden;
+mobile preparation notice compact; no huge absent-view minimum. Primary retained original native
+canvas aspect behavior (removed newly added frame minimum-heights which could override thin raster
+ratios), retained the original active-fetch/queued cancellation condition, and kept one human layer
+heading in single view so mobile users do not need to open layer details just to identify the chosen
+kind. Compact failure labels explicitly say 미리보기 rather than implying the entire Site is denied.
+Full193files/1916tests +type/changedlint pass; no scheduler/byte/domain helper edits. Built actual
+Console comparison still required; these source checks do not overrule the Human's UX feedback.
