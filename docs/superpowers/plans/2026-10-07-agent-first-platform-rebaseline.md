@@ -6886,3 +6886,43 @@ actual synthetic metadata/evidence GET identity already revalidated, not calcula
 MCP execution. Rollback: remove this UI component/integration only. Broader saved-comparison storage,
 registration geometry authority, grant budgets/tolerances remain separate decisions, not required to
 expose already existing record lineage truthfully.
+
+P1/P2 first integrated render — 9769724d (not final acceptance): locked191files/1899tests and
+existing4spec100pass/24expectedskip, exit0/no test listeners. Owned frontend replaced only; Core
+unchanged. Actual GET-only journey passed explicit coastal date-onlyA/B, URL-selected DSM through
+reload/modes/BackForward, no-candidate analysis return, exact synthetic input draft, original frozen
+800m3 inputs/report identity preserved, matching evidence/profile and permissioned record link,
+repeated query refusal and plain-analysis axe0/0. No product POST/pageerror. First selector failure
+was ambiguous getByLabel matching both select and labelled section; it now scopes to the rail.
+
+Primary personally read actual390/768/1024/1440 comparison and analysis/reuse captures. Necessary
+correction batch: compact the overly long comparison rail (tablet area was vertically centred in
+a stretched grid row; phone viewer below the first viewport), retaining explicit A/B fields,
+literal precision and visible unregistered limitation by the panes; detailed repeated explanation
+moves on demand. Also exact-input analysis navigation must land at the request/conditions section,
+not first scroll through history. Preserve read-only context return even where compact mutation
+controls are hidden or no result exists. No authority/data/retention/grant change. Same General owns
+only ExploreCanvas/WorkspaceCompare+focused tests; main owns Header/AnalysisRequestPanel+tests.
+Final rendered confirmation and original-goal reconciliation follow this batch, not aesthetic churn.
+
+Read-only final-direction review found two further source-confirmed handoff defects in the same
+unit, not new scope: rail actions concatenated a second workAreaId, which the receiving visual
+context parser correctly rejected; and the pair-specific CTA (as well as the header) omitted the
+conditions anchor. Main now merges allowed context keys uniquely, cannot overwrite a fixed
+analysisId, preserves the pair on the related materials action, and attaches the conditions anchor
+only for exact-input draft handoff. Ordinary history/record links remain record links. Added tests
+cover unique scope, fixed-record identity, array/foreign context refusal and the actual receiving
+context parser. The review judged existing-record P2 disclosure adequate without new owner policy
+or an MCP-host claim; no other substantive unblocked implementation unit was identified after the
+planned composition/handoff corrections. This is advisory source review, not final rendered proof.
+
+Compact-rail handback integrated: WorkArea row stays at the start across tablet columns; one tight
+explicit A/B GET flow; long repeated concepts disclose near the panes, leaving literal identities
+and no-registration status visible. Small-screen layers collapse but keep the same portal nodes.
+Main replaced the worker's CSS-only closed-details exposure: hiding its summary on an engine that
+lacks ::details-content could strand the controls, and its open state would disagree with visible
+content. A small native SiteLayerDisclosure instead uses the actual responsive open attribute,
+leaves its summary/heading reachable on every engine, is open by default on desktop/closed on phone,
+and respects explicit user toggling. No new fetch/write/dependency or authority. Server/Client
+props stay serializable ReactNode slots. Added desktop/phone/SSR fallback tests; main host193files/
+1913tests, tsc and changed ESLint pass. Final committed-image/runtime verification still follows.

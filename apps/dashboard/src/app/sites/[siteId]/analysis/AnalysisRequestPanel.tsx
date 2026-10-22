@@ -1597,6 +1597,10 @@ export function AnalysisRequestPanel({
   const showError = error && (error.analysisId === null || error.analysisId === selectedId);
 
   return <div className="flex flex-col gap-4">
+    {visualContext && visualReturnHref && <nav aria-label="독립 보기 복귀" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] leading-5 text-ink-2">
+      <span>두 관측의 탐색 선택을 유지하고 있습니다.</span>
+      <Link className="tap-target inline-flex items-center font-semibold underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
+    </nav>}
     {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
       <p className="text-[12.5px] leading-5 text-ink-2">
         <span className="font-bold text-ink-1">최근 변화 분석 요약</span>
@@ -1667,18 +1671,12 @@ export function AnalysisRequestPanel({
     </section>
     {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
     {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
-    {canCreate && <section id="new-analysis-request" className="rounded-lg border border-line bg-surface px-4 py-4">
+    {canCreate && <section id="new-analysis-request" className="scroll-mt-20 rounded-lg border border-line bg-surface px-4 py-4">
       <h2 className="text-[16px] font-bold">새 변화 분석 요청</h2>
-      <ResponsiveActionBoundary action="ANALYSIS_REQUEST" reason="변화 분석 요청은 노트북 이상의 화면에서 진행하세요. 모바일에서는 결과와 근거 검토를 이어갈 수 있습니다.">
-      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
-      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
-      {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
-      {scopeNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{scopeNotice}</p>}
-      {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
       {exactHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{exactHintNotice}</p>}
       {!attempt && (initialBaselineSelector || initialCurrentSelector) && !exactHintNotice && (
         <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">
-          탐색에서 고른 두 자료와 정확히 같은 제출 묶음·버전이 분석 후보에 있어 미리 골랐습니다. 요청 전에 기준·현재가 맞는지 확인하세요. 요청하지 않으면 아무 계산도 시작하지 않습니다.
+          처음 열 때 탐색에서 고른 자료와 정확히 같은 제출 묶음·버전이 분석 후보에 있어 미리 골랐습니다. 요청 전에 기준·현재가 맞는지 확인하세요. 요청하지 않으면 아무 계산도 시작하지 않습니다.
         </p>
       )}
       {visualContext && visualReturnHref && (
@@ -1687,6 +1685,12 @@ export function AnalysisRequestPanel({
           <Link className="font-semibold text-accent-text underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
         </p>
       )}
+      <ResponsiveActionBoundary action="ANALYSIS_REQUEST" reason="변화 분석 요청은 노트북 이상의 화면에서 진행하세요. 모바일에서는 결과와 근거 검토를 이어갈 수 있습니다.">
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">기준 관측과 현재 관측을 선택하면 Core가 권한·자료 적합성·계산 실행을 확인합니다. 이 화면은 그 판단을 대신하지 않습니다.</p>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">선택지는 작업명·촬영 구간으로 구분합니다. 겹치는 후보에만 등록 버전을, 그래도 겹치면 관측 기록 정보를 함께 표시합니다.</p>
+      {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
+      {scopeNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{scopeNotice}</p>}
+      {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
       {visualContextNotice && (
         <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{visualContextNotice}</p>
       )}

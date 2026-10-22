@@ -307,7 +307,11 @@ describe("analysis handoff panel (rendered draft, frozen inputs, no auto POST)",
       visualReturnHref={`/sites/site-1?mode=compare&workAreaId=area-1&visualAAssetRef=${ref("1")}&visualBAssetRef=${ref("2")}`}
     />);
     expect(screen.getByText(/요청한 관측을 분석 후보에서 확인하지 못했습니다/)).toBeTruthy();
-    expect(screen.getByRole("link", { name: "독립 보기로 돌아가기" })).toBeTruthy();
+    const returnLinks = screen.getAllByRole("link", { name: "독립 보기로 돌아가기" });
+    expect(returnLinks.length).toBeGreaterThanOrEqual(1);
+    for (const link of returnLinks) {
+      expect(link.getAttribute("href")).toBe(`/sites/site-1?mode=compare&workAreaId=area-1&visualAAssetRef=${ref("1")}&visualBAssetRef=${ref("2")}`);
+    }
     expect(posts.filter((url) => /analyses/.test(url))).toEqual([]);
   });
 });

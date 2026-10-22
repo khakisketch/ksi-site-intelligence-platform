@@ -169,6 +169,29 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("retains a read-only return path even without a result or request permission", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const context = {workAreaId:"area-1",visualAAssetRef:`ksa-v1-${"a".repeat(64)}`,visualBAssetRef:`ksa-v1-${"b".repeat(64)}`};
+    const href = `/sites/site-1?mode=compare&workAreaId=area-1&visualAAssetRef=${context.visualAAssetRef}&visualBAssetRef=${context.visualBAssetRef}`;
+    renderPanel({ initialPage: {siteId:"site-1",items:[],nextCursor:null}, initialAnalysisId:null, initialSelectedDetail:null,
+      canCreate:false, visualContext:context, visualReturnHref:href });
+    const nav = screen.getByRole("navigation", {name:"독립 보기 복귀"});
+    expect(within(nav).getByRole("link", {name:"독립 보기로 돌아가기"}).getAttribute("href")).toBe(href);
+    expect(screen.queryByRole("button", {name:"변화 분석 요청"})).toBeNull();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("keeps the handoff explanation outside compact-screen mutation gating", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate:true, initialPage:{siteId:"site-1",items:[],nextCursor:null},initialAnalysisId:null,initialSelectedDetail:null,
+      exactHintNotice:"정확한 분석 후보를 확인하지 못했습니다.", visualContext:{workAreaId:"area-1",visualAAssetRef:`ksa-v1-${"a".repeat(64)}`,visualBAssetRef:`ksa-v1-${"b".repeat(64)}`},
+      visualReturnHref:"/sites/site-1?mode=compare" });
+    const message = screen.getByText("정확한 분석 후보를 확인하지 못했습니다.");
+    expect(message.closest(".hidden")).toBeNull();
+    expect(screen.getByRole("button", {name:"변화 분석 요청",hidden:true}).closest(".hidden")).not.toBeNull();
+    expect(document.getElementById("new-analysis-request")?.className).toContain("scroll-mt-20");
+  });
+
   it("renders compact metric definitions without a forced-width horizontal table", () => {
     renderPanel();
 

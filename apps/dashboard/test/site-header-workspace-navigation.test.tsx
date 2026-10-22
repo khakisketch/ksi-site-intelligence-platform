@@ -74,6 +74,20 @@ describe("site header workspace navigation", () => {
     expect(bare).not.toContain("assetRef");
   });
 
+  it("opens the condition form rather than the history when handing off an exact visual pair", () => {
+    const visualContext = { workAreaId: "wa-a", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`,
+      visualBAssetRef: `ksa-v1-${"b".repeat(64)}`,
+      hintBaseline: { workOrderId: "work-a", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 },
+      hintCurrent: { workOrderId: "work-b", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 2 } };
+    const nav = workspaceNav(headerHtml({ scopedWorkAreaId: "wa-a", visualContext }));
+    const href = nav.match(/href="([^"]+)"[^>]*>분석·결과</)?.[1]?.replaceAll("&amp;", "&");
+    const url = new URL(href!, "https://console.test");
+    expect(url.hash).toBe("#new-analysis-request");
+    expect(url.searchParams.get("hintCurrentRevision")).toBe("2");
+    expect(url.searchParams.get("visualAAssetRef")).toBe(visualContext.visualAAssetRef);
+    expect(workspaceNav(headerHtml({ scopedWorkAreaId: "wa-a" }))).not.toContain("#new-analysis-request");
+  });
+
   it("retains the work-orders key for legacy URLs", () => {
     expect(SITE_TABS.some((tab) => tab.key === "work-orders")).toBe(true);
     expect(normalizeSiteTab("work-orders")).toBe("work-orders");

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { EXACT_ANALYSIS_HINT_QUERY_KEYS, VISUAL_PAIR_QUERY_KEYS } from "./site-visual-pair";
 
 /**
  * 선택 구역의 다음 행동 — 탐색 첫 화면과 구역 상세 화면이 같은 것을 본다.
@@ -15,6 +16,8 @@ export interface SiteAreaNextAction {
   secondaryRegisterHref: string | null;
   /** 변화량 분석 시작 진입 — 권한이 없으면 비운다. */
   secondaryCompareHref: string | null;
+  /** Related read-only materials route, with a validated pair when supplied. */
+  materialsHref?: string;
 }
 
 /**
@@ -39,13 +42,20 @@ export function resolveSiteAreaNextAction(input: {
 }): SiteAreaNextAction {
   const { sitePath, workAreaId, workAreaStatus, canCreateWorkOrder, canCreateAnalysis, latestAnalysis, pairQuery } = input;
   const active = workAreaStatus === "ACTIVE";
-  const withPair = (href: string): string => {
+  const withPair = (href: string, includeHints = true): string => {
     if (!pairQuery) return href;
-    const hashIndex = href.indexOf("#");
-    const base = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
-    const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
-    const separator = base.includes("?") ? "&" : "?";
-    return `${base}${separator}${pairQuery}${hash}`;
+    const target = new URL(href, "https://console.invalid");
+    const pair = new URLSearchParams(pairQuery);
+    const targetArea = target.searchParams.get("workAreaId");
+    if (pair.getAll("workAreaId").length !== 1 || pair.get("workAreaId") !== workAreaId
+      || (targetArea !== null && targetArea !== workAreaId)) return href;
+    const keys = ["workAreaId", ...(includeHints ? Object.values(EXACT_ANALYSIS_HINT_QUERY_KEYS) : []), ...Object.values(VISUAL_PAIR_QUERY_KEYS)];
+    if (keys.some((key) => pair.getAll(key).length > 1)) return href;
+    for (const key of keys) {
+      const value = pair.get(key);
+      if (value !== null) target.searchParams.set(key, value);
+    }
+    return `${target.pathname}?${target.searchParams.toString()}${target.hash}`;
   };
   const scopedRegisterHref = `${sitePath}/observations/new?workAreaId=${encodeURIComponent(workAreaId)}`;
   const scopedCompareHref = withPair(`${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}#new-analysis-request`);
@@ -67,6 +77,7 @@ export function resolveSiteAreaNextAction(input: {
     primary,
     secondaryRegisterHref: canRegisterHere && primary.href !== scopedRegisterHref ? scopedRegisterHref : null,
     secondaryCompareHref: canCompareHere ? scopedCompareHref : null,
+    materialsHref: withPair(`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`, false),
   };
 }
 
@@ -120,7 +131,7 @@ export function SiteAreaNextActionNav({
             )}
             <p className="flex flex-wrap gap-x-3 text-[12px]">
               <Link
-                href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}
+                href={action.materialsHref ?? `${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}
                 className="tap-target underline"
               >
                 등록 자료 보기
@@ -165,7 +176,7 @@ export function SiteAreaNextActionNav({
       )}
       <p className="flex flex-wrap gap-x-3 text-[12px]">
         <Link
-          href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}
+          href={action.materialsHref ?? `${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}
           className="tap-target underline"
         >
           등록 자료 보기

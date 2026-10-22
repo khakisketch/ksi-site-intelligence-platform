@@ -174,5 +174,5 @@ export function analysisHandoffHref(
   if (!baseline || !current) {
     return `${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}`;
   }
-  return `${sitePath}/analysis?${pairQueryString(workAreaId, baseline, current)}`;
+  return `${sitePath}/analysis?${pairQueryString(workAreaId, baseline, current)}#new-analysis-request`;
 }

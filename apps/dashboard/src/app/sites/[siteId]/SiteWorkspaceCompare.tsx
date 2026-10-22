@@ -270,33 +270,30 @@ export function SiteWorkspaceCompare({
     : [];
   const visualOptionCount = visualGroups.reduce((total, group) => total + group.options.length, 0);
   const visualForm = selected && projectionState === "ready" && visualOptionCount >= 2 ? (
-    <form method="get" action={formAction} className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3">
+    <form method="get" action={formAction} className="flex min-w-0 flex-col gap-2">
       <input type="hidden" name="mode" value="compare" />
       <input type="hidden" name="workAreaId" value={selected.workAreaId} />
-      <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
-      <p className="text-[12px] leading-5 text-ink-2">
-        두 시점을 나란히 두는 독립 보기입니다. A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않으며,
-        위치 맞춤·동기화·정합을 주장하지 않습니다. 각 보기는 독립된 카메라로만 움직입니다.
-      </p>
-      <div className="min-w-0">
-        <label htmlFor="workspace-visual-a" className="block text-[12px] font-semibold">관측 A</label>
-        <select id="workspace-visual-a" name="visualAAssetRef" required defaultValue={visualARequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
-          <option value="">관측 A 선택</option>
-          {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
-            {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
-          </optgroup>)}
-        </select>
+      <div className="grid min-w-0 gap-2 min-[420px]:grid-cols-2">
+        <div className="min-w-0">
+          <label htmlFor="workspace-visual-a" className="block text-[12px] font-semibold">관측 A</label>
+          <select id="workspace-visual-a" name="visualAAssetRef" required defaultValue={visualARequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+            <option value="">관측 A 선택</option>
+            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
+              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+            </optgroup>)}
+          </select>
+        </div>
+        <div className="min-w-0">
+          <label htmlFor="workspace-visual-b" className="block text-[12px] font-semibold">관측 B</label>
+          <select id="workspace-visual-b" name="visualBAssetRef" required defaultValue={visualBRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+            <option value="">관측 B 선택</option>
+            {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
+              {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+            </optgroup>)}
+          </select>
+        </div>
       </div>
-      <div className="min-w-0">
-        <label htmlFor="workspace-visual-b" className="block text-[12px] font-semibold">관측 B</label>
-        <select id="workspace-visual-b" name="visualBAssetRef" required defaultValue={visualBRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
-          <option value="">관측 B 선택</option>
-          {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
-            {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
-          </optgroup>)}
-        </select>
-      </div>
-      <button type="submit" className="btn">독립 보기로 나란히 두기</button>
+      <button type="submit" className="btn tap-target">독립 보기로 나란히 두기</button>
       {workspaceHasMore && <p className="text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
     </form>
   ) : null;
@@ -354,9 +351,15 @@ export function SiteWorkspaceCompare({
       <div className="rounded-lg border border-line bg-surface px-4 py-3">
         <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-          A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않습니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않으며,
-          화면을 겹쳐도 분석 근거가 되지 않습니다. 각 보기는 독립된 카메라로만 움직입니다.
+          A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않습니다. 동기화 비교는 지원하지 않으며, 각 보기는 독립된 카메라로만 움직입니다.
         </p>
+        <details className="mt-1 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">정합 근거 없음 — 자세히</summary>
+          <p className="mt-1 leading-5">
+            화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 같은 범위 맞춤·같은 색 눈금 비교는 지원하지 않습니다.
+            화면을 겹쳐도 분석 근거가 되지 않으며, 높낮이 차이로 읽지 마세요.
+          </p>
+        </details>
         <p className="mt-2">
           <Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link>
         </p>

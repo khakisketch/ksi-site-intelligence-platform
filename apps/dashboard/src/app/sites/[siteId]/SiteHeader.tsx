@@ -89,7 +89,9 @@ export function SiteHeader({
         + `&hintCurrentSubmissionRef=${encodeURIComponent(visualScope.hintCurrent.submissionRef)}`
         + `&hintCurrentRevision=${encodeURIComponent(String(visualScope.hintCurrent.revision))}`;
     }
-    return `${href}${separator}${suffix}`;
+    const target = `${href}${separator}${suffix}`;
+    return includeHints && visualScope.hintBaseline && visualScope.hintCurrent
+      ? `${target}#new-analysis-request` : target;
   };
   const preparationAction = resolveSiteOperatorNextAction(site, {
     canEditSite: canEditAoi,

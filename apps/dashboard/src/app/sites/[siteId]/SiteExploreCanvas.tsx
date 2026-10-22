@@ -1,5 +1,6 @@
 import type { WorkArea } from "@/lib/core-api/types";
 import Link from "next/link";
+import { SiteLayerDisclosure } from "./SiteLayerDisclosure";
 
 import { disambiguatedAreaNames, displayName } from "./site-spatial";
 import { SiteSelectionForm } from "./SiteSelectionForm";
@@ -66,8 +67,8 @@ export function SiteExploreCanvas({
   // 긴 구역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
   const showFullName = selectedName !== null && [...selectedName].length > 80;
   return <section aria-label="선택 관측 화면" className="grid min-w-0 items-start gap-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:has-[>details[open]]:grid-cols-[260px_minmax(0,1fr)_320px]">
-    <aside aria-label="공간 보기 선택" className="grid min-w-0 gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
-      <div className="flex min-w-0 items-center justify-between gap-2 lg:flex-col lg:items-stretch">
+    <aside aria-label="공간 보기 선택" className="grid min-w-0 content-start items-start gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
+      <div className="flex min-w-0 items-center justify-between gap-2 sm:col-span-full lg:flex-col lg:items-stretch">
         {areas.length > 1 ? (
           <SiteSelectionForm action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
             {mode !== "explore" && <input type="hidden" name="mode" value={mode} />}
@@ -145,10 +146,21 @@ export function SiteExploreCanvas({
         </p>
       )}
       </div>
-      <div className="min-w-0">
-        <h3 className="mb-2 text-[12px] font-semibold">표시 레이어</h3>
-        {layers ?? <p className="text-[12px] leading-5 text-ink-2">{mode === "compare" ? "두 관측의 레이어는 각 보기에서 확인합니다." : mode === "results" ? "선택한 분석 결과와 연결 자료를 표시합니다." : "표시할 레이어를 확인하지 못했습니다."}</p>}
-      </div>
+      {/*
+        레이어 그룹은 작은 화면에서 닫힌 펼침으로 둔다(기본 닫힘). 같은
+        노드를 그대로 싣으므로 포털 대상 id가 중복되지 않고, 닫혀 있어도
+        DOM에 있어 포털이 사라지지 않는다. 데스크톱에서는 기본으로
+        열리며 네이티브 open 상태와 실제 노출이 일치한다. 선택 중인 층은
+        실제 보기 자리에서 그대로 읽힌다.
+      */}
+      {layers === undefined || layers === null ? (
+        <div className="min-w-0">
+          <h3 className="mb-2 text-[12px] font-semibold">표시 레이어</h3>
+          <p className="text-[12px] leading-5 text-ink-2">{mode === "compare" ? "두 관측의 레이어는 각 보기에서 확인합니다." : mode === "results" ? "선택한 분석 결과와 연결 자료를 표시합니다." : "표시할 레이어를 확인하지 못했습니다."}</p>
+        </div>
+      ) : (
+        <SiteLayerDisclosure>{layers}</SiteLayerDisclosure>
+      )}
       {actions && <div className="min-w-0 border-t border-line pt-3 [&>nav]:flex-row [&>nav]:flex-wrap [&>nav]:items-center lg:[&>nav]:flex-col lg:[&>nav]:items-start">{actions}</div>}
     </aside>
     <div role="region" aria-label="공간자료 뷰어" className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface lg:col-start-2 lg:row-start-1">

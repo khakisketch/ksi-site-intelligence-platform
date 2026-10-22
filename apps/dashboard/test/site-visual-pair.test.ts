@@ -189,6 +189,7 @@ describe("visual layer pinning (exact workArea/workOrder/epoch/submission/versio
       fact({ workOrderId: "w-b", assetRef: ref("2"), submissionRef: SUB_B, revision: 1 }));
     expect(href).toContain("workAreaId=area-1");
     expect(href).toContain("hintBaselineSubmissionRef=");
+    expect(new URL(href, "https://console.test").hash).toBe("#new-analysis-request");
     expect(href).toContain(`visualAAssetRef=${encodeURIComponent(ref("1"))}`);
     expect(href).toContain(`visualBAssetRef=${encodeURIComponent(ref("2"))}`);
     expect(href).not.toContain("assetRef=%2F");
