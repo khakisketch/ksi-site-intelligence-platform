@@ -7111,3 +7111,43 @@ existing advanced tools (single native 보기 상세 entry); current-layer ident
 Full193files/1921tests +type/lint clean. E2E's obsolete long-copy literal was replaced by compact
 unknown plus not-known-empty/compact-height checks, retaining actual BFF200/unknown/no fake canvas,
 site headings/actions/keyboard and all fixtures/permissions/skips. Actual built verification follows.
+
+##### Text/thumbnail correction delivered — afe78a1a (photo restoration incomplete)
+
+Primary personally read actual1440/768/390 Sites and Explore: large near-identical rectangle
+thumbnail substitutes are gone; no-image strip35px, both Sites/open actions fit phone. Default
+Explore has current kind + compact cause/recovery, not a large range schematic or0-painted canvas.
+Native range is available only when explicitly expanded; technical/advanced controls remain under
+supporting native disclosures. Important precision/partial/NoData/relative/registration/quantitative
+facts and exact A/B/analysis/result navigation retained. This corrects presentation, NOT missing
+imagery. The lack of an eligible readable photo is still real, not disguised by a substitute.
+
+Final code/runtime afe78a1a94a67e4d701533260098bb5058e4f378: locked193files/1921tests, tsc/changedlint,
+mechanicalscan[]; existing isolated4spec100pass/24expectedskip/code0/no test listeners. Actual
+correction and preserved full pair/analysis/frozen-record/reuse journey pass, productwrites0/
+pageerrors0; actual single-view main axe0/0 and inherited pair/analysis checks passed. Ready-byte
+rendering remains guarded/tested; fixture rendering is not current real-photo restoration proof.
+Initial blank loading captures and later machine-pass-but-empty-canvas captures are separated as
+rejected history, not final evidence. Final E2E state assertion checks compact preview container,
+not an exact concatenation with its hidden screen-reader note; unknown-vs-empty and no fake canvas
+remain enforced without fixture/timeout/skip/golden changes.
+
+**Actual content blocker and scope:** settled authorized file GET503 is confirmed by the Core access
+log; its root cause/typed code remains unestablished. Earlier expiry-only explanation was corrected.
+Photo restoration is INCOMPLETE; a photo cannot be declared restored by changing a placeholder or
+copy. Core8074 remains PID919034/start17:01:51, ready/not restarted. No S3/retention/grants/security/
+worker/shared-inspector intervention or new producer was made. Needed recovery/operational scope
+must be explicit rather than silently changing protected resources for a screenshot.
+
+**Shared append provenance — no false unchanged-state claim:**14 original journal prefixes remain
+intact. `spatial-data-jobs.jsonl` appended15226bytes/9records for job9a01caaf..., created21:22:59KST.
+Core log shows4preparationPOSTs (one201/three200), worker lease/upload/complete, then fileGET503.
+Our actual browser runs captured0productPOST; the General reviewed its tool history and reported
+only local type/lint/mockedtests/dynamicbuild, no private-runtime request. Origin is UNATTRIBUTED,
+not assigned to the Human, this run or another agent without evidence. No cancel/delete/restore/
+journal rewrite/recovery was attempted. Prior stashes and unowned Playwright/pnpm files retained.
+
+Durable actual images/scripts/runtime/E2E/prefix/provenance evidence and SHA manifest:
+`~/.local/share/ksi-product-use-20261021/text-thumbnails-afe78a1a/`. The UI goal is delivered where
+feasible; actual photographs remain blocked by guarded read failure and are not accepted as restored.
+No platform/slice/customer/field/production completion follows from this correction.
