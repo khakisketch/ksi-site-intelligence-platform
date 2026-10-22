@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 
 import {
   sanitizeSiteVisualTileDescriptor,
@@ -41,11 +41,18 @@ export function SiteVisualTileProvider({
   );
 }
 
-/** 이 현장의 합성 기술서 — 검증된 것만 돌린다. 없거나 어긋나면 null이다. */
+/**
+ * 이 현장의 합성 기술서 — 검증된 것만 돌린다. 없거나 어긋나면 null이다.
+ *
+ * 검증 결과는 `useMemo`로 고정한다. 검증기가 매 호출마다 새 객체를 만들면
+ * 호출자는 이 값이 의존성으로 든 effect를 렌더마다 다시 돌리게 된다 —
+ * 참조만 바뀌는데 작업이 계속 재시작되는 순환이 생긴다. 원본 기술서
+ * 객체(`tiles[siteId]`)가 그대로일 때만 새 참조가 생긴다.
+ */
 export function useSiteVisualTile(siteId: string): SiteVisualTileDescriptor | null {
   const tiles = useContext(SiteVisualTileMapContext);
-  if (!tiles) return null;
-  return sanitizeSiteVisualTileDescriptor(tiles[siteId] ?? null, siteId);
+  const raw = tiles ? (tiles[siteId] ?? null) : null;
+  return useMemo(() => sanitizeSiteVisualTileDescriptor(raw, siteId), [raw, siteId]);
 }
 
 interface PlaneBounds {

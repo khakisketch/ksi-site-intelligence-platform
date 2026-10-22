@@ -8,6 +8,7 @@ import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 import { fromArrayBuffer } from "geotiff";
 import { SitePreviewThumb } from "@/components/site/SitePreviewThumb";
+import { SiteVisualTileProvider } from "@/components/site/SiteVisualTile";
 
 const fromArrayBufferMock = fromArrayBuffer as unknown as ReturnType<typeof vi.fn>;
 
@@ -239,6 +240,49 @@ describe("SitePreviewThumb", () => {
     await screen.findByText("미리보기를 확인하지 못함");
     expect(screen.queryByText("표시할 미리보기 없음")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
+  });
+
+  it("keeps a composed tile from restarting the preview lookup on every render", async () => {
+    // 회귀: 합성 기술서 검증기가 매 렌더 새 객체를 만들면 이 조회가 무한히
+    // 재시작되어 카드가 '불러오는 중'에서 멈춘다. 한 번만 조회해야 한다.
+    stubObserver();
+    const siteId = "site-composed";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/preview")) {
+        return new Response(JSON.stringify({ available: false, reason: "no-output" }), { status: 200 });
+      }
+      return new Response("bytes", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tiles = {
+      [siteId]: {
+        available: true,
+        siteId,
+        workAreaId: "area-1",
+        workAreaName: "합성 도식 구역",
+        crs: "EPSG:5186",
+        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
+        vertexCount: 4,
+        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
+        scannedAssetCount: 1,
+        hasMoreAssets: false,
+        siteHref: `/sites/${siteId}?workAreaId=area-1`,
+      },
+    };
+
+    render(
+      <SiteVisualTileProvider tiles={tiles}>
+        <SitePreviewThumb siteId={siteId} size="card" />
+      </SiteVisualTileProvider>,
+    );
+    fireVisible();
+    await screen.findByText("범위 도식 · 사진 아님");
+    // 합성 타일이 있어도 미리보기 조회는 한 번만 — 무한 재시작이 없다.
+    expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
+    // 합성 타일은 사진이 아니다 — 실제로 픽셀을 읽지 않는다.
+    expect(document.querySelector("canvas")).toBeNull();
+    expect(screen.getByText("범위 도식 · 사진 아님")).toBeTruthy();
   });
 
   it("fetches fresh on remount and does not hold a success across mounts", async () => {

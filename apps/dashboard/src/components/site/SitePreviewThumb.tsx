@@ -100,6 +100,9 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
   // 합성 기술서 — 픽셀이 없을 때만 쓰는 대체 타일. 기술서 조회(fetch)·바이트
   // 읽기를 새로 하지 않으며, 그리기 전에 모양을 다시 검증한다.
   const composedTile = useSiteVisualTile(siteId);
+  // effect 의존성은 참조가 아니라 존재 여부만 본다. 검증된 기술서 객체가
+  // 렌더마다 새 참조로 생겨도 조회가 다시 시작되지 않는다(무한 재시작 방지).
+  const hasComposedTile = composedTile !== null;
 
   useEffect(() => {
     const box = boxRef.current;
@@ -117,7 +120,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
         if (cancelled || controller.signal.aborted) return;
         if (outcome.status !== "ready") {
           // 픽셀이 이긴다 — 합성은 픽셀이 없을 때만 대신 그린다.
-          if (composedTile) {
+          if (hasComposedTile) {
             setPhase({ name: "composed" });
             return;
           }
@@ -169,7 +172,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       controller.abort();
       observer.disconnect();
     };
-  }, [siteId, composedTile]);
+  }, [siteId, hasComposedTile]);
 
   useEffect(() => {
     if (phase.name !== "ready" || preview === null) return;
