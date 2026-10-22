@@ -7,8 +7,8 @@ No ambient SDK client, get_bytes fallback, multipart upload or public URL surfac
 from __future__ import annotations
 
 import base64
-import hashlib
 import math
+import os
 import re
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import AbstractContextManager, contextmanager
@@ -29,11 +29,9 @@ from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
 from ksi_core.domains.external.delivery.storage import (
     capability_ttl_seconds,
     observation_from_head,
-    versioned_head_identity,
 )
 from ksi_core.domains.external.delivery.storage_supervisor import (
     SpatialDataStorageSupervisor,
-    StorageChildChannel,
     StorageParentSession,
 )
 from ksi_core.domains.external.delivery.storage_types import (
@@ -49,6 +47,25 @@ _OWNED_KEY = re.compile(
     r"spatial-data/v1/[0-9A-Za-z][0-9A-Za-z_.-]*/"
     r"(sdj-v1-[0-9a-f-]{36})/[0-9a-f]{64}/result\.tif"
 )
+
+
+def _json_safe(value: Any) -> Any:
+    """Carry a client setting across the description without losing its meaning.
+
+    A non-finite timeout is exactly the setting the child must REFUSE, so it has
+    to survive the description intact instead of breaking the whole operation.
+    """
+    if isinstance(value, bool) or value is None or isinstance(value, (int, str)):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return value
+        return "Infinity" if value > 0 else "-Infinity"
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return str(value)
 
 
 def _owned_key(key: str, job_id: str | None = None) -> str:
@@ -113,6 +130,7 @@ class SpatialDataS3Storage:
         policy: SpatialDataPolicyV1,
         supervisor: SpatialDataStorageSupervisor,
         operation_timeout_seconds: float,
+        child_sdk_settings: Mapping[str, Any] | None = None,
     ) -> None:
         if not callable(client_factory) or not callable(source_key_resolver) or not callable(clock):
             raise ValueError("explicit fresh factory, sealed-source resolver and clock required")
@@ -138,6 +156,7 @@ class SpatialDataS3Storage:
         self._policy = policy
         self._supervisor = supervisor
         self._timeout = float(operation_timeout_seconds)
+        self._child_sdk_overrides = dict(child_sdk_settings or {})
 
     def _client(self) -> Any:
         # Executed only inside the deadline-supervised child, including construction/DNS.
@@ -154,25 +173,79 @@ class SpatialDataS3Storage:
             raise SpatialDataDomainError("STORAGE_UNAVAILABLE", 503, True)
         return client
 
-    def _session(
-        self, work: Callable[[StorageChildChannel], None], *, timeout: float | None = None
+    def _data_session(
+        self, description: dict[str, Any], *, timeout: float | None = None
     ) -> AbstractContextManager[StorageParentSession]:
-        return self._supervisor.session(
+        """Run one DATA-described operation inside a fresh child interpreter.
+
+        The child is a NEW interpreter, so it inherits no parent thread, no parent
+        lock and no parent descriptor. The description is plain JSON — never a
+        callable, closure, SDK client or credential object — and it carries the
+        exact SDK configuration the child must use, so the parent stays in control
+        of what the child can reach.
+        """
+        work = dict(description)
+        work["maxFrameBytes"] = max(
+            self._policy.max_json_bytes, self._policy.stream_chunk_bytes + 1
+        )
+        work.setdefault("operationTimeoutSeconds", self._timeout)
+        work.setdefault("bucket", self._bucket)
+        work.update(self._child_sdk_settings())
+        if work.get("bucket") is None:
+            work["bucket"] = self._bucket
+        return self._supervisor.data_session(
             work,
             timeout_seconds=timeout or self._timeout,
             max_frame_bytes=max(self._policy.max_json_bytes, self._policy.stream_chunk_bytes + 1),
         )
 
+    def _client_factory_path(self) -> str | None:
+        """The owner-named client factory, when it is configured for the child."""
+        value = os.environ.get("KSI_CORE_S3_CLIENT_FACTORY")
+        return value if isinstance(value, str) and value.strip() else None
+
+    def _child_sdk_settings(self) -> dict[str, Any]:
+        """Per-storage SDK settings handed to the child.
+
+        A storage may be bound to a substitute client (the contract suite does
+        this). The settings travel in the description, so the child serves exactly
+        the bytes and behaviour THIS storage was configured for, instead of
+        reading whatever ambient environment happens to be set.
+
+        Values are carried as JSON-safe primitives. A client configured with a
+        non-finite timeout is exactly the configuration the child must REFUSE, so
+        it has to survive the description intact instead of failing to serialize.
+        """
+        settings: dict[str, Any] = {}
+        factory = self._client_factory_path()
+        if factory is not None:
+            settings["clientFactory"] = factory
+        endpoint = self._client_endpoint()
+        if endpoint is not None:
+            settings["endpointUrl"] = endpoint
+        for key, value in self._child_sdk_overrides.items():
+            if value is None:
+                # An absent override must not erase a value the parent already
+                # set (the bucket, the key, the endpoint). Only a real value
+                # replaces one.
+                continue
+            settings[key] = _json_safe(value)
+        return settings
+
+    def _client_endpoint(self) -> str | None:
+        """The owner-configured endpoint, when it is configured for the child."""
+        value = os.environ.get("KSI_CORE_S3_ENDPOINT")
+        return value if isinstance(value, str) and value.strip() else None
+
     def observe_owned_output(self, target: SpatialDataOutputTarget) -> SpatialDataObjectObservation:
         key = _owned_key(target.object_key, target.job_id)
-
-        def work(channel: StorageChildChannel) -> None:
-            response = self._client().head_object(
-                Bucket=self._bucket, Key=key, ChecksumMode="ENABLED"
-            )
-            channel.send_json(_metadata(response))
-
-        with self._session(work) as session:
+        with self._data_session(
+            {
+                "operation": "head_output",
+                "bucket": self._bucket,
+                "key": key,
+            }
+        ) as session:
             result = observation_from_head(target, _result(session), expected_version=None)
         if result.size_bytes > self._policy.max_output_bytes:
             raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
@@ -197,44 +270,19 @@ class SpatialDataS3Storage:
         if duration <= 0:
             raise SpatialDataDomainError("DEADLINE_EXCEEDED", 409)
 
-        def work(channel: StorageChildChannel) -> None:
-            response = self._client().get_object(
-                Bucket=self._bucket,
-                Key=key,
-                VersionId=observation.version_id,
-                ChecksumMode="ENABLED",
-            )
-            body = response["Body"]
-            try:
-                version, size, checksum = versioned_head_identity(
-                    response, expected_version=observation.version_id
-                )
-                if (version, size, checksum, response.get("ContentType")) != (
-                    observation.version_id,
-                    observation.size_bytes,
-                    observation.sha256,
-                    observation.content_type,
-                ):
-                    raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-                channel.send_json({"ready": True})
-                count, digest = 0, hashlib.sha256()
-                while channel.command() == "NEXT":
-                    chunk = body.read(chunk_bytes)
-                    if type(chunk) is not bytes or len(chunk) > chunk_bytes:
-                        raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-                    if not chunk:
-                        if count != size or "sha256:" + digest.hexdigest() != checksum:
-                            raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-                        break
-                    count += len(chunk)
-                    if count > size:
-                        raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-                    digest.update(chunk)
-                    channel.send_bytes(chunk)
-            finally:
-                body.close()
-
-        with self._session(work, timeout=duration) as session:
+        with self._data_session(
+            {
+                "operation": "get_output",
+                "bucket": self._bucket,
+                "key": key,
+                "versionId": observation.version_id,
+                "sizeBytes": observation.size_bytes,
+                "sha256": observation.sha256,
+                "contentType": observation.content_type,
+                "chunkBytes": chunk_bytes,
+            },
+            timeout=duration,
+        ) as session:
             if session.receive() != ("JSON", {"ready": True}):
                 raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
 
@@ -267,29 +315,18 @@ class SpatialDataS3Storage:
         if source.observed_size_bytes > self._policy.resource_envelope.max_input_bytes:
             raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
 
-        def work(channel: StorageChildChannel) -> None:
-            client = self._client()
-            response = client.head_object(Bucket=self._bucket, Key=key, ChecksumMode="ENABLED")
-            version, size, checksum = versioned_head_identity(response, expected_version=None)
-            if (size, checksum) != (source.observed_size_bytes, source.observed_sha256):
-                raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-            ttl = capability_ttl_seconds(
-                expires_at=expires_at, now=self._clock(), upper_bound=attempt.lease_until
-            )
-            url = client.generate_presigned_url(
-                "get_object",
-                Params={
-                    "Bucket": self._bucket,
-                    "Key": key,
-                    "VersionId": version,
-                    "ChecksumMode": "ENABLED",
-                },
-                ExpiresIn=ttl,
-                HttpMethod="GET",
-            )
-            channel.send_json({"url": url})
-
-        with self._session(work) as session:
+        with self._data_session(
+            {
+                "operation": "issue_source_get",
+                "bucket": self._bucket,
+                "key": key,
+                "observedSizeBytes": source.observed_size_bytes,
+                "observedSha256": source.observed_sha256,
+                "expiresAt": expires_at.isoformat(),
+                "now": self._clock().isoformat(),
+                "upperBound": attempt.lease_until.isoformat(),
+            }
+        ) as session:
             url = _result(session)["url"]
         url = _checked_signature_url(url, expires_at=expires_at, headers="host;x-amz-checksum-mode")
         capability_ttl_seconds(
@@ -326,26 +363,19 @@ class SpatialDataS3Storage:
         )
         encoded = base64.b64encode(bytes.fromhex(sha256[7:])).decode("ascii")
 
-        def work(channel: StorageChildChannel) -> None:
-            client = self._client()
-            ttl = capability_ttl_seconds(
-                expires_at=expires_at, now=self._clock(), upper_bound=target.expires_at
-            )
-            url = client.generate_presigned_url(
-                "put_object",
-                Params={
-                    "Bucket": self._bucket,
-                    "Key": key,
-                    "ContentType": content_type,
-                    "ContentLength": size_bytes,
-                    "ChecksumSHA256": encoded,
-                },
-                ExpiresIn=ttl,
-                HttpMethod="PUT",
-            )
-            channel.send_json({"url": url})
-
-        with self._session(work) as session:
+        with self._data_session(
+            {
+                "operation": "issue_output_put",
+                "bucket": self._bucket,
+                "key": key,
+                "contentType": content_type,
+                "sizeBytes": size_bytes,
+                "checksumSha256": encoded,
+                "expiresAt": expires_at.isoformat(),
+                "now": self._clock().isoformat(),
+                "upperBound": target.expires_at.isoformat(),
+            }
+        ) as session:
             url = _result(session)["url"]
         url = _checked_signature_url(
             url,
@@ -383,35 +413,14 @@ class SpatialDataS3Storage:
         if type(limit) is not int or not 0 < limit <= min(1000, self._policy.max_list_records):
             raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
 
-        def work(channel: StorageChildChannel) -> None:
-            client = self._client()
-            response = client.list_object_versions(Bucket=self._bucket, Prefix=key, MaxKeys=limit)
-            if response.get("ResponseMetadata", {}).get("HTTPStatusCode") != 200:
-                raise SpatialDataDomainError("STORAGE_UNAVAILABLE", 503, True)
-            # A partial page is never mistaken for a complete cleanup inventory.
-            if response.get("IsTruncated") is not False:
-                raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
-            versions = response.get("Versions", [])
-            markers = response.get("DeleteMarkers", [])
-            if (
-                type(versions) is not list
-                or type(markers) is not list
-                or len(versions) + len(markers) > limit
-            ):
-                raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-            observed = []
-            for item in versions:
-                if item["Key"] != key:
-                    continue
-                version = _immutable_version(item["VersionId"])
-                result = client.head_object(
-                    Bucket=self._bucket, Key=key, VersionId=version, ChecksumMode="ENABLED"
-                )
-                observation_from_head(target, result, expected_version=version)
-                observed.append(_metadata(result))
-            channel.send_json({"versions": observed})
-
-        with self._session(work) as session:
+        with self._data_session(
+            {
+                "operation": "list_owned_versions",
+                "bucket": self._bucket,
+                "key": key,
+                "limit": limit,
+            }
+        ) as session:
             values = _result(session)["versions"]
         return tuple(
             observation_from_head(target, value, expected_version=value["VersionId"])
@@ -422,17 +431,13 @@ class SpatialDataS3Storage:
         key = self._cleanup_key(target)
         _immutable_version(version_id)
 
-        def work(channel: StorageChildChannel) -> None:
-            result = self._client().delete_object(
-                Bucket=self._bucket, Key=key, VersionId=version_id
-            )
-            if (
-                result.get("VersionId") != version_id
-                or result.get("ResponseMetadata", {}).get("HTTPStatusCode") != 204
-            ):
-                raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)
-            channel.send_json({"deleted": True})
-
-        with self._session(work) as session:
+        with self._data_session(
+            {
+                "operation": "delete_owned_version",
+                "bucket": self._bucket,
+                "key": key,
+                "versionId": version_id,
+            }
+        ) as session:
             if _result(session) != {"deleted": True}:
                 raise SpatialDataDomainError("INTEGRITY_MISMATCH", 503)

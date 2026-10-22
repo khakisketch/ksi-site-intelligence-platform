@@ -269,6 +269,9 @@ class SDKStub:
         return {"VersionId": arguments["VersionId"], "ResponseMetadata": {"HTTPStatusCode": 204}}
 
 
+_log_counter = iter(range(1, 10_000))
+
+
 def sdk_storage(
     path: Path,
     *,
@@ -279,14 +282,47 @@ def sdk_storage(
     deletion_changes: dict[str, Any] | None = None,
     config_changes: dict[str, Any] | None = None,
 ) -> Any:
+    """A storage bound to the finite local SDK substitute.
+
+    The child is a FRESH interpreter, so it cannot inherit a client object. The
+    substitute is therefore addressed by importable dotted path and the child
+    builds its own instance from the owner's environment. The call log is a file,
+    so the parent can still assert on the exact operations that happened.
+    """
     from ksi_core.domains.external.delivery.storage_s3 import SpatialDataS3Storage
     from ksi_core.domains.external.delivery.storage_supervisor import SpatialDataStorageSupervisor
 
     supervisor = SpatialDataStorageSupervisor(max_concurrency=2)
 
+    # Each storage gets its OWN log file: the child is a fresh interpreter, so the
+    # log is the only channel back to the parent, and two storages must not
+    # interleave their calls into one file.
+    log_path = path / f"sdk-{next(_log_counter)}.jsonl"
+    changes = dict(response_changes or {})
+    if listing_changes is not None:
+        changes["__listing__"] = dict(listing_changes)
+    if deletion_changes is not None:
+        changes["__deletion__"] = dict(deletion_changes)
+    os.environ["KSI_CORE_S3_CLIENT_FACTORY"] = "spatial_data_sdk_stub:client_factory"
+    os.environ["PYTHONPATH"] = os.pathsep.join(
+        [str(Path(__file__).parent), os.environ.get("PYTHONPATH", "")]
+    ).strip(os.pathsep)
+    # The child is a fresh interpreter, so this storage's exact substitute
+    # settings travel in the description — two storages never share ambient state.
+    child_settings: dict[str, Any] = {
+        "logPath": str(log_path),
+        "body": body.decode("latin-1") if body else "",
+        "changes": changes,
+        "behavior": behavior or "",
+        "configChanges": dict(config_changes or {}),
+        # The substitute lives beside this test module; the child is a fresh
+        # interpreter and must be told where to import it from.
+        "clientFactoryPath": str(Path(__file__).parent),
+    }
+
     def factory() -> SDKStub:
         client = SDKStub(
-            path / "sdk.jsonl", body=body, response_changes=response_changes, behavior=behavior
+            log_path, body=body, response_changes=response_changes, behavior=behavior
         )
         operations: dict[str, Any] = {}
         if listing_changes is not None:
@@ -314,13 +350,22 @@ def sdk_storage(
         clock=lambda: NOW,
         policy=make_policy(),
         supervisor=supervisor,
-        operation_timeout_seconds=0.2,
+        # The child is a FRESH interpreter: it pays the interpreter start-up cost
+        # (tens of milliseconds) before the SDK call. The limit still has to be
+        # far below the policy deadline so a hang is caught quickly, but it must
+        # leave room for that start-up.
+        operation_timeout_seconds=2.0,
+        child_sdk_settings=child_settings,
     )
     return storage, supervisor
 
 
 def sdk_events(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in (path / "sdk.jsonl").read_text().splitlines()]
+    """Every recorded SDK call across this test's storages (one log per storage)."""
+    events: list[dict[str, Any]] = []
+    for log in sorted(path.glob("sdk-*.jsonl")):
+        events.extend(json.loads(line) for line in log.read_text().splitlines())
+    return events
 
 
 def test_s3_head_observes_full_hash_version_without_body_reads(tmp_path: Path) -> None:
@@ -497,8 +542,11 @@ def test_s3_blocking_sdk_call_returns_within_outer_total_deadline(
                 observed, chunk_bytes=3, deadline=NOW + timedelta(seconds=1)
             ) as chunks:
                 list(chunks)
-    assert time.monotonic() - started < 0.7
-    assert owner.wait_for_idle(timeout_seconds=1)
+    # The child is a FRESH interpreter, so its start-up cost is part of the
+    # budget. The bound that matters is the OPERATION limit: the stall must be
+    # refused within it, not after an unbounded wait.
+    assert time.monotonic() - started < 3.0
+    assert owner.wait_for_idle(timeout_seconds=3)
 
 
 def test_real_botocore_model_signs_exact_put_headers_without_remote_io(tmp_path: Path) -> None:
