@@ -7211,3 +7211,39 @@ not written and live Core was not stopped. This is an isolation/config-relocatio
 proof of corrupted journals or permission to change the shared directory/locks. Resolve task-local
 physical paths or report the prerequisite before risking the only running Core. No journal repair,
 S3 mutation, new jobs, TTL/grant/security change or forced restart has occurred.
+
+##### Existing-photo recovery diagnosis — exact audit predicate confirmed (2026-10-22)
+
+Typed Core refusal is now observed as503/RESOURCE_LIMIT_EXCEEDED through unchanged guarded file
+GET9a01caaf. Current config and that job's frozen policy dictionaries are identical; output474427B
+is below8MiB. Exact65536B stream/65537B frame and concurrent-child fixtures pass. A private strict
+replay of the actual audit journal under the unchanged policy confirms1531events,512sessions,
+914424semantic bytes,0reserved slots. All512sessions are terminal (490STREAM_COMPLETED,
+17STREAM_INTERRUPTED,5CLEANUP_COMPLETED), so unfinished0. A prospective, sealed admission was
+VALIDATED ONLY on the private copy, never appended: next event594B plus reservations requires
+1046090B <=1048576B, but retained session count512 >= maxPendingRecords8 × maxListRecords64
+trips audit.py:163–166 and returns503. This is a confirmed sufficient blocker, not guessed S3 failure
+or mere file expiry. The live audit file is unchanged since the recovery baseline.
+
+A restart would replay the same full sessions and cannot reclaim capacity. No Core restart/code
+change was performed. The selected ops contract explicitly says exhausted audit history fails
+closed and no unapproved implicit eviction/rotation/archival exists (SPATIAL_DATA_LOCAL_VERIFICATION
+§Operations). Independent read-only Plan confirms that dropping completed sessions would also
+break historical lookup/retry/terminal identity semantics; DurableJournal itself retains/deepcopies
+full history, so a superficial dictionary eviction or unbounded disk scan is not a safe bounded fix.
+This exceeds the granted reader-code/limited-restart scope while resource checks remain protected.
+
+Required material decision: authorize a delivery-audit-specific, history-preserving indexed backing
+and bounded active working-set lifecycle, with explicit admission-budget meaning, bounded historical
+queries/rebuild/index memory/disk, crash consistency, preserved unfinished sessions/all event IDs/
+exact retry/conflict/old-session queries. Original fsynced journal stays authoritative; no history
+truncation/repair, no cap bump, no new preparation, TTL/grant/S3 change or protected worker action.
+Until that lifecycle decision exists, preserve the refusal rather than manufacture200 or a photo.
+No claim of whole photo restoration or product-slice closure is made.
+
+Restart preflight is now valid in an isolated private copy: mapped physical authority-journal and
+spool paths in COPY configs only; factory builds33routes with audit-denied network/spawn/sharedwrites
+attempts0. Initial denied probes were path-isolation catches, not journal corruption. The actual
+configured authority journal is additionally outside CoreDataDir (private provider path,0bytes),
+so snapshot/proof inventory includes it rather than falsely assuming the14CoreDataDir journals are
+all physical backing. Shared environment/config/security paths/permissions remain untouched.
