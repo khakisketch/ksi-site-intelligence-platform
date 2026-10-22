@@ -6763,3 +6763,52 @@ Rollback: retain preceding owned frontend image/container cf985644; revert only 
 Protected resources: all Core durable journals/config/credentials, S3, shared inspector incident and
 all unrelated containers/ports. Only existing task-owned frontend3243/private10010 may be replaced
 using its retained rollback. No Core restart or preparation/inspection/analysis issuance for this UI.
+
+##### P0 integrated result — 01c74afd, 2026-10-22
+
+- Four site sections are visible without a disclosure. Modes share the same workspace chrome;
+  the desktop rail is260px; a selected-information panel occupies320px only on demand at wide
+  widths. At1024px it is inline rather than squeezing the viewer to a narrow strip. Existing
+  scope/URLs remain. `작업구역 관리` now opens actual `/work-areas`; observation work records retain
+  `?section=work-orders` as `관측 작업 기록` under the 자료 context, not falsely as area management.
+- The separate full-width recent-analysis card is gone; the area's next action lives in its
+  selection rail. Observation and layer GET selections immediately navigate, including keyboard
+  selection and browser Back/Forward. Important date-only/partial/accuracy limits stay visible;
+  identifiers and coordinate diagnostics are on demand. Phone rail was reduced327px from484px
+  after actual render review; tablet202px from389px, without hiding the observation selector.
+- Actual expired/no-prepared-pixel state uses inspected native file extent and same-plane WorkArea
+  geometry labelled `범위 도식 · 사진 아님`. It does not claim mask-valid coverage or accuracy.
+  Execution-deadline expiry, retention expiry, cancellation, denied and unknown are distinct;
+  a larger WorkArea does not enlarge the numbers labelled file extent. Valid-byte canvas rendering
+  keeps its native ratio and verifier. Per-window map text/borders removed; status/recovery remain
+  in legend and details. No diagnostic toggle is shipped without authoritative admin permission.
+- Actual owned Console01c74afd: admin widths390/768/1024/1440/1920, wide/inline inspector, current
+  blocked compare (date-only coastal records), exact separately synthetic800m3 results, materials,
+  settings/actual WorkArea/legacy records and read-only-role390 personally rendered/read. The
+  WorkArea transition capture was rejected and replaced with actual loaded form/list content;
+  background map editing was not operated. No product writes/page errors. Main axe0violations and
+  0incomplete after correcting the named viewer's semantic role. Native DOM worked but pointer and
+  visible capture failed; repeatable actual Playwright used (not physical-device evidence).
+- Final committed-lockfile image build +188files/1864tests pass; host tsc/changed ESLint clean;
+  detector[]. Existing isolated four-spec regression on01c74afd:100pass/24expectedskips/code0;
+  no test listeners left, no golden updates or permission/fixture/data changes. Initial4 failures
+  were a new test's incorrect assumption that the empty-observation fixture must have a select;
+  it now checks the no-candidate recovery and absence of invented selection, while the real
+  populated journey exercises actual immediate date selection. Blocker-copy sync contract3pass.
+- All14 protected journal byte prefixes and lengths remained unchanged; Core not restarted;
+  S3/grants/retention/config/inspector incident untouched. Only owned frontend3243/private10010
+  replaced; previous images/containers retained. Build context came from `git archive`, excluding
+  unowned untracked pnpm manifests and user `.playwright-cli/`, both retained untouched.
+- Worker isolation mistake: unrelated stash86adc2f8 was accidentally applied. Main compared the
+  only introduced test file to the retained stash blob f9f95adc27f563e466df60a7a944e46dfa2ab54f,
+  removed only that accidentally staged/worktree copy, and confirmed both original stash refs
+  retained. No unrelated file was committed. Evidence records containment; no shared state repair.
+- Durable evidence: `~/.local/share/ksi-product-use-20261021/workspace-layout-01c74afd/`, SHA manifest,
+  real renders/interaction JSON, exact E2E/runtime provenance and protected-prefix check.
+
+**Not whole-scope completion:** P0 structure has integrated evidence, not a completion claim for
+P1 synchronised visual comparison, P2 expanded lineage/reuse UX, real pixel/physical-touch/SR or
+platform/customer acceptance. All current prepared output pixels remain expired and were not
+re-prepared. Fully JS-disabled browser integration is blocked by the existing hidden streamed
+Suspense ancestor; only the selection form's SSR fallback is verified. Further original-goal gaps
+must be considered separately from the completed structural unit; no product-state slice closes.
