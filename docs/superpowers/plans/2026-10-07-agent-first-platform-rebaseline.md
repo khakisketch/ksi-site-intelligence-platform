@@ -6926,3 +6926,13 @@ leaves its summary/heading reachable on every engine, is open by default on desk
 and respects explicit user toggling. No new fetch/write/dependency or authority. Server/Client
 props stay serializable ReactNode slots. Added desktop/phone/SSR fallback tests; main host193files/
 1913tests, tsc and changed ESLint pass. Final committed-image/runtime verification still follows.
+
+Final functional confirmation found a concrete defect (not further polish): on01df0c42 the actual
+portalled layer link changed the URL/viewer to A's DSM, while the dirty native uncontrolled A select
+still displayed the former ortho. The earlier journey had changed the select itself and missed this
+link-to-select synchronization. Visual-pair forms now remount only when canonical area/A/B URL intent
+changes, preserving local two-field editing before explicit GET apply but reflecting layer/history
+navigation afterwards. Added a dirty-select/rerender/history regression; retained the failed actual
+capture and JSON under `canonical-select-failure-01df0c42/`. No quantitative/data/permission change.
+01df0c42 locked193/1913 and existing4spec100pass/24expectedskip passed but were not sufficient for
+this outcome; corrected source must pass its own built actual journey before acceptance.

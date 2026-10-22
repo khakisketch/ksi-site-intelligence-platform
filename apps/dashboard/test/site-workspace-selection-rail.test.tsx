@@ -143,7 +143,7 @@ const visualCatalog = [
 
 const visualAreas = [{ workAreaId: "area-1", name: "검증 구역", status: "ACTIVE" }];
 
-function compareControls() {
+function compareControls(a = visualRef("1"), b = visualRef("2")) {
   return <SiteWorkspaceCompare
     sitePath="/sites/site-1"
     areas={visualAreas as never}
@@ -154,8 +154,8 @@ function compareControls() {
     baselineRequestedRef={null}
     currentRequestedRef={null}
     resolution={{ status: "prompt" }}
-    visualARequestedRef={visualRef("1")}
-    visualBRequestedRef={visualRef("2")}
+    visualARequestedRef={a}
+    visualBRequestedRef={b}
     visualPair={{ status: "prompt" }}
     canCreateAnalysis
     canCreateWorkOrder={false}
@@ -179,6 +179,16 @@ function compareRailLayers() {
 }
 
 describe("compare selection rail (viewer-first compact)", () => {
+  it("replaces dirty native selections when a layer URL or browser history changes the canonical pair", () => {
+    const {rerender} = render(compareControls());
+    fireEvent.change(screen.getByLabelText("관측 A"), {target:{value:visualRef("1")}});
+    rerender(compareControls(visualRef("2"), visualRef("1")));
+    expect((screen.getByLabelText("관측 A") as HTMLSelectElement).value).toBe(visualRef("2"));
+    expect((screen.getByLabelText("관측 B") as HTMLSelectElement).value).toBe(visualRef("1"));
+    rerender(compareControls());
+    expect((screen.getByLabelText("관측 A") as HTMLSelectElement).value).toBe(visualRef("1"));
+  });
+
   it("keeps one tight A/B flow: no card, no long paragraph, GET submit intact", () => {
     render(<SiteExploreCanvas sitePath="/sites/site-1" areas={visualAreas as never} selectedWorkAreaId="area-1"
       captureOptions={[]} selectedCaption={null} coverageNote={null} mode="compare"

@@ -270,7 +270,7 @@ export function SiteWorkspaceCompare({
     : [];
   const visualOptionCount = visualGroups.reduce((total, group) => total + group.options.length, 0);
   const visualForm = selected && projectionState === "ready" && visualOptionCount >= 2 ? (
-    <form method="get" action={formAction} className="flex min-w-0 flex-col gap-2">
+    <form key={`${selected.workAreaId}:${visualARequestedRef ?? ""}:${visualBRequestedRef ?? ""}`} method="get" action={formAction} className="flex min-w-0 flex-col gap-2">
       <input type="hidden" name="mode" value="compare" />
       <input type="hidden" name="workAreaId" value={selected.workAreaId} />
       <div className="grid min-w-0 gap-2 min-[420px]:grid-cols-2">
