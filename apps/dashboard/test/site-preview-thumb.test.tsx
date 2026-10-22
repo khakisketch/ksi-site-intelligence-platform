@@ -134,28 +134,35 @@ describe("SitePreviewThumb", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     fireVisible();
 
-    const link = await screen.findByRole("link", { name: /Floreat common-extent 정사영상 미리보기 일부 범위 열기/ });
+    const link = await screen.findByRole("link", { name: /정사영상 미리보기 일부 범위 열기/ });
     expect(link.getAttribute("href")).toBe(
       `/sites/site-1?workAreaId=area-1&assetRef=${`ksa-v1-${"a".repeat(64)}`}`,
     );
+    // 인식 우선: 보이는 자막은 촬영 날짜·자료 종류가 먼저, 기술 상 세는 펼침이 맡는다.
+    expect(link.getAttribute("aria-label")).toMatch(/2021.*정사영상.*일부 범위.*Floreat common-extent/);
     // Exact source labels, never latest/whole-site claims.
-    expect(link.textContent).toContain("Floreat common-extent · 정사영상");
+    expect(link.textContent).toContain("정사영상");
+    expect(link.textContent).toContain("2021");
     expect(link.textContent).toContain("부분 범위");
-    expect(link.textContent).toContain("제출 GSD 0.05m");
     expect(link.textContent).not.toMatch(/최신|전체 현장/);
+    // 작업구역명·등록 버전·GSD는 보이는 자막에 두지 않고 펼침이 맡는다.
+    expect(link.textContent).not.toContain("Floreat common-extent");
+    expect(link.textContent).not.toContain("등록 버전");
+    expect(link.textContent).not.toContain("제출 GSD");
     // 사진 밝기와 무관한 명시적 토큰 쌍 + 좁은 화면에서 잘리지 않는 정보 줄.
     const caption = link.querySelector("figcaption")!;
     expect(caption.classList.contains("bg-accent")).toBe(true);
     expect(caption.classList.contains("text-accent-on")).toBe(true);
     expect(caption.className).not.toMatch(/gradient|linear-to|transparent/);
-    const precision = screen.getByText(/제출 GSD 0\.05m/);
-    expect(precision.classList.contains("min-w-0")).toBe(true);
-    expect(precision.classList.contains("shrink-0")).toBe(false);
+    expect(caption.textContent).toContain("부분 범위");
     // Attribution is available OUTSIDE the link — hover-only title is not the path.
     expect(link.hasAttribute("title")).toBe(false);
     expect(link.querySelector("details,summary")).toBeNull();
     const info = screen.getByText("자료 정보").closest("details")!;
     expect(link.contains(info)).toBe(false);
+    expect(info.textContent).toContain("Floreat common-extent");
+    expect(info.textContent).toContain("등록 버전 1");
+    expect(info.textContent).toContain("제출 GSD 0.05m");
     expect(info.textContent).toContain("Floreat public sample (CC BY 4.0)");
     await waitFor(() => {
       const canvas = link.querySelector("canvas")!;
@@ -207,6 +214,59 @@ describe("SitePreviewThumb", () => {
     const link = await screen.findByRole("link", { name: /미리보기 일부 범위 열기/ });
     expect(link.textContent).toContain("상대 음영");
     expect(link.textContent).not.toMatch(/정확도|측량|정산/);
+    expect(link.textContent).toContain("부분 범위");
+  });
+
+  it("leads the card caption with capture date and kind, details on demand", async () => {
+    stubObserver();
+    const bytes = new Uint8Array([7, 7, 7, 7]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.endsWith("/preview")) {
+          return new Response(
+            JSON.stringify(
+              descriptor({
+                siteId: "site-1",
+                asset: {
+                  revision: 1,
+                  gsdM: 0.05,
+                  captureStartedAt: null,
+                  captureEndedAt: null,
+                  captureDate: "2021-08-17",
+                  attribution: "Floreat public sample (CC BY 4.0)",
+                  modificationNotice: "Windowed crop; no reprojection.",
+                },
+              }),
+            ),
+            { status: 200 },
+          );
+        }
+        return new Response(bytes as unknown as BodyInit, { status: 200 });
+      }),
+    );
+
+    render(<SitePreviewThumb siteId="site-1" size="card" />);
+    fireVisible();
+    const link = await screen.findByRole("link", { name: /미리보기 일부 범위 열기/ });
+    const caption = link.querySelector("figcaption")!.textContent!;
+    // 날짜만 확인 caveat stays visible, kind next to it.
+    expect(caption).toContain("2021. 8. 17. (날짜만 확인 · 시각 미상)");
+    expect(caption).toContain("정사영상");
+    expect(caption).toContain("부분 범위");
+    expect(caption.indexOf("2021")).toBeLessThan(caption.indexOf("부분 범위"));
+    // Technical values leave the first screen for the disclosure.
+    expect(caption).not.toContain("등록 버전");
+    expect(caption).not.toContain("제출 GSD");
+    expect(caption).not.toContain("Floreat common-extent");
+    const info = screen.getByText("자료 정보").closest("details")!;
+    expect(info.textContent).toContain("Floreat common-extent");
+    expect(info.textContent).toContain("등록 버전 1");
+    expect(info.textContent).toContain("제출 GSD 0.05m");
+    expect(info.textContent).toContain("Floreat public sample (CC BY 4.0)");
+    // Disclosure stays outside the link and keyboard-operable.
+    expect(link.contains(info)).toBe(false);
+    expect(info.querySelector("summary")).not.toBeNull();
   });
 
   it("shows an honest unavailable state without touching bytes when nothing is allowed", async () => {
@@ -237,9 +297,31 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId="site-4" size="card" />);
     fireVisible();
+    await screen.findByText("이 현장의 미리보기를 볼 권한이 없음");
+    expect(screen.queryByText("표시할 미리보기 없음")).toBeNull();
+    expect(screen.queryByText("미리보기를 확인하지 못함")).toBeNull();
+    // 권한 거부는 자료 부재가 아니다 — 경쟁 행동 버튼도 새로 달지 않는다.
+    expect(document.querySelector("canvas")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
+    expect(document.body.textContent).toMatch(/등록 자료가 없다는 뜻이 아닙니다/);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
+  it("says could-not-check on unreadable lookup without claiming absence", async () => {
+    stubObserver();
+    const fetchMock = vi.fn(async () => new Response("missing", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SitePreviewThumb siteId="site-4b" size="card" />);
+    fireVisible();
     await screen.findByText("미리보기를 확인하지 못함");
     expect(screen.queryByText("표시할 미리보기 없음")).toBeNull();
+    expect(screen.queryByText("이 현장의 미리보기를 볼 권한이 없음")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
+    expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
+    expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("keeps a composed tile from restarting the preview lookup on every render", async () => {
@@ -366,12 +448,56 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId={siteId} size="row" />);
     fireVisible();
-    const link = await screen.findByRole("link", { name: /Floreat common-extent 정사영상 미리보기 일부 범위 열기/ });
+    const link = await screen.findByRole("link", { name: /정사영상 미리보기 일부 범위 열기/ });
     expect(link.getAttribute("aria-label")).toContain("2021");
+    expect(link.getAttribute("aria-label")).toContain("Floreat common-extent");
     // Attribution lives outside the link, reachable by assistive tech.
     const described = document.getElementById(link.getAttribute("aria-describedby")!);
+    const accessibleText = `${link.getAttribute("aria-label")} ${described?.textContent}`;
+    // Row cue carries site/area, date, kind, partial, attribution for assistive tech.
+    expect(accessibleText).toContain("site-6");
+    expect(accessibleText).toContain("Floreat common-extent");
+    expect(accessibleText).toContain("2021");
+    expect(accessibleText).toContain("정사영상");
+    expect(accessibleText).toContain("부분 범위");
     expect(described?.textContent).toContain("Floreat public sample (CC BY 4.0)");
+    expect(described?.textContent).toContain("등록 버전 1");
+    expect(described?.textContent).toContain("제출 GSD 0.05m");
+    expect(accessibleText).not.toMatch(/전체 현장|최신/);
     expect(link.querySelector("details,summary,input,button")).toBeNull();
+  });
+
+  it("keeps the composed diagram winning over a refused lookup", async () => {
+    stubObserver();
+    const siteId = "site-refused-composed";
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: "denied" }), { status: 403 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tiles = {
+      [siteId]: {
+        available: true,
+        siteId,
+        workAreaId: "area-1",
+        workAreaName: "합성 도식 구역",
+        crs: "EPSG:5186",
+        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
+        vertexCount: 4,
+        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
+        scannedAssetCount: 1,
+        hasMoreAssets: false,
+        siteHref: `/sites/${siteId}?workAreaId=area-1`,
+      },
+    };
+
+    render(
+      <SiteVisualTileProvider tiles={tiles}>
+        <SitePreviewThumb siteId={siteId} size="card" />
+      </SiteVisualTileProvider>,
+    );
+    fireVisible();
+    await screen.findByText("범위 도식 · 사진 아님");
+    expect(screen.queryByText("이 현장의 미리보기를 볼 권한이 없음")).toBeNull();
+    expect(document.querySelector("canvas")).toBeNull();
   });
 
   it("does not share an old in-flight descriptor or abort signal with a new mount", async () => {

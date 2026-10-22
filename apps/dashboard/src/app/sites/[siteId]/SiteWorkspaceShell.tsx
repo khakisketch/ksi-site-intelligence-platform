@@ -496,6 +496,9 @@ export function SiteWorkspaceShell({
         coverageNote={selected && viewerJobsState !== "not-requested"
           ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다."
           : null}
+        compareHref={selected
+          ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}`
+          : null}
       >
         {selected && viewerJobsState !== "not-requested" ? (
           <SiteWindowedPixelViewer

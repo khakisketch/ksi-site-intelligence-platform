@@ -198,6 +198,8 @@ export function SiteWorkspaceCompare({
     && resolution.status !== "ready"
     && resolution.status !== "unresolvable";
   // 선택지가 하나도 없을 때의 한 줄 사유 — 기존 typed 사실에서만 고른다.
+  // 순서 후보가 없으면 무엇이 있어야 하는지(촬영 시간이 정확한 관측)를
+  // 함께 밝힌다 — 막힌 이유만 말하면 사용자는 무엇을 해야 할지 모른다.
   const noOptionReason = (() => {
     if (!showNoOptionBox || !selected) return null;
     if (representatives.length === 0) {
@@ -208,7 +210,7 @@ export function SiteWorkspaceCompare({
       return "시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 나란히 둘 후보가 없습니다.";
     }
     if (browsableCount > 0 && blocked.length === 0 && tiedFacts.length === 0) {
-      return "시간 순서가 확인된 관측이 없어 나란히 둘 후보가 없습니다. 날짜만 아는 관측은 둘러볼 수 있습니다.";
+      return "이 구역의 관측은 촬영 시각 대신 날짜만 확인되어, 두 시점의 순서를 확정할 수 없습니다.";
     }
     if (tiedFacts.length > 0 && blocked.length === 0 && browsableCount === 0) {
       return "같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다.";
@@ -261,6 +263,25 @@ export function SiteWorkspaceCompare({
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
           같은 구역의 실제 관측부터 둘러보세요.{" "}
           <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
+        </p>
+        {/* 무엇을 하면 비교가 되는지 — 막힌 이유만 말하고 끝내지 않는다.
+            준비는 보는 범위만 넓히고 순서 조건은 만들지 않으므로, 시간이
+            필요할 때의 수치 계산 경로와 새 관측 등록을 함께 제시한다. */}
+        <p className="mt-2 border-t border-line pt-2 text-[12px] leading-5 text-ink-2">
+          나란히 두려면 <span className="font-semibold text-ink-1">촬영 시간이 정확히 기록된 관측 2개</span>가
+          같은 구역에 있어야 합니다. 현재 자료는 날짜만 확인되어 순서를 확정할 수 없습니다.
+        </p>
+        <p className="mt-1.5 flex flex-wrap gap-2 text-[12px]">
+          {canCreateWorkOrderHere && (
+            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn w-fit">
+              촬영 시각이 있는 관측 등록
+            </Link>
+          )}
+          {canCreateAnalysis && (
+            <Link href={scopedCompareHref} className="btn w-fit">
+              변화량 분석 요청
+            </Link>
+          )}
         </p>
       </div>
     )}

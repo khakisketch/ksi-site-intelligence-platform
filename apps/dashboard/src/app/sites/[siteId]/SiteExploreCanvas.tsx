@@ -1,4 +1,5 @@
 import type { WorkArea } from "@/lib/core-api/types";
+import Link from "next/link";
 
 import { disambiguatedAreaNames, displayName } from "./site-spatial";
 
@@ -28,6 +29,7 @@ export function SiteExploreCanvas({
   captureOptions,
   selectedCaption,
   coverageNote,
+  compareHref,
   children,
 }: {
   sitePath: string;
@@ -39,6 +41,8 @@ export function SiteExploreCanvas({
   selectedCaption: string | null;
   /** 부분 보기 등 범위 한계 한 줄 — 없으면 null. */
   coverageNote: string | null;
+  /** 같은 구역의 두 시점을 나란히 보는 곳으로 가는 주소 — 없으면 두지 않는다. */
+  compareHref?: string | null;
   children: React.ReactNode;
 }) {
   const selected = areas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null;
@@ -115,6 +119,14 @@ export function SiteExploreCanvas({
       </div>
       {selectedCaption && (
         <p className="break-words text-[12px] leading-5 text-ink-2">선택 중 · {selectedCaption}</p>
+      )}
+      {/* 두 시점 보기는 이 화면의 모드 탭에만 있다. 자료를 보다가 "이전
+          촬영과 비교"를 직접 찾게 하지 않고, 자료 자리 옆에 둔다. */}
+      {compareHref && (
+        <p className="text-[12px]">
+          <Link href={compareHref} className="tap-target underline">이전 촬영과 비교</Link>
+          <span className="text-ink-muted"> · 같은 구역의 두 시점을 나란히 봅니다</span>
+        </p>
       )}
     </div>
     {children}

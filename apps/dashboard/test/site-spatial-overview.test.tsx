@@ -346,7 +346,11 @@ describe("Site spatial overview honesty", () => {
       }],
     });
     await renderDefaultTab({});
-    expect(screen.getByRole("link", { name: /촬영/ }).getAttribute("href")).toContain("assetRef=asset-1");
+    // '이전 촬영과 비교' 링크도 '촬영' 글자를 쓰므로, 날짜가 있는 자산
+    // 링크는 href의 assetRef로 구분한다.
+    const assetLink = screen.getAllByRole("link", { name: /촬영/ })
+      .find((link) => (link.getAttribute("href") ?? "").includes("assetRef=asset-1"));
+    expect(assetLink).toBeTruthy();
     expect(screen.getByText(/외부 비교 기록을 조회하지 못했습니다/)).toBeTruthy();
   });
 

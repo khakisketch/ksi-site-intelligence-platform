@@ -29,9 +29,9 @@ import { SiteVisualTile, useSiteVisualTile } from "@/components/site/SiteVisualT
  *   취소한다. 대기 중 취소는 큐에서 즉시 빠진다.
  * - 기술서를 다른 마운트와 공유하지 않는다. 각 마운트가 자기 취소 신호와
  *   현재 세션으로 새로 조회한다(진행 중 조회도 계정 간에 섞지 않는다).
- * - 원인을 알 때(읽기 실패·거부·미확인)는 '확인하지 못함'으로, 완전히 읽고
- *   없음이 확정될 때만 '표시할 미리보기 없음'으로 구분한다. 어느 쪽도 등록
- *   자료 부재로 말하지 않는다.
+ * - 원인을 알 때(읽기 실패·미확인)는 '확인하지 못함'으로, 권한 거부(403)는
+ *   '볼 권한이 없음'으로, 완전히 읽고 없음이 확정될 때만 '표시할 미리보기
+ *   없음'으로 구분한다. 어느 쪽도 등록 자료 부재로 말하지 않는다.
  * - 클릭은 기술서가 가리킨 정확한 구역·자산·버전의 현장 주소로 간다.
  * - 실제 픽셀이 없을 때는 현장 목록 페이지가 같은 세션으로 집계한 합성
  *   기술서(`SiteVisualTileProvider`)가 있으면, 검증 뒤 범위 도식을 대신
@@ -43,11 +43,12 @@ import { SiteVisualTile, useSiteVisualTile } from "@/components/site/SiteVisualT
  *   자산을 주장하지 않는다.
  */
 
-type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "composed" } | { name: "unknown" } | { name: "empty" };
+type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "composed" } | { name: "unknown" } | { name: "refused" } | { name: "empty" };
 
 type LookupOutcome =
   | { status: "ready"; link: SitePreviewDescriptor }
   | { status: "empty" }
+  | { status: "refused" }
   | { status: "unknown" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -62,7 +63,7 @@ async function fetchPreviewDescriptor(siteId: string, signal: AbortSignal): Prom
         redirect: "error",
         signal,
       });
-      if (!response.ok) return { status: "unknown" };
+      if (!response.ok) return response.status === 403 ? { status: "refused" } : { status: "unknown" };
       const raw: unknown = await response.json();
       if (isRecord(raw) && raw.available === false) {
         return raw.reason === "no-output" ? { status: "empty" } : { status: "unknown" };
@@ -125,6 +126,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
             return;
           }
           if (outcome.status === "empty") setPhase({ name: "empty" });
+          else if (outcome.status === "refused") setPhase({ name: "refused" });
           else setPhase({ name: "unknown" });
           return;
         }
@@ -192,12 +194,19 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
 
   const kindLabel = preview ? dataKindLabel(preview.link.artifactKind) : null;
   const figureLabel = preview
-    ? `${preview.link.workAreaName} ${kindLabel} 미리보기 일부 범위 열기 · ${captureLine(preview.link)}`
+    ? `${captureLine(preview.link)} · ${kindLabel} 미리보기 일부 범위 열기 · ${preview.link.workAreaName}`
     : null;
   const attributionText = preview
     ? [preview.link.asset.attribution, preview.link.asset.modificationNotice]
         .filter((line): line is string => typeof line === "string" && line.trim().length > 0)
         .join(" ")
+    : null;
+  const precisionFacts = preview ? precisionLine(preview.link) : null;
+  const rowFactsText = preview
+    ? `${siteId} ${preview.link.workAreaName} · ${captureLine(preview.link)} · ${kindLabel}` +
+      (precisionFacts ? ` · ${precisionFacts}` : "") +
+      (attributionText ? ` · ${attributionText}` : "") +
+      " 부분 범위이며 정확도 평가·측량·정산 근거가 아닙니다."
     : null;
 
   if (size === "row") {
@@ -214,7 +223,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               <canvas ref={canvasRef} className="block size-full object-cover" />
             </Link>
             <span id={rowDescriptionId} className="sr-only">
-              {attributionText} 부분 범위이며 정확도 평가·측량·정산 근거가 아닙니다.
+              {rowFactsText}
             </span>
           </>
         ) : phase.name === "composed" && composedTile !== null ? (
@@ -225,9 +234,11 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
             aria-label={
               phase.name === "loading" || phase.name === "pending"
                 ? "미리보기 불러오는 중"
-                : phase.name === "unknown"
-                  ? "미리보기를 확인하지 못함"
-                  : "표시할 미리보기 없음"
+                : phase.name === "refused"
+                  ? "이 현장의 미리보기를 볼 권한이 없음"
+                  : phase.name === "unknown"
+                    ? "미리보기를 확인하지 못함"
+                    : "표시할 미리보기 없음"
             }
             className="block size-full"
           />
@@ -249,13 +260,9 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               <canvas ref={canvasRef} className="absolute inset-0 size-full object-cover" />
               <figcaption className="absolute right-0 bottom-0 left-0 flex flex-wrap items-end justify-between gap-x-3 gap-y-0.5 bg-accent px-4 py-2 text-accent-on">
                 <span className="min-w-0 text-[12px] font-semibold break-keep">
-                  {preview.link.workAreaName} · {kindLabel}
+                  {captureLine(preview.link)} · {kindLabel}
                   <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">부분 범위</span>
                   {preview.link.artifactKind === "dsm" && <span className="ml-1 rounded bg-white/20 px-1 py-px text-[10.5px]">상대 음영</span>}
-                </span>
-                <span className="num w-full min-w-0 text-[10.5px] break-keep">
-                  {captureLine(preview.link)}
-                  {precisionLine(preview.link) ? ` · ${precisionLine(preview.link)}` : ""}
                 </span>
               </figcaption>
             </figure>
@@ -269,17 +276,29 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
           </>
         ) : (
           <p className="flex h-full items-center justify-center px-4 py-3 text-center text-[12px] break-keep text-ink-2">
-            {phase.name === "unknown" ? "미리보기를 확인하지 못함" : "표시할 미리보기 없음"}
-            <span className="sr-only"> — 등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.</span>
+            {phase.name === "refused"
+              ? "이 현장의 미리보기를 볼 권한이 없음"
+              : phase.name === "unknown"
+                ? "미리보기를 확인하지 못함"
+                : "표시할 미리보기 없음"}
+            <span className="sr-only">
+              {phase.name === "refused"
+                ? " — 미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
+                : " — 등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요."}
+            </span>
           </p>
         )}
       </div>
-      {phase.name === "ready" && preview !== null && attributionText && (
+      {phase.name === "ready" && preview !== null && (
         <details className="border-t border-line px-4 py-1">
           <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
             자료 정보
           </summary>
-          <p className="pb-2 text-[11.5px] leading-5 break-keep text-ink-2">{attributionText}</p>
+          <div className="pb-2 text-[11.5px] leading-5 break-keep text-ink-2">
+            <p>표시 구역: {preview.link.workAreaName}</p>
+            {precisionFacts ? <p>{precisionFacts}</p> : null}
+            {attributionText ? <p>{attributionText}</p> : null}
+          </div>
         </details>
       )}
     </div>
