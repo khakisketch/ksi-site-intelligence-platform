@@ -67,6 +67,7 @@ export function SiteAreaNextActionNav({
   archived,
   canRegisterOrCompare,
   label = "선택 구역 다음 확인",
+  compact = false,
 }: {
   sitePath: string;
   workAreaId: string;
@@ -77,7 +78,62 @@ export function SiteAreaNextActionNav({
   canRegisterOrCompare: boolean;
   /** 접근성 이름 — 같은 행동을 두 자리에 둘 때는 자리를 구분한다. */
   label?: string;
+  /**
+   * 첫 화면용 짧은 형태 — 주 행동 하나만 먼저 보이고, 다른 진입은
+   * '다른 보기' 펼침에 둔다. 처음 보는 사람이 다섯 개의 단추를 먼저
+   * 훑어야 하는 상황을 만든다.
+   */
+  compact?: boolean;
 }) {
+  if (compact) {
+    return (
+      <nav className="flex flex-col gap-1.5" aria-label={label}>
+        <Link href={action.primary.href} className="btn btn-primary w-fit">
+          {action.primary.label}
+        </Link>
+        <details className="text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">다른 보기</summary>
+          <div className="mt-1.5 flex flex-col gap-2">
+            {(action.secondaryRegisterHref || action.secondaryCompareHref) && (
+              <p className="flex flex-wrap gap-2">
+                {action.secondaryRegisterHref && (
+                  <Link href={action.secondaryRegisterHref} className="btn w-fit">
+                    이 구역 자료 등록
+                  </Link>
+                )}
+                {action.secondaryCompareHref && (
+                  <Link href={action.secondaryCompareHref} className="btn w-fit">
+                    변화량 분석
+                  </Link>
+                )}
+              </p>
+            )}
+            <p className="flex flex-wrap gap-x-3 text-[12px]">
+              <Link
+                href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`}
+                className="tap-target underline"
+              >
+                등록 자료 보기
+              </Link>
+              <Link href={`${sitePath}/observations`} className="tap-target underline">
+                외부 비교 기록
+              </Link>
+            </p>
+            {canRegisterOrCompare && (
+              <p className="text-[11.5px] leading-5 text-ink-muted">
+                자료 등록 뒤에는 파일 제출·검사를 같은 작업 화면에서 이어갑니다. 비교는 기준·현재 두 시점을 고른 뒤 요청합니다.
+              </p>
+            )}
+          </div>
+        </details>
+        {archived && (
+          <p className="text-[12px] text-ink-2">
+            보관된 구역입니다. 기존 자료와 결과를 확인할 수 있으며, 새 자료 등록과 비교는 활성 구역에서 시작하세요.
+          </p>
+        )}
+      </nav>
+    );
+  }
   return (
     <nav className="flex flex-col gap-2" aria-label={label}>
       <Link href={action.primary.href} className="btn btn-primary w-fit">

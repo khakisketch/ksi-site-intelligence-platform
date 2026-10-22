@@ -472,6 +472,21 @@ export function SiteWorkspaceShell({
     {mode === "explore" && (<>
       {/* 탐색 첫 화면은 실제 화면이 먼저다. 측정 전 2042자(390px 기준)가
           앞을 막던 기하 개요·등록 수·행동벽은 아래 '자료·범위 상세'에 둔다. */}
+      {/* 다음 행동은 그림보다 위 — 그림이 길어 아래로 밀리면 처음 보는
+          사람은 무엇을 할 수 있는지 화면을 끝까지 스크롤해야 안다. */}
+      {selected && exploreNextAction && (
+        <div className="rounded-lg border border-line bg-surface px-4 py-3">
+          <SiteAreaNextActionNav
+            sitePath={sitePath}
+            workAreaId={selected.workAreaId}
+            action={exploreNextAction}
+            archived={selected.status === "ARCHIVED"}
+            canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
+            label="탐색 다음 행동"
+            compact
+          />
+        </div>
+      )}
       <SiteExploreCanvas
         sitePath={sitePath}
         areas={areas}
@@ -510,20 +525,6 @@ export function SiteWorkspaceShell({
           </p>
         )}
       </SiteExploreCanvas>
-      {/* 다음 행동은 그림 바로 아래, 첫 화면에 둔다 — 펼침을 열어야 보이면
-          처음 보는 사람은 무엇을 할 수 있는지 모른다. */}
-      {selected && exploreNextAction && (
-        <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <SiteAreaNextActionNav
-            sitePath={sitePath}
-            workAreaId={selected.workAreaId}
-            action={exploreNextAction}
-            archived={selected.status === "ARCHIVED"}
-            canRegisterOrCompare={canCreateWorkOrder && selected.status === "ACTIVE" || canCreateAnalysis && selected.status === "ACTIVE"}
-            label="탐색 다음 행동"
-          />
-        </div>
-      )}
       {/* 기하 개요·등록 수·행동벽은 두 번째 자리다. 정보는 지우지 않고 펼침에 둔다. */}
       <details className="rounded-lg border border-line bg-surface px-4 py-3">
         <summary className="tap-target cursor-pointer text-[13px] font-semibold">자료·범위 상세</summary>

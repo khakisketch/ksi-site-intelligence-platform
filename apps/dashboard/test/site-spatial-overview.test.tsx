@@ -439,8 +439,18 @@ describe("Site spatial overview honesty", () => {
     // 탐색 첫 화면도 같은 행동을 제시한다 — 펼침을 열어야 보이면 처음
     // 보는 사람은 무엇을 할 수 있는지 모른다.
     const exploreActions = within(screen.getByRole("navigation", { name: "탐색 다음 행동" }));
-    expect(exploreActions.getByRole("link", { name: "변화 분석 보기" }).getAttribute("href"))
+    // 첫 화면은 주 행동 하나만 먼저 보인다 — 다섯 개의 단추를 훑어야 하는
+    // 상황을 만들지 않는다. 나머지 진입은 펼침에 남는다.
+    const exploreButtons = exploreActions.getAllByRole("link").filter((link) => link.className.includes("btn"));
+    expect(exploreButtons).toHaveLength(1);
+    expect(exploreButtons[0].getAttribute("href"))
       .toBe(actions.getByRole("link", { name: "변화 분석 보기" }).getAttribute("href"));
+    // 보조 진입은 '다른 보기' 펼침 안에 그대로 있다 — 지우지 않는다.
+    const otherViews = exploreActions.getByText("다른 보기");
+    expect(otherViews.closest("details")).toBeTruthy();
+    const other = within(otherViews.closest("details") as HTMLElement);
+    expect(other.getByRole("link", { name: "등록 자료 보기" })).toBeTruthy();
+    expect(other.getByRole("link", { name: "외부 비교 기록" })).toBeTruthy();
   });
 
   it("links the header to the preserved AOI anchor on the manage tab", async () => {
