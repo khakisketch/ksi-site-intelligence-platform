@@ -42,6 +42,7 @@ function fact(overrides: Partial<SiteVisualTileAssetFact> = {}): SiteVisualTileA
     captureEndedAt: "2021-08-17T00:10:00Z",
     captureDate: null,
     lifecycleState: "SEALED",
+    extentRing: null,
     ...overrides,
   };
 }

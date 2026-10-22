@@ -94,10 +94,24 @@ function visualTileViewBox(ring: ReadonlyArray<readonly [number, number]>): stri
   return `${bounds.minX - padX} ${-(bounds.maxY + padY)} ${spanX + padX * 2} ${spanY + padY * 2}`;
 }
 
+/**
+ * The work-area boundary plus the extent the registered files actually reach.
+ *
+ * Both are drawn in their OWN registered plane — no reprojection, no
+ * basemap, no invented coverage. The file extent comes from an inspected
+ * raster's own measured transform, so the picture shows what the data
+ * really covers instead of a generic shape.
+ */
 function RingPolygon({ tile }: { tile: SiteVisualTileDescriptor }) {
+  const extent = tile.facts
+    .map((fact) => fact.extentRing)
+    .find((ring): ring is Array<[number, number]> => Array.isArray(ring));
   const viewBox = visualTileViewBox(tile.ring);
   if (!viewBox) return null;
   const points = tile.ring.map(([x, y]) => `${x},${y}`).join(" ");
+  const extentPoints = extent
+    ? extent.map(([x, y]) => `${x},${y}`).join(" ")
+    : null;
   return (
     <svg
       viewBox={viewBox}
@@ -107,10 +121,21 @@ function RingPolygon({ tile }: { tile: SiteVisualTileDescriptor }) {
       focusable="false"
     >
       <g transform="scale(1,-1)">
+        {extentPoints && (
+          <polygon
+            points={extentPoints}
+            fill="currentColor"
+            fillOpacity={0.2}
+            stroke="currentColor"
+            strokeWidth={1}
+            strokeDasharray="4 3"
+            vectorEffect="non-scaling-stroke"
+            strokeLinejoin="round"
+          />
+        )}
         <polygon
           points={points}
-          fill="currentColor"
-          fillOpacity={0.08}
+          fill="none"
           stroke="currentColor"
           strokeWidth={1.5}
           vectorEffect="non-scaling-stroke"

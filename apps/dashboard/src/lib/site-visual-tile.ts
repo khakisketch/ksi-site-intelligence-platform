@@ -140,6 +140,14 @@ export interface SiteVisualTileAssetFact {
   captureEndedAt: string | null;
   captureDate: string | null;
   lifecycleState: string;
+  /**
+   * The registered file's OBSERVED spatial extent, in the same plane as the
+   * work area. It is a rectangle the inspected raster actually covers, so
+   * drawing it beside the work-area boundary shows what the data really
+   * reaches. Null when the file has not been inspected, or when its extent
+   * is in a different plane — then nothing is drawn, never a guess.
+   */
+  extentRing: Array<[number, number]> | null;
 }
 
 export interface VisualTileCatalogInput {
@@ -148,6 +156,45 @@ export interface VisualTileCatalogInput {
   kind: unknown;
   lifecycleState: unknown;
   declared: unknown;
+  inspection?: unknown;
+}
+
+/**
+ * The inspected raster's observed extent, as a rectangle in the raster's own
+ * plane. Only a full-object inspection that actually measured a raster
+ * carries one; anything else draws nothing.
+ */
+function toVisualTileExtentRing(
+  inspection: unknown,
+): Array<[number, number]> | null {
+  if (!isRecord(inspection)) return null;
+  const raster = inspection.raster;
+  if (!isRecord(raster)) return null;
+  const width = raster.width;
+  const height = raster.height;
+  const transform = raster.transform;
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    !Array.isArray(transform) ||
+    transform.length !== 6 ||
+    !transform.every((value) => typeof value === "number" && Number.isFinite(value))
+  ) {
+    return null;
+  }
+  // The affine transform maps raster pixel corners to the observed plane.
+  const [a, b, c, d, e, f] = transform as number[];
+  const corners: Array<[number, number]> = [
+    [0, 0],
+    [width, 0],
+    [width, height],
+    [0, height],
+  ];
+  return corners.map(([px, py]) => [a * px + c * py + e, b * px + d * py + f]);
 }
 
 function toVisualTileFact(item: unknown): SiteVisualTileAssetFact | null {
@@ -165,6 +212,7 @@ function toVisualTileFact(item: unknown): SiteVisualTileAssetFact | null {
     captureEndedAt: (captureEndedAt as string | null) ?? null,
     captureDate: (captureDate as string | null) ?? null,
     lifecycleState: item.lifecycleState,
+    extentRing: toVisualTileExtentRing(item.inspection),
   };
 }
 
@@ -286,12 +334,28 @@ export function sanitizeSiteVisualTileDescriptor(
     for (const moment of [captureStartedAt, captureEndedAt, captureDate]) {
       if (moment !== null && typeof moment !== "string") return null;
     }
+    let extentRing: Array<[number, number]> | null = null;
+    const rawExtent = item.extentRing;
+    if (rawExtent !== null && rawExtent !== undefined) {
+      if (!Array.isArray(rawExtent) || rawExtent.length < 3 || rawExtent.length > 8) return null;
+      const ring: Array<[number, number]> = [];
+      for (const point of rawExtent) {
+        if (!Array.isArray(point) || point.length < 2) return null;
+        const [x, y] = point as unknown[];
+        if (typeof x !== "number" || typeof y !== "number" || !Number.isFinite(x) || !Number.isFinite(y)) {
+          return null;
+        }
+        ring.push([x, y]);
+      }
+      extentRing = ring;
+    }
     checkedFacts.push({
       kind,
       captureStartedAt: captureStartedAt as string | null,
       captureEndedAt: captureEndedAt as string | null,
       captureDate: captureDate as string | null,
       lifecycleState,
+      extentRing,
     });
   }
   if (!Number.isSafeInteger(raw.scannedAssetCount) || (raw.scannedAssetCount as number) < checkedFacts.length) return null;
