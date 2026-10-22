@@ -14,6 +14,7 @@ import {
   fetchVerifiedReceiptBytes,
   type DecodedReceiptPreview,
 } from "@/lib/spatial-data-preview";
+import { SiteVisualTile, useSiteVisualTile } from "@/components/site/SiteVisualTile";
 
 /**
  * 현장 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
@@ -32,13 +33,17 @@ import {
  *   없음이 확정될 때만 '표시할 미리보기 없음'으로 구분한다. 어느 쪽도 등록
  *   자료 부재로 말하지 않는다.
  * - 클릭은 기술서가 가리킨 정확한 구역·자산·버전의 현장 주소로 간다.
+ * - 실제 픽셀이 없을 때는 현장 목록 페이지가 같은 세션으로 집계한 합성
+ *   기술서(`SiteVisualTileProvider`)가 있으면, 검증 뒤 범위 도식을 대신
+ *   그린다(사진이 아님을 밝힌다). 합성 기술서가 없어도 기존의 '없음·미확인'
+ *   문구는 그대로다 — 픽셀이 합성을 이긴다.
  * - 조작(확대·이동·폼·스케줄러)이 없다. 링크 안에는 캔버스+설명만 둔다.
  *   출처·변경 안내는 링크 밖 접힌 정보(카드)나 접근성 설명(목록행)으로 둔다.
  * - 대표 미리보기는 언제나 부분 범위다. 단일 준비 창으로 전체 현장·전체
  *   자산을 주장하지 않는다.
  */
 
-type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "unknown" } | { name: "empty" };
+type Phase = { name: "pending" } | { name: "loading" } | { name: "ready" } | { name: "composed" } | { name: "unknown" } | { name: "empty" };
 
 type LookupOutcome =
   | { status: "ready"; link: SitePreviewDescriptor }
@@ -92,6 +97,9 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
   const boxRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rowDescriptionId = useId();
+  // 합성 기술서 — 픽셀이 없을 때만 쓰는 대체 타일. 기술서 조회(fetch)·바이트
+  // 읽기를 새로 하지 않으며, 그리기 전에 모양을 다시 검증한다.
+  const composedTile = useSiteVisualTile(siteId);
 
   useEffect(() => {
     const box = boxRef.current;
@@ -108,6 +116,11 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
         const outcome = await fetchPreviewDescriptor(siteId, controller.signal);
         if (cancelled || controller.signal.aborted) return;
         if (outcome.status !== "ready") {
+          // 픽셀이 이긴다 — 합성은 픽셀이 없을 때만 대신 그린다.
+          if (composedTile) {
+            setPhase({ name: "composed" });
+            return;
+          }
           if (outcome.status === "empty") setPhase({ name: "empty" });
           else setPhase({ name: "unknown" });
           return;
@@ -156,7 +169,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       controller.abort();
       observer.disconnect();
     };
-  }, [siteId]);
+  }, [siteId, composedTile]);
 
   useEffect(() => {
     if (phase.name !== "ready" || preview === null) return;
@@ -201,6 +214,8 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               {attributionText} 부분 범위이며 정확도 평가·측량·정산 근거가 아닙니다.
             </span>
           </>
+        ) : phase.name === "composed" && composedTile !== null ? (
+          <SiteVisualTile tile={composedTile} size="row" />
         ) : (
           <span
             role="img"
@@ -242,6 +257,8 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
               </figcaption>
             </figure>
           </Link>
+        ) : phase.name === "composed" && composedTile !== null ? (
+          <SiteVisualTile tile={composedTile} size="card" />
         ) : phase.name === "loading" || phase.name === "pending" ? (
           <>
             <span aria-hidden="true" className="absolute inset-0 animate-pulse bg-line/40" />

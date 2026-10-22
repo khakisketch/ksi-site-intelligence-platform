@@ -40,4 +40,4 @@ export function displayGestureKeyAction(key: string): DisplayGestureKeyAction | 
 
 /** 지원하는 제스처 안내 한 줄 — 구현된 것만 적는다. */
 export const DISPLAY_GESTURE_HINT =
-  "그림을 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기 또는 + − 키로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다. 화면 이동·확대는 표시용이며 측정값이 아닙니다.";
+  "끌어서 이동하고, 휠·두 손가락·두 번 두드리기·+ −로 확대합니다. 그림을 선택하면 방향키·Home도 씁니다. 화면 이동·확대는 표시용이며 측정값이 아닙니다.";

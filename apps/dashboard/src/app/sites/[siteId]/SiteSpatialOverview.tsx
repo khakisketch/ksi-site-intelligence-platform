@@ -304,23 +304,33 @@ export function SiteSpatialOverview({
       </div>
 
       <aside className="flex min-w-0 flex-col gap-3" aria-label="선택 범위 상태">
-        <div className="rounded-lg border border-line bg-surface px-4 py-3">
-          <h2 className="text-[14px] font-bold">선택한 작업구역</h2>
-          <dl className="mt-2 grid gap-1.5 text-[12px]">
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">상태</dt><dd className="break-words text-right font-semibold">{selected.status === "ACTIVE" ? "사용 중" : "보관됨"}</dd></div>
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">관측 작업</dt><dd className="text-right font-semibold">{areaOrders === null ? "확인 불가" : `${areaOrders.length}개 연결됨`}</dd></div>
-            <div className="flex justify-between gap-2"><dt className="shrink-0 text-ink-muted">분석 결과</dt><dd className="text-right font-semibold">{areaAnalyses === null ? "확인 불가" : `${areaAnalyses.length}개${analysesHasMore ? " · 더 있음" : ""}`}</dd></div>
-          </dl>
-          <details className="mt-2 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer">구역 등록 정보</summary>
-            <p className="mt-1 break-words">등록된 구역명 · {areaNames.get(selected.workAreaId)?.label ?? selected.name}</p>
-            <p className="mt-1">등록 · {formatKoreanDateTime(selected.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
-            <p className="mt-1">좌표계 · {geometry?.crs ?? "확인 불가"}</p>
-            <p className="mt-1">외부 비교 기록 · {areaLegacy === null ? "확인 불가" : `${areaLegacy.length}건${legacyHasMore ? " · 더 있음" : ""}`}</p>
-            <p className="mt-1 break-all font-mono">{selected.workAreaId}</p>
-            {selected.supersedes && <p className="mt-1 break-all font-mono">대체 전 구역 · {selected.supersedes}</p>}
-          </details>
-        </div>
+        {/* 다음 행동이 칸의 첫 자리다 — 개수·식별자는 아래 펼침에 둔다. */}
+        <nav className="flex flex-col gap-2" aria-label="선택 구역 다음 확인">
+          <Link href={primaryAction.href} className="btn btn-primary w-fit">{primaryAction.label}</Link>
+          {(secondaryRegisterHref || secondaryCompareHref) && (
+            <p className="flex flex-wrap gap-2">
+              {secondaryRegisterHref && (
+                <Link
+                  href={secondaryRegisterHref}
+                  className="btn w-fit"
+                >
+                  이 구역 자료 등록
+                </Link>
+              )}
+              {secondaryCompareHref && (
+                <Link href={secondaryCompareHref} className="btn w-fit">
+                  변화량 분석
+                </Link>
+              )}
+            </p>
+          )}
+          <p className="flex flex-wrap gap-x-3 text-[12px]">
+            <Link href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">등록 자료 보기</Link>
+            <Link href={`${sitePath}/observations`} className="tap-target underline">외부 비교 기록</Link>
+          </p>
+          {(canRegisterHere || canCompareHere) && <p className="text-[11.5px] leading-5 text-ink-muted">자료 등록 뒤에는 파일 제출·검사를 같은 작업 화면에서 이어갑니다. 비교는 기준·현재 두 시점을 고른 뒤 요청합니다.</p>}
+          {selected.status === "ARCHIVED" && <p className="text-[12px] text-ink-2">보관된 구역입니다. 기존 자료와 결과를 확인할 수 있으며, 새 자료 등록과 비교는 활성 구역에서 시작하세요.</p>}
+        </nav>
 
         <div className="rounded-lg border border-line bg-surface px-4 py-3">
           <h3 className="text-[13px] font-bold">선택된 자료</h3>
@@ -377,32 +387,21 @@ export function SiteSpatialOverview({
           </>)}
         </div>
 
-        <nav className="flex flex-col gap-2" aria-label="선택 구역 다음 확인">
-          <Link href={primaryAction.href} className="btn btn-primary w-fit">{primaryAction.label}</Link>
-          {(secondaryRegisterHref || secondaryCompareHref) && (
-            <p className="flex flex-wrap gap-2">
-              {secondaryRegisterHref && (
-                <Link
-                  href={secondaryRegisterHref}
-                  className="btn w-fit"
-                >
-                  이 구역 자료 등록
-                </Link>
-              )}
-              {secondaryCompareHref && (
-                <Link href={secondaryCompareHref} className="btn w-fit">
-                  변화량 분석
-                </Link>
-              )}
-            </p>
-          )}
-          <p className="flex flex-wrap gap-x-3 text-[12px]">
-            <Link href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">등록 자료 보기</Link>
-            <Link href={`${sitePath}/observations`} className="tap-target underline">외부 비교 기록</Link>
-          </p>
-          {(canRegisterHere || canCompareHere) && <p className="text-[11.5px] leading-5 text-ink-muted">자료 등록 뒤에는 파일 제출·검사를 같은 작업 화면에서 이어갑니다. 비교는 기준·현재 두 시점을 고른 뒤 요청합니다.</p>}
-          {selected.status === "ARCHIVED" && <p className="text-[12px] text-ink-2">보관된 구역입니다. 기존 자료와 결과를 확인할 수 있으며, 새 자료 등록과 비교는 활성 구역에서 시작하세요.</p>}
-        </nav>
+        <div className="rounded-lg border border-line bg-surface px-4 py-3">
+          <h3 className="text-[13px] font-bold">선택한 작업구역</h3>
+          <p className="mt-1 text-[12px]"><span className="text-ink-muted">상태 · </span><span className="font-semibold">{selected.status === "ACTIVE" ? "사용 중" : "보관됨"}</span></p>
+          <details className="mt-1 text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer">구역 등록 정보·개수</summary>
+            <p className="mt-1 break-words">등록된 구역명 · {areaNames.get(selected.workAreaId)?.label ?? selected.name}</p>
+            <p className="mt-1">관측 작업 · {areaOrders === null ? "확인 불가" : `${areaOrders.length}개 연결됨`}</p>
+            <p className="mt-1">분석 결과 · {areaAnalyses === null ? "확인 불가" : `${areaAnalyses.length}개${analysesHasMore ? " · 더 있음" : ""}`}</p>
+            <p className="mt-1">등록 · {formatKoreanDateTime(selected.createdAt, { dateStyle: "medium", timeStyle: "short" })}</p>
+            <p className="mt-1">좌표계 · {geometry?.crs ?? "확인 불가"}</p>
+            <p className="mt-1">외부 비교 기록 · {areaLegacy === null ? "확인 불가" : `${areaLegacy.length}건${legacyHasMore ? " · 더 있음" : ""}`}</p>
+            <p className="mt-1 break-all font-mono">{selected.workAreaId}</p>
+            {selected.supersedes && <p className="mt-1 break-all font-mono">대체 전 구역 · {selected.supersedes}</p>}
+          </details>
+        </div>
       </aside>
     </div>}
   </section>;
