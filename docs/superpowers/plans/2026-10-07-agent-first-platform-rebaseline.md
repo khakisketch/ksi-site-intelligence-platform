@@ -7247,3 +7247,64 @@ attempts0. Initial denied probes were path-isolation catches, not journal corrup
 configured authority journal is additionally outside CoreDataDir (private provider path,0bytes),
 so snapshot/proof inventory includes it rather than falsely assuming the14CoreDataDir journals are
 all physical backing. Shared environment/config/security paths/permissions remain untouched.
+
+#### Human-approved history-preserving audit working set (2026-10-22)
+
+Human explicitly selected “기록 보존형 개선”: permit the necessary private audit storage/query
+structure and limited restart, while retaining every historical record and old-query/recovery/safety
+semantics, without record deletion, numeric-cap increase, preparation, TTL/grant/S3 changes. This is
+the previously missing lifecycle/indexing/admission decision. Accepted ADR-KSI-041 (private download
+audit working set) records the selected mode and subordination; it does not claim implemented or
+verified runtime. Prior legacy-mode evidence and its no-implicit-archive limitation remain history.
+
+Requirement IDs: Human photo recovery + explicit audit-lifecycle decision; SDP-REQ-01/02/03/05,
+INV-020/024/040/051/053/060/061.
+Owner module: Core download/cleanup audit + additive bounded journal/backing primitives and audit-
+only composition/configuration. Existing other Foundation defaults/domain owners remain unchanged.
+Acceptance criteria: explicit versioned opt-in bounded working set; completed history retained and
+queryable; unfinished/terminal reservation/retry/conflict/corruption semantics preserved; no full
+history RAM dictionary or per-query unbounded scan. Original journal bytes remain authoritative,
+unchanged-prefix and append-only. Exact existing job9a file must return recorded474427B/SHA and
+actual UI photograph through existing requester-scoped guards, with no new preparation. Legacy
+mode keeps its old behavior; invalid new configuration refuses rather than silently enabling.
+Contracts affected: no public endpoint/event/output schema or preparation-policy mutation. New
+private versioned audit-runtime binding/configuration defines working-set versus historical index
+semantics explicitly; it references the unchanged sealed data-policy digest. Finite lookup/cache/
+staging/active memory together stay within maxSnapshotBytes; finite disk/rebuild limits stay within
+existing envelope. Exact chosen local values and binding require Primary review before activation.
+Reference assets: ADR-KSI-041, current retained audit/private replay and owner tests; no external code/
+service/dependency or new database authority. An embedded standard-library index is derived only.
+Adoption decisions: separately retained authoritative history and bounded active projection; no
+superficial dictionary eviction, cap bump, clearing/rotation over old evidence, unbounded scan/RAM
+index or Foundation-wide behavior change. Historical lookups and deduplication cannot depend on an
+index whose corruption could manufacture absence or terminal reopening.
+Files to change: isolated source-copy Core audit/backing/composition + narrowly necessary additive
+Foundation reader interfaces; owner contract/replay/boundedness tests. Main owns ADR/docs/Git/live
+activation and applies only inside approved Core stop/restart window. No other policy/identity/S3/
+worker/inspector/journal repair. No real audit payload is committed as a test fixture.
+Tests: legacy exhaustion retained; >512 completed sessions; old session/event exact queries and
+idempotent/conflicting retries; terminal reopening refusal; unfinished restart; corrupt/missing/
+stale index and crash/rebuild; before-header/midstream audit failure; cancellation/tenant isolation;
+RAM/I/O/disk/deadline bounds including exhausted limits; owner suites and actual bytes/hash/UI plus
+pre/post preservation/replay proof. Synthetic fixtures do not establish actual thumbnail recovery.
+HIL/real-device assumptions: none. License/data implications: existing attribution/current access
+and immutable audit meanings retained; no new byte egress or retention. Sensitive real audit copy
+is local/private/read-only for migration verification only, never source fixtures or printed payload.
+Rollback: code/opt-in mode only, preserve all old and new history/objects; legacy refusal may return
+when disabled. No reverting journals to an earlier snapshot or deleting in-use derived state.
+
+Activation containment detail: current cleanupIntervalSeconds is300. Freeing audit capacity must
+not incidentally restart S3 deletion through the existing background cleanup loop, since the Human
+excluded S3 mutation. The new task activation is explicitly download/read-recovery scoped: new
+cleanup starts/runner are not activated, with trusted disabled/refusal diagnostics before cleanup
+reservation/storage I/O. Historical cleanup events and unfinished evidence remain preserved. Legacy
+/default behavior and the signed retention/cleanup policy file are not silently edited. This is a
+protective operation-scope restriction, not a widened data permission or a disabled integrity check.
+
+Rollback phase clarification selected in ADR041: after session513+ is durably appended, reverting
+pre-index code/removing opt-in may prevent even legacy bootstrap replay, not merely return a file
+refusal. Require an explicit compatible indexed-history, admissions-disabled recovery mode that
+preserves/query-loads full and unfinished history and Core metadata while refusing new reads/cleanup
+before side effects. Old-code rollback remains possible only before beyond-legacy admissions. No
+journal snapshot restore/cap increase is an acceptable downgrade. Same implementer received this
+constraint before activation; no live Core changes or restart occurred.
