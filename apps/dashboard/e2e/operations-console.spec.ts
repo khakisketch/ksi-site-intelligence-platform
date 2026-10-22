@@ -378,6 +378,7 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     await expect(page.getByRole("heading", { level: 2, name: "E2E 현장 작업공간" })).toBeVisible();
   }
+  await expect(page.getByRole("link", { name: "현장으로 이동", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "선택 관측 화면", exact: true })).toBeVisible();
   // 네 영역은 펼침 없이 바로 보인다. 다섯 번째 숨은 메뉴·옛 펼침은 두지 않는다.
@@ -415,11 +416,17 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   expect(selectedWorkAreaId).toBeTruthy();
   // 선택은 네이티브 GET으로 즉시 이동한다. no-JS 보기 단추는 그대로 둔다.
   const railForms = rail.locator('form[method="get"]');
-  expect(await railForms.count()).toBeGreaterThan(0);
+  // One area and no surfaced observations need no selection form. Do not invent
+  // candidates merely to exercise it; the populated real journey covers selection.
   for (const form of await railForms.all()) {
     expect(await form.getAttribute("action")).toBe(new URL(siteHref!, page.url()).pathname);
   }
-  await expect(rail.locator('form[method="get"] button[type="submit"]', { hasText: "보기" }).first()).toBeAttached();
+  if (await railForms.count() > 0) {
+    await expect(rail.locator('form[method="get"] button[type="submit"]', { hasText: "보기" }).first()).toBeAttached();
+  } else {
+    await expect(rail.getByText("선택할 관측은 자료·범위 상세에서 확인하세요.", { exact: true })).toBeVisible();
+    await expect(rail.locator("select")).toHaveCount(0);
+  }
   const captureSelect = rail.locator("select#explore-canvas-capture");
   if (await captureSelect.count() > 0 && await captureSelect.locator("option").count() >= 2) {
     const second = await captureSelect.locator("option").nth(1).getAttribute("value");

@@ -64,7 +64,7 @@ export function SiteExploreCanvas({
   const selectedOption = captureOptions.find((option) => option.selected) ?? null;
   const selectedName = selected ? (names.get(selected.workAreaId)?.label ?? selected.name) : null;
   // 긴 구역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
-  const showFullName = selectedName !== null && [...selectedName].length > 40;
+  const showFullName = selectedName !== null && [...selectedName].length > 80;
   return <section aria-label="선택 관측 화면" className="grid min-w-0 items-start gap-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:has-[>details[open]]:grid-cols-[260px_minmax(0,1fr)_320px]">
     <aside aria-label="공간 보기 선택" className="grid min-w-0 gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
       <div className="flex min-w-0 items-center justify-between gap-2 lg:flex-col lg:items-stretch">
@@ -93,7 +93,7 @@ export function SiteExploreCanvas({
           </SiteSelectionForm>
         ) : selected && selectedName ? (
           <div className="min-w-0 flex-1">
-            <p className="line-clamp-2 break-words text-[13px] font-semibold">
+            <p className={`${showFullName ? "line-clamp-2 " : ""}break-words text-[13px] font-semibold`}>
               작업구역 · {selectedName}
               {selected.status === "ARCHIVED" ? " (보관됨)" : ""}
             </p>
@@ -139,17 +139,17 @@ export function SiteExploreCanvas({
       {/* 두 시점 보기는 이 화면의 모드 탭에만 있다. 자료를 보다가 "이전
           촬영과 비교"를 직접 찾게 하지 않고, 자료 자리 옆에 둔다. */}
       {compareHref && (
-        <p className="text-[12px]">
+        <p className="hidden text-[12px] lg:block">
           <Link href={compareHref} className="tap-target underline">이전 촬영과 비교</Link>
           <span className="sr-only text-ink-muted lg:not-sr-only"> · 같은 구역의 두 시점을 나란히 봅니다</span>
         </p>
       )}
       </div>
-      <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+      <div className="min-w-0">
         <h3 className="mb-2 text-[12px] font-semibold">표시 레이어</h3>
         {layers ?? <p className="text-[12px] leading-5 text-ink-2">{mode === "compare" ? "두 관측의 레이어는 각 보기에서 확인합니다." : mode === "results" ? "선택한 분석 결과와 연결 자료를 표시합니다." : "표시할 레이어를 확인하지 못했습니다."}</p>}
       </div>
-      {actions && <div className="min-w-0 border-t border-line pt-3 sm:col-span-2 lg:col-span-1">{actions}</div>}
+      {actions && <div className="min-w-0 border-t border-line pt-3 [&>nav]:flex-row [&>nav]:flex-wrap [&>nav]:items-center lg:[&>nav]:flex-col lg:[&>nav]:items-start">{actions}</div>}
     </aside>
     <div aria-label="공간자료 뷰어" className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface lg:col-start-2 lg:row-start-1">
       {toolbar && <div className="border-b border-line bg-surface p-2">{toolbar}</div>}

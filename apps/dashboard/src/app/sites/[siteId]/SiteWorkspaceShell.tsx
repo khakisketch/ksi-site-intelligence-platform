@@ -409,8 +409,8 @@ export function SiteWorkspaceShell({
     ? observationPrecisionOf(captionFact) === "interval"
       ? `등록 버전 ${captionFact.revision}`
       : observationPrecisionOf(captionFact) === "date-only"
-        ? `등록 버전 ${captionFact.revision} · 날짜만 확인 · 시각 미상`
-        : `등록 버전 ${captionFact.revision} · 관측 시점 미상`
+        ? "날짜만 확인 · 시각 미상"
+        : "관측 시점 미상"
     : null;
   // 촬영 시점 선택지 — 같은 구역 관측별 대표 한 줄. 순서는 서버 그대로 두며,
   // 층(정사영상/DSM)은 고른 층을 그 관측에서 유지하고, 없으면 그 관측의
@@ -473,7 +473,7 @@ export function SiteWorkspaceShell({
           label="탐색 다음 행동" compact />
       ) : undefined}
       observationControls={mode === "compare" && areasKnown ? <SiteWorkspaceCompare {...compareProps} presentation="controls" /> : undefined}
-      layers={mode === "explore" && exploreLayers.length > 0 ? <nav aria-label="자료 층 전환" className="flex flex-col gap-1">
+      layers={mode === "explore" && exploreLayers.length > 0 ? <nav aria-label="자료 층 전환" className="flex flex-wrap gap-1 lg:flex-col">
         {exploreLayers.map((item) => <Link key={item.assetRef}
           href={`${sitePath}?workAreaId=${encodeURIComponent(selectedWorkAreaId!)}&assetRef=${encodeURIComponent(item.assetRef)}`}
           aria-current={item.assetRef === (selectedAssetRef ?? exploreLayers[0]?.assetRef) ? "true" : undefined}
