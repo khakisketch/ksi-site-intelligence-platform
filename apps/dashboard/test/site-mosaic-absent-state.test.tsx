@@ -294,9 +294,9 @@ describe("mosaic absent-pixel state from current jobs", () => {
     renderMosaic([readableJob()]);
 
     // One window's read failed: concise cause, exact message discoverable.
-    await screen.findByText("창을 읽지 못했습니다.", { exact: true });
+    await screen.findByText("미리보기를 불러오지 못했습니다.", { exact: true });
     expect(screen.getAllByText(/준비된 파일을 받지 못했습니다/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText(/준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요/)).toBeTruthy();
+    expect(screen.getByText(/잠시 후 준비 상태를 다시 확인하세요/)).toBeTruthy();
     // No canvas, no masking as generic absence/retention/job failure.
     expect(screen.queryByRole("img", { name: /이어 보기/ })).toBeNull();
     expect(screen.queryByText("준비된 표시 자료가 없습니다.")).toBeNull();

@@ -689,14 +689,14 @@ export function SiteMosaicViewport({
   const compactCopy: { headline: string; recovery: string; detail: string | null } =
     compactKind === "paintFailure"
       ? {
-          headline: "이어 보기를 그리지 못했습니다.",
-          recovery: "준비 상태 다시 확인을 눌러 다시 시도하세요.",
+          headline: "미리보기를 표시하지 못했습니다.",
+          recovery: "페이지를 새로고침하거나 다른 관측을 선택해 보세요.",
           detail: paintError,
         }
       : compactKind === "loading"
         ? {
             headline: "자료 읽는 중…",
-            recovery: "준비된 창의 바이트를 받고 있습니다.",
+            recovery: "",
             detail: null,
           }
         : compactKind === "readFailure" && firstReadFailure !== null
@@ -716,12 +716,9 @@ export function SiteMosaicViewport({
                   detail: firstReadFailure.message,
                 }
               : {
-                  headline:
-                    currentFailedKeys.length > 1
-                      ? `창 ${currentFailedKeys.length}개를 읽지 못했습니다.`
-                      : "창을 읽지 못했습니다.",
-                  recovery: "준비 상태 다시 확인을 누르거나 구역 자료 준비에서 확인하세요.",
-                  detail: firstReadFailure.message,
+                  headline: "미리보기를 불러오지 못했습니다.",
+                  recovery: "잠시 후 준비 상태를 다시 확인하세요.",
+                  detail: null,
                 }
           : compactKind === "preparing"
             ? {
@@ -752,7 +749,7 @@ export function SiteMosaicViewport({
           {compactCopy.detail !== null && (
             <p className="text-[12px] leading-5 text-ink-2">{compactCopy.detail}</p>
           )}
-          <p className="text-[12px] leading-5 text-ink-2">{compactCopy.recovery}</p>
+          {compactCopy.recovery && <p className="text-[12px] leading-5 text-ink-2">{compactCopy.recovery}</p>}
           <div className="flex flex-wrap gap-2">
             {canFillNow && (
               <ResponsiveActionBoundary

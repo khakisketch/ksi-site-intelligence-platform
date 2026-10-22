@@ -58,8 +58,9 @@ test("데스크톱은 실제 미리보기 카드가 기본, 밀도표는 명시�
     const lookup = await page.request.get(`/api/sites/${encodeURIComponent(siteId!)}/preview`);
     expect(lookup.status()).toBe(200);
     expect(await lookup.json()).toEqual({ available: false, reason: "unknown" });
-    await expect(firstCard.getByText("미리보기 확인 불가", { exact: true })).toBeVisible();
-    await expect(firstCard.getByText("미리보기 없음", { exact: true })).toHaveCount(0);
+    const missingPreview = firstCard.locator('[data-site-preview="card-empty"]');
+    await expect(missingPreview).toContainText("미리보기 확인 불가");
+    await expect(missingPreview).not.toContainText("미리보기 없음");
     await expect(firstCard.locator("canvas")).toHaveCount(0);
     await expect(firstCard.locator('[data-site-preview="card"]:visible')).toHaveCount(0);
   }
