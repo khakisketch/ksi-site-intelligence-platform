@@ -99,3 +99,5 @@ tests/contract/_hygiene_mutation_scratch_*/
 
 # 로컬 에이전트 스크래치 — 커밋하지 않는다.
 /.opencode/
+# Test scratch: the storage child local SDK substitute writes its call log here.
+tests/contract/threaded-child-sdk.jsonl
