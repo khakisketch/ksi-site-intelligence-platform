@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AnalysisRecordReuse } from "./AnalysisRecordReuse";
 
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { ActionUnavailable } from "@/components/ui/ActionUnavailable";
@@ -331,7 +332,7 @@ function MetricSummary({ summary, detail }: { summary: AnalysisListRow; detail: 
         <div><dt className="text-ink-muted">선택 셀</dt><dd>{formatCountKo(result.coverage.selectedCellCount)}</dd></div>
         <div><dt className="text-ink-muted">공통 유효 셀</dt><dd>{formatCountKo(result.coverage.commonValidCellCount)}</dd></div>
       </dl>
-      <p className="mt-2 text-[12px] leading-5 text-ink-muted">임계값 {formatNumber(metrics.thresholdM, "m")}: 높이 차이 기준으로 제외되는 셀이 없습니다. 공통 유효 영역은 두 관측에서 유효한 셀로 별도 제한됩니다.</p>
+      <p className="mt-2 text-[12px] leading-5 text-ink-muted">임계값 {formatNumber(metrics.thresholdM, "m")}: 높이 차이 기준으로 제외된 셀 {formatCountKo(result.coverage.thresholdExcludedCellCount)}개. 공통 유효 영역은 두 관측에서 유효한 셀로 별도 제한됩니다.</p>
       <ResultIdentity result={result} />
       <p className="mt-2 text-[12px] leading-5 text-ink-muted">{detail.suitabilityState === "EVALUATED" ? "독립 평가 근거가 있습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다." : "독립 정확도 평가는 아직 확인되지 않았습니다. 이 기록은 물량 정확도 보증, 측량 승인 또는 정산 사용 승인을 뜻하지 않습니다."}</p>
       {result.limitationCodes.length > 0 && <IssueCodeList codes={result.limitationCodes} />}
@@ -889,6 +890,12 @@ export function AnalysisRequestPanel({
   initialCurrentWorkOrderId = null,
   scopeNotice = null,
   currentHintNotice = null,
+  initialBaselineSelector = null,
+  initialCurrentSelector = null,
+  exactHintNotice = null,
+  visualContext = null,
+  visualReturnHref = null,
+  visualContextNotice = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -907,6 +914,14 @@ export function AnalysisRequestPanel({
   initialCurrentWorkOrderId?: string | null;
   scopeNotice?: string | null;
   currentHintNotice?: string | null;
+  /** 시각 쌍에서의 정확한 선택자 인계(UI 초안) — 후보와 정확히 맞을 때만 쓴다. */
+  initialBaselineSelector?: { workOrderId: string; submissionRef: string; revision: number } | null;
+  initialCurrentSelector?: { workOrderId: string; submissionRef: string; revision: number } | null;
+  exactHintNotice?: string | null;
+  /** 탐색 중이던 시각 쌍 맥락 — frozen 결과 입력과 구분해 복귀한다. */
+  visualContext?: { workAreaId: string; visualAAssetRef: string; visualBAssetRef: string } | null;
+  visualReturnHref?: string | null;
+  visualContextNotice?: string | null;
 }) {
   const router = useRouter();
   const firstPage = fromListPage(initialPage);
@@ -923,9 +938,36 @@ export function AnalysisRequestPanel({
   const detailsRef = useRef<Map<string, AnalysisView>>(initialDetails);
   const [selectedId, setSelectedId] = useState<string | null>(initialAnalysisId ?? initialPage.items[0]?.analysisId ?? null);
   const [workAreaId, setWorkAreaId] = useState(initialWorkAreaId ?? "");
-  const [baselineIndex, setBaselineIndex] = useState("");
+  // 정확한 선택자 인계는 딥링크·이력과 무관한 새 요청 초안일 때만 쓴다.
+  // 보류 시도·분석 딥링크가 있으면 힌트를 읽지 않는다(호출자가 이미 null로 둔다).
+  // 모호하거나 후보에 없거나 같은 선택이면 고르지 않는다.
+  const [baselineIndex, setBaselineIndex] = useState(() => {
+    if (initialAnalysisId || !initialWorkAreaId || !initialBaselineSelector) return "";
+    const matches = observations.flatMap((item, index) =>
+      item.workAreaIds.includes(initialWorkAreaId)
+      && item.selector.workOrderId === initialBaselineSelector.workOrderId
+      && item.selector.submissionRef === initialBaselineSelector.submissionRef
+      && item.selector.revision === initialBaselineSelector.revision
+        ? [String(index)]
+        : [],
+    );
+    return matches.length === 1 && matches[0] ? matches[0] : "";
+  });
   const [currentIndex, setCurrentIndex] = useState(() => {
-    if (!initialWorkAreaId || !initialCurrentWorkOrderId) return "";
+    if (initialAnalysisId || !initialWorkAreaId) return "";
+    if (initialCurrentSelector) {
+      const matches = observations.flatMap((item, index) =>
+        item.workAreaIds.includes(initialWorkAreaId)
+        && item.selector.workOrderId === initialCurrentSelector.workOrderId
+        && item.selector.submissionRef === initialCurrentSelector.submissionRef
+        && item.selector.revision === initialCurrentSelector.revision
+          ? [String(index)]
+          : [],
+      );
+      if (matches.length === 1 && matches[0]) return matches[0];
+      return "";
+    }
+    if (!initialCurrentWorkOrderId) return "";
     const matches = observations.flatMap((item, index) =>
       item.selector.workOrderId === initialCurrentWorkOrderId && item.workAreaIds.includes(initialWorkAreaId)
         ? [String(index)]
@@ -1577,7 +1619,24 @@ export function AnalysisRequestPanel({
     </div>}
     {selectedId && selectedDetail && <div className="flex justify-end"><button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button></div>}
     {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
+    {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
+      inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
     <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
+      {selectedDetail && visualContext && visualReturnHref && (
+        <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">
+          <span className="font-bold text-ink-1">탐색 중 자료와 이 결과의 계산 입력 구분</span>
+          <span className="mt-1 block">탐색 중 자료(독립 보기 A·B)와 이 결과의 계산 입력은 다를 수 있습니다. 기록은 바뀌지 않습니다.{" "}
+          <Link className="font-semibold text-accent-text underline" href={visualReturnHref}>독립 보기로 돌아가기</Link></span>
+          <details className="mt-1">
+            <summary className="tap-target cursor-pointer font-semibold">이 결과의 계산 입력 확인</summary>
+            <span className="mt-1 block break-all">기준 · {selectedDetail.baseline.workOrderId} · {selectedDetail.baseline.submissionRef} · 버전 {selectedDetail.baseline.revision}</span>
+            <span className="mt-1 block break-all">현재 · {selectedDetail.current.workOrderId} · {selectedDetail.current.submissionRef} · 버전 {selectedDetail.current.revision}</span>
+          </details>
+        </div>
+      )}
+      {selectedDetail && visualContextNotice && !visualContext && (
+        <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">{visualContextNotice}</p>
+      )}
       {rows.map((summary) => <AnalysisCard
         key={summary.analysisId}
         summary={summary}
@@ -1616,6 +1675,21 @@ export function AnalysisRequestPanel({
       {unattributedObservationCount > 0 && <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">작업구역 연결을 확인할 수 없는 관측은 선택지에서 제외했습니다.</p>}
       {scopeNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{scopeNotice}</p>}
       {currentHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{currentHintNotice} <Link className="font-semibold text-accent-text underline" href={`/sites/${encodeURIComponent(siteId)}/spatial-assets${workAreaId ? `?workAreaId=${encodeURIComponent(workAreaId)}` : ""}`}>등록 자료와 검사 상태 확인</Link></p>}
+      {exactHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{exactHintNotice}</p>}
+      {!attempt && (initialBaselineSelector || initialCurrentSelector) && !exactHintNotice && (
+        <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+          탐색에서 고른 두 자료와 정확히 같은 제출 묶음·버전이 분석 후보에 있어 미리 골랐습니다. 요청 전에 기준·현재가 맞는지 확인하세요. 요청하지 않으면 아무 계산도 시작하지 않습니다.
+        </p>
+      )}
+      {visualContext && visualReturnHref && (
+        <p className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">
+          탐색 중 자료와 이 화면의 분석 선택은 별개입니다.{" "}
+          <Link className="font-semibold text-accent-text underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
+        </p>
+      )}
+      {visualContextNotice && (
+        <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{visualContextNotice}</p>
+      )}
       {attempt && <p className="mt-2 text-[12px] text-ink-2">{activationBlock ? "보류된 요청은 변화 분석 실행 활성화가 복구되기 전에는 처리되지 않습니다. 활성화 상태가 확인된 뒤 다시 시도하거나 보류 요청을 취소하세요." : "중단된 요청이 있습니다. 다시 시도하면 같은 요청 식별자로 Core에 확인합니다."}</p>}
       <form className="mt-4 grid gap-3 lg:grid-cols-2" noValidate onSubmit={(event) => { event.preventDefault(); void submit(); }}>
         <label className="min-w-0 text-[12.5px] font-semibold lg:col-span-2">작업구역

@@ -139,7 +139,7 @@ describe("spatial asset catalog page", () => {
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", assetRef);
     // 헤더의 분석 목적지에도 검증된 관측 출처가 실린다 — 돌아올 때 잃지 않는다.
     expect(html).toContain(`href="/sites/site-1/analysis?workAreaId=area-1&amp;assetRef=${assetRef}"`);
-    expect(html).toContain("/sites/site-1/analysis?workAreaId=area-1&amp;currentWorkOrderId=order-1#new-analysis-request");
+    expect(html).toContain(`/sites/site-1/analysis?workAreaId=area-1&amp;hintCurrentWorkOrderId=order-1&amp;hintCurrentSubmissionRef=ers-v1-${"b".repeat(64)}&amp;hintCurrentRevision=2#new-analysis-request`);
   });
 
   it("labels declarations, byte observations and inspection as separate facts", async () => {
@@ -172,14 +172,14 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain("상태: 검사 완료 · 결과: 파일 정보 확인됨");
     expect(html).toContain("지표면 높이 자료(DSM) · image/tiff");
     expect(html).toContain("이 화면은 파일의 등록 정보만 제공합니다.");
-    expect(html).toContain("분석 적합성은 평가되지 않았습니다.");
+    expect(html).toContain("이 자료 목록은 분석 적합성을 평가하지 않습니다.");
   });
 
   it("offers the selected observation to the comparison form only with analysis permission", async () => {
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SITES_WRITE"] } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(html).toContain("이 자료를 현재 관측으로 선택");
-    expect(html).toContain("/sites/site-1/analysis?workAreaId=area-1&amp;currentWorkOrderId=order-1#new-analysis-request");
+    expect(html).toContain(`/sites/site-1/analysis?workAreaId=area-1&amp;hintCurrentWorkOrderId=order-1&amp;hintCurrentSubmissionRef=ers-v1-${"b".repeat(64)}&amp;hintCurrentRevision=2#new-analysis-request`);
     expect(html).toContain("여기서 분석을 실행하지 않습니다.");
   });
 

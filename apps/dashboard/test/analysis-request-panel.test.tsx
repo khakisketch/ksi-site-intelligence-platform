@@ -431,9 +431,9 @@ describe("analysis V2 panel", () => {
       .mockResolvedValueOnce(json(other))
       .mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; })));
     renderPanel({ initialPage: listPage(["analysis-1", "analysis-2"]) });
-    await waitFor(() => expect(screen.getByText("result-core-1")).toBeTruthy());
+    await waitFor(() => expect(within(screen.getByText("분석 ID · analysis-1").closest("article")!).getByText("result-core-1")).toBeTruthy());
     fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[1]!);
-    await screen.findByText("other-result");
+    await waitFor(() => expect(within(screen.getByText("분석 ID · analysis-2").closest("article")!).getByText("other-result")).toBeTruthy());
     fireEvent.click(screen.getAllByRole("button", { name: "이 변화 분석 보기" })[0]!);
     const selected = within(screen.getByText("분석 ID · analysis-1").closest("article")!);
     expect(selected.queryByText("result-core-1")).toBeNull();
@@ -485,7 +485,7 @@ describe("analysis V2 panel", () => {
     renderPanel();
     expect(screen.getByText("분석 ID · analysis-1")).toBeTruthy();
     expect(screen.getByRole("region", { name: /^계산 결과/ })).toBeTruthy();
-    expect(screen.getByText("result-core-1")).toBeTruthy();
+    expect(within(screen.getByText("분석 ID · analysis-1").closest("article")!).getByText("result-core-1")).toBeTruthy();
     expect(screen.getByText("정확도 평가 미확인")).toBeTruthy();
     expect(screen.getByText("자료 검사에 제한 있음")).toBeTruthy();
     expect(screen.getByText("정확도 미확인")).toBeTruthy();

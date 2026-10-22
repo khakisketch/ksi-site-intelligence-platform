@@ -7,6 +7,7 @@ import { formatKoreanDate } from "@/lib/datetime";
 import { spatialAssetKindLabel } from "@/lib/human-labels";
 import type {
   ExplicitComparisonResolution,
+  VisualPairResolution,
   WorkspaceObservationFact,
   WorkspaceServerFacts,
 } from "@/lib/site-workspace-entry";
@@ -16,6 +17,7 @@ import {
   splitCompareCandidates,
   workspaceCaptureLine,
 } from "@/lib/site-workspace-entry";
+import { visualPairCatalogOptions } from "./site-visual-pair";
 import { capturePeriodTitle } from "@/lib/operator-language";
 import { SiteNativeExtentSvg } from "./SiteNativeExtentSvg";
 import {
@@ -52,7 +54,7 @@ function CompareSlot({
   fact,
   emptyNote,
 }: {
-  slotLabel: "기준 자료" | "비교 자료";
+  slotLabel: "기준 자료" | "비교 자료" | "관측 A" | "관측 B";
   sitePath: string;
   workAreaId: string;
   ring: Array<[number, number]> | null;
@@ -146,6 +148,9 @@ export function SiteWorkspaceCompare({
   baselineRequestedRef,
   currentRequestedRef,
   resolution,
+  visualARequestedRef = null,
+  visualBRequestedRef = null,
+  visualPair = { status: "prompt" } as VisualPairResolution | { status: "prompt" },
   canCreateAnalysis,
   canCreateWorkOrder: canCreateWorkOrderHere,
   scopedCompareHref,
@@ -162,6 +167,9 @@ export function SiteWorkspaceCompare({
   baselineRequestedRef: string | null;
   currentRequestedRef: string | null;
   resolution: ExplicitComparisonResolution | { status: "prompt" };
+  visualARequestedRef?: string | null;
+  visualBRequestedRef?: string | null;
+  visualPair?: VisualPairResolution | { status: "prompt" };
   canCreateAnalysis: boolean;
   /** 관측 자료 등록(쓰기) 가능 여부 — 펼침의 등록 경로 안내에만 쓴다. */
   canCreateWorkOrder: boolean;
@@ -194,6 +202,8 @@ export function SiteWorkspaceCompare({
     .filter((item): item is WorkspaceObservationFact => item !== null);
   const baselineFact = resolution.status === "ready" ? resolution.baseline : null;
   const currentFact = resolution.status === "ready" ? resolution.current : null;
+  const visualAFact = visualPair.status === "ready" ? visualPair.sideA : null;
+  const visualBFact = visualPair.status === "ready" ? visualPair.sideB : null;
   const formAction = selected ? `${sitePath}?` : sitePath;
   const hasOptions = eligible.length > 0;
   const showNoOptionBox = selected !== null
@@ -246,7 +256,51 @@ export function SiteWorkspaceCompare({
       {workspaceHasMore && <p className="text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
     </form>
   ) : null;
-  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{comparisonForm ?? <p className="text-[12px] leading-5 text-ink-2">{projectionState === "ready" ? "비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 확인하지 못했습니다. 뷰어에서 조회 상태를 확인하세요."}</p>}</div>;
+  // 시각 쌍(독립 보기) 선택지 — 카탈로그에 정확히 묶인 모든 검사 버전
+  // (대표 한 줄이 아니라 모든 정사영상/DSM 개정)을 둔다. 정밀도 표기는
+  // 그대로 두며, 순서·최신을 단정하지 않는다. 후보 존재가 픽셀 가용성과
+  // 같지 않다 — 실제 픽셀은 guarded 뷰어가 말한다.
+  const visualGroups = selected && projectionState === "ready"
+    ? visualPairCatalogOptions({
+      facts: facts.observations,
+      workAreaId: selected.workAreaId,
+      catalogAssets,
+      selectedRefs: [visualARequestedRef, visualBRequestedRef],
+    })
+    : [];
+  const visualOptionCount = visualGroups.reduce((total, group) => total + group.options.length, 0);
+  const visualForm = selected && projectionState === "ready" && visualOptionCount >= 2 ? (
+    <form method="get" action={formAction} className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3">
+      <input type="hidden" name="mode" value="compare" />
+      <input type="hidden" name="workAreaId" value={selected.workAreaId} />
+      <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
+      <p className="text-[12px] leading-5 text-ink-2">
+        두 시점을 나란히 두는 독립 보기입니다. A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않으며,
+        위치 맞춤·동기화·정합을 주장하지 않습니다. 각 보기는 독립된 카메라로만 움직입니다.
+      </p>
+      <div className="min-w-0">
+        <label htmlFor="workspace-visual-a" className="block text-[12px] font-semibold">관측 A</label>
+        <select id="workspace-visual-a" name="visualAAssetRef" required defaultValue={visualARequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+          <option value="">관측 A 선택</option>
+          {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
+            {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+          </optgroup>)}
+        </select>
+      </div>
+      <div className="min-w-0">
+        <label htmlFor="workspace-visual-b" className="block text-[12px] font-semibold">관측 B</label>
+        <select id="workspace-visual-b" name="visualBAssetRef" required defaultValue={visualBRequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
+          <option value="">관측 B 선택</option>
+          {visualGroups.map((group) => <optgroup key={group.observationEpochId} label={group.options[0] ? candidateLabel(group.options[0]) : group.observationEpochId}>
+            {group.options.map((item) => <option key={item.assetRef} value={item.assetRef}>{candidateLabel(item)}</option>)}
+          </optgroup>)}
+        </select>
+      </div>
+      <button type="submit" className="btn">독립 보기로 나란히 두기</button>
+      {workspaceHasMore && <p className="text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
+    </form>
+  ) : null;
+  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{visualForm ?? <p className="text-[12px] leading-5 text-ink-2">{projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 확인하지 못했습니다. 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">기존 시간 순서 보기</summary><div className="mt-2">{comparisonForm}</div></details>}</div>;
   return <div className="flex min-w-0 flex-col gap-3">
     {selected === null && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
@@ -255,7 +309,13 @@ export function SiteWorkspaceCompare({
     )}
     {selected && (
       <p className="text-[12.5px] leading-5 text-ink-2">
-        {areaLabel} · 같은 구역의 기준 자료와 비교 자료를 나란히 둡니다.
+        {areaLabel} · 같은 구역의 두 자료를 독립 보기로 나란히 둡니다.{" "}
+        <span className="font-semibold">독립 보기 — 정합 근거 없음</span>
+        {visualPair.status === "ready" && visualAFact && visualBFact
+          ? ` · 관측 A(${candidateLabel(visualAFact)}) · 관측 B(${candidateLabel(visualBFact)})`
+          : visualPair.status === "unresolvable"
+            ? " · 요청한 쌍을 확인하지 못했습니다"
+            : " · 쌍을 고르세요"}
       </p>
     )}
     {resolution.status === "unresolvable" && (
@@ -268,11 +328,40 @@ export function SiteWorkspaceCompare({
         </p>
       </div>
     )}
-    {resolution.status === "prompt" && selected && hasOptions && (
+    {resolution.status === "prompt" && selected && hasOptions && visualOptionCount < 2 && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
         비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요. 자동으로 고르지 않았습니다.
         먼저 둘러보려면 <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>하세요.
       </p>
+    )}
+    {visualPair.status === "prompt" && selected && visualOptionCount >= 2 && resolution.status !== "ready" && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
+        독립 보기로 둘 관측 A·B를 위 선택에서 고르세요. 자동으로 고르지 않았습니다.
+      </p>
+    )}
+    {visualPair.status === "unresolvable" && (
+      <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
+        <p className="text-[13px] font-bold">{visualPair.headline}</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{visualPair.detail}</p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">독립 보기 지시는 자동으로 다른 자료로 바꾸지 않습니다. 아래 독립 보기 선택에서 확인할 수 있는 자료를 직접 고르세요.</p>
+        <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
+          <Link href={`${sitePath}/spatial-assets${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
+          <Link href={exploreHref} className="tap-target underline">탐색으로 돌아가기</Link>
+        </p>
+      </div>
+    )}
+    {visualPair.status === "ready" && visualAFact && visualBFact && (
+      <div className="rounded-lg border border-line bg-surface px-4 py-3">
+        <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않습니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않으며,
+          화면을 겹쳐도 분석 근거가 되지 않습니다. 각 보기는 독립된 카메라로만 움직입니다.
+        </p>
+        <p className="mt-2">
+          <Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link>
+        </p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">수치 계산이 필요할 때만 씁니다. 위 기록은 바뀌지 않으며, 요청하지 않으면 아무 계산도 시작하지 않습니다.</p>
+      </div>
     )}
 
     {selected && projectionState === "denied" && (
@@ -286,7 +375,7 @@ export function SiteWorkspaceCompare({
       </p>
     )}
 
-    {showNoOptionBox && (
+    {showNoOptionBox && visualOptionCount < 2 && (
       <div className="rounded-lg border border-line bg-surface px-4 py-3" role="status">
         <p className="text-[13px] font-bold">{noOptionReason}</p>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
@@ -315,7 +404,13 @@ export function SiteWorkspaceCompare({
       </div>
     )}
 
-    {presentation !== "viewer" && comparisonForm}
+    {presentation !== "viewer" && visualForm}
+    {presentation !== "viewer" && comparisonForm && (
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">기존 시간 순서 보기</summary>
+        <div className="mt-2">{comparisonForm}</div>
+      </details>
+    )}
 
     {selected && resolution.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
       <CompareSlot
@@ -341,6 +436,33 @@ export function SiteWorkspaceCompare({
         catalogAssets={catalogAssets}
         fact={currentFact}
         emptyNote="비교 자료를 아직 고르지 않았습니다. 위에서 직접 고르세요."
+      />
+    </div>}
+
+    {selected && visualPair.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
+      <CompareSlot
+        slotLabel="관측 A"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={visualAFact}
+        emptyNote="관측 A를 아직 고르지 않았습니다. 위 독립 보기 선택에서 직접 고르세요."
+      />
+      <CompareSlot
+        slotLabel="관측 B"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={visualBFact}
+        emptyNote="관측 B를 아직 고르지 않았습니다. 위 독립 보기 선택에서 직접 고르세요."
       />
     </div>}
 
@@ -378,7 +500,7 @@ export function SiteWorkspaceCompare({
               </ul>
             </div>
           )}
-          <p>시간 순서가 확인된 관측이 2개 이상 있어야 나란히 둘 수 있습니다. 날짜만 아는 관측은 순서 후보가 아닙니다.</p>
+          <p>시간 순서가 확인된 관측이 2개 이상 있어야 나란히 둘 수 있습니다. 날짜만 아는 관측은 순서 후보가 아닙니다. 순서 없이 나란히 두려면 위의 독립 보기 선택을 쓰세요 — 시간 순서를 주장하지 않습니다.</p>
           <div>
             <p className="font-semibold">지원하지 않는 동기화 비교</p>
             <p className="mt-1">

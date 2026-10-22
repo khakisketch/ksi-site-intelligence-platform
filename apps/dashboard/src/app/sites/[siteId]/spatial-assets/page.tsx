@@ -1,3 +1,4 @@
+import { parseVisualBrowsingContext, visualBrowsingReturnHref, type VisualBrowsingContext } from "@/lib/operator-journey";
 import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActionBoundary";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -41,14 +42,18 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 export const metadata = { title: "등록 자료 · KSI" };
 
 type SearchValue = string | string[] | undefined;
-type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; assetRef?: SearchValue };
+type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; assetRef?: SearchValue; visualAAssetRef?: SearchValue; visualBAssetRef?: SearchValue };
 
 function singleQueryValue(value: SearchValue): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function pageHref(siteId: string, workAreaId: string, values: { cursor?: string; assetRef?: string } = {}): string {
+function pageHref(siteId: string, workAreaId: string, values: { cursor?: string; assetRef?: string } = {}, context: VisualBrowsingContext | null = null): string {
   const query = new URLSearchParams({ workAreaId });
+  if (context?.workAreaId === workAreaId) {
+    query.set("visualAAssetRef", context.visualAAssetRef);
+    query.set("visualBAssetRef", context.visualBAssetRef);
+  }
   if (values.cursor) query.set("cursor", values.cursor);
   if (values.assetRef) query.set("assetRef", values.assetRef);
   return `/sites/${encodeURIComponent(siteId)}/spatial-assets?${query.toString()}`;
@@ -139,13 +144,14 @@ function isMetadataOnly(item: SpatialAssetCatalogItem): boolean {
     && item.supportedActions[0] === "VIEW_METADATA";
 }
 
-function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated }: {
+function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated, visualContext = null }: {
   item: SpatialAssetCatalogItem;
   siteId: string;
   workName: string | null;
   areaName: string;
   headline: string;
   nameIsDuplicated: boolean;
+  visualContext?: VisualBrowsingContext | null;
 }) {
   const stateClass = item.lifecycleState === "SEALED" ? "text-ink" : "text-high-ink";
   return <article className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -156,7 +162,7 @@ function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplic
         <p className="mt-1 text-[12px] text-ink-2">{item.declared.format} · {exactByteCount(item.declared.sizeBytes)} (제출 정보 기준)</p>
         <p className={`mt-1 text-[12px] ${stateClass}`}>제출 상태: {assetLifecycleLabel(item.lifecycleState)}</p>
       </div>
-      <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef })}>상세 보기</Link>
+      <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef }, visualContext)}>상세 보기</Link>
     </div>
     {nameIsDuplicated && <p className="mt-2 rounded-md bg-sunk/70 px-3 py-2 text-[11.5px] leading-5 text-ink-2">같은 파일명이 이 목록에 여러 건 있습니다. 등록 버전·촬영 구간·아래 파일 정보로 구분하세요.</p>}
     <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
@@ -271,7 +277,7 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
     <section className="rounded-lg border border-high/30 bg-high-bg px-4 py-3 text-[12px] leading-5 text-high-ink">
       <p className="font-semibold">데이터 사용 제한</p>
       <p className="mt-1">이 화면은 파일의 등록 정보만 제공합니다. 파일이 필요하면 아래에서 받기 요청을 만들고, 준비 상태는 구역 자료 준비에서 확인하세요.</p>
-      <p className="mt-1">분석 적합성은 평가되지 않았습니다. 이 자산을 분석 입력으로 사용할 수 있다고 판단하지 않습니다.</p>
+      <p className="mt-1">이 자료 목록은 분석 적합성을 평가하지 않습니다. 이 목록만으로 분석 입력의 사용 가능 여부를 판단하지 않습니다.</p>
       {item.lifecycleState !== "SEALED" && <p className="mt-1">현재 제출 상태가 {assetLifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
     </section>
   </section>;
@@ -393,8 +399,30 @@ export default async function SpatialAssetsPage({
       historyResult = { kind: "unavailable" };
     }
   }
-  const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detail?.workOrderId
-    ? `/sites/${encodeURIComponent(siteId)}/analysis?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}&currentWorkOrderId=${encodeURIComponent(detail.workOrderId)}#new-analysis-request`
+  const visualShape = parseVisualBrowsingContext({ workAreaId: effectiveWorkAreaId,
+    visualAAssetRef: query.visualAAssetRef, visualBAssetRef: query.visualBAssetRef });
+  const currentAssets = page && page.siteId === siteId && page.workAreaId === effectiveWorkAreaId
+    ? [...page.assets, ...(detailMatchesScope && detail ? [detail] : [])] : [];
+  const visualContext = visualShape && [visualShape.visualAAssetRef, visualShape.visualBAssetRef].every((ref) =>
+    currentAssets.some((item) => item.siteId === siteId && item.workAreaId === effectiveWorkAreaId
+      && item.assetRef === ref && isMetadataOnly(item))) ? visualShape : null;
+  const visualNotice = (query.visualAAssetRef !== undefined || query.visualBAssetRef !== undefined) && !visualContext
+    ? "현재 자료 목록에서 탐색 중이던 두 자료를 확인하지 못했습니다. 다른 자료로 대체하지 않았습니다." : null;
+  const visualReturnHref = visualContext && effectiveWorkAreaId
+    ? visualBrowsingReturnHref(`/sites/${encodeURIComponent(siteId)}`, visualContext, effectiveWorkAreaId) : null;
+  const currentHint = new URLSearchParams();
+  if (effectiveWorkAreaId && detailMatchesScope && detail) {
+    currentHint.set("workAreaId", effectiveWorkAreaId);
+    currentHint.set("hintCurrentWorkOrderId", detail.workOrderId);
+    currentHint.set("hintCurrentSubmissionRef", detail.submissionRef);
+    currentHint.set("hintCurrentRevision", String(detail.revision));
+    if (visualContext) {
+      currentHint.set("visualAAssetRef", visualContext.visualAAssetRef);
+      currentHint.set("visualBAssetRef", visualContext.visualBAssetRef);
+    }
+  }
+  const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detailMatchesScope && detail?.workOrderId
+    ? `/sites/${encodeURIComponent(siteId)}/analysis?${currentHint.toString()}#new-analysis-request`
     : null;
 
   return <div className="flex flex-col">
@@ -406,8 +434,11 @@ export default async function SpatialAssetsPage({
       canEditAoi={canRequestAnalysis}
       scopedWorkAreaId={effectiveWorkAreaId && selectedArea ? effectiveWorkAreaId : null}
       scopedAssetRef={detail && assetRef && detail.assetRef === assetRef ? assetRef : null}
+      visualContext={visualContext}
     />
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
+      {visualReturnHref && <p className="text-[12px] text-ink-2">탐색 중이던 두 자료는 유지합니다. <Link className="tap-target inline-flex underline" href={visualReturnHref}>독립 보기로 돌아가기</Link></p>}
+      {visualNotice && <p role="status" className="text-[12px] text-ink-2">{visualNotice}</p>}
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
         <div>
           <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 등록 자료</h2>
@@ -499,12 +530,13 @@ export default async function SpatialAssetsPage({
                   areaName={areaDisplayName}
                   headline={businessTitleFor(item)}
                   nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
+                  visualContext={visualContext}
                 />;
               })}
           </section>
           <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
-            {cursor && effectiveWorkAreaId && <Link className="btn" href={pageHref(siteId, effectiveWorkAreaId)}>처음부터 보기</Link>}
-            {page.hasMore && page.nextCursor && effectiveWorkAreaId && <Link className="btn btn-primary" href={pageHref(siteId, effectiveWorkAreaId, { cursor: page.nextCursor })}>다음 자산 보기</Link>}
+            {cursor && effectiveWorkAreaId && <Link className="btn" href={pageHref(siteId, effectiveWorkAreaId, {}, visualContext)}>처음부터 보기</Link>}
+            {page.hasMore && page.nextCursor && effectiveWorkAreaId && <Link className="btn btn-primary" href={pageHref(siteId, effectiveWorkAreaId, { cursor: page.nextCursor }, visualContext)}>다음 자산 보기</Link>}
           </nav>
         </>}
       </>}

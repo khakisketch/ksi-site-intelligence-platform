@@ -535,3 +535,65 @@ export function matchAnalysisSelectors(
     ) ?? null;
   return { baseline: find(analysis.baseline), current: find(analysis.current) };
 }
+
+export type VisualPairResolution =
+  | {
+      status: "ready";
+      basis: "explicit-visual";
+      workAreaId: string;
+      sideA: WorkspaceObservationFact;
+      sideB: WorkspaceObservationFact;
+    }
+  | UnresolvableEntry;
+
+/**
+ * 명시적 시각 쌍(독립 보기) — 같은 구역의 서로 다른 두 승인 버전을
+ * 정확히 복원한다. 정량 비교(`resolveExplicitComparison`)와 달리 시간 순서
+ * 후보·표시 준비를 요구하지 않는다: 날짜만·시점 미상 관측도 나란히 둘 수
+ * 있으며, 후보 존재가 픽셀 가용성과 같지 않다. 호출자는 양쪽 정체성을
+ * 그대로 두고, 실제 픽셀은 기존 guarded 뷰어로만 그린다(동기화·정합 없음).
+ * 어긋난 지시는 막고 조용히 다른 대상으로 바꾸지 않는다. 정밀도·순서를
+ * 여기서 단정하지 않는다.
+ */
+export function resolveExplicitVisualPair(
+  facts: WorkspaceServerFacts,
+  raw: { workAreaId: unknown; visualAAssetRef: unknown; visualBAssetRef: unknown },
+  catalog?: readonly Pick<WorkspaceObservationFact, "assetRef" | "workAreaId" | "workOrderId" | "observationEpochId" | "submissionRef" | "revision" | "kind">[],
+): VisualPairResolution {
+  const workAreaId = parseWorkspaceScopeId(raw.workAreaId);
+  const visualAAssetRef = parseWorkspaceScopeId(raw.visualAAssetRef);
+  const visualBAssetRef = parseWorkspaceScopeId(raw.visualBAssetRef);
+  if (!workAreaId || !visualAAssetRef || !visualBAssetRef
+    || !/^ksa-v1-[0-9a-f]{64}$/.test(visualAAssetRef) || !/^ksa-v1-[0-9a-f]{64}$/.test(visualBAssetRef)) {
+    return failClosed("comparison", "malformed");
+  }
+  if (!facts.authorizedWorkAreaIds.includes(workAreaId)) {
+    return failClosed("comparison", "foreign-work-area");
+  }
+  if (visualAAssetRef === visualBAssetRef) {
+    return failClosed("comparison", "identical-selectors");
+  }
+  const sideA = facts.observations.find(
+    (item) => item.workAreaId === workAreaId && item.assetRef === visualAAssetRef,
+  );
+  const sideB = facts.observations.find(
+    (item) => item.workAreaId === workAreaId && item.assetRef === visualBAssetRef,
+  );
+  if (!sideA || !sideB) {
+    const foreign = [visualAAssetRef, visualBAssetRef].some(
+      (ref) =>
+        facts.observations.some((item) => item.assetRef === ref) &&
+        !facts.observations.some((item) => item.assetRef === ref && item.workAreaId === workAreaId),
+    );
+    return failClosed("comparison", foreign ? "cross-area-comparison" : "unknown-asset");
+  }
+  if (catalog && [sideA, sideB].some((fact) => {
+    const matches = catalog.filter((asset) => asset.assetRef === fact.assetRef
+      && asset.workAreaId === fact.workAreaId && asset.workOrderId === fact.workOrderId
+      && asset.observationEpochId === fact.observationEpochId && asset.submissionRef === fact.submissionRef
+      && asset.revision === fact.revision && asset.kind === fact.kind
+      && (asset.kind === "ortho" || asset.kind === "dsm"));
+    return matches.length !== 1;
+  })) return failClosed("comparison", "unknown-asset");
+  return { status: "ready", basis: "explicit-visual", workAreaId, sideA, sideB };
+}

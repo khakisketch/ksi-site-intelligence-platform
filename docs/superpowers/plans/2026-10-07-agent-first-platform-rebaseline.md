@@ -6812,3 +6812,77 @@ platform/customer acceptance. All current prepared output pixels remain expired 
 re-prepared. Fully JS-disabled browser integration is blocked by the existing hidden streamed
 Suspense ancestor; only the selection form's SSR fallback is verified. Further original-goal gaps
 must be considered separately from the completed structural unit; no product-state slice closes.
+
+##### Next approved outcome — P1 independent pair/context/analysis journey (2026-10-22)
+
+P0 handback is accepted as a bounded unit, not the whole Human P0/P1/P2 request. Read-only Plan
+cross-check found independent implementation remains feasible even though current pixels expired.
+Main continues without asking for routine reapproval or selecting another product-state task.
+
+Requirement IDs: Human P1 and related P2 existing-record discoverability; SDP-REQ-01/02/03/05.
+Owner module: Dashboard UI and additive pure navigation helpers; Core contracts unchanged.
+Acceptance criteria: explicitly select two same-area exact material revisions for independent visual
+inspection, including literal date-only/unknown precision; preserve pair/layers through modes,
+relevant navigation/Back/reload; hand off exact submission/revision hints only when matching current
+server analysis candidates; no approximation by WorkOrder alone; show actual existing eligibility/
+blockers and open an exact recorded result; return context never changes frozen result inputs.
+Contracts affected: no wire/schema/source/admission change. Keep old strict compare helpers and deep
+URL semantics. Add separate explicit UI visual-pair intent; never manufacture displayReady/viewAvailable
+or chronologyCandidate. Existing guarded requester-owned prepared outputs remain the only byte path.
+Reference assets: current01c74afd workspace and P0 actual evidence; Constitution/ADR036/037/038/039,
+existing workspace UX design, source AnalysisObservationOption exact selectors and immutable results.
+Adoption decisions: independent side-by-side browsing; preserve literal precision and exact versions.
+No synchronized spatial camera: established pair-display geometry is absent. The Human-directed
+registration/purpose-split document is DESIGN ONLY (header), not an implemented authority path;
+its stated evidence/purpose constraints and the incumbent fail-closed geometry rules are preserved.
+PairRegistration shape/equal CRS/common grid/CSS transforms are not registration evidence. Do not
+introduce sync, shared crosshairs, difference-colouring or any implied quantitative compatibility.
+Files to change: Site workspace/page/compare/result/header context, analysis page/panel and additive
+operator-journey/visual-intent helpers, focused Dashboard tests/E2E as needed. No Core/API/grants/
+retention/registration/worker/inspector change, no separate ledger or redesign of Home/list.
+Tests: existing strict-path negatives unchanged; date-only/unknown independent intent; foreign/repeated/
+invalid fail-closed selection; exact layer revision; scope/mode/Back/reload; exact analysis candidate
+matching; no deep-result/pending-attempt overwrite; browsing-vs-frozen inputs; no automatic POST;
+full Vitest/type/lint/build/isolated regression and actual legal metadata/context journey.
+HIL or real-device assumptions: none. Lawful fixture pixel checks explicitly simulated; real-pixel
+comparison remains unavailable due expired outputs; physical/native-input acceptance absent.
+License/data implications: no dependency/asset/egress/cache/producer; source attribution and per-user
+rights unchanged. INV-020/024/040/051/053/060/061 enforced by distinct typed UI intent, exact matching,
+existing guarded bytes, untouched quantitative chronology/compatibility and immutable results.
+Rollback: revert P1 UI commit set to already verified01c74afd; retained frontend/runtime unchanged
+until Main builds/reviews a new owned image. No shared-state restore/repair is authorized.
+
+P1/P2 real verification preconditions revalidated (read-only, existing human-session BFF GETs):
+Floreat `analysis-observations`200 returns0 candidates; the separate SYNTHETIC Site200 returns2.
+Existing synthetic analysis `analysis-v1-a54a41705b90721036d77c30ab698d28`200 remains COMPLETED /
+PROVISIONAL_ACCURACY_UNVERIFIED, cut0/fill800/net800m3, uncertainty null, result
+`report-d12897aa3511adcaa7afdcd7e6b9efb4`, report digest
+`sha256:bff0b46aecf16dfb026503b051a3b03fed90b59b88e93b51cafe8941e61edc39`.
+Its exact input triples remain obs-work-00000001/ers-v1-5fe272105b7cc7adc910d7705fd6e62944c17201ac5394e4565bdf7cc5b5e3ed/rev1
+and obs-work-00000002/ers-v1-a275552ba0056ad9012d30a49d0416f61af825ebd1ac630a8ca2061ef4d6ef3d/rev1.
+Evidence GET200 returns19 typed items (two epoch identities, calculation identity, evaluations,
+authority/source references, numeric result and limitation), evidenceRevision1. Witness:
+`/tmp/opencode/ksi-workspace-journey-20261022/existing-reuse.json`. No product writes; not a new
+calculation, reproduction, external-client or MCP execution proof. The MCP adapter's existing
+local-stdio `ksi_get_analysis`/`ksi_get_analysis_result` share the same Core V2 detail route;
+separate MCP identity, explicit Site AI-egress consent and ALLOWED response are still required.
+
+P2 existing-record disclosure implementation plan (parallel, disjoint files):
+Requirement IDs: Human P2 lineage/reuse discoverability; SDP-REQ-03/05/06, INV-020/024/040/051/060/061.
+Owner: Dashboard analysis presentation. Main owns only new AnalysisRecordReuse.tsx and its focused
+unit test while the P1 implementer owns analysis/page/panel and navigation. Main integrates after
+that worker returns; no overlapping edits. Acceptance: selected authoritative AnalysisView supplies
+its exact original input triples, request/result identity, evidence revision/digest and permissioned
+Console permalink; calculation profile/runtime/WorkArea definition appear only from matching loaded
+evidence pages (same analysisId+revision+digest), not fabricated or joined across revisions. The
+main screen stays concise; technical details disclose on demand. Explain current suitability versus
+immutable numeric record and that links do not grant access. API/MCP reference shows only existing
+Core V2 paths and existing local-stdio query argument identities, with separate authentication and
+AI-egress consent caveats; no endpoint/host/vendor/public support or connection activation claim.
+Contracts/dependencies/licenses unchanged; no requests, clipboard credential, external URL, download
+producer, registration or new computation. Tests cover exact binding, stale evidence refusal, no
+result/no profile honesty, encoded local links, closed disclosure and absent write controls. No HIL;
+actual synthetic metadata/evidence GET identity already revalidated, not calculation reproduction or
+MCP execution. Rollback: remove this UI component/integration only. Broader saved-comparison storage,
+registration geometry authority, grant budgets/tolerances remain separate decisions, not required to
+expose already existing record lineage truthfully.

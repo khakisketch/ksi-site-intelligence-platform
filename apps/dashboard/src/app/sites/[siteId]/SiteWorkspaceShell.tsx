@@ -9,6 +9,7 @@ import type {
   ExplicitComparisonResolution,
   ExplicitResultResolution,
   OrdinaryEntryResolution,
+  VisualPairResolution,
   WorkspaceMode,
   WorkspaceObservationFact,
   WorkspaceServerFacts,
@@ -17,7 +18,9 @@ import {
   representativeFacts,
   workspaceCaptureLine,
 } from "@/lib/site-workspace-entry";
+import { visualLayersForExactSubmission, pairQueryString } from "./site-visual-pair";
 import { observationPrecisionOf } from "@/lib/site-workspace-entry";
+import { inspectionOutcomeLabel } from "@/lib/site-windowed-pixel-viewer";
 import type {
   PreparedWindowJob,
   WindowedViewerLayer,
@@ -196,11 +199,18 @@ function modeHref(
   sitePath: string,
   mode: WorkspaceMode,
   scope: { workAreaId: string | null; assetRef: string | null },
+  visual?: { visualAAssetRef: string | null; visualBAssetRef: string | null } | null,
 ): string {
   const query = new URLSearchParams();
   if (mode !== "explore") query.set("mode", mode);
   if (scope.workAreaId) query.set("workAreaId", scope.workAreaId);
   if (scope.assetRef) query.set("assetRef", scope.assetRef);
+  // 시각 쌍 맥락은 모드를 옮겨도 유지한다. 구역이 바뀌면 싣지 않는다 —
+  // 받는 화면이 같은 구역에서 재대조하고, 어긋나면 막는다.
+  if (visual?.visualAAssetRef && visual?.visualBAssetRef && scope.workAreaId) {
+    query.set("visualAAssetRef", visual.visualAAssetRef);
+    query.set("visualBAssetRef", visual.visualBAssetRef);
+  }
   const search = query.toString();
   return search ? `${sitePath}?${search}` : sitePath;
 }
@@ -325,6 +335,9 @@ export function SiteWorkspaceShell({
   baselineRequestedRef,
   currentRequestedRef,
   comparison,
+  visualARequestedRef = null,
+  visualBRequestedRef = null,
+  visualPair = { status: "prompt" } as VisualPairResolution | { status: "prompt" },
   explicitResult,
   explicitDetail,
   leadDetail,
@@ -359,6 +372,9 @@ export function SiteWorkspaceShell({
   baselineRequestedRef: string | null;
   currentRequestedRef: string | null;
   comparison: ExplicitComparisonResolution | { status: "prompt" };
+  visualARequestedRef?: string | null;
+  visualBRequestedRef?: string | null;
+  visualPair?: VisualPairResolution | { status: "prompt" };
   explicitResult: ExplicitResultResolution | null;
   explicitDetail: AnalysisView | null;
   /** 결과 목록 첫 기록의 상세(선택자 복원용, 1건만) — 없으면 조용히 둔다. */
@@ -390,12 +406,21 @@ export function SiteWorkspaceShell({
   const selectedGeometry = selected ? selectableGeometry(selected) : null;
   const workAreaRing = selectedGeometry ? extractSimpleRing(selectedGeometry.polygon) : null;
   const workAreaCrs = selectedGeometry?.crs ?? "확인 불가";
+  const browseAsset = selectedAssetRef ? catalogAssets.find((item) => item.assetRef === selectedAssetRef
+    && item.workAreaId === selectedWorkAreaId) ?? null : null;
   const exploreFact = selectedAssetRef
     ? (facts.observations.find((item) => item.assetRef === selectedAssetRef) ?? null)
     : null;
   const exploreEpochId = exploreFact?.observationEpochId
     ?? (ordinaryEntry.status === "ready" ? ordinaryEntry.observation.observationEpochId : null);
-  const exploreLayers = exploreEpochId ? viewerLayersForEpoch(catalogAssets, exploreEpochId) : [];
+  // 탐색 층은 고른 정확한 제출 묶음·버전 안에서만 둔다. epoch 전체로 넓혀
+  // 다른 버전을 조용히 섞지 않는다. 일반 둘러보기의 고른 참조는 현재
+  // 카탈로그의 버전으로 고정하며, 명시 비교의 프로젝션 충돌은 별도로 막는다.
+  const exploreLayers = browseAsset
+    ? visualLayersForExactSubmission(catalogAssets, browseAsset)
+    : exploreFact
+      ? visualLayersForExactSubmission(catalogAssets, exploreFact)
+      : exploreEpochId ? viewerLayersForEpoch(catalogAssets, exploreEpochId) : [];
   const exploreHeading = exploreFact
     ? viewerHeadingFor(exploreFact)
     : ordinaryEntry.status === "ready"
@@ -434,6 +459,13 @@ export function SiteWorkspaceShell({
     : sitePath;
   const baselineFact = comparison.status === "ready" ? comparison.baseline : null;
   const currentFact = comparison.status === "ready" ? comparison.current : null;
+  const visualAFact = visualPair.status === "ready" ? visualPair.sideA : null;
+  const visualBFact = visualPair.status === "ready" ? visualPair.sideB : null;
+  // 둘러보기 맥락은 정식 resolve된 사실에서만 싣는다. 요청 문자열(미확인·
+  // 실패·거부된 값)은 전파하지 않는다 — 받는 화면이 재대조한다.
+  const visualContext = visualAFact && visualBFact && selectedWorkAreaId
+    ? { visualAAssetRef: visualAFact.assetRef, visualBAssetRef: visualBFact.assetRef }
+    : null;
   // 탐색 첫 화면의 다음 행동 — 구역 상세 화면과 같은 계산을 공유한다.
   // 자료·범위 상세(펼침) 안에만 있으면 처음 보는 사람은 무엇을 할 수
   // 있는지 펼치기 전까지 모른다.
@@ -449,13 +481,35 @@ export function SiteWorkspaceShell({
       latestAnalysis: exploreLatestAnalysis
         ? { workAreaId: exploreLatestAnalysis.workAreaId, analysisId: exploreLatestAnalysis.analysisId }
         : null,
+      pairQuery: visualAFact && visualBFact && selected.workAreaId === visualAFact.workAreaId
+        ? pairQueryString(selected.workAreaId, visualAFact, visualBFact)
+        : baselineFact && currentFact && comparison.status === "ready" && selected.workAreaId === comparison.workAreaId
+          ? pairQueryString(selected.workAreaId, baselineFact, currentFact)
+          : null,
     })
     : null;
+  // 시각 쌍 한쪽의 층 전환 주소 — 같은 구역에서 그쪽만 정확한 참조로
+  // 바꾼다. 다른 쪽·구역·모드는 그대로 둔다(정식 쌍은 받는 쪽이 재대조한다).
+  const visualLayerHref = (side: "A" | "B", assetRef: string): string => {
+    if (!selectedWorkAreaId) return sitePath;
+    const query = new URLSearchParams();
+    query.set("mode", "compare");
+    query.set("workAreaId", selectedWorkAreaId);
+    if (side === "A") {
+      query.set("visualAAssetRef", assetRef);
+      if (visualContext) query.set("visualBAssetRef", visualContext.visualBAssetRef);
+    } else {
+      if (visualContext) query.set("visualAAssetRef", visualContext.visualAAssetRef);
+      query.set("visualBAssetRef", assetRef);
+    }
+    return `${sitePath}?${query.toString()}`;
+  };
   const selectedCatalog = mode === "explore" ? catalogAssets.find((item) => item.assetRef === selectedAssetRef) ?? null : null;
   const compareProps = {
     sitePath, areas, selectedWorkAreaId, catalogAssets,
     projectionState: projectionState === "not-requested" ? "unavailable" as const : projectionState,
     workspaceHasMore, baselineRequestedRef, currentRequestedRef, resolution: comparison,
+    visualARequestedRef, visualBRequestedRef, visualPair,
     canCreateAnalysis, canCreateWorkOrder, scopedCompareHref, exploreHref, facts,
   };
   return <div className="flex min-w-0 flex-col gap-3">
@@ -464,7 +518,7 @@ export function SiteWorkspaceShell({
       captureOptions={captureOptions} selectedCaption={mode === "explore" ? selectedCaption : null}
       coverageNote={mode === "explore" && selected && viewerJobsState !== "not-requested"
         ? "이어 붙인 화면은 준비된 창의 나란한 배치이며, 전체 현장·정확도 근거가 아닙니다." : null}
-      compareHref={mode === "explore" && selected ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}` : null}
+      compareHref={mode === "explore" && selected ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(selected.workAreaId)}${visualContext ? `&visualAAssetRef=${encodeURIComponent(visualContext.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(visualContext.visualBAssetRef)}` : ""}` : null}
       mode={mode}
       actions={selected && exploreNextAction ? (
         <SiteAreaNextActionNav sitePath={sitePath} workAreaId={selected.workAreaId}
@@ -487,14 +541,25 @@ export function SiteWorkspaceShell({
           {viewerLayersForEpoch(catalogAssets, slot.fact.observationEpochId).length === 1 && <p className="text-[12px]">{dataKindLabel(slot.fact.kind)}</p>}
           <noscript><p className="text-[12px]">레이어 전환은 JavaScript가 필요합니다. 원본 정보는 비교 자료·조건에서 확인할 수 있습니다.</p></noscript>
         </nav>)}
+      </div> : mode === "compare" && visualAFact && visualBFact ? <div className="flex flex-col gap-3">
+        {([{ label: "관측 A", fact: visualAFact, id: "workspace-visual-a-layer-controls" }, { label: "관측 B", fact: visualBFact, id: "workspace-visual-b-layer-controls" }] as const).map((slot) => {
+          const exactLayers = visualLayersForExactSubmission(catalogAssets, slot.fact);
+          return <nav key={slot.id} aria-label={`${slot.label} 표시 레이어`} className="flex flex-col gap-1">
+            <p className="text-[12px] text-ink-muted">{slot.label} · {dataKindLabel(slot.fact.kind)} · 등록 버전 {slot.fact.revision}</p>
+            <div id={slot.id} />
+            {exactLayers.length <= 1 && <p className="text-[12px]">{dataKindLabel(slot.fact.kind)}</p>}
+            <noscript><p className="text-[12px]">레이어 전환은 JavaScript가 필요합니다. 원본 정보는 비교 자료·조건에서 확인할 수 있습니다.</p></noscript>
+          </nav>;
+        })}
       </div> : undefined}
       detail={selectedCatalog ? <>
         <p className="break-words font-semibold">{exploreHeading ?? dataKindLabel(selectedCatalog.kind)}</p>
         <dl className="grid gap-2">
           <div><dt className="text-ink-muted">등록 파일명</dt><dd className="break-all">{selectedCatalog.declared.fileName}</dd></div>
+          <div><dt className="text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(selectedCatalog.inspection.outcome)}</dd></div>
           <div><dt className="text-ink-muted">관측 위치 기준</dt><dd>{selectedCatalog.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
           <div><dt className="text-ink-muted">수직 기준</dt><dd>{selectedCatalog.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"}</dd></div>
-          <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "미평가 · 지도 표시 준비와 별개입니다." : "분석 기록에서 확인하세요."}</dd></div>
+          <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "자료 목록에서는 분석 적합성을 평가하지 않습니다. 분석·결과에서 입력별 조건을 확인하세요." : "분석 기록에서 확인하세요."}</dd></div>
         </dl>
         <Link className="tap-target underline" href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selectedCatalog.workAreaId)}&assetRef=${encodeURIComponent(selectedCatalog.assetRef)}`}>원본 메타데이터 확인</Link>
         <details><summary className="tap-target cursor-pointer">버전·식별 정보</summary><p className="break-all">등록 버전 {selectedCatalog.revision} · {selectedCatalog.submissionRef}</p><p className="break-all">{selectedCatalog.assetRef}</p></details>
@@ -505,7 +570,7 @@ export function SiteWorkspaceShell({
         return (
           <Link
             key={option.key}
-            href={modeHref(sitePath, option.key, scope)}
+            href={modeHref(sitePath, option.key, scope, visualContext)}
             aria-current={active ? "page" : undefined}
             className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[13px] break-keep ${
               active ? "bg-surface font-bold" : "text-ink-2"
@@ -591,7 +656,7 @@ export function SiteWorkspaceShell({
 
     {mode === "compare" && !areasKnown && <p role="status" className="text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
     {mode === "compare" && areasKnown && (<>
-      {comparison.status !== "ready" && <SiteWorkspaceCompare {...compareProps} presentation="viewer" />}
+      {comparison.status !== "ready" && visualPair.status !== "ready" && <SiteWorkspaceCompare {...compareProps} presentation="viewer" />}
       {/* 비교의 창 단위 픽셀 보기 — 두 칸은 독립된 어댑터다. 동기화 비교가
           아니라 각 창의 실제 픽셀을 같은 평면에 둔다. */}
       {selected && comparison.status === "ready" && baselineFact && currentFact && viewerJobsState !== "not-requested" && (
@@ -621,6 +686,44 @@ export function SiteWorkspaceShell({
         <summary className="tap-target cursor-pointer text-[13px] font-semibold">비교 자료·조건 확인</summary>
         <div className="mt-2"><SiteWorkspaceCompare {...compareProps} presentation="viewer" /></div>
       </details>}
+      {/* 시각 쌍(독립 보기) — 날짜만·시점 미상 관측도 나란히 둔다. 시간 순서·
+          정합을 주장하지 않으며, 각 칸은 독립된 카메라로만 본다. */}
+      {selected && visualPair.status === "ready" && visualAFact && visualBFact && viewerJobsState !== "not-requested" && (
+        <SiteWindowedPixelCompare
+          siteId={facts.siteId}
+          workAreaId={selected.workAreaId}
+          baselineRoleLabel="관측 A"
+          currentRoleLabel="관측 B"
+          baselineHeading={viewerHeadingFor(visualAFact)}
+          currentHeading={viewerHeadingFor(visualBFact)}
+          baselineLayers={visualLayersForExactSubmission(catalogAssets, visualAFact)}
+          currentLayers={visualLayersForExactSubmission(catalogAssets, visualBFact)}
+          baselineCrs={catalogAssets.find((item) => item.assetRef === visualAFact.assetRef)?.inspection.raster?.observedCrsIdentifier ?? null}
+          currentCrs={catalogAssets.find((item) => item.assetRef === visualBFact.assetRef)?.inspection.raster?.observedCrsIdentifier ?? null}
+          jobs={[...jobs]}
+          jobsState={viewerJobsState}
+          canRead={viewerCanRead}
+          canRequest={viewerCanRequest}
+          requestsHref={requestsHref}
+          workAreaRing={workAreaRing}
+          workAreaCrs={workAreaCrs}
+          hideLayerControls
+          baselineAssetRef={visualAFact.assetRef}
+          currentAssetRef={visualBFact.assetRef}
+          layerControlsInRail
+          baselineLayerControlsTargetId="workspace-visual-a-layer-controls"
+          currentLayerControlsTargetId="workspace-visual-b-layer-controls"
+          baselineLayerHref={visualLayerHref("A", visualAFact.assetRef)}
+          currentLayerHref={visualLayerHref("B", visualBFact.assetRef)}
+          baselineLayerParam="visualAAssetRef"
+          currentLayerParam="visualBAssetRef"
+        />
+      )}
+      {visualPair.status === "ready" && <p><Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link></p>}
+      {visualPair.status === "ready" && <details className="rounded-lg border border-line p-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">독립 보기 자료·조건 확인</summary>
+        <div className="mt-2"><SiteWorkspaceCompare {...compareProps} presentation="viewer" /></div>
+      </details>}
       <SiteDisplayLegend />
     </>)}
 
@@ -636,6 +739,7 @@ export function SiteWorkspaceShell({
         facts={facts}
         canCreateAnalysis={canCreateAnalysis}
         scopedCompareHref={scopedCompareHref}
+        visualContext={selectedWorkAreaId && visualContext ? { workAreaId: selectedWorkAreaId, ...visualContext } : null}
       />
     )}
     </SiteExploreCanvas>

@@ -31,11 +31,14 @@ import {
   parseWorkspaceScopeId,
   resolveExplicitComparison,
   resolveExplicitResult,
+  resolveExplicitVisualPair,
   resolveOrdinaryEntry,
   type ExplicitComparisonResolution,
   type ExplicitResultResolution,
   type OrdinaryEntryResolution,
+  type VisualPairResolution,
 } from "@/lib/site-workspace-entry";
+import { analysisHandoffHref } from "./site-visual-pair";
 import { toPreparedWindowJob } from "@/lib/site-windowed-pixel-viewer";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { formatKoreanDate, formatKoreanDateTime } from "@/lib/datetime";
@@ -68,7 +71,7 @@ export default async function SiteDetailPage({
   searchParams,
 }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; analysisId?: string | string[] }>;
+  searchParams: Promise<{ section?: string | string[]; tab?: string | string[]; workAreaId?: string | string[]; assetRef?: string | string[]; mode?: string | string[]; baselineAssetRef?: string | string[]; currentAssetRef?: string | string[]; visualAAssetRef?: string | string[]; visualBAssetRef?: string | string[]; analysisId?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const firstValue = (value: string | string[] | undefined): string | undefined =>
@@ -295,8 +298,14 @@ export default async function SiteDetailPage({
 
   const rawBaselineAssetRef = wantSpatial && mode === "compare" ? firstValue(query.baselineAssetRef) : undefined;
   const rawCurrentAssetRef = wantSpatial && mode === "compare" ? firstValue(query.currentAssetRef) : undefined;
+  // 시각 쌍 쿼리는 원문 그대로 판정한다 — 반복 배열을 첫 값으로 접지 않고
+  // 명시적 invalid 경로로 둔다. 표시 기본값은 별도로 다듬는다.
+  const rawVisualAAssetRef = wantSpatial && selectedWorkAreaId ? query.visualAAssetRef : undefined;
+  const rawVisualBAssetRef = wantSpatial && selectedWorkAreaId ? query.visualBAssetRef : undefined;
   const baselineRequestedRef = parseWorkspaceScopeId(rawBaselineAssetRef ?? null);
   const currentRequestedRef = parseWorkspaceScopeId(rawCurrentAssetRef ?? null);
+  const visualARequestedRef = parseWorkspaceScopeId(typeof rawVisualAAssetRef === "string" ? rawVisualAAssetRef : null);
+  const visualBRequestedRef = parseWorkspaceScopeId(typeof rawVisualBAssetRef === "string" ? rawVisualBAssetRef : null);
   let comparison: ExplicitComparisonResolution | { status: "prompt" } = { status: "prompt" };
   // 프로젝션 준비 여부와 무관하게 명시 지시는 판정한다 — 실패하면 막는다.
   // 준비되지 않은 목록으로 조용히 바꾸지 않는다.
@@ -308,6 +317,25 @@ export default async function SiteDetailPage({
         currentAssetRef: rawCurrentAssetRef,
       });
     }
+  }
+  // 시각 쌍(독립 보기) — 정량 비교와 별개의 명시 의도다. 날짜만·시점 미상
+  // 관측도 나란히 둘 수 있으며, 시간 순서·봉인을 요구하지 않는다. 기존
+  // strict 경로의 의미를 바꾸지 않는다. 비교·결과 모드의 복귀 맥락으로 쓰므로
+  // 모드와 무관하게 같은 구역에서 판정한다. 원문 쿼리를 그대로 넘긴다.
+  let visualPair: VisualPairResolution | { status: "prompt" } = { status: "prompt" };
+  if (facts && selectedWorkAreaId && (rawVisualAAssetRef != null || rawVisualBAssetRef != null)) {
+    visualPair = resolveExplicitVisualPair(facts, {
+      workAreaId: query.workAreaId,
+      visualAAssetRef: rawVisualAAssetRef,
+      visualBAssetRef: rawVisualBAssetRef,
+    }, assetsState.status === "ready" ? assetsState.page.assets : []);
+  }
+  if (mode === "compare" && (rawVisualAAssetRef != null || rawVisualBAssetRef != null)
+    && (rawBaselineAssetRef != null || rawCurrentAssetRef != null)) {
+    comparison = { status: "prompt" };
+    visualPair = { status: "unresolvable", intent: "comparison", reason: "malformed",
+      headline: "비교 선택 방식을 하나만 사용하세요",
+      detail: "독립 보기 A·B와 기존 시간 순서 보기의 선택이 함께 들어왔습니다. 아래에서 한 쌍을 직접 고르세요. 다른 선택으로 바꾸지 않았습니다." };
   }
   const rawAnalysisId = wantSpatial && mode === "results" ? firstValue(query.analysisId) : undefined;
   let explicitResult: ExplicitResultResolution | null = null;
@@ -368,6 +396,15 @@ export default async function SiteDetailPage({
       canEditAoi={canTransition}
       scopedWorkAreaId={headerWorkAreaId}
       scopedAssetRef={headerAssetRef}
+      visualContext={visualPair.status === "ready" && selectedWorkAreaId === headerWorkAreaId
+        ? {
+            workAreaId: visualPair.workAreaId,
+            visualAAssetRef: visualPair.sideA.assetRef,
+            visualBAssetRef: visualPair.sideB.assetRef,
+            hintBaseline: { workOrderId: visualPair.sideA.workOrderId, submissionRef: visualPair.sideA.submissionRef, revision: visualPair.sideA.revision },
+            hintCurrent: { workOrderId: visualPair.sideB.workOrderId, submissionRef: visualPair.sideB.submissionRef, revision: visualPair.sideB.revision },
+          }
+        : null}
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       {tab === "overview" && <div className="flex flex-col gap-4">
@@ -397,10 +434,25 @@ export default async function SiteDetailPage({
           baselineRequestedRef={baselineRequestedRef}
           currentRequestedRef={currentRequestedRef}
           comparison={comparison}
+          visualARequestedRef={visualARequestedRef}
+          visualBRequestedRef={visualBRequestedRef}
+          visualPair={visualPair}
           explicitResult={explicitResult}
           explicitDetail={explicitDetail}
           leadDetail={leadDetail}
-          scopedCompareHref={selectedWorkAreaId && activeWorkAreaIds.has(selectedWorkAreaId) ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}` : `${sitePath}/analysis`}
+          scopedCompareHref={(() => {
+            if (!selectedWorkAreaId || !activeWorkAreaIds.has(selectedWorkAreaId)) return `${sitePath}/analysis`;
+            // 분석 인계는 정식으로 resolve된 한 쌍의 사실 그대로만 싣는다 —
+            // 힌트 6건 + 복귀 참조 2건의 정식 빌더 하나를 쓴다.
+            // 기존 구역-only 주소와 호환되며, 받는 분석 화면이 후보와 재대조한다.
+            const hintSource = visualPair.status === "ready"
+              ? { baseline: visualPair.sideA, current: visualPair.sideB }
+              : comparison.status === "ready"
+                ? { baseline: comparison.baseline, current: comparison.current }
+                : null;
+            if (!hintSource) return `${sitePath}/analysis?workAreaId=${encodeURIComponent(selectedWorkAreaId)}`;
+            return analysisHandoffHref(sitePath, selectedWorkAreaId, hintSource.baseline, hintSource.current);
+          })()}
           preparedJobs={preparedJobs}
           jobsState={preparedJobsState}
           canReadData={canReadData}

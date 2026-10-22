@@ -103,6 +103,9 @@ export interface WindowedPixelViewerProps {
   selectedAssetRef?: string | null;
   /** 탐색에서 층을 바꿀 때 날짜 선택·Back·reload도 같은 원본을 가리키게 한다. */
   layerSelectionHref?: string;
+  /** 같은 제출 묶음 안에서 층을 바꿀 때 이동할 주소 — 주면 로컬 상태 대신 링크로 둔다. */
+  layerSelectHref?: string;
+  layerSelectParam?: "assetRef" | "visualAAssetRef" | "visualBAssetRef";
   /** Workspace hosts the layer selector in its persistent rail. */
   hideLayerControls?: boolean;
   /** Local comparison-layer controls may be hosted in the shared rail without changing selectors. */
@@ -723,6 +726,8 @@ export function SiteWindowedPixelViewer({
   slimHeader = false,
   selectedAssetRef = null,
   layerSelectionHref,
+  layerSelectHref,
+  layerSelectParam = "assetRef",
   hideLayerControls = false,
   layerControlsTargetId,
 }: WindowedPixelViewerProps) {
@@ -738,17 +743,32 @@ export function SiteWindowedPixelViewer({
   }, [layerControlsTargetId]);
   const layerControls = layers.length > 1 ? (
     <div className="flex flex-wrap gap-1 lg:flex-col" role="group" aria-label="자료 층 전환">
-      {layers.map((item) => <button key={item.assetRef} type="button"
-        aria-pressed={item.assetRef === layer?.assetRef}
-        onClick={() => {
-          if (layerSelectionHref) {
-            if (item.assetRef === layer?.assetRef) return;
-            router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
-          } else setLayerOverride(item.assetRef);
-        }}
-        className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${item.assetRef === layer?.assetRef ? "bg-sunk font-bold" : "text-ink-2"}`}>
-        {item.kindLabel}
-      </button>)}
+      {layers.map((item) => {
+        const selected = item.assetRef === layer?.assetRef;
+        // URL 전환이 있으면 링크로 둔다 — Back·reload·분석 복귀가 같은 층을
+        // 가리킨다. 없으면 기존 로컬 전환 그대로 둔다(동기화 없음).
+        if (layerSelectHref && !layerSelectionHref) {
+          const target = new URL(layerSelectHref, "https://console.invalid");
+          target.searchParams.set(layerSelectParam, item.assetRef);
+          const href = `${target.pathname}?${target.searchParams.toString()}${target.hash}`;
+          return <Link key={item.assetRef} href={href}
+            aria-current={selected ? "true" : undefined}
+            className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
+            {item.kindLabel}
+          </Link>;
+        }
+        return <button key={item.assetRef} type="button"
+          aria-pressed={selected}
+          onClick={() => {
+            if (layerSelectionHref) {
+              if (selected) return;
+              router.push(`${layerSelectionHref}${layerSelectionHref.includes("?") ? "&" : "?"}assetRef=${encodeURIComponent(item.assetRef)}`);
+            } else setLayerOverride(item.assetRef);
+          }}
+          className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${selected ? "bg-sunk font-bold" : "text-ink-2"}`}>
+          {item.kindLabel}
+        </button>;
+      })}
     </div>
   ) : null;
 
@@ -810,7 +830,7 @@ export function SiteWindowedPixelViewer({
       )}
 
       {/* 기술 벽은 실제 화면 뒤다. 정보는 지우지 않고 펼침에 둔다. */}
-      <details id="windowed-display-conditions" className="scroll-mt-5 text-[12px] text-ink-2">
+      <details id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-[12px] text-ink-2">
         <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
         <p className="mt-1">{WINDOWED_VIEWER_ADAPTER_LABEL} — {WINDOWED_VIEWER_ADAPTER_NOTE}</p>
         <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">{NO_COMPOSITE_FLAG_COPY}</p>
@@ -860,6 +880,14 @@ export function SiteWindowedPixelCompare({
   baselineAssetRef,
   currentAssetRef,
   layerControlsInRail = false,
+  baselineRoleLabel = "기준 자료",
+  currentRoleLabel = "비교 자료",
+  baselineLayerHref,
+  currentLayerHref,
+  baselineLayerParam = "assetRef",
+  currentLayerParam = "assetRef",
+  baselineLayerControlsTargetId,
+  currentLayerControlsTargetId,
 }: {
   siteId: string;
   workAreaId: string;
@@ -880,12 +908,23 @@ export function SiteWindowedPixelCompare({
   baselineAssetRef?: string;
   currentAssetRef?: string;
   layerControlsInRail?: boolean;
+  /** 칸 제목 앞 역할 표기 — 기본 "기준 자료"/"비교 자료", 독립 보기는 "관측 A"/"관측 B". */
+  baselineRoleLabel?: string;
+  currentRoleLabel?: string;
+  /** 같은 제출 묶음 안에서 층을 바꿀 때 이동할 주소 — 주면 로컬 상태 대신 링크로 둔다. */
+  baselineLayerHref?: string;
+  baselineLayerParam?: "assetRef" | "visualAAssetRef";
+  currentLayerHref?: string;
+  currentLayerParam?: "assetRef" | "visualBAssetRef";
+  /** 레일 포털 대상 — 기본 workspace-baseline/current-layer-controls. */
+  baselineLayerControlsTargetId?: string;
+  currentLayerControlsTargetId?: string;
 }) {
   const verdict = sharedPlaneForCompare(baselineCrs, currentCrs);
   return (
     <div className="flex flex-col gap-3">
       <div className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[13px] font-bold">나란히 보기 안내(창 단위 픽셀 보기)</h3>
+        <h3 className="text-[13px] font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
         {verdict.ok ? (
           <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
             두 칸은 같은 위치 기준({verdict.crs})의 작업구역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
@@ -900,7 +939,7 @@ export function SiteWindowedPixelCompare({
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[12px] font-bold">기준 자료 · {baselineHeading}</p>
+          <p className="text-[12px] font-bold">{baselineRoleLabel} · {baselineHeading}</p>
           <SiteWindowedPixelViewer
             siteId={siteId}
             workAreaId={workAreaId}
@@ -917,11 +956,13 @@ export function SiteWindowedPixelCompare({
             slimHeader
             hideLayerControls={hideLayerControls}
             selectedAssetRef={baselineAssetRef}
-            layerControlsTargetId={layerControlsInRail ? "workspace-baseline-layer-controls" : undefined}
+            layerSelectHref={baselineLayerHref}
+            layerSelectParam={baselineLayerParam}
+            layerControlsTargetId={layerControlsInRail ? (baselineLayerControlsTargetId ?? "workspace-baseline-layer-controls") : undefined}
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[12px] font-bold">비교 자료 · {currentHeading}</p>
+          <p className="text-[12px] font-bold">{currentRoleLabel} · {currentHeading}</p>
           <SiteWindowedPixelViewer
             siteId={siteId}
             workAreaId={workAreaId}
@@ -938,7 +979,9 @@ export function SiteWindowedPixelCompare({
             slimHeader
             hideLayerControls={hideLayerControls}
             selectedAssetRef={currentAssetRef}
-            layerControlsTargetId={layerControlsInRail ? "workspace-current-layer-controls" : undefined}
+            layerSelectHref={currentLayerHref}
+            layerSelectParam={currentLayerParam}
+            layerControlsTargetId={layerControlsInRail ? (currentLayerControlsTargetId ?? "workspace-current-layer-controls") : undefined}
           />
         </div>
       </div>

@@ -28,7 +28,7 @@ function suitabilityLimitCopy(item: Pick<AnalysisListItem, "suitabilityState">):
   }
 }
 
-function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown = false }: {
+function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown = false, visualQuery = "" }: {
   item: AnalysisListItem;
   sitePath: string;
   lead?: boolean;
@@ -36,6 +36,8 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
   pairLine?: string | null;
   /** 원래 입력을 현재 목록에서 확인하지 못했을 때 true. */
   pairUnknown?: boolean;
+  /** 탐색 중이던 시각 쌍 복귀 쿼리 — frozen 기록 링크를 바꾸지 않고 덧붙인다. */
+  visualQuery?: string;
 }) {
   // 결과 모드의 첫 화면은 "무엇이 얼마나 바뀌었나"다. 수치는 이미 Core가
   // 결정해 기록한 값이므로 그대로 옮기고 그 옆에 한계를 함께 둔다. 여기서
@@ -90,7 +92,7 @@ function RecordCard({ item, sitePath, lead = false, pairLine = null, pairUnknown
       이 화면은 기록된 값을 옮긴 것이며 다시 계산하지 않습니다. 계산에 쓰인 자료·조건·근거는 분석 기록에 있습니다.
     </p>
     <p className="mt-1">
-      <Link href={`${sitePath}/analysis?workAreaId=${encodeURIComponent(item.workAreaId)}&analysisId=${encodeURIComponent(item.analysisId)}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
+      <Link href={`${sitePath}/analysis?workAreaId=${encodeURIComponent(item.workAreaId)}&analysisId=${encodeURIComponent(item.analysisId)}${visualQuery}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
     </p>
   </article>;
 }
@@ -115,6 +117,7 @@ export function SiteWorkspaceResults({
   facts,
   canCreateAnalysis,
   scopedCompareHref,
+  visualContext = null,
 }: {
   sitePath: string;
   areaLabel: string | null;
@@ -128,7 +131,10 @@ export function SiteWorkspaceResults({
   facts: WorkspaceServerFacts;
   canCreateAnalysis: boolean;
   scopedCompareHref: string;
+  /** 탐색 중이던 시각 쌍 맥락 — 결과의 frozen 입력과 구분해 복귀한다. */
+  visualContext?: { workAreaId: string; visualAAssetRef: string; visualBAssetRef: string } | null;
 }) {
+  const normalizedVisualContext = visualContext ?? null;
   const explicitReady = explicitResult?.status === "ready" && explicitDetail ? explicitDetail : null;
   // 원래 입력(기준·현재 선택자)을 현재 프로젝션 버전에서 찾는다 — 없으면
   // 기록을 바꾸지 않고 그대로 둔다고 밝힌다.
@@ -164,8 +170,24 @@ export function SiteWorkspaceResults({
       .join(" · ") || null
     : null;
   const leadPairUnknown = Boolean(leadItem && leadDetail && leadDetail.analysisId === leadItem.analysisId && leadPairLine === null);
+  // 탐색 복귀 주소 — 검증된 시각 쌍 맥락만 싣는다. 구역이 바뀌면 쌍을 싣지 않고
+  // 비교 모드 주소로만 둔다(조용히 다른 구역의 쌍을 복원하지 않는다).
+  // 탐색 복귀 쿼리 — 정식 맥락에서만 덧붙인다. frozen 기록 식별자는 그대로 둔다.
+  const visualQuery = normalizedVisualContext
+    ? `&visualAAssetRef=${encodeURIComponent(normalizedVisualContext.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(normalizedVisualContext.visualBAssetRef)}`
+    : "";
+  const visualReturnHref = normalizedVisualContext
+    ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(normalizedVisualContext.workAreaId)}${visualQuery}`
+    : null;
   return <div className="flex flex-col gap-3">
     <h2 className="text-[14px] font-bold">결과와 근거{areaLabel ? ` · ${areaLabel}` : ""}</h2>
+    {visualReturnHref && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+        탐색 중이던 독립 보기 쌍이 있습니다.{" "}
+        <Link href={visualReturnHref} className="tap-target underline">독립 보기로 돌아가기</Link>
+        <span className="text-ink-muted"> · 돌아가면 같은 두 자료·층을 그대로 둡니다. 이 결과의 계산 입력과는 다를 수 있습니다.</span>
+      </p>
+    )}
 
     {explicitResult?.status === "unresolvable" && (
       <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -202,8 +224,15 @@ export function SiteWorkspaceResults({
               : " — 나머지 입력은 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다."}
           </p>;
         })()}
+        {normalizedVisualContext && (
+          <p className="mt-1 text-[12px] leading-5 text-ink-2">
+            탐색 중 자료와 이 결과의 계산 입력은 다를 수 있습니다. 위의 원래 입력이 이 결과의 계산 입력이며,
+            탐색 중 자료는 독립 보기 쌍 그대로 둡니다.{" "}
+            <Link href={visualReturnHref!} className="tap-target underline">독립 보기로 돌아가기</Link>
+          </p>
+        )}
         <p className="mt-1">
-          <Link href={`${sitePath}/analysis?analysisId=${encodeURIComponent(explicitReady.analysisId)}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
+          <Link href={`${sitePath}/analysis?analysisId=${encodeURIComponent(explicitReady.analysisId)}${explicitReady.workAreaId && normalizedVisualContext && explicitReady.workAreaId === normalizedVisualContext.workAreaId ? `&workAreaId=${encodeURIComponent(explicitReady.workAreaId)}${visualQuery}` : ""}`} className="tap-target inline-block text-[12px] underline">자료·근거와 검토 보기</Link>
         </p>
       </article>
     ) : !analysesKnown || areaAnalyses === null ? (
@@ -217,12 +246,12 @@ export function SiteWorkspaceResults({
     ) : (
       <div className="flex flex-col gap-2">
         {/* 첫 화면은 가장 최근 기록 하나다. 나머지는 겹쳐 두지 않고 펼침에 둔다. */}
-        <RecordCard item={areaAnalyses[0]!} sitePath={sitePath} lead pairLine={leadPairLine} pairUnknown={leadPairUnknown} />
+        <RecordCard item={areaAnalyses[0]!} sitePath={sitePath} lead pairLine={leadPairLine} pairUnknown={leadPairUnknown} visualQuery={visualQuery} />
         {areaAnalyses.length > 1 && (
           <details className="rounded-lg border border-line px-4 py-3">
             <summary className="tap-target cursor-pointer text-[13px] font-semibold">이전 기록 {areaAnalyses.length - 1}건</summary>
             <div className="mt-2 flex flex-col gap-2">
-              {areaAnalyses.slice(1).map((item) => <RecordCard key={item.analysisId} item={item} sitePath={sitePath} />)}
+              {areaAnalyses.slice(1).map((item) => <RecordCard key={item.analysisId} item={item} sitePath={sitePath} visualQuery={visualQuery} />)}
             </div>
           </details>
         )}

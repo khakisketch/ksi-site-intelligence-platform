@@ -312,3 +312,146 @@ export function siteTabHref(
   const search = params.toString();
   return search ? `${base}?${search}` : base;
 }
+
+/** 시각 쌍 둘러보기 맥락 — 같은 구역의 두 정확한 자료 참조만 싣는다. */
+export type VisualBrowsingContext = {
+  workAreaId: string;
+  visualAAssetRef: string;
+  visualBAssetRef: string;
+};
+
+function isScopedAssetRef(value: string): boolean {
+  return /^ksa-v1-[0-9a-f]{64}$/.test(value);
+}
+
+function trimmedContextId(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > MAX_JOURNEY_SCOPE_ID_LENGTH) return null;
+  return trimmed;
+}
+
+/**
+ * 시각 쌍 복귀 맥락 해석 — 모양(shape)만 본다. 권위(authorization)·범위
+ * 확인이 아니며, 해석 결과를 권위 있는 값으로 취급하지 않는다. 구역·양쪽
+ * 참조가 모두 있고 서로 다를 때만 둔다. 토큰·바이트 URL·외부 참조를 싣지
+ * 않는다. 받는 화면이 같은 구역의 카탈로그·프로젝션과 재대조해야 한다.
+ */
+export function parseVisualBrowsingContext(input: {
+  workAreaId?: unknown;
+  visualAAssetRef?: unknown;
+  visualBAssetRef?: unknown;
+}): VisualBrowsingContext | null {
+  const workAreaId = trimmedContextId(input.workAreaId);
+  const visualAAssetRef = trimmedContextId(input.visualAAssetRef);
+  const visualBAssetRef = trimmedContextId(input.visualBAssetRef);
+  if (!workAreaId || !visualAAssetRef || !visualBAssetRef) return null;
+  if (visualAAssetRef === visualBAssetRef) return null;
+  if (!isScopedAssetRef(visualAAssetRef) || !isScopedAssetRef(visualBAssetRef)) return null;
+  return { workAreaId, visualAAssetRef, visualBAssetRef };
+}
+
+/**
+ * 작업공간 복귀 주소 — 검증된 시각 쌍 맥락만 싣는다. 임의 returnTo·개방
+ * 리다이렉트를 만들지 않으며, 원문 쿼리 값을 그대로 옮기지 않는다.
+ * 구역이 바뀌면 쌍을 싣지 않는다(조용히 다른 구역의 쌍을 복원하지 않는다).
+ */
+export function visualBrowsingReturnHref(
+  sitePath: string,
+  context: VisualBrowsingContext | null,
+  workAreaId: string | null,
+): string {
+  if (!context || !workAreaId || context.workAreaId !== workAreaId) {
+    return workAreaId ? `${sitePath}?mode=compare&workAreaId=${encodeURIComponent(workAreaId)}` : `${sitePath}?mode=compare`;
+  }
+  const query = new URLSearchParams();
+  query.set("mode", "compare");
+  query.set("workAreaId", context.workAreaId);
+  query.set("visualAAssetRef", context.visualAAssetRef);
+  query.set("visualBAssetRef", context.visualBAssetRef);
+  return `${sitePath}?${query.toString()}`;
+}
+
+export type ExactAnalysisSelectorHint = {
+  workOrderId: string;
+  submissionRef: string;
+  revision: number;
+};
+
+export type ExactAnalysisCandidate = {
+  selector: { workOrderId: string; submissionRef: string; revision: number };
+  workAreaIds: readonly string[];
+};
+
+/**
+ * 변화 분석 정확한 선택자 힌트 해석 — 작업지시·제출 묶음·버전의 정확한
+ * 일치가 같은 구역에 정확히 하나 있을 때만 미리 고른다. WorkOrder 근사·
+ * 최신·날짜 유추를 하지 않는다. 모호하거나 후보에 없거나 날짜만으로 온
+ * 값은 고르지 않고 사유를 둔다. 보류 시도·딥링크가 있으면 호출자가 먼저
+ * 가른다(여기서는 힌트를 쓰지 않는다).
+ */
+export function resolveExactAnalysisSelectorHints(input: {
+  candidates: readonly ExactAnalysisCandidate[];
+  workAreaId: string;
+  rawBaseline?: { workOrderId: unknown; submissionRef: unknown; revision: unknown };
+  rawCurrent?: { workOrderId: unknown; submissionRef: unknown; revision: unknown };
+  hasPendingAttempt: boolean;
+  hasAnalysisDeepLink: boolean;
+}): {
+  baseline: ExactAnalysisSelectorHint | null;
+  current: ExactAnalysisSelectorHint | null;
+  notice: string | null;
+} {
+  const empty = { baseline: null, current: null, notice: null };
+  if (input.hasPendingAttempt || input.hasAnalysisDeepLink) return empty;
+  if (!input.workAreaId) return empty;
+  if (!input.rawBaseline && !input.rawCurrent) return empty;
+  const parseHint = (raw: { workOrderId: unknown; submissionRef: unknown; revision: unknown } | undefined): ExactAnalysisSelectorHint | "invalid" | null => {
+    if (!raw) return null;
+    if (typeof raw.workOrderId !== "string" || raw.workOrderId.trim().length === 0 || raw.workOrderId.length > MAX_JOURNEY_SCOPE_ID_LENGTH) return "invalid";
+    if (typeof raw.submissionRef !== "string" || !/^ers-v1-[0-9a-f]{64}$/.test(raw.submissionRef)) return "invalid";
+    const revision = typeof raw.revision === "string" && /^\d+$/.test(raw.revision.trim()) ? Number(raw.revision.trim()) : raw.revision;
+    if (typeof revision !== "number" || !Number.isSafeInteger(revision) || revision <= 0) return "invalid";
+    return { workOrderId: raw.workOrderId, submissionRef: raw.submissionRef, revision };
+  };
+  const baselineHint = parseHint(input.rawBaseline);
+  const currentHint = parseHint(input.rawCurrent);
+  if (baselineHint === "invalid" || currentHint === "invalid") {
+    return {
+      baseline: null,
+      current: null,
+      notice: "요청한 관측을 분석 후보에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.",
+    };
+  }
+  const scoped = input.candidates.filter((candidate) => candidate.workAreaIds.includes(input.workAreaId));
+  const match = (hint: ExactAnalysisSelectorHint | null) => {
+    if (!hint) return null;
+    const hits = scoped.filter((candidate) =>
+      candidate.selector.workOrderId === hint.workOrderId &&
+      candidate.selector.submissionRef === hint.submissionRef &&
+      candidate.selector.revision === hint.revision);
+    if (hits.length !== 1) return "ambiguous" as const;
+    return hint;
+  };
+  const baseline = match(baselineHint);
+  const current = match(currentHint);
+  if (baseline === "ambiguous" || current === "ambiguous") {
+    return {
+      baseline: null,
+      current: null,
+      notice: "요청한 관측이 분석 후보와 정확히 맞지 않아 자동으로 고르지 않았습니다. 기준·현재 관측을 직접 선택하세요.",
+    };
+  }
+  if (baseline && current
+    && baseline.workOrderId === current.workOrderId
+    && baseline.submissionRef === current.submissionRef
+    && baseline.revision === current.revision) {
+    return {
+      baseline: null,
+      current: null,
+      notice: "요청한 기준·현재 관측이 서로 같아 자동으로 고르지 않았습니다. 서로 다른 두 관측을 직접 선택하세요.",
+    };
+  }
+  if (!baseline && !current) return empty;
+  return { baseline, current, notice: null };
+}

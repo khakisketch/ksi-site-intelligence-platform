@@ -34,19 +34,29 @@ export function resolveSiteAreaNextAction(input: {
   canCreateWorkOrder: boolean;
   canCreateAnalysis: boolean;
   latestAnalysis: { workAreaId: string; analysisId: string } | null;
+  /** 정식 쌍의 인계 쿼리(힌트 6건 + 복귀 참조 2건) — 분석 이동에만 덧붙인다. */
+  pairQuery?: string | null;
 }): SiteAreaNextAction {
-  const { sitePath, workAreaId, workAreaStatus, canCreateWorkOrder, canCreateAnalysis, latestAnalysis } = input;
+  const { sitePath, workAreaId, workAreaStatus, canCreateWorkOrder, canCreateAnalysis, latestAnalysis, pairQuery } = input;
   const active = workAreaStatus === "ACTIVE";
+  const withPair = (href: string): string => {
+    if (!pairQuery) return href;
+    const hashIndex = href.indexOf("#");
+    const base = hashIndex >= 0 ? href.slice(0, hashIndex) : href;
+    const hash = hashIndex >= 0 ? href.slice(hashIndex) : "";
+    const separator = base.includes("?") ? "&" : "?";
+    return `${base}${separator}${pairQuery}${hash}`;
+  };
   const scopedRegisterHref = `${sitePath}/observations/new?workAreaId=${encodeURIComponent(workAreaId)}`;
-  const scopedCompareHref = `${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}#new-analysis-request`;
-  const scopedAnalysisListHref = active
+  const scopedCompareHref = withPair(`${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}#new-analysis-request`);
+  const scopedAnalysisListHref = withPair(active
     ? `${sitePath}/analysis?workAreaId=${encodeURIComponent(workAreaId)}`
-    : `${sitePath}/analysis`;
+    : `${sitePath}/analysis`);
   const canRegisterHere = canCreateWorkOrder && active;
   const canCompareHere = canCreateAnalysis && active;
   const primary = latestAnalysis
     ? {
-      href: `${sitePath}/analysis?workAreaId=${encodeURIComponent(latestAnalysis.workAreaId)}&analysisId=${encodeURIComponent(latestAnalysis.analysisId)}`,
+      href: withPair(`${sitePath}/analysis?workAreaId=${encodeURIComponent(latestAnalysis.workAreaId)}&analysisId=${encodeURIComponent(latestAnalysis.analysisId)}`),
       label: "이 구역의 최근 분석 확인",
     }
     : {

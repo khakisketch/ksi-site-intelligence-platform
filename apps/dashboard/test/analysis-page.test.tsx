@@ -2,13 +2,14 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), workOrders: vi.fn(), list: vi.fn(), detail: vi.fn() }));
+const mocked = vi.hoisted(() => ({ session: vi.fn(), site: vi.fn(), areas: vi.fn(), observations: vi.fn(), workOrders: vi.fn(), list: vi.fn(), detail: vi.fn(), catalog: vi.fn() }));
 vi.mock("@/app/field/resolve-session", () => ({ resolveFieldSession: mocked.session }));
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
 vi.mock("@/lib/core-api/workAreas", () => ({ listWorkAreas: mocked.areas }));
+vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.catalog }));
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalysisObservations: mocked.observations, listAnalyses: mocked.list, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/observation-work-orders", () => ({ listObservationWorkOrders: mocked.workOrders }));
-vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p></> }));
+vi.mock("@/app/sites/[siteId]/analysis/AnalysisRequestPanel", () => ({ AnalysisRequestPanel: ({ initialPage, initialAnalysisId, initialSelectedDetail, observations, unattributedObservationCount, workOrderNames, initialWorkAreaId, scopeNotice, ...extra }: { initialPage: { items: Array<{ analysisId: string }> }; initialAnalysisId: string; initialSelectedDetail: { analysisId: string } | null; observations: Array<{ observationEpochId: string; workAreaIds: string[] }>; unattributedObservationCount: number; workOrderNames: Record<string, string>; initialWorkAreaId?: string; scopeNotice?: string | null; [key: string]: unknown }) => <><p>{`${initialAnalysisId}:${initialSelectedDetail?.analysisId ?? "none"}:${initialPage.items.map((item) => item.analysisId).join(",")}`}</p><p data-testid="panel-attribution">{`${observations.map((item) => `${item.observationEpochId}:${item.workAreaIds.join(",")}`).join(";")}|unknown:${unattributedObservationCount}`}</p><p data-testid="panel-work-names">{Object.entries(workOrderNames ?? {}).map(([id, name]) => `${id}=${name}`).join(";")}</p><p data-testid="panel-scope">{`${initialWorkAreaId ?? ""}|${scopeNotice ?? ""}`}</p><p data-testid="panel-exact">{JSON.stringify(extra)}</p></> }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },
   useRouter: () => ({ refresh: vi.fn() }),
@@ -27,6 +28,7 @@ beforeEach(() => {
   mocked.workOrders.mockResolvedValue([]);
   mocked.list.mockResolvedValue({ siteId: "site-1", items: [], nextCursor: null });
   mocked.detail.mockResolvedValue(null);
+  mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets: [] });
 });
 
 describe("analysis deep link", () => {
@@ -261,5 +263,60 @@ describe("browse source return scope", () => {
     expect(screen.getByTestId("panel-scope").textContent?.startsWith("|")).toBe(true);
     expect(screen.getAllByRole("link", { name: "공간 보기" })[0]?.getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getAllByRole("link", { name: "자료" })[0]?.getAttribute("href")).toBe("/sites/site-1/spatial-assets");
+  });
+});
+
+
+describe("routed independent-pair analysis handoff", () => {
+  const a = `ksa-v1-${"a".repeat(64)}`, b = `ksa-v1-${"b".repeat(64)}`;
+  const sa = `ers-v1-${"a".repeat(64)}`, sb = `ers-v1-${"b".repeat(64)}`;
+  const base = { workOrderId: "work-a", submissionRef: sa, revision: 1 };
+  const current = { workOrderId: "work-b", submissionRef: sb, revision: 2 };
+  const hints = { hintBaselineWorkOrderId: "work-a", hintBaselineSubmissionRef: sa, hintBaselineRevision: "1",
+    hintCurrentWorkOrderId: "work-b", hintCurrentSubmissionRef: sb, hintCurrentRevision: "2" };
+  function setupPair() {
+    mocked.areas.mockResolvedValue({ workAreas: [{ workAreaId: "area-1", name: "북측", status: "ACTIVE" }] });
+    mocked.observations.mockResolvedValue([
+      { selector: base, observationEpochId: "epoch-a", captureStartedAt: "2026-10-06T00:00:00Z", captureEndedAt: "2026-10-06T01:00:00Z" },
+      { selector: current, observationEpochId: "epoch-b", captureStartedAt: "2026-10-13T00:00:00Z", captureEndedAt: "2026-10-13T01:00:00Z" },
+    ]);
+    mocked.workOrders.mockResolvedValue(["work-a", "work-b"].map((workOrderId) => ({ workOrderId, siteId: "site-1", organizationId: "org-1", workAreaIds: ["area-1"] })));
+    mocked.catalog.mockResolvedValue({ siteId: "site-1", workAreaId: "area-1", assets: [a,b].map((assetRef) => ({ assetRef, siteId: "site-1", workAreaId: "area-1" })) });
+  }
+  const panelProps = () => JSON.parse(screen.getByTestId("panel-exact").textContent!);
+  it("does not create a missing-hint warning or extra catalogue request on an ordinary visit", async () => {
+    setupPair();
+    render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1"}) }));
+    expect(panelProps().exactHintNotice).toBeNull();
+    expect(panelProps().initialBaselineSelector).toBeNull();
+    expect(mocked.catalog).not.toHaveBeenCalled();
+  });
+  it("validates exact draft selectors and the separate return pair at the receiving route", async () => {
+    setupPair();
+    render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1", visualAAssetRef:a, visualBAssetRef:b, ...hints}) }));
+    const props = panelProps();
+    expect(props.initialBaselineSelector).toEqual(base);
+    expect(props.initialCurrentSelector).toEqual(current);
+    expect(props.exactHintNotice).toBeNull();
+    expect(props.visualContext).toEqual({workAreaId:"area-1",visualAAssetRef:a,visualBAssetRef:b});
+    expect(props.visualReturnHref).toContain(`visualAAssetRef=${a}`);
+    expect(mocked.catalog).toHaveBeenCalledTimes(1);
+  });
+  it("rejects repeated exact hints and never falls back to a WorkOrder approximation", async () => {
+    setupPair();
+    render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1", ...hints, hintBaselineRevision:["1","2"], currentWorkOrderId:"work-b"}) }));
+    const props = panelProps();
+    expect(props.initialBaselineSelector).toBeNull();
+    expect(props.initialCurrentSelector).toBeNull();
+    expect(props.initialCurrentWorkOrderId).toBeNull();
+    expect(props.exactHintNotice).toContain("직접 선택");
+  });
+  it("drops return context when the metadata page contradicts its scope", async () => {
+    setupPair();
+    mocked.catalog.mockResolvedValue({siteId:"other-site",workAreaId:"area-1",assets:[a,b].map((assetRef)=>({assetRef,siteId:"other-site",workAreaId:"area-1"}))});
+    render(await SiteAnalysisPage({ params: Promise.resolve({siteId:"site-1"}), searchParams: Promise.resolve({workAreaId:"area-1",visualAAssetRef:a,visualBAssetRef:b}) }));
+    expect(panelProps().visualContext).toBeNull();
+    expect(panelProps().visualReturnHref).toBeNull();
+    expect(panelProps().visualContextNotice).toContain("확인하지 못");
   });
 });

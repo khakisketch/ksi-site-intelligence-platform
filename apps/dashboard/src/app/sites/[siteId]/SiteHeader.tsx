@@ -43,6 +43,7 @@ export function SiteHeader({
   canEditAoi,
   scopedWorkAreaId = null,
   scopedAssetRef = null,
+  visualContext = null,
 }: {
   site: SiteView;
   selectedEpochId: string | null;
@@ -56,12 +57,39 @@ export function SiteHeader({
   scopedWorkAreaId?: string | null;
   /** 같은 등록 자료 목록에서 확인한 자산 참조 — 구역과 함께일 때만 싣는다. */
   scopedAssetRef?: string | null;
+  /** 탐색 중이던 시각 쌍 맥락 — 현황·분석 이동에 그대로 싣고 받는 화면이 재대조한다. */
+  visualContext?: {
+    workAreaId: string;
+    visualAAssetRef: string;
+    visualBAssetRef: string;
+    hintBaseline?: { workOrderId: string; submissionRef: string; revision: number };
+    hintCurrent?: { workOrderId: string; submissionRef: string; revision: number };
+  } | null;
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { section: tab, epoch: selectedEpochId ?? undefined };
   const scope: SiteHeaderScope = {
     workAreaId: scopedWorkAreaId ?? null,
     assetRef: scopedAssetRef ?? null,
+  };
+  // 시각 쌍 맥락은 같은 구역의 정식 사실일 때만 싣는다. 원문 쿼리를 그대로
+  // 두지 않으며, 받는 화면이 서버 목록과 재대조한다. 구역이 바뀌면 쌍을 싣지 않는다.
+  const visualScope = visualContext && scope.workAreaId && visualContext.workAreaId === scope.workAreaId
+    ? visualContext
+    : null;
+  const withVisual = (href: string, includeHints = false): string => {
+    if (!visualScope) return href;
+    const separator = href.includes("?") ? "&" : "?";
+    let suffix = `visualAAssetRef=${encodeURIComponent(visualScope.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(visualScope.visualBAssetRef)}`;
+    if (includeHints && visualScope.hintBaseline && visualScope.hintCurrent) {
+      suffix += `&hintBaselineWorkOrderId=${encodeURIComponent(visualScope.hintBaseline.workOrderId)}`
+        + `&hintBaselineSubmissionRef=${encodeURIComponent(visualScope.hintBaseline.submissionRef)}`
+        + `&hintBaselineRevision=${encodeURIComponent(String(visualScope.hintBaseline.revision))}`
+        + `&hintCurrentWorkOrderId=${encodeURIComponent(visualScope.hintCurrent.workOrderId)}`
+        + `&hintCurrentSubmissionRef=${encodeURIComponent(visualScope.hintCurrent.submissionRef)}`
+        + `&hintCurrentRevision=${encodeURIComponent(String(visualScope.hintCurrent.revision))}`;
+    }
+    return `${href}${separator}${suffix}`;
   };
   const preparationAction = resolveSiteOperatorNextAction(site, {
     canEditSite: canEditAoi,
@@ -155,7 +183,7 @@ export function SiteHeader({
         {headerTabs.map((option) => (
           <Link
             key={option.key}
-            href={hrefWith(site.siteId, current, { section: option.key }, scope)}
+            href={option.key === "analysis" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : option.key === "overview" || option.key === "materials" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope)) : hrefWith(site.siteId, current, { section: option.key }, scope)}
             aria-current={option.key === activeTab ? "page" : undefined}
             className={`tap-target flex items-center justify-center rounded-md px-2 text-[12.5px] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 sm:justify-start sm:px-3 sm:text-[13px] ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
           >

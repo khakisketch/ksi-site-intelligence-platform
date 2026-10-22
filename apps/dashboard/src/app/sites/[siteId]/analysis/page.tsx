@@ -7,12 +7,13 @@ import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-api/analysis";
+import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { getSite } from "@/lib/core-api/sites";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
-import { resolveAnalysisCurrentHint, resolveAnalysisScope } from "@/lib/operator-journey";
+import { resolveAnalysisCurrentHint, resolveAnalysisScope, resolveExactAnalysisSelectorHints, parseVisualBrowsingContext, visualBrowsingReturnHref } from "@/lib/operator-journey";
 import { AnalysisRequestPanel } from "./AnalysisRequestPanel";
 import { parseScopeId } from "../site-spatial";
 
@@ -20,7 +21,7 @@ export const metadata = { title: "현장 변화 분석 · KSI" };
 
 export default async function SiteAnalysisPage({ params, searchParams }: {
   params: Promise<{ siteId: string }>;
-  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[]; assetRef?: string | string[] }>;
+  searchParams: Promise<{ analysisId?: string | string[]; workAreaId?: string | string[]; currentWorkOrderId?: string | string[]; assetRef?: string | string[]; visualAAssetRef?: string | string[]; visualBAssetRef?: string | string[]; hintBaselineWorkOrderId?: string | string[]; hintBaselineSubmissionRef?: string | string[]; hintBaselineRevision?: string | string[]; hintCurrentWorkOrderId?: string | string[]; hintCurrentSubmissionRef?: string | string[]; hintCurrentRevision?: string | string[] }>;
 }) {
   const [{ siteId }, query] = await Promise.all([params, searchParams]);
   const single = (value: string | string[] | undefined): string | undefined =>
@@ -104,15 +105,77 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
   const deeplinkArea = loaded?.selectedDetail?.workAreaId
     ?? (hasDeepLink ? loaded?.analyses.items.find((item) => item.analysisId === analysisId)?.workAreaId ?? "" : "");
   const effectiveWorkAreaId = hasDeepLink ? (deeplinkArea ?? "") : journeyScope.initialWorkAreaId;
-  const currentHint = loaded
+  // 정확한 선택자 인계 힌트 — 키가 하나라도 있으면 정확 모드다. 원문 값을
+  // 그대로 넘기며(반복 배열을 첫 값으로 접지 않는다), 일부만 있거나 배열이면
+  // invalid 경로로 둔다. 정확 모드가 켜지면 WorkOrder 근사로 돌아가지 않는다.
+  const hintKeys = [
+    query.hintBaselineWorkOrderId, query.hintBaselineSubmissionRef, query.hintBaselineRevision,
+    query.hintCurrentWorkOrderId, query.hintCurrentSubmissionRef, query.hintCurrentRevision,
+  ] as const;
+  const hintModeSupplied = hintKeys.some((value) => value !== undefined);
+  const exactHint = loaded
+    ? resolveExactAnalysisSelectorHints({
+        candidates: loaded.attributedObservations,
+        workAreaId: effectiveWorkAreaId,
+        rawBaseline: hintKeys[0] !== undefined || hintKeys[1] !== undefined || hintKeys[2] !== undefined
+          ? {
+              workOrderId: query.hintBaselineWorkOrderId,
+              submissionRef: query.hintBaselineSubmissionRef,
+              revision: query.hintBaselineRevision,
+            }
+          : undefined,
+        rawCurrent: hintKeys[3] !== undefined || hintKeys[4] !== undefined || hintKeys[5] !== undefined
+          ? {
+              workOrderId: query.hintCurrentWorkOrderId,
+              submissionRef: query.hintCurrentSubmissionRef,
+              revision: query.hintCurrentRevision,
+            }
+          : undefined,
+        hasPendingAttempt: false,
+        hasAnalysisDeepLink: hasDeepLink,
+      })
+    : { baseline: null, current: null, notice: null };
+  const currentHint = loaded && !hintModeSupplied
     ? resolveAnalysisCurrentHint({
         candidates: loaded.attributedObservations,
         workAreaId: effectiveWorkAreaId,
-        rawCurrentWorkOrderId: single(query.currentWorkOrderId),
+        rawCurrentWorkOrderId: query.currentWorkOrderId,
         hasPendingAttempt: false,
         hasAnalysisDeepLink: hasDeepLink,
       })
     : { currentWorkOrderId: null, notice: null };
+  // 탐색 복귀 맥락 — 모양만 본 뒤, 같은 구역의 카탈로그와 한 번만 대조한다
+  // (메타데이터 1회 읽기, 바이트 없음). 묶이지 않은 참조는 버리고 사유를 둔다.
+  const visualShape = parseVisualBrowsingContext({
+    workAreaId: query.workAreaId ?? effectiveWorkAreaId,
+    visualAAssetRef: query.visualAAssetRef,
+    visualBAssetRef: query.visualBAssetRef,
+  });
+  let visualContext = visualShape && effectiveWorkAreaId && visualShape.workAreaId === effectiveWorkAreaId
+    ? visualShape
+    : null;
+  const visualSupplied = query.visualAAssetRef !== undefined || query.visualBAssetRef !== undefined;
+  let visualContextNotice: string | null = visualSupplied && !visualContext
+    ? "요청한 탐색 맥락을 확인하지 못했습니다. 작업구역을 직접 선택하세요."
+    : null;
+  if (visualContext && effectiveWorkAreaId) {
+    try {
+      const page = await listSpatialAssets(siteId, effectiveWorkAreaId, { limit: 50 });
+      const boundRefs = new Set(page.siteId === siteId && page.workAreaId === effectiveWorkAreaId
+        ? page.assets.filter((item) => item.siteId === siteId && item.workAreaId === effectiveWorkAreaId).map((item) => item.assetRef)
+        : []);
+      if (!boundRefs.has(visualContext.visualAAssetRef) || !boundRefs.has(visualContext.visualBAssetRef)) {
+        visualContext = null;
+        visualContextNotice = "요청한 탐색 맥락의 자료를 이 구역에서 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.";
+      }
+    } catch {
+      visualContext = null;
+      visualContextNotice = "탐색 맥락을 확인하지 못했습니다. 기준·현재 관측을 직접 선택하세요.";
+    }
+  }
+  const visualReturnHref = visualContext && effectiveWorkAreaId
+    ? visualBrowsingReturnHref(`/sites/${encodeURIComponent(siteId)}`, visualContext, effectiveWorkAreaId)
+    : null;
   // 목록을 읽지 못해 검증된 범위가 없을 때는 사용자가 가져온 쿼리를 그대로 믿지
   // 않고 다듬은 값만 복귀 링크에 싣는다. 목적지(등록 자료)가 범위를 다시 검증해
   // 닫히므로(모르는 구역은 실패 공지), 여기서 자료 유효성을 단정하지 않는다.
@@ -134,6 +197,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       canEditAoi={canCreate}
       scopedWorkAreaId={effectiveWorkAreaId || null}
       scopedAssetRef={headerAssetRef}
+      visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
     />
     <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
@@ -171,6 +235,12 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
           initialCurrentWorkOrderId={currentHint.currentWorkOrderId}
           scopeNotice={journeyScope.scopeNotice}
           currentHintNotice={currentHint.notice}
+          initialBaselineSelector={exactHint.baseline}
+          initialCurrentSelector={exactHint.current}
+          exactHintNotice={exactHint.notice}
+          visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
+          visualReturnHref={visualReturnHref}
+          visualContextNotice={visualContextNotice}
         />
       </> : <div className="flex flex-col gap-3">
         <ErrorState message={denied ? "현장 변화 분석을 조회할 권한이 없습니다. 현장 담당자에게 변화 분석 기록 조회 권한을 요청하세요." : missingDetail ? "선택한 분석 기록을 찾을 수 없거나 접근할 수 없습니다. 분석 목록에서 다른 기록을 확인하세요." : unavailable ? "이 환경에서는 현장 변화 분석 기능을 사용할 수 없습니다. 등록 자료 자체의 문제가 아닙니다." : "현장 변화 분석 정보를 불러오지 못했습니다."} tone={denied ? "high" : unavailable || missingDetail ? "idle" : "crit"} retryable={!denied && !unavailable && !missingDetail} retryAfterSeconds={retryAfterSeconds} />
