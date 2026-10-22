@@ -6541,3 +6541,131 @@ availability; no further concrete UI defect remains from this review. This does 
 slice, certify mature commercial UX/competitor equivalence, establish stable preview production or
 declare the whole platform/customer/field gates complete. Stop this refinement rather than silently
 selecting a new producer, LOD/cache, unrelated redesign or shared-runtime repair.
+
+### 2026-10-22 — Human asks for a composed thumbnail where no preview exists
+
+Human: "표시할 미리보기 없다면 이전처럼, 구성되는 섬네일도 좋지 않나". Combined with the earlier
+instruction that the Console must not show users everything difficult, and that usability carries the
+product. This is a refinement of the SAME visual-entry correction, not a new product slice.
+
+Interpretation fixed before implementation: "이전처럼" refers to the fact that a card always had a
+recognisable tile, NOT to restoring the deleted `DefaultSiteVisual` (c343ee7b) — that one was a
+`siteId`-hashed decorative SVG with no relation to the site, deleted in7f4d45b1 as fabricated cover.
+INV-040 forbids mock/placeholder/static always-go, and a synthetic terrain drawing presented as a
+site image would be a fabricated data claim. A composed thumbnail is therefore built ONLY from the
+requester's own current records.
+
+Read-only fact check against the real product (bd40df2a, own session, 10010): the work-area list
+returns each ACTIVE area's real registered polygon, CRS and name for both `prod-sample-floreat-01`
+(EPSG:7850,4-vertex ring) and `prod-sample-site-01` (EPSG:5186). The registered-asset catalog
+(metadata only, `NOT_AVAILABLE_FROM_CATALOG`) lists real kind/capture/lifecycle facts for both sites
+(Floreat ortho+DSM 2021-08-17 and 2022-08-24; synthetic ortho+DSM 2026-10-13/2026-10-06). So a
+composed tile can be composed from real geometry plus real registered records without any new byte
+path, producer, grant or cache.
+
+Requirement IDs: REQ-UX-101; SDP-REQ-01/03/06; 2026-10-22 composed-thumbnail feedback. Owner module:
+Dashboard Site entry visual tile (server-side composition + client presentation) and its focused
+regression. Acceptance: (1) when a lawful prepared pixel preview exists it still wins and is
+unchanged; (2) when it does not, the card still shows a composed, site-specific tile instead of an
+empty box — the site's own real work-area boundary shape, in its real registered CRS, plus the real
+registered-asset kinds and capture periods; (3) the tile is unmistakably NOT imagery: it says so in
+visible copy and in the accessible name, claims no coverage/accuracy/completeness, and is never
+described as a photo; (4) an empty/absent record set produces an honest plain state, not an invented
+shape; (5) no new Core API/schema/producer/grant/retention/cache/byte path, no coordinate
+reprojection, no external tile/basemap, no fake CRS, and no automatic job; (6) exact-area deep link
+and the current permission/ownership/scope checks are unchanged; (7) the tile is legible at390 and
+1440 and does not push the card's identity/action below the fold.
+Contracts affected: none (read-only reuse of the existing work-area list and existing metadata-only
+catalog; presentation only). INV-020/024/040/051/053/060/061 preserved: real geometry is drawn in its
+own registered CRS without reprojection or unit claims, no accuracy or completeness claim, no
+placeholder data, no cross-principal disclosure, no change to source/derivative authority, and
+analysis/readiness/rights semantics stay separate. Reference assets: current bd40 real renders and
+the read-only probes above; the existing `SiteNativeExtentSvg` native-plane projection rules and
+`site-spatial.ts` ring/CRS/unit helpers are the adopted reference for drawing real boundaries
+honestly. Adoption: reuse the incumbent native-plane projection and existing tokens, one composed
+tile type shared by card/list/phone, no new component library, font, tile service or dependency.
+Files: Site list visual tile composition + its presentation component and focused tests; the existing
+preview BFF/route/decoder stay as they are unless the composition needs a bounded metadata read
+(reuse `listWorkAreas`/catalog metadata only). Tests: composed-tile selection (real geometry +
+real records), CRS/unit honesty, no-geometry/no-record honest empty state, real-pixel priority,
+no-catalog-byte-access, exact deep link unchanged, existing preview/permission suites preserved,
+full Dashboard + type/lint + locked image, and actual private renders at390/768/1024/1440 read by
+Primary. HIL: none; physical touch/SR/customer study remain separate. License/data: no new egress
+or storage; only current-session metadata already authorized for the visible site. Rollback: owned
+frontend bd40df2a image plus the inverse of the composition diff; no data/journal/env/S3 change.
+
+Stop rule: a composed tile may show only the site's own real registered geometry and real
+registered-asset facts. If the honest composition cannot be drawn, the card shows the plain
+unavailable state. Never fall back to decoration, seeded art, a stock coastline or any pixel that
+is not the requester's currently permitted prepared output.
+
+#### Composed thumbnail + first-screen declutter — delivered 2026-10-22
+
+Human asked for the composed thumbnail where no preview exists, then asked to apply everything
+discussed: "처음 보는 사람이 자료와 다음 행동부터 이해하도록, 화면을 덜어내는 방향으로" — first
+screen = site, capture date, data and the main action; long ids, hashes, processing history and
+technical settings behind on-demand disclosure; fewer duplicate titles/menus/explanations and bigger
+actual data; operator language instead of internal system terms; **but decision-relevant limits
+(부분 범위, 분석 불가, 정확도 미확인) stay visible next to the related action**. "사용성이 그런게
+제일 중요하니까 제품은" and "사용자들이 봤을 때 너무 어렵고 불편한 내용까지 다 보여줄 필요 없어".
+
+**Composed tile (real records only).** The deleted `DefaultSiteVisual` was a `siteId`-hashed
+decorative SVG with no relation to the site (c343ee7b → deleted 7f4d45b1) and was NOT restored.
+Instead the tile is composed from the requester's own records: the site's real registered ACTIVE
+work-area boundary drawn in its own registered CRS (no reprojection, no basemap, no fake CRS, no
+hillshade/photo styling) plus the real registered-asset kinds and capture periods (≤8 facts, honest
+`외 N건`/`외 더 있음`/`N건 이상` when truncated). Visible copy and accessible name both say
+**범위 도식 · 사진 아님**; the row cue carries a `도식` badge. The server aggregates in the sites
+page with the same session (≤6 areas, ≤50 catalog items/area, ≤8 facts, ≤48 sites/render, 6
+concurrent); a per-site failure (including 403/404) yields no descriptor, so the existing honest
+empty/unknown copy remains. The client re-validates the descriptor and rebuilds the expected href
+locally (`sanitizeSiteVisualTileDescriptor`), so a foreign/absolute/swapped URL cannot render.
+**Real pixels still win**: the composed branch is reachable only when the preview lookup is
+empty/unknown. No bytes, object keys, signed URLs, catalog `dataAccess`, automatic PREPARE/inspection,
+new Core endpoint/schema/producer/grant/retention/cache, or cross-principal disclosure.
+
+**First-screen declutter (site detail explore).** The side column now leads with the next action
+instead of counters; 관측 작업/분석 결과/외부 비교 기록 counts, registered area name/date/CRS and
+ids moved into a `구역 등록 정보·개수` disclosure. The shared `SiteAreaNextAction` /
+`resolveSiteAreaNextAction` pair is used by BOTH the explore first screen and the overview column
+so one area never proposes two different actions; on the explore screen the primary action appears
+**above the picture** with the other entries behind a `다른 보기` disclosure. The always-visible
+gesture hint was shortened. `SiteHeader` and `SiteExploreCanvas` were left alone on judgement:
+they are already collapsed/quiet and their wording is test-pinned, and the `선택 중 · 등록 버전 N ·
+날짜만 확인 · 시각 미상` line is the only place that precision fact appears.
+
+**Defect found by actual rendering and fixed.** The first composed build left every card stuck at
+"미리보기 불러오는 중": the composed descriptor was re-created on every render, so the preview
+effect's dependency changed each time and the lookup restarted in a loop. Fixed by memoizing the
+validated descriptor (`useMemo` over the raw technical object) and depending on presence rather than
+identity. The jsdom suite could NOT reproduce it (the effect→render cycle does not close there), so
+a referential-stability regression was added and verified to fail when the fix is reverted. A second
+actual defect — the caption escaping the card and pushing site identity/action off-screen on
+390px — was found in the real render and fixed by making the caption part of the figure's flow
+(`flex flex-col`, diagram `flex-1 min-h-0`, caption `shrink-0`), with a regression asserting the
+caption is not absolutely positioned.
+
+**Evidence.** Actual private10010 → owned frontend3243 → durable Core8074/issuer9042. Final
+locked build **ee3c5f4c→(current)** with **184files/1830tests** pass, host tsc and changed ESLint
+clean, mechanical detector[]. Actual renders at390/768/1024/1440 were read by Primary: the Floreat
+card keeps its real guarded pixels (510×512/259642opaque), the synthetic site shows the composed
+range diagram with its real boundary and real registered-asset facts, the caption stays inside the
+card at every width, the composed tile opens the exact work area scope
+(`wa-prod-sample-site-01-0001`), the site detail first screen prints no work-area id, asset ref
+or file name by default, and the next action is present on the first screen. Zero intercepted
+product writes and zero browser errors in every actual run.
+
+Final same-committed **68d3030a** existing isolated four-spec browser suite: **100passed, 24expected
+viewport/fixture skips, 0failed** (4.2m) with the exact sourceRevision bound in the result JSON, no
+automatic golden updates, credential-scrubbed/no-sync/offline seed profile and no 3230/8032/9030
+listener left behind. It never touched product8074, S3 or the tailnet services. Durable evidence for
+this unit: **165files** + SHA manifest at
+`~/.local/share/ksi-product-use-20261021/visual-direct-entry-68d3030a/` (current verification/ and the
+older 94925ba4 evidence kept separate so no build is relabelled).
+
+**Still true after this work.** Real prepared pixels remain the primary visual; the composed tile is
+a substitute for sites with no currently permitted output, never a photo claim. There is still **no
+always-available all-actor upload-thumbnail producer** — that is a producer/retention decision, not
+a UI one, and remains an explicit capability limit. The shared inspector audit incident stays
+unresolved and protected; no worker was started. Physical touch/SR, real customer studies, customer
+IdP/data, public production/TLS and field/settlement accuracy remain unverified/external.
