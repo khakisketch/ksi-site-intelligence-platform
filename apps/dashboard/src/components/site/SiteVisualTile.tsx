@@ -149,11 +149,14 @@ export function SiteVisualTile({ tile, size }: { tile: SiteVisualTileDescriptor;
       aria-label={label}
       className="block size-full"
     >
-      <figure className="relative size-full bg-sunk">
-        <span className="absolute inset-0">
+      <figure className="relative flex size-full flex-col bg-sunk">
+        {/* 도식은 카드 안에 남아야 한다 — 캡션이 카드 밖으로 새면 현장
+            이름·상태·다음 행동이 화면 아래로 밀려난다. 캡션이 두꺼워지면
+            도식 영역이 그만큼 줄어들도록 flex로 나눈다. */}
+        <span className="relative min-h-0 flex-1">
           <RingPolygon tile={tile} />
         </span>
-        <figcaption className="absolute right-0 bottom-0 left-0 border-t border-line bg-surface px-4 py-2">
+        <figcaption className="shrink-0 border-t border-line bg-surface px-4 py-2">
           <span className="block text-[12px] font-semibold break-keep">
             범위 도식 · 사진 아님
           </span>

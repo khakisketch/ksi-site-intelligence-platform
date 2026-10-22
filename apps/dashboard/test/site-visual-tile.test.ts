@@ -326,4 +326,22 @@ describe("SiteVisualTile rendering", () => {
     expect(screen.getByText(/외 더 있음/)).toBeTruthy();
     expect(screen.getByText(/50건 이상/)).toBeTruthy();
   });
+
+  it("keeps the caption inside the tile so identity and action stay on screen", () => {
+    // 회귀: 캡션이 절대 위치로 카드 밖에 새면, 모바일에서 현장 이름·상태·
+    // 다음 행동이 화면 아래로 밀려난다. 캡션은 흐름 안에 있어야 한다.
+    render(createElement(SiteVisualTile, { tile: validTile(), size: "card" }));
+
+    const figure = document.querySelector("figure")!;
+    const caption = document.querySelector("figcaption")!;
+    // 절대 위치가 아니라 흐름(flex) 안의 마지막 항목이다.
+    expect(caption.className).not.toMatch(/absolute/);
+    expect(caption.className).toMatch(/shrink-0/);
+    expect(figure.className).toMatch(/flex/);
+    expect(figure.className).toMatch(/flex-col/);
+    // 도식 영역은 남은 자리를 받고, 캡션이 두꺼워지면 도식이 줄어든다.
+    const diagram = figure.firstElementChild as HTMLElement;
+    expect(diagram.className).toMatch(/flex-1/);
+    expect(diagram.className).toMatch(/min-h-0/);
+  });
 });
