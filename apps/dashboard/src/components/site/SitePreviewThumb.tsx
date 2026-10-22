@@ -297,7 +297,15 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
           <div className="pb-2 text-[11.5px] leading-5 break-keep text-ink-2">
             <p>표시 구역: {preview.link.workAreaName}</p>
             {precisionFacts ? <p>{precisionFacts}</p> : null}
-            {attributionText ? <p>{attributionText}</p> : null}
+            {attributionText ? (
+              /* 출처 문장은 제출자가 적은 원문이라 길다. 사람이 읽는
+                 앞부분만 먼저 보이고 원문은 한 번 더 펼쳐야 보인다 —
+                 펼침을 열 때마다 긴 문장이 화면을 밀어내지 않게 한다. */
+              <details>
+                <summary className="tap-target cursor-pointer font-semibold">출처 · 변경 안내 전체 보기</summary>
+                <p className="mt-1">{attributionText}</p>
+              </details>
+            ) : null}
           </div>
         </details>
       )}
