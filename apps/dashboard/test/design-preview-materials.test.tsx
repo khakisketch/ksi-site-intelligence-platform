@@ -43,6 +43,9 @@ function designPreviewSourceFiles(): string[] {
     }
   };
   walk(root);
+  // 겹쳐 보기 원시 요소도 예시 전용 호출(등록 바인딩 없음)을 지킨다.
+  files.push(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "components", "site", "SpatialSwipeCompare.tsx"));
+  files.push(join(dirname(fileURLToPath(import.meta.url)), "..", "src", "lib", "spatial-swipe.ts"));
   return files;
 }
 
@@ -111,5 +114,41 @@ describe("design preview materials page", () => {
     // 등록은 실제 현장 맥락으로만 연결한다.
     expect(html).toContain("실제 현장에서 등록");
     expect(html).toContain('href="/sites"');
+  });
+});
+
+describe("design preview swipe mode", () => {
+  it("stays on side-by-side without a mode and validates the mode parameter", async () => {
+    const plain = renderToStaticMarkup(<MaterialsDesignPreview />);
+    expect(plain).not.toContain("비교 경계");
+    expect(plain).toContain("독립 보기 · 정량 비교 아님");
+
+    const swiped = renderToStaticMarkup(<MaterialsDesignPreview initialMode="swipe" />);
+    expect(swiped).toContain("비교 경계");
+    expect(swiped).toContain("표시용 겹쳐 보기 · 정량 비교 아님");
+    expect(swiped).not.toContain("독립 보기 · 정량 비교 아님");
+  });
+
+  it("opens ?mode=swipe directly and falls back to side-by-side otherwise", async () => {
+    const swiped = renderToStaticMarkup(
+      await DesignPreviewMaterialsPage({ searchParams: Promise.resolve({ mode: "swipe" }) }),
+    );
+    expect(swiped).toContain("비교 경계");
+    for (const mode of ["zoom", "", "COMPARE", ["swipe", "compare"]]) {
+      const fallback = renderToStaticMarkup(
+        await DesignPreviewMaterialsPage({ searchParams: Promise.resolve({ mode: mode as string }) }),
+      );
+      expect(fallback).not.toContain("비교 경계");
+      expect(fallback).toContain("나란히");
+    }
+  });
+
+  it("keeps the scoped return destination with the swipe entry", async () => {
+    const target = "/sites/site-return/spatial-assets?workAreaId=area-return&visualAAssetRef=ksa-v1-x";
+    const swiped = renderToStaticMarkup(
+      await DesignPreviewMaterialsPage({ searchParams: Promise.resolve({ mode: "swipe", returnTo: target }) }),
+    );
+    expect(swiped).toContain("비교 경계");
+    expect(swiped).toContain(`href="${target.replaceAll("&", "&amp;")}"`);
   });
 });

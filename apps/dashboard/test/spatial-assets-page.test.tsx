@@ -673,6 +673,9 @@ describe("materials visual browsing", () => {
     expect(html).toContain("나란히");
     expect(html).toContain("한 장으로");
     expect(html).toContain("작업공간에서 나란히 보기");
+    // 실제 경로에는 겹쳐 보기를 두지 않고, 예시로의 보조 길만 둔다.
+    expect(html).toContain("밀어서 비교 예시");
+    expect(html).toContain("/design-preview/materials?mode=swipe");
     expect(html).toContain(`visualAAssetRef=${assetRef}`);
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
     // 동기화·정합·수치 비교를 주장하지 않는다 — 쌍별 위치 기준 안내만 둔다.

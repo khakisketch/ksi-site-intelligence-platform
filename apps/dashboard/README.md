@@ -27,7 +27,12 @@ camera. Each pane carries its own observation/date select and layer control dire
 above its image; the footer keeps one short `독립 보기 · 정량 비교 아님` line with the
 source note, details on demand. Two records sit side by side as independent views with
 one center divider (A/B chosen in the catalog or the pane selects, kept in
-`visualAAssetRef`/`visualBAssetRef` URL keys). There is no synchronized alignment,
+`visualAAssetRef`/`visualBAssetRef` URL keys). The design example additionally offers
+`밀어서 비교` (`?mode=swipe`): the same two display crops layered in one viewport with
+one shared camera and a screen-space `< >` divider — display overlap only, never a
+geodetic or quantitative claim. Mixed layers must be unified explicitly first; the real
+console keeps independent side-by-side and gains no fabricated swipe. There is no
+synchronized alignment,
 swipe, heatmap or quantitative claim — each pane is an independent read of that exact
 submission's ortho/DSM layers through the verified prepared-output path, and the
 default body never creates prepare requests. Rail rows are two lines (short kind ·

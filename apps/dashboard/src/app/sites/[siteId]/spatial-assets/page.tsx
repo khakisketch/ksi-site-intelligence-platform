@@ -1011,6 +1011,7 @@ export default async function SpatialAssetsPage({
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}/observations`}>외부 비교 기록</Link>
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}?section=work-orders${effectiveWorkAreaId ? `&workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}>관측 작업 기록</Link>
           {workspaceReturnHref && <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={workspaceReturnHref}>작업공간에서 나란히 보기</Link>}
+          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/design-preview/materials?mode=swipe&returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>밀어서 비교 예시</Link>
         </div>
       </details>
     </span>

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { DEFAULT_MATERIALS_DESIGN_RETURN } from "@/lib/design-preview-return";
 
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
+import { SpatialSwipeCompare } from "@/components/site/SpatialSwipeCompare";
 import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 import {
   useDirectViewport,
@@ -31,7 +32,15 @@ import {
 
 type ExampleLayer = "ortho" | "dsm";
 type ExampleSide = "A" | "B";
-type ExampleMode = "single" | "compare";
+export type ExampleMode = "single" | "compare" | "swipe";
+
+const EXAMPLE_MODE_ORDER: readonly ExampleMode[] = ["single", "compare", "swipe"];
+
+function modeLabel(mode: ExampleMode): string {
+  if (mode === "single") return "한 장";
+  if (mode === "swipe") return "밀어서 비교";
+  return "나란히";
+}
 
 interface ExampleObservation {
   id: "obs-2021" | "obs-2022";
@@ -189,17 +198,29 @@ function ObservationPicker({
 
 export default function MaterialsDesignPreview({
   returnHref = DEFAULT_MATERIALS_DESIGN_RETURN,
-}: { returnHref?: string }) {
-  const [mode, setMode] = useState<ExampleMode>("compare");
+  initialMode = "compare",
+}: { returnHref?: string; initialMode?: ExampleMode }) {
+  const [mode, setMode] = useState<ExampleMode>(initialMode);
   const [sideAObservation, setSideAObservation] = useState<ExampleObservation["id"]>("obs-2021");
   const [sideBObservation, setSideBObservation] = useState<ExampleObservation["id"]>("obs-2022");
   const [layerA, setLayerA] = useState<ExampleLayer>("ortho");
   const [layerB, setLayerB] = useState<ExampleLayer>("ortho");
   const [infoOpen, setInfoOpen] = useState(false);
+  const [swipeBoundary, setSwipeBoundary] = useState(50);
+  // 겹쳐 보기의 공유 카메라 — 두 층이 같은 transform 하나로 움직인다.
+  // 층별 독립 카메라는 두지 않는다.
+  const swipeViewport = useDirectViewport();
 
   const observationA = OBSERVATIONS.find((item) => item.id === sideAObservation) ?? OBSERVATIONS[0]!;
   const observationB = OBSERVATIONS.find((item) => item.id === sideBObservation) ?? OBSERVATIONS[1]!;
   const compareMode = mode === "compare";
+  const swipeMode = mode === "swipe";
+  const swipeLayersMatch = layerA === layerB;
+  const swipeSameObservation = sideAObservation === sideBObservation;
+  const setBothLayers = (layer: ExampleLayer) => {
+    setLayerA(layer);
+    setLayerB(layer);
+  };
 
   return (
     <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col px-2 py-2 sm:px-3">
@@ -216,7 +237,7 @@ export default function MaterialsDesignPreview({
             </span>
             <TopBarSearchTrigger />
             <div className="flex shrink-0 gap-1" role="group" aria-label="보기 방식">
-              {(["single", "compare"] as const).map((candidate) => (
+              {EXAMPLE_MODE_ORDER.map((candidate) => (
                 <button
                   key={candidate}
                   type="button"
@@ -224,7 +245,7 @@ export default function MaterialsDesignPreview({
                   onClick={() => setMode(candidate)}
                   className={`tap-target rounded-md px-3 py-1.5 text-[12.5px] break-keep ${mode === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
                 >
-                  {candidate === "single" ? "한 장" : "나란히"}
+                  {modeLabel(candidate)}
                 </button>
               ))}
             </div>
@@ -255,8 +276,124 @@ export default function MaterialsDesignPreview({
         }
         catalogLabel="관측 선택"
         stage={
-          <section aria-label={compareMode ? "예시 두 관측 나란히 보기" : "예시 관측 한 장 보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto">
-            {compareMode ? (
+          <section aria-label={swipeMode ? "예시 겹쳐 보기" : compareMode ? "예시 두 관측 나란히 보기" : "예시 관측 한 장 보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto">
+            {swipeMode ? (
+              <>
+                <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+                  <div className="flex min-w-0 shrink-0 items-center gap-2">
+                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">A</span>
+                  <label className="sr-only" htmlFor="example-swipe-observation-a">A 관측 선택</label>
+                  <select
+                    id="example-swipe-observation-a"
+                    value={observationA.id}
+                    onChange={(event) => setSideAObservation(event.target.value as ExampleObservation["id"])}
+                    className="input min-w-0 w-44 text-[12.5px]"
+                  >
+                    {OBSERVATIONS.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.dateLabel}
+                      </option>
+                    ))}
+                  </select>
+                  </div>
+                  <div className="flex min-w-0 shrink-0 items-center gap-2">
+                  <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">B</span>
+                  <label className="sr-only" htmlFor="example-swipe-observation-b">B 관측 선택</label>
+                  <select
+                    id="example-swipe-observation-b"
+                    value={observationB.id}
+                    onChange={(event) => setSideBObservation(event.target.value as ExampleObservation["id"])}
+                    className="input min-w-0 w-44 text-[12.5px]"
+                  >
+                    {OBSERVATIONS.map((candidate) => (
+                      <option key={candidate.id} value={candidate.id}>
+                        {candidate.dateLabel}
+                      </option>
+                    ))}
+                  </select>
+                  </div>
+                  <div className="flex shrink-0 gap-1" role="group" aria-label="겹쳐 보기 층 선택">
+                    {(["ortho", "dsm"] as const).map((candidate) => (
+                      <button
+                        key={candidate}
+                        type="button"
+                        aria-pressed={swipeLayersMatch && layerA === candidate}
+                        onClick={() => setBothLayers(candidate)}
+                        className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[12.5px] break-keep ${swipeLayersMatch && layerA === candidate ? "bg-sunk font-bold" : "text-ink-2"}`}
+                      >
+                        {layerLabel(candidate)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {!swipeLayersMatch ? (
+                  <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-line bg-surface px-4 py-6" role="status">
+                    <p className="break-words text-[13px] font-bold">두 칸의 층이 다릅니다</p>
+                    <p className="text-[12px] leading-5 text-ink-2">
+                      A는 {layerLabel(layerA)}, B는 {layerLabel(layerB)}입니다. 겹쳐 보기 전에 같은 층을
+                      고르세요 — 날짜는 그대로 둡니다.
+                    </p>
+                    <p className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => setBothLayers("ortho")} className="btn min-h-11">
+                        둘 다 정사영상으로
+                      </button>
+                      <button type="button" onClick={() => setBothLayers("dsm")} className="btn min-h-11">
+                        둘 다 DSM으로
+                      </button>
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {swipeSameObservation && (
+                      <p role="status" className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
+                        같은 관측을 두 번 선택했습니다. 같은 사진이 양쪽에 겹쳐 보입니다.
+                      </p>
+                    )}
+                    <div className="flex min-w-0 flex-col lg:min-h-0 lg:flex-1">
+                      <SpatialSwipeCompare
+                        frameProps={{
+                          ...swipeViewport.frameProps,
+                          "aria-label": `밀어서 비교 · A ${observationA.dateLabel} · B ${observationB.dateLabel}. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 경계 손잡이를 끌거나 선택한 뒤 방향키로 경계를 옮길 수 있습니다.`,
+                        }}
+                        contentRef={swipeViewport.contentProps.ref}
+                        contentStyle={swipeViewport.contentProps.style}
+                        aspectRatio="1100 / 985"
+                        left={
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            key={layerA === "ortho" ? observationA.orthoSrc : observationA.dsmSrc}
+                            src={layerA === "ortho" ? observationA.orthoSrc : observationA.dsmSrc}
+                            alt=""
+                            aria-hidden="true"
+                            className="block h-full w-full object-contain"
+                            draggable={false}
+                          />
+                        }
+                        right={
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img
+                            key={layerB === "ortho" ? observationB.orthoSrc : observationB.dsmSrc}
+                            src={layerB === "ortho" ? observationB.orthoSrc : observationB.dsmSrc}
+                            alt=""
+                            aria-hidden="true"
+                            className="block h-full w-full object-contain"
+                            draggable={false}
+                          />
+                        }
+                        leftLabel={`A ${observationA.dateLabel}`}
+                        rightLabel={`B ${observationB.dateLabel}`}
+                        boundary={swipeBoundary}
+                        onBoundaryChange={setSwipeBoundary}
+                        resetControl={<ViewportResetButton onReset={swipeViewport.reset} />}
+                      />
+                    </div>
+                    {swipeViewport.note && (
+                      <p className="shrink-0 text-[12px] leading-5 text-ink-2" role="status">{swipeViewport.note}</p>
+                    )}
+                  </>
+                )}
+              </>
+            ) : compareMode ? (
               <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
                 <ExamplePane side="A" observation={observationA} layer={layerA} onObservationChange={setSideAObservation} onLayerChange={setLayerA} />
                 <ExamplePane side="B" observation={observationB} layer={layerB} onObservationChange={setSideBObservation} onLayerChange={setLayerB} />
@@ -270,7 +407,7 @@ export default function MaterialsDesignPreview({
               </>
             )}
             <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
-              <p className="text-[11.5px] leading-5 text-ink-muted">독립 보기 · 정량 비교 아님</p>
+              <p className="text-[11.5px] leading-5 text-ink-muted">{swipeMode ? "표시용 겹쳐 보기 · 정량 비교 아님" : "독립 보기 · 정량 비교 아님"}</p>
               <p className="text-[11.5px] leading-5 text-ink-2">
                 출처 · {SOURCE_LINE}{" "}
                 <a className="tap-target underline" href={LICENSE_HREF} target="_blank" rel="noreferrer">
