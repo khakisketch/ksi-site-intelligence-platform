@@ -119,7 +119,7 @@ function stubCanvas() {
   });
 }
 
-function renderMosaic(jobs: PreparedWindowJob[], canRequest = true) {
+function renderMosaic(jobs: PreparedWindowJob[], canRequest = true, hidePrepareActions = false) {
   return render(
     <SiteMosaicViewport
       siteId="site-1"
@@ -131,6 +131,7 @@ function renderMosaic(jobs: PreparedWindowJob[], canRequest = true) {
       isDsm={false}
       jobs={jobs}
       canRequest={canRequest}
+      hidePrepareActions={hidePrepareActions}
       requestsHref="/sites/site-1/spatial-data-requests?workAreaId=area-1"
       workAreaRing={[[100, 200], [500, 200], [500, 500], [100, 500]]}
       workAreaCrs="EPSG:5186"
@@ -146,6 +147,17 @@ afterEach(() => {
 });
 
 describe("mosaic absent-pixel state from current jobs", () => {
+  it("points the read-only explorer to preparation history instead of a hidden create action", () => {
+    stubCanvas();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    renderMosaic([], true, true);
+    expect(screen.getByRole("link", { name: /^구역 자료 준비$/ }).getAttribute("href"))
+      .toBe("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+    expect(screen.queryByText("아래에서 미리보기를 준비할 수 있습니다.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^미리보기 준비$/ })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it("names retention expiry for this observation without claiming other artifacts expired", () => {
     stubCanvas();
     const fetchMock = vi.fn(async () => new Response(BYTES, { status: 200 }));

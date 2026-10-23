@@ -115,6 +115,19 @@ beforeEach(() => {
 });
 
 describe("spatial asset catalog page", () => {
+  it("keeps a valid B visible and preserves an explicit failed A during info/filter navigation", async () => {
+    const refusedRef = `ksa-v1-${"9".repeat(64)}`;
+    const second = { ...asset(), assetRef: `ksa-v1-${"c".repeat(64)}`, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset(), second], nextCursor: null, hasMore: false });
+    const { CoreApiError } = await import("@/lib/core-api/client");
+    mocked.detail.mockRejectedValueOnce(new CoreApiError(404, {}));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: refusedRef, visualBAssetRef: second.assetRef, info: "1", q: "no-match" }));
+    expect(html).toContain("선택한 B는 그대로 표시합니다.");
+    expect(html).toContain("second-dsm.tif");
+    expect(html).not.toContain('aria-label="현재 A로 선택됨"');
+    expect(html).toContain(`visualAAssetRef=${refusedRef}&amp;visualBAssetRef=${second.assetRef}`);
+    expect(html).toContain(`name="visualAAssetRef" value="${refusedRef}"`);
+  });
   it("resolves an explicit visual selection even on an empty cursor page", async () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", cursor: "empty-tail", visualAAssetRef: assetRef }));

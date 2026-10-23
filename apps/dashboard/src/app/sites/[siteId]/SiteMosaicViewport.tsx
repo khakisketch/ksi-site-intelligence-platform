@@ -661,8 +661,10 @@ export function SiteMosaicViewport({
               }
             : {
                 headline: "준비된 표시 자료가 없습니다.",
-                recovery: canRequest
-                  ? "아래에서 미리보기를 준비할 수 있습니다."
+                 recovery: canRequest
+                   ? hidePrepareActions
+                     ? "구역 자료 준비에서 미리보기 준비 상태와 요청 이력을 확인하세요."
+                     : "아래에서 미리보기를 준비할 수 있습니다."
                   : "표시 준비는 권한 있는 담당자에게 요청하세요.",
               };
 
@@ -765,6 +767,7 @@ export function SiteMosaicViewport({
           )}
           {compactCopy.recovery && <p className="text-[12px] leading-5 text-ink-2">{compactCopy.recovery}</p>}
           <div className="flex flex-wrap gap-2">
+            {hidePrepareActions && <a href={requestsHref} className="btn min-h-11">구역 자료 준비</a>}
             {canFillNow && (
               <ResponsiveActionBoundary
                 action="SPATIAL_DATA_REQUEST"

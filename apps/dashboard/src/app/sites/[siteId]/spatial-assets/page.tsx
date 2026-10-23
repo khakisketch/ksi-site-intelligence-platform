@@ -771,13 +771,22 @@ export default async function SpatialAssetsPage({
       : null;
   // 모든 이동 링크는 현재 A/B 쌍을 싣는다 — 페이지·필터·정보 전환이
   // 선택을 잃지 않는다. 구역이 바뀌는 이동에서만 쌍을 버린다.
+  // Info/filter/paging actions must not clear an explicit failed selection and
+  // thereby trigger the default A on the next request. Keep exact requested refs;
+  // malformed input is represented by a harmless invalid marker, never echoed.
+  const retainedARef = sideA?.assetRef ?? (selection.notices.invalidA || selection.notices.foreignA
+    ? typeof visualARaw === "string" && /^ksa-v1-[0-9a-f]{64}$/.test(visualARaw) ? visualARaw : "invalid"
+    : null);
+  const retainedBRef = sideB?.assetRef ?? (selection.notices.invalidB || selection.notices.foreignB
+    ? typeof visualBRaw === "string" && /^ksa-v1-[0-9a-f]{64}$/.test(visualBRaw) ? visualBRaw : "invalid"
+    : null);
   const scopeForLinks = (overrides: Partial<MaterialsScope> = {}): MaterialsScope => ({
     ...(filters.q ? { q: filters.q } : {}),
     ...(filters.kind ? { kind: filters.kind } : {}),
     ...(filters.state ? { state: filters.state } : {}),
     ...(assetRef ? { assetRef } : {}),
-    visualA: sideA?.assetRef ?? null,
-    visualB: sideB?.assetRef ?? null,
+    visualA: retainedARef,
+    visualB: retainedBRef,
     ...(infoOpen ? { info: "1" } : {}),
     ...overrides,
   });
@@ -834,8 +843,8 @@ export default async function SpatialAssetsPage({
       <summary className="tap-target cursor-pointer font-semibold">검색·필터{filtersAreActive(filters) ? " · 적용 중" : ""}</summary>
       <SiteSelectionForm action={basePath} className="mt-1.5 flex min-w-0 flex-col gap-2">
         <input type="hidden" name="workAreaId" value={effectiveWorkAreaId} />
-        {sideA && <input type="hidden" name="visualAAssetRef" value={sideA.assetRef} />}
-        {sideB && <input type="hidden" name="visualBAssetRef" value={sideB.assetRef} />}
+        {retainedARef && <input type="hidden" name="visualAAssetRef" value={retainedARef} />}
+        {retainedBRef && <input type="hidden" name="visualBAssetRef" value={retainedBRef} />}
         {assetRef && <input type="hidden" name="assetRef" value={assetRef} />}
         {infoOpen && <input type="hidden" name="info" value="1" />}
         <label className="flex min-w-0 flex-col gap-1 font-semibold" htmlFor={`spatial-q-${idSuffix}`}>검색
@@ -854,7 +863,7 @@ export default async function SpatialAssetsPage({
             <option value="attention">확인 필요</option>
           </select>
         </label>
-        {filtersAreActive(filters) && <Link className="tap-target text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, { visualA: sideA?.assetRef ?? null, visualB: sideB?.assetRef ?? null, assetRef: assetRef ?? null, info: infoOpen ? "1" : null })}>필터 초기화</Link>}
+        {filtersAreActive(filters) && <Link className="tap-target text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ q: "", kind: "", state: "" }))}>필터 초기화</Link>}
       </SiteSelectionForm>
     </details>
   ) : null;
@@ -1021,7 +1030,8 @@ export default async function SpatialAssetsPage({
               {/* 중앙: 큰 미리보기. 단일 또는 좌·우 독립 보기. 동기화·정합을 주장하지 않는다.
                   휴대폰에서는 미리보기가 목록보다 먼저다. */}
               <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-2 sm:p-3 lg:col-start-2 lg:row-start-1 lg:h-full lg:min-h-0 lg:overflow-y-auto">
-                {!sideA && <p role="status" className="text-[12.5px] leading-5 text-ink-2">표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다.</p>}
+                {!sideA && <p role="status" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
+                {!sideA && sideB && centerPane("B", sideB, businessTitleFor(sideB))}
                 {sideA && !compareMode && <>
                   <p className="min-w-0 break-words text-[11.5px] text-ink-muted">
                     {selection.legacyMapped ? "옛 주소의 선택을 그대로 읽었습니다" : selection.defaultedA ? "목록 첫 자료" : "선택한 자료"}
@@ -1059,12 +1069,12 @@ export default async function SpatialAssetsPage({
                     <h3 className="min-w-0 break-words text-[13px] font-bold">선택 자료 정보</h3>
                     <Link className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>닫기</Link>
                   </div>
-                  {!sideA && <p>표시할 자료를 목록에서 고르세요.</p>}
+                  {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}
                   {sideA && <>
                     <h4 className="break-words text-[13px] font-bold">A · {businessTitleFor(sideA)}</h4>
                     {detailBlockFor(sideA)}
                   </>}
-                  {sideA && sideB && compareMode && <>
+                  {sideB && <>
                     <h4 className="break-words text-[13px] font-bold">B · {businessTitleFor(sideB)}</h4>
                     {detailBlockFor(sideB)}
                   </>}
