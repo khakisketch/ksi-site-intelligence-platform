@@ -257,6 +257,9 @@ function AssetRow({ item, headline, toggleHref, toggleLabel, open, expanded, nam
   nameIsDuplicated: boolean;
 }) {
   const availability = availabilityStatus(item);
+  const inspectionText = inspectionOutcomeLabel(item.inspection.outcome);
+  // 검사 결과가 상태를 그대로 말하면 되풀이하지 않는다 — 다를 때만 둘 다 둔다.
+  const statusExtra = availability.label !== inspectionText || availability.action ? availability : null;
   const inspectionTone = item.inspection.outcome === "MEASURED"
     ? "text-safe-ink"
     : needsAttention(item) ? "text-high-ink" : "text-ink-2";
@@ -267,8 +270,11 @@ function AssetRow({ item, headline, toggleHref, toggleLabel, open, expanded, nam
         <p className="break-words text-[14px] font-semibold leading-snug">{headline}</p>
         <p className="mt-0.5 break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
         <p className="mt-0.5 break-words text-[12px] text-ink-2">
-          <span className={`font-semibold ${inspectionTone}`}>파일 검사 · {inspectionOutcomeLabel(item.inspection.outcome)}</span>
-          {" · "}상태 · {availability.label}
+          <span className={`font-semibold ${inspectionTone}`}>파일 검사 · {inspectionText}</span>
+          {statusExtra !== null && <>
+            {" · "}상태 · {statusExtra.label}
+            {statusExtra.action ? ` — ${statusExtra.action}` : ""}
+          </>}
         </p>
         {nameIsDuplicated && <p className="mt-0.5 text-[11.5px] text-high-ink">같은 파일명이 이 목록에 여러 건 있습니다. 펼쳐서 등록 버전·촬영 구간으로 구분하세요.</p>}
       </div>
@@ -724,7 +730,6 @@ export default async function SpatialAssetsPage({
       {pageError !== null && <div>{errorView(pageError, "catalog", siteId, effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
       {page && <>
         {page.workAreaId !== effectiveWorkAreaId || page.siteId !== siteId ? <ErrorState message="Core 응답의 현장·작업구역 범위가 요청과 일치하지 않아 자산을 표시하지 않았습니다." tone="high" /> : <>
-          <p className="text-[11.5px] leading-5 text-ink-muted">여러 작업구역에 함께 연결된 기록은 이 목록에 나오지 않습니다.</p>
           {assetRef && detailError && <div>{errorView(detailError, "detail", siteId, effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
           {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== effectiveWorkAreaId)
             ? <ErrorState message="Core 응답 자산의 ID 또는 현장·작업구역 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />
