@@ -12,7 +12,7 @@ function headerHtml(props: Partial<Parameters<typeof SiteHeader>[0]> = {}) {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="overview"
+      tab="workspace"
       latestExternalReportAt={null}
       latestExternalReportKnown={false}
       canCreateWorkOrder={false}
@@ -64,21 +64,26 @@ describe("siteTabHref", () => {
 });
 
 describe("SiteHeader scoped navigation", () => {
-  it("links analysis and materials direct with scope in the directly visible nav", () => {
+  it("links results and materials direct with scope in the directly visible nav", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a", scopedAssetRef: "asset-1" });
     // 데스크톱·모바일 구분 없는 직접 nav 하나에 같은 목적지를 둔다.
     expect(html.match(/\/sites\/site-1\/analysis\?workAreaId=wa-a/g)?.length).toBe(1);
     expect(html.match(/\/sites\/site-1\/spatial-assets\?workAreaId=wa-a&amp;assetRef=asset-1/g)?.length).toBe(1);
     expect(html).not.toContain("section=analysis");
     expect(html).not.toContain("section=materials");
-    // 네 영역을 펼침 없이 바로 보인다 — 이름 없는 아이콘-only 진입 금지.
-    const nav = html.slice(html.indexOf('aria-label="현장 업무 메뉴"'));
-    expect(nav.match(/<a[\s>]/g)?.length).toBe(4);
+    // 세 영역을 펼침 없이 바로 보인다 — 이름 없는 아이콘-only 진입 금지.
+    // 설정은 최상위 nav가 아니라 머리 설정 메뉴에 둔다. 끝 위치는 nav 닫힘으로
+    // 끊는다(뒤따르는 설정 메뉴 링크를 세지 않는다).
+    const navLabel = html.indexOf('aria-label="현장 업무 메뉴"');
+    const navOpen = html.lastIndexOf("<nav", navLabel);
+    const nav = html.slice(navOpen, html.indexOf("</nav>", navLabel));
+    expect(nav.match(/<a[\s>]/g)?.length).toBe(3);
     expect(nav).not.toContain("section=work-orders");
-    expect(html).toContain("공간 보기");
+    expect(nav).not.toContain("section=manage");
+    expect(html).toContain("작업공간");
     expect(html).toContain("설정");
     expect(html).toContain("자료");
-    expect(html).toContain("분석·결과");
+    expect(html).toContain("결과");
     expect(html).toContain('aria-current="page"');
   });
 
@@ -86,8 +91,8 @@ describe("SiteHeader scoped navigation", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a" });
     expect(html).toContain("/sites/site-1?section=manage&amp;workAreaId=wa-a");
     expect(html).toContain("/sites/site-1?section=manage#site-aoi");
-    // 옛 작업 URL은 자료 맥락의 하위 길로 범위를 함께 싣는다 — 다섯 번째
-    // 최상위 구간이 아니다. 표준 목적지(canonical helper)와 같다.
+    // 옛 작업 URL은 자료 맥락의 하위 길로 범위를 함께 싣는다 — 최상위
+    // 구간이 아니다. 표준 목적지(canonical helper)와 같다.
     const materials = headerHtml({ tab: "materials", scopedWorkAreaId: "wa-a" });
     expect(materials).toContain("/sites/site-1?section=work-orders&amp;workAreaId=wa-a");
     expect(siteTabHref("site-1", "work-orders", {}, { workAreaId: "wa-a", assetRef: null })).toBe(

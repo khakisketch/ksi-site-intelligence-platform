@@ -61,7 +61,7 @@ export default async function SiteObservationHistoryPage({
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="analysis"
+      tab="results"
       canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
       canEditAoi={session.principal.permissions.includes("SITES_WRITE")}
     />

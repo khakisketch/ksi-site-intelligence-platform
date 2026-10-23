@@ -21,7 +21,7 @@ describe("tabbed site workspace uses surviving platform surfaces", () => {
 
   it("has no retired briefing, event, mission, design, or report tab data source", () => {
     expect(PAGE).not.toMatch(/listAllEvents|listMissions|getSiteWorkspace|getLatestSiteBriefing|listSiteProcessingJobs|\/events|\/missions/);
-    expect(PAGE).toContain('{tab === "overview"');
+    expect(PAGE).toContain('{tab === "workspace"');
     expect(PAGE).toContain('{tab === "work-orders"');
     expect(PAGE).toContain('{tab === "manage"');
   });

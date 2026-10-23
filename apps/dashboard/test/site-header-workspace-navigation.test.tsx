@@ -12,7 +12,7 @@ function headerHtml(props: Partial<Parameters<typeof SiteHeader>[0]> = {}) {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="overview"
+      tab="workspace"
       latestExternalReportAt={null}
       latestExternalReportKnown={false}
       canCreateWorkOrder={false}
@@ -34,18 +34,18 @@ function workspaceNav(html: string): string {
 describe("site header workspace navigation", () => {
   it("keeps the workspace tab labels", () => {
     const labels = new Map(SITE_TABS.map((tab) => [tab.key, tab.label] as const));
-    expect(labels.get("overview")).toBe("공간 보기");
+    expect(labels.get("workspace")).toBe("작업공간");
     expect(labels.get("materials")).toBe("자료");
-    expect(labels.get("analysis")).toBe("분석·결과");
+    expect(labels.get("results")).toBe("결과");
     expect(labels.get("manage")).toBe("설정");
     expect(labels.get("work-orders")).toBe("관측 작업 기록");
   });
 
-  it("shows exactly four directly visible section links without a top-level work-orders entry", () => {
+  it("shows exactly three directly visible section links without top-level work-orders or settings entries", () => {
     const nav = workspaceNav(headerHtml({}));
     const links = nav.match(/<a[\s>]/g) ?? [];
-    expect(links).toHaveLength(4);
-    for (const label of ["공간 보기", "자료", "분석·결과", "설정"]) {
+    expect(links).toHaveLength(3);
+    for (const label of ["작업공간", "자료", "결과"]) {
       expect(nav).toContain(`>${label}<`);
     }
     expect(nav).not.toContain("관측 작업 기록");
@@ -53,19 +53,21 @@ describe("site header workspace navigation", () => {
     expect(nav).not.toContain("현장 메뉴");
   });
 
-  it("marks the current section with aria-current in the four-link nav", () => {
+  it("marks the current section with aria-current in the three-link nav", () => {
     const nav = workspaceNav(headerHtml({ tab: "materials" }));
     expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
     const current = nav.match(/<a[^>]*aria-current="page"[^>]*>([^<]*)</);
     expect(current?.[1]).toBe("자료");
   });
 
-  it("preserves the validated scope and epoch on the four section links", () => {
-    const html = headerHtml({ tab: "overview", selectedEpochId: "epoch-9", scopedWorkAreaId: "wa-a" });
+  it("preserves the validated scope and epoch on the three section links", () => {
+    const html = headerHtml({ tab: "workspace", selectedEpochId: "epoch-9", scopedWorkAreaId: "wa-a" });
     const nav = workspaceNav(html);
     expect(nav).toContain("/sites/site-1/analysis?workAreaId=wa-a");
     expect(nav).toContain("/sites/site-1/spatial-assets?workAreaId=wa-a");
-    expect(nav).toContain("section=manage");
+    // 설정은 최상위 nav가 아니라 머리 설정 메뉴에 둔다 — nav에는 싣지 않는다.
+    expect(nav).not.toContain("section=manage");
+    expect(html).toContain("section=manage");
     expect(nav).toContain("workAreaId=wa-a");
     expect(nav).toContain("epoch=epoch-9");
     // 범위가 없을 때는 조용히 뺀다 — 없는 값을 지어내지 않는다.
@@ -80,7 +82,7 @@ describe("site header workspace navigation", () => {
       hintBaseline: { workOrderId: "work-a", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 },
       hintCurrent: { workOrderId: "work-b", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 2 } };
     const nav = workspaceNav(headerHtml({ scopedWorkAreaId: "wa-a", visualContext }));
-    const href = nav.match(/href="([^"]+)"[^>]*>분석·결과</)?.[1]?.replaceAll("&amp;", "&");
+    const href = nav.match(/href="([^"]+)"[^>]*>결과</)?.[1]?.replaceAll("&amp;", "&");
     const url = new URL(href!, "https://console.test");
     expect(url.hash).toBe("#new-analysis-request");
     expect(url.searchParams.get("hintCurrentRevision")).toBe("2");
@@ -100,7 +102,10 @@ describe("site header workspace navigation", () => {
     expect(materials).toContain("자료 · ");
     expect(materials).toContain("관측 작업 기록");
     expect(materials).toContain("/sites/site-1?section=work-orders&amp;workAreaId=wa-a");
-    expect(materials).not.toContain("작업구역 관리");
+    // 자료 하위 길 문단에는 구역 관리 링크를 두지 않는다 — 설정 메뉴의 전역
+    // 작업구역 관리와 섞지 않는다.
+    const recordsStart = materials.indexOf("자료 · ");
+    expect(materials.slice(recordsStart)).not.toContain("작업구역 관리");
     expect(headerHtml({ tab: "manage" })).not.toContain("section=work-orders");
     const legacy = headerHtml({ tab: "work-orders", scopedWorkAreaId: "wa-a" });
     expect(workspaceNav(legacy)).toMatch(/aria-current="page"[^>]*>자료</);

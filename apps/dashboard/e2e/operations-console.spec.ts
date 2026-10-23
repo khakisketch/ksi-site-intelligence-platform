@@ -44,7 +44,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 async function openSiteMenu(page: Page) {
-  // 네 영역 내비는 펼침 없이 바로 보인다 — summary 클릭 없이 같은 nav를 쓴다.
+  // 세 영역 내비는 펼침 없이 바로 보인다 — summary 클릭 없이 같은 nav를 쓴다.
   const menu = page.getByRole("navigation", { name: "현장 업무 메뉴", exact: true });
   await expect(menu).toBeVisible();
   return menu;
@@ -381,15 +381,15 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(page.getByRole("link", { name: "현장으로 이동", exact: true })).toBeVisible();
   await expect(page.getByRole("heading", { name: "현장 범위" })).toHaveCount(0);
   await expect(page.getByRole("region", { name: "선택 관측 화면", exact: true })).toBeVisible();
-  // 네 영역은 펼침 없이 바로 보인다. 다섯 번째 숨은 메뉴·옛 펼침은 두지 않는다.
+  // 세 영역은 펼침 없이 바로 보인다. 숨은 메뉴·옛 펼침은 두지 않는다.
   const siteNavigation = await openSiteMenu(page);
   await expect(page.locator("summary").filter({ hasText: "현장 메뉴" })).toHaveCount(0);
-  const sectionLabels = ["공간 보기", "자료", "분석·결과", "설정"];
-  await expect(siteNavigation.getByRole("link")).toHaveCount(4);
+  const sectionLabels = ["작업공간", "자료", "결과"];
+  await expect(siteNavigation.getByRole("link")).toHaveCount(3);
   for (const label of sectionLabels) {
     await expect(siteNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
-  await expect(siteNavigation.getByRole("link", { name: "공간 보기", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(siteNavigation.getByRole("link", { name: "작업공간", exact: true })).toHaveAttribute("aria-current", "page");
   // ?section=work-orders는 관측 작업 기록이지 구역 관리가 아니다 — 최상위에는 두지 않는다.
   await expect(siteNavigation.getByRole("link", { name: "관측 작업 기록", exact: true })).toHaveCount(0);
   await expect(siteNavigation.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveCount(0);
@@ -402,7 +402,7 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   }
   await expect(workspaceModes.getByRole("link", { name: "단일 시점", exact: true })).toHaveAttribute("aria-current", "page");
   // 왼쪽 레일 — 작업구역·관측 시점·레이어. 한 구역은 자동 선택한다.
-  const rail = page.getByRole("complementary", { name: "공간 보기 선택" });
+  const rail = page.getByRole("complementary", { name: "작업공간 선택" });
   await expect(rail).toBeVisible();
   await expect(rail.getByText(/작업구역/).first()).toBeVisible();
   await expect(rail.getByText(/관측 시점/).first()).toBeVisible();
@@ -458,10 +458,10 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) await expect(page.getByText("E2E 현장 작업공간", { exact: true })).toBeVisible();
   await page.goto(siteHref!);
   const returnNavigation = await openSiteMenu(page);
-  await returnNavigation.getByRole("link", { name: "공간 보기", exact: true }).click();
+  await returnNavigation.getByRole("link", { name: "작업공간", exact: true }).click();
   await expect.poll(() => new URL(page.url()).pathname).toBe(new URL(siteHref!, page.url()).pathname);
-  await expect(returnNavigation.getByRole("link", { name: "공간 보기", exact: true })).toHaveAttribute("aria-current", "page");
-  for (const [label, suffix] of [["분석·결과", "analysis"], ["자료", "spatial-assets"]]) {
+  await expect(returnNavigation.getByRole("link", { name: "작업공간", exact: true })).toHaveAttribute("aria-current", "page");
+  for (const [label, suffix] of [["결과", "analysis"], ["자료", "spatial-assets"]]) {
     const href = await returnNavigation.getByRole("link", { name: label, exact: true }).getAttribute("href");
     expect(new URL(href!, page.url()).pathname).toBe(`${new URL(siteHref!, page.url()).pathname}/${suffix}`);
     expect(new URL(href!, page.url()).searchParams.get("workAreaId")).toBe(selectedWorkAreaId);

@@ -290,7 +290,7 @@ export function siteTabHref(
   const workAreaId = scope.workAreaId;
   // 자산 참조는 같은 작업구역이 검증된 때만 싣는다 — 구역 없는 단독 참조는 버린다.
   const assetRef = workAreaId && scope.assetRef ? scope.assetRef : null;
-  if (tab === "analysis") {
+  if (tab === "results" || tab === "analysis") {
     const query = new URLSearchParams();
     if (workAreaId) query.set("workAreaId", workAreaId);
     if (assetRef) query.set("assetRef", assetRef);
@@ -305,7 +305,7 @@ export function siteTabHref(
     return search ? `${base}/spatial-assets?${search}` : `${base}/spatial-assets`;
   }
   const params = new URLSearchParams();
-  if (tab !== "overview") params.set("section", tab);
+  if (tab !== "workspace" && tab !== "overview") params.set("section", tab);
   if (workAreaId) params.set("workAreaId", workAreaId);
   if (assetRef) params.set("assetRef", assetRef);
   if (current.epoch) params.set("epoch", current.epoch);

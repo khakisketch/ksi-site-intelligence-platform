@@ -447,7 +447,7 @@ export default async function SpatialAssetsPage({
         <div className="flex flex-wrap gap-2">
           {/* 자료 메뉴의 역할은 등록·원본/버전 관리·출처와 검증 상태 확인이다.
               등록으로 들어가는 길이 이 화면에 있어야 자료만 보고 있는 사람이
-              다음 행동을 찾을 수 있다(공간 보기의 다음 행동만으로는 놓친다). */}
+              다음 행동을 찾을 수 있다(작업공간의 다음 행동만으로는 놓친다). */}
           {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
             <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
             <Link

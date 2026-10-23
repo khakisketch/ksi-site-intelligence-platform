@@ -558,7 +558,7 @@ export function SiteWorkspaceShell({
           <div><dt className="text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(selectedCatalog.inspection.outcome)}</dd></div>
           <div><dt className="text-ink-muted">관측 위치 기준</dt><dd>{selectedCatalog.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
           <div><dt className="text-ink-muted">수직 기준</dt><dd>{selectedCatalog.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"}</dd></div>
-          <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "자료 목록에서는 분석 적합성을 평가하지 않습니다. 분석·결과에서 입력별 조건을 확인하세요." : "분석 기록에서 확인하세요."}</dd></div>
+          <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "자료 목록에서는 분석 적합성을 평가하지 않습니다. 결과 화면에서 입력별 조건을 확인하세요." : "분석 기록에서 확인하세요."}</dd></div>
         </dl>
         <Link className="tap-target underline" href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selectedCatalog.workAreaId)}&assetRef=${encodeURIComponent(selectedCatalog.assetRef)}`}>원본 메타데이터 확인</Link>
         <details><summary className="tap-target cursor-pointer">버전·식별 정보</summary><p className="break-all">등록 버전 {selectedCatalog.revision} · {selectedCatalog.submissionRef}</p><p className="break-all">{selectedCatalog.assetRef}</p></details>

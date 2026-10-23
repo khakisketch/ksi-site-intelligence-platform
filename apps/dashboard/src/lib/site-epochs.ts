@@ -99,15 +99,16 @@ export function ambiguousEpochDays(epochs: readonly SiteEpoch[]): Set<string> {
 // 설명하고 링크 하나를 주는 안내판이었다. 탭은 그 안내를 **일 단위**로 접는다:
 // 지금 무엇을 보려는지 고르면 그 아래는 그 일에 필요한 것만 남는다.
 
-// 메뉴는 "무엇을 하러 오는가"로 나눈다: 공간 보기(overview)·자료(materials)·
-// 분석·결과(analysis)·설정(manage)을 머리에서 바로 보인다. 관측 작업 기록
-// (work-orders) 키는 옛 URL(?section=work-orders) 호환을 위해 남기되,
-// 최상위 메뉴가 아니라 자료 안의 하위 길로 둔다. 외부 비교 기록 같은 별도
-// 목록은 분석·결과 안의 하위 보기로 두고, KSI 계산 결과와 출처를 섞지 않는다.
+// 메뉴는 "무엇을 하러 오는가"로 나눈다: 작업공간(workspace)·자료(materials)·
+// 결과(results)를 머리에서 바로 보인다. 관측 작업 기록(work-orders) 키와
+// 현장 설정(manage) 키는 옛 URL(?section=...) 호환을 위해 남기되,
+// 최상위 메뉴가 아니라 각각 자료 안의 하위 길과 머리 설정 메뉴로 둔다.
+// 외부 비교 기록 같은 별도 목록은 결과 안의 하위 보기로 두고,
+// KSI 계산 결과와 출처를 섞지 않는다.
 export const SITE_TABS = [
-  { key: "overview", label: "공간 보기" },
+  { key: "workspace", label: "작업공간" },
   { key: "materials", label: "자료" },
-  { key: "analysis", label: "분석·결과" },
+  { key: "results", label: "결과" },
   { key: "work-orders", label: "관측 작업 기록" },
   { key: "manage", label: "설정" },
 ] as const;
@@ -118,10 +119,10 @@ export function normalizeSiteTab(raw: string | null | undefined): SiteTabKey {
   const hit = SITE_TABS.find((tab) => tab.key === raw);
   if (hit) return hit.key;
   // 이전 URL·다른 화면의 옛 키는 가장 가까운 현재 영역으로만 옮긴다 — 원문 키를
-  // 화면에 다시 노출하지 않는다. 기본 진입은 현황(overview)이다.
-  if (raw === "observations") return "overview";
+  // 화면에 다시 노출하지 않는다. 기본 진입은 작업공간(workspace)이다.
+  if (raw === "overview" || raw === "observations") return "workspace";
   if (raw === "spatial-assets" || raw === "data" || raw === "volume" || raw === "design") return "materials";
   if (raw === "work" || raw === "records") return "work-orders";
-  if (raw === "external-results" || raw === "reports" || raw === "review-items") return "analysis";
-  return "overview";
+  if (raw === "analysis" || raw === "external-results" || raw === "reports" || raw === "review-items") return "results";
+  return "workspace";
 }

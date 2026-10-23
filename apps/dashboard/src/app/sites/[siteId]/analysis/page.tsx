@@ -192,7 +192,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
     <SiteHeader
       site={site}
       selectedEpochId={null}
-      tab="analysis"
+      tab="results"
       canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
       canEditAoi={canCreate}
       scopedWorkAreaId={effectiveWorkAreaId || null}

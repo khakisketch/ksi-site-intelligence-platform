@@ -118,11 +118,11 @@ export default async function SiteDetailPage({
   const sitePath = `/sites/${encodeURIComponent(site.siteId)}`;
   const status = SITE_STATUS_LABEL[site.status];
 
-  // 기본 탭(현황)의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
+  // 기본 탭(작업공간)의 읽기 전용 공간 확인은 bounded 추가 읽기 2건으로 족하다 —
   // Core 분석 목록 50건 1회, 선택 구역의 공간 자산 20건 1회. 둘 다 실패해도
   // unknown으로 두고 빈 목록으로 단정하지 않는다. 다른 탭에서는 읽지 않는다.
   // 선택 구역은 이미 읽은 관측 작업·분석 목록의 묶임으로 고른다(추가 조회 없음).
-  const wantSpatial = tab === "overview";
+  const wantSpatial = tab === "workspace";
   const analysesResult = wantSpatial
     ? await listAnalyses(site.siteId, { limit: 50 }).then(
       (page) => ({ ok: true as const, page }),
@@ -286,7 +286,7 @@ export default async function SiteDetailPage({
       ? `${sitePath}/spatial-assets?${search}`
       : `${sitePath}/spatial-assets`);
   }
-  if (tab === "analysis") {
+  if (tab === "results") {
     const target = new URLSearchParams();
     if (headerWorkAreaId) target.set("workAreaId", headerWorkAreaId);
     if (headerAssetRef) target.set("assetRef", headerAssetRef);
@@ -407,7 +407,7 @@ export default async function SiteDetailPage({
         : null}
     />
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      {tab === "overview" && <div className="flex flex-col gap-4">
+      {tab === "workspace" && <div className="flex flex-col gap-4">
         <SiteWorkspaceShell
           sitePath={sitePath}
           mode={mode}

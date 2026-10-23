@@ -39,13 +39,13 @@ afterEach(cleanup);
 function expectKnownContext() {
   expect(screen.getAllByText("권한 확인된 현장").length).toBeGreaterThan(0);
   expect(screen.getByRole("heading", { name: "외부 비교 기록" })).toBeTruthy();
-  // 공통 현장 틀 유지 — 네 영역을 펼침 없이 바로 보인다. 분석·결과 안의 하위
+  // 공통 현장 틀 유지 — 세 영역을 펼침 없이 바로 보인다. 결과 안의 하위
   // 목록에서도 현장 업무 메뉴와 구역 범위를 잃지 않는다.
   const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
   expect(menu).toBeTruthy();
   for (const [label, href] of [
-    ["공간 보기", "/sites/site-1"],
-    ["분석·결과", "/sites/site-1/analysis"],
+    ["작업공간", "/sites/site-1"],
+    ["결과", "/sites/site-1/analysis"],
     ["자료", "/sites/site-1/spatial-assets"],
   ] as const) {
     const links = screen.getAllByRole("link", { name: label });

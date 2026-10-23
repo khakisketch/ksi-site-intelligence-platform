@@ -247,15 +247,15 @@ describe("explore declutter: primary action leads the side column", () => {
   });
 });
 
-describe("explore declutter: identity and five-area navigation stay reachable", () => {
-  it("keeps one site-name heading and all four labelled areas", async () => {
+describe("explore declutter: identity and three-area navigation stay reachable", () => {
+  it("keeps one site-name heading and all three labelled areas", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.getByText("현장 정보·범위")).toBeTruthy();
     const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
     const links = within(menu).getAllByRole("link");
-    expect(links).toHaveLength(4);
-    for (const label of ["공간 보기", "자료", "분석·결과", "설정"]) {
+    expect(links).toHaveLength(3);
+    for (const label of ["작업공간", "자료", "결과"]) {
       expect(within(menu).getByRole("link", { name: label })).toBeTruthy();
     }
     expect(within(menu).getAllByRole("link", { current: "page" })).toHaveLength(1);

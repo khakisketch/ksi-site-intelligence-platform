@@ -31,9 +31,9 @@ export function contextPaletteItems(
   if (!site) return [];
   const scope = parseScopedNavQuery(search);
   return [
-    { key: `${site.key}:overview`, label: tabLabel("overview"), group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, null, scope), keywords: "지도 구역 관측 시점 최근 변화 상태 공간자료" },
+    { key: `${site.key}:workspace`, label: tabLabel("workspace"), group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, null, scope), keywords: "지도 구역 관측 시점 최근 변화 상태 공간자료" },
     { key: `${site.key}:data`, label: tabLabel("materials"), group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/spatial-assets`, null, scope), keywords: "촬영 사진 정사영상 높이 DSM 파일 등록" },
-    { key: `${site.key}:analysis`, label: tabLabel("analysis"), group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/analysis`, null, scope), keywords: "비교 기준 결과 근거 검토" },
+    { key: `${site.key}:results`, label: tabLabel("results"), group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/analysis`, null, scope), keywords: "비교 기준 결과 근거 검토" },
     { key: `${site.key}:work`, label: tabLabel("work-orders"), group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, "work-orders", scope), keywords: "관측 작업 담당 기한 이어서" },
     { key: `${site.key}:manage`, label: tabLabel("manage"), group: "현재 현장", hint: site.label, href: scopedSiteHref(site.href, "manage", scope), keywords: "작업구역 경계 현장 상태 설정" },
     { key: `${site.key}:prepare`, label: "구역 자료 준비", group: "현재 현장", hint: site.label, href: scopedSiteHref(`${site.href}/spatial-data-requests`, null, scope), keywords: "내보내기 받기 다운로드 요청" },

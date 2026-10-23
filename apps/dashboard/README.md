@@ -1,9 +1,10 @@
 # apps/dashboard
 
 KSI Operations Console: 홈 · 현장 · 업무, with supporting 계정·도움말 on `/more`.
-The Site workspace has four direct sections: 공간 보기 (overview), 자료 (materials),
-분석·결과 (analysis), 설정 (manage). 단일 시점 / 두 시점 비교 / 분석 결과 are modes of the
-same viewer-led workspace. The retained `work-orders` deep route is 관측 작업 기록 under the
+The Site workspace has three direct sections: 작업공간 (workspace), 자료 (materials),
+결과 (results). Single observation / two-observation compare / analysis result are modes of the
+same viewer-led workspace. 현장 설정 lives in the header settings menu, not as a tab.
+The retained `work-orders` deep route is 관측 작업 기록 under the
 자료 context, not WorkArea management. 설정 owns work-area setup (`/work-areas`), the optional
 site-wide boundary and site-state transitions; external comparison records stay distinct from KSI
 calculations. Existing keys/deep routes remain compatible.

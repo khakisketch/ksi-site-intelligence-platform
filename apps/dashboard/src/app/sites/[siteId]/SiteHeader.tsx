@@ -20,13 +20,13 @@ function hrefWith(
   scope: SiteHeaderScope,
 ): string {
   const merged = { ...current, ...patch };
-  return siteTabHref(siteId, merged.section ?? "overview", { epoch: merged.epoch }, scope);
+  return siteTabHref(siteId, merged.section ?? "workspace", { epoch: merged.epoch }, scope);
 }
 
 /**
  * 현장 상세 머리 — 정체(상태·식별자)·행동·시간축·메뉴가 스크롤 위에 함께 있는 자리.
  *
- * 현장 안의 화면들(현황·자료·분석·검토·작업·관리)이 같은 머리를 쓴다. 그래서
+ * 현장 안의 화면들(작업공간·자료·결과·관측 작업·관리)이 같은 머리를 쓴다. 그래서
  * 자료·분석 화면에 들어가도 현장과 구역, 그리고 다른 영역으로 가는 길이 사라지지
  * 않는다. 시안의 "조사 주기" 선택과 "내 현장 고정"은 넣지 않았다 — 이 시스템에
  * 조사 주기라는 값은 없고(현장이 가진 것은 모델 노후 판정 기준일 뿐이라 주기로
@@ -104,13 +104,14 @@ export function SiteHeader({
     && scope.workAreaId
     ? { ...preparationAction, href: `${preparationAction.href}?workAreaId=${encodeURIComponent(scope.workAreaId)}` }
     : preparationAction;
-  // The overview panel owns this same action on its default tab; keep one
+  // The workspace panel owns this same action on its default tab; keep one
   // entry point there while the mobile panel remains the direct action surface.
-  const primaryAction = tab === "overview" ? null : scopedPreparationAction;
-  // 최상위 메뉴는 네 영역만 바로 보인다. 관측 작업 기록(work-orders) 키는 옛
-  // URL(?section=work-orders) 호환을 위해 SITE_TABS·normalizeSiteTab에 남기되,
-  // 최상위 nav가 아니라 자료 맥락의 하위 길로 둔다.
-  const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders");
+  const primaryAction = tab === "workspace" ? null : scopedPreparationAction;
+  // 최상위 메뉴는 세 영역만 바로 보인다. 관측 작업 기록(work-orders) 키와
+  // 현장 설정(manage) 키는 옛 URL(?section=...) 호환을 위해 SITE_TABS·
+  // normalizeSiteTab에 남기되, 최상위 nav가 아니라 각각 자료 맥락의 하위 길과
+  // 머리 설정 메뉴로 둔다.
+  const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders" && option.key !== "manage");
   const workOrdersTab = SITE_TABS.find((option) => option.key === "work-orders");
   const showRecordsContext = tab === "materials" || tab === "work-orders";
   const activeTab = tab === "work-orders" ? "materials" : tab;
@@ -176,16 +177,16 @@ export function SiteHeader({
       </div>
 
       {/*
-        현장 업무 메뉴 — 네 영역을 펼침 없이 바로 보인다. label 없는 아이콘-only
+        현장 업무 메뉴 — 세 영역을 펼침 없이 바로 보인다. label 없는 아이콘-only
         진입은 두지 않으며, 현재 영역은 aria-current로 밝힌다. 관측 작업 기록
-        (옛 ?section=work-orders)는 최상위에 두지 않고 자료 맥락의 하위 길로
-        둔다. 키보드로 이동하고 포커스 표시를 둔다.
+        (옛 ?section=work-orders)은 최상위에 두지 않고 자료 맥락의 하위 길로
+        두고, 현장 설정은 아래 설정 메뉴로 둔다. 키보드로 이동하고 포커스 표시를 둔다.
       */}
-      <nav className="grid grid-cols-4 gap-1 pb-2" aria-label="현장 업무 메뉴">
+      <nav className="grid grid-cols-3 gap-1 pb-2" aria-label="현장 업무 메뉴">
         {headerTabs.map((option) => (
           <Link
             key={option.key}
-            href={option.key === "analysis" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : option.key === "overview" || option.key === "materials" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope)) : hrefWith(site.siteId, current, { section: option.key }, scope)}
+            href={option.key === "results" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
             aria-current={option.key === activeTab ? "page" : undefined}
             className={`tap-target flex items-center justify-center rounded-md px-2 text-[12.5px] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 sm:justify-start sm:px-3 sm:text-[13px] ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
           >
@@ -193,18 +194,45 @@ export function SiteHeader({
           </Link>
         ))}
       </nav>
-      {showRecordsContext && workOrdersTab ? (
-        <p className="pb-2 text-[12px] text-ink-2">
-          <span>자료 · </span>
-          <Link
-            href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
-            aria-current={tab === "work-orders" ? "page" : undefined}
-            className="tap-target underline decoration-dotted focus-visible:outline-2 focus-visible:outline-offset-2"
-          >
-            {workOrdersTab.label}
-          </Link>
-        </p>
-      ) : null}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-[12px] text-ink-2">
+        <details className="relative">
+          <summary className="tap-target cursor-pointer list-none rounded-md border border-line bg-surface px-2.5 py-1.5 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
+            설정
+          </summary>
+          <div className="absolute z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-lg">
+            <Link
+              href={`/sites/${encodeURIComponent(site.siteId)}/work-areas`}
+              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              작업구역 관리
+            </Link>
+            <Link
+              href={`${hrefWith(site.siteId, current, { section: "manage" }, scope)}#site-aoi`}
+              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              현장 전체 범위
+            </Link>
+            <Link
+              href={hrefWith(site.siteId, current, { section: "manage" }, scope)}
+              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              현장 상태
+            </Link>
+          </div>
+        </details>
+        {showRecordsContext && workOrdersTab ? (
+          <p>
+            <span>자료 · </span>
+            <Link
+              href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
+              aria-current={tab === "work-orders" ? "page" : undefined}
+              className="tap-target underline decoration-dotted focus-visible:outline-2 focus-visible:outline-offset-2"
+            >
+              {workOrdersTab.label}
+            </Link>
+          </p>
+        ) : null}
+      </div>
     </header>
   );
 }

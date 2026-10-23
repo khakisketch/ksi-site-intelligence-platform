@@ -12,7 +12,7 @@ describe("Site header report-time semantics", () => {
     [true, null, "아직 없음"],
     [false, null, "알 수 없음"],
   ])("labels result reporting independently from capture (%s, %s)", (known, at, expected) => {
-    const html = renderToStaticMarkup(<SiteHeader site={site} selectedEpochId={null} tab="overview" latestExternalReportAt={at} latestExternalReportKnown={known} canCreateWorkOrder={false} canEditAoi={false} />);
+    const html = renderToStaticMarkup(<SiteHeader site={site} selectedEpochId={null} tab="workspace" latestExternalReportAt={at} latestExternalReportKnown={known} canCreateWorkOrder={false} canEditAoi={false} />);
     expect(html).toContain("최근 외부 비교 보고");
     expect(html).toContain(expected);
     expect(html).not.toContain("최신 관측");

@@ -264,7 +264,7 @@ describe("workspace shell structure", () => {
     expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeTruthy();
     expect(within(modeNav).getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
     expect(modeNav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-    expect(screen.getByRole("complementary", { name: "공간 보기 선택" })).toBeTruthy();
+    expect(screen.getByRole("complementary", { name: "작업공간 선택" })).toBeTruthy();
   });
   it("shows each mode once without duplicating the site-name heading", async () => {
     await renderOverview({});
@@ -791,10 +791,10 @@ describe("browse source round trip", () => {
     expect(screen.getByRole("link", { name: "자료" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "분석·결과" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "결과" }).getAttribute("href")).toBe(
       "/sites/site-1/analysis?workAreaId=tiny-1&assetRef=disp-2022",
     );
-    expect(screen.getByRole("link", { name: "공간 보기" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "작업공간" }).getAttribute("href")).toBe(
       "/sites/site-1?workAreaId=tiny-1&assetRef=disp-2022",
     );
     // 선택 중인 관측·층·등록 버전은 title hover 없이 그대로 읽힌다.

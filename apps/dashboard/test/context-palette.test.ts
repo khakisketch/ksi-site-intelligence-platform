@@ -11,9 +11,9 @@ const items = [{ key: "site:one", label: "남측 현장", group: "현장", href:
 describe("current Site task vocabulary", () => {
   it("offers human tasks only for a known authorized Site, not a pathname guess", () => {
     expect(contextPaletteItems(items, "/sites/site-1").map((i) => i.label)).toEqual([
-      "공간 보기",
+      "작업공간",
       "자료",
-      "분석·결과",
+      "결과",
       "관측 작업 기록",
       "설정",
       "구역 자료 준비",
@@ -35,10 +35,10 @@ describe("current Site task vocabulary", () => {
     const scoped = contextPaletteItems(items, "/sites/site-1", "?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
     const hrefs = new Map(scoped.map((item) => [item.label, item.href]));
     // 헤더 메뉴와 같은 목적지·같은 범위다. 현황으로 돌아가도 관측을 잃지 않는다.
-    expect(hrefs.get("공간 보기")).toBe("/sites/site-1?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("작업공간")).toBe("/sites/site-1?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
     expect(hrefs.get("자료")).toBe("/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
     // 분석 기록의 assetRef는 복귀용 항해 맥락일 뿐 선택자가 아니다.
-    expect(hrefs.get("분석·결과")).toBe("/sites/site-1/analysis?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
+    expect(hrefs.get("결과")).toBe("/sites/site-1/analysis?workAreaId=wa-a&assetRef=ksa-v1-" + "b".repeat(64));
   });
 
   it("fails closed on malformed or foreign scope instead of echoing it", () => {
@@ -241,7 +241,7 @@ describe("palette scoped cross-screen round trip", () => {
     // 같은 구역·관측으로 Header와 같은 목적지에 간다 — 새 읽기 없이 주소만 싣는다.
     const options = screen.getAllByRole("option");
     const labels = options.map((option) => option.textContent);
-    expect(labels.some((text) => text?.includes("공간 보기"))).toBe(true);
+    expect(labels.some((text) => text?.includes("작업공간"))).toBe(true);
     const scoped = options.find((option) => option.textContent?.startsWith("자료"));
     fireEvent.click(scoped!);
     expect(push).toHaveBeenCalledWith(`/sites/site-1/spatial-assets?workAreaId=wa-a&assetRef=${ref}`);

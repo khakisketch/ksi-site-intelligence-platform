@@ -183,7 +183,7 @@ describe("visual pair routed integration (rendered)", () => {
       <SiteHeader
         site={site}
         selectedEpochId={null}
-        tab="overview"
+        tab="workspace"
         canCreateWorkOrder={false}
         canEditAoi={false}
         scopedWorkAreaId="area-1"
@@ -200,7 +200,7 @@ describe("visual pair routed integration (rendered)", () => {
     expect(withPair).toContain("hintBaselineSubmissionRef=");
     expect(withPair).toContain(`visualAAssetRef=${ref("1")}`);
     const withoutPair = renderToStaticMarkup(
-      <SiteHeader site={site} selectedEpochId={null} tab="overview" canCreateWorkOrder={false} canEditAoi={false} />,
+      <SiteHeader site={site} selectedEpochId={null} tab="workspace" canCreateWorkOrder={false} canEditAoi={false} />,
     );
     expect(withoutPair).not.toContain("visualAAssetRef");
     expect(withoutPair).not.toContain("hintBaseline");

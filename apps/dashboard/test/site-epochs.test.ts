@@ -117,27 +117,29 @@ describe("같은 날 겹치는 시점", () => {
 });
 
 describe("탭", () => {
-  it("현장 업무 다섯 갈래다", () => {
+  it("현장 업무 다섯 갈래다 — 셋은 머리 메뉴, 둘은 하위 길·설정 메뉴", () => {
     expect(SITE_TABS.map((t) => t.key)).toEqual([
-      "overview",
+      "workspace",
       "materials",
-      "analysis",
+      "results",
       "work-orders",
       "manage",
     ]);
   });
 
   it("surviving platform tabs are canonical and retired tabs map to a safe surface", () => {
-    expect(normalizeSiteTab("analysis")).toBe("analysis");
+    expect(normalizeSiteTab("results")).toBe("results");
     expect(normalizeSiteTab("materials")).toBe("materials");
     expect(normalizeSiteTab("manage")).toBe("manage");
     expect(normalizeSiteTab("data")).toBe("materials");
     expect(normalizeSiteTab("spatial-assets")).toBe("materials");
-    expect(normalizeSiteTab("observations")).toBe("overview");
+    expect(normalizeSiteTab("observations")).toBe("workspace");
+    expect(normalizeSiteTab("overview")).toBe("workspace");
     expect(normalizeSiteTab("records")).toBe("work-orders");
-    expect(normalizeSiteTab("reports")).toBe("analysis");
-    expect(normalizeSiteTab("external-results")).toBe("analysis");
-    expect(normalizeSiteTab("없는탭")).toBe("overview");
-    expect(normalizeSiteTab(undefined)).toBe("overview");
+    expect(normalizeSiteTab("reports")).toBe("results");
+    expect(normalizeSiteTab("analysis")).toBe("results");
+    expect(normalizeSiteTab("external-results")).toBe("results");
+    expect(normalizeSiteTab("없는탭")).toBe("workspace");
+    expect(normalizeSiteTab(undefined)).toBe("workspace");
   });
 });

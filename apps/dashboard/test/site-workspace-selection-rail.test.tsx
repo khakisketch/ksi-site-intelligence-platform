@@ -60,7 +60,7 @@ describe("workspace selection rail", () => {
   it("keeps work-area management in the shared rail in every viewer mode", () => {
     for (const mode of ["explore", "compare", "results"] as const) {
       const { unmount } = render(canvas({ mode }));
-      const rail = screen.getByRole("complementary", { name: "공간 보기 선택" });
+      const rail = screen.getByRole("complementary", { name: "작업공간 선택" });
       const link = rail.querySelector('a[href*="/work-areas"]')!;
       expect(link.textContent).toBe("작업구역 관리");
       expect(link.getAttribute("href")).toBe("/sites/site-1/work-areas?workAreaId=area-1");
@@ -195,7 +195,7 @@ describe("compare selection rail (viewer-first compact)", () => {
       observationControls={compareControls()} layers={compareRailLayers()}>
       <p>보기 자리</p>
     </SiteExploreCanvas>);
-    const rail = screen.getByRole("complementary", { name: "공간 보기 선택" });
+    const rail = screen.getByRole("complementary", { name: "작업공간 선택" });
     const selectA = within(rail).getByLabelText("관측 A") as HTMLSelectElement;
     const selectB = within(rail).getByLabelText("관측 B") as HTMLSelectElement;
     const controls = selectA.closest("form")!;
@@ -226,7 +226,7 @@ describe("compare selection rail (viewer-first compact)", () => {
       observationControls={compareControls()} layers={compareRailLayers()}>
       <p>보기 자리</p>
     </SiteExploreCanvas>);
-    const rail = screen.getByRole("complementary", { name: "공간 보기 선택" });
+    const rail = screen.getByRole("complementary", { name: "작업공간 선택" });
     const aside = rail.closest("aside")!;
     expect(aside.className).toContain("items-start");
     expect(aside.className).toContain("content-start");

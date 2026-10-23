@@ -67,7 +67,7 @@ export function SiteExploreCanvas({
   // 긴 구역 이름은 두 줄까지만 둔다. 잘린 전체 이름은 같은 자리 펼침에 둔다.
   const showFullName = selectedName !== null && [...selectedName].length > 80;
   return <section aria-label="선택 관측 화면" className="grid min-w-0 items-start gap-3 lg:grid-cols-[260px_minmax(0,1fr)] xl:has-[>details[open]]:grid-cols-[260px_minmax(0,1fr)_320px]">
-    <aside aria-label="공간 보기 선택" className="grid min-w-0 content-start items-start gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
+    <aside aria-label="작업공간 선택" className="grid min-w-0 content-start items-start gap-3 rounded-lg border border-line bg-surface p-3 sm:grid-cols-2 lg:sticky lg:top-3 lg:grid-cols-1">
       <div className="flex min-w-0 items-center justify-between gap-2 sm:col-span-full lg:flex-col lg:items-stretch">
         {areas.length > 1 ? (
           <SiteSelectionForm action={sitePath} className="flex w-full min-w-0 flex-col gap-2">
