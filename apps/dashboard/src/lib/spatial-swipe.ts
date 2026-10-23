@@ -53,10 +53,10 @@ export function swipeClipInset(boundary: number): string {
 
 /**
  * 그립 표시 위치 — 클립 경계는 양끝까지 가되, 44px 그립은 무대 안에
- * 둔다. CSS clamp 한 줄이라 픽셀 측정 없이도 가장자리에서 잘리지 않는다.
+ * 둔다. 4px 여유는 그림자·키보드 포커스 링까지 보존한다.
  */
 export function swipeGripLeft(boundary: number): string {
-  return `clamp(22px, ${clampSwipeBoundary(boundary)}%, calc(100% - 22px))`;
+  return `clamp(26px, ${clampSwipeBoundary(boundary)}%, calc(100% - 26px))`;
 }
 
 /** 슬라이더 읽힘값 — A/B 백분율만 말하고 우열을 붙이지 않는다. */

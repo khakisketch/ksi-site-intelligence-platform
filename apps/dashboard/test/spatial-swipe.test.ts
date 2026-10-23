@@ -49,8 +49,8 @@ describe("swipe boundary pure rules", () => {
     expect(swipeClipInset(0)).toBe("inset(0 100% 0 0)");
     expect(swipeClipInset(100)).toBe("inset(0 0% 0 0)");
     // 클립은 양끝까지 가되, 44px 그립 표시는 무대 안에 둔다.
-    expect(swipeGripLeft(0)).toBe("clamp(22px, 0%, calc(100% - 22px))");
-    expect(swipeGripLeft(100)).toBe("clamp(22px, 100%, calc(100% - 22px))");
+    expect(swipeGripLeft(0)).toBe("clamp(26px, 0%, calc(100% - 26px))");
+    expect(swipeGripLeft(100)).toBe("clamp(26px, 100%, calc(100% - 26px))");
   });
 
   it("reads the value as A/B percents without ranking them", () => {

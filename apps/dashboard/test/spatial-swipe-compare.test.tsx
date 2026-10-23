@@ -69,6 +69,10 @@ function renderSwipe(boundary = 50, onBoundaryChange = vi.fn(), refCleanup?: () 
 }
 
 describe("swipe viewport structure", () => {
+  it.each([[0, "B 2022-08-24"], [100, "A 2021-08-17"]] as const)("names the single visible observation at endpoint %s", (boundary, label) => {
+    renderSwipe(boundary);
+    expect(screen.getByText(`현재 보기 · ${label}`)).toBeDefined();
+  });
   it("retains the viewport callback-ref cleanup so wheel listeners cannot accumulate", () => {
     const cleanupRef = vi.fn();
     const { unmount } = renderSwipe(50, vi.fn(), cleanupRef);
