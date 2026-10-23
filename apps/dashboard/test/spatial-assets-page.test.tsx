@@ -810,4 +810,44 @@ describe("materials visual browsing", () => {
     expect(html).toContain(`visualAAssetRef=${assetRef}`);
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
   });
+
+  it("keeps the verified extent diagram even when a prepared record exists but its bytes fail", async () => {
+    // 영수증 메타데이터는 있어도 바이트 GET이 실패할 수 있다(실측 503 사례).
+    // 그 경우에도 중앙 시각(범위 도식)은 유지되며, 픽셀로 둔갑하지 않는다.
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1",
+      workAreaId: "area-1",
+      items: [{
+        jobId: "sdj-v1-00000000-0000-4000-8000-000000000001",
+        assetRef,
+        siteId: "site-1",
+        workAreaId: "area-1",
+        createdAt: "2026-09-30T02:00:00Z",
+        executionState: "COMPLETED",
+        availability: "AVAILABLE",
+        receipt: {
+          jobId: "sdj-v1-00000000-0000-4000-8000-000000000001",
+          artifactKind: "dsm",
+          outputSizeBytes: 1234,
+          outputSha256: digest("e"),
+          requestedBounds: [500000, 4000000, 500010, 4000010],
+          actualBounds: [500000, 4000000, 500010, 4000010],
+          pixelWindow: [0, 200, 0, 100],
+          width: 200,
+          height: 100,
+          observedCrsIdentifier: "EPSG:32652",
+          observedCrsDigest: digest("1"),
+          accuracyAssessed: false,
+          attribution: "attr",
+          modificationNotice: "mod",
+          limitations: [],
+          preparedAt: "2026-09-30T02:00:00Z",
+        },
+      }],
+      nextCursor: null,
+      hasMore: false,
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("범위 도식 · 사진 아님");
+  });
 });

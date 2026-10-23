@@ -44,7 +44,6 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { visualLayersForExactSubmission } from "../site-visual-pair";
 import { extractSimpleRing, planeUnitForCrs, sameDisplayPlane, selectableGeometry } from "../site-spatial";
 import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
-import { readableWindowJobs } from "@/lib/site-windowed-pixel-viewer";
 import { SiteMosaicAbsentDiagram } from "../SiteMosaicAbsentDiagram";
 import {
   firstReadableWindowJob,
@@ -476,12 +475,12 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
   const layers = visualLayersForExactSubmission(pool, item);
   const param = side === "A" ? "visualAAssetRef" : "visualBAssetRef";
   const heading = `${dataKindLabel(item.kind)} · ${capturePeriodTitle(item.declared.captureStartedAt, item.declared.captureEndedAt, { captureDate: item.declared.captureDate ?? null })}`;
-  // 준비 픽셀이 없어도 중앙은 비워 두지 않는다 — 검사 격자에서 유도한
+  // 픽셀 유무와 무관하게 중앙 시각을 둔다 — 검사 격자에서 유도한
   // 범위 도식(사진 아님)을 먼저 둔다. 픽셀을 흉내내지 않으며, 아래 뷰어의
-  // 정직한 상태·복구 문구는 그대로 둔다.
+  // 정직한 상태·복구 문구는 그대로 둔다. 픽셀이 복구되면 도식은 파일 전체
+  // 범위 맥락으로 남는다.
   const raster = item.inspection.raster;
-  const hasReadablePixels = readableWindowJobs(jobs, item.assetRef).length > 0;
-  const fileBounds = !hasReadablePixels && raster ? nativeBoundsFromInspection(raster) : null;
+  const fileBounds = raster ? nativeBoundsFromInspection(raster) : null;
   const fileRing: Array<[number, number]> | null = fileBounds
     ? [[fileBounds[0], fileBounds[1]], [fileBounds[2], fileBounds[1]], [fileBounds[2], fileBounds[3]], [fileBounds[0], fileBounds[3]]]
     : null;
