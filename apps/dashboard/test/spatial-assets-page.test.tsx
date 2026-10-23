@@ -287,8 +287,8 @@ describe("spatial asset catalog page", () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
     expect(html).toContain("등록된 관측 작업명 · 확인 불가");
-    expect(html).toContain("DSM · 등록 버전 2");
-    expect(html).toContain("DSM · 등록 버전 3");
+    expect(html).toContain("DSM · v2");
+    expect(html).toContain("DSM · v3");
     expect(html).toContain("파일 정보·처리 상세 보기");
   });
 
@@ -636,11 +636,19 @@ describe("selected asset registration history (V3 submission record)", () => {
 describe("materials visual browsing", () => {
   const secondRef = `ksa-v1-${"9".repeat(64)}`;
 
-  it("shows a verified extent diagram — never fake pixels — when no prepared window exists", async () => {
-    // 준비 기록이 없어도 중앙은 비워 두지 않는다. 검사 격자에서 유도한
-    // 범위 도식(사진 아님)이며, 픽셀을 흉내내지 않는다.
+  it("keeps an honest compact state with extent metadata on demand when no prepared window exists", async () => {
+    // 읽기 권한이 없으면 빈 목록으로 단정하지 않고 권한 없음만 말한다. 사진도
+    // 범위 도식도 중앙에 두지 않는다.
+    const denied = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(denied).toContain("준비 기록을 조회할 권한이 없습니다");
+    expect(denied).not.toContain("범위 도식 · 사진 아님");
+    // 읽을 수 있으면 정직한 현재 상태 한 줄과 복구 길만 먼저 두고, 검사 격자에서
+    // 유도한 범위 도식(사진 아님)은 펼침(자료 범위 보기) 안에서만 둔다. 픽셀을 흉내내지 않는다.
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("범위 도식 · 사진 아님");
+    expect(html).toContain("준비된 표시 자료가 없습니다");
+    expect(html).toContain("자료 범위 보기");
+    expect(html.indexOf("자료 범위 보기")).toBeLessThan(html.indexOf("범위 도식 · 사진 아님"));
     expect(html).toContain("사진이 아니며 정확도를 보증하지 않습니다");
     expect(html).not.toContain("목록 첫 자료를 보여줍니다");
   });
@@ -658,8 +666,8 @@ describe("materials visual browsing", () => {
   it("shows two exact records side by side without substituting either side", async () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
-    expect(html).toContain("A·B 보기");
-    expect(html).toContain("한 장 보기로");
+    expect(html).toContain("나란히");
+    expect(html).toContain("한 장으로");
     expect(html).toContain("작업공간에서 나란히 보기");
     expect(html).toContain(`visualAAssetRef=${assetRef}`);
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
@@ -672,8 +680,8 @@ describe("materials visual browsing", () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: "broken" }));
     expect(html).toContain("두 번째 자료(B)의 참조가 올바르지 않습니다");
-    expect(html).toContain("단일 보기");
-    expect(html).toContain(`A · 지표면 높이 자료(DSM)`);
+    expect(html).toContain("한 장");
+    expect(html).toContain(`A · 촬영 구간 미기재`);
   });
 
   it("prompts instead of substituting when the explicit A is outside the loaded page", async () => {
@@ -691,8 +699,8 @@ describe("materials visual browsing", () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: assetRef }));
     expect(html).toContain("같은 자료를 두 번 선택했습니다");
-    expect(html).toContain("단일 보기");
-    expect(html).not.toContain("A·B 보기");
+    expect(html).toContain(">한 장<");
+    expect(html).not.toContain(">한 장으로<");
   });
 
   it("switches ortho and dsm of the same submission through exact refs only", async () => {
@@ -755,7 +763,7 @@ describe("materials visual browsing", () => {
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", secondRef);
     // 목록 밖에 있어도 같은 범위의 정확한 자료는 미리보기·정보에 둔다.
     expect(html).toContain("outside-dsm.tif");
-    expect(html).toContain("단일 보기");
+    expect(html).toContain("한 장");
     expect(html).not.toContain("현재 목록에서 확인하지 못했습니다");
     // 선택 쪽의 제출서 이력도 bounded 1건으로 읽는다.
     expect(mocked.revision).toHaveBeenCalledWith("order-1", `ers-v1-${"b".repeat(64)}`, 2);
@@ -769,7 +777,7 @@ describe("materials visual browsing", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: outsideRef }));
     expect(mocked.detail).toHaveBeenCalledWith("site-1", "area-1", outsideRef);
     expect(html).toContain("선택한 두 번째 자료를 현재 목록에서 확인하지 못했습니다");
-    expect(html).toContain("단일 보기");
+    expect(html).toContain("한 장");
     // 404의 원문·상태 코드는 드러내지 않는다. 상세 오류 경로도 타지 않는다.
     expect(html).not.toContain("Core 404");
     expect(html).not.toContain("자산을 찾을 수 없거나 현재 조회할 수 없습니다");
@@ -786,7 +794,7 @@ describe("materials visual browsing", () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [restricted], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: secondRef, info: "1" }));
     // 목록에는 그대로 두고, 미리보기와 정보에는 제한을 밝힌다.
-    expect(html).toContain("DSM · 등록 버전 2");
+    expect(html).toContain("DSM · v2");
     expect(html).toContain("Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 미리보기를 표시하지 않았습니다");
     expect(html).toContain("Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다");
   });
@@ -811,9 +819,11 @@ describe("materials visual browsing", () => {
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
   });
 
-  it("keeps the verified extent diagram even when a prepared record exists but its bytes fail", async () => {
-    // 영수증 메타데이터는 있어도 바이트 GET이 실패할 수 있다(실측 503 사례).
-    // 그 경우에도 중앙 시각(범위 도식)은 유지되며, 픽셀로 둔갑하지 않는다.
+  it("keeps an honest compact state — not a central diagram — when a prepared record exists but its bytes are unverified", async () => {
+    // 영수증 메타데이터가 있어도 바이트 검증·디코딩 전에는 픽셀로 두지 않는다.
+    // 정적 본문은 읽는 중 상태를 두며, 범위 도식은 펼침 안에서만 둔다.
+    // (실측 503 사례: 메타데이터만으로 중앙 시각을 채우지 않는다.)
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] }});
     mocked.prepared.mockResolvedValueOnce({
       siteId: "site-1",
       workAreaId: "area-1",
@@ -848,6 +858,8 @@ describe("materials visual browsing", () => {
       hasMore: false,
     });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("범위 도식 · 사진 아님");
+    expect(html).toContain("자료 읽는 중");
+    expect(html).toContain("자료 범위 보기");
+    expect(html.indexOf("자료 범위 보기")).toBeLessThan(html.indexOf("범위 도식 · 사진 아님"));
   });
 });

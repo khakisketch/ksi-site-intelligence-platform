@@ -122,6 +122,8 @@ export function SiteHeader({
   const showRecordsContext = tab === "materials" || tab === "work-orders";
   const activeTab = tab === "work-orders" ? "materials" : tab;
   if (variant === "compact") {
+    // 한 줄 머리에는 자료 맥락 하위 행을 두지 않는다 — 작업공간·자료 화면의
+    // 「더 보기」가 관측 작업 기록으로 이미 이어진다. 기본 머리의 행은 그대로 둔다.
     return (
       <header
         className="flex min-w-0 flex-col gap-1 border-b border-line bg-surface px-4 py-1.5 sm:px-5"
@@ -163,18 +165,6 @@ export function SiteHeader({
             </div>
           </details>
         </div>
-        {showRecordsContext && workOrdersTab ? (
-          <p className="text-[11.5px] text-ink-2">
-            <span>자료 · </span>
-            <Link
-              href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
-              aria-current={tab === "work-orders" ? "page" : undefined}
-              className="tap-target underline decoration-dotted"
-            >
-              {workOrdersTab.label}
-            </Link>
-          </p>
-        ) : null}
       </header>
     );
   }

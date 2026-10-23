@@ -43,12 +43,14 @@ describe("site header compact variant", () => {
     expect(html).not.toContain("hintCurrent");
   });
 
-  it("keeps settings and records context reachable from one disclosure", () => {
+  it("keeps settings reachable from one disclosure without duplicating the records link", () => {
     const html = compactHtml({ scopedWorkAreaId: "wa-a" });
     expect(html).toContain("설정·정보");
     expect(html).toContain("작업구역 관리");
     expect(html).toContain("현장 전체 범위");
-    expect(html).toContain("관측 작업 기록");
+    // 자료 맥락 하위 행은 한 줄 머리에서 빼고, 작업공간·자료 화면의 「더 보기」가
+    // 관측 작업 기록으로 이어진다 — 같은 링크를 두 자리에 두지 않는다.
+    expect(html).not.toContain("관측 작업 기록");
     // 기본 머리의 큰 블록·펼침은 두지 않는다.
     expect(html).not.toContain("현장 정보·범위");
     expect(html).not.toContain("text-[16px]");

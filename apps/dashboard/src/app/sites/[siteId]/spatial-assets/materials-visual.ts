@@ -50,7 +50,7 @@ function parseVisualRef(raw: unknown): RawRef {
 export interface VisualSelection {
   sideA: SpatialAssetCatalogItem | null;
   sideB: SpatialAssetCatalogItem | null;
-  /** 양쪽이 모두 정해지고 서로 다를 때만 "compare" — 그 밖은 단일 보기다. */
+  /** 양쪽이 모두 정해지고 서로 다를 때만 "compare" — 그 밖은 한 장 보기다. */
   mode: "single" | "compare";
   /** 기본값(목록 첫 자료)으로 A를 둔 경우 true — 최신 단언이 아니다. */
   defaultedA: boolean;

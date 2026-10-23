@@ -1,0 +1,88 @@
+{
+  "purpose": "Explicit UI design example only; not an automatic fallback, current registered Site, Core-prepared output, file-access permission, alignment or quantitative result",
+  "publisher": "Cambridge Coastcare",
+  "sourceCatalogue": "DataWA",
+  "case": "Floreat-f3 coastal observations, Western Australia; NOT a construction project",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "attribution": "Cambridge Coastcare / DataWA — Floreat-f3, 2021 and 2022. Preview crops, scaling, hillshade and labels by KSI; no endorsement implied.",
+  "sourceManifest": "docs/design/DEMO_MATERIALS.json",
+  "assets": [
+    {
+      "file": "ortho-2021.webp",
+      "sha256": "b9f7d673e3dfb202ac646790e76f8d79da25f967805ea532329d833910b8bb3d",
+      "pixels": [
+        1100,
+        985
+      ],
+      "sourceDesignDerivative": "rgb_t0_2021.jpg",
+      "sourceDesignDerivativeSha256": "c9164f39679cc521ae0df7e249542c2dfa23be7d1c134ee4233c09731e607585",
+      "sourceOriginal": "floreat-f3-2021_orthomosaic.tif",
+      "sourceOriginalSha256": "14646080960606bc11b4352a062bad403af3ba918e7edc6ce8308becd7c10d9b",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-orthomosaic-aug-2021",
+      "captureDate": "2021-08-17",
+      "captureDateBasis": "publisher-declared; exact time unknown",
+      "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
+      "CoreReceipt": false,
+      "quantitativeUse": false,
+      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+    },
+    {
+      "file": "ortho-2022.webp",
+      "sha256": "9043fcf50c8b5c1347744a93ab16089d3896a45a446aac67613382a0d211653e",
+      "pixels": [
+        1100,
+        985
+      ],
+      "sourceDesignDerivative": "rgb_t1_2022.jpg",
+      "sourceDesignDerivativeSha256": "f47c1a154872396a3babcdec0612f71c504778998d7505087a085f0ffef7fb92",
+      "sourceOriginal": "floreat-f3-2022_transparent_mosaic.jp2",
+      "sourceOriginalSha256": "babd66f374f9092013bc62f55f8833d222d6886343980eca1ce2b5c7d132fb54",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-orthomosaic-aug-2022",
+      "captureDate": "2022-08-24",
+      "captureDateBasis": "publisher-declared; exact time unknown",
+      "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
+      "CoreReceipt": false,
+      "quantitativeUse": false,
+      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+    },
+    {
+      "file": "dsm-2021.webp",
+      "sha256": "37357b61f9070da3bf272ccc990d0c0c5fea36354e2fd0012fd0c26fd3b2cfcd",
+      "pixels": [
+        1100,
+        985
+      ],
+      "sourceDesignDerivative": "dsm_t0_2021.png",
+      "sourceDesignDerivativeSha256": "a10f834e93974dd644c888c429035b01d84091f9cb65236c999a9ffe3743eafd",
+      "sourceOriginal": "floreat-f3-2021_10cm-dsm.tif",
+      "sourceOriginalSha256": "170f98edac9869b768788132569df1c274082d967e21e9d2a6255f9cd12b9c5b",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-raster-dsm-geotiff-aug-2021",
+      "captureDate": "2021-08-17",
+      "captureDateBasis": "publisher-declared; exact time unknown",
+      "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
+      "CoreReceipt": false,
+      "quantitativeUse": false,
+      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+    },
+    {
+      "file": "dsm-2022.webp",
+      "sha256": "4ce297249c406055b953d77d37c16e7d0cdde5672ceeddcd094f731ad2496958",
+      "pixels": [
+        1100,
+        985
+      ],
+      "sourceDesignDerivative": "dsm_t1_2022.png",
+      "sourceDesignDerivativeSha256": "40a5beec67a169e8da97ef894b05f175a50fd457294952479a56b28cfaa5f4fd",
+      "sourceOriginal": "floreat-f3_2022_dsm.tif",
+      "sourceOriginalSha256": "bfc5f43ebf576e6400046f5b840663879a38224880cf5efad4e1157eeb2edfb1",
+      "catalogueUrl": "https://catalogue.data.wa.gov.au/dataset/floreat-f3-raster-dsm-geotiff-aug-2022",
+      "captureDate": "2022-08-24",
+      "captureDateBasis": "publisher-declared; exact time unknown",
+      "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
+      "CoreReceipt": false,
+      "quantitativeUse": false,
+      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+    }
+  ]
+}
