@@ -1017,6 +1017,33 @@ export default async function SpatialAssetsPage({
     </span>
   </>);
 
+  // 빈 자료의 행동 줄 — 준비된 자료가 없어도 등록 길과 기록 길을 둔다.
+  // 맥락막대와 같은 목적지·권한 게이트를 그대로 쓰며, 픽셀·준비 흐름을
+  // 새로 만들지 않는다. 실패(denied/unavailable) 분기에는 두지 않으므로
+  // 빈 목록과 조회 실패를 섞지 않는다.
+  const renderEmptyActions = (): ReactNode => (
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
+      {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
+        <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
+          <Link
+            href={`/sites/${encodeURIComponent(siteId)}/observations/new${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}
+            className="btn btn-primary"
+          >
+            자료 등록
+          </Link>
+        </ResponsiveActionBoundary>
+      )}
+      <details className="relative text-[12.5px]">
+        <summary className="tap-target cursor-pointer list-none rounded-md border border-line bg-surface px-2.5 py-1.5 font-semibold text-ink-2">더 보기</summary>
+        <div className="absolute left-0 z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-lg">
+          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}/spatial-data-requests${effectiveWorkAreaId ? `?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}>구역 자료 준비</Link>
+          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}/observations`}>외부 비교 기록</Link>
+          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}?section=work-orders${effectiveWorkAreaId ? `&workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}>관측 작업 기록</Link>
+        </div>
+      </details>
+    </div>
+  );
+
   // 목록 드로어 내용 — 무대 위에 뜨므로 넓이·높이 래퍼를 두지 않는다.
   // 누르면 중앙 미리보기가 바뀌고, 파일 사실은 정보 펼침에서만 본다.
   const renderCatalog = (): ReactNode => (<>
@@ -1106,7 +1133,10 @@ export default async function SpatialAssetsPage({
           {selection.notices.samePair && <p role="status" className="text-[12px] text-ink-2">같은 자료를 두 번 선택했습니다. 한 장으로 둡니다.</p>}
 
           {page.assets.length === 0 && !sideA && !sideB
-            ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
+            ? <>
+              <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
+              {renderEmptyActions()}
+            </>
             : <SpatialWorkbenchFrame
                 contextBar={renderContextBar()}
                 catalog={renderCatalog()}

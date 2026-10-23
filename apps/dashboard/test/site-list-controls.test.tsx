@@ -275,10 +275,12 @@ describe("SiteListControls", () => {
     );
     searchbox().focus();
     fireEvent.change(searchbox(), { target: { value: "서쪽x" } });
-    // 칩 클릭 상당: 취소 의도 뒤 같은 q·새 묶음 응답이 온다.
+    // 칩 클릭 상당: Link가 주소창을 먼저 새 묶음으로 옮기고, 취소 의도 뒤
+    // 같은 q·새 묶음 응답이 늦게 온다.
     act(() => {
       window.dispatchEvent(new Event(SITE_LIST_CANCEL_EVENT));
     });
+    setLocation("/sites?q=%EC%84%9C%EC%AA%BD&group=patrol&sort=attention");
     rerender(
       <SiteListControls query="서쪽" sort="attention" group="patrol" hasFilter visibleCount={1} totalCount={5} />,
     );
@@ -289,6 +291,32 @@ describe("SiteListControls", () => {
     });
     expect(mocked.replace).not.toHaveBeenCalled();
     expect(mocked.push).not.toHaveBeenCalled();
+  });
+
+  it("늦게 도착한 이전 내비게이션 응답은 입력 중 초안을 지우지 않는다", () => {
+    vi.useFakeTimers();
+    // 주소창은 이미 새 묶음을 가리키지만 서버 응답이 아직이라 화면은
+    // 이전 기준 props다 — 이 공백에 타이핑한 검색어는 늦은 응답이 와도
+    // 살아남아야 한다.
+    setLocation("/sites?group=attention&sort=attention");
+    const { rerender } = render(
+      <SiteListControls query="" sort="attention" hasFilter={false} visibleCount={0} totalCount={5} />,
+    );
+    searchbox().focus();
+    fireEvent.change(searchbox(), { target: { value: "e2e-site-review" } });
+    // 늦은 응답 상당: 묶음 props가 주소창 기준으로 따라온다.
+    rerender(
+      <SiteListControls query="" sort="attention" group="attention" hasFilter={false} visibleCount={0} totalCount={5} />,
+    );
+    expect(searchbox().value).toBe("e2e-site-review");
+    // 곧바로 묶음·정렬을 적용해도 최신 초원이 함께 간다.
+    fireEvent.change(phoneSortSelect(), { target: { value: "name" } });
+    fireEvent.submit(phoneForm());
+    expect(mocked.push).toHaveBeenCalledTimes(1);
+    const params = hrefParams(mocked.push.mock.calls[0][0]);
+    expect(params.get("q")).toBe("e2e-site-review");
+    expect(params.get("group")).toBe("attention");
+    expect(params.get("sort")).toBe("name");
   });
 
   it("q만 바뀌는 응답은 패널의 미적용 선택을 유지한다", () => {
@@ -572,6 +600,29 @@ describe("SiteListControls phone panel", () => {
     expect(mocked.push).toHaveBeenCalledTimes(1);
     expect(document.querySelector("details")?.hasAttribute("open")).toBe(false);
     expect(document.activeElement?.textContent).toContain("필터·정렬");
+  });
+
+  it("늦은 기준 응답 뒤에도 타이핑만 한 검색어는 디바운스로 확정된다", () => {
+    vi.useFakeTimers();
+    // 주소창은 이미 묶음을 가리키지만 서버 응답이 아직이다. 타이핑 뒤
+    // 정렬·적용 없이 늦은 응답이 와도 입력은 살아남고 예약이 이어진다.
+    setLocation("/sites?group=attention&sort=attention");
+    const { rerender } = render(
+      <SiteListControls query="" sort="attention" hasFilter={false} visibleCount={0} totalCount={5} />,
+    );
+    fireEvent.change(searchbox(), { target: { value: "e2e-site-review" } });
+    rerender(
+      <SiteListControls query="" sort="attention" group="attention" hasFilter={false} visibleCount={0} totalCount={5} />,
+    );
+    expect(searchbox().value).toBe("e2e-site-review");
+    act(() => {
+      vi.advanceTimersByTime(301);
+    });
+    expect(mocked.replace).toHaveBeenCalledTimes(1);
+    const params = hrefParams(mocked.replace.mock.calls[0][0]);
+    expect(params.get("q")).toBe("e2e-site-review");
+    expect(params.get("group")).toBe("attention");
+    expect(mocked.push).not.toHaveBeenCalled();
   });
 
   it("그룹이 바뀌는 적용 후에도 요약 포커스가 남는다", () => {

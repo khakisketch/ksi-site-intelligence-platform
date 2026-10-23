@@ -50,6 +50,10 @@ test("KSI callback 검증 실패는 generic server error 대신 로그인 복구
   await page.getByRole("button", { name: "KSI 개발 관리자" }).click();
 
   await expect(page).toHaveURL(/\/login\?error=Configuration/);
-  await expect(page.getByRole("status")).toContainText("기본 개발 계정으로 다시 시작");
+  // Toast live-region도 role=status라서, 복구 안내 문구로 좁혀 읽는다.
+  // 실제 복구 URL·사본은 그대로 두며, generic server error로 바꾸지 않는다.
+  const recoveryNotice = page.getByRole("status").filter({ hasText: "기본 개발 계정으로 다시 시작" });
+  await expect(recoveryNotice).toContainText("이전 로그인 요청을 검증하지 못했습니다");
+  await expect(recoveryNotice).toContainText("기본 개발 계정으로 다시 시작");
   expect(page.url()).not.toContain("/api/auth/error");
 });

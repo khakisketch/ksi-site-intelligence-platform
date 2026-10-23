@@ -382,6 +382,39 @@ describe("spatial asset catalog page", () => {
     expect(empty).toContain("관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다.");
   });
 
+  it("keeps the register and records entries on a genuinely empty catalog when authorized", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "WORK_ORDERS_WRITE"] } });
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const empty = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(empty).toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(empty).toContain("/sites/site-1/observations/new?workAreaId=area-1");
+    expect(empty).toContain(">자료 등록<");
+    expect(empty).toContain(">더 보기<");
+    expect(empty).toContain("/sites/site-1?section=work-orders&amp;workAreaId=area-1");
+    expect(empty).toContain("/sites/site-1/observations");
+    expect(empty).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+  });
+
+  it("shows records entries but no register path to readers on an empty catalog", async () => {
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const empty = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(empty).toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(empty).not.toContain("/sites/site-1/observations/new");
+    expect(empty).toContain(">더 보기<");
+    expect(empty).toContain("관측 작업 기록");
+  });
+
+  it("shows no register or records shortcut on denied or unknown scope", async () => {
+    const { CoreApiError } = await import("@/lib/core-api/client");
+    mocked.catalog.mockRejectedValueOnce(new CoreApiError(403, {}));
+    const denied = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(denied).toContain("현장 등록 자료 조회 권한이 없습니다");
+    expect(denied).not.toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(denied).not.toContain("/sites/site-1/observations/new");
+    // 문맥막대의 기존 도구모음은 그대로 두되, 빈 목록 행위는 싣지 않는다.
+    expect(denied).not.toContain("관측 자료가 이 작업구역에 등록되면");
+  });
+
   it("fails closed on denied access, temporary Core failures, duplicate selection and detail 404", async () => {
     const { CoreApiError } = await import("@/lib/core-api/client");
     mocked.catalog.mockRejectedValueOnce(new CoreApiError(403, {}));

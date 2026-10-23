@@ -106,6 +106,10 @@ export function SiteListControls({
   const appliedRef = useRef(committedQuery);
   /** 마지막으로 본 묶음·상태 — q가 같아도 기준이 바뀌면 입력을 확정값으로 되돌린다. */
   const criteriaRef = useRef({ group, status });
+  /** 마지막 키 입력 때의 주소창 — 늦게 도착한 이전 내비게이션 응답이
+      방금 타이핑을 지우지 않게 대조한다. 칩 클릭처럼 주소창이 먼저
+      바뀌는 이동 뒤의 응답은 확정값 되돌리기를 그대로 둔다. */
+  const typeSearchRef = useRef<string | null>(null);
   const composingRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -178,12 +182,25 @@ export function SiteListControls({
     // 기준(묶음·상태)이 바뀌면 q가 같아도 결과와 입력이 어긋난다 —
     // 포커스 중이어도 대기 타이머를 버리고 확정 검색어로 되돌린다.
     // q만 바뀌는 자체 ack(group/status 동일)는 여기서 손대지 않는다.
+    // 단, 주소창이 마지막 키 입력 때와 같으면 그 입력은 지금 기준에서 친
+    // 것이다 — 아직 도착하지 않은 이전 내비게이션의 늦은 응답으로 지우지
+    // 않는다(칩 클릭은 주소창을 먼저 바꾸므로 되돌리기를 그대로 둔다).
+    // 이때 대기 타이머는 이미 버린 상태이므로, 최신 기준으로 다시 예약해
+    // 입력만 남고 확정이 사라지는 반쪽 상태를 만들지 않는다. 조합 중에는
+    // 확정하지 않는다(조합 확정이 예약한다).
     const prev = criteriaRef.current;
     if (prev.group === group && prev.status === status) return;
     criteriaRef.current = { group, status };
     cancelPending();
+    if (typeSearchRef.current !== null && typeSearchRef.current === window.location.search) {
+      if (!composingRef.current) {
+        scheduleCommit(draft);
+      }
+      return;
+    }
     appliedRef.current = committedQuery;
     setDraft(committedQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 기준 변경 가드에만 반응한다. draft·scheduleCommit은 최신 렌더 값을 의도적으로 읽는다
   }, [group, status, committedQuery]);
 
   function commit(next: string, navigation: "replace" | "push") {
@@ -226,6 +243,7 @@ export function SiteListControls({
 
   function handleSearchChange(value: string) {
     setDraft(value);
+    typeSearchRef.current = window.location.search;
     if (composingRef.current) return;
     scheduleCommit(value);
   }

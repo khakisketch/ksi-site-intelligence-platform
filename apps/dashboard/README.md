@@ -71,6 +71,11 @@ exact-record bridge back to workspace results. Browsed A/B inputs remain separat
 result's inputs; no new calculation, automatic preparation, synchronization, or registered-data
 swipe is implied by the shared layout.
 
+Empty materials retain the same validated registration/record entry points (including the
+existing desktop-only write boundary). Site search keeps a draft typed into the current address
+bar scope when an older criteria response arrives, and reschedules its debounce against the
+current criteria; deliberate chip/history/page navigation still cancels or restores as before.
+
 전역 `업무`는 조직의 `관측 작업`(`/field`)과 배정·공유된 `받은 업무`(`/field/inbox`)를
 구분한다. 팀 관리·계정·도움말은 지원 동선이며 권한이나 업무 기록 의미를 바꾸지 않는다.
 `계정·도움말`은 실제 계정/역할과 기존 로그아웃을 제공하고, 서버 오류 때 신원을 만들지 않는다.
