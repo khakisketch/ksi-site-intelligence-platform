@@ -324,8 +324,9 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("shows a compact honest empty state when no composed tile exists", async () => {
-    // 합성 기술서가 없을 때만 사진 칸을 접고 짧은 한 줄 상태로 둔다. 조회는 한 번만 돈다.
+  it("shows an honest neutral block when no composed tile exists", async () => {
+    // 합성 기술서가 없을 때는 자료인 척하는 도형 대신 사진 아님을 밝힌
+    // 중립 블록으로 같은 자리를 채운다. 조회는 한 번만 돈다.
     stubObserver();
     const siteId = "site-composed";
     const fetchMock = vi.fn(async (url: string) => {
@@ -340,10 +341,13 @@ describe("SitePreviewThumb", () => {
     fireVisible();
     await screen.findByText("미리보기 없음");
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 사진도 도식도 두지 않는다 — 바이트 읽기가 나가지 않는다.
+    // 실제 픽셀은 읽지 않고, 자료 도식이 아닌 중립 표시만 둔다.
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).toBeNull();
+    expect(document.querySelector("svg")).not.toBeNull();
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
+    expect(screen.getByText("사진 아님")).toBeTruthy();
+    expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
+    expect(screen.queryByRole("link")).toBeNull();
   });
 
   it("restores the composed range diagram when pixels are unavailable", async () => {
@@ -484,7 +488,7 @@ describe("SitePreviewThumb", () => {
     expect(link.querySelector("details,summary,input,button")).toBeNull();
   });
 
-  it("states a refused lookup honestly without a schematic stand-in", async () => {
+  it("states a refused lookup honestly with a neutral block", async () => {
     stubObserver();
     const siteId = "site-refused-composed";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ message: "denied" }), { status: 403 }));
@@ -496,7 +500,7 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByText("미리보기 없음")).toBeNull();
     expect(screen.queryByText("미리보기 확인 불가")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).toBeNull();
+    expect(document.querySelector("svg")).not.toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });

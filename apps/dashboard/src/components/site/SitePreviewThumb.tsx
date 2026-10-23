@@ -311,16 +311,36 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
   }
   const emptyLabel =
     phase.name === "refused" ? "미리보기 권한 없음" : phase.name === "unknown" ? "미리보기 확인 불가" : "미리보기 없음";
+  const emptyNote =
+    phase.name === "refused"
+      ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
+      : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
+  // 합성 기술서도 없으면 자료인 척하는 도형을 그리지 않고, 사진이 아님을
+  // 밝힌 중립 블록으로 같은 자리를 채운다 — 카드 높이를 맞추되 자료·범위를
+  // 주장하지 않는다.
   return (
-    <div ref={boxRef} data-site-preview="card-empty" className="border-b border-line px-4 py-2">
-      <p className="text-[12px] break-keep text-ink-2">
-        {emptyLabel}
-        <span className="sr-only">
-          {phase.name === "refused"
-            ? " — 미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
-            : " — 등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요."}
-        </span>
-      </p>
+    <div ref={boxRef} data-site-preview="card-empty" className="relative aspect-[16/9] overflow-hidden bg-sunk">
+      <span
+        role="img"
+        aria-label={`${emptyLabel} — 사진 아님. ${emptyNote}`}
+        className="absolute inset-0 block"
+        style={{ background: "repeating-linear-gradient(135deg,#f1efe9 0 12px,#e9e7e0 12px 13px)" }}
+      >
+        <svg viewBox="0 0 300 150" className="absolute inset-0 size-full" aria-hidden="true" focusable="false">
+          <g fill="none" stroke="#b9b6ac" strokeWidth="1.5">
+            <circle cx="150" cy="66" r="34" />
+            <circle cx="150" cy="66" r="18" />
+            <path d="M40 128 L110 96 L180 112 L260 84" strokeDasharray="5 4" />
+          </g>
+        </svg>
+      </span>
+      <span className="absolute top-2 left-2 rounded bg-accent px-1.5 py-0.5 text-[10.5px] font-bold text-accent-on">
+        사진 아님
+      </span>
+      <span className="absolute inset-x-0 bottom-0 border-t border-line bg-surface px-4 py-2 text-left">
+        <span className="block text-[12px] font-semibold break-keep">{emptyLabel}</span>
+        <span className="mt-px block text-[10.5px] break-keep text-ink-2">{emptyNote}</span>
+      </span>
     </div>
   );
 }
