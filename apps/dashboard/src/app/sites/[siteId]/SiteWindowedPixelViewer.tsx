@@ -777,7 +777,7 @@ export function SiteWindowedPixelViewer({
     setControlsTarget(node && layerControlsTargetId ? document.getElementById(layerControlsTargetId) : null);
   }, [layerControlsTargetId]);
   const layerControls = layers.length > 1 ? (
-    <div className={`flex flex-wrap gap-1 ${canvasMode ? "text-[12px]" : "lg:flex-col"}`} role="group" aria-label="자료 층 전환">
+    <div data-workbench-pane-controls={canvasMode || undefined} className={`flex flex-wrap gap-1 ${canvasMode ? "text-[12px]" : "lg:flex-col"}`} role="group" aria-label="자료 층 전환">
       {layers.map((item) => {
         const selected = item.assetRef === layer?.assetRef;
         // URL 전환이 있으면 링크로 둔다 — Back·reload·분석 복귀가 같은 층을

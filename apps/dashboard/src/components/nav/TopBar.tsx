@@ -6,6 +6,7 @@ import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
 import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
 
+import { NormalShellTopBar } from "./ShellPathBoundary";
 import { BackButton } from "./BackButton";
 import { PageTitle } from "./PageTitle";
 import { TopBarSearchTrigger } from "./TopBarSearchTrigger";
@@ -75,9 +76,15 @@ export async function TopBar() {
   // 세션이 살아 있는 정상 분기 — 사이드바가 숨는 lg 미만에서는 상단바가
   // 팔레트의 유일한 터치 입구다(⌘K 단축키가 없는 터치 기기를 위해).
   // 만료 분기에는 두지 않는다 — 검색 결과가 있어도 만료 세션에서는 열 수 없다.
+  //
+  // 집중 모드(자료 작업환경·디자인 예시)에서는 정상행을 그리지 않는다 —
+  // 무대 위의 두 번째 타이틀바가 되기 때문이다. 팔레트 입구는 작업환경
+  // 맥락막대의 검색 트리거가 맡는다. 인증 경보 분기는 그대로 둔다.
   return (
+    <NormalShellTopBar>
     <TopBarFrame title={title}>
       <TopBarSearchTrigger />
     </TopBarFrame>
+    </NormalShellTopBar>
   );
 }

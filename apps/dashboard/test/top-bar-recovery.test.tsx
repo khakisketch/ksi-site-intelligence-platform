@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ whoami: vi.fn(), pathname: "/sites/site-1/spatial-assets" }));
 vi.mock("next/headers", () => ({ headers: async () => new Map([["x-pathname", mocks.pathname]]) }));
+vi.mock("next/navigation", () => ({ usePathname: () => mocks.pathname }));
 vi.mock("next/link", () => ({ default: ({ href, children }: { href: string; children: React.ReactNode }) => createElement("a", { href }, children) }));
 vi.mock("@/lib/core-api/auth", () => ({ whoAmI: mocks.whoami }));
 vi.mock("@/lib/core-api/session", () => ({ MissingSessionError: class MissingSessionError extends Error {} }));
@@ -43,10 +44,25 @@ describe("TopBar distinguishes identity expiry from server recovery", () => {
   });
 
   it("keeps a normal search entry and hides repeated failure text on login", async () => {
+    mocks.pathname = "/sites/site-1";
     mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
     expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
     mocks.pathname = "/login";
     mocks.whoami.mockRejectedValueOnce(new Error("network"));
-    expect(await TopBar()).toBeNull();
+    expect(renderToStaticMarkup(await TopBar())).toBe("");
+  });
+
+  it("hides only the normal row in focus mode but keeps the auth alert visible", async () => {
+    mocks.pathname = "/sites/site-1/spatial-assets";
+    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
+    expect(renderToStaticMarkup(await TopBar())).toBe("");
+    mocks.whoami.mockRejectedValueOnce(new MissingSessionError());
+    const html = renderToStaticMarkup(await TopBar());
+    expect(html).toContain("세션이 만료되었습니다");
+    expect(html).toContain("/login?next=%2Fsites%2Fsite-1%2Fspatial-assets");
+    mocks.whoami.mockRejectedValueOnce(new Error("ECONNREFUSED private details"));
+    const unreachable = renderToStaticMarkup(await TopBar());
+    expect(unreachable).toContain("서버 연결을 확인하지 못했습니다");
+    expect(unreachable).not.toContain("private");
   });
 });

@@ -10,14 +10,17 @@ function source(relativePath: string): string {
 describe("Operations Console 접근성 셸", () => {
   it("skip link와 client route focus가 같은 main landmark를 사용한다", () => {
     const layout = source("src/app/layout.tsx");
+    const boundary = source("src/components/nav/ShellPathBoundary.tsx");
     const focusManager = source("src/components/nav/RouteFocusManager.tsx");
     const pageTitle = source("src/components/nav/PageTitle.tsx");
 
     expect(layout).toContain('href="#main-content"');
-    expect(layout).toContain('id="main-content"');
-    expect(layout).toContain("tabIndex={-1}");
+    expect(layout).toContain("<ShellMain>");
     expect(layout).toContain("<RouteFocusManager />");
     expect(layout).toContain("<MainPageTitle fallback={currentPageTitle} />");
+    // main landmark 자체는 경로별 래퍼가 둔다 — id·포커스 대상은 한 곳이다.
+    expect(boundary).toContain('id="main-content"');
+    expect(boundary).toContain("tabIndex={-1}");
     expect(pageTitle).toContain('<h1 className="sr-only">');
     expect(pageTitle).toContain("usePathname()");
     expect(pageTitle).toContain("return title ?");

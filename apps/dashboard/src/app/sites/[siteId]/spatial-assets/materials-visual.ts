@@ -1,6 +1,8 @@
 import {
   capturePeriodTitle,
+  dataKindLabel,
 } from "@/lib/operator-language";
+import { isSupportedDataKind } from "@/lib/operator-language";
 import type { SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 
 /**
@@ -193,4 +195,60 @@ export function materialsHref(
   if (scope.cursor) query.set("cursor", scope.cursor);
   if (scope.info) query.set("info", scope.info);
   return `/sites/${encodeURIComponent(siteId)}/spatial-assets?${query.toString()}`;
+}
+
+/** 목록 필터 — Core 카탈로그는 정렬·검색 계약을 따로 받지 않으므로, 불러온
+ *  페이지 안에서만 적용한다. */
+export interface CatalogFilters {
+  q: string;
+  kind: string;
+  state: "" | "inspected" | "attention";
+}
+
+/** 검사 실패와 검사 전을 한 칸에 둔다 — 둘 다 아직 쓸 수 있다고 말할 수 없다. */
+export function needsCatalogAttention(item: SpatialAssetCatalogItem): boolean {
+  return item.inspection.state === "FAILED"
+    || item.inspection.outcome === "REJECTED"
+    || item.inspection.outcome === null;
+}
+
+/**
+ * 불러온 페이지 안 필터 — 대상은 호출자가 이미 범위 확인한 목록이다.
+ * 필터가 빗나가도 선택 미리보기를 바꾸지 않는다(호출자가 분리한다).
+ */
+export function applyCatalogFilters(
+  items: readonly SpatialAssetCatalogItem[],
+  filters: CatalogFilters,
+): SpatialAssetCatalogItem[] {
+  return items.filter((item) => {
+    if (filters.kind && item.kind !== filters.kind) return false;
+    if (filters.state === "inspected" && item.inspection.outcome !== "MEASURED") return false;
+    if (filters.state === "attention" && !needsCatalogAttention(item)) return false;
+    if (filters.q) {
+      const haystack = `${item.declared.fileName} · ${dataKindLabel(item.kind)} · ${shortKindLabel(item.kind)}`.toLowerCase();
+      if (!haystack.includes(filters.q.toLowerCase())) return false;
+    }
+    return true;
+  });
+}
+
+export function catalogCounts(items: readonly SpatialAssetCatalogItem[]): {
+  total: number;
+  inspected: number;
+  attention: number;
+} {
+  return {
+    total: items.length,
+    inspected: items.filter((item) => item.inspection.outcome === "MEASURED").length,
+    attention: items.filter(needsCatalogAttention).length,
+  };
+}
+
+/** 목록 필터 값 정리 — 지원하지 않는 종류·상태는 빈 값으로 둔다. */
+export function normalizeCatalogFilters(input: { q?: string; kind?: string; state?: string }): CatalogFilters {
+  return {
+    q: (input.q ?? "").slice(0, 80),
+    kind: input.kind && isSupportedDataKind(input.kind) ? input.kind : "",
+    state: input.state === "inspected" || input.state === "attention" ? input.state : "",
+  };
 }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import { DEFAULT_MATERIALS_DESIGN_RETURN } from "@/lib/design-preview-return";
 
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
+import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 import {
   useDirectViewport,
   ViewportResetButton,
@@ -72,19 +73,36 @@ function ExamplePane({
   side,
   observation,
   layer,
+  onObservationChange,
   onLayerChange,
 }: {
   side: ExampleSide;
   observation: ExampleObservation;
   layer: ExampleLayer;
+  onObservationChange: (id: ExampleObservation["id"]) => void;
   onLayerChange: (layer: ExampleLayer) => void;
 }) {
   const viewport = useDirectViewport();
   const src = layer === "ortho" ? observation.orthoSrc : observation.dsmSrc;
+  const selectId = `example-observation-${side}`;
   return (
-    <div className="flex min-w-0 flex-col gap-1.5 lg:h-full lg:min-h-0">
-      <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-        <h3 className="min-w-0 break-words text-[13px] font-bold">{side} · {observation.dateLabel}</h3>
+    <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
+      <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">{side}</span>
+        <span className="sr-only">{side} 칸</span>
+        <label className="sr-only" htmlFor={selectId}>{side} 관측 선택</label>
+        <select
+          id={selectId}
+          value={observation.id}
+          onChange={(event) => onObservationChange(event.target.value as ExampleObservation["id"])}
+          className="input min-w-0 max-w-44 text-[12.5px]"
+        >
+          {OBSERVATIONS.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.dateLabel}
+            </option>
+          ))}
+        </select>
         <div className="flex shrink-0 gap-1" role="group" aria-label={`${side} 층 선택`}>
           {(["ortho", "dsm"] as const).map((candidate) => (
             <button
@@ -102,7 +120,7 @@ function ExamplePane({
       <div
         {...viewport.frameProps}
         aria-label={`${side} · ${observation.dateLabel} 보기용 크롭. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다.`}
-        className="relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing lg:min-h-0 lg:flex-1"
+        className="relative w-full cursor-grab overflow-hidden bg-sidebar focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing lg:min-h-0 lg:flex-1"
       >
         <div {...viewport.contentProps} className="relative h-full w-full">
           {/* 정적 예시 크롭 — 빌드타임 최적화 대상이 아니다. */}
@@ -184,20 +202,19 @@ export default function MaterialsDesignPreview({
   const compareMode = mode === "compare";
 
   return (
-    <div className="flex w-full min-w-0 flex-col px-4 py-3 sm:px-5">
+    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col px-2 py-2 sm:px-3">
       <h2 className="sr-only">디자인 예시</h2>
       <SpatialWorkbenchFrame
-        banner={
-          <p role="note" className="sticky top-0 z-20 min-w-0 rounded-lg border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
-            <strong className="font-bold text-ink-1">디자인 예시 · 현재 등록 자료 아님</strong>
-            {" · "}
-              <Link className="tap-target font-semibold underline" href={returnHref}>
-              실제 등록 자료로 돌아가기
-            </Link>
-          </p>
-        }
-        toolbar={
+        contextBar={
           <>
+            <span className="min-w-0 shrink-0 truncate text-[12px] leading-5 text-ink-2">
+              <strong className="font-bold text-ink-1">디자인 예시 · 현재 등록 자료 아님</strong>
+              {" · "}
+              <Link className="tap-target font-semibold underline" href={returnHref}>
+                실제 등록 자료로 돌아가기
+              </Link>
+            </span>
+            <TopBarSearchTrigger />
             <div className="flex shrink-0 gap-1" role="group" aria-label="보기 방식">
               {(["single", "compare"] as const).map((candidate) => (
                 <button
@@ -211,15 +228,16 @@ export default function MaterialsDesignPreview({
                 </button>
               ))}
             </div>
-            {infoOpen ? (
-              <button type="button" onClick={() => setInfoOpen(false)} className="tap-target shrink-0 text-[12px] font-semibold underline">
-                정보 닫기
-              </button>
-            ) : (
-              <button type="button" onClick={() => setInfoOpen(true)} className="tap-target shrink-0 text-[12px] underline text-ink-2">
-                정보
-              </button>
-            )}
+            <button
+              data-workbench-info-trigger
+              type="button"
+              aria-expanded={infoOpen}
+              aria-controls="design-example-info"
+              onClick={() => setInfoOpen(!infoOpen)}
+              className={`tap-target shrink-0 text-[12px] underline ${infoOpen ? "font-semibold" : "text-ink-2"}`}
+            >
+              정보
+            </button>
             <span className="ml-auto flex shrink-0 items-center">
               <Link href="/sites" className="tap-target shrink-0 text-[12px] underline decoration-dotted text-ink-2">
                 실제 현장에서 등록
@@ -227,38 +245,38 @@ export default function MaterialsDesignPreview({
             </span>
           </>
         }
-        rail={
-          <div className="flex min-w-0 flex-col gap-3 rounded-lg border border-line bg-surface p-2 lg:h-full lg:min-h-0 lg:overflow-y-auto">
-            <h3 className="px-1.5 pb-1 text-[12px] font-bold text-ink-muted">관측 선택 · 2건</h3>
+        catalog={
+          <div className="flex min-w-0 flex-col gap-1">
             <ObservationPicker side="A" value={sideAObservation} onChange={setSideAObservation} />
             {compareMode && (
               <ObservationPicker side="B" value={sideBObservation} onChange={setSideBObservation} />
             )}
-            <p className="border-t border-line px-1.5 pt-2 text-[11.5px] leading-5 text-ink-2">
-              출처 · {SOURCE_LINE}{" "}
-              <a className="tap-target underline" href={LICENSE_HREF} target="_blank" rel="noreferrer">
-                라이선스 보기
-              </a>
-            </p>
           </div>
         }
+        catalogLabel="관측 선택"
         stage={
-          <section aria-label={compareMode ? "예시 두 관측 나란히 보기" : "예시 관측 한 장 보기"} className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-2 sm:p-3 lg:h-full lg:min-h-0 lg:overflow-y-auto">
+          <section aria-label={compareMode ? "예시 두 관측 나란히 보기" : "예시 관측 한 장 보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto">
             {compareMode ? (
-              <div className="grid min-w-0 gap-3 md:grid-cols-2 lg:min-h-0 lg:flex-1">
-                <ExamplePane side="A" observation={observationA} layer={layerA} onLayerChange={setLayerA} />
-                <ExamplePane side="B" observation={observationB} layer={layerB} onLayerChange={setLayerB} />
+              <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
+                <ExamplePane side="A" observation={observationA} layer={layerA} onObservationChange={setSideAObservation} onLayerChange={setLayerA} />
+                <ExamplePane side="B" observation={observationB} layer={layerB} onObservationChange={setSideBObservation} onLayerChange={setLayerB} />
               </div>
             ) : (
               <>
                 <p className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">선택한 관측</p>
                 <div className="min-w-0 lg:min-h-0 lg:flex-1">
-                  <ExamplePane side="A" observation={observationA} layer={layerA} onLayerChange={setLayerA} />
+                  <ExamplePane side="A" observation={observationA} layer={layerA} onObservationChange={setSideAObservation} onLayerChange={setLayerA} />
                 </div>
               </>
             )}
             <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
               <p className="text-[11.5px] leading-5 text-ink-muted">독립 보기 · 정량 비교 아님</p>
+              <p className="text-[11.5px] leading-5 text-ink-2">
+                출처 · {SOURCE_LINE}{" "}
+                <a className="tap-target underline" href={LICENSE_HREF} target="_blank" rel="noreferrer">
+                  라이선스 보기
+                </a>
+              </p>
               <details className="text-[12px] text-ink-2">
                 <summary className="tap-target cursor-pointer font-semibold">조작 안내</summary>
                 <ul className="mt-1 flex list-disc flex-col gap-1 pl-5 leading-5">
@@ -308,6 +326,7 @@ export default function MaterialsDesignPreview({
           </>
         }
         inspectorOpen={infoOpen}
+        onCloseInspector={() => setInfoOpen(false)}
         inspectorId="design-example-info"
         inspectorLabel="예시 화면 정보"
       />

@@ -7,9 +7,35 @@ import { useCommandModifierLabel } from "@/components/console/command-modifier";
  *
  * 버튼이 따로 있는 이유: 단축키만 두면 그 기능이 있는 줄 아는 사람만 쓴다. 우측
  * `⌘K` 칩이 단축키를 **가르치는** 자리이기도 하다(디자인 §0). */
-export function SidebarSearchTrigger() {
+export function SidebarSearchTrigger({ compact = false }: { compact?: boolean }) {
   const commandModifier = useCommandModifierLabel();
-
+  const onOpen = () => window.dispatchEvent(new CustomEvent(PALETTE_OPEN_EVENT));
+  // 집중 모드 64px 레일에서는 아이콘만 둔다 — 같은 팔레트 이벤트, 새 읽기 없음.
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label="검색 · 이동"
+        title="검색 · 이동"
+        className="tap-target flex size-11 items-center justify-center rounded-md text-sidebar-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-text"
+      >
+        <svg
+          aria-hidden="true"
+          width="15"
+          height="15"
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          className="flex-none"
+        >
+          <circle cx="7" cy="7" r="4.4" />
+          <path d="M10.4 10.4 14 14" />
+        </svg>
+      </button>
+    );
+  }
   return (
     <button
       type="button"

@@ -89,6 +89,9 @@ describe("design preview materials page", () => {
     expect(html).toContain("나란히");
     expect(html).toContain("한 장");
     expect(html).toContain("층 선택");
+    // 날짜 선택은 각 이미지 바로 위에서 한다.
+    expect(html).toContain('id="example-observation-A"');
+    expect(html).toContain('id="example-observation-B"');
     // 출처 표시는 항상 보인다.
     expect(html).toContain("Cambridge Coastcare / DataWA · CC BY 4.0 · 보기용 크롭");
     expect(html).toContain("https://creativecommons.org/licenses/by/4.0/");
@@ -102,7 +105,7 @@ describe("design preview materials page", () => {
     const html = renderToStaticMarkup(<MaterialsDesignPreview />);
     // 상세 근거는 정보 펼침에서만 본다 — 기본 화면은 사진이 먼저다.
     expect(html).toContain("정보");
-    expect(html).not.toContain("design-example-info");
+    expect(html).not.toContain('id="design-example-info"');
     expect(html).not.toContain("예시 화면 정보");
     expect(html).not.toContain("이 예시에서는 등록·준비·검사를 만들 수 없습니다");
     // 등록은 실제 현장 맥락으로만 연결한다.
