@@ -324,9 +324,8 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("shows a compact honest empty state without a schematic stand-in", async () => {
-    // Human correction: 기하 도식을 썸네일 행세로 두지 않는다. 픽셀이 없을
-    // 때는 사진 칸을 접고 짧은 한 줄 상태로 둔다. 조회는 한 번만 돈다.
+  it("shows a compact honest empty state when no composed tile exists", async () => {
+    // 합성 기술서가 없을 때만 사진 칸을 접고 짧은 한 줄 상태로 둔다. 조회는 한 번만 돈다.
     stubObserver();
     const siteId = "site-composed";
     const fetchMock = vi.fn(async (url: string) => {
@@ -345,6 +344,47 @@ describe("SitePreviewThumb", () => {
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.querySelector("svg")).toBeNull();
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
+  });
+
+  it("restores the composed range diagram when pixels are unavailable", async () => {
+    // 복원: 픽셀이 없을 때 합성 기술서가 있으면 범위 도식을 대신 그린다(사진 아님 명시).
+    stubObserver();
+    const siteId = "site-composed-restore";
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith("/preview")) {
+        return new Response(JSON.stringify({ available: false, reason: "no-output" }), { status: 200 });
+      }
+      return new Response("bytes", { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const tiles = {
+      [siteId]: {
+        available: true,
+        siteId,
+        workAreaId: "area-1",
+        workAreaName: "합성 도식 구역",
+        crs: "EPSG:5186",
+        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
+        vertexCount: 4,
+        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
+        scannedAssetCount: 1,
+        hasMoreAssets: false,
+        siteHref: `/sites/${siteId}?workAreaId=area-1`,
+      },
+    };
+
+    render(
+      <SiteVisualTileProvider tiles={tiles}>
+        <SitePreviewThumb siteId={siteId} size="card" />
+      </SiteVisualTileProvider>,
+    );
+    fireVisible();
+    await screen.findByText("범위 도식 · 사진 아님");
+    expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
+    // 합성 타일은 사진이 아니다 — 실제로 픽셀을 읽지 않는다.
+    expect(document.querySelector("canvas")).toBeNull();
+    expect(document.querySelector("svg")).not.toBeNull();
   });
 
   it("keeps the composed-tile descriptor referentially stable across renders", async () => {
