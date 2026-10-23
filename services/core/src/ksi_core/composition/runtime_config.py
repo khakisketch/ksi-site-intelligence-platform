@@ -115,6 +115,21 @@ def _spatial_data_config_path_env() -> Path | None:
     return path
 
 
+def _audit_working_set_path_env() -> Path | None:
+    """``KSI_CORE_AUDIT_WORKING_SET_CONFIG`` — 부재는 레거시 감사 투영을 뜻한다.
+
+    값이 있으면 소유자-전용 작업집합 바인딩 파일의 정규화된 절대 경로여야
+    한다. 잘못된 경로는 조용한 레거시 대체가 아니라 부팅 실패다.
+    """
+    raw = os.environ.get("KSI_CORE_AUDIT_WORKING_SET_CONFIG")
+    if raw is None:
+        return None
+    path = Path(raw)
+    if not raw or not path.is_absolute() or ".." in path.parts:
+        raise RuntimeError("KSI_CORE_AUDIT_WORKING_SET_CONFIG은 정규화된 절대 경로여야 한다")
+    return path
+
+
 def _site_bootstrap_max_sites_per_org_env() -> int:
     """``KSI_CORE_SITE_BOOTSTRAP_MAX_SITES_PER_ORG`` — F-01 bootstrap 조직 상한.
 

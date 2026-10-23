@@ -19,6 +19,7 @@ Analysis 3종(런타임 설정·활성화·검증키)과 외부 권한 쌍(워�
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
@@ -31,6 +32,7 @@ from ksi_core.composition.platform_assembly import assemble_platform_app
 from ksi_core.composition.runtime_config import (
     _JOURNAL_SEGMENT_BYTES_DEFAULT,
     _analysis_activation_paths_env,
+    _audit_working_set_path_env,
     _expose_docs_env,
     _external_authority_paths_env,
     _human_auth_config_env,
@@ -99,8 +101,19 @@ def build_platform_production_app() -> FastAPI:
         if oidc_subject_registry.principal_ids & opaque_principal_ids:
             raise RuntimeError("OIDC subject principalId collides with opaque principalId")
     spatial_config_path = _spatial_data_config_path_env()
+    audit_working_set_path = _audit_working_set_path_env()
     spatial_config = None
     spatial_rights = None
+    audit_working_set = None
+    if audit_working_set_path is not None:
+        from ksi_core.domains.external.delivery.audit_working_set import (
+            load_spatial_data_audit_working_set,
+        )
+
+        try:
+            audit_working_set = load_spatial_data_audit_working_set(audit_working_set_path)
+        except ValueError as exc:
+            raise RuntimeError("protected audit working-set configuration is invalid") from exc
     if spatial_config_path is not None:
         from ksi_core.composition.spatial_data_production import (
             SpatialDataCoreConfigError,
@@ -211,12 +224,35 @@ def build_platform_production_app() -> FastAPI:
             oidc_subject_registry=oidc_subject_registry,
             bucket=s3_bucket,
             endpoint_url=s3_endpoint,
+            audit_working_set=audit_working_set,
         )
 
     opened: list[Any] = []
 
-    def _journal(name: str) -> DurableJournal:
-        journal = DurableJournal(data_dir / name, max_segment_bytes=journal_segment_bytes)
+    def _journal(
+        name: str,
+        *,
+        retain_records: bool = True,
+        max_line_bytes: int | None = None,
+        max_recover_bytes: int | None = None,
+        recover_deadline: float | None = None,
+        recover_cpu_budget: float | None = None,
+        recover_cpu_start: float | None = None,
+        tolerate_torn_tail: bool = True,
+        line_validator: Callable[[bytes], None] | None = None,
+    ) -> DurableJournal:
+        journal = DurableJournal(
+            data_dir / name,
+            max_segment_bytes=journal_segment_bytes,
+            retain_records=retain_records,
+            max_line_bytes=max_line_bytes,
+            max_recover_bytes=max_recover_bytes,
+            recover_deadline=recover_deadline,
+            recover_cpu_budget=recover_cpu_budget,
+            recover_cpu_start=recover_cpu_start,
+            tolerate_torn_tail=tolerate_torn_tail,
+            line_validator=line_validator,
+        )
         opened.append(journal)
         return journal
 
@@ -248,17 +284,27 @@ def build_platform_production_app() -> FastAPI:
             app.state.external_authority_provider = external_authority_provider
         if spatial_data is not None and spatial_config is not None:
             from ksi_core.composition.spatial_data_production import (
+                SpatialDataCleanupDisabledError,
                 start_spatial_data_cleanup,
             )
 
             wiring = getattr(app.state, "spatial_data", None)
             if wiring is None:
                 raise RuntimeError("spatial data wiring was not mounted by the platform app")
-            cleanup = start_spatial_data_cleanup(
-                wiring, interval_seconds=float(spatial_config.cleanup_interval_seconds)
-            )
-            app.state.spatial_data_cleanup = cleanup
-            app.router.add_event_handler("shutdown", cleanup.stop)
+            try:
+                cleanup = start_spatial_data_cleanup(
+                    wiring, interval_seconds=float(spatial_config.cleanup_interval_seconds)
+                )
+            except SpatialDataCleanupDisabledError as exc:
+                import logging as _logging  # noqa: PLC0415 -- boot-path loud refusal
+
+                _logging.getLogger("ksi_core.composition.platform_production").warning(
+                    "spatial data cleanup not started: %s", exc
+                )
+                app.state.spatial_data_cleanup = None
+            else:
+                app.state.spatial_data_cleanup = cleanup
+                app.router.add_event_handler("shutdown", cleanup.stop)
         return app
     except BaseException:
         # 레거시 프로덕션 조립과 같은 이유 — 안 닫으면 재시도가 flock 에 막혀

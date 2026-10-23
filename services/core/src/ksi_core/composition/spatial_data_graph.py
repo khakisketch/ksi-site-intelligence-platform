@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from time import monotonic, process_time
 from typing import Any
 
 from fastapi import FastAPI
@@ -41,6 +42,7 @@ from ksi_event_contracts.spatial_data_worker import (
 from ksi_core.domains.external.delivery.ai_egress import SpatialDataAiEgress
 from ksi_core.domains.external.delivery.asset_discovery import SpatialDataAssetDiscovery
 from ksi_core.domains.external.delivery.audit import SpatialDataAuditStore
+from ksi_core.domains.external.delivery.audit_working_set import SpatialDataAuditWorkingSetV1
 from ksi_core.domains.external.delivery.downloads import SpatialDataDownloadService
 from ksi_core.domains.external.delivery.grants import (
     SpatialDataGrantAuthorizer,
@@ -209,7 +211,7 @@ class SpatialDataWiring:
 
 def build_spatial_data_wiring(
     *,
-    journal: Callable[[str], DurableJournal],
+    journal: Callable[..., DurableJournal],
     config: SpatialDataLocalGraphConfig,
     reconstruction: ExternalReconstructionStore,
     inspections: ExternalArtifactInspectionStore,
@@ -220,6 +222,7 @@ def build_spatial_data_wiring(
     storage: SpatialDataStoragePort,
     currentness: SpatialDataJobCurrentnessPort,
     spool_root: Path | None = None,
+    audit_working_set: SpatialDataAuditWorkingSetV1 | None = None,
 ) -> SpatialDataWiring:
     if (
         not isinstance(config, SpatialDataLocalGraphConfig)
@@ -231,6 +234,10 @@ def build_spatial_data_wiring(
         raise ValueError(
             "spatial data requires complete explicit local storage/currentness material"
         )
+    if audit_working_set is not None and not isinstance(
+        audit_working_set, SpatialDataAuditWorkingSetV1
+    ):
+        raise ValueError("audit working set must be a validated working-set config or None")
     config = SpatialDataLocalGraphConfig(
         config.policy,
         config.runtime,
@@ -264,7 +271,48 @@ def build_spatial_data_wiring(
     )
     downloads = None
     if spool_root is not None:
-        audit = SpatialDataAuditStore(journal("spatial-data-audit.jsonl"), policy=config.policy)
+        if audit_working_set is None:
+            audit_journal = journal("spatial-data-audit.jsonl")
+        else:
+            # The indexed mode must never retain the full history in RAM:
+            # the audit journal opens without a retained record list and all
+            # retained reads go through bounded streams and point lookups.
+            # The torn tail is never truncated on behalf of the audit — a
+            # partial write refuses boot instead, byte-identical. Legacy
+            # defaults (retain + tolerate) are untouched by this opt-in.
+            from ksi_core.domains.external.delivery.audit import (  # noqa: PLC0415
+                _reject_unbounded_line_shape,
+                audit_journal_max_line_bytes,
+            )
+
+            # Shared boot window starts BEFORE the journal open: the wall
+            # deadline and the CPU budget below cover journal recovery plus
+            # every later index verify/rebuild/load step inside the same
+            # existing envelope (no bound increase, earlier start = stricter).
+            # The delivery structural gate runs on raw line bytes BEFORE the
+            # first parse, so an inflated shape is refused before objects
+            # accumulate — legacy parse behavior is untouched elsewhere.
+            audit_open_wall = monotonic()
+            audit_open_cpu = process_time()
+            audit_journal = journal(
+                "spatial-data-audit.jsonl",
+                retain_records=False,
+                max_line_bytes=audit_journal_max_line_bytes(config.policy),
+                max_recover_bytes=audit_working_set.max_boot_scan_bytes,
+                recover_deadline=audit_open_wall + audit_working_set.max_boot_seconds,
+                recover_cpu_budget=min(
+                    float(config.policy.resource_envelope.max_cpu_seconds),
+                    float(audit_working_set.max_boot_seconds),
+                ),
+                recover_cpu_start=audit_open_cpu,
+                tolerate_torn_tail=False,
+                line_validator=_reject_unbounded_line_shape,
+            )
+        audit = SpatialDataAuditStore(
+            audit_journal,
+            policy=config.policy,
+            working_set=audit_working_set,
+        )
         downloads = SpatialDataDownloadService(
             jobs=jobs,
             storage=storage,
@@ -321,6 +369,9 @@ class SpatialDataLocalAssemblyConfig:
     # Operator-provisioned grant/revocation import for the protected production
     # seam. Absent keeps the local/test assembly behaviour unchanged.
     import_rights: Callable[[SpatialDataGrantStore], None] | None = None
+    # Opt-in indexed-history audit working set (ADR-KSI-041). Absent keeps the
+    # legacy finite audit projection unchanged.
+    audit_working_set: SpatialDataAuditWorkingSetV1 | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -333,6 +384,10 @@ class SpatialDataLocalAssemblyConfig:
             raise ValueError(
                 "complete explicit local data config/storage/currentness factories required"
             )
+        if self.audit_working_set is not None and not isinstance(
+            self.audit_working_set, SpatialDataAuditWorkingSetV1
+        ):
+            raise ValueError("audit working set must be a validated working-set config or None")
 
 
 def bind_spatial_data_openapi(app: FastAPI) -> None:

@@ -197,7 +197,12 @@ class SpatialDataDownloadService:
                 or sum(self._counts.values()) >= self.policy.max_pending_records
             ):
                 raise SpatialDataDomainError("CONCURRENCY_LIMIT_EXCEEDED", 429)
-            if self._reserved + size > self.policy.resource_envelope.max_workspace_bytes:
+            if (
+                self._reserved
+                + size
+                + self.audit_store.disk_reserved_bytes()
+                > self.policy.resource_envelope.max_workspace_bytes
+            ):
                 raise SpatialDataDomainError("WORKSPACE_LIMIT_EXCEEDED", 429)
             self._counts[org] = self._counts.get(org, 0) + 1
             self._reserved += size
@@ -259,6 +264,11 @@ class SpatialDataDownloadService:
             self.policy.max_output_bytes, self.policy.max_stream_bytes
         ):
             raise SpatialDataDomainError("RESOURCE_LIMIT_EXCEEDED", 503)
+        if getattr(self.audit_store, "operation_scope", "full") == "history-only":
+            # Recovery mode: retain and serve history, deny every new byte
+            # admission before reservation, spool, storage or journal writes.
+            # Authorization and scope checks above keep their exact precedence.
+            raise SpatialDataDomainError("AUDIT_UNAVAILABLE", 503)
         org, session, started = output.job.organization_id, str(uuid4()), monotonic()
         self._reserve(org, size)
         spool: BinaryIO | None = None
