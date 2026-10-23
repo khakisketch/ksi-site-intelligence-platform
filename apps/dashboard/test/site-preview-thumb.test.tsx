@@ -324,9 +324,9 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("shows an honest neutral block when no composed tile exists", async () => {
-    // 합성 기술서가 없을 때는 자료인 척하는 도형 대신 사진 아님을 밝힌
-    // 중립 블록으로 같은 자리를 채운다. 조회는 한 번만 돈다.
+  it("shows an honest neutral block when no preview pixels exist", async () => {
+    // 뱃지가 상태를 먼저 말한다 — 없음은 중립색, 사진인 척하지 않는다.
+    // 조회는 한 번만 돈다.
     stubObserver();
     const siteId = "site-composed";
     const fetchMock = vi.fn(async (url: string) => {
@@ -339,14 +339,27 @@ describe("SitePreviewThumb", () => {
 
     render(<SitePreviewThumb siteId={siteId} size="card" />);
     fireVisible();
-    await screen.findByText("미리보기 없음");
+    const badge = await screen.findByText("미리보기 없음");
+    expect(badge.className).toMatch(/bg-surface/);
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 실제 픽셀은 읽지 않고, 중립 표시(사진 아이콘·상태 문구)만 둔다.
+    // 실제 픽셀은 읽지 않고, 중립 표시(장식 일러스트·상태 문구)만 둔다.
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.querySelector("svg")).not.toBeNull();
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
-    expect(screen.getByText("사진 아님")).toBeTruthy();
     expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  it("paints the unknown state with a caution tone, distinct from confirmed absence", async () => {
+    stubObserver();
+    const fetchMock = vi.fn(async () => new Response("missing", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<SitePreviewThumb siteId="site-unknown-tone" size="card" />);
+    fireVisible();
+    const badge = await screen.findByText("미리보기 확인 불가");
+    expect(badge.className).toMatch(/bg-high-bg/);
+    expect(document.querySelector("canvas")).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
   });
 

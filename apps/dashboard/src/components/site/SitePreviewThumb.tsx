@@ -201,6 +201,12 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
           : phase.name === "unknown"
             ? "미리보기 확인 불가"
             : "미리보기 없음";
+    const rowToneClass =
+      phase.name === "refused"
+        ? "text-crit-ink"
+        : phase.name === "unknown"
+          ? "text-high-ink"
+          : "text-ink-2";
     return (
       <div ref={boxRef} data-site-preview="row" className="h-11 w-14 shrink-0 overflow-hidden rounded border border-line bg-sunk">
         {phase.name === "ready" && preview !== null ? (
@@ -223,7 +229,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
           <span
             role="img"
             aria-label={rowLabel}
-            className="flex size-full items-center justify-center px-1 text-center text-[10px] font-semibold break-keep text-ink-2"
+            className={`flex size-full items-center justify-center px-1 text-center text-[10px] font-semibold break-keep ${rowToneClass}`}
           >
             {rowLabel}
           </span>
@@ -290,6 +296,14 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
     phase.name === "refused"
       ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
       : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
+  // 뱃지가 상태를 먼저 말한다 — 없음(중립)·확인 불가(주의)·권한 없음(경고)을
+  // 색으로도 구분한다. 색만으로 구분하지 않고 라벨 텍스트를 항상 둔다.
+  const emptyToneClass =
+    phase.name === "refused"
+      ? "border-crit bg-crit-bg text-crit-ink"
+      : phase.name === "unknown"
+        ? "border-high bg-high-bg text-high-ink"
+        : "border-line-strong bg-surface text-ink-2";
   // 합성 기술서가 없을 때는 추상 일러스트(특정 현장이 아닌 공통 배경) 위에
   // 상태 문구를 올린다. 범위 도식은 그리지 않는다.
   return (
@@ -344,14 +358,13 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       </svg>
       <span
         role="img"
-        aria-label={`${emptyLabel} — 사진 아님. 일러스트는 장식이며 실제 현장이 아닙니다. ${emptyNote}`}
+        aria-label={`${emptyLabel} — 아래 일러스트는 장식이며 실제 현장이 아닙니다. ${emptyNote}`}
         className="absolute inset-0 flex flex-col items-center justify-end gap-1 px-6 pt-6 pb-3 text-center"
       >
-        <span className="text-[12.5px] font-bold break-keep text-ink-1">{emptyLabel}</span>
         <span className="max-w-[52ch] text-[10.5px] leading-relaxed break-keep text-ink-2">{emptyNote}</span>
       </span>
-      <span className="absolute top-2 left-2 rounded bg-accent px-1.5 py-0.5 text-[10.5px] font-bold text-accent-on">
-        사진 아님
+      <span className={`absolute top-2 left-2 rounded-full border px-2 py-0.5 text-[11px] font-bold break-keep ${emptyToneClass}`}>
+        {emptyLabel}
       </span>
     </div>
   );
