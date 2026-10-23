@@ -25,7 +25,7 @@
       "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
       "CoreReceipt": false,
       "quantitativeUse": false,
-      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+      "provenanceStorage": "ortho-2021.webp.json origin sidecar plus this manifest; WebP display pixels unchanged"
     },
     {
       "file": "ortho-2022.webp",
@@ -44,7 +44,7 @@
       "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
       "CoreReceipt": false,
       "quantitativeUse": false,
-      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+      "provenanceStorage": "ortho-2022.webp.json origin sidecar plus this manifest; WebP display pixels unchanged"
     },
     {
       "file": "dsm-2021.webp",
@@ -63,7 +63,7 @@
       "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
       "CoreReceipt": false,
       "quantitativeUse": false,
-      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+      "provenanceStorage": "dsm-2021.webp.json origin sidecar plus this manifest; WebP display pixels unchanged"
     },
     {
       "file": "dsm-2022.webp",
@@ -82,7 +82,7 @@
       "modifications": "KSI historical display crop, downscaling/colour rendering, re-encoded WebP for the explicit design example only",
       "CoreReceipt": false,
       "quantitativeUse": false,
-      "embeddedProvenance": "Sourced origin and licence embedded; display pixels unchanged"
+      "provenanceStorage": "dsm-2022.webp.json origin sidecar plus this manifest; WebP display pixels unchanged"
     }
   ]
 }
