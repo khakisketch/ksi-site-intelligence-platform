@@ -212,6 +212,42 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain(`자산 참조 · ${assetRef}`);
   });
 
+  it("groups the catalog by observation bundle instead of a flat file list", async () => {
+    const second = {
+      ...asset(),
+      assetRef: `ksa-v1-${"c".repeat(64)}`,
+      kind: "ortho",
+      observationEpochId: "epoch-2",
+      declared: { ...asset().declared, fileName: "north-ortho.tif" },
+    };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset(), second], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html.match(/관측 묶음 · 1건/g)?.length).toBe(2);
+    expect(html).toContain("관측 묶음 단위로 묶었습니다");
+  });
+
+  it("marks failed processing with its cause and a re-request path", async () => {
+    const failed = {
+      ...asset(),
+      inspection: { ...asset().inspection, state: "FAILED", outcome: "REJECTED", reason: "검사 정책 불일치" },
+    };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [failed], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("상태 · 처리 실패");
+    expect(html).toContain("검사 정책 불일치");
+    expect(html).toContain("구역 자료 준비에서 재처리 요청");
+    expect(html).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
+  });
+
+  it("marks unverified and unsealed records without blocking their metadata", async () => {
+    const pending = { ...asset(), assetRef: `ksa-v1-${"d".repeat(64)}`, inspection: { ...asset().inspection, state: "INSPECTION_PENDING", outcome: null } };
+    const opened = { ...pending, assetRef: `ksa-v1-${"e".repeat(64)}`, lifecycleState: "UNSEALED", inspection: asset().inspection };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [pending, opened], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("상태 · 검사 결과 확인 전");
+    expect(html).toContain("상태 · 파일 제출 미완료");
+  });
+
   it("stays honest when work names are unavailable and distinguishes duplicate file names", async () => {
     mocked.workOrders.mockRejectedValueOnce(new Error("work orders unavailable"));
     const first = asset();

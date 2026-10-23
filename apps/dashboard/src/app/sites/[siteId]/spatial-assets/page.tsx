@@ -33,6 +33,7 @@ import {
   assetBusinessTitle,
   assetBusinessTitles,
   assetLifecycleLabel,
+  capturePeriodTitle,
   dataKindLabel,
   isSupportedDataKind,
   isSupportedLifecycleState,
@@ -144,7 +145,76 @@ function isMetadataOnly(item: SpatialAssetCatalogItem): boolean {
     && item.supportedActions[0] === "VIEW_METADATA";
 }
 
-function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated, visualContext = null }: {
+/**
+ * 관측 묶음 grouping — Core가 준 관측 기록 ID 순서 그대로 둔다.
+ * 시간으로 재정렬하지 않고, 묶음 식별자가 없는 항목은 따로 모은다(버리지 않는다).
+ */
+function groupAssetsByObservation(items: readonly SpatialAssetCatalogItem[]): Array<{ epochId: string; items: SpatialAssetCatalogItem[] }> {
+  const groups: Array<{ epochId: string; items: SpatialAssetCatalogItem[] }> = [];
+  const index = new Map<string, SpatialAssetCatalogItem[]>();
+  for (const item of items) {
+    const key = typeof item.observationEpochId === "string" && item.observationEpochId.length > 0
+      ? item.observationEpochId
+      : "";
+    let list = index.get(key);
+    if (!list) {
+      list = [];
+      index.set(key, list);
+      groups.push({ epochId: key, items: list });
+    }
+    list.push(item);
+  }
+  return groups;
+}
+
+/** 묶음 안의 촬영 구간이 모두 같을 때만 한 줄로 말한다. 다르면 항목별로만 둔다. */
+function observationGroupDateLine(items: readonly SpatialAssetCatalogItem[]): string | null {
+  const lines = items.map((item) =>
+    capturePeriodTitle(item.declared.captureStartedAt, item.declared.captureEndedAt, {
+      captureDate: item.declared.captureDate ?? null,
+    }));
+  const first = lines[0];
+  if (first === undefined) return null;
+  return lines.every((line) => line === first) ? first : null;
+}
+
+interface AvailabilityStatus {
+  label: string;
+  action: string | null;
+  retry: boolean;
+}
+
+/**
+ * 자료 상태에서 허용되는 행동 — 카탈로그가 아는 것만 말한다.
+ * 분석 적합성은 이 목록에서 평가하지 않으므로 '적합' 상태는 두지 않는다.
+ */
+function availabilityStatus(item: SpatialAssetCatalogItem): AvailabilityStatus {
+  if (item.inspection.outcome === "REJECTED" || item.inspection.state === "FAILED") {
+    return {
+      label: "처리 실패",
+      action: `${item.inspection.reason ? `사유: ${item.inspection.reason}. ` : ""}구역 자료 준비에서 재처리를 요청하세요.`,
+      retry: true,
+    };
+  }
+  if (item.lifecycleState === "UNSEALED") {
+    return { label: "파일 제출 미완료", action: "제출이 끝나면 갱신됩니다.", retry: false };
+  }
+  if (item.lifecycleState === "SUPERSEDED") {
+    return { label: "이전 등록 자료", action: "최신 제출을 기준으로 보세요.", retry: false };
+  }
+  const inspected = item.inspection.outcome === "MEASURED"
+    ? "파일 정보 확인됨"
+    : item.inspection.outcome === "NOT_APPLICABLE"
+      ? "적용 대상 아님"
+      : "검사 결과 확인 전";
+  return {
+    label: inspected,
+    action: item.observed ? null : "저장 파일 확인 기록 없음.",
+    retry: false,
+  };
+}
+
+function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated, visualContext = null, retryHref = null }: {
   item: SpatialAssetCatalogItem;
   siteId: string;
   workName: string | null;
@@ -152,8 +222,11 @@ function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplic
   headline: string;
   nameIsDuplicated: boolean;
   visualContext?: VisualBrowsingContext | null;
+  /** 처리 실패 항목에만 준다 — 다른 상태의 재처리를 암시하지 않는다. */
+  retryHref?: string | null;
 }) {
   const stateClass = item.lifecycleState === "SEALED" ? "text-ink" : "text-high-ink";
+  const availability = availabilityStatus(item);
   return <article className="rounded-lg border border-line bg-surface px-4 py-3">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div className="min-w-0">
@@ -161,6 +234,11 @@ function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplic
         <p className="mt-1 break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
         <p className="mt-1 text-[12px] text-ink-2">{item.declared.format} · {exactByteCount(item.declared.sizeBytes)} (제출 정보 기준)</p>
         <p className={`mt-1 text-[12px] ${stateClass}`}>제출 상태: {assetLifecycleLabel(item.lifecycleState)}</p>
+        <p className="mt-1 text-[12px] text-ink-2">
+          <span className="font-semibold">상태 · {availability.label}</span>
+          {availability.action ? ` — ${availability.action}` : ""}
+        </p>
+        {availability.retry && retryHref && <Link className="tap-target mt-1 inline-flex text-[12px] underline" href={retryHref}>구역 자료 준비에서 재처리 요청</Link>}
       </div>
       <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef }, visualContext)}>상세 보기</Link>
     </div>
@@ -403,6 +481,18 @@ export default async function SpatialAssetsPage({
     visualAAssetRef: query.visualAAssetRef, visualBAssetRef: query.visualBAssetRef });
   const currentAssets = page && page.siteId === siteId && page.workAreaId === effectiveWorkAreaId
     ? [...page.assets, ...(detailMatchesScope && detail ? [detail] : [])] : [];
+  // 목록은 관측 묶음(관측 기록 ID) 단위로 접는다 — Core 반환 순서를 유지하고
+  // 시간으로 재정렬하지 않는다. 범위 밖 항목은 묶음에 넣지 않고 그대로 둔다.
+  const inScopeAssets = page && page.siteId === siteId && page.workAreaId === effectiveWorkAreaId
+    ? page.assets.filter((item) => item.siteId === siteId && item.workAreaId === effectiveWorkAreaId)
+    : [];
+  const outOfScopeAssets = page && page.siteId === siteId && page.workAreaId === effectiveWorkAreaId
+    ? page.assets.filter((item) => item.siteId !== siteId || item.workAreaId !== effectiveWorkAreaId)
+    : [];
+  const observationGroups = groupAssetsByObservation(inScopeAssets);
+  const retryBase = effectiveWorkAreaId
+    ? `/sites/${encodeURIComponent(siteId)}/spatial-data-requests?workAreaId=${encodeURIComponent(effectiveWorkAreaId)}`
+    : null;
   const visualContext = visualShape && [visualShape.visualAAssetRef, visualShape.visualBAssetRef].every((ref) =>
     currentAssets.some((item) => item.siteId === siteId && item.workAreaId === effectiveWorkAreaId
       && item.assetRef === ref && isMetadataOnly(item))) ? visualShape : null;
@@ -512,27 +602,45 @@ export default async function SpatialAssetsPage({
               : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
             : null}
           <section className="flex flex-col gap-3">
-            <header><h2 className="text-[16px] font-bold">등록 자료 목록</h2><p className="mt-1 text-[12px] text-ink-muted">파일의 등록 정보만 보여줍니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다.</p></header>
+            <header><h2 className="text-[16px] font-bold">등록 자료 목록</h2><p className="mt-1 text-[12px] text-ink-muted">관측 묶음 단위로 묶었습니다. 파일의 등록 정보만 보여줍니다. 파일 받기와 분석 사용 가능 여부는 별도로 확인합니다.</p></header>
             {page.assets.length === 0
               ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
-              : page.assets.map((item) => {
-                if (item.siteId !== siteId || item.workAreaId !== effectiveWorkAreaId) {
-                  return <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />;
-                }
-                if (!isMetadataOnly(item)) {
-                  return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
-                }
-                return <AssetSummary
-                  key={item.assetRef}
-                  item={item}
-                  siteId={siteId}
-                  workName={resolveWorkName(item.workOrderId, workOrderNames)}
-                  areaName={areaDisplayName}
-                  headline={businessTitleFor(item)}
-                  nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
-                  visualContext={visualContext}
-                />;
-              })}
+              : <>
+                {observationGroups.map((group) => {
+                  const dateLine = observationGroupDateLine(group.items);
+                  return <section key={group.epochId === "" ? "unidentified" : group.epochId} aria-label={group.epochId === "" ? "관측 묶음 확인 불가" : "관측 묶음"} className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/40 p-3">
+                    <header>
+                      <h3 className="text-[13.5px] font-bold break-keep">
+                        {group.epochId === "" ? "관측 묶음 확인 불가" : "관측 묶음"} · {group.items.length}건
+                      </h3>
+                      <p className="mt-0.5 text-[12px] text-ink-2">
+                        {dateLine ?? (group.epochId === ""
+                          ? "묶음 식별자가 없어 촬영 시점은 각 항목에서 확인하세요."
+                          : "항목별 촬영 구간이 다르므로 각 항목에서 확인하세요.")}
+                      </p>
+                    </header>
+                    {group.items.map((item) => {
+                      if (!isMetadataOnly(item)) {
+                        return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
+                      }
+                      return <AssetSummary
+                        key={item.assetRef}
+                        item={item}
+                        siteId={siteId}
+                        workName={resolveWorkName(item.workOrderId, workOrderNames)}
+                        areaName={areaDisplayName}
+                        headline={businessTitleFor(item)}
+                        nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
+                        visualContext={visualContext}
+                        retryHref={retryBase}
+                      />;
+                    })}
+                  </section>;
+                })}
+                {outOfScopeAssets.map((item) => (
+                  <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />
+                ))}
+              </>}
           </section>
           <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={pageHref(siteId, effectiveWorkAreaId, {}, visualContext)}>처음부터 보기</Link>}
