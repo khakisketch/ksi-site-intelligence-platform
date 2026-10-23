@@ -636,6 +636,15 @@ describe("selected asset registration history (V3 submission record)", () => {
 describe("materials visual browsing", () => {
   const secondRef = `ksa-v1-${"9".repeat(64)}`;
 
+  it("shows a verified extent diagram — never fake pixels — when no prepared window exists", async () => {
+    // 준비 기록이 없어도 중앙은 비워 두지 않는다. 검사 격자에서 유도한
+    // 범위 도식(사진 아님)이며, 픽셀을 흉내내지 않는다.
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("범위 도식 · 사진 아님");
+    expect(html).toContain("사진이 아니며 정확도를 보증하지 않습니다");
+    expect(html).not.toContain("목록 첫 자료를 보여줍니다");
+  });
+
   function pairCatalog() {
     const second = {
       ...asset("area-1", "ortho"),

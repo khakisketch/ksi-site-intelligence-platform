@@ -42,7 +42,10 @@ import {
 } from "@/lib/operator-language";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { visualLayersForExactSubmission } from "../site-visual-pair";
-import { extractSimpleRing, selectableGeometry } from "../site-spatial";
+import { extractSimpleRing, planeUnitForCrs, sameDisplayPlane, selectableGeometry } from "../site-spatial";
+import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
+import { readableWindowJobs } from "@/lib/site-windowed-pixel-viewer";
+import { SiteMosaicAbsentDiagram } from "../SiteMosaicAbsentDiagram";
 import {
   firstReadableWindowJob,
   toPreparedWindowJob,
@@ -473,7 +476,40 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
   const layers = visualLayersForExactSubmission(pool, item);
   const param = side === "A" ? "visualAAssetRef" : "visualBAssetRef";
   const heading = `${dataKindLabel(item.kind)} · ${capturePeriodTitle(item.declared.captureStartedAt, item.declared.captureEndedAt, { captureDate: item.declared.captureDate ?? null })}`;
-  return <SiteWindowedPixelViewer
+  // 준비 픽셀이 없어도 중앙은 비워 두지 않는다 — 검사 격자에서 유도한
+  // 범위 도식(사진 아님)을 먼저 둔다. 픽셀을 흉내내지 않으며, 아래 뷰어의
+  // 정직한 상태·복구 문구는 그대로 둔다.
+  const raster = item.inspection.raster;
+  const hasReadablePixels = readableWindowJobs(jobs, item.assetRef).length > 0;
+  const fileBounds = !hasReadablePixels && raster ? nativeBoundsFromInspection(raster) : null;
+  const fileRing: Array<[number, number]> | null = fileBounds
+    ? [[fileBounds[0], fileBounds[1]], [fileBounds[2], fileBounds[1]], [fileBounds[2], fileBounds[3]], [fileBounds[0], fileBounds[3]]]
+    : null;
+  const overlaid = fileRing !== null
+    && workAreaRing !== null
+    && workAreaRing.length >= 3
+    && raster?.observedCrsIdentifier != null
+    && sameDisplayPlane(workAreaCrs, raster.observedCrsIdentifier);
+  const overlayNote = !fileRing ? null
+    : !workAreaRing || workAreaRing.length < 3
+      ? "작업구역 경계를 확인하지 못해 파일 범위만 단독으로 둡니다."
+      : !raster?.observedCrsIdentifier
+        ? "위치 기준을 확인하지 못해 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+        : !overlaid
+          ? "위치 기준이 달라 작업구역 경계를 겹쳐 표시하지 않았습니다. 파일 범위만 단독으로 둡니다."
+          : null;
+  return <div className="flex min-w-0 flex-col gap-2">
+  {fileRing && raster && <SiteMosaicAbsentDiagram
+    fileRing={fileRing}
+    workAreaRing={workAreaRing}
+    overlaid={overlaid}
+    overlayNote={overlayNote}
+    crsLabel={raster.observedCrsIdentifier ?? "확인 불가"}
+    planeUnit={raster.observedCrsIdentifier ? planeUnitForCrs(raster.observedCrsIdentifier) : "unknown"}
+    filePixelSize={{ width: raster.width, height: raster.height }}
+    fileExtentLabel={raster.observedCrsIdentifier ? `${raster.observedCrsIdentifier} 네이티브 평면 ${raster.width} × ${raster.height} 픽셀` : null}
+  />}
+  <SiteWindowedPixelViewer
     siteId={siteId}
     workAreaId={workAreaId}
     layers={layers}
@@ -492,7 +528,8 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
     layerSelectParam={param as "visualAAssetRef" | "visualBAssetRef"}
     hidePrepareActions
     presentation="canvas"
-  />;
+  />
+  </div>;
 }
 
 async function readCatalogOutcome(siteId: string, workAreaId: string, cursor: string | undefined) {
