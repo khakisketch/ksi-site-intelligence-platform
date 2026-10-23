@@ -114,7 +114,7 @@ describe("spatial asset catalog page", () => {
     const html = renderToStaticMarkup(await callPage());
     expect(mocked.catalog).toHaveBeenCalledWith("site-1", "area-1", { limit: 50, cursor: undefined });
     expect(html).toContain("현장에 등록된 작업구역이 하나뿐이라 해당 구역의 자료를 표시합니다.");
-    expect(html).toContain("북측 작업구역 · 한 번에 최대 50건");
+    expect(html).toContain("불러온 1 · 검사 완료 1");
     expect(html).toContain("?workAreaId=area-1&amp;assetRef=");
   });
 
@@ -143,16 +143,15 @@ describe("spatial asset catalog page", () => {
   });
 
   it("labels declarations, byte observations and inspection as separate facts", async () => {
-    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(html).toContain("제출자 입력 정보 있음");
     expect(html).toContain("저장 파일 확인 기록 있음");
     expect(html).toContain("파일 검사:");
     expect(html).toContain("north-dsm.tif");
     expect(html).toContain("DSM");
     expect(html).toContain("지표면 높이 자료(DSM) · 촬영 구간 미기재");
-    // 목록 머리의 반복 설명 대신 현재 구역의 상태 집계를 먼저 보여준다.
-    expect(html).toContain('aria-label="등록 자료 요약"');
-    expect(html).toContain("검사 완료");
+    // 목록 머리의 반복 설명 대신 현재 구역의 상태 요약을 먼저 보여준다.
+    expect(html).toContain("불러온 1 · 검사 완료 1");
     expect(html).not.toContain("카탈로그에서 바이트 다운로드는 제공되지 않습니다.");
     expect(html).not.toContain("분석 상태는 평가되지 않았습니다.");
     expect(html).toContain("?workAreaId=area-1&amp;assetRef=");
@@ -206,7 +205,7 @@ describe("spatial asset catalog page", () => {
   });
 
   it("connects the list rows to work name, area, capture window and version", async () => {
-    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(html).toContain("등록된 관측 작업명 · 북측 1차 관측");
     expect(html).toContain("작업구역명 · 북측 작업구역");
     expect(html).toContain("등록 버전 2");
@@ -224,8 +223,8 @@ describe("spatial asset catalog page", () => {
     };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [asset(), second], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html.match(/관측 묶음 · 1건/g)?.length).toBe(2);
-    expect(html).toContain('aria-label="등록 자료 요약"');
+    expect(html.match(/촬영 구간 미기재 · 1/g)?.length).toBe(2);
+    expect(html).toContain("불러온 2 · 검사 완료 2");
   });
 
   it("marks failed processing with its cause and a re-request path", async () => {
@@ -234,8 +233,9 @@ describe("spatial asset catalog page", () => {
       inspection: { ...asset().inspection, state: "FAILED", outcome: "REJECTED", reason: "검사 정책 불일치" },
     };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [failed], nextCursor: null, hasMore: false });
-    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
-    expect(html).toContain("상태 · 처리 실패");
+    mocked.detail.mockResolvedValueOnce(failed);
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(html).toContain("불러온 1 · 검사 완료 0");
     expect(html).toContain("검사 정책 불일치");
     expect(html).toContain("구역 자료 준비에서 재처리 요청");
     expect(html).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
@@ -245,7 +245,7 @@ describe("spatial asset catalog page", () => {
     const pending = { ...asset(), assetRef: `ksa-v1-${"d".repeat(64)}`, inspection: { ...asset().inspection, state: "INSPECTION_PENDING", outcome: null } };
     const opened = { ...pending, assetRef: `ksa-v1-${"e".repeat(64)}`, lifecycleState: "UNSEALED", inspection: asset().inspection };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [pending, opened], nextCursor: null, hasMore: false });
-    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(html).toContain("상태 · 검사 결과 확인 전");
     expect(html).toContain("상태 · 파일 제출 미완료");
   });
@@ -255,12 +255,12 @@ describe("spatial asset catalog page", () => {
     const first = asset();
     const second = { ...asset(), assetRef: `ksa-v1-${"b".repeat(64)}`, revision: 3 };
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
-    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
     expect(html).toContain("등록된 관측 작업명 · 확인 불가");
     expect(html).toContain("등록 버전 2");
     expect(html).toContain("등록 버전 3");
     expect(html).toContain("같은 파일명이 이 목록에 여러 건 있습니다");
-    expect(html).toContain("파일 검사:");
+    expect(html).toContain("펼쳐서 등록 버전·촬영 구간으로 구분하세요");
   });
 
   it("formats declared submission and capture timestamps in Seoul time", async () => {
@@ -313,7 +313,7 @@ describe("spatial asset catalog page", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("처리 보고서");
     expect(html).not.toContain("(report)");
-    expect(html).toContain("파일 검사: 적용 대상 아님");
+    expect(html).toContain("파일 검사 · 적용 대상 아님");
     expect(html).not.toContain("격자 크기");
   });
 
@@ -324,7 +324,8 @@ describe("spatial asset catalog page", () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [large], nextCursor: null, hasMore: false });
     mocked.detail.mockResolvedValueOnce(large);
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
-    expect(html.match(/정확한 크기 표시 불가/g)).toHaveLength(3);
+    // 행은 바이트 사실을 싣지 않는다 — 선언·관측 상세에서만 센다.
+    expect(html.match(/정확한 크기 표시 불가/g)).toHaveLength(2);
     expect(html).not.toContain("9,007,199,254,740,992 bytes");
   });
 
@@ -513,7 +514,7 @@ describe("selected asset registration history (V3 submission record)", () => {
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
 
     expect(mocked.revision).not.toHaveBeenCalled();
-    expect(html).toContain("등록된 자료");
+    expect(html).toContain(">자료</h2>");
     expect(html).not.toContain("등록 이력");
     expect(html).not.toContain("등록 이력(제출서)을 확인하지 못했습니다");
   });
@@ -544,6 +545,30 @@ describe("selected asset registration history (V3 submission record)", () => {
     expect(html).toContain("조건에 맞는 자료가 없습니다");
     expect(html).not.toContain("이 작업구역에 등록된 자료가 없습니다");
     expect(html).toContain("필터 초기화");
+  });
+
+  it("expands the selected row inline with a close link that keeps the scope", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    // 상세는 행 아래에 한 번만 펼친다 — 목록 위의 별도 섹션이 아니다.
+    expect(html.match(/관측 자료 상세/g)).toHaveLength(2); // sr-only 표제 + 펼침 영역 라벨
+    expect(html).toContain('aria-expanded="true"');
+    expect(html).toContain(`/sites/site-1/spatial-assets?workAreaId=area-1"`);
+    expect(html).toContain(">닫기</a>");
+    // 닫은 뒤에도 목록 행으로 돌아갈 수 있다.
+    expect(html).toContain("상세 보기");
+  });
+
+  it("emphasizes only the attention count in the inline summary", async () => {
+    const failed = {
+      ...asset(),
+      inspection: { ...asset().inspection, state: "FAILED", outcome: "REJECTED", reason: "검사 정책 불일치" },
+    };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [failed], nextCursor: null, hasMore: false });
+    mocked.detail.mockResolvedValueOnce(failed);
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(html).toContain("불러온 1 · 검사 완료 0");
+    expect(html).toContain("확인 필요 1");
+    expect(html).toContain("font-semibold text-high-ink");
   });
 
   it("keeps the work area select as the only required selection so filters can be cleared", async () => {

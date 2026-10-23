@@ -20,11 +20,14 @@ Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/
 scope is historical only. Auth, scoped external registration, work operations,
 result/evidence and unavailable states remain.
 
-The 자료 section is a filter-first catalog: the WorkArea selector and the search/type/inspection
-filters submit on change, counts and rows reflect the page Core actually returned (never the whole
-site), and the observation bundle stays a grouping of that page rather than a second navigation
-level. Selected-record detail leads with 자료 구성·관측 시점·파일 검사·정량 분석 적합성 (unjudged
-here) before file facts, so registration, inspection and quantitative usability stay separate.
+The 자료 section is a single-column catalog, not a card dashboard: one slim title row
+(자료 + register), one toolbar band (WorkArea + search/type/inspection, all submitting on
+change), one inline summary line (loaded count · inspected · attention only when >0), then a
+continuous row list grouped only by date dividers. Rows are two-to-three lines (kind · file
+name · inspection/state) with a file-format tile — no pixel thumbnails, since submissions carry
+no viewable pixels. Selecting a row expands its detail (facts → inspection → file references →
+history → request) directly beneath it; a selection filtered out of the loaded page renders
+above the list instead. No nested cards, no descriptive paragraphs, no duplicate headings.
 
 전역 `업무`는 조직의 `관측 작업`(`/field`)과 배정·공유된 `받은 업무`(`/field/inbox`)를
 구분한다. 팀 관리·계정·도움말은 지원 동선이며 권한이나 업무 기록 의미를 바꾸지 않는다.

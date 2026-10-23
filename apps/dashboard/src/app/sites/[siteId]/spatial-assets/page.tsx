@@ -3,6 +3,7 @@ import { ResponsiveActionBoundary } from "@/components/responsive/ResponsiveActi
 import { SiteSelectionForm } from "@/app/sites/[siteId]/SiteSelectionForm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
 
 import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
@@ -239,39 +240,42 @@ function availabilityStatus(item: SpatialAssetCatalogItem): AvailabilityStatus {
   };
 }
 
-function AssetSummary({ item, siteId, workName, areaName, headline, nameIsDuplicated, visualContext = null, retryHref = null, filters = EMPTY_FILTERS }: {
+/** 파일 타일 — 제출된 파일의 형식만 말한다. 픽셀이 없으므로 썸네일인 척하지 않는다. */
+function FileKindTile({ fileName }: { fileName: string }) {
+  const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase().slice(0, 4) : "FILE";
+  return <span aria-hidden="true" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md border border-line bg-sunk font-mono text-[10px] font-bold text-ink-2">{ext}</span>;
+}
+
+/** 목록 행 — 두 줄로 끝낸다. 파일 사실과 검사 근거는 펼친 상세에서만 본다. */
+function AssetRow({ item, headline, toggleHref, toggleLabel, open, expanded, nameIsDuplicated }: {
   item: SpatialAssetCatalogItem;
-  siteId: string;
-  workName: string | null;
-  areaName: string;
   headline: string;
+  toggleHref: string;
+  toggleLabel: "상세 보기" | "닫기";
+  open: boolean;
+  expanded: ReactNode;
   nameIsDuplicated: boolean;
-  visualContext?: VisualBrowsingContext | null;
-  /** 처리 실패 항목에만 준다 — 다른 상태의 재처리를 암시하지 않는다. */
-  retryHref?: string | null;
-  filters?: CatalogFilters;
 }) {
-  const stateClass = item.lifecycleState === "SEALED" ? "text-ink" : "text-high-ink";
   const availability = availabilityStatus(item);
-  return <article className="rounded-lg border border-line bg-surface px-4 py-3">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h3 className="break-words text-[14px] font-semibold">{headline}</h3>
-        <p className="mt-1 break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
-        <p className="mt-1 text-[12px] text-ink-2">{item.declared.format} · {exactByteCount(item.declared.sizeBytes)} (제출 정보 기준)</p>
-        <p className={`mt-1 text-[12px] ${stateClass}`}>제출 상태: {assetLifecycleLabel(item.lifecycleState)}</p>
-        <p className="mt-1 text-[12px] text-ink-2">
-          <span className="font-semibold">상태 · {availability.label}</span>
-          {availability.action ? ` — ${availability.action}` : ""}
+  const inspectionTone = item.inspection.outcome === "MEASURED"
+    ? "text-safe-ink"
+    : needsAttention(item) ? "text-high-ink" : "text-ink-2";
+  return <>
+    <div className="flex items-center gap-3 py-2.5">
+      <FileKindTile fileName={item.declared.fileName} />
+      <div className="min-w-0 flex-1">
+        <p className="break-words text-[14px] font-semibold leading-snug">{headline}</p>
+        <p className="mt-0.5 break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
+        <p className="mt-0.5 break-words text-[12px] text-ink-2">
+          <span className={`font-semibold ${inspectionTone}`}>파일 검사 · {inspectionOutcomeLabel(item.inspection.outcome)}</span>
+          {" · "}상태 · {availability.label}
         </p>
-        {availability.retry && retryHref && <Link className="tap-target mt-1 inline-flex text-[12px] underline" href={retryHref}>구역 자료 준비에서 재처리 요청</Link>}
+        {nameIsDuplicated && <p className="mt-0.5 text-[11.5px] text-high-ink">같은 파일명이 이 목록에 여러 건 있습니다. 펼쳐서 등록 버전·촬영 구간으로 구분하세요.</p>}
       </div>
-      <Link className="btn min-h-11 shrink-0" href={pageHref(siteId, item.workAreaId, { assetRef: item.assetRef }, visualContext, filters)}>상세 보기</Link>
+      <Link href={toggleHref} aria-expanded={open} aria-label={`${headline} ${toggleLabel}`} className="tap-target shrink-0 text-[12.5px] font-semibold text-ink-2 underline decoration-dotted">{toggleLabel}</Link>
     </div>
-    {nameIsDuplicated && <p className="mt-2 rounded-md bg-sunk/70 px-3 py-2 text-[11.5px] leading-5 text-ink-2">같은 파일명이 이 목록에 여러 건 있습니다. 등록 버전·촬영 구간·아래 파일 정보로 구분하세요.</p>}
-    <TechnicalFileInfo item={item} workName={workName} areaName={areaName} />
-    <FactStatus item={item} compact />
-  </article>;
+    {open ? expanded : null}
+  </>;
 }
 
 function FactStatus({ item, compact = false }: { item: SpatialAssetCatalogItem; compact?: boolean }) {
@@ -355,25 +359,30 @@ function InspectionFacts({ inspection }: { inspection: SpatialAssetInspection })
   </section>;
 }
 
-function AssetDetail({ item, workName, areaName, headline, compareHref }: {
+function AssetDetail({ item, workName, areaName, headline, compareHref, retryHref = null }: {
   item: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
   headline: string;
   /** 분석 요청 권한이 있고 이 자료의 관측 작업을 실제로 지목할 수 있을 때만 넘긴다. */
   compareHref: string | null;
+  /** 처리 실패 항목에만 준다 — 다른 상태의 재처리를 암시하지 않는다. */
+  retryHref?: string | null;
 }) {
   const availability = availabilityStatus(item);
   const captureLine = capturePeriodTitle(item.declared.captureStartedAt, item.declared.captureEndedAt, {
     captureDate: item.declared.captureDate ?? null,
   });
-  return <section className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/50 p-3 sm:p-4">
+  // 바깥(행 목록·상세 틀)이 경계를 이미 졌으므로 안쪽은 근접으로만 나눈다.
+  // kicker는 두지 않는다 — 제목이 말하게 한다.
+  return <section aria-label="관측 자료 상세" className="flex flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 sm:p-4">
     <header>
-      <p className="text-[11.5px] text-ink-muted">{areaName} · 관측 자료 상세</p>
-      <h2 className="mt-0.5 break-words text-[19px] font-bold tracking-tight">{headline}</h2>
+      <p className="sr-only">관측 자료 상세</p>
+      <h4 className="break-words text-[16px] font-bold tracking-tight">{headline}</h4>
+      <p className="mt-0.5 text-[12px] text-ink-2">{areaName} · 등록 버전 {item.revision}</p>
     </header>
     {/* 상세 첫 화면은 파일명이 아니라 이 자료가 무엇이고 어디까지 확인됐는지다. */}
-    <dl className="grid grid-cols-2 gap-3 rounded-lg border border-line bg-surface px-4 py-3 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-2 py-1 sm:grid-cols-4">
       <div className="min-w-0"><dt className="text-[11px] text-ink-muted">자료 구성</dt><dd className="mt-0.5 break-words text-[12.5px] font-semibold">{dataKindLabel(item.kind)} · {item.declared.format}</dd></div>
       <div className="min-w-0"><dt className="text-[11px] text-ink-muted">관측 시점</dt><dd className="mt-0.5 break-words text-[12.5px] font-semibold">{captureLine}</dd></div>
       <div className="min-w-0"><dt className="text-[11px] text-ink-muted">파일 검사</dt><dd className="mt-0.5 break-words text-[12.5px] font-semibold">{inspectionOutcomeLabel(item.inspection.outcome)}</dd></div>
@@ -384,11 +393,14 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
       <span className="font-semibold">상태 · {availability.label}</span>
       {availability.action ? ` — ${availability.action}` : ""}
     </p>
-    {availability.retry && <p className="text-[12px] text-high-ink">재처리는 구역 자료 준비에서 요청하세요.</p>}
+    {availability.retry && retryHref
+      ? <p className="text-[12px] text-high-ink">재처리는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비에서 재처리 요청</Link>하세요.</p>
+      : null}
     {compareHref && <div className="flex flex-wrap items-center gap-2">
       <Link href={compareHref} className="btn w-fit">이 자료를 현재 관측으로 선택</Link>
       <span className="text-[11.5px] text-ink-muted">분석 실행은 결과 화면에서 합니다.</span>
     </div>}
+    <FactStatus item={item} />
     <div className="grid gap-2 sm:grid-cols-2">
       <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">제출자 입력 정보</summary><DeclaredFacts item={item} /></details>
       <details className="rounded-lg border border-line bg-surface p-3 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">저장 파일 확인</summary><ObservedFacts item={item} /></details>
@@ -398,6 +410,40 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
     <p className="text-[11.5px] leading-5 text-ink-muted">파일 검사 완료는 형식·격자 확인이며, 측량·정산 근거나 분석 사용 가능 판정이 아닙니다.</p>
     {item.lifecycleState !== "SEALED" && <p className="text-[11.5px] leading-5 text-high-ink">제출 상태가 {assetLifecycleLabel(item.lifecycleState)}이므로 유효한 분석 입력으로 취급하지 않습니다.</p>}
   </section>;
+}
+
+/** 펼친 행의 본문 — 상세·등록 이력·받기 요청을 한 덩어리로 둔다. */
+function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, historyResult, requestProps }: {
+  detail: SpatialAssetCatalogItem;
+  workName: string | null;
+  areaName: string;
+  headline: string;
+  compareHref: string | null;
+  retryHref: string | null;
+  historyResult: ReturnType<typeof validateRegistrationHistory> | null;
+  requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
+}) {
+  return <>
+    <AssetDetail
+      item={detail}
+      workName={workName}
+      areaName={areaName}
+      headline={headline}
+      compareHref={compareHref}
+      retryHref={retryHref}
+    />
+    {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
+    {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
+    <SpatialDataRequestAction
+      siteId={requestProps.siteId}
+      workAreaId={requestProps.workAreaId}
+      assetRef={detail.assetRef}
+      inspectedRaster={requestProps.inspectedRaster}
+      observedCrsIdentifier={requestProps.inspectedRaster?.observedCrsIdentifier ?? null}
+      observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
+      canRequest={requestProps.canRequest}
+    />
+  </>;
 }
 
 export default async function SpatialAssetsPage({
@@ -552,7 +598,6 @@ export default async function SpatialAssetsPage({
     total: inScopeAssets.length,
     inspected: inScopeAssets.filter((item) => item.inspection.outcome === "MEASURED").length,
     attention: inScopeAssets.filter(needsAttention).length,
-    notApplicable: inScopeAssets.filter((item) => item.inspection.outcome === "NOT_APPLICABLE").length,
   };
   const availableKinds = [...new Set(inScopeAssets.map((item) => item.kind))];
   const observationGroups = groupAssetsByObservation(filteredAssets);
@@ -580,6 +625,23 @@ export default async function SpatialAssetsPage({
   const compareHref = canRequestAnalysis && effectiveWorkAreaId && selectedArea && detailMatchesScope && detail?.workOrderId
     ? `/sites/${encodeURIComponent(siteId)}/analysis?${currentHint.toString()}#new-analysis-request`
     : null;
+  // 상세는 목록 행 아래에 펼친다. 현재 필터에 걸러진 항목이면 목록 위에
+  // 같은 상세를 둔다 — 커서 페이지 밖 선택도 잃지 않는다.
+  const expandedAssetRef = detailMatchesScope && detail && filteredAssets.some((item) => item.assetRef === detail.assetRef)
+    ? detail.assetRef
+    : null;
+  const detailBlock = detailMatchesScope && detail && isMetadataOnly(detail)
+    ? <DetailBlock
+      detail={detail}
+      workName={resolveWorkName(detail.workOrderId, workOrderNames)}
+      areaName={areaDisplayName}
+      headline={businessTitleFor(detail)}
+      compareHref={compareHref}
+      retryHref={retryBase}
+      historyResult={historyResult}
+      requestProps={{ siteId, workAreaId: effectiveWorkAreaId!, inspectedRaster, canRequest: canRequestData }}
+    />
+    : null;
 
   return <div className="flex flex-col">
     <SiteHeader
@@ -592,15 +654,13 @@ export default async function SpatialAssetsPage({
       scopedAssetRef={detail && assetRef && detail.assetRef === assetRef ? assetRef : null}
       visualContext={visualContext}
     />
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 p-4 sm:p-5">
       {visualReturnHref && <p className="text-[12px] text-ink-2">탐색 중이던 두 자료는 유지합니다. <Link className="tap-target inline-flex underline" href={visualReturnHref}>독립 보기로 돌아가기</Link></p>}
       {visualNotice && <p role="status" className="text-[12px] text-ink-2">{visualNotice}</p>}
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
-        <div>
-          <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 자료</h2>
-          <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">관측 묶음별로 등록 자료와 검사 상태를 확인하세요.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      {/* 제목은 탭과 같은 말로 한 번만. 설명 문단은 두지 않는다. */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-[18px] font-bold tracking-tight">자료</h2>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {/* 자료 등록이 이 화면의 유일한 1차 행동이다. 준비·외부 기록은
               같은 줄의 조용한 길로만 둔다. */}
           {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
@@ -618,25 +678,48 @@ export default async function SpatialAssetsPage({
             <Link className="tap-target underline text-ink-2" href={`/sites/${encodeURIComponent(siteId)}/observations`}>외부 비교 기록</Link>
           </span>
         </div>
-      </header>
+      </div>
 
-      {/* 작업구역은 목록의 필터다. 고르면 바로 목록이 바뀌고, 별도 조회 버튼을
-          두지 않는다. SiteSelectionForm 은 JS 가 있을 때 변경 즉시 제출하고,
-          없을 때는 네이티브 제출 버튼을 남긴다. */}
-      <section className="rounded-lg border border-line bg-surface px-4 py-3">
-        <SiteSelectionForm action={basePath} className="flex flex-wrap items-end gap-2">
-          <label className="flex min-w-56 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-work-area">작업구역
-            <select id="spatial-work-area" name="workAreaId" className="input" defaultValue={effectiveWorkAreaId ?? ""} required>
-              <option value="" disabled>작업구역을 선택하세요</option>
+      {/* 도구모음 한 줄 — 구역·검색·유형·검사가 같은 띠에서 바로 바뀐다.
+          SiteSelectionForm 은 JS 가 있을 때 변경 즉시 제출하고, 없을 때는
+          네이티브 제출 버튼을 남긴다. 구역이 바뀌면 다른 필터는 버린다. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-y border-line py-2">
+        <SiteSelectionForm action={basePath} className="flex items-center gap-1.5">
+          <label className="flex items-center gap-1.5 text-[12px] font-semibold" htmlFor="spatial-work-area">작업구역
+            <select id="spatial-work-area" name="workAreaId" className="input w-auto" defaultValue={effectiveWorkAreaId ?? ""} required>
+              <option value="" disabled>선택</option>
               {areas.workAreas.map((area) => <option key={area.workAreaId} value={area.workAreaId}>{area.name}{area.status === "ARCHIVED" ? " · 보관됨" : ""}</option>)}
             </select>
           </label>
         </SiteSelectionForm>
-        {areas.workAreas.length === 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
-        {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="mt-3 text-[12.5px] leading-5 text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
-        {effectiveAreaNotice && <p className="mt-2 text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
-        {effectiveWorkAreaId && selectedArea && <p className="mt-2 text-[12px] text-ink-muted">{selectedArea.name}{selectedArea.status === "ARCHIVED" ? " · 보관됨" : ""} · 한 번에 최대 50건</p>}
-      </section>
+        {effectiveWorkAreaId && inScopeAssets.length > 0 && <SiteSelectionForm action={basePath} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+          <input type="hidden" name="workAreaId" value={effectiveWorkAreaId} />
+          {visualContext && <>
+            <input type="hidden" name="visualAAssetRef" value={visualContext.visualAAssetRef} />
+            <input type="hidden" name="visualBAssetRef" value={visualContext.visualBAssetRef} />
+          </>}
+          <label className="flex min-w-36 flex-1 items-center gap-1.5 text-[12px] font-semibold" htmlFor="spatial-q">검색
+            <input id="spatial-q" name="q" type="search" defaultValue={filters.q} maxLength={80} placeholder="파일명 또는 자료 유형" className="input" />
+          </label>
+          <label className="flex items-center gap-1.5 text-[12px] font-semibold" htmlFor="spatial-kind">유형
+            <select id="spatial-kind" name="kind" className="input w-auto" defaultValue={filters.kind}>
+              <option value="">전체 유형</option>
+              {availableKinds.map((kind) => <option key={kind} value={kind}>{dataKindLabel(kind)}</option>)}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-[12px] font-semibold" htmlFor="spatial-state">검사
+            <select id="spatial-state" name="state" className="input w-auto" defaultValue={filters.state}>
+              <option value="">전체</option>
+              <option value="inspected">검사 완료</option>
+              <option value="attention">확인 필요</option>
+            </select>
+          </label>
+          {filtersAreActive(filters) && <Link className="tap-target text-[12.5px] underline text-ink-2" href={pageHref(siteId, effectiveWorkAreaId ?? "", {}, visualContext)}>필터 초기화</Link>}
+        </SiteSelectionForm>}
+      </div>
+      {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
+      {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
+      {effectiveAreaNotice && <p className="text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
 
       {pageError !== null && <div>{errorView(pageError, "catalog", siteId, effectiveWorkAreaId ? pageHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
       {page && <>
@@ -646,114 +729,59 @@ export default async function SpatialAssetsPage({
           {assetRef && detail && (detail.assetRef !== assetRef || detail.siteId !== siteId || detail.workAreaId !== effectiveWorkAreaId)
             ? <ErrorState message="Core 응답 자산의 ID 또는 현장·작업구역 범위가 요청과 일치하지 않아 상세를 표시하지 않았습니다." tone="high" />
             : null}
-          {detail && detail.assetRef === assetRef && detail.siteId === siteId && detail.workAreaId === effectiveWorkAreaId
-            ? isMetadataOnly(detail)
-              ? <>
-                <AssetDetail
-                  item={detail}
-                  workName={resolveWorkName(detail.workOrderId, workOrderNames)}
-                  areaName={areaDisplayName}
-                  headline={businessTitleFor(detail)}
-                  compareHref={compareHref}
-                />
-                {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
-                {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
-                <SpatialDataRequestAction
-                  siteId={siteId}
-                  workAreaId={effectiveWorkAreaId!}
-                  assetRef={detail.assetRef}
-                  inspectedRaster={inspectedRaster}
-                  observedCrsIdentifier={inspectedRaster?.observedCrsIdentifier ?? null}
-                  observedCrsDigest={inspectedRaster?.observedCrsDigest ?? null}
-                  canRequest={canRequestData}
-                />
-              </>
-              : <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />
+          {/* 필터에 걸러진 선택은 목록 위에서 본다 — 커서 밖 선택도 잃지 않는다. */}
+          {detailMatchesScope && detail && expandedAssetRef === null
+            ? (detailBlock ?? <ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 상세를 표시하지 않았습니다." tone="high" />)
             : null}
-          <section className="flex flex-col gap-3">
-            <header className="flex flex-wrap items-end justify-between gap-2">
-              <h2 className="text-[16px] font-bold">등록된 자료</h2>
-              {page.hasMore && <p className="text-[11.5px] text-ink-muted">이번에 불러온 {formatCountKo(catalogCounts.total)}건 기준</p>}
-            </header>
-            {inScopeAssets.length > 0 && <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="등록 자료 요약">
-              {[
-                { term: "등록 자료", value: catalogCounts.total, tone: "" },
-                { term: "검사 완료", value: catalogCounts.inspected, tone: "text-safe-ink" },
-                { term: "확인 필요", value: catalogCounts.attention, tone: "text-high-ink" },
-                { term: "적용 대상 아님", value: catalogCounts.notApplicable, tone: "text-ink-muted" },
-              ].map((count) => <div key={count.term} className="rounded-lg border border-line bg-surface px-3 py-2">
-                <dt className="text-[11.5px] text-ink-muted">{count.term}</dt>
-                {/* 0 은 색을 칠하지 않는다 — 색은 실제로 볼 것이 있을 때만 신호다. */}
-                <dd className={`mt-0.5 text-[20px] font-bold tabular-nums ${count.value > 0 ? count.tone : "text-ink-muted"}`}>{formatCountKo(count.value)}</dd>
-              </div>)}
-            </dl>}
-            {inScopeAssets.length > 0 && <SiteSelectionForm action={basePath} className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">
-              {effectiveWorkAreaId && <input type="hidden" name="workAreaId" value={effectiveWorkAreaId} />}
-              {visualContext && <>
-                <input type="hidden" name="visualAAssetRef" value={visualContext.visualAAssetRef} />
-                <input type="hidden" name="visualBAssetRef" value={visualContext.visualBAssetRef} />
-              </>}
-              <label className="flex min-w-44 flex-1 flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-q">자료 검색
-                <input id="spatial-q" name="q" type="search" defaultValue={filters.q} maxLength={80} placeholder="파일명 또는 자료 유형" className="input" />
-              </label>
-              <label className="flex flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-kind">유형
-                <select id="spatial-kind" name="kind" className="input" defaultValue={filters.kind}>
-                  <option value="">전체 유형</option>
-                  {availableKinds.map((kind) => <option key={kind} value={kind}>{dataKindLabel(kind)}</option>)}
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[12px] font-semibold" htmlFor="spatial-state">검사 상태
-                <select id="spatial-state" name="state" className="input" defaultValue={filters.state}>
-                  <option value="">전체</option>
-                  <option value="inspected">검사 완료</option>
-                  <option value="attention">확인 필요</option>
-                </select>
-              </label>
-              {filtersAreActive(filters) && <Link className="tap-target text-[12.5px] underline text-ink-2" href={pageHref(siteId, effectiveWorkAreaId ?? "", {}, visualContext)}>필터 초기화</Link>}
-            </SiteSelectionForm>}
-            {page.assets.length === 0
-              ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
-              : filteredAssets.length === 0
-                ? <EmptyState compact title="조건에 맞는 자료가 없습니다" description="검색어나 필터를 바꿔 다시 찾아보세요." />
-                : <>
-                {observationGroups.map((group) => {
+          {/* 집계는 한 줄 요약으로 — 0인 칸은 색 없이, 확인할 것만 강조한다. */}
+          <div className="flex flex-col gap-2.5">
+          <div>
+            <p className="text-[12px] text-ink-2">
+              불러온 {formatCountKo(catalogCounts.total)} · 검사 완료 {formatCountKo(catalogCounts.inspected)}
+              {catalogCounts.attention > 0 && <span className="font-semibold text-high-ink"> · 확인 필요 {formatCountKo(catalogCounts.attention)}</span>}
+              {page.hasMore && <span className="text-ink-muted"> · 이번에 불러온 {formatCountKo(catalogCounts.total)}건 기준</span>}
+            </p>
+            <p className="mt-0.5 text-[11.5px] text-ink-muted">여러 작업구역에 함께 연결된 기록은 제외합니다.</p>
+          </div>
+          {page.assets.length === 0
+            ? <EmptyState compact title="이 작업구역에 등록된 자료가 없습니다" description="관측 자료가 이 작업구역에 등록되면 해당 자료의 메타데이터가 여기에 표시됩니다." />
+            : filteredAssets.length === 0
+              ? <EmptyState compact title="조건에 맞는 자료가 없습니다" description="검색어나 필터를 바꿔 다시 찾아보세요." />
+              : <ul className="flex flex-col divide-y divide-line">
+                {observationGroups.flatMap((group, groupIndex) => {
                   const dateLine = observationGroupDateLine(group.items);
-                  return <section key={group.epochId === "" ? "unidentified" : group.epochId} aria-label={group.epochId === "" ? "관측 묶음 확인 불가" : "관측 묶음"} className="flex flex-col gap-3 rounded-xl border border-line bg-sunk/40 p-3">
-                    <header>
-                      <h3 className="text-[13.5px] font-bold break-keep">
-                        {group.epochId === "" ? "관측 묶음 확인 불가" : "관측 묶음"} · {group.items.length}건
-                      </h3>
-                      <p className="mt-0.5 text-[12px] text-ink-2">
-                        {dateLine ?? (group.epochId === ""
-                          ? "묶음 식별자가 없어 촬영 시점은 각 항목에서 확인하세요."
-                          : "항목별 촬영 구간이 다르므로 각 항목에서 확인하세요.")}
-                      </p>
-                    </header>
-                    {group.items.map((item) => {
+                  const dividerLabel = dateLine ?? (group.epochId === ""
+                    ? "관측 묶음 확인 불가"
+                    : "촬영 구간이 항목마다 다름");
+                  return [
+                    <li key={group.epochId === "" ? "divider-unidentified" : `divider-${group.epochId}`} className={groupIndex === 0 ? "pb-1" : "pt-3 pb-1"}>
+                      <h3 className="text-[12px] font-bold text-ink-muted">{dividerLabel} · {formatCountKo(group.items.length)}</h3>
+                    </li>,
+                    ...group.items.map((item) => {
                       if (!isMetadataOnly(item)) {
-                        return <ErrorState key={item.assetRef} message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" />;
+                        return <li key={item.assetRef}><ErrorState message="Core 응답에 데이터 접근 또는 분석 상태 제한이 없어 해당 항목을 숨겼습니다." tone="high" /></li>;
                       }
-                      return <AssetSummary
-                        key={item.assetRef}
-                        item={item}
-                        siteId={siteId}
-                        workName={resolveWorkName(item.workOrderId, workOrderNames)}
-                        areaName={areaDisplayName}
-                        headline={businessTitleFor(item)}
-                        nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
-                        visualContext={visualContext}
-                        retryHref={retryBase}
-                        filters={filters}
-                      />;
-                    })}
-                  </section>;
+                      const open = expandedAssetRef === item.assetRef;
+                      return <li key={item.assetRef}>
+                        <AssetRow
+                          item={item}
+                          headline={businessTitleFor(item)}
+                          toggleHref={pageHref(siteId, item.workAreaId, open ? { ...(cursor ? { cursor } : {}) } : { assetRef: item.assetRef, ...(cursor ? { cursor } : {}) }, visualContext, filters)}
+                          toggleLabel={open ? "닫기" : "상세 보기"}
+                          open={open}
+                          expanded={open && detailBlock ? <div className="pb-3 sm:pl-14">{detailBlock}</div> : null}
+                          nameIsDuplicated={duplicatedNames.has(item.declared.fileName)}
+                        />
+                      </li>;
+                    }),
+                  ];
                 })}
                 {outOfScopeAssets.map((item) => (
-                  <ErrorState key={item.assetRef} message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" />
+                  <li key={item.assetRef}><ErrorState message="Core 응답 자산의 현장·작업구역 범위가 일치하지 않아 해당 항목을 숨겼습니다." tone="high" /></li>
                 ))}
-              </>}
-          </section>
-          <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2">
+              </ul>}
+          </div>
+          <nav aria-label="등록 자료 페이지" className="flex flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={pageHref(siteId, effectiveWorkAreaId, {}, visualContext, filters)}>처음부터 보기</Link>}
             {page.hasMore && page.nextCursor && effectiveWorkAreaId && <Link className="btn btn-primary" href={pageHref(siteId, effectiveWorkAreaId, { cursor: page.nextCursor }, visualContext, filters)}>다음 자산 보기</Link>}
           </nav>
