@@ -94,6 +94,7 @@ export function SpatialDataReceiptPreview({
   autoLoad = false,
   compact = false,
   gestureControls = false,
+  presentation = "default",
 }: {
   siteId: string;
   workAreaId: string;
@@ -104,14 +105,34 @@ export function SpatialDataReceiptPreview({
   compact?: boolean;
   /** 탐색 폴백의 부분 보기처럼, 같은 바이트의 화면 표시 제스처를 둘 때 true. */
   gestureControls?: boolean;
+  /**
+   * 자료 탐색 무대용 — 큰 픽셀을 먼저 두고 긴 안내·범례·진단은 펼침에 둔다.
+   * 기본값 "default"는 기존 화면 그대로이며, 바이트 검증·읽기 흐름을 바꾸지 않는다.
+   */
+  presentation?: "default" | "canvas";
 }) {
   const [phase, setPhase] = useState<Phase>(() => ({ name: autoLoad ? "loading" : "idle" }));
   const [image, setImage] = useState<DecodedReceiptPreview | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasMode = presentation === "canvas";
   const abortRef = useRef<AbortController | null>(null);
   // ── 부분 출력 직접 조작 — 같은 훅 하나로 같은 규칙을 탄다 ──
   const viewport = useDirectViewport();
   const view = viewport.view;
+  const attributionLine = [receipt.attribution, receipt.modificationNotice]
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
+  const limitationLine = receipt.limitations
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(" ");
+  const receiptNotice = (
+    <>
+      {attributionLine && <p className="break-words leading-5">출처 · {attributionLine}</p>}
+      {limitationLine && <p className="break-words leading-5 text-ink-muted">제한 · {limitationLine}</p>}
+    </>
+  );
 
   useEffect(() => () => {
     abortRef.current?.abort();
@@ -177,8 +198,8 @@ export function SpatialDataReceiptPreview({
     };
   }, [autoLoad, load]);
 
-  return <section aria-label="준비된 출력 미리보기" className={compact ? "" : "border-t border-line pt-4"}>
-    {!compact && <div className="flex flex-wrap items-start justify-between gap-2">
+  return <section aria-label="준비된 출력 미리보기" className={compact || canvasMode ? "" : "border-t border-line pt-4"}>
+    {!compact && !canvasMode && <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
         <h3 className="text-[15px] font-bold">준비된 출력 미리보기</h3>
         <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
@@ -212,14 +233,16 @@ export function SpatialDataReceiptPreview({
       </div>
     )}
     {phase.name === "ready" && (
-      <div className="mt-3 flex flex-col gap-2">
+      <div className={canvasMode ? "flex min-w-0 flex-col gap-1.5" : "mt-3 flex flex-col gap-2"}>
         {gestureControls ? (
           <>
             <div
               {...viewport.frameProps}
               aria-label={`부분 출력 ${phase.width} × ${phase.height} 픽셀. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다.`}
-              className="relative mx-auto cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
-              style={{ maxWidth: `min(100%, calc(52dvh * ${phase.width / phase.height}))` }}
+              className={`relative mx-auto ${canvasMode ? "w-full " : ""}cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing`}
+              style={canvasMode
+                ? { maxWidth: `min(100%, calc(max(160px, 100dvh - 400px) * ${phase.width / phase.height}))` }
+                : { maxWidth: `min(100%, calc(52dvh * ${phase.width / phase.height}))` }}
             >
               <div
                 {...viewport.contentProps}
@@ -232,24 +255,48 @@ export function SpatialDataReceiptPreview({
             {viewport.note && (
               <p className="text-[11.5px] leading-5 text-ink-2" role="status">{viewport.note}</p>
             )}
-            <ViewportGestureHint />
-            {isDisplayViewMoved(view) && (
-              <p className="text-[12px] leading-5 text-ink-2" role="status">
-                표시 확대 {displayZoomPercent(view)}%
-                {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
-              </p>
+            {canvasMode ? (
+              <>
+                {isDisplayViewMoved(view) && (
+                  <p className="text-[11.5px] leading-5 text-ink-2" role="status">
+                    표시 확대 {displayZoomPercent(view)}%
+                    {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+                  </p>
+                )}
+                {receipt.attribution.trim() && (
+                  <p className="break-words text-[11.5px] leading-5 text-ink-2">출처 · {receipt.attribution}</p>
+                )}
+                <details className="text-[11.5px] text-ink-2">
+                  <summary className="tap-target cursor-pointer font-semibold">표시 안내·출처</summary>
+                  <div className="mt-1 flex min-w-0 flex-col gap-1">
+                    <ViewportGestureHint />
+                    {receiptNotice}
+                    <p className="leading-5 text-ink-muted">정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.</p>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <>
+                <ViewportGestureHint />
+                {isDisplayViewMoved(view) && (
+                  <p className="text-[12px] leading-5 text-ink-2" role="status">
+                    표시 확대 {displayZoomPercent(view)}%
+                    {view.cx !== 0.5 || view.cy !== 0.5 ? " · 이동한 화면" : ""} · 원본 버퍼는 그대로 둡니다.
+                  </p>
+                )}
+              </>
             )}
           </>
         ) : (
           <canvas ref={canvasRef} className="max-w-full rounded border border-line" style={{ imageRendering: "pixelated" }} />
         )}
-        <p className="text-[12px] leading-5 text-ink-2">
+        <p className={canvasMode ? "text-[11.5px] leading-5 text-ink-2" : "text-[12px] leading-5 text-ink-2"}>
           출력 {phase.width} × {phase.height} 픽셀 ·{" "}
           {phase.color
             ? "실제 픽셀 색상을 그대로 표시합니다. WGS84 변환·지도 타일·보정을 적용하지 않았습니다."
             : "단일 밴드를 명암으로 표시합니다(화면용 상대 음영). 이 미리보기는 수직 기준 적합성·높이 정확도를 판정하지 않습니다."}
         </p>
-        {!phase.color && (
+        {!phase.color && !canvasMode && (
           <div className="flex items-center gap-2 text-[11.5px] text-ink-muted" aria-label="상대 음영 범례">
             <span>어두움</span>
             <span
@@ -260,9 +307,11 @@ export function SpatialDataReceiptPreview({
             <span>밝음 — 측정값 아님</span>
           </div>
         )}
-        <p className="text-[11.5px] leading-5 text-ink-muted">
-          정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.
-        </p>
+        {!canvasMode && (
+          <p className="text-[11.5px] leading-5 text-ink-muted">
+            정확도 평가·측량·정산 근거가 아닙니다. 체적·면적 등 정량 계산을 하지 않습니다.
+          </p>
+        )}
       </div>
     )}
     {phase.name !== "ready" && <canvas ref={canvasRef} className="hidden" aria-hidden="true" />}

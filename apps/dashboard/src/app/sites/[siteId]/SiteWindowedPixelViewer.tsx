@@ -110,6 +110,17 @@ export interface WindowedPixelViewerProps {
   hideLayerControls?: boolean;
   /** Local comparison-layer controls may be hosted in the shared rail without changing selectors. */
   layerControlsTargetId?: string;
+  /**
+   * 시각 탐색 기본 본문용 — 새 창 준비 요청 UI를 숨긴다. 읽기(준비 상태 다시
+   * 확인·구역 자료 준비 길)와 접힌 진단(details)은 그대로 둔다. 기본 false로
+   * 기존 호출의 동작을 바꾸지 않는다.
+   */
+  hidePrepareActions?: boolean;
+  /**
+   * 자료 탐색 무대용 — 큰 픽셀을 먼저 두고 긴 안내는 펼침에 둔다.
+   * 기본값 "default"는 기존 화면 그대로이다.
+   */
+  presentation?: "default" | "canvas";
 }
 
 type PaintPhase =
@@ -199,6 +210,8 @@ function WindowedLayerView({
   workAreaCrs,
   idPrefix,
   supportingDetails,
+  hidePrepareActions = false,
+  presentation = "default",
 }: {
   siteId: string;
   workAreaId: string;
@@ -210,6 +223,10 @@ function WindowedLayerView({
   workAreaCrs: string;
   idPrefix: string;
   supportingDetails?: ReactNode;
+  /** true면 새 창 준비 요청 UI를 숨기고 읽기 길만 둔다. 기본 false. */
+  hidePrepareActions?: boolean;
+  /** "canvas"면 큰 픽셀을 먼저 두고 긴 안내는 펼침에 둔다. 기본 "default". */
+  presentation?: "default" | "canvas";
 }) {
   const router = useRouter();
   const grid = layer.inspectedRaster;
@@ -465,7 +482,7 @@ function WindowedLayerView({
           새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
       {existingCrop?.receipt ? (
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] leading-5 text-ink-2">준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다.</p>
+          <p className="text-[12px] leading-5 text-ink-2">{presentation === "canvas" ? "일부 범위 · 전체 관측이 아님" : "준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다."}</p>
           <SpatialDataReceiptPreview
             key={existingCrop.jobId}
             siteId={siteId}
@@ -476,6 +493,7 @@ function WindowedLayerView({
             autoLoad
             compact
             gestureControls
+            presentation={presentation}
           />
           {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
         </div>
@@ -493,6 +511,8 @@ function WindowedLayerView({
           requestsHref={requestsHref}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
+          hidePrepareActions={hidePrepareActions}
+          presentation={presentation}
         />
       )}
 
@@ -624,6 +644,12 @@ function WindowedLayerView({
         </div>
       )}
 
+      {hidePrepareActions ? (
+        <p className="text-[12px] leading-5 text-ink-2">
+          새 창 준비 요청은 <Link href={requestsHref} className="tap-target underline">구역 자료 준비</Link>에서
+          합니다. 이 화면에서는 준비 요청을 만들지 않습니다.
+        </p>
+      ) : (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2">
         <h4 className="text-[13px] font-bold">{WINDOWED_VIEWER_REQUEST_LABEL}</h4>
         <p className="text-[12px] leading-5 text-ink-2">
@@ -709,6 +735,7 @@ function WindowedLayerView({
           </p>
         )}
       </div>
+      )}
         </div>
       </details>
     </div>
@@ -735,7 +762,10 @@ export function SiteWindowedPixelViewer({
   layerSelectParam = "assetRef",
   hideLayerControls = false,
   layerControlsTargetId,
+  hidePrepareActions = false,
+  presentation = "default",
 }: WindowedPixelViewerProps) {
+  const canvasMode = presentation === "canvas";
   const router = useRouter();
   const activeLayer = layers.find((item) => item.assetRef === selectedAssetRef) ?? layers[0] ?? null;
   const [layerOverride, setLayerOverride] = useState<string | null>(null);
@@ -747,7 +777,7 @@ export function SiteWindowedPixelViewer({
     setControlsTarget(node && layerControlsTargetId ? document.getElementById(layerControlsTargetId) : null);
   }, [layerControlsTargetId]);
   const layerControls = layers.length > 1 ? (
-    <div className="flex flex-wrap gap-1 lg:flex-col" role="group" aria-label="자료 층 전환">
+    <div className={`flex flex-wrap gap-1 ${canvasMode ? "text-[12px]" : "lg:flex-col"}`} role="group" aria-label="자료 층 전환">
       {layers.map((item) => {
         const selected = item.assetRef === layer?.assetRef;
         // URL 전환이 있으면 링크로 둔다 — Back·reload·분석 복귀가 같은 층을
@@ -802,7 +832,9 @@ export function SiteWindowedPixelViewer({
   return (
     <section
       aria-label={`${WINDOWED_VIEWER_ADAPTER_LABEL}${observationHeading ? ` · ${observationHeading}` : ""}`}
-      className={`flex min-w-0 flex-col gap-3 ${hideLayerControls ? "" : "rounded-xl border border-line bg-surface px-4 py-3"}`}
+      className={canvasMode
+        ? "flex min-w-0 flex-col gap-1.5"
+        : `flex min-w-0 flex-col gap-3 ${hideLayerControls ? "" : "rounded-xl border border-line bg-surface px-4 py-3"}`}
     >
       {!slimHeader && (
         <header>
@@ -853,6 +885,8 @@ export function SiteWindowedPixelViewer({
           workAreaCrs={workAreaCrs}
           idPrefix={`${idPrefix}-${layer.assetRef === layers[0]?.assetRef ? "first" : "second"}`}
           supportingDetails={supportingDetails}
+          hidePrepareActions={hidePrepareActions}
+          presentation={presentation}
         />
       )}
 
@@ -896,6 +930,8 @@ export function SiteWindowedPixelCompare({
   currentLayerParam = "assetRef",
   baselineLayerControlsTargetId,
   currentLayerControlsTargetId,
+  hidePrepareActions = false,
+  presentation = "default",
 }: {
   siteId: string;
   workAreaId: string;
@@ -927,25 +963,38 @@ export function SiteWindowedPixelCompare({
   /** 레일 포털 대상 — 기본 workspace-baseline/current-layer-controls. */
   baselineLayerControlsTargetId?: string;
   currentLayerControlsTargetId?: string;
+  /** true면 두 칸 모두 새 창 준비 요청 UI를 숨긴다. 기본 false. */
+  hidePrepareActions?: boolean;
+  /** "canvas"면 큰 픽셀을 먼저 두고 안내 박스는 한 줄로 둔다. 기본 "default". */
+  presentation?: "default" | "canvas";
 }) {
+  const canvasMode = presentation === "canvas";
   const verdict = sharedPlaneForCompare(baselineCrs, currentCrs);
   return (
-    <div className="flex flex-col gap-3">
-      <div className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[13px] font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
-        {verdict.ok ? (
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-            두 칸은 같은 위치 기준({verdict.crs})의 작업구역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
-            동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다. 화면을 겹쳐도 분석 근거가 되지 않습니다.
-          </p>
-        ) : (
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2" role="status">{verdict.notice}</p>
-        )}
-        <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
-          각 칸의 DSM 명암은 그 창 안에서만 늘이기한 상대 음영입니다. 창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요.
+    <div className={`flex min-w-0 flex-col ${canvasMode ? "gap-2" : "gap-3"}`}>
+      {canvasMode ? (
+        <p className="text-[11.5px] leading-5 text-ink-muted" role="status">
+          {verdict.ok
+            ? "각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다."
+            : verdict.notice}
         </p>
-      </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      ) : (
+        <div className="rounded-lg border border-line bg-surface px-4 py-3">
+          <h3 className="text-[13px] font-bold">{baselineRoleLabel === "관측 A" ? "독립 보기 — 정합 근거 없음" : "나란히 보기 안내(창 단위 픽셀 보기)"}</h3>
+          {verdict.ok ? (
+            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+              두 칸은 같은 위치 기준({verdict.crs})의 작업구역 경계와 함께 둡니다. 화면 맞춤이 실제 지형 일치를 뜻하지 않으며,
+              동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다. 화면을 겹쳐도 분석 근거가 되지 않습니다.
+            </p>
+          ) : (
+            <p className="mt-1 text-[12.5px] leading-5 text-ink-2" role="status">{verdict.notice}</p>
+          )}
+          <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">
+            각 칸의 DSM 명암은 그 창 안에서만 늘이기한 상대 음영입니다. 창이 다르면 밝기가 달라도 높이 차이로 읽지 마세요.
+          </p>
+        </div>
+      )}
+      <div className={`grid min-w-0 gap-3 ${canvasMode ? "md:grid-cols-2" : "gap-4 md:grid-cols-2"}`}>
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-[12px] font-bold">{baselineRoleLabel} · {baselineHeading}</p>
           <SiteWindowedPixelViewer
@@ -967,6 +1016,8 @@ export function SiteWindowedPixelCompare({
             layerSelectHref={baselineLayerHref}
             layerSelectParam={baselineLayerParam}
             layerControlsTargetId={layerControlsInRail ? (baselineLayerControlsTargetId ?? "workspace-baseline-layer-controls") : undefined}
+            hidePrepareActions={hidePrepareActions}
+            presentation={presentation}
           />
         </div>
         <div className="flex min-w-0 flex-col gap-1">
@@ -990,6 +1041,8 @@ export function SiteWindowedPixelCompare({
             layerSelectHref={currentLayerHref}
             layerSelectParam={currentLayerParam}
             layerControlsTargetId={layerControlsInRail ? (currentLayerControlsTargetId ?? "workspace-current-layer-controls") : undefined}
+            hidePrepareActions={hidePrepareActions}
+            presentation={presentation}
           />
         </div>
       </div>

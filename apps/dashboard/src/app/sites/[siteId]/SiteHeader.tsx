@@ -44,6 +44,7 @@ export function SiteHeader({
   scopedWorkAreaId = null,
   scopedAssetRef = null,
   visualContext = null,
+  variant = "default",
 }: {
   site: SiteView;
   selectedEpochId: string | null;
@@ -65,6 +66,11 @@ export function SiteHeader({
     hintBaseline?: { workOrderId: string; submissionRef: string; revision: number };
     hintCurrent?: { workOrderId: string; submissionRef: string; revision: number };
   } | null;
+  /**
+   * 자료 탐색용 한 줄 머리 — 같은 목적지·같은 범위 브리지를 작은 행에 둔다.
+   * 기본값 "default"는 기존 머리 그대로이며, 다른 화면의 동작을 바꾸지 않는다.
+   */
+  variant?: "default" | "compact";
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { section: tab, epoch: selectedEpochId ?? undefined };
@@ -115,6 +121,63 @@ export function SiteHeader({
   const workOrdersTab = SITE_TABS.find((option) => option.key === "work-orders");
   const showRecordsContext = tab === "materials" || tab === "work-orders";
   const activeTab = tab === "work-orders" ? "materials" : tab;
+  if (variant === "compact") {
+    return (
+      <header
+        className="flex min-w-0 flex-col gap-1 border-b border-line bg-surface px-4 py-1.5 sm:px-5"
+        data-site-nav="true"
+        data-site-id={site.siteId}
+        data-work-area-id={scopedWorkAreaId ?? ""}
+        data-asset-ref={scopedAssetRef ?? ""}
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
+          <h2 className="w-full min-w-0 truncate text-[14px] font-bold tracking-tight sm:w-auto sm:flex-1">{site.name}</h2>
+          <StateBadge label={status.label} tone={status.tone} />
+          <nav className="flex shrink-0 items-center gap-0.5" aria-label="현장 업무 메뉴">
+            {headerTabs.map((option) => (
+              <Link
+                key={option.key}
+                href={option.key === "results" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
+                aria-current={option.key === activeTab ? "page" : undefined}
+                className={`tap-target rounded-md px-2 py-1 text-[12px] whitespace-nowrap ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
+              >
+                {option.label}
+              </Link>
+            ))}
+          </nav>
+          <details className="relative shrink-0 text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer list-none rounded-md border border-line bg-surface px-2 py-1 font-semibold">설정·정보</summary>
+            <div className="absolute right-0 z-10 mt-1 flex min-w-52 flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-lg">
+              <p className="px-2 py-1 text-[11.5px]">현장 관리 상태 · {status.label}</p>
+              <p className="break-all px-2 py-1 font-mono text-[11px] text-ink-muted">{site.siteId}</p>
+              <Link href={`/sites/${encodeURIComponent(site.siteId)}/work-areas`} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">작업구역 관리</Link>
+              <Link href={`${hrefWith(site.siteId, current, { section: "manage" }, scope)}#site-aoi`} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">현장 전체 범위</Link>
+              <Link href={hrefWith(site.siteId, current, { section: "manage" }, scope)} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">현장 상태</Link>
+              {latestExternalReportKnown !== undefined && (
+                <p className="px-2 py-1 text-[11.5px] text-ink-2">
+                  최근 외부 비교 보고{" "}
+                  {!latestExternalReportKnown ? "알 수 없음" : latestExternalReportAt ? formatKoreanDate(latestExternalReportAt) : "아직 없음"}
+                </p>
+              )}
+              {site.resumeTarget && <p className="px-2 py-1 text-[11.5px] text-ink-2">복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}</p>}
+            </div>
+          </details>
+        </div>
+        {showRecordsContext && workOrdersTab ? (
+          <p className="text-[11.5px] text-ink-2">
+            <span>자료 · </span>
+            <Link
+              href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
+              aria-current={tab === "work-orders" ? "page" : undefined}
+              className="tap-target underline decoration-dotted"
+            >
+              {workOrdersTab.label}
+            </Link>
+          </p>
+        ) : null}
+      </header>
+    );
+  }
   return (
     <header
       className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5"

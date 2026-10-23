@@ -105,6 +105,18 @@ export function readableWindowJobs(
   );
 }
 
+/**
+ * 레일 썸네일용 첫 번째 그릴 수 있는 창 — 같은 정확한 자료의 준비 기록 중
+ * 가장 먼저 확인된 하나만 둔다. 없으면 null이며, 다른 자료의 화면을
+ * 가져오지 않는다. N+1 조회를 만들지 않는다(호출자가 이미 읽은 목록에서 고른다).
+ */
+export function firstReadableWindowJob(
+  jobs: readonly PreparedWindowJob[],
+  assetRef: string,
+): PreparedWindowJob | null {
+  return readableWindowJobs(jobs, assetRef)[0] ?? null;
+}
+
 /** 이미 준비된 부분 출력도 보여준다. 타일망과 다르다고 자료가 없는 것은 아니다. */
 export function preparedWindowFallback(
   grid: InspectedRasterGrid | null,

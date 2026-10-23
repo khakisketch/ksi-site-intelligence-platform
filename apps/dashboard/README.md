@@ -20,14 +20,25 @@ Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/
 scope is historical only. Auth, scoped external registration, work operations,
 result/evidence and unavailable states remain.
 
-The 자료 section is a single-column catalog, not a card dashboard: one slim title row
-(자료 + register), one toolbar band (WorkArea + search/type/inspection, all submitting on
-change), one inline summary line (loaded count · inspected · attention only when >0), then a
-continuous row list grouped only by date dividers. Rows are two-to-three lines (kind · file
-name · inspection/state) with a file-format tile — no pixel thumbnails, since submissions carry
-no viewable pixels. Selecting a row expands its detail (facts → inspection → file references →
-history → request) directly beneath it; a selection filtered out of the loaded page renders
-above the list instead. No nested cards, no descriptive paragraphs, no duplicate headings.
+The 자료 section is a visual material explorer, not a metadata dump: a compact
+epoch-grouped rail (~240px, filters on demand), a large selected preview at center
+that fills the viewport stage, and an info panel that only takes a grid column when
+opened (`?info=1`; drawer on smaller widths). Clicking a record switches the preview;
+metadata opens on demand via the info link. Rail rows are two lines (short kind ·
+version, filename) with exact-asset thumbnails drawn only from that record's already
+prepared window — never a representative borrowed from another record. Two records
+can sit side by side as independent views (A/B chosen explicitly in the rail, kept in
+`visualAAssetRef`/`visualBAssetRef` URL keys). There is no synchronized alignment,
+swipe, heatmap or quantitative claim — each pane is an independent read of that exact
+submission's ortho/DSM layers through the verified prepared-output path, and the
+default body never creates prepare requests. Non-raster reports render an honest
+file-type body, never a fake map. Dates keep exact precision; grouping follows Core's
+observation order without guessing. Legacy `assetRef` deep links, filters and paging
+keep their scope; cursor-out-of-page selections are re-read in the same scope
+(bounded, opaque on 403/404); explicit invalid/foreign selections fail closed without
+substitution. Old catalog-only copy is superseded by the latest user direction;
+retained tests still enforce scope/security/date/precision/decode checks against this
+layout.
 
 전역 `업무`는 조직의 `관측 작업`(`/field`)과 배정·공유된 `받은 업무`(`/field/inbox`)를
 구분한다. 팀 관리·계정·도움말은 지원 동선이며 권한이나 업무 기록 의미를 바꾸지 않는다.

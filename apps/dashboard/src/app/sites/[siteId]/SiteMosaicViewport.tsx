@@ -88,6 +88,16 @@ export interface MosaicViewportProps {
   workAreaRing?: Array<[number, number]> | null;
   /** 작업구역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
   workAreaCrs?: string | null;
+  /**
+   * 시각 탐색 무대용 — 큰 픽셀을 먼저 두고 긴 안내·범례·진단은 펼침에 둔다.
+   * 기본값 "default"는 기존 화면 그대로이며, 바이트 검증·읽기 흐름을 바꾸지 않는다.
+   */
+  presentation?: "default" | "canvas";
+  /**
+   * 시각 탐색 기본 본문용 — 미리보기 준비/다시 준비 요청 버튼을 숨긴다.
+   * 읽기(준비 상태 다시 확인·구역 자료 준비 길)와 접힌 진단은 그대로 둔다.
+   */
+  hidePrepareActions?: boolean;
 }
 
 type MosaicFailure = { reason: DisplayGapReason; message: string };
@@ -154,7 +164,10 @@ export function SiteMosaicViewport({
   requestsHref,
   workAreaRing = null,
   workAreaCrs = null,
+  hidePrepareActions = false,
+  presentation = "default",
 }: MosaicViewportProps) {
+  const canvasMode = presentation === "canvas";
   const router = useRouter();
   const ownerToken = useId();
   const footprint = useMemo<DisplayViewportBounds>(() => {
@@ -558,6 +571,7 @@ export function SiteMosaicViewport({
       }).length
     : 0;
   const canFillNow =
+    !hidePrepareActions &&
     cover.ok &&
     (pendingFetchCount > 0 || (canRequest !== false && observedCrsDigest !== null && missingCount > 0));
   // 아래 compact/showCanvas 분기는 디코딩된 바이트 유무로만 가른다. 준비
@@ -837,8 +851,12 @@ export function SiteMosaicViewport({
           <div
             {...viewport.frameProps}
             aria-label="이어 보기 화면. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다."
-            className="relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
-            style={{ ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}` }}
+            className={canvasMode
+              ? "relative mx-auto w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
+              : "relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"}
+            style={canvasMode
+              ? { ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}`, maxWidth: `min(100%, calc((100dvh - 380px) * ${geometry.width / geometry.height}))` }
+              : { ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}` }}
           >
             <div
               {...viewport.contentProps}
@@ -859,7 +877,7 @@ export function SiteMosaicViewport({
             {observedCrsIdentifier ? ` · ${observedCrsIdentifier} 네이티브 평면 ${geometry.width} × ${geometry.height} 픽셀` : null}
           </p>
           {isDsm && (
-            <p className="text-[12px] leading-5 text-ink-2">{DSM_RELATIVE_SHADING_NOTE}</p>
+            <p className={canvasMode ? "text-[11.5px] leading-5 text-ink-muted" : "text-[12px] leading-5 text-ink-2"}>{DSM_RELATIVE_SHADING_NOTE}</p>
           )}
           {paintError && (
             <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
