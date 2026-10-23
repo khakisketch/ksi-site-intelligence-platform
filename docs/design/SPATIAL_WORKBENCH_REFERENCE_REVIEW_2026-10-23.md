@@ -385,3 +385,33 @@ Human의 후속 `continue`에서 실제 자료→작업공간→결과 흐름을
 `live-preserved-swipe-*`와 배포 영수증이다. 이 검증은 UI 연결 단위의 수용이며, 실자료 복구,
 검증된 실제 쌍 swipe, 하나의 지속 카메라를 공유하는 모든 경로, 플랫폼/고객/운영 전체 수용을
 뜻하지 않는다. 도구 생성 PRODUCT의 오래된 메뉴 요약은 권위로 사용하거나 임의 수정하지 않았다.
+
+### 후속 실제 업무 회귀와 최종 UI 배포
+
+기존 4개 E2E 묶음을 함께 실행하면서 두 기능 문제를 추가로 확인했다. 준비 자료가 없는
+자료 화면에서는 등록/관측 작업 기록 진입점이 사라졌고, 모바일 검색은 이전 기준의 늦은
+응답이 방금 입력한 초안을 지웠다. 빈 자료에는 기존 권한·검증 구역·1024px 쓰기 경계를
+그대로 쓰는 등록/기록 행동을 복원했다. 검색은 입력 시 주소창 맥락을 대조하여 초안을
+보존하고 최신 기준으로 debounce를 다시 예약한다. 명시적 칩/뒤로가기/페이지 이동의
+취소 동작과 IME 제한은 유지한다. 초안 표시만 남기고 자동 적용을 잃는 중간 수정은
+수용하지 않았고, 입력→자동 결과와 입력→필터 적용을 모두 검증했다.
+
+최종 UI 코드 `5ad60d2e55860a465e5ee6e90de817f29d373b82`, 이미지
+`ksi-product-dashboard:connected-workspace-followup-20261024` /
+`sha256:77815bee10cc7332b6a267e41e04ade930302a521a1debc63b5c6ee315f3fa1e`.
+롤백 `ksi-product-console-pre-workspace-recovery-20261024` 보존. 206파일/2063단위테스트,
+types/lint0errors/production build 통과. 기존 4개 E2E는 **97통과·16조건부 제외·3실패**다.
+3실패는 Home 기준 PNG 불일치이며, 변경 전3374567f를 같은 환경에서 실행한 수신 PNG가
+현재와 pixel/SHA256까지 동일했다. 기준 이미지나 임계값을 바꾸어 전체 green으로 보고하지
+않는다. 별도 dev StrictMode 입력 이벤트 유실 가능성은 관찰됐지만 인과적 제품 수정으로
+해결했다고 주장하지 않는다. 실제 배포에서는390/1440에서 검색 초안·그룹/정렬 보존,
+자동 적용 및 실제 현장 검색, 기존 비교/공개 예시를 다시 실행하고 캡처를 읽었다.
+추가 증거는 `ui-followup-verification-receipt.json`, `official-e2e-v4.log`,
+`home-baseline-comparison.json`, `search-unit/materials-empty-*.png`, `live-followup-*`다.
+
+Core 복구 후보는 별도 격리 분기 `recovery/audit-working-set-20261024`의 `6ba3612a`에
+보존했으며 main에 병합/적용하지 않았다. 실제15개 backing의 사본에서512세션 조회,
+사본513번째 admission/denial, 동일 index warm/history-only 전환과 torn 거부를 확인했다.
+하지만 settled allocator 수치와 Python peak만으로 동시 native/transient1MiB 한도를
+입증하지 못하여 **자원 수용은 미검증**이다. 사본 기능 검증과 원본410 만료, 이 계측 한계를
+구분한다. 실자료 복구나 실제 쌍 swipe 수용으로 확장하지 않는다.
