@@ -380,8 +380,8 @@ function AssetDetail({ item, workName, areaName, headline, compareHref }: {
       <div className="min-w-0"><dt className="text-[11px] text-ink-muted">정량 분석 적합성</dt><dd className="mt-0.5 break-words text-[12.5px] font-semibold text-ink-2">이 화면에서 판정하지 않음</dd></div>
     </dl>
     <p className="text-[12px] text-ink-2">
-      <span className="font-semibold">제출 상태 · {assetLifecycleLabel(item.lifecycleState)}</span>
-      {" · "}<span className="font-semibold">상태 · {availability.label}</span>
+      {item.lifecycleState !== "SEALED" && <><span className="font-semibold">제출 상태 · {assetLifecycleLabel(item.lifecycleState)}</span>{" · "}</>}
+      <span className="font-semibold">상태 · {availability.label}</span>
       {availability.action ? ` — ${availability.action}` : ""}
     </p>
     {availability.retry && <p className="text-[12px] text-high-ink">재처리는 구역 자료 준비에서 요청하세요.</p>}
@@ -683,7 +683,8 @@ export default async function SpatialAssetsPage({
                 { term: "적용 대상 아님", value: catalogCounts.notApplicable, tone: "text-ink-muted" },
               ].map((count) => <div key={count.term} className="rounded-lg border border-line bg-surface px-3 py-2">
                 <dt className="text-[11.5px] text-ink-muted">{count.term}</dt>
-                <dd className={`mt-0.5 text-[20px] font-bold tabular-nums ${count.tone}`}>{formatCountKo(count.value)}</dd>
+                {/* 0 은 색을 칠하지 않는다 — 색은 실제로 볼 것이 있을 때만 신호다. */}
+                <dd className={`mt-0.5 text-[20px] font-bold tabular-nums ${count.value > 0 ? count.tone : "text-ink-muted"}`}>{formatCountKo(count.value)}</dd>
               </div>)}
             </dl>}
             {inScopeAssets.length > 0 && <SiteSelectionForm action={basePath} className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-surface px-3 py-2.5">

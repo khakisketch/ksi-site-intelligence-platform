@@ -104,9 +104,9 @@ export function SiteHeader({
     && scope.workAreaId
     ? { ...preparationAction, href: `${preparationAction.href}?workAreaId=${encodeURIComponent(scope.workAreaId)}` }
     : preparationAction;
-  // The workspace panel owns this same action on its default tab; keep one
-  // entry point there while the mobile panel remains the direct action surface.
-  const primaryAction = tab === "workspace" ? null : scopedPreparationAction;
+  // The workspace panel and the 자료 catalog own this action on their own
+  // surfaces; keep one entry point there. Other tabs keep the header action.
+  const primaryAction = tab === "workspace" || tab === "materials" ? null : scopedPreparationAction;
   // 최상위 메뉴는 세 영역만 바로 보인다. 관측 작업 기록(work-orders) 키와
   // 현장 설정(manage) 키는 옛 URL(?section=...) 호환을 위해 SITE_TABS·
   // normalizeSiteTab에 남기되, 최상위 nav가 아니라 각각 자료 맥락의 하위 길과
