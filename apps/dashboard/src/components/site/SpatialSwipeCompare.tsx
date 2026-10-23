@@ -180,7 +180,7 @@ export function SpatialSwipeCompare({
         onPointerLeave={(event) => { if (!event.currentTarget.hasPointerCapture?.(event.pointerId)) endDrag(event); }}
         onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); }}
         onKeyDown={onGripKeyDown}
-        className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none focus-visible:outline-2 focus-visible:outline-offset-2"
+        className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink-1 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
         style={{ left: swipeGripLeft(shown) }}
       >
         <span
