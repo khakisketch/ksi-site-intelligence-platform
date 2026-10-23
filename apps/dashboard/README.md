@@ -48,7 +48,8 @@ invalid/foreign selections fail closed without substitution. Old catalog-only co
 superseded by the latest user direction; retained tests still enforce
 scope/security/date/precision/decode checks against this layout.
 
-Focused shell: `/design-preview/materials` and `/sites/[siteId]/spatial-assets` render
+Focused shell: `/design-preview/materials`, `/sites/[siteId]/spatial-assets`, and the
+exact `/sites/[siteId]` workspace route (not `/sites/new` or nested form/review routes) render
 under a compact 64px icon rail and no normal TopBar row — the same items, search entry,
 account and logout, only denser; auth-expiry alerts still render. Other routes
 (Home/Sites/Work/login) keep the normal shell. The stage/drawer geometry lives in the
@@ -61,6 +62,14 @@ under a persistent `디자인 예시 · 현재 등록 자료 아님` banner with
 the real materials context. Example bytes are never a fallback for failed/denied
 current records, and registration there navigates back to the real context instead of
 uploading. The licensed source manifest is `docs/design/DEMO_MATERIALS.json`.
+
+The actual workspace's single-observation, independent-pair, and recorded-result modes use
+`SiteWorkspaceWorkbench` over that same frame. Date/layer controls stay beside their content;
+catalog/info are overlays, with status counts disclosed in info rather than a permanent footer.
+The canonical `/analysis` record/request surface keeps its document/form shell and offers an
+exact-record bridge back to workspace results. Browsed A/B inputs remain separate from a frozen
+result's inputs; no new calculation, automatic preparation, synchronization, or registered-data
+swipe is implied by the shared layout.
 
 전역 `업무`는 조직의 `관측 작업`(`/field`)과 배정·공유된 `받은 업무`(`/field/inbox`)를
 구분한다. 팀 관리·계정·도움말은 지원 동선이며 권한이나 업무 기록 의미를 바꾸지 않는다.

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -235,15 +235,16 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 
 describe("explore declutter: primary action leads the side column", () => {
   it("puts the next-action nav first in the scope column with one primary button", async () => {
+    // 고정 선택 레일을 접고 실제 화면을 먼저 둔다 — 다음 행동은 무대 아래
+    // '자료·범위 상세'에서 한 번에 둔다. 옛 별도 칸은 두지 않는다.
     await renderOverview({});
-    const column = screen.getByRole("complementary", { name: "선택 범위 상태" });
-    const first = column.firstElementChild;
-    expect(first?.tagName).toBe("NAV");
-    expect(first?.getAttribute("aria-label")).toBe("선택 구역 다음 확인");
-    const nav = within(first as HTMLElement);
-    const primary = nav.getByRole("link", { name: "관측 자료 등록" });
-    expect(primary.className).toContain("btn-primary");
-    expect(within(first as HTMLElement).getAllByRole("link").filter((link) => link.className.includes("btn-primary"))).toHaveLength(1);
+    expect(screen.queryByRole("region", { name: "선택 관측 화면" })).toBeNull();
+    expect(screen.getByRole("region", { name: "선택 관측 보기" })).toBeTruthy();
+    const detail = screen.getByText("자료·범위 상세").closest("details")!;
+    const nav = within(detail).getByRole("navigation", { name: "탐색 다음 행동" });
+    const primary = nav.querySelector("a.btn-primary");
+    expect(primary?.textContent).toContain("관측 자료 등록");
+    expect(nav.querySelectorAll("a.btn-primary")).toHaveLength(1);
   });
 });
 
@@ -251,7 +252,8 @@ describe("explore declutter: identity and three-area navigation stay reachable",
   it("keeps one site-name heading and all three labelled areas", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
-    expect(screen.getByText("현장 정보·범위")).toBeTruthy();
+    expect(screen.queryByText("현장 정보·범위")).toBeNull();
+    expect(screen.getByText("설정·정보")).toBeTruthy();
     const menu = screen.getByRole("navigation", { name: "현장 업무 메뉴" });
     const links = within(menu).getAllByRole("link");
     expect(links).toHaveLength(3);
@@ -277,12 +279,21 @@ describe("explore declutter: decision limits stay visible next to what they cons
 describe("explore declutter: technical identifiers live in disclosures", () => {
   it("keeps file and identifier facts present but only inside a disclosure", async () => {
     await renderOverview({});
-    const column = screen.getByRole("complementary", { name: "선택 범위 상태" });
-    for (const pattern of [/등록 파일명/, /자료 식별자/, /등록된 구역명/]) {
-      const row = within(column).getByText(pattern);
-      expect(row.closest("details")).toBeTruthy();
+    // 파일 사실은 무대가 아니라 오른쪽 정보 드로어에서만 둔다 — 드로어를 연다.
+    // 드로어 자체가 닫힘 기본이므로 무대를 가리지 않으며, 식별자는 그 안에서
+    // 다시 펼침에 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = document.getElementById("workspace-inspector")!;
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    for (const pattern of [/등록 파일명/, /자료 식별자/]) {
+      // 무대에 남은 기술 행도 펼침 안에만 둔다(뷰어 '표시 조건·근거' 포함).
+      for (const match of within(stage).queryAllByText(pattern)) {
+        expect(match.closest("details")).toBeTruthy();
+      }
+      expect(within(inspector).getAllByText(pattern).length).toBeGreaterThan(0);
     }
-    const canvas = screen.getByRole("region", { name: "선택 관측 화면" });
+    expect(within(inspector).getAllByText(/자료 식별자/)[0]!.closest("details")).toBeTruthy();
+    const canvas = screen.getByRole("region", { name: "선택 관측 보기" });
     // 화면(뷰어의 '표시 조건·근거' 포함)에 남은 기술 행도 펼침 안에만 둔다.
     for (const pattern of [/등록 파일명/, /자료 식별자/]) {
       const matches = within(canvas).queryAllByText(pattern);
@@ -339,7 +350,7 @@ describe("explore declutter: no duplicated titles in the default view", () => {
   it("prints the site name and the explore mode once each", async () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
-    expect(screen.getAllByText("현장 정보·범위")).toHaveLength(1);
+    expect(screen.getAllByText("설정·정보")).toHaveLength(1);
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
     const labels = within(modeNav).getAllByRole("link").map((link) => link.textContent);
     expect(new Set(labels).size).toBe(labels.length);

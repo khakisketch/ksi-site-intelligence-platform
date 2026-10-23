@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -168,7 +168,9 @@ describe("Site spatial overview data bounds", () => {
 
   it("announces an unknown scope query once without echoing the raw id", async () => {
     await renderDefaultTab({ workAreaId: "no-such-area-evil'\"><" });
-    expect(screen.getByRole("status").textContent).toContain("요청한 대상을 확인할 수 없어 조회 가능한 구역을 표시합니다");
+    const banner = screen.getAllByRole("status").find((element) => element.textContent?.includes("요청한 구역·자료가 조회 범위에 없어"))!;
+    expect(banner).toBeTruthy();
+    expect(banner.textContent).toContain("작업구역 · 미세 분석 구역");
     expect(screen.queryByText(/no-such-area/)).toBeNull();
     expect(mocked.assets).toHaveBeenCalledWith("site-1", "tiny-1", { limit: 50 });
     expect(screen.getByText("등록된 구역명 · 미세 분석 구역")).toBeTruthy();
@@ -177,7 +179,9 @@ describe("Site spatial overview data bounds", () => {
   it("announces an unknown asset query while keeping the valid default footprint", async () => {
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderDefaultTab({ assetRef: "ghost-asset" });
-    expect(screen.getByRole("status").textContent).toContain("요청한 대상을 확인할 수 없어 조회 가능한 구역을 표시합니다");
+    const banner = screen.getAllByRole("status").find((element) => element.textContent?.includes("요청한 구역·자료가 조회 범위에 없어"))!;
+    expect(banner).toBeTruthy();
+    expect(banner.textContent).toContain("작업구역 · 미세 분석 구역");
     expect(screen.getByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeTruthy();
   });
 
@@ -229,6 +233,8 @@ describe("Site spatial overview honesty", () => {
       areaFixture({ workAreaId: "dup-2", name: "같은 구역", createdAt: "2026-09-02T00:00:00Z" }),
     ] });
     await renderDefaultTab({});
+    // 구역 선택은 목록 드로어에 있다 — 열어야 보인다.
+    fireEvent.click(screen.getByRole("button", { name: "목록" }));
     const options = screen.getByRole("combobox").querySelectorAll("option");
     expect([...options].map((o) => o.textContent)).toEqual(["같은 구역 · dup-1", "같은 구역 · dup-2"]);
   });
@@ -459,8 +465,9 @@ describe("Site spatial overview honesty", () => {
 
   it("links the header to the preserved AOI anchor on the manage tab", async () => {
     await renderDefaultTab({});
-    expect(screen.getByRole("link", { name: "현장 전체 범위 보기" }).getAttribute("href"))
-      .toBe("/sites/site-1?section=manage#site-aoi");
+    // 집중 모드 한 줄 머리의 설정 메뉴가 같은 목적지를 둔다(검증된 구역 범위 포함).
+    expect(screen.getByRole("link", { name: "현장 전체 범위" }).getAttribute("href"))
+      .toBe("/sites/site-1?section=manage&workAreaId=tiny-1#site-aoi");
   });
 
   function grantPermissions(...perms: string[]) {

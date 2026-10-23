@@ -87,6 +87,7 @@ describe("Site detail start guidance", () => {
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({}),
     }));
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
 
     const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(guide.getAllByText("1개 목록됨")).toHaveLength(2);
@@ -106,6 +107,7 @@ describe("Site detail start guidance", () => {
       params: Promise.resolve({ siteId: "site-1" }),
       searchParams: Promise.resolve({}),
     }));
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
     const guide = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(guide.getByRole("link", { name: "작업구역 확인" }).getAttribute("href")).toBe("/sites/site-1/work-areas");
     expect(screen.queryByRole("link", { name: "비교할 자료 선택" })).toBeNull();
@@ -118,6 +120,7 @@ describe("Site detail start guidance", () => {
       searchParams: Promise.resolve({}),
     }));
     // 작업공간 선택이 있으면 관측 작업이 없어도 건수 요약만 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
     const summaryOnly = within(screen.getByRole("region", { name: "현장 시작 안내" }));
     expect(summaryOnly.getAllByText("1개 목록됨")).toHaveLength(2);
     expect(summaryOnly.getByText("0개 목록됨")).toBeTruthy();
@@ -136,6 +139,7 @@ describe("Site detail start guidance", () => {
       searchParams: Promise.resolve({}),
     }));
 
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
     expect(screen.getByRole("region", { name: "현장 시작 안내" })).toBeTruthy();
     expect(screen.getAllByText("확인 불가")).toHaveLength(3);
     expect(screen.queryByText("등록된 작업구역이 없습니다")).toBeNull();

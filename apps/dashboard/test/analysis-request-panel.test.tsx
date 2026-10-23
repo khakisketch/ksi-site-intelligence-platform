@@ -169,6 +169,30 @@ afterEach(() => {
 });
 
 describe("analysis V2 panel", () => {
+  it("bridges the exact selected record into the shared workspace result mode", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const context = { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
+    renderPanel({ visualContext: context });
+    const bridge = screen.getByRole("link", { name: "작업공간에서 결과 보기" });
+    const href = bridge.getAttribute("href")!;
+    // frozen 기록 신원 그대로 — 최신 추론·다른 기록 대체 없음.
+    expect(href).toContain("/sites/site-1?mode=results");
+    expect(href).toContain("workAreaId=area-1");
+    expect(href).toContain("analysisId=analysis-1");
+    // 같은 구역 검증 쌍만 덧붙인다.
+    expect(href).toContain(`visualAAssetRef=${context.visualAAssetRef}`);
+    expect(href).toContain(`visualBAssetRef=${context.visualBAssetRef}`);
+    expect(href).not.toContain("mode=compare");
+  });
+
+  it("drops a foreign-area visual context from the workspace bridge", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ visualContext: { workAreaId: "other-area", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` } });
+    const href = screen.getByRole("link", { name: "작업공간에서 결과 보기" }).getAttribute("href")!;
+    expect(href).not.toContain("visualAAssetRef");
+    expect(href).not.toContain("visualBAssetRef");
+    expect(href).toContain("analysisId=analysis-1");
+  });
   it.each([null, "analysis-1"])("orders the exact draft before history, but keeps a fixed result first (%s)", (initialAnalysisId) => {
     renderPanel({canCreate:true,initialAnalysisId,initialWorkAreaId:"area-1",initialBaselineSelector:observations[0]!.selector,initialCurrentSelector:observations[1]!.selector});
     const request = document.getElementById("new-analysis-request")!;

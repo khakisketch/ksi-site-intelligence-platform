@@ -318,15 +318,17 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 describe("usability-first explore", () => {
   it("shows the actual canvas before the technical disclosure", async () => {
     await renderOverview({});
-    const canvas = screen.getByRole("region", { name: "선택 관측 화면" });
+    const canvas = screen.getByRole("region", { name: "선택 관측 보기" });
     const detail = screen.getByText("자료·범위 상세").closest("details")!;
     expect(canvas.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     // 실제 화면 자리가 기술 벽보다 먼저다.
     const text = document.body.textContent ?? "";
-    // 타일망 전체 보기와 이미 준비된 부분 보기 모두 실제 표시 경로다.
+    // 이어 보기와 이미 준비된 부분 보기 모두 실제 표시 경로다(canvas 무대 포함).
     const mosaic = text.includes("이어 보기 — 여러 창의 나란한 배치")
       ? text.indexOf("이어 보기 — 여러 창의 나란한 배치")
-      : text.indexOf("준비된 일부 범위");
+      : text.includes("준비된 일부 범위")
+        ? text.indexOf("준비된 일부 범위")
+        : text.indexOf("일부 범위");
     const conditions = text.indexOf("표시 조건·근거");
     expect(mosaic).toBeGreaterThanOrEqual(0);
     expect(conditions).toBeGreaterThan(mosaic);
@@ -351,7 +353,9 @@ describe("usability-first explore", () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.queryByText("현장명")).toBeNull();
-    expect(screen.getByText("현장 정보·범위")).toBeTruthy();
+    // 집중 모드 한 줄 머리 — 기본 머리의 펼침 대신 설정 메뉴를 둔다.
+    expect(screen.getByText("설정·정보")).toBeTruthy();
+    expect(screen.queryByText("현장 정보·범위")).toBeNull();
   });
 });
 

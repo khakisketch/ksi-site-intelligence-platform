@@ -258,13 +258,17 @@ describe("workspace shell structure", () => {
   });
   it.each([
     ["explore", "단일 시점"], ["compare", "두 시점 비교"], ["results", "분석 결과"],
-  ])("keeps %s inside the same viewer and rail with one current mode", async (mode, label) => {
+  ])("keeps %s in one compact context bar with one current mode", async (mode, label) => {
     await renderOverview({ mode });
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
-    expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeTruthy();
+    // 작업 방식은 무대 위 오버레이와 무관한 한 줄 맥락막대에 둔다 — 뷰어 박스 안이 아니다.
+    expect(modeNav.closest("[data-workbench-context-bar]")).toBeTruthy();
+    expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeNull();
     expect(within(modeNav).getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
     expect(modeNav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
-    expect(screen.getByRole("complementary", { name: "작업공간 선택" })).toBeTruthy();
+    // 고정 260px 선택 레일은 두지 않고, 목록은 여는 드로어로 둔다.
+    expect(screen.queryByRole("complementary", { name: "작업공간 선택" })).toBeNull();
+    expect(screen.getByRole("button", { name: "목록" })).toBeTruthy();
   });
   it("shows each mode once without duplicating the site-name heading", async () => {
     await renderOverview({});
@@ -272,7 +276,7 @@ describe("workspace shell structure", () => {
     const modeLinks = within(modeNav).getAllByRole("link");
     expect(modeLinks.map((link) => link.textContent)).toEqual(["단일 시점", "두 시점 비교", "분석 결과"]);
     expect(within(modeNav).getByRole("link", { name: "단일 시점" }).getAttribute("aria-current")).toBe("page");
-    expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeTruthy();
+    expect(modeNav.closest("[data-workbench-context-bar]")).toBeTruthy();
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(mocked.detail).not.toHaveBeenCalled();
   });
@@ -804,7 +808,7 @@ describe("browse source round trip", () => {
   it("announces an unknown browse hint instead of quietly substituting another observation", async () => {
     readySelection();
     await renderOverview({ workAreaId: "tiny-1", assetRef: "ghost-asset" });
-    expect(screen.getByText(/요청한 대상을 확인할 수 없어/)).toBeTruthy();
+    expect(screen.getByText(/요청한 구역·자료가 조회 범위에 없어/)).toBeTruthy();
     // 모르는 참조는 그대로 돌려주지 않는다 — 공지된 서버 기본(검증값)으로 돌아간다.
     const materialsHref = screen.getByRole("link", { name: "자료" }).getAttribute("href");
     expect(materialsHref).toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022");

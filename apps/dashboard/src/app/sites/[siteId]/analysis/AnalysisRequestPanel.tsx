@@ -1717,7 +1717,25 @@ export function AnalysisRequestPanel({
       {listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void restartAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 처음부터 다시 불러오기"}</button>}
       {evidenceRestartRequired && <button type="button" className="btn ml-2" disabled={evidenceLoading} onClick={restartEvidence}>{evidenceLoading ? "근거 불러오는 중" : "근거 처음부터 다시 불러오기"}</button>}
     </div>}
-    {selectedId && selectedDetail && <div className="flex justify-end"><button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button></div>}
+    {selectedId && selectedDetail && (() => {
+      // 작업공간 결과 모드로 이어지는 발견 다리 — frozen 기록 신원은 그대로 싣는다.
+      // 구역·기록 ID는 이 화면이 이미 검증해 들고 있는 선택 상세에서만 싣고,
+      // 최신 추론·다른 기록 대체를 하지 않는다. 탐색 쌍 맥락은 같은 구역에서
+      // 검증된 경우에만 덧붙이며, 받는 작업공간이 재대조한다.
+      const bridgeQuery = new URLSearchParams();
+      bridgeQuery.set("mode", "results");
+      bridgeQuery.set("workAreaId", selectedDetail.workAreaId);
+      bridgeQuery.set("analysisId", selectedDetail.analysisId);
+      if (visualContext && visualContext.workAreaId === selectedDetail.workAreaId) {
+        bridgeQuery.set("visualAAssetRef", visualContext.visualAAssetRef);
+        bridgeQuery.set("visualBAssetRef", visualContext.visualBAssetRef);
+      }
+      const workspaceResultHref = `/sites/${encodeURIComponent(siteId)}?${bridgeQuery.toString()}`;
+      return <div className="flex flex-wrap items-center justify-end gap-2">
+        <Link className="tap-target text-[12px] underline" href={workspaceResultHref}>작업공간에서 결과 보기</Link>
+        <button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button>
+      </div>;
+    })()}
     {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
     {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
       inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}

@@ -15,8 +15,19 @@ describe("집중 모드 경로", () => {
     expect(isFocusModePath("/sites/floreat-01/spatial-assets/")).toBe(true);
   });
 
+  it("정확한 현장 경로의 작업공간만 집중 모드다", () => {
+    expect(isFocusModePath("/sites/floreat-01")).toBe(true);
+    expect(isFocusModePath("/sites/floreat-01/")).toBe(true);
+  });
+
   it("분석·로그인·중첩 하위 경로는 끌어들이지 않는다", () => {
+    expect(isFocusModePath("/sites/new")).toBe(false);
+    expect(isFocusModePath("/sites/new/")).toBe(false);
     expect(isFocusModePath("/sites/floreat-01/analysis")).toBe(false);
+    expect(isFocusModePath("/sites/floreat-01/work-areas")).toBe(false);
+    expect(isFocusModePath("/sites/floreat-01/observations")).toBe(false);
+    expect(isFocusModePath("/sites/floreat-01/observations/new")).toBe(false);
+    expect(isFocusModePath("/sites/floreat-01/spatial-data-requests")).toBe(false);
     expect(isFocusModePath("/sites/floreat-01/spatial-assets/extra")).toBe(false);
     expect(isFocusModePath("/sites/floreat-01/spatial-assets/extra/deep")).toBe(false);
     expect(isFocusModePath("/design-preview/materials/extra")).toBe(false);

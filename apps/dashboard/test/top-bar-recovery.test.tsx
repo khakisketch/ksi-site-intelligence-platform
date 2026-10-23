@@ -44,7 +44,12 @@ describe("TopBar distinguishes identity expiry from server recovery", () => {
   });
 
   it("keeps a normal search entry and hides repeated failure text on login", async () => {
+    // 정확한 현장 작업공간 경로는 집중 모드라서 정상행을 접는다 — 검색 입구는
+    // 작업환경 맥락막대가 맡는다. 일반 경로에서는 정상행을 둔다.
     mocks.pathname = "/sites/site-1";
+    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
+    expect(renderToStaticMarkup(await TopBar())).toBe("");
+    mocks.pathname = "/sites";
     mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
     expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
     mocks.pathname = "/login";

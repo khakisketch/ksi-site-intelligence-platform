@@ -275,7 +275,7 @@ export function SiteWorkspaceCompare({
     <form key={`${selected.workAreaId}:${visualARequestedRef ?? ""}:${visualBRequestedRef ?? ""}`} method="get" action={formAction} className="flex min-w-0 flex-col gap-2">
       <input type="hidden" name="mode" value="compare" />
       <input type="hidden" name="workAreaId" value={selected.workAreaId} />
-      <div className="grid min-w-0 gap-2 min-[420px]:grid-cols-2 lg:grid-cols-1">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-2">
         <div className="min-w-0">
           <label htmlFor="workspace-visual-a" className="block text-[12px] font-semibold">관측 A</label>
           <select id="workspace-visual-a" name="visualAAssetRef" required defaultValue={visualARequestedRef ?? ""} className="tap-target mt-1 w-full rounded-md border border-line bg-surface px-2 text-[13px]">
@@ -299,7 +299,7 @@ export function SiteWorkspaceCompare({
       {workspaceHasMore && <p className="text-[12px] text-ink-2">조회된 목록 뒤에 관측이 더 있습니다. 찾는 관측이 없으면 담당자에게 문의하세요.</p>}
     </form>
   ) : null;
-  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{visualForm ?? <p className="text-[12px] leading-5 text-ink-2">{projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 확인하지 못했습니다. 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">기존 시간 순서 보기</summary><div className="mt-2">{comparisonForm}</div></details>}</div>;
+  if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{visualForm ?? <p className="text-[12px] leading-5 text-ink-2">{selected === null ? "비교할 작업구역이 없습니다. 목록에서 구역을 고르세요." : projectionState === "denied" ? "관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요." : projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 불러오지 못했습니다. 잠시 후 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">기존 시간 순서 보기</summary><div className="mt-2">{comparisonForm}</div></details>}</div>;
   return <div className="flex min-w-0 flex-col gap-3">
     {selected === null && (
       <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">

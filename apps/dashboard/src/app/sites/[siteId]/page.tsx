@@ -385,11 +385,12 @@ export default async function SiteDetailPage({
     }
   }
 
-  return <div className="flex flex-col">
+  return <div className="flex min-w-0 min-h-0 flex-1 flex-col">
     <SiteHeader
       site={site}
       selectedEpochId={null}
       tab={tab}
+      variant={tab === "workspace" ? "compact" : "default"}
       latestExternalReportAt={latestExternalReport}
       latestExternalReportKnown={historyResult.status === "fulfilled"}
       canCreateWorkOrder={canCreateWorkOrder}
@@ -406,8 +407,9 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <div className="flex flex-col gap-4 p-4 sm:p-5">
-      {tab === "workspace" && <div className="flex flex-col gap-4">
+    <div className={tab === "workspace" ? "flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3" : "flex flex-col gap-4 p-4 sm:p-5"}>
+      {tab === "workspace" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
+        <h2 className="sr-only">작업공간</h2>
         <SiteWorkspaceShell
           sitePath={sitePath}
           mode={mode}
@@ -457,13 +459,13 @@ export default async function SiteDetailPage({
           jobsState={preparedJobsState}
           canReadData={canReadData}
           canRequestData={canRequestData}
-        />
-        <SiteStartGuidance
-          siteId={site.siteId}
-          {...siteStartCounts}
-          // 실제 공간 작업공간 선택이 있을 때만 건수 요약을 둔다 — 다음 행동은
-          // 작업공간이 이미 안내한다. unknown·빈 목록 복구는 그대로 둔다.
-          hasWorkspaceActions={selectedWorkAreaId !== null}
+          // 하단 고정 건수 바를 두지 않는다 — 같은 현황을 정보 서랍 맨 위에 둔다.
+          // unknown·빈 목록·다음 확인 규율은 그대로 둔다.
+          inspectorStatus={<SiteStartGuidance
+            siteId={site.siteId}
+            {...siteStartCounts}
+            hasWorkspaceActions={selectedWorkAreaId !== null}
+          />}
         />
       </div>}
 
