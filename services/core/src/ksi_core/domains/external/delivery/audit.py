@@ -34,7 +34,7 @@ from ksi_event_contracts._spatial_data import (
 )
 from ksi_event_contracts.spatial_data import JobId, SpatialDataReasonV1
 from ksi_event_contracts.spatial_data_authority import SpatialDataPolicyV1
-from pydantic import Field, StrictInt, StringConstraints, model_validator
+from pydantic import ConfigDict, Field, StrictInt, StringConstraints, model_validator
 
 from ksi_core.domains.external.delivery.audit_history_index import (
     AuditHistoryIndex,
@@ -114,6 +114,13 @@ class SpatialDataAuditEventV1(SpatialDataDigestModel):
 
 
 class _Record(SpatialDataModel):
+    # Avoid data-dependent retained-history entries in Pydantic's bounded
+    # global short-string cache (16,384 entries). Synthetic1531-record arms
+    # retained ~210KiB by default versus ~13KiB here; neither figure proves
+    # an aggregate native/transient RAM bound. False preserves JSON validation
+    # and wire serialization semantics (no JSON-to-Python validation switch).
+    model_config = ConfigDict(cache_strings=False)
+
     record_type: Literal["spatial-data-audit.v1"] = "spatial-data-audit.v1"
     sequence: PositiveInt
     event: SpatialDataAuditEventV1

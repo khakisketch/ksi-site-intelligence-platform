@@ -3487,3 +3487,48 @@ def test_late_source_replacement_seals_without_adopting_empty_file(
     with pytest.raises(SpatialDataDomainError):
         store.events(organization_id=ORG, session_id=done, limit=8)
     store.close()
+
+
+def test_record_disables_pydantic_string_cache_without_model_changes() -> None:
+    """The private audit record opts out of the global string cache.
+
+    Only ``_Record`` carries ``cache_strings=False``; the public event/model
+    configs, caps, formats, and legacy behavior are untouched.
+    """
+    from ksi_core.domains.external.delivery.audit import (
+        SpatialDataAuditEventV1,
+        _Record,
+    )
+
+    assert _Record.model_config.get("cache_strings") is False
+    assert SpatialDataAuditEventV1.model_config.get("cache_strings") is not False
+
+
+def test_distinct_records_retain_no_history_sized_cache(tmp_path: Path) -> None:
+    """1531 distinct retained-shape records leave no history-sized residue.
+
+    Same validation/serialization/digest/strictness as the default path —
+    invalid input is still refused and digests still verify — but nothing
+    accumulates per distinct record.
+    """
+    import tracemalloc
+    from datetime import timedelta
+
+    from ksi_core.domains.external.delivery.audit import _Record
+
+    tracemalloc.start()
+    try:
+        start_current = tracemalloc.get_traced_memory()[0]
+        for i in range(1531):
+            at = NOW + timedelta(seconds=i)
+            ev = _event(str(uuid4()), "DOWNLOAD_ADMITTED", at=at, job_index=i)
+            raw = _Record(sequence=i + 1, event=ev).model_dump_json(by_alias=True)
+            parsed = _Record.model_validate_json(raw.encode("utf-8"))
+            assert parsed.event.event_digest == parsed.event.canonical_digest()
+        retained = tracemalloc.get_traced_memory()[0] - start_current
+    finally:
+        tracemalloc.stop()
+    assert retained < 64 * 1024
+    # Strict negative parity: malformed input is still refused, not skipped.
+    with pytest.raises((ValueError, TypeError), match="Extra inputs"):
+        _Record.model_validate_json(b'{"junk":[' + b"{}," * 9 + b"{}]}")
