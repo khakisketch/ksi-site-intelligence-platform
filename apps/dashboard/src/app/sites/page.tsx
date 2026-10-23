@@ -30,18 +30,6 @@ import {
   hasAllPermissions,
 } from "@/lib/core-api/permissions";
 import { listSitesCached } from "@/lib/core-api/cached";
-import { listWorkAreas } from "@/lib/core-api/workAreas";
-import { listSpatialAssets } from "@/lib/core-api/spatial-assets";
-import {
-  buildSiteVisualTileDescriptor,
-  pickVisualTileArea,
-  SITE_VISUAL_TILE_ITEMS_PER_AREA,
-  SITE_VISUAL_TILE_MAX_AREAS,
-  SITE_VISUAL_TILE_MAX_SITES_PER_RENDER,
-  toVisualTileFacts,
-  type SiteVisualTileDescriptor,
-} from "@/lib/site-visual-tile";
-import { SiteVisualTileProvider } from "@/components/site/SiteVisualTile";
 import {
   SITE_GROUPS,
   normalizeSiteGroup,
@@ -101,66 +89,6 @@ function hrefWith(
 ): string {
   return buildSiteListHref(base, patch);
 }
-
-/**
- * 현장 목록 합성 타일 집계(서버, 같은 세션 읽기 전용).
- *
- * 실제 픽셀 미리보기가 없는 카드가 빈 칸이 되지 않게, 등록된 작업구역 경계
- * 1개(원본 평면 그대로)와 그 구역의 등록 자료 사실(메타데이터만, 바이트 없음)
- * 최대 8건을 기술서로 접는다. 판정·재계산은 하지 않고 Core 목록에서 고르기만
- * 한다. 그릴 모양(그리기 가능한 ACTIVE 경계)이나 올릴 사실이 없으면 null이다.
- *
- * - 같은 세션의 Core 권한으로 읽는다. 403/404를 포함한 실패는 null로만
- *   돌린다(불투명 — 남의 구역·자료·형태를 새지 않는다). 클라이언트는 기술서를
- *   다시 검증한 뒤, 실제 픽셀이 없을 때만 그린다.
- * - BOUNDED: 구역 ≤6, 구역당 카탈로그 ≤50건, 타일 표면 ≤8건. 목록 렌더당
- *   최대 48현장까지만 시도하고, 동시 6개로만 읽는다.
- * - 쓰기 없음, 새 Core 엔드포인트·생산자·보관·권한 변경 없음, 바이트·원본 키·
- *   서명 URL 읽음 없음, 캐시 저장 없음.
- */
-async function composeSiteVisualTile(siteId: string): Promise<SiteVisualTileDescriptor | null> {
-  try {
-    const areas = await listWorkAreas(siteId);
-    if (!areas || !Array.isArray(areas.workAreas)) return null;
-    const picked = pickVisualTileArea(areas.workAreas.slice(0, SITE_VISUAL_TILE_MAX_AREAS));
-    if (!picked) return null;
-    const page = await listSpatialAssets(siteId, picked.workAreaId, {
-      limit: SITE_VISUAL_TILE_ITEMS_PER_AREA,
-    });
-    if (!page || page.siteId !== siteId || page.workAreaId !== picked.workAreaId) return null;
-    if (!Array.isArray(page.assets)) return null;
-    const facts = toVisualTileFacts(siteId, picked.workAreaId, page.assets);
-    if (!facts) return null;
-    return buildSiteVisualTileDescriptor({
-      siteId,
-      area: picked,
-      facts: facts.surfaced,
-      scannedAssetCount: facts.scanned,
-      hasMoreAssets: page.hasMore === true || page.nextCursor !== null,
-    });
-  } catch {
-    return null;
-  }
-}
-
-async function composeSiteVisualTiles(
-  siteIds: readonly string[],
-): Promise<Record<string, SiteVisualTileDescriptor>> {
-  const out: Record<string, SiteVisualTileDescriptor> = {};
-  const queue = siteIds.slice(0, SITE_VISUAL_TILE_MAX_SITES_PER_RENDER);
-  const workers = Array.from({ length: 6 }, async () => {
-    while (queue.length > 0) {
-      const next = queue.shift();
-      if (!next) return;
-      const tile = await composeSiteVisualTile(next);
-      if (tile) out[next] = tile;
-    }
-  });
-  await Promise.all(workers);
-  return out;
-}
-
-
 
 /**
  * 현장 목록 — 데스크톱 비교표와 모바일 현장 카드의 같은 projection.
@@ -269,14 +197,10 @@ export default async function SitesPage({
     group: group === "all" ? undefined : group,
   };
   const hasRows = siteRows.length > 0;
-  // 합성 타일 기술서 — 실제 픽셀이 없을 때만 쓰는 대체 표시. 실패한 현장은
-  // 기술서가 없어 기존의 '없음·미확인' 문구가 그대로 난다.
-  const visualTiles = await composeSiteVisualTiles(siteRows.map((row) => row.site.siteId));
 
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
     <div className="flex flex-col gap-4 p-4 sm:p-5">
-      <SiteVisualTileProvider tiles={visualTiles}>
       {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색은 300ms 디바운스 자동 적용·ENTER 확정, 정렬은 즉시 적용한다. */}
       <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
@@ -490,7 +414,6 @@ export default async function SitesPage({
           </section>
         </>
       )}
-      </SiteVisualTileProvider>
     </div>
   );
 }

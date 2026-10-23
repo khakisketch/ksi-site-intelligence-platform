@@ -350,47 +350,6 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByRole("link")).toBeNull();
   });
 
-  it("restores the composed range diagram when pixels are unavailable", async () => {
-    // 복원: 픽셀이 없을 때 합성 기술서가 있으면 범위 도식을 대신 그린다(사진 아님 명시).
-    stubObserver();
-    const siteId = "site-composed-restore";
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith("/preview")) {
-        return new Response(JSON.stringify({ available: false, reason: "no-output" }), { status: 200 });
-      }
-      return new Response("bytes", { status: 200 });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const tiles = {
-      [siteId]: {
-        available: true,
-        siteId,
-        workAreaId: "area-1",
-        workAreaName: "합성 도식 구역",
-        crs: "EPSG:5186",
-        ring: [[200000, 549999.8], [200010, 549999.8], [200010, 550009.8], [200000, 549999.8]],
-        vertexCount: 4,
-        facts: [{ kind: "ortho", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17", lifecycleState: "SEALED" }],
-        scannedAssetCount: 1,
-        hasMoreAssets: false,
-        siteHref: `/sites/${siteId}?workAreaId=area-1`,
-      },
-    };
-
-    render(
-      <SiteVisualTileProvider tiles={tiles}>
-        <SitePreviewThumb siteId={siteId} size="card" />
-      </SiteVisualTileProvider>,
-    );
-    fireVisible();
-    await screen.findByText("범위 도식 · 사진 아님");
-    expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 합성 타일은 사진이 아니다 — 실제로 픽셀을 읽지 않는다.
-    expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).not.toBeNull();
-  });
-
   it("keeps the composed-tile descriptor referentially stable across renders", async () => {
     // 합성 타일 검증기가 매 렌더 새 객체를 만들면 소비자의 effect 의존성이
     // 계속 바뀐다. 같은 기술서에서 같은 참조가 나오는지 직접 본다.
