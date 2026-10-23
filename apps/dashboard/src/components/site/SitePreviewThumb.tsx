@@ -323,15 +323,26 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       <span
         role="img"
         aria-label={`${emptyLabel} — 사진 아님. ${emptyNote}`}
-        className="absolute inset-0 block"
-        style={{ background: "repeating-linear-gradient(135deg,#f3f1ea 0 12px,#ebe8df 12px 13px)" }}
-      />
+        className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 px-6 text-center"
+        style={{ background: "linear-gradient(180deg,#f5f4f0 0%,#ebe9e2 100%)" }}
+      >
+        <svg viewBox="0 0 64 48" width="60" height="45" aria-hidden="true" focusable="false">
+          <rect x="5" y="4" width="54" height="40" rx="7" fill="none" stroke="#c6c3b8" strokeWidth="2" />
+          <circle cx="23" cy="18" r="4" fill="none" stroke="#c6c3b8" strokeWidth="2" />
+          <path
+            d="M11 38 L27 22 L37 32 L43 26 L53 38"
+            fill="none"
+            stroke="#c6c3b8"
+            strokeWidth="2"
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        </svg>
+        <span className="text-[12.5px] font-bold break-keep text-ink-1">{emptyLabel}</span>
+        <span className="max-w-[46ch] text-[10.5px] leading-relaxed break-keep text-ink-2">{emptyNote}</span>
+      </span>
       <span className="absolute top-2 left-2 rounded bg-accent px-1.5 py-0.5 text-[10.5px] font-bold text-accent-on">
         사진 아님
-      </span>
-      <span className="absolute inset-x-0 bottom-0 border-t border-line bg-surface px-4 py-2 text-left">
-        <span className="block text-[12px] font-semibold break-keep">{emptyLabel}</span>
-        <span className="mt-px block text-[10.5px] break-keep text-ink-2">{emptyNote}</span>
       </span>
     </div>
   );

@@ -116,7 +116,7 @@ function RingPolygon({ tile }: { tile: SiteVisualTileDescriptor }) {
     <svg
       viewBox={viewBox}
       preserveAspectRatio="xMidYMid meet"
-      className="block size-full text-ink-2"
+      className="block size-full text-ink-muted"
       aria-hidden="true"
       focusable="false"
     >
