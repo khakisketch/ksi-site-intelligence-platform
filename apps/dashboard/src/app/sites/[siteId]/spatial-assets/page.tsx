@@ -990,8 +990,8 @@ export default async function SpatialAssetsPage({
       <Link className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ visualB: null }))}>한 장으로</Link>
     )}
     {effectiveWorkAreaId && (infoOpen
-      ? <Link data-workbench-info-trigger className="tap-target shrink-0 text-[12px] font-semibold underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보 닫기</Link>
-      : <Link data-workbench-info-trigger className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
+      ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target shrink-0 text-[12px] font-semibold underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
+      : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
     <Link className="tap-target shrink-0 text-[12px] underline decoration-dotted text-ink-2" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시 보기</Link>
     <span className="ml-auto flex shrink-0 items-center gap-2">
       {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
@@ -1060,7 +1060,7 @@ export default async function SpatialAssetsPage({
   const renderInspector = (): ReactNode => (<>
     <div className="flex min-w-0 items-center justify-between gap-2">
       <h3 className="min-w-0 break-words text-[13px] font-bold">선택 자료 정보</h3>
-      <Link data-workbench-info-close className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId!, scopeForLinks({ info: null }))}>닫기</Link>
+      <Link scroll={false} data-workbench-info-close className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId!, scopeForLinks({ info: null }))}>닫기</Link>
     </div>
     {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}
     {sideA && <>

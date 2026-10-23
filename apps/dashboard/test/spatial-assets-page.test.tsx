@@ -14,8 +14,10 @@ const mocked = vi.hoisted(() => ({
 }));
 
 vi.mock("next/link", () => ({
-  default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) =>
-    createElement("a", { href, ...props }, children),
+  default: ({ href, children, ...props }: { href: string; children: React.ReactNode; [key: string]: unknown }) => {
+    delete props.scroll;
+    return createElement("a", { href, ...props }, children);
+  },
 }));
 vi.mock("next/navigation", () => ({
   notFound: () => { throw new Error("NEXT_NOT_FOUND"); },

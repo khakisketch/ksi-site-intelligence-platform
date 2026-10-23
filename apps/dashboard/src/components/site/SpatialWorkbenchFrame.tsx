@@ -64,6 +64,7 @@ export function SpatialWorkbenchFrame({
   const catalogRef = useRef<HTMLElement>(null);
   const inspectorRef = useRef<HTMLElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  const contextRef = useRef<HTMLDivElement>(null);
   const [drawerTop, setDrawerTop] = useState(8);
   const wasInspectorOpen = useRef(false);
 
@@ -72,6 +73,14 @@ export function SpatialWorkbenchFrame({
     if (!stageElement || (!catalogOpen && !showInspector)) return;
     let observed: Element[] = [];
     const measure = () => {
+      const desktop = typeof matchMedia !== "function" || matchMedia("(min-width: 1024px)").matches;
+      if (!desktop) {
+        // A narrow-screen drawer is viewport-fixed: focusing it must not scroll
+        // the document away from the observation the person was viewing.
+        const header = contextRef.current?.getBoundingClientRect();
+        setDrawerTop(Math.max(8, Math.ceil((header?.bottom ?? 0) + 8)));
+        return;
+      }
       const base = stageElement.getBoundingClientRect();
       const controls = [...stageElement.querySelectorAll<HTMLElement>("[data-workbench-pane-controls]")];
       const wide = typeof matchMedia === "function" && matchMedia("(min-width: 768px)").matches;
@@ -86,7 +95,7 @@ export function SpatialWorkbenchFrame({
     const resize = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
     const bind = () => {
       for (const element of observed) resize?.unobserve(element);
-      observed = [stageElement, ...stageElement.querySelectorAll("[data-workbench-pane-controls]")];
+      observed = [stageElement, ...(contextRef.current ? [contextRef.current] : []), ...stageElement.querySelectorAll("[data-workbench-pane-controls]")];
       for (const element of observed) resize?.observe(element);
       measure();
     };
@@ -140,7 +149,7 @@ export function SpatialWorkbenchFrame({
   return (
     <div ref={rootRef} className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
       {banner}
-      <div className="sticky top-0 z-40 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-surface lg:static lg:z-auto">
+      <div ref={contextRef} data-workbench-context-bar className="sticky top-0 z-40 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-surface lg:static lg:z-auto">
         <button
           ref={catalogToggleRef}
           type="button"
@@ -161,7 +170,7 @@ export function SpatialWorkbenchFrame({
               aria-hidden="true"
               onClick={closeCatalog}
               style={{ top: drawerTop }}
-              className="absolute inset-0 z-20 bg-black/20"
+              className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-20 bg-black/20 lg:absolute lg:inset-0"
             />
             <section
               ref={catalogRef}
@@ -170,7 +179,7 @@ export function SpatialWorkbenchFrame({
               tabIndex={-1}
               onKeyDown={onCatalogKeyDown}
               style={{ top: drawerTop }}
-              className="absolute inset-y-2 left-2 z-30 flex w-[min(320px,88%)] flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-xl"
+              className="fixed bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] left-2 z-30 flex w-[min(320px,88%)] flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-xl lg:absolute lg:bottom-2"
             >
               <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-1.5 pt-1">
                 <h3 className="min-w-0 break-words text-[13px] font-bold">{catalogLabel}</h3>
@@ -194,7 +203,7 @@ export function SpatialWorkbenchFrame({
             tabIndex={-1}
             onKeyDown={onInspectorKeyDown}
             style={{ top: drawerTop }}
-            className="absolute inset-y-2 right-2 z-30 flex w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl"
+            className="fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 flex w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2"
           >
             {inspector}
           </section>

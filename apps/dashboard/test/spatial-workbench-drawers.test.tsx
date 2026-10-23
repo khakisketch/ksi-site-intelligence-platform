@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 function FrameCase({ delegated = true }: { delegated?: boolean }) {
   const [info, setInfo] = useState(false);
@@ -25,6 +25,17 @@ function FrameCase({ delegated = true }: { delegated?: boolean }) {
 }
 
 describe("workbench drawer keyboard ownership", () => {
+  it("anchors narrow-screen drawers below the viewport toolbar, not the scrolled page", async () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute("data-workbench-context-bar")
+        ? new DOMRect(0, 0, 390, 76)
+        : new DOMRect(0, -150, 390, 1000);
+    });
+    render(<FrameCase />);
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "선택 정보" }).style.top).toBe("84px"));
+  });
   it("starts overlays below the measured pane controls without resizing the stage", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       return this.hasAttribute("data-workbench-pane-controls")
