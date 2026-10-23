@@ -324,16 +324,8 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
         role="img"
         aria-label={`${emptyLabel} — 사진 아님. ${emptyNote}`}
         className="absolute inset-0 block"
-        style={{ background: "repeating-linear-gradient(135deg,#f1efe9 0 12px,#e9e7e0 12px 13px)" }}
-      >
-        <svg viewBox="0 0 300 150" className="absolute inset-0 size-full" aria-hidden="true" focusable="false">
-          <g fill="none" stroke="#b9b6ac" strokeWidth="1.5">
-            <circle cx="150" cy="66" r="34" />
-            <circle cx="150" cy="66" r="18" />
-            <path d="M40 128 L110 96 L180 112 L260 84" strokeDasharray="5 4" />
-          </g>
-        </svg>
-      </span>
+        style={{ background: "repeating-linear-gradient(135deg,#f3f1ea 0 12px,#ebe8df 12px 13px)" }}
+      />
       <span className="absolute top-2 left-2 rounded bg-accent px-1.5 py-0.5 text-[10.5px] font-bold text-accent-on">
         사진 아님
       </span>

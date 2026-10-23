@@ -341,9 +341,9 @@ describe("SitePreviewThumb", () => {
     fireVisible();
     await screen.findByText("미리보기 없음");
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 실제 픽셀은 읽지 않고, 자료 도식이 아닌 중립 표시만 둔다.
+    // 실제 픽셀은 읽지 않고, 자료 도형 없는 중립 표시만 둔다.
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).not.toBeNull();
+    expect(document.querySelector("svg")).toBeNull();
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
     expect(screen.getByText("사진 아님")).toBeTruthy();
     expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
@@ -500,7 +500,7 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByText("미리보기 없음")).toBeNull();
     expect(screen.queryByText("미리보기 확인 불가")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).not.toBeNull();
+    expect(document.querySelector("svg")).toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });
