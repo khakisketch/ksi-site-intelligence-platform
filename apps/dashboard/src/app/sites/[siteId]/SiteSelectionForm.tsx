@@ -26,7 +26,10 @@ export function SiteSelectionForm({
       }
     }}
     onChange={(event) => {
-      if (!(event.target instanceof HTMLSelectElement) || !event.target.value) return;
+      // 선택 즉시 반영한다. 필수 선택(작업구역)에서 빈 값으로 되돌리는 경우만
+      // 제출하지 않는다 — 그 밖의 "전체" 필터는 빈 값도 유효한 선택이다.
+      if (!(event.target instanceof HTMLSelectElement)) return;
+      if (!event.target.value && event.target.required) return;
       if (composing.current || (event.nativeEvent as InputEvent).isComposing) {
         changedDuringComposition.current = true;
         return;
