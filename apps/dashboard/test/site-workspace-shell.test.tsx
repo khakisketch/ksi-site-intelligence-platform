@@ -281,9 +281,9 @@ describe("workspace shell structure", () => {
   it("states the compare purpose in one line without a second mode control", async () => {
     await renderOverview({ mode: "compare" });
     const bar = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]")!;
-    expect(within(bar as HTMLElement).getByText(/관측을 둘러보고 비교합니다/)).toBeTruthy();
+    expect(within(bar as HTMLElement).getByText(/관측을 둘러보고 비교/)).toBeTruthy();
     // 용도 문구는 맥락막대에 한 줄만 둔다.
-    expect(screen.getAllByText(/관측을 둘러보고 비교합니다/)).toHaveLength(1);
+    expect(screen.getAllByText(/관측을 둘러보고 비교/)).toHaveLength(1);
     // 세그먼트는 탭 행이 아니다 — 서로 다른 pill 행을 두지 않는다.
     const segmented = screen.getByRole("navigation", { name: "보기 방식" });
     expect(segmented.tagName).toBe("NAV");

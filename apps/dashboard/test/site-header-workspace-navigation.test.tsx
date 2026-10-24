@@ -101,18 +101,14 @@ describe("site header workspace navigation", () => {
     expect(normalizeSiteTab("records")).toBe("work-orders");
   });
 
-  it("keeps observation-work records in the data context without mislabelling them as area management", () => {
+  it("keeps the records route in the data context, not as a fourth tab", () => {
     const materials = headerHtml({ tab: "materials", scopedWorkAreaId: "wa-a" });
-    expect(materials).toContain("자료 · ");
-    expect(materials).toContain("관측 작업 기록");
-    expect(materials).toContain("/sites/site-1?section=work-orders&amp;workAreaId=wa-a");
-    // 자료 하위 길 문단에는 구역 관리 링크를 두지 않는다 — 설정 메뉴의 전역
-    // 작업구역 관리와 섞지 않는다.
-    const recordsStart = materials.indexOf("자료 · ");
-    expect(materials.slice(recordsStart)).not.toContain("작업구역 관리");
+    // The header owns three destination tabs only. Observation-work records stay
+    // a legacy/canonical route owned by the materials context menu (「더 보기」).
+    expect(workspaceNav(materials).match(/<a[\s>]/g)).toHaveLength(3);
+    expect(materials).not.toContain("section=work-orders");
     expect(headerHtml({ tab: "manage" })).not.toContain("section=work-orders");
     const legacy = headerHtml({ tab: "work-orders", scopedWorkAreaId: "wa-a" });
     expect(workspaceNav(legacy)).toMatch(/aria-current="page"[^>]*>자료</);
-    expect(legacy).toContain("관측 작업 기록");
   });
 });

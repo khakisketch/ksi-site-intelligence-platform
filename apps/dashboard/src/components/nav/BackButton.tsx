@@ -34,7 +34,9 @@ export function resolveParentNavigation(pathname: string | null): ParentNavigati
   }
 
   const siteMatch = pathname.match(/^\/sites\/([^/]+)(?:\/.*)?\/?$/);
-  if (siteMatch) return { href: `/sites/${siteMatch[1]}`, label: "현장" };
+  // Site detail screens carry their own breadcrumb back to /sites in SiteHeader.
+  // Repeating it in the global top bar wastes a row and duplicates the label.
+  if (siteMatch) return null;
   if (/^\/field\/work-orders\/[^/]+\/?$/.test(pathname)) {
     return { href: "/field", label: "작업" };
   }

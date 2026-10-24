@@ -447,35 +447,41 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
     await page.goto(siteHref!);
     await expect(page.getByRole("region", { name: "선택 관측 보기", exact: true })).toBeVisible();
   }
-  // 정보 서랍은 URL을 바꾸지 않고, 닫기·Escape 뒤 포커스와 선택이 그대로다.
-  // 서랍 틀은 항상 마운트되나 닫힘 상태에서는 접근성 트리에서 제외된다.
-  await expect(page.locator("#workspace-inspector")).toBeHidden();
-  await expect(page.getByRole("region", { name: "작업공간 정보", exact: true })).toHaveCount(0);
-  const infoToggle = page.getByRole("button", { name: "정보", exact: true });
-  const urlBeforeInfo = page.url();
-  const stageBoxBeforeInfo = await stage.boundingBox();
-  await infoToggle.click();
+  // 정보는 1280px 이상에서 상시 우측 패널이고, 그 아래에서는 기존 드로어다.
+  // 두 배치 모두 URL·선택·무대를 바꾸지 않는다는 계약은 같다.
   const inspector = page.locator("#workspace-inspector");
-  await expect(inspector).toBeVisible();
-  await expect(page).toHaveURL(urlBeforeInfo);
-  // 정보 드로어가 무대를 밀지 않는다 — 카메라·선택 자리가 그대로다.
-  const stageBoxAfterInfo = await stage.boundingBox();
-  expect(stageBoxAfterInfo?.width).toBe(stageBoxBeforeInfo?.width);
-  expect(stageBoxAfterInfo?.height).toBe(stageBoxBeforeInfo?.height);
-  await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("workspace-inspector");
-  await inspector.getByRole("button", { name: "닫기", exact: true }).click();
-  await expect(inspector).toBeHidden();
-  await expect(infoToggle).toBeFocused();
-  await infoToggle.click();
-  await expect(inspector).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(inspector).toBeHidden();
-  await expect(infoToggle).toBeFocused();
-  await expect(page).toHaveURL(urlBeforeInfo);
+  const persistentInspector = (page.viewportSize()?.width ?? 0) >= 1280;
+  if (persistentInspector) {
+    await expect(inspector).toBeVisible();
+    await expect(page.getByRole("button", { name: "정보", exact: true })).toHaveCount(0);
+  } else {
+    await expect(inspector).toBeHidden();
+    await expect(page.getByRole("region", { name: "작업공간 정보", exact: true })).toHaveCount(0);
+    const infoToggle = page.getByRole("button", { name: "정보", exact: true });
+    const urlBeforeInfo = page.url();
+    const stageBoxBeforeInfo = await stage.boundingBox();
+    await infoToggle.click();
+    await expect(inspector).toBeVisible();
+    await expect(page).toHaveURL(urlBeforeInfo);
+    // 정보 드로어가 무대를 밀지 않는다 — 카메라·선택 자리가 그대로다.
+    const stageBoxAfterInfo = await stage.boundingBox();
+    expect(stageBoxAfterInfo?.width).toBe(stageBoxBeforeInfo?.width);
+    expect(stageBoxAfterInfo?.height).toBe(stageBoxBeforeInfo?.height);
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("workspace-inspector");
+    await inspector.getByRole("button", { name: "닫기", exact: true }).click();
+    await expect(inspector).toBeHidden();
+    await expect(infoToggle).toBeFocused();
+    await infoToggle.click();
+    await expect(inspector).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(inspector).toBeHidden();
+    await expect(infoToggle).toBeFocused();
+    await expect(page).toHaveURL(urlBeforeInfo);
+    await infoToggle.click();
+    await expect(inspector).toBeVisible();
+  }
   // 옛 무대 하단 펼침('자료·범위 상세')은 두지 않는다 — 개요는 정보 서랍의 한 면에 있다.
   await expect(stage.locator("summary", { hasText: /^자료·범위 상세$/ })).toHaveCount(0);
-  await infoToggle.click();
-  await expect(inspector).toBeVisible();
   const spatialPanel = page.getByRole("region", { name: "선택 구역 공간 확인", exact: true });
   await expect(spatialPanel).toBeVisible();
   // 팩트·빈 등록·분석 한계가 서랍에서도 그대로다 — 조용히 버리지 않는다.
@@ -581,7 +587,9 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(compareStage.locator("summary", { hasText: /^자료·범위 상세$/ })).toHaveCount(0);
   if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
     await expect(compareStage.getByRole("link", { name: "이 쌍으로 분석 조건 확인", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "정보", exact: true }).click();
+    if ((page.viewportSize()?.width ?? 0) < 1280) {
+      await page.getByRole("button", { name: "정보", exact: true }).click();
+    }
     await expect(page.locator("#workspace-inspector")).toBeVisible();
     await expect(page.getByRole("region", { name: "작업공간 정보", exact: true }).getByText("비교 조건과 다른 작업 확인")).toBeVisible();
   }

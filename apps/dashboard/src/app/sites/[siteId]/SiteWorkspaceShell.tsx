@@ -164,14 +164,14 @@ function SiteWorkspaceEntryPanel({
     const observationCount = new Set(scopeFacts.map((item) => item.observationEpochId)).size;
     if (compactRecovery) {
       if (expiredKnown) {
-        return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
-          <p className="text-[13px] font-bold">이 관측의 미리보기 보관 기간이 끝났습니다</p>
-          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        return <section aria-label="기본 관측 선택 상태" className="border-t border-line pt-2">
+          <p className="text-[12.5px] font-bold text-ink-1">이 관측의 미리보기 보관 기간이 끝났습니다</p>
+          <p className="mt-0.5 text-[12px] leading-5 text-ink-2">
             준비된 적이 있으나 보관 기간이 지나 지금은 볼 수 없습니다.
             등록된 자료와 검사 기록은 그대로 있으며, 다시 보려면 위의 보기(구역 자료 준비에서 확인)를 따르세요.
           </p>
           {transitional && (
-            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
+            <p className="mt-1 text-[12px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
           )}
         </section>;
       }
@@ -760,15 +760,16 @@ export function SiteWorkspaceShell({
   })();
   const sharedExpiredMedia = (
     <WorkbenchMediaState
+      tone="absence"
       headline="미리보기 보관 기간이 끝났습니다."
       detail="두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다."
       action={
-        <Link href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
+        <Link href={requestsHref} className="btn btn-primary min-h-11">
           구역 자료 준비에서 확인
         </Link>
       }
       hint={
-        <>무대 구성을 먼저 보려면 <Link className="font-semibold text-sidebar-text underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(workspaceExampleReturnTo)}`}>예시 화면으로 미리 보기</Link></>
+        <>무대 구성을 먼저 보려면 <Link className="font-semibold text-ink-1 underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(workspaceExampleReturnTo)}`}>예시 화면으로 미리 보기</Link></>
       }
     />
   );
@@ -847,7 +848,7 @@ export function SiteWorkspaceShell({
   // 말은 범위 밖 요청을 기본으로 둔 경우에만 쓴다(기본이 실제로 바뀐 전이
   // 선택에는 서버 기본이 아니라는 말만 둔다).
   const selectionNotice = (scopeNotice || (mode === "explore" && transitionalSelection)) ? (
-    <p role="status" className="shrink-0 rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+    <p role="status" className="shrink-0 rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2 max-sm:hidden">
       {scopeNotice ? "요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다. " : ""}
       {selected ? `작업구역 · ${areaLabel}. ` : ""}
       {mode === "explore" && selectedCaption ? `선택 중 · ${selectedCaption}. ` : ""}
@@ -862,7 +863,7 @@ export function SiteWorkspaceShell({
   // 보기 방식은 탭이 아니라 세그먼트다. 목록 토글·검색·정보는 셸이 앞에 둔다.
   const contextControls = (<>
     {selected ? (
-      <span className="min-w-0 shrink truncate text-[12px]">
+      <span className="min-w-0 flex-1 truncate text-[12px]">
         <span className="text-ink-muted">작업구역 · </span>
         <span className="font-semibold">{areaLabel}{selected.status === "ARCHIVED" ? " (보관됨)" : ""}</span>
       </span>
@@ -870,7 +871,7 @@ export function SiteWorkspaceShell({
       <span className="text-[12px] text-ink-2">작업구역을 확인하지 못했습니다</span>
     )}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="workspace-view-mode-label" className="shrink-0 text-[11.5px] text-ink-muted">보기 방식</span>
+      <span id="workspace-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
       <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
         {WORKSPACE_MODES.map((option) => {
           const active = option.key === mode;
@@ -890,7 +891,7 @@ export function SiteWorkspaceShell({
       </nav>
     </div>
     {mode === "compare" && (
-      <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교합니다</p>
+      <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
     )}
   </>);
 
@@ -940,6 +941,9 @@ export function SiteWorkspaceShell({
   // 시야에서 밀려나지 않게 한다.
   const inspector = (<>
     {inspectorStatus}
+    {mode === "explore" && transitionalSelection && (
+      <p className="text-[11.5px] leading-4 text-ink-muted sm:hidden">표시 범위는 서버 기본이 아니라 확인된 측정 범위입니다.</p>
+    )}
     {mode === "explore" && selectedCatalog && <>
       <p className="break-words font-semibold">{exploreHeading ?? dataKindLabel(selectedCatalog.kind)}</p>
       <dl className="grid gap-2">

@@ -750,7 +750,10 @@ export function SiteMosaicViewport({
                 recovery: "준비가 끝나면 준비 상태 다시 확인을 누르세요.",
                 detail: null,
               }
-            : { headline: absentCopy.headline, recovery: absentCopy.recovery, detail: null };
+            : { headline: absentCopy.headline, recovery: absentCopy.recovery,
+                detail: absentKind === "expired"
+                  ? "준비된 적이 있으나 보관 기간이 지나 지금은 볼 수 없습니다. 등록된 자료와 검사 기록은 그대로입니다."
+                  : null };
 
   const hasActiveWait = fetchingKeys.length > 0 || (lane?.queuedCount ?? 0) > 0;
   const supportCopy = requestNote ?? (failedJobs.length > 0
@@ -760,7 +763,12 @@ export function SiteMosaicViewport({
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
   // 그대로이며, 명시적 다시 준비(쓰기)는 아래 접힌 상세로만 둔다.
   const canvasRequestsLink = (
-    <a href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
+    <a
+      href={requestsHref}
+      className={compactKind === "absent" && absentKind === "expired"
+        ? "btn btn-primary min-h-11"
+        : "btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"}
+    >
       구역 자료 준비에서 확인
     </a>
   );
@@ -878,6 +886,7 @@ export function SiteMosaicViewport({
             hint={canvasMediaHint}
             action={canvasMediaAction}
             alert={canvasMediaAlert}
+            tone={compactKind === "absent" && absentKind === "expired" ? "absence" : "media"}
           />
           {detailsTargetId ? (
             <DetailsPortal targetId={detailsTargetId}>

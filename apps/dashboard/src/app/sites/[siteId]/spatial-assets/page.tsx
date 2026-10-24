@@ -44,7 +44,6 @@ import { listWorkAreas } from "@/lib/core-api/workAreas";
 import { visualLayersForExactSubmission } from "../site-visual-pair";
 import { extractSimpleRing, selectableGeometry } from "../site-spatial";
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
-import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 import { PaneObservationSelect } from "./PaneObservationSelect";
 import {
   firstReadableWindowJob,
@@ -987,15 +986,16 @@ export default async function SpatialAssetsPage({
       />
     ) : (
       <WorkbenchMediaState
+        tone="absence"
         headline="미리보기 보관 기간이 끝났습니다."
         detail="두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다."
         action={
-          <Link href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
+          <Link href={requestsHref} className="btn btn-primary min-h-11">
             구역 자료 준비에서 확인
           </Link>
         }
         hint={
-          <>무대 구성을 먼저 보려면 <Link className="font-semibold text-sidebar-text underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>예시 화면으로 미리 보기</Link></>
+          <>무대 구성을 먼저 보려면 <Link className="font-semibold text-ink-1 underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>예시 화면으로 미리 보기</Link></>
         }
       />
     )
@@ -1028,8 +1028,6 @@ export default async function SpatialAssetsPage({
   // 공유 frame 슬롯 — 실제 화면과 디자인 예시 화면이 같은 머리/무대/
   // 드로어 관계를 쓴다. 조회·선택 판정은 위에서 끝냈고, 여기서는 배치만 둔다.
   const renderContextBar = (): ReactNode => (<>
-    {/* 집중 모드에서는 상단바가 없으므로, 작은 화면의 팔레트 입구를 여기서 둔다. */}
-    <TopBarSearchTrigger />
     {areas.workAreas.length > 1 ? (
       <SiteSelectionForm action={basePath} className="flex min-w-0 items-center gap-1.5">
         {infoOpen && <input type="hidden" name="info" value="1" />}
@@ -1044,7 +1042,7 @@ export default async function SpatialAssetsPage({
       <p className="min-w-0 truncate text-[12px] font-semibold">작업구역 · {areaDisplayName}{selectedArea.status === "ARCHIVED" ? " (보관됨)" : ""}</p>
     ) : null}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="materials-view-mode-label" className="shrink-0 text-[11.5px] text-ink-muted">보기 방식</span>
+      <span id="materials-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
       <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
         {effectiveWorkAreaId ? (
           <Link
@@ -1195,7 +1193,7 @@ export default async function SpatialAssetsPage({
   const renderInspector = (): ReactNode => (<>
     <div className="flex min-w-0 items-center justify-between gap-2">
       <h3 className="min-w-0 break-words text-[13px] font-bold">선택 자료 정보</h3>
-      <Link scroll={false} data-workbench-info-close className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId!, scopeForLinks({ info: null }))}>닫기</Link>
+      <Link scroll={false} data-workbench-info-close className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId!, scopeForLinks({ info: null }))}>닫기</Link>
     </div>
     {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}
     {sideA && <>
@@ -1217,7 +1215,6 @@ export default async function SpatialAssetsPage({
       site={site}
       selectedEpochId={null}
       tab="materials"
-      variant="compact"
       canCreateWorkOrder={session.principal.permissions.includes("WORK_ORDERS_WRITE")}
       canEditAoi={canRequestAnalysis}
       scopedWorkAreaId={effectiveWorkAreaId && selectedArea ? effectiveWorkAreaId : null}

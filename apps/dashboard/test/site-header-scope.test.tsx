@@ -91,10 +91,10 @@ describe("SiteHeader scoped navigation", () => {
     const html = headerHtml({ scopedWorkAreaId: "wa-a" });
     expect(html).toContain("/sites/site-1?section=manage&amp;workAreaId=wa-a");
     expect(html).toContain("/sites/site-1?section=manage#site-aoi");
-    // 옛 작업 URL은 자료 맥락의 하위 길로 범위를 함께 싣는다 — 최상위
-    // 구간이 아니다. 표준 목적지(canonical helper)와 같다.
-    const materials = headerHtml({ tab: "materials", scopedWorkAreaId: "wa-a" });
-    expect(materials).toContain("/sites/site-1?section=work-orders&amp;workAreaId=wa-a");
+    // 옛 작업 URL은 최상위 탭이 아니라 자료 문맥의 「더 보기」가 소유한다 —
+    // 헤더에 네 번째 탭이나 중복 링크를 만들지 않는다. 표준 목적지는
+    // canonical helper가 그대로 유지한다.
+    expect(html).not.toContain("section=work-orders");
     expect(siteTabHref("site-1", "work-orders", {}, { workAreaId: "wa-a", assetRef: null })).toBe(
       "/sites/site-1?section=work-orders&workAreaId=wa-a",
     );

@@ -28,6 +28,7 @@ export function WorkbenchMediaState({
   action = null,
   compact = false,
   alert = false,
+  tone = "media",
 }: {
   /** 짧은 사유 한 줄 — 무엇이 막혔는지. */
   headline: string;
@@ -41,27 +42,76 @@ export function WorkbenchMediaState({
   compact?: boolean;
   /** true면 role="alert" — 실패 공지에만 쓴다. */
   alert?: boolean;
+  /**
+   * media: 사진·차단·읽는 중의 어두운 매체 상태.
+   * absence: 준비됐다가 보관 기간이 끝난 자료처럼 "없음"이 확인된 상태.
+   *   밝은 캔버스와 점 격자로 두어 거대한 검은 빈 사각형이 되지 않게 한다.
+   */
+  tone?: "media" | "absence";
 }) {
+  const absence = tone === "absence";
   return (
     <div
       role={alert ? "alert" : "status"}
       className={
         compact
           ? "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-sidebar px-4 py-3"
-          : "flex min-h-48 min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-sidebar px-4 py-8 text-center"
+          : absence
+            ? "relative flex min-h-[300px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-line bg-sunk/40 px-6 py-12 text-center"
+            : "flex min-h-48 min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-sidebar px-4 py-8 text-center"
       }
     >
-      <p className={compact ? "min-w-0 flex-1 break-words text-[12.5px] font-bold text-sidebar-text" : "max-w-prose break-words text-[13px] font-bold text-sidebar-text"}>
+      {absence && (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 opacity-40"
+            style={{
+              backgroundImage: "radial-gradient(circle at 1px 1px, var(--line-strong) 1px, transparent 0)",
+              backgroundSize: "24px 24px",
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="relative mb-2 grid size-11 place-items-center rounded-full border border-line bg-surface text-ink-2"
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="4.5" width="18" height="15" rx="2" />
+              <path d="m3.5 16 5-5 4 4 3.2-3.2 5.3 5.2" />
+              <circle cx="9" cy="9" r="1.2" />
+            </svg>
+          </span>
+        </>
+      )}
+      <p className={
+        absence
+          ? "relative max-w-prose text-[16px] font-bold break-words text-ink-1"
+          : compact
+            ? "min-w-0 flex-1 break-words text-[12.5px] font-bold text-sidebar-text"
+            : "max-w-prose break-words text-[13px] font-bold text-sidebar-text"
+      }>
         {headline}
       </p>
       {detail && (
-        <p className={compact ? "min-w-0 basis-full break-words text-[12px] leading-5 text-sidebar-muted" : "max-w-prose break-words text-[12px] leading-5 text-sidebar-muted"}>
+        <p className={
+          absence
+            ? "relative mt-1 max-w-prose text-[13px] leading-6 break-words text-ink-2"
+            : compact
+              ? "min-w-0 basis-full break-words text-[12px] leading-5 text-sidebar-muted"
+              : "max-w-prose break-words text-[12px] leading-5 text-sidebar-muted"
+        }>
           {detail}
         </p>
       )}
-      {action && <div className={compact ? "shrink-0" : "mt-1.5"}>{action}</div>}
+      {action && <div className={compact ? "shrink-0" : absence ? "relative mt-3" : "mt-1.5"}>{action}</div>}
       {hint && (
-        <p className={compact ? "min-w-0 basis-full break-words text-[11.5px] leading-5 text-sidebar-muted" : "max-w-prose break-words text-[11.5px] leading-5 text-sidebar-muted"}>
+        <p className={
+          absence
+            ? "relative mt-1 max-w-prose text-[12px] leading-5 break-words text-ink-muted"
+            : compact
+              ? "min-w-0 basis-full break-words text-[11.5px] leading-5 text-sidebar-muted"
+              : "max-w-prose break-words text-[11.5px] leading-5 text-sidebar-muted"
+        }>
           {hint}
         </p>
       )}

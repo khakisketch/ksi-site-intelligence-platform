@@ -75,6 +75,20 @@ export function SpatialWorkbenchFrame({
   const contextRef = useRef<HTMLDivElement>(null);
   const [drawerTop, setDrawerTop] = useState(8);
   const wasInspectorOpen = useRef(false);
+  // Wide screens keep the inspector as a persistent right column; narrow screens
+  // keep the existing overlay drawer and its close/focus contract. The media
+  // query is client-only so SSR and the drawer tests keep their original DOM.
+  const [wideInspector, setWideInspector] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(min-width: 1280px)");
+    const update = () => setWideInspector(media.matches);
+    update();
+    media.addEventListener?.("change", update);
+    return () => media.removeEventListener?.("change", update);
+  }, []);
+  const persistentInspector = wideInspector && inspector !== null;
+  const showInspectorPanel = showInspector || persistentInspector;
 
   useLayoutEffect(() => {
     const stageElement = stageRef.current;
@@ -170,54 +184,51 @@ export function SpatialWorkbenchFrame({
         </button>
         {contextBar}
       </div>
-      <div ref={stageRef} className="relative min-w-0 min-h-0 flex-1">
-        {stage}
-        {catalogOpen && (
-          <>
-            <div
-              aria-hidden="true"
-              onClick={closeCatalog}
-              style={{ top: drawerTop }}
-              className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-20 bg-black/20 lg:absolute lg:inset-0"
-            />
-            <section
-              ref={catalogRef}
-              id="workbench-catalog"
-              aria-label={catalogLabel}
-              tabIndex={-1}
-              onKeyDown={onCatalogKeyDown}
-              style={{ top: drawerTop }}
-              className="fixed bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] left-2 z-30 flex w-[min(320px,88%)] flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-xl lg:absolute lg:bottom-2"
-            >
-              <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-1.5 pt-1">
-                <h3 className="min-w-0 break-words text-[13px] font-bold">{catalogLabel}</h3>
-                <button
-                  type="button"
-                  onClick={closeCatalog}
-                  className="tap-target shrink-0 text-[12px] underline text-ink-2"
-                >
-                  닫기
-                </button>
-              </div>
-              {catalog}
-            </section>
-          </>
-        )}
-        {/* 정보 서랍 틀과 접힘 자리는 항상 마운트한다 — 닫힘 상태에서는
-            display:none이라 자리·초점·읽기 순서에 들지 않는다. 무대 뷰어의
-            접힌 상세가 포털로 들어가는 자리(detailsHostId)는 닫혀도 유지되므로,
-            포털이 사라지거나 카메라·선택이 흔들리지 않는다. 본문은 열렸을
-            때만 둔다. */}
+      <div className="relative flex min-w-0 min-h-0 flex-1 gap-3">
+        <div ref={stageRef} className="relative min-w-0 min-h-0 flex-1">
+          {stage}
+          {catalogOpen && (
+            <>
+              <div
+                aria-hidden="true"
+                onClick={closeCatalog}
+                style={{ top: drawerTop }}
+                className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-20 bg-black/20 lg:absolute lg:inset-0"
+              />
+              <section
+                ref={catalogRef}
+                id="workbench-catalog"
+                aria-label={catalogLabel}
+                tabIndex={-1}
+                onKeyDown={onCatalogKeyDown}
+                style={{ top: drawerTop }}
+                className="fixed bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] left-2 z-30 flex w-[min(320px,88%)] flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-xl lg:absolute lg:bottom-2"
+              >
+                <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-1.5 pt-1">
+                  <h3 className="min-w-0 break-words text-[13px] font-bold">{catalogLabel}</h3>
+                  <button
+                    type="button"
+                    onClick={closeCatalog}
+                    className="tap-target shrink-0 text-[12px] underline text-ink-2"
+                  >
+                    닫기
+                  </button>
+                </div>
+                {catalog}
+              </section>
+            </>
+          )}
+        </div>
         <section
           ref={inspectorRef}
           id={inspectorId}
           aria-label={inspectorLabel}
           tabIndex={-1}
           onKeyDown={onInspectorKeyDown}
-          style={{ top: drawerTop, display: showInspector ? undefined : "none" }}
-          className="fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 flex w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2"
+          style={{ top: drawerTop, display: showInspectorPanel ? undefined : "none" }}
+          className={`fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
         >
-          {showInspector ? inspector : null}
+          {showInspectorPanel ? inspector : null}
           {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}
         </section>
       </div>

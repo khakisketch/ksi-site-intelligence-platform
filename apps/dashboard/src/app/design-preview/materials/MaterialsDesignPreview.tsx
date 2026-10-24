@@ -6,7 +6,6 @@ import { DEFAULT_MATERIALS_DESIGN_RETURN } from "@/lib/design-preview-return";
 
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
 import { SpatialSwipeCompare } from "@/components/site/SpatialSwipeCompare";
-import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 import {
   useDirectViewport,
   ViewportResetButton,
@@ -235,7 +234,6 @@ export default function MaterialsDesignPreview({
                 실제 등록 자료로 돌아가기
               </Link>
             </span>
-            <TopBarSearchTrigger />
             <div className="flex shrink-0 gap-1" role="group" aria-label="보기 방식">
               {EXAMPLE_MODE_ORDER.map((candidate) => (
                 <button
@@ -430,7 +428,7 @@ export default function MaterialsDesignPreview({
           <>
             <div className="flex min-w-0 items-center justify-between gap-2">
               <h3 className="min-w-0 break-words text-[13px] font-bold">예시 화면 정보</h3>
-              <button type="button" onClick={() => setInfoOpen(false)} className="tap-target shrink-0 text-[12px] underline text-ink-2">
+              <button type="button" onClick={() => setInfoOpen(false)} className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden">
                 닫기
               </button>
             </div>

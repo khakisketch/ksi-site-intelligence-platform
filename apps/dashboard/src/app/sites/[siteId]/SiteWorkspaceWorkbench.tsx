@@ -3,7 +3,6 @@
 import { useState, type ReactNode } from "react";
 
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
-import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 
 /**
  * 실제 작업공간용 작은 클라이언트 래퍼 — 서버가 만든 맥락막대·목록·무대·
@@ -51,14 +50,13 @@ export function SiteWorkspaceWorkbench({
       contextBar={
         <>
           {contextControls}
-          <TopBarSearchTrigger />
           <button
             data-workbench-info-trigger
             type="button"
             aria-expanded={infoOpen}
             aria-controls={inspectorId}
             onClick={() => setInfoOpen((open) => !open)}
-            className={`tap-target ml-auto shrink-0 text-[12px] underline ${infoOpen ? "font-semibold" : "text-ink-2"}`}
+            className={`tap-target ml-auto shrink-0 text-[12px] underline xl:hidden ${infoOpen ? "font-semibold" : "text-ink-2"}`}
           >
             정보
           </button>
@@ -75,7 +73,7 @@ export function SiteWorkspaceWorkbench({
               type="button"
               data-workbench-info-close
               onClick={() => setInfoOpen(false)}
-              className="tap-target shrink-0 text-[12px] underline text-ink-2"
+              className="tap-target shrink-0 text-[12px] underline text-ink-2 xl:hidden"
             >
               닫기
             </button>

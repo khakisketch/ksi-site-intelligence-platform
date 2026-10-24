@@ -199,11 +199,11 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       scopedAssetRef={headerAssetRef}
       visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
     />
-    <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
+    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
         <div>
-          <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 변화 분석</h2>
-          <p className="mt-1 text-[13px] leading-5 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
+          <h2 className="mt-1 text-[26px] font-bold tracking-[-0.03em]">현장 변화 분석</h2>
+          <p className="mt-1 max-w-2xl text-[13.5px] leading-6 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
         </div>
         <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
       </header>

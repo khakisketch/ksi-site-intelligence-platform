@@ -11,7 +11,6 @@ import type { SiteView } from "@/lib/core-api/types";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { siteTabHref, type SiteHeaderScope } from "@/lib/operator-journey";
 
-
 /** 탭을 옮겨도 고른 시점·구역을 잃지 않는다 — 검증된 범위만 싣는다. */
 function hrefWith(
   siteId: string,
@@ -24,14 +23,16 @@ function hrefWith(
 }
 
 /**
- * 현장 상세 머리 — 정체(상태·식별자)·행동·시간축·메뉴가 스크롤 위에 함께 있는 자리.
+ * 현장 상세 머리 — 제품 전체에서 같은 셸과 같은 문법을 쓴다.
  *
- * 현장 안의 화면들(작업공간·자료·결과·관측 작업·관리)이 같은 머리를 쓴다. 그래서
- * 자료·분석 화면에 들어가도 현장과 구역, 그리고 다른 영역으로 가는 길이 사라지지
- * 않는다. 시안의 "조사 주기" 선택과 "내 현장 고정"은 넣지 않았다 — 이 시스템에
- * 조사 주기라는 값은 없고(현장이 가진 것은 모델 노후 판정 기준일 뿐이라 주기로
- * 바꿔 부르면 없는 약속을 만든다), 고정은 저장할 곳이 없어 새로고침하면 사라지는
- * 버튼이 된다.
+ * 위층은 전역 셸(사이드바·상단바)이고, 이 머리는 그 안의 현장 문맥이다.
+ * 사이트명·상태·설정·1차 행동을 한 줄에 두고, 작업공간·자료·결과는
+ * 밑줄 탭으로 분리한다. 예전의 pill 탭과 화면별 compact 변형은 제거했다 —
+ * 같은 제품이 화면마다 다른 앱처럼 보이던 원인 중 하나였다.
+ *
+ * 현장 안의 화면들(작업공간·자료·결과·관측 작업·관리)이 같은 머리를 쓴다.
+ * 시안의 "조사 주기" 선택과 "내 현장 고정"은 넣지 않았다 — 이 시스템에
+ * 조사 주기라는 값은 없고, 고정은 저장할 곳이 없어 새로고침하면 사라진다.
  */
 export function SiteHeader({
   site,
@@ -44,7 +45,6 @@ export function SiteHeader({
   scopedWorkAreaId = null,
   scopedAssetRef = null,
   visualContext = null,
-  variant = "default",
 }: {
   site: SiteView;
   selectedEpochId: string | null;
@@ -65,11 +65,6 @@ export function SiteHeader({
     visualAAssetRef: string;
     visualBAssetRef: string;
   } | null;
-  /**
-   * 자료 탐색용 한 줄 머리 — 같은 목적지·같은 범위 브리지를 작은 행에 둔다.
-   * 기본값 "default"는 기존 머리 그대로이며, 다른 화면의 동작을 바꾸지 않는다.
-   */
-  variant?: "default" | "compact";
 }) {
   const status = SITE_STATUS_LABEL[site.status];
   const current = { section: tab, epoch: selectedEpochId ?? undefined };
@@ -109,59 +104,39 @@ export function SiteHeader({
   // normalizeSiteTab에 남기되, 최상위 nav가 아니라 각각 자료 맥락의 하위 길과
   // 머리 설정 메뉴로 둔다.
   const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders" && option.key !== "manage");
-  const workOrdersTab = SITE_TABS.find((option) => option.key === "work-orders");
-  const showRecordsContext = tab === "materials" || tab === "work-orders";
   const activeTab = tab === "work-orders" ? "materials" : tab;
-  if (variant === "compact") {
-    // 한 줄 머리에는 자료 맥락 하위 행을 두지 않는다 — 작업공간·자료 화면의
-    // 「더 보기」가 관측 작업 기록으로 이미 이어진다. 기본 머리의 행은 그대로 둔다.
-    return (
-      <header
-        className="flex min-w-0 flex-col gap-1 border-b border-line bg-surface px-4 py-1.5 sm:px-5"
-        data-site-nav="true"
-        data-site-id={site.siteId}
-        data-work-area-id={scopedWorkAreaId ?? ""}
-        data-asset-ref={scopedAssetRef ?? ""}
-      >
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap">
-          <h2 className="w-full min-w-0 truncate text-[14px] font-bold tracking-tight sm:w-auto sm:flex-1">{site.name}</h2>
-          <StateBadge label={status.label} tone={status.tone} />
-          <nav className="flex shrink-0 items-center gap-0.5" aria-label="현장 업무 메뉴">
-            {headerTabs.map((option) => (
-              <Link
-                key={option.key}
-                href={withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
-                aria-current={option.key === activeTab ? "page" : undefined}
-                className={`tap-target rounded-md px-2 py-1 text-[12px] whitespace-nowrap ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
-              >
-                {option.label}
-              </Link>
-            ))}
-          </nav>
-          <details className="relative shrink-0 text-[12px] text-ink-2">
-            <summary className="tap-target cursor-pointer list-none rounded-md border border-line bg-surface px-2 py-1 font-semibold">설정·정보</summary>
-            <div className="absolute right-0 z-10 mt-1 flex min-w-52 flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-lg">
-              <p className="px-2 py-1 text-[11.5px]">현장 관리 상태 · {status.label}</p>
-              <p className="break-all px-2 py-1 font-mono text-[11px] text-ink-muted">{site.siteId}</p>
-              <Link href={`/sites/${encodeURIComponent(site.siteId)}/work-areas`} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">작업구역 관리</Link>
-              <Link href={`${hrefWith(site.siteId, current, { section: "manage" }, scope)}#site-aoi`} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">현장 전체 범위</Link>
-              <Link href={hrefWith(site.siteId, current, { section: "manage" }, scope)} className="tap-target rounded px-2 py-1.5 hover:bg-sunk">현장 상태</Link>
-              {latestExternalReportKnown !== undefined && (
-                <p className="px-2 py-1 text-[11.5px] text-ink-2">
-                  최근 외부 비교 보고{" "}
-                  {!latestExternalReportKnown ? "알 수 없음" : latestExternalReportAt ? formatKoreanDate(latestExternalReportAt) : "아직 없음"}
-                </p>
-              )}
-              {site.resumeTarget && <p className="px-2 py-1 text-[11.5px] text-ink-2">복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}</p>}
-            </div>
-          </details>
+  const statusBadge = <StateBadge label={status.label} tone={status.tone} />;
+  const settingsMenu = (
+    <details className="relative text-[12px] text-ink-2">
+      <summary className="tap-target flex min-h-10 cursor-pointer list-none items-center rounded-md border border-line bg-surface px-3 font-semibold transition-colors hover:bg-sunk [&::-webkit-details-marker]:hidden">
+        설정·정보
+      </summary>
+      <div className="absolute right-0 z-30 mt-1 flex w-[min(280px,calc(100vw-2rem))] flex-col gap-1 rounded-lg border border-line bg-surface p-2 shadow-xl">
+        <div className="flex flex-col gap-0.5 rounded-md bg-sunk/60 px-2.5 py-2">
+          <p className="text-[11.5px] font-semibold text-ink-1">현장 관리 상태 · {status.label}</p>
+          <p className="break-all font-mono text-[11px] text-ink-muted">{site.siteId}</p>
         </div>
-      </header>
-    );
-  }
+        <Link href={`/sites/${encodeURIComponent(site.siteId)}/work-areas`} className="tap-target rounded-md px-2.5 py-2 font-medium hover:bg-sunk">작업구역 관리</Link>
+        <Link href={`/sites/${encodeURIComponent(site.siteId)}?section=manage#site-aoi`} className="tap-target rounded-md px-2.5 py-2 font-medium hover:bg-sunk">현장 전체 범위</Link>
+        <Link href={hrefWith(site.siteId, current, { section: "manage" }, scope)} className="tap-target rounded-md px-2.5 py-2 font-medium hover:bg-sunk">현장 상태</Link>
+        {latestExternalReportKnown !== undefined && (
+          <p className="px-2.5 py-1.5 text-[11.5px] leading-5 text-ink-2">
+            최근 외부 비교 보고{" "}
+            {!latestExternalReportKnown ? "알 수 없음" : latestExternalReportAt ? formatKoreanDate(latestExternalReportAt) : "아직 없음"}
+          </p>
+        )}
+        {site.resumeTarget && (
+          <p className="px-2.5 py-1.5 text-[11.5px] leading-5 text-ink-2">
+            복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
+          </p>
+        )}
+      </div>
+    </details>
+  );
+
   return (
     <header
-      className="flex flex-col gap-1.5 border-b border-line bg-surface px-4 pt-2.5 sm:px-5"
+      className="border-b border-line bg-surface"
       // 서버 확인 범위의 읽기 전용 브리지 — 팔레트가 열릴 때 같은 목적지를
       // 가리키게 한다. URL 쿼리에는 없는 bare deep link(분석 기록 직접 연결 등)의
       // 실제 구역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,
@@ -171,112 +146,59 @@ export function SiteHeader({
       data-work-area-id={scopedWorkAreaId ?? ""}
       data-asset-ref={scopedAssetRef ?? ""}
     >
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은 그 하위
-            맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
-            현장명은 한 번만 보인다. 앞의 "현장명" 라벨과 별도 큰 머리글은 두지 않는다. */}
-        <h2 className="text-[16px] font-bold tracking-tight break-keep">{site.name}</h2>
-        <StateBadge label={status.label} tone={status.tone} />
-        <details className="text-[12px] text-ink-2">
-          <summary className="tap-target cursor-pointer underline decoration-dotted">현장 정보·범위</summary>
-          <dl className="my-1.5 grid gap-1">
-            <div><dt className="font-semibold">현장 관리 상태</dt><dd>{status.label}</dd></div>
-            <div><dt className="font-semibold">현장 식별자</dt><dd className="break-all font-mono">{site.siteId}</dd></div>
-          </dl>
-        <p>
-          <Link
-            href={`/sites/${encodeURIComponent(site.siteId)}?section=manage#site-aoi`}
-            className="tap-target text-[11.5px] break-keep underline text-ink-2"
-          >
-            현장 전체 범위 보기
-          </Link>
-        </p>
-        {latestExternalReportKnown !== undefined && (
-          <p className="mt-1 text-[11.5px] break-keep text-ink-2">
-            최근 외부 비교 보고{" "}
-            {!latestExternalReportKnown
-              ? "알 수 없음"
-              : latestExternalReportAt
-                ? formatKoreanDate(latestExternalReportAt)
-                : "아직 없음"}
-          </p>
-        )}
-        {site.resumeTarget && (
-          <span className="mt-1 block text-[11.5px] break-keep text-ink-2">
-            복귀 예정 상태 {SITE_STATUS_LABEL[site.resumeTarget].label}
-          </span>
-        )}
-        </details>
+      <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-2 gap-y-1.5 px-4 pt-3 pb-2 sm:flex-nowrap sm:gap-3 sm:px-6">
+        <Link
+          href="/sites"
+          className="tap-target shrink-0 text-[12px] font-semibold text-ink-muted transition-colors hover:text-ink-1"
+        >
+          현장
+        </Link>
+        <span aria-hidden="true" className="max-sm:hidden shrink-0 text-line-strong">/</span>
 
-        <span className="ml-auto hidden flex-wrap items-center gap-1.5 lg:flex">
+        {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은
+            그 하위 맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
+            모바일에서는 order-3 + w-full로 이름이 자기 줄을 통째로 써서 중간에
+            잘리지 않고, 상태·설정은 첫 줄 오른쪽에 남는다. */}
+        <h2 className="order-3 w-full min-w-0 text-[18px] font-bold tracking-[-0.02em] break-keep sm:order-none sm:w-auto sm:flex-1 sm:truncate sm:text-[20px]">
+          {site.name}
+        </h2>
+
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {primaryAction && (
             <Link
               href={primaryAction.href}
-              className="btn btn-primary tap-target"
+              className="btn btn-primary tap-target hidden min-h-10 lg:inline-flex"
             >
               {primaryAction.label}
             </Link>
           )}
-        </span>
+          {statusBadge}
+          {settingsMenu}
+        </div>
       </div>
 
-      {/*
-        현장 업무 메뉴 — 세 영역을 펼침 없이 바로 보인다. label 없는 아이콘-only
-        진입은 두지 않으며, 현재 영역은 aria-current로 밝힌다. 관측 작업 기록
-        (옛 ?section=work-orders)은 최상위에 두지 않고 자료 맥락의 하위 길로
-        두고, 현장 설정은 아래 설정 메뉴로 둔다. 키보드로 이동하고 포커스 표시를 둔다.
-      */}
-      <nav className="grid grid-cols-3 gap-1 pb-2" aria-label="현장 업무 메뉴">
+      {/* 현장 업무 메뉴 — 제품 전체에서 같은 밑줄 탭 문법. 현재 영역은
+          aria-current와 밑줄로 밝히고, 좁은 화면에서는 가로 스크롤로
+          두 줄로 깨지지 않게 한다. */}
+      <nav
+        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5"
+        aria-label="현장 업무 메뉴"
+      >
         {headerTabs.map((option) => (
           <Link
             key={option.key}
             href={withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
             aria-current={option.key === activeTab ? "page" : undefined}
-            className={`tap-target flex items-center justify-center rounded-md px-2 text-[12.5px] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 sm:justify-start sm:px-3 sm:text-[13px] ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
+            className={`tap-target relative flex min-h-11 shrink-0 items-center border-b-2 px-3 text-[13px] whitespace-nowrap transition-colors ${
+              option.key === activeTab
+                ? "border-ink-1 font-bold text-ink-1"
+                : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink-1"
+            }`}
           >
             {option.label}
           </Link>
         ))}
       </nav>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-[12px] text-ink-2">
-        <details className="relative">
-          <summary className="tap-target cursor-pointer list-none rounded-md border border-line bg-surface px-2.5 py-1.5 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2">
-            설정
-          </summary>
-          <div className="absolute z-10 mt-1 flex min-w-44 flex-col gap-1 rounded-md border border-line bg-surface p-1.5 shadow-lg">
-            <Link
-              href={`/sites/${encodeURIComponent(site.siteId)}/work-areas`}
-              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              작업구역 관리
-            </Link>
-            <Link
-              href={`${hrefWith(site.siteId, current, { section: "manage" }, scope)}#site-aoi`}
-              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              현장 전체 범위
-            </Link>
-            <Link
-              href={hrefWith(site.siteId, current, { section: "manage" }, scope)}
-              className="tap-target rounded px-2 py-1.5 hover:bg-sunk focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              현장 상태
-            </Link>
-          </div>
-        </details>
-        {showRecordsContext && workOrdersTab ? (
-          <p>
-            <span>자료 · </span>
-            <Link
-              href={hrefWith(site.siteId, current, { section: "work-orders" }, scope)}
-              aria-current={tab === "work-orders" ? "page" : undefined}
-              className="tap-target underline decoration-dotted focus-visible:outline-2 focus-visible:outline-offset-2"
-            >
-              {workOrdersTab.label}
-            </Link>
-          </p>
-        ) : null}
-      </div>
     </header>
   );
 }

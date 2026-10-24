@@ -68,13 +68,13 @@ describe("TopBar distinguishes identity expiry from server recovery", () => {
     expect(html).toContain("/login?next=%2Fsites%2Fsite-1%2Fspatial-assets");
   });
 
-  it("keeps a normal search entry and hides repeated failure text on login", async () => {
-    // 정확한 현장 작업공간 경로는 집중 모드라서 정상행을 접는다 — 검색 입구는
-    // 작업환경 맥락막대가 맡는다. 일반 경로에서는 정상행을 둔다.
+  it("renders the normal search row on every authenticated console path", async () => {
+    // The shell no longer has a path-based compact/focus mode: site workspace
+    // and materials keep the same global top bar as every other console page.
     mocks.pathname = "/sites/site-1";
     mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
-    expect(renderToStaticMarkup(await TopBar())).toBe("");
-    mocks.pathname = "/sites";
+    expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
+    mocks.pathname = "/sites/site-1/spatial-assets";
     mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
     expect(renderToStaticMarkup(await TopBar())).toContain("검색 · 이동");
     mocks.pathname = "/login";
@@ -82,10 +82,8 @@ describe("TopBar distinguishes identity expiry from server recovery", () => {
     expect(renderToStaticMarkup(await TopBar())).toBe("");
   });
 
-  it("hides only the normal row in focus mode but keeps the auth alert visible", async () => {
+  it("keeps the auth alert visible on workspace and materials paths", async () => {
     mocks.pathname = "/sites/site-1/spatial-assets";
-    mocks.whoami.mockResolvedValueOnce({ kind: "OPERATOR" });
-    expect(renderToStaticMarkup(await TopBar())).toBe("");
     mocks.whoami.mockRejectedValueOnce(new MissingSessionError());
     const html = renderToStaticMarkup(await TopBar());
     expect(html).toContain("세션이 만료되었습니다");

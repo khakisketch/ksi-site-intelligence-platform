@@ -390,7 +390,6 @@ export default async function SiteDetailPage({
       site={site}
       selectedEpochId={null}
       tab={tab}
-      variant={tab === "workspace" ? "compact" : "default"}
       latestExternalReportAt={latestExternalReport}
       latestExternalReportKnown={historyResult.status === "fulfilled"}
       canCreateWorkOrder={canCreateWorkOrder}
@@ -489,7 +488,7 @@ export default async function SiteDetailPage({
       </div>}
 
       {tab === "work-orders" && <div className="flex flex-col gap-4">
-        <SectionCard title="관측 작업">
+        <SectionCard title="관측 작업 기록">
           {ordersResult.status === "rejected" ? <ErrorState message="관측 작업을 불러오지 못했습니다." retryable /> : ordersResult.value.length === 0 ? <EmptyState title="등록된 관측 작업이 없습니다" description="새 관측 작업이 생성되면 이 목록에 표시됩니다." /> : <ul className="divide-y divide-line">{ordersResult.value.map((order) => {
             const presentation = presentWorkOrder(order.status, order.executionMode);
             const names = order.workAreaIds.map((id) => areaNames.get(id) || "이름을 확인할 수 없는 구역");

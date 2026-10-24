@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
-import { isFocusModePath } from "./focus-mode-path";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
 import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
@@ -33,82 +32,6 @@ export function DesktopSidebar({
   // 셸을 벗는 로그인 화면에는 레일 자체가 없다 — 판정은 layout.tsx 와
   // 같은 술어를 쓴다(둘이 갈리면 그리드 트랙만 남고 레일이 사라진다).
   if (isChromelessPath(pathname)) return null;
-  // 집중 모드(자료 작업환경·디자인 예시)에서는 같은 항목·같은 권한으로
-  // 64px 아이콘 레일만 둔다. 전역 내비 권한을 복제하지 않으며, 사용자·
-  // 로그아웃은 기존 서버 블록을 그대로 싣는다.
-  if (isFocusModePath(pathname)) {
-    return (
-      <nav
-        aria-label="주 메뉴"
-        className="print:hidden hidden w-full flex-col items-center gap-1 bg-sidebar pt-3 pb-2.5 text-sidebar-text lg:flex"
-      >
-        <Link
-          href="/"
-          aria-label="KSI 홈"
-          title="KSI 홈"
-          className="tap-target grid size-9 flex-none place-items-center rounded-md bg-accent text-[12px] font-extrabold tracking-tight text-accent-on ring-1 ring-white/10"
-        >
-          <span aria-hidden="true">KSI</span>
-        </Link>
-        <SidebarSearchTrigger compact />
-        <div className="flex min-w-0 flex-1 flex-col items-center gap-1 overflow-y-auto">
-          {DESKTOP_NAV_GROUPS.flatMap((group) => group.items).map((item) => {
-            const active =
-              item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-            const count = counts?.[item.key];
-            return (
-              <Link
-                key={item.key}
-                href={item.href}
-                aria-label={item.label}
-                title={item.label}
-                aria-current={active ? "page" : undefined}
-                className={`tap-target relative flex w-14 flex-col items-center gap-0.5 rounded-md px-1 py-2 text-[10px] leading-tight break-keep transition-colors ${
-                  active
-                    ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
-                    : "hover:bg-sidebar-hover"
-                } ${item.implemented || active ? "" : "text-sidebar-muted"}`}
-              >
-                <NavIcon name={item.icon} className="size-5 flex-none" />
-                <span className="max-w-full truncate">{item.label}</span>
-                {count && (
-                  <span
-                    className={`tabular rounded-full px-1 text-[10px] leading-tight ${
-                      count.urgent
-                        ? "bg-crit font-bold text-white"
-                        : "bg-white/[0.13] text-sidebar-text"
-                    }`}
-                  >
-                    {count.value}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
-        </div>
-        {userBlock && (
-          <details className="relative flex-none">
-            <summary
-              aria-label="계정"
-              title="계정"
-              className="tap-target flex size-11 cursor-pointer list-none items-center justify-center rounded-md transition-colors hover:bg-sidebar-hover [&::-webkit-details-marker]:hidden"
-            >
-              <span
-                aria-hidden="true"
-                className="grid size-7 place-items-center rounded-full bg-sidebar-active text-[11px] font-bold text-sidebar-active-ink"
-              >
-                계
-              </span>
-            </summary>
-            <div className="absolute bottom-0 left-full z-40 ml-2 w-64 rounded-lg bg-sidebar p-1 text-sidebar-text shadow-xl ring-1 ring-white/10">
-              {userBlock}
-            </div>
-          </details>
-        )}
-      </nav>
-    );
-  }
-
   return (
     <nav
       aria-label="주 메뉴"

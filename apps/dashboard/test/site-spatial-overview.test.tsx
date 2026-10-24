@@ -502,9 +502,10 @@ describe("Site spatial overview honesty", () => {
 
   it("links the header to the preserved AOI anchor on the manage tab", async () => {
     await renderDefaultTab({});
-    // 집중 모드 한 줄 머리의 설정 메뉴가 같은 목적지를 둔다(검증된 구역 범위 포함).
+    // 현장 전체 범위는 구역 범위가 아니라 현장 단위 목적지다 — 검증된
+    // 작업구역 쿼리를 붙이지 않고 보존된 AOI 앵커로 이동한다.
     expect(screen.getByRole("link", { name: "현장 전체 범위" }).getAttribute("href"))
-      .toBe("/sites/site-1?section=manage&workAreaId=tiny-1#site-aoi");
+      .toBe("/sites/site-1?section=manage#site-aoi");
   });
 
   function grantPermissions(...perms: string[]) {

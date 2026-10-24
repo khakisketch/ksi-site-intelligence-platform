@@ -4,7 +4,6 @@ import { headers } from "next/headers";
 
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
-import { isFocusModePath } from "@/components/nav/focus-mode-path";
 import { getNavCounts } from "@/components/nav/nav-counts";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
@@ -48,10 +47,6 @@ export default async function RootLayout({
   // 부르면 아무도 보지 않는 배지를 위해 매 요청 왕복만 늘린다(로그인 화면에서는
   // 세션조차 없어 401 왕복이 된다).
   const chromeless = isChromelessPath(headerStore.get(PATHNAME_HEADER));
-  // 집중 모드(자료 작업환경·디자인 예시)에서는 같은 셸 골격을 두고 레일 폭만
-  // 64px로 좁힌다. 인증·읽기 게이트는 그대로 — 배치만 바꾼다. 클라이언트
-  // 네비게이션 사이의 복원은 ShellLayoutMode 가 같은 술어로 맞춘다.
-  const focusMode = !chromeless && isFocusModePath(headerStore.get(PATHNAME_HEADER));
   const currentPageTitle = resolvePageTitle(headerStore.get(PATHNAME_HEADER)) || "KSI Site Intelligence";
   // 셸을 벗는 로그인 화면에는 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
   const [navCounts, paletteItems] = chromeless
@@ -84,9 +79,7 @@ export default async function RootLayout({
         className={
           chromeless
             ? "min-h-full"
-            : focusMode
-              ? "min-h-full lg:grid lg:h-screen lg:grid-cols-[64px_minmax(0,1fr)] lg:overflow-hidden"
-              : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]"
+            : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]"
         }
       >
         <ShellLayoutMode />

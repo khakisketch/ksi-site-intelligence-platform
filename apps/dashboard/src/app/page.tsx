@@ -248,6 +248,30 @@ export default async function HomePage() {
       <div className="flex items-center gap-4"><Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline"><TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} /></Link><span aria-hidden="true" className="hidden h-4 w-px bg-line sm:block" /><Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">현장 전체</Link></div>
     </header>
 
+    <section aria-label="운영 요약" className="grid grid-cols-3 gap-2 sm:gap-3">
+      <div className="rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-[11.5px] font-semibold text-ink-muted">현장</p>
+        <p className="mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums">
+          {sitesResult.ok ? sites.length : "—"}
+        </p>
+        <p className="mt-1 text-[11.5px] text-ink-muted">등록된 현장</p>
+      </div>
+      <div className="rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-[11.5px] font-semibold text-ink-muted">확인 필요</p>
+        <p className={`mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums ${portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-1"}`}>
+          {portfolioComplete ? attentionCount : "—"}
+        </p>
+        <p className="mt-1 text-[11.5px] text-ink-muted">사람이 볼 안건</p>
+      </div>
+      <div className="rounded-xl border border-line bg-surface px-4 py-3">
+        <p className="text-[11.5px] font-semibold text-ink-muted">받은 업무</p>
+        <p className="mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums">
+          {inboxResult.ok ? inboxResult.value.items.length : "—"}
+        </p>
+        <p className="mt-1 text-[11.5px] text-ink-muted">배정·공유된 항목</p>
+      </div>
+    </section>
+
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
     {sitesResult.ok && sites.length === 0 && <EmptyState title="아직 등록된 현장이 없습니다" description={canRegisterSite ? "첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다." : "현장 등록 권한이 있는 계정에서 시작할 수 있습니다."} action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : undefined} />}
     {sites.length > 0 && !portfolioComplete && <section aria-label="일부 정보를 확인하지 못했습니다" className="rounded-lg border border-line bg-sunk px-4 py-3">

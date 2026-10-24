@@ -182,12 +182,14 @@ describe("뒤로가기 노출 규칙", () => {
   });
 
   it("하위 화면은 브라우저 이력이 아닌 결정적인 부모 화면으로 이동한다", () => {
-    expect(isBackVisible("/sites/S-1")).toBe(true);
+    // 현장 상세는 SiteHeader의 breadcrumb이 /sites 부모 이동을 소유한다 —
+    // 전역 상단바에서 같은 링크를 반복하지 않는다.
+    expect(isBackVisible("/sites/S-1")).toBe(false);
     expect(isBackVisible("/field/work-orders/WO-1")).toBe(true);
     expect(isBackVisible("/coming-soon/fleet")).toBe(true);
-    expect(resolveParentNavigation("/sites/S-1")).toEqual({ href: "/sites/S-1", label: "현장" });
+    expect(resolveParentNavigation("/sites/S-1")).toBeNull();
     expect(resolveParentNavigation("/field/work-orders/WO-1")).toEqual({ href: "/field", label: "작업" });
-    expect(resolveParentNavigation("/sites/S-1/design")).toEqual({ href: "/sites/S-1", label: "현장" });
+    expect(resolveParentNavigation("/sites/S-1/design")).toBeNull();
   });
 
   it("로그인과 retired /field/M-1 경로에는 뒤로가기가 없고 work-order 상세에는 있다", () => {
@@ -199,6 +201,6 @@ describe("뒤로가기 노출 규칙", () => {
   it("경로를 모르면 그리지 않는다", () => {
     expect(isBackVisible(null)).toBe(false);
     expect(resolveParentNavigation("/sites/new")).toBeNull();
-    expect(resolveParentNavigation("/sites/S-1/observations/new")).toEqual({ href: "/sites/S-1", label: "현장" });
+    expect(resolveParentNavigation("/sites/S-1/observations/new")).toBeNull();
   });
 });
