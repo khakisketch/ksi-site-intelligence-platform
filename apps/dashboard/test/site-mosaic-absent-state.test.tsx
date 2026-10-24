@@ -225,6 +225,48 @@ describe("mosaic absent-pixel state from current jobs", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("renders an expired canvas state with one recovery and one folded detail", () => {
+    stubCanvas();
+    const fetchMock = vi.fn(async () => new Response(BYTES, { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <SiteMosaicViewport
+        siteId="site-1"
+        workAreaId="area-1"
+        assetRef={assetRef}
+        grid={grid}
+        observedCrsDigest={crsDigest}
+        observedCrsIdentifier="EPSG:5186"
+        isDsm={false}
+        jobs={[baseJob({ executionState: "EXPIRED", availability: "RETENTION_EXPIRED" })]}
+        canRequest
+        requestsHref="/sites/site-1/spatial-data-requests?workAreaId=area-1"
+        workAreaRing={[[100, 200], [500, 200], [500, 500], [100, 500]]}
+        workAreaCrs="EPSG:5186"
+        presentation="canvas"
+      />,
+    );
+    // 차단 자리: 사유 한 줄 + 하나의 1차 회복. 큰 빈 사각형이 아니다.
+    expect(screen.getByText(/미리보기 보관 기간이 끝났습니다/)).toBeTruthy();
+    // 하나의 1차 회복(구역 자료 준비 길)만 무대에 둔다 — 명시적 다시 준비는 접힘 안에 둔다.
+    const media = screen.getByText(/미리보기 보관 기간이 끝났습니다/).closest("div[role]")!;
+    // 실패 공지는 alert로 알린다.
+    expect(media.getAttribute("role")).toBe("alert");
+    expect(media.querySelectorAll("a")).toHaveLength(1);
+    expect(media.querySelectorAll("button")).toHaveLength(0);
+    const folded = screen.getByText("상세·준비").closest("details")!;
+    expect(folded.open).toBe(false);
+    // 명시적 다시 준비는 권한·노트북 게이트 그대로 접힘 안에만 둔다.
+    expect(folded.querySelector('button')).not.toBeNull();
+    expect(folded.textContent).toContain("미리보기 다시 준비");
+    // 펼침 요약은 하나로 둔다 — 범위·준비 과정은 그 안의 절 제목으로만 둔다.
+    expect(screen.getAllByText("상세·준비")).toHaveLength(1);
+    expect(screen.queryByText("자료 범위 보기")).toBeNull();
+    expect(screen.queryByText("준비 과정·상세 상태", { selector: "summary" })).toBeNull();
+    expect(screen.queryByText("자료 범위 보기")).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps unavailable distinct from expired and empty", () => {
     stubCanvas();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(BYTES, { status: 200 })));

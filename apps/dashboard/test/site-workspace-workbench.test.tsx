@@ -43,11 +43,17 @@ describe("workspace workbench overlay", () => {
   it("opens info without touching the URL and closes with the close button", () => {
     const { container } = frame();
     const before = window.location.href;
+    const panel = container.querySelector("#workspace-inspector")!;
+    // 닫힘 상태에서는 틀만 마운트되고 본문은 두지 않는다.
+    expect(panel.getAttribute("style")).toMatch(/display:\s*none/);
+    expect(screen.queryByText("선택 자료 정보")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    expect(container.querySelector("#workspace-inspector")).toBeTruthy();
+    expect(panel.getAttribute("style")).not.toMatch(/display:\s*none/);
+    expect(screen.getByText("선택 자료 정보")).toBeTruthy();
     expect(window.location.href).toBe(before);
     fireEvent.click(screen.getByRole("button", { name: "닫기" }));
-    expect(container.querySelector("#workspace-inspector")).toBeNull();
+    expect(panel.getAttribute("style")).toMatch(/display:\s*none/);
+    expect(screen.queryByText("선택 자료 정보")).toBeNull();
     // 포커스는 정보 트리거로 돌아간다.
     expect(document.activeElement?.getAttribute("data-workbench-info-trigger")).not.toBeNull();
   });
@@ -55,10 +61,11 @@ describe("workspace workbench overlay", () => {
   it("closes with Escape", () => {
     const { container } = frame();
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    expect(container.querySelector("#workspace-inspector")).toBeTruthy();
     const panel = container.querySelector("#workspace-inspector")!;
+    expect(screen.getByText("선택 자료 정보")).toBeTruthy();
     fireEvent.keyDown(panel, { key: "Escape" });
-    expect(container.querySelector("#workspace-inspector")).toBeNull();
+    expect(panel.getAttribute("style")).toMatch(/display:\s*none/);
+    expect(screen.queryByText("선택 자료 정보")).toBeNull();
     expect(document.activeElement?.getAttribute("data-workbench-info-trigger")).not.toBeNull();
   });
 

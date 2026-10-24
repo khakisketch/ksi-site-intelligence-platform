@@ -82,6 +82,7 @@ export function SiteSpatialOverview({
   canCreateAnalysis,
   scopeNotice,
   hideAreaForm = false,
+  compact = false,
 }: {
   sitePath: string;
   areas: WorkArea[];
@@ -102,6 +103,11 @@ export function SiteSpatialOverview({
   scopeNotice: boolean;
   /** 탐색 첫 화면의 작업 막대가 구역 선택을 맡을 때 true — 중복 상자를 숨긴다. */
   hideAreaForm?: boolean;
+  /**
+   * 정보 서랍처럼 좁은 자리에 둘 때 true — 뷰포트 너비와 무관하게 한 열로 둔다.
+   * 기본 false는 기존 넓은 화면 3열 배치를 그대로 둔다.
+   */
+  compact?: boolean;
 }) {
   if (!areasKnown) {
     return <section aria-label="선택 구역 공간 확인" className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -209,8 +215,8 @@ export function SiteSpatialOverview({
       />
     )}
 
-    {selected && <div className="grid gap-4 lg:grid-cols-3">
-      <div className="flex min-w-0 flex-col gap-3 lg:col-span-2">
+    {selected && <div className={compact ? "grid gap-4" : "grid gap-4 lg:grid-cols-3"}>
+      <div className={compact ? "flex min-w-0 flex-col gap-3" : "flex min-w-0 flex-col gap-3 lg:col-span-2"}>
         <h2 className="sr-only">선택 구역 지도</h2>
         {nativePrimary ? <>
           {ring && <SiteNativeExtentSvg

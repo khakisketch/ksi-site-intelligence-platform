@@ -375,6 +375,24 @@ describe("site windowed pixel viewer", () => {
     render(<SiteWindowedPixelViewer {...propsFor({ jobsState: "unavailable" })} />);
     expect(screen.getByText(/불러오지 못했습니다. 잠시 후 다시 확인하세요/)).toBeTruthy();
   });
+
+  it("renders blocked canvas states on a dark stage with one recovery, not a disclosure wall", () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(new Uint8Array([7, 7, 7, 7]), { status: 200 })));
+    const { unmount } = render(<SiteWindowedPixelViewer {...propsFor({ jobsState: "denied", presentation: "canvas" })} />);
+    // 차단 자리: 어두운 면 + 사유 + 사람 행동 안내. 단추·펼침 벽을 두지 않는다.
+    expect(screen.getByText("준비 기록을 조회할 권한이 없습니다.")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "준비 상태 다시 확인" })).toBeNull();
+    expect(screen.getByText("상세·준비")).toBeTruthy();
+    expect(screen.queryByText("보기 상세")).toBeNull();
+    expect(screen.queryByText("자료 범위 보기")).toBeNull();
+    expect(screen.queryByText("준비 과정·상세 상태")).toBeNull();
+    unmount();
+    render(<SiteWindowedPixelViewer {...propsFor({ jobsState: "unavailable", presentation: "canvas" })} />);
+    expect(screen.getByText("준비 기록을 불러오지 못했습니다.")).toBeTruthy();
+    // 하나의 1차 회복만 둔다.
+    expect(screen.getAllByRole("button", { name: "준비 상태 다시 확인" })).toHaveLength(1);
+    expect(screen.getByText("상세·준비")).toBeTruthy();
+  });
 });
 
 describe("site windowed pixel compare", () => {

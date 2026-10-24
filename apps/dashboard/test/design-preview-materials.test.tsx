@@ -107,9 +107,10 @@ describe("design preview materials page", () => {
   it("keeps the detailed provenance on demand and explains registration limits", () => {
     const html = renderToStaticMarkup(<MaterialsDesignPreview />);
     // 상세 근거는 정보 펼침에서만 본다 — 기본 화면은 사진이 먼저다.
+    // 서랍 틀은 마운트 유지하되 숨긴다.
     expect(html).toContain("정보");
-    expect(html).not.toContain('id="design-example-info"');
-    expect(html).not.toContain("예시 화면 정보");
+    expect(html).toContain('id="design-example-info"');
+    expect(html).toContain("display:none");
     expect(html).not.toContain("이 예시에서는 등록·준비·검사를 만들 수 없습니다");
     // 등록은 실제 현장 맥락으로만 연결한다.
     expect(html).toContain("실제 현장에서 등록");

@@ -76,18 +76,22 @@ describe("site header workspace navigation", () => {
     expect(bare).not.toContain("assetRef");
   });
 
-  it("opens the condition form rather than the history when handing off an exact visual pair", () => {
+  it("keeps header Results as a records-first browse handoff without request hints", () => {
     const visualContext = { workAreaId: "wa-a", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`,
-      visualBAssetRef: `ksa-v1-${"b".repeat(64)}`,
-      hintBaseline: { workOrderId: "work-a", submissionRef: `ers-v1-${"a".repeat(64)}`, revision: 1 },
-      hintCurrent: { workOrderId: "work-b", submissionRef: `ers-v1-${"b".repeat(64)}`, revision: 2 } };
+      visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
     const nav = workspaceNav(headerHtml({ scopedWorkAreaId: "wa-a", visualContext }));
     const href = nav.match(/href="([^"]+)"[^>]*>결과</)?.[1]?.replaceAll("&amp;", "&");
     const url = new URL(href!, "https://console.test");
-    expect(url.hash).toBe("#new-analysis-request");
-    expect(url.searchParams.get("hintCurrentRevision")).toBe("2");
+    // 둘러보기 맥락(A/B)은 싣되, 요청 힌트 6건과 #new-analysis-request는 싣지
+    // 않는다 — 최상위 결과 이동이 둘러보기를 새 요청으로 바꾸지 않는다.
+    expect(url.hash).toBe("");
     expect(url.searchParams.get("visualAAssetRef")).toBe(visualContext.visualAAssetRef);
-    expect(workspaceNav(headerHtml({ scopedWorkAreaId: "wa-a" }))).not.toContain("#new-analysis-request");
+    expect(url.searchParams.get("visualBAssetRef")).toBe(visualContext.visualBAssetRef);
+    expect(url.searchParams.get("hintBaselineWorkOrderId")).toBeNull();
+    expect(url.searchParams.get("hintCurrentWorkOrderId")).toBeNull();
+    expect(nav).not.toContain("#new-analysis-request");
+    expect(nav).not.toContain("hintBaseline");
+    expect(nav).not.toContain("hintCurrent");
   });
 
   it("retains the work-orders key for legacy URLs", () => {

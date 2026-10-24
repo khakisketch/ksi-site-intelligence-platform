@@ -191,19 +191,29 @@ function shell(props: Parameters<typeof SiteWorkspaceShell>[0]) {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("compare stage pair controls", () => {
-  it("puts each layer row and date caption at its own pane with inline controls", () => {
+  it("puts each date select and layer control at its own pane with inline controls", () => {
     render(shell(shellProps()));
     const stage = screen.getByRole("region", { name: "두 시점 비교" });
-    // 각 칸의 날짜·버전 표식은 그 칸 바로 위에 있으며, 드로어 기준선에 든다.
-    const captions = [
-      ...within(stage).getAllByText(/^관측 A ·/),
-      ...within(stage).getAllByText(/^관측 B ·/),
-    ];
-    expect(captions).toHaveLength(2);
-    for (const caption of captions) {
-      expect(caption.textContent).toContain("등록 버전 1");
-      expect(caption.closest("[data-workbench-pane-controls]")).toBeTruthy();
+    // 각 칸의 관측 선택은 그 칸 바로 위의 직접 GET 폼이다 — 큰 제출 벽을 두지 않는다.
+    const selectA = within(stage).getByLabelText("관측 A 관측 선택") as HTMLSelectElement;
+    const selectB = within(stage).getByLabelText("관측 B 관측 선택") as HTMLSelectElement;
+    expect(selectA.value).toBe(REFA);
+    expect(selectB.value).toBe(REFB);
+    // 날짜 정밀도는 선택지에 그대로 둔다.
+    expect(selectA.textContent).toContain("2021");
+    // 폼마다 같은 구역·반대쪽 참조를 싣고, 제출하면 그 칸만 바뀐다.
+    for (const [select, name, sibling] of [
+      [selectA, "visualAAssetRef", "visualBAssetRef"],
+      [selectB, "visualBAssetRef", "visualAAssetRef"],
+    ] as const) {
+      const form = select.closest("form")!;
+      expect(form.method).toBe("get");
+      expect(form.querySelector('input[name="mode"][value="compare"]')).toBeTruthy();
+      expect(form.querySelector('input[name="workAreaId"][value="tiny-1"]')).toBeTruthy();
+      expect(form.querySelector(`select[name="${name}"]`)).toBe(select);
+      expect(form.querySelector(`input[name="${sibling}"]`)).toBeTruthy();
     }
+    expect(within(stage).queryByRole("button", { name: "독립 보기로 나란히 두기" })).toBeNull();
     // 층 전환은 각 칸의 내장 제어로 그 칸에 붙는다 — 전역 포털 대상 없음.
     const layerGroups = within(stage).getAllByRole("group", { name: "자료 층 전환" });
     expect(layerGroups).toHaveLength(2);
@@ -212,17 +222,139 @@ describe("compare stage pair controls", () => {
       expect(group.closest("#workbench-catalog")).toBeNull();
     }
     expect(document.getElementById("workbench-catalog")).toBeNull();
+    // 같은 사유 회복은 하나로 둔다 — 읽기 권한이 없어 두 칸이 함께 막혔다.
+    expect(within(stage).getByText("이미 준비된 창을 볼 권한이 없습니다.")).toBeTruthy();
   });
 
-  it("folds the ready visual pair into a disclosure and keeps the CTA once", () => {
+  it("carries the opposite side exactly in each pane form, never its own ref", () => {
     render(shell(shellProps()));
-    const folded = screen.getByText("독립 보기 자료·조건 확인").closest("details")!;
-    expect(folded).toBeTruthy();
-    // 바깥 진입 하나 + 접힌 안의 기존 안내 — 새로 늘리지 않는다.
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // A 폼의 반대쪽 hidden은 B의 정확한 참조여야 한다 — A를 고르면 B가 바뀌면 안 된다.
+    const formA = within(stage).getByLabelText("관측 A 관측 선택").closest("form")!;
+    expect(formA.querySelector('select[name="visualAAssetRef"]')).toBeTruthy();
+    expect(formA.querySelector('input[name="visualBAssetRef"]')?.getAttribute("value")).toBe(REFB);
+    expect(formA.querySelector('input[name="visualAAssetRef"]')).toBeNull();
+    // B 폼의 반대쪽 hidden은 A의 정확한 참조여야 한다.
+    const formB = within(stage).getByLabelText("관측 B 관측 선택").closest("form")!;
+    expect(formB.querySelector('select[name="visualBAssetRef"]')).toBeTruthy();
+    expect(formB.querySelector('input[name="visualAAssetRef"]')?.getAttribute("value")).toBe(REFA);
+    expect(formB.querySelector('input[name="visualBAssetRef"]')).toBeNull();
+    // GET 제출 주소는 정확히 그 칸만 바꾼다.
+    expect(formA.getAttribute("action")).toBe("/sites/site-1");
+  });
+
+  it("carries the opposite time-ordered side exactly in each pane form", () => {
+    const props = shellProps({
+      comparison: {
+        status: "ready",
+        workAreaId: "tiny-1",
+        baseline: { observationEpochId: "epoch-a", workAreaId: "tiny-1", workOrderId: "w1", assetRef: "base-1", submissionRef: "s1", revision: 1, kind: "dsm", displayReady: true, inspectedRasterAvailable: true, chronologyCandidate: true, captureSourcesAgree: true, viewAvailable: true, viewUnavailableReason: null, viewAssetRef: "base-1", newerRevisionPending: false, newerRevisionState: null, captureStartedAt: "2021-08-17T10:00:00Z", captureEndedAt: "2021-08-17T11:00:00Z", captureDate: null },
+        current: { observationEpochId: "epoch-b", workAreaId: "tiny-1", workOrderId: "w1", assetRef: "curr-1", submissionRef: "s1", revision: 1, kind: "dsm", displayReady: true, inspectedRasterAvailable: true, chronologyCandidate: true, captureSourcesAgree: true, viewAvailable: true, viewUnavailableReason: null, viewAssetRef: "curr-1", newerRevisionPending: false, newerRevisionState: null, captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z", captureDate: null },
+      },
+      baselineRequestedRef: "base-1",
+      currentRequestedRef: "curr-1",
+      visualPair: { status: "prompt" },
+      visualARequestedRef: null,
+      visualBRequestedRef: null,
+    });
+    render(shell(props));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    const formBase = within(stage).getByLabelText("기준 자료 관측 선택").closest("form")!;
+    expect(formBase.querySelector('input[name="currentAssetRef"]')?.getAttribute("value")).toBe("curr-1");
+    expect(formBase.querySelector('input[name="baselineAssetRef"]')).toBeNull();
+    const formCurr = within(stage).getByLabelText("비교 자료 관측 선택").closest("form")!;
+    expect(formCurr.querySelector('input[name="baselineAssetRef"]')?.getAttribute("value")).toBe("base-1");
+    expect(formCurr.querySelector('input[name="currentAssetRef"]')).toBeNull();
+  });
+
+  it("refuses an invalid side ref without substituting the other side", () => {
+    render(shell(shellProps({ visualARequestedRef: "ghost-ref", visualPair: { status: "unresolvable", intent: "comparison", reason: "malformed", headline: "쌍을 확인하지 못했습니다", detail: "독립 보기 지시를 확인하세요." } })));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // 실패한 쪽 선택은 비어 있고(조용히 바꾸지 않음), 살아 있는 B는 그대로 싣는다.
+    const selectA = within(stage).getByLabelText("관측 A 관측 선택") as HTMLSelectElement;
+    expect(selectA.value).toBe("");
+    const formA = selectA.closest("form")!;
+    expect(formA.querySelector('input[name="visualBAssetRef"]')?.getAttribute("value")).toBe(REFB);
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("does not coalesce when an old expired record coexists with a newer available one", () => {
+    const expired = (assetRef: string, jobId: string) => ({
+      jobId, assetRef, executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+      createdAt: "2026-10-21T00:00:00Z", receipt: null,
+    });
+    const available = (assetRef: string, jobId: string) => ({
+      jobId, assetRef, executionState: "COMPLETED", availability: "AVAILABLE",
+      createdAt: "2026-10-22T00:00:00Z", receipt: null,
+    });
+    // A에는 오래된 만료와 새 사용 가능본이 함께 있다 — 만료로 묶으면 유효 픽셀이 숨겨진다.
+    render(shell(shellProps({
+      canReadData: true, canRequestData: false,
+      preparedJobs: [expired(REFA, "sdj-exp-a"), available(REFA, "sdj-av-a"), expired(REFB, "sdj-exp-b")],
+    })));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // 같은 사유 묶음이 아니다 — 공유 바(둘 칸 한 줄)가 없다. 각 칸 뷰어가 그대로 마운트된다.
+    expect(within(stage).queryByText(/두 칸의 불러온 준비 기록/)).toBeNull();
+    expect(within(stage).getAllByLabelText(/임시 시각화 어댑터/)).toHaveLength(2);
+    expect(within(stage).getByLabelText("관측 A 관측 선택")).toBeTruthy();
+    expect(within(stage).getByLabelText("관측 B 관측 선택")).toBeTruthy();
+  });
+
+  it("keeps viewers when one side expired and the other only has an unreadable record", () => {
+    const expired = (assetRef: string, jobId: string) => ({
+      jobId, assetRef, executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+      createdAt: "2026-10-21T00:00:00Z", receipt: null,
+    });
+    const pending = (assetRef: string, jobId: string) => ({
+      jobId, assetRef, executionState: "RUNNING", availability: "NOT_READY",
+      createdAt: "2026-10-22T00:00:00Z", receipt: null,
+    });
+    render(shell(shellProps({
+      canReadData: true, canRequestData: false,
+      preparedJobs: [expired(REFA, "sdj-exp-a"), pending(REFB, "sdj-run-b")],
+    })));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    expect(within(stage).queryByText(/두 칸의 불러온 준비 기록/)).toBeNull();
+    // 각 칸 뷰어가 그대로 마운트된다 — 공유 바 없이 각자 자기 사유만 말한다.
+    expect(within(stage).getAllByLabelText(/임시 시각화 어댑터/)).toHaveLength(2);
+    expect(within(stage).getByLabelText("관측 A 관측 선택")).toBeTruthy();
+    expect(within(stage).getByLabelText("관측 B 관측 선택")).toBeTruthy();
+  });
+
+  it("coalesces only when every known job for both sides expired", () => {
+    const expired = (assetRef: string, jobId: string) => ({
+      jobId, assetRef, executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+      createdAt: "2026-10-21T00:00:00Z", receipt: null,
+    });
+    render(shell(shellProps({
+      canReadData: true, canRequestData: false,
+      preparedJobs: [expired(REFA, "sdj-exp-a"), expired(REFB, "sdj-exp-b")],
+    })));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    expect(within(stage).getAllByText(/두 칸의 불러온 준비 기록/)).toHaveLength(1);
+    expect(within(stage).getAllByText(/미리보기 보관 기간이 끝났습니다/)).toHaveLength(1);
+    // 뷰어는 접히고 헤드(관측 선택·층)만 남는다 — 같은 사유 회복 하나만 둔다.
+    expect(within(stage).getByText("관측 A 관측 선택")).toBeTruthy();
+    expect(within(stage).getByText("관측 B 관측 선택")).toBeTruthy();
+  });
+
+  it("keeps the denied list state instead of an expired claim when the list itself is denied", () => {
+    render(shell(shellProps({ jobsState: "denied" })));
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    expect(within(stage).getByText(/준비 기록을 조회할 권한이 없습니다/)).toBeTruthy();
+    expect(within(stage).queryByText(/미리보기 보관 기간이 끝났습니다/)).toBeNull();
+  });
+
+  it("keeps the request entry once in the stage and folds pair conditions into info", () => {
+    render(shell(shellProps()));
+    // 무대에는 명시적 요청 진입 하나만 둔다.
     const ctas = screen.getAllByRole("link", { name: "이 쌍으로 분석 조건 확인" });
-    expect(ctas).toHaveLength(2);
+    expect(ctas).toHaveLength(1);
     expect(ctas[0]!.closest("details")).toBeNull();
-    expect(ctas[1]!.closest("details")).toBe(folded);
+    expect(ctas[0]!.getAttribute("href")).toBe("/sites/site-1/analysis?workAreaId=tiny-1");
+    // 칸 카드·조건 펼침은 정보 서랍의 한 면에 둔다.
+    expect(screen.queryByText("독립 보기 자료·조건 확인")).toBeNull();
+    expect(screen.queryByText("비교 자료·조건 확인")).toBeNull();
     // 임계 고지는 접히지 않은 채 무대에 남는다(픽셀 비교 한 줄).
     expect(screen.getByText(/각 칸은 독립된 보기입니다/)).toBeTruthy();
   });

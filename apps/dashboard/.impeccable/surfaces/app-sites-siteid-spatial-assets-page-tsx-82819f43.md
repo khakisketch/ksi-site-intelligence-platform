@@ -9,7 +9,15 @@ related_targets: []
 
 Scope: Actual Console spatial-assets route and reusable visual viewer. Mode: Operate. Current user approved improving materials visually and prefers DroneDeploy-like left/right observation viewing. This brief is a development aid, subordinate to repository product authority and current user direction, not runtime acceptance.
 
-## Direction contract
+## Direction contract — reopened after explicit rejection (2026-10-24)
+THESIS: One observation work surface, not a form-and-disclosure document. The Human rejected the deployed result; shared components and passing tests did not establish visual success.
+OWN-WORLD: Inherit KSI's existing typography, restrained light chrome/dark navigation and the liked photographic example. A neutral dark media stage is for imagery or an honest unavailable state, never fake terrain, imagery or a giant extent rectangle.
+STORY: Choose A/B and their layers beside the view; browse directly, then inspect evidence or recover access on demand. Browsing does not initiate preparation or calculation.
+FIRST VIEWPORT: One compact site/context hierarchy; each observation/date appears once. No full-width compare-submit wall. A deliberate media region leads; blocked content has short cause/recovery rather than repeated pane buttons and five disclosure bands. Supporting range, queue, display and provenance share the existing information surface.
+FORM: User-pinned visual spatial workbench, Operate/code-led; preserve canonical URLs, independent mixed-layer A/B and the explicit public-example swipe. Exact implementation topology remains revisable by rendered task evidence. Results open existing records first; only an explicit new-request action opens the form.
+FINISH: Independent UI/UX review against current actual/ready/blocked mobile+desktop scenes is required. Reuse provenance assets unchanged; no Core/source/journal/PREPARE/TTL/grant/S3 changes and no quantitative acceptance implied.
+
+## Historical direction contract — retained, overridden where contradicted above
 THESIS: Recognize a spatial material by seeing it, then inspect evidence on demand; refuse the file-and-validation-page-as-primary composition.
 OWN-WORLD: Preserve KSI's dark navigation, light readable chrome, restrained status tokens and existing UI font; frame real ortho/DSM in a neutral spatial canvas. No fake photography, basemap, or unsupported 3D affordance.
 STORY: Choose an observation/material, see its allowed pixels, add an explicit B observation for independent left/right viewing, inspect only the selected material's provenance and permitted uses. API/MCP and web refer to the same durable records.

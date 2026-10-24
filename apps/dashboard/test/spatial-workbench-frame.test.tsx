@@ -12,13 +12,14 @@ function frameHtml(props: Partial<Parameters<typeof SpatialWorkbenchFrame>[0]> =
       stage={<section aria-label="선택한 자료 미리보기">무대</section>}
       inspectorId="test-inspector"
       inspectorLabel="선택 자료 정보"
+      detailsHostId="workbench-test-details"
       {...props}
     />,
   );
 }
 
 describe("spatial workbench frame", () => {
-  it("keeps the stage first with a closed catalog drawer and no ghost inspector column", () => {
+  it("keeps the stage first with a closed catalog drawer and no visible inspector", () => {
     const html = frameHtml();
     expect(html).toContain("맥락막대");
     expect(html).toContain("선택한 자료 미리보기");
@@ -26,9 +27,10 @@ describe("spatial workbench frame", () => {
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain('aria-controls="workbench-catalog"');
     expect(html).not.toContain("목록 내용");
-    // 정보가 닫히면 자리·열을 차지하지 않는다.
-    expect(html).not.toContain("test-inspector");
-    expect(html).not.toContain("선택 자료 정보");
+    // 정보가 닫히면 자리를 차지하지 않는다 — 자리는 마운트 유지하되 숨긴다.
+    expect(html).toContain('id="test-inspector"');
+    expect(html).toContain("display:none");
+    expect(html).not.toContain("선택한 것만");
   });
 
   it("opens the catalog drawer without resizing the stage", () => {
@@ -54,13 +56,16 @@ describe("spatial workbench frame", () => {
     expect(html).toContain("선택한 자료 미리보기");
   });
 
-  it("renders no inspector column when it is closed", () => {
+  it("hides the inspector column when it is closed without unmounting the details host", () => {
     const html = frameHtml({
       inspector: <p>선택한 것만</p>,
       inspectorOpen: false,
     });
+    // 틀과 접힘 자리는 마운트 유지하되 숨긴다 — 본문은 두지 않는다.
+    expect(html).toContain("test-inspector");
+    expect(html).toContain("display:none");
     expect(html).not.toContain("선택한 것만");
-    expect(html).not.toContain("test-inspector");
+    expect(html).toContain("workbench-test-details");
   });
 
   it("keeps an example banner above the context bar when given", () => {

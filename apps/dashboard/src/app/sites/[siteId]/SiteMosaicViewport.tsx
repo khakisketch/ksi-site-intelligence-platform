@@ -49,6 +49,7 @@ import {
   ViewportGestureHint,
   ViewportResetButton,
 } from "./DirectDisplayViewport";
+import { WorkbenchMediaState, WorkbenchRefreshButton, DetailsPortal } from "./WorkbenchMediaState";
 import {
   DSM_RELATIVE_SHADING_NOTE,
   DSM_WINDOW_STRETCH_NOTE,
@@ -93,6 +94,12 @@ export interface MosaicViewportProps {
    * 기본값 "default"는 기존 화면 그대로이며, 바이트 검증·읽기 흐름을 바꾸지 않는다.
    */
   presentation?: "default" | "canvas";
+  /**
+   * 작업환경 정보 서랍 안 숨김 자리 식별자 — 주면 접힌 상세를 무대가 아니라
+   * 서랍으로 포털한다. 무대에는 매체 상태와 1차 회복만 둔다. 서랍이 닫혀도
+   * 자리는 유지되므로 포털이 사라지지 않는다. 없으면 기존 자리 펼침을 둔다.
+   */
+  detailsTargetId?: string | null;
   /**
    * 시각 탐색 기본 본문용 — 미리보기 준비/다시 준비 요청 버튼을 숨긴다.
    * 읽기(준비 상태 다시 확인·구역 자료 준비 길)와 접힌 진단은 그대로 둔다.
@@ -166,6 +173,7 @@ export function SiteMosaicViewport({
   workAreaCrs = null,
   hidePrepareActions = false,
   presentation = "default",
+  detailsTargetId = null,
 }: MosaicViewportProps) {
   const canvasMode = presentation === "canvas";
   const router = useRouter();
@@ -749,6 +757,111 @@ export function SiteMosaicViewport({
     ? `준비에 실패한 요청 ${failedJobs.length}개가 있습니다. 사유는 구역 자료 준비에서 확인하세요.`
     : null);
 
+  // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
+  // 그대로이며, 명시적 다시 준비(쓰기)는 아래 접힌 상세로만 둔다.
+  const canvasRequestsLink = (
+    <a href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
+      구역 자료 준비에서 확인
+    </a>
+  );
+  const canvasMediaAction = compactKind === "loading" || hasActiveWait ? (
+    <button
+      type="button"
+      className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"
+      onClick={cancelLoading}
+    >
+      대기 취소
+    </button>
+  ) : compactKind === "preparing" ? (
+    <WorkbenchRefreshButton />
+  ) : compactKind === "readFailure" ? (
+    firstReadFailure?.reason === "RIGHTS_UNAVAILABLE" ? null
+      : firstReadFailure?.reason === "RECEIPT_MISMATCH" ? canvasRequestsLink
+        : <WorkbenchRefreshButton />
+  ) : compactKind === "paintFailure" ? (
+    <WorkbenchRefreshButton />
+  ) : absentKind === "rights" ? null
+    : absentKind === "expired" || absentKind === "failed" || absentKind === "canceled" || absentKind === "deadline" ? (
+      canvasRequestsLink
+    ) : (
+      <WorkbenchRefreshButton />
+    );
+  // 권한 없음은 사람 행동(담당자 요청)이 회복이므로 단추를 두지 않고 안내만 둔다.
+  const canvasMediaHint =
+    (compactKind === "readFailure" && firstReadFailure?.reason === "RIGHTS_UNAVAILABLE") || (compactKind === "absent" && absentKind === "rights")
+      ? compactCopy.recovery
+      : null;
+  const canvasMediaAlert = compactKind !== "loading" && compactKind !== "preparing" && !(compactKind === "absent" && absentKind === "empty");
+
+  const canvasDetailBody = (
+    <div className="mt-2 flex min-w-0 flex-col gap-2 text-[12px] leading-5 text-ink-2">
+      {requestBusy && <p role="status">창 준비 요청을 만드는 중…</p>}
+      {supportCopy && <p role="status">{supportCopy}</p>}
+      {canFillNow && (
+        <div className="flex flex-col gap-1.5">
+          <ResponsiveActionBoundary
+            action="SPATIAL_DATA_REQUEST"
+            reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요."
+            inlineNotice={false}
+          >
+            <button
+              type="button"
+              className="btn btn-primary min-h-11"
+              onClick={() => setFillTick((tick) => tick + 1)}
+              disabled={requestBusy}
+            >
+              {hasRetentionExpired ? "미리보기 다시 준비" : "미리보기 준비"}
+            </button>
+          </ResponsiveActionBoundary>
+          <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
+        </div>
+      )}
+      {absentFileRing && (
+        <section aria-label="자료 범위">
+          <p className="font-bold">자료 범위</p>
+          <div className="mt-1">
+            <SiteMosaicAbsentDiagram
+              fileRing={absentFileRing}
+              workAreaRing={workAreaRing}
+              overlaid={absentOverlaid}
+              overlayNote={absentOverlayNote}
+              crsLabel={absentCrsLabel}
+              planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+              filePixelSize={{ width: grid.width, height: grid.height }}
+              fileExtentLabel={observedCrsIdentifier ? `${observedCrsIdentifier} 네이티브 평면 ${grid.width} × ${grid.height} 픽셀` : null}
+            />
+          </div>
+        </section>
+      )}
+      <section aria-label="준비 과정·상세 상태">
+        <p className="font-bold">준비 과정·상세 상태</p>
+        <div className="mt-1 flex flex-col gap-1">
+          {lane?.laneCopy && <p role="status" className="leading-5">{lane.laneCopy}</p>}
+          {lane?.retryCopy && <p role="status" className="leading-5">{lane.retryCopy}</p>}
+          {(!canRequest || !observedCrsDigest) && (
+            <p className="leading-5">새 창 준비 요청을 만들 권한 또는 위치 기준 확인값이 없어 이미 준비된 창만 이어 봅니다.</p>
+          )}
+          <p className="leading-5">
+            {"같은 계정이 준비한 창만 봅니다. "}
+            <a href={requestsHref} className="tap-target underline">구역 자료 준비</a>
+            {" · 준비 상태 다시 확인은 읽기만 하며 새 요청을 만들지 않습니다."}
+          </p>
+          <p className="font-bold">{MOSAIC_ASSEMBLY_HEADING}</p>
+          <p className="leading-5">{MOSAIC_ASSEMBLY_LABEL}</p>
+          <p className="leading-5 text-ink-muted">{MOSAIC_ASSEMBLY_NOTE}</p>
+          <ul className="mt-1 flex flex-col gap-1">
+            {cells.map((cell) => (
+              <li key={cell.key} className="text-[12px] leading-5">
+                <span className="font-mono">[{cell.plan.pixelWindow.join(", ")}]</span>
+                {` · ${cell.detail}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+    </div>
+  );
+
   return (
     <div className="flex flex-col gap-2">
       <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
@@ -757,7 +870,30 @@ export function SiteMosaicViewport({
         <p className="text-[12px] leading-5 text-ink-2" role="status">{VIEWPORT_RESOLVE_COPY[cover.reason]}</p>
       )}
 
-      {cover.ok && geometry && !showCanvas && (
+      {cover.ok && geometry && !showCanvas && (canvasMode ? (
+        <div className="flex w-full min-w-0 flex-col gap-1.5">
+          <WorkbenchMediaState
+            headline={compactCopy.headline}
+            detail={compactCopy.detail}
+            hint={canvasMediaHint}
+            action={canvasMediaAction}
+            alert={canvasMediaAlert}
+          />
+          {detailsTargetId ? (
+            <DetailsPortal targetId={detailsTargetId}>
+              <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+                <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                {canvasDetailBody}
+              </details>
+            </DetailsPortal>
+          ) : (
+            <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+              <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+              {canvasDetailBody}
+            </details>
+          )}
+        </div>
+      ) : (
         <div className="flex w-full flex-col gap-2">
           <p role="status" className="text-[12.5px] leading-5 font-semibold text-ink-1">
             {compactCopy.headline}
@@ -848,7 +984,7 @@ export function SiteMosaicViewport({
             </div>
           </details>
         </div>
-      )}
+      ))}
       {showCanvas && (
         <>
           <div
@@ -858,7 +994,7 @@ export function SiteMosaicViewport({
               ? "relative mx-auto w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"
               : "relative w-full cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing"}
             style={canvasMode
-              ? { ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}`, maxWidth: `min(100%, calc((100dvh - 380px) * ${geometry.width / geometry.height}))` }
+              ? { ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}`, maxWidth: `min(100%, calc((100dvh - 280px) * ${geometry.width / geometry.height}))` }
               : { ...viewport.frameProps.style, aspectRatio: `${geometry.width} / ${geometry.height}` }}
           >
             <div
@@ -888,7 +1024,7 @@ export function SiteMosaicViewport({
             </p>
           )}
           <div className="flex flex-wrap gap-2">
-            {canFillNow && (
+            {canFillNow && !canvasMode && (
               <ResponsiveActionBoundary
                 action="SPATIAL_DATA_REQUEST"
                 reason="창 준비 요청은 노트북 이상의 화면에서 진행하세요."
@@ -913,17 +1049,30 @@ export function SiteMosaicViewport({
               </button>
             )}
           </div>
-          {canFillNow && (
+          {canFillNow && !canvasMode && (
             <p className="text-[11.5px] leading-5 text-ink-muted lg:hidden">창 준비 요청은 노트북에서 할 수 있습니다.</p>
           )}
-          {requestBusy && (
+          {requestBusy && !canvasMode && (
             <p className="text-[12px] text-ink-2" role="status">창 준비 요청을 만드는 중…</p>
           )}
-          {supportCopy && (
+          {supportCopy && !canvasMode && (
             <p role="status" aria-live="polite" className="rounded-md border border-line bg-surface px-3 py-2 text-[12px] leading-5 text-ink-2">
               {supportCopy}
             </p>
           )}
+          {detailsTargetId ? (
+          <DetailsPortal targetId={detailsTargetId}>
+            <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+              <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+              {canvasDetailBody}
+            </details>
+          </DetailsPortal>
+          ) : canvasMode ? (
+          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+            {canvasDetailBody}
+          </details>
+          ) : (
           <details className="text-[12px] text-ink-2">
             <summary className="tap-target cursor-pointer font-semibold">준비 과정·상세 상태</summary>
             <div className="mt-1 flex flex-col gap-1">
@@ -960,6 +1109,7 @@ export function SiteMosaicViewport({
               </ul>
             </div>
           </details>
+          )}
         </>
       )}
     </div>

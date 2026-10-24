@@ -18,6 +18,7 @@ import {
   ViewportGestureHint,
   ViewportResetButton,
 } from "../DirectDisplayViewport";
+import { WorkbenchMediaState } from "../WorkbenchMediaState";
 
 /**
  * 준비된 출력의 브라우저 미리보기 — 요청 상세 화면의 일부다.
@@ -213,14 +214,37 @@ export function SpatialDataReceiptPreview({
       </button>
     )}
     {phase.name === "loading" && (
+      canvasMode ? (
+        <WorkbenchMediaState
+          headline="자료 읽는 중…"
+          action={
+            <button type="button" className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink" onClick={cancel}>
+              불러오기 취소
+            </button>
+          }
+        />
+      ) : (
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <p className="text-[12px] text-ink-2" role="status">자료 읽는 중…</p>
         <button type="button" className="btn min-h-11" onClick={cancel}>
           불러오기 취소
         </button>
       </div>
+      )
     )}
     {phase.name === "failure" && (
+      canvasMode ? (
+        <WorkbenchMediaState
+          headline="미리보기를 표시하지 못했습니다."
+          detail={phase.message}
+          alert
+          action={
+            <button type="button" className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink" onClick={() => void load()}>
+              다시 시도
+            </button>
+          }
+        />
+      ) : (
       <div className="mt-3 flex flex-col gap-2">
         <p className="rounded-md border border-line bg-sunk px-3 py-2 text-[12px] leading-5 text-ink-2" role="alert">
           {phase.message}
@@ -231,6 +255,7 @@ export function SpatialDataReceiptPreview({
           </button>
         </div>
       </div>
+      )
     )}
     {phase.name === "ready" && (
       <div className={canvasMode ? "flex min-w-0 flex-col gap-1.5" : "mt-3 flex flex-col gap-2"}>
@@ -241,7 +266,7 @@ export function SpatialDataReceiptPreview({
               aria-label={`부분 출력 ${phase.width} × ${phase.height} 픽셀. 직접 끌어서 보고, 휠·두 손가락·두 번 두드리기로 확대합니다. 그림을 선택하면 방향키·Home 키도 쓸 수 있습니다.`}
               className={`relative mx-auto ${canvasMode ? "w-full " : ""}cursor-grab overflow-hidden rounded border border-line bg-sunk/30 focus-visible:outline-2 focus-visible:outline-offset-2 active:cursor-grabbing`}
               style={canvasMode
-                ? { maxWidth: `min(100%, calc(max(160px, 100dvh - 400px) * ${phase.width / phase.height}))` }
+                ? { maxWidth: `min(100%, calc(max(160px, 100dvh - 300px) * ${phase.width / phase.height}))` }
                 : { maxWidth: `min(100%, calc(52dvh * ${phase.width / phase.height}))` }}
             >
               <div

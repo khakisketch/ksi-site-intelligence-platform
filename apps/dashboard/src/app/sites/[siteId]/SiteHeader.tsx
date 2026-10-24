@@ -58,13 +58,12 @@ export function SiteHeader({
   scopedWorkAreaId?: string | null;
   /** 같은 등록 자료 목록에서 확인한 자산 참조 — 구역과 함께일 때만 싣는다. */
   scopedAssetRef?: string | null;
-  /** 탐색 중이던 시각 쌍 맥락 — 현황·분석 이동에 그대로 싣고 받는 화면이 재대조한다. */
+  /** 탐색 중이던 시각 쌍 맥락 — 현황·분석 이동에 그대로 싣고 받는 화면이 재대조한다.
+   *  결과 이동에는 요청 힌트·앵커를 싣지 않는다 — 둘러보기는 새 요청 의도가 아니다. */
   visualContext?: {
     workAreaId: string;
     visualAAssetRef: string;
     visualBAssetRef: string;
-    hintBaseline?: { workOrderId: string; submissionRef: string; revision: number };
-    hintCurrent?: { workOrderId: string; submissionRef: string; revision: number };
   } | null;
   /**
    * 자료 탐색용 한 줄 머리 — 같은 목적지·같은 범위 브리지를 작은 행에 둔다.
@@ -80,24 +79,16 @@ export function SiteHeader({
   };
   // 시각 쌍 맥락은 같은 구역의 정식 사실일 때만 싣는다. 원문 쿼리를 그대로
   // 두지 않으며, 받는 화면이 서버 목록과 재대조한다. 구역이 바뀌면 쌍을 싣지 않는다.
+  // 머리 이동은 둘러보기 맥락(검증된 A/B 참조)만 싣는다 — 요청 힌트 6건과
+  // #new-analysis-request 앵커는 명시적 요청 진입(이 쌍으로 분석 조건 확인 등)의
+  // 전유물이며, 최상위 결과 이동이 둘러보기를 새 요청으로 바꾸지 않는다.
   const visualScope = visualContext && scope.workAreaId && visualContext.workAreaId === scope.workAreaId
     ? visualContext
     : null;
-  const withVisual = (href: string, includeHints = false): string => {
+  const withVisual = (href: string): string => {
     if (!visualScope) return href;
     const separator = href.includes("?") ? "&" : "?";
-    let suffix = `visualAAssetRef=${encodeURIComponent(visualScope.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(visualScope.visualBAssetRef)}`;
-    if (includeHints && visualScope.hintBaseline && visualScope.hintCurrent) {
-      suffix += `&hintBaselineWorkOrderId=${encodeURIComponent(visualScope.hintBaseline.workOrderId)}`
-        + `&hintBaselineSubmissionRef=${encodeURIComponent(visualScope.hintBaseline.submissionRef)}`
-        + `&hintBaselineRevision=${encodeURIComponent(String(visualScope.hintBaseline.revision))}`
-        + `&hintCurrentWorkOrderId=${encodeURIComponent(visualScope.hintCurrent.workOrderId)}`
-        + `&hintCurrentSubmissionRef=${encodeURIComponent(visualScope.hintCurrent.submissionRef)}`
-        + `&hintCurrentRevision=${encodeURIComponent(String(visualScope.hintCurrent.revision))}`;
-    }
-    const target = `${href}${separator}${suffix}`;
-    return includeHints && visualScope.hintBaseline && visualScope.hintCurrent
-      ? `${target}#new-analysis-request` : target;
+    return `${href}${separator}visualAAssetRef=${encodeURIComponent(visualScope.visualAAssetRef)}&visualBAssetRef=${encodeURIComponent(visualScope.visualBAssetRef)}`;
   };
   const preparationAction = resolveSiteOperatorNextAction(site, {
     canEditSite: canEditAoi,
@@ -139,7 +130,7 @@ export function SiteHeader({
             {headerTabs.map((option) => (
               <Link
                 key={option.key}
-                href={option.key === "results" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
+                href={withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
                 aria-current={option.key === activeTab ? "page" : undefined}
                 className={`tap-target rounded-md px-2 py-1 text-[12px] whitespace-nowrap ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
               >
@@ -239,7 +230,7 @@ export function SiteHeader({
         {headerTabs.map((option) => (
           <Link
             key={option.key}
-            href={option.key === "results" ? withVisual(hrefWith(site.siteId, current, { section: option.key }, scope), true) : withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
+            href={withVisual(hrefWith(site.siteId, current, { section: option.key }, scope))}
             aria-current={option.key === activeTab ? "page" : undefined}
             className={`tap-target flex items-center justify-center rounded-md px-2 text-[12.5px] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 sm:justify-start sm:px-3 sm:text-[13px] ${option.key === activeTab ? "bg-sunk font-bold" : "text-ink-2"}`}
           >

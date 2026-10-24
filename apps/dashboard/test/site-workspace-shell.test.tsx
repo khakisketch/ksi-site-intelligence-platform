@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -257,7 +257,7 @@ describe("workspace shell structure", () => {
     expect(screen.queryByText("비교할 수 있는 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요.")).toBeNull();
   });
   it.each([
-    ["explore", "단일 시점"], ["compare", "두 시점 비교"], ["results", "분석 결과"],
+    ["explore", "단일 시점"], ["compare", "두 시점 비교"],
   ])("keeps %s in one compact context bar with one current mode", async (mode, label) => {
     await renderOverview({ mode });
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
@@ -274,7 +274,9 @@ describe("workspace shell structure", () => {
     await renderOverview({});
     const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
     const modeLinks = within(modeNav).getAllByRole("link");
-    expect(modeLinks.map((link) => link.textContent)).toEqual(["단일 시점", "두 시점 비교", "분석 결과"]);
+    // 작업공간 안에는 단일·비교만 둔다 — 결과는 최상위 결과 목적지가 맡는다.
+    // mode=results 주소와 기록 다리는 그대로 둔다.
+    expect(modeLinks.map((link) => link.textContent)).toEqual(["단일 시점", "두 시점 비교"]);
     expect(within(modeNav).getByRole("link", { name: "단일 시점" }).getAttribute("aria-current")).toBe("page");
     expect(modeNav.closest("[data-workbench-context-bar]")).toBeTruthy();
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
@@ -307,8 +309,11 @@ describe("workspace shell structure", () => {
     expect(panel.textContent).toContain("보여주는 관측");
     expect(panel.textContent).toContain("등록 순서로 고르지 않았습니다");
     expect(panel.textContent).toContain("사유 코드 · LATEST_EXACT_VIEW_AVAILABLE");
-    const selected = screen.getByRole("link", { name: /선택 중/ });
-    expect(selected.getAttribute("href")).toContain("assetRef=disp-2022");
+    // 선택 사실은 정보 서랍의 개요에서 직접 둔다 — 무대에는 펼침 벽을 두지 않는다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const overviewSelected = within(screen.getByRole("region", { name: "작업공간 정보" }))
+      .getByRole("link", { name: /선택 중/ });
+    expect(overviewSelected.getAttribute("href")).toContain("assetRef=disp-2022");
   });
 
   it("shows a truthful no-view state without calling anything latest", async () => {
@@ -345,8 +350,25 @@ describe("workspace shell structure", () => {
   it("shows registration guidance only for real absence", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
     await renderOverview({});
-    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
-    expect(panel.textContent).toContain("등록된 관측이 없습니다");
+    // 참 빈 상태의 1차 빈 블록이 사실·행동을 이미 둔다 — 진입 패널 본문은
+    // 같은 등록 길과 같은 고지를 두 번 내지 않는다.
+    expect(screen.queryByRole("region", { name: "기본 관측 선택 상태" })).toBeNull();
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    expect(within(stage).getByText("이 구역에 확인할 관측이 없습니다")).toBeTruthy();
+    // 읽기 전용이라 등록 길 자체가 없다.
+    expect(within(stage).queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
+  });
+
+  it("keeps exactly one primary register link for a true empty area", async () => {
+    mocked.permissions.mockResolvedValue(true);
+    mocked.areas.mockResolvedValue({ workAreas: [areaFixture()] });
+    await renderOverview({});
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    const registerLinks = within(stage).getAllByRole("link", { name: "관측 자료 등록" });
+    expect(registerLinks).toHaveLength(1);
+    expect(registerLinks[0]!.getAttribute("href")).toBe("/sites/site-1/observations/new?workAreaId=tiny-1");
+    // 진입 패널 본문은 같은 등록 길을 반복하지 않는다.
+    expect(screen.queryByRole("region", { name: "기본 관측 선택 상태" })).toBeNull();
   });
 
   it("states ambiguity with the tied candidates instead of picking one", async () => {
@@ -405,14 +427,16 @@ describe("workspace compare mode", () => {
     expect(screen.queryByRole("region", { name: "기준 자료" })).toBeNull();
     expect(screen.queryByRole("region", { name: "비교 자료" })).toBeNull();
     expect(screen.getByText(/탐색에서 날짜·층별로 확인/)).toBeTruthy();
-    // 비어 있는 두 지도 안내 카드는 두지 않는다 — 조건·다른 작업은 펼침에 둔다.
+    // 빈 지도 안내·경쟁 분석 버튼 없이 조건 펼침만 둔다.
     expect(screen.queryByText(/나란히 보기 안내/)).toBeNull();
-    expect(screen.getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
-    // 동기화 불가 고지는 펼침 안에서 그대로 둔다.
-    // 동기화 불가 고지는 펼침 안에서 그대로 둔다.
-    expect(screen.getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
-    expect(screen.getByText("지원하지 않는 동기화 비교")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
+    // 조건·다른 작업·동기화 한계는 정보 서랍의 한 면에 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    expect(within(inspector).getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
+    // 동기화 불가 고지는 서랍 펼침 안에서 그대로 둔다.
+    expect(within(inspector).getByText(/동기화된 공간 비교\(같은 범위 맞춤·같은 색 눈금\)는 지원하지 않습니다/)).toBeTruthy();
+    expect(within(inspector).getByText("지원하지 않는 동기화 비교")).toBeTruthy();
+    expect(within(inspector).getByRole("link", { name: "구역 자료 준비" }).getAttribute("href")).toBe(
       "/sites/site-1/spatial-data-requests?workAreaId=tiny-1",
     );
   });
@@ -460,8 +484,11 @@ describe("workspace compare mode", () => {
     // 빈 지도 안내·경쟁 분석 버튼 없이 조건 펼침만 둔다.
     expect(screen.queryByText(/나란히 보기 안내/)).toBeNull();
     expect(screen.queryByRole("button", { name: "변화량 분석" })).toBeNull();
-    expect(screen.getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
-    expect(screen.getByText(/수치가 필요할 때만/)).toBeTruthy();
+    // 조건·수치 한계는 정보 서랍의 한 면에 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    expect(within(inspector).getByText("비교 조건과 다른 작업 확인")).toBeTruthy();
+    expect(within(inspector).getByText(/수치가 필요할 때만/)).toBeTruthy();
   });
 
   it("renders two equal-weight map slots once both inputs are chosen", async () => {
@@ -489,8 +516,30 @@ describe("workspace compare mode", () => {
       },
     }));
     await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
-    expect(screen.getByRole("region", { name: "기준 자료" })).toBeTruthy();
-    expect(screen.getByRole("region", { name: "비교 자료" })).toBeTruthy();
+    // 두 칸은 무대에서 같은 무게로 둔다 — 각 칸 머리의 관측 선택이 직접 GET이다.
+    const baselineSelect = screen.getByLabelText("기준 자료 관측 선택") as HTMLSelectElement;
+    const currentSelect = screen.getByLabelText("비교 자료 관측 선택") as HTMLSelectElement;
+    expect(baselineSelect.value).toBe("exact-1");
+    expect(currentSelect.value).toBe("exact-2");
+    for (const [select, name, sibling] of [
+      [baselineSelect, "baselineAssetRef", "currentAssetRef"],
+      [currentSelect, "currentAssetRef", "baselineAssetRef"],
+    ] as const) {
+      const form = select.closest("form")!;
+      expect(form.method).toBe("get");
+      expect(form.querySelector('input[name="mode"][value="compare"]')).toBeTruthy();
+      expect(form.querySelector('input[name="workAreaId"]')).toBeTruthy();
+      expect(form.querySelector(`select[name="${name}"]`)).toBe(select);
+      expect(form.querySelector(`input[name="${sibling}"]`)).toBeTruthy();
+    }
+    // 전체 폭 제출 벽은 두지 않는다 — 선택이 바뀌면 그 칸의 폼이 바로 제출한다.
+    expect(screen.queryByRole("button", { name: "나란히 보기" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "독립 보기로 나란히 두기" })).toBeNull();
+    // 칸 카드는 정보 서랍의 한 면에 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    expect(within(inspector).getByRole("region", { name: "기준 자료" })).toBeTruthy();
+    expect(within(inspector).getByRole("region", { name: "비교 자료" })).toBeTruthy();
   });
 
   it("lists orderable candidates and keeps date-only observations browsable at real precision", async () => {
@@ -503,8 +552,11 @@ describe("workspace compare mode", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("요청한 비교 대상을 확인할 수 없습니다");
     expect(alert.textContent).toContain("자동으로 다른 자료로 바꾸지 않았습니다");
-    expect(screen.getByText(/시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다/)).toBeTruthy();
-    expect(screen.getAllByText(/날짜만 확인 · 시각 미상/).length).toBeGreaterThan(0);
+    // 조건 목록·정밀도 표기는 정보 서랍의 한 면에 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = screen.getByRole("region", { name: "작업공간 정보" });
+    expect(within(inspector).getByText(/시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다/)).toBeTruthy();
+    expect(within(inspector).getAllByText(/날짜만 확인 · 시각 미상/).length).toBeGreaterThan(0);
   });
 
   it("fails closed on an unknown explicit comparison without substituting another asset", async () => {

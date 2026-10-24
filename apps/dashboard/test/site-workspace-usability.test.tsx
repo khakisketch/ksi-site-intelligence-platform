@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocked = vi.hoisted(() => ({
@@ -319,8 +319,17 @@ describe("usability-first explore", () => {
   it("shows the actual canvas before the technical disclosure", async () => {
     await renderOverview({});
     const canvas = screen.getByRole("region", { name: "선택 관측 보기" });
-    const detail = screen.getByText("자료·범위 상세").closest("details")!;
-    expect(canvas.compareDocumentPosition(detail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 무대에는 펼침을 두지 않는다 — 기술 상세가 정보 서랍 자리로 옮겨갔다.
+    expect(within(canvas).queryByText("보기·준비 상세")).toBeNull();
+    expect(within(canvas).queryByText("이어 보기 상세")).toBeNull();
+    expect(within(canvas).queryByText("상세·준비")).toBeNull();
+    // 서랍 자리에 접힌 상세가 살아 있다.
+    const host = document.getElementById("workspace-inspector-details")!;
+    expect(within(host).getAllByText("보기·준비 상세")).toHaveLength(1);
+    // 이어 보기(모자이크) 상세가 있으면 같은 자리에서 접힌 채 둔다.
+    for (const match of within(host).queryAllByText("이어 보기 상세")) {
+      expect(match.closest("details")).toBeTruthy();
+    }
     // 실제 화면 자리가 기술 벽보다 먼저다.
     const text = document.body.textContent ?? "";
     // 이어 보기와 이미 준비된 부분 보기 모두 실제 표시 경로다(canvas 무대 포함).

@@ -117,6 +117,72 @@ beforeEach(() => {
 });
 
 describe("spatial asset catalog page", () => {
+  it("coalesces a known both-expired cause into one shared recovery instead of per-pane walls", async () => {
+    const first = asset();
+    const secondRef = `ksa-v1-${"c".repeat(64)}`;
+    const second = { ...asset(), assetRef: secondRef, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
+    // 두 칸의 선택 출력이 모두 보관 만료 — 스캔하지 않은 부재가 아니라 알려진 동일 사유다.
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", nextCursor: null, hasMore: false,
+      items: [first.assetRef, secondRef].map((assetRef, index) => ({
+        jobId: `sdj-v1-00000000-0000-4000-8000-00000000000${index + 1}`,
+        assetRef, siteId: "site-1", workAreaId: "area-1",
+        createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+        receipt: null,
+      })),
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: first.assetRef, visualBAssetRef: secondRef }));
+    // 같은 알려진 만료는 하나로 둔다 — 칸마다 단추·펼침 벽을 두지 않는다.
+    expect(html.match(/미리보기 보관 기간이 끝났습니다\./g)).toHaveLength(1);
+    // 뷰어는 접히고 헤드만 남는다.
+    expect(html.match(/임시 시각화 어댑터/g)).toBeNull();
+    expect(html).not.toContain("자료 범위 보기");
+    expect(html).not.toContain("상세·준비");
+    // 각 칸 머리의 관측 선택은 그대로 쓸 수 있다.
+    expect(html).toContain('name="visualAAssetRef"');
+    expect(html).toContain('name="visualBAssetRef"');
+  });
+
+  it("does not coalesce when an old expired record coexists with a newer available one", async () => {
+    const first = asset();
+    const secondRef = `ksa-v1-${"c".repeat(64)}`;
+    const second = { ...asset(), assetRef: secondRef, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
+    // A에는 오래된 만료와 새 사용 가능본이 함께 있다 — 만료로 묶으면 유효 픽셀이 숨겨진다.
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", nextCursor: null, hasMore: false,
+      items: [
+        { jobId: "sdj-v1-00000000-0000-4000-8000-000000000011", assetRef: first.assetRef, siteId: "site-1", workAreaId: "area-1", createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED", receipt: null },
+        { jobId: "sdj-v1-00000000-0000-4000-8000-000000000012", assetRef: first.assetRef, siteId: "site-1", workAreaId: "area-1", createdAt: "2026-09-30T03:00:00Z", executionState: "COMPLETED", availability: "AVAILABLE", receipt: null },
+        { jobId: "sdj-v1-00000000-0000-4000-8000-000000000013", assetRef: secondRef, siteId: "site-1", workAreaId: "area-1", createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED", receipt: null },
+      ],
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: first.assetRef, visualBAssetRef: secondRef }));
+    // 같은 사유 묶음이 아니다 — 공유 바가 없고 각 칸이 자기 보기를 둔다.
+    expect(html).not.toContain("두 칸의 불러온 준비 기록이 모두");
+    expect(html).toContain('name="visualAAssetRef"');
+    expect(html).toContain('name="visualBAssetRef"');
+    // 각 칸 헤드 아래에 자기 보기가 그대로 있다(공유 바로 접히지 않음).
+    expect(html.match(/임시 시각화 어댑터/g)?.length).toBe(2);
+  });
+
+  it("shares one list-level recovery across both panes instead of repeating it per pane", async () => {
+    const first = asset();
+    const secondRef = `ksa-v1-${"c".repeat(64)}`;
+    const second = { ...asset(), assetRef: secondRef, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [first, second], nextCursor: null, hasMore: false });
+    // SPATIAL_DATA_READ 없음 → 준비 기록 조회 거부(두 칸 동일 사유).
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: first.assetRef, visualBAssetRef: secondRef }));
+    // 같은 사유 회복은 하나로 둔다 — 칸마다 단추를 두지 않는다.
+    expect(html.match(/준비 기록을 조회할 권한이 없습니다\./g)).toHaveLength(1);
+    expect(html).not.toContain("준비 상태 다시 확인");
+    // 각 칸 머리의 관측 선택은 그대로 쓸 수 있다.
+    expect(html).toContain('name="visualAAssetRef"');
+    expect(html).toContain('name="visualBAssetRef"');
+  });
   it("keeps a valid B visible and preserves an explicit failed A during info/filter navigation", async () => {
     const refusedRef = `ksa-v1-${"9".repeat(64)}`;
     const second = { ...asset(), assetRef: `ksa-v1-${"c".repeat(64)}`, observationEpochId: "epoch-2", declared: { ...asset().declared, fileName: "second-dsm.tif" } };
@@ -147,7 +213,10 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain(`visualAAssetRef=${assetRef}`);
     expect(html).toContain("목록 첫 자료");
     expect(html).toContain(">정보<");
-    expect(html).not.toContain("선택 자료 정보");
+    // 정보 서랍은 닫힘 상태로 마운트 유지하되 숨긴다 — 본문 제목은 열었을 때만 둔다.
+    expect(html).toContain('id="material-inspector"');
+    expect(html).toContain("display:none");
+    expect(html).not.toContain(">선택 자료 정보<");
   });
 
   it("stays on an explicit prompt with multiple areas instead of guessing a scope", async () => {
@@ -679,14 +748,16 @@ describe("materials visual browsing", () => {
     const denied = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(denied).toContain("준비 기록을 조회할 권한이 없습니다");
     expect(denied).not.toContain("범위 도식 · 사진 아님");
-    // 읽을 수 있으면 정직한 현재 상태 한 줄과 복구 길만 먼저 두고, 검사 격자에서
-    // 유도한 범위 도식(사진 아님)은 펼침(자료 범위 보기) 안에서만 둔다. 픽셀을 흉내내지 않는다.
+    // 읽을 수 있으면 정직한 현재 상태 한 줄과 복구 길만 먼저 둔다. 검사 격자에서
+    // 유도한 범위 도식(사진 아님)은 정보 서랍 자리로 옮겨가므로 무대에는 두지
+    // 않는다 — 서버 본문에는 자리만 두고, 접힘 본문은 하이드레이션 뒤에 든다.
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("준비된 표시 자료가 없습니다");
-    expect(html).toContain("자료 범위 보기");
-    expect(html.indexOf("자료 범위 보기")).toBeLessThan(html.indexOf("범위 도식 · 사진 아님"));
-    expect(html).toContain("사진이 아니며 정확도를 보증하지 않습니다");
+    expect(html).not.toContain("자료 범위 보기");
+    expect(html).not.toContain("상세·준비");
+    expect(html).not.toContain("범위 도식 · 사진 아님");
+    expect(html).toContain('id="material-inspector-details"');
     expect(html).not.toContain("목록 첫 자료를 보여줍니다");
   });
 
@@ -781,7 +852,8 @@ describe("materials visual browsing", () => {
     expect(html).not.toContain("받기 요청 만들기");
     expect(html).not.toContain("미리보기 준비");
     expect(html).not.toContain("이 구역의 창 준비 요청");
-    expect(html).toContain("구역 자료 준비에서 확인");
+    // 준비 길은 정보 서랍 자리로 옮겨가므로 무대에는 두지 않는다.
+    expect(html).toContain('id="material-inspector-details"');
   });
 
   it("reads prepared windows only with the data-read permission and never writes", async () => {
@@ -901,7 +973,10 @@ describe("materials visual browsing", () => {
     });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("자료 읽는 중");
-    expect(html).toContain("자료 범위 보기");
-    expect(html.indexOf("자료 범위 보기")).toBeLessThan(html.indexOf("범위 도식 · 사진 아님"));
+    // 범위 도식은 서랍 자리로 옮겨가므로 무대에는 두지 않는다.
+    expect(html).not.toContain("자료 범위 보기");
+    expect(html).not.toContain("상세·준비");
+    expect(html).not.toContain("범위 도식 · 사진 아님");
+    expect(html).toContain('id="material-inspector-details"');
   });
 });

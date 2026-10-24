@@ -201,6 +201,39 @@ describe("analysis V2 panel", () => {
     expect(document.querySelectorAll('#new-analysis-request')).toHaveLength(1);
   });
 
+  it("shows the selected record's calculation inputs near the summary from validated candidates", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({ canCreate: true });
+    // 기록의 frozen 선택자를 현재 후보에서 검증해 라벨로 둔다 — 탐색 쌍을 쓰지 않는다.
+    const pairLine = screen.getByText(/계산 입력 · 기준/);
+    expect(pairLine.textContent).toContain("현재");
+    expect(pairLine.textContent).toMatch(/2026/);
+    expect(screen.queryByText(/원래 입력을 현재 목록에서 확인할 수 없습니다/)).toBeNull();
+  });
+
+  it("says unknown instead of inferring inputs the current list cannot validate", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const unknown = (workOrderId: string, digit: string) => ({ workOrderId, submissionRef: `ers-v1-${digit.repeat(64)}`, revision: 9 });
+    const stale = { ...detail("analysis-9"), baseline: unknown("work-old", "c"), current: unknown("work-older", "d") };
+    renderPanel({ canCreate: true, initialAnalysisId: "analysis-9", initialSelectedDetail: stale });
+    expect(screen.getByText(/원래 입력을 현재 목록에서 확인할 수 없습니다/)).toBeTruthy();
+    expect(screen.queryByText(/계산 입력 · 기준/)).toBeNull();
+  });
+
+  it("keeps existing records before the request form for a bare browse context", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    const context = { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` };
+    renderPanel({ canCreate: true, initialAnalysisId: null, initialSelectedDetail: null,
+      visualContext: context, visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1" });
+    // 머리 결과 이동은 힌트·앵커 없이 둘러보기 맥락만 싣는다 — 새 요청 의도가 아니다.
+    const request = document.getElementById("new-analysis-request")!;
+    const history = document.getElementById("analysis-history")!;
+    expect(Boolean(history.compareDocumentPosition(request) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+    // 복귀 다리는 기록보다 먼저 둔다.
+    expect(screen.getAllByRole("link", { name: "독립 보기로 돌아가기" }).length).toBeGreaterThan(0);
+    expect(screen.queryByText("요청한 관측이 분석 후보와 정확히 맞지 않아")).toBeNull();
+  });
+
   it("retains a read-only return path even without a result or request permission", () => {
     vi.stubGlobal("fetch", vi.fn());
     const context = {workAreaId:"area-1",visualAAssetRef:`ksa-v1-${"a".repeat(64)}`,visualBAssetRef:`ksa-v1-${"b".repeat(64)}`};

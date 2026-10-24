@@ -39,9 +39,12 @@ default body never creates prepare requests. Rail rows are two lines (short kind
 concise version, filename) with exact-asset thumbnails drawn only from that record's
 already prepared window — never a representative borrowed from another record.
 Non-raster reports render an honest file-type body, never a fake map. Failed, denied or
-missing pixels stay as a compact recovery state with a refresh path; extent metadata
-folds away into an on-demand `자료 범위 보기` disclosure instead of a central diagram.
-Dates keep exact precision; grouping follows Core's observation order without guessing.
+missing pixels stay as a compact recovery state with a refresh path; range, grid,
+queue, preparation, source and display details live folded in the right info drawer
+(`보기·준비 상세` · `이어 보기 상세`), not as a stage accordion wall or a central
+diagram. Dates keep exact precision, with the full date and its date-only/unknown
+qualifier visible beside each pane even on narrow screens; grouping follows Core's
+observation order without guessing.
 Legacy `assetRef` deep links, filters and paging keep their scope; cursor-out-of-page
 selections are re-read in the same scope (bounded, opaque on 403/404); explicit
 invalid/foreign selections fail closed without substitution. Old catalog-only copy is
@@ -63,8 +66,10 @@ the real materials context. Example bytes are never a fallback for failed/denied
 current records, and registration there navigates back to the real context instead of
 uploading. The licensed source manifest is `docs/design/DEMO_MATERIALS.json`.
 
-The actual workspace's single-observation, independent-pair, and recorded-result modes use
-`SiteWorkspaceWorkbench` over that same frame. Date/layer controls stay beside their content;
+The actual workspace's single-observation and independent-pair modes use
+`SiteWorkspaceWorkbench` over that same frame; the workspace bar no longer carries a
+local analysis tab because the canonical header Results owns that destination
+(`mode=results` URLs and exact-record bridges keep working). Date/layer controls stay beside their content;
 catalog/info are overlays, with status counts disclosed in info rather than a permanent footer.
 The canonical `/analysis` record/request surface keeps its document/form shell and offers an
 exact-record bridge back to workspace results. Browsed A/B inputs remain separate from a frozen

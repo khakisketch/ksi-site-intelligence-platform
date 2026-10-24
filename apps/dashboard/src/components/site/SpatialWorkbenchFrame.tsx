@@ -33,6 +33,7 @@ export function SpatialWorkbenchFrame({
   onCloseInspector,
   inspectorId,
   inspectorLabel,
+  detailsHostId,
   defaultCatalogOpen = false,
 }: {
   /** 예시 경로의 고정 안내 등, 맥락막대 위에 두는 띠. 실제 경로는 두지 않는다. */
@@ -56,6 +57,13 @@ export function SpatialWorkbenchFrame({
   /** 정보 영역 식별자·이름 — 열릴 때만 렌더된다. */
   inspectorId: string;
   inspectorLabel: string;
+  /**
+   * 정보 서랍 안의 항상-마운트 숨김 자리 식별자 — 무대 뷰어의 접힌 상세가
+   * 포털로 들어가는 곳이다. 서랍이 닫혀도 마운트를 유지하므로 포털이
+   * 사라지지 않고, 닫힘 상태에서는 display:none이라 포커스가 새지 않는다.
+   * 주지 않으면 뷰어는 기존 자리 펼침을 그대로 둔다.
+   */
+  detailsHostId?: string;
 }) {
   const showInspector = inspectorOpen && inspector !== null;
   const [catalogOpen, setCatalogOpen] = useState(defaultCatalogOpen);
@@ -195,19 +203,23 @@ export function SpatialWorkbenchFrame({
             </section>
           </>
         )}
-        {showInspector ? (
-          <section
-            ref={inspectorRef}
-            id={inspectorId}
-            aria-label={inspectorLabel}
-            tabIndex={-1}
-            onKeyDown={onInspectorKeyDown}
-            style={{ top: drawerTop }}
-            className="fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 flex w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2"
-          >
-            {inspector}
-          </section>
-        ) : null}
+        {/* 정보 서랍 틀과 접힘 자리는 항상 마운트한다 — 닫힘 상태에서는
+            display:none이라 자리·초점·읽기 순서에 들지 않는다. 무대 뷰어의
+            접힌 상세가 포털로 들어가는 자리(detailsHostId)는 닫혀도 유지되므로,
+            포털이 사라지거나 카메라·선택이 흔들리지 않는다. 본문은 열렸을
+            때만 둔다. */}
+        <section
+          ref={inspectorRef}
+          id={inspectorId}
+          aria-label={inspectorLabel}
+          tabIndex={-1}
+          onKeyDown={onInspectorKeyDown}
+          style={{ top: drawerTop, display: showInspector ? undefined : "none" }}
+          className="fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 flex w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2"
+        >
+          {showInspector ? inspector : null}
+          {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}
+        </section>
       </div>
     </div>
   );

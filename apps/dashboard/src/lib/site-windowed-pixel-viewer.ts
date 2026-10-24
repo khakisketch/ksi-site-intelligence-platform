@@ -88,6 +88,22 @@ export function inspectionOutcomeLabel(outcome: WindowedViewerLayer["inspectionO
 }
 
 /**
+ * 알려진 선택 출력 만료 — 같은 자산 참조의 읽은 준비 기록이 1건 이상 있고
+ * 그 모두가 보관 만료(RETENTION_EXPIRED)일 때만 true. 읽을 수 있는 창·
+ * 진행 중·실패·알 수 없는 상태가 하나라도 있으면 false를 둔다. 기록이
+ * 없으면(스캔하지 않은 부재) false다. false일 때는 뷰어의 기존 판정에 맡긴다.
+ * 판정은 호출자가 이미 읽은 목록 범위 안에서만 하며, 바이트 권한이나
+ * 원본 유무를 새로 단정하지 않는다.
+ */
+export function isKnownExpiredAsset(
+  jobs: readonly PreparedWindowJob[],
+  assetRef: string,
+): boolean {
+  const scoped = jobs.filter((job) => job.assetRef === assetRef);
+  return scoped.length > 0 && scoped.every((job) => job.availability === "RETENTION_EXPIRED");
+}
+
+/**
  * 지금 바로 그릴 수 있는 준비된 창 — COMPLETED + 출력 정보 + 접근 허용.
  * "볼 수 있음"은 이 창의 표시 가능성에 대한 말이지, 검증·적합성 판정이 아니다.
  */

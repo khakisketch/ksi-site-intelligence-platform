@@ -235,13 +235,15 @@ async function renderOverview(searchParams: Record<string, string> = {}) {
 
 describe("explore declutter: primary action leads the side column", () => {
   it("puts the next-action nav first in the scope column with one primary button", async () => {
-    // 고정 선택 레일을 접고 실제 화면을 먼저 둔다 — 다음 행동은 무대 아래
-    // '자료·범위 상세'에서 한 번에 둔다. 옛 별도 칸은 두지 않는다.
+    // 고정 선택 레일을 접고 실제 화면을 먼저 둔다 — 다음 행동은 정보 서랍의
+    // 한 면에 둔다. 옛 '자료·범위 상세' 펼침 벽은 두지 않는다.
     await renderOverview({});
     expect(screen.queryByRole("region", { name: "선택 관측 화면" })).toBeNull();
     expect(screen.getByRole("region", { name: "선택 관측 보기" })).toBeTruthy();
-    const detail = screen.getByText("자료·범위 상세").closest("details")!;
-    const nav = within(detail).getByRole("navigation", { name: "탐색 다음 행동" });
+    expect(screen.queryByText("자료·범위 상세")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const nav = within(screen.getByRole("region", { name: "작업공간 정보" }))
+      .getByRole("navigation", { name: "탐색 다음 행동" });
     const primary = nav.querySelector("a.btn-primary");
     expect(primary?.textContent).toContain("관측 자료 등록");
     expect(nav.querySelectorAll("a.btn-primary")).toHaveLength(1);
@@ -268,10 +270,11 @@ describe("explore declutter: decision limits stay visible next to what they cons
   it("keeps the footprint-mismatch notice outside any disclosure", async () => {
     mocked.areas.mockResolvedValue({ workAreas: [areaFixture("tiny-1", "미세 분석 구역", { crs: "EPSG:9999" })] });
     await renderOverview({});
-    const notice = screen.getByText("위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다.");
-    // 카드 안 펼침이 아니라 바깥 '자료·범위 상세' 펼침 안에만 든다 — 카드 단위로 더 묻지 않았다.
-    const holder = notice.closest("details");
-    expect(holder?.querySelector("summary")?.textContent).toBe("자료·범위 상세");
+    // 정보 서랍의 한 면에서 한 번만 말한다 — 카드 안 펼침에 묻지 않는다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const notice = within(screen.getByRole("region", { name: "작업공간 정보" }))
+      .getByText("위치 기준이 맞지 않아 파일 범위를 겹쳐 표시하지 않았습니다.");
+    expect(notice.closest("details")).toBeNull();
     expect(screen.queryByText("선택한 파일이 포함하는 범위를 함께 표시합니다.")).toBeNull();
   });
 });
@@ -280,26 +283,23 @@ describe("explore declutter: technical identifiers live in disclosures", () => {
   it("keeps file and identifier facts present but only inside a disclosure", async () => {
     await renderOverview({});
     // 파일 사실은 무대가 아니라 오른쪽 정보 드로어에서만 둔다 — 드로어를 연다.
-    // 드로어 자체가 닫힘 기본이므로 무대를 가리지 않으며, 식별자는 그 안에서
-    // 다시 펼침에 둔다.
-    fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    const inspector = document.getElementById("workspace-inspector")!;
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     for (const pattern of [/등록 파일명/, /자료 식별자/]) {
-      // 무대에 남은 기술 행도 펼침 안에만 둔다(뷰어 '표시 조건·근거' 포함).
-      for (const match of within(stage).queryAllByText(pattern)) {
-        expect(match.closest("details")).toBeTruthy();
-      }
-      expect(within(inspector).getAllByText(pattern).length).toBeGreaterThan(0);
+      expect(within(stage).queryByText(pattern)).toBeNull();
     }
-    expect(within(inspector).getAllByText(/자료 식별자/)[0]!.closest("details")).toBeTruthy();
-    const canvas = screen.getByRole("region", { name: "선택 관측 보기" });
-    // 화면(뷰어의 '표시 조건·근거' 포함)에 남은 기술 행도 펼침 안에만 둔다.
+    fireEvent.click(screen.getByRole("button", { name: "정보" }));
+    const inspector = document.getElementById("workspace-inspector")!;
     for (const pattern of [/등록 파일명/, /자료 식별자/]) {
-      const matches = within(canvas).queryAllByText(pattern);
-      for (const match of matches) expect(match.closest("details")).toBeTruthy();
+      const matches = within(inspector).getAllByText(pattern);
+      expect(matches.length).toBeGreaterThan(0);
     }
-    expect(within(canvas).queryAllByText(/등록 파일명/).length).toBeGreaterThan(0);
+    // 무대에서 옮겨온 뷰어 상세가 서랍 자리에서 펼침으로 살아 있다.
+    // (식별자 원문은 정보 본문의 버전 펼침이, 등록 파일명은 옮겨온 표시 조건이 둔다.)
+    const host = document.getElementById("workspace-inspector-details")!;
+    expect(host.querySelectorAll("details").length).toBeGreaterThan(0);
+    const inFolded = within(host).getAllByText(/등록 파일명/);
+    expect(inFolded.length).toBeGreaterThan(0);
+    for (const match of inFolded) expect(match.closest("details")).toBeTruthy();
   });
 });
 
@@ -307,7 +307,8 @@ describe("explore declutter: failed reads stay failures, never empty", () => {
   it("says the catalog could not be read instead of claiming no materials", async () => {
     mocked.assets.mockRejectedValue(new CoreApiError(503, { detail: "unavailable" }));
     await renderOverview({});
-    expect(screen.getByText("등록 자료를 불러오지 못했습니다. 잠시 후 다시 확인하세요.")).toBeTruthy();
+    // 무대 1차 영역에 조회 실패를 둔다 — 빈 목록으로 단정하지 않는다.
+    expect(screen.getByText(/등록 자료 목록을 불러오지 못했습니다/)).toBeTruthy();
     expect(screen.queryByText("이 구역에 조회된 등록 자료가 없습니다.")).toBeNull();
   });
 });

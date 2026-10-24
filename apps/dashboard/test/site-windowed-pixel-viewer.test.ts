@@ -10,6 +10,7 @@ import {
   VIEWABILITY_STATE_NOTE,
   adjacentWindowSelection,
   formatNativeWindowExtent,
+  isKnownExpiredAsset,
   readableWindowJobs,
   preparedWindowFallback,
   sharedPlaneForCompare,
@@ -61,6 +62,42 @@ function receiptFor(jobId: string, pixelWindow: [number, number, number, number]
 }
 
 describe("site windowed pixel viewer helpers", () => {
+  it("treats an asset as known-expired only when every known job for it expired", () => {
+    const ref = `ksa-v1-${"b".repeat(64)}`;
+    const expired = (jobId: string): PreparedWindowJob => toPreparedWindowJob(jobView({
+      jobId, assetRef: ref, executionState: "EXPIRED", availability: "RETENTION_EXPIRED", receipt: null,
+    }));
+    const available = (jobId: string): PreparedWindowJob => toPreparedWindowJob(jobView({
+      jobId, assetRef: ref, executionState: "COMPLETED", availability: "AVAILABLE",
+      receipt: receiptFor(jobId, [0, 0, 512, 512]),
+    }));
+    // 모두 만료일 때만 true — 스캔하지 않은 부재(0건)는 만료가 아니다.
+    expect(isKnownExpiredAsset([], ref)).toBe(false);
+    expect(isKnownExpiredAsset([expired("sdj-v1-00000000-0000-0000-0000-000000000001")], ref)).toBe(true);
+    expect(isKnownExpiredAsset([
+      expired("sdj-v1-00000000-0000-0000-0000-000000000001"),
+      expired("sdj-v1-00000000-0000-0000-0000-000000000002"),
+    ], ref)).toBe(true);
+    // 오래된 만료 뒤에 새 사용 가능본이 있으면 만료로 묶지 않는다 — 픽셀을 숨기지 않는다.
+    expect(isKnownExpiredAsset([
+      expired("sdj-v1-00000000-0000-0000-0000-000000000001"),
+      available("sdj-v1-00000000-0000-0000-0000-000000000002"),
+    ], ref)).toBe(false);
+    // 진행 중·실패·알 수 없음이 하나라도 있으면 만료로 묶지 않는다.
+    const pending = toPreparedWindowJob(jobView({
+      jobId: "sdj-v1-00000000-0000-0000-0000-000000000003", assetRef: ref,
+      executionState: "RUNNING", availability: "NOT_READY", receipt: null,
+    }));
+    expect(isKnownExpiredAsset([expired("sdj-v1-00000000-0000-0000-0000-000000000001"), pending], ref)).toBe(false);
+    const failed = toPreparedWindowJob(jobView({
+      jobId: "sdj-v1-00000000-0000-0000-0000-000000000004", assetRef: ref,
+      executionState: "FAILED", availability: "AVAILABLE", receipt: null,
+    }));
+    expect(isKnownExpiredAsset([expired("sdj-v1-00000000-0000-0000-0000-000000000001"), failed], ref)).toBe(false);
+    // 다른 자산의 기록은 세지 않는다.
+    expect(isKnownExpiredAsset([expired("sdj-v1-00000000-0000-0000-0000-000000000001")], `ksa-v1-${"f".repeat(64)}`)).toBe(false);
+  });
+
   it("uses an existing partial crop rather than treating a different window shape as missing data", () => {
     const record = jobView();
     const crop = toPreparedWindowJob({ ...record, receipt: { ...receiptFor(record.jobId, [256, 768, 128, 384]), height: 256 } });

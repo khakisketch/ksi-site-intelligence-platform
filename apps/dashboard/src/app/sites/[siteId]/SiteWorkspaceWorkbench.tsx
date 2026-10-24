@@ -26,6 +26,7 @@ export function SiteWorkspaceWorkbench({
   inspector,
   inspectorLabel,
   inspectorId,
+  detailsHostId,
 }: {
   /** 구역·방식 등 서버가 만든 맥락 노드 — 목록 토글·검색은 래퍼가 앞에 둔다. */
   contextControls: ReactNode;
@@ -41,6 +42,8 @@ export function SiteWorkspaceWorkbench({
   inspectorLabel: string;
   /** 정보 영역 식별자. */
   inspectorId: string;
+  /** 무대 뷰어 접힘 포털 자리 식별자 — 서랍 안에 항상 마운트한다. */
+  detailsHostId?: string;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   return (
@@ -84,6 +87,7 @@ export function SiteWorkspaceWorkbench({
       onCloseInspector={() => setInfoOpen(false)}
       inspectorId={inspectorId}
       inspectorLabel={inspectorLabel}
+      detailsHostId={detailsHostId}
     />
   );
 }

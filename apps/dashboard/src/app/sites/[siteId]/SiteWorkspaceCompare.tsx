@@ -38,7 +38,7 @@ function precisionNote(fact: WorkspaceObservationFact): string {
 }
 
 /** 선택지·칸 제목 — 서버 사실의 정밀도 그대로. 날짜만 알면 날짜+시각 미상, 미상은 날짜를 그리지 않는다. */
-function candidateLabel(fact: WorkspaceObservationFact, dateFirst = false): string {
+export function candidateLabel(fact: WorkspaceObservationFact, dateFirst = false): string {
   const identity = dateFirst ? `${precisionNote(fact)} · ${dataKindLabel(fact.kind)}`
     : `${dataKindLabel(fact.kind)} · ${precisionNote(fact)}`;
   return `${identity} · 등록 버전 ${fact.revision}`;
@@ -180,8 +180,10 @@ export function SiteWorkspaceCompare({
   exploreHref: string;
   facts: WorkspaceServerFacts;
   /** Same comparison logic, with its observation controls hosted by the workspace rail. */
-  presentation?: "full" | "controls" | "viewer";
+  presentation?: "full" | "controls" | "viewer" | "inspector";
 }) {
+  // 무대(viewer)는 짧은 고지·막힘·다음 행동만 둔다. 칸 카드·조건 펼침·
+  // 장문 안내는 정보 서랍(inspector)이 맡는다 — 무대는 매체와 선택이 먼저다.
   const selected = areas.find((area) => area.workAreaId === selectedWorkAreaId) ?? null;
   const areaLabel = selected
     ? (disambiguatedAreaNames(areas).get(selected.workAreaId)?.label ?? selected.workAreaId)
@@ -300,55 +302,7 @@ export function SiteWorkspaceCompare({
     </form>
   ) : null;
   if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{visualForm ?? <p className="text-[12px] leading-5 text-ink-2">{selected === null ? "비교할 작업구역이 없습니다. 목록에서 구역을 고르세요." : projectionState === "denied" ? "관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요." : projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 불러오지 못했습니다. 잠시 후 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">기존 시간 순서 보기</summary><div className="mt-2">{comparisonForm}</div></details>}</div>;
-  return <div className="flex min-w-0 flex-col gap-3">
-    {selected === null && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
-        비교할 작업구역이 없습니다. 작업구역이 등록되면 같은 구역의 두 자료를 나란히 둘 수 있습니다.
-      </p>
-    )}
-    {selected && (
-      <p className="text-[12.5px] leading-5 text-ink-2">
-        {areaLabel} · 같은 구역의 두 자료를 독립 보기로 나란히 둡니다.{" "}
-        <span className="font-semibold">독립 보기 — 정합 근거 없음</span>
-        {visualPair.status === "ready" && visualAFact && visualBFact
-          ? ` · 관측 A(${candidateLabel(visualAFact)}) · 관측 B(${candidateLabel(visualBFact)})`
-          : visualPair.status === "unresolvable"
-            ? " · 요청한 쌍을 확인하지 못했습니다"
-            : " · 쌍을 고르세요"}
-      </p>
-    )}
-    {resolution.status === "unresolvable" && (
-      <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
-        <p className="text-[13px] font-bold">{resolution.headline}</p>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{resolution.detail}</p>
-        <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
-          <Link href={`${sitePath}/spatial-assets${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
-          <Link href={sitePath} className="tap-target underline">탐색으로 돌아가기</Link>
-        </p>
-      </div>
-    )}
-    {resolution.status === "prompt" && selected && hasOptions && visualOptionCount < 2 && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
-        비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요. 자동으로 고르지 않았습니다.
-        먼저 둘러보려면 <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>하세요.
-      </p>
-    )}
-    {visualPair.status === "prompt" && selected && visualOptionCount >= 2 && resolution.status !== "ready" && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
-        독립 보기로 둘 관측 A·B를 위 선택에서 고르세요. 자동으로 고르지 않았습니다.
-      </p>
-    )}
-    {visualPair.status === "unresolvable" && (
-      <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
-        <p className="text-[13px] font-bold">{visualPair.headline}</p>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{visualPair.detail}</p>
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">독립 보기 지시는 자동으로 다른 자료로 바꾸지 않습니다. 아래 독립 보기 선택에서 확인할 수 있는 자료를 직접 고르세요.</p>
-        <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
-          <Link href={`${sitePath}/spatial-assets${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
-          <Link href={exploreHref} className="tap-target underline">탐색으로 돌아가기</Link>
-        </p>
-      </div>
-    )}
+  if (presentation === "inspector") return <div className="flex min-w-0 flex-col gap-3">
     {visualPair.status === "ready" && visualAFact && visualBFact && (
       <div className="rounded-lg border border-line bg-surface px-4 py-3">
         <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
@@ -367,54 +321,6 @@ export function SiteWorkspaceCompare({
         </p>
         <p className="mt-1 text-[12px] leading-5 text-ink-2">수치 계산이 필요할 때만 씁니다. 위 기록은 바뀌지 않으며, 요청하지 않으면 아무 계산도 시작하지 않습니다.</p>
       </div>
-    )}
-
-    {selected && projectionState === "denied" && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
-        관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요.
-      </p>
-    )}
-    {selected && projectionState === "unavailable" && (
-      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
-        관측 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
-      </p>
-    )}
-
-    {showNoOptionBox && visualOptionCount < 2 && (
-      <div className="rounded-lg border border-line bg-surface px-4 py-3" role="status">
-        <p className="text-[13px] font-bold">{noOptionReason}</p>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
-          같은 구역의 실제 관측부터 둘러보세요.{" "}
-          <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
-        </p>
-        {/* 무엇을 하면 비교가 되는지 — 막힌 이유만 말하고 끝내지 않는다.
-            준비는 보는 범위만 넓히고 순서 조건은 만들지 않으므로, 시간이
-            필요할 때의 수치 계산 경로와 새 관측 등록을 함께 제시한다. */}
-        <p className="mt-2 border-t border-line pt-2 text-[12px] leading-5 text-ink-2">
-          나란히 두려면 <span className="font-semibold text-ink-1">촬영 시간이 정확히 기록된 관측 2개</span>가
-          같은 구역에 있어야 합니다. 각 관측의 표시 조건도 별도로 확인해야 합니다.
-        </p>
-        <p className="mt-1.5 flex flex-wrap gap-2 text-[12px]">
-          {canCreateWorkOrderHere && (
-            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn w-fit">
-              촬영 시각이 있는 관측 등록
-            </Link>
-          )}
-          {canCreateAnalysis && (
-            <Link href={scopedCompareHref} className="btn w-fit">
-              변화량 분석 요청
-            </Link>
-          )}
-        </p>
-      </div>
-    )}
-
-    {presentation !== "viewer" && visualForm}
-    {presentation !== "viewer" && comparisonForm && (
-      <details className="rounded-lg border border-line bg-surface px-4 py-3">
-        <summary className="tap-target cursor-pointer text-[13px] font-semibold">기존 시간 순서 보기</summary>
-        <div className="mt-2">{comparisonForm}</div>
-      </details>
     )}
 
     {selected && resolution.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
@@ -538,7 +444,282 @@ export function SiteWorkspaceCompare({
       </details>
     )}
 
+    {comparisonForm && (
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">기존 시간 순서 보기</summary>
+        <div className="mt-2">{comparisonForm}</div>
+      </details>
+    )}
+
     {selected && resolution.status === "ready" && <div className="rounded-lg border border-line bg-surface px-4 py-3">
+      <h3 className="text-[13px] font-bold">나란히 보기 안내</h3>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+        두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+      </p>
+      <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+        화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 높낮이 차이로 읽지 마세요. 측정 범위 표시이며 정확도를 보증하지 않습니다.
+      </p>
+      <div className="mt-2 border-t border-line pt-2">
+        <p className="text-[12.5px] font-semibold leading-5">수치 계산이 필요할 때 — 변화량 분석</p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">
+          나란히 두는 독립 열람과 별개로, 두 시점의 변화량을 계산 요청할 때만 씁니다. 위 기록은 바뀌지 않습니다.
+        </p>
+        <p className="mt-2">
+          {canCreateAnalysis ? (
+            <Link href={scopedCompareHref} className="btn">변화량 분석</Link>
+          ) : (
+            <span className="text-[12px] text-ink-2">현재 계정으로는 변화량 분석을 요청할 수 없습니다. 권한 있는 담당자에게 문의하세요.</span>
+          )}
+        </p>
+      </div>
+      <p className="mt-2 text-[12px] leading-5">
+        <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+        <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
+      </p>
+      <p className="mt-1 text-[11.5px] leading-5 text-ink-muted">실제 파일은 권한 확인 뒤 준비·다운로드로만 받습니다. 이 화면에서 바이트를 직접 열지 않습니다.</p>
+    </div>}
+  </div>;
+  return <div className="flex min-w-0 flex-col gap-3">
+    {selected === null && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+        비교할 작업구역이 없습니다. 작업구역이 등록되면 같은 구역의 두 자료를 나란히 둘 수 있습니다.
+      </p>
+    )}
+    {selected && (
+      <p className="text-[12.5px] leading-5 text-ink-2">
+        {areaLabel} · 같은 구역의 두 자료를 독립 보기로 나란히 둡니다.{" "}
+        <span className="font-semibold">독립 보기 — 정합 근거 없음</span>
+        {presentation === "full" && (visualPair.status === "ready" && visualAFact && visualBFact
+          ? ` · 관측 A(${candidateLabel(visualAFact)}) · 관측 B(${candidateLabel(visualBFact)})`
+          : visualPair.status === "unresolvable"
+            ? " · 요청한 쌍을 확인하지 못했습니다"
+            : " · 쌍을 고르세요")}
+      </p>
+    )}
+    {resolution.status === "unresolvable" && (
+      <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
+        <p className="text-[13px] font-bold">{resolution.headline}</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{resolution.detail}</p>
+        <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
+          <Link href={`${sitePath}/spatial-assets${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
+          <Link href={sitePath} className="tap-target underline">탐색으로 돌아가기</Link>
+        </p>
+      </div>
+    )}
+    {resolution.status === "prompt" && selected && hasOptions && visualOptionCount < 2 && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
+        비교할 기준 자료와 비교 자료를 관측 시점 선택에서 고르세요. 자동으로 고르지 않았습니다.
+        먼저 둘러보려면 <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>하세요.
+      </p>
+    )}
+    {visualPair.status === "prompt" && selected && visualOptionCount >= 2 && resolution.status !== "ready" && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2" role="status">
+        독립 보기로 둘 관측 A·B를 위 선택에서 고르세요. 자동으로 고르지 않았습니다.
+      </p>
+    )}
+    {visualPair.status === "unresolvable" && (
+      <div role="alert" className="rounded-lg border border-line bg-surface px-4 py-3">
+        <p className="text-[13px] font-bold">{visualPair.headline}</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">{visualPair.detail}</p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">독립 보기 지시는 자동으로 다른 자료로 바꾸지 않습니다. 아래 독립 보기 선택에서 확인할 수 있는 자료를 직접 고르세요.</p>
+        <p className="mt-2 flex flex-wrap gap-x-3 text-[12px]">
+          <Link href={`${sitePath}/spatial-assets${selected ? `?workAreaId=${encodeURIComponent(selected.workAreaId)}` : ""}`} className="tap-target underline">자료 목록 보기</Link>
+          <Link href={exploreHref} className="tap-target underline">탐색으로 돌아가기</Link>
+        </p>
+      </div>
+    )}
+
+    {presentation !== "viewer" && visualPair.status === "ready" && visualAFact && visualBFact && (
+      <div className="rounded-lg border border-line bg-surface px-4 py-3">
+        <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않습니다. 동기화 비교는 지원하지 않으며, 각 보기는 독립된 카메라로만 움직입니다.
+        </p>
+        <details className="mt-1 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">정합 근거 없음 — 자세히</summary>
+          <p className="mt-1 leading-5">
+            화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 같은 범위 맞춤·같은 색 눈금 비교는 지원하지 않습니다.
+            화면을 겹쳐도 분석 근거가 되지 않으며, 높낮이 차이로 읽지 마세요.
+          </p>
+        </details>
+        <p className="mt-2">
+          <Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link>
+        </p>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">수치 계산이 필요할 때만 씁니다. 위 기록은 바뀌지 않으며, 요청하지 않으면 아무 계산도 시작하지 않습니다.</p>
+      </div>
+    )}
+
+    {selected && projectionState === "denied" && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+        관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요.
+      </p>
+    )}
+    {selected && projectionState === "unavailable" && (
+      <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2">
+        관측 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
+      </p>
+    )}
+
+    {showNoOptionBox && visualOptionCount < 2 && (
+      <div className="rounded-lg border border-line bg-surface px-4 py-3" role="status">
+        <p className="text-[13px] font-bold">{noOptionReason}</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          같은 구역의 실제 관측부터 둘러보세요.{" "}
+          <Link href={exploreHref} className="tap-target underline">탐색에서 날짜·층별로 확인</Link>
+        </p>
+        {/* 무엇을 하면 비교가 되는지 — 막힌 이유만 말하고 끝내지 않는다.
+            준비는 보는 범위만 넓히고 순서 조건은 만들지 않으므로, 시간이
+            필요할 때의 수치 계산 경로와 새 관측 등록을 함께 제시한다. */}
+        <p className="mt-2 border-t border-line pt-2 text-[12px] leading-5 text-ink-2">
+          나란히 두려면 <span className="font-semibold text-ink-1">촬영 시간이 정확히 기록된 관측 2개</span>가
+          같은 구역에 있어야 합니다. 각 관측의 표시 조건도 별도로 확인해야 합니다.
+        </p>
+        <p className="mt-1.5 flex flex-wrap gap-2 text-[12px]">
+          {canCreateWorkOrderHere && (
+            <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="btn w-fit">
+              촬영 시각이 있는 관측 등록
+            </Link>
+          )}
+          {canCreateAnalysis && (
+            <Link href={scopedCompareHref} className="btn w-fit">
+              변화량 분석 요청
+            </Link>
+          )}
+        </p>
+      </div>
+    )}
+
+    {presentation === "full" && visualForm}
+    {presentation === "full" && comparisonForm && (
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-semibold">기존 시간 순서 보기</summary>
+        <div className="mt-2">{comparisonForm}</div>
+      </details>
+    )}
+
+    {presentation !== "viewer" && selected && resolution.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
+      <CompareSlot
+        slotLabel="기준 자료"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={baselineFact}
+        emptyNote="기준 자료를 아직 고르지 않았습니다. 위에서 직접 고르세요."
+      />
+      <CompareSlot
+        slotLabel="비교 자료"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={currentFact}
+        emptyNote="비교 자료를 아직 고르지 않았습니다. 위에서 직접 고르세요."
+      />
+    </div>}
+
+    {presentation !== "viewer" && selected && visualPair.status === "ready" && <div className="grid gap-4 md:grid-cols-2">
+      <CompareSlot
+        slotLabel="관측 A"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={visualAFact}
+        emptyNote="관측 A를 아직 고르지 않았습니다. 위 독립 보기 선택에서 직접 고르세요."
+      />
+      <CompareSlot
+        slotLabel="관측 B"
+        sitePath={sitePath}
+        workAreaId={selected.workAreaId}
+        ring={ring}
+        areaCrs={areaCrs}
+        planeUnit={planeUnit}
+        coincident={coincident}
+        catalogAssets={catalogAssets}
+        fact={visualBFact}
+        emptyNote="관측 B를 아직 고르지 않았습니다. 위 독립 보기 선택에서 직접 고르세요."
+      />
+    </div>}
+
+    {presentation !== "viewer" && selected && projectionState === "ready" && resolution.status !== "ready" && (
+      <details className="rounded-lg border border-line bg-surface px-4 py-3">
+        <summary className="tap-target cursor-pointer text-[13px] font-bold">비교 조건과 다른 작업 확인</summary>
+        <div className="mt-1 flex flex-col gap-2 text-[12.5px] leading-5 text-ink-2">
+          {blocked.length > 0 && (
+            <div>
+              <p>시간 순서는 정해졌으나 표시용 출력이 봉인되지 않아 칸에 올리지 않았습니다.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {blocked.map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {tiedFacts.length > 0 && (
+            <div>
+              <p>같은 촬영 구간의 관측이 2개 이상 있어 자동으로 고르지 않았습니다. 직접 고르세요.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {tiedFacts.map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {groups && (groups.browsableDateOnly.length > 0 || groups.browsableUnknown.length > 0) && (
+            <div>
+              <p>시간 순서 비교 후보는 아니지만 둘러볼 수 있습니다. 정밀도 그대로 둡니다.</p>
+              <ul className="mt-1 divide-y divide-line">
+                {[...groups.browsableDateOnly, ...groups.browsableUnknown].map((item) => (
+                  <li key={item.assetRef} className="py-1 text-[12px] text-ink-2">{candidateLabel(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p>시간 순서가 확인된 관측이 2개 이상 있어야 나란히 둘 수 있습니다. 날짜만 아는 관측은 순서 후보가 아닙니다. 순서 없이 나란히 두려면 위의 독립 보기 선택을 쓰세요 — 시간 순서를 주장하지 않습니다.</p>
+          <div>
+            <p className="font-semibold">지원하지 않는 동기화 비교</p>
+            <p className="mt-1">
+              동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.
+              두 자료의 위치 맞춤이 확인되지 않아 같은 범위를 가리킨다고 보장하지 않으며, 화면을 겹쳐도 분석 근거가 되지 않습니다.
+            </p>
+          </div>
+          <p>
+            수치가 필요할 때만{" "}
+            {canCreateAnalysis ? (
+              <Link href={scopedCompareHref} className="tap-target underline">변화량 분석</Link>
+            ) : (
+              <span>변화량 분석 — 현재 계정으로는 요청할 수 없어 권한 있는 담당자에게 문의하세요.</span>
+            )}
+            을 요청하세요. 준비를 더 한다고 시간 순서·표시 조건이 생기지는 않습니다.
+          </p>
+          <p>
+            <Link href={`${sitePath}/spatial-data-requests?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">구역 자료 준비</Link>
+            <span className="text-ink-muted"> · 자료 준비는 보는 범위를 넓힐 뿐, 시간 순서·표시 봉인 조건을 보장하지 않습니다.</span>
+          </p>
+          <p>
+            {canCreateWorkOrderHere ? (
+              <Link href={`${sitePath}/observations/new?workAreaId=${encodeURIComponent(selected.workAreaId)}`} className="tap-target underline">관측 자료 등록</Link>
+            ) : (
+              <span>관측 자료 등록 — 외부 관측 등록은 권한 있는 담당자와 확인하세요.</span>
+            )}
+            <span className="text-ink-muted"> 새 관측이 등록되면 같은 구역의 두 시점을 나란히 둘 수 있습니다.</span>
+          </p>
+        </div>
+      </details>
+    )}
+
+    {presentation !== "viewer" && selected && resolution.status === "ready" && <div className="rounded-lg border border-line bg-surface px-4 py-3">
       <h3 className="text-[13px] font-bold">나란히 보기 안내</h3>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
         두 지도는 같은 크기로 나란히 둡니다. 동기화된 공간 비교(같은 범위 맞춤·같은 색 눈금)는 지원하지 않습니다.

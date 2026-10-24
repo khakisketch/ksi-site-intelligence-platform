@@ -402,8 +402,6 @@ export default async function SiteDetailPage({
             workAreaId: visualPair.workAreaId,
             visualAAssetRef: visualPair.sideA.assetRef,
             visualBAssetRef: visualPair.sideB.assetRef,
-            hintBaseline: { workOrderId: visualPair.sideA.workOrderId, submissionRef: visualPair.sideA.submissionRef, revision: visualPair.sideA.revision },
-            hintCurrent: { workOrderId: visualPair.sideB.workOrderId, submissionRef: visualPair.sideB.submissionRef, revision: visualPair.sideB.revision },
           }
         : null}
     />

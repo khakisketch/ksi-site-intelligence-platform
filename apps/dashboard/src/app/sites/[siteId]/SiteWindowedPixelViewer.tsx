@@ -37,6 +37,7 @@ import {
   ViewportGestureHint,
   ViewportResetButton,
 } from "./DirectDisplayViewport";
+import { WorkbenchMediaState, WorkbenchRefreshButton, DetailsPortal } from "./WorkbenchMediaState";
 import {
   AUDIT_STATE_NOTE,
   DSM_RELATIVE_LEGEND_LABEL,
@@ -121,6 +122,11 @@ export interface WindowedPixelViewerProps {
    * 기본값 "default"는 기존 화면 그대로이다.
    */
   presentation?: "default" | "canvas";
+  /**
+   * 작업환경 정보 서랍 안 숨김 자리 식별자 — 주면 접힌 상세를 무대가 아니라
+   * 서랍으로 포털한다. 없으면 기존 자리 펼침을 둔다.
+   */
+  detailsTargetId?: string | null;
 }
 
 type PaintPhase =
@@ -212,6 +218,7 @@ function WindowedLayerView({
   supportingDetails,
   hidePrepareActions = false,
   presentation = "default",
+  detailsTargetId = null,
 }: {
   siteId: string;
   workAreaId: string;
@@ -227,6 +234,8 @@ function WindowedLayerView({
   hidePrepareActions?: boolean;
   /** "canvas"면 큰 픽셀을 먼저 두고 긴 안내는 펼침에 둔다. 기본 "default". */
   presentation?: "default" | "canvas";
+  /** 작업환경 정보 서랍 안 숨김 자리 식별자 — 주면 접힌 상세를 서랍으로 포털한다. */
+  detailsTargetId?: string | null;
 }) {
   const router = useRouter();
   const grid = layer.inspectedRaster;
@@ -476,49 +485,9 @@ function WindowedLayerView({
     layer.observedCrsIdentifier !== null &&
     workAreaCrs === layer.observedCrsIdentifier;
 
-  return (
-    <div className="flex flex-col gap-2">
-      {/* 실제 화면이 먼저다. 이어 보기는 진입 시 이미 준비된 창만 읽는다(읽기 전용).
-          새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
-      {existingCrop?.receipt ? (
-        <div className="flex flex-col gap-2">
-          <p className="text-[12px] leading-5 text-ink-2">{presentation === "canvas" ? "일부 범위 · 전체 관측이 아님" : "준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다."}</p>
-          <SpatialDataReceiptPreview
-            key={existingCrop.jobId}
-            siteId={siteId}
-            workAreaId={workAreaId}
-            jobId={existingCrop.jobId}
-            receipt={existingCrop.receipt}
-            fileHref={fileHrefFor(siteId, workAreaId, existingCrop.jobId)}
-            autoLoad
-            compact
-            gestureControls
-            presentation={presentation}
-          />
-          {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
-        </div>
-      ) : grid && (
-        <SiteMosaicViewport
-          siteId={siteId}
-          workAreaId={workAreaId}
-          assetRef={layer.assetRef}
-          grid={grid}
-          observedCrsDigest={layer.observedCrsDigest}
-          observedCrsIdentifier={layer.observedCrsIdentifier}
-          isDsm={layer.isDsm}
-          jobs={jobs}
-          canRequest={canRequest}
-          requestsHref={requestsHref}
-          workAreaRing={workAreaRing}
-          workAreaCrs={workAreaCrs}
-          hidePrepareActions={hidePrepareActions}
-          presentation={presentation}
-        />
-      )}
 
-      {/* 낱창 도구·수동 설정은 펼침에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
-      <details className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] text-ink-2">
-        <summary className="tap-target cursor-pointer font-semibold">보기 상세</summary>
+  // 낱창 접힘 본문 — 무대 자리 펼침 또는 정보 서랍 포털이 같은 노드를 둔다.
+  const layerDetailsBody = (
         <div className="mt-2 flex flex-col gap-2">
           {supportingDetails}
           <h4 className="text-[13px] font-semibold">낱창 보기 · 새 창 준비</h4>
@@ -737,7 +706,64 @@ function WindowedLayerView({
       </div>
       )}
         </div>
-      </details>
+  );
+  return (
+
+    <div className="flex flex-col gap-2">
+      {/* 실제 화면이 먼저다. 이어 보기는 진입 시 이미 준비된 창만 읽는다(읽기 전용).
+          새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
+      {existingCrop?.receipt ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-[12px] leading-5 text-ink-2">{presentation === "canvas" ? "일부 범위 · 전체 관측이 아님" : "준비된 일부 범위 · 전체 관측이 아닌 현재 계정의 출력 범위를 표시합니다."}</p>
+          <SpatialDataReceiptPreview
+            key={existingCrop.jobId}
+            siteId={siteId}
+            workAreaId={workAreaId}
+            jobId={existingCrop.jobId}
+            receipt={existingCrop.receipt}
+            fileHref={fileHrefFor(siteId, workAreaId, existingCrop.jobId)}
+            autoLoad
+            compact
+            gestureControls
+            presentation={presentation}
+          />
+          {layer.isDsm && <p className="text-[11.5px] leading-5 text-ink-muted">{DSM_WINDOW_STRETCH_NOTE}</p>}
+        </div>
+      ) : grid && (
+        <SiteMosaicViewport
+          siteId={siteId}
+          workAreaId={workAreaId}
+          assetRef={layer.assetRef}
+          grid={grid}
+          observedCrsDigest={layer.observedCrsDigest}
+          observedCrsIdentifier={layer.observedCrsIdentifier}
+          isDsm={layer.isDsm}
+          jobs={jobs}
+          canRequest={canRequest}
+          requestsHref={requestsHref}
+          workAreaRing={workAreaRing}
+          workAreaCrs={workAreaCrs}
+          hidePrepareActions={hidePrepareActions}
+          presentation={presentation}
+          detailsTargetId={detailsTargetId}
+        />
+      )}
+
+      {/* 낱창 도구·수동 설정은 펼침 하나에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
+      {/* 낱창 도구·수동 설정은 펼침 하나에 둔다. 보통 흐름은 이어 보기+다시 확인이면 된다. */}
+      {detailsTargetId ? (
+        <DetailsPortal targetId={detailsTargetId}>
+          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">보기·준비 상세</summary>
+            {layerDetailsBody}
+          </details>
+        </DetailsPortal>
+      ) : (
+        <details className="rounded-lg border border-line bg-sunk/50 px-3 py-2 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">{presentation === "canvas" ? "상세·준비" : "보기 상세"}</summary>
+          {layerDetailsBody}
+        </details>
+      )}
     </div>
   );
 }
@@ -764,6 +790,7 @@ export function SiteWindowedPixelViewer({
   layerControlsTargetId,
   hidePrepareActions = false,
   presentation = "default",
+  detailsTargetId = null,
 }: WindowedPixelViewerProps) {
   const canvasMode = presentation === "canvas";
   const router = useRouter();
@@ -807,6 +834,36 @@ export function SiteWindowedPixelViewer({
     </div>
   ) : null;
 
+  // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
+  // 그대로이며, 명시적 준비 요청(쓰기)은 아래 접힌 상세에만 둔다.
+  const canvasMedia = !layer ? (
+    <WorkbenchMediaState
+      headline="이 관측에서 화면에 둘 정사영상·DSM 층을 확인하지 못했습니다."
+      detail="등록 자료에서 파일 검사 상태를 확인하세요."
+    />
+  ) : jobsState === "denied" ? (
+    <WorkbenchMediaState
+      headline="준비 기록을 조회할 권한이 없습니다."
+      hint="담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다."
+    />
+  ) : jobsState === "unavailable" ? (
+    <WorkbenchMediaState
+      headline="준비 기록을 불러오지 못했습니다."
+      detail="빈 목록으로 단정하지 않습니다."
+      action={<WorkbenchRefreshButton />}
+    />
+  ) : jobsState === "ready" && !canRead ? (
+    <WorkbenchMediaState
+      headline="이미 준비된 창을 볼 권한이 없습니다."
+      action={
+        <ActionUnavailable
+          label={WINDOWED_VIEWER_READ_LABEL}
+          description="이미 준비된 창을 볼 권한이 없습니다. 필요한 창과 용도를 담당자에게 알려 주세요."
+        />
+      }
+    />
+  ) : null;
+
   const supportingDetails = (
     <details id={`${idPrefix}-display-conditions`} className="scroll-mt-5 text-[12px] text-ink-2">
         <summary className="tap-target cursor-pointer font-semibold">표시 조건·근거</summary>
@@ -846,24 +903,26 @@ export function SiteWindowedPixelViewer({
       {layerControlsTargetId && <span hidden ref={attachControlsSlot} />}
       {controlsTarget ? createPortal(layerControls, controlsTarget) : !hideLayerControls && !layerControlsTargetId ? layerControls : null}
 
-      {!layer && (
+      {canvasMode && canvasMedia}
+
+      {!canvasMode && !layer && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
           이 관측에서 화면에 둘 정사영상·DSM 층을 확인하지 못했습니다. 등록 자료에서 파일 검사 상태를 확인하세요.
         </p>
       )}
 
-      {layer && jobsState === "denied" && (
+      {!canvasMode && layer && jobsState === "denied" && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
           준비 기록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다.
         </p>
       )}
-      {layer && jobsState === "unavailable" && (
+      {!canvasMode && layer && jobsState === "unavailable" && (
         <p className="rounded-lg border border-line bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">
           준비 기록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.
         </p>
       )}
 
-      {layer && jobsState === "ready" && !canRead && (
+      {!canvasMode && layer && jobsState === "ready" && !canRead && (
         <div className="rounded-lg border border-line bg-sunk px-3 py-2">
           <ActionUnavailable
             label={WINDOWED_VIEWER_READ_LABEL}
@@ -872,7 +931,7 @@ export function SiteWindowedPixelViewer({
         </div>
       )}
 
-      {layer && jobsState === "ready" && canRead && (
+      {!(canvasMode && canvasMedia) && layer && jobsState === "ready" && canRead && (
         <WindowedLayerView
           key={layer.assetRef}
           siteId={siteId}
@@ -887,10 +946,23 @@ export function SiteWindowedPixelViewer({
           supportingDetails={supportingDetails}
           hidePrepareActions={hidePrepareActions}
           presentation={presentation}
+          detailsTargetId={detailsTargetId}
         />
       )}
 
-      {!(layer && jobsState === "ready" && canRead) && supportingDetails}
+      {!(layer && jobsState === "ready" && canRead) && (detailsTargetId ? (
+        <DetailsPortal targetId={detailsTargetId}>
+          <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+            <summary className="tap-target cursor-pointer font-semibold">보기·준비 상세</summary>
+            <div className="mt-2">{supportingDetails}</div>
+          </details>
+        </DetailsPortal>
+      ) : canvasMode ? (
+        <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+          <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+          <div className="mt-2">{supportingDetails}</div>
+        </details>
+      ) : supportingDetails)}
     </section>
   );
 }

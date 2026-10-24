@@ -48,10 +48,12 @@ import { TopBarSearchTrigger } from "@/components/nav/TopBarSearchTrigger";
 import { PaneObservationSelect } from "./PaneObservationSelect";
 import {
   firstReadableWindowJob,
+  isKnownExpiredAsset,
   toPreparedWindowJob,
   type PreparedWindowJob,
 } from "@/lib/site-windowed-pixel-viewer";
 import { SiteWindowedPixelViewer } from "../SiteWindowedPixelViewer";
+import { WorkbenchMediaState, WorkbenchRefreshButton } from "../WorkbenchMediaState";
 import { MaterialThumb } from "./MaterialThumb";
 import {
   applyCatalogFilters,
@@ -488,6 +490,7 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
     layerSelectParam={param as "visualAAssetRef" | "visualBAssetRef"}
     hidePrepareActions
     presentation="canvas"
+    detailsTargetId="material-inspector-details"
   />;
 }
 
@@ -927,25 +930,77 @@ export default async function SpatialAssetsPage({
 
   // 칸 — 역할 표식 + 그 이미지 바로 위의 관측 선택 + 해당 칸의 보기.
   // 날짜는 선택 상자 하나에서만 고르고, 종류는 아래 층 전환이 보여준다.
-  const centerPane = (side: "A" | "B", item: SpatialAssetCatalogItem) => {
+  // 선택 상자가 잘려도 전체 날짜+정밀도가 칸 옆에 남는다.
+  const panePrecisionQualifier = (item: SpatialAssetCatalogItem): string | null => {
+    if (item.declared.captureStartedAt && item.declared.captureEndedAt) return null;
+    if (item.declared.captureDate) return "날짜만 확인 · 시각 미상";
+    return "관측 시점 미상";
+  };
+  const paneHead = (side: "A" | "B", item: SpatialAssetCatalogItem) => {
     const dateLine = capturePeriodTitle(item.declared.captureStartedAt, item.declared.captureEndedAt, {
       captureDate: item.declared.captureDate ?? null,
     });
+    const qualifier = panePrecisionQualifier(item);
+    return (
+      <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-col gap-y-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">{side}</span>
+          <span className="sr-only">{side} 칸</span>
+          <PaneObservationSelect
+            action={basePath}
+            side={side}
+            sideParam={side === "A" ? "visualAAssetRef" : "visualBAssetRef"}
+            currentRef={item.assetRef}
+            currentLabel={`${dateLine} · v${item.revision}`}
+            options={paneOptionsFor(item)}
+            hidden={paneHiddenFor(side)}
+          />
+        </div>
+        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2">{qualifier ? `${dateLine} · ${qualifier}` : dateLine}</p>
+      </div>
+    );
+  };
+  // 같은 사유 회복은 하나로 모은다 — 준비 기록 조회 실패는 두 칸에 똑같이
+  // 걸리므로 칸마다 단추를 두지 않는다. 두 칸이 모두 실제 픽셀 보기(읽기
+  // 전용)일 때만 공유한다. 파일형·상세 전용 칸은 각자 정직하게 둔다.
+  const paneNeedsJobs = (item: SpatialAssetCatalogItem): boolean =>
+    isMetadataOnly(item) && isViewableRasterKind(item.kind);
+  // 알려진 선택 출력 만료는 스캔하지 않은 부재와 섞지 않는다 — 선택한 두 층의
+  // 불러온 준비 기록이 모두 보관 만료일 때만 같은 사유로 묶는다. 읽을 수 있는
+  // 창·진행 중·실패·알 수 없는 상태가 하나라도 있으면 뷰어의 기존 판정에 맡긴다.
+  const bothSelectedExpired = sideA !== null && sideB !== null && compareMode
+    && paneNeedsJobs(sideA) && paneNeedsJobs(sideB) && jobsState === "ready"
+    && isKnownExpiredAsset(preparedJobs, sideA.assetRef) && isKnownExpiredAsset(preparedJobs, sideB.assetRef);
+  const materialsSharedBlocked = sideA !== null && sideB !== null && compareMode
+    && paneNeedsJobs(sideA) && paneNeedsJobs(sideB) && (jobsState !== "ready" || bothSelectedExpired);
+  const materialsSharedRecovery = materialsSharedBlocked ? (
+    jobsState === "denied" ? (
+      <WorkbenchMediaState
+        headline="준비 기록을 조회할 권한이 없습니다."
+        hint="담당자에게 조회 권한을 요청하세요. 권한이 없어 빈 목록으로 단정하지 않습니다."
+      />
+    ) : jobsState === "unavailable" ? (
+      <WorkbenchMediaState
+        headline="준비 기록을 불러오지 못했습니다."
+        detail="빈 목록으로 단정하지 않습니다."
+        action={<WorkbenchRefreshButton />}
+      />
+    ) : (
+      <WorkbenchMediaState
+        headline="미리보기 보관 기간이 끝났습니다."
+        detail="두 칸의 불러온 준비 기록이 모두 보관 기간이 끝났습니다."
+        action={
+          <Link href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
+            구역 자료 준비에서 확인
+          </Link>
+        }
+      />
+    )
+  ) : null;
+  const centerPane = (side: "A" | "B", item: SpatialAssetCatalogItem) => {
     return (
     <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
-      <div data-workbench-pane-controls className="flex min-w-0 shrink-0 items-center gap-2">
-        <span aria-hidden="true" className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-sunk text-[11px] font-bold">{side}</span>
-        <span className="sr-only">{side} 칸</span>
-        <PaneObservationSelect
-          action={basePath}
-          side={side}
-          sideParam={side === "A" ? "visualAAssetRef" : "visualBAssetRef"}
-          currentRef={item.assetRef}
-          currentLabel={`${dateLine} · v${item.revision}`}
-          options={paneOptionsFor(item)}
-          hidden={paneHiddenFor(side)}
-        />
-      </div>
+      {paneHead(side, item)}
       <div className="min-w-0 lg:min-h-0 lg:flex-1">
         <PreviewPane
           siteId={siteId}
@@ -1075,10 +1130,22 @@ export default async function SpatialAssetsPage({
         <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted">두 시점을 나란히 보려면 목록에서 다른 자료를 「B에 두기」로 고르세요.</p>
       </>}
       {sideA && sideB && compareMode && <>
-        <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
-          {centerPane("A", sideA)}
-          {centerPane("B", sideB)}
-        </div>
+        {materialsSharedBlocked ? (<>
+          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+            <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
+              {paneHead("A", sideA)}
+            </div>
+            <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
+              {paneHead("B", sideB)}
+            </div>
+          </div>
+          {materialsSharedRecovery}
+        </>) : (
+          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
+            {centerPane("A", sideA)}
+            {centerPane("B", sideB)}
+          </div>
+        )}
         <ComparePlaneNote sideA={sideA} sideB={sideB} />
       </>}
     </section>
@@ -1146,6 +1213,7 @@ export default async function SpatialAssetsPage({
                 inspectorOpen={infoOpen && !!effectiveWorkAreaId}
                 inspectorId="material-inspector"
                 inspectorLabel="선택 자료 정보"
+                detailsHostId="material-inspector-details"
               />}
           <nav aria-label="등록 자료 페이지" className="flex min-w-0 flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ cursor: null }))}>처음부터 보기</Link>}

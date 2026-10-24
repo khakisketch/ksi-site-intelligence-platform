@@ -1596,7 +1596,11 @@ export function AnalysisRequestPanel({
   const evidenceItemCount = selectedEvidencePages.reduce((total, page) => total + page.items.length, 0);
   const showError = error && (error.analysisId === null || error.analysisId === selectedId);
 
-  const draftFirst = !initialAnalysisId && Boolean(visualContext || exactHintNotice || initialBaselineSelector || initialCurrentSelector);
+  // 둘러보기 쌍(visualContext)만으로는 새 요청을 먼저 두지 않는다 — 기록·차단
+  // 사유·수치가 먼저다. 새 요청서가 먼저 오는 것은 명시적 요청 진입일 때뿐이다:
+  // 정확한 선택자 힌트(일치·불일치 공지 포함) 또는 보류 중인 요청 식별자.
+  // 머리 결과 이동은 힌트·앵커를 싣지 않으므로 기록 우선이 된다.
+  const draftFirst = !initialAnalysisId && Boolean(exactHintNotice || initialBaselineSelector || initialCurrentSelector);
   const requestSection = canCreate && <section id="new-analysis-request" className="scroll-mt-20 rounded-lg border border-line bg-surface px-4 py-4">
       <h2 className="text-[16px] font-bold">새 변화 분석 요청</h2>
       {exactHintNotice && !attempt && <p role="status" className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">{exactHintNotice}</p>}
@@ -1704,6 +1708,20 @@ export function AnalysisRequestPanel({
       </p>
       <p className="mt-1 text-[12px] leading-5 text-ink-2">최근 실행 상태: {executionLabel(latestRow.executionState).label}. 적합성 상태: {suitabilityLabel(latestRow.suitabilityState).label}.</p>
       <p className="mt-1 text-[12px] leading-5 text-ink-2">{latestNextAction}</p>
+      {selectedDetail && (() => {
+        // 계산 입력 한 줄 — 선택된 기록의 frozen 선택자를 현재 후보 목록에서
+        // 검증해 라벨로 둔다. 탐색 쌍 맥락은 계산 입력이 아니므로 쓰지 않는다.
+        // 맞지 않으면 추측하지 않고 모름을 밝힌다.
+        const baseline = observations.find((option) => sameSelector(option.selector, selectedDetail.baseline));
+        const current = observations.find((option) => sameSelector(option.selector, selectedDetail.current));
+        if (!baseline || !current) {
+          return <p className="mt-1 text-[12px] leading-5 text-ink-2">계산 입력 · 원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
+        }
+        const [baselineLabel, currentLabel] = observationChoiceLabels([baseline, current], workOrderNames);
+        return <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">
+          계산 입력 · 기준 {baselineLabel} · 현재 {currentLabel}
+        </p>;
+      })()}
       <div className="mt-1 flex flex-wrap gap-x-5">
         <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>
         {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 변화 분석 요청으로 이동"}</a>}

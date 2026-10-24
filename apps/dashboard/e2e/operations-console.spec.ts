@@ -394,10 +394,11 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(siteNavigation.getByRole("link", { name: "관측 작업 기록", exact: true })).toHaveCount(0);
   await expect(siteNavigation.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveCount(0);
   // 작업 방식은 맥락막대에 있고 현재 방식을 aria-current로 밝힌다.
+  // 결과는 최상위 결과 목적지가 맡으므로 작업공간 막대에는 단일·비교만 둔다.
   const workspaceModes = page.getByRole("navigation", { name: "공간 작업 방식", exact: true });
   await expect(workspaceModes).toBeVisible();
-  await expect(workspaceModes.getByRole("link")).toHaveCount(3);
-  for (const label of ["단일 시점", "두 시점 비교", "분석 결과"]) {
+  await expect(workspaceModes.getByRole("link")).toHaveCount(2);
+  for (const label of ["단일 시점", "두 시점 비교"]) {
     await expect(workspaceModes.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
   await expect(workspaceModes.getByRole("link", { name: "단일 시점", exact: true })).toHaveAttribute("aria-current", "page");
@@ -444,12 +445,20 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
     await expect(page.getByRole("region", { name: "선택 관측 보기", exact: true })).toBeVisible();
   }
   // 정보 서랍은 URL을 바꾸지 않고, 닫기·Escape 뒤 포커스와 선택이 그대로다.
+  // 서랍 틀은 항상 마운트되나 닫힘 상태에서는 접근성 트리에서 제외된다.
+  await expect(page.locator("#workspace-inspector")).toBeHidden();
+  await expect(page.getByRole("region", { name: "작업공간 정보", exact: true })).toHaveCount(0);
   const infoToggle = page.getByRole("button", { name: "정보", exact: true });
   const urlBeforeInfo = page.url();
+  const stageBoxBeforeInfo = await stage.boundingBox();
   await infoToggle.click();
   const inspector = page.locator("#workspace-inspector");
   await expect(inspector).toBeVisible();
   await expect(page).toHaveURL(urlBeforeInfo);
+  // 정보 드로어가 무대를 밀지 않는다 — 카메라·선택 자리가 그대로다.
+  const stageBoxAfterInfo = await stage.boundingBox();
+  expect(stageBoxAfterInfo?.width).toBe(stageBoxBeforeInfo?.width);
+  expect(stageBoxAfterInfo?.height).toBe(stageBoxBeforeInfo?.height);
   await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("workspace-inspector");
   await inspector.getByRole("button", { name: "닫기", exact: true }).click();
   await expect(inspector).toBeHidden();
@@ -460,12 +469,21 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(inspector).toBeHidden();
   await expect(infoToggle).toBeFocused();
   await expect(page).toHaveURL(urlBeforeInfo);
-  const detailSummary = stage.locator("summary").filter({ hasText: "자료·범위 상세" }).first();
-  if (!await detailSummary.evaluate((node) => (node.parentElement as HTMLDetailsElement).open)) {
-    await detailSummary.click();
-  }
+  // 옛 무대 하단 펼침('자료·범위 상세')은 두지 않는다 — 개요는 정보 서랍의 한 면에 있다.
+  await expect(stage.locator("summary", { hasText: /^자료·범위 상세$/ })).toHaveCount(0);
+  await infoToggle.click();
+  await expect(inspector).toBeVisible();
   const spatialPanel = page.getByRole("region", { name: "선택 구역 공간 확인", exact: true });
   await expect(spatialPanel).toBeVisible();
+  // 팩트·빈 등록·분석 한계가 서랍에서도 그대로다 — 조용히 버리지 않는다.
+  await expect(spatialPanel.getByText("이 구역에 조회된 등록 자료가 없습니다.", { exact: true })).toBeVisible();
+  await expect(spatialPanel.getByText("선택한 작업구역", { exact: true })).toBeVisible();
+  // 빈 현장 합성 fixture에서 분석 목록 조회는 실패한다 — 빈 목록으로 단정하지 않고
+  // 모름을 밝힌다. 빈 단언으로 바꾸지 않는다.
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    await expect(spatialPanel.getByText("분석 기록을 확인할 수 없습니다.", { exact: true })).toBeVisible();
+    await expect(spatialPanel.getByText("이 구역에 조회된 분석 결과가 없습니다.", { exact: true })).toHaveCount(0);
+  }
 
   // 모든 화면 폭에서 같은 현장 메뉴와 같은 범위의 복귀 목적지를 쓴다.
   const materialMenu = await openSiteMenu(page);
@@ -505,8 +523,12 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(returnNavigation.getByRole("link", { name: "작업공간", exact: true })).toHaveAttribute("aria-current", "page");
   for (const [label, suffix] of [["결과", "analysis"], ["자료", "spatial-assets"]]) {
     const href = await returnNavigation.getByRole("link", { name: label, exact: true }).getAttribute("href");
-    expect(new URL(href!, page.url()).pathname).toBe(`${new URL(siteHref!, page.url()).pathname}/${suffix}`);
-    expect(new URL(href!, page.url()).searchParams.get("workAreaId")).toBe(selectedWorkAreaId);
+    const url = new URL(href!, page.url());
+    expect(url.pathname).toBe(`${new URL(siteHref!, page.url()).pathname}/${suffix}`);
+    expect(url.searchParams.get("workAreaId")).toBe(selectedWorkAreaId);
+    // 머리 이동은 둘러보기 맥락만 싣는다 — 새 요청 힌트·앵커를 싣지 않는다.
+    expect(url.hash).toBe("");
+    expect([...url.searchParams.keys()].filter((key) => key.startsWith("hint"))).toEqual([]);
   }
   // 설정은 실제 구역 관리 동작을 싣는다. 기존 work-orders 경로는 문맥 속
   // 관측 작업 기록 길로만 둔다 — 구역 관리로 오인하지 않는다.
@@ -531,6 +553,35 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   const unavailableHistory = page.getByText("외부 비교 기록을 불러오지 못했습니다.", { exact: true });
   const emptyHistory = page.getByText("조회된 외부 비교 기록이 없습니다", { exact: true });
   await expect(unavailableHistory.or(emptyHistory)).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  // 결과 모드는 직접 주소로도 열린다 — 막대 탭 제거와 무관하게 호환된다.
+  // 빈 쌍에서도 새 요청 힌트·앵커를 지어내지 않으며, 폼-first로 바뀌지 않는다.
+  await page.goto(`${siteHref}?mode=results&workAreaId=${encodeURIComponent(selectedWorkAreaId!)}`);
+  const resultsStage = page.getByRole("region", { name: "분석 결과 검토", exact: true });
+  await expect(resultsStage).toBeVisible();
+  expect(new URL(page.url()).hash).toBe("");
+  expect([...new URL(page.url()).searchParams.keys()].filter((key) => key.startsWith("hint"))).toEqual([]);
+  // 빈 현장 합성 fixture에서 분석 목록 조회는 실패한다 — 모름을 밝히고 빈 단언을 두지 않는다.
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    await expect(resultsStage.getByText("분석 기록을 확인할 수 없습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.", { exact: true })).toBeVisible();
+    await expect(resultsStage.getByText("이 구역에 조회된 분석 결과가 없습니다. 비교할 두 시점이 정해지면 아래에서 분석 요청을 시작합니다.", { exact: true })).toHaveCount(0);
+  }
+  await expectNoHorizontalOverflow(page);
+
+  // 빈 쌍 비교 모드: 무대에는 거부·안내만, 조건 상자는 정보 서랍에 있다.
+  // 후보를 지어내지 않으므로 명시적 요청 CTA도 함께 두지 않는다.
+  // (합성 빈 fixture 전제 — 외부 원장은 읽기 전용 스모크만 한다.)
+  await page.goto(`${siteHref}?mode=compare&workAreaId=${encodeURIComponent(selectedWorkAreaId!)}`);
+  const compareStage = page.getByRole("region", { name: "두 시점 비교", exact: true });
+  await expect(compareStage).toBeVisible();
+  await expect(compareStage.locator("summary", { hasText: /^자료·범위 상세$/ })).toHaveCount(0);
+  if (!process.env.KSI_DASHBOARD_E2E_BASE_URL) {
+    await expect(compareStage.getByRole("link", { name: "이 쌍으로 분석 조건 확인", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "정보", exact: true }).click();
+    await expect(page.locator("#workspace-inspector")).toBeVisible();
+    await expect(page.getByRole("region", { name: "작업공간 정보", exact: true }).getByText("비교 조건과 다른 작업 확인")).toBeVisible();
+  }
   await expectNoHorizontalOverflow(page);
 });
 
