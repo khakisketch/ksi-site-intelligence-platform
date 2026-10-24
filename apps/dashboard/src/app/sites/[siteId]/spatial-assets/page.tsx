@@ -1164,6 +1164,12 @@ export default async function SpatialAssetsPage({
         <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted">두 시점을 나란히 보려면 목록에서 다른 자료를 「B에 두기」로 고르세요.</p>
       </>}
       {sideA && sideB && compareMode && <>
+        {workspaceReturnHref && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+            <p className="min-w-0 flex-1 text-[12px] leading-5 text-ink-2">같은 두 자료를 작업공간 비교에서 둡니다. 분석 조건 확인과 기록 연결은 작업공간에서 이어집니다.</p>
+            <Link href={workspaceReturnHref} className={`w-fit shrink-0 ${materialsSharedBlocked ? "btn" : "btn btn-primary"}`}>작업공간에서 비교</Link>
+          </div>
+        )}
         {materialsSharedBlocked ? (<>
           <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
             <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
@@ -1181,12 +1187,6 @@ export default async function SpatialAssetsPage({
           </div>
         )}
         <ComparePlaneNote sideA={sideA} sideB={sideB} />
-        {workspaceReturnHref && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-            <p className="min-w-0 flex-1 text-[12px] leading-5 text-ink-2">같은 두 자료를 작업공간 비교에서 둡니다. 분석 조건 확인과 기록 연결은 작업공간에서 이어집니다.</p>
-            <Link href={workspaceReturnHref} className="btn btn-primary w-fit shrink-0">작업공간에서 비교</Link>
-          </div>
-        )}
       </>}
     </section>
   );

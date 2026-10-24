@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextFetchEvent, NextMiddleware, NextRequest } from "next/server";
 
 import { auth } from "@/auth";
-import { PATHNAME_HEADER, SESSION_COOKIE_NAME } from "@/lib/core-api/session-cookie";
+import { PATHNAME_HEADER, RETURN_TO_HEADER, SESSION_COOKIE_NAME } from "@/lib/core-api/session-cookie";
 import { AUTH_SESSION_COOKIE_NAME } from "@/lib/auth/auth-cookie";
 
 // Next.js 16: middleware.ts → proxy.ts 로 개명(node_modules/next/dist/docs 확인).
@@ -45,6 +45,11 @@ export async function proxy(request: NextRequest, event: NextFetchEvent) {
 
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(PATHNAME_HEADER, pathname);
+  // 복귀 주소는 경로+쿼리까지 싣는다 — 만료 후 재로그인이 비교 쌍·선택
+  // 맥락을 잃지 않게 한다. 값 자체는 TopBar·로그인 동작이 safeNextPath 로
+  // 살균하므로 외부·비정상 복귀를 만들지 않는다. PATHNAME_HEADER 는 경로
+  // 판별·제목용으로 그대로 둔다.
+  requestHeaders.set(RETURN_TO_HEADER, `${pathname}${request.nextUrl.search}`);
   const withPathnameHeader = () => NextResponse.next({ request: { headers: requestHeaders } });
 
   const withPersistedSession = async () => {

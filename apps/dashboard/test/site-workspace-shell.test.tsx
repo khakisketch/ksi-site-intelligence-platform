@@ -12,6 +12,7 @@ const mocked = vi.hoisted(() => ({
   detail: vi.fn(),
   assets: vi.fn(),
   workspace: vi.fn(),
+  requests: vi.fn(),
 }));
 
 vi.mock("@/lib/core-api/sites", () => ({ getSite: mocked.site }));
@@ -22,6 +23,7 @@ vi.mock("@/lib/core-api/external-result-workflow", () => ({ listSiteExternalVolu
 vi.mock("@/lib/core-api/analysis", () => ({ listAnalyses: mocked.analyses, getAnalysis: mocked.detail }));
 vi.mock("@/lib/core-api/spatial-assets", () => ({ listSpatialAssets: mocked.assets }));
 vi.mock("@/lib/core-api/spatial-workspace", () => ({ listSpatialWorkspaceObservations: mocked.workspace }));
+vi.mock("@/lib/core-api/spatial-data-requests", () => ({ listSpatialDataRequests: mocked.requests }));
 vi.mock("@/components/map/AoiPolygonMap", () => ({
   AoiPolygonMap: ({ value }: { value: unknown }) => (
     <div data-testid="aoi-map" data-vertices={JSON.stringify(value)} />
@@ -240,6 +242,7 @@ beforeEach(() => {
   mocked.detail.mockRejectedValue(new CoreApiError(404, { detail: "not found" }));
   mocked.assets.mockResolvedValue(EMPTY_CATALOG);
   mocked.workspace.mockResolvedValue(workspacePage());
+  mocked.requests.mockRejectedValue(new Error("prepared jobs unavailable in this test"));
 });
 
 async function renderOverview(searchParams: Record<string, string> = {}) {
@@ -368,6 +371,57 @@ describe("workspace shell structure", () => {
     expect(screen.queryByText(/최신/)).toBeNull();
     // 자료가 있는 현장에서 "관측이 없습니다"로 읽히면 안 된다.
     expect(panel.textContent).not.toContain("관측이 없습니다");
+  });
+
+  it("names expiry as prepared-then-expired when every shown layer is retention-expired", async () => {
+    mocked.permissions.mockResolvedValue(true);
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["v1"], {
+        viewAvailable: false,
+        viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+        viewAssetRef: null,
+        versions: [wireVersion("v1")],
+      })],
+      entryDefault: {
+        observationEpochId: null,
+        viewAssetRef: null,
+        reason: "NO_VIEW_AVAILABLE_OBSERVATION",
+        detail: "Observations exist but none has a display-ready version.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [{ ...rasterAsset("v1"), observationEpochId: "epoch-2021" }],
+    });
+    mocked.requests.mockResolvedValue({
+      siteId: "site-1",
+      workAreaId: "tiny-1",
+      items: [{
+        jobId: "sdj-v1-00000000-0000-4000-8000-000000000001",
+        siteId: "site-1",
+        workAreaId: "tiny-1",
+        assetRef: "v1",
+        executionState: "EXPIRED",
+        availability: "RETENTION_EXPIRED",
+        createdAt: "2026-10-20T00:00:00Z",
+        receipt: null,
+      }],
+      nextCursor: null,
+    });
+    await renderOverview({ assetRef: "v1" });
+    // 같은 층의 준비 기록이 모두 보관 만료로 확인되면 진입 패널도 만료를
+    // 말한다 — 무대 픽셀 회복(클라이언트 캔버스, 별도 컴포넌트 테스트 범위)과
+    // 같은 CTA를 반복하지 않는다.
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    const panel = within(stage).getByRole("region", { name: "기본 관측 선택 상태" });
+    // 만료를 '준비된 적 없음'으로 읽히게 하지 않고, 진행 중으로도 암시하지 않는다.
+    expect(panel.textContent).toContain("미리보기 보관 기간이 끝났습니다");
+    expect(panel.textContent).toContain("준비된 적이 있으나 보관 기간이 지나");
+    expect(panel.textContent).toContain("등록된 자료와 검사 기록은 그대로");
+    expect(panel.textContent).not.toContain("직접 요청하세요");
+    expect(panel.textContent).not.toContain("봉인이 끝나지 않았습니다");
+    expect(within(panel).queryByRole("link")).toBeNull();
   });
 
   it("keeps one recovery in the stage when the viewer already carries it", async () => {
@@ -632,25 +686,31 @@ describe("workspace compare mode", () => {
     expect(screen.getByRole("alert").textContent).toContain("요청한 비교 대상을 확인할 수 없습니다");
   });
 
-  it("shows the observation strip in server order with honest status and no latest claim", async () => {
+  it("keeps pair selection in the per-pane controls without a third selector row", async () => {
     mocked.workspace.mockResolvedValue(readyProjection());
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [
+        { ...rasterAsset("exact-1"), workOrderId: "w-epoch-2021", observationEpochId: "epoch-2021", submissionRef: "s-exact-1", revision: 1 },
+        { ...rasterAsset("date-only-2", { captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" }), workOrderId: "w-epoch-2022", observationEpochId: "epoch-2022", submissionRef: "s-date-only-2", revision: 1 },
+      ],
+    });
     await renderOverview({ mode: "compare" });
-    const strip = screen.getByRole("navigation", { name: "관측 둘러보기" });
-    expect(within(strip).getByText(/관측 2건 · 목록 순서/)).toBeTruthy();
-    const chips = within(strip).getAllByRole("link");
-    expect(chips).toHaveLength(2);
-    // 서버 목록 순서 그대로 — 날짜 재정열·최신 단언 없음.
-    expect(chips[0]!.textContent).toContain("등록 버전 1");
-    expect(chips[1]!.textContent).toContain("날짜만 확인");
-    expect(chips[0]!.getAttribute("href")).toBe("/sites/site-1?workAreaId=tiny-1&assetRef=exact-1");
-    expect(chips[1]!.getAttribute("href")).toContain("/sites/site-1?workAreaId=tiny-1&assetRef=");
-    expect(within(strip).queryByText(/최신/)).toBeNull();
-    // 고르기 전에는 A·B 표식이 없다.
-    expect(within(strip).queryByText("A")).toBeNull();
-    expect(within(strip).queryByText("B")).toBeNull();
+    // 둘러보기 띠는 두지 않는다 — 칸별 관측 선택이 유일한 선택 수단이다.
+    expect(screen.queryByRole("navigation", { name: "관측 둘러보기" })).toBeNull();
+    const visualA = screen.getByLabelText("관측 A 관측 선택") as HTMLSelectElement;
+    expect(visualA.options.length).toBeGreaterThanOrEqual(2);
+    expect(visualA.textContent).toContain("날짜만 확인");
+    // 좁은 화면에서는 칸을 세로로 쌓는다 — 390px에서 선택지가 잘리지 않는다.
+    const pane = visualA.closest("[data-workbench-pane]");
+    expect(pane).toBeTruthy();
+    const grid = pane!.parentElement!;
+    expect(grid.className).toContain("grid-cols-1");
+    expect(grid.className).toContain("md:grid-cols-2");
   });
 
-  it("marks the chosen pair on the strip and stacks panes on narrow screens", async () => {    mocked.workspace.mockResolvedValue(workspacePage({
+  it("marks the chosen pair in the pane selects and keeps one analysis action", async () => {
+    mocked.workspace.mockResolvedValue(workspacePage({
       observations: [
         wireObservation("epoch-2021", ["exact-1"], {
           capture: wireCapture(),
@@ -674,20 +734,77 @@ describe("workspace compare mode", () => {
       },
     }));
     await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
-    const strip = screen.getByRole("navigation", { name: "관측 둘러보기" });
-    const marked = within(strip).getAllByRole("link", { current: true });
-    expect(marked.map((link) => link.textContent)).toEqual([
-      expect.stringContaining("기준"),
-      expect.stringContaining("비교"),
-    ]);
+    // 고른 쌍은 칸 선택값 그대로 두며, 작업 동작은 무대에 하나만 둔다.
+    const baselineSelect = screen.getByLabelText("기준 자료 관측 선택") as HTMLSelectElement;
+    const currentSelect = screen.getByLabelText("비교 자료 관측 선택") as HTMLSelectElement;
+    expect(baselineSelect.value).toBe("exact-1");
+    expect(currentSelect.value).toBe("exact-2");
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    const ctas = within(stage).getAllByRole("link", { name: "이 쌍으로 분석 조건 확인" });
+    expect(ctas).toHaveLength(1);
+    expect(ctas[0]!.getAttribute("href")).toContain("/sites/site-1/analysis?workAreaId=tiny-1");
     // 좁은 화면에서는 칸을 세로로 쌓는다 — 390px에서 선택지가 잘리지 않는다.
-    const panes = screen.getAllByLabelText("기준 자료 관측 선택");
-    expect(panes).toHaveLength(1);
-    const pane = panes[0]!.closest("[data-workbench-pane]");
+    const pane = baselineSelect.closest("[data-workbench-pane]");
     expect(pane).toBeTruthy();
     const grid = pane!.parentElement!;
     expect(grid.className).toContain("grid-cols-1");
     expect(grid.className).toContain("md:grid-cols-2");
+  });
+
+  it("puts the pair action before the panes and the shared recovery", async () => {
+    mocked.permissions.mockResolvedValue(true);
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["exact-1"], {
+          capture: wireCapture(),
+          versions: [wireVersion("exact-1", { displayReady: true, displayState: "SEALED" })],
+        }),
+        wireObservation("epoch-2022", ["exact-2"], {
+          capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+          versions: [wireVersion("exact-2", {
+            capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+            displayReady: true,
+            displayState: "SEALED",
+          })],
+        }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2022",
+        viewAssetRef: "exact-2",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [
+        { ...rasterAsset("exact-1"), observationEpochId: "epoch-2021" },
+        { ...rasterAsset("exact-2", { captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }), observationEpochId: "epoch-2022" },
+      ],
+    });
+    mocked.requests.mockResolvedValue({
+      siteId: "site-1",
+      workAreaId: "tiny-1",
+      items: ["exact-1", "exact-2"].map((assetRef, index) => ({
+        jobId: `sdj-v1-00000000-0000-4000-8000-00000000003${index + 1}`,
+        assetRef, siteId: "site-1", workAreaId: "tiny-1",
+        createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+        receipt: null,
+      })),
+      nextCursor: null,
+    });
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
+    const stage = screen.getByRole("region", { name: "두 시점 비교" });
+    // 쌍 동작은 칸·회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
+    const markup = stage.innerHTML;
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeGreaterThan(-1);
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("기준 자료 관측 선택"));
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("미리보기 보관 기간이 끝났습니다"));
+    // 차단 상태에서는 조용한 동작으로 둔다(회복 CTA와 1차를 다투지 않는다).
+    const ctas = within(stage).getAllByRole("link", { name: "이 쌍으로 분석 조건 확인" });
+    expect(ctas).toHaveLength(1);
+    expect(ctas[0]!.className).not.toContain("btn-primary");
   });
 });
 

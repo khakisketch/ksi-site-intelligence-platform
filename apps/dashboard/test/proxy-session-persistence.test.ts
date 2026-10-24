@@ -103,6 +103,18 @@ describe("proxy refresh persistence", () => {
     expect(fixture.tokenExchanges).toBe(1);
   });
 
+  it("carries the query-bearing return address without changing the pathname header", async () => {
+    await setupIssuer();
+    const response = await navigate(
+      "/sites/generated?mode=compare&workAreaId=w1&visualAAssetRef=a1&visualBAssetRef=b2",
+      `${AUTH_SESSION_COOKIE_NAME}=${await expiredCookie()}`,
+    );
+    expect(response.headers.get("x-middleware-request-x-pathname")).toBe("/sites/generated");
+    expect(response.headers.get("x-middleware-request-x-return-to")).toBe(
+      "/sites/generated?mode=compare&workAreaId=w1&visualAAssetRef=a1&visualBAssetRef=b2",
+    );
+  });
+
   it("replaces stale chunked session cookies without removing unrelated cookies", async () => {
     await setupIssuer();
     const encrypted = await expiredCookie();

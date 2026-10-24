@@ -4,7 +4,7 @@ import Link from "next/link";
 import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
-import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
+import { PATHNAME_HEADER, RETURN_TO_HEADER } from "@/lib/core-api/session-cookie";
 
 import { NormalShellTopBar } from "./ShellPathBoundary";
 import { BackButton } from "./BackButton";
@@ -53,10 +53,14 @@ export async function TopBar() {
         </span>
       </TopBarFrame>;
     }
-    // UX 목표 §5 "401 — 재로그인 유도(원래 화면으로 복귀 가능해야 함)" — x-pathname 이
-    // 이미 손에 있으니 next 로 실어 재로그인 후 원래 화면에 복귀시킨다(독립 재검토 2차 P3-1).
-    const loginHref = currentPathname
-      ? `/login?next=${encodeURIComponent(currentPathname)}`
+    // UX 목표 §5 "401 — 재로그인 유도(원래 화면으로 복귀 가능해야 함)" —
+    // 복귀 주소(경로+쿼리)를 next 로 실어 재로그인 후 원래 화면에 복귀시킨다
+    // (독립 재검토 2차 P3-1). 비교 쌍·구역 선택 쿼리를 잃지 않는다. 값은
+    // 로그인 동작의 safeNextPath 가 살균하므로 외부·비정상 복귀를 만들지
+    // 않으며, 헤더가 없으면 기존 경로 폴백을 쓴다.
+    const returnTo = headerStore.get(RETURN_TO_HEADER) ?? currentPathname;
+    const loginHref = returnTo
+      ? `/login?next=${encodeURIComponent(returnTo)}`
       : "/login";
     return (
       <TopBarFrame title={title}>

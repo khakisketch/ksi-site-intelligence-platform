@@ -14,7 +14,12 @@ navigation; date-only independent viewing does not establish chronology, registr
 eligibility. Analysis drafts preselect only an exact current candidate triple; browsing cannot replace
 a stored result's inputs. Existing-record lineage/reuse details require matching loaded evidence.
 Synchronized spatial navigation remains unavailable without pair-display authority/geometry; expired
-prepared outputs are not silently regenerated. See the current task ledger for actual evidence and
+prepared outputs are not silently regenerated. A materials pair reached by exact visual references
+offers one primary bridge to the workspace compare with the same work area and pair, where analysis
+conditions and record linkage continue; the materials renderer itself stays valid for legacy deep
+links. Session expiry keeps the full current address (path plus query) as the post-login return, so
+a compare or results view resumes instead of falling back to a default view; the return is
+sanitized to same-origin paths before use. See the current task ledger for actual evidence and
 unverified input/data/host boundaries. P4 removed
 Mission/flight/Edge/managed acquisition screens and actions; S3's older mission/event/fleet
 scope is historical only. Auth, scoped external registration, work operations,
@@ -71,6 +76,12 @@ The actual workspace's single-observation and independent-pair modes use
 local analysis tab because the canonical header Results owns that destination
 (`mode=results` URLs and exact-record bridges keep working). Date/layer controls stay beside their content;
 catalog/info are overlays, with status counts disclosed in info rather than a permanent footer.
+A ready pair carries one pair action row directly under the panes (analysis conditions, primary
+unless the stage already shows a same-cause recovery); there is no third observation selector —
+per-pane selects are the only selection controls. When the stage viewer already carries the
+recovery, the entry panel compacts to status and cause (expiry is named only when every shown
+layer's prepared record is known retention-expired, never as never-prepared or in-progress) and
+drops its preparation links; the viewer action and the info drawer own the recovery paths.
 The canonical `/analysis` record/request surface keeps its document/form shell and offers an
 exact-record bridge back to workspace results. Browsed A/B inputs remain separate from a frozen
 result's inputs; no new calculation, automatic preparation, synchronization, or registered-data

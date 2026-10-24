@@ -78,6 +78,8 @@ function SiteWorkspaceEntryPanel({
   canCreateWorkOrder,
   transitional,
   compactRecovery = false,
+  expiredKnown = false,
+  recoveryHint = null,
 }: {
   sitePath: string;
   workAreaId: string | null;
@@ -93,6 +95,17 @@ function SiteWorkspaceEntryPanel({
    * 무대의 회복 단추와 정보 서랍이 맡는다.
    */
   compactRecovery?: boolean;
+  /**
+   * 무대에 올린 표시 층의 준비 기록이 모두 보관 만료로 확인될 때 true —
+   * '표시 불가'가 아니라 '준비됐다가 보관 기간이 끝남'을 말한다. 준비된
+   * 적 없는 자료를 만료로 단정하지 않으며, 진행 중으로 암시하지도 않는다.
+   */
+  expiredKnown?: boolean;
+  /**
+   * 무대 회복 안내를 가리키는 한 줄 — 무대 상태(만료·거부·불가)에 맞는
+   * 명시 동작을 적는다. 호출자가 같은 분기로 계산한다.
+   */
+  recoveryHint?: string | null;
 }) {
   if (projectionState === "denied") {
     return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -150,13 +163,25 @@ function SiteWorkspaceEntryPanel({
     const lines = reasons.map(viewReasonLine).filter((line): line is string => line !== null);
     const observationCount = new Set(scopeFacts.map((item) => item.observationEpochId)).size;
     if (compactRecovery) {
+      if (expiredKnown) {
+        return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+          <p className="text-[13px] font-bold">이 관측의 미리보기 보관 기간이 끝났습니다</p>
+          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+            준비된 적이 있으나 보관 기간이 지나 지금은 볼 수 없습니다.
+            등록된 자료와 검사 기록은 그대로 있으며, 다시 보려면 위의 보기(구역 자료 준비에서 확인)를 따르세요.
+          </p>
+          {transitional && (
+            <p className="mt-1 text-[12.5px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
+          )}
+        </section>;
+      }
       return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
         <p className="text-[13px] font-bold">표시용 파생물이 아직 준비되지 않았습니다</p>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
           {observationCount > 0
             ? `확인된 관측은 ${observationCount}건입니다. `
             : "확인된 관측이 없습니다. "}
-          준비 상태와 다음 확인은 위의 보기 안내를 따릅니다.
+          {recoveryHint ?? "준비 상태와 다음 확인은 위의 보기 안내를 따릅니다."}
         </p>
         <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
           {lines.length > 0 ? lines.join(" ") : "언제 준비되는지는 담당자에게 확인하세요."}
@@ -684,13 +709,29 @@ export function SiteWorkspaceShell({
     && catalogStatus === null
     && viewerJobsState !== "not-requested"
     && (exploreLayers.length > 0 || viewerJobsState === "ready");
-  const entryRecoveryCompact = viewerRendered
-    && ordinaryEntry.status === "no-server-default"
-    && ordinaryEntry.reason === "NO_VIEW_AVAILABLE_OBSERVATION";
-
   // 같은 사유 회복은 하나로 모은다 — 준비 기록 조회 실패·읽기 권한 없음은
   // 두 칸에 똑같이 걸리므로 칸마다 단추를 두지 않는다. 서로 다른 칸 실패
   // (바이트 수신 실패 등)는 각자 정직하게 둔다.
+  const entryNoView = ordinaryEntry.status === "no-server-default"
+    && ordinaryEntry.reason === "NO_VIEW_AVAILABLE_OBSERVATION";
+  // 같은 관측의 표시 층이 모두 보관 만료로 확인되면 만료 사실을 말한다.
+  // 프로젝션의 표시 불가와 준비 기록의 보존 만료는 다른 사실이므로, 알려진
+  // 만료가 아니면 만료를 단정하지 않고 준비 중·미확인으로 두지 않는다.
+  // 읽을 수 있는 창이 하나라도 있으면 픽셀이 보일 수 있어 패널을 줄이지 않는다.
+  const exploreExpiredKnown = viewerRendered
+    && viewerJobsState === "ready"
+    && exploreLayers.length > 0
+    && exploreLayers.every((layer) => isKnownExpiredAsset(jobs, layer.assetRef));
+  const exploreBlockedKnown = viewerRendered
+    && (viewerJobsState === "denied" || viewerJobsState === "unavailable");
+  const entryRecoveryCompact = entryNoView && (exploreBlockedKnown || exploreExpiredKnown);
+  const recoveryPointer = !entryRecoveryCompact
+    ? null
+    : exploreExpiredKnown
+      ? "위의 보기(구역 자료 준비에서 확인)를 따릅니다"
+      : viewerJobsState === "denied"
+        ? "위의 보기 안내(준비 기록 조회 권한 요청)를 따릅니다"
+        : "위의 보기 안내(다시 불러오기)를 따릅니다";
   const pairJobsBlocked = viewerJobsState === "denied" || viewerJobsState === "unavailable" || !viewerCanRead;
   const baselineFact = comparison.status === "ready" ? comparison.baseline : null;
   const currentFact = comparison.status === "ready" ? comparison.current : null;
@@ -793,30 +834,6 @@ export function SiteWorkspaceShell({
     </div>
   );
   const selectedCatalog = mode === "explore" ? catalogAssets.find((item) => item.assetRef === selectedAssetRef) ?? null : null;
-  // 관측 둘러보기 띠 — 같은 구역 관측을 서버 목록 순서대로 한 줄로 둔다.
-  // 시간 순서·최신을 단정하지 않으며, 각 칩은 그 관측의 탐색 보기로만 간다.
-  // 현재 A·B·기준·비교로 고른 관측은 표식으로 밝힌다.
-  const stripFacts = selected && areasKnown && mode === "compare"
-    ? representativeFacts(facts, selected.workAreaId)
-    : [];
-  const stripEpochRole = (epochId: string): string | null => {
-    if (visualAFact?.observationEpochId === epochId) return "A";
-    if (visualBFact?.observationEpochId === epochId) return "B";
-    if (baselineFact?.observationEpochId === epochId) return "기준";
-    if (currentFact?.observationEpochId === epochId) return "비교";
-    return null;
-  };
-  const stripStatusLine = (fact: WorkspaceObservationFact): string => {
-    if (!fact.viewAvailable) {
-      if (fact.viewUnavailableReason === "NO_DISPLAY_READY_VERSION") return "표시용 출력 봉인 전";
-      if (fact.viewUnavailableReason === "DISPLAY_NOT_CONFIGURED") return "표시 미설정";
-      return "표시 준비 중";
-    }
-    const precision = observationPrecisionOf(fact);
-    if (precision === "date-only") return "날짜만 확인";
-    if (precision === "unknown") return "시점 미상";
-    return `등록 버전 ${fact.revision}`;
-  };
   const compareProps = {
     sitePath, areas, selectedWorkAreaId, catalogAssets,
     projectionState: projectionState === "not-requested" ? "unavailable" as const : projectionState,
@@ -1086,6 +1103,8 @@ export function SiteWorkspaceShell({
             canCreateWorkOrder={canCreateWorkOrder}
             transitional={transitionalSelection}
             compactRecovery={entryRecoveryCompact}
+            expiredKnown={exploreExpiredKnown}
+            recoveryHint={recoveryPointer}
           />
         )}
       </section>
@@ -1094,35 +1113,20 @@ export function SiteWorkspaceShell({
     {mode === "compare" && (
       <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
-        {areasKnown && selected && stripFacts.length > 0 && (
-          <nav aria-label="관측 둘러보기" className="shrink-0 rounded-lg border border-line bg-surface px-3 py-2">
-            <p className="text-[11.5px] text-ink-muted">관측 {stripFacts.length}건 · 목록 순서{workspaceHasMore ? " · 조회된 목록 기준" : ""}</p>
-            <ul className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto pb-1">
-              {stripFacts.map((fact) => {
-                const role = stripEpochRole(fact.observationEpochId);
-                const ref = fact.viewAssetRef ?? fact.assetRef;
-                return (
-                  <li key={fact.observationEpochId} className="shrink-0">
-                    <Link
-                      href={`${sitePath}?workAreaId=${encodeURIComponent(selected!.workAreaId)}&assetRef=${encodeURIComponent(ref)}`}
-                      aria-current={role ? "true" : undefined}
-                      title={`${entryCaptureLine(fact)} · ${stripStatusLine(fact)}`}
-                      className={`tap-target inline-flex max-w-56 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[12px] ${role ? "border-line-strong bg-sunk font-bold" : "border-line text-ink-2"}`}
-                    >
-                      {role && <span aria-hidden="true" className="shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold">{role}</span>}
-                      <span className="truncate">{entryCaptureLine(fact)}</span>
-                      <span className="shrink-0 text-[11px] text-ink-muted">{stripStatusLine(fact)}</span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </nav>
-        )}
         {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
           <>
             <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted max-sm:text-[11px] max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
+            {(comparisonReady || visualReady) && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {sharedOrderedRecovery || sharedVisualRecovery || jobsSharedBar ? (
+                  <Link href={scopedCompareHref} className="btn w-fit">이 쌍으로 분석 조건 확인</Link>
+                ) : (
+                  <Link href={scopedCompareHref} className="btn btn-primary w-fit">이 쌍으로 분석 조건 확인</Link>
+                )}
+                <span className="text-[11.5px] leading-5 text-ink-muted">수치 계산이 필요할 때만 씁니다. 위 기록은 바뀌지 않으며, 요청하지 않으면 아무 계산도 시작하지 않습니다.</span>
+              </div>
+            )}
             {comparisonReady && (
               <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("1",
@@ -1146,7 +1150,6 @@ export function SiteWorkspaceShell({
             )}
             {sharedVisualRecovery}
             {jobsSharedBar}
-            {visualReady && <p><Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link></p>}
           </>
         )}
         {areasKnown && selected && !comparisonReady && !visualReady && catalogStatus === null && (visualOptions.length >= 2 || compareOptions.length >= 2) && (

@@ -803,8 +803,33 @@ describe("materials visual browsing", () => {
     expect(href).toContain(`workAreaId=area-1`);
     expect(href).toContain(`visualAAssetRef=${assetRef}`);
     expect(href).toContain(`visualBAssetRef=${secondRef}`);
+    // 다리는 쌍별 위치 기준 안내보다 먼저 두며, 만료 회복이 1차일 때는
+    // 조용한 동작으로 둔다(회복 CTA와 1차를 다투지 않는다).
+    expect(bridge![0]).not.toContain("btn-primary");
+    expect(html.indexOf("작업공간에서 비교")).toBeLessThan(html.indexOf("두 칸은 같은 위치 기준"));
+    // 다리는 차단 회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
+    expect(html.indexOf("작업공간에서 비교")).toBeLessThan(html.indexOf("준비 기록을 조회할 권한이 없습니다"));
     // 기존 자료 비교 표시는 그대로 둔다 — 옛 주소·필터·권리가 깨지지 않는다.
     expect(html).toContain("선택한 두 자료 미리보기");
+  });
+
+  it("keeps the bridge primary when both sides are readable", async () => {
+    pairCatalog();
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_READ"] } });
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", nextCursor: null, hasMore: false,
+      items: [assetRef, secondRef].map((ref, index) => ({
+        jobId: `sdj-v1-00000000-0000-4000-8000-00000000002${index + 1}`,
+        assetRef: ref, siteId: "site-1", workAreaId: "area-1",
+        createdAt: "2026-09-30T03:00:00Z", executionState: "COMPLETED", availability: "AVAILABLE",
+        receipt: null,
+      })),
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
+    const bridge = html.match(/<a[^>]*href="([^"]*mode=compare[^"]*)"[^>]*>작업공간에서 비교<\/a>/);
+    expect(bridge).toBeTruthy();
+    expect(bridge![0]).toContain("btn-primary");
+    expect(html).not.toContain("미리보기 보관 기간이 끝났습니다");
   });
 
   it("keeps a single view and an explicit notice when B is malformed", async () => {

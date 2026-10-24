@@ -5,3 +5,8 @@ export const SESSION_COOKIE_NAME = "ksi_session_token";
 // proxy.ts 가 매 요청에 실어 보내는 현재 경로 — TopBar 가 usePathname 없이
 // "지금 /login 화면인가"를 판별하는 데 쓴다(무효 세션 탈출구 문구 중복 방지).
 export const PATHNAME_HEADER = "x-pathname";
+
+// 같은 요청의 복귀 주소(경로+쿼리) — 만료·거부 시 "다시 로그인"이 원래 화면으로
+// 돌아오기 위해 쓴다. 쿼리까지 싣는 이유는 비교 쌍·선택 맥락을 잃지 않기
+// 위해서다. 사용처는 반드시 safeNextPath 로 살균한다(외부·비정상 복귀 차단).
+export const RETURN_TO_HEADER = "x-return-to";
