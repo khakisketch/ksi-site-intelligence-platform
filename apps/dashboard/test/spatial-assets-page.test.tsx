@@ -789,6 +789,24 @@ describe("materials visual browsing", () => {
     expect(html).not.toContain("목록 첫 자료");
   });
 
+  it("leads the chosen pair to the canonical workspace compare with exact refs", async () => {
+    pairCatalog();
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
+    // 자료 맥락의 쌍 선택은 작업공간 비교로 이어진다 — 같은 구역·같은 두
+    // 참조를 싣고, 분석 조건 확인·기록 연결은 작업공간에서 잇는다.
+    expect(html).toContain("작업공간에서 비교");
+    expect(html).toContain("분석 조건 확인과 기록 연결은 작업공간에서 이어집니다");
+    const bridge = html.match(/<a[^>]*href="([^"]*mode=compare[^"]*)"[^>]*>작업공간에서 비교<\/a>/);
+    expect(bridge).toBeTruthy();
+    const href = bridge![1]!.replace(/&amp;/g, "&");
+    expect(href).toContain(`/sites/site-1?mode=compare`);
+    expect(href).toContain(`workAreaId=area-1`);
+    expect(href).toContain(`visualAAssetRef=${assetRef}`);
+    expect(href).toContain(`visualBAssetRef=${secondRef}`);
+    // 기존 자료 비교 표시는 그대로 둔다 — 옛 주소·필터·권리가 깨지지 않는다.
+    expect(html).toContain("선택한 두 자료 미리보기");
+  });
+
   it("keeps a single view and an explicit notice when B is malformed", async () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: "broken" }));

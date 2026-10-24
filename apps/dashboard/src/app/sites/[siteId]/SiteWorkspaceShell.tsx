@@ -77,6 +77,7 @@ function SiteWorkspaceEntryPanel({
   facts,
   canCreateWorkOrder,
   transitional,
+  compactRecovery = false,
 }: {
   sitePath: string;
   workAreaId: string | null;
@@ -86,6 +87,12 @@ function SiteWorkspaceEntryPanel({
   canCreateWorkOrder: boolean;
   /** 서버 기본이 없어 전이 선택을 보여줄 때 true — 기본인 척하지 않는다. */
   transitional: boolean;
+  /**
+   * 무대 보기가 이미 같은 사유의 회복 안내와 다음 행동을 둬서 진입 패널이
+   * 준비 길을 반복하지 않을 때 true — 상태·원인 한 줄만 둔다. 이동 길은
+   * 무대의 회복 단추와 정보 서랍이 맡는다.
+   */
+  compactRecovery?: boolean;
 }) {
   if (projectionState === "denied") {
     return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
@@ -142,6 +149,23 @@ function SiteWorkspaceEntryPanel({
     const reasons = [...new Set(scopeFacts.map((item) => item.viewUnavailableReason))];
     const lines = reasons.map(viewReasonLine).filter((line): line is string => line !== null);
     const observationCount = new Set(scopeFacts.map((item) => item.observationEpochId)).size;
+    if (compactRecovery) {
+      return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
+        <p className="text-[13px] font-bold">표시용 파생물이 아직 준비되지 않았습니다</p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          {observationCount > 0
+            ? `확인된 관측은 ${observationCount}건입니다. `
+            : "확인된 관측이 없습니다. "}
+          준비 상태와 다음 확인은 위의 보기 안내를 따릅니다.
+        </p>
+        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+          {lines.length > 0 ? lines.join(" ") : "언제 준비되는지는 담당자에게 확인하세요."}
+        </p>
+        {transitional && (
+          <p className="mt-1 text-[12.5px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
+        )}
+      </section>;
+    }
     return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">
       <p className="text-[13px] font-bold">표시용 파생물이 아직 준비되지 않았습니다</p>
       <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
@@ -652,6 +676,17 @@ export function SiteWorkspaceShell({
         : "등록 자료 목록을 불러오지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다."}
     </p>
   ) : null;
+  // 무대 보기가 같은 사유의 회복 안내를 이미 두면 진입 패널은 준비 길을
+  // 반복하지 않는다 — 상태·원인 한 줄만 둔다. 이동 길은 무대의 회복 단추와
+  // 정보 서랍이 맡는다. 위 무대 분기와 같은 조건을 쓴다.
+  const viewerRendered = selected !== null
+    && !exploreIsEmpty
+    && catalogStatus === null
+    && viewerJobsState !== "not-requested"
+    && (exploreLayers.length > 0 || viewerJobsState === "ready");
+  const entryRecoveryCompact = viewerRendered
+    && ordinaryEntry.status === "no-server-default"
+    && ordinaryEntry.reason === "NO_VIEW_AVAILABLE_OBSERVATION";
 
   // 같은 사유 회복은 하나로 모은다 — 준비 기록 조회 실패·읽기 권한 없음은
   // 두 칸에 똑같이 걸리므로 칸마다 단추를 두지 않는다. 서로 다른 칸 실패
@@ -758,6 +793,30 @@ export function SiteWorkspaceShell({
     </div>
   );
   const selectedCatalog = mode === "explore" ? catalogAssets.find((item) => item.assetRef === selectedAssetRef) ?? null : null;
+  // 관측 둘러보기 띠 — 같은 구역 관측을 서버 목록 순서대로 한 줄로 둔다.
+  // 시간 순서·최신을 단정하지 않으며, 각 칩은 그 관측의 탐색 보기로만 간다.
+  // 현재 A·B·기준·비교로 고른 관측은 표식으로 밝힌다.
+  const stripFacts = selected && areasKnown && mode === "compare"
+    ? representativeFacts(facts, selected.workAreaId)
+    : [];
+  const stripEpochRole = (epochId: string): string | null => {
+    if (visualAFact?.observationEpochId === epochId) return "A";
+    if (visualBFact?.observationEpochId === epochId) return "B";
+    if (baselineFact?.observationEpochId === epochId) return "기준";
+    if (currentFact?.observationEpochId === epochId) return "비교";
+    return null;
+  };
+  const stripStatusLine = (fact: WorkspaceObservationFact): string => {
+    if (!fact.viewAvailable) {
+      if (fact.viewUnavailableReason === "NO_DISPLAY_READY_VERSION") return "표시용 출력 봉인 전";
+      if (fact.viewUnavailableReason === "DISPLAY_NOT_CONFIGURED") return "표시 미설정";
+      return "표시 준비 중";
+    }
+    const precision = observationPrecisionOf(fact);
+    if (precision === "date-only") return "날짜만 확인";
+    if (precision === "unknown") return "시점 미상";
+    return `등록 버전 ${fact.revision}`;
+  };
   const compareProps = {
     sitePath, areas, selectedWorkAreaId, catalogAssets,
     projectionState: projectionState === "not-requested" ? "unavailable" as const : projectionState,
@@ -981,7 +1040,7 @@ export function SiteWorkspaceShell({
           </div>
         )}
         {catalogStatus}
-        {!exploreIsEmpty && catalogStatus === null && selected && viewerJobsState !== "not-requested" && (exploreLayers.length > 0 || viewerJobsState === "ready") ? (
+        {viewerRendered ? (
           <div data-workbench-pane className="min-w-0">
             <SiteWindowedPixelViewer
               siteId={facts.siteId}
@@ -1026,6 +1085,7 @@ export function SiteWorkspaceShell({
             facts={facts}
             canCreateWorkOrder={canCreateWorkOrder}
             transitional={transitionalSelection}
+            compactRecovery={entryRecoveryCompact}
           />
         )}
       </section>
@@ -1034,12 +1094,37 @@ export function SiteWorkspaceShell({
     {mode === "compare" && (
       <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
+        {areasKnown && selected && stripFacts.length > 0 && (
+          <nav aria-label="관측 둘러보기" className="shrink-0 rounded-lg border border-line bg-surface px-3 py-2">
+            <p className="text-[11.5px] text-ink-muted">관측 {stripFacts.length}건 · 목록 순서{workspaceHasMore ? " · 조회된 목록 기준" : ""}</p>
+            <ul className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto pb-1">
+              {stripFacts.map((fact) => {
+                const role = stripEpochRole(fact.observationEpochId);
+                const ref = fact.viewAssetRef ?? fact.assetRef;
+                return (
+                  <li key={fact.observationEpochId} className="shrink-0">
+                    <Link
+                      href={`${sitePath}?workAreaId=${encodeURIComponent(selected!.workAreaId)}&assetRef=${encodeURIComponent(ref)}`}
+                      aria-current={role ? "true" : undefined}
+                      title={`${entryCaptureLine(fact)} · ${stripStatusLine(fact)}`}
+                      className={`tap-target inline-flex max-w-56 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[12px] ${role ? "border-line-strong bg-sunk font-bold" : "border-line text-ink-2"}`}
+                    >
+                      {role && <span aria-hidden="true" className="shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold">{role}</span>}
+                      <span className="truncate">{entryCaptureLine(fact)}</span>
+                      <span className="shrink-0 text-[11px] text-ink-muted">{stripStatusLine(fact)}</span>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
+        )}
         {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
           <>
             <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted max-sm:text-[11px] max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
             {comparisonReady && (
-              <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("1",
                   pairSideSelect("baselineAssetRef", "기준 자료", baselineFact!.assetRef, compareOptions, "기준 자료 선택"),
                   baselineFact!, viewerLayersForEpoch(catalogAssets, baselineFact!.observationEpochId), "windowed-baseline", "baselineAssetRef", sharedOrderedRecovery ?? jobsSharedBar)}
@@ -1050,7 +1135,7 @@ export function SiteWorkspaceShell({
             )}
             {sharedOrderedRecovery}
             {visualReady && (
-              <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("A",
                   pairSideSelect("visualAAssetRef", "관측 A", visualAFact!.assetRef, visualOptions, "관측 A 선택"),
                   visualAFact!, visualLayersForExactSubmission(catalogAssets, visualAFact!), "windowed-visual-a", "visualAAssetRef", sharedVisualRecovery ?? jobsSharedBar)}
@@ -1065,7 +1150,7 @@ export function SiteWorkspaceShell({
           </>
         )}
         {areasKnown && selected && !comparisonReady && !visualReady && catalogStatus === null && (visualOptions.length >= 2 || compareOptions.length >= 2) && (
-          <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
+          <div className="grid min-w-0 grid-cols-1 gap-2 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
             {visualOptions.length >= 2 ? (
               <>
                 {pairPromptPane("A",

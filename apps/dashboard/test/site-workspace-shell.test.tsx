@@ -351,17 +351,57 @@ describe("workspace shell structure", () => {
     }));
     mocked.assets.mockResolvedValue({ ...EMPTY_CATALOG, assets: [rasterAsset("asset-1")] });
     await renderOverview({});
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    // 무대 보기가 회복 안내를 먼저 둔다 — 진입 패널은 같은 준비 길을 반복하지
+    // 않고 상태·원인만 둔다. 읽기 권한이 없어도 무대 회복이 1차 안내다.
+    expect(within(stage).getByText("준비 기록을 조회할 권한이 없습니다.")).toBeTruthy();
     const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
     // "자료가 없다"가 아니라 "표시용 파생물이 아직 없다"로 구분한다 — 확인된
     // 관측이 있는 현장인데도 없는 것처럼 읽히면 안 된다.
     expect(panel.textContent).toContain("표시용 파생물이 아직 준비되지 않았습니다");
     expect(panel.textContent).toContain("확인된 관측은 1건입니다");
-    expect(panel.textContent).toContain("구역 자료 준비에서 직접 요청하세요");
     expect(panel.textContent).toContain("표시용 출력의 봉인이 끝나지 않았습니다");
     expect(panel.textContent).toContain("서버가 정한 기본 관측이 아닙니다");
+    expect(panel.textContent).not.toContain("구역 자료 준비에서 직접 요청하세요");
+    expect(within(panel).queryByRole("link", { name: "자료 목록 보기" })).toBeNull();
+    expect(within(panel).queryByRole("link", { name: "구역 자료 준비" })).toBeNull();
     expect(screen.queryByText(/최신/)).toBeNull();
     // 자료가 있는 현장에서 "관측이 없습니다"로 읽히면 안 된다.
     expect(panel.textContent).not.toContain("관측이 없습니다");
+  });
+
+  it("keeps one recovery in the stage when the viewer already carries it", async () => {
+    mocked.permissions.mockResolvedValue(true);
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["v1"], {
+        viewAvailable: false,
+        viewUnavailableReason: "NO_DISPLAY_READY_VERSION",
+        viewAssetRef: null,
+        versions: [wireVersion("v1")],
+      })],
+      entryDefault: {
+        observationEpochId: null,
+        viewAssetRef: null,
+        reason: "NO_VIEW_AVAILABLE_OBSERVATION",
+        detail: "Observations exist but none has a display-ready version.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [{ ...rasterAsset("v1"), observationEpochId: "epoch-2021" }],
+    });
+    await renderOverview({ assetRef: "v1" });
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    // 무대 보기가 회복 안내를 먼저 둔다 — 같은 준비 길을 진입 패널이 반복하지 않는다.
+    expect(within(stage).getByText("준비 기록을 불러오지 못했습니다.")).toBeTruthy();
+    const panel = screen.getByRole("region", { name: "기본 관측 선택 상태" });
+    expect(panel.textContent).toContain("표시용 파생물이 아직 준비되지 않았습니다");
+    expect(panel.textContent).toContain("확인된 관측은 1건입니다");
+    expect(panel.textContent).toContain("표시용 출력의 봉인이 끝나지 않았습니다");
+    expect(panel.textContent).not.toContain("구역 자료 준비에서 직접 요청하세요");
+    expect(within(panel).queryByRole("link", { name: "자료 목록 보기" })).toBeNull();
+    expect(within(panel).queryByRole("link", { name: "구역 자료 준비" })).toBeNull();
   });
 
   it("shows registration guidance only for real absence", async () => {
@@ -590,6 +630,64 @@ describe("workspace compare mode", () => {
     mocked.workspace.mockResolvedValue(readyProjection());
     await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-1" });
     expect(screen.getByRole("alert").textContent).toContain("요청한 비교 대상을 확인할 수 없습니다");
+  });
+
+  it("shows the observation strip in server order with honest status and no latest claim", async () => {
+    mocked.workspace.mockResolvedValue(readyProjection());
+    await renderOverview({ mode: "compare" });
+    const strip = screen.getByRole("navigation", { name: "관측 둘러보기" });
+    expect(within(strip).getByText(/관측 2건 · 목록 순서/)).toBeTruthy();
+    const chips = within(strip).getAllByRole("link");
+    expect(chips).toHaveLength(2);
+    // 서버 목록 순서 그대로 — 날짜 재정열·최신 단언 없음.
+    expect(chips[0]!.textContent).toContain("등록 버전 1");
+    expect(chips[1]!.textContent).toContain("날짜만 확인");
+    expect(chips[0]!.getAttribute("href")).toBe("/sites/site-1?workAreaId=tiny-1&assetRef=exact-1");
+    expect(chips[1]!.getAttribute("href")).toContain("/sites/site-1?workAreaId=tiny-1&assetRef=");
+    expect(within(strip).queryByText(/최신/)).toBeNull();
+    // 고르기 전에는 A·B 표식이 없다.
+    expect(within(strip).queryByText("A")).toBeNull();
+    expect(within(strip).queryByText("B")).toBeNull();
+  });
+
+  it("marks the chosen pair on the strip and stacks panes on narrow screens", async () => {    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [
+        wireObservation("epoch-2021", ["exact-1"], {
+          capture: wireCapture(),
+          versions: [wireVersion("exact-1", { displayReady: true, displayState: "SEALED" })],
+        }),
+        wireObservation("epoch-2022", ["exact-2"], {
+          capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+          versions: [wireVersion("exact-2", {
+            capture: wireCapture({ captureStartedAt: "2022-08-24T10:00:00Z", captureEndedAt: "2022-08-24T11:00:00Z" }),
+            displayReady: true,
+            displayState: "SEALED",
+          })],
+        }),
+      ],
+      entryDefault: {
+        observationEpochId: "epoch-2022",
+        viewAssetRef: "exact-2",
+        reason: "LATEST_EXACT_VIEW_AVAILABLE",
+        detail: "Latest view-available observation by exact capture interval.",
+        tiedObservationEpochIds: [],
+      },
+    }));
+    await renderOverview({ mode: "compare", baselineAssetRef: "exact-1", currentAssetRef: "exact-2" });
+    const strip = screen.getByRole("navigation", { name: "관측 둘러보기" });
+    const marked = within(strip).getAllByRole("link", { current: true });
+    expect(marked.map((link) => link.textContent)).toEqual([
+      expect.stringContaining("기준"),
+      expect.stringContaining("비교"),
+    ]);
+    // 좁은 화면에서는 칸을 세로로 쌓는다 — 390px에서 선택지가 잘리지 않는다.
+    const panes = screen.getAllByLabelText("기준 자료 관측 선택");
+    expect(panes).toHaveLength(1);
+    const pane = panes[0]!.closest("[data-workbench-pane]");
+    expect(pane).toBeTruthy();
+    const grid = pane!.parentElement!;
+    expect(grid.className).toContain("grid-cols-1");
+    expect(grid.className).toContain("md:grid-cols-2");
   });
 });
 
