@@ -153,7 +153,6 @@ export function SiteHeader({
         >
           현장
         </Link>
-        <span aria-hidden="true" className="max-sm:hidden shrink-0 text-line-strong">/</span>
 
         {/* 앱 셸의 sr-only h1이 현재 위치를 유일하게 소유한다. 여기 대상명은
             그 하위 맥락이므로 h2다 — 같은 상세 화면에서 h1이 두 번 읽히지 않게 한다.
