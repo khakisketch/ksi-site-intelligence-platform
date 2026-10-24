@@ -7396,3 +7396,48 @@ transient1MiB acceptance still UNVERIFIED. Historical F-03/Task5a/5c completion 
 No further actionable UI task is established from this verification, and no new style iteration or
 backend detour is selected. Those genuine data/resource boundaries prevent whole-photo-recovery
 or platform/customer/operations completion claims; they do not prevent delivering this UI result.
+
+## Core audit working-set activation (2026-10-24, Human "활성화 진행")
+
+Human approved activation of the merged indexed-history audit working set (candidate 6ba3612a,
+merged 1c18b047). This is the bounded live activation that the preceding paragraph left open; it
+does not reopen acquisition/customer-production scope and creates no new preparation, TTL, grant,
+S3, cap or deletion.
+
+- Exact binding: owner-only `~/.local/state/ksi-audit-20261024/audit-working-set/spatial-data-audit-working-set.v1.json`
+  (0700 dir / 0600 file), schema `spatial-data-audit-working-set.v1`, sealed policy digest
+  `sha256:6837f65fdb78d9ce6df440cb31b36e215a68dcbf93978ab97a9812132d218e2d`, journal
+  `spatial-data-audit.jsonl`, scope `download-only`, activation `audit-ws-prod-20261024`, session
+  cap 512, index 8MiB, cache 128KiB, boot scan 64MiB, boot 180s, tail 4096 records / 16MiB.
+  Config digest `sha256:eb9d58e01067c5411f9e0243ec540959574f6294d728b34dbcea97cc426ba9ba`.
+  Opt-in added to the preserved environment as `KSI_CORE_AUDIT_WORKING_SET_CONFIG` (63 entries,
+  0600 preserved); no other environment value changed.
+- Pre-activation dry run on a byte-identical private journal copy rebuilt the index in 43.25s
+  (618,496B, under the 8MiB budget) and left the copy's SHA-256 unchanged.
+- Live activation: `ksi-core-8074` restarted 2026-10-24 19:04 KST; `/ready` in 47s. Production
+  index `core-data/spatial-data-audit.ws.sqlite3` = 618,496B / 0600, meta activation/config/policy
+  digests match, 1,531 events across 512 sessions, `max_seq=1531`, `journal_end_offset=1011301`.
+  Authoritative journal unchanged: SHA-256 `9ad12fa1f11ec4ef81138c2af6de7335983087e79e473067b70c4d823f2bf36e`,
+  1,011,301 bytes, 1,531 lines, mtime unchanged. No record was deleted, restored, truncated or
+  rewritten.
+- Warm restart: `/ready` in 3s; the index was reused, not rebuilt (size and row counts unchanged;
+  only the derived activation-trace timestamp refreshed). Service active, zero error lines. The
+  single expected warning records that the cleanup loop is not started under the working set, so no
+  deletion loop runs while active.
+- Read-only proof of retained history: a terminal session's three index addresses were sought in
+  the authoritative journal and parsed back with matching `eventId`/record type. Real UI request
+  history (12 items) shows `완료 / 보관 기한 만료 / RETENTION_EXPIRED`; no 503 resource-limit error
+  appeared. No new PREPARE was created.
+- Honest limits: live new-download admission and actual resolution of the earlier 503 cannot be
+  demonstrated without a new PREPARE and readable output; all real outputs remain retention-expired.
+  Foreign-principal live file denial was not re-executed (covered by contract tests). Recovered
+  pixels, quantitative accuracy, customer/operations acceptance and the calculable-pair/two-cycle
+  gate remain separate and unverified.
+- Receipt/evidence: `~/.local/state/ksi-audit-20261024/audit-working-set-activation-receipt.json`,
+  `activation-baseline.json`, `activation-live-requests.png`. Rollback: remove
+  `KSI_CORE_AUDIT_WORKING_SET_CONFIG` from `~/.cache/ksi-product-console-20261021/core-durable-env.bin`
+  and restart `ksi-core-8074`; the journal is untouched and the derived index is ignored without
+  the opt-in.
+- This section supersedes only the preceding paragraph's current-state statements that candidate
+  6ba3612a is "isolated/unapplied" and the 1MiB acceptance is "UNVERIFIED"; the historical record
+  of those gates and their evidence is retained above.
