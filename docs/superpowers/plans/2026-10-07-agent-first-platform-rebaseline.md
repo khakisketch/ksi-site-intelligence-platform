@@ -7322,3 +7322,77 @@ ReqIDs same Human actual-photo restoration; owner Dashboard preview BFF/pure lim
 files preview/route.ts, site-preview.ts and route tests; noAPI/schema/license/HIL change. Tests cover
 page2validjob with exactlink, multi-area fairness, repeatedcursor/failure/oversizedpage, sameglobal
 budget+unknown at exhaustion, explicit requester/scopedjob filtering. Rollback source-only.
+
+
+#### Human-rejected appearance reopened — stage-first UI shipped (2026-10-24)
+
+The latest Human rejection and explicit request to use multiple agents superseded the previous
+UI acceptance, not the data/safety contracts. Implementer, independent UI critic and functional
+reviewer were separated. Scout access was denied in its own session, so its fallback screenshot
+analysis was not live interaction proof. Primary inspected the original captures and exercised
+product runtimes; reviews informed corrections, not an agent-count vote. Original source/context,
+first rejected candidate, corrected images and reviewer findings remain in
+`/tmp/opencode/ksi-visual-reopening-20261024/` and the append-only reference review
+`docs/design/SPATIAL_WORKBENCH_REFERENCE_REVIEW_2026-10-23.md`.
+
+Requirement IDs: current Human visual registration/browse/compare/results goal;
+SDP-REQ-01/02/03/05/06, INV020/040/051/053/060/061. Owner Dashboard presentation/navigation.
+No schema/API/data/auth/analysis authority change, new source asset, map vendor, dependency or
+quantitative claim. Default non-workbench callers, canonical three site URLs, legacy mode=results,
+precision/partial/NoData, mixed independent layers/cameras, exact frozen results and rights remain.
+Core/services/packages/contracts source in main stays unchanged. Rollback preserves original UI
+image/config; no HIL/physical-device/operational or customer acceptance is inferred.
+
+Stage-first selection is now beside each view, with full narrow-screen dates/unknown-time
+qualifiers; no pair-apply form wall. Supporting range/grid/queue/preparation evidence and large
+extent geometry moved to Info. Both-known-expired panes share one honest recovery without hiding
+unique per-pane errors. A parent-found ANY-expired false-positive was corrected to >=1 known job
+AND all known jobs expired; old expired+new readable/pending/unknown never suppresses the viewer.
+The functional reviewer found an A/B hidden-sibling crosswire and primary reproduced it before
+correction. Final actual A-only/B-only GETs preserve the other side. Header Results preserves browse
+A/B but adds no request hints/hash; explicit request still has all6 hints/#new-analysis-request.
+Saved record summary precedes form; immutable input labels derive from the record's exact
+selectors, never the browse pair. Read-only file retry recovers in the isolated fixture.
+
+True-empty registration duplication was fixed in the product, not by weakening strict locators.
+A newly added E2E known-empty analysis expectation was wrong: observed lookup failure stays unknown,
+with explicit absence of a false empty claim; its external cause was not established. The relocated
+Info overview's desktop3-column viewport breakpoint clipped a352px drawer; optional compact
+presentation stacks it. Final1440/390 Info clientWidth/scrollWidth338px and visible action bounds
+fit; actual images were inspected. Focus, camera/rect/scroll/URL stable after Info/catalog overlays.
+
+Code commit8d811912dcddca9390da080af4f2408a210b1bcf deployed frontend-only as
+`ksi-product-dashboard:stage-first-final-20261024`,
+`sha256:0a1e2727173f236acaf0400f1490253aa626711b4a3a4abc927f14e56217128c`.
+Original config/security topology retained, rollback container
+`ksi-product-console-pre-stagefirst-final-20261024` retained. Actual Core919034 remains the same
+22Oct process; no apply/restart, audit delete/restore/truncate, cap increase, PREPARE, TTL, grant,
+S3 or shared private configuration changes. No push performed.
+
+Verification:206files/2081unit, types, lint0errors/1existing evidence warning, production image
+build pass. Existing4E2Es97pass/16conditional skips/3Home golden failures. All4workspace viewport
+cases pass. The3received Home PNGs are pixel/SHA-identical to earlier/pre-existing versions;
+goldens/thresholds/retries/skips were not relaxed. Actual OIDC1440/390 captures of workspace,
+compare, materials, results and explicit example show no horizontal overflow/axe WCAG2A/AA
+violation in those10states. Actual result→same-pair return, both direct selection directions,
+Info geometry/focus, explicit request hint/hash, example keyboard+mouse slider50→61 and
+side-by-side2images executed. Physical touch, screen reader and full no-JS remain unverified.
+
+Evidence: `deploy-final.json`, `final-image.json`, `final-info.log`, `final-overlays.log`,
+`official-e2e-integrated.log`, `home-integrated-comparison.json`, `live-final-captures.json`,
+`live-final-interactions.log`, `live-final-selections.log`, `live-final-explicit-info.log`,
+`live-final-example-confirm.log`. Failed harness locators (example mode is a button, not a link)
+remain separately recorded; corrected inputs, not selector errors, establish final behavior.
+`actual-before-after.png` compares the same actual expired records before/after. Ready/mixed/history
+pixel evidence uses licensed photo-backed TIFF test data with SYNTHETIC geometry/records, not
+actual Core files. No example bytes substitute for missing/revoked/expired product bytes.
+
+Whole-current-task reconciliation: this reopened UI unit is implemented, reviewed, integrated and
+live-verified at the stated scope. Actual photo restoration remains BLOCKED by recorded retention
+expiry (last direct GET410; current UI still expired), not proven fixed by any UI or old503 outcome.
+Real-pair swipe remains disabled without readable authorized outputs and purpose-bound display
+geometry. The separate Core audit candidate6ba3612a remains isolated/unapplied; aggregate native/
+transient1MiB acceptance still UNVERIFIED. Historical F-03/Task5a/5c completion is not reopened.
+No further actionable UI task is established from this verification, and no new style iteration or
+backend detour is selected. Those genuine data/resource boundaries prevent whole-photo-recovery
+or platform/customer/operations completion claims; they do not prevent delivering this UI result.
