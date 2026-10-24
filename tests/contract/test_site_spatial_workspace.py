@@ -13,9 +13,10 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from jsonschema import Draft202012Validator
 from ksi_core.app import create_app
@@ -28,6 +29,9 @@ from ksi_core.auth import (
 )
 from ksi_core.domains.external.ingress.external_artifact_inspections import (
     ExternalArtifactInspectionStore,
+)
+from ksi_core.domains.external.ingress.external_display_artifacts import (
+    ExternalDisplayArtifactStore,
 )
 from ksi_core.durable_journal import DurableJournal
 from ksi_core.evidence import ObjectStorageObservation
@@ -354,7 +358,12 @@ def _setup(
     kwargs: dict[str, Any] = {}
     if inspections is not None:
         kwargs["external_artifact_inspection_store"] = inspections
-        kwargs["external_display_artifact_store"] = SimpleNamespace()
+        # Placeholder satisfying the assembly-table non-None assert: the
+        # workspace projection under test reads the inspection stub only
+        # (public_display_state) and never touches display routes.
+        kwargs["external_display_artifact_store"] = cast(
+            ExternalDisplayArtifactStore, SimpleNamespace()
+        )
     app = create_app(
         auth_registry=AuthRegistry(records),
         site_store=sites,
@@ -802,9 +811,10 @@ def test_workspace_openapi_declares_route_and_schema(tmp_path: Path) -> None:
     import yaml
 
     client, order, _, _, area_a, _, _, _, _ = _setup(tmp_path)
+    app = cast(FastAPI, client.app)
     assert (
         "/v1/sites/{site_id}/work-areas/{work_area_id}/spatial-workspace-observations"
-        in client.app.openapi()["paths"]
+        in app.openapi()["paths"]
     )
     document = yaml.safe_load(
         (Path(__file__).resolve().parents[2] / "contracts/api/openapi-core.yaml").read_text()
@@ -815,7 +825,7 @@ def test_workspace_openapi_declares_route_and_schema(tmp_path: Path) -> None:
     assert path["get"]["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/SiteSpatialWorkspacePageV1"
     }
-    live = client.app.openapi()["components"]["schemas"]
+    live = app.openapi()["components"]["schemas"]
     for name in (
         "SiteSpatialWorkspacePageV1",
         "WorkspaceObservationViewV1",
@@ -885,7 +895,10 @@ def test_workspace_projection_survives_journal_replay(tmp_path: Path) -> None:
         evidence_storage=_Storage(),
         external_reconstruction_store=replayed_reconstruction,
         external_artifact_inspection_store=_DisplayStub(ready=frozenset({("exact-one", 1)})),
-        external_display_artifact_store=SimpleNamespace(),
+        # Same placeholder rationale as _setup: replay compares projections only.
+        external_display_artifact_store=cast(
+            ExternalDisplayArtifactStore, SimpleNamespace()
+        ),
     )
     again = TestClient(replayed_app).get(_root(order, area_a), headers=_headers()).json()
     assert again == before

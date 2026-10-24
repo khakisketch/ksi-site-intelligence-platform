@@ -9,24 +9,52 @@ lives in the unit handback receipts, not here.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from typing import TYPE_CHECKING, Any
 
-REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts"))
+import pytest
 
-import rehearse_operator_journey as seed  # noqa: E402
+if TYPE_CHECKING:
+    from ksi_core.domains.external.ingress.external_validation_policy import (
+        ExternalValidationPolicyV1,
+        PolicyAuthorityRecord,
+    )
+    from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
+
+_TOOL_PATH = Path(__file__).resolve().parents[2] / "scripts" / "rehearse_operator_journey.py"
+
+
+def _load_seed() -> ModuleType:
+    """Load the rehearsal script without adding ``scripts/`` to the import path.
+
+    Mirrors the ``importlib`` pattern of the neighbouring HIL tool tests so the
+    static checker resolves a real module object instead of an unresolvable
+    flat import; the executed bytes and module name are unchanged.
+    """
+    spec = importlib.util.spec_from_file_location("rehearse_operator_journey", _TOOL_PATH)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+seed = _load_seed()
 
 
 class NoAdministration:
-    def post(self, *args, **kwargs):
+    def post(self, *args: Any, **kwargs: Any) -> None:
         raise AssertionError("a reuse/refusal must never reload or administer")
 
 
-def _finish_fixture(tmp_path):
+def _finish_fixture(
+    tmp_path: Path,
+) -> tuple[
+    SimpleNamespace, tuple[SealedExternalSubjectV1, SealedExternalSubjectV1], dict[str, Any], datetime
+]:
     subjects = (
         _test_subject("obs-work-1", "syn-demo-t0-submission", "ab"),
         _test_subject("obs-work-2", "syn-demo-t1-submission", "cd"),
@@ -54,7 +82,9 @@ def _finish_fixture(tmp_path):
     return args, subjects, template, now
 
 
-def test_finish_reuse_preserves_every_artifact_without_administration(tmp_path):
+def test_finish_reuse_preserves_every_artifact_without_administration(
+    tmp_path: Path,
+) -> None:
     args, subjects, template, now = _finish_fixture(tmp_path)
     before = {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*.json*")}
     assert (
@@ -66,7 +96,9 @@ def test_finish_reuse_preserves_every_artifact_without_administration(tmp_path):
     assert before == {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*.json*")}
 
 
-def test_finish_refuses_tampered_standalone_policy_mirror_without_overwrite(tmp_path, capsys):
+def test_finish_refuses_tampered_standalone_policy_mirror_without_overwrite(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     args, subjects, template, now = _finish_fixture(tmp_path)
     policy_path = args.provider_dir / "policy-v5-syn-practical.json"
     policy_path.write_text('{"mismatched":true}')
@@ -76,7 +108,9 @@ def test_finish_refuses_tampered_standalone_policy_mirror_without_overwrite(tmp_
     assert before == {p: (p.read_bytes(), p.stat().st_mtime_ns) for p in tmp_path.rglob("*.json*")}
 
 
-def test_fresh_finish_uses_provided_journal_and_never_requires_historical_v2(tmp_path):
+def test_fresh_finish_uses_provided_journal_and_never_requires_historical_v2(
+    tmp_path: Path,
+) -> None:
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -97,10 +131,10 @@ def test_fresh_finish_uses_provided_journal_and_never_requires_historical_v2(tmp
             serialization.NoEncryption(),
         )
     )
-    calls = []
+    calls: list[str] = []
 
     class FreshAdministration:
-        def post(self, path, **kwargs):
+        def post(self, path: str, **kwargs: Any) -> SimpleNamespace:
             calls.append(path)
             return SimpleNamespace(status_code=200, text="accepted fake administration")
 
@@ -113,18 +147,18 @@ def test_fresh_finish_uses_provided_journal_and_never_requires_historical_v2(tmp
     assert snapshot["previousSnapshotDigest"] == "sha256:" + "d" * 64
 
 
-def test_analysis_rehearsal_reads_v2_detail_result_not_nonexistent_result_route():
-    paths = []
+def test_analysis_rehearsal_reads_v2_detail_result_not_nonexistent_result_route() -> None:
+    paths: list[str] = []
 
     class AnalysisClient:
-        def post(self, path, **kwargs):
+        def post(self, path: str, **kwargs: Any) -> SimpleNamespace:
             return SimpleNamespace(
                 status_code=202,
                 text="queued",
                 json=lambda: {"analysisId": kwargs["headers"]["Idempotency-Key"]},
             )
 
-        def get(self, path, **kwargs):
+        def get(self, path: str, **kwargs: Any) -> SimpleNamespace:
             paths.append(path)
             return SimpleNamespace(
                 json=lambda: {
@@ -219,8 +253,6 @@ def test_core_url_accepts_only_isolated_8096() -> None:
 
 
 def test_core_url_rejects_protected_rigs() -> None:
-    import pytest
-
     for bad in (
         "http://127.0.0.1:8092",  # F03 live Core
         "http://127.0.0.1:8061",
@@ -232,8 +264,6 @@ def test_core_url_rejects_protected_rigs() -> None:
 
 
 def test_core_url_rejects_remote_and_unsafe_shapes() -> None:
-    import pytest
-
     for bad in (
         "https://127.0.0.1:8096",
         "http://192.168.1.10:8096",
@@ -249,7 +279,7 @@ def test_core_url_rejects_remote_and_unsafe_shapes() -> None:
             seed.validate_core_url(bad)
 
 
-def _area(wid, name, status="ACTIVE", polygon=None):
+def _area(wid: str, name: str, status: str = "ACTIVE", polygon: dict[str, Any] | None = None) -> dict[str, Any]:
     return {
         "workAreaId": wid,
         "name": name,
@@ -271,8 +301,6 @@ def test_decide_area_receipt_hit_reuses_without_touching_same_named() -> None:
 
 
 def test_decide_area_receipt_archived_or_unknown_fails_clearly() -> None:
-    import pytest
-
     with pytest.raises(seed.AreaAmbiguityError):
         seed.decide_area(
             [_area("wa-1", "북측 절토구역", status="ARCHIVED")],
@@ -293,8 +321,6 @@ def test_decide_area_single_match_reuses_zero_creates() -> None:
 
 
 def test_decide_area_ambiguous_same_name_different_geometry_raises() -> None:
-    import pytest
-
     existing = [
         _area("wa-a", "북측 절토구역", polygon={"type": "Polygon", "coordinates": [[[0, 0]]]}),
         _area("wa-b", "북측 절토구역", polygon={"type": "Polygon", "coordinates": [[[5, 5]]]}),
@@ -332,7 +358,8 @@ def _raster_bounds(data: bytes) -> tuple[float, float, float, float]:
     from rasterio.io import MemoryFile
 
     with MemoryFile(data) as mem, mem.open() as ds:
-        return tuple(ds.bounds)
+        left, bottom, right, top = ds.bounds
+        return (left, bottom, right, top)
 
 
 def test_north_admitted_bytes_unchanged() -> None:
@@ -371,7 +398,7 @@ def test_south_readme_matches_translated_footprint() -> None:
     }
 
 
-def _test_subject(work_order_id: str, submission_id: str, tag: str):
+def _test_subject(work_order_id: str, submission_id: str, tag: str) -> SealedExternalSubjectV1:
     from ksi_event_contracts.external_artifact_validation import SealedExternalSubjectV1
 
     return SealedExternalSubjectV1(
@@ -385,7 +412,11 @@ def _test_subject(work_order_id: str, submission_id: str, tag: str):
     )
 
 
-def _sealed_test_policy(subjects, *, body_overrides=None):
+def _sealed_test_policy(
+    subjects: tuple[SealedExternalSubjectV1, SealedExternalSubjectV1],
+    *,
+    body_overrides: dict[str, Any] | None = None,
+) -> tuple[ExternalValidationPolicyV1, PolicyAuthorityRecord, str, datetime]:
     from analysis_api_local_fixture import _envelope
     from ksi_core.domains.external.ingress.external_validation_policy import (
         PolicyAuthorityRecord,
@@ -402,7 +433,7 @@ def _sealed_test_policy(subjects, *, body_overrides=None):
 
     envelope = _envelope()
     manifest = _manifest(envelope)
-    body = {
+    body: dict[str, Any] = {
         "policy_id": "syn-practical-geotiff-v1",
         "version": 5,
         "status": PolicyStatus.ACTIVE,
@@ -438,7 +469,13 @@ def _sealed_test_policy(subjects, *, body_overrides=None):
     return policy, record, correct, now
 
 
-def _record_variant(correct, subjects, *, hours_back, days_valid):
+def _record_variant(
+    correct: str,
+    subjects: tuple[SealedExternalSubjectV1, ...],
+    *,
+    hours_back: int,
+    days_valid: int,
+) -> PolicyAuthorityRecord:
     from ksi_core.domains.external.ingress.external_validation_policy import (
         PolicyAuthorityRecord,
     )
@@ -457,7 +494,7 @@ def _record_variant(correct, subjects, *, hours_back, days_valid):
     ).sealed()
 
 
-def _admit_row(policy, record):
+def _admit_row(policy: ExternalValidationPolicyV1, record: PolicyAuthorityRecord) -> dict[str, Any]:
     return {
         "kind": "external-validation-policy-admitted",
         "policyId": policy.policy_id,
@@ -467,7 +504,15 @@ def _admit_row(policy, record):
     }
 
 
-def _planner_inputs(policy, record, correct, subjects, *, file_records=None, file_current=None):
+def _planner_inputs(
+    policy: ExternalValidationPolicyV1,
+    record: PolicyAuthorityRecord,
+    correct: str,
+    subjects: tuple[SealedExternalSubjectV1, ...],
+    *,
+    file_records: list[dict[str, Any]] | None = None,
+    file_current: list[str] | None = None,
+) -> dict[str, Any]:
     return {
         "policy_id": "syn-practical-geotiff-v1",
         "version": 5,
@@ -497,7 +542,7 @@ def test_plan_skip_reuse_writes_nothing() -> None:
     assert json.dumps(mirror, sort_keys=True).encode() == before_bytes
 
 
-def test_plan_skip_proves_no_file_touch_via_mtime(tmp_path) -> None:
+def test_plan_skip_proves_no_file_touch_via_mtime(tmp_path: Path) -> None:
     import os
     import time
 
@@ -532,6 +577,7 @@ def test_plan_mismatch_mirror_refuses_reload() -> None:
     policy, record, correct, now = _sealed_test_policy(subjects)
     other = _record_variant(correct, subjects, hours_back=2, days_valid=6)
     assert other.digest != record.digest
+    assert other.digest is not None
     journal = [_admit_row(policy, record)]
     decision, detail = seed.plan_policy_admission(
         journal_rows=journal,
@@ -598,7 +644,7 @@ def test_plan_revoked_latest_refuses_resurrection() -> None:
     assert decision == "mismatch", detail
 
 
-def test_plan_expired_record_fails_clearly_no_writes(tmp_path) -> None:
+def test_plan_expired_record_fails_clearly_no_writes(tmp_path: Path) -> None:
     subjects = (
         _test_subject("obs-work-1", "syn-demo-t0-submission", "ab"),
         _test_subject("obs-work-1", "syn-demo-t1-submission", "cd"),
@@ -606,6 +652,7 @@ def test_plan_expired_record_fails_clearly_no_writes(tmp_path) -> None:
     policy, record, correct, _ = _sealed_test_policy(subjects)
     now = datetime.now(UTC).replace(microsecond=0)
     stale = _record_variant(correct, subjects, hours_back=9 * 24, days_valid=-2)
+    assert stale.digest is not None
     journal = [_admit_row(policy, stale)]
     sentinel = tmp_path / "snapshot.json"
     sentinel.write_bytes(b'{"records": []}')
@@ -651,7 +698,7 @@ def test_latest_policy_status_ordering() -> None:
     assert seed.latest_policy_status(unknown, "p", 1)[0] == "absent"
 
 
-def test_read_jsonl_rows_uses_given_path(tmp_path) -> None:
+def test_read_jsonl_rows_uses_given_path(tmp_path: Path) -> None:
     journal = tmp_path / "external-validation-policy.jsonl"
     journal.write_text('{"kind": "a"}\n\n{"kind": "b"}\n', encoding="utf-8")
     assert seed.read_jsonl_rows(journal) == [{"kind": "a"}, {"kind": "b"}]
@@ -666,7 +713,7 @@ def test_read_jsonl_rows_uses_given_path(tmp_path) -> None:
         raise AssertionError("malformed journal must fail")
 
 
-def test_build_template_honors_provided_template_path(tmp_path) -> None:
+def test_build_template_honors_provided_template_path(tmp_path: Path) -> None:
     template = tmp_path / "policy-template.json"
     template.write_text(
         json.dumps(
@@ -681,7 +728,6 @@ def test_build_template_honors_provided_template_path(tmp_path) -> None:
     built = seed.build_live_template(template)
     assert built["inspectionRuleIds"] == ["EXTERNAL_GEOTIFF_MEASURED_V1"]
     assert built["evidenceRuleIds"] == ["CHECKPOINT_NEAREST_PIXEL_LOWER_TIE_V1"]
-    import pytest
 
     with pytest.raises((FileNotFoundError, OSError)):
         seed.build_live_template(tmp_path / "does-not-exist.json")

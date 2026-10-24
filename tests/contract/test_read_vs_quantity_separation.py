@@ -43,6 +43,7 @@ Test map:
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -105,7 +106,7 @@ def _catalog_urls(lane: SimpleNamespace) -> tuple[str, list[dict[str, Any]]]:
 
 
 @pytest.fixture(scope="module")
-def lane(tmp_path_factory: pytest.TempPathFactory) -> SimpleNamespace:
+def lane(tmp_path_factory: pytest.TempPathFactory) -> Generator[SimpleNamespace, None, None]:
     """One mounted app, one sealed DSM pair, no checkpoint evidence."""
     tmp = tmp_path_factory.mktemp("read-vs-quantity")
     ctx = _PlatformFlowContext(tmp, with_spatial_data=False)
@@ -422,8 +423,18 @@ def test_spatial_read_works_under_grant_and_prepare_without_capability_is_denied
     )
     wiring.grants.provision(grant)
     x0, y_bottom, x_mid, _ = left
-    inside = [x0, y_bottom + 0.05, x0 + 0.05, y_bottom + 0.15]
-    outside = [x_mid + 0.05, y_bottom + 0.05, x_mid + 0.1, y_bottom + 0.15]
+    inside: tuple[float, float, float, float] = (
+        x0,
+        y_bottom + 0.05,
+        x0 + 0.05,
+        y_bottom + 0.15,
+    )
+    outside: tuple[float, float, float, float] = (
+        x_mid + 0.05,
+        y_bottom + 0.05,
+        x_mid + 0.1,
+        y_bottom + 0.15,
+    )
 
     def body(bounds: list[float], purpose: str = "GENERAL_DATA_USE") -> dict[str, Any]:
         return {
@@ -468,7 +479,7 @@ def test_spatial_read_works_under_grant_and_prepare_without_capability_is_denied
         issued = client.post(
             lane.spatial_root,
             headers={**_op_headers(), "Idempotency-Key": "rq-issue"},
-            json=body(inside),
+            json=body(list(inside)),
         )
         assert issued.status_code == 201, issued.text
         view = issued.json()
@@ -484,12 +495,12 @@ def test_spatial_read_works_under_grant_and_prepare_without_capability_is_denied
         refused_bounds = client.post(
             lane.spatial_root,
             headers={**_op_headers(), "Idempotency-Key": "rq-bounds"},
-            json=body(outside),
+            json=body(list(outside)),
         )
         assert refused_bounds.status_code == 403, refused_bounds.text
         assert refused_bounds.json()["reason"] == "GRANT_REQUIRED"
         assert (
-            check(lane.baseline_source, measurements, tuple(outside), grant.grant_id, "PREPARE")
+            check(lane.baseline_source, measurements, outside, grant.grant_id, "PREPARE")
             == "OUTPUT_OUTSIDE_GRANT"
         )
         # Capability: a READ-only grant cannot back PREPARE-scoped issuance.

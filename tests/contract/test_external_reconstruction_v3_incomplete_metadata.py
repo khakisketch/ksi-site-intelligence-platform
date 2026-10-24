@@ -46,11 +46,18 @@ from ksi_event_contracts.external_artifact_validation import (
     SealedExternalSubjectV1,
 )
 from ksi_event_contracts.external_reconstruction import (
+    ExternalArtifactDeclarationV1,
     ExternalReconstructionSubmissionV1,
+    ExternalReconstructionSubmissionV1Input,
+    ExternalReconstructionSubmissionV1Producer,
     ExternalReconstructionSubmissionV2,
     ExternalReconstructionSubmissionV3,
     external_reconstruction_submission_v3_wire_dict,
     parse_external_reconstruction_submission_v3,
+)
+from ksi_event_contracts.observation_work_order import (
+    ObservationWorkOrder,
+    ObservationWorkOrderStatus,
 )
 from ksi_event_contracts.processing_artifact import ProcessingArtifactKind
 from pydantic import ValidationError
@@ -520,18 +527,28 @@ def _derived_epoch_id() -> str:
     return "obs-epoch-" + hashlib.sha256(raw).hexdigest()[:24]
 
 
+def _v3_journal_order() -> ObservationWorkOrder:
+    """Typed stand-in for the work order the V3 journal replays against."""
+    return ObservationWorkOrder(
+        work_order_id="order-a",
+        organization_id="org-a",
+        site_id="site-a",
+        name="v3 incomplete-metadata order",
+        work_area_ids=["wa-a"],
+        status=ObservationWorkOrderStatus.APPROVED,
+        version=1,
+        created_at="2026-10-20T00:00:00Z",
+        updated_at="2026-10-20T00:00:00Z",
+        created_by="operator-a",
+    )
+
+
 def _v3_revision_journal(tmp_path: Path) -> DurableJournal:
     journal = DurableJournal(tmp_path / "v3-replay.jsonl")
     store = ExternalReconstructionStore(journal)
     wire = _v3_wire(epoch_id=_derived_epoch_id())
     submission = parse_external_reconstruction_submission_v3(wire)
-    order = SimpleNamespace(
-        organization_id="org-a",
-        site_id="site-a",
-        work_order_id="order-a",
-        version=1,
-        cycle_number=1,
-    )
+    order = _v3_journal_order()
     result = store.register(
         submission, work_order=order, registered_by="operator-a", now=datetime.now(UTC)
     )
@@ -557,14 +574,7 @@ def test_v3_journal_replays_with_stable_digests_and_rejects_mixed_streams(
     # A V1 declaration for the same stream is a conflict, never a silent merge.
     v1_wire = dict(_v3_wire(epoch_id="epoch-1"))
     v1_wire["contractVersion"] = "external-reconstruction-submission.v1"
-    order = SimpleNamespace(
-        organization_id="org-a",
-        site_id="site-a",
-        work_order_id="order-a",
-        version=1,
-        cycle_number=1,
-    )
-    from ksi_event_contracts.external_reconstruction import ExternalReconstructionSubmissionV1
+    order = _v3_journal_order()
 
     forged = ExternalReconstructionSubmissionV1(
         submission_id="datawa-2021-ortho",
@@ -574,28 +584,28 @@ def test_v3_journal_replays_with_stable_digests_and_rejects_mixed_streams(
         observation_epoch_id=_derived_epoch_id(),
         submitted_at=datetime(2026, 10, 20, tzinfo=UTC),
         submitted_by="operator-a",
-        producer_declaration={
-            "softwareName": "Mapper",
-            "softwareVersion": "1",
-            "buildIdentifier": None,
-            "producerRunIdentifier": None,
-            "configurationDigest": None,
-            "completedAt": None,
-        },
-        input_declaration={
-            "rawMediaStoredByKsi": False,
-            "originalRetentionLocus": "customer_workstation",
-        },
+        producer_declaration=ExternalReconstructionSubmissionV1Producer(
+            software_name="Mapper",
+            software_version="1",
+            build_identifier=None,
+            producer_run_identifier=None,
+            configuration_digest=None,
+            completed_at=None,
+        ),
+        input_declaration=ExternalReconstructionSubmissionV1Input(
+            raw_media_stored_by_ksi=False,
+            original_retention_locus="customer_workstation",
+        ),
         artifacts=(
-            {
-                "artifactId": "ortho-2021",
-                "kind": ProcessingArtifactKind.ORTHO,
-                "fileName": "o.tif",
-                "format": "GeoTIFF",
-                "contentType": "application/octet-stream",
-                "declaredSha256": hashlib.sha256(b"v3 ortho bytes").hexdigest(),
-                "declaredSizeBytes": len(b"v3 ortho bytes"),
-            },
+            ExternalArtifactDeclarationV1(
+                artifact_id="ortho-2021",
+                kind=ProcessingArtifactKind.ORTHO,
+                file_name="o.tif",
+                format="GeoTIFF",
+                content_type="application/octet-stream",
+                declared_sha256=hashlib.sha256(b"v3 ortho bytes").hexdigest(),
+                declared_size_bytes=len(b"v3 ortho bytes"),
+            ),
         ),
     ).sealed()
     from ksi_core.domains.external.ingress.external_reconstruction import (
@@ -660,6 +670,8 @@ def test_v3_http_register_grant_seal_and_inspection_issue(tmp_path: Path) -> Non
         order_id, wire["submissionId"], 1, organization_id="org-a", site_id="site-a"
     )
     assert revision is not None and revision.manifest is not None
+    assert revision.submission.submission_digest is not None
+    assert revision.manifest.manifest_digest is not None
     subject = SealedExternalSubjectV1(
         organization_id="org-a",
         site_id="site-a",
