@@ -104,7 +104,12 @@
    판독 가능한 실제 출력이 필요해 이번 활성화에서 입증하지 못했다(모든 실제 출력 보관 만료).
    외부 principal의 실제 파일 권한 거부는 계약 테스트 범위이며 이번에 재실행하지 않았다.
    작업집합 활성 중 cleanup 루프는 설계대로 시작되지 않는다(경고 1건, 삭제 없음).
-4. **계산 가능 쌍·2주기 증거, 전체 게이트(mypy 109·archive 불일치)** — 미착수(다음 후보).
+4. **계산 가능 쌍·2주기 증거, 전체 게이트**: 계산 가능 쌍·`t0→t1→t2` 반복 증거는 판독 가능한
+   실제 출력이 없어(보관 만료) 차단 상태다. mypy는 공식 CI 명령(`mypy packages services tests
+   tools`) 기준 감사 후보가 남긴 8개를 수정해 40→**32**로 줄였고, 남은 32개는
+   `test_operator_journey_seed.py`(20)·`test_external_reconstruction_v3_incomplete_metadata.py`(7)·
+   `test_site_spatial_workspace.py`(3)·`test_read_vs_quantity_separation.py`(2)의 기존 테스트
+   타이핑이다. archive 적응 2건 해시 불일치와 함께 수정 또는 문서화된 면제 결정이 필요하다.
 
 ## 7. 증거
 
