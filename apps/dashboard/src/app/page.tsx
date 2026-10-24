@@ -18,7 +18,7 @@ import { listWorkInbox } from "@/lib/core-api/work-collaboration";
 import type { SiteView } from "@/lib/core-api/types";
 import { formatKoreanDateTime } from "@/lib/datetime";
 import { externalDecisionCardText } from "@/lib/home-external-decision";
-import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, summarizeHomeAnalysisReviewReads, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSiteRead, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
+import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHomeInitialSetupSites, selectHomeQuickAccessSites, selectHomeRecentSiteSources, selectHomeRecentUpdates, summarizeHomeAnalysisReviewReads, type HomeAnalysisReviewRecord, type HomeAnalysisReviewSiteRead, type HomeAnalysisReviewSource, type HomeAttentionSource, type HomeRecentSiteSource, type HomeRecentUpdateSource } from "@/lib/home-operations";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
@@ -224,6 +224,13 @@ export default async function HomePage() {
     const nextAction = resolveSiteOperatorNextAction(site, siteActionPermissions);
     return { key: `initial-setup:${site.siteId}`, siteId: site.siteId, siteName: site.name, statusLabel: SITE_STATUS_LABEL[site.status].label, statusTone: SITE_STATUS_LABEL[site.status].tone, title: "작업구역에 첫 관측 자료를 연결하세요.", detail: "관측 자료 등록에서 작업구역을 선택합니다. 현장 전체 경계는 선택 설정입니다.", href: nextAction?.href ?? `/sites/${encodeURIComponent(site.siteId)}`, actionLabel: nextAction?.label ?? "현장 맥락 보기" };
   });
+  // 대기열에 오르지 않은 실제 현장 바로가기 — 캐러셀·초기 설정에 이미 나온
+  // 현장은 빼고, 남는 현장이 있을 때만 한 줄씩 둔다. 장식 이미지·가짜 요약은 두지 않는다.
+  const surfacedSiteIds = new Set([
+    ...attentionSources.map((source) => source.siteId),
+    ...initialSetupItems.map((item) => item.siteId),
+  ]);
+  const otherSites = selectHomeQuickAccessSites(sites, surfacedSiteIds);
   const recentItems = recentSources.map((source) => recentUpdateView(source, siteById));
   const portfolioComplete = sitesResult.ok && workOrdersResult.ok && !operationsUnavailable && !decisionsUnavailable && !analysisReviewsUnknown;
   const attentionCount = new Set(operationalAttention.map((source) => source.siteId)).size;
@@ -257,6 +264,21 @@ export default async function HomePage() {
     </section>}
 
     {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
+
+    {otherSites.length > 0 && (
+      <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2">
+        <h2 className="text-[16px] font-bold tracking-[-0.015em] break-keep">다른 현장</h2>
+        <ul className="flex min-w-0 flex-col gap-1.5">
+          {otherSites.map((site) => (
+            <li key={site.siteId} className="flex min-w-0 items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold break-keep">{site.name}</span>
+              <span className="shrink-0 text-[11.5px] text-ink-2">{SITE_STATUS_LABEL[site.status].label}</span>
+              <Link href={`/sites/${encodeURIComponent(site.siteId)}`} aria-label={`${site.name} 열기`} className="tap-target shrink-0 text-[12px] font-semibold text-accent hover:underline">열기</Link>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )}
 
     {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
     {sites.length > 0 && <HomeRecentUpdates items={recentItems} />}

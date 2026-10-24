@@ -956,7 +956,7 @@ export default async function SpatialAssetsPage({
             hidden={paneHiddenFor(side)}
           />
         </div>
-        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2">{qualifier ? `${dateLine} · ${qualifier}` : dateLine}</p>
+        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2 max-sm:text-[11px]">{qualifier ? `${dateLine} · ${qualifier}` : dateLine}</p>
       </div>
     );
   };
@@ -993,6 +993,9 @@ export default async function SpatialAssetsPage({
           <Link href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
             구역 자료 준비에서 확인
           </Link>
+        }
+        hint={
+          <>무대 구성을 먼저 보려면 <Link className="font-semibold text-sidebar-text underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>예시 화면으로 미리 보기</Link></>
         }
       />
     )
@@ -1040,15 +1043,40 @@ export default async function SpatialAssetsPage({
     ) : selectedArea ? (
       <p className="min-w-0 truncate text-[12px] font-semibold">작업구역 · {areaDisplayName}{selectedArea.status === "ARCHIVED" ? " (보관됨)" : ""}</p>
     ) : null}
-    <span className="shrink-0 rounded bg-sunk px-1.5 py-0.5 text-[11.5px] font-bold">{compareMode ? "나란히" : "한 장"}</span>
-    {compareMode && effectiveWorkAreaId && (
-      <Link className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ visualB: null }))}>한 장으로</Link>
-    )}
+    <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <span id="materials-view-mode-label" className="shrink-0 text-[11.5px] text-ink-muted">보기 방식</span>
+      <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
+        {effectiveWorkAreaId ? (
+          <Link
+            href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ visualB: null }))}
+            aria-current={!compareMode ? "page" : undefined}
+            className={`tap-target inline-flex items-center rounded-full px-2.5 py-1 text-[12px] break-keep ${!compareMode ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"}`}
+          >
+            한 장
+          </Link>
+        ) : (
+          <span aria-current={!compareMode ? "page" : undefined} className="inline-flex items-center rounded-full bg-surface px-2.5 py-1 text-[12px] font-semibold break-keep">한 장</span>
+        )}
+        {compareMode && effectiveWorkAreaId ? (
+          <Link
+            href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks())}
+            aria-current="page"
+            className="tap-target inline-flex items-center rounded-full bg-sidebar-active px-2.5 py-1 text-[12px] font-semibold break-keep text-sidebar-active-ink shadow-sm"
+          >
+            나란히
+          </Link>
+        ) : (
+          <span aria-disabled="true" title="목록에서 다른 자료를 B에 두면 나란히 볼 수 있습니다" className="inline-flex cursor-default items-center rounded-full px-2.5 py-1 text-[12px] break-keep text-ink-muted">
+            나란히
+          </span>
+        )}
+      </div>
+    </div>
+    <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
     {effectiveWorkAreaId && (infoOpen
-      ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target shrink-0 text-[12px] font-semibold underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
-      : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
-    <Link className="tap-target shrink-0 text-[12px] underline decoration-dotted text-ink-2" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시 보기</Link>
-    <span className="ml-auto flex shrink-0 items-center gap-2">
+      ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto shrink-0 text-[12px] font-semibold underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
+      : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto shrink-0 text-[12px] underline text-ink-2" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
+    <span className="flex shrink-0 items-center gap-2">
       {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
         <Link
@@ -1077,6 +1105,7 @@ export default async function SpatialAssetsPage({
   // 새로 만들지 않는다. 실패(denied/unavailable) 분기에는 두지 않으므로
   // 빈 목록과 조회 실패를 섞지 않는다.
   const renderEmptyActions = (): ReactNode => (
+    <>
     <div className="flex min-w-0 flex-wrap items-center gap-2">
       {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
@@ -1097,6 +1126,11 @@ export default async function SpatialAssetsPage({
         </div>
       </details>
     </div>
+    <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">
+      등록 전에 무대 구성을 보려면{" "}
+      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
+    </p>
+    </>
   );
 
   // 목록 드로어 내용 — 무대 위에 뜨므로 넓이·높이 래퍼를 두지 않는다.
@@ -1131,7 +1165,7 @@ export default async function SpatialAssetsPage({
       </>}
       {sideA && sideB && compareMode && <>
         {materialsSharedBlocked ? (<>
-          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
             <div data-workbench-pane className="flex min-w-0 flex-col gap-1.5 md:px-3 md:first:pl-0 md:last:pr-0 lg:h-full lg:min-h-0">
               {paneHead("A", sideA)}
             </div>
@@ -1141,7 +1175,7 @@ export default async function SpatialAssetsPage({
           </div>
           {materialsSharedRecovery}
         </>) : (
-          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line lg:min-h-0 lg:flex-1">
             {centerPane("A", sideA)}
             {centerPane("B", sideB)}
           </div>
@@ -1166,6 +1200,10 @@ export default async function SpatialAssetsPage({
       <h4 className="break-words text-[13px] font-bold">B · {businessTitleFor(sideB)}</h4>
       {detailBlockFor(sideB)}
     </>}
+    <p className="text-[11.5px] leading-5 text-ink-muted">
+      무대 구성을 먼저 보려면{" "}
+      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
+    </p>
   </>);
 
   return <div className="flex min-w-0 min-h-0 flex-1 flex-col">

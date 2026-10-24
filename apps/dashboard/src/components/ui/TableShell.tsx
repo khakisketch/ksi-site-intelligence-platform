@@ -86,7 +86,7 @@ export function TableAction({
       href={href}
       className={`tap-target inline-flex items-center rounded-md border px-2.5 text-[11.5px] font-semibold whitespace-nowrap transition-colors ${
         primary
-          ? "border-line-strong bg-surface hover:border-accent hover:bg-accent hover:text-accent-on"
+          ? "border-accent bg-accent text-accent-on hover:brightness-110"
           : "border-line-strong bg-surface hover:bg-sunk"
       }`}
     >

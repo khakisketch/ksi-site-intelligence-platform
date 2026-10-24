@@ -529,6 +529,17 @@ describe("sites desktop view wiring", () => {
     expect(VIEW).toContain("data-site-list-view={view}");
   });
 
+  it("현장 열기가 유일한 채움 1차 동작이고 이웃은 조용한 텍스트다", () => {
+    expect((CARDS.match(/>\s*현장 열기\s*</g) ?? []).length).toBe(1);
+    expect(CARDS).toContain("btn btn-primary");
+    expect(CARDS).toContain("조치 필요");
+    expect(CARDS).toContain("상태 확인");
+    expect((DENSE.match(/label="현장 열기"/g) ?? []).length).toBe(1);
+    expect(DENSE).toMatch(/<TableAction[\s\S]*?primary[\s\S]*?\/>/);
+    expect((PAGE.match(/>\s*현장 열기\s*</g) ?? []).length).toBe(1);
+    expect(PAGE).toContain("btn btn-primary");
+  });
+
   it("간결 카드는 실제 미리보기 영역을 두고 장식 표지는 두지 않는다", () => {
     expect(CARDS).toContain("data-site-card");
     expect(CARDS).toContain("SitePreviewThumb");

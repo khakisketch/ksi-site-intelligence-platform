@@ -352,7 +352,7 @@ describe("explore declutter: no duplicated titles in the default view", () => {
     await renderOverview({});
     expect(screen.getAllByRole("heading", { name: "현장 하나" })).toHaveLength(1);
     expect(screen.getAllByText("설정·정보")).toHaveLength(1);
-    const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
+    const modeNav = screen.getByRole("navigation", { name: "보기 방식" });
     const labels = within(modeNav).getAllByRole("link").map((link) => link.textContent);
     expect(new Set(labels).size).toBe(labels.length);
   });

@@ -157,7 +157,7 @@ export function SpatialWorkbenchFrame({
   return (
     <div ref={rootRef} className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
       {banner}
-      <div ref={contextRef} data-workbench-context-bar className="sticky top-0 z-40 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-surface lg:static lg:z-auto">
+      <div ref={contextRef} data-workbench-context-bar className="sticky top-0 z-40 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-surface max-sm:gap-y-1 lg:static lg:z-auto">
         <button
           ref={catalogToggleRef}
           type="button"

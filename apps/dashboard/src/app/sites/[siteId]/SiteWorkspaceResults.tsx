@@ -227,8 +227,7 @@ export function SiteWorkspaceResults({
         {normalizedVisualContext && (
           <p className="mt-1 text-[12px] leading-5 text-ink-2">
             탐색 중 자료와 이 결과의 계산 입력은 다를 수 있습니다. 위의 원래 입력이 이 결과의 계산 입력이며,
-            탐색 중 자료는 독립 보기 쌍 그대로 둡니다.{" "}
-            <Link href={visualReturnHref!} className="tap-target underline">독립 보기로 돌아가기</Link>
+            탐색 중 자료는 독립 보기 쌍 그대로 둡니다.
           </p>
         )}
         <p className="mt-1">

@@ -35,7 +35,7 @@ describe("DESKTOP_NAV_GROUPS", () => {
 
   it("[핵심][회귀] 범위 밖 장비 안내는 주 메뉴 그룹에 들어가지 않는다", () => {
     const grouped = DESKTOP_NAV_GROUPS.flatMap((group) => group.items.map((i) => i.key));
-    expect(grouped).toEqual(["home", "sites", "work"]);
+    expect(grouped).toEqual(["home", "sites", "work", "more"]);
     expect(grouped).not.toContain("fleet");
     // 옛날 링크는 살아 있다 — 우선순위에서만 뺀다.
     expect(NAV_ITEMS.find((item) => item.key === "fleet")?.href).toBe("/coming-soon/fleet");

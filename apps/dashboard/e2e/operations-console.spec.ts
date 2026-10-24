@@ -107,10 +107,13 @@ test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({
   await expect(navigation).toBeVisible();
 
   const expectedLinks = isDesktop
-    ? [["/", "홈"], ["/sites", "현장"], ["/field", "업무"]]
+    ? [["/", "홈"], ["/sites", "현장"], ["/field", "업무"], ["/more", "계정"]]
     : [["/", "홈"], ["/sites", "현장"], ["/field", "업무"], ["/more", "계정"]];
   for (const [href, label] of expectedLinks) {
-    const link = navigation.locator(`a[href="${href}"]`);
+    // /more 는 레일 계정 항목과 하단 사용자 블록에 각각 있다 — 레일 항목만 본다.
+    const link = href === "/more" && isDesktop
+      ? navigation.getByRole("link", { name: "계정", exact: true })
+      : navigation.locator(`a[href="${href}"]`);
     await expect(link).toBeVisible();
     await expect(link).toContainText(label);
   }
@@ -395,7 +398,7 @@ test("현장 작업공간은 대상 맥락과 네 업무 영역을 유지한다"
   await expect(siteNavigation.getByRole("link", { name: "작업구역 관리", exact: true })).toHaveCount(0);
   // 작업 방식은 맥락막대에 있고 현재 방식을 aria-current로 밝힌다.
   // 결과는 최상위 결과 목적지가 맡으므로 작업공간 막대에는 단일·비교만 둔다.
-  const workspaceModes = page.getByRole("navigation", { name: "공간 작업 방식", exact: true });
+  const workspaceModes = page.getByRole("navigation", { name: "보기 방식", exact: true });
   await expect(workspaceModes).toBeVisible();
   await expect(workspaceModes.getByRole("link")).toHaveCount(2);
   for (const label of ["단일 시점", "두 시점 비교"]) {

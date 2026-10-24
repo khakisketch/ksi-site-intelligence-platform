@@ -201,6 +201,28 @@ describe("analysis V2 panel", () => {
     expect(document.querySelectorAll('#new-analysis-request')).toHaveLength(1);
   });
 
+  it("makes only the latest record's view button primary and keeps one browse return", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    renderPanel({
+      canCreate: true,
+      initialPage: listPage(["analysis-2", "analysis-1"]),
+      initialAnalysisId: "analysis-1",
+      initialSelectedDetail: detail("analysis-1"),
+      visualContext: { workAreaId: "area-1", visualAAssetRef: `ksa-v1-${"a".repeat(64)}`, visualBAssetRef: `ksa-v1-${"b".repeat(64)}` },
+      visualReturnHref: "/sites/site-1?mode=compare&workAreaId=area-1",
+    });
+    // 최신 기록 카드의 보기 단추만 1차 동작이다.
+    const viewButtons = screen.getAllByRole("button", { name: "이 변화 분석 보기" });
+    expect(viewButtons).toHaveLength(2);
+    expect(viewButtons[0]!.className).toContain("btn-primary");
+    expect(viewButtons[1]!.className).not.toContain("btn-primary");
+    // 탐색 복귀는 맨 위 맥락 띠 하나뿐이다.
+    expect(screen.getAllByRole("link", { name: "독립 보기로 돌아가기" })).toHaveLength(1);
+    // 나머지는 조용한 링크 행에 있다.
+    expect(screen.getByRole("link", { name: "작업공간에서 결과 보기" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /근거 확인/ })).toBeTruthy();
+  });
+
   it("shows the selected record's calculation inputs near the summary from validated candidates", () => {
     vi.stubGlobal("fetch", vi.fn());
     renderPanel({ canCreate: true });

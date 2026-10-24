@@ -488,7 +488,7 @@ export function SiteWorkspaceCompare({
     )}
     {selected && (
       <p className="text-[12.5px] leading-5 text-ink-2">
-        {areaLabel} · 같은 구역의 두 자료를 독립 보기로 나란히 둡니다.{" "}
+        {areaLabel} · 같은 구역의 두 자료를 독립된 두 보기로 둡니다.{" "}
         <span className="font-semibold">독립 보기 — 정합 근거 없음</span>
         {presentation === "full" && (visualPair.status === "ready" && visualAFact && visualBFact
           ? ` · 관측 A(${candidateLabel(visualAFact)}) · 관측 B(${candidateLabel(visualBFact)})`

@@ -402,7 +402,7 @@ export default async function SitesPage({
                           이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
                       <Link
                         href={`/sites/${encodeURIComponent(site.siteId)}`}
-                        className="btn tap-target justify-center"
+                        className="btn btn-primary tap-target justify-center"
                       >
                         현장 열기
                       </Link>

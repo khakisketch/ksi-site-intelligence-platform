@@ -85,6 +85,7 @@ export function SiteListDenseList({
               <TableAction
                 href={`/sites/${encodeURIComponent(site.siteId)}`}
                 label="현장 열기"
+                primary
               />
             </span>
           </TableRow>

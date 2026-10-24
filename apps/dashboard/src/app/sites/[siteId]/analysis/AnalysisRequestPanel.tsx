@@ -489,7 +489,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   </p>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses }: {
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, primary = false }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -508,6 +508,8 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   observations: readonly AttributedAnalysisObservation[];
   siteObservations: readonly AnalysisObservationOption[];
   newerAnalyses: readonly NewerAnalysisCandidate[];
+  /** 최신 기록 카드의 보기 단추를 1차 동작으로 둔다. 나머지는 조용한 링크 행에 둔다. */
+  primary?: boolean;
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
@@ -522,7 +524,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
           <p className="mt-1 break-all">분석 ID · {summary.analysisId}</p>
         </details>
       </div>
-      <button type="button" className="btn" onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
+      <button type="button" className={`btn ${primary ? "btn-primary" : ""}`} onClick={onSelect} aria-current={selected ? "page" : undefined}>이 변화 분석 보기</button>
     </div>
     {detail && <NewerObservationNotice siteId={siteId} detail={detail} summaryNewerSiblingIds={summary.newerSiblingAnalysisIds} observations={observations} siteObservations={siteObservations} analyses={newerAnalyses} />}
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
@@ -1611,8 +1613,7 @@ export function AnalysisRequestPanel({
       )}
       {visualContext && visualReturnHref && (
         <p className="mt-2 rounded-md border border-line bg-sunk/50 px-3 py-2 text-[11.5px] leading-5 text-ink-2">
-          탐색 중 자료와 이 화면의 분석 선택은 별개입니다.{" "}
-          <Link className="font-semibold text-accent-text underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
+          탐색 중 자료와 이 화면의 분석 선택은 별개입니다. 기록은 바뀌지 않습니다.
         </p>
       )}
       <ResponsiveActionBoundary action="ANALYSIS_REQUEST" reason="변화 분석 요청은 노트북 이상의 화면에서 진행하세요. 모바일에서는 결과와 근거 검토를 이어갈 수 있습니다.">
@@ -1749,9 +1750,9 @@ export function AnalysisRequestPanel({
         bridgeQuery.set("visualBAssetRef", visualContext.visualBAssetRef);
       }
       const workspaceResultHref = `/sites/${encodeURIComponent(siteId)}?${bridgeQuery.toString()}`;
-      return <div className="flex flex-wrap items-center justify-end gap-2">
-        <Link className="tap-target text-[12px] underline" href={workspaceResultHref}>작업공간에서 결과 보기</Link>
-        <button type="button" className="btn" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button>
+      return <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <Link className="tap-target inline-flex min-h-11 items-center text-[12px] underline" href={workspaceResultHref}>작업공간에서 결과 보기</Link>
+        <button type="button" className="tap-target inline-flex min-h-11 items-center text-[12px] underline" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button>
       </div>;
     })()}
     {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
@@ -1761,8 +1762,7 @@ export function AnalysisRequestPanel({
       {selectedDetail && visualContext && visualReturnHref && (
         <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">
           <span className="font-bold text-ink-1">탐색 중 자료와 이 결과의 계산 입력 구분</span>
-          <span className="mt-1 block">탐색 중 자료(독립 보기 A·B)와 이 결과의 계산 입력은 다를 수 있습니다. 기록은 바뀌지 않습니다.{" "}
-          <Link className="font-semibold text-accent-text underline" href={visualReturnHref}>독립 보기로 돌아가기</Link></span>
+          <span className="mt-1 block">탐색 중 자료(독립 보기 A·B)와 이 결과의 계산 입력은 다를 수 있습니다. 기록은 바뀌지 않습니다.</span>
           <details className="mt-1">
             <summary className="tap-target cursor-pointer font-semibold">이 결과의 계산 입력 확인</summary>
             <span className="mt-1 block break-all">기준 · {selectedDetail.baseline.workOrderId} · {selectedDetail.baseline.submissionRef} · 버전 {selectedDetail.baseline.revision}</span>
@@ -1778,6 +1778,7 @@ export function AnalysisRequestPanel({
         summary={summary}
         detail={details.get(summary.analysisId) ?? null}
         selected={summary.analysisId === selectedId}
+        primary={summary.analysisId === latestRow?.analysisId}
         onSelect={() => choose(summary.analysisId)}
         evidencePages={summary.analysisId === selectedId ? selectedEvidencePages : []}
         siteId={siteId}

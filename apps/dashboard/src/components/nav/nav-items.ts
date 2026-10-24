@@ -29,6 +29,17 @@ export const NAV_ITEMS: NavItem[] = [
     demoted: true,
     description: "장비 운용은 현 제품 범위 밖입니다. 기존 경로의 안내만 유지합니다.",
   },
+  {
+    key: "more",
+    label: "계정",
+    href: "/more",
+    implemented: true,
+    icon: "more",
+    // 데스크톱 레일의 계정·도움말 입구 — 모바일 넷째 탭과 같은 목적지다.
+    // MOBILE_TAB_ITEMS는 별도 객체로 두므로 여기서 mobile 을 세우지 않는다.
+    mobile: false,
+    description: "계정·도움·지원 경계를 여는 자리다.",
+  },
 ];
 
 export const DESKTOP_NAV_ITEMS = NAV_ITEMS.filter((item) => !item.demoted);
@@ -46,6 +57,11 @@ export const DESKTOP_NAV_GROUPS: NavGroup[] = [
     key: "primary",
     label: null,
     items: DESKTOP_NAV_ITEMS.filter((item) => PRIMARY_KEYS.has(item.key)),
+  },
+  {
+    key: "account",
+    label: null,
+    items: DESKTOP_NAV_ITEMS.filter((item) => item.key === "more"),
   },
 ].filter((group) => group.items.length > 0);
 

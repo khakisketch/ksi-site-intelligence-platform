@@ -6,6 +6,7 @@ import {
   selectHomeActiveWorkOrders,
   selectHomeDecisionWorkOrders,
   selectHomeInitialSetupSites,
+  selectHomeQuickAccessSites,
   selectHomeRecentSiteSources,
   selectHomeRecentUpdates,
 } from "@/lib/home-operations";
@@ -166,5 +167,25 @@ describe("Home platform selectors", () => {
 
     expect(selected).toHaveLength(1);
     expect(selected[0]).toMatchObject({ kind: "CURRENT_LEDGER_CLEAR", siteId: "site-1" });
+  });
+});
+
+describe("home quick-access sites", () => {
+  const sites = [
+    site("site-queue"),
+    site("site-other"),
+    site("site-setup", "UNMAPPED"),
+  ];
+  it("lists only sites missing from the queue and setup sections", () => {
+    expect(selectHomeQuickAccessSites(sites, new Set(["site-queue", "site-setup"])).map((s) => s.siteId))
+      .toEqual(["site-other"]);
+  });
+  it("renders nothing when every real site is already surfaced", () => {
+    expect(selectHomeQuickAccessSites(sites, new Set(["site-queue", "site-other", "site-setup"]))).toEqual([]);
+    expect(selectHomeQuickAccessSites([], new Set())).toEqual([]);
+  });
+  it("does not invent sites that do not exist", () => {
+    expect(selectHomeQuickAccessSites(sites, new Set(["site-unknown"])).map((s) => s.siteId))
+      .toEqual(["site-queue", "site-other", "site-setup"]);
   });
 });

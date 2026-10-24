@@ -774,8 +774,10 @@ describe("materials visual browsing", () => {
   it("shows two exact records side by side without substituting either side", async () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
+    // 보기 방식은 한 줄 세그먼트다 — 한 장으로 돌아가는 링크를 그대로 둔다.
+    expect(html).toContain("보기 방식");
     expect(html).toContain("나란히");
-    expect(html).toContain("한 장으로");
+    expect(html).toContain(`visualBAssetRef=${secondRef}`);
     expect(html).toContain("작업공간에서 나란히 보기");
     // 실제 경로에는 겹쳐 보기를 두지 않고, 예시로의 보조 길만 둔다.
     expect(html).toContain("밀어서 비교 예시");
@@ -795,6 +797,31 @@ describe("materials visual browsing", () => {
     // B 칸이 없으므로 B 관측 선택 상자도 없다 — A 칸의 보기는 유지된다.
     expect(html).toContain("선택한 자료 미리보기");
     expect(html).not.toContain('id="pane-observation-visualBAssetRef"');
+  });
+
+  it("keeps one segmented view switch with its purpose line and no toolbar example entry", async () => {
+    pairCatalog();
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
+    // 보기 방식은 탭이 아니라 한 줄 세그먼트다.
+    expect(html).toContain("보기 방식");
+    expect(html).toContain('role="group"');
+    expect(html).toContain('aria-labelledby="materials-view-mode-label"');
+    expect(html).toContain("나란히 보기 · 등록 자료 확인·준비·열람");
+    expect(html.match(/나란히 보기 · 등록 자료 확인·준비·열람/g)).toHaveLength(1);
+    expect(html).toContain('aria-current="page"');
+    // 디자인 예시는 도구 막대에서 빼고 정보 서랍에만 둔다.
+    expect(html).not.toContain("디자인 예시 보기");
+    const opened = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef, info: "1" }));
+    expect(opened).toContain("디자인 예시로 미리 보기");
+    expect(opened).toContain("/design-preview/materials?returnTo=");
+  });
+
+  it("offers the design example in empty and expired states without touching selection", async () => {
+    mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("이 작업구역에 등록된 자료가 없습니다");
+    expect(html).toContain("디자인 예시로 미리 보기");
+    expect(html).toContain("/design-preview/materials?returnTo=");
   });
 
   it("prompts instead of substituting when the explicit A is outside the loaded page", async () => {

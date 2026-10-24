@@ -243,6 +243,13 @@ describe("compare stage pair controls", () => {
     expect(formA.getAttribute("action")).toBe("/sites/site-1");
   });
 
+  it("states the ready pair as two independent views without borrowing the materials mode name", () => {
+    render(shell(shellProps()));
+    // 작업공간 쌍 설명은 '나란히'(자료 화면 보기 방식 이름)를 쓰지 않는다.
+    expect(screen.getByText(/독립된 두 보기로 둡니다/)).toBeTruthy();
+    expect(screen.queryByText(/나란히 둡니다/)).toBeNull();
+  });
+
   it("carries the opposite time-ordered side exactly in each pane form", () => {
     const props = shellProps({
       comparison: {

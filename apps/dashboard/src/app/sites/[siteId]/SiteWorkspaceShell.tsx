@@ -563,9 +563,9 @@ export function SiteWorkspaceShell({
           <span aria-hidden="true" className="flex h-6 min-w-6 shrink-0 items-center justify-center rounded bg-sunk px-1 text-[11px] font-bold">{badge}</span>
           {select}
         </div>
-        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2">{pairDateCaption(fact)}</p>
+        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2 max-sm:text-[11px]">{pairDateCaption(fact)}</p>
         {layers.length > 1 && (
-          <div role="group" aria-label="자료 층 전환" data-workbench-pane-controls className="flex shrink-0 flex-wrap gap-1">
+          <div role="group" aria-label="자료 층 전환" data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-nowrap gap-1 overflow-x-auto">
             {layers.map((item) => (
               <Link key={item.assetRef}
                 href={pairLayerHref(layerParam, item.assetRef)}
@@ -672,6 +672,16 @@ export function SiteWorkspaceShell({
     && isKnownExpiredAsset(jobs, visualAFact!.assetRef) && isKnownExpiredAsset(jobs, visualBFact!.assetRef);
   const bothOrderedExpired = comparisonReady && viewerJobsState === "ready"
     && isKnownExpiredAsset(jobs, baselineFact!.assetRef) && isKnownExpiredAsset(jobs, currentFact!.assetRef);
+  // 워크스페이스 예시 화면 복귀 주소 — 선택 쌍을 그대로 싣는다.
+  const workspaceExampleReturnTo = (() => {
+    const query = new URLSearchParams();
+    query.set("mode", "compare");
+    if (selectedWorkAreaId) query.set("workAreaId", selectedWorkAreaId);
+    if (visualAFact) query.set("visualAAssetRef", visualAFact.assetRef);
+    if (visualBFact) query.set("visualBAssetRef", visualBFact.assetRef);
+    const search = query.toString();
+    return search ? `${sitePath}?${search}` : sitePath;
+  })();
   const sharedExpiredMedia = (
     <WorkbenchMediaState
       headline="미리보기 보관 기간이 끝났습니다."
@@ -680,6 +690,9 @@ export function SiteWorkspaceShell({
         <Link href={requestsHref} className="btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink">
           구역 자료 준비에서 확인
         </Link>
+      }
+      hint={
+        <>무대 구성을 먼저 보려면 <Link className="font-semibold text-sidebar-text underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(workspaceExampleReturnTo)}`}>예시 화면으로 미리 보기</Link></>
       }
     />
   );
@@ -769,32 +782,40 @@ export function SiteWorkspaceShell({
           : ""}
     </p>
   ) : null;
-  // 맥락막대 — 구역 한 줄 + 작업 방식만 둔다. 목록 토글·검색·정보는 셸이 앞에 둔다.
+  // 맥락막대 — 한 줄 맥락(목록·구역) + 작은 보기 방식 전환 + 한 줄 용도만 둔다.
+  // 보기 방식은 탭이 아니라 세그먼트다. 목록 토글·검색·정보는 셸이 앞에 둔다.
   const contextControls = (<>
     {selected ? (
-      <span className="min-w-0 shrink truncate text-[12px] font-semibold">
-        작업구역 · {areaLabel}{selected.status === "ARCHIVED" ? " (보관됨)" : ""}
+      <span className="min-w-0 shrink truncate text-[12px]">
+        <span className="text-ink-muted">작업구역 · </span>
+        <span className="font-semibold">{areaLabel}{selected.status === "ARCHIVED" ? " (보관됨)" : ""}</span>
       </span>
     ) : (
       <span className="text-[12px] text-ink-2">작업구역을 확인하지 못했습니다</span>
     )}
-    <nav aria-label="공간 작업 방식" className="flex shrink-0 flex-wrap gap-1 rounded-lg bg-sunk p-1">
-      {WORKSPACE_MODES.map((option) => {
-        const active = option.key === mode;
-        return (
-          <Link
-            key={option.key}
-            href={modeHref(sitePath, option.key, scope, visualContext)}
-            aria-current={active ? "page" : undefined}
-            className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[13px] break-keep ${
-              active ? "bg-surface font-bold" : "text-ink-2"
-            }`}
-          >
-            {option.label}
-          </Link>
-        );
-      })}
-    </nav>
+    <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <span id="workspace-view-mode-label" className="shrink-0 text-[11.5px] text-ink-muted">보기 방식</span>
+      <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
+        {WORKSPACE_MODES.map((option) => {
+          const active = option.key === mode;
+          return (
+            <Link
+              key={option.key}
+              href={modeHref(sitePath, option.key, scope, visualContext)}
+              aria-current={active ? "page" : undefined}
+              className={`tap-target inline-flex items-center rounded-full px-2.5 py-1 text-[12px] break-keep ${
+                active ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"
+              }`}
+            >
+              {option.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>
+    {mode === "compare" && (
+      <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교합니다</p>
+    )}
   </>);
 
   // 목록 드로어 — 구역 선택과 이동 길만 둔다. 관측·층 선택과 포털 대상은
@@ -1011,14 +1032,14 @@ export function SiteWorkspaceShell({
     )}
 
     {mode === "compare" && (
-      <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2">
+      <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
         {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
           <>
-            <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
+            <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted max-sm:text-[11px] max-sm:leading-4">각 칸은 독립된 보기입니다. 같은 범위 맞춤·같은 색 눈금은 지원하지 않습니다.</p>
             {comparisonReady && (
-              <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("1",
                   pairSideSelect("baselineAssetRef", "기준 자료", baselineFact!.assetRef, compareOptions, "기준 자료 선택"),
                   baselineFact!, viewerLayersForEpoch(catalogAssets, baselineFact!.observationEpochId), "windowed-baseline", "baselineAssetRef", sharedOrderedRecovery ?? jobsSharedBar)}
@@ -1029,7 +1050,7 @@ export function SiteWorkspaceShell({
             )}
             {sharedOrderedRecovery}
             {visualReady && (
-              <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+              <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
                 {pairPane("A",
                   pairSideSelect("visualAAssetRef", "관측 A", visualAFact!.assetRef, visualOptions, "관측 A 선택"),
                   visualAFact!, visualLayersForExactSubmission(catalogAssets, visualAFact!), "windowed-visual-a", "visualAAssetRef", sharedVisualRecovery ?? jobsSharedBar)}
@@ -1044,7 +1065,7 @@ export function SiteWorkspaceShell({
           </>
         )}
         {areasKnown && selected && !comparisonReady && !visualReady && catalogStatus === null && (visualOptions.length >= 2 || compareOptions.length >= 2) && (
-          <div className="grid min-w-0 gap-3 md:grid-cols-2 md:gap-0 md:divide-x md:divide-line">
+          <div className="grid min-w-0 grid-cols-2 gap-2 md:gap-0 md:divide-x md:divide-line">
             {visualOptions.length >= 2 ? (
               <>
                 {pairPromptPane("A",

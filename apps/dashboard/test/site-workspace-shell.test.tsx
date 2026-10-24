@@ -260,19 +260,36 @@ describe("workspace shell structure", () => {
     ["explore", "단일 시점"], ["compare", "두 시점 비교"],
   ])("keeps %s in one compact context bar with one current mode", async (mode, label) => {
     await renderOverview({ mode });
-    const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
+    const modeNav = screen.getByRole("navigation", { name: "보기 방식" });
     // 작업 방식은 무대 위 오버레이와 무관한 한 줄 맥락막대에 둔다 — 뷰어 박스 안이 아니다.
     expect(modeNav.closest("[data-workbench-context-bar]")).toBeTruthy();
     expect(modeNav.closest('[aria-label="공간자료 뷰어"]')).toBeNull();
     expect(within(modeNav).getByRole("link", { name: label }).getAttribute("aria-current")).toBe("page");
     expect(modeNav.querySelectorAll('[aria-current="page"]')).toHaveLength(1);
+    // 세그먼트 앞의 보이는 라벨이 접근 이름과 같다.
+    expect(screen.getByText("보기 방식")).toBeTruthy();
+    // 맥락행은 라벨+이름 한 줄이다 — 탭 행과 같은 모양을 쓰지 않는다.
+    expect(screen.getByText(/작업구역 ·/)).toBeTruthy();
     // 고정 260px 선택 레일은 두지 않고, 목록은 여는 드로어로 둔다.
     expect(screen.queryByRole("complementary", { name: "작업공간 선택" })).toBeNull();
     expect(screen.getByRole("button", { name: "목록" })).toBeTruthy();
   });
+
+  it("states the compare purpose in one line without a second mode control", async () => {
+    await renderOverview({ mode: "compare" });
+    const bar = screen.getByRole("navigation", { name: "보기 방식" }).closest("[data-workbench-context-bar]")!;
+    expect(within(bar as HTMLElement).getByText(/관측을 둘러보고 비교합니다/)).toBeTruthy();
+    // 용도 문구는 맥락막대에 한 줄만 둔다.
+    expect(screen.getAllByText(/관측을 둘러보고 비교합니다/)).toHaveLength(1);
+    // 세그먼트는 탭 행이 아니다 — 서로 다른 pill 행을 두지 않는다.
+    const segmented = screen.getByRole("navigation", { name: "보기 방식" });
+    expect(segmented.tagName).toBe("NAV");
+    expect(segmented.className).toContain("rounded-full");
+    expect(segmented.className).not.toContain("rounded-lg");
+  });
   it("shows each mode once without duplicating the site-name heading", async () => {
     await renderOverview({});
-    const modeNav = screen.getByRole("navigation", { name: "공간 작업 방식" });
+    const modeNav = screen.getByRole("navigation", { name: "보기 방식" });
     const modeLinks = within(modeNav).getAllByRole("link");
     // 작업공간 안에는 단일·비교만 둔다 — 결과는 최상위 결과 목적지가 맡는다.
     // mode=results 주소와 기록 다리는 그대로 둔다.
