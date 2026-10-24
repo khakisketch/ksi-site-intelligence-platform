@@ -228,6 +228,7 @@ def build_platform_graph(
             storage=spatial_data.build_storage(external_pre_work_order.reconstruction_store),
             currentness=spatial_data.build_currentness(coordinator),
             spool_root=spatial_data.spool_root,
+            audit_working_set=spatial_data.audit_working_set,
         )
         if spatial_data.import_rights is not None:
             # Operator-provisioned grants/revocations are applied after the exact

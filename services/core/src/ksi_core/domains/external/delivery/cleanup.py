@@ -54,6 +54,11 @@ def run_spatial_data_cleanup_once(
     durable cleanup leases before and after I/O; it cannot promise hard host-I/O
     deadlines or recall an already in-flight authorized delete.
     """
+    if getattr(audit, "operation_scope", "full") != "full":
+        # Read-only activations (download-only, history-only): cleanup storage
+        # mutation is not enabled under these audit modes. Refuse before jobs,
+        # storage or audit see any call.
+        raise SpatialDataDomainError("PERMISSION_DENIED", 403)
     if audit.policy != jobs.policy:
         raise ValueError("exact cleanup audit policy required")
     initial = monotonic()

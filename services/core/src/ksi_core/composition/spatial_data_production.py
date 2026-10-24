@@ -51,6 +51,10 @@ from ksi_core.composition.spatial_data_graph import (
     SpatialDataLocalGraphConfig,
     SpatialDataWiring,
 )
+from ksi_core.domains.external.delivery.audit_working_set import (
+    SpatialDataAuditWorkingSetV1,
+    load_spatial_data_audit_working_set,
+)
 from ksi_core.domains.external.delivery.cleanup import run_spatial_data_cleanup_once
 from ksi_core.domains.external.delivery.errors import SpatialDataDomainError
 from ksi_core.domains.external.delivery.grants import SpatialDataGrantStore
@@ -513,6 +517,7 @@ def build_spatial_data_production(
     oidc_subject_registry: OidcSubjectRegistry | None,
     bucket: str,
     endpoint_url: str,
+    audit_working_set: SpatialDataAuditWorkingSetV1 | None = None,
 ) -> SpatialDataLocalAssemblyConfig:
     """Assemble the explicit local wiring factories for the platform factory."""
     if not isinstance(config, SpatialDataCoreConfigV1) or not isinstance(
@@ -521,6 +526,10 @@ def build_spatial_data_production(
         raise ValueError("validated protected configuration and rights required")
     if not bucket:
         raise ValueError("explicit S3 bucket required")
+    if audit_working_set is not None and not isinstance(
+        audit_working_set, SpatialDataAuditWorkingSetV1
+    ):
+        raise ValueError("audit working set must be a validated working-set config or None")
     location = ExecutionLocus(config.processing_location)
     clock = lambda: datetime.now(UTC)  # noqa: E731 -- single explicit Core clock
 
@@ -564,7 +573,16 @@ def build_spatial_data_production(
         build_currentness=build_currentness,
         spool_root=config.spool_root_path,
         import_rights=import_rights,
+        audit_working_set=audit_working_set,
     )
+
+
+class SpatialDataCleanupDisabledError(ValueError):
+    """Cleanup startup refused under a read-only audit activation.
+
+    The wiring carries a download-only working set, so the retention thread
+    must never start. This is loud boot wiring refusal, not a silent skip.
+    """
 
 
 class SpatialDataCleanupLoop:
@@ -645,6 +663,10 @@ def start_spatial_data_cleanup(
     downloads = wiring.downloads
     if not isinstance(wiring, SpatialDataWiring) or downloads is None:
         raise ValueError("cleanup requires the mounted download/audit wiring")
+    if getattr(downloads.audit_store, "operation_scope", "full") != "full":
+        raise SpatialDataCleanupDisabledError(
+            "cleanup loop is not activated under a read-only audit working set"
+        )
     loop = SpatialDataCleanupLoop(
         jobs=wiring.jobs,
         storage=wiring.storage,
@@ -657,12 +679,14 @@ def start_spatial_data_cleanup(
 
 
 __all__ = [
+    "SpatialDataCleanupDisabledError",
     "SpatialDataCleanupLoop",
     "SpatialDataCoreConfigError",
     "SpatialDataCoreConfigV1",
     "SpatialDataProductionCurrentness",
     "SpatialDataRightsFileV1",
     "build_spatial_data_production",
+    "load_spatial_data_audit_working_set",
     "load_spatial_data_core_config",
     "load_spatial_data_rights_file",
     "spatial_data_source_key_resolver",

@@ -1262,3 +1262,200 @@ def test_platform_boot_imports_no_flight_or_legacy_assembly(
     ) % (_DENIED_PREFIXES,)
     completed = _run_python(script)
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+# -- Indexed audit through the real production journal callback ---------------
+
+
+def _write_owner_private(path: Path, payload: dict[str, Any]) -> Path:
+    path.parent.chmod(0o700)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    path.chmod(0o600)
+    return path
+
+
+def _spatial_factory_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[dict[str, Any], Any, dict[str, str]]:
+    """Synthetic owner-private spatial config + rights + audit working set.
+
+    Self-contained generated fixtures (Ed25519 trust, exact policy binding,
+    0700 spool, 0600 files) without touching any private or real
+    configuration. The policy envelope fits the working-set cold peak
+    (3x index + headers inside 64MiB) with the existing numeric caps
+    unchanged — no bound increase, just a coherent synthetic envelope.
+    """
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from spatial_data_fixture import (
+        NOW,
+        make_activation,
+        make_envelope,
+        make_policy,
+        make_runtime,
+    )
+    from test_spatial_data_production_adapter import _sign
+
+    envelope = make_envelope(max_workspace_bytes=64 * 1024 * 1024)
+    policy = make_policy(
+        policy_id="production-callback-proof",
+        resource_envelope=envelope,
+        max_pending_records=8,
+        max_list_records=64,
+        max_snapshot_bytes=1024 * 1024,
+    )
+    runtime = make_runtime()
+    activation = make_activation(
+        organization_id="organization-1",
+        worker_principal_id="data-worker-1",
+        worker_instance_id="instance-1",
+        policy_digest=policy.policy_digest,
+        runtime_digest=runtime.runtime_digest,
+        valid_from=NOW - timedelta(minutes=1),
+        valid_until=NOW + timedelta(hours=1),
+    )
+    key = Ed25519PrivateKey.generate()
+    signature = _sign(key, activation)
+    trusted = key.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
+    spool = tmp_path / "spool"
+    spool.mkdir(mode=0o700, exist_ok=True)
+    spool.chmod(0o700)
+    grants_file = tmp_path / "rights.json"
+    payload: dict[str, Any] = {
+        "version": "spatial-data-core-config.v1",
+        "processingLocation": "site_onprem",
+        "policy": policy.model_dump(by_alias=True, mode="json"),
+        "runtime": runtime.model_dump(by_alias=True, mode="json"),
+        "activation": activation.model_dump(by_alias=True, mode="json"),
+        "activationSignature": signature,
+        "trustedPublicKey": base64.b64encode(trusted).decode("ascii"),
+        "revokedActivationDigests": [],
+        "spoolRoot": str(spool),
+        "operationTimeoutSeconds": 5.0,
+        "grantsFile": str(grants_file),
+        "cleanupIntervalSeconds": 300.0,
+    }
+    config_path = _write_owner_private(tmp_path / "spatial-config.json", payload)
+    _write_owner_private(
+        grants_file,
+        {"version": "spatial-data-rights.v1", "grants": [], "revocations": []},
+    )
+    from ksi_core.domains.external.delivery.audit_working_set import (
+        SpatialDataAuditWorkingSetV1,
+    )
+
+    working_set = SpatialDataAuditWorkingSetV1(
+        version="spatial-data-audit-working-set.v1",
+        policy_digest=policy.policy_digest,
+        journal_file_name="spatial-data-audit.jsonl",
+        allowed_operation_scope="download-only",
+        activation_id="production-callback-proof",
+        active_session_cap=512,
+        index_disk_bytes=8 * 1024 * 1024,
+        index_cache_allowance_bytes=128 * 1024,
+        max_boot_scan_bytes=64 * 1024 * 1024,
+        max_boot_seconds=60.0,
+        max_tail_records=4096,
+        max_tail_bytes=16 * 1024,
+    )
+    working_set_path = _write_owner_private(
+        tmp_path / "audit-working-set.json",
+        working_set.model_dump(by_alias=True, mode="json"),
+    )
+    env = _platform_env(tmp_path)
+    Path(env["KSI_CORE_DATA_DIR"]).chmod(0o700)
+    # The spatial config load requires a registered worker identity alongside
+    # the operator (same synthetic shape as the production-adapter fixtures).
+    records = json.loads(env["KSI_CORE_PRINCIPAL_TOKENS_JSON"])
+    records.append(
+        {
+            "tokenSha256": hashlib.sha256(b"worker-token").hexdigest(),
+            "principalId": "data-worker-1",
+            "kind": "SPATIAL_DATA_WORKER",
+            "role": None,
+            "deviceId": None,
+            "organizationId": "organization-1",
+        }
+    )
+    records[0]["organizationId"] = "organization-1"
+    env["KSI_CORE_PRINCIPAL_TOKENS_JSON"] = json.dumps(records)
+    env["KSI_CORE_SPATIAL_DATA_CONFIG_FILE"] = str(config_path)
+    env["KSI_CORE_AUDIT_WORKING_SET_CONFIG"] = str(working_set_path)
+    _apply_env(monkeypatch, env)
+    return payload, policy, env
+
+
+def test_factory_boots_indexed_audit_through_real_production_callback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real production journal callback forwards the shared CPU window.
+
+    The spatial wiring always passed ``recover_cpu_budget`` and
+    ``recover_cpu_start``, but the production ``_journal`` callback neither
+    accepted nor forwarded them — a ``TypeError`` before any boot. This
+    drives the whole ``build_platform_production_app`` with synthetic
+    owner-private configs and proves the indexed audit actually boots
+    (derived index with the boot format marker appears) with the shared
+    budget recorded on the real journal open.
+    """
+    import sqlite3
+
+    from ksi_core.composition import platform_production as production_module
+    from ksi_core.composition.platform_production import build_platform_production_app
+
+    _payload, policy, env = _spatial_factory_env(tmp_path, monkeypatch)
+    seen: dict[str, Any] = {}
+    real_journal = production_module.DurableJournal
+
+    def _spy(path: Path, **kwargs: Any) -> Any:
+        if Path(path).name == "spatial-data-audit.jsonl":
+            seen.update(kwargs)
+        return real_journal(path, **kwargs)
+
+    monkeypatch.setattr(production_module, "DurableJournal", _spy)
+    app = build_platform_production_app()
+    assert app is not None
+    # The real callback forwarded the shared window (was TypeError before).
+    assert seen.get("retain_records") is False
+    assert seen.get("tolerate_torn_tail") is False
+    assert isinstance(seen.get("recover_deadline"), float)
+    assert seen.get("recover_cpu_budget") == min(
+        float(policy.resource_envelope.max_cpu_seconds), 60.0
+    )
+    assert isinstance(seen.get("recover_cpu_start"), float)
+    # The delivery structural gate travels the same real path, so the
+    # initial journal parse is bounded before the first object accumulates.
+    from ksi_core.domains.external.delivery.audit import _reject_unbounded_line_shape
+
+    assert seen.get("line_validator") is _reject_unbounded_line_shape
+    # Indexed audit actually booted through the factory: the derived index
+    # carries the boot format marker next to the journal directory.
+    index_path = Path(env["KSI_CORE_DATA_DIR"]) / "spatial-data-audit.ws.sqlite3"
+    assert index_path.exists()
+    connection = sqlite3.connect(str(index_path))
+    try:
+        assert (
+            connection.execute(
+                "SELECT value FROM meta WHERE key = 'format'"
+            ).fetchone()[0]
+            == "audit-history-index.v1"
+        )
+    finally:
+        connection.close()
+
+
+def test_factory_without_working_set_keeps_legacy_audit_projection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Absent opt-in config keeps the legacy audit projection (no index)."""
+    from ksi_core.composition.platform_production import build_platform_production_app
+
+    _payload, _policy, env = _spatial_factory_env(tmp_path, monkeypatch)
+    monkeypatch.delenv("KSI_CORE_AUDIT_WORKING_SET_CONFIG", raising=False)
+    for key in ("KSI_CORE_AUDIT_WORKING_SET_CONFIG",):
+        env.pop(key, None)
+    app = build_platform_production_app()
+    assert app is not None
+    assert not (Path(env["KSI_CORE_DATA_DIR"]) / "spatial-data-audit.ws.sqlite3").exists()
