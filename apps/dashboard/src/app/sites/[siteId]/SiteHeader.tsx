@@ -149,8 +149,11 @@ export function SiteHeader({
       <div className="mx-auto flex w-full max-w-[1440px] flex-wrap items-center gap-x-2 gap-y-1.5 px-4 pt-3 pb-2 sm:flex-nowrap sm:gap-3 sm:px-6">
         <Link
           href="/sites"
-          className="tap-target shrink-0 text-[12px] font-semibold text-ink-muted transition-colors hover:text-ink-1"
+          className="tap-target inline-flex shrink-0 items-center gap-1 text-[12px] font-semibold text-ink-muted transition-colors hover:text-ink-1"
         >
+          <svg aria-hidden="true" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" className="flex-none">
+            <path d="m10 3-4 5 4 5" />
+          </svg>
           현장
         </Link>
 
@@ -163,14 +166,16 @@ export function SiteHeader({
         </h2>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          {primaryAction && (
-            <Link
-              href={primaryAction.href}
-              className="btn btn-primary tap-target hidden min-h-10 lg:inline-flex"
-            >
-              {primaryAction.label}
-            </Link>
-          )}
+          <div className="hidden w-[10rem] shrink-0 justify-end lg:flex">
+            {primaryAction && (
+              <Link
+                href={primaryAction.href}
+                className="btn btn-primary tap-target min-h-10"
+              >
+                {primaryAction.label}
+              </Link>
+            )}
+          </div>
           {statusBadge}
           {settingsMenu}
         </div>

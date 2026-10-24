@@ -56,7 +56,7 @@ export function SiteWorkspaceWorkbench({
             aria-expanded={infoOpen}
             aria-controls={inspectorId}
             onClick={() => setInfoOpen((open) => !open)}
-            className={`tap-target ml-auto shrink-0 text-[12px] underline xl:hidden ${infoOpen ? "font-semibold" : "text-ink-2"}`}
+            className={`tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden ${infoOpen ? "font-semibold" : "text-ink-2"}`}
           >
             정보
           </button>

@@ -209,6 +209,25 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       </header>
       {loaded ? <>
         {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
+        <section aria-label="분석 요약" className="grid grid-cols-3 gap-2 sm:gap-3">
+          <div className="rounded-xl border border-line bg-surface px-4 py-3">
+            <p className="text-[11.5px] font-semibold text-ink-muted">분석 기록</p>
+            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">
+              {loaded.analyses.items.length}{loaded.analyses.nextCursor ? "+" : ""}
+            </p>
+            <p className="mt-1 text-[11.5px] text-ink-muted">조회된 범위</p>
+          </div>
+          <div className="rounded-xl border border-line bg-surface px-4 py-3">
+            <p className="text-[11.5px] font-semibold text-ink-muted">작업구역</p>
+            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">{loaded.areas.workAreas.length}</p>
+            <p className="mt-1 text-[11.5px] text-ink-muted">등록된 작업구역</p>
+          </div>
+          <div className="rounded-xl border border-line bg-surface px-4 py-3">
+            <p className="text-[11.5px] font-semibold text-ink-muted">관측 자료</p>
+            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">{loaded.attributedObservations.length}</p>
+            <p className="mt-1 text-[11.5px] text-ink-muted">분석에 연결된 관측</p>
+          </div>
+        </section>
         {loaded.analyses.items.length === 0 && <AnalysisStartGuide
           workAreaId={effectiveWorkAreaId || null}
           siteId={siteId}

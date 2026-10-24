@@ -165,14 +165,9 @@ function SiteWorkspaceEntryPanel({
     if (compactRecovery) {
       if (expiredKnown) {
         return <section aria-label="기본 관측 선택 상태" className="border-t border-line pt-2">
-          <p className="text-[12.5px] font-bold text-ink-1">이 관측의 미리보기 보관 기간이 끝났습니다</p>
-          <p className="mt-0.5 text-[12px] leading-5 text-ink-2">
-            준비된 적이 있으나 보관 기간이 지나 지금은 볼 수 없습니다.
-            등록된 자료와 검사 기록은 그대로 있으며, 다시 보려면 위의 보기(구역 자료 준비에서 확인)를 따르세요.
+          <p className="text-[12px] leading-5 text-ink-2">
+            보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다. 복구는 위의 구역 자료 준비에서 확인하세요.
           </p>
-          {transitional && (
-            <p className="mt-1 text-[12px] leading-5 text-ink-2">위에는 확인된 측정 범위를 표시합니다. 서버가 정한 기본 관측이 아닙니다.</p>
-          )}
         </section>;
       }
       return <section aria-label="기본 관측 선택 상태" className="rounded-lg border border-line bg-surface px-4 py-3">

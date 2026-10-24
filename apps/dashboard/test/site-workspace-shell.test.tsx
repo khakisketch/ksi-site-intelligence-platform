@@ -410,15 +410,13 @@ describe("workspace shell structure", () => {
       nextCursor: null,
     });
     await renderOverview({ assetRef: "v1" });
-    // 같은 층의 준비 기록이 모두 보관 만료로 확인되면 진입 패널도 만료를
-    // 말한다 — 무대 픽셀 회복(클라이언트 캔버스, 별도 컴포넌트 테스트 범위)과
-    // 같은 CTA를 반복하지 않는다.
+    // 같은 층의 준비 기록이 모두 보관 만료로 확인되면 진입 패널은 무대의
+    // 만료 안내를 반복하지 않고, 보존·복구 한 줄만 덧붙인다.
     const stage = screen.getByRole("region", { name: "선택 관측 보기" });
     const panel = within(stage).getByRole("region", { name: "기본 관측 선택 상태" });
-    // 만료를 '준비된 적 없음'으로 읽히게 하지 않고, 진행 중으로도 암시하지 않는다.
-    expect(panel.textContent).toContain("미리보기 보관 기간이 끝났습니다");
-    expect(panel.textContent).toContain("준비된 적이 있으나 보관 기간이 지나");
-    expect(panel.textContent).toContain("등록된 자료와 검사 기록은 그대로");
+    expect(panel.textContent).toContain("보관 만료는 등록 자료·검사 기록을 삭제하지 않았습니다");
+    expect(panel.textContent).toContain("복구는 위의 구역 자료 준비에서 확인하세요");
+    expect(panel.textContent).not.toContain("미리보기 보관 기간이 끝났습니다");
     expect(panel.textContent).not.toContain("직접 요청하세요");
     expect(panel.textContent).not.toContain("봉인이 끝나지 않았습니다");
     expect(within(panel).queryByRole("link")).toBeNull();

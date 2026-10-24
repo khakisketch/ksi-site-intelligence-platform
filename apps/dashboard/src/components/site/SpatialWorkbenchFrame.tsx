@@ -178,9 +178,12 @@ export function SpatialWorkbenchFrame({
           aria-expanded={catalogOpen}
           aria-controls="workbench-catalog"
           onClick={() => (catalogOpen ? closeCatalog() : setCatalogOpen(true))}
-          className="tap-target shrink-0 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
+          className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
         >
-          목록
+          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
+            <path d="M3 4h10M3 8h10M3 12h10" />
+          </svg>
+          <span className="max-sm:sr-only">목록</span>
         </button>
         {contextBar}
       </div>
