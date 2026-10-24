@@ -1346,6 +1346,7 @@ def _spatial_factory_env(
         SpatialDataAuditWorkingSetV1,
     )
 
+    assert policy.policy_digest is not None
     working_set = SpatialDataAuditWorkingSetV1(
         version="spatial-data-audit-working-set.v1",
         policy_digest=policy.policy_digest,

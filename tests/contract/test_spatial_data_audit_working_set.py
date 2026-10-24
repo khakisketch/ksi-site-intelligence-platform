@@ -11,7 +11,7 @@ import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any, Mapping, cast
 from uuid import uuid4
 
 import pytest
@@ -613,8 +613,11 @@ def test_history_only_boots_over_post_legacy_history_and_denies_admissions(
     )
     assert recovery.operation_scope == "history-only"
     assert journal_path.read_bytes() == before_switch
+    assert recovery._history is not None  # noqa: SLF001
     assert recovery._history.get_meta("prev_config_digest") == _ws(policy).config_digest()  # noqa: SLF001
-    recorded_binding = json.loads(recovery._history.get_meta("audit_working_set_json"))  # noqa: SLF001
+    recorded_raw = recovery._history.get_meta("audit_working_set_json")  # noqa: SLF001
+    assert recorded_raw is not None
+    recorded_binding = json.loads(recorded_raw)
     assert recorded_binding["allowed_operation_scope"] == "history-only"
     assert recorded_binding["activation_id"] == "test-activation-01"
     assert recovery.unfinished(organization_id=ORG, limit=8) == ()
@@ -2470,7 +2473,7 @@ def test_hot_forged_insert_blocked_before_journal_write(tmp_path: Path, monkeypa
     real_append = journal.append
     forged_id = str(uuid4())
 
-    def _racing(record: object) -> None:
+    def _racing(record: Mapping[str, Any]) -> None:
         # Injected after the guard/version check, before the journal fsync:
         # a hot external writer forges a conflicting row for the event we
         # are about to commit. The held writer boundary must block it.
@@ -2484,7 +2487,7 @@ def test_hot_forged_insert_blocked_before_journal_write(tmp_path: Path, monkeypa
             calls.append(f"blocked:{type(exc).__name__}")
         else:
             calls.append("committed")
-        return real_append(record)  # type: ignore[operator]
+        return real_append(record)
 
     monkeypatch.setattr(journal, "append", _racing)
     try:
@@ -2862,7 +2865,7 @@ def test_audit_phase_wall_burn_refuses_with_source_unchanged(
     from ksi_core.domains.external.delivery import audit as audit_module
     from ksi_core.domains.external.delivery.audit import SpatialDataAuditRecoveryError
 
-    calls = [0]
+    calls = [0.0]
 
     def _burning() -> float:
         calls[0] += 100.0
@@ -3303,6 +3306,7 @@ def test_progress_watch_aborts_cpu_burn_during_sql(
     _cycle(store, 1, at=NOW)
     assert store._history is not None
     history = store._history
+    assert store._boot_wall_deadline is not None  # noqa: SLF001
     assert real_monotonic() < store._boot_wall_deadline  # noqa: SLF001
     monkeypatch.setattr(audit_module, "process_time", lambda: 1e9)
     history.watch_deadline(store._past_boot_deadline)  # noqa: SLF001
