@@ -343,6 +343,11 @@ describe("compare stage pair controls", () => {
     // 뷰어는 접히고 헤드(관측 선택·층)만 남는다 — 같은 사유 회복 하나만 둔다.
     expect(within(stage).getByText("관측 A 관측 선택")).toBeTruthy();
     expect(within(stage).getByText("관측 B 관측 선택")).toBeTruthy();
+    // 쌍 동작은 칸·회복보다 먼저 둔다 — 실패 무대를 스크롤해야 보이지 않는다.
+    const markup = stage.innerHTML;
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeGreaterThan(-1);
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("관측 A 관측 선택"));
+    expect(markup.indexOf("이 쌍으로 분석 조건 확인")).toBeLessThan(markup.indexOf("미리보기 보관 기간이 끝났습니다"));
   });
 
   it("keeps the denied list state instead of an expired claim when the list itself is denied", () => {
