@@ -227,6 +227,7 @@ export function SiteSpatialOverview({
             planeUnit={planeUnit}
             vertexCount={ring.length}
             coincident={coincident}
+            compact={compact}
           />}
           <details className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] text-ink-2">
             <summary className="tap-target cursor-pointer font-semibold">배경 지도에서 위치 확인</summary>

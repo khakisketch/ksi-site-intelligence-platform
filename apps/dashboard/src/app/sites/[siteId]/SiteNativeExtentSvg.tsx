@@ -52,6 +52,7 @@ export function SiteNativeExtentSvg({
   planeUnit,
   vertexCount,
   coincident,
+  compact = false,
 }: {
   boundary: Array<[number, number]>;
   footprint: Array<[number, number]> | null;
@@ -60,6 +61,7 @@ export function SiteNativeExtentSvg({
   planeUnit: PlaneUnit;
   vertexCount: number;
   coincident: boolean;
+  compact?: boolean;
 }) {
   const bounds = computePlaneBounds(boundary, footprint);
   if (!bounds) return null;
@@ -72,7 +74,7 @@ export function SiteNativeExtentSvg({
   return <figure className="overflow-hidden rounded-lg border border-line bg-surface">
     <svg
       viewBox={`0 0 ${width} ${VIEW_HEIGHT}`}
-      className="block h-60 w-full text-ink-1 sm:h-80"
+      className={compact ? "block h-36 w-full text-ink-1" : "block h-60 w-full text-ink-1 sm:h-80"}
       role="img"
       aria-label={`작업구역 경계${footprint ? ", 선택한 자료의 포함 범위 함께 표시" : ""}. ${planeUnit === "unknown" ? "좌표 단위 미확인." : ""}`}
     >

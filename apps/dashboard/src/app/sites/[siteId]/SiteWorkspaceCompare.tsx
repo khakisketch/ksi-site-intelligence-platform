@@ -304,22 +304,18 @@ export function SiteWorkspaceCompare({
   if (presentation === "controls") return <div className="min-w-0"><h3 className="mb-2 text-[12px] font-semibold">관측 시점</h3>{visualForm ?? <p className="text-[12px] leading-5 text-ink-2">{selected === null ? "비교할 작업구역이 없습니다. 목록에서 구역을 고르세요." : projectionState === "denied" ? "관측 목록을 조회할 권한이 없습니다. 담당자에게 조회 권한을 요청하세요." : projectionState === "ready" ? "독립 보기로 둘 관측이 아직 없습니다. 뷰어에서 사유를 확인하세요." : "관측 목록을 불러오지 못했습니다. 잠시 후 뷰어에서 조회 상태를 확인하세요."}</p>}{comparisonForm && <details className="mt-2 text-[12px]"><summary className="tap-target cursor-pointer font-semibold">기존 시간 순서 보기</summary><div className="mt-2">{comparisonForm}</div></details>}</div>;
   if (presentation === "inspector") return <div className="flex min-w-0 flex-col gap-3">
     {visualPair.status === "ready" && visualAFact && visualBFact && (
-      <div className="rounded-lg border border-line bg-surface px-4 py-3">
-        <h3 className="text-[13px] font-bold">독립 보기 — 정합 근거 없음</h3>
-        <p className="mt-1 text-[12.5px] leading-5 text-ink-2">
+      <div className="rounded-lg border border-line bg-surface px-3.5 py-2.5">
+        <h3 className="text-[12.5px] font-bold">독립 보기 — 정합 근거 없음</h3>
+        <p className="mt-1 text-[12px] leading-5 text-ink-2">
           A·B는 고른 순서일 뿐 촬영 순서를 뜻하지 않습니다. 동기화 비교는 지원하지 않으며, 각 보기는 독립된 카메라로만 움직입니다.
         </p>
-        <details className="mt-1 text-[12px] text-ink-2">
+        <details className="mt-1 text-[11.5px] text-ink-2">
           <summary className="tap-target cursor-pointer font-semibold">정합 근거 없음 — 자세히</summary>
           <p className="mt-1 leading-5">
             화면 맞춤이 실제 지형 일치를 뜻하지 않으며, 같은 범위 맞춤·같은 색 눈금 비교는 지원하지 않습니다.
             화면을 겹쳐도 분석 근거가 되지 않으며, 높낮이 차이로 읽지 마세요.
           </p>
         </details>
-        <p className="mt-2">
-          <Link href={scopedCompareHref} className="btn">이 쌍으로 분석 조건 확인</Link>
-        </p>
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">수치 계산이 필요할 때만 씁니다. 위 기록은 바뀌지 않으며, 요청하지 않으면 아무 계산도 시작하지 않습니다.</p>
       </div>
     )}
 
