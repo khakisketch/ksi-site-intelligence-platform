@@ -1,16 +1,12 @@
-import Link from "next/link";
-
 import { EmptyState } from "@/components/ui/EmptyState";
 import { ErrorState } from "@/components/ui/ErrorState";
-import { StateBadge } from "@/components/ui/StatusBadge";
 import { SiteListControls } from "@/components/site/SiteListControls";
 import { SiteListNavLink } from "@/components/site/SiteListNavLink";
 import { SiteListCancelBoundary } from "@/components/site/SiteListCancelBoundary";
 import { SiteListDesktopCards } from "@/components/site/SiteListDesktopCards";
-import { SitePreviewThumb } from "@/components/site/SitePreviewThumb";
+import { SiteDirectoryCard } from "@/components/site/SiteDirectoryCard";
 import { SiteListDenseList } from "@/components/site/SiteListDenseList";
 import { SiteListPager } from "@/components/site/SiteListPager";
-import { SiteListCreateTile } from "@/components/site/SiteListCreateTile";
 import { SiteListView } from "@/components/site/SiteListView";
 import { readSiteListView } from "@/components/site/site-list-view.server";
 import {
@@ -22,7 +18,7 @@ import {
   SITE_LIST_CARDS_PER_PAGE,
   SITE_LIST_LIST_PER_PAGE,
 } from "@/components/site/site-list-query";
-import { duplicateSiteNames, SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
+import { duplicateSiteNames } from "@/components/site/SiteIdentityDetails";
 import { CoreApiError } from "@/lib/core-api/client";
 import { humanizeApiError, SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import {
@@ -36,7 +32,6 @@ import {
   siteGroupStatuses,
   siteNextAction,
 } from "@/lib/core-api/site-progress";
-import { formatKoreanDate } from "@/lib/datetime";
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { SITE_STATUSES, type SiteStatus, type SiteView } from "@/lib/core-api/types";
 
@@ -200,7 +195,11 @@ export default async function SitesPage({
 
   return (
     // 화면 이름은 topbar 가 이미 '현장'을 찍는다 — 본문에서 h1 을 또 찍지 않는다.
-    <div className="flex flex-col gap-4 p-4 sm:p-5">
+    <div className="console-page">
+      <header className="console-page-heading">
+        <div><h2 className="console-page-title">현장 목록</h2><p className="console-page-description">현장을 선택해 관측 자료와 분석 기록을 확인하세요.</p></div>
+        <RegisterSiteAction availability={registrationAvailability} />
+      </header>
       {/* 상태 선택과 검색·정렬을 다른 줄에 둔다. 검색은 300ms 디바운스 자동 적용·ENTER 확정, 정렬은 즉시 적용한다. */}
       <div className="flex flex-wrap items-start gap-3">
         {sites !== null && sites.length > 0 && (
@@ -283,7 +282,6 @@ export default async function SitesPage({
                 </SiteListNavLink>
               )}
 
-                <span className="ml-auto"><RegisterSiteAction availability={registrationAvailability} /></span>
               </div>
 
               <SiteListView
@@ -304,16 +302,11 @@ export default async function SitesPage({
                 // 걸린 행이 없으면 패널을 비운다 — 아래 EmptyState 하나만 말한다.
                 cards={
                   hasRows ? (
-                    <div className="w-full max-w-[920px] 2xl:max-w-[1350px]">
+                    <div className="w-full max-w-[976px] 2xl:max-w-full">
                       <SiteListDesktopCards
                         rows={desktopCards}
                         meta={cardsMeta}
                         sameNameSites={sameNameSites}
-                        trailing={
-                          cardsPage === cardsTotalPages ? (
-                            <SiteListCreateTile availability={registrationAvailability} />
-                          ) : null
-                        }
                       />
                       <SiteListPager page={cardsPage} totalPages={cardsTotalPages} base={pagerBase} />
                     </div>
@@ -339,11 +332,6 @@ export default async function SitesPage({
             </div>
           </>
         )}
-        {sites === null && (
-          <span className="ml-auto hidden items-center gap-2 lg:flex">
-            <RegisterSiteAction availability={registrationAvailability} />
-          </span>
-        )}
       </div>
 
       {errorMessage !== null ? (
@@ -368,48 +356,8 @@ export default async function SitesPage({
                 {sites !== null ? `${siteRows.length} / ${sites.length}곳 표시` : undefined}
               </span>
             </div>
-            <ul className="overflow-hidden rounded-lg border border-line bg-surface divide-y divide-line lg:grid lg:grid-cols-2 lg:gap-3 lg:overflow-visible lg:border-0 lg:bg-transparent lg:divide-y-0">
-              {siteRows.map(({ site, next, primaryAction }) => {
-                const statusLabel = SITE_STATUS_LABEL[site.status];
-                const nextLabel = primaryAction?.label ?? next.label;
-                return (
-                  <li key={site.siteId} className="overflow-hidden px-3 py-3.5 sm:px-4 lg:gap-4 lg:overflow-hidden lg:rounded-lg lg:border lg:border-line lg:bg-surface lg:p-4 lg:only:col-span-2">
-                    {/* 실제 준비된 출력 미리보기를 카드 커버로 — 장식 칸을 두지 않는다. */}
-                    <SitePreviewThumb siteId={site.siteId} size="card" />
-                    <div className="flex min-w-0 flex-1 flex-col gap-3 pt-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Link
-                            href={`/sites/${encodeURIComponent(site.siteId)}`}
-                            className="block text-[14px] font-semibold break-keep hover:underline"
-                          >
-                            {site.name}
-                          </Link>
-                           <p className="mt-1 text-[12px] break-keep text-ink-2">
-                             최근 갱신 {formatKoreanDate(site.updatedAt)}
-                           </p>
-                           {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
-                        </div>
-                        <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
-                      </div>
-                      <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
-                        <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
-                        <span className={`shrink-0 text-[11.5px] font-bold ${next.actionable ? "text-accent" : "text-ink-muted"}`}>
-                          {next.actionable ? "조치 필요" : "상태 확인"}
-                        </span>
-                      </div>
-                      {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
-                          이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
-                      <Link
-                        href={`/sites/${encodeURIComponent(site.siteId)}`}
-                        className="btn btn-primary tap-target justify-center"
-                      >
-                        현장 열기
-                      </Link>
-                    </div>
-                  </li>
-                );
-              })}
+            <ul className="grid min-w-0 gap-4 sm:grid-cols-2">
+              {siteRows.map((row) => <li key={row.site.siteId} className="min-w-0"><SiteDirectoryCard row={row} sameName={sameNameSites.has(row.site.name)} /></li>)}
             </ul>
           </section>
         </>

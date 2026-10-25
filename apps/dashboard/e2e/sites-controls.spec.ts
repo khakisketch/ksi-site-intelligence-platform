@@ -80,8 +80,12 @@ test("폭에 맞춰 검색·정렬과 장식의 우선순위를 바꾼다", asyn
   if (phone) {
     const open = page.getByRole("link", { name: "현장 열기", exact: true }).first();
     const actionBox = await open.boundingBox();
-    const cardBox = await open.locator("xpath=ancestor::li[1]").boundingBox();
-    expect(actionBox!.width).toBeGreaterThanOrEqual(cardBox!.width - 32);
+    // Compact directory uses distinct links, not a full-width black button per card.
+    expect(actionBox!.width).toBeGreaterThanOrEqual(44);
+    expect(actionBox!.height).toBeGreaterThanOrEqual(44);
+    const card = open.locator("xpath=ancestor::li[1]");
+    await expect(card.getByRole("link", { name: "자료", exact: true })).toBeVisible();
+    await expect(card.getByRole("link", { name: "결과", exact: true })).toBeVisible();
   }
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(overflow).toBe(false);

@@ -21,7 +21,8 @@ export function MobileBottomNav() {
           역행시킨 자리). 12px 라벨이고 이 제품의 1급 기기가 태블릿이라 여기서 물러설 수 없다.
           --ink-2(#4E5359)는 ≈7.5:1. muted 는 '읽지 않아도 되는 보조 정보'용이지 내비게이션용이 아니다. */}
       {MOBILE_TAB_ITEMS.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)
+          || (item.key === "more" && (pathname === "/help" || pathname.startsWith("/coming-soon/")));
         return (
           <Link
             key={item.key}

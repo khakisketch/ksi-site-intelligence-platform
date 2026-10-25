@@ -17,8 +17,8 @@ export function FieldWorkNav({
   showTeam: boolean;
 }) {
   const tabs = [
-    { key: "orders", label: "관측 작업", href: "/field" },
     { key: "inbox", label: "받은 업무", href: "/field/inbox" },
+    { key: "orders", label: "전체 관측 작업", href: "/field" },
     ...(showTeam ? [{ key: "team", label: "팀 관리", href: "/field/team" }] : []),
   ] as const;
   return (

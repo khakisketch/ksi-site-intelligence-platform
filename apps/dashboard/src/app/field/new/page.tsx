@@ -38,22 +38,22 @@ export default async function FieldNewObservationPage() {
   }
   const sites = result.sites;
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
+    <div className="console-page !max-w-[800px]">
       <div>
-        <p className="text-[12.5px] text-ink-2">관측 자료 등록은 현장의 작업구역과 함께 시작합니다.</p>
-        <h2 className="mt-1 text-[22px] font-bold tracking-tight">현장 선택</h2>
+        <h2 className="console-page-title">어느 현장의 자료인가요?</h2>
+        <p className="console-page-description">현장을 고른 뒤 작업구역을 선택합니다.</p>
       </div>
       {sites.length === 0 ? (
         <EmptyState title="선택할 현장이 없습니다" description="먼저 현장을 등록한 뒤 관측을 시작하세요." />
       ) : (
-        <ul className="flex flex-col divide-y divide-line rounded-xl border border-line bg-surface px-4">
+        <ul className="flex flex-col divide-y divide-line rounded-lg border border-line bg-surface px-4">
           {sites.map((site) => <li key={site.siteId}>
             <Link href={`/sites/${encodeURIComponent(site.siteId)}/observations/new`} className="tap-target -mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-3 hover:bg-sunk">
-              <span className="min-w-0 flex flex-col gap-1">
+              <span className="min-w-0 flex flex-col items-start gap-1">
                 <span className="block text-[14px] font-semibold">{site.name}</span>
                 <StateBadge label={SITE_STATUS_LABEL[site.status].label} tone={SITE_STATUS_LABEL[site.status].tone} />
               </span>
-              <span className="text-[13px] font-bold whitespace-nowrap text-accent-text">선택 ›</span>
+              <span className="flex items-center gap-2 text-[13px] font-semibold whitespace-nowrap text-accent-text">선택<svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="m7 4 6 6-6 6" /></svg></span>
             </Link>
           </li>)}
         </ul>

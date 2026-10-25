@@ -33,7 +33,8 @@ describe("owned single-h1 hierarchy", () => {
       workAreas={[{ workAreaId: "area-1", name: "1구역" }]}
     /></main>);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 2, name: "A 현장 · 관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByText("A 현장")).toBeTruthy();
   });
 
   it("hands a compact reader to the exact notebook target without promising features", () => {
@@ -50,6 +51,6 @@ describe("owned single-h1 hierarchy", () => {
   it("keeps one shell h1 and a contextual h2 on field/new", async () => {
     render(<main><MainPageTitle fallback="새 관측" />{await FieldNewObservationPage()}</main>);
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
-    expect(screen.getByRole("heading", { level: 2, name: "현장 선택" })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 2, name: "어느 현장의 자료인가요?" })).toBeTruthy();
   });
 });

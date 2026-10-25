@@ -242,8 +242,8 @@ export default async function HomePage() {
     ...(analysisReviewsUnknown ? [{ key: "analysis-reviews", message: "분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
   ];
 
-  return <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
-    <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface px-4 py-3">
+  return <div className="console-page">
+    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <p className="text-[14px] font-bold tracking-[-0.015em] break-keep">
           전체 {sitesResult.ok ? `${sites.length}곳` : "—"}
@@ -289,7 +289,7 @@ export default async function HomePage() {
 
         <aside aria-label="현장 및 운영 바로가기" className="flex min-w-0 flex-col gap-4">
           {otherSites.length > 0 && (
-            <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
+            <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2.5 border-t border-line pt-4 xl:border-t-0 xl:pt-0">
               <div className="flex items-baseline justify-between gap-2">
                 <h2 className="text-[16px] font-bold tracking-[-0.015em] break-keep">다른 현장</h2>
                 <Link href="/sites" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline">전체 목록</Link>
@@ -319,14 +319,10 @@ export default async function HomePage() {
             </section>
           )}
 
-          <section aria-label="주요 업무 이동" className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
-            <h2 className="text-[14px] font-bold tracking-[-0.01em]">운영 바로가기</h2>
-            <p className="text-[12px] leading-5 text-ink-2">현장별 공간자료·분석 기록과 조직 관측 작업을 확인합니다.</p>
-            <div className="mt-1 flex flex-wrap gap-2">
-              <Link href="/sites" className="btn tap-target text-[12.5px]">현장 자료·작업 보기</Link>
-              <Link href="/field" className="btn tap-target text-[12.5px]">관측 작업 목록</Link>
-            </div>
-          </section>
+          <nav aria-label="주요 업무 이동" className="flex flex-wrap gap-x-5 border-t border-line pt-3 text-[12px] text-ink-2">
+            <Link href="/sites" className="tap-target inline-flex items-center hover:underline">현장 자료·작업 보기</Link>
+            <Link href="/field" className="tap-target inline-flex items-center hover:underline">관측 작업 목록</Link>
+          </nav>
         </aside>
       </div>
     )}

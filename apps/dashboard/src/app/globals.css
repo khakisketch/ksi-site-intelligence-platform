@@ -3,6 +3,87 @@
 @import "leaflet/dist/leaflet.css";
 @import "leaflet-draw/dist/leaflet.draw.css";
 
+/* Task surfaces share a rhythm, not a forced card-grid layout. */
+.console-page {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.console-page-heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.console-page-title {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.3;
+  letter-spacing: -0.03em;
+}
+.console-page-description {
+  margin-top: 6px;
+  max-width: 68ch;
+  color: var(--ink-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.console-work-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 16px;
+}
+.console-work-heading > .console-page-description {
+  grid-column: 1 / -1;
+  max-width: none;
+}
+.console-filter-link {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--ink-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.console-filter-link:hover { background: var(--sunk); }
+.console-filter-link[aria-current="page"] {
+  border-color: var(--line-strong);
+  background: var(--surface);
+  color: var(--ink-1);
+  font-weight: 600;
+}
+.site-directory-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+}
+.console-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 48px 24px;
+  text-align: center;
+}
+@media (max-width: 639px) {
+  .console-page { padding: 16px; gap: 20px; }
+  .console-page-title { font-size: 22px; }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    KSI 현장 지능 — 디자인 토큰
 

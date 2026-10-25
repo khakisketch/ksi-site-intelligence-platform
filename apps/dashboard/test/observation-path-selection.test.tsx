@@ -18,7 +18,8 @@ describe("ExternalObservationCreateForm path selection", () => {
       />,
     );
     // Sole workflow heading, not a method-choice card grid.
-    expect(screen.getByRole("heading", { name: "A 현장 · 관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByText("A 현장")).toBeTruthy();
     expect(screen.getAllByRole("heading")).toHaveLength(1);
     expect(screen.queryByRole("heading", { name: "외부 산출물 등록" })).toBeNull();
     expect(screen.queryByRole("button", { name: /외부 산출물 등록/ })).toBeNull();

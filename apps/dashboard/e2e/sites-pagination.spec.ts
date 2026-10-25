@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }, testInfo) => {
   await login(page);
 });
 
-test("카드는 실제 현장4개씩 나누고 마지막 페이지 생성 카드는 건수에서 뺀다", async ({ page }, testInfo) => {
+test("실제 현장4개씩 나누고 등록 진입은 머리말에만 둔다", async ({ page }, testInfo) => {
   test.skip(Boolean(process.env.KSI_DASHBOARD_E2E_BASE_URL), "다섯 개의 명시적 격리 fixture로 페이지 경계를 확인합니다.");
   await expect(root(page)).toHaveAttribute("data-site-total", "5");
   await expect(root(page)).toHaveAttribute("data-site-page", "1");
@@ -32,7 +32,8 @@ test("카드는 실제 현장4개씩 나누고 마지막 페이지 생성 카드
   await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("2");
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
   await expect(cards(page)).toHaveCount(1);
-  await expect(page.locator("[data-site-create-card]:visible")).toHaveCount(1);
+  await expect(page.locator("[data-site-create-card]:visible")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "현장 등록", exact: true })).toHaveCount(1);
   const gridBox = await cards(page).first().locator("..").boundingBox();
   const pageBox = await pager(page).boundingBox();
   expect(pageBox!.y - (gridBox!.y + gridBox!.height)).toBeGreaterThanOrEqual(12);
@@ -40,7 +41,7 @@ test("카드는 실제 현장4개씩 나누고 마지막 페이지 생성 카드
   const finalId = await cards(page).first().getAttribute("data-site-card");
   expect(new Set([...firstIds, finalId]).size).toBe(5);
   await expect(pager(page).getByText("2", { exact: true })).toHaveAttribute("aria-current", "page");
-  await expect(page.getByRole("heading", { name: "현장", level: 2 })).toBeInViewport();
+  await expect(page.getByRole("heading", { name: "현장", exact: true, level: 2 })).toBeInViewport();
   await capture(page, `page2-create-${testInfo.project.name}`);
   await page.reload();
   await expect(root(page)).toHaveAttribute("data-site-page", "2");
@@ -84,7 +85,7 @@ test("페이지·보기·정렬을 바꿔도 검색 범위를 잃거나 이전 �
   expect(new URL(page.url()).searchParams.get("q")).toBe("e2e-site");
 });
 
-test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 생성 카드는 설명만 연다", async ({ page }) => {
+test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 머리말 행동은 설명만 연다", async ({ page }) => {
   // 기본 카드를 바꾸더라도 저장 가능한 목록의 별도 페이지 경계도 보존한다.
   const modes = page.getByRole("group", { name: "현장 보기 방식" });
   await modes.getByRole("button", { name: "목록", exact: true }).click();
@@ -105,7 +106,7 @@ test("잘못된 페이지는 실제 범위로 보정하고 등록 권한 없는 
     } else await route.continue();
   });
   await expect(page.getByRole("link", { name: "새 현장 추가", exact: true })).toHaveCount(0);
-  const trigger = page.getByRole("button", { name: "새 현장 추가", exact: true });
+  const trigger = page.getByRole("button", { name: "현장 등록", exact: true });
   await trigger.focus();
   await page.keyboard.press("Enter");
   await expect(page.getByText("현재 계정으로는 현장을 등록할 수 없습니다. 관리자에게 문의하세요.", { exact: true })).toBeVisible();

@@ -24,5 +24,5 @@ export default async function FieldTeamPage() {
     }
     throw error;
   }
-  return <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5"><FieldWorkNav active="team" showTeam /> <header><h2 className="text-[22px] font-bold tracking-[-0.025em]">팀 관리</h2><p className="mt-1 text-[13px] leading-5 text-ink-2">작업 배정·공유에 쓰는 팀원 정보를 확인합니다. 조직 관리 화면이 아닙니다.</p></header><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} /></div>;
+  return <div className="console-page"><FieldWorkNav active="team" showTeam /> <header><h2 className="console-page-title">팀 관리</h2><p className="console-page-description">작업 배정·공유에 쓰는 팀원 정보입니다. 계정 권한은 변경하지 않습니다.</p></header><div className="w-full max-w-4xl"><TeamRosterPanel initialMembers={roster.members} canManage={canManage} currentPrincipalId={session.principal.principalId} /></div></div>;
 }

@@ -60,9 +60,13 @@ export function DesktopSidebar({
         <SidebarSearchTrigger />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-2.5">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5">
         {DESKTOP_NAV_GROUPS.map((group) => (
-          <div key={group.key}>
+          <div key={group.key} className={group.key === "account" ? "mt-auto border-t border-white/10 pt-3 pb-2" : undefined}>
+            {group.key === "account" && <Link href="/help" aria-current={pathname.startsWith("/help") ? "page" : undefined} className={`tap-target flex items-center gap-2.5 rounded-md px-2 text-[13px] hover:bg-sidebar-hover ${pathname.startsWith("/help") ? "bg-sidebar-active font-semibold text-sidebar-active-ink" : ""}`}>
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="size-[17px]"><circle cx="12" cy="12" r="9" /><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5" /></svg>
+              도움말
+            </Link>}
             {group.label && (
               // tracking 0.1em 은 라틴 대문자용이다 — 한글에 그대로 걸면 자모가 흩어져
               // 오히려 읽기 나빠진다. uppercase 는 라틴 라벨이 섞일 때를 위해 남긴다.

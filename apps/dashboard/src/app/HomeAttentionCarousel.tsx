@@ -151,15 +151,12 @@ export function HomeAttentionCarousel({
               </figure>
             )}
 
-            <div className="flex min-w-0 flex-col gap-2 p-4 sm:p-5">
+            <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-6">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
                 <p className="min-w-0 text-[13px] font-bold break-keep">{item.siteName}</p>
                 <p className="num shrink-0 text-[11px] text-ink-muted">{item.timeLabel} {item.observedAt}</p>
               </div>
-              <p className="text-[11.5px] font-bold tracking-[0.03em] text-accent">{item.label}</p>
-              <h3 className="text-[19px] leading-snug font-bold tracking-[-0.025em] break-keep sm:text-[22px]">
-                {item.title}
-              </h3>
+              <div><h3 className="text-[19px] leading-snug font-semibold tracking-[-0.025em] break-keep sm:text-[22px]">{item.title}</h3><p className="mt-1 text-[12px] font-medium text-ink-2">{item.label}</p></div>
               <p className="text-[13px] leading-6 break-keep text-ink-2">{item.detail}</p>
               {item.technicalRef && (
                 <details className="text-[11.5px] text-ink-muted">

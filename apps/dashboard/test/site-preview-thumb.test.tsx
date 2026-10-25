@@ -320,7 +320,8 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByText("미리보기 권한 없음")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.body.textContent).not.toMatch(/자료 없음|등록된 자료가 없|관측자료 없음|보유 자료 없음/);
-    expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
+    expect(document.body.textContent).toMatch(/등록 자료가 없다는 뜻이 아닙니다/);
+    expect(document.body.textContent).toContain("현장을 열어 자료와 준비 상태를 다시 확인하세요.");
     expect(screen.queryByRole("link")).toBeNull();
   });
 
@@ -342,9 +343,11 @@ describe("SitePreviewThumb", () => {
     const badge = await screen.findByText("미리보기 없음");
     expect(badge.className).toMatch(/bg-surface/);
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 실제 픽셀은 읽지 않고, 중립 표시(장식 일러스트·상태 문구)만 둔다.
+    // 실제 픽셀을 꾸며내지 않고 작은 상태와 복구 안내만 둔다.
     expect(document.querySelector("canvas")).toBeNull();
     expect(document.querySelector("svg")).not.toBeNull();
+    expect(document.querySelector("linearGradient")).toBeNull();
+    expect(document.querySelector('[data-site-preview="card-empty"]')?.className).not.toContain("aspect-");
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
     expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
     expect(screen.queryByRole("link")).toBeNull();

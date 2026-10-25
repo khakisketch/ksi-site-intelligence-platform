@@ -1,14 +1,9 @@
-import Link from "next/link";
 import { useId, type ReactNode } from "react";
 
-import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import type { OperatorNextAction } from "@/lib/operator-next-action";
 import type { SiteNextAction } from "@/lib/core-api/site-progress";
 import type { SiteView } from "@/lib/core-api/types";
-import { formatKoreanDate } from "@/lib/datetime";
-import { SiteIdentityDetails } from "@/components/site/SiteIdentityDetails";
-import { SitePreviewThumb } from "@/components/site/SitePreviewThumb";
-import { StateBadge } from "@/components/ui/StatusBadge";
+import { SiteDirectoryCard } from "./SiteDirectoryCard";
 
 /** 현장 목록 한 행의 projection — 카드·밀도표가 같은 값을 쓴다. */
 export interface SiteListRow {
@@ -49,53 +44,8 @@ export function SiteListDesktopCards({
         </h2>
         <span className="text-[11.5px] text-ink-muted">{meta}</span>
       </div>
-      <div className="grid w-full max-w-[920px] gap-3 lg:grid-cols-2 2xl:max-w-[1350px] 2xl:grid-cols-3">
-      {rows.map(({ site, next, primaryAction }) => {
-        const statusLabel = SITE_STATUS_LABEL[site.status];
-        const nextLabel = primaryAction?.label ?? next.label;
-        return (
-          <article
-            key={site.siteId}
-            data-site-card={site.siteId}
-            className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
-          >
-            <SitePreviewThumb siteId={site.siteId} size="card" />
-            <div className="flex min-w-0 flex-1 flex-col gap-3 p-4">
-            <div className="flex min-w-0 flex-col gap-2">
-              <div className="flex items-start justify-between gap-3">
-                <h3 className="min-w-0 flex-1 text-[17px] leading-snug font-bold tracking-[-0.015em] break-words">
-                  <Link
-                    href={`/sites/${encodeURIComponent(site.siteId)}`}
-                    className="hover:underline"
-                  >
-                    {site.name}
-                  </Link>
-                </h3>
-                <StateBadge label={statusLabel.label} tone={statusLabel.tone} />
-              </div>
-              <p className="num text-[11.5px] text-ink-2">
-                최근 갱신 {formatKoreanDate(site.updatedAt)}
-              </p>
-            </div>
-            <div className="flex items-center justify-between gap-3 rounded-md bg-sunk px-3 py-2">
-              <p className="min-w-0 text-[12.5px] font-semibold break-keep">{nextLabel}</p>
-              <span className={`shrink-0 text-[11.5px] font-bold ${next.actionable ? "text-accent" : "text-ink-muted"}`}>
-                {next.actionable ? "조치 필요" : "상태 확인"}
-              </span>
-            </div>
-            {sameNameSites.has(site.name) && <SiteIdentityDetails site={site} sameName />}
-            {/* 표 행과 같은 이유(F08) — 다음 행동 CTA는 현장 상세 헤더가
-                이미 1차 액션으로 보여준다. 카드는 열람 동작 하나만 둔다. */}
-            <Link
-              href={`/sites/${encodeURIComponent(site.siteId)}`}
-              className="btn btn-primary tap-target mt-auto justify-center"
-            >
-              현장 열기
-            </Link>
-            </div>
-          </article>
-        );
-      })}
+      <div className="grid w-full gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      {rows.map((row) => <SiteDirectoryCard key={row.site.siteId} row={row} sameName={sameNameSites.has(row.site.name)} />)}
       {trailing}
       </div>
     </section>

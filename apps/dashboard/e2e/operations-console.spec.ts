@@ -88,15 +88,20 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
-test("계정·도움말은 계정 행동과 기존 제품 지원 경계를 함께 제공한다", async ({ page }) => {
+test("계정 행동과 도움말을 분리해도 기존 지원 경계에 도달할 수 있다", async ({ page }) => {
   await page.goto("/more");
-
+  await expect(page.getByRole("heading", { name: "내 계정", exact: true })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: /Dock·Edge 지원 범위/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "로그아웃", exact: true }).first()).toBeAttached();
+  await page.getByRole("main").getByRole("link", { name: "도움말·작업 안내", exact: true }).click();
+  await expect(page).toHaveURL(/\/help$/);
   const supportLink = page.getByRole("main").getByRole("link", { name: /Dock·Edge 지원 범위/ });
   await expect(supportLink).toHaveCount(1);
   await expect(supportLink).toHaveAttribute("href", "/coming-soon/fleet");
-  await expect(supportLink).toContainText("장비 운용은 현 제품 범위 밖입니다. 기존 경로의 안내만 유지합니다.");
+  await expect(page.getByText("장비 운용과 고객 측 재구성은 제품 범위 밖입니다.", { exact: true })).toBeVisible();
   await expect(page.getByText("비행 임무·장비 연결·복구처럼 기술 운영에 필요한 화면입니다.", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "로그아웃", exact: true }).first()).toBeAttached();
+  await supportLink.click();
+  await expect(page).toHaveURL(/\/coming-soon\/fleet$/);
 });
 
 test("역할에 맞는 전역 메뉴와 반응형 셸을 유지한다", async ({ page }, testInfo) => {
@@ -606,8 +611,10 @@ test("전역 작업 화면은 결정·진행·완료 원장을 구분하고 모�
     await expect(page.getByText("E2E 과거 읽기 전용 · 결과 검토 기록", { exact: true })).toBeVisible();
     await expect(page.getByText("E2E 과거 읽기 전용 · 완료 기록", { exact: true })).toBeVisible();
     await expect(page.getByText("E2E 외부 산출물 등록", { exact: true })).toBeVisible();
-    for (const group of ["결정 필요", "진행 중", "완료"]) {
-      await expect(page.getByRole("heading", { name: group, exact: true })).toBeVisible();
+    for (const [group, key, count] of [["결정 필요", "decisionRequired", 2], ["진행 중", "inFlight", 2], ["완료", "completed", 1]] as const) {
+      await page.getByRole("navigation", { name: "작업 요약" }).getByRole("link", { name: new RegExp(`^${group}`) }).click();
+      await expect.poll(() => new URL(page.url()).searchParams.get("group")).toBe(key);
+      await expect(page.getByRole("region", { name: "관측 작업 목록" }).locator("li")).toHaveCount(count);
     }
   }
 });

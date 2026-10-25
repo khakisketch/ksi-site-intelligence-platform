@@ -28,9 +28,11 @@ describe("ExternalObservationCreateForm", () => {
 
   it("creates one external ingress with a stable idempotency key and opens its work detail", async () => {
     render(<ExternalObservationCreateForm siteId="site-1" siteName="서쪽 현장" workAreas={[{ workAreaId: "wa-1", name: "동측 절토면" }]} />);
-    expect(screen.getByRole("heading", { name: "서쪽 현장 · 관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "관측 자료 등록" })).toBeTruthy();
+    expect(screen.getByText("서쪽 현장")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "외부 산출물 등록" })).toBeNull();
-    expect(screen.getByText("비행 또는 장비 제어는 시작하지 않습니다.")).toBeTruthy();
+    expect(screen.getByText("등록할 자료의 작업 이름과 범위를 선택하세요.")).toBeTruthy();
+    expect(screen.getByRole("list", { name: "자료 등록 흐름" }).querySelector('[aria-current="step"]')?.textContent).toBe("1. 작업구역");
     expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1");
     expect(screen.getByLabelText("작업 이름").getAttribute("maxlength")).toBe("200");
     fireEvent.change(screen.getByLabelText("작업 이름"), { target: { value: "9월 6일 현황 비교" } });
@@ -125,7 +127,7 @@ describe("ExternalObservationCreateForm", () => {
     expect(screen.queryByText(/촬영 간격 기준을 미리 골랐습니다/)).toBeNull();
     expect(screen.getByText(/선택한 구역에서 시작합니다/)).toBeTruthy();
     // 작업→파일 흐름 설명은 CTA 근처 하나만 둔다.
-    expect(screen.getAllByText(/파일 올리기는 그 화면에서 이어갑니다/)).toHaveLength(1);
+    expect(screen.getAllByText(/파일은 다음 화면에서 제출합니다/)).toHaveLength(1);
     // 하나 고른 범위는 돌아가기 링크에 싣는다.
     expect(screen.getByRole("link", { name: "현장으로 돌아가기" }).getAttribute("href")).toBe("/sites/site-1?workAreaId=wa-1");
   });

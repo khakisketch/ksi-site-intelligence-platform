@@ -9,8 +9,8 @@ afterEach(() => cleanup());
 describe("WorkInboxPanel", () => {
   it("explains what appears in an empty inbox and how the unread filter behaves", () => {
     render(<WorkInboxPanel initialUnreadOnly initialNextCursor={null} initialItems={[]} />);
-    expect(screen.getByText(/읽지 않은 받은 업무가 없습니다/)).toBeTruthy();
-    expect(screen.getByText(/전체 목록을 선택해 읽은 업무를 확인/)).toBeTruthy();
+    expect(screen.getByText(/읽지 않은 업무가 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/읽은 업무는 전체 목록에서 볼 수 있습니다/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "읽지 않음" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "전체" }).getAttribute("aria-pressed")).toBe("false");
   });

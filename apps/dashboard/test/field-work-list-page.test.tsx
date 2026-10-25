@@ -63,8 +63,8 @@ describe("Field work list page", () => {
     // 보기 전환은 탭으로, 한 줄 목적만 둔다(설명벽을 주 내비로 쓰지 않는다).
     const nav = screen.getByRole("navigation", { name: "업무 보기 방식" });
     expect(nav).toBeTruthy();
-    expect(screen.getByText("현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "관측 작업" }).getAttribute("href")).toBe("/field");
+    expect(screen.getByText("조직의 전체 관측 작업 기록입니다.")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "전체 관측 작업" }).getAttribute("href")).toBe("/field");
     expect(screen.getByRole("link", { name: "받은 업무" }).getAttribute("href")).toBe("/field/inbox");
   });
   it("explains an unavailable registration action only on demand, without a registration link", async () => {
@@ -84,7 +84,8 @@ describe("Field work list page", () => {
     const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
     expect(task.textContent).toContain("담당·기한 상태 확인");
     expect(task.textContent).not.toContain("자료 등록·검사 확인");
-    expect(screen.getByText("등록·검사 상태와 다음 분석을 확인할 작업")).toBeTruthy();
+    expect(screen.getByRole("link", { name: /운영 상태 확인 필요/ })).toBeTruthy();
+    expect(task.textContent).toContain("확인 불가");
   });
 
   it("lets a closed operation lead to history even when its retained observation is approved", async () => {
@@ -96,12 +97,12 @@ describe("Field work list page", () => {
   it("summarizes all four queue groups and keeps opaque IDs out of task rows", async () => {
     render(await FieldWorkListPage());
 
-    const summary = within(screen.getByRole("region", { name: "작업 요약" }));
+    const summary = within(screen.getByRole("navigation", { name: "작업 요약" }));
     expect(summary.getByText("결정 필요")).toBeTruthy();
     expect(summary.getByText("진행 중")).toBeTruthy();
     expect(summary.getByText("운영 상태 확인 필요")).toBeTruthy();
     expect(summary.getByText("완료")).toBeTruthy();
-    expect(summary.getByText("1")).toBeTruthy();
+    expect(summary.getByRole("link", { name: "운영 상태 확인 필요 1" }).getAttribute("href")).toBe("/field?group=operationsUnavailable");
 
     const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
     expect(task.getAttribute("href")).toBe("/field/work-orders/obs-work-opaque-0001");
@@ -115,5 +116,23 @@ describe("Field work list page", () => {
     expect(disclosureSummary.tagName).toBe("SUMMARY");
     expect(disclosure?.textContent).toContain("obs-work-opaque-0001");
     expect(disclosure?.textContent).toContain("site-opaque-0001");
+  });
+
+  it("filters existing records by query and state without replacing the unknown operations state", async () => {
+    mocked.workOrders.mockResolvedValueOnce([order(), order({ workOrderId: "obs-2", name: "서측 등록" })]);
+    render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: "동측", group: "operationsUnavailable" }) }));
+    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /서측 등록/ })).toBeNull();
+    expect(screen.getByRole("link", { name: /결정 필요/ }).getAttribute("href")).toBe("/field?q=%EB%8F%99%EC%B8%A1&group=decisionRequired");
+    expect(screen.queryByText("이 구분에 표시할 작업이 없습니다.")).toBeNull();
+  });
+
+  it("distinguishes a filtered empty list and accepts repeated URL parameters without crashing", async () => {
+    render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: "없는 작업", site: "unavailable-site" }) }));
+    expect(screen.getByText("조건에 맞는 작업이 없습니다")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeNull();
+    cleanup();
+    render(await FieldWorkListPage({ searchParams: Promise.resolve({ q: ["a", "b"], group: ["completed", "inFlight"] }) }));
+    expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ })).toBeTruthy();
   });
 });

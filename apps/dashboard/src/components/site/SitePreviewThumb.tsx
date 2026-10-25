@@ -281,7 +281,7 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
     );
   }
 
-  // 실제 픽셀이 없으면 사진이 아님을 밝힌 중립 블록으로 같은 자리를 채운다.
+  // 픽셀이 없을 때도 로딩·미확인·거부·부재를 구분한다. 큰 표지는 만들지 않는다.
   if (phase.name === "loading" || phase.name === "pending") {
     return (
       <div ref={boxRef} data-site-preview="card-loading" className="border-b border-line px-4 py-2">
@@ -295,6 +295,8 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
   const emptyNote =
     phase.name === "refused"
       ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
+      : phase.name === "unknown"
+        ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 현장을 열어 자료와 준비 상태를 다시 확인하세요."
       : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
   // 뱃지가 상태를 먼저 말한다 — 없음(중립)·확인 불가(주의)·권한 없음(경고)을
   // 색으로도 구분한다. 색만으로 구분하지 않고 라벨 텍스트를 항상 둔다.
@@ -304,68 +306,17 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       : phase.name === "unknown"
         ? "border-high bg-high-bg text-high-ink"
         : "border-line-strong bg-surface text-ink-2";
-  // 합성 기술서가 없을 때는 추상 일러스트(특정 현장이 아닌 공통 배경) 위에
-  // 상태 문구를 올린다. 범위 도식은 그리지 않는다.
+  // No pixels means a small, explicit status, not an invented landscape cover.
   return (
-    <div ref={boxRef} data-site-preview="card-empty" className="relative aspect-[16/9] overflow-hidden bg-sunk">
-      <svg
-        viewBox="0 0 320 180"
-        preserveAspectRatio="xMidYMid slice"
-        className="absolute inset-0 size-full"
-        aria-hidden="true"
-        focusable="false"
-      >
-        <defs>
-          <linearGradient id="ksi-empty-sky" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#f7fafd" />
-            <stop offset="1" stopColor="#e9f0f7" />
-          </linearGradient>
-        </defs>
-        <rect width="320" height="180" fill="url(#ksi-empty-sky)" />
-        {/* 먼 산 — 옅은 두 겹, 특정 지형이 아닌 장식 */}
-        <path
-          d="M0 96 L42 62 L78 84 L118 58 L162 88 L204 66 L248 90 L284 70 L320 92 L320 180 L0 180 Z"
-          fill="#dde6f0"
-        />
-        <path
-          d="M0 118 L52 92 L104 112 L160 90 L222 114 L272 96 L320 112 L320 180 L0 180 Z"
-          fill="#cfdae8"
-        />
-        {/* 강 — 가운데를 가로지르는 옅은 물결 */}
-        <path
-          d="M0 148 C60 138 96 156 150 146 C210 135 250 152 320 142 L320 180 L0 180 Z"
-          fill="#c9dcf0"
-          opacity="0.8"
-        />
-        {/* 도심 블록 암시 — 위치·규모를 주장하지 않는 작은 사각형들 */}
-        <g fill="#e2e9f2" stroke="#bfccdd" strokeWidth="1">
-          <rect x="196" y="112" width="14" height="18" rx="1" />
-          <rect x="213" y="106" width="12" height="24" rx="1" />
-          <rect x="228" y="114" width="16" height="16" rx="1" />
-          <rect x="247" y="108" width="11" height="22" rx="1" />
-          <rect x="261" y="116" width="14" height="14" rx="1" />
-        </g>
-        {/* 나무점 — 식생 판독이 아닌 장식 점 */}
-        <g fill="#ccd6c2">
-          <circle cx="36" cy="140" r="3" />
-          <circle cx="48" cy="144" r="2.4" />
-          <circle cx="62" cy="139" r="2.8" />
-          <circle cx="76" cy="145" r="2.2" />
-          <circle cx="120" cy="142" r="2.6" />
-        </g>
-        {/* 아래쪽 본문 가독 베일 */}
-        <rect y="96" width="320" height="84" fill="#ffffff" opacity="0.55" />
-      </svg>
-      <span
-        role="img"
-        aria-label={`${emptyLabel} — 아래 일러스트는 장식이며 실제 현장이 아닙니다. ${emptyNote}`}
-        className="absolute inset-0 flex flex-col items-center justify-end gap-1 px-6 pt-6 pb-3 text-center"
-      >
-        <span className="max-w-[52ch] text-[10.5px] leading-relaxed break-keep text-ink-2">{emptyNote}</span>
-      </span>
-      <span className={`absolute top-2 left-2 rounded-full border px-2 py-0.5 text-[11px] font-bold break-keep ${emptyToneClass}`}>
-        {emptyLabel}
-      </span>
+    <div ref={boxRef} data-site-preview="card-empty" className="flex items-center gap-3 border-b border-line bg-page px-4 py-3">
+      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5 shrink-0 text-ink-muted"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m3 16 5-5 5 5 3-3 5 5M16 7h.01" /></svg>
+      <details className="min-w-0 text-[12px] text-ink-2">
+        <summary className="tap-target flex cursor-pointer items-center gap-2 font-medium">
+          <span className={`rounded border px-2 py-0.5 ${emptyToneClass}`}>{emptyLabel}</span>
+          <span className="text-[11px] text-ink-muted">상태 안내</span>
+        </summary>
+        <p className="max-w-[52ch] pt-1 text-[12px] leading-5">{emptyNote}</p>
+      </details>
     </div>
   );
 }

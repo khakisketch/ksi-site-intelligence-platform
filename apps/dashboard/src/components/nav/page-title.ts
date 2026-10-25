@@ -10,6 +10,7 @@ const STATIC_TITLES: Record<string, string> = {
   "/sites": "현장",
   "/sites/new": "현장 등록",
   "/more": "계정·도움말",
+  "/help": "도움말",
   "/field": "업무",
   "/field/new": "관측 자료 등록",
   "/field/inbox": "받은 업무",

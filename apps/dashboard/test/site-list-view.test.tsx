@@ -507,6 +507,7 @@ describe("SiteListView", () => {
 
 const PAGE = readFileSync(join(process.cwd(), "src/app/sites/page.tsx"), "utf8");
 const CARDS = readFileSync(join(process.cwd(), "src/components/site/SiteListDesktopCards.tsx"), "utf8");
+const DIRECTORY_CARD = readFileSync(join(process.cwd(), "src/components/site/SiteDirectoryCard.tsx"), "utf8");
 const DENSE = readFileSync(join(process.cwd(), "src/components/site/SiteListDenseList.tsx"), "utf8");
 const VIEW = readFileSync(join(process.cwd(), "src/components/site/SiteListView.tsx"), "utf8");
 
@@ -529,41 +530,48 @@ describe("sites desktop view wiring", () => {
     expect(VIEW).toContain("data-site-list-view={view}");
   });
 
-  it("현장 열기가 유일한 채움 1차 동작이고 이웃은 조용한 텍스트다", () => {
-    expect((CARDS.match(/>\s*현장 열기\s*</g) ?? []).length).toBe(1);
-    expect(CARDS).toContain("btn btn-primary");
-    expect(CARDS).toContain("조치 필요");
-    expect(CARDS).toContain("상태 확인");
+  it("현장 열기가 중심 동작이고 자료·결과는 조용한 텍스트다", () => {
+    // 공유 카드: 현장 열기 하나만 두고 이웃(자료·결과)은 조용한 텍스트다.
+    expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
+    expect(DIRECTORY_CARD).toContain("조치 필요");
+    expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
+    expect(DIRECTORY_CARD).toContain("spatial-assets");
+    expect(DIRECTORY_CARD).toContain("/analysis");
     expect((DENSE.match(/label="현장 열기"/g) ?? []).length).toBe(1);
     expect(DENSE).toMatch(/<TableAction[\s\S]*?primary[\s\S]*?\/>/);
-    expect((PAGE.match(/>\s*현장 열기\s*</g) ?? []).length).toBe(1);
-    expect(PAGE).toContain("btn btn-primary");
+    // 머리말은 등록 진입 하나만 소유한다 — 큰 trailing 타일을 두지 않는다.
+    expect(PAGE).toContain("RegisterSiteAction");
+    expect(PAGE).toContain("SiteDirectoryCard");
+    expect(PAGE).not.toContain("SiteListCreateTile");
   });
 
   it("간결 카드는 실제 미리보기 영역을 두고 장식 표지는 두지 않는다", () => {
-    expect(CARDS).toContain("data-site-card");
-    expect(CARDS).toContain("SitePreviewThumb");
-    expect(CARDS).not.toContain("data-site-cover");
-    expect(CARDS).not.toContain("기본 표지");
-    expect(CARDS).not.toContain("DefaultSiteVisual");
-    expect(CARDS).not.toContain("aspect-[16/7]");
-    expect(CARDS).not.toContain("line-clamp-3");
-    expect(CARDS).not.toContain("text-[22px]");
-    expect(CARDS).toContain("text-[17px]");
+    // 격자는 배치만 맡고 카드 본문은 공유 카드가 그린다.
+    expect(CARDS).toContain("SiteDirectoryCard");
     expect(CARDS).toContain("lg:grid-cols-2");
     expect(CARDS).toContain("2xl:grid-cols-3");
-    expect(CARDS).toContain("max-w-[920px]");
-    expect(CARDS).toContain("2xl:max-w-[1350px]");
-    expect(CARDS).not.toContain("mx-auto");
-    expect(CARDS).toContain("mt-auto");
     expect(CARDS).toContain("trailing");
     expect(CARDS).toContain("<h2");
     expect(CARDS).toContain("meta: string");
-    expect(CARDS.match(/<h3/g) ?? []).toHaveLength(1);
-    expect(CARDS).not.toContain("only:col-span");
-    expect(CARDS).not.toContain("h-[180px]");
-    expect(CARDS).not.toMatch(/위성|항공|실측 이미지|현장 사진|미리보기 없음|기본 이미지/);
-    expect((CARDS.match(/현장 열기/g) ?? []).length).toBe(1);
+    expect(CARDS).not.toContain("aspect-[16/7]");
+    expect(CARDS).not.toContain("line-clamp-3");
+    expect(CARDS).not.toContain("DefaultSiteVisual");
+    expect(DIRECTORY_CARD).toContain("data-site-card");
+    expect(DIRECTORY_CARD).toContain("SitePreviewThumb");
+    expect(DIRECTORY_CARD).not.toContain("data-site-cover");
+    expect(DIRECTORY_CARD).not.toContain("기본 표지");
+    expect(DIRECTORY_CARD).not.toContain("DefaultSiteVisual");
+    expect(DIRECTORY_CARD).not.toContain("line-clamp-3");
+    expect(DIRECTORY_CARD).not.toContain("text-[22px]");
+    expect(DIRECTORY_CARD).toContain("text-[17px]");
+    expect(DIRECTORY_CARD).toContain("mt-auto");
+    expect(DIRECTORY_CARD).toContain("<h3");
+    expect(DIRECTORY_CARD.match(/<h3/g) ?? []).toHaveLength(1);
+    expect(DIRECTORY_CARD).not.toContain("only:col-span");
+    expect(DIRECTORY_CARD).not.toContain("h-[180px]");
+    expect(DIRECTORY_CARD).not.toMatch(/위성|항공|실측 이미지|현장 사진|미리보기 없음|기본 이미지/);
+    expect((DIRECTORY_CARD.match(/현장 열기/g) ?? []).length).toBe(1);
+    expect(DIRECTORY_CARD).not.toContain("<img");
   });
 
   it("밀도표는 썸네일 없이 좁은 열에 든다", () => {
@@ -792,7 +800,7 @@ describe("sites desktop pagination", () => {
     return document.querySelector('[data-site-list-view="cards"],[data-site-list-view="list"]') as HTMLElement;
   }
 
-  it("카드는 4개씩 끊고 마지막 페이지만 타일을 둔다", async () => {
+  it("카드는 4개씩 끊고 타일을 두지 않는다", async () => {
     mockedCookies.value = "cards";
     mockFiveSites();
     render(await SitesPage({ searchParams: Promise.resolve({ q: "" }) }));
@@ -805,13 +813,14 @@ describe("sites desktop pagination", () => {
     expect(within(pager).getByRole("link", { name: "1" }).getAttribute("aria-current")).toBe("page");
   });
 
-  it("마지막 카드는 남은 행과 타일을 함께 둔다", async () => {
+  it("마지막 카드는 남은 행만 두고 타일을 두지 않는다", async () => {
     mockedCookies.value = "cards";
     mockFiveSites();
     render(await SitesPage({ searchParams: Promise.resolve({ page: "2" }) }));
     const panel = desktopPanel();
     expect(within(panel).getAllByRole("heading", { level: 3 })).toHaveLength(1);
-    expect(within(panel).getByText("새 현장 추가")).toBeTruthy();
+    // 등록 진입은 머리말 RegisterSiteAction이 소유한다 — 큰 trailing 타일을 두지 않는다.
+    expect(within(panel).queryByText("새 현장 추가")).toBeNull();
     expect(within(panel).getByText("5–5 / 5곳 표시")).toBeTruthy();
     expect(screen.getByRole("link", { name: "2" }).getAttribute("aria-current")).toBe("page");
   });
@@ -822,7 +831,7 @@ describe("sites desktop pagination", () => {
     render(await SitesPage({ searchParams: Promise.resolve({ page: "99" }) }));
     const panel = desktopPanel();
     expect(within(panel).getAllByRole("heading", { level: 3 })).toHaveLength(1);
-    expect(within(panel).getByText("새 현장 추가")).toBeTruthy();
+    expect(within(panel).queryByText("새 현장 추가")).toBeNull();
   });
 
   it("깨진 페이지 값은 1페이지로 떨어진다", async () => {

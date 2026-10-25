@@ -37,7 +37,17 @@ const SUMMARY_GROUPS = [
   ["completed", "완료"],
 ] as const;
 
-export default async function FieldWorkListPage() {
+export default async function FieldWorkListPage({ searchParams }: {
+  searchParams?: Promise<{ q?: string | string[]; group?: string | string[]; site?: string | string[] }>;
+} = {}) {
+  const rawParams = await searchParams ?? {};
+  const params = {
+    q: typeof rawParams.q === "string" ? rawParams.q : undefined,
+    group: typeof rawParams.group === "string" ? rawParams.group : undefined,
+    site: typeof rawParams.site === "string" ? rawParams.site : undefined,
+  };
+  const query = (params.q ?? "").trim();
+  const groupKey = GROUPS.some(([key]) => key === params.group) ? params.group : undefined;
   const session = await resolveFieldSession();
   if (session.kind === "blocked") return <OperationsSessionFailure verdict={session.verdict} next="/field" />;
   let workOrders;
@@ -91,6 +101,17 @@ export default async function FieldWorkListPage() {
   const groups = orderWorkQueueGroupsForDisplay(GROUPS.map(([key, label, description]) => ({
     key, label, description, rows: summary[key],
   })));
+  const matching = groups.flatMap(({ key, rows }) => rows.map((order) => ({ key, order })))
+    .filter(({ key, order }) => (!groupKey || key === groupKey)
+      && (!params.site || order.siteId === params.site)
+      && (!query || `${order.name} ${siteById.get(order.siteId)?.name ?? ""}`.toLocaleLowerCase("ko-KR").includes(query.toLocaleLowerCase("ko-KR"))));
+  const filterHref = (group?: string) => {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (params.site) next.set("site", params.site);
+    if (group) next.set("group", group);
+    return `/field${next.size ? `?${next}` : ""}`;
+  };
   const notices = operations
     ? deriveWorkQueueOperationalNotices(workOrders, byId, session.principal.principalId, new Date())
     : [];
@@ -98,19 +119,19 @@ export default async function FieldWorkListPage() {
   const showTeam = session.principal.role === "ADMIN" || canCreateObservation;
 
   return (
-      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5">
+      <div className="console-page">
         <header className="flex flex-col gap-2.5">
           <FieldWorkNav active="orders" showTeam={showTeam} />
-          <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
-            <div>
-              <h2 className="text-[22px] font-bold tracking-[-0.025em]">관측 작업</h2>
-              <p className="mt-1 text-[13px] text-ink-2">현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.</p>
+          <div className="console-work-heading pt-1">
+            <div className="min-w-0 flex-1">
+              <h2 className="console-page-title">관측 작업</h2>
             </div>
             {canCreateObservation ? (
               <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
             ) : (
               <ActionUnavailable label="관측 자료 등록" description="현재 계정으로는 관측 자료를 등록할 수 없습니다. 작업 등록 권한이 있는 담당자에게 문의하세요." />
             )}
+            <p className="console-page-description !mt-0 basis-full">조직의 전체 관측 작업 기록입니다.</p>
           </div>
         </header>
         <WorkQueueOperationsNotices notices={notices} />
@@ -118,31 +139,27 @@ export default async function FieldWorkListPage() {
           <EmptyState title="등록된 관측 작업이 없습니다" description="현장 화면에서 작업구역을 확인하고 관측 자료 등록을 시작할 수 있습니다." action={{ label: "현장 보기", href: "/sites" }} />
         ) : (
           <>
-            <section className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-line bg-line lg:grid-cols-4" aria-label="작업 요약">
+            <nav className="flex items-center gap-1 overflow-x-auto border-b border-line pb-3" aria-label="작업 요약">
+              <Link href={filterHref()} aria-current={!groupKey ? "page" : undefined} className="console-filter-link">전체 <span className="tabular-nums text-ink-muted">{workOrders.length}</span></Link>
               {SUMMARY_GROUPS.map(([key, label]) => (
-                <div key={key} className="min-w-0 bg-surface px-3 py-3 sm:px-4">
-                  <p className="text-[12px] font-semibold text-ink-muted">{label}</p>
-                  <p className="num mt-1 text-[22px] font-bold tracking-tight">{summary[key].length}</p>
-                </div>
+                <Link key={key} href={filterHref(key)} aria-current={groupKey === key ? "page" : undefined} className="console-filter-link">{label}<span className="tabular-nums text-ink-muted">{summary[key].length}</span></Link>
               ))}
-            </section>
-            {groups.map(({ key, label, description, rows }) => {
-              return (
-                <section key={key} className="overflow-hidden rounded-lg border border-line bg-surface" aria-labelledby={`work-${key}`}>
-                  <div className="border-b border-line px-4 py-3">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <h2 id={`work-${key}`} className="text-[15px] font-bold">{label}</h2>
-                      <span className="num text-[12px] text-ink-muted">{rows.length}</span>
-                    </div>
-                    <p className="mt-1 text-[12px] text-ink-2">{description}</p>
-                  </div>
-                  {rows.length === 0 ? (
-                    <p className="px-4 py-4 text-[12.5px] text-ink-muted">이 구분에 표시할 작업이 없습니다.</p>
-                  ) : (
-                    <ul className="divide-y divide-line">
-                      {rows.map((order) => {
+            </nav>
+            <form action="/field" className="flex flex-wrap items-end gap-3" role="search" aria-label="관측 작업 검색">
+              {groupKey && <input type="hidden" name="group" value={groupKey} />}
+              <label className="grid min-w-0 flex-1 basis-56 gap-1.5 text-[12px] font-medium sm:max-w-md">작업 검색<input className="input w-full" type="search" name="q" defaultValue={query} placeholder="작업명 또는 현장명" /></label>
+              <label className="grid min-w-0 gap-1.5 text-[12px] font-medium">현장<select className="input w-full sm:max-w-64" name="site" defaultValue={params.site ?? ""}><option value="">전체 현장</option>{[...siteById.values()].filter((site) => siteIds.includes(site.siteId)).map((site) => <option key={site.siteId} value={site.siteId}>{site.name}</option>)}</select></label>
+              <button className="btn" type="submit">검색</button>
+              {(query || params.site || groupKey) && <Link href="/field" className="tap-target inline-flex items-center px-2 text-[12px] underline">필터 초기화</Link>}
+            </form>
+            <section aria-label="관측 작업 목록" className="overflow-hidden rounded-lg border border-line bg-surface">
+              <div className="flex items-center justify-between border-b border-line px-4 py-3 text-[12px] text-ink-2"><span>{groupKey ? GROUPS.find(([key]) => key === groupKey)?.[1] : "전체 작업"}</span><span role="status" className="tabular-nums">{matching.length}건 표시</span></div>
+              <div className="hidden grid-cols-[minmax(0,1fr)_140px_110px_150px] gap-4 border-b border-line bg-page px-4 py-2.5 text-[12px] text-ink-muted xl:grid" aria-hidden="true"><span>작업 · 현장</span><span>담당</span><span>기한</span><span>상태</span></div>
+              {matching.length === 0 ? <EmptyState title="조건에 맞는 작업이 없습니다" description="검색어나 상태·현장 필터를 바꿔 보세요." action={{ label: "필터 초기화", href: "/field" }} /> : <ul className="divide-y divide-line">
+                      {matching.map(({ key, order }) => {
                         const state = presentWorkOrder(order.status, order.executionMode);
                         const siteName = siteById.get(order.siteId)?.name ?? null;
+                        const operation = byId.get(order.workOrderId);
                         const context = formatWorkQueueRowContext({
                           siteName,
                           workAreaIds: order.workAreaIds,
@@ -152,12 +169,16 @@ export default async function FieldWorkListPage() {
                         });
                         return (
                           <li key={order.workOrderId}>
-                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target flex flex-col items-start justify-between gap-2 px-4 py-3 hover:bg-sunk sm:flex-row sm:items-center sm:gap-3">
-                              <span className="min-w-0 flex-1">
-                                <span className="block break-words break-keep text-[13px] font-semibold">{order.name}</span>
+                            <Link href={`/field/work-orders/${encodeURIComponent(order.workOrderId)}`} className="tap-target grid grid-cols-2 gap-x-4 gap-y-2 px-4 py-4 hover:bg-page xl:grid-cols-[minmax(0,1fr)_140px_110px_150px] xl:items-center">
+                              <span className="col-span-2 min-w-0 flex-1 xl:col-span-1">
+                                <span className="block break-words break-keep text-[14px] font-semibold">{order.name}</span>
                                 <span className="mt-1 block break-words break-keep text-[12px] leading-5 text-ink-2">{context}</span>
                               </span>
+                              <span className="min-w-0 break-words text-[12px] text-ink-2"><span className="xl:hidden">담당 · </span>{operation ? operation.assigneePrincipalId === session.principal.principalId ? "나" : operation.assigneePrincipalId ?? "미배정" : "확인 불가"}</span>
+                              <span className="text-[12px] text-ink-2 tabular-nums"><span className="xl:hidden">기한 · </span>{operation ? operation.dueAt ? formatKoreanDateTime(operation.dueAt, { dateStyle: "short", timeStyle: "short" }) : "미정" : "확인 불가"}</span>
+                              <span className="col-span-2 xl:col-span-1">
                               <StateBadge label={key === "completed" ? "이력 보기" : key === "operationsUnavailable" ? "담당·기한 상태 확인" : state.label} tone={key === "completed" ? "neutral" : key === "operationsUnavailable" ? "warning" : state.tone} />
+                              </span>
                             </Link>
                             {rowsNeedingTechnicalRef.has(order.workOrderId) && <details className="px-4 pb-2 text-[11.5px] text-ink-muted">
                               <summary className="tap-target inline-flex cursor-pointer items-center font-semibold">파일 정보</summary>
@@ -166,11 +187,8 @@ export default async function FieldWorkListPage() {
                           </li>
                         );
                       })}
-                    </ul>
-                  )}
-                </section>
-              );
-            })}
+                    </ul>}
+            </section>
           </>
         )}
       </div>

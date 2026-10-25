@@ -5,16 +5,12 @@ import { whoAmI } from "@/lib/core-api/auth";
 import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
-import { NAV_ITEMS } from "@/components/nav/nav-items";
-import { NavIcon } from "@/components/nav/NavIcon";
-import { StateBadge } from "@/components/ui/StatusBadge";
 
 // TopBar 가 "/more" 경로 h1("계정·도움말") 을 이미 렌더한다(page-title.ts) — 여기서 또 찍지 않는다.
 //
-// 넷째 탭의 목적지는 계정·도움말이다. 범위 밖 장비 안내(Dock·Edge) 하나가
-// 탭 전체를 차지하던 구조를 걷고, 현재 계정·로그아웃·작업 안내·지원 경계를
-// 한 자리에서 연다. 계정 설정·결제·조직 관리 같은 화면은 이 제품에 없으므로
-// 만들지 않는다.
+// 넷째 탭은 계정과 도움말의 입구다. 현재 계정·로그아웃은 여기에,
+// 작업 안내·지원 경계는 /help에 둔다. 계정 설정·결제·조직 관리처럼
+// 구현되지 않은 기능을 채우기 위해 만들지 않는다.
 export default async function MorePage() {
   let principal: Awaited<ReturnType<typeof whoAmI>> | null = null;
   let loginRequired = false;
@@ -28,23 +24,21 @@ export default async function MorePage() {
   }
 
   const roleLabel = principal ? (principal.role ? ROLE_LABEL[principal.role] : principal.kind) : null;
-  const showTeam = principal?.role === "ADMIN" || principal?.permissions?.includes("WORK_ORDERS_WRITE") === true;
-  const boundaryItems = NAV_ITEMS.filter((item) => item.demoted);
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 sm:p-5">
-      <section aria-label="계정" className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3">
-        <h2 className="text-[15px] font-bold">계정</h2>
+    <div className="console-page">
+      <header className="console-page-heading"><div><h2 className="console-page-title">내 계정</h2><p className="console-page-description">현재 로그인한 계정과 역할을 확인합니다.</p></div></header>
+      <section aria-label="계정" className="flex w-full max-w-2xl flex-col gap-5 rounded-lg border border-line bg-surface p-5 sm:p-6">
         {principal ? (
           <div className="flex flex-wrap items-center gap-3">
             <span
               aria-hidden="true"
-              className="grid size-9 flex-none place-items-center rounded-full bg-sunk text-[14px] font-bold"
+              className="grid size-12 flex-none place-items-center rounded-full bg-sunk text-[18px] font-semibold"
             >
               {principal.principalId.trim().charAt(0).toUpperCase() || "?"}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block break-words text-[13.5px] font-semibold">{principal.principalId}</span>
+              <span className="block break-words text-[16px] font-semibold">{principal.principalId}</span>
               <span className="mt-0.5 block text-[12px] text-ink-2">{roleLabel}</span>
             </span>
             <form action={logout} className="flex-none">
@@ -74,66 +68,7 @@ export default async function MorePage() {
         )}
       </section>
 
-      <section aria-label="도움말·작업 안내" className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3">
-        <h2 className="text-[15px] font-bold">도움말·작업 안내</h2>
-        <p className="text-[12.5px] leading-5 text-ink-2">
-          현장에서는 자료와 분석 결과를, 업무에서는 관측 작업과 배정·공유된 항목을 확인할 수 있습니다.
-        </p>
-        <ul className="flex flex-col divide-y divide-line">
-          <li>
-            <Link href="/sites" className="tap-target flex items-center gap-3 py-2.5 text-sm hover:underline">
-              <span className="min-w-0 flex-1"><span className="block font-semibold">현장 목록</span>
-                <span className="mt-0.5 block text-[12px] font-normal text-ink-muted">등록된 현장을 찾아 공간자료·등록 자료·분석 기록을 확인합니다.</span></span>
-            </Link>
-          </li>
-          <li>
-            <Link href="/field" className="tap-target flex items-center gap-3 py-2.5 text-sm hover:underline">
-              <span className="min-w-0 flex-1"><span className="block font-semibold">관측 작업</span>
-                <span className="mt-0.5 block text-[12px] font-normal text-ink-muted">조직의 관측 작업 기록을 상태별로 확인합니다. 개인 할당 목록이 아닙니다.</span></span>
-            </Link>
-          </li>
-          <li>
-            <Link href="/field/inbox" className="tap-target flex items-center gap-3 py-2.5 text-sm hover:underline">
-              <span className="min-w-0 flex-1"><span className="block font-semibold">받은 업무</span>
-                <span className="mt-0.5 block text-[12px] font-normal text-ink-muted">나에게 배정·공유된 작업과 결과를 확인합니다.</span></span>
-            </Link>
-          </li>
-          {showTeam && <li>
-            <Link href="/field/team" className="tap-target flex items-center gap-3 py-2.5 text-sm hover:underline">
-              <span className="min-w-0 flex-1"><span className="block font-semibold">팀 관리</span>
-                <span className="mt-0.5 block text-[12px] font-normal text-ink-muted">작업 배정·공유에 쓰는 팀원 정보를 확인합니다. 조직 관리 화면이 아닙니다.</span></span>
-            </Link>
-          </li>}
-        </ul>
-      </section>
-
-      {boundaryItems.length > 0 && (
-        <section aria-label="지원 경계 안내" className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3">
-          <h2 className="text-[15px] font-bold">지원 경계 안내</h2>
-          <p className="text-[12.5px] leading-5 text-ink-2">
-            현재 제품의 지원 경계를 안내합니다. 장비 운용 기능은 제공하지 않습니다.
-          </p>
-          <ul className="flex flex-col divide-y divide-line">
-            {boundaryItems.map((item) => (
-              <li key={item.key}>
-                <Link
-                  href={item.href}
-                  className="tap-target flex items-center gap-3 py-2.5 text-sm hover:bg-sunk"
-                >
-                  <NavIcon name={item.icon} className="size-5 flex-none text-ink-2" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block font-semibold">{item.label}</span>
-                    {item.description && (
-                      <span className="mt-0.5 block text-[12px] font-normal text-ink-muted">{item.description}</span>
-                    )}
-                  </span>
-                  {!item.implemented && <StateBadge label="제품 범위 밖" tone="neutral" />}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <Link href="/help" className="tap-target flex w-full max-w-2xl items-center justify-between gap-4 border-t border-line py-4 text-[13px] font-semibold hover:underline">도움말·작업 안내<svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-4"><path d="m7 4 6 6-6 6" /></svg></Link>
     </div>
   );
 }

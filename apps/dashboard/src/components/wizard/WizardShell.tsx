@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 /**
  * 위저드 껍데기 — 왼쪽 단계 레일 · 가운데 입력 · 오른쪽 요약(Console v2 §6).
@@ -41,6 +42,7 @@ export function WizardShell({
    * 확인 다이얼로그 없이 바로 나가도 된다(useDraftState). */
   exitHref,
   exitLabel = "목록으로",
+  layout = "rail",
 }: {
   title: string;
   stepLabels: string[];
@@ -58,11 +60,21 @@ export function WizardShell({
   aside?: React.ReactNode;
   exitHref?: string;
   exitLabel?: string;
+  /** Short registration flows don't need a permanent navigation rail. */
+  layout?: "rail" | "steps";
 }) {
   const totalSteps = stepLabels.length;
+  const contentRef = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(currentStep);
+  useEffect(() => {
+    if (previousStep.current === currentStep) return;
+    previousStep.current = currentStep;
+    contentRef.current?.focus();
+  }, [currentStep]);
 
   return (
-    <div className="flex w-full flex-col gap-4 p-4 sm:p-5 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start xl:grid-cols-[230px_minmax(0,1fr)_320px]">
+    <div className={layout === "steps" ? "console-page !max-w-[960px]" : `flex w-full flex-col gap-4 p-4 sm:p-5 lg:grid lg:grid-cols-[230px_minmax(0,1fr)] lg:items-start ${aside ? "xl:grid-cols-[230px_minmax(0,1fr)_320px]" : "max-w-[1200px]"}`}>
+      {layout === "steps" && <header className="hidden flex-col gap-5 lg:flex"><div className="console-page-heading"><h2 className="console-page-title">{title}</h2>{exitHref && <Link href={exitHref} className="tap-target inline-flex items-center text-[13px] text-ink-2 underline">{exitLabel}</Link>}</div><ol className="grid grid-cols-3 gap-3" aria-label="진행 단계">{stepLabels.map((label, index) => <li key={label} aria-current={index === currentStep ? "step" : undefined} className={`flex items-center gap-2 border-b-2 pb-3 text-[13px] ${index === currentStep ? "border-accent font-semibold text-ink-1" : "border-line text-ink-muted"}`}><span className="tabular-nums">{index + 1}</span>{label}</li>)}</ol>{origin}</header>}
       {/* ── 좁은 화면용 축약 진행 표시 ─────────────────────────────────── */}
       <div className="flex flex-col gap-2 lg:hidden">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
@@ -113,7 +125,7 @@ export function WizardShell({
       </div>
 
       {/* ── 넓은 화면용 세로 레일 ──────────────────────────────────────── */}
-      <aside className="hidden flex-col gap-3 rounded-lg border border-line bg-surface p-3.5 lg:flex">
+      <aside className={layout === "steps" ? "hidden" : "hidden flex-col gap-3 rounded-lg border border-line bg-surface p-3.5 lg:flex"}>
         {/* 초안 자동 저장은 이미 동작하지만 **말해 준 적이 없었다** — 여러 단계를
             채우는 화면에서 "나가면 날아가나"는 실제로 사람을 붙잡아 두는 불안이다. */}
         <p className="flex items-center gap-2 rounded-md border border-line bg-sunk px-2.5 py-2 text-[11.5px] break-keep text-ink-2">
@@ -183,7 +195,7 @@ export function WizardShell({
       </aside>
 
       {/* ── 입력 ───────────────────────────────────────────────────────── */}
-      <div className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface">
+      <div ref={contentRef} tabIndex={-1} aria-label={`${stepLabels[currentStep]} · ${currentStep + 1}/${totalSteps}`} className="min-w-0 overflow-hidden rounded-lg border border-line bg-surface">
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-5">{children}</div>
 
         {error && <div className="px-4 pb-4 sm:px-5">{error}</div>}

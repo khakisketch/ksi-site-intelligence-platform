@@ -725,6 +725,7 @@ describe("SiteListControls phone panel", () => {
 
 const PAGE = readFileSync(join(process.cwd(), "src/app/sites/page.tsx"), "utf8");
 const CONTROLS = readFileSync(join(process.cwd(), "src/components/site/SiteListControls.tsx"), "utf8");
+const DIRECTORY_CARD = readFileSync(join(process.cwd(), "src/components/site/SiteDirectoryCard.tsx"), "utf8");
 
 describe("sites page wiring", () => {
   it("검색·정렬을 새 컨트롤 하나로 묶고 옛 정렬 폼을 남기지 않는다", () => {
@@ -744,7 +745,8 @@ describe("sites page wiring", () => {
 
   it("머리말 주석이 실제 동작·경로를 말한다", () => {
     expect(PAGE).toContain("300ms 디바운스");
-    expect(PAGE).toContain("실제 준비된 출력 미리보기를 카드 커버로");
+    expect(PAGE).toContain("SiteDirectoryCard");
+    expect(PAGE).toContain("RegisterSiteAction");
     expect(PAGE).not.toContain("검색만 제출하며");
     expect(PAGE).not.toContain("실측 이미지가 없으므로");
   });
@@ -763,14 +765,22 @@ describe("sites page wiring", () => {
   });
 
   it("모바일·태블릿 카드는 실제 미리보기와 이름·상태·다음 행동·열기 하나만 둔다", () => {
-    const cardStart = PAGE.indexOf("<li key={site.siteId}");
+    const cardStart = PAGE.indexOf("<li key={row.site.siteId}");
     const cardEnd = PAGE.indexOf("</li>", cardStart);
     const card = PAGE.slice(cardStart, cardEnd);
     expect(card).not.toContain("SiteListVisual");
     expect(card).not.toContain("<img");
-    expect(card).toContain('<SitePreviewThumb siteId={site.siteId} size="card" />');
-    expect(card).toContain("현장 열기");
-    expect(card.match(/현장 열기/g)).toHaveLength(1);
+    // 폰·태블릿 목록은 공유 카드(SiteDirectoryCard) 하나로 그린다.
+    expect(card).toContain("SiteDirectoryCard");
+    expect(DIRECTORY_CARD).toContain('<SitePreviewThumb siteId={site.siteId} size="card" />');
+    expect(DIRECTORY_CARD).toContain("현장 열기");
+    expect(DIRECTORY_CARD.match(/현장 열기/g)).toHaveLength(1);
+    // 이웃은 조용한 텍스트 바로가기(자료·결과)다.
+    expect(DIRECTORY_CARD).toContain("spatial-assets");
+    expect(DIRECTORY_CARD).toContain("/analysis");
+    expect(DIRECTORY_CARD).not.toContain("btn btn-primary");
+    expect(DIRECTORY_CARD).not.toContain("<img");
+    expect(DIRECTORY_CARD).not.toContain("next/image");
     // 데스크톱은 실제 미리보기 카드 또는 밀도표다.
     expect(PAGE).toContain("SiteListDesktopCards");
     expect(PAGE).toContain("SiteListDenseList");

@@ -595,3 +595,54 @@ polish와 Core 후보 메모리 계측 결과 반영은 후속 기록으로 둔�
   **100통과·16조건부 제외·0실패**, 1440/1280/390 실배포 **27개 캡처 0 overflow / 0 axe WCAG2A/AA**.
   증거: `~/.local/state/ksi-audit-20261024/system-redesign-20261025/` (`live-*`,
   `system-ia-overview-20261025.jpg`).
+
+## 후속 승인 — 전역 목적지·목록·등록 흐름 재구성 (2026-10-25)
+
+사용자가 텍스트 위주 구성에 재차 이의를 제기하고 다른 메뉴·페이지의 재구성안을 요청한 뒤
+실행을 승인했다. 이번 범위는 전역 메뉴, 홈, 현장 목록, 업무·받은 업무, 계정·도움말,
+등록 진입과 짧은 현장 등록 흐름이다. 이전 배포의 간격 조정만으로 이 요청을 충족했다고
+보지 않는다. 동시에 진행 중인 공간 엔진/분석 연동의 작업공간·결과·자료 owner 파일과
+Core 계약·권한·원장은 이 UI 단위에서 수정하지 않는다.
+
+### 구현 계획·책임 경계
+
+- Requirement IDs: REQ-UX-101, SDP-REQ-01/02/05/06. INV-020/040/051/053/060/061 유지.
+- Owner module: `apps/dashboard/`. Core 데이터·명령·권한은 기존 접점 그대로 소비.
+- Acceptance criteria: 현장 식별→관측 등록→작업 상세와 받은 업무→대상 열기,
+  계정→도움말→기존 지원 범위의 길을 보존. 빈 상태별 큰 박스와 가짜 표지를 제거.
+  검색·상태 범위는 URL·새로고침·뒤로가기에도 유지. 실패·거부·미확인을 부재/0으로 대체하지 않음.
+- Contracts affected: API/schema/보관/계산 변경 없음. `/field?q=&group=&site=`는 읽기 목록 필터.
+  기존 `/field`, `/field/inbox`, 현장·자료·결과·지원 범위 direct link 유지.
+- Reference assets: 기존 ink-mono 셸과 실제 제품 캡처를 비교 기준으로 사용. 신규 사진·외부 아이콘·폰트 없음.
+- Adoption decisions: 자료가 없을 때 큰 장식 그림 대신 작은 상태와 복구 안내; 운영 큐는 빈 상태별
+  카드가 아니라 하나의 필터 가능한 목록; 설정·도움은 작업 메뉴와 분리. 모든 화면을 지도나 카드 격자로
+  통일하지 않음. 결정에 필요한 권한·부재·반출 한계는 표시하고 보조 안내만 펼침으로 이동.
+- Files to change: nav/DesktopSidebar·MobileBottomNav·page-title, home, sites directory/preview/shared card,
+  field/nav/inbox/new/team wrapper, more/help, WizardShell/site registration/observation scope form와 관련 테스트.
+- Tests: 전체 Vitest/tsc/lint/production build, 공식 4 E2E+페이지네이션+신규 업무 흐름 회귀,
+  1440/768/390 scroll-0 캡처와 axe, 독립 Critic.
+- HIL or real-device assumptions: 없음. 실제 고객·측량·장비·물리 터치/스크린리더 수용은 주장하지 않음.
+- License/data implications: 기존 출처/버전/부분 범위 보존. 새 데이터 반출·지도 제공자·보관/접근 변경 없음.
+- Rollback: 이 UI 단위의 명명된 파일 변경만 되돌림. 동시 변경·원장·서비스·정책은 건드리지 않음.
+
+### 현재 구현·검증 증거
+
+- 현장 목록: 큰 대체 풍경과 마지막 추가 타일 제거. 실제 출력이 있을 때만 픽셀·출처·부분 범위를
+  표시하고, 없으면 작은 상태 안내. 공유 `SiteDirectoryCard`로 desktop/mobile 동일한 현장명·갱신·상태와
+  현장 열기/자료/결과 진입 제공. 기존 필터·보기 쿠키·페이지 범위와 권한 3상태 유지.
+- 업무: 받은 업무/전체 관측 작업/권한에 따른 팀 관리. 실제 Core 목록을 검색·현장·상태로 필터하고
+  담당/기한을 별도 열로 표시. 읽지 못한 운영 상태를 미배정/미정으로 추정하지 않음.
+- 계정/도움말: 계정은 사용자·역할·로그아웃과 도움말 링크만 제공. `/help`에서 작업 진입·FAQ 펼침·
+  기존 범위 안내에 접근. desktop 보조 메뉴는 하단, mobile은 기존 4탭과 계정 내 도움말 유지.
+- 등록: 현장 선택→작업구역→파일 제출·검사 흐름 표시. 3단계 현장 등록은 빈 세로 레일/3열 예약 없이
+  적정 폭의 단계 표시·입력·검토로 구성. 기존 초안/멱등성/권한/모바일 쓰기 제한 유지.
+- 격리 실행: `localhost:3298`/Core8098/issuer9098의 공식 합성 영속 fixture. 권한 있는 현장 등록은
+  별도 `localhost:3297`/Core8097/issuer9097의 private MAPPED_BOOTSTRAP 테스트 신원에서
+  실제 등록201→현장 상세→새로고침·서버 발급 identity/저널 결속 확인. 운영 서비스는 변경하지 않음.
+- 현재 검사: Vitest **211파일 2171통과**, tsc0, lint0오류/기존 경고1, production build 성공.
+  공식 4개+페이지네이션+신규 task navigation E2E **120통과/24명시적 제외/0실패**.
+  10개 경로×1440/768/390 **30개 초기 캡처 모두200/문서 overflow0/axe WCAG2A-AA0**;
+  공식 Impeccable detector `[]`. 실제 자료의 미리보기 복구·계산 가능 쌍을 입증하는 검사는 아니다.
+- 증거: `~/.local/state/ksi-console-ia-20261025/`의 `final-*.png`, `captures.log`, `build.log`,
+  `unit-green.log`, `e2e-confirmed.log`, `registration/evidence/`. 독립 검토 결과는 수신 후 여기에 대조.
+  운영 배포·고객 수용·전체 제품 완료는 이 UI 증거로 승격하지 않는다.

@@ -134,19 +134,14 @@ export function ExternalObservationCreateForm({
   };
 
   return (
-    <div className="mx-auto flex max-w-2xl flex-col gap-4 p-4 sm:p-5">
+    <div className="console-page !max-w-[800px]">
       <div>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[22px] font-bold tracking-tight">{siteName} · 관측 자료 등록</h2>
+          <h2 className="console-page-title">관측 자료 등록</h2>
           <Link href={returnHref} className="text-[13px] font-semibold text-accent-text hover:underline">현장으로 돌아가기</Link>
         </div>
-        <p className="mt-1 text-[12px] leading-5 text-ink-2">
-          등록된 외부 비교 기록과 검토 상태는{" "}
-          <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="font-semibold text-accent-text hover:underline">
-            외부 비교 기록
-          </Link>
-          에서 확인하세요.
-        </p>
+        <p className="console-page-description">{siteName}</p>
+        <ol aria-label="자료 등록 흐름" className="mt-5 grid grid-cols-3 gap-3 text-[12px]"><li aria-current="step" className="border-b-2 border-accent pb-3 font-semibold">1. 작업구역</li><li className="border-b-2 border-line pb-3 text-ink-muted">2. 파일 제출</li><li className="border-b-2 border-line pb-3 text-ink-muted">3. 검사 확인</li></ol>
       </div>
 
       {workAreas.length === 0 ? (
@@ -157,9 +152,9 @@ export function ExternalObservationCreateForm({
         </section>
       ) : (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" reason="노트북에서 같은 계정으로 이 현장의 '관측 자료 등록' 화면을 열어 이어가세요.">
-          <section className="flex flex-col gap-4 rounded-xl border border-line bg-surface p-4">
+          <section className="flex flex-col gap-5 rounded-lg border border-line bg-surface p-5 sm:p-6">
             <div>
-              <p className="text-[13px] leading-5 text-ink-2">비행 또는 장비 제어는 시작하지 않습니다.</p>
+              <p className="text-[13px] leading-5 text-ink-2">등록할 자료의 작업 이름과 범위를 선택하세요.</p>
               {/* 반복 템플릿 공지는 실제 검증된 반복 진입에서만 page가 넘긴다. 범위 선택만으로 추론하지 않는다. */}
               {templateNotice ? <p className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{templateNotice}</p> : null}
               {scopeNotice && <p role="status" className="mt-2 rounded-lg bg-sunk px-3 py-2 text-[12.5px] leading-5 text-ink-2">{scopeNotice}</p>}
@@ -185,7 +180,7 @@ export function ExternalObservationCreateForm({
             <div className="flex flex-wrap gap-2">
               <button className="btn btn-primary" disabled={busy || !name.trim() || selected.length === 0} onClick={() => void submit()}>{busy ? "작업 만드는 중" : attempt ? "같은 요청 다시 시도" : "관측 자료 등록 계속"}</button>
             </div>
-            <p className="text-[12px] leading-5 text-ink-2">작업이 만들어지면 파일 제출·검사 화면으로 이동합니다. 파일 올리기는 그 화면에서 이어갑니다.</p>
+            <p className="text-[12px] leading-5 text-ink-2">계속하면 작업이 만들어집니다. 파일은 다음 화면에서 제출합니다.</p>
             {!busy && !attempt && !name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하고 비교할 작업구역을 하나 이상 선택하세요.</p>}
             {!busy && !attempt && !name.trim() && selected.length > 0 && <p className="text-[12.5px] leading-5 text-ink-2">작업 이름을 입력하세요.</p>}
             {!busy && !attempt && name.trim() && selected.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">비교할 작업구역을 하나 이상 선택하세요.</p>}
@@ -193,6 +188,7 @@ export function ExternalObservationCreateForm({
           </section>
         </ResponsiveActionBoundary>
       )}
+      <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="tap-target inline-flex w-fit items-center text-[12px] text-ink-2 underline">외부 비교 기록 확인</Link>
     </div>
   );
 }

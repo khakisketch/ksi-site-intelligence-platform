@@ -442,6 +442,7 @@ export function SiteRegistrationOnlyWizard({
   return (
     <WizardShell
       title="현장 등록"
+      layout="steps"
       stepLabels={STEP_LABELS}
       currentStep={currentStep}
       onBack={canGoBack ? handleBack : undefined}
@@ -456,8 +457,7 @@ export function SiteRegistrationOnlyWizard({
       {currentStep === 0 && (
         <>
           <p className="text-sm break-keep text-ink-2 sm:col-span-2">
-            현장 정보와 조사할 공사 구역을 먼저 등록합니다. 첫 조사는 등록 후 현장
-            브리핑에서 별도로 계획합니다.
+            현장 이름과 범위를 등록한 뒤, 현장에서 관측 자료를 추가할 수 있습니다.
           </p>
           <Field label="현장 이름" required>
             <input
@@ -552,7 +552,7 @@ export function SiteRegistrationOnlyWizard({
         <>
           <div className="flex flex-col gap-3 sm:col-span-2">
             <p className="text-sm break-keep text-ink-2">
-              지도에서 조사할 공사 구역을 그리세요. 최소 3개 꼭짓점의 볼록한 모양이어야 합니다.
+              지도에서 현장 범위를 그리세요. 최소 3개 꼭짓점의 볼록한 모양이어야 합니다.
             </p>
             <AoiPolygonMap value={form.aoi} onChange={(aoi) => update({ aoi })} />
             {form.aoi.length >= 3 && !isConvexPolygon(form.aoi) && (
@@ -608,7 +608,7 @@ export function SiteRegistrationOnlyWizard({
                 <div><dt className="text-[11.5px] text-ink-muted">KSI AI</dt><dd>{form.aiEgressAllowed ? "구조화 결과 반출 허용" : "사용 안 함"}</dd></div>
               </dl>
               <p className="text-[12px] break-keep text-ink-2">
-                등록 뒤 현장 브리핑에서 첫 조사를 별도로 계획합니다. 이 단계에서는 비행을 시작하지 않습니다.
+                현장 등록과 자료 검사·분석은 별개입니다. 등록 후 작업구역과 관측 자료를 확인하세요.
               </p>
             </section>
           )}
@@ -626,9 +626,8 @@ export function SiteRegistrationOnlyWizard({
                   상세 화면에서 "베이스라인 조사 계획" 버튼이 곧바로 보인다. */}
               <p className="break-keep text-safe-ink/90">
                 {mode === "MAPPED_BOOTSTRAP"
-                  ? "현장 브리핑에서 사용할 수 있는 작업을 확인하세요."
-                  : <>첫 조사는 아직 만들어지지 않았습니다. 현장 브리핑에서
-                    &quot;베이스라인 조사 계획&quot;으로 이어서 진행할 수 있습니다.</>}
+                  ? "현장에서 작업구역과 관측 자료를 확인하세요."
+                  : "현장에서 작업구역을 확인하고 관측 자료 등록을 이어가세요."}
               </p>
             </div>
           )}
