@@ -242,35 +242,27 @@ export default async function HomePage() {
     ...(analysisReviewsUnknown ? [{ key: "analysis-reviews", message: "분석 결과의 검토 대기 여부를 확인할 수 없습니다. 확인할 결과가 없다는 뜻이 아닙니다." }] : []),
   ];
 
-  return <div className="flex flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
-    <header className="flex items-center justify-between gap-4 border-b border-line pb-3">
-      <p className="text-[14px] font-bold tracking-[-0.015em] break-keep">전체 {sitesResult.ok ? `${sites.length}곳` : "—"}<span aria-hidden="true" className="mx-2 text-line-strong">·</span><span className={portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}>확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}</span></p>
-      <div className="flex items-center gap-4"><Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline"><TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} /></Link><span aria-hidden="true" className="hidden h-4 w-px bg-line sm:block" /><Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">현장 전체</Link></div>
+  return <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5 p-4 sm:p-5 lg:gap-6 lg:p-6">
+    <header className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-line bg-surface px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p className="text-[14px] font-bold tracking-[-0.015em] break-keep">
+          전체 {sitesResult.ok ? `${sites.length}곳` : "—"}
+          <span aria-hidden="true" className="mx-2 text-line-strong">·</span>
+          <span className={portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}>
+            확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}
+          </span>
+        </p>
+      </div>
+      <div className="flex items-center gap-4">
+        <Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline">
+          <TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} />
+        </Link>
+        <span aria-hidden="true" className="hidden h-4 w-px bg-line sm:block" />
+        <Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">
+          현장 전체
+        </Link>
+      </div>
     </header>
-
-    <section aria-label="운영 요약" className="grid grid-cols-3 gap-2 sm:gap-3">
-      <div className="rounded-xl border border-line bg-surface px-4 py-3">
-        <p className="text-[11.5px] font-semibold text-ink-muted">현장</p>
-        <p className="mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums">
-          {sitesResult.ok ? sites.length : "—"}
-        </p>
-        <p className="mt-1 text-[11.5px] text-ink-muted">등록된 현장</p>
-      </div>
-      <div className="rounded-xl border border-line bg-surface px-4 py-3">
-        <p className="text-[11.5px] font-semibold text-ink-muted">확인 필요</p>
-        <p className={`mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums ${portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-1"}`}>
-          {portfolioComplete ? attentionCount : "—"}
-        </p>
-        <p className="mt-1 text-[11.5px] text-ink-muted">사람이 볼 안건</p>
-      </div>
-      <div className="rounded-xl border border-line bg-surface px-4 py-3">
-        <p className="text-[11.5px] font-semibold text-ink-muted">받은 업무</p>
-        <p className="mt-1 text-[26px] leading-none font-bold tracking-[-0.03em] tabular-nums">
-          {inboxResult.ok ? inboxResult.value.items.length : "—"}
-        </p>
-        <p className="mt-1 text-[11.5px] text-ink-muted">배정·공유된 항목</p>
-      </div>
-    </section>
 
     {!sitesResult.ok && <ErrorState message={sitesResult.message} retryable />}
     {sitesResult.ok && sites.length === 0 && <EmptyState title="아직 등록된 현장이 없습니다" description={canRegisterSite ? "첫 현장을 등록하면 관측과 변화 기록을 시작할 수 있습니다." : "현장 등록 권한이 있는 계정에서 시작할 수 있습니다."} action={canRegisterSite ? { label: "현장 등록", href: "/sites/new" } : undefined} />}
@@ -287,27 +279,56 @@ export default async function HomePage() {
       </details>}
     </section>}
 
-    {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
+    {sites.length > 0 && (
+      <div className="grid min-w-0 grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,1fr)] xl:items-start">
+        <div className="flex min-w-0 flex-col gap-5">
+          {attentionItems.length > 0 ? <HomeAttentionCarousel items={attentionItems} /> : recentSiteItems.length > 0 ? <HomeAttentionCarousel items={recentSiteItems} title={portfolioComplete ? "조회된 범위에 새 운영 안건이 없습니다." : "최근 현장을 직접 확인하세요."} description={portfolioComplete ? "현재 조회된 현장·작업과 최근 분석 기록 기준입니다. 전체 기록의 확인 완료나 현장의 정상·안전을 뜻하지 않습니다. 현장을 선택해 자료와 작업 이력을 확인하세요." : "일부 원장을 불러오지 못해 새 안건 여부를 판단하지 않습니다. 현장을 선택해 상태를 직접 확인하세요."} regionLabel="최근 현장 캐러셀" /> : null}
+          {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
+          <HomeRecentUpdates items={recentItems} />
+        </div>
 
-    {otherSites.length > 0 && (
-      <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2">
-        <h2 className="text-[16px] font-bold tracking-[-0.015em] break-keep">다른 현장</h2>
-        <ul className="flex min-w-0 flex-col gap-1.5">
-          {otherSites.map((site) => (
-            <li key={site.siteId} className="flex min-w-0 items-center gap-3 rounded-lg border border-line bg-surface px-4 py-2.5">
-              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold break-keep">{site.name}</span>
-              <span className="shrink-0 text-[11.5px] text-ink-2">{SITE_STATUS_LABEL[site.status].label}</span>
-              <Link href={`/sites/${encodeURIComponent(site.siteId)}`} aria-label={`${site.name} 열기`} className="tap-target shrink-0 text-[12px] font-semibold text-accent hover:underline">열기</Link>
-            </li>
-          ))}
-        </ul>
-      </section>
+        <aside aria-label="현장 및 운영 바로가기" className="flex min-w-0 flex-col gap-4">
+          {otherSites.length > 0 && (
+            <section aria-label="다른 현장 바로가기" className="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line bg-surface p-4">
+              <div className="flex items-baseline justify-between gap-2">
+                <h2 className="text-[16px] font-bold tracking-[-0.015em] break-keep">다른 현장</h2>
+                <Link href="/sites" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline">전체 목록</Link>
+              </div>
+              <ul className="flex min-w-0 flex-col divide-y divide-line">
+                {otherSites.map((site) => {
+                  const encoded = encodeURIComponent(site.siteId);
+                  return (
+                    <li key={site.siteId} className="flex min-w-0 flex-col gap-2 py-3 first:pt-1 last:pb-0">
+                      <div className="flex min-w-0 items-center justify-between gap-2">
+                        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold break-keep">{site.name}</span>
+                        <span className="shrink-0 rounded-full border border-line bg-sunk/60 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                          {SITE_STATUS_LABEL[site.status].label}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                        <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent hover:underline">열기</Link>
+                        <span aria-hidden="true" className="text-line-strong">·</span>
+                        <Link href={`/sites/${encoded}/spatial-assets`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
+                        <span aria-hidden="true" className="text-line-strong">·</span>
+                        <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">결과</Link>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
+
+          <section aria-label="주요 업무 이동" className="flex flex-col gap-2 rounded-xl border border-line bg-surface p-4">
+            <h2 className="text-[14px] font-bold tracking-[-0.01em]">운영 바로가기</h2>
+            <p className="text-[12px] leading-5 text-ink-2">현장별 공간자료·분석 기록과 조직 관측 작업을 확인합니다.</p>
+            <div className="mt-1 flex flex-wrap gap-2">
+              <Link href="/sites" className="btn tap-target text-[12.5px]">현장 자료·작업 보기</Link>
+              <Link href="/field" className="btn tap-target text-[12.5px]">관측 작업 목록</Link>
+            </div>
+          </section>
+        </aside>
+      </div>
     )}
-
-    {initialSetupItems.length > 0 && <HomeSituationList title="초기 설정이 필요한 현장" description="작업구역을 확인하고 고객이 준비한 관측 자료를 등록하세요." items={initialSetupItems} emptyMessage="초기 설정이 필요한 현장이 없습니다." allHref="/sites" allLabel="현장 전체" />}
-    {sites.length > 0 && <HomeRecentUpdates items={recentItems} />}
-    {/* 닫는 안내문은 두지 않는다 — 상단의 건수와 각 카드가 이미 "조회된 범위" 기준임을 말하고,
-        같은 취지의 문장을 페이지 끝에 한 번 더 두면 매번 읽어야 하는 잔소리가 된다. */}
-    {sites.length > 0 && <footer className="flex justify-end border-t border-line pt-3 text-[12px]"><Link href="/sites" className="tap-target inline-flex items-center font-semibold hover:underline">현장 자료·작업 보기</Link></footer>}
   </div>;
 }

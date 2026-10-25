@@ -162,7 +162,16 @@ export function SiteHeader({
             모바일에서는 order-3 + w-full로 이름이 자기 줄을 통째로 써서 중간에
             잘리지 않고, 상태·설정은 첫 줄 오른쪽에 남는다. */}
         <h2 className="order-3 w-full min-w-0 text-[18px] font-bold tracking-[-0.02em] break-keep sm:order-none sm:w-auto sm:flex-1 sm:truncate sm:text-[20px]">
-          {site.name}
+          {(() => {
+            const match = /^(.*?)(\s*\([^()]+\))$/.exec(site.name);
+            if (!match) return site.name;
+            return (
+              <>
+                <span>{match[1]}</span>
+                <span className="text-[13px] font-medium tracking-normal text-ink-muted">{match[2]}</span>
+              </>
+            );
+          })()}
         </h2>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">

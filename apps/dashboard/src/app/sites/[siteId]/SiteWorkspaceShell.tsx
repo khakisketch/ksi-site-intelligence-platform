@@ -656,7 +656,8 @@ export function SiteWorkspaceShell({
       : precision === "unknown"
         ? "관측 시점 미상"
         : null;
-    return qualifier ? `${line} · ${qualifier}` : line;
+    const base = qualifier && !line.includes(qualifier) ? `${line} · ${qualifier}` : line;
+    return `${base} · 등록 버전 ${fact.revision}`;
   };
   // 쌍 한쪽의 층 전환 주소 — 같은 구역에서 그쪽만 정확한 참조로
   // 바꾼다. 다른 쪽·다른 쌍 family·구역·모드는 그대로 둔다(정식 쌍은 받는 쪽이 재대조한다).
@@ -843,7 +844,7 @@ export function SiteWorkspaceShell({
   // 말은 범위 밖 요청을 기본으로 둔 경우에만 쓴다(기본이 실제로 바뀐 전이
   // 선택에는 서버 기본이 아니라는 말만 둔다).
   const selectionNotice = (scopeNotice || (mode === "explore" && transitionalSelection)) ? (
-    <p role="status" className="shrink-0 rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px] leading-5 text-ink-2 max-sm:hidden">
+    <p role="status" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
       {scopeNotice ? "요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다. " : ""}
       {selected ? `작업구역 · ${areaLabel}. ` : ""}
       {mode === "explore" && selectedCaption ? `선택 중 · ${selectedCaption}. ` : ""}
@@ -939,18 +940,28 @@ export function SiteWorkspaceShell({
     {mode === "explore" && transitionalSelection && (
       <p className="text-[11.5px] leading-4 text-ink-muted sm:hidden">표시 범위는 서버 기본이 아니라 확인된 측정 범위입니다.</p>
     )}
-    {mode === "explore" && selectedCatalog && <>
-      <p className="break-words font-semibold">{exploreHeading ?? dataKindLabel(selectedCatalog.kind)}</p>
-      <dl className="grid gap-2">
-        <div><dt className="text-ink-muted">등록 파일명</dt><dd className="break-all">{selectedCatalog.declared.fileName}</dd></div>
-        <div><dt className="text-ink-muted">파일 검사</dt><dd>{inspectionOutcomeLabel(selectedCatalog.inspection.outcome)}</dd></div>
-        <div><dt className="text-ink-muted">관측 위치 기준</dt><dd>{selectedCatalog.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
-        <div><dt className="text-ink-muted">수직 기준</dt><dd>{selectedCatalog.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"}</dd></div>
-        <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "자료 목록에서는 분석 적합성을 평가하지 않습니다. 결과 화면에서 입력별 조건을 확인하세요." : "분석 기록에서 확인하세요."}</dd></div>
-      </dl>
-      <Link className="tap-target underline" href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selectedCatalog.workAreaId)}&assetRef=${encodeURIComponent(selectedCatalog.assetRef)}`}>원본 메타데이터 확인</Link>
-      <details><summary className="tap-target cursor-pointer">버전·식별 정보</summary><dl className="mt-1 grid gap-1"><div><dt className="text-ink-muted">등록 버전</dt><dd className="break-all">{selectedCatalog.revision} · {selectedCatalog.submissionRef}</dd></div><div><dt className="text-ink-muted">자료 식별자</dt><dd className="break-all">{selectedCatalog.assetRef}</dd></div></dl></details>
-    </>}
+    {mode === "explore" && selectedCatalog && (
+      <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/35 p-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <p className="min-w-0 flex-1 break-words text-[12.5px] font-semibold text-ink-1">{exploreHeading ?? dataKindLabel(selectedCatalog.kind)}</p>
+          <Link className="tap-target shrink-0 text-[11.5px] font-semibold underline" href={`${sitePath}/spatial-assets?workAreaId=${encodeURIComponent(selectedCatalog.workAreaId)}&assetRef=${encodeURIComponent(selectedCatalog.assetRef)}`}>원본 메타데이터 확인</Link>
+        </div>
+        <dl className="grid grid-cols-3 gap-2 rounded-md border border-line bg-surface px-2.5 py-2 text-[11.5px]">
+          <div className="min-w-0"><dt className="text-[11px] text-ink-muted">파일 검사</dt><dd className="mt-0.5 font-semibold break-keep text-ink-1">{inspectionOutcomeLabel(selectedCatalog.inspection.outcome)}</dd></div>
+          <div className="min-w-0"><dt className="text-[11px] text-ink-muted">관측 위치 기준</dt><dd className="mt-0.5 font-mono font-semibold break-all text-ink-1">{selectedCatalog.inspection.raster?.observedCrsIdentifier ?? "확인 불가"}</dd></div>
+          <div className="min-w-0"><dt className="text-[11px] text-ink-muted">수직 기준</dt><dd className="mt-0.5 font-semibold break-keep text-ink-1">{selectedCatalog.inspection.raster?.observedVerticalReference?.identifier ?? "확인 불가"}</dd></div>
+        </dl>
+        <details className="text-[11.5px]">
+          <summary className="tap-target cursor-pointer font-semibold text-ink-2">버전·식별·적합성 상세</summary>
+          <dl className="mt-1.5 grid gap-1.5 rounded-md border border-line bg-surface p-2">
+            <div><dt className="text-ink-muted">등록 파일명</dt><dd className="break-all font-mono">{selectedCatalog.declared.fileName}</dd></div>
+            <div><dt className="text-ink-muted">분석 적합성</dt><dd>{selectedCatalog.analysisStatus === "NOT_EVALUATED" ? "자료 목록에서는 분석 적합성을 평가하지 않습니다. 결과 화면에서 입력별 조건을 확인하세요." : "분석 기록에서 확인하세요."}</dd></div>
+            <div><dt className="text-ink-muted">등록 버전</dt><dd className="break-all font-mono">{selectedCatalog.revision} · {selectedCatalog.submissionRef}</dd></div>
+            <div><dt className="text-ink-muted">자료 식별자</dt><dd className="break-all font-mono">{selectedCatalog.assetRef}</dd></div>
+          </dl>
+        </details>
+      </div>
+    )}
     {mode === "explore" && !selectedCatalog && <p>선택한 자료 사실이 없습니다. 무대에서 관측을 고르세요.</p>}
     {mode === "explore" && (
       <section aria-label="자료·범위·다음 행동" className="flex min-w-0 flex-col gap-3">
@@ -1041,7 +1052,14 @@ export function SiteWorkspaceShell({
         )}
         {mode === "explore" && captureOptions.length > 0 && <p id="workspace-capture-help" className="sr-only">관측을 선택하면 표시가 바뀝니다.</p>}
         {mode === "explore" && !exploreIsEmpty && selectedCaption && captionFact && (
-          <p className="shrink-0 break-words text-[12px] leading-5 text-ink-2">선택 중 · {entryCaptureLine(captionFact)} · {selectedCaption}</p>
+          <p className="shrink-0 break-words text-[12px] leading-5 text-ink-2">
+            선택 중 · {(() => {
+              const line = entryCaptureLine(captionFact);
+              const version = `등록 버전 ${captionFact.revision}`;
+              if (line.includes(selectedCaption)) return `${line} · ${version}`;
+              return selectedCaption === version ? `${line} · ${version}` : `${line} · ${selectedCaption} · ${version}`;
+            })()}
+          </p>
         )}
         {exploreIsEmpty && selected && exploreNextAction && (
           <div className="shrink-0 rounded-lg border border-line bg-surface px-4 py-3">

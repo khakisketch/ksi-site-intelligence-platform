@@ -1096,4 +1096,27 @@ describe("browse source round trip", () => {
     expect(materialsHref).toBe("/sites/site-1/spatial-assets?workAreaId=tiny-1&assetRef=disp-2022");
     expect(materialsHref).not.toContain("ghost-asset");
   });
+
+  it("renders date-only precision once with version in single-observation caption", async () => {
+    const capture = wireCapture({ precision: "DATE_ONLY", captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" });
+    mocked.workspace.mockResolvedValue(workspacePage({
+      observations: [wireObservation("epoch-2021", ["date-only-1"], {
+        capture,
+        chronologyCandidate: false,
+        viewAvailable: true,
+        viewAssetRef: "date-only-1",
+        versions: [wireVersion("date-only-1", { capture, chronologyCandidate: false, displayReady: true, displayState: "SEALED" })],
+      })],
+      entryDefault: { observationEpochId: null, viewAssetRef: null, reason: "NO_EXACT_CAPTURE_CANDIDATE", detail: "Date only", tiedObservationEpochIds: [] },
+    }));
+    mocked.assets.mockResolvedValue({
+      ...EMPTY_CATALOG,
+      assets: [rasterAsset("date-only-1", { captureStartedAt: null, captureEndedAt: null, captureDate: "2021-08-17" })],
+    });
+    await renderOverview({ workAreaId: "tiny-1", assetRef: "date-only-1" });
+    const stage = screen.getByRole("region", { name: "선택 관측 보기" });
+    const caption = within(stage).getByText(/^선택 중 ·/).textContent ?? "";
+    expect(caption.match(/날짜만 확인 · 시각 미상/g)).toHaveLength(1);
+    expect(caption).toContain("등록 버전 1");
+  });
 });

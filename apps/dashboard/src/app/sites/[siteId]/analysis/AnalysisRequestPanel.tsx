@@ -1696,114 +1696,139 @@ export function AnalysisRequestPanel({
       )}
     </section>;
 
+  const workspaceBridgeControls = selectedId && selectedDetail ? (() => {
+    // 작업공간 결과 모드로 이어지는 발견 다리 — frozen 기록 신원은 그대로 싣는다.
+    // 구역·기록 ID는 이 화면이 이미 검증해 들고 있는 선택 상세에서만 싣고,
+    // 최신 추론·다른 기록 대체를 하지 않는다. 탐색 쌍 맥락은 같은 구역에서
+    // 검증된 경우에만 덧붙이며, 받는 작업공간이 재대조한다.
+    const bridgeQuery = new URLSearchParams();
+    bridgeQuery.set("mode", "results");
+    bridgeQuery.set("workAreaId", selectedDetail.workAreaId);
+    bridgeQuery.set("analysisId", selectedDetail.analysisId);
+    if (visualContext && visualContext.workAreaId === selectedDetail.workAreaId) {
+      bridgeQuery.set("visualAAssetRef", visualContext.visualAAssetRef);
+      bridgeQuery.set("visualBAssetRef", visualContext.visualBAssetRef);
+    }
+    const workspaceResultHref = `/sites/${encodeURIComponent(siteId)}?${bridgeQuery.toString()}`;
+    return <>
+      <Link className="tap-target inline-flex min-h-10 items-center text-[12px] underline" href={workspaceResultHref}>작업공간에서 결과 보기</Link>
+      <button type="button" className="tap-target inline-flex min-h-10 items-center text-[12px] underline" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button>
+    </>;
+  })() : null;
+
+  const recordsColumn = (
+    <div className="flex min-w-0 flex-col gap-3">
+      {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-xl border border-line bg-surface px-4 py-3.5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="text-[13px] leading-5 text-ink-2">
+            <span className="font-bold text-ink-1">최근 변화 분석 요약</span>
+            {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""}`}
+          </p>
+          <span className="text-[11.5px] font-medium text-ink-muted">
+            최근 실행 상태: {executionLabel(latestRow.executionState).label}. 적합성 상태: {suitabilityLabel(latestRow.suitabilityState).label}.
+          </span>
+        </div>
+        <p className="mt-1.5 text-[12.5px] leading-5 text-ink-2">{latestNextAction}</p>
+        {selectedDetail && (() => {
+          // 계산 입력 한 줄 — 선택된 기록의 frozen 선택자를 현재 후보 목록에서
+          // 검증해 라벨로 둔다. 탐색 쌍 맥락은 계산 입력이 아니므로 쓰지 않는다.
+          // 맞지 않으면 추측하지 않고 모름을 밝힌다.
+          const baseline = observations.find((option) => sameSelector(option.selector, selectedDetail.baseline));
+          const current = observations.find((option) => sameSelector(option.selector, selectedDetail.current));
+          if (!baseline || !current) {
+            return <p className="mt-1 text-[12px] leading-5 text-ink-2">계산 입력 · 원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
+          }
+          const [baselineLabel, currentLabel] = observationChoiceLabels([baseline, current], workOrderNames);
+          return <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">
+            계산 입력 · 기준 {baselineLabel} · 현재 {currentLabel}
+          </p>;
+        })()}
+        <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-line pt-2">
+          <a href="#analysis-history" className="inline-flex min-h-10 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>
+          {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-10 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 변화 분석 요청으로 이동"}</a>}
+          {workspaceBridgeControls}
+        </div>
+        {attempt && <p role="status" className="mt-1 text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
+      </section>}
+      {!latestRow && workspaceBridgeControls && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {workspaceBridgeControls}
+        </div>
+      )}
+      {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
+      {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
+        inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
+      <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
+        {selectedDetail && visualContext && visualReturnHref && (
+          <div className="rounded-lg border border-line bg-sunk/40 px-4 py-2.5 text-[12px] leading-5 text-ink-2">
+            <span className="font-bold text-ink-1">탐색 중 자료와 이 결과의 계산 입력 구분</span>
+            <span className="mt-0.5 block">탐색 중 자료(독립 보기 A·B)와 이 결과의 계산 입력은 다를 수 있습니다. 기록은 바뀌지 않습니다.</span>
+            <details className="mt-1">
+              <summary className="tap-target cursor-pointer font-semibold">이 결과의 계산 입력 확인</summary>
+              <span className="mt-1 block break-all">기준 · {selectedDetail.baseline.workOrderId} · {selectedDetail.baseline.submissionRef} · 버전 {selectedDetail.baseline.revision}</span>
+              <span className="mt-1 block break-all">현재 · {selectedDetail.current.workOrderId} · {selectedDetail.current.submissionRef} · 버전 {selectedDetail.current.revision}</span>
+            </details>
+          </div>
+        )}
+        {selectedDetail && visualContextNotice && !visualContext && (
+          <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">{visualContextNotice}</p>
+        )}
+        {rows.map((summary) => <AnalysisCard
+          key={summary.analysisId}
+          summary={summary}
+          detail={details.get(summary.analysisId) ?? null}
+          selected={summary.analysisId === selectedId}
+          primary={summary.analysisId === latestRow?.analysisId}
+          onSelect={() => choose(summary.analysisId)}
+          evidencePages={summary.analysisId === selectedId ? selectedEvidencePages : []}
+          siteId={siteId}
+          workAreaId={summary.workAreaId}
+          workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
+          scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
+          canCreate={canCreate}
+          reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
+          reviewLoading={reviewLoadingId === summary.analysisId}
+          reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}
+          onRefreshReview={loadReviewState}
+          onRefreshAfterReviewConflict={refreshReviewAfterConflict}
+          observations={observations}
+          newerAnalyses={newerAnalyses}
+          siteObservations={siteObservations}
+        />)}
+        {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
+        {rows.length === 0 && !listLoading && !listLoadError && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor
+          ? "현재 페이지에 변화 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
+          : canCreate
+            ? "이 현장에는 아직 변화 분석 요청이 없습니다. 새 변화 분석 요청에서 실제 작업구역과 관측 후보를 확인한 뒤 진행하세요."
+            : "이 현장에는 아직 변화 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>}
+      </section>
+      {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
+      {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
+    </div>
+  );
+
+  const requestColumn = (
+    <div className="flex min-w-0 flex-col gap-3 xl:sticky xl:top-4">
+      {!canCreate && <ActionUnavailable label="새 변화 분석 요청" description="새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다. 필요한 작업구역과 관측을 담당자에게 알려 주세요." />}
+      {requestSection}
+    </div>
+  );
+
   return <div className="flex flex-col gap-4">
-    {visualContext && visualReturnHref && <nav aria-label="독립 보기 복귀" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] leading-5 text-ink-2">
+    {visualContext && visualReturnHref && <nav aria-label="독립 보기 복귀" className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-line bg-sunk/40 px-3.5 py-2 text-[12px] leading-5 text-ink-2">
       <span>두 관측의 탐색 선택을 유지하고 있습니다.</span>
-      <Link className="tap-target inline-flex items-center font-semibold underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
+      <Link className="tap-target inline-flex items-center font-semibold text-ink-1 underline" href={visualReturnHref}>독립 보기로 돌아가기</Link>
     </nav>}
-    {draftFirst && requestSection}
-    {latestRow && <section aria-label="최근 변화 분석 요약" className="rounded-lg border border-line bg-surface px-4 py-3">
-      <p className="text-[12.5px] leading-5 text-ink-2">
-        <span className="font-bold text-ink-1">최근 변화 분석 요약</span>
-        {` · 기록 ${rows.length}개${nextListCursor ? " 이상" : ""}`}
-      </p>
-      <p className="mt-1 text-[12px] leading-5 text-ink-2">최근 실행 상태: {executionLabel(latestRow.executionState).label}. 적합성 상태: {suitabilityLabel(latestRow.suitabilityState).label}.</p>
-      <p className="mt-1 text-[12px] leading-5 text-ink-2">{latestNextAction}</p>
-      {selectedDetail && (() => {
-        // 계산 입력 한 줄 — 선택된 기록의 frozen 선택자를 현재 후보 목록에서
-        // 검증해 라벨로 둔다. 탐색 쌍 맥락은 계산 입력이 아니므로 쓰지 않는다.
-        // 맞지 않으면 추측하지 않고 모름을 밝힌다.
-        const baseline = observations.find((option) => sameSelector(option.selector, selectedDetail.baseline));
-        const current = observations.find((option) => sameSelector(option.selector, selectedDetail.current));
-        if (!baseline || !current) {
-          return <p className="mt-1 text-[12px] leading-5 text-ink-2">계산 입력 · 원래 입력을 현재 목록에서 확인할 수 없습니다. 기록은 그대로 둡니다.</p>;
-        }
-        const [baselineLabel, currentLabel] = observationChoiceLabels([baseline, current], workOrderNames);
-        return <p className="mt-1 break-words text-[12px] leading-5 text-ink-2">
-          계산 입력 · 기준 {baselineLabel} · 현재 {currentLabel}
-        </p>;
-      })()}
-      <div className="mt-1 flex flex-wrap gap-x-5">
-        <a href="#analysis-history" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">변화 분석 이력으로 이동</a>
-        {canCreate && <a href="#new-analysis-request" className="inline-flex min-h-11 items-center text-[12px] font-semibold text-accent-text hover:underline">{attempt ? "보류 요청 이어가기" : "새 변화 분석 요청으로 이동"}</a>}
-      </div>
-      {attempt && <p role="status" className="text-[12px] text-ink-2">중단된 요청이 남아 있습니다. 보류 요청에서 같은 요청 식별자로 확인하거나 취소할 수 있습니다.</p>}
-    </section>}
-    {!canCreate && <ActionUnavailable label="새 변화 분석 요청" description="새 변화 분석 요청은 권한 있는 현장 담당자가 진행해야 합니다. 필요한 작업구역과 관측을 담당자에게 알려 주세요." />}
     {showError && <div role="alert" className="rounded-lg border border-crit bg-crit-bg px-4 py-3 text-[12.5px] text-crit-ink">
       <span>{error.message}</span>
       {error.analysisId === selectedId && selectedId && <button type="button" className="btn ml-2" disabled={detailLoadingId === selectedId} onClick={() => void refreshDetail(selectedId, ++detailGeneration.current)}>{detailLoadingId === selectedId ? "상세 불러오는 중" : "변화 분석 상세 다시 불러오기"}</button>}
       {listRestartRequired && <button type="button" className="btn ml-2" disabled={listLoading} onClick={() => void restartAnalyses()}>{listLoading ? "목록 불러오는 중" : "목록 처음부터 다시 불러오기"}</button>}
       {evidenceRestartRequired && <button type="button" className="btn ml-2" disabled={evidenceLoading} onClick={restartEvidence}>{evidenceLoading ? "근거 불러오는 중" : "근거 처음부터 다시 불러오기"}</button>}
     </div>}
-    {selectedId && selectedDetail && (() => {
-      // 작업공간 결과 모드로 이어지는 발견 다리 — frozen 기록 신원은 그대로 싣는다.
-      // 구역·기록 ID는 이 화면이 이미 검증해 들고 있는 선택 상세에서만 싣고,
-      // 최신 추론·다른 기록 대체를 하지 않는다. 탐색 쌍 맥락은 같은 구역에서
-      // 검증된 경우에만 덧붙이며, 받는 작업공간이 재대조한다.
-      const bridgeQuery = new URLSearchParams();
-      bridgeQuery.set("mode", "results");
-      bridgeQuery.set("workAreaId", selectedDetail.workAreaId);
-      bridgeQuery.set("analysisId", selectedDetail.analysisId);
-      if (visualContext && visualContext.workAreaId === selectedDetail.workAreaId) {
-        bridgeQuery.set("visualAAssetRef", visualContext.visualAAssetRef);
-        bridgeQuery.set("visualBAssetRef", visualContext.visualBAssetRef);
-      }
-      const workspaceResultHref = `/sites/${encodeURIComponent(siteId)}?${bridgeQuery.toString()}`;
-      return <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-        <Link className="tap-target inline-flex min-h-11 items-center text-[12px] underline" href={workspaceResultHref}>작업공간에서 결과 보기</Link>
-        <button type="button" className="tap-target inline-flex min-h-11 items-center text-[12px] underline" onClick={evidenceLoaded ? collapseEvidence : loadEvidence} disabled={evidenceLoading} aria-expanded={evidenceLoaded}>{evidenceLoading ? "근거 불러오는 중" : evidenceLoaded ? `근거 닫기 · ${evidenceItemCount}개 항목` : "근거 확인"}</button>
-      </div>;
-    })()}
-    {selectedId && !selectedDetail && detailLoadingId === selectedId && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12.5px]">변화 분석 상세를 불러오는 중입니다.</p>}
-    {selectedDetail && <AnalysisRecordReuse record={selectedDetail} evidencePages={selectedEvidencePages}
-      inputLabels={{ baseline: workOrderNames[selectedDetail.baseline.workOrderId], current: workOrderNames[selectedDetail.current.workOrderId] }} />}
-    <section id="analysis-history" className="flex flex-col gap-3" aria-label="변화 분석 이력">
-      {selectedDetail && visualContext && visualReturnHref && (
-        <div className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">
-          <span className="font-bold text-ink-1">탐색 중 자료와 이 결과의 계산 입력 구분</span>
-          <span className="mt-1 block">탐색 중 자료(독립 보기 A·B)와 이 결과의 계산 입력은 다를 수 있습니다. 기록은 바뀌지 않습니다.</span>
-          <details className="mt-1">
-            <summary className="tap-target cursor-pointer font-semibold">이 결과의 계산 입력 확인</summary>
-            <span className="mt-1 block break-all">기준 · {selectedDetail.baseline.workOrderId} · {selectedDetail.baseline.submissionRef} · 버전 {selectedDetail.baseline.revision}</span>
-            <span className="mt-1 block break-all">현재 · {selectedDetail.current.workOrderId} · {selectedDetail.current.submissionRef} · 버전 {selectedDetail.current.revision}</span>
-          </details>
-        </div>
-      )}
-      {selectedDetail && visualContextNotice && !visualContext && (
-        <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[12px] leading-5 text-ink-2">{visualContextNotice}</p>
-      )}
-      {rows.map((summary) => <AnalysisCard
-        key={summary.analysisId}
-        summary={summary}
-        detail={details.get(summary.analysisId) ?? null}
-        selected={summary.analysisId === selectedId}
-        primary={summary.analysisId === latestRow?.analysisId}
-        onSelect={() => choose(summary.analysisId)}
-        evidencePages={summary.analysisId === selectedId ? selectedEvidencePages : []}
-        siteId={siteId}
-        workAreaId={summary.workAreaId}
-        workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
-        scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
-        canCreate={canCreate}
-        reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
-        reviewLoading={reviewLoadingId === summary.analysisId}
-        reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}
-        onRefreshReview={loadReviewState}
-        onRefreshAfterReviewConflict={refreshReviewAfterConflict}
-        observations={observations}
-        newerAnalyses={newerAnalyses}
-        siteObservations={siteObservations}
-      />)}
-      {rows.length === 0 && listLoading && <p role="status" className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] text-ink-2">변화 분석 목록을 불러오는 중입니다.</p>}
-      {rows.length === 0 && !listLoading && !listLoadError && <p className="rounded-lg border border-line bg-surface px-4 py-3 text-[13px] leading-5 text-ink-2">{nextListCursor
-        ? "현재 페이지에 변화 분석 요청이 없습니다. 다음 페이지를 불러와 나머지 이력을 확인하세요."
-        : canCreate
-          ? "이 현장에는 아직 변화 분석 요청이 없습니다. 새 변화 분석 요청에서 실제 작업구역과 관측 후보를 확인한 뒤 진행하세요."
-          : "이 현장에는 아직 변화 분석 요청이 없습니다. 권한 있는 현장 담당자가 요청을 제출하면 상태와 근거가 여기에 표시됩니다."}</p>}
-    </section>
-    {lastEvidencePage?.nextCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={evidenceLoading} onClick={loadNextEvidence}>{evidenceLoading ? "근거 불러오는 중" : "다음 근거 보기"}</button></div>}
-    {nextListCursor && <div className="flex justify-center"><button type="button" className="btn" disabled={listLoading} onClick={() => void loadMoreAnalyses()}>{listLoading ? "변화 분석 목록 불러오는 중" : "다음 변화 분석 보기"}</button></div>}
-    {!draftFirst && requestSection}
+    <div className="grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(360px,1fr)] xl:items-start">
+      {draftFirst && requestColumn}
+      {recordsColumn}
+      {!draftFirst && requestColumn}
+    </div>
   </div>;
 }

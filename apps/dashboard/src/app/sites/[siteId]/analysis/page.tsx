@@ -199,35 +199,27 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
       scopedAssetRef={headerAssetRef}
       visualContext={visualContext && visualContext.workAreaId === effectiveWorkAreaId ? visualContext : null}
     />
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4 p-4 sm:p-6">
+    <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-6">
       <header className="flex flex-wrap items-end justify-between gap-3 border-b border-line pb-3">
         <div>
-          <h2 className="mt-1 text-[26px] font-bold tracking-[-0.03em]">현장 변화 분석</h2>
-          <p className="mt-1 max-w-2xl text-[13.5px] leading-6 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
+          <h2 className="mt-1 text-[24px] font-bold tracking-[-0.03em] sm:text-[26px]">현장 변화 분석</h2>
+          <p className="mt-1 max-w-2xl text-[13px] leading-6 text-ink-2">같은 구역에서 촬영한 기준 자료와 비교할 자료를 고르고, 변화량과 확인 근거를 살펴보세요.</p>
         </div>
-        <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
+        <div className="flex flex-wrap items-center gap-2.5">
+          {loaded && (
+            <p aria-label="분석 요약" className="rounded-lg border border-line bg-sunk/40 px-3 py-1.5 text-[12px] text-ink-2">
+              <span className="font-semibold text-ink-1">분석 기록 {loaded.analyses.items.length}{loaded.analyses.nextCursor ? "+" : ""}건</span>
+              <span aria-hidden="true" className="mx-1.5 text-line-strong">·</span>
+              <span>작업구역 {loaded.areas.workAreas.length}개</span>
+              <span aria-hidden="true" className="mx-1.5 text-line-strong">·</span>
+              <span>관측 자료 {loaded.attributedObservations.length}건</span>
+            </p>
+          )}
+          <Link href={`/sites/${encodeURIComponent(siteId)}/observations`} className="btn">외부 비교 기록</Link>
+        </div>
       </header>
       {loaded ? <>
         {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 시작 안내는 기록이 없을 때만 둔다. */}
-        <section aria-label="분석 요약" className="grid grid-cols-3 gap-2 sm:gap-3">
-          <div className="rounded-xl border border-line bg-surface px-4 py-3">
-            <p className="text-[11.5px] font-semibold text-ink-muted">분석 기록</p>
-            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">
-              {loaded.analyses.items.length}{loaded.analyses.nextCursor ? "+" : ""}
-            </p>
-            <p className="mt-1 text-[11.5px] text-ink-muted">조회된 범위</p>
-          </div>
-          <div className="rounded-xl border border-line bg-surface px-4 py-3">
-            <p className="text-[11.5px] font-semibold text-ink-muted">작업구역</p>
-            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">{loaded.areas.workAreas.length}</p>
-            <p className="mt-1 text-[11.5px] text-ink-muted">등록된 작업구역</p>
-          </div>
-          <div className="rounded-xl border border-line bg-surface px-4 py-3">
-            <p className="text-[11.5px] font-semibold text-ink-muted">관측 자료</p>
-            <p className="mt-1 text-[24px] leading-none font-bold tracking-[-0.03em] tabular-nums">{loaded.attributedObservations.length}</p>
-            <p className="mt-1 text-[11.5px] text-ink-muted">분석에 연결된 관측</p>
-          </div>
-        </section>
         {loaded.analyses.items.length === 0 && <AnalysisStartGuide
           workAreaId={effectiveWorkAreaId || null}
           siteId={siteId}

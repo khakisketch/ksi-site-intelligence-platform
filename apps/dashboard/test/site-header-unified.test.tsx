@@ -74,4 +74,12 @@ describe("unified site header", () => {
     expect(html).not.toContain("workAreaId");
     expect(html).not.toContain("assetRef");
   });
+
+  it("visually de-emphasizes a trailing license or sample parenthetical while preserving the full heading text", () => {
+    const html = headerHtml({
+      site: { ...site, name: "Floreat public sample (CC BY 4.0)" },
+    });
+    expect(html).toContain("<span>Floreat public sample</span>");
+    expect(html).toContain(" (CC BY 4.0)</span>");
+  });
 });

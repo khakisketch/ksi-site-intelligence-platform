@@ -955,7 +955,7 @@ export default async function SpatialAssetsPage({
             hidden={paneHiddenFor(side)}
           />
         </div>
-        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2 max-sm:text-[11px]">{qualifier ? `${dateLine} · ${qualifier}` : dateLine}</p>
+        <p className="min-w-0 break-words text-[11.5px] leading-4 text-ink-2 max-sm:text-[11px]">{qualifier && !dateLine.includes(qualifier) ? `${dateLine} · ${qualifier}` : dateLine} · 등록 버전 {item.revision}</p>
       </div>
     );
   };
@@ -1072,9 +1072,9 @@ export default async function SpatialAssetsPage({
     </div>
     <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
     {effectiveWorkAreaId && (infoOpen
-      ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
-      : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
-    <span className="flex shrink-0 items-center gap-2">
+      ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
+      : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
+    <span className="flex shrink-0 items-center gap-2 xl:ml-auto">
       {session.principal.permissions.includes("WORK_ORDERS_WRITE") && (
         <ResponsiveActionBoundary action="WORK_ORDERS_WRITE" inlineNotice={false}>
         <Link

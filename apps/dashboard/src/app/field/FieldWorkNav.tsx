@@ -22,7 +22,7 @@ export function FieldWorkNav({
     ...(showTeam ? [{ key: "team", label: "팀 관리", href: "/field/team" }] : []),
   ] as const;
   return (
-    <nav aria-label="업무 보기 방식" className="flex flex-wrap gap-1">
+    <nav aria-label="업무 보기 방식" className="flex gap-1 overflow-x-auto border-b border-line">
       {tabs.map((option) => {
         const current = option.key === active;
         return (
@@ -30,8 +30,10 @@ export function FieldWorkNav({
             key={option.key}
             href={option.href}
             aria-current={current ? "page" : undefined}
-            className={`tap-target inline-flex items-center rounded-md px-3 py-1.5 text-[13px] break-keep ${
-              current ? "bg-sunk font-bold" : "text-ink-2"
+            className={`tap-target relative inline-flex min-h-11 shrink-0 items-center border-b-2 px-3 text-[13px] whitespace-nowrap transition-colors ${
+              current
+                ? "border-ink-1 font-bold text-ink-1"
+                : "border-transparent text-ink-2 hover:border-line-strong hover:text-ink-1"
             }`}
           >
             {option.label}

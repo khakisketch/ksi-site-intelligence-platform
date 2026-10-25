@@ -98,11 +98,14 @@ export default async function FieldWorkListPage() {
   const showTeam = session.principal.role === "ADMIN" || canCreateObservation;
 
   return (
-      <div className="flex flex-col gap-4 p-4 sm:p-5">
-        <header className="flex flex-col gap-2">
+      <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-4 p-4 sm:p-5">
+        <header className="flex flex-col gap-2.5">
           <FieldWorkNav active="orders" showTeam={showTeam} />
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <p className="text-[12.5px] text-ink-2">현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.</p>
+          <div className="flex flex-wrap items-end justify-between gap-3 pt-1">
+            <div>
+              <h2 className="text-[22px] font-bold tracking-[-0.025em]">관측 작업</h2>
+              <p className="mt-1 text-[13px] text-ink-2">현장에 속한 관측 작업 기록을 상태별로 확인합니다. 이 목록은 개인 할당 목록이 아닙니다.</p>
+            </div>
             {canCreateObservation ? (
               <Link href="/field/new" className="btn btn-primary tap-target">관측 자료 등록</Link>
             ) : (
