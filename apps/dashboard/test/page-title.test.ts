@@ -18,7 +18,7 @@ describe("정적 경로", () => {
     ["/field/new", "관측 자료 등록"],
     ["/field/inbox", "받은 업무"],
     ["/field/team", "팀 관리"],
-    ["/more", "계정·도움말"],
+    ["/more", "내 계정"],
   ])("%s → %s", (pathname, expected) => {
     expect(resolvePageTitle(pathname)).toBe(expected);
   });

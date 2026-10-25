@@ -6,7 +6,7 @@ import { CoreApiError } from "@/lib/core-api/client";
 import { MissingSessionError } from "@/lib/core-api/session";
 import { ROLE_LABEL } from "@/lib/core-api/labels";
 
-// TopBar 가 "/more" 경로 h1("계정·도움말") 을 이미 렌더한다(page-title.ts) — 여기서 또 찍지 않는다.
+// 셸이 "/more"의 h1("내 계정")을 소유한다 — 본문에는 맥락 제목 h2만 둔다.
 //
 // 넷째 탭은 계정과 도움말의 입구다. 현재 계정·로그아웃은 여기에,
 // 작업 안내·지원 경계는 /help에 둔다. 계정 설정·결제·조직 관리처럼

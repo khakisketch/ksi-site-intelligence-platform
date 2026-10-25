@@ -646,3 +646,34 @@ Core 계약·권한·원장은 이 UI 단위에서 수정하지 않는다.
 - 증거: `~/.local/state/ksi-console-ia-20261025/`의 `final-*.png`, `captures.log`, `build.log`,
   `unit-green.log`, `e2e-confirmed.log`, `registration/evidence/`. 독립 검토 결과는 수신 후 여기에 대조.
   운영 배포·고객 수용·전체 제품 완료는 이 UI 증거로 승격하지 않는다.
+
+### 독립 검토·공식 레퍼런스 대조 (2026-10-26)
+
+독립 Critic은 위 UI 커밋 `825455e3`의 30개 초기 캡처와 별도 등록 흐름, 기존 anti-reference,
+원래 사용자 요구·보호 계약을 대조했고 **소유 범위 내 차단 결함 없음**을 반환했다. 작은 불일치인
+계정 상단 제목(`계정·도움말` vs `내 계정`)은 `내 계정`으로 통일했고 제목/계정 테스트23개와1440/390
+렌더로 확인했다. 도움말에서 모바일 계정 탭을 활성화하는 것은 계정 하위 진입의 연속성을 위한
+의도된 구조다. 미확인 미리보기의 보조 안내는 펼침으로, 권한 거부 화면은 장식으로 채우지 않는
+방식을 유지했다. 실제 미디어 ready/팀 목록 populated·물리 터치·전체 스크린리더 수용은 별도다.
+
+Research는 다음 공개 공식 문서를 읽어 비교했다(2026-10-26, 외부로 프로젝트 자료 전송 없음).
+
+- Linear [Inbox](https://linear.app/docs/inbox), [My Issues](https://linear.app/docs/my-issues),
+  [Projects](https://linear.app/docs/projects): 개인에게 도착한 항목과 전체 작업 기록을 구분하는
+  원칙을 채택했다. KSI 받은 업무는 배정 **및 공유 결과**이므로 `내게 할당`만으로 좁혀 부르지 않고,
+  구독/알림 지연·SLA·우선순위·새 개인 원장을 추가하지 않는다.
+- DroneDeploy [Project View](https://help.dronedeploy.com/hc/en-us/articles/1500004860621-Navigating-the-Project-View),
+  [Project navigation](https://help.dronedeploy.com/hc/en-us/articles/1500004963802-Overview-Navigating-Projects-in-DroneDeploy):
+  현장 식별 메타데이터·검색·보기 전환과 맥락 도움말을 채택했다. 사진 없는 큰 카드 표지는 거절했다.
+  다만 미리보기 부재만으로 사용자가 저장한 카드/목록 취향을 강제 전환하지는 않는다.
+- DroneDeploy [Support](https://help.dronedeploy.com/hc/en-us/articles/10974763021335-Support-at-DroneDeploy):
+  보조 도움말 진입은 채택하되 유료 지원시간·라이브 채팅 약속은 채택하지 않는다.
+  비행·EXIF 기반 자동 취득·현재 위치 추적·장비 운영도 KSI 범위 밖이므로 복제하지 않는다.
+
+외부 스크린샷·브랜드 에셋·글꼴은 가져오지 않았고 신규 에셋 라이선스 의존성은 없다.
+공식 Trimble 문서는 유효한 본문을 확인하지 못해 근거로 사용하지 않았다. 문서 기반 원칙 비교는
+사용자 첫 클릭·tree test나 고객 업무 수용을 대신하지 않는다.
+
+최종 제목 수정 뒤에도 canonical E2E 6개 스펙 **120통과/24명시적 제외**와 전체 Vitest
+**2171통과**, production build를 다시 확인했다. 검증용3298·3297 스택은 종료했고 영속 테스트
+기록·캡처는 보존했다. 공개/운영 링크를 바꾸거나 배포하지 않았다.

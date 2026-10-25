@@ -32,7 +32,7 @@ test("업무 검색과 상태 범위는 새로고침·뒤로가기에도 유지�
 
 test("도움말은 계정에서 접근하며 FAQ를 키보드로 열 수 있다", async ({ page }) => {
   await page.goto("/more");
-  await expect(page.getByRole("heading", { name: "내 계정" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "내 계정", level: 2 })).toBeVisible();
   await page.getByRole("main").getByRole("link", { name: "도움말·작업 안내" }).click();
   await expect(page).toHaveURL(/\/help$/);
   const question = page.locator("summary").filter({ hasText: "화면을 볼 수 있으면 물량 분석도 가능한가요?" });

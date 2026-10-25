@@ -90,7 +90,7 @@ test.beforeEach(async ({ page }) => {
 
 test("계정 행동과 도움말을 분리해도 기존 지원 경계에 도달할 수 있다", async ({ page }) => {
   await page.goto("/more");
-  await expect(page.getByRole("heading", { name: "내 계정", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "내 계정", exact: true, level: 2 })).toBeVisible();
   await expect(page.getByRole("main").getByRole("link", { name: /Dock·Edge 지원 범위/ })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "로그아웃", exact: true }).first()).toBeAttached();
   await page.getByRole("main").getByRole("link", { name: "도움말·작업 안내", exact: true }).click();
