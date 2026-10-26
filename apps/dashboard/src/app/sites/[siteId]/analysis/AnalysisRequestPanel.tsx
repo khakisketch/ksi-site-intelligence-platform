@@ -1,5 +1,8 @@
 "use client";
 
+import type { DeltaExportDeliveryConfig } from "@/lib/delta-export-config";
+import { AnalysisDeltaPublication } from "./AnalysisDeltaPublication";
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -520,7 +523,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   </p>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, primary = false }: {
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, primary = false, deltaExportConfig = null }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -541,6 +544,7 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   newerAnalyses: readonly NewerAnalysisCandidate[];
   /** 최신 기록 카드의 보기 단추를 1차 동작으로 둔다. 나머지는 조용한 링크 행에 둔다. */
   primary?: boolean;
+  deltaExportConfig?: DeltaExportDeliveryConfig | null;
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
@@ -561,6 +565,11 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       <div className="grid gap-2 border-t border-line px-4 py-3 sm:grid-cols-2"><div><p className="mb-1 text-[12px] text-ink-muted">실행 상태</p><StateBadge label={execution.label} tone={execution.tone} /></div><div><p className="mb-1 text-[12px] text-ink-muted">적합성 상태</p><StateBadge label={suitability.label} tone={suitability.tone} /></div>{summary.executionState === "COMPLETED" && summary.suitabilityState === "REASSESSMENT_REQUIRED" && <p className="rounded-md bg-high-bg px-3 py-2 text-[12.5px] leading-5 text-high-ink sm:col-span-2">계산은 완료됐습니다. 현장 적합성은 재평가가 필요합니다.</p>}{summary.executionState === "FAILED" && <p className="rounded-md bg-crit-bg px-3 py-2 text-[12.5px] leading-5 text-crit-ink sm:col-span-2">{detail?.blockers.length ? "Core의 실패 사유와 필요한 조치를 아래에서 확인하세요. 원인을 확인하기 전에는 같은 요청을 반복하지 마세요." : canCreate ? "Core가 변화 분석을 완료하지 못했습니다. 아래 상세의 실패 사유를 검토하고 자료 또는 운영 담당자와 해결 여부를 확인하세요. 결과를 0으로 해석하거나 같은 요청을 바로 반복하지 마세요." : "Core가 변화 분석을 완료하지 못했습니다. 현장 변화 분석 담당자에게 실패 사유와 근거 검토를 요청하세요."}</p>}</div>
     {detail?.blockers.length ? <section className="border-t border-line px-4 py-3" aria-label="확인 및 보완"><h3 className="text-[13px] font-bold">확인 및 보완</h3><ul className="mt-2 space-y-2">{detail.blockers.map((blocker, index) => <AnalysisBlockerItem key={`${blocker.code}-${index}`} blocker={blocker} siteId={siteId} workAreaId={workAreaId} />)}</ul></section> : null}
     {detail ? <MetricSummary summary={summary} detail={detail} /> : !selected && summary.metrics ? <MetricSummary summary={summary} detail={null} /> : null}
+    {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisDeltaPublication
+      detail={detail} workAreaLabel={workAreaName} canRequest={canCreate} delivery={deltaExportConfig}
+      reviewAnalysisId={reviewState?.analysisId ?? null} target={reviewState?.target ?? null}
+      sourceLoading={reviewLoading}
+    />}
     {selected && detail?.executionState === "COMPLETED" && detail.result && <AnalysisReviewSection
       siteId={siteId}
       analysisId={detail.analysisId}
@@ -1175,6 +1184,7 @@ export function AnalysisRequestPanel({
   visualReturnHref = null,
   visualContextNotice = null,
   catalogPair = null,
+  deltaExportConfig = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -1216,6 +1226,7 @@ export function AnalysisRequestPanel({
   catalogPair?: CatalogInspectPair | null;
   visualReturnHref?: string | null;
   visualContextNotice?: string | null;
+  deltaExportConfig?: DeltaExportDeliveryConfig | null;
 }) {
   const router = useRouter();
   const firstPage = fromListPage(initialPage);
@@ -2237,6 +2248,7 @@ export function AnalysisRequestPanel({
           workAreaName={workAreaNameById.get(summary.workAreaId) ?? "이름을 확인할 수 없는 구역"}
           scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
           canCreate={canCreate}
+          deltaExportConfig={deltaExportConfig}
           reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
           reviewLoading={reviewLoadingId === summary.analysisId}
           reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}

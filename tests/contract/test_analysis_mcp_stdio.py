@@ -19,6 +19,32 @@ from typing import Any
 import pytest
 
 
+def _known_checkout_stdio_args() -> list[str]:
+    """Bootstrap the stdio child from this checkout's source, not an install.
+
+    Test-only known-source bootstrap: the child inserts this checkout's
+    trusted source roots ahead of any installed copy, then runs the exact
+    module `-m ksi_analysis_mcp.server` would (`run_module` on the
+    `ksi_analysis_mcp.server` module, since the package ships no
+    `__main__`). No PYTHONPATH inheritance, no installs, no credentials.
+    """
+    root = Path(__file__).resolve().parents[2]
+    sources = [
+        root / "services" / "analysis-mcp" / "src",
+        root / "packages" / "event-contracts" / "src",
+        root / "packages" / "domain" / "src",
+    ]
+    for source in sources:
+        assert source.is_dir(), f"known checkout source missing: {source}"
+    entries = ", ".join(repr(str(source)) for source in sources)
+    script = (
+        "import runpy, sys; "
+        f"sys.path[:0] = [{entries}]; "
+        "runpy.run_module('ksi_analysis_mcp.server', run_name='__main__')"
+    )
+    return ["-c", script]
+
+
 def test_mcp_config_accepts_only_loopback_http_and_private_absolute_token_file(
     tmp_path: Path,
 ) -> None:
@@ -482,7 +508,7 @@ def test_official_sdk_stdio_server_lists_only_analysis_tools_and_requires_core_a
             command = sys.executable
         parameters = StdioServerParameters(
             command=command,
-            args=["-m", "ksi_analysis_mcp.server"],
+            args=_known_checkout_stdio_args(),
             env={
                 "KSI_ANALYSIS_MCP_CORE_ORIGIN": f"http://127.0.0.1:{server.server_port}",
                 "KSI_ANALYSIS_MCP_TOKEN_FILE": str(token_file),
@@ -499,6 +525,9 @@ def test_official_sdk_stdio_server_lists_only_analysis_tools_and_requires_core_a
                 "ksi_get_analysis",
                 "ksi_get_analysis_result",
                 "ksi_get_analysis_evidence",
+                "ksi_create_delta_publication",
+                "ksi_get_delta_publication",
+                "ksi_read_delta_publication_bytes",
             }
             assert all(
                 tool.annotations and tool.annotations.open_world_hint is False
@@ -578,7 +607,7 @@ def test_mcp_preserves_expected_core_conflict_codes_for_restart(tmp_path: Path) 
     async def exercise() -> None:
         parameters = StdioServerParameters(
             command=sys.executable,
-            args=["-m", "ksi_analysis_mcp.server"],
+            args=_known_checkout_stdio_args(),
             env={
                 "KSI_ANALYSIS_MCP_CORE_ORIGIN": f"http://127.0.0.1:{server.server_port}",
                 "KSI_ANALYSIS_MCP_TOKEN_FILE": str(token_file),
@@ -662,7 +691,7 @@ def test_official_sdk_runtime_token_file_failure_is_safe_typed_error(tmp_path: P
             command = sys.executable
         parameters = StdioServerParameters(
             command=command,
-            args=["-m", "ksi_analysis_mcp.server"],
+            args=_known_checkout_stdio_args(),
             env={
                 "KSI_ANALYSIS_MCP_CORE_ORIGIN": "http://127.0.0.1:1",
                 "KSI_ANALYSIS_MCP_TOKEN_FILE": str(token_file),
@@ -803,7 +832,7 @@ def test_mcp_create_reuses_the_real_core_result_and_evidence_after_worker_comple
         ) -> dict[str, object]:
             parameters = StdioServerParameters(
                 command=sys.executable,
-                args=["-m", "ksi_analysis_mcp.server"],
+                args=_known_checkout_stdio_args(),
                 env={
                     "KSI_ANALYSIS_MCP_CORE_ORIGIN": core_origin,
                     "KSI_ANALYSIS_MCP_TOKEN_FILE": str(token_path),

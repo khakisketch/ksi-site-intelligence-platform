@@ -1,0 +1,810 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-delta-publication-api.v1.json",
+  "$defs": {
+    "CreateDeltaPublicationV1": {
+      "additionalProperties": false,
+      "description": "Sources only: Core resolves all grid/frame facts, never client declarations.",
+      "properties": {
+        "publicationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceNumericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcenumericresultidentitydigest",
+          "type": "string"
+        },
+        "sourceCoverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecoveragewitnessdigest",
+          "type": "string"
+        },
+        "lifetimeSeconds": {
+          "minimum": 1,
+          "title": "Lifetimeseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "publicationId",
+        "sourceCalculationIdentityDigest",
+        "sourceNumericResultIdentityDigest",
+        "sourceCoverageWitnessDigest",
+        "lifetimeSeconds"
+      ],
+      "title": "CreateDeltaPublicationV1",
+      "type": "object"
+    },
+    "DeltaOutputObservationWireV1": {
+      "additionalProperties": false,
+      "description": "Authenticated contained-worker result, not the byte-upload caller's metadata.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "sourceContractVersion": {
+          "enum": [
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3"
+          ],
+          "title": "Sourcecontractversion",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceNumericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcenumericresultidentitydigest",
+          "type": "string"
+        },
+        "sourceCoverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecoveragewitnessdigest",
+          "type": "string"
+        },
+        "publicationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 1,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "outputSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Outputsha256",
+          "type": "string"
+        },
+        "outputSizeBytes": {
+          "minimum": 1,
+          "title": "Outputsizebytes",
+          "type": "integer"
+        },
+        "gridRows": {
+          "minimum": 1,
+          "title": "Gridrows",
+          "type": "integer"
+        },
+        "gridColumns": {
+          "minimum": 1,
+          "title": "Gridcolumns",
+          "type": "integer"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "transformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Transformdigest",
+          "type": "string"
+        },
+        "gridCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Gridcrsidentifier",
+          "type": "string"
+        },
+        "gridCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Gridcrsdigest",
+          "type": "string"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        },
+        "dtype": {
+          "const": "FLOAT64",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "deltaSign": {
+          "const": "CURRENT_MINUS_BASELINE",
+          "title": "Deltasign",
+          "type": "string"
+        },
+        "nodataValue": {
+          "const": "NAN",
+          "title": "Nodatavalue",
+          "type": "string"
+        },
+        "observationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observationdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "sourceContractVersion",
+        "sourceCalculationIdentityDigest",
+        "sourceNumericResultIdentityDigest",
+        "sourceCoverageWitnessDigest",
+        "publicationId",
+        "workerPrincipalId",
+        "workerInstanceId",
+        "leaseGeneration",
+        "outputSha256",
+        "outputSizeBytes",
+        "gridRows",
+        "gridColumns",
+        "transform",
+        "transformDigest",
+        "gridCrsIdentifier",
+        "gridCrsDigest",
+        "bounds",
+        "dtype",
+        "deltaSign",
+        "nodataValue",
+        "observationDigest"
+      ],
+      "title": "DeltaOutputObservationWireV1",
+      "type": "object"
+    },
+    "DeltaPublicationBytesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "publicationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "contentBase64": {
+          "maxLength": 1398104,
+          "title": "Contentbase64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "publicationId",
+        "offset",
+        "contentBase64"
+      ],
+      "title": "DeltaPublicationBytesV1",
+      "type": "object"
+    },
+    "DeltaPublicationIntentViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "publicationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "sourceContractVersion": {
+          "enum": [
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3"
+          ],
+          "title": "Sourcecontractversion",
+          "type": "string"
+        },
+        "outputId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Outputid",
+          "type": "string"
+        },
+        "uploadFenceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Uploadfenceid",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceNumericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcenumericresultidentitydigest",
+          "type": "string"
+        },
+        "sourceCoverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecoveragewitnessdigest",
+          "type": "string"
+        },
+        "gridRows": {
+          "minimum": 1,
+          "title": "Gridrows",
+          "type": "integer"
+        },
+        "gridColumns": {
+          "minimum": 1,
+          "title": "Gridcolumns",
+          "type": "integer"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "policyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "PUBLISHED",
+            "REVOKED",
+            "CANCELED",
+            "FAILED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 0,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "leaseHolderPrincipalId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Leaseholderprincipalid"
+        },
+        "leaseHolderInstanceId": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Leaseholderinstanceid"
+        },
+        "leaseIssuedAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Leaseissuedat"
+        },
+        "leaseExpiresAt": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Leaseexpiresat"
+        }
+      },
+      "required": [
+        "publicationId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "sourceContractVersion",
+        "outputId",
+        "uploadFenceId",
+        "sourceCalculationIdentityDigest",
+        "sourceNumericResultIdentityDigest",
+        "sourceCoverageWitnessDigest",
+        "gridRows",
+        "gridColumns",
+        "issuedAt",
+        "expiresAt",
+        "policyDigest",
+        "status",
+        "leaseGeneration",
+        "leaseHolderPrincipalId",
+        "leaseHolderInstanceId",
+        "leaseIssuedAt",
+        "leaseExpiresAt"
+      ],
+      "title": "DeltaPublicationIntentViewV1",
+      "type": "object"
+    },
+    "DeltaPublicationPendingJobsV1": {
+      "additionalProperties": false,
+      "description": "Bounded worker-only discovery, never content or a minted lease.",
+      "properties": {
+        "publicationIds": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "type": "string"
+          },
+          "maxItems": 50,
+          "title": "Publicationids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "publicationIds"
+      ],
+      "title": "DeltaPublicationPendingJobsV1",
+      "type": "object"
+    },
+    "DeltaPublicationViewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "publicationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "outputId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Outputid",
+          "type": "string"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "policyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "PUBLISHED",
+            "REVOKED",
+            "CANCELED",
+            "FAILED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Reason"
+        },
+        "descriptor": {
+          "$ref": "#/$defs/DeltaRasterPublicationV1"
+        }
+      },
+      "required": [
+        "publicationId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "outputId",
+        "issuedAt",
+        "expiresAt",
+        "policyDigest",
+        "status",
+        "reason",
+        "descriptor"
+      ],
+      "title": "DeltaPublicationViewV1",
+      "type": "object"
+    },
+    "DeltaRasterPublicationV1": {
+      "additionalProperties": false,
+      "description": "Immutable descriptor of derived delta-raster bytes, evidence only.\n\nThe raster is derived from the actual validated delta array\n(``CURRENT_MINUS_BASELINE``), never reconstructed from aggregate metrics.\nThe descriptor carries an opaque protected output id plus the observed\noutput SHA-256 and size; it carries no URL, path, or capability, and it\nasserts no currency, revocation state, or read right. Float width is fixed\nto ``FLOAT64``: a 32-bit float cannot hold metre-scale elevation deltas\nover large grids without metric drift. Lifetime is an explicit\nissued/expires UTC interval; expiry, revocation, scope, and AI-egress are\nchecked by Core before any byte access, not by this descriptor.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-volume-delta-publication.v1",
+          "default": "external-masked-volume-delta-publication.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "publicationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Publicationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "sourceContractVersion": {
+          "enum": [
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3"
+          ],
+          "title": "Sourcecontractversion",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceNumericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcenumericresultidentitydigest",
+          "type": "string"
+        },
+        "sourceCoverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecoveragewitnessdigest",
+          "type": "string"
+        },
+        "deltaSign": {
+          "const": "CURRENT_MINUS_BASELINE",
+          "title": "Deltasign",
+          "type": "string"
+        },
+        "gridRows": {
+          "exclusiveMinimum": 0,
+          "title": "Gridrows",
+          "type": "integer"
+        },
+        "gridColumns": {
+          "exclusiveMinimum": 0,
+          "title": "Gridcolumns",
+          "type": "integer"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "transformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Transformdigest",
+          "type": "string"
+        },
+        "gridCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Gridcrsidentifier",
+          "type": "string"
+        },
+        "gridCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Gridcrsdigest",
+          "type": "string"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        },
+        "verticalUnit": {
+          "const": "metre",
+          "title": "Verticalunit",
+          "type": "string"
+        },
+        "dtype": {
+          "const": "FLOAT64",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "outputId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._-]+$",
+          "title": "Outputid",
+          "type": "string"
+        },
+        "outputSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Outputsha256",
+          "type": "string"
+        },
+        "outputSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Outputsizebytes",
+          "type": "integer"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "publicationPolicyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Publicationpolicydigest",
+          "type": "string"
+        },
+        "publicationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Publicationdigest"
+        }
+      },
+      "required": [
+        "publicationId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "sourceContractVersion",
+        "sourceCalculationIdentityDigest",
+        "sourceNumericResultIdentityDigest",
+        "sourceCoverageWitnessDigest",
+        "deltaSign",
+        "gridRows",
+        "gridColumns",
+        "transform",
+        "transformDigest",
+        "gridCrsIdentifier",
+        "gridCrsDigest",
+        "bounds",
+        "verticalUnit",
+        "dtype",
+        "outputId",
+        "outputSha256",
+        "outputSizeBytes",
+        "issuedAt",
+        "expiresAt",
+        "publicationPolicyDigest"
+      ],
+      "title": "DeltaRasterPublicationV1",
+      "type": "object"
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/CreateDeltaPublicationV1"
+    },
+    {
+      "$ref": "#/$defs/DeltaOutputObservationWireV1"
+    },
+    {
+      "$ref": "#/$defs/DeltaPublicationIntentViewV1"
+    },
+    {
+      "$ref": "#/$defs/DeltaPublicationViewV1"
+    },
+    {
+      "$ref": "#/$defs/DeltaPublicationPendingJobsV1"
+    },
+    {
+      "$ref": "#/$defs/DeltaPublicationBytesV1"
+    }
+  ]
+}

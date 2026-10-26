@@ -17,6 +17,7 @@ from .core_client import (
     CoreAdapterError,
     CoreAnalysisClient,
 )
+from .delta_publications import MAX_DELTA_BYTES_RESPONSE_BYTES
 
 _READ_TOOLS = frozenset(
     {
@@ -26,8 +27,13 @@ _READ_TOOLS = frozenset(
         "ksi_get_analysis",
         "ksi_get_analysis_result",
         "ksi_get_analysis_evidence",
+        "ksi_get_delta_publication",
+        "ksi_read_delta_publication_bytes",
     }
 )
+_STRUCTURED_CEILINGS = {
+    "ksi_read_delta_publication_bytes": MAX_DELTA_BYTES_RESPONSE_BYTES,
+}
 _TOOL_DESCRIPTIONS = {
     "ksi_list_analysis_observations": (
         "List registered selectable observation revisions for one supplied Site; "
@@ -42,6 +48,17 @@ _TOOL_DESCRIPTIONS = {
     "ksi_get_analysis": "Read one durable Analysis state for a supplied Site.",
     "ksi_get_analysis_result": "Read one durable Analysis result state for a supplied Site.",
     "ksi_get_analysis_evidence": "Read provenance and restrictions for one supplied Analysis.",
+    "ksi_create_delta_publication": (
+        "Request one source-bound delta-publication intent for a supplied WorkArea; "
+        "Core resolves all grid facts from the bound sources."
+    ),
+    "ksi_get_delta_publication": (
+        "Read one published delta-publication descriptor for a supplied WorkArea."
+    ),
+    "ksi_read_delta_publication_bytes": (
+        "Read one bounded opaque byte chunk of a published delta output; "
+        "bytes are passed through, never recomputed or parsed."
+    ),
 }
 
 
@@ -76,7 +93,8 @@ def build_server(client: CoreAnalysisClient) -> Server[dict[str, Any]]:
         except CoreAdapterError as exc:
             return _error_result(exc.code)
         serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-        if len(serialized.encode("utf-8")) > MAX_STRUCTURED_RESPONSE_BYTES:
+        ceiling = _STRUCTURED_CEILINGS.get(params.name, MAX_STRUCTURED_RESPONSE_BYTES)
+        if len(serialized.encode("utf-8")) > ceiling:
             return _error_result("CORE_RESPONSE_TOO_LARGE")
         return types.CallToolResult(
             content=[types.TextContent(type="text", text=serialized)],
@@ -87,9 +105,11 @@ def build_server(client: CoreAnalysisClient) -> Server[dict[str, Any]]:
         "ksi-analysis-mcp",
         version="0.0.1",
         instructions=(
-            "Use only the seven KSI Analysis tools with explicit Site and WorkArea identifiers. "
+            "Use only the ten KSI Analysis tools with explicit Site and WorkArea identifiers. "
             "The six established tools keep their frozen shapes; ksi_check_analysis_readiness "
-            "is the additive read-only preflight."
+            "is the additive read-only preflight. The three delta-publication tools are "
+            "closed additive external-consumer reads/creates that pass opaque worker bytes "
+            "through without recomputation."
         ),
         on_list_tools=list_tools,
         on_call_tool=call_tool,

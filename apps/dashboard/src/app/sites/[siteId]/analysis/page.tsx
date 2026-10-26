@@ -10,6 +10,7 @@ import { getAnalysis, listAnalyses, listAnalysisObservations } from "@/lib/core-
 import { getSpatialAsset, type SpatialAssetCatalogItem } from "@/lib/core-api/spatial-assets";
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { getSite } from "@/lib/core-api/sites";
+import { resolveDeltaExportDeliveryConfig } from "@/lib/delta-export-config";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
@@ -280,6 +281,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
         {/* 기록이 있으면 결과 요약·이력이 먼저 보인다. 기록이 없으면 실제
             선택 폼이 먼저 오고, 시작 안내는 접힌 도움말로 뒤에 둔다. */}
         <AnalysisRequestPanel
+          deltaExportConfig={resolveDeltaExportDeliveryConfig()}
           siteId={siteId}
           organizationId={session.principal.organizationId}
           principalId={session.principal.principalId}

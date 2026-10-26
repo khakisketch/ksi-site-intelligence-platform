@@ -354,8 +354,9 @@ Implementation boundaries for this continuation:
 ### P2 implementation in progress — revalidated 2026-10-26
 
 The previous P2 proposal/Console whole-scope table's “decision required” status is superseded by the
-Human choice above. There is no new pilot-scope or contract-approval stop. Implementation remains
-uncommitted after P1 `d20379cd`; no new route is enabled by default and no deployment occurred.
+Human choice above. There is no new pilot-scope or contract-approval stop. The measurement/model
+foundation is committed as `131e5e29` after P1 `d20379cd`; later integration remains uncommitted.
+No new route is enabled by default and no deployment occurred.
 
 - New strict mask/profile/identity and V3 coverage/result/impact contracts, pure masked math and
   byte-bound contained measurement primitives are implemented. They preserve V2 identities and
@@ -398,6 +399,53 @@ Integration follow-through (same authorized task, still in progress):
   functional software checks, not product acceptance. Real Core mask adapters, late delta-reproduction
   worker, additive MCP operations and guarded Console export status are actively assigned; Build owns
   composition/auth/schema integration and final real-rendered acceptance.
+
+2026-10-27 integration revalidation (same task, no deployment):
+
+- Explicit delta common composition and exact MCP/OIDC consumer route allowlists are connected;
+  absent config still mounts no extension. Closed source-only API, actual worker output acceptance,
+  bounded raw upload/read, successful revoke response and rejected-byte conflicts are exercised.
+  New policy attempt caps are constrained by the configured envelope. The combined API/contract/
+  composition/receipt plus incumbent Analysis HTTP set passed **46** checks after those fixes.
+- The late V2 publication worker now has a task-owned live-loopback Core/object HTTP proof through
+  `run_delta_publication_job`; original completed NX report bytes stay unchanged. Pending-job
+  discovery/driver and independent V3 late publication wiring remain in integration.
+- Additive MCP verification passed **17/17**, including the official SDK stdio child explicitly
+  bootstrapped from this checkout's source (no unsafe environment inheritance or environment install).
+- Export UI hardening delivery includes exact response validation, source-change cancellation,
+  expiry precedence, pre/post guarded metadata checks and verified two-chunk assembly. Parent result
+  binding/config plus incumbent page/panel tests passed **114** and TypeScript; the UI owner's full
+  suite reported **2,295**. Real-rendered composed acceptance is still pending on a fresh P2 runtime.
+- Mask-family admission/runtime/activation and immutable byte-journal/storage defects found during
+  source review are assigned for correction before mounting. The actual masked HTTP/composition and
+  Console workflow are still implementation work, not unavailable external authority.
+
+Rendered delta verification (fresh task-owned Core8036 / Console3234; synthetic only):
+
+- The actual Console user action created a publication; bounded worker discovery found the opaque id
+  and the late-output worker published it. The browser downloaded **525,191 bytes** through two guarded
+  BFF slices (524,288 + 903). File SHA-256 matched the descriptor; current metadata was checked before
+  and after assembly. The original V2 numeric result stayed visible and unchanged.
+- Desktop 1440px / mobile 390px showed the numeric result and separate output state without horizontal
+  overflow. Mobile write restriction and read/download access remained distinct. Keyboard focus and
+  Enter/Escape on the permission explanation caused no additional mutation.
+- A simulated typed-expiry response exposed a stale green availability badge during download. It was
+  corrected and rechecked in the rendered component: the descriptor/download action disappears and
+  expiry is shown without changing the numeric result. Typed-expiry and forbidden branches in these
+  captures are **simulated HTTP responses**, not customer events or Core state changes.
+- Exact receipt and screenshots: `/tmp/opencode/ksi-integration-20261026/p2-preview/rendered-verification.json`
+  and `browser-download-receipt.json`. That running Core predates the latest typed-disposition and
+  lapsed-lease discovery changes; fresh tests cover those fixes. A final all-lane re-import is pending.
+  Dev font-preload warnings and expected unavailable-read 404s are disclosed, not a clean-production
+  console claim. The focused UI/source-binding set subsequently passed **94**, with TypeScript clean.
+
+Mask authority corrections now preserve provisional accuracy, bind all five execution runtime pins
+and the actual signed activation record, reject immutable-byte overwrite/symlink/journal tamper, and
+accept only the designated inspection worker at the worker seam. Baseline-parent mask children are
+allowed; the earlier distinct-parent restriction had no approved basis and was removed. The new V3
+source adapter passed **9** genuine-but-synthetic source/currentness checks without any V2 NX result.
+Optional masked mounting, actual inspection/calculation transport, source-context/BFF/Console wiring,
+V3 late-output transport and their composed acceptance are still active integration work.
 
 Only unavailable signing/provisioning, deployment-host proof, retained permitted customer data and
 field/consumer/customer acceptance remain external. Continue independently actionable local code;

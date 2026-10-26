@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-quantitative-extension-activation.v1.json",
+  "title": "Signed quantitative extension activation V1",
+  "description": "Separate time-bounded Core authority for one exact organization, explicit purpose (MASKED_ANALYSIS_V3 or DELTA_PUBLICATION_V1), and quantitative execution graph. An old V2 activation without a purpose never validates here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "activationId",
+    "organizationId",
+    "purpose",
+    "policyDigest",
+    "runtimeDigest",
+    "resourceEnvelopeDigest",
+    "workerPrincipalId",
+    "issuedAt",
+    "validUntil",
+    "keyId",
+    "signature"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "activationId": { "$ref": "#/$defs/text" },
+    "organizationId": { "$ref": "#/$defs/text" },
+    "purpose": { "enum": ["MASKED_ANALYSIS_V3", "DELTA_PUBLICATION_V1"] },
+    "policyDigest": { "$ref": "#/$defs/digest" },
+    "runtimeDigest": { "$ref": "#/$defs/digest" },
+    "resourceEnvelopeDigest": { "$ref": "#/$defs/digest" },
+    "workerPrincipalId": { "$ref": "#/$defs/text" },
+    "issuedAt": { "$ref": "#/$defs/utcTime" },
+    "validUntil": { "$ref": "#/$defs/utcTime" },
+    "keyId": { "$ref": "#/$defs/text" },
+    "signature": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{86}==$"
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "utcTime": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+]00:00)$"
+    }
+  }
+}
