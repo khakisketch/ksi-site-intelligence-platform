@@ -1213,11 +1213,11 @@ export default async function SpatialAssetsPage({
   // 중앙: 큰 미리보기. 단일 또는 좌·우 독립 보기. 동기화·정합을 주장하지
   // 않는다. 무대 높이를 채우고 넘치면 안에서 스크롤한다.
   const renderStage = (): ReactNode => (
-    <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto">
-      {!sideA && <p role="status" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
+    <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto" data-materials-stage="true">
+      {!sideA && <p role="status" data-workbench-stage-caption="true" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
       {!sideA && sideB && centerPane("B", sideB)}
       {sideA && !compareMode && <>
-        <p className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
+        <p data-workbench-stage-caption="true" className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
           {selection.legacyMapped ? "옛 주소의 선택을 그대로 읽었습니다" : selection.defaultedA ? "목록 첫 자료" : "선택한 자료"}
         </p>
         <div className="min-w-0 lg:min-h-0 lg:flex-1">

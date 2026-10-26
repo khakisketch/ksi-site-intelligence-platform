@@ -622,6 +622,22 @@ body {
   display: none;
 }
 
+/* Materials: the layer panel is the selection surface in viewer mode. The
+   in-canvas pane head duplicates it and would sit under the floating panel. */
+[data-workbench-viewer] [data-materials-stage] [data-workbench-pane-controls],
+[data-workbench-viewer] [data-materials-stage] [data-workbench-stage-caption] {
+  display: none;
+}
+
+/* Workspace: observation/layer controls are primary. Keep them visible by
+   insetting them past the floating catalog; the canvas itself stays full-bleed. */
+@media (min-width: 1024px) {
+  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-pane-controls],
+  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-stage-inset] {
+    margin-left: 312px;
+  }
+}
+
 @media print {
   html,
   body {

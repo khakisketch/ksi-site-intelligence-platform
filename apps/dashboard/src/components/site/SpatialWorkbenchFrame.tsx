@@ -285,6 +285,7 @@ export function SpatialWorkbenchFrame({
       <div
         ref={rootRef}
         data-workbench-viewer="true"
+        data-catalog-open={catalogOpen ? "true" : "false"}
         className="relative flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden bg-page"
       >
         <div
