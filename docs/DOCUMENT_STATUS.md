@@ -42,7 +42,6 @@ it does not change product decisions or current capability state.
 | `goals/REMAINING_WORK_PLAN.md` dated tables | HISTORICAL SNAPSHOT | Its header delegates current routing to the product-state/named slice ledger and, when present, checkpoint/named task ledger; it does not select work. |
 | `.ai/audits/*`, `.superpowers/sdd/*` (machine-local), `.ksi/*`, `docs/audit/*` | EVIDENCE | Audit-time, harness-era task-freeze or retired-helper findings only; no product or current-state authority |
 | `.ai/mvp-*`, `.ai/*` previous sections | HISTORICAL | Authoritative product/state documents and their named plan ledger; no `.ai/` record supplies current state |
-| `docs/ledger/archive/console-design-2026-10/*` | ARCHIVED DESIGN | Superseded 2026-10 console proposals and retired prototype instructions. Provenance only; current design is `docs/design/CONSOLE_CURRENT_SPEC.md`. |
 | `docs/superpowers/plans/*`, `docs/superpowers/specs/*` | DATED IMPLEMENTATION HISTORY by default | A plan/spec is active only when current authority, the active checkout task ledger, or `product-state.md`'s named slice ledger explicitly names it; approved design documents remain active design only and never runtime/field proof. The 2026-10-09 harness mapping record is a historical one-time mapping, not an execution instruction |
 | `references/**` | REFERENCE ONLY | Adoption matrix and KSI-owned code/contracts control product behavior |
 | `docs/archive/**` | ARCHIVED | May be used only as provenance/evidence; never canonical |

@@ -50,5 +50,6 @@ site/queue authority.
 
 ## Superseded design material
 
-Archived at [`../ledger/archive/console-design-2026-10/`](../ledger/archive/console-design-2026-10/). Those
-boards are provenance, not active instructions.
+Earlier console boards were consolidated into this spec and `docs/ledger/DESIGN.md`; their working
+tree copies were removed on 2026-10-26. They remain recoverable from Git history only and are not
+active instructions.

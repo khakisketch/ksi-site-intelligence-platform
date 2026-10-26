@@ -1,6 +1,6 @@
 # Mobile Prototype Agent Guide
 
-Read [`../../../../AGENTS.md`](../../../../AGENTS.md) for shared product authority, task routing, and control
+Read [`../../AGENTS.md`](../../AGENTS.md) for shared product authority, task routing, and control
 boundaries before applying this prototype's local rules.
 
 > Harness note (2026-10-09, updated 2026-10-14): current sessions run under the OpenCode harness,

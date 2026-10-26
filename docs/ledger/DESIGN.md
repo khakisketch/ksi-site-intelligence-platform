@@ -21,5 +21,5 @@ Visual reference: [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](../design/
 - Home/global `내 업무/검토` split (ADR-025/026 approval).
 - Theme setting (deferred).
 
-Superseded boards: [`archive/console-design-2026-10/`](archive/console-design-2026-10/) —
-temporary archive, not active guidance.
+Superseded boards were consolidated here and in `CONSOLE_CURRENT_SPEC.md`; working-tree copies
+were removed on 2026-10-26 (Git history only). No archive is kept.
