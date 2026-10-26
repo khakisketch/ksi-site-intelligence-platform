@@ -57,7 +57,7 @@ export function SiteVisualPlaceholder({
       <div className="absolute inset-0 flex flex-col justify-between gap-3 p-4">
         <div className="flex items-start justify-between gap-3">
           <span className={`rounded border px-2 py-1 font-mono text-[9.5px] tracking-[0.02em] ${toneClass} ${tone === "loading" ? "animate-pulse" : ""}`}>
-            {showLabel ? label : "등록 범위"}
+            {showLabel ? label : "기본 표지"}
           </span>
           <span aria-hidden="true" className="grid size-8 flex-none place-items-center rounded-md bg-white/[0.09] text-[11px] font-bold ring-1 ring-white/10">
             {mark}
