@@ -9,14 +9,23 @@ site/queue authority.
 - Desktop-first 1440×900. The site is the object; the current site's spatial state is the hero.
 - Global rail: 홈 · 현장 · 업무 · 계정/도움말. When inside a site, only the current site expands
   under 현장: 작업공간 · 자료 · 관측 작업 · 결과, with a site switcher that preserves the section.
-- The site header owns site name, status and settings. Section navigation lives in the rail on
-  desktop; the header tabs remain only below `lg` where the rail is absent.
-- 자료 at ≥1280px: persistent catalog · spatial stage · selected-material inspector. The catalog
-  is not a drawer on desktop.
+- **Viewer-first** for site 공간 and 자료 at `lg+`: 56px icon rail, no global top bar or site
+  header, full-bleed spatial stage, floating layer panel with the current site + sections, and a
+  floating selected-material inspector. The layer toggle lives in the toolbar.
+- **Dense-first** for 업무 · 결과 · 검토 and site management (`?section=manage`,
+  `?section=work-orders`, `?section=results`, `?mode=results`, analysis/observations/work-area
+  routes): labelled 176/232px rail, top bar, site header, table/form density.
+- The site header owns site name, status and settings on dense screens; viewer screens move the
+  site name/switcher and settings link into the floating layer panel. Header tabs remain only
+  below `lg` where neither rail nor floating panel is present.
+- 자료: floating catalog (300px) · spatial stage · selected-material inspector (332px). At
+  `xl+` both panels default open; at 1024–1279 the catalog defaults closed and the toolbar hides
+  the explanatory line/redundant label to stay one row.
 - Inspector: title, status, four key facts and the next action first. Provenance, history and
   inspection detail collapse under `상세 정보`. Preparation requests open in a native dialog.
 - Expired/unprepared stage: show the registered extent, work area/file bounds, actual prepared
-  window and dimensions. Never show a fake image or empty poster box.
+  window and dimensions. Never show a fake image or empty poster box. Site workspace uses the
+  same extent canvas.
 - `/field` remains the organization work record. The global `내 업무` projection and `검토` queue
   are not implemented; do not relabel `/field` as personal work.
 
@@ -25,8 +34,15 @@ site/queue authority.
 - Site context rail and switcher: `1b8ed545`.
 - Desktop materials 3-pane, compact inspector, request dialog: `589490ca`.
 - Expired extent canvas (`SiteMosaicAbsentCanvas`): `49d19a3d`.
-- Visual reference: [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
-- Audit/evidence: [`CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md`](CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md).
+- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `153b0f7e`
+  (branch HEAD `10bacff0` adds the final regression test); production image
+  `ksi-product-dashboard:viewer-first-20261026`
+  `sha256:9c21ecfcedd627fb5954a46a222e53aac813dfbfeb5aa59aa5d4107b8b806d11`.
+- Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
+  and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
+  desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
+- Audit/evidence: [`CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md`](CONSOLE_USABILITY_IA_AUDIT_2026-10-26.md)
+  and `~/.local/state/ksi-console-ia-20261025/viewer-first-20261026/`.
 
 ## Invariants
 
@@ -40,11 +56,9 @@ site/queue authority.
 
 ## Open / next
 
-- Viewer-first direction **A decided** (2026-10-26): site 공간/자료 viewer-first; 업무/결과/검토
-  list/form-first. Comparison: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html).
-  Implementation pending; current production still uses the 3-pane materials shell.
-- Apply the same extent canvas to the site workspace stage.
-- Mobile site switcher (desktop rail pattern is not available below `lg`).
+- Viewer-first direction **A implemented** for site 공간/자료; 업무/결과/검토 remain list/form-first.
+  Comparison: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html).
+- Mobile site switcher (desktop rail/floating panel pattern is not available below `lg`).
 - Home structure and global `내 업무/검토` split remain gated by ADR-025 D6/D7 and explicit
   product-owner approval; 4-viewport and projection/E2E evidence required.
 - Theme selection is deferred to a future `설정 > 화면 테마` decision; no palette change now.
