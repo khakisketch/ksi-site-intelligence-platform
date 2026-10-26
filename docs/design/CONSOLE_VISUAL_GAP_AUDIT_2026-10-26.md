@@ -351,3 +351,32 @@
 - 물리 터치·스크린리더·고대비·인쇄.
 - hover/focus/loading/error 상태의 전체 렌더(초기 캡처만 확인).
 - 사용자 첫 클릭·tree test·현장 담당자 인터뷰.
+
+
+## 9. 후속 수정 — 모바일 자료 목록 시트 (2026-10-26)
+
+사용자가 모바일 자료 화면의 열린 목록을 지적한 뒤, 모바일 전용 수정을 배포했다.
+대상은 `SpatialWorkbenchFrame`, `spatial-assets/page.tsx`, `WorkbenchMediaState`이며
+Core·권한·저장·계산은 변경하지 않았다.
+
+- 390px에서 목록 시트: 이전 x8·y437·320×342 (한 항목만 보임) → x8·y8·374×771
+  (전체 높이, 4개 항목, 내부 스크롤). 320px에서도 304×667, 가로 넘침 없음.
+- 배경의 sticky 도구막대가 시트 위로 올라오던 z-index 겹침 제거. 시트 위에서
+  배경 컨트롤을 클릭할 수 없음을 DOM hit-test로 확인.
+- 자료 행: 종류 아이콘(정사영상 격자/DSM 등고선) + 확장자, 2줄 파일명,
+  `A로 보기`/`B에 두기` 44px 버튼. 320px에서 88×44.
+- 모바일에서 보기 방식 문구를 숨기고 세그먼트를 축소; 만료/부재 캔버스는
+  200px(모바일)/300px(이상).
+- 운영 화면에 노출되던 `/design-preview/materials` 링크를 제거.
+- 검증: Vitest 2105, tsc0, lint0오류, production build 성공; 운영 390/320 axe
+  WCAG2A-AA 0; 공식 운영 E2E 71통과/41조건부/4건은 합성 빈 데이터 전용
+  assertion으로 실제 Floreat 데이터와 불일치.
+- 배포 이미지 `ksi-product-dashboard:mobile-materials-20261026`
+  `sha256:653224718d1fd02115274330976603e40c022ec4d14813eb6f5b4fd32d0f22dd`,
+  revision `c58c3e147163aef9d2a9d119917d0026abc8f260`, 백업
+  `ksi-product-console-pre-mobile-materials-20261026`. 증거
+  `~/.local/state/ksi-console-ia-20261025/mobile-materials-20261026/`.
+
+남은 것: 데스크톱 시트의 절대 높이(기존과 동일하게 화면보다 큼), 실제 픽셀이
+살아 있을 때의 썸네일 배치, 닫힌 모바일 화면의 상단 제어 밀도. 이번 수정은
+모바일 목록 경험에 한정하며 전체 시각 감사의 P0를 모두 닫은 것이 아니다.
