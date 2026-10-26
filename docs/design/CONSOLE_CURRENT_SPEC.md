@@ -10,18 +10,21 @@ site/queue authority.
 - Global rail: 홈 · 현장 · 업무 · 계정/도움말. When inside a site, only the current site expands
   under 현장: 작업공간 · 자료 · 관측 작업 · 결과, with a site switcher that preserves the section.
 - **Viewer-first** for site 공간 and 자료 at `lg+`: 56px icon rail, no global top bar or site
-  header, full-bleed spatial stage, floating layer panel with the current site + sections, and a
-  floating selected-material inspector. The layer toggle lives in the toolbar.
+  header, full-bleed spatial stage, and a **collapsible** floating layer panel with the current
+  site + sections. The layer panel starts closed, so the canvas is never narrowed by default;
+  the closed toggle keeps the site name visible. The inspector opens on demand.
 - **Dense-first** for 업무 · 결과 · 검토 and site management (`?section=manage`,
   `?section=work-orders`, `?section=results`, `?mode=results`, analysis/observations/work-area
   routes): labelled 176/232px rail, top bar, site header, table/form density.
+- Home and site list use a consistent 16:9 neutral cover when no prepared preview exists. The
+  cover is explicitly not imagery and makes no extent/accuracy claim; real pixels replace it
+  when available.
 - The site header owns site name, status and settings on dense screens; viewer screens move the
   site name/switcher and settings link into the floating layer panel. Header tabs remain only
   below `lg` where neither rail nor floating panel is present.
-- 자료: floating catalog (300px) · spatial stage · on-demand selected-material inspector (332px).
-  At `xl+` the catalog defaults open and the inspector opens from the toolbar; at 1024–1279 the
-  catalog defaults closed and the toolbar hides the explanatory line/redundant label to stay
-  one row.
+- 자료: floating catalog (300px) and on-demand selected-material inspector (332px). Both start
+  closed; the toolbar toggle opens them, and the canvas keeps the full width until the user
+  asks for a panel.
 - Inspector: title, status, four key facts and the next action first. Provenance, history and
   inspection detail collapse under `상세 정보`. Preparation requests open in a native dialog.
 - Expired/unprepared stage: show the registered extent, work area/file bounds, actual prepared
@@ -35,9 +38,10 @@ site/queue authority.
 - Site context rail and switcher: `1b8ed545`.
 - Desktop materials 3-pane, compact inspector, request dialog: `589490ca`.
 - Expired extent canvas (`SiteMosaicAbsentCanvas`): `49d19a3d`.
-- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `946409c7`;
+- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `41dc234f`;
   production image `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:bc8c2d938a0c63ff1d25a65ce8d6ee7a35319ed75f63eb33acdc9d9f41d5a779`.
+  `sha256:2866c73a1c8ab78e80c6d73811d87d87e1ae4057e786f87695c87a5b6a8a6bff`.
+- Visual site covers (`SiteVisualPlaceholder`) and collapsible viewer panels.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
   and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
   desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).

@@ -18,7 +18,7 @@ acceptance remains external and unverified.
 
 | Work | Owner | Status | Evidence / next |
 |---|---|---|---|
-| Console desktop-first UX | Build | Viewer-first deployed | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — 56px viewer rail, full-bleed site 공간/자료, floating layer/inspector, real extents; dense 업무/결과/검토 retained |
+| Console desktop-first UX | Build | Viewer-first deployed | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — 56px viewer rail, full-bleed site 공간/자료, collapsible layer/inspector, visual site covers, real extents; dense 업무/결과/검토 retained |
 | Spatial engine integration | Build | Active, separate uncommitted stream | [`../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md) — do not duplicate here until close |
 | Ledger/document consolidation | Build | Active | This directory; legacy console boards deleted after consolidation |
 
@@ -27,7 +27,8 @@ acceptance remains external and unverified.
 [`../design/CONSOLE_CURRENT_SPEC.md`](../design/CONSOLE_CURRENT_SPEC.md) and
 [`../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html).
 Desktop-first, site-centric, viewer-first for site 공간/자료, list/form-first for 업무/결과/검토,
-real extents, no fake imagery, no duplicate work authority.
+real extents, consistent neutral site covers when no prepared preview, no fake imagery, no
+duplicate work authority.
 
 ## Open decisions / limits
 
