@@ -2,7 +2,6 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { ViewerSiteBadge } from "@/components/nav/ViewerSiteBadge";
 import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
 
 /**
@@ -293,6 +292,23 @@ export function SpatialWorkbenchFrame({
           data-workbench-context-bar
           className="absolute inset-x-3 top-3 z-40 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 shadow-lg backdrop-blur"
         >
+          {!catalogOpen && (
+            <button
+              ref={viewerCatalogToggleRef}
+              type="button"
+              aria-expanded={false}
+              aria-controls="workbench-catalog"
+              onClick={openCatalog}
+              aria-label="레이어 패널 열기"
+              title="레이어 패널 열기"
+              className="tap-target grid size-9 shrink-0 place-items-center rounded-md border border-line bg-surface text-ink-2 hover:bg-sunk"
+            >
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                <path d="m12 3 9 5-9 5-9-5Z" />
+                <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
+              </svg>
+            </button>
+          )}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">{contextBar}</div>
           {inspector !== null && (
             <button
@@ -317,7 +333,7 @@ export function SpatialWorkbenchFrame({
             {stage}
           </div>
 
-          {catalogOpen ? (
+          {catalogOpen && (
             <aside
               ref={catalogRef}
               id="workbench-catalog"
@@ -354,22 +370,6 @@ export function SpatialWorkbenchFrame({
                 </div>
               )}
             </aside>
-          ) : (
-            <button
-              ref={viewerCatalogToggleRef}
-              type="button"
-              aria-expanded={false}
-              aria-controls="workbench-catalog"
-              onClick={openCatalog}
-              className="absolute left-3 top-2 z-30 flex min-h-10 max-w-[min(300px,calc(100%-24px))] items-center gap-2 rounded-lg border border-line bg-surface/95 px-2.5 text-[12px] font-semibold text-ink-1 shadow-lg backdrop-blur hover:bg-surface"
-            >
-              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none text-ink-2">
-                <path d="m12 3 9 5-9 5-9-5Z" />
-                <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
-              </svg>
-              <ViewerSiteBadge fallback="현장" />
-              <span className="shrink-0 text-ink-muted">· {catalogLabel}</span>
-            </button>
           )}
 
           {(inspector !== null || detailsHostId) && (

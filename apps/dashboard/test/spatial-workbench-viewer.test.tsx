@@ -66,7 +66,7 @@ describe("viewer-first workbench frame", () => {
     await screen.findByLabelText("자료 목록");
     fireEvent.click(screen.getByRole("button", { name: "자료 목록 닫기" }));
     expect(screen.queryByLabelText("자료 목록")).toBeNull();
-    const toggle = screen.getByRole("button", { name: /Floreat/ });
+    const toggle = screen.getByRole("button", { name: "레이어 패널 열기" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(toggle);
     fireEvent.click(toggle);
