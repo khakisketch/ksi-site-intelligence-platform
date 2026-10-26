@@ -73,6 +73,7 @@ export function MobileSiteSwitcher({
         <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" className="size-4">
           <path d="M4 7h11l-2.5-2.5M16 13H5l2.5 2.5" />
         </svg>
+        <span className="sm:hidden">변경</span>
         <span className="hidden sm:inline">현장 변경</span>
       </button>
 
