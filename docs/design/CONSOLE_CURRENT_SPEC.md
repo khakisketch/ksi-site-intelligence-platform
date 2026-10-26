@@ -50,5 +50,5 @@ site/queue authority.
 
 ## Superseded design material
 
-Archived at [`../archive/console-design-2026-10/`](../archive/console-design-2026-10/). Those
+Archived at [`../ledger/archive/console-design-2026-10/`](../ledger/archive/console-design-2026-10/). Those
 boards are provenance, not active instructions.

@@ -3,7 +3,7 @@
 `design/` contains disposable or reviewable prototype source and visual studies. It is not product
 authority and is not automatically part of the Dashboard runtime.
 
-- `ksi-operations-console-a-prototype/`: disposable runnable Console prototype and generated local outputs. Its former local `AGENTS.md` is archived at `../docs/archive/console-design-2026-10/`; no active local instructions remain.
+- `ksi-operations-console-a-prototype/`: disposable runnable Console prototype and generated local outputs. Its former local `AGENTS.md` is archived at `../docs/ledger/archive/console-design-2026-10/`; no active local instructions remain.
 - `ksi-site-intelligence/`: static screen/study generator and generated studies.
 
 Adopted UI constraints belong in `../design-system/`; durable decision/audit prose belongs in `../docs/`.

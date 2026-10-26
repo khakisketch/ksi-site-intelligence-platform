@@ -210,7 +210,7 @@
 
 ## 7. 시각 제안 보드
 
-`docs/archive/console-design-2026-10/CONSOLE_USABILITY_REDESIGN_PROPOSAL_2026-10-26.html` (historical, archived)에
+`docs/ledger/archive/console-design-2026-10/CONSOLE_USABILITY_REDESIGN_PROPOSAL_2026-10-26.html` (historical, archived)에
 전역 검토 메뉴, 자료 데스크톱의 상시 목록, 모바일 목록→시트→결과 3단계, 만료 복구 요청,
 등록 3단계, 작업 상세/1024px 안내를 한 보드로 정리했다. 운영 UI의 무채색·상태 언어를
 유지한 레이아웃 제안이며 구현 완료가 아니다. 증거 캡처는
@@ -238,7 +238,7 @@
 ## 9. 공간 중심 시각 방향 (2026-10-26)
 
 기존 제안이 여전히 텍스트·표 중심이라는 지적을 반영해 별도 시각 보드를 만들었다:
-archived `docs/archive/console-design-2026-10/CONSOLE_SPATIAL_VISUAL_DIRECTION_2026-10-26.html` (역사 기록).
+archived `docs/ledger/archive/console-design-2026-10/CONSOLE_SPATIAL_VISUAL_DIRECTION_2026-10-26.html` (역사 기록).
 - 홈: 지표 카드 대신 두 현장의 실제 범위 도식이 캔버스가 되고, 확인 필요·상태·다음 행동은
   타일 위에 한 번만 둔다.
 - 현장: 큰 공간 캔버스, A/B 범위, 시간선, 얇은 우측 정보. 만료는 거대한 빈 사각형이 아니라

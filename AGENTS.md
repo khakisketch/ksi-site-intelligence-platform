@@ -1,5 +1,13 @@
 # KSI Site Intelligence Agent Instructions
 
+## Current operational ledger
+
+Current work/evidence routing is owned by [`docs/ledger/CURRENT.md`](docs/ledger/CURRENT.md) and its
+work/design/evidence indexes. The ledger links to product authority; it does not create or override
+it. `.opencode/working-state.md` is a short pointer to the ledger and active work file, not a
+parallel narrative. Product decisions remain in the authority chain below; do not duplicate them in
+the ledger.
+
 ## Product authority precedence
 
 For product-decision conflicts, read in this order. This is a product-authority precedence list;
@@ -32,8 +40,8 @@ derived artifacts. It does not authorize a proprietary KSI photogrammetry engine
 production reconstruction service, a vendor integration, or a claim that registration, RTK FIX,
 or a software check establishes quantitative or settlement accuracy.
 
-The shared worktree checkpoint `.opencode/working-state.md`, when present, identifies the active
-checkout task and its task ledger; revalidate Git before relying on it. A current Human-assigned
+The shared worktree checkpoint `.opencode/working-state.md`, when present, is a pointer to
+`docs/ledger/CURRENT.md` and the active work file/task ledger; revalidate Git before relying on it. A current Human-assigned
 bounded task persists without closing or reprioritizing the product slice. Separately,
 `docs/superpowers/product-state.md` identifies the current product slice and its slice ledger.
 Only when no active bounded checkout task exists may work selection begin from product-state.

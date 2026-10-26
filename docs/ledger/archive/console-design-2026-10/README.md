@@ -4,8 +4,8 @@ Dated design proposals superseded by the current desktop-first console direction
 for provenance only; they are not current design instructions, not product authority, and not
 acceptance evidence.
 
-Current design: [`../../design/CONSOLE_CURRENT_SPEC.md`](../../design/CONSOLE_CURRENT_SPEC.md) and
-[`../../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](../../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html).
+Current design: [`../../../design/CONSOLE_CURRENT_SPEC.md`](../../../design/CONSOLE_CURRENT_SPEC.md) and
+[`../../../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](../../../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html).
 
 - `CONSOLE_USABILITY_REDESIGN_PROPOSAL_2026-10-26.html` — menu/Home proposal; superseded by the
   implemented site-context rail and materials workbench.
