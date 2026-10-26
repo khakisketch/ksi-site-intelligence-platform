@@ -22,6 +22,7 @@ import { selectHomeAnalysisReviewSources, selectHomeAttentionSources, selectHome
 import { resolveSiteOperatorNextAction } from "@/lib/operator-next-action";
 import { formatHomeReviewTechnicalRef, homeAnalysisReviewCardText, indexWorkAreaNamesBySite } from "@/lib/work-context-names";
 import { TopUnattendedHeadline } from "./TopUnattendedHeadline";
+import { SiteVisualPlaceholder } from "@/components/site/SiteVisualPlaceholder";
 
 export const metadata = { title: "홈 · KSI" };
 
@@ -298,19 +299,22 @@ export default async function HomePage() {
                 {otherSites.map((site) => {
                   const encoded = encodeURIComponent(site.siteId);
                   return (
-                    <li key={site.siteId} className="flex min-w-0 flex-col gap-2 py-3 first:pt-1 last:pb-0">
-                      <div className="flex min-w-0 items-center justify-between gap-2">
-                        <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold break-keep">{site.name}</span>
-                        <span className="shrink-0 rounded-full border border-line bg-sunk/60 px-2 py-0.5 text-[11px] font-medium text-ink-2">
-                          {SITE_STATUS_LABEL[site.status].label}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-                        <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent hover:underline">열기</Link>
-                        <span aria-hidden="true" className="text-line-strong">·</span>
-                        <Link href={`/sites/${encoded}/spatial-assets`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
-                        <span aria-hidden="true" className="text-line-strong">·</span>
-                        <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">결과</Link>
+                    <li key={site.siteId} className="flex min-w-0 gap-3 py-3 first:pt-1 last:pb-0">
+                      <SiteVisualPlaceholder siteName={site.name} label="미리보기 없음" size="mini" />
+                      <div className="flex min-w-0 flex-1 flex-col gap-2">
+                        <div className="flex min-w-0 items-center justify-between gap-2">
+                          <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold break-keep">{site.name}</span>
+                          <span className="shrink-0 rounded-full border border-line bg-sunk/60 px-2 py-0.5 text-[11px] font-medium text-ink-2">
+                            {SITE_STATUS_LABEL[site.status].label}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
+                          <Link href={`/sites/${encoded}`} aria-label={`${site.name} 열기`} className="tap-target font-semibold text-accent hover:underline">열기</Link>
+                          <span aria-hidden="true" className="text-line-strong">·</span>
+                          <Link href={`/sites/${encoded}/spatial-assets`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">자료</Link>
+                          <span aria-hidden="true" className="text-line-strong">·</span>
+                          <Link href={`/sites/${encoded}/analysis`} className="tap-target text-ink-2 hover:text-ink-1 hover:underline">결과</Link>
+                        </div>
                       </div>
                     </li>
                   );

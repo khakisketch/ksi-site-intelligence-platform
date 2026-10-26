@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { MobileSiteSwitcher } from "@/components/nav/MobileSiteSwitcher";
+import type { SiteSection } from "@/components/nav/site-context";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
@@ -105,6 +107,11 @@ export function SiteHeader({
   // 머리 설정 메뉴로 둔다.
   const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders" && option.key !== "manage");
   const activeTab = tab === "work-orders" ? "materials" : tab;
+  // Mobile site switching preserves the nearest section the header owns. The
+  // settings tab has no site-section peer, so it falls back to the workspace.
+  const switchSection: SiteSection = tab === "materials" || tab === "results" || tab === "work-orders"
+    ? tab
+    : "workspace";
   const statusBadge = <StateBadge label={status.label} tone={status.tone} />;
   const settingsMenu = (
     <details className="relative text-[12px] text-ink-2">
@@ -176,6 +183,7 @@ export function SiteHeader({
         </h2>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <MobileSiteSwitcher siteId={site.siteId} section={switchSection} />
           <div className="hidden w-[10rem] shrink-0 justify-end lg:flex">
             {primaryAction && (
               <Link

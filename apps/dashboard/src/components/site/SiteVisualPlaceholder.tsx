@@ -20,7 +20,7 @@ export function SiteVisualPlaceholder({
   note?: string | null;
   tone?: "empty" | "loading" | "unknown" | "refused";
   /** `card` keeps the 16:9 site-card cover; `banner` is the shorter Home hero strip. */
-  size?: "card" | "banner";
+  size?: "card" | "banner" | "mini";
   /** Site cards show the state label; Home already prints it in the card body. */
   showLabel?: boolean;
   className?: string;
@@ -32,6 +32,18 @@ export function SiteVisualPlaceholder({
       ? "border-high/50 bg-high-bg/90 text-high-ink"
       : "border-white/15 bg-black/45 text-sidebar-text";
   const sizeClass = size === "banner" ? "h-[184px] sm:h-[214px]" : "aspect-[16/9] min-h-[132px]";
+  if (size === "mini") {
+    return (
+      <div
+        role="img"
+        aria-label={`${siteName} 기본 현장 표지. 실제 영상 미리보기가 아닙니다.`}
+        data-site-visual-placeholder="mini"
+        className={`site-visual-placeholder grid size-10 flex-none place-items-center rounded-md border border-line bg-sidebar text-[11px] font-bold text-sidebar-text ${className}`}
+      >
+        {mark}
+      </div>
+    );
+  }
   return (
     <div
       role="img"
