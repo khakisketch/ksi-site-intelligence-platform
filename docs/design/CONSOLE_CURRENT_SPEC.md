@@ -9,21 +9,22 @@ site/queue authority.
 - Desktop-first 1440×900. The site is the object; the current site's spatial state is the hero.
 - Global rail: 홈 · 현장 · 업무 · 계정/도움말. When inside a site, only the current site expands
   under 현장: 작업공간 · 자료 · 관측 작업 · 결과, with a site switcher that preserves the section.
-- **Viewer-first** for site 공간 and 자료 at `lg+`: 56px icon rail, no global top bar or site
-  header, full-bleed spatial stage, and a **collapsible** floating layer panel with the current
-  site + sections. The layer panel starts closed, so the canvas is never narrowed by default;
-  the closed toggle keeps the site name visible. The inspector opens on demand.
+- **Viewer-first** for site 공간 and 자료 at `lg+`: no global top bar or site header;
+  spatial stage fills the available work surface. The global menu defaults labelled, with an
+  explicit expand/collapse control and a remembered choice across routes (no forced 56px rail).
+  Layer panel and inspector start closed. Opening either reserves a bounded column, never covers
+  the canvas. With compact global navigation, the layer panel also exposes site/section navigation.
 - **Dense-first** for 업무 · 결과 · 검토 and site management (`?section=manage`,
   `?section=work-orders`, `?section=results`, `?mode=results`, analysis/observations/work-area
-  routes): labelled 176/232px rail, top bar, site header, table/form density.
+  routes): top bar, site header, table/form density; the same user-controlled 176/232px or56px menu.
 - Home and site list use a consistent 16:9 neutral cover when no prepared preview exists. The
   cover is explicitly not imagery and makes no extent/accuracy claim; real pixels replace it
   when available.
-- The site header owns site name, status and settings on dense screens; viewer screens move the
-  site name/switcher and settings link into the floating layer panel. Header tabs remain only
-  below `lg` where neither rail nor floating panel is present. Below `lg` a compact **현장 변경**
-  sheet changes sites while preserving the active section.
-- 자료: floating catalog (300px) and on-demand selected-material inspector (332px). Both start
+- The site header owns site name, status and settings on dense screens; viewer screens use the
+  expanded global site's context, or the layer-panel site navigation when the global menu is compact.
+  Header tabs remain below `lg`. A compact **현장 변경** native modal sheet changes sites while
+  preserving the active section, containing keyboard focus and releasing it on cancel/desktop resize.
+- 자료: docked catalog (224–300px) and on-demand selected-material inspector (224–332px). Both start
   closed; the toolbar toggle opens them, and the canvas keeps the full width until the user
   asks for a panel.
 - Inspector: title, status, four key facts and the next action first. Provenance, history and
@@ -44,6 +45,10 @@ site/queue authority.
   `sha256:5cb96229db0297351290e29b9159ae05958fd72dba6d6eda409dd1874bbb55bb`.
 - Visual site covers (`SiteVisualPlaceholder`), collapsible viewer panels, and mobile site
   switcher.
+- **Integration candidate, not deployed:** branch `integration/viewer-first-20261026` carries
+  existing SIE readiness/provenance/results plus user-controlled navigation, non-overlapping docked
+  panels and native mobile site-change modality. The deployed image above remains the prior UI.
+  Current combined evidence: `/tmp/opencode/ksi-integration-20261026/`; see Console work entry.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
   and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
   desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
