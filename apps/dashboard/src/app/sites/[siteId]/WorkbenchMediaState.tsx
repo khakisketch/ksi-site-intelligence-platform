@@ -57,7 +57,7 @@ export function WorkbenchMediaState({
         compact
           ? "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-sidebar px-4 py-3"
           : absence
-            ? "relative flex min-h-[300px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-line bg-sunk/40 px-6 py-12 text-center"
+            ? "relative flex min-h-[200px] min-w-0 flex-col items-center justify-center overflow-hidden rounded-xl border border-line bg-sunk/40 px-6 py-8 text-center sm:min-h-[300px] sm:py-12"
             : "flex min-h-48 min-w-0 flex-col items-center justify-center gap-1.5 rounded-lg bg-sidebar px-4 py-8 text-center"
       }
     >

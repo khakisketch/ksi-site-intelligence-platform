@@ -26,6 +26,7 @@ export function SiteWorkspaceWorkbench({
   inspectorLabel,
   inspectorId,
   detailsHostId,
+  viewerMode = false,
 }: {
   /** 구역·방식 등 서버가 만든 맥락 노드 — 목록 토글·검색은 래퍼가 앞에 둔다. */
   contextControls: ReactNode;
@@ -43,6 +44,8 @@ export function SiteWorkspaceWorkbench({
   inspectorId: string;
   /** 무대 뷰어 접힘 포털 자리 식별자 — 서랍 안에 항상 마운트한다. */
   detailsHostId?: string;
+  /** 공간 탐색이면 lg+에서 viewer 배치를 쓴다. 결과 검토 모드는 밀도 유지. */
+  viewerMode?: boolean;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   return (
@@ -86,6 +89,8 @@ export function SiteWorkspaceWorkbench({
       inspectorId={inspectorId}
       inspectorLabel={inspectorLabel}
       detailsHostId={detailsHostId}
+      viewerMode={viewerMode}
+      viewerInspectorDefaultOpen={false}
     />
   );
 }

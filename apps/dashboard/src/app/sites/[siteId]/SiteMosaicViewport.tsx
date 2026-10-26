@@ -39,6 +39,7 @@ import { VIEWPORT_RESOLVE_COPY } from "@/lib/spatial-display-viewport";
 import type { DisplayViewportBounds } from "@/lib/spatial-display-viewport";
 import { nativeBoundsFromInspection } from "@/lib/spatial-data-request";
 import { planeUnitForCrs, sameDisplayPlane } from "./site-spatial";
+import { SiteMosaicAbsentCanvas } from "./SiteMosaicAbsentCanvas";
 import { SiteMosaicAbsentDiagram } from "./SiteMosaicAbsentDiagram";
 import {
   displayZoomPercent,
@@ -85,6 +86,10 @@ export interface MosaicViewportProps {
   jobs: PreparedWindowJob[];
   canRequest: boolean;
   requestsHref: string;
+  /** 준비 요청 폼이 정보 서랍에 있을 때 그 자리로 가는 링크 — 만료 회복을 이력 페이지로 보내지 않는다. */
+  prepareHref?: string;
+  /** 자료 탐색의 큰 무대에서 만료·미준비 상태도 실제 범위 캔버스로 보여 준다. */
+  showAbsentExtentCanvas?: boolean;
   /** 같은 네이티브 평면의 작업구역 링 — 같은 평면일 때만 범위 도식에 겹친다. */
   workAreaRing?: Array<[number, number]> | null;
   /** 작업구역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
@@ -169,6 +174,8 @@ export function SiteMosaicViewport({
   jobs,
   canRequest,
   requestsHref,
+  prepareHref,
+  showAbsentExtentCanvas = false,
   workAreaRing = null,
   workAreaCrs = null,
   hidePrepareActions = false,
@@ -616,6 +623,22 @@ export function SiteMosaicViewport({
   // 같은 관측(같은 assetRef)의 현재 작업 기록에서만 상태를 말한다. 한 층의
   // 만료로 다른 층까지 만료되었다고 말하지 않는다.
   const assetJobs = jobs.filter((job) => job.assetRef === assetRef);
+  const preparedJob = assetJobs.find((job) => {
+    const bounds = job.receipt?.actualBounds;
+    return Array.isArray(bounds) && bounds.length === 4 && bounds.every((value) => Number.isFinite(value));
+  });
+  const preparedBounds = preparedJob?.receipt?.actualBounds ?? null;
+  const preparedRing: Array<[number, number]> | null = preparedBounds
+    ? [
+        [preparedBounds[0]!, preparedBounds[1]!],
+        [preparedBounds[2]!, preparedBounds[1]!],
+        [preparedBounds[2]!, preparedBounds[3]!],
+        [preparedBounds[0]!, preparedBounds[3]!],
+      ]
+    : null;
+  const preparedLabel = preparedJob?.receipt
+    ? `${preparedJob.receipt.width} × ${preparedJob.receipt.height} px 준비 창`
+    : null;
   const hasRetentionExpired = assetJobs.some(
     (job) => job.availability === "RETENTION_EXPIRED",
   );
@@ -640,7 +663,9 @@ export function SiteMosaicViewport({
     absentKind === "expired"
       ? {
           headline: "미리보기 보관 기간이 끝났습니다.",
-          recovery: "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
+          recovery: hidePrepareActions && prepareHref
+            ? "선택 자료 정보에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요."
+            : "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
         }
       : absentKind === "rights"
         ? {
@@ -762,14 +787,20 @@ export function SiteMosaicViewport({
 
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
   // 그대로이며, 명시적 다시 준비(쓰기)는 아래 접힌 상세로만 둔다.
+  const expiredInInspector = hidePrepareActions && prepareHref !== undefined;
   const canvasRequestsLink = (
     <a
-      href={requestsHref}
+      href={expiredInInspector && absentKind === "expired" ? prepareHref : requestsHref}
       className={compactKind === "absent" && absentKind === "expired"
         ? "btn btn-primary min-h-11"
         : "btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"}
     >
-      구역 자료 준비에서 확인
+      {expiredInInspector && absentKind === "expired"
+        ? <>
+            <span className="lg:hidden">준비 요청 방법 보기</span>
+            <span className="hidden lg:inline">선택 자료 정보에서 준비 요청</span>
+          </>
+        : "구역 자료 준비에서 확인"}
     </a>
   );
   const canvasMediaAction = compactKind === "loading" || hasActiveWait ? (
@@ -871,7 +902,7 @@ export function SiteMosaicViewport({
   );
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <p className="sr-only">이어 보기 — 여러 창의 나란한 배치</p>
 
       {!cover.ok && (
@@ -879,29 +910,72 @@ export function SiteMosaicViewport({
       )}
 
       {cover.ok && geometry && !showCanvas && (canvasMode ? (
-        <div className="flex w-full min-w-0 flex-col gap-1.5">
-          <WorkbenchMediaState
-            headline={compactCopy.headline}
-            detail={compactCopy.detail}
-            hint={canvasMediaHint}
-            action={canvasMediaAction}
-            alert={canvasMediaAlert}
-            tone={compactKind === "absent" && absentKind === "expired" ? "absence" : "media"}
-          />
-          {detailsTargetId ? (
-            <DetailsPortal targetId={detailsTargetId}>
+        showAbsentExtentCanvas && absentFileRing && (compactKind === "absent" || compactKind === "readFailure") ? (
+          <div className="flex min-h-0 w-full min-w-0 flex-1 flex-col gap-1.5">
+            <div className="relative min-h-[240px] flex-1 overflow-hidden rounded-lg border border-line bg-sidebar sm:min-h-[340px]">
+              <SiteMosaicAbsentCanvas
+                fileRing={absentFileRing}
+                workAreaRing={workAreaRing}
+                overlaid={absentOverlaid}
+                crsLabel={absentCrsLabel}
+                planeUnit={observedCrsIdentifier ? planeUnitForCrs(observedCrsIdentifier) : "unknown"}
+                filePixelSize={{ width: grid.width, height: grid.height }}
+                preparedRing={preparedRing}
+                preparedLabel={preparedLabel}
+              />
+              <span className="absolute left-3 top-3 rounded border border-white/15 bg-black/55 px-2 py-1 font-mono text-[9px] text-sidebar-text backdrop-blur-sm">
+                등록 범위 · 실제 픽셀 아님
+              </span>
+            </div>
+            <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 text-[12px] leading-5 text-ink-2">
+                <span className="font-semibold text-ink-1">{compactCopy.headline}</span>
+                {absentKind === "expired" ? " 등록 범위와 검사 기록은 유지됩니다." : compactCopy.recovery ? ` ${compactCopy.recovery}` : ""}
+              </p>
+              {absentKind === "expired" ? (
+                <a href={prepareHref ?? requestsHref} className="btn btn-primary min-h-11">준비 요청</a>
+              ) : canvasMediaAction}
+            </div>
+            {canvasMediaHint && <p className="text-[11.5px] leading-5 text-ink-muted">{canvasMediaHint}</p>}
+            {detailsTargetId ? (
+              <DetailsPortal targetId={detailsTargetId}>
+                <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+                  <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                  {canvasDetailBody}
+                </details>
+              </DetailsPortal>
+            ) : (
               <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-                <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
                 {canvasDetailBody}
               </details>
-            </DetailsPortal>
-          ) : (
-            <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
-              <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
-              {canvasDetailBody}
-            </details>
-          )}
-        </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex w-full min-w-0 flex-col gap-1.5">
+            <WorkbenchMediaState
+              headline={compactCopy.headline}
+              detail={compactCopy.detail}
+              hint={canvasMediaHint}
+              action={canvasMediaAction}
+              alert={canvasMediaAlert}
+              tone={compactKind === "absent" && absentKind === "expired" ? "absence" : "media"}
+            />
+            {detailsTargetId ? (
+              <DetailsPortal targetId={detailsTargetId}>
+                <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+                  <summary className="tap-target cursor-pointer font-semibold">이어 보기 상세</summary>
+                  {canvasDetailBody}
+                </details>
+              </DetailsPortal>
+            ) : (
+              <details className="rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-ink-2">
+                <summary className="tap-target cursor-pointer font-semibold">상세·준비</summary>
+                {canvasDetailBody}
+              </details>
+            )}
+          </div>
+        )
       ) : (
         <div className="flex w-full flex-col gap-2">
           <p role="status" className="text-[12.5px] leading-5 font-semibold text-ink-1">

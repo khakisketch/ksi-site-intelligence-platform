@@ -205,6 +205,9 @@ export default async function SiteDetailPage({
   // SWX-1 명시적 진입 — 일반 둘러보기 힌트(workAreaId/assetRef)와 달리,
   // 비교·결과 지시는 정확히 복원하거나 막는다. 조용히 다른 대상으로 바꾸지 않는다.
   const mode = wantSpatial ? parseWorkspaceMode(firstValue(query.mode)) : "explore" as const;
+  // Viewer-first covers spatial exploration; the workspace result-review mode
+  // stays dense (decision A — 결과/검토 are list/form-first).
+  const workspaceViewer = tab === "workspace" && mode !== "results";
   const facts = wantSpatial
     ? buildWorkspaceServerFacts({
       siteId: site.siteId,
@@ -404,7 +407,7 @@ export default async function SiteDetailPage({
           }
         : null}
     />
-    <div className={tab === "workspace" ? "flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3" : "flex flex-col gap-4 p-4 sm:p-5"}>
+    <div className={tab === "workspace" ? `flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3${workspaceViewer ? " lg:gap-0 lg:p-0" : ""}` : "flex flex-col gap-4 p-4 sm:p-5"}>
       {tab === "workspace" && <div className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
         <h2 className="sr-only">작업공간</h2>
         <SiteWorkspaceShell

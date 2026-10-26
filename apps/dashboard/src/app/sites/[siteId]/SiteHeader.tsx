@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { MobileSiteSwitcher } from "@/components/nav/MobileSiteSwitcher";
+import type { SiteSection } from "@/components/nav/site-context";
 import { StateBadge } from "@/components/ui/StatusBadge";
 import { SITE_STATUS_LABEL } from "@/lib/core-api/labels";
 import { formatKoreanDate } from "@/lib/datetime";
@@ -105,6 +107,11 @@ export function SiteHeader({
   // 머리 설정 메뉴로 둔다.
   const headerTabs = SITE_TABS.filter((option) => option.key !== "work-orders" && option.key !== "manage");
   const activeTab = tab === "work-orders" ? "materials" : tab;
+  // Mobile site switching preserves the nearest section the header owns. The
+  // settings tab has no site-section peer, so it falls back to the workspace.
+  const switchSection: SiteSection = tab === "materials" || tab === "results" || tab === "work-orders"
+    ? tab
+    : "workspace";
   const statusBadge = <StateBadge label={status.label} tone={status.tone} />;
   const settingsMenu = (
     <details className="relative text-[12px] text-ink-2">
@@ -137,6 +144,7 @@ export function SiteHeader({
   return (
     <header
       className="border-b border-line bg-surface"
+      data-site-header="true"
       // 서버 확인 범위의 읽기 전용 브리지 — 팔레트가 열릴 때 같은 목적지를
       // 가리키게 한다. URL 쿼리에는 없는 bare deep link(분석 기록 직접 연결 등)의
       // 실제 구역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,
@@ -175,6 +183,7 @@ export function SiteHeader({
         </h2>
 
         <div className="ml-auto flex shrink-0 items-center gap-2">
+          <MobileSiteSwitcher siteId={site.siteId} section={switchSection} />
           <div className="hidden w-[10rem] shrink-0 justify-end lg:flex">
             {primaryAction && (
               <Link
@@ -194,7 +203,7 @@ export function SiteHeader({
           aria-current와 밑줄로 밝히고, 좁은 화면에서는 가로 스크롤로
           두 줄로 깨지지 않게 한다. */}
       <nav
-        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5"
+        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5 lg:hidden"
         aria-label="현장 업무 메뉴"
       >
         {headerTabs.map((option) => (

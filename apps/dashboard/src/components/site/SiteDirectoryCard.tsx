@@ -13,7 +13,7 @@ export function SiteDirectoryCard({ row, sameName }: { row: SiteListRow; sameNam
   const status = SITE_STATUS_LABEL[site.status];
   const href = `/sites/${encodeURIComponent(site.siteId)}`;
   return <article data-site-card={site.siteId} className="site-directory-card">
-    <SitePreviewThumb siteId={site.siteId} size="card" />
+    <SitePreviewThumb siteId={site.siteId} siteName={site.name} size="card" />
     <div className="flex min-w-0 flex-1 flex-col gap-4 p-4 sm:p-5">
       <div className="flex items-start justify-between gap-3">
         <h3 className="min-w-0 text-[17px] leading-6 font-semibold tracking-[-0.02em] break-words">

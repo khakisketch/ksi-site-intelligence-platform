@@ -294,4 +294,36 @@ describe("spatial data request Console surface", () => {
     expect(html).toContain(`요청 ${requestId}`);
     expect(html).toContain(`요청 ${secondId}`);
   });
+
+  it("offers a real create action from the request history instead of a dead end", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("자료에서 새 준비 요청");
+    expect(html).toContain("/sites/site-1/spatial-assets?workAreaId=area-1");
+    // 정확한 자료 없이 기본 A의 정보 서랍을 열지 않는다.
+    expect(html).not.toContain("info=1");
+  });
+
+  it("carries the exact asset from an expired preview into the create action", async () => {
+    const assetRef = `ksa-v1-${"a".repeat(64)}`;
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef }));
+    expect(html).toContain("이 자료 새로 준비 요청");
+    expect(html).toContain(`assetRef=${assetRef}`);
+    expect(html).toContain("info=1");
+  });
+
+  it("shows a browse link, not a create action, without request permission", async () => {
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: {
+      principalId: "reader-1", organizationId: "org-1", kind: "OPERATOR", role: "VIEWER",
+      permissions: ["SITES_READ", "SPATIAL_DATA_READ"],
+    } });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
+    expect(html).toContain("등록 자료");
+    expect(html).not.toContain("자료에서 새 준비 요청");
+  });
+
+  it("fails closed on an invalid asset reference", async () => {
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef: "not-an-asset" }));
+    expect(html).toContain("자료 참조 형식이 올바르지 않습니다");
+    expect(mocked.list).not.toHaveBeenCalled();
+  });
 });

@@ -569,6 +569,15 @@ body {
     );
 }
 
+/* Neutral site cover for cards without a prepared preview. Not a map, not a
+   synthetic image — just a consistent visual surface with a labelled state. */
+.site-visual-placeholder {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    인쇄 — 현장 보고서(M4-D)
 
@@ -582,6 +591,68 @@ body {
    `print:hidden`(Tailwind 내장 `@media print` 변형)은 사이드바·상단바·하단
    탭·내보내기 버튼 각각에 개별로 건다 — 여기서 셀렉터로 다시 감추지 않는다.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Viewer-first shell — site 공간/자료 only (2026-10-26 decision A)
+
+   Dense screens keep the labelled 176/232px rail and the global top bar. On
+   viewer paths the body switches to a 56px icon rail; the main region stops
+   scrolling so the spatial stage owns the viewport. The top bar hides only
+   for a healthy session — expiry/unknown keeps its recovery strip. The site
+   header moves into the floating layer panel at lg+; mobile keeps it.
+
+   `viewer-path.ts` owns the path predicate. `ShellLayoutMode` toggles this
+   class on client navigation; the root layout sets it in the first render.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 1024px) {
+  body.viewer-shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  body.viewer-shell #main-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  body.viewer-shell [data-shell-topbar][data-session-state="ok"] {
+    display: none;
+  }
+  body.viewer-shell [data-site-header] {
+    display: none;
+  }
+  body.viewer-shell [data-viewer-page-notice] {
+    display: none;
+  }
+}
+
+/* Viewer panels own catalog/info toggles; the page-level URL/link triggers are
+   mobile/tablet controls and would duplicate the panel buttons at lg+. */
+[data-workbench-viewer] [data-workbench-info-trigger],
+[data-workbench-viewer] [data-workbench-info-close] {
+  display: none;
+}
+
+/* Materials: the layer panel is the selection surface in viewer mode. The
+   in-canvas pane head duplicates it and would sit under the floating panel. */
+[data-workbench-viewer] [data-materials-stage] [data-workbench-pane-controls],
+[data-workbench-viewer] [data-materials-stage] [data-workbench-stage-caption] {
+  display: none;
+}
+
+/* Workspace: observation/layer controls are primary. Keep them visible by
+   insetting them past the floating catalog; the canvas itself stays full-bleed. */
+@media (min-width: 1024px) {
+  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-pane-controls],
+  [data-workbench-viewer][data-catalog-open="true"] [data-workbench-stage-inset] {
+    margin-left: 312px;
+  }
+}
+
+/* The same viewer bar keeps only actionable controls. The "보기 방식" label and
+   the explanatory purpose line duplicate the visible controls at every width. */
+[data-workbench-viewer] [data-viewer-compact-hide] {
+  display: none;
+}
+
 @media print {
   html,
   body {

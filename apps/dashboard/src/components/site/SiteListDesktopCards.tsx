@@ -39,7 +39,7 @@ export function SiteListDesktopCards({
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-2">
       <div className="flex items-baseline gap-2 px-1">
-        <h2 id={headingId} className="text-[14px] font-bold">
+        <h2 id={headingId} className="sr-only">
           현장
         </h2>
         <span className="text-[11.5px] text-ink-muted">{meta}</span>

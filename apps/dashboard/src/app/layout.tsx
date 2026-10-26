@@ -4,7 +4,11 @@ import { headers } from "next/headers";
 
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
+import { isViewerPath } from "@/components/nav/viewer-path";
+import { SiteListProvider } from "@/components/nav/SiteListContext";
+import type { SidebarSite } from "@/components/nav/site-context";
 import { getNavCounts } from "@/components/nav/nav-counts";
+import { listSitesCached } from "@/lib/core-api/cached";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
 import { RouteFocusManager } from "@/components/nav/RouteFocusManager";
@@ -17,7 +21,7 @@ import { SessionRefresh } from "@/components/auth/SessionRefresh";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { buildPaletteItems } from "@/components/console/palette-source";
 import { getDashboardAuthRuntime } from "@/lib/auth/runtime";
-import { PATHNAME_HEADER } from "@/lib/core-api/session-cookie";
+import { PATHNAME_HEADER, SEARCH_HEADER } from "@/lib/core-api/session-cookie";
 
 import "./globals.css";
 
@@ -47,11 +51,19 @@ export default async function RootLayout({
   // 부르면 아무도 보지 않는 배지를 위해 매 요청 왕복만 늘린다(로그인 화면에서는
   // 세션조차 없어 401 왕복이 된다).
   const chromeless = isChromelessPath(headerStore.get(PATHNAME_HEADER));
-  const currentPageTitle = resolvePageTitle(headerStore.get(PATHNAME_HEADER)) || "KSI Site Intelligence";
+  const currentPathname = headerStore.get(PATHNAME_HEADER);
+  const viewerShell = !chromeless && isViewerPath(currentPathname, headerStore.get(SEARCH_HEADER));
+  const currentPageTitle = resolvePageTitle(currentPathname) || "KSI Site Intelligence";
   // 셸을 벗는 로그인 화면에는 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
-  const [navCounts, paletteItems] = chromeless
-    ? [undefined, []]
-    : await Promise.all([getNavCounts(), buildPaletteItems()]);
+  const [navCounts, paletteItems, sidebarSites] = chromeless
+    ? [undefined, [], [] as SidebarSite[]]
+    : await Promise.all([
+        getNavCounts(),
+        buildPaletteItems(),
+        listSitesCached()
+          .then((items): SidebarSite[] => items.map(({ siteId, name, status }) => ({ siteId, name, status })))
+          .catch((): SidebarSite[] => []),
+      ]);
 
   return (
     <html
@@ -79,33 +91,35 @@ export default async function RootLayout({
         className={
           chromeless
             ? "min-h-full"
-            : "min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]"
+            : `min-h-full lg:grid lg:h-screen lg:grid-cols-[176px_1fr] lg:overflow-hidden xl:grid-cols-[232px_1fr]${viewerShell ? " viewer-shell" : ""}`
         }
       >
-        <ShellLayoutMode />
-        <ShellViewport>
-          {!chromeless && (
-            <ShellOnly>
-              <a href="#main-content" className="skip-link">
-                본문으로 건너뛰기
-              </a>
-            </ShellOnly>
-          )}
-          {!chromeless && (
-            <ShellOnly>
-              <TopBar />
-            </ShellOnly>
-          )}
-          <ShellMain>
-            {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
-            <ToastProvider>{children}</ToastProvider>
-          </ShellMain>
-        </ShellViewport>
-        <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />
-        <MobileBottomNav />
-        {!chromeless && <RouteFocusManager />}
-        {!chromeless && <CommandPalette items={paletteItems} />}
-        {authRuntime.mode !== "OPAQUE" && <SessionRefresh />}
+        <SiteListProvider sites={sidebarSites}>
+          <ShellLayoutMode />
+          <ShellViewport>
+            {!chromeless && (
+              <ShellOnly>
+                <a href="#main-content" className="skip-link">
+                  본문으로 건너뛰기
+                </a>
+              </ShellOnly>
+            )}
+            {!chromeless && (
+              <ShellOnly>
+                <TopBar />
+              </ShellOnly>
+            )}
+            <ShellMain>
+              {!chromeless && <MainPageTitle fallback={currentPageTitle} />}
+              <ToastProvider>{children}</ToastProvider>
+            </ShellMain>
+          </ShellViewport>
+          <DesktopSidebar counts={navCounts} sites={sidebarSites} userBlock={!chromeless && <SidebarUserBlock />} />
+          <MobileBottomNav />
+          {!chromeless && <RouteFocusManager />}
+          {!chromeless && <CommandPalette items={paletteItems} />}
+          {authRuntime.mode !== "OPAQUE" && <SessionRefresh />}
+        </SiteListProvider>
       </body>
     </html>
   );

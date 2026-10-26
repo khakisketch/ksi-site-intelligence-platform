@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -143,6 +145,30 @@ describe("spatial asset catalog page", () => {
     // 각 칸 머리의 관측 선택은 그대로 쓸 수 있다.
     expect(html).toContain('name="visualAAssetRef"');
     expect(html).toContain('name="visualBAssetRef"');
+  });
+
+  it("sends an expired selected asset to its own request form in the inspector, not a history dead end", async () => {
+    const current = asset();
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: {
+      organizationId: "org-1", principalId: "operator-1",
+      permissions: ["SITES_READ", "SPATIAL_DATA_READ", "SPATIAL_DATA_REQUEST"],
+    } });
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", nextCursor: null, hasMore: false,
+      items: [{
+        jobId: "sdj-v1-00000000-0000-4000-8000-000000000009",
+        assetRef: current.assetRef, siteId: "site-1", workAreaId: "area-1",
+        createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+        receipt: null,
+      }],
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef: current.assetRef }));
+    expect(html).toContain(">준비 요청</a>");
+    expect(html).toContain(`assetRef=${current.assetRef}`);
+    expect(html).toContain("info=1");
+    // 만료여도 무대에는 실제 등록 범위가 남는다 — 사진이 아니라 도식임을 명시한다.
+    expect(html).toContain("등록 범위 · 실제 픽셀 아님");
+    expect(html).toContain("등록 범위 도식");
   });
 
   it("does not coalesce when an old expired record coexists with a newer available one", async () => {
@@ -300,8 +326,10 @@ describe("spatial asset catalog page", () => {
 
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_REQUEST"] } });
     const writerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
-    expect(writerHtml).toContain("받기 요청 만들기");
-    expect(writerHtml).toContain("준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다");
+    // 준비 요청 폼은 정보 패널에 상시로 펼치지 않고, 이 버튼이 여는 모달 안에서만 렌더한다.
+    expect(writerHtml).toContain("이 자료 새로 준비 요청");
+    expect(writerHtml).toContain("<dialog");
+    expect(writerHtml).not.toContain("받기 요청 만들기");
     expect(writerHtml).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
   });
 
@@ -779,9 +807,9 @@ describe("materials visual browsing", () => {
     expect(html).toContain("나란히");
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
     expect(html).toContain("작업공간에서 나란히 보기");
-    // 실제 경로에는 겹쳐 보기를 두지 않고, 예시로의 보조 길만 둔다.
-    expect(html).toContain("밀어서 비교 예시");
-    expect(html).toContain("/design-preview/materials?mode=swipe");
+    // 실제 경로에는 내부 디자인 예시로 나가는 길을 두지 않는다.
+    expect(html).not.toContain("밀어서 비교 예시");
+    expect(html).not.toContain("/design-preview/materials");
     expect(html).toContain(`visualAAssetRef=${assetRef}`);
     expect(html).toContain(`visualBAssetRef=${secondRef}`);
     // 동기화·정합·수치 비교를 주장하지 않는다 — 쌍별 위치 기준 안내만 둔다.
@@ -842,6 +870,18 @@ describe("materials visual browsing", () => {
     expect(html).not.toContain('id="pane-observation-visualBAssetRef"');
   });
 
+  it("gives each mobile rail item a kind mark and two 44px A/B actions", () => {
+    const source = readFileSync(join(process.cwd(), "src/app/sites/[siteId]/spatial-assets/page.tsx"), "utf8");
+    expect(source).toContain("data-rail-item");
+    expect(source).toContain("A로 보기");
+    expect(source).toContain("B에 두기");
+    expect(source).toContain("grid-cols-2");
+    expect(source).toContain("min-h-11");
+    expect(source).toContain("rounded-xl border");
+    // No fake image or file-name-as-thumbnail: the type mark only states the kind.
+    expect(source).toContain("KindGlyph");
+  });
+
   it("keeps one segmented view switch with its purpose line and no toolbar example entry", async () => {
     pairCatalog();
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef }));
@@ -852,19 +892,20 @@ describe("materials visual browsing", () => {
     expect(html).toContain("나란히 보기 · 등록 자료 확인·준비·열람");
     expect(html.match(/나란히 보기 · 등록 자료 확인·준비·열람/g)).toHaveLength(1);
     expect(html).toContain('aria-current="page"');
-    // 디자인 예시는 도구 막대에서 빼고 정보 서랍에만 둔다.
-    expect(html).not.toContain("디자인 예시 보기");
+    // 내부 디자인 예시는 운영 화면의 도구·정보 서랍 어디에도 노출하지 않는다.
+    expect(html).not.toContain("디자인 예시");
     const opened = renderToStaticMarkup(await callPage({ workAreaId: "area-1", visualAAssetRef: assetRef, visualBAssetRef: secondRef, info: "1" }));
-    expect(opened).toContain("디자인 예시로 미리 보기");
-    expect(opened).toContain("/design-preview/materials?returnTo=");
+    expect(opened).toContain("선택 자료 정보");
+    expect(opened).not.toContain("디자인 예시");
+    expect(opened).not.toContain("/design-preview/materials");
   });
 
-  it("offers the design example in empty and expired states without touching selection", async () => {
+  it("keeps the empty state inside the product instead of linking to the design example", async () => {
     mocked.catalog.mockResolvedValueOnce({ siteId: "site-1", workAreaId: "area-1", scopePolicy: "SINGLE_WORK_AREA_WORK_ORDERS_ONLY", scopeNote: "scope", assets: [], nextCursor: null, hasMore: false });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1" }));
     expect(html).toContain("이 작업구역에 등록된 자료가 없습니다");
-    expect(html).toContain("디자인 예시로 미리 보기");
-    expect(html).toContain("/design-preview/materials?returnTo=");
+    expect(html).not.toContain("디자인 예시");
+    expect(html).not.toContain("/design-preview/materials");
   });
 
   it("prompts instead of substituting when the explicit A is outside the loaded page", async () => {

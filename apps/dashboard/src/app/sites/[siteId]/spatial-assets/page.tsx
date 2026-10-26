@@ -9,8 +9,10 @@ import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 
+import { AssetRequestDialog } from "./AssetRequestDialog";
 import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StateBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
@@ -204,6 +206,13 @@ function availabilityStatus(item: SpatialAssetCatalogItem): AvailabilityStatus {
   };
 }
 
+/** 묶음 머리의 긴 날짜+정밀도 문구를 두 줄로 가른다 — 좁은 목록에서 잘리지 않게. */
+function groupDateParts(line: string): { date: string; qualifier: string | null } {
+  const match = /^(.*?)(?:\s*\(([^()]+)\))$/.exec(line);
+  if (!match) return { date: line, qualifier: null };
+  return { date: match[1]!.trim(), qualifier: match[2]!.trim() };
+}
+
 /** 확인 필요 점 — 문제 있는 항목에만 둔다. 정상 검사는 정보 펼침이 맡는다. */
 function RailStatusDot({ item }: { item: SpatialAssetCatalogItem }) {
   if (!needsCatalogAttention(item)) return null;
@@ -211,10 +220,20 @@ function RailStatusDot({ item }: { item: SpatialAssetCatalogItem }) {
   return <span title={label} className="mt-1 inline-block size-2 shrink-0 rounded-full bg-high-ink"><span className="sr-only">{label}</span></span>;
 }
 
-/** 파일 타일 — 제출된 파일의 형식만 말한다. 픽셀이 없으므로 썸네일인 척하지 않는다. */
-function FileKindTile({ fileName }: { fileName: string }) {
+/** 파일 타일 — 형식과 자료 종류만 말한다. 픽셀이 없으므로 썸네일인 척하지 않는다. */
+function KindGlyph({ kind }: { kind: SpatialAssetCatalogItem["kind"] }) {
+  if (kind === "dsm") {
+    return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0" /></svg>;
+  }
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M15 3v18M3 9h18M3 15h18" /></svg>;
+}
+
+function FileKindTile({ fileName, kind }: { fileName: string; kind: SpatialAssetCatalogItem["kind"] }) {
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase().slice(0, 4) : "FILE";
-  return <span aria-hidden="true" className="flex h-[54px] w-[72px] shrink-0 items-center justify-center rounded-md border border-line bg-sunk font-mono text-[10px] font-bold text-ink-2">{ext}</span>;
+  return <span aria-hidden="true" className="flex size-14 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-line bg-sunk text-ink-muted sm:h-[54px] sm:w-[72px]">
+    <KindGlyph kind={kind} />
+    <span className="font-mono text-[9px] font-bold">{ext}</span>
+  </span>;
 }
 
 /**
@@ -240,21 +259,21 @@ function RailItem({ item, headline, viewHref, putBHref, isA, isB, showThumb, thu
   const role = isA && isB ? "A·B" : isA ? "A" : isB ? "B" : null;
   const fullTitle = `${shortKindLabel(item.kind)} · 등록 버전 ${item.revision} · ${item.declared.fileName}`;
   const readable = showThumb ? firstReadableWindowJob(thumbJobs, item.assetRef) : null;
-  return <div className={`flex min-w-0 items-start gap-2 rounded-md px-1.5 py-1.5 ${isA || isB ? "bg-sunk" : ""}`}>
+  return <div data-rail-item className={`flex min-w-0 items-start gap-3 rounded-xl border p-3 sm:gap-2 sm:rounded-md sm:border-0 sm:p-1.5 ${isA || isB ? "border-line-strong bg-sunk" : "border-line bg-surface"}`}>
     {readable && readable.receipt
       ? <MaterialThumb siteId={siteId} workAreaId={item.workAreaId} jobId={readable.jobId} receipt={readable.receipt} fileName={item.declared.fileName} />
-      : <FileKindTile fileName={item.declared.fileName} />}
+      : <FileKindTile fileName={item.declared.fileName} kind={item.kind} />}
     <div className="min-w-0 flex-1">
-      <p className="flex min-w-0 items-start gap-1 break-words text-[12.5px] font-semibold leading-snug">
+      <p className="flex min-w-0 items-start gap-1 break-words text-[14px] font-semibold leading-snug sm:text-[12.5px]">
         {role && <span className="mt-0.5 shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold" aria-label={`현재 ${role}로 선택됨`}>{role}</span>}
         <Link href={viewHref} aria-current={isA ? "true" : undefined} title={fullTitle} className="min-w-0 tap-target underline-offset-2 hover:underline">{headline}</Link>
         <RailStatusDot item={item} />
       </p>
-      <p className="mt-0.5 truncate text-[11.5px] text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
-      <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px]">
-        <Link href={viewHref} className="tap-target underline decoration-dotted text-ink-2" aria-label={`${fullTitle} A로 보기`}>A로 보기</Link>
-        <Link href={putBHref} className="tap-target underline decoration-dotted text-ink-2" aria-label={`${fullTitle} B에 두기`}>B에 두기</Link>
-      </p>
+      <p className="mt-0.5 truncate font-mono text-[10px] leading-4 text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:flex-wrap sm:gap-x-3 sm:gap-y-0.5 sm:text-[11.5px]">
+        <Link href={viewHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} A로 보기`}>A로 보기</Link>
+        <Link href={putBHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} B에 두기`}>B에 두기</Link>
+      </div>
     </div>
   </div>;
 }
@@ -394,37 +413,82 @@ function AssetDetail({ item, workName, areaName, headline, compareHref, retryHre
 }
 
 /** 펼친 본문 — 상세·등록 이력·받기 요청을 한 덩어리로 둔다. */
-function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, historyResult, requestProps }: {
+function CompactFact({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0">
+    <dt className="text-[10px] text-ink-muted">{label}</dt>
+    <dd className="mt-0.5 break-words text-[11.5px] leading-4 font-semibold text-ink-2">{value}</dd>
+  </div>;
+}
+
+/**
+ * 선택 자료의 패널 본문 — 먼저 "무엇을 고른지, 지금 무엇을 할 수 있는지"만 둔다.
+ * 등록 이력·제출자 입력·검사 원문은 `상세 정보` 안으로 접고, 준비 요청 폼은
+ * 필요할 때만 모달로 연다. 정보 밀도가 선택 자체를 가리지 않게 하는 것이 목적이다.
+ */
+function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps }: {
   detail: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
   headline: string;
   compareHref: string | null;
   retryHref: string | null;
+  requestsHref: string;
   historyResult: ReturnType<typeof validateRegistrationHistory> | null;
   requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
 }) {
-  return <>
-    <AssetDetail
-      item={detail}
-      workName={workName}
-      areaName={areaName}
-      headline={headline}
-      compareHref={compareHref}
-      retryHref={retryHref}
-    />
-    {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
-    {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
-    <SpatialDataRequestAction
-      siteId={requestProps.siteId}
-      workAreaId={requestProps.workAreaId}
-      assetRef={detail.assetRef}
-      inspectedRaster={requestProps.inspectedRaster}
-      observedCrsIdentifier={requestProps.inspectedRaster?.observedCrsIdentifier ?? null}
-      observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
-      canRequest={requestProps.canRequest}
-    />
-  </>;
+  const availability = availabilityStatus(detail);
+  const captureLine = capturePeriodTitle(detail.declared.captureStartedAt, detail.declared.captureEndedAt, {
+    captureDate: detail.declared.captureDate ?? null,
+  });
+  const tone: "neutral" | "positive" | "warning" =
+    availability.retry ? "warning" : detail.inspection.outcome === "MEASURED" ? "positive" : "neutral";
+  const requestAction = <SpatialDataRequestAction
+    siteId={requestProps.siteId}
+    workAreaId={requestProps.workAreaId}
+    assetRef={detail.assetRef}
+    inspectedRaster={requestProps.inspectedRaster}
+    observedCrsIdentifier={requestProps.inspectedRaster?.observedCrsIdentifier ?? null}
+    observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
+    canRequest={requestProps.canRequest}
+  />;
+  return <div className="flex min-w-0 flex-col gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <StateBadge label={availability.label} tone={tone} />
+      <span className="font-mono text-[9px] text-ink-muted">{areaName} · v{detail.revision}</span>
+    </div>
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+      <CompactFact label="자료 구성" value={`${dataKindLabel(detail.kind)} · ${detail.declared.format}`} />
+      <CompactFact label="관측 시점" value={captureLine} />
+      <CompactFact label="파일 검사" value={inspectionOutcomeLabel(detail.inspection.outcome)} />
+      <CompactFact label="좌표 기준" value={detail.inspection.raster?.observedCrsIdentifier ?? "확인 불가"} />
+    </dl>
+    {availability.action && <p className="text-[11px] leading-5 text-ink-muted">{availability.action}</p>}
+    {availability.retry && retryHref && <p className="text-[11px] leading-5 text-high-ink">재처리는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비에서 재처리 요청</Link>하세요.</p>}
+    <div className="flex flex-col gap-2">
+      {requestProps.canRequest
+        ? <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>
+        : null}
+      {compareHref && <Link href={compareHref} className="btn min-h-11 w-full">이 자료를 현재 관측으로 선택</Link>}
+      <Link href={requestsHref} className="tap-target text-center text-[11px] text-ink-2 underline underline-offset-2">준비 기록 보기</Link>
+    </div>
+    {!requestProps.canRequest && <p className="text-[11px] leading-5 text-ink-muted">자료 준비 요청은 권한 있는 담당자가 만들 수 있습니다.</p>}
+    <details className="rounded-lg border border-line bg-surface p-3 text-[12px]">
+      <summary className="tap-target cursor-pointer font-semibold">상세 정보</summary>
+      <div className="mt-2 flex flex-col gap-2">
+        <AssetDetail
+          item={detail}
+          workName={workName}
+          areaName={areaName}
+          headline={headline}
+          compareHref={compareHref}
+          retryHref={retryHref}
+        />
+        {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
+        {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
+        {!requestProps.canRequest && requestAction}
+      </div>
+    </details>
+  </div>;
 }
 
 /**
@@ -460,7 +524,7 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
   }
   if (!isViewableRasterKind(item.kind)) {
     return <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-line bg-surface px-4 py-6">
-      <FileKindTile fileName={item.declared.fileName} />
+      <FileKindTile fileName={item.declared.fileName} kind={item.kind} />
       <p className="break-words text-[13px] font-bold">{dataKindLabel(item.kind)}</p>
       <p className="break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
       <p className="text-[12px] text-ink-2">파일 검사 · {inspectionOutcomeLabel(item.inspection.outcome)}</p>
@@ -479,6 +543,8 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
     canRead={canRead}
     canRequest={canRequest}
     requestsHref={requestsHref}
+    prepareHref={materialsHref(siteId, workAreaId, { assetRef: item.assetRef, info: "1" })}
+    showAbsentExtentCanvas
     workAreaRing={workAreaRing}
     workAreaCrs={workAreaCrs}
     observationHeading={heading}
@@ -785,6 +851,7 @@ export default async function SpatialAssetsPage({
       compareHref={compareHrefFor(item)}
       retryHref={retryBase}
       historyResult={historyByRef.get(item.assetRef) ?? null}
+      requestsHref={requestsHref}
       requestProps={{ siteId, workAreaId: effectiveWorkAreaId!, inspectedRaster: item.inspection.raster, canRequest: canRequestData }}
     />;
   };
@@ -889,8 +956,13 @@ export default async function SpatialAssetsPage({
         const dividerLabel = dateLine ?? (group.epochId === ""
           ? "관측 묶음 확인 불가"
           : "촬영 구간이 항목마다 다름");
+        const dateParts = dateLine ? groupDateParts(dateLine) : null;
         return <section key={group.epochId === "" ? "divider-unidentified" : `divider-${group.epochId}`} aria-label={dividerLabel} className="min-w-0">
-          <h4 className="px-1.5 pb-1 text-[12px] font-bold text-ink-muted">{dividerLabel} · {formatCountKo(group.items.length)}</h4>
+          <h4 className="flex items-baseline justify-between gap-2 px-1.5 pb-1">
+            <span className="min-w-0 truncate text-[11.5px] font-bold text-ink-muted" title={dateLine ?? dividerLabel}>{dateParts?.date ?? dividerLabel}</span>
+            <span className="shrink-0 font-mono text-[9px] text-ink-muted">{formatCountKo(group.items.length)}</span>
+          </h4>
+          {dateParts?.qualifier && <p className="px-1.5 pb-1.5 text-[10px] text-ink-muted">{dateParts.qualifier}</p>}
           <ul className="flex min-w-0 flex-col divide-y divide-line">
             {group.items.map((item) => {
               const isA = sideA?.assetRef === item.assetRef;
@@ -994,9 +1066,6 @@ export default async function SpatialAssetsPage({
             구역 자료 준비에서 확인
           </Link>
         }
-        hint={
-          <>무대 구성을 먼저 보려면 <Link className="font-semibold text-ink-1 underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>예시 화면으로 미리 보기</Link></>
-        }
       />
     )
   ) : null;
@@ -1042,13 +1111,13 @@ export default async function SpatialAssetsPage({
       <p className="min-w-0 truncate text-[12px] font-semibold">작업구역 · {areaDisplayName}{selectedArea.status === "ARCHIVED" ? " (보관됨)" : ""}</p>
     ) : null}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="materials-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
-      <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
+      <span id="materials-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
+      <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
         {effectiveWorkAreaId ? (
           <Link
             href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ visualB: null }))}
             aria-current={!compareMode ? "page" : undefined}
-            className={`tap-target inline-flex items-center rounded-full px-2.5 py-1 text-[12px] break-keep ${!compareMode ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"}`}
+            className={`tap-target inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] break-keep sm:text-[12px] ${!compareMode ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"}`}
           >
             한 장
           </Link>
@@ -1059,18 +1128,18 @@ export default async function SpatialAssetsPage({
           <Link
             href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks())}
             aria-current="page"
-            className="tap-target inline-flex items-center rounded-full bg-sidebar-active px-2.5 py-1 text-[12px] font-semibold break-keep text-sidebar-active-ink shadow-sm"
+            className="tap-target inline-flex items-center rounded-md bg-sidebar-active px-2.5 py-1 text-[11.5px] font-semibold break-keep text-sidebar-active-ink shadow-sm sm:text-[12px]"
           >
             나란히
           </Link>
         ) : (
-          <span aria-disabled="true" title="목록에서 다른 자료를 B에 두면 나란히 볼 수 있습니다" className="inline-flex cursor-default items-center rounded-full px-2.5 py-1 text-[12px] break-keep text-ink-muted">
+          <span aria-disabled="true" title="목록에서 다른 자료를 B에 두면 나란히 볼 수 있습니다" className="inline-flex cursor-default items-center rounded-md px-2.5 py-1 text-[11.5px] break-keep text-ink-muted sm:text-[12px]">
             나란히
           </span>
         )}
       </div>
     </div>
-    <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
+    <p data-viewer-compact-hide="true" className="hidden min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted sm:block lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
     {effectiveWorkAreaId && (infoOpen
       ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
       : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
@@ -1092,7 +1161,6 @@ export default async function SpatialAssetsPage({
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}/observations`}>외부 비교 기록</Link>
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}?section=work-orders${effectiveWorkAreaId ? `&workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}>관측 작업 기록</Link>
           {workspaceReturnHref && <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={workspaceReturnHref}>작업공간에서 나란히 보기</Link>}
-          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/design-preview/materials?mode=swipe&returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>밀어서 비교 예시</Link>
         </div>
       </details>
     </span>
@@ -1124,10 +1192,6 @@ export default async function SpatialAssetsPage({
         </div>
       </details>
     </div>
-    <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">
-      등록 전에 무대 구성을 보려면{" "}
-      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
-    </p>
     </>
   );
 
@@ -1149,17 +1213,16 @@ export default async function SpatialAssetsPage({
   // 중앙: 큰 미리보기. 단일 또는 좌·우 독립 보기. 동기화·정합을 주장하지
   // 않는다. 무대 높이를 채우고 넘치면 안에서 스크롤한다.
   const renderStage = (): ReactNode => (
-    <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto">
-      {!sideA && <p role="status" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
+    <section aria-label={compareMode ? "선택한 두 자료 미리보기" : "선택한 자료 미리보기"} className="flex h-full min-w-0 flex-col gap-2 overflow-y-auto" data-materials-stage="true">
+      {!sideA && <p role="status" data-workbench-stage-caption="true" className="text-[12.5px] leading-5 text-ink-2">{sideB ? "첫 자료(A)를 목록에서 고르세요. 선택한 B는 그대로 표시합니다." : "표시할 자료를 목록에서 고르세요. 자동으로 다른 자료를 보여주지 않습니다."}</p>}
       {!sideA && sideB && centerPane("B", sideB)}
       {sideA && !compareMode && <>
-        <p className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
+        <p data-workbench-stage-caption="true" className="min-w-0 shrink-0 break-words text-[11.5px] text-ink-muted">
           {selection.legacyMapped ? "옛 주소의 선택을 그대로 읽었습니다" : selection.defaultedA ? "목록 첫 자료" : "선택한 자료"}
         </p>
         <div className="min-w-0 lg:min-h-0 lg:flex-1">
           {centerPane("A", sideA)}
         </div>
-        <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted">두 시점을 나란히 보려면 목록에서 다른 자료를 「B에 두기」로 고르세요.</p>
       </>}
       {sideA && sideB && compareMode && <>
         {workspaceReturnHref && (
@@ -1189,6 +1252,20 @@ export default async function SpatialAssetsPage({
     </section>
   );
 
+  // 목록 시트 하단 — 자료를 고른 뒤 시트가 무대를 덮은 채 남지 않도록,
+  // 현재 선택을 한 줄로 확인하고 시트만 닫는 동작을 둔다. 선택·URL은 바꾸지 않는다.
+  const selectedCatalogLines = [
+    sideA ? `A · ${businessTitleFor(sideA)}` : null,
+    sideB ? `B · ${businessTitleFor(sideB)}` : null,
+  ].filter((line): line is string => line !== null);
+  const catalogFooter = selectedCatalogLines.length > 0
+    ? <p className="min-w-0 break-words text-[11.5px] leading-5 text-ink-2">
+        <span className="font-semibold text-ink-1">현재 선택</span>
+        <span className="mx-1 text-ink-muted">·</span>
+        {selectedCatalogLines.join(" / ")}
+      </p>
+    : null;
+
   // 오른쪽: 선택 자료 정보 — frame이 열렸을 때만 자리를 차지한다.
   const renderInspector = (): ReactNode => (<>
     <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1197,17 +1274,13 @@ export default async function SpatialAssetsPage({
     </div>
     {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}
     {sideA && <>
-      <h4 className="break-words text-[13px] font-bold">A · {businessTitleFor(sideA)}</h4>
+      <h4 className="break-words text-[15px] leading-snug font-bold">A · {businessTitleFor(sideA)}</h4>
       {detailBlockFor(sideA)}
     </>}
     {sideB && <>
-      <h4 className="break-words text-[13px] font-bold">B · {businessTitleFor(sideB)}</h4>
+      <h4 className="break-words text-[15px] leading-snug font-bold">B · {businessTitleFor(sideB)}</h4>
       {detailBlockFor(sideB)}
     </>}
-    <p className="text-[11.5px] leading-5 text-ink-muted">
-      무대 구성을 먼저 보려면{" "}
-      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
-    </p>
   </>);
 
   return <div className="flex min-w-0 min-h-0 flex-1 flex-col">
@@ -1221,11 +1294,13 @@ export default async function SpatialAssetsPage({
       scopedAssetRef={sideA ? sideA.assetRef : null}
       visualContext={headerVisualContext}
     />
-    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3">
+    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3 lg:gap-0 lg:p-0">
       <h2 className="sr-only">자료</h2>
-      {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
-      {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
-      {effectiveAreaNotice && <p className="text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
+      <div data-viewer-page-notice className="flex flex-col gap-1">
+        {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
+        {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
+        {effectiveAreaNotice && <p className="text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
+      </div>
 
       {pageError !== null && <div>{errorView(pageError, "catalog", siteId, effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
       {page && <>
@@ -1255,6 +1330,10 @@ export default async function SpatialAssetsPage({
                 inspectorId="material-inspector"
                 inspectorLabel="선택 자료 정보"
                 detailsHostId="material-inspector-details"
+                catalogFooter={catalogFooter}
+                catalogDismissLabel={catalogFooter ? "이 선택으로 보기" : undefined}
+                viewerMode
+                viewerInspectorDefaultOpen={false}
               />}
           <nav aria-label="등록 자료 페이지" className="flex min-w-0 flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ cursor: null }))}>처음부터 보기</Link>}

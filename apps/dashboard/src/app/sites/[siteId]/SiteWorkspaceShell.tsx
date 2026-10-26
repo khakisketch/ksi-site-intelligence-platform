@@ -627,8 +627,6 @@ export function SiteWorkspaceShell({
         workAreaId={selected!.workAreaId}
         layers={layers}
         jobs={[...jobs]}
-        // 이 칸은 선택 구역이 있을 때만 둔다. 호출 경로의 preparedJobsState는
-        // 그때 "not-requested"가 될 수 없으므로, 도달 불가 분기는 unavailable이다.
         jobsState={viewerJobsState === "not-requested" ? "unavailable" : viewerJobsState}
         canRead={viewerCanRead}
         canRequest={viewerCanRequest}
@@ -641,6 +639,7 @@ export function SiteWorkspaceShell({
         hideLayerControls
         selectedAssetRef={fact.assetRef}
         presentation="canvas"
+        showAbsentExtentCanvas
         detailsTargetId="workspace-inspector-details"
       />
       )}
@@ -844,10 +843,9 @@ export function SiteWorkspaceShell({
   // 말은 범위 밖 요청을 기본으로 둔 경우에만 쓴다(기본이 실제로 바뀐 전이
   // 선택에는 서버 기본이 아니라는 말만 둔다).
   const selectionNotice = (scopeNotice || (mode === "explore" && transitionalSelection)) ? (
-    <p role="status" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
+    <p role="status" data-workbench-stage-inset="true" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
       {scopeNotice ? "요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다. " : ""}
       {selected ? `작업구역 · ${areaLabel}. ` : ""}
-      {mode === "explore" && selectedCaption ? `선택 중 · ${selectedCaption}. ` : ""}
       {mode === "explore" && transitionalSelection
         ? "서버 기본이 없어 확인된 측정 범위를 보여줍니다. 서버가 정한 기본 관측이 아닙니다."
         : scopeNotice
@@ -867,7 +865,7 @@ export function SiteWorkspaceShell({
       <span className="text-[12px] text-ink-2">작업구역을 확인하지 못했습니다</span>
     )}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="workspace-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
+      <span id="workspace-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
       <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
         {WORKSPACE_MODES.map((option) => {
           const active = option.key === mode;
@@ -887,7 +885,7 @@ export function SiteWorkspaceShell({
       </nav>
     </div>
     {mode === "compare" && (
-      <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
+      <p data-viewer-compact-hide="true" className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
     )}
   </>);
 
@@ -1009,7 +1007,7 @@ export function SiteWorkspaceShell({
   // 오류·만료·복구는 이 1차 영역에 둔다.
   const stage = (<>
     {mode === "explore" && (
-      <section aria-label="선택 관측 보기" className="flex min-w-0 flex-col gap-2">
+      <section aria-label="선택 관측 보기" className="flex h-full min-w-0 min-h-0 flex-col gap-2">
         {selectionNotice}
         {selected && captureOptions.length > 0 && (
           <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -1052,7 +1050,7 @@ export function SiteWorkspaceShell({
         )}
         {mode === "explore" && captureOptions.length > 0 && <p id="workspace-capture-help" className="sr-only">관측을 선택하면 표시가 바뀝니다.</p>}
         {mode === "explore" && !exploreIsEmpty && selectedCaption && captionFact && (
-          <p className="shrink-0 break-words text-[12px] leading-5 text-ink-2">
+          <p data-workbench-stage-inset="true" className="shrink-0 break-words text-[12px] leading-5 text-ink-2">
             선택 중 · {(() => {
               const line = entryCaptureLine(captionFact);
               const version = `등록 버전 ${captionFact.revision}`;
@@ -1075,7 +1073,7 @@ export function SiteWorkspaceShell({
         )}
         {catalogStatus}
         {viewerRendered ? (
-          <div data-workbench-pane className="min-w-0">
+          <div data-workbench-pane className="flex min-h-0 min-w-0 flex-1 flex-col">
             <SiteWindowedPixelViewer
               siteId={facts.siteId}
               workAreaId={selected.workAreaId}
@@ -1094,6 +1092,7 @@ export function SiteWorkspaceShell({
               selectedAssetRef={selectedAssetRef}
               layerSelectionHref={`${sitePath}?workAreaId=${encodeURIComponent(selected.workAreaId)}`}
               presentation="canvas"
+              showAbsentExtentCanvas
               detailsTargetId="workspace-inspector-details"
             />
           </div>
@@ -1128,7 +1127,7 @@ export function SiteWorkspaceShell({
     )}
 
     {mode === "compare" && (
-      <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2 max-sm:gap-1.5">
+      <section aria-label="두 시점 비교" className="flex h-full min-w-0 min-h-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
         {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
@@ -1228,5 +1227,6 @@ export function SiteWorkspaceShell({
     inspectorId="workspace-inspector"
     inspectorLabel="작업공간 정보"
     detailsHostId="workspace-inspector-details"
+    viewerMode={mode !== "results"}
   />;
 }

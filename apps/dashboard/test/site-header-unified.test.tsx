@@ -43,6 +43,15 @@ describe("unified site header", () => {
     expect(nav).not.toContain("section=manage");
   });
 
+  it("moves the site sections to the desktop rail at lg without removing the mobile tabs", () => {
+    const html = headerHtml({ scopedWorkAreaId: "wa-a" });
+    const navLabel = html.indexOf('aria-label="현장 업무 메뉴"');
+    const navOpen = html.lastIndexOf("<nav", navLabel);
+    const nav = html.slice(navOpen, html.indexOf("</nav>", navLabel));
+    expect(nav).toContain("lg:hidden");
+    expect(nav).toContain("overflow-x-auto");
+  });
+
   it("preserves the validated scope and exact visual pair", () => {
     const html = headerHtml({
       scopedWorkAreaId: "wa-a",
