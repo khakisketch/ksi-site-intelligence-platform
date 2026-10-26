@@ -319,3 +319,86 @@ erase the original2026-10-25 receipts above; the deployed image still omits the 
 No new endpoint, export worker, mask capability, signed policy value or production permission is
 created by this proposal. All already approved implementation remains in force; only the unresolved
 quantitative extension semantics and release sequencing are brought back for an explicit decision.
+
+### P2 execution choice — Human confirmed 2026-10-26
+
+The Human selected **새 프로필로 분리 (Recommended)**: retain all V2 identities/results; implement
+delta GeoTIFF as a separate evidence-bound derived output and independent mask inputs under a new
+calculation profile. Exact grid only; mask NoData is a blocker; record the exclusions and their
+numeric impact. This closes the scope choice above, not signed deployment policy/data/host gates.
+
+Implementation boundaries for this continuation:
+
+- Add separate immutable mask/profile/calculation/output contracts; no new fields or reinterpretation
+  of frozen V2 contracts, journals or numeric results. Producers/consumers remain Core, worker,
+  API/MCP and Console, and retained records are permanent consumers.
+- Mask convention: uint8 single-band binary0=retain,1=exclude. Invalid/nonbinary/NoData input blocks;
+  exact baseline shape/affine/CRS only, no resampling. Polygon holes exclude first; report the full
+  original WorkArea, independently excluded cells and final effective selected cells separately.
+  Remaining selected cells still require100%common-valid coverage; an empty effective zone blocks.
+- The new profile retains current−baseline, zero threshold, metre-axis prerequisites and null
+  uncertainty unless a separately approved assessment says otherwise. A V2 binding may be retained
+  as source evidence, but it is never the masked calculation's identity or admission authority.
+- Raster output is derived from the actual validated delta array, not aggregate metrics. Inactive,
+  expired or revoked publications grant no bytes. Scope/currentness/AI-egress checks precede output
+  access. Lifetime and byte/resource ceilings remain explicit policy inputs, not guessed defaults.
+- Ownership: Build integrates/owns shared docs and routes. New pure math may be delegated within
+  change-detection; new immutable models/schemas may be delegated within event-contracts. Workers
+  parse only through the retained contained/bounded path. No shared runtime/production mutation.
+- Verify hostile masks/frame mismatches/holes/NoData/empty and oversized zones, known answers,
+  digest identities, old V2 schema/replay regression, Core scope/revocation/replay and actual
+  synthetic local worker/output bytes before claiming a mounted capability. No customer accuracy claim.
+- No new reference code/dependency/data rights/device assumptions. Rollback disables new entrypoints
+  and retains old V2 behavior and immutable new records; no migration/deletion of historical data.
+
+### P2 implementation in progress — revalidated 2026-10-26
+
+The previous P2 proposal/Console whole-scope table's “decision required” status is superseded by the
+Human choice above. There is no new pilot-scope or contract-approval stop. Implementation remains
+uncommitted after P1 `d20379cd`; no new route is enabled by default and no deployment occurred.
+
+- New strict mask/profile/identity and V3 coverage/result/impact contracts, pure masked math and
+  byte-bound contained measurement primitives are implemented. They preserve V2 identities and
+  make unmasked impact null when excluded source cells are unknown. Software tests are synthetic;
+  separately authorized mask runtime/host containment is not established by importable primitives.
+- Additive UINT8 mask TIFF preflight shares directory/entry/block/overlap/allocation safeguards
+  without widening the old DSM/RGB parser. Mask NoData/extra IFDs are rejected before native decode.
+- V2 measurement → private FLOAT64 delta retains the original V2 report bytes. Separate V3 writer
+  consumes the actual V3 measured array/report, never a fabricated V2 numeric result. Fresh combined
+  writer/measurement checks:44 passed; native output SHA/cells/NaN exclusion, metre/sign/identity tags,
+  private descriptor lifetime, deterministic bytes, resource/currentness failures and V3 identity
+  mismatch covered in `tests/contract/test_external_masked_delta_raster.py` and adjacent tests.
+- Core publication lane's first delivery was not accepted: scoped-human checks, read currentness,
+  worker ownership, integrity and source-version defects were identified and corrected by its owner.
+  Trusted output-observation binding and bounded read/storage hardening are now under follow-up;
+  no fake authority port is counted as actual production authorization.
+- Independent mask child ingress and new V3 admission/lease/three-input execution workstream is
+  active. A successful unmasked V2 numeric result is not a prerequisite for V3 admission.
+- Remaining Build integration: inspect those deliveries; real Core source/authority/egress/output
+  adapters and publication handshake; explicit optional composition + exact auth route allowlists;
+  closed API/MCP/Console consumption; actual generated-mask/DSM→V3→delta→guarded bytes/replay proof.
+
+Integration follow-through (same authorized task, still in progress):
+
+- Actual retained Core AP/NX journals now back the V2 delta source resolver. The integration test
+  measures generated DSM bytes, accepts the immutable numeric report, validates the actual emitted
+  TIFF through the worker-side observation seam, and publishes/reads only after a new purpose-bound
+  synthetic signature and output lease. Source-evidence revocation denies subsequent reads. The
+  synthetic signing key is temporary test material, never customer or deployment authority.
+- This actual Core integration exposed a compatibility error absent from small aligned fixtures:
+  frozen coverage windows may include unselected border cells outside the original DSM rectangle.
+  Delta writers now preserve those cells as NaN padding and still reject any selected cell outside
+  the byte-bound baseline. No V2 numeric record, coverage witness or digest is changed.
+- Publication receipts are distinct from byte uploads and require the exact pinned worker/lease,
+  current source/activation and matching observed grid/hash/size. Raw uploads alone grant neither
+  format nor availability. Fresh API work uses closed source-only requests, bounded JSON/raw streams,
+  explicit observation acceptance and guarded byte slices; it remains optional, not deployed.
+- Latest stable math/model/measurement/parser set:229 passed (explicit integration imports). Fresh
+  publication/source/receipt set:78 passed before the new closed API consumer wiring. These are
+  functional software checks, not product acceptance. Real Core mask adapters, late delta-reproduction
+  worker, additive MCP operations and guarded Console export status are actively assigned; Build owns
+  composition/auth/schema integration and final real-rendered acceptance.
+
+Only unavailable signing/provisioning, deployment-host proof, retained permitted customer data and
+field/consumer/customer acceptance remain external. Continue independently actionable local code;
+do not turn those gates into an implementation-completion claim or an invented approval request.

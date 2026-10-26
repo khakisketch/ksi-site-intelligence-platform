@@ -22,6 +22,7 @@ from typing import Any
 
 import numpy as np
 import rasterio
+from ksi_change_detection.dsm_diff import DiffResult
 from ksi_change_detection.external_volume import (
     ExternalVolumeMeasurementError,
     measure_fixed_profile_external_volume_zone,
@@ -206,9 +207,7 @@ def _require_combined_input_workspace(
         raise _CalculationInputError("RESOURCE_LIMIT_EXCEEDED")
 
 
-def _require_work_area_vertex_budget(
-    polygon: dict[str, Any], *, maximum_vertices: int
-) -> None:
+def _require_work_area_vertex_budget(polygon: dict[str, Any], *, maximum_vertices: int) -> None:
     """Bound the already-sealed polygon before any rasterization allocation."""
     coordinates = polygon.get("coordinates")
     if not isinstance(coordinates, list):
@@ -222,7 +221,7 @@ def _require_work_area_vertex_budget(
             raise _CalculationInputError("RESOURCE_LIMIT_EXCEEDED")
 
 
-def measure_external_relative_volume_v2(
+def _measure_external_relative_volume_v2(
     *,
     attempt: AnalysisExecutionAttemptV2,
     calculation_identity: CalculationIdentityV2,
@@ -233,6 +232,10 @@ def measure_external_relative_volume_v2(
     reported_at: datetime,
     maximum_wall_seconds: float | None = None,
     is_cancelled: Callable[[], bool] | None = None,
+    _consume_delta: Callable[
+        [DiffResult, RelativeVolumeNumericResultV2, MeasurementWatchdogV2], None
+    ]
+    | None = None,
 ) -> RelativeVolumeCalculationReportV2 | RelativeVolumeCalculationFailureV2:
     """Measure exactly one sealed V2 identity without launching a worker runtime."""
     try:
@@ -335,9 +338,7 @@ def measure_external_relative_volume_v2(
                 from_crs=calculation_identity.work_area_crs,
                 maximum_zone_grid_cells=maximum_fixed_profile_zone_grid_cells(
                     envelope=envelope,
-                    baseline_cell_count=(
-                        baseline_preflight.width * baseline_preflight.height
-                    ),
+                    baseline_cell_count=(baseline_preflight.width * baseline_preflight.height),
                 ),
             )
             if isinstance(measurement, ExternalVolumeMeasurementError):
@@ -399,6 +400,10 @@ def measure_external_relative_volume_v2(
                 > envelope.max_output_bytes
             ):
                 raise _CalculationInputError("RESOURCE_LIMIT_EXCEEDED")
+            if _consume_delta is not None:
+                # Only the separate derived-output callable consumes this exact
+                # validated array. Historical reports gain no fields or new math.
+                _consume_delta(diff, numeric, watchdog)
             return report
     except MeasurementAlgorithmIncomplete:
         return _failure(
@@ -421,6 +426,32 @@ def measure_external_relative_volume_v2(
             reason=exc.reason,
             failed_at=reported_at,
         )
+
+
+def measure_external_relative_volume_v2(
+    *,
+    attempt: AnalysisExecutionAttemptV2,
+    calculation_identity: CalculationIdentityV2,
+    baseline_path: Path,
+    current_path: Path,
+    report_id: str,
+    computed_at: datetime,
+    reported_at: datetime,
+    maximum_wall_seconds: float | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> RelativeVolumeCalculationReportV2 | RelativeVolumeCalculationFailureV2:
+    """Unchanged V2 callable: no delta output or publication is requested."""
+    return _measure_external_relative_volume_v2(
+        attempt=attempt,
+        calculation_identity=calculation_identity,
+        baseline_path=baseline_path,
+        current_path=current_path,
+        report_id=report_id,
+        computed_at=computed_at,
+        reported_at=reported_at,
+        maximum_wall_seconds=maximum_wall_seconds,
+        is_cancelled=is_cancelled,
+    )
 
 
 __all__ = ["measure_external_relative_volume_v2"]

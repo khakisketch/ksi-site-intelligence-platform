@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.local/contracts/external-masked-volume-result.v3.json",
+  "title": "KSI external masked-volume result V3",
+  "description": "Identity-bound masked numeric result with lossless five-mask coverage witness, unmasked-vs-masked impact, report, and typed failure. V2 arithmetic leaf reused; no V2 result identity reuse.",
+  "oneOf": [
+    { "$ref": "#/$defs/coverage" },
+    { "$ref": "#/$defs/numericResult" },
+    { "$ref": "#/$defs/report" },
+    { "$ref": "#/$defs/failure" }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "utc": { "type": "string", "pattern": "Z$|\\+00:00$" },
+    "mask": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 2000000,
+      "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "rows", "columns", "rowOffset", "columnOffset", "originalSelectedMaskB64", "maskExcludedMaskB64", "effectiveSelectedMaskB64", "commonValidMaskB64", "unavailableMaskB64", "originalSelectedCellCount", "maskExcludedCellCount", "effectiveSelectedCellCount", "commonValidCellCount", "unavailableCellCount", "cellAreaM2", "originalSelectedAreaM2", "effectiveSelectedAreaM2", "commonValidAreaM2", "bounds", "coverageWitnessDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-masked-volume-coverage-witness.v3" },
+        "rows": { "type": "integer", "exclusiveMinimum": 0 },
+        "columns": { "type": "integer", "exclusiveMinimum": 0 },
+        "rowOffset": { "type": "integer" },
+        "columnOffset": { "type": "integer" },
+        "originalSelectedMaskB64": { "$ref": "#/$defs/mask" },
+        "maskExcludedMaskB64": { "$ref": "#/$defs/mask" },
+        "effectiveSelectedMaskB64": { "$ref": "#/$defs/mask" },
+        "commonValidMaskB64": { "$ref": "#/$defs/mask" },
+        "unavailableMaskB64": { "$ref": "#/$defs/mask" },
+        "originalSelectedCellCount": { "type": "integer", "minimum": 0 },
+        "maskExcludedCellCount": { "type": "integer", "minimum": 0 },
+        "effectiveSelectedCellCount": { "type": "integer", "exclusiveMinimum": 0 },
+        "commonValidCellCount": { "type": "integer", "exclusiveMinimum": 0 },
+        "unavailableCellCount": { "const": 0 },
+        "cellAreaM2": { "type": "number", "exclusiveMinimum": 0 },
+        "originalSelectedAreaM2": { "type": "number", "minimum": 0 },
+        "effectiveSelectedAreaM2": { "type": "number", "minimum": 0 },
+        "commonValidAreaM2": { "type": "number", "minimum": 0 },
+        "bounds": { "type": "array", "prefixItems": [{"type":"number"},{"type":"number"},{"type":"number"},{"type":"number"}], "items": false },
+        "coverageWitnessDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cutM3", "fillM3", "netM3", "thresholdM", "uncertaintyM3"],
+      "properties": {
+        "cutM3": { "type": "number", "minimum": 0 },
+        "fillM3": { "type": "number", "minimum": 0 },
+        "netM3": { "type": "number" },
+        "thresholdM": { "const": 0.0 },
+        "uncertaintyM3": { "const": null }
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["unmaskedImpactKnown", "excludedCellCount", "unmaskedCutM3", "unmaskedFillM3", "unmaskedNetM3", "excludedCutM3", "excludedFillM3", "excludedNetM3"],
+      "properties": {
+        "unmaskedImpactKnown": { "type": "boolean" },
+        "excludedCellCount": { "type": "integer", "minimum": 0 },
+        "unmaskedCutM3": { "type": ["number", "null"], "minimum": 0 },
+        "unmaskedFillM3": { "type": ["number", "null"], "minimum": 0 },
+        "unmaskedNetM3": { "type": ["number", "null"] },
+        "excludedCutM3": { "type": ["number", "null"], "minimum": 0 },
+        "excludedFillM3": { "type": ["number", "null"], "minimum": 0 },
+        "excludedNetM3": { "type": ["number", "null"] }
+      }
+    },
+    "numericResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "maskedCalculationIdentityDigest", "maskedProfileDigest", "maskBindingDigest", "metrics", "coverage", "impact", "numericResultIdentityDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-masked-volume-numeric-result.v3" },
+        "maskedCalculationIdentityDigest": { "$ref": "#/$defs/digest" },
+        "maskedProfileDigest": { "$ref": "#/$defs/digest" },
+        "maskBindingDigest": { "$ref": "#/$defs/digest" },
+        "metrics": { "$ref": "#/$defs/metrics" },
+        "coverage": { "$ref": "#/$defs/coverage" },
+        "impact": { "$ref": "#/$defs/impact" },
+        "numericResultIdentityDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "reportId", "maskedCalculationIdentityDigest", "numericResult", "numericResultIdentityDigest", "computedAt", "reportedAt", "reportDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-masked-volume-calculation-report.v3" },
+        "reportId": { "$ref": "#/$defs/text" },
+        "maskedCalculationIdentityDigest": { "$ref": "#/$defs/digest" },
+        "numericResult": { "$ref": "#/$defs/numericResult" },
+        "numericResultIdentityDigest": { "$ref": "#/$defs/digest" },
+        "computedAt": { "$ref": "#/$defs/utc" },
+        "reportedAt": { "$ref": "#/$defs/utc" },
+        "reportDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "failureId", "maskedCalculationIdentityDigest", "reasonCode", "failedAt", "failureDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-masked-volume-calculation-failure.v3" },
+        "failureId": { "$ref": "#/$defs/text" },
+        "maskedCalculationIdentityDigest": { "$ref": "#/$defs/digest" },
+        "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{0,127}$" },
+        "failedAt": { "$ref": "#/$defs/utc" },
+        "failureDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

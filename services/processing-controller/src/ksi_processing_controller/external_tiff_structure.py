@@ -186,6 +186,7 @@ def _block_stats(
     *,
     byte_order: str,
     payload_size: int,
+    binary_mask_profile: bool = False,
 ) -> tuple[int, int, int, int, tuple[tuple[int, int], ...]]:
     """Validate every allocated strip/tile and return blocks, bytes, samples, raw estimate."""
     tile_offsets = _tag_values(directory, 324, byte_order)
@@ -204,7 +205,15 @@ def _block_stats(
         raise TiffStructureError("TIFF image dimensions or sample model are invalid")
     if width <= 0 or height <= 0 or samples <= 0 or any(value <= 0 for value in bits):
         raise TiffStructureError("TIFF image dimensions or bit depth are invalid")
-    _require_exact_raw_sample_model(directory, byte_order, samples, bits)
+    if binary_mask_profile:
+        sample_format = _tag_values(directory, 339, byte_order) or (1,)
+        subtype = _one(directory, 254, byte_order, required=False) or 0
+        if samples != 1 or bits != (8,) or sample_format != (1,) or subtype != 0:
+            raise TiffStructureError("binary exclusion mask requires one base UINT8 band")
+        if 42113 in directory.entries:
+            raise TiffStructureError("binary exclusion mask must not declare NoData")
+    else:
+        _require_exact_raw_sample_model(directory, byte_order, samples, bits)
     planar_configuration = _one(directory, 284, byte_order, required=False) or 1
     if planar_configuration not in {1, 2}:
         raise TiffStructureError("TIFF planar configuration is invalid")
@@ -217,9 +226,11 @@ def _block_stats(
         if 278 in directory.entries:
             raise TiffStructureError("TIFF tiled image cannot carry RowsPerStrip")
         offsets, counts = tile_offsets, tile_counts
-        expected_blocks = ((width + tile_width - 1) // tile_width) * (
-            (height + tile_height - 1) // tile_height
-        ) * planes
+        expected_blocks = (
+            ((width + tile_width - 1) // tile_width)
+            * ((height + tile_height - 1) // tile_height)
+            * planes
+        )
     else:
         rows_per_strip = _one(directory, 278, byte_order)
         if rows_per_strip is None or rows_per_strip <= 0:
@@ -295,7 +306,9 @@ def _require_globally_disjoint_ranges(ranges: list[tuple[int, int]]) -> None:
             raise TiffStructureError("TIFF metadata, index, or block allocations overlap")
 
 
-def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> TiffStructureV1:
+def _parse_sealed_tiff_structure(
+    path: Path, envelope: ResourceEnvelopeV1, *, binary_mask_profile: bool
+) -> TiffStructureV1:
     """Parse all IFDs and allocation pairs before Rasterio/GDAL can decode bytes."""
     if path.stat().st_size > min(envelope.max_input_bytes, envelope.max_streamed_bytes):
         raise TiffResourceLimitError("sealed input exceeds the finite policy byte cap")
@@ -355,6 +368,8 @@ def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> Tif
         directories.append(directory)
         next_offset = directory.next_offset
     total_blocks = allocated_bytes = decompressed = samples = 0
+    if binary_mask_profile and len(directories) != 1:
+        raise TiffStructureError("binary exclusion mask cannot contain extra image directories")
     index_ranges: list[tuple[int, int]] = [(0, 16 if big_tiff else 8)]
     all_ranges: list[tuple[int, int]] = list(index_ranges)
     for directory in directories:
@@ -365,8 +380,17 @@ def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> Tif
             current_samples,
             block_ranges,
         ) = _block_stats(
-            directory, byte_order=byte_order, payload_size=len(payload)
+            directory,
+            byte_order=byte_order,
+            payload_size=len(payload),
+            binary_mask_profile=binary_mask_profile,
         )
+        if binary_mask_profile:
+            width = _one(directory, 256, byte_order)
+            height = _one(directory, 257, byte_order)
+            assert width is not None and height is not None
+            if width * height > envelope.max_pixels:
+                raise TiffResourceLimitError("binary exclusion mask pixel cap exceeded")
         total_blocks += current_blocks
         allocated_bytes += current_allocated
         decompressed += current_decompressed
@@ -392,6 +416,23 @@ def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> Tif
         estimated_sample_bytes=samples,
         index_end=max(end for _, end in index_ranges),
     )
+
+
+def parse_sealed_tiff_structure(path: Path, envelope: ResourceEnvelopeV1) -> TiffStructureV1:
+    """Unchanged V2 sample profile and structural checks before any native decode."""
+    return _parse_sealed_tiff_structure(path, envelope, binary_mask_profile=False)
+
+
+def parse_sealed_binary_mask_tiff_structure(
+    path: Path, envelope: ResourceEnvelopeV1
+) -> TiffStructureV1:
+    """Additive strict UINT8 mask profile; does not widen the DSM/RGB parser.
+
+    Shares all bounded IFD/entry/block/allocation/external-metadata safeguards.
+    Exactly one base directory is allowed; NoData and implicit mask/overview
+    directories are rejected before Rasterio/GDAL sees any bytes.
+    """
+    return _parse_sealed_tiff_structure(path, envelope, binary_mask_profile=True)
 
 
 def _reject_external_metadata(directory: TiffDirectoryV1) -> None:
