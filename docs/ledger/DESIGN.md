@@ -18,6 +18,8 @@ and the prior dense board [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](..
 - Materials: floating catalog (300px) opens from the toolbar, stage, on-demand compact
   inspector; details collapsed; request form in a native dialog. At 1024–1279 the toolbar hides
   the explanatory line/redundant "보기 방식" label to stay one row.
+- Mobile site header keeps the site name, status and tabs and adds a compact **현장 변경** sheet;
+  changing sites preserves the current section (workspace/materials/results/work-orders).
 - Expired/unprepared stage: real registered extent + actual prepared-window bounds; no fake pixels.
   The site workspace now uses the same extent canvas.
 - Unknown units/rights/retention/accuracy remain explicit.
@@ -32,13 +34,12 @@ and the prior dense board [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](..
   Comparison: [`../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html);
   full screen: [`../design/CONSOLE_VIEWER_FIRST_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_2026-10-26.html).
 - Scope A chosen: 공간/자료 are viewer-first; 업무/결과/검토 stay list/form-first with reduced chrome.
-- Implemented on branch `viewer-first-20261026` (product commit `41dc234f`) and deployed as
+- Implemented on branch `viewer-first-20261026` (product commit `4879a05e`) and deployed as
   `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:2866c73a1c8ab78e80c6d73811d87d87e1ae4057e786f87695c87a5b6a8a6bff`.
+  `sha256:8efc8dc2eb56746ef062068a48c93bf0a3915cca0a0b3a75f9514279323a4a50`.
 
 ## Open design decisions
 
-- Mobile site switcher.
 - Home/global `내 업무/검토` split (ADR-025/026 approval).
 - Theme setting (deferred).
 

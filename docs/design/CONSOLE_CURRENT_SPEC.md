@@ -21,7 +21,8 @@ site/queue authority.
   when available.
 - The site header owns site name, status and settings on dense screens; viewer screens move the
   site name/switcher and settings link into the floating layer panel. Header tabs remain only
-  below `lg` where neither rail nor floating panel is present.
+  below `lg` where neither rail nor floating panel is present. Below `lg` a compact **현장 변경**
+  sheet changes sites while preserving the active section.
 - 자료: floating catalog (300px) and on-demand selected-material inspector (332px). Both start
   closed; the toolbar toggle opens them, and the canvas keeps the full width until the user
   asks for a panel.
@@ -38,10 +39,11 @@ site/queue authority.
 - Site context rail and switcher: `1b8ed545`.
 - Desktop materials 3-pane, compact inspector, request dialog: `589490ca`.
 - Expired extent canvas (`SiteMosaicAbsentCanvas`): `49d19a3d`.
-- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `41dc234f`;
+- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `4879a05e`;
   production image `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:2866c73a1c8ab78e80c6d73811d87d87e1ae4057e786f87695c87a5b6a8a6bff`.
-- Visual site covers (`SiteVisualPlaceholder`) and collapsible viewer panels.
+  `sha256:8efc8dc2eb56746ef062068a48c93bf0a3915cca0a0b3a75f9514279323a4a50`.
+- Visual site covers (`SiteVisualPlaceholder`), collapsible viewer panels, and mobile site
+  switcher.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
   and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
   desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
@@ -62,7 +64,6 @@ site/queue authority.
 
 - Viewer-first direction **A implemented** for site 공간/자료; 업무/결과/검토 remain list/form-first.
   Comparison: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html).
-- Mobile site switcher (desktop rail/floating panel pattern is not available below `lg`).
 - Home structure and global `내 업무/검토` split remain gated by ADR-025 D6/D7 and explicit
   product-owner approval; 4-viewport and projection/E2E evidence required.
 - Theme selection is deferred to a future `설정 > 화면 테마` decision; no palette change now.

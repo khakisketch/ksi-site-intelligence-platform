@@ -36,12 +36,11 @@ duplicate work authority.
   list/form-first. See [`DESIGN.md`](DESIGN.md).
 - Home structure and global `내 업무/검토` split: ADR-025 D6/D7 / ADR-026 approval and evidence
   required; not implemented.
-- Mobile site switcher: not implemented; header tabs remain below `lg`.
 - Real Floreat imagery is retention-expired; quantitative/field/customer acceptance unverified.
 - Theme selection deferred to a future `설정 > 화면 테마` decision; no palette change.
 
 ## Next
 
-1. Add the mobile site switcher and close remaining mobile viewer gaps.
-2. Complete the ledger migration for the platform/engine stream when it closes.
-3. Revisit Home/global IA only with explicit approval and required evidence.
+1. Complete the ledger migration for the platform/engine stream when it closes.
+2. Revisit Home/global IA only with explicit approval and required evidence.
+3. Prepare the clean integration merge once the engine/analysis working tree settles.
