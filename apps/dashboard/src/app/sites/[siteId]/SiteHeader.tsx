@@ -137,6 +137,7 @@ export function SiteHeader({
   return (
     <header
       className="border-b border-line bg-surface"
+      data-site-header="true"
       // 서버 확인 범위의 읽기 전용 브리지 — 팔레트가 열릴 때 같은 목적지를
       // 가리키게 한다. URL 쿼리에는 없는 bare deep link(분석 기록 직접 연결 등)의
       // 실제 구역을 헤더가 이미 알고 있을 때만 싣는다. 판정이 아니라 힌트이며,

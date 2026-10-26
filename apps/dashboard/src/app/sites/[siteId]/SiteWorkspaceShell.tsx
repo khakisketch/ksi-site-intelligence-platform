@@ -1009,7 +1009,7 @@ export function SiteWorkspaceShell({
   // 오류·만료·복구는 이 1차 영역에 둔다.
   const stage = (<>
     {mode === "explore" && (
-      <section aria-label="선택 관측 보기" className="flex min-w-0 flex-col gap-2">
+      <section aria-label="선택 관측 보기" className="flex h-full min-w-0 min-h-0 flex-col gap-2">
         {selectionNotice}
         {selected && captureOptions.length > 0 && (
           <div data-workbench-pane-controls className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5">
@@ -1075,7 +1075,7 @@ export function SiteWorkspaceShell({
         )}
         {catalogStatus}
         {viewerRendered ? (
-          <div data-workbench-pane className="min-w-0">
+          <div data-workbench-pane className="flex min-h-0 min-w-0 flex-1 flex-col">
             <SiteWindowedPixelViewer
               siteId={facts.siteId}
               workAreaId={selected.workAreaId}
@@ -1128,7 +1128,7 @@ export function SiteWorkspaceShell({
     )}
 
     {mode === "compare" && (
-      <section aria-label="두 시점 비교" className="flex min-w-0 flex-col gap-2 max-sm:gap-1.5">
+      <section aria-label="두 시점 비교" className="flex h-full min-w-0 min-h-0 flex-col gap-2 max-sm:gap-1.5">
         {selectionNotice}
         {!areasKnown && <p role="status" className="shrink-0 text-[12.5px] leading-5 text-ink-2">작업구역 목록을 확인하지 못했습니다. 잠시 후 다시 확인하세요. 빈 목록으로 단정하지 않습니다.</p>}
         {areasKnown && selected && (comparisonReady || visualReady) && viewerJobsState !== "not-requested" && catalogStatus === null && (
@@ -1228,5 +1228,6 @@ export function SiteWorkspaceShell({
     inspectorId="workspace-inspector"
     inspectorLabel="작업공간 정보"
     detailsHostId="workspace-inspector-details"
+    viewerMode={mode !== "results"}
   />;
 }

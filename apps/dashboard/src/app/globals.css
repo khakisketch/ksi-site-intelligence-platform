@@ -582,6 +582,40 @@ body {
    `print:hidden`(Tailwind 내장 `@media print` 변형)은 사이드바·상단바·하단
    탭·내보내기 버튼 각각에 개별로 건다 — 여기서 셀렉터로 다시 감추지 않는다.
    ═══════════════════════════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Viewer-first shell — site 공간/자료 only (2026-10-26 decision A)
+
+   Dense screens keep the labelled 176/232px rail and the global top bar. On
+   viewer paths the body switches to a 56px icon rail; the main region stops
+   scrolling so the spatial stage owns the viewport. The top bar hides only
+   for a healthy session — expiry/unknown keeps its recovery strip. The site
+   header moves into the floating layer panel at lg+; mobile keeps it.
+
+   `viewer-path.ts` owns the path predicate. `ShellLayoutMode` toggles this
+   class on client navigation; the root layout sets it in the first render.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 1024px) {
+  body.viewer-shell {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+  body.viewer-shell #main-content {
+    overflow: hidden;
+  }
+  body.viewer-shell [data-shell-topbar][data-session-state="ok"] {
+    display: none;
+  }
+  body.viewer-shell [data-site-header] {
+    display: none;
+  }
+}
+
+/* Viewer panels own catalog/info toggles; the page-level URL/link triggers are
+   mobile/tablet controls and would duplicate the panel buttons at lg+. */
+[data-workbench-viewer] [data-workbench-info-trigger],
+[data-workbench-viewer] [data-workbench-info-close] {
+  display: none;
+}
+
 @media print {
   html,
   body {

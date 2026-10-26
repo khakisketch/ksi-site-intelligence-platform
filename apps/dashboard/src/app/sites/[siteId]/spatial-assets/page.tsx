@@ -1294,7 +1294,7 @@ export default async function SpatialAssetsPage({
       scopedAssetRef={sideA ? sideA.assetRef : null}
       visualContext={headerVisualContext}
     />
-    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3">
+    <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3 lg:gap-0 lg:p-0">
       <h2 className="sr-only">자료</h2>
       {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
       {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
@@ -1330,6 +1330,7 @@ export default async function SpatialAssetsPage({
                 detailsHostId="material-inspector-details"
                 catalogFooter={catalogFooter}
                 catalogDismissLabel={catalogFooter ? "이 선택으로 보기" : undefined}
+                viewerMode
               />}
           <nav aria-label="등록 자료 페이지" className="flex min-w-0 flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ cursor: null }))}>처음부터 보기</Link>}

@@ -11,9 +11,23 @@ import { PageTitle } from "./PageTitle";
 import { TopBarSearchTrigger } from "./TopBarSearchTrigger";
 import { resolvePageTitle } from "./page-title";
 
-function TopBarFrame({ title, children }: { title: string; children?: React.ReactNode }) {
+function TopBarFrame({
+  title,
+  children,
+  sessionState = "ok",
+}: {
+  title: string;
+  children?: React.ReactNode;
+  /** Viewer 셸은 정상 세션의 전역 상단바를 숨긴다. 만료·확인 실패는 복구
+   *  동작이므로 숨기지 않는다 — CSS가 이 값을 본다. */
+  sessionState?: "ok" | "expired" | "unknown";
+}) {
   return (
-    <header className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5">
+    <header
+      data-shell-topbar="true"
+      data-session-state={sessionState}
+      className="print:hidden flex shrink-0 flex-wrap items-center gap-x-3.5 gap-y-2 border-b border-line bg-surface px-4 py-2.5 sm:px-5"
+    >
       <BackButton />
       <PageTitle fallback={title} />
       <span className="flex-1" />
@@ -46,7 +60,7 @@ export async function TopBar() {
     const expired = error instanceof MissingSessionError || (error instanceof CoreApiError && error.status === 401);
     const denied = error instanceof CoreApiError && error.status === 403;
     if (!expired && !denied) {
-      return <TopBarFrame title={title}>
+      return <TopBarFrame title={title} sessionState="unknown">
         <span role="status" className="rounded-md bg-sunk px-2.5 py-1 text-[13px] break-keep text-ink-2">
           서버 연결을 확인하지 못했습니다. 잠시 후 다시 시도하세요.
         </span>
@@ -62,7 +76,7 @@ export async function TopBar() {
       ? `/login?next=${encodeURIComponent(returnTo)}`
       : "/login";
     return (
-      <TopBarFrame title={title}>
+      <TopBarFrame title={title} sessionState="expired">
         <span className="rounded-md bg-high-bg px-2.5 py-1 text-[13px] break-keep text-high-ink">
           {denied ? "이 계정의 접근 권한을 확인하세요." : "세션이 만료되었습니다."}
         </span>

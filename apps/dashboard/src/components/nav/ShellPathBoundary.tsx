@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { isChromelessPath } from "./chromeless-path";
+import { isViewerPath } from "./viewer-path";
 
 const CONSOLE_BODY_CLASSES = [
   "lg:grid",
@@ -18,21 +19,25 @@ const CONSOLE_BODY_CLASSES = [
  * redirect to /login. Reconcile the body grid with the live pathname so the
  * chromeless login card never inherits the console's 176px sidebar column.
  *
- * The console shell is deliberately uniform: every authenticated desktop
- * screen keeps the full labelled rail and the global top bar. There is no
- * path-based compact mode; the previous 64px workbench rail made the same
- * product look like a different app on workspace/materials.
+ * Dense authenticated screens keep the full labelled rail and the global top
+ * bar. The viewer-first paths (site 공간/자료) deliberately switch to the
+ * 56px icon rail and hide the top bar/site header at lg+; the exception is
+ * owned by `viewer-path.ts` and is toggled here because layouts survive
+ * client navigation.
  */
 export function ShellLayoutMode() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const chromeless = isChromelessPath(pathname);
+    const viewer = !chromeless && isViewerPath(pathname, searchParams?.toString());
     document.body.classList.add("min-h-full");
     for (const className of CONSOLE_BODY_CLASSES) {
       document.body.classList.toggle(className, !chromeless);
     }
-  }, [pathname]);
+    document.body.classList.toggle("viewer-shell", viewer);
+  }, [pathname, searchParams]);
 
   return null;
 }

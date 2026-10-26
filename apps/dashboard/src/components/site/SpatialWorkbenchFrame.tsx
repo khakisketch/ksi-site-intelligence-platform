@@ -2,6 +2,9 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { ViewerSiteBadge } from "@/components/nav/ViewerSiteBadge";
+import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
+
 /**
  * 공간 작업환경 공유 오버레이 셸 — 실제 등록 자료 화면과
  * `/design-preview/materials` 예시 화면이 같은 머리/무대/드로어 관계를 쓴다.
@@ -37,6 +40,8 @@ export function SpatialWorkbenchFrame({
   defaultCatalogOpen = false,
   catalogFooter = null,
   catalogDismissLabel,
+  viewerMode = false,
+  viewerInspectorDefaultOpen = true,
 }: {
   /** 예시 경로의 고정 안내 등, 맥락막대 위에 두는 띠. 실제 경로는 두지 않는다. */
   banner?: ReactNode;
@@ -76,6 +81,14 @@ export function SpatialWorkbenchFrame({
    * 주지 않으면 뷰어는 기존 자리 펼침을 그대로 둔다.
    */
   detailsHostId?: string;
+  /**
+   * Viewer-first 배치 — lg+에서 무대를 전체 폭으로 두고 목록·정보를 떠 있는
+   * 패널로 낮춘다. 모바일/태블릿은 기존 드로어 동작을 그대로 쓴다. 이 플래그는
+   * 배치만 바꾸며 조회·권한·선택 판정은 호출자가 그대로 소유한다.
+   */
+  viewerMode?: boolean;
+  /** Viewer 데스크톱에서 정보 카드를 xl+에 기본으로 연다(닫으면 기억). */
+  viewerInspectorDefaultOpen?: boolean;
 }) {
   const showInspector = inspectorOpen && inspector !== null;
   const [catalogOpen, setCatalogOpen] = useState(defaultCatalogOpen);
@@ -100,11 +113,53 @@ export function SpatialWorkbenchFrame({
     return () => media.removeEventListener?.("change", update);
   }, []);
   const persistentInspector = wideInspector && inspector !== null;
-  const showInspectorPanel = showInspector || persistentInspector;
+  // Viewer placement is desktop-only; mobile keeps the existing sheet behavior.
+  // Two queries: lg starts the floating viewer, xl applies the default-open
+  // layer/info panels decided in the design study.
+  const [viewerDesktop, setViewerDesktop] = useState(false);
+  const [viewerWide, setViewerWide] = useState(false);
+  useEffect(() => {
+    if (!viewerMode || typeof window.matchMedia !== "function") return;
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const wide = window.matchMedia("(min-width: 1280px)");
+    const update = () => {
+      setViewerDesktop(desktop.matches);
+      setViewerWide(wide.matches);
+    };
+    update();
+    desktop.addEventListener?.("change", update);
+    wide.addEventListener?.("change", update);
+    return () => {
+      desktop.removeEventListener?.("change", update);
+      wide.removeEventListener?.("change", update);
+    };
+  }, [viewerMode]);
+  const viewerDesktopMode = viewerMode && viewerDesktop;
+  const [viewerInspectorOpen, setViewerInspectorOpen] = useState(false);
+  const viewerCatalogInitialized = useRef(false);
+  const viewerInspectorInitialized = useRef(false);
+  const catalogFocusRequested = useRef(false);
+  const catalogFocusReturn = useRef(false);
+  const viewerCatalogToggleRef = useRef<HTMLButtonElement>(null);
+  const viewerInfoToggleRef = useRef<HTMLButtonElement>(null);
+  const infoFocusRequested = useRef(false);
+  useEffect(() => {
+    if (!viewerDesktopMode || !viewerWide || viewerCatalogInitialized.current) return;
+    viewerCatalogInitialized.current = true;
+    setCatalogOpen(true);
+  }, [viewerDesktopMode, viewerWide]);
+  useEffect(() => {
+    if (!viewerDesktopMode || !viewerWide || viewerInspectorInitialized.current) return;
+    viewerInspectorInitialized.current = true;
+    setViewerInspectorOpen(viewerInspectorDefaultOpen && inspector !== null);
+  }, [viewerDesktopMode, viewerWide, viewerInspectorDefaultOpen, inspector]);
+  const showInspectorPanel = viewerDesktopMode
+    ? viewerInspectorOpen && inspector !== null
+    : showInspector || persistentInspector;
 
   useLayoutEffect(() => {
     const stageElement = stageRef.current;
-    if (!stageElement || (!catalogOpen && !showInspector)) return;
+    if (viewerDesktopMode || !stageElement || (!catalogOpen && !showInspector)) return;
     let observed: Element[] = [];
     const measure = () => {
       const desktop = typeof matchMedia !== "function" || matchMedia("(min-width: 1024px)").matches;
@@ -142,28 +197,70 @@ export function SpatialWorkbenchFrame({
       resize?.disconnect();
       window.removeEventListener("resize", measure);
     };
-  }, [catalogOpen, showInspector]);
+  }, [catalogOpen, showInspector, viewerDesktopMode]);
 
   useEffect(() => {
-    if (catalogOpen) catalogRef.current?.focus();
+    if (catalogOpen && catalogFocusRequested.current) {
+      catalogFocusRequested.current = false;
+      catalogRef.current?.focus();
+    }
   }, [catalogOpen]);
 
   useEffect(() => {
-    if (showInspector && !wasInspectorOpen.current) inspectorRef.current?.focus();
-    if (!showInspector && wasInspectorOpen.current) {
-      rootRef.current?.querySelector<HTMLElement>("[data-workbench-info-trigger]")?.focus();
+    if (catalogOpen || !catalogFocusReturn.current) return;
+    catalogFocusReturn.current = false;
+    (viewerDesktopMode ? viewerCatalogToggleRef.current : catalogToggleRef.current)?.focus();
+  }, [catalogOpen, viewerDesktopMode]);
+
+  useEffect(() => {
+    const open = showInspectorPanel;
+    if (open && (!viewerDesktopMode || infoFocusRequested.current)) {
+      infoFocusRequested.current = false;
+      inspectorRef.current?.focus();
     }
-    wasInspectorOpen.current = showInspector;
-  }, [showInspector]);
+    if (!open && wasInspectorOpen.current) {
+      const trigger = viewerDesktopMode
+        ? viewerInfoToggleRef.current
+        : rootRef.current?.querySelector<HTMLElement>("[data-workbench-info-trigger]");
+      trigger?.focus();
+    }
+    wasInspectorOpen.current = open;
+  }, [showInspectorPanel, viewerDesktopMode]);
 
   const closeCatalog = () => {
     setCatalogOpen(false);
-    catalogToggleRef.current?.focus();
+    if (viewerDesktopMode) {
+      // The closed-state trigger is mounted by the same state change; wait for
+      // the commit instead of focusing a ref that is still null.
+      catalogFocusReturn.current = true;
+    } else {
+      catalogToggleRef.current?.focus();
+    }
+  };
+
+  const openCatalog = () => {
+    catalogFocusRequested.current = true;
+    setCatalogOpen(true);
+  };
+
+  const closeViewerInspector = () => {
+    setViewerInspectorOpen(false);
+    viewerInfoToggleRef.current?.focus();
+  };
+
+  const toggleViewerInspector = () => {
+    if (viewerInspectorOpen) {
+      closeViewerInspector();
+      return;
+    }
+    infoFocusRequested.current = true;
+    setViewerInspectorOpen(true);
   };
 
   const onCatalogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-    // 넓은 화면에서는 목록이 상시 열린 열이라 닫을 드로어가 없다.
-    if (wideInspector) return;
+    // 넓은 화면의 상시 열(일반 셸)에는 닫을 드로어가 없다. Viewer의 떠 있는
+    // 패널은 넓은 화면에서도 닫을 수 있다.
+    if (wideInspector && !viewerDesktopMode) return;
     // 드로어 안에 포커스가 있을 때만 닫는다 — 팔레트 등 바깥의 Escape에는
     // 손대지 않는다. 합성 중 키는 브라우저에 맡긴다.
     if (event.nativeEvent.isComposing) return;
@@ -177,10 +274,135 @@ export function SpatialWorkbenchFrame({
     if (event.nativeEvent.isComposing) return;
     if (event.key === "Escape") {
       event.stopPropagation();
-      if (onCloseInspector) onCloseInspector();
+      if (viewerDesktopMode) closeViewerInspector();
+      else if (onCloseInspector) onCloseInspector();
       else inspectorRef.current?.querySelector<HTMLElement>("[data-workbench-info-close]")?.click();
     }
   };
+
+  if (viewerDesktopMode) {
+    return (
+      <div
+        ref={rootRef}
+        data-workbench-viewer="true"
+        className="relative flex min-w-0 min-h-0 flex-1 flex-col overflow-hidden bg-page"
+      >
+        <div
+          ref={contextRef}
+          data-workbench-context-bar
+          className="absolute inset-x-3 top-3 z-40 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 shadow-lg backdrop-blur"
+        >
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">{contextBar}</div>
+          {inspector !== null && (
+            <button
+              ref={viewerInfoToggleRef}
+              type="button"
+              aria-expanded={viewerInspectorOpen}
+              aria-controls={inspectorId}
+              onClick={toggleViewerInspector}
+              className={`tap-target inline-flex min-h-9 shrink-0 items-center rounded-md border px-2.5 text-[11.5px] font-semibold transition-colors ${
+                viewerInspectorOpen
+                  ? "border-line-strong bg-sunk text-ink-1"
+                  : "border-line bg-surface text-ink-2 hover:bg-sunk"
+              }`}
+            >
+              정보
+            </button>
+          )}
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 top-[62px] min-h-0">
+          <div ref={stageRef} className="relative h-full min-h-0 overflow-hidden">
+            {stage}
+          </div>
+
+          {catalogOpen ? (
+            <aside
+              ref={catalogRef}
+              id="workbench-catalog"
+              aria-label={catalogLabel}
+              tabIndex={-1}
+              onKeyDown={onCatalogKeyDown}
+              data-viewer-panel="catalog"
+              className="absolute bottom-3 left-3 top-2 z-30 flex w-[300px] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+            >
+              <ViewerSiteNav />
+              <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
+                <div className="min-w-0">
+                  <p className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-ink-muted">Layer panel</p>
+                  <h3 className="truncate text-[12.5px] font-bold">{catalogLabel}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCatalog}
+                  aria-label={`${catalogLabel} 닫기`}
+                  className="tap-target grid size-8 flex-none place-items-center rounded-md text-[15px] text-ink-muted hover:bg-sunk hover:text-ink-1"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2">{catalog}</div>
+              {catalogFooter && (
+                <div className="shrink-0 border-t border-line bg-surface px-3 py-2">
+                  {catalogFooter}
+                  {catalogDismissLabel && (
+                    <button type="button" onClick={closeCatalog} className="btn btn-primary mt-2 min-h-10 w-full text-[12px]">
+                      {catalogDismissLabel}
+                    </button>
+                  )}
+                </div>
+              )}
+            </aside>
+          ) : (
+            <button
+              ref={viewerCatalogToggleRef}
+              type="button"
+              aria-expanded={false}
+              aria-controls="workbench-catalog"
+              onClick={openCatalog}
+              className="absolute left-3 top-2 z-30 flex min-h-10 max-w-[min(300px,calc(100%-24px))] items-center gap-2 rounded-lg border border-line bg-surface/95 px-2.5 text-[12px] font-semibold text-ink-1 shadow-lg backdrop-blur hover:bg-surface"
+            >
+              <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none text-ink-2">
+                <path d="m12 3 9 5-9 5-9-5Z" />
+                <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
+              </svg>
+              <ViewerSiteBadge fallback="현장" />
+              <span className="shrink-0 text-ink-muted">· {catalogLabel}</span>
+            </button>
+          )}
+
+          {(inspector !== null || detailsHostId) && (
+            <section
+              ref={inspectorRef}
+              id={inspectorId}
+              aria-label={inspectorLabel}
+              tabIndex={-1}
+              onKeyDown={onInspectorKeyDown}
+              style={{ display: showInspectorPanel ? undefined : "none" }}
+              data-viewer-panel="inspector"
+              className="absolute right-3 bottom-3 z-30 flex max-h-[calc(100%-16px)] w-[min(332px,calc(100%-24px))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-2xl"
+            >
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-line px-3 py-1.5">
+                <span className="font-mono text-[8.5px] uppercase tracking-[0.1em] text-ink-muted">Inspector</span>
+                <button
+                  type="button"
+                  onClick={closeViewerInspector}
+                  aria-label={`${inspectorLabel} 닫기`}
+                  className="tap-target grid size-8 place-items-center rounded-md text-[15px] text-ink-muted hover:bg-sunk hover:text-ink-1"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="min-h-0 overflow-y-auto overscroll-contain p-3 text-[12px] leading-5 text-ink-2">
+                {showInspectorPanel ? inspector : null}
+                {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div ref={rootRef} className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
@@ -192,7 +414,7 @@ export function SpatialWorkbenchFrame({
             type="button"
             aria-expanded={catalogOpen}
             aria-controls="workbench-catalog"
-            onClick={() => (catalogOpen ? closeCatalog() : setCatalogOpen(true))}
+            onClick={() => (catalogOpen ? closeCatalog() : openCatalog())}
             className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
           >
             <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
