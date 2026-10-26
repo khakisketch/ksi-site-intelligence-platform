@@ -96,6 +96,8 @@ export interface WindowedPixelViewerProps {
    * 주면 만료·숨김 상태의 회복 동작이 이력 페이지가 아니라 요청 폼을 연다.
    */
   prepareHref?: string;
+  /** 자료 탐색의 큰 무대에서 만료·미준비 상태도 실제 범위 캔버스로 보여 준다. */
+  showAbsentExtentCanvas?: boolean;
   /** 같은 네이티브 평면의 작업구역 링 — 좌표 변환 없이 겹쳐 그린다. */
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
@@ -218,6 +220,7 @@ function WindowedLayerView({
   canRequest,
   requestsHref,
   prepareHref,
+  showAbsentExtentCanvas = false,
   workAreaRing,
   workAreaCrs,
   idPrefix,
@@ -233,6 +236,7 @@ function WindowedLayerView({
   canRequest: boolean;
   requestsHref: string;
   prepareHref?: string;
+  showAbsentExtentCanvas?: boolean;
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
   idPrefix: string;
@@ -723,7 +727,7 @@ function WindowedLayerView({
   );
   return (
 
-    <div className="flex flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       {/* 실제 화면이 먼저다. 이어 보기는 진입 시 이미 준비된 창만 읽는다(읽기 전용).
           새 준비 요청은 아래의 명시적 버튼에서만 나간다. */}
       {existingCrop?.receipt ? (
@@ -756,6 +760,7 @@ function WindowedLayerView({
           canRequest={canRequest}
           requestsHref={requestsHref}
           prepareHref={prepareHref}
+          showAbsentExtentCanvas={showAbsentExtentCanvas}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
           hidePrepareActions={hidePrepareActions}
@@ -793,6 +798,7 @@ export function SiteWindowedPixelViewer({
   canRequest,
   requestsHref,
   prepareHref,
+  showAbsentExtentCanvas = false,
   workAreaRing,
   workAreaCrs,
   observationHeading,
@@ -906,7 +912,7 @@ export function SiteWindowedPixelViewer({
     <section
       aria-label={`${WINDOWED_VIEWER_ADAPTER_LABEL}${observationHeading ? ` · ${observationHeading}` : ""}`}
       className={canvasMode
-        ? "flex min-w-0 flex-col gap-1.5"
+        ? "flex h-full min-h-0 min-w-0 flex-col gap-1.5"
         : `flex min-w-0 flex-col gap-3 ${hideLayerControls ? "" : "rounded-xl border border-line bg-surface px-4 py-3"}`}
     >
       {!slimHeader && (
@@ -957,6 +963,7 @@ export function SiteWindowedPixelViewer({
           canRequest={canRequest}
           requestsHref={requestsHref}
           prepareHref={prepareHref}
+          showAbsentExtentCanvas={showAbsentExtentCanvas}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
           idPrefix={`${idPrefix}-${layer.assetRef === layers[0]?.assetRef ? "first" : "second"}`}

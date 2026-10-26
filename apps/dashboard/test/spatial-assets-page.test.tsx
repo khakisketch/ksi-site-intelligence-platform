@@ -163,9 +163,12 @@ describe("spatial asset catalog page", () => {
       }],
     });
     const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef: current.assetRef }));
-    expect(html).toContain("선택 자료 정보에서 준비 요청");
+    expect(html).toContain(">준비 요청</a>");
     expect(html).toContain(`assetRef=${current.assetRef}`);
     expect(html).toContain("info=1");
+    // 만료여도 무대에는 실제 등록 범위가 남는다 — 사진이 아니라 도식임을 명시한다.
+    expect(html).toContain("등록 범위 · 실제 픽셀 아님");
+    expect(html).toContain("등록 범위 도식");
   });
 
   it("does not coalesce when an old expired record coexists with a newer available one", async () => {

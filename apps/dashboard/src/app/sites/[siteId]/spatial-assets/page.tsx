@@ -544,6 +544,7 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
     canRequest={canRequest}
     requestsHref={requestsHref}
     prepareHref={materialsHref(siteId, workAreaId, { assetRef: item.assetRef, info: "1" })}
+    showAbsentExtentCanvas
     workAreaRing={workAreaRing}
     workAreaCrs={workAreaCrs}
     observationHeading={heading}
@@ -1222,7 +1223,6 @@ export default async function SpatialAssetsPage({
         <div className="min-w-0 lg:min-h-0 lg:flex-1">
           {centerPane("A", sideA)}
         </div>
-        <p className="shrink-0 text-[11.5px] leading-5 text-ink-muted">두 시점을 나란히 보려면 목록에서 다른 자료를 「B에 두기」로 고르세요.</p>
       </>}
       {sideA && sideB && compareMode && <>
         {workspaceReturnHref && (
