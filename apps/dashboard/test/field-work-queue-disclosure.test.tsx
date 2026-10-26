@@ -67,7 +67,7 @@ describe("Field work queue technical disclosure", () => {
       order({ workOrderId: "wo-unique-1", name: "첫 관측", updatedAt: "2026-10-01T00:00:00Z" }),
       order({ workOrderId: "wo-unique-2", name: "다음 관측", updatedAt: "2026-10-02T00:00:00Z" }),
     ]);
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
 
     const first = screen.getByRole("link", { name: /첫 관측/ });
     const second = screen.getByRole("link", { name: /다음 관측/ });
@@ -88,7 +88,7 @@ describe("Field work queue technical disclosure", () => {
       order({ workOrderId: "wo-dup-1", name: "같은 관측" }),
       order({ workOrderId: "wo-dup-2", name: "같은 관측" }),
     ]);
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
 
     const links = screen.getAllByRole("link", { name: /같은 관측/ });
     expect(links).toHaveLength(2);
@@ -103,7 +103,7 @@ describe("Field work queue technical disclosure", () => {
 
   it("맥락이 빠진 행은 펼침을 둔다", async () => {
     mocked.workOrders.mockResolvedValue([order({ workOrderId: "wo-missing-1", workAreaIds: ["area-gone"] })]);
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
 
     const link = screen.getByRole("link", { name: /고유 관측 작업/ });
     expect(link.textContent).not.toContain("wo-missing-1");

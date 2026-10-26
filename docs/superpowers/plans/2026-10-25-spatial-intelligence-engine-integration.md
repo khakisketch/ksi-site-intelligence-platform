@@ -543,7 +543,7 @@ unchanged; the unrelated child stash-apply was narrowly repaired with original s
 | Core ingress/admission/currentness, protected bytes, actual first worker and retry/replay | Implemented and verified, including designated principal, five runtime pins and signed new-purpose activation |
 | Separate V2/V3 output publication, discovery, bounded guarded file reads, MCP/Console consumers | Implemented and verified at local generated/official SDK scope; external AI-host installation not inferred |
 | Actual Console declaration→inspection→V3 result→delta download; rejection/recovery/resume | Verified through actual common factory, not manually copied mounts or substituted success replies |
-| Production policy/runtime/envelope signing, installed host containment, portable release artifact | BLOCKED / unverified; temporary signatures and linked-worktree compilation cannot establish these gates |
+| Production policy/runtime/envelope signing, installed host containment, portable release artifact | Signing/host gates remain BLOCKED / unverified; same-platform Dashboard package relocation is verified in the follow-up below, not a signed/full-platform release |
 | Permitted retained customer inputs, EPSG:7850/vertical evidence, independent consumer hosts, field/quantitative/repeated-use customer acceptance | BLOCKED / unavailable; no imagery, accuracy, Terra or customer acceptance invented |
 | Main merge, push, production/TLS/cloud/billing/account mutation; Home/global IA/theme | Not performed or newly authorized; original main work remains protected |
 
@@ -556,3 +556,54 @@ recorded synthetic/authorized-host scope and is not reopened or promoted by this
 Only unavailable signing/provisioning, deployment-host proof, retained permitted customer data and
 field/consumer/customer acceptance remain external. Continue independently actionable local code;
 do not turn those gates into an implementation-completion claim or an invented approval request.
+
+### Dashboard standalone package follow-up — 2026-10-27
+
+Human approved continuing with isolated package validation; no merge, push, shared dependency
+installation, production/TLS, account, signing or existing preview-server changes were authorized
+or performed. Base: `b9dc81ea578aa3b889b5c117ed0c24c42e7c7794` on the same integration worktree.
+
+The original Webpack standalone copied outside the checkout failed with `Cannot find module 'next'`.
+Its27-file warning was real: the app-local tracing root excluded the linked dependencies. A shared
+build-root helper now picks the nearest common parent of the app and real `node_modules` for both
+Turbopack and NFT. Normal app-local/Docker layouts remain unchanged. Both compiler paths now finish
+without the omission warning. Webpack additionally omitted four pnpm resolver aliases despite
+including their target bytes; the package builder restores only aliases to already traced targets,
+not an unbounded dependency copy or a hand-maintained missing-file patch.
+
+`package:standalone` validates trace presence/bytes and relocatable links, rejects build-time `.env`
+files and existing/overlapping output, preserves the generated nested layout, copies static/public
+assets and retains the production-profile guard via `start.mjs`. `verify:standalone` copies the
+package again outside the checkout, strips inherited credentials/Node path overrides, and confines
+CommonJS resolution to that copy. It checks login200, all referenced JS/CSS200 (Turbopack12 /
+Webpack11 assets), protected page307, unauthenticated malformed-JSON BFF POST401, retained public
+asset307 and incomplete EXTERNAL_VM rejection. Core is deliberately unreachable. This diagnostic
+guard is **not** an OS sandbox or native-host containment claim.
+
+The stricter run-local compiler included generated route types and exposed a pre-existing `/field`
+optional-whole-props signature error. Removing its default `{}` argument preserves runtime behavior;
+direct component tests now pass `{}` as Next does. The prior final-build compiler excluded
+`test-results`, including its generated types: its compilation/static/source checks remain evidence,
+but do not establish the generated-route-type check. Both new complete builds include those types
+and pass. Final Dashboard suite: **2,425 tests /232 files**, including12 new packaging regressions;
+generated-type-inclusive `tsc`, changed-source ESLint and `git diff --check` pass. Full ESLint exits0
+with7 pre-existing warnings in unchanged evidence/delta-test files (no new warnings). Backend
+contracts are unchanged, not relabeled as newly rerun tests.
+
+An actual externally located Turbopack package also rendered the existing configured-local-OIDC
+login at1440×900 and390×844: primary CTA visible/unobscured, mobile keyboard focus visible, no
+horizontal overflow or failed resource responses. No login/issuer registration was mutated and
+this is not an authenticated end-to-end packaged workflow claim. Only the new packaged preview3240
+and verification browsers were stopped; the existing P2/Core/issuer previews were not restarted.
+
+Durable non-secret logs, source/package manifests, two same-platform package archives, smoke
+receipts and captures: `~/.local/state/ksi-console-ia-20261025/integration-20261026/standalone-20261027/`.
+`main-protection.json` rechecks the protected original main patch and16 original untracked inputs
+against their prior hashes: unchanged. No main merge, push or deployment occurred.
+Scratch preserves failed attempts at `/tmp/opencode/ksi-standalone-20261027/`. Actual environment:
+**Linux ARM64, Node24.19.0, installed Next16.4.2**. This closes the linked-worktree default-build and
+local relocation defect, **not** Docker's Node22 Alpine/locked-version proof, a signed platform
+release, production activation, independent native containment, permitted retained customer data,
+CRS/vertical/field accuracy, external consumer-host or customer acceptance. V2/V3 semantics and the
+viewer-first UI are unchanged. Those genuine external/target-environment gates still prevent
+whole-product/deployment acceptance; historical F-03/Task5a/5c scope is unchanged.

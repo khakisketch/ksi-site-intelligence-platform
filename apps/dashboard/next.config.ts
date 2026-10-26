@@ -1,5 +1,8 @@
 import path from "node:path";
 import type { NextConfig } from "next";
+import { dashboardBuildRoot } from "./scripts/dashboard-build-root.mjs";
+
+const buildRoot = dashboardBuildRoot(__dirname);
 
 const extraAllowedDevOrigins = (process.env.KSI_DASHBOARD_ALLOWED_DEV_ORIGINS ?? "")
   .split(",")
@@ -27,10 +30,11 @@ const nextConfig: NextConfig = {
   // VM image는 Next standalone output만 복사한다. 소스·dev 의존을 runtime image에
   // 남기지 않고 Auth.js/Core BFF를 같은 Node 프로세스로 실행한다.
   output: "standalone",
-  // 홈 디렉터리에 무관한 package-lock.json 이 있어 Turbopack 이 workspace root 를
-  // 잘못 추론한다 — apps/dashboard 를 명시적으로 고정한다.
+  // Linked worktrees share dependencies outside the app. Use the same bounded
+  // root for tracing and bundling; ordinary/Docker installs remain app-local.
+  outputFileTracingRoot: buildRoot,
   turbopack: {
-    root: path.join(__dirname),
+    root: buildRoot,
   },
   // **dev 전용.** Next 16 dev 서버는 기동 호스트(기본 localhost) 밖의 origin 에서
   // 온 dev 자산 요청을 403 으로 막는다. 그 결과 `127.0.0.1:<port>` 로 열면 HTML 은

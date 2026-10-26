@@ -59,7 +59,7 @@ afterEach(() => { cleanup(); vi.resetAllMocks(); });
 
 describe("Field work list page", () => {
   it("names the work queue, inbox, and observation record consistently", async () => {
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
     // 보기 전환은 탭으로, 한 줄 목적만 둔다(설명벽을 주 내비로 쓰지 않는다).
     const nav = screen.getByRole("navigation", { name: "업무 보기 방식" });
     expect(nav).toBeTruthy();
@@ -72,7 +72,7 @@ describe("Field work list page", () => {
       kind: "ready",
       principal: { kind: "OPERATOR", principalId: "viewer-1", organizationId: "org-1", permissions: [] },
     });
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
     expect(screen.queryByRole("link", { name: "관측 자료 등록" })).toBeNull();
     expect(screen.queryByText(/현재 계정으로는 관측 자료를 등록할 수 없습니다/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /관측 자료 등록/ }));
@@ -80,7 +80,7 @@ describe("Field work list page", () => {
     expect(mocked.operations).not.toHaveBeenCalled();
   });
   it("does not describe an unknown operations state as an inspection task", async () => {
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
     const task = screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ });
     expect(task.textContent).toContain("담당·기한 상태 확인");
     expect(task.textContent).not.toContain("자료 등록·검사 확인");
@@ -90,12 +90,12 @@ describe("Field work list page", () => {
 
   it("lets a closed operation lead to history even when its retained observation is approved", async () => {
     mocked.operations.mockResolvedValueOnce([{ workOrderId: "obs-work-opaque-0001", workflowStatus: "CLOSED" }]);
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
     expect(screen.getByRole("link", { name: /동측 구역 외부 산출물 등록/ }).textContent).toContain("이력 보기");
   });
 
   it("summarizes all four queue groups and keeps opaque IDs out of task rows", async () => {
-    render(await FieldWorkListPage());
+    render(await FieldWorkListPage({}));
 
     const summary = within(screen.getByRole("navigation", { name: "작업 요약" }));
     expect(summary.getByText("결정 필요")).toBeTruthy();

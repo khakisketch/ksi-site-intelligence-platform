@@ -39,7 +39,7 @@ const SUMMARY_GROUPS = [
 
 export default async function FieldWorkListPage({ searchParams }: {
   searchParams?: Promise<{ q?: string | string[]; group?: string | string[]; site?: string | string[] }>;
-} = {}) {
+}) {
   const rawParams = await searchParams ?? {};
   const params = {
     q: typeof rawParams.q === "string" ? rawParams.q : undefined,

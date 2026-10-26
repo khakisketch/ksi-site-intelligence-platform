@@ -200,6 +200,44 @@ npx tsc --noEmit
 npm run build
 ```
 
+### Relocatable standalone package
+
+With the already prepared dependencies, build and package into a **new directory
+outside the source project** (its parent must already exist):
+
+```bash
+npm run build
+npm run package:standalone -- /tmp/opencode/dashboard-package
+TMPDIR=/tmp/opencode npm run verify:standalone -- /tmp/opencode/dashboard-package
+```
+
+Use the same `KSI_DASHBOARD_DIST_DIR` for build and packaging when using an
+isolated build directory; the verifier reads the package's own manifest. Both
+default Turbopack and `npm run build -- --webpack` are supported by this path.
+The common build/tracing root includes a linked worktree's real `node_modules`,
+while ordinary installs (including the existing Docker builder) stay app-local.
+Packaging checks traced bytes, rejects escaping/broken/absolute runtime links
+and `.env` files, includes `public/` and generated static assets, and restores
+missing pnpm aliases **only to packages already included by tracing**. It does
+not install or change shared dependencies. Rebuild if traced source bytes changed.
+
+Start the resulting package with `node /path/to/dashboard-package/start.mjs`,
+supplying the existing runtime auth/Core environment and secret files separately.
+The launcher retains `start-production.mjs`'s LOCAL/EXTERNAL_VM validation; do not
+bypass it by invoking the nested generated `server.js`. Do not flatten the package:
+the generated app may be nested beneath its tracing root. No source tree or
+external `node_modules` directory should be needed at runtime.
+
+The verifier runs only **trusted** build output, copies it again to a fresh
+temporary directory, strips inherited credentials and Node resolution overrides,
+uses loopback plus an unreachable Core, and checks login, JS/CSS, retained public
+asset gating, unauthenticated page/API rejection and incomplete EXTERNAL_VM
+configuration rejection. It stops its own server and removes its temporary copy.
+Its CommonJS-resolution guard is diagnostic, **not OS containment**. The recorded
+local proof is Linux ARM64 / Node24.19.0 / installed Next16.4.2; it does not verify
+the Dockerfile's Node22 Alpine/locked-dependency image, cross-platform native
+libraries, real OIDC/customer use, production TLS, signing or deployment approval.
+
 The browser suite starts an isolated local Identity/Core/Dashboard stack and
 checks the `390`, `768`, `1024`, and `1440` px layouts, OIDC sign-in, primary
 navigation, horizontal overflow, touch targets, reduced motion, and serious or

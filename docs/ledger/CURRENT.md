@@ -19,7 +19,7 @@ acceptance remains external and unverified.
 | Work | Owner | Status | Evidence / next |
 |---|---|---|---|
 | Console desktop-first UX | Build | Viewer-first deployed | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — 56px viewer rail, full-bleed site 공간/자료, collapsible layer/inspector, visual site covers, real extents; dense 업무/결과/검토 retained |
-| Engine + Console integration | Build | P1 + P2 local implementation/integration verified; activation/customer gates blocked; not deployed or merged to main | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) + [owning SIE plan](../superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md#p2-final-local-acceptance-reconciliation--2026-10-27) — isolated `integration/viewer-first-20261026`; actual Console mask→first V3 worker→separate delta download and rejected-input recovery/resume; backend372/UI2413/type/lint; no customer/host/production acceptance inferred |
+| Engine + Console integration | Build | P1 + P2 local integration and Dashboard package relocation verified; activation/customer/target-image gates blocked; not deployed or merged to main | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) + [owning SIE plan](../superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md#dashboard-standalone-package-follow-up--2026-10-27) — actual Console mask→V3→separate delta retained; default Turbopack/Webpack builds and external-path package startup/static/auth-denial checks pass; UI2425/type/lint; Linux ARM64/Node24 proof only, no Docker/host/customer acceptance inferred |
 | Spatial engine integration | Build | Active, separate uncommitted stream | [`../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md) — do not duplicate here until close |
 | Ledger/document consolidation | Build | Active | This directory; legacy console boards deleted after consolidation |
 
@@ -51,4 +51,6 @@ duplicate work authority.
    main changes remain protected. Do not restart the older shared runtime to test this candidate.
 4. P2 local implementation and generated-byte/replay/Console verification are complete at the owning
    SIE plan's scope. Further activation/customer acceptance needs genuine signing, host containment,
-   portable release and permitted data/consumer inputs; synthetic success does not supply those gates.
+   target-image/signed release and permitted data/consumer inputs; synthetic success does not supply
+   those gates. Same-platform Dashboard packaging/relocation is now verified in the SIE follow-up;
+   Docker Node22 Alpine and full-platform/production portability are not thereby established.

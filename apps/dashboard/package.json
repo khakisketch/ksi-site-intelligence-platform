@@ -7,6 +7,8 @@
     "dev:local": "node scripts/run-local-oidc-stack.mjs --tailscale disabled",
     "dev:dashboard": "next dev",
     "build": "next build",
+    "package:standalone": "node scripts/package-standalone.mjs",
+    "verify:standalone": "node scripts/verify-standalone.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
