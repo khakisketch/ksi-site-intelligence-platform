@@ -1,0 +1,569 @@
+{
+  "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+  "parentSubject": {
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workOrderId": "work-parent",
+    "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "revision": 1,
+    "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "baselineSubject": {
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workOrderId": "work-baseline",
+    "submissionId": "ers-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "revision": 1,
+    "submissionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+  },
+  "declaration": {
+    "contractVersion": "external-mask-child-declaration.v1",
+    "declarationId": "decl-1",
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "childKind": "MASK_CHILD",
+    "maskChildId": "mask-child-1",
+    "maskArtifactId": "mask-artifact-1",
+    "parentSubject": {
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workOrderId": "work-parent",
+      "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": 1,
+      "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "targetBaselineSubject": {
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workOrderId": "work-baseline",
+      "submissionId": "ers-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revision": 1,
+      "submissionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "targetBaselineDsmArtifactId": "dsm-baseline-1",
+    "declaredSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "declaredSizeBytes": 2,
+    "declarationDigest": "sha256:4cff2dedfb1d48bb159cc2ddc3643f5469dc91ff7453f1b36fb283e50305e83e"
+  },
+  "manifest": {
+    "contractVersion": "external-mask-observed-manifest.v1",
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "childKind": "MASK_CHILD",
+    "maskChildId": "mask-child-1",
+    "maskArtifactId": "mask-artifact-1",
+    "subject": {
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workOrderId": "work-parent",
+      "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "revision": 1,
+      "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "parentSubjectDigest": "sha256:47a71f8f638ae6564d730146570bc2b44cc9c95d8cba1984278a9b6116423558",
+    "targetBaselineDsmArtifactId": "dsm-baseline-1",
+    "targetBaselineSubjectDigest": "sha256:0733c4ffcd7fa822e9a7c8fa15f32bab55398b62158e3bcbc53b84611b63ffe6",
+    "observedSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "observedSizeBytes": 2,
+    "observedInspectionReportDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "inspectionProfileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "rows": 4,
+    "columns": 4,
+    "transform": [
+      1.0,
+      0.0,
+      100.0,
+      0.0,
+      -1.0,
+      200.0
+    ],
+    "transformDigest": "sha256:346c581086b30b00404a54bf59815dcbd9b363b042cbef1b1989049c33feb33b",
+    "observedCrsIdentifier": "EPSG:5186",
+    "observedCrsDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "dtype": "UINT8",
+    "bandCount": 1,
+    "retainValue": 0,
+    "excludeValue": 1,
+    "nodataRepresentation": "NONE",
+    "bounds": [
+      100.0,
+      196.0,
+      104.0,
+      200.0
+    ],
+    "manifestDigest": "sha256:23b37ffdb23db3f8b0ed28bd57fef8b8ecd156c68b0d05f57a1d0f7af41a9f65"
+  },
+  "childViewPending": {
+    "declaration": {
+      "contractVersion": "external-mask-child-declaration.v1",
+      "declarationId": "decl-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "childKind": "MASK_CHILD",
+      "maskChildId": "mask-child-1",
+      "maskArtifactId": "mask-artifact-1",
+      "parentSubject": {
+        "organizationId": "org-1",
+        "siteId": "site-1",
+        "workOrderId": "work-parent",
+        "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "revision": 1,
+        "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "targetBaselineSubject": {
+        "organizationId": "org-1",
+        "siteId": "site-1",
+        "workOrderId": "work-baseline",
+        "submissionId": "ers-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "revision": 1,
+        "submissionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "targetBaselineDsmArtifactId": "dsm-baseline-1",
+      "declaredSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "declaredSizeBytes": 2,
+      "declarationDigest": "sha256:4cff2dedfb1d48bb159cc2ddc3643f5469dc91ff7453f1b36fb283e50305e83e"
+    },
+    "manifest": null
+  },
+  "childViewReady": {
+    "declaration": {
+      "contractVersion": "external-mask-child-declaration.v1",
+      "declarationId": "decl-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "childKind": "MASK_CHILD",
+      "maskChildId": "mask-child-1",
+      "maskArtifactId": "mask-artifact-1",
+      "parentSubject": {
+        "organizationId": "org-1",
+        "siteId": "site-1",
+        "workOrderId": "work-parent",
+        "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "revision": 1,
+        "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "targetBaselineSubject": {
+        "organizationId": "org-1",
+        "siteId": "site-1",
+        "workOrderId": "work-baseline",
+        "submissionId": "ers-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "revision": 1,
+        "submissionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "targetBaselineDsmArtifactId": "dsm-baseline-1",
+      "declaredSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "declaredSizeBytes": 2,
+      "declarationDigest": "sha256:4cff2dedfb1d48bb159cc2ddc3643f5469dc91ff7453f1b36fb283e50305e83e"
+    },
+    "manifest": {
+      "contractVersion": "external-mask-observed-manifest.v1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "childKind": "MASK_CHILD",
+      "maskChildId": "mask-child-1",
+      "maskArtifactId": "mask-artifact-1",
+      "subject": {
+        "organizationId": "org-1",
+        "siteId": "site-1",
+        "workOrderId": "work-parent",
+        "submissionId": "ers-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "revision": 1,
+        "submissionDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      "parentSubjectDigest": "sha256:47a71f8f638ae6564d730146570bc2b44cc9c95d8cba1984278a9b6116423558",
+      "targetBaselineDsmArtifactId": "dsm-baseline-1",
+      "targetBaselineSubjectDigest": "sha256:0733c4ffcd7fa822e9a7c8fa15f32bab55398b62158e3bcbc53b84611b63ffe6",
+      "observedSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "observedSizeBytes": 2,
+      "observedInspectionReportDigest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "inspectionProfileDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "rows": 4,
+      "columns": 4,
+      "transform": [
+        1.0,
+        0.0,
+        100.0,
+        0.0,
+        -1.0,
+        200.0
+      ],
+      "transformDigest": "sha256:346c581086b30b00404a54bf59815dcbd9b363b042cbef1b1989049c33feb33b",
+      "observedCrsIdentifier": "EPSG:5186",
+      "observedCrsDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "dtype": "UINT8",
+      "bandCount": 1,
+      "retainValue": 0,
+      "excludeValue": 1,
+      "nodataRepresentation": "NONE",
+      "bounds": [
+        100.0,
+        196.0,
+        104.0,
+        200.0
+      ],
+      "manifestDigest": "sha256:23b37ffdb23db3f8b0ed28bd57fef8b8ecd156c68b0d05f57a1d0f7af41a9f65"
+    }
+  },
+  "sourceContext": {
+    "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+    "baselineSubject": {
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workOrderId": "work-baseline",
+      "submissionId": "ers-v1-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "revision": 1,
+      "submissionDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "currentSubject": {
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workOrderId": "work-current",
+      "submissionId": "ers-v1-cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "revision": 1,
+      "submissionDigest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "manifestDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    },
+    "baselineDsmArtifactId": "dsm-baseline-1",
+    "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+    "inspectionProfileDigest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "maxMaskBytes": 8388608,
+    "maxMaskPixels": 8388608,
+    "sourceDisposition": "ADMIT_PROVISIONAL",
+    "assessedAt": "2026-10-26T00:00:00Z"
+  },
+  "inspectionCompleted": {
+    "maskChildId": "mask-child-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "status": "COMPLETED",
+    "reasonCode": null,
+    "checkedAt": "2026-10-26T00:10:00Z",
+    "manifestDigest": "sha256:23b37ffdb23db3f8b0ed28bd57fef8b8ecd156c68b0d05f57a1d0f7af41a9f65"
+  },
+  "inspectionRejected": {
+    "maskChildId": "mask-child-9",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "status": "REJECTED",
+    "reasonCode": "MASK_NODATA_REJECTED",
+    "checkedAt": "2026-10-26T00:10:00Z",
+    "manifestDigest": null
+  },
+  "inspectionFailed": {
+    "maskChildId": "mask-child-8",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "status": "FAILED",
+    "reasonCode": "MASK_INSPECTION_FAILED",
+    "checkedAt": "2026-10-26T00:10:00Z",
+    "manifestDigest": null
+  },
+  "inspectionPending": {
+    "maskChildId": "mask-child-7",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "status": "PENDING",
+    "reasonCode": null,
+    "checkedAt": "2026-10-26T00:10:00Z",
+    "manifestDigest": null
+  },
+  "grantRequest": {
+    "maskArtifactId": "mask-artifact-1",
+    "subjectDigest": "sha256:47a71f8f638ae6564d730146570bc2b44cc9c95d8cba1984278a9b6116423558",
+    "declaredSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "declaredSizeBytes": 2,
+    "ttlSeconds": 3600
+  },
+  "grantView": {
+    "grantId": "grant-1",
+    "maskChildId": "mask-child-1",
+    "maskArtifactId": "mask-artifact-1",
+    "expiresAt": "2026-10-26T01:00:00Z"
+  },
+  "sealView": {
+    "maskChildId": "mask-child-1",
+    "maskArtifactId": "mask-artifact-1",
+    "observedSha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "observedSizeBytes": 2
+  },
+  "createRequest": {
+    "maskedCalculationId": "masked-v3-1",
+    "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+    "maskChildId": "mask-child-1",
+    "requestId": "req-v3-1",
+    "idempotencyKey": "idem-req-v3-1"
+  },
+  "createdView": {
+    "requestId": "req-v3-1",
+    "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+    "status": "QUEUED",
+    "admission": {
+      "contractVersion": "external-masked-execution-admission.v3",
+      "admissionId": "masked-admission-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+      "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+      "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "areaDefinitionDigest": "sha256:0ad20a67c7b0f44e31c58a72d3bc3db61c306640f892391a642bf9a050ad93e8",
+      "policyDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "runtimeDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "resourceEnvelopeDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "activationDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "scopeDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "aiEgressDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "disposition": "ADMIT_PROVISIONAL",
+      "reasonCodes": [
+        "MASK_ADMITTED"
+      ],
+      "assessedAt": "2026-10-26T00:00:00Z",
+      "admissionDigest": "sha256:b37d2f44e48e5171e1a119fb4c0ec1a8aca76f6ff636a5d2541b128e00ddbe61"
+    }
+  },
+  "detailViewAvailable": {
+    "requestId": "req-v3-1",
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+    "status": "COMPLETED",
+    "disposition": "AVAILABLE",
+    "admission": {
+      "contractVersion": "external-masked-execution-admission.v3",
+      "admissionId": "masked-admission-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+      "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+      "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "areaDefinitionDigest": "sha256:0ad20a67c7b0f44e31c58a72d3bc3db61c306640f892391a642bf9a050ad93e8",
+      "policyDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "runtimeDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "resourceEnvelopeDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "activationDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "scopeDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "aiEgressDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "disposition": "ADMIT_PROVISIONAL",
+      "reasonCodes": [
+        "MASK_ADMITTED"
+      ],
+      "assessedAt": "2026-10-26T00:00:00Z",
+      "admissionDigest": "sha256:b37d2f44e48e5171e1a119fb4c0ec1a8aca76f6ff636a5d2541b128e00ddbe61"
+    },
+    "report": {
+      "contractVersion": "external-masked-volume-calculation-report.v3",
+      "reportId": "report-v3-1",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "numericResult": {
+        "contractVersion": "external-masked-volume-numeric-result.v3",
+        "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+        "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+        "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+        "metrics": {
+          "cutM3": 5.0,
+          "fillM3": 9.0,
+          "netM3": 4.0,
+          "thresholdM": 0.0,
+          "uncertaintyM3": null
+        },
+        "coverage": {
+          "contractVersion": "external-masked-volume-coverage-witness.v3",
+          "rows": 4,
+          "columns": 4,
+          "rowOffset": 0,
+          "columnOffset": 0,
+          "originalSelectedMaskB64": "//8=",
+          "maskExcludedMaskB64": "8AA=",
+          "effectiveSelectedMaskB64": "D/8=",
+          "commonValidMaskB64": "D/8=",
+          "unavailableMaskB64": "AAA=",
+          "originalSelectedCellCount": 16,
+          "maskExcludedCellCount": 4,
+          "effectiveSelectedCellCount": 12,
+          "commonValidCellCount": 12,
+          "unavailableCellCount": 0,
+          "cellAreaM2": 1.0,
+          "originalSelectedAreaM2": 16.0,
+          "effectiveSelectedAreaM2": 12.0,
+          "commonValidAreaM2": 12.0,
+          "bounds": [
+            100.0,
+            196.0,
+            104.0,
+            200.0
+          ],
+          "coverageWitnessDigest": "sha256:c74f50ef5afd88561175c2879d0a05ff5d07719feeb2e1411e61a0db6d5a031a"
+        },
+        "impact": {
+          "unmaskedImpactKnown": true,
+          "excludedCellCount": 4,
+          "unmaskedCutM3": 6.0,
+          "unmaskedFillM3": 11.0,
+          "unmaskedNetM3": 5.0,
+          "excludedCutM3": 1.0,
+          "excludedFillM3": 2.0,
+          "excludedNetM3": 1.0
+        },
+        "numericResultIdentityDigest": "sha256:fa7c40def6f94fb30a8dd3881cdfbf0019ea98c4688f1d7d317602469a52a88a"
+      },
+      "numericResultIdentityDigest": "sha256:fa7c40def6f94fb30a8dd3881cdfbf0019ea98c4688f1d7d317602469a52a88a",
+      "computedAt": "2026-10-26T00:00:00Z",
+      "reportedAt": "2026-10-26T00:05:00Z",
+      "reportDigest": "sha256:ce74641f1d972f4aa5e422d9e58112d3a3f6b47e1f12db29f52ac53d87af39ad"
+    }
+  },
+  "detailViewPending": {
+    "requestId": "req-v3-1",
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+    "status": "RUNNING",
+    "disposition": "PENDING",
+    "admission": {
+      "contractVersion": "external-masked-execution-admission.v3",
+      "admissionId": "masked-admission-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+      "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+      "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "areaDefinitionDigest": "sha256:0ad20a67c7b0f44e31c58a72d3bc3db61c306640f892391a642bf9a050ad93e8",
+      "policyDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "runtimeDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "resourceEnvelopeDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "activationDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "scopeDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "aiEgressDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "disposition": "ADMIT_PROVISIONAL",
+      "reasonCodes": [
+        "MASK_ADMITTED"
+      ],
+      "assessedAt": "2026-10-26T00:00:00Z",
+      "admissionDigest": "sha256:b37d2f44e48e5171e1a119fb4c0ec1a8aca76f6ff636a5d2541b128e00ddbe61"
+    },
+    "report": null
+  },
+  "detailViewUnknownImpact": {
+    "requestId": "req-v3-2",
+    "organizationId": "org-1",
+    "siteId": "site-1",
+    "workAreaId": "area-1",
+    "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+    "status": "COMPLETED",
+    "disposition": "AVAILABLE",
+    "admission": {
+      "contractVersion": "external-masked-execution-admission.v3",
+      "admissionId": "masked-admission-1",
+      "organizationId": "org-1",
+      "siteId": "site-1",
+      "workAreaId": "area-1",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+      "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+      "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "areaDefinitionDigest": "sha256:0ad20a67c7b0f44e31c58a72d3bc3db61c306640f892391a642bf9a050ad93e8",
+      "policyDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+      "runtimeDigest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+      "resourceEnvelopeDigest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+      "activationDigest": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+      "scopeDigest": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "aiEgressDigest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "disposition": "ADMIT_PROVISIONAL",
+      "reasonCodes": [
+        "MASK_ADMITTED"
+      ],
+      "assessedAt": "2026-10-26T00:00:00Z",
+      "admissionDigest": "sha256:b37d2f44e48e5171e1a119fb4c0ec1a8aca76f6ff636a5d2541b128e00ddbe61"
+    },
+    "report": {
+      "contractVersion": "external-masked-volume-calculation-report.v3",
+      "reportId": "report-v3-2",
+      "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+      "numericResult": {
+        "contractVersion": "external-masked-volume-numeric-result.v3",
+        "maskedCalculationIdentityDigest": "sha256:c952eec0c36804660dca3acd2d24af6e911620b6bdb71ec024ca57c402a7e13d",
+        "maskedProfileDigest": "sha256:a42f75f1e8e9db898f1e9b5a7847b092df8bb46e72f0973fc73e7b870db1ded9",
+        "maskBindingDigest": "sha256:5cc5f9183bf810b1412753b5ffc80857d0bd6884aac399354e2f59749df17e10",
+        "metrics": {
+          "cutM3": 5.0,
+          "fillM3": 9.0,
+          "netM3": 4.0,
+          "thresholdM": 0.0,
+          "uncertaintyM3": null
+        },
+        "coverage": {
+          "contractVersion": "external-masked-volume-coverage-witness.v3",
+          "rows": 4,
+          "columns": 4,
+          "rowOffset": 0,
+          "columnOffset": 0,
+          "originalSelectedMaskB64": "//8=",
+          "maskExcludedMaskB64": "8AA=",
+          "effectiveSelectedMaskB64": "D/8=",
+          "commonValidMaskB64": "D/8=",
+          "unavailableMaskB64": "AAA=",
+          "originalSelectedCellCount": 16,
+          "maskExcludedCellCount": 4,
+          "effectiveSelectedCellCount": 12,
+          "commonValidCellCount": 12,
+          "unavailableCellCount": 0,
+          "cellAreaM2": 1.0,
+          "originalSelectedAreaM2": 16.0,
+          "effectiveSelectedAreaM2": 12.0,
+          "commonValidAreaM2": 12.0,
+          "bounds": [
+            100.0,
+            196.0,
+            104.0,
+            200.0
+          ],
+          "coverageWitnessDigest": "sha256:c74f50ef5afd88561175c2879d0a05ff5d07719feeb2e1411e61a0db6d5a031a"
+        },
+        "impact": {
+          "unmaskedImpactKnown": false,
+          "excludedCellCount": 4,
+          "unmaskedCutM3": null,
+          "unmaskedFillM3": null,
+          "unmaskedNetM3": null,
+          "excludedCutM3": null,
+          "excludedFillM3": null,
+          "excludedNetM3": null
+        },
+        "numericResultIdentityDigest": "sha256:abda2e88dd5b317872535b60f1e51ddbf88372c40c7c934281430a8257a378ac"
+      },
+      "numericResultIdentityDigest": "sha256:abda2e88dd5b317872535b60f1e51ddbf88372c40c7c934281430a8257a378ac",
+      "computedAt": "2026-10-26T02:00:00Z",
+      "reportedAt": "2026-10-26T02:05:00Z",
+      "reportDigest": "sha256:751ec6b3769afeb2e5615eab2ad73c06ed7471e08ef02f97eb0891caa5cb30f5"
+    }
+  },
+  "deltaSourceRef": {
+    "sourceCalculationIdentityDigest": "sha256:b30042cc1b5dfd79473b1d71f1edeb1f44d7ff844c5f9fa13a06f706e0212ff4",
+    "sourceNumericResultIdentityDigest": "sha256:fa7c40def6f94fb30a8dd3881cdfbf0019ea98c4688f1d7d317602469a52a88a",
+    "sourceCoverageWitnessDigest": "sha256:c74f50ef5afd88561175c2879d0a05ff5d07719feeb2e1411e61a0db6d5a031a",
+    "maskChildId": "mask-child-1"
+  }
+}

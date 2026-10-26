@@ -105,6 +105,8 @@ def _assemble_local_analysis_app(
     config: ExternalAnalysisLocalGraphConfig,
     auth_registry: AuthRegistry | None = None,
     analysis_activation: Any = None,
+    delta_publications: Any = None,
+    masked_quantitative: Any = None,
 ) -> tuple[FastAPI, list[DurableJournal]]:
     opened: list[DurableJournal] = []
 
@@ -125,6 +127,8 @@ def _assemble_local_analysis_app(
         external_result_workflow=workflow,
         external_analysis_local_graph=config,
         analysis_activation=analysis_activation,
+        delta_publications=delta_publications,
+        masked_quantitative=masked_quantitative,
     )
     return app, opened
 
@@ -221,9 +225,10 @@ def test_reusable_local_fixture_serves_real_scoped_selectors_and_queues_over_htt
         assert alias_created.status_code == 202, alias_created.text
         alias_id = alias_created.json()["analysisId"]
         assert alias_id != analysis_id
-        assert alias_created.json()["authority"]["calculationRequestId"] == created.json()[
-            "authority"
-        ]["calculationRequestId"]
+        assert (
+            alias_created.json()["authority"]["calculationRequestId"]
+            == created.json()["authority"]["calculationRequestId"]
+        )
 
         evidence = client.get(
             f"/v1/sites/{fixture.site_id}/analyses/{analysis_id}/evidence",
@@ -242,8 +247,7 @@ def test_reusable_local_fixture_serves_real_scoped_selectors_and_queues_over_htt
             "CURRENT",
         }
         assert all(
-            item["evaluationDigest"].startswith("sha256:")
-            for item in evidence_body["evaluations"]
+            item["evaluationDigest"].startswith("sha256:") for item in evidence_body["evaluations"]
         )
         assert all(
             fact["contextDigest"].startswith("sha256:")
@@ -293,9 +297,10 @@ def test_reusable_local_fixture_serves_real_scoped_selectors_and_queues_over_htt
             json={"attempt": attempt},
         )
         assert renewed.status_code == 200, renewed.text
-        assert renewed.json()["calculationRequestId"] == created.json()["authority"][
-            "calculationRequestId"
-        ]
+        assert (
+            renewed.json()["calculationRequestId"]
+            == created.json()["authority"]["calculationRequestId"]
+        )
     finally:
         fixture.close()
 
@@ -370,16 +375,20 @@ def test_v2_routes_project_history_and_require_activation_for_new_create(tmp_pat
             headers=fixture.operator_headers(),
         )
         assert malformed_cursor.status_code == 400
-        wrong_type_evidence_cursor = base64.urlsafe_b64encode(
-            json.dumps(
-                {
-                    "analysisId": analysis_id,
-                    "evidenceRevision": "1",
-                    "evidenceDigest": "sha256:" + "0" * 64,
-                    "offset": 1,
-                }
-            ).encode()
-        ).decode().rstrip("=")
+        wrong_type_evidence_cursor = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {
+                        "analysisId": analysis_id,
+                        "evidenceRevision": "1",
+                        "evidenceDigest": "sha256:" + "0" * 64,
+                        "offset": 1,
+                    }
+                ).encode()
+            )
+            .decode()
+            .rstrip("=")
+        )
         malformed_evidence = client.get(
             f"/v2/sites/{fixture.site_id}/analyses/{analysis_id}/evidence",
             params={"limit": 1, "cursor": wrong_type_evidence_cursor},
@@ -450,8 +459,10 @@ def test_v2_current_rejected_checkpoint_requires_remediation_and_survives_retry_
         )
         assert detail.status_code == result.status_code == evidence.status_code == 200
         assert detail.json()["executionState"] == result.json()["executionState"] == "NOT_STARTED"
-        assert detail.json()["suitabilityState"] == result.json()["suitabilityState"] == (
-            "REMEDIATION_REQUIRED"
+        assert (
+            detail.json()["suitabilityState"]
+            == result.json()["suitabilityState"]
+            == ("REMEDIATION_REQUIRED")
         )
         assert detail.json()["result"] is result.json()["result"] is None
         assert evidence.json()["result"] is None
@@ -512,13 +523,12 @@ def test_v2_current_rejected_checkpoint_requires_remediation_and_survives_retry_
         assert replayed_evidence.json()["result"] is None
         assert replayed_detail.json()["blockers"] == created.json()["blockers"]
         replayed_current_evaluation = next(
-            item
-            for item in replayed_evidence.json()["evaluations"]
-            if item["epoch"] == "CURRENT"
+            item for item in replayed_evidence.json()["evaluations"] if item["epoch"] == "CURRENT"
         )
-        assert replayed_current_evaluation["evaluationDigest"] == current_evaluation[
-            "evaluationDigest"
-        ]
+        assert (
+            replayed_current_evaluation["evaluationDigest"]
+            == current_evaluation["evaluationDigest"]
+        )
         replayed_pending = replay_client.get(
             "/v1/internal/analysis-jobs", headers=replay.worker_headers()
         )
@@ -587,13 +597,9 @@ def test_v2_baseline_rejected_checkpoint_requires_remediation_and_survives_retry
         assert current["outcome"] == "UNASSESSED"
         assert baseline["evaluationDigest"].startswith("sha256:")
         assert len(baseline["evidenceFacts"]) == 1
-        baseline_terminal_records = _terminal_facts_for_subject(
-            fixture, fixture._baseline_subject
-        )
+        baseline_terminal_records = _terminal_facts_for_subject(fixture, fixture._baseline_subject)
         assert len(baseline_terminal_records) == 1
-        baseline_assessed_at = datetime.fromisoformat(
-            baseline["assessedAt"].replace("Z", "+00:00")
-        )
+        baseline_assessed_at = datetime.fromisoformat(baseline["assessedAt"].replace("Z", "+00:00"))
         assert baseline_terminal_records[0].terminal_record.core_recorded_at <= baseline_assessed_at
         result = client.get(
             f"/v1/sites/{fixture.site_id}/analyses/{analysis_id}/result",
@@ -652,9 +658,7 @@ def test_v2_baseline_rejected_checkpoint_requires_remediation_and_survives_retry
         )
         assert result.status_code == 200
         assert result.json()["result"] is None
-        pending = replay_client.get(
-            "/v1/internal/analysis-jobs", headers=replay.worker_headers()
-        )
+        pending = replay_client.get("/v1/internal/analysis-jobs", headers=replay.worker_headers())
         assert pending.status_code == 200
         assert pending.json()["items"] == []
     finally:
@@ -708,13 +712,11 @@ def test_v2_failed_checkpoint_wins_over_pass_for_same_exact_dsm(tmp_path: Path) 
         assert len({fact["evidenceRecordDigest"] for fact in retained}) == 2
         terminal_facts = _terminal_facts_for_subject(fixture, fixture._current_subject)
         assert len(terminal_facts) == 2
-        assert {
-            item.terminal_record.evidence_record_digest for item in terminal_facts
-        } == {fact["evidenceRecordDigest"] for fact in retained}
+        assert {item.terminal_record.evidence_record_digest for item in terminal_facts} == {
+            fact["evidenceRecordDigest"] for fact in retained
+        }
         assessed_at = datetime.fromisoformat(current_facts[0]["assessedAt"].replace("Z", "+00:00"))
-        assert all(
-            item.terminal_record.core_recorded_at <= assessed_at for item in terminal_facts
-        )
+        assert all(item.terminal_record.core_recorded_at <= assessed_at for item in terminal_facts)
         retry = client.post(
             f"/v1/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses",
             headers={
@@ -759,15 +761,11 @@ def test_v2_failed_checkpoint_wins_over_pass_for_same_exact_dsm(tmp_path: Path) 
         )
         assert replayed_evidence.status_code == 200
         replayed_current = next(
-            item
-            for item in replayed_evidence.json()["evaluations"]
-            if item["epoch"] == "CURRENT"
+            item for item in replayed_evidence.json()["evaluations"] if item["epoch"] == "CURRENT"
         )
         assert replayed_current["evaluationDigest"] == current_facts[0]["evaluationDigest"]
         assert replayed_current["evidenceFacts"] == retained
-        pending = replay_client.get(
-            "/v1/internal/analysis-jobs", headers=replay.worker_headers()
-        )
+        pending = replay_client.get("/v1/internal/analysis-jobs", headers=replay.worker_headers())
         assert pending.status_code == 200
         assert pending.json()["items"] == []
     finally:
@@ -813,9 +811,10 @@ def test_unfinished_alias_fails_closed_after_newer_inequivalent_ap_admission(
         analysis_id = created.json()["analysisId"]
         alias_id = alias.json()["analysisId"]
         assert alias_id != analysis_id
-        assert alias.json()["authority"]["calculationRequestId"] == created.json()["authority"][
-            "calculationRequestId"
-        ]
+        assert (
+            alias.json()["authority"]["calculationRequestId"]
+            == created.json()["authority"]["calculationRequestId"]
+        )
 
         leased = client.post(
             f"/v1/internal/analysis-jobs/{alias_id}:lease",
@@ -853,9 +852,11 @@ def test_unfinished_alias_fails_closed_after_newer_inequivalent_ap_admission(
             )
             is None
         )
-        context_digest = first_assessment.admission.evaluation_revisions[0].evidence_facts[
-            0
-        ].context.context_digest
+        context_digest = (
+            first_assessment.admission.evaluation_revisions[0]
+            .evidence_facts[0]
+            .context.context_digest
+        )
         assert context_digest is not None
 
         fixture.revoke_evidence_context(context_digest)
@@ -866,9 +867,7 @@ def test_unfinished_alias_fails_closed_after_newer_inequivalent_ap_admission(
         )
         assert changed.status_code == 202, changed.text
         changed_id = changed.json()["analysisId"]
-        changed_assessment = wiring.assessments.get_history(
-            changed_id, organization_id="org-a"
-        )
+        changed_assessment = wiring.assessments.get_history(changed_id, organization_id="org-a")
         assert changed_assessment is not None
         assert (
             changed_assessment.admission.calculation_identity_digest
@@ -918,9 +917,10 @@ def test_unfinished_alias_fails_closed_after_newer_inequivalent_ap_admission(
             json=body,
         )
         assert restored.status_code == 202, restored.text
-        assert restored.json()["authority"]["calculationRequestId"] == created.json()[
-            "authority"
-        ]["calculationRequestId"]
+        assert (
+            restored.json()["authority"]["calculationRequestId"]
+            == created.json()["authority"]["calculationRequestId"]
+        )
         assert (
             client.post(
                 f"/v1/internal/analysis-jobs/{alias_id}:renew",
@@ -964,13 +964,12 @@ def test_same_key_relinks_persisted_nx_after_link_crash_and_core_journal_reopen(
 
         (intent,) = wiring.intents.list_for_organization(organization_id="org-a")
         assert intent.calculation_request_id is None
-        calculation = wiring.calculations.get_history(
-            intent.analysis_id, organization_id="org-a"
-        )
+        calculation = wiring.calculations.get_history(intent.analysis_id, organization_id="org-a")
         assert calculation is not None
         assert calculation.calculation_identity_digest == (
-            wiring.assessments.get_history(intent.analysis_id, organization_id="org-a")
-            .admission.calculation_identity_digest
+            wiring.assessments.get_history(
+                intent.analysis_id, organization_id="org-a"
+            ).admission.calculation_identity_digest
         )
 
         # Polling retains the durable projection but never appends the missing
@@ -1005,16 +1004,22 @@ def test_same_key_relinks_persisted_nx_after_link_crash_and_core_journal_reopen(
         linked = recovered_wiring.intents.get(intent.analysis_id, organization_id="org-a")
         assert linked is not None
         assert linked.calculation_request_id == calculation.request_id
-        assert sum(
-            1
-            for raw in recovered_wiring.assessments._journal.replay()  # noqa: SLF001
-            if raw["kind"] == "external-relative-volume-analysis-assessed"
-        ) == 1
-        assert sum(
-            1
-            for raw in recovered_wiring.calculations._journal.replay()  # noqa: SLF001
-            if raw["kind"] == "external-relative-volume-calculation-issued"
-        ) == 1
+        assert (
+            sum(
+                1
+                for raw in recovered_wiring.assessments._journal.replay()  # noqa: SLF001
+                if raw["kind"] == "external-relative-volume-analysis-assessed"
+            )
+            == 1
+        )
+        assert (
+            sum(
+                1
+                for raw in recovered_wiring.calculations._journal.replay()  # noqa: SLF001
+                if raw["kind"] == "external-relative-volume-calculation-issued"
+            )
+            == 1
+        )
 
         pending = reopened_client.get(
             "/v1/internal/analysis-jobs", headers=reopened_fixture.worker_headers()
@@ -1155,9 +1160,7 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
         listen_socket.bind(("127.0.0.1", 0))
         listen_socket.listen(128)
         core_origin = f"http://127.0.0.1:{listen_socket.getsockname()[1]}"
-        server = uvicorn.Server(
-            uvicorn.Config(fixture.app, log_level="warning", access_log=False)
-        )
+        server = uvicorn.Server(uvicorn.Config(fixture.app, log_level="warning", access_log=False))
         core_server = server
         core_thread = Thread(target=lambda: server.run(sockets=[listen_socket]), daemon=True)
         core_thread.start()
@@ -1222,12 +1225,11 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                         "external-reconstruction-submission.v2"
                     )
                     assert [
-                        artifact["kind"]
-                        for artifact in sealed.json()["submission"]["artifacts"]
+                        artifact["kind"] for artifact in sealed.json()["submission"]["artifacts"]
                     ] == ["dsm"]
-                    assert [
-                        entry["kind"] for entry in sealed.json()["manifest"]["entries"]
-                    ] == ["dsm"]
+                    assert [entry["kind"] for entry in sealed.json()["manifest"]["entries"]] == [
+                        "dsm"
+                    ]
             created = operator.post(
                 f"/v1/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses",
                 headers={**fixture.operator_headers(), "Idempotency-Key": "combined-real-loop"},
@@ -1243,9 +1245,10 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
             assert alias_created.status_code == 202, alias_created.text
             alias_id = alias_created.json()["analysisId"]
             assert alias_id != analysis_id
-            assert alias_created.json()["authority"]["calculationRequestId"] == created.json()[
-                "authority"
-            ]["calculationRequestId"]
+            assert (
+                alias_created.json()["authority"]["calculationRequestId"]
+                == created.json()["authority"]["calculationRequestId"]
+            )
             worker_client = ExternalAnalysisCoreClient(
                 base_url=core_origin,
                 worker_token=fixture.worker_headers()["Authorization"].removeprefix("Bearer "),
@@ -1278,18 +1281,18 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
             assert detail_body["suitabilityState"] == expected_suitability
             assert detail_body["executionState"] == result_body["executionState"] == "COMPLETED"
             assert detail_body["result"] == result_body["result"] == evidence_body["result"]
-            assert evidence_body["baseline"]["inspectionReportDigest"] == (
-                fixture.synthetic_inspection_report_digests[0]
+            assert (
+                evidence_body["baseline"]["inspectionReportDigest"]
+                == (fixture.synthetic_inspection_report_digests[0])
             )
-            assert evidence_body["current"]["inspectionReportDigest"] == (
-                fixture.synthetic_inspection_report_digests[1]
+            assert (
+                evidence_body["current"]["inspectionReportDigest"]
+                == (fixture.synthetic_inspection_report_digests[1])
             )
             if real_inspection:
                 for epoch_key, revision in (
-                    (
-                        ("baseline", fixture._baseline_revision),
-                        ("current", fixture._current_revision),
-                    )
+                    ("baseline", fixture._baseline_revision),
+                    ("current", fixture._current_revision),
                 ):
                     evidence_epoch = evidence_body[epoch_key]
                     sealed_entry = revision.manifest.entries[0]
@@ -1327,9 +1330,13 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
             assert v2_detail.json()["result"]["resultId"] == detail_body["result"]["resultId"]
             assert v2_detail.json()["result"]["metrics"] == detail_body["result"]["metrics"]
             assert "selectedMaskB64" not in v2_detail.text
-            malformed_list_cursor = base64.urlsafe_b64encode(
-                json.dumps({"createdAt": 42, "analysisId": analysis_id}).encode()
-            ).decode().rstrip("=")
+            malformed_list_cursor = (
+                base64.urlsafe_b64encode(
+                    json.dumps({"createdAt": 42, "analysisId": analysis_id}).encode()
+                )
+                .decode()
+                .rstrip("=")
+            )
             malformed_list = operator.get(
                 f"/v2/sites/{fixture.site_id}/analyses",
                 params={"cursor": malformed_list_cursor},
@@ -1390,9 +1397,7 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                     "Range": f"bytes=0-{total_bytes - 1}",
                 },
             )
-            expected_coverage = canonical_json_bytes(
-                detail_body["result"]["coverage"]
-            )
+            expected_coverage = canonical_json_bytes(detail_body["result"]["coverage"])
             assert full_range.status_code == 206, full_range.text
             assert full_range.content == expected_coverage
             assert full_range.headers["Content-Range"] == f"bytes 0-{total_bytes - 1}/{total_bytes}"
@@ -1411,12 +1416,13 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                 )
                 assert completed_retry.status_code == 202, completed_retry.text
                 assert completed_retry.json()["analysisId"] == analysis_id
-                assert completed_retry.json()["result"]["resultId"] == detail_body["result"][
-                    "resultId"
-                ]
-                assert completed_retry.json()["result"]["metrics"] == detail_body["result"][
-                    "metrics"
-                ]
+                assert (
+                    completed_retry.json()["result"]["resultId"]
+                    == detail_body["result"]["resultId"]
+                )
+                assert (
+                    completed_retry.json()["result"]["metrics"] == detail_body["result"]["metrics"]
+                )
             for invalid_range in (None, "bytes=0-1,3-4", "bytes=0-65536", "bytes=999999-1000000"):
                 headers = dict(fixture.operator_headers())
                 if invalid_range is not None:
@@ -1438,9 +1444,7 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                         and by_epoch[epoch]["evidenceFacts"][0]["coreVerdict"] == "VALIDATED"
                         for epoch in ("BASELINE", "CURRENT")
                     )
-                    evaluation_digests = {
-                        item["evaluationDigest"] for item in by_epoch.values()
-                    }
+                    evaluation_digests = {item["evaluationDigest"] for item in by_epoch.values()}
                     checkpoint_refs = {
                         item["recordId"]
                         for item in evidence_body["evidenceRefs"]
@@ -1455,20 +1459,14 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                     assert checkpoint_refs == passed_record_refs
                     assert detail_body["result"]["limitationCodes"] == []
                 elif passed_checkpoint_epochs:
-                    assert detail_body["suitabilityState"] == (
-                        "PROVISIONAL_ACCURACY_UNVERIFIED"
-                    )
-                    unassessed_epochs = set(("BASELINE", "CURRENT")) - set(
-                        passed_checkpoint_epochs
-                    )
+                    assert detail_body["suitabilityState"] == ("PROVISIONAL_ACCURACY_UNVERIFIED")
+                    unassessed_epochs = set(("BASELINE", "CURRENT")) - set(passed_checkpoint_epochs)
                     assert len(unassessed_epochs) == 1
                     unassessed_epoch = unassessed_epochs.pop()
                     assert by_epoch[unassessed_epoch]["reasonCodes"] == [
                         "CHECKPOINT_EVIDENCE_ABSENT"
                     ]
-                    assert "CHECKPOINT_EVIDENCE_ABSENT" in detail_body["result"][
-                        "limitationCodes"
-                    ]
+                    assert "CHECKPOINT_EVIDENCE_ABSENT" in detail_body["result"]["limitationCodes"]
             completed_alias = operator.post(
                 f"/v1/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses",
                 headers={
@@ -1480,9 +1478,10 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
             assert completed_alias.status_code == 202, completed_alias.text
             completed_alias_id = completed_alias.json()["analysisId"]
             assert completed_alias_id not in {analysis_id, alias_id}
-            assert completed_alias.json()["authority"]["calculationRequestId"] == created.json()[
-                "authority"
-            ]["calculationRequestId"]
+            assert (
+                completed_alias.json()["authority"]["calculationRequestId"]
+                == created.json()["authority"]["calculationRequestId"]
+            )
             if set(passed_checkpoint_epochs) == {"BASELINE", "CURRENT"}:
                 retried = operator.post(
                     f"/v1/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses",
@@ -1630,9 +1629,10 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                 assert pending_after_late_evaluation.json()["items"] == []
                 assert not run_once(worker_client, runtime, transport)
 
-                assert wiring.assessments.get_history(
-                    analysis_id, organization_id="org-a"
-                ) == original_assessment
+                assert (
+                    wiring.assessments.get_history(analysis_id, organization_id="org-a")
+                    == original_assessment
+                )
                 historical_calculation = wiring.calculations.get_history(
                     analysis_id, organization_id="org-a"
                 )
@@ -1759,9 +1759,10 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
                 )
                 assert replayed_v2_detail.status_code == 200
                 assert replayed_v2_detail.json()["analysisId"] == analysis_id
-                assert replayed_v2_detail.json()["result"]["resultId"] == result_body["result"][
-                    "resultId"
-                ]
+                assert (
+                    replayed_v2_detail.json()["result"]["resultId"]
+                    == result_body["result"]["resultId"]
+                )
                 expired_v2_create = replayed_client.post(
                     f"/v2/sites/{fixture.site_id}/work-areas/{fixture.work_area_id}/analyses",
                     headers={
@@ -1839,9 +1840,10 @@ def test_combined_frozen_worker_completes_real_core_http_loop_over_loopback_obje
             assert replayed_jobs.status_code == 200
             assert replayed_jobs.json()["items"] == []
             replayed_wiring = reopened_fixture.app.state.external_analysis_wiring
-            assert replayed_wiring.assessments.get_history(
-                analysis_id, organization_id="org-a"
-            ) == original_assessment
+            assert (
+                replayed_wiring.assessments.get_history(analysis_id, organization_id="org-a")
+                == original_assessment
+            )
             replayed_calculation = replayed_wiring.calculations.get_history(
                 analysis_id, organization_id="org-a"
             )

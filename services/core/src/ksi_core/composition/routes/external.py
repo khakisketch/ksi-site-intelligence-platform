@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 
 from fastapi import FastAPI
@@ -29,6 +30,8 @@ def mount_external_routes(
     external_artifact_inspection_store: Any,
     external_display_artifact_store: Any,
     external_analysis_wiring: Any = None,
+    external_delta_wiring: Any = None,
+    external_masked_wiring: Any = None,
 ) -> Any:
     if spatial_data is not None:
         from ksi_core.composition.spatial_data_graph import (
@@ -305,5 +308,174 @@ def mount_external_routes(
             )
 
             app.include_router(build_analysis_review_router(wiring.reviews))
+
+    if external_masked_wiring is not None:
+        from contextlib import asynccontextmanager
+
+        from ksi_core.composition.masked_quantitative_graph import MaskedQuantitativeWiring
+        from ksi_core.domains.external.ingress.external_mask_input_api import (
+            build_external_mask_input_router,
+        )
+        from ksi_core.domains.external.quantity.external_masked_calculation_api import (
+            build_external_masked_calculation_router,
+        )
+        from ksi_core.domains.external.quantity.external_masked_input_capabilities import (
+            build_external_masked_dsm_capability_router,
+        )
+
+        if (
+            not isinstance(external_masked_wiring, MaskedQuantitativeWiring)
+            or external_analysis_wiring is None
+        ):
+            raise ValueError("masked quantitative requires complete explicit common wiring")
+        external_masked_wiring.verify_participants(
+            assessments=external_analysis_wiring.assessments,
+            sites=site_store,
+            reconstruction=external_reconstruction_store,
+            inspections=external_artifact_inspection_store,
+            work_areas=work_area_store,
+            coordinator=external_reconstruction_store.coordinator,
+        )
+        app.include_router(
+            build_external_mask_input_router(
+                ingress=external_masked_wiring.ingress,
+                byte_store=external_masked_wiring.byte_store,
+                inspection_journal=external_masked_wiring.inspection_journal,
+                resource_envelope=external_masked_wiring.config.resource_envelope,
+                designated_worker=external_masked_wiring.config.worker_principal,
+                lane_source=external_masked_wiring.source_context,
+                clock=external_masked_wiring.config.clock,
+            )
+        )
+        app.include_router(
+            build_external_masked_calculation_router(
+                calculations=external_masked_wiring.calculations,
+                evidence=external_masked_wiring.evidence,
+                mask_bytes=external_masked_wiring.mask_bytes,
+                resource_envelope=external_masked_wiring.config.resource_envelope,
+                designated_worker=external_masked_wiring.config.worker_principal,
+                dsm_byte_reader=external_masked_wiring.dsm_byte_reader,
+                queued=external_masked_wiring.calculations,
+                clock=external_masked_wiring.config.clock,
+            )
+        )
+        app.state.external_masked_wiring = external_masked_wiring
+        app.include_router(
+            build_external_masked_dsm_capability_router(
+                wiring=external_masked_wiring,
+                reconstruction=external_reconstruction_store,
+                storage=evidence_storage,
+                designated_worker=external_masked_wiring.config.worker_principal,
+                clock=external_masked_wiring.config.clock,
+            )
+        )
+        previous_masked_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def masked_lifespan(application: FastAPI) -> AsyncIterator[Any]:
+            try:
+                async with previous_masked_lifespan(application) as state:
+                    yield state
+            finally:
+                external_masked_wiring.close()
+
+        app.router.lifespan_context = masked_lifespan
+
+    if external_delta_wiring is not None:
+        from contextlib import asynccontextmanager
+
+        from ksi_core.composition.quantitative_extension_graph import DeltaPublicationWiring
+        from ksi_core.domains.external.quantity.external_delta_publication_api import (
+            build_external_delta_publication_router,
+        )
+        from ksi_core.domains.external.quantity.external_delta_publication_inputs import (
+            DeltaPublicationS3InputCapabilityIssuer,
+            build_external_delta_publication_input_router,
+            build_external_delta_publication_masked_input_router,
+        )
+
+        if (
+            not isinstance(external_delta_wiring, DeltaPublicationWiring)
+            or external_analysis_wiring is None
+        ):
+            raise ValueError("delta publication requires complete explicit common wiring")
+        external_delta_wiring.verify_participants(
+            analysis=external_analysis_wiring,
+            sites=site_store,
+            coordinator=external_reconstruction_store.coordinator,
+        )
+        app.include_router(
+            build_external_delta_publication_router(
+                store=external_delta_wiring.store,
+                clock=external_delta_wiring.config.clock,
+            )
+        )
+        app.state.external_delta_wiring = external_delta_wiring
+        app.include_router(
+            build_external_delta_publication_input_router(
+                store=external_delta_wiring.store,
+                material_resolver=external_delta_wiring.source,
+                capability_issuer=DeltaPublicationS3InputCapabilityIssuer(
+                    reconstruction=external_reconstruction_store,
+                    storage=evidence_storage,
+                    signing_clock=external_delta_wiring.config.clock,
+                ),
+                clock=external_delta_wiring.config.clock,
+            )
+        )
+        if external_delta_wiring.masked_source is not None:
+            from ksi_core.domains.external.quantity.external_delta_mask_inputs import (
+                build_external_delta_mask_input_router,
+            )
+
+            if (
+                external_masked_wiring is None
+                or external_delta_wiring.config.mask_core_origin is None
+            ):
+                raise ValueError("masked delta inputs require exact masked wiring and Core origin")
+            if (
+                external_delta_wiring.masked_source.calculations
+                is not external_masked_wiring.calculations
+            ):
+                raise ValueError("masked delta inputs cannot use another calculation store")
+            app.include_router(
+                build_external_delta_publication_masked_input_router(
+                    store=external_delta_wiring.store,
+                    material_resolver=external_delta_wiring.masked_source,
+                    capability_issuer=DeltaPublicationS3InputCapabilityIssuer(
+                        reconstruction=external_reconstruction_store,
+                        storage=evidence_storage,
+                        signing_clock=external_delta_wiring.config.clock,
+                    ),
+                    mask_base_url=external_delta_wiring.config.mask_core_origin,
+                    clock=external_delta_wiring.config.clock,
+                )
+            )
+            app.include_router(
+                build_external_delta_mask_input_router(
+                    store=external_delta_wiring.store,
+                    material_resolver=external_delta_wiring.masked_source,
+                    mask_manifests=external_masked_wiring.ingress,
+                    mask_bytes=external_masked_wiring.byte_store,
+                    max_mask_bytes=min(
+                        external_masked_wiring.config.resource_envelope.max_input_bytes,
+                        external_masked_wiring.config.resource_envelope.max_streamed_bytes,
+                    ),
+                    clock=external_delta_wiring.config.clock,
+                )
+            )
+        # Preserve the incumbent lifespan and any subsequently registered
+        # production shutdown handlers; release only these new pinned byte fds.
+        incumbent_lifespan = app.router.lifespan_context
+
+        @asynccontextmanager
+        async def delta_lifespan(application: FastAPI) -> AsyncIterator[Any]:
+            try:
+                async with incumbent_lifespan(application) as state:
+                    yield state
+            finally:
+                external_delta_wiring.close()
+
+        app.router.lifespan_context = delta_lifespan
 
     return external_result_projection

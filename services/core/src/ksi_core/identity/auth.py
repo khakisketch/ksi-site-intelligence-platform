@@ -639,6 +639,15 @@ _ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/evidence"),
         ("GET", "/v2/sites/{site_id}/analyses/{analysis_id}/coverage"),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications"),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}",
+        ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}/bytes",
+        ),
     }
 )
 
@@ -648,6 +657,48 @@ _ANALYSIS_MCP_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
 # operational workflows, while generic Core routes remain closed by default.
 _OIDC_SCOPED_OPERATOR_ROUTE_ALLOWLIST: frozenset[tuple[str, str]] = frozenset(
     {
+        (
+            "GET",
+            "/v3/sites/{site_id}/work-areas/{work_area_id}/masked-calculations/{request_id}/failure",
+        ),
+        (
+            "GET",
+            "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-children/{mask_child_id}/inspection-status",
+        ),
+        ("GET", "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-source-context"),
+        ("POST", "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-children"),
+        ("GET", "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-children/{mask_child_id}"),
+        (
+            "POST",
+            "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-children/{mask_child_id}/upload-grants",
+        ),
+        (
+            "POST",
+            "/v3/sites/{site_id}/work-areas/{work_area_id}/mask-children/{mask_child_id}/upload-grants/{grant_id}/bytes",
+        ),
+        ("POST", "/v3/sites/{site_id}/work-areas/{work_area_id}/masked-calculations"),
+        ("GET", "/v3/sites/{site_id}/work-areas/{work_area_id}/masked-calculations/{request_id}"),
+        (
+            "POST",
+            "/v3/sites/{site_id}/work-areas/{work_area_id}/masked-calculations/{request_id}/cancel",
+        ),
+        ("POST", "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications"),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}",
+        ),
+        (
+            "GET",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}/bytes",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}/cancel",
+        ),
+        (
+            "POST",
+            "/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications/{publication_id}/revoke",
+        ),
         ("GET", "/v1/auth/whoami"),
         ("GET", "/v1/sites"),
         ("GET", "/v1/sites/{site_id}"),

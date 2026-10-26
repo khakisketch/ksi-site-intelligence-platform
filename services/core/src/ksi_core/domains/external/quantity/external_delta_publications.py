@@ -1570,7 +1570,11 @@ class ExternalDeltaPublicationStore:
             return self._intent_view(entry)
 
     def list_pending_for_worker(
-        self, *, worker_principal: Principal, limit: int = 50
+        self,
+        *,
+        worker_principal: Principal,
+        limit: int = 50,
+        source_contract_version: str | None = None,
     ) -> tuple[str, ...]:
         """Bounded worker job discovery: pending publication ids this worker may take.
 
@@ -1594,6 +1598,12 @@ class ExternalDeltaPublicationStore:
         self._require_worker(worker_principal)
         if type(limit) is not int or isinstance(limit, bool) or limit < 1 or limit > 50:
             raise ValueError("discovery limit must be an integer between 1 and 50")
+        if source_contract_version not in {
+            None,
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3",
+        }:
+            raise ValueError("discovery source version must name the V2 or V3 source contract")
         with self._coordinator.guarded_read(), self._lock:
             trusted = self._clock()
             self._require_utc(trusted)
@@ -1607,6 +1617,13 @@ class ExternalDeltaPublicationStore:
                 if entry.organization_id != worker_principal.organization_id:
                     continue
                 if entry.status is not DeltaPublicationStatusV1.PENDING:
+                    continue
+                # Filter before limit/lease: a differently configured native
+                # worker must never consume another calculation lane's retry.
+                if (
+                    source_contract_version is not None
+                    and entry.source_contract_version != source_contract_version
+                ):
                     continue
                 if not self._caller_scope_allows(
                     worker_principal, entry.site_id, entry.work_area_id

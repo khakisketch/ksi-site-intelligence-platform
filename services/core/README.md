@@ -47,6 +47,58 @@ Generated MCP end-to-end parity, restart, replay, and rights-matrix evidence (lo
 software only) is recorded in
 [SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE](../../docs/ops/SPATIAL_DATA_MCP_SOFTWARE_EVIDENCE.md).
 
+## Optional separate quantitative outputs
+
+`composition.quantitative_extension_graph.DeltaPublicationLocalConfig` explicitly attaches the delta
+publication lane to the exact common Analysis/Site/currentness participants. No config means no new
+routes; the normal production/environment factory does not implicitly activate it. Configuration pins
+the complete executable/build/image/lock runtime, sealed resource envelope, designated Analysis worker,
+policy caps (including upload attempts), protected byte root and trusted clock. A separately verified
+`DELTA_PUBLICATION_V1` activation is required; the existing V2 Analysis signature is insufficient.
+
+The lane retains source-only intents, independent output leases, separately authenticated output
+observations and sealed descriptors in their own journals. Uploading bytes cannot assert a TIFF dtype
+or grid: publication requires an accepted pinned-worker observation plus exact hash/size/current source
+checks. Reads hash the full stored file with bounded slice memory and fresh checks before and after
+streaming. Numeric success and output failure remain independent. Cancel/revoke preserve history.
+
+Public routes are scoped under `/v1/sites/{site_id}/work-areas/{work_area_id}/delta-publications`;
+dedicated worker routes are under `/v1/internal/delta-publication-uploads`. MCP/OIDC allowlists are exact
+route/method matches, not prefix grants. The optional input router issues capabilities only after a
+fresh final source/lease/runtime check. No native raster decoder is added to Core.
+
+See the [owning integration plan](../../docs/superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md)
+for current implementation evidence and remaining independent-mask integration. Temporary signatures,
+generated files and loopback tests are not production signing, deployment-host containment or customer
+quantitative acceptance. Rollback disables the optional composition, retaining immutable new records
+and the unchanged V2 readers; it does not delete or reinterpret either journal family.
+
+### Optional independent-mask V3 lane
+
+`composition.masked_quantitative_graph.MaskedQuantitativeLocalConfig` attaches an independent binary
+mask lane to the same common stores. It requires sealed masked/inspection profiles, the full execution
+runtime, resource envelope, designated worker, private byte root and trusted clock, plus a verified
+`MASKED_ANALYSIS_V3` activation. It cannot borrow V2 or delta-publication signing authority. Missing
+configuration mounts no mask routes; production provisioning remains external.
+
+Human routes under `/v3/sites/{site_id}/work-areas/{work_area_id}` resolve source context, declare/upload
+mask children, read inspection status, and create/read/cancel masked calculations. Source context needs
+a current admitted AP identity, **not** a completed V2 numeric report. Core seals declaration intents,
+rechecks actual source anchors, and accepts inspection evidence only from the designated worker's live
+fence. A null manifest is not a pending-state guarantee: the separate inspection-status route reports
+PENDING/RUNNING/COMPLETED/REJECTED/FAILED. Worker failures carry only bounded closed reasons.
+
+Worker-only discovery/lease/input/report routes stay outside human and MCP allowlists. Two DSM
+capabilities and the authenticated protected-mask windows are bound to the new V3 attempt. The
+authorization names the designated worker, never the human issuer; runtime/envelope/activation pins
+are checked before native work. Core does not decode TIFFs. Provisional admission remains provisional;
+100% validity applies to the effective selected zone, and unknowable unmasked impact remains null.
+
+When both optional lanes exist, the versioned delta adapter resolves genuine V2/V3 records without
+rewriting either. Flavored delta discovery filters before lease/limit, so a V2 worker cannot consume
+a masked job's retry budget. Late V3 output has its own publication lease and DELTA authority checks;
+a completed masked attempt is not mask-byte permission for that later job.
+
 ## Core R1 module routing (partial)
 
 `KSI-CORE-R1-20260914` has relocated the reusable foundation and identity

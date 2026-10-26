@@ -1,6 +1,6 @@
 # Current
 
-Updated: 2026-10-26. Entry point for the current product/work state.
+Updated: 2026-10-27. Entry point for the current product/work state.
 
 ## Authority
 
@@ -19,7 +19,7 @@ acceptance remains external and unverified.
 | Work | Owner | Status | Evidence / next |
 |---|---|---|---|
 | Console desktop-first UX | Build | Viewer-first deployed | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) — 56px viewer rail, full-bleed site 공간/자료, collapsible layer/inspector, visual site covers, real extents; dense 업무/결과/검토 retained |
-| Engine + Console integration | Build | P1 locally verified; P2 implementation active, not deployed or merged to main | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) + [owning SIE plan](../superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md#p2-execution-choice--human-confirmed-2026-10-26) — isolated `integration/viewer-first-20261026`; V2 preserved, separate delta output and independent-mask V3 approved; no remaining product-choice gate for P2 |
+| Engine + Console integration | Build | P1 + P2 local implementation/integration verified; activation/customer gates blocked; not deployed or merged to main | [`work/2026-10-26-console.md`](work/2026-10-26-console.md) + [owning SIE plan](../superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md#p2-final-local-acceptance-reconciliation--2026-10-27) — isolated `integration/viewer-first-20261026`; actual Console mask→first V3 worker→separate delta download and rejected-input recovery/resume; backend372/UI2413/type/lint; no customer/host/production acceptance inferred |
 | Spatial engine integration | Build | Active, separate uncommitted stream | [`../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md`](../superpowers/plans/2026-10-07-agent-first-platform-rebaseline.md) — do not duplicate here until close |
 | Ledger/document consolidation | Build | Active | This directory; legacy console boards deleted after consolidation |
 
@@ -39,7 +39,7 @@ duplicate work authority.
   required; not implemented.
 - Real Floreat imagery is retention-expired; quantitative/field/customer acceptance unverified.
 - Theme selection deferred to a future `설정 > 화면 테마` decision; no palette change.
-- P2 independent masks/new profile and separate delta publication are approved and in development.
+- P2 independent masks/new profile and separate delta publication are approved and locally verified.
   New policy/runtime signing, deployment-host containment, permitted retained data and customer
   quantitative acceptance remain external activation/acceptance gates, not reasons to stop local work.
 
@@ -49,5 +49,6 @@ duplicate work authority.
 2. Revisit Home/global IA only with explicit approval and required evidence.
 3. Verify the existing isolated integration candidate before any main merge/deployment; original
    main changes remain protected. Do not restart the older shared runtime to test this candidate.
-4. Continue P2 mask ingress → V3 admission/execution → observed delta publication → API/MCP/Console
-   integration and actual generated-byte/replay verification under the existing SIE plan.
+4. P2 local implementation and generated-byte/replay/Console verification are complete at the owning
+   SIE plan's scope. Further activation/customer acceptance needs genuine signing, host containment,
+   portable release and permitted data/consumer inputs; synthetic success does not supply those gates.

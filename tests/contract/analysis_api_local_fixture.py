@@ -625,9 +625,7 @@ def _sealed_revision(
     dsm_bytes: bytes | None = None,
 ) -> Any:
     reconstruction = app.state.external_reconstruction_store
-    submission, contents = _submission(
-        order, label, start=start, end=end, dsm_bytes=dsm_bytes
-    )
+    submission, contents = _submission(order, label, start=start, end=end, dsm_bytes=dsm_bytes)
     registered = reconstruction.register(
         submission, work_order=order, registered_by="operator-a", now=start
     )
@@ -1071,7 +1069,6 @@ def _single_mapping(
     ).sealed()
 
 
-
 _OPERATOR_TOKEN = "analysis-local-fixture-operator"
 _WORKER_TOKEN = "analysis-local-fixture-worker"
 _VALIDATION_WORKER_TOKEN = "analysis-local-fixture-validation-worker"
@@ -1144,9 +1141,9 @@ class LocalAnalysisApiFixture:
     passed_and_failed_checkpoint_current: bool
     passed_checkpoint_epochs: tuple[str, ...]
     synthetic_inspection_report_digests: tuple[str, ...] = field(repr=False)
-    synthetic_epoch_chronology: tuple[
-        tuple[datetime, datetime, datetime, datetime], ...
-    ] = field(repr=False)
+    synthetic_epoch_chronology: tuple[tuple[datetime, datetime, datetime, datetime], ...] = field(
+        repr=False
+    )
     synthetic_policy_admitted_at: datetime = field(repr=False)
     _current_revision: Any = field(repr=False)
     _current_subject: Any = field(repr=False)
@@ -1251,9 +1248,7 @@ def _register_and_seal_v2_dsm(
     organization_id: str = "org-a",
 ) -> tuple[Any, SealedExternalSubjectV1]:
     """Exercise V2 HTTP registration and shared digest-bound upload/seal routes."""
-    candidate, contents = _submission(
-        order, label, start=start, end=end, dsm_bytes=dsm_bytes
-    )
+    candidate, contents = _submission(order, label, start=start, end=end, dsm_bytes=dsm_bytes)
     wire = candidate.model_dump(by_alias=True, mode="json")
     wire["contractVersion"] = "external-reconstruction-submission.v2"
     wire["submittedBy"] = "analysis-local-operator"
@@ -1262,8 +1257,7 @@ def _register_and_seal_v2_dsm(
     wire["submissionDigest"] = ExternalReconstructionSubmissionV2.digest_for_wire(wire)
 
     v2_path = (
-        f"/v1/observation-work-orders/{order.work_order_id}/"
-        "external-reconstruction-submissions-v2"
+        f"/v1/observation-work-orders/{order.work_order_id}/external-reconstruction-submissions-v2"
     )
     registered = client.post(
         v2_path,
@@ -1344,6 +1338,8 @@ def build_local_analysis_api_fixture(
     current_dsm_spatial_case: str = "VALID",
     organization_id: str | None = None,
     analysis_activation: Any = None,
+    delta_publications: Any = None,
+    masked_quantitative: Any = None,
 ) -> LocalAnalysisApiFixture:
     """Seed inspected/sealed epochs backed by real 2×2 GeoTIFF bytes for local API tests."""
     if replay_of is not None:
@@ -1536,6 +1532,8 @@ def build_local_analysis_api_fixture(
         config=local_graph_config,
         auth_registry=registry,
         analysis_activation=analysis_activation,
+        delta_publications=delta_publications,
+        masked_quantitative=masked_quantitative,
     )
     assert isinstance(app, FastAPI)
     try:
@@ -1557,9 +1555,7 @@ def build_local_analysis_api_fixture(
                     replay_of.passed_and_failed_checkpoint_current
                 ),
                 passed_checkpoint_epochs=replay_of.passed_checkpoint_epochs,
-                synthetic_inspection_report_digests=(
-                    replay_of.synthetic_inspection_report_digests
-                ),
+                synthetic_inspection_report_digests=(replay_of.synthetic_inspection_report_digests),
                 synthetic_epoch_chronology=replay_of.synthetic_epoch_chronology,
                 synthetic_policy_admitted_at=replay_of.synthetic_policy_admitted_at,
                 _current_revision=replay_of._current_revision,
@@ -1669,9 +1665,7 @@ def build_local_analysis_api_fixture(
             }[current_dsm_spatial_case]
             current_transform = transform
             if current_dsm_spatial_case == "NON_OVERLAPPING_GRID":
-                current_transform = from_origin(
-                    _ORIGIN_X + 1000.0, _ORIGIN_Y + 1000.0, 0.1, 0.1
-                )
+                current_transform = from_origin(_ORIGIN_X + 1000.0, _ORIGIN_Y + 1000.0, 0.1, 0.1)
             elif current_dsm_spatial_case == "ROTATED_OVERLAPPING_GRID":
                 current_transform = Affine(
                     0.1,
@@ -1691,11 +1685,15 @@ def build_local_analysis_api_fixture(
                 crs=current_crs,
                 nodata=current_nodata,
             )
-        third_bytes = _geotiff_bytes(
-            np.array([[103.0, 97.0], [100.0, 100.0]]), transform=transform
-        )
+        third_bytes = _geotiff_bytes(np.array([[103.0, 97.0], [100.0, 100.0]]), transform=transform)
         if v2_dsm_only:
-            with TestClient(app) as ingress_client:
+            # Seed HTTP records before the caller starts the actual app's
+            # lifespan. Entering/exiting TestClient here would shut down the
+            # optional lanes' owned journals and pinned byte descriptors before
+            # the returned fixture is served. Close only this transport.
+            from contextlib import closing
+
+            with closing(TestClient(app)) as ingress_client:
                 baseline_revision, baseline_subject = _register_and_seal_v2_dsm(
                     ingress_client,
                     app,

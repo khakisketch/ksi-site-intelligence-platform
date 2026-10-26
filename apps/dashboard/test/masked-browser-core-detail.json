@@ -1,0 +1,95 @@
+{
+  "requestId": "req-b3e57ffd-60d9-4771-ad4e-bbf97ebee791",
+  "organizationId": "org-a",
+  "siteId": "site-a",
+  "workAreaId": "wa-site-a-0001",
+  "maskedCalculationIdentityDigest": "sha256:5f92c6705f3dc7ccc5675195216fd7888ec77d2d23e58a055a44128066951ad3",
+  "status": "COMPLETED",
+  "disposition": "AVAILABLE",
+  "admission": {
+    "contractVersion": "external-masked-execution-admission.v3",
+    "admissionId": "masked-admission-5f92c6705f3dc7cc",
+    "organizationId": "org-a",
+    "siteId": "site-a",
+    "workAreaId": "wa-site-a-0001",
+    "maskedCalculationIdentityDigest": "sha256:5f92c6705f3dc7ccc5675195216fd7888ec77d2d23e58a055a44128066951ad3",
+    "sourceCalculationIdentityDigest": "sha256:14e4e9ae3f867221a4812a06bbfc61c83f1f5a5bb85c7c6087ae52cd3c17def0",
+    "maskBindingDigest": "sha256:2440031ba583d611832cd8a3794460929184c3a2f4df40cc66e77b4403e5faf9",
+    "maskedProfileDigest": "sha256:fe055b0691753b90991cdccb9c34e3cf8fa195300b59c1565092ebad22582703",
+    "areaDefinitionDigest": "sha256:c6bec8632f892f32691b167cf8bfada972a96e71ff2d4c8855fbb5837f7f9398",
+    "policyDigest": "sha256:fe055b0691753b90991cdccb9c34e3cf8fa195300b59c1565092ebad22582703",
+    "runtimeDigest": "sha256:0b5ca2035abbceeb5eeaed2a7fa54bc9f64a4153ec14e8e7daa4add6ca891bd1",
+    "resourceEnvelopeDigest": "sha256:f2a2f3d91a1cee7afeb5f97dd7fb23f744e6f61b2abc9228a042b49253e3822e",
+    "activationDigest": "sha256:1295c9773e833479bf57278b09d24ebf49d73c87be33b616cb3998d18073a53c",
+    "scopeDigest": "sha256:3acf83c0c4d1c8d662a235c982d06b555f660089bd1fc259a93800cc4979a8b0",
+    "aiEgressDigest": "sha256:096be7b97ba06548d0e7d0d8d5e4f2412fdcfed3e70c28ef08da00f37a01cc1c",
+    "disposition": "ADMIT_PROVISIONAL",
+    "reasonCodes": [
+      "MASK_ADMITTED",
+      "CHECKPOINT_EVIDENCE_ABSENT"
+    ],
+    "assessedAt": "2026-10-26T17:11:53.812908Z",
+    "admissionDigest": "sha256:b4e2385ca65aa2d3ead8841ce86f2a735ab4913b0cde8b579fd2d073fd54c99f"
+  },
+  "report": {
+    "contractVersion": "external-masked-volume-calculation-report.v3",
+    "reportId": "report-19ef284f5905",
+    "maskedCalculationIdentityDigest": "sha256:5f92c6705f3dc7ccc5675195216fd7888ec77d2d23e58a055a44128066951ad3",
+    "numericResult": {
+      "contractVersion": "external-masked-volume-numeric-result.v3",
+      "maskedCalculationIdentityDigest": "sha256:5f92c6705f3dc7ccc5675195216fd7888ec77d2d23e58a055a44128066951ad3",
+      "maskedProfileDigest": "sha256:fe055b0691753b90991cdccb9c34e3cf8fa195300b59c1565092ebad22582703",
+      "maskBindingDigest": "sha256:2440031ba583d611832cd8a3794460929184c3a2f4df40cc66e77b4403e5faf9",
+      "metrics": {
+        "cutM3": 0.010000000000000002,
+        "fillM3": 0.010000000000000002,
+        "netM3": 0.0,
+        "thresholdM": 0.0,
+        "uncertaintyM3": null
+      },
+      "coverage": {
+        "contractVersion": "external-masked-volume-coverage-witness.v3",
+        "rows": 3,
+        "columns": 4,
+        "rowOffset": -1,
+        "columnOffset": -1,
+        "originalSelectedMaskB64": "BmA=",
+        "maskExcludedMaskB64": "ACA=",
+        "effectiveSelectedMaskB64": "BkA=",
+        "commonValidMaskB64": "BkA=",
+        "unavailableMaskB64": "AAA=",
+        "originalSelectedCellCount": 4,
+        "maskExcludedCellCount": 1,
+        "effectiveSelectedCellCount": 3,
+        "commonValidCellCount": 3,
+        "unavailableCellCount": 0,
+        "cellAreaM2": 0.010000000000000002,
+        "originalSelectedAreaM2": 0.04000000000000001,
+        "effectiveSelectedAreaM2": 0.030000000000000006,
+        "commonValidAreaM2": 0.030000000000000006,
+        "bounds": [
+          199999.9,
+          549999.7999999999,
+          200000.3,
+          550000.1
+        ],
+        "coverageWitnessDigest": "sha256:9f3e18a57817be9ca813aa2c0d2854f77ef13a7dbe497354edde91de22ecd069"
+      },
+      "impact": {
+        "unmaskedImpactKnown": true,
+        "excludedCellCount": 1,
+        "unmaskedCutM3": 0.010000000000000002,
+        "unmaskedFillM3": 0.010000000000000002,
+        "unmaskedNetM3": 0.0,
+        "excludedCutM3": -0.0,
+        "excludedFillM3": 0.0,
+        "excludedNetM3": 0.0
+      },
+      "numericResultIdentityDigest": "sha256:ee29377f007ad2c570d4cf6ad9f90657027fc11f4901df192be33cb8dbf3376e"
+    },
+    "numericResultIdentityDigest": "sha256:ee29377f007ad2c570d4cf6ad9f90657027fc11f4901df192be33cb8dbf3376e",
+    "computedAt": "2026-10-26T17:10:22.579890Z",
+    "reportedAt": "2026-10-26T17:10:22.579891Z",
+    "reportDigest": "sha256:b4ce707a54c9c58b79477aef81e24eac5977d2d01bc49fa529b75a7c4e956f63"
+  }
+}

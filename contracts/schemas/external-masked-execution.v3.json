@@ -1,0 +1,365 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-masked-execution.v3.json",
+  "title": "KSI external masked execution V3",
+  "description": "Additive V3 masked-execution transport: admission, authorization, attempt, three ordered inputs. Fenced envelope only; numeric V3 report carries no fence fields. Synthetic test fixtures only.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/admission"
+    },
+    {
+      "$ref": "#/$defs/authorization"
+    },
+    {
+      "$ref": "#/$defs/attempt"
+    },
+    {
+      "$ref": "#/$defs/workerInput"
+    },
+    {
+      "$ref": "#/$defs/executionRuntime"
+    }
+  ],
+  "$defs": {
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "text": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "utc": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+]00:00)$"
+    },
+    "admission": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "admissionId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "maskedCalculationIdentityDigest",
+        "sourceCalculationIdentityDigest",
+        "maskBindingDigest",
+        "maskedProfileDigest",
+        "areaDefinitionDigest",
+        "policyDigest",
+        "runtimeDigest",
+        "resourceEnvelopeDigest",
+        "activationDigest",
+        "scopeDigest",
+        "aiEgressDigest",
+        "disposition",
+        "reasonCodes",
+        "assessedAt",
+        "admissionDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-admission.v3"
+        },
+        "admissionId": {
+          "$ref": "#/$defs/text"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "siteId": {
+          "$ref": "#/$defs/text"
+        },
+        "workAreaId": {
+          "$ref": "#/$defs/text"
+        },
+        "maskedCalculationIdentityDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceCalculationIdentityDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "maskBindingDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "maskedProfileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "areaDefinitionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "runtimeDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "resourceEnvelopeDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "activationDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "scopeDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "aiEgressDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "disposition": {
+          "enum": [
+            "ADMIT_PROVISIONAL",
+            "ADMIT_EVALUATED",
+            "REMEDIATION_REQUIRED",
+            "BLOCKED"
+          ]
+        },
+        "reasonCodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "assessedAt": {
+          "$ref": "#/$defs/utc"
+        },
+        "admissionDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "authorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "authorizationId",
+        "organizationId",
+        "maskedCalculationIdentityDigest",
+        "maskedProfileDigest",
+        "maskBindingDigest",
+        "sourceCalculationIdentityDigest",
+        "admissionDigest",
+        "activationDigest",
+        "workerPrincipalId",
+        "resourceEnvelope",
+        "resourceEnvelopeDigest",
+        "authorizedAt",
+        "executionAuthorizationDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-authorization.v3"
+        },
+        "authorizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "organizationId": {
+          "$ref": "#/$defs/text"
+        },
+        "maskedCalculationIdentityDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "maskedProfileDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "maskBindingDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "sourceCalculationIdentityDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "admissionDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "activationDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "workerPrincipalId": {
+          "$ref": "#/$defs/text"
+        },
+        "resourceEnvelope": {
+          "type": "object"
+        },
+        "resourceEnvelopeDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "authorizedAt": {
+          "$ref": "#/$defs/utc"
+        },
+        "executionAuthorizationDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "attempt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "attemptId",
+        "authorization",
+        "authorizationDigest",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "leaseGeneration",
+        "issuedAt",
+        "leaseExpiresAt",
+        "executionAttemptDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-attempt.v3"
+        },
+        "attemptId": {
+          "$ref": "#/$defs/text"
+        },
+        "authorization": {
+          "$ref": "#/$defs/authorization"
+        },
+        "authorizationDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "workerInstanceId": {
+          "$ref": "#/$defs/text"
+        },
+        "leaseAcquisitionId": {
+          "$ref": "#/$defs/text"
+        },
+        "leaseGeneration": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issuedAt": {
+          "$ref": "#/$defs/utc"
+        },
+        "leaseExpiresAt": {
+          "$ref": "#/$defs/utc"
+        },
+        "executionAttemptDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "workerInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "maskedRequestId",
+        "attempt",
+        "maskedCalculationIdentity",
+        "inputs"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-input.v3"
+        },
+        "maskedRequestId": {
+          "$ref": "#/$defs/text"
+        },
+        "attempt": {
+          "$ref": "#/$defs/attempt"
+        },
+        "maskedCalculationIdentity": {
+          "type": "object"
+        },
+        "inputs": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "prefixItems": [
+            {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "const": "BASELINE_DSM"
+                }
+              },
+              "required": [
+                "role",
+                "artifactId",
+                "observedSha256",
+                "observedSizeBytes",
+                "expiresAt"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "const": "CURRENT_DSM"
+                }
+              },
+              "required": [
+                "role",
+                "artifactId",
+                "observedSha256",
+                "observedSizeBytes",
+                "expiresAt"
+              ]
+            },
+            {
+              "type": "object",
+              "properties": {
+                "role": {
+                  "const": "EXCLUSION_MASK"
+                }
+              },
+              "required": [
+                "role",
+                "artifactId",
+                "observedSha256",
+                "observedSizeBytes",
+                "expiresAt"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "executionRuntime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contractVersion",
+        "workerExecutableDigest",
+        "workerBuildDigest",
+        "runtimeImageVersion",
+        "runtimeImageOciDigest",
+        "dependencyLockDigest",
+        "runtimeDigest"
+      ],
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-runtime.v3"
+        },
+        "workerExecutableDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "workerBuildDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "runtimeImageVersion": {
+          "$ref": "#/$defs/text"
+        },
+        "runtimeImageOciDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "dependencyLockDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "runtimeDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    }
+  }
+}

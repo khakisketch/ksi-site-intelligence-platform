@@ -124,6 +124,8 @@ def create_platform_app(
         external_artifact_inspection_store=graph.external.artifact_inspection_store,
         external_display_artifact_store=graph.external.display_artifact_store,
         external_analysis_wiring=graph.analysis,
+        external_delta_wiring=graph.delta,
+        external_masked_wiring=graph.masked,
     )
     return app
 

@@ -239,6 +239,25 @@ def test_pending_discovery_is_bounded_worker_only_and_does_not_mint_a_lease(http
     )
     assert pending.status_code == 200, pending.text
     assert pending.json() == {"publicationIds": ["pub-01"]}
+    for version, expected in (
+        ("external-relative-volume-calculation-report.v2", []),
+        ("external-masked-volume-calculation-identity.v3", ["pub-01"]),
+    ):
+        filtered = client.get(
+            "/v1/internal/delta-publication-uploads",
+            headers=_headers("worker"),
+            params={"limit": 1, "source_contract_version": version},
+        )
+        assert filtered.status_code == 200
+        assert filtered.json() == {"publicationIds": expected}
+    assert (
+        client.get(
+            "/v1/internal/delta-publication-uploads",
+            headers=_headers("worker"),
+            params={"source_contract_version": "unapproved-source-version"},
+        ).status_code
+        == 422
+    )
     for role in ("operator", "mcp", "processing"):
         assert (
             client.get("/v1/internal/delta-publication-uploads", headers=_headers(role)).status_code

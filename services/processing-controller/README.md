@@ -147,6 +147,44 @@ acceptance or release readiness. Core HTTP phase timeouts and bounded filesystem
 do not prove a hard deadline for arbitrary blocked host I/O. Guarded public downloads
 and operational retention cleanup are separate Core delivery responsibilities.
 
+## Separate delta reproduction primitives (P2 local integration)
+
+`external_delta_publication_worker` and `external_delta_reproduction_measurement` implement the separate
+late-output job handshake. They do not revive a completed/expired V2 analysis attempt or mutate its
+numeric report: a new publication lease binds exact Core-resolved source material and download
+capabilities, reproduction verifies the retained metrics/coverage, the worker measures the actual
+private FLOAT64 TIFF and submits an output observation before raw byte publication. Publication
+failure stays in the output journal. `external_delta_raster` has distinct V2 and V3 writers; excluded
+or unselected cells are NaN and the sign is `CURRENT_MINUS_BASELINE` in metres.
+
+This is an explicit software integration API, **not a newly installed production daemon or proof of
+native-process containment**. No default credential, automatic environment activation, launcher
+installation, account, image or namespace provisioning is added. Generated loopback Core/object tests
+exercise the handshake; operating these native primitives on untrusted production inputs still needs
+the separately accepted host containment and exact signed new-purpose runtime/policy/envelope.
+See the [owning P2 plan](../../docs/superpowers/plans/2026-10-25-spatial-intelligence-engine-integration.md).
+
+### First independent-mask inspection and calculation
+
+`external_masked_workflow_worker` provides a bounded discovery-driven pass over genuine Core pending
+inspection/calculation records. It requires explicit Core credentials, pinned object endpoints,
+private work directories, sealed profiles/envelope and the exact execution runtime. It does not
+install a daemon or infer credentials from the environment. Inspection runs outside Core and reports
+through a live designated-worker fence; deterministic invalid input is reported as a terminal rejected
+inspection, rather than left indefinitely pending.
+
+First calculation uses a distinct V3 attempt: fetch its closed input, verify the designated principal
+and runtime/envelope/activation pins, download the two DSM capabilities, read mask windows only from
+the pinned authenticated Core origin, dispatch bounded native measurement, and report under the same
+fence. Core bearer credentials never go to object-storage origins. No completed V2 numeric result or
+late-output lease is used to authorize first execution. Unknown excluded-source impact remains null.
+
+`run_pending_delta_publications(flavor="v2"|"masked")` separately discovers only the matching source
+version and reproduces a retained report for output publication. Neither drain silently converts
+between profiles or revises old numerics. Generated loopback tests are local software proof only;
+production native-process containment, signed runtime installation and customer acceptance remain
+separate gates.
+
 ## Platform/managed split (P3 Task 3)
 
 The registered entrypoints now carry only platform lanes. Some import-only historical helpers

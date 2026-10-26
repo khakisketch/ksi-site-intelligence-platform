@@ -355,7 +355,9 @@ Implementation boundaries for this continuation:
 
 The previous P2 proposal/Console whole-scope table's “decision required” status is superseded by the
 Human choice above. There is no new pilot-scope or contract-approval stop. The measurement/model
-foundation is committed as `131e5e29` after P1 `d20379cd`; later integration remains uncommitted.
+foundation is committed as `131e5e29` after P1 `d20379cd`; the guarded delta protocol/API models,
+MCP and result-bound export consumers are committed as `a0e40cb6`. Later composition/worker/mask
+integration remains uncommitted.
 No new route is enabled by default and no deployment occurred.
 
 - New strict mask/profile/identity and V3 coverage/result/impact contracts, pure masked math and
@@ -446,6 +448,110 @@ allowed; the earlier distinct-parent restriction had no approved basis and was r
 source adapter passed **9** genuine-but-synthetic source/currentness checks without any V2 NX result.
 Optional masked mounting, actual inspection/calculation transport, source-context/BFF/Console wiring,
 V3 late-output transport and their composed acceptance are still active integration work.
+
+Subsequent whole-Console check: **2,376 tests / 228 files passed**, including the new selected-AP
+source binding and masked-result/export composition; TypeScript passed. The isolated worktree's
+`node_modules` symlink resolves into main, outside Turbopack's configured root, so the default build
+failed at Next-package resolution (the package exists; no install was run). The documented
+`next build --webpack` path compiled, typechecked and generated all routes successfully. Standalone
+tracing warned that **27 linked-dependency files** lie outside its trace root: this is compilation
+evidence, **not a portable release artifact**. No shared dependency/configuration was changed; the
+build's two run-local tsconfig include additions were removed without changing the original entries.
+
+### P2 common-lane integration — 2026-10-27 verification
+
+- Both optional lanes now use the actual common platform factory and exact AP/Site/reconstruction/
+  inspection/WorkArea/currentness objects. Missing configuration still mounts neither lane. Distinct
+  purpose signatures and explicit runtime/envelope/worker pins remain required; no production factory
+  silently enables the extension. V2 and V3 source routing is record-derived, ambiguity denies.
+- First masked execution is now verified over genuine loopback HTTP: human declaration/upload →
+  worker discovery/inspection → Core seal → human source-only V3 request → worker discovery/lease →
+  direct DSM capabilities + protected mask bytes → native worker dispatch → Core report acceptance.
+  Generated 4×4 proof: original16, excluded1, effective/common-valid15, unavailable0; fill2/cut2/net0,
+  provisional admission retained. No completed V2 numeric report or borrowed V2 attempt authorizes it.
+- The critical human-issuer/worker confusion is corrected: the required designated Analysis worker,
+  not the human issuer, is sealed into V3 execution authorization and checked through every transition.
+  Runtime/envelope/activation mismatch is rejected before object download/native decoding. Mask byte
+  windows use the pinned private root and same descriptor for full-hash proof and bounded window.
+- Inspection failures are fenced, terminal and visible: deterministic input rejection is REJECTED;
+  unexpected IO is FAILED; both leave the immutable input bytes intact and cannot revive a lease.
+  Human status reads no longer infer endless pending from a null manifest. Report time is within the
+  live inspection lease. Typed failure/status models remain separate from frozen V2.
+- Mixed export queues are version-filtered **before** lease/limit: the V2 drain cannot consume a V3
+  retry and vice versa. Genuine mixed-lane proof publishes each independently and retains both source
+  numeric reports byte-identically. Expired leases remain rediscoverable within signed retry caps.
+- Console source selection binds current evidence pages to their selected analysis/revision/digest,
+  with an explicit read-only source-evidence action. V3 export uses only the AVAILABLE V3 result's
+  exact three digests; non-AVAILABLE/denied inspection callbacks clear stale export availability.
+  Session continuity stores only opaque child/request ids scoped to organization/principal/site/area/
+  source, and resumes only by explicit guarded Core reads; no file, credential or capability URL persists.
+- A fresh combined backend run passed **372**, zero deselection; updated full Dashboard suite passed
+  **2,401 / 229 files**, TypeScript and scoped ESLint passed. Mypy passed **34 changed/new source modules**;
+  changed/new Python Ruff passed. These are software evidence, not customer or sandbox acceptance.
+- Actual common-fixture boot exposed an early TestClient lifespan shutdown during DSM seeding: the
+  seeding transport now closes without ending the future live app's lifespan. The regression confirms
+  `/ready` remains true until actual application shutdown closes owned descriptors. Failed startup
+  receipts are retained separately; no journal or permission gate was bypassed.
+- Actual browser declaration exposed a null-digest construction seam: Core now seals the validated
+  declaration intent before the store (whose sealed-input rule is unchanged). Tampered provided digests
+  still fail 422 without journal growth. Browser upload-to-result/output and rejection recovery are
+  the final composed verification in progress, not an unavailable external authority.
+
+### P2 final local acceptance reconciliation — 2026-10-27
+
+The composed local outcome above is now verified, not left at individual module handoffs. The actual
+common-factory preview (Core8037 / issuer9034 / Console3235) accepted a browser-uploaded generated mask,
+discovered and inspected it through the first worker, accepted the user's separate V3 calculation,
+and published/downloaded its separate V3 delta through the late-output worker. The browser file is
+**525,191 bytes**, two slices **524,288 + 903**, SHA-256
+`54fc22bfd49d1fe77e63b26cddd825ee52e7fdc800368f950dacd497a257c582`; metadata was checked before/after
+assembly. FLOAT64 native readback has exactly3 finite selected cells (`-1,0,+1`) and9 NaNs, retaining
+excluded/unselected cells as NaN. The source V2 result remained byte-equivalent as parsed JSON.
+
+Actual browser tests also uploaded a NoData-tagged mask: the real inspector rejected it, Core retained
+REJECTED status, calculation/upload actions disappeared, and a corrected fresh child subsequently
+reached AVAILABLE. The rejected record stayed terminal. Reload plus explicit scoped restore made zero
+mask/calculation/publication mutations. Desktop1440/mobile390 first and result views, small positive
+areas0.04/0.03m² and keyboard disclosures were inspected; no horizontal overflow. This finite-input
+browser record does not replace the separate unknown-impact/NaN fixture evidence.
+
+The actual composed checks corrected three interface gaps missed by hand-made fixtures: unsealed
+declaration construction, missing browser upload-verification headers, and legitimate signed padded
+coverage offsets(-1,-1). Real public contract payloads now cover the latter. BFF upload forwarding is
+pull-based and cancels its source on rejection/timeout; ambiguous declaration/calculation retries retain
+their exact intent ids. Accepting a new mask draft clears stale result/export presentation without
+changing the old Core record. Positive sub-square-metre areas no longer display as zero.
+
+Final verification: **372 backend contract/replay/integration tests**, zero deselection; **2,413 Dashboard
+tests /231 files**, TypeScript and scoped ESLint; **34 Python source modules mypy**, changed/new Python
+Ruff. Source-bound MCP/official SDK stdio **17/17**. Final Webpack compilation/typecheck/route generation
+passed after render fixes; the default Turbopack/shared-symlink and27-file standalone tracing limits
+remain disclosed above. No portable release artifact is claimed.
+
+Durable non-secret actual-render/native-byte receipts and captures:
+`~/.local/state/ksi-console-ia-20261025/integration-20261026/p2-masked-20261027/manifest.json` and
+`masked-rendered-verification.json`; V2-only export evidence remains under the sibling
+`p2-delta-20261027/`. Failed startup/harness/development receipts remain in the task scratch root,
+not counted as product passes. Original main patch and16 original untracked inputs were hash-verified
+unchanged; the unrelated child stash-apply was narrowly repaired with original stash and bytes retained.
+
+| Approved requirement / remaining boundary | Live disposition |
+|---|---|
+| Viewer-first 공간/자료; list/form-first 업무/결과/검토; user-controlled navigation | P1 retained; no new Home/theme/global IA change |
+| Frozen V2 contracts/results and existing replay | Preserved; named V2 contract/schema diff from P1 is empty; original numeric result unchanged through actual V3 flow |
+| Independent exact-grid UINT8 masks, holes-first exclusions, strict validity, unknown-impact honesty | Implemented and verified at synthetic local/software scope; native containment is separate |
+| Core ingress/admission/currentness, protected bytes, actual first worker and retry/replay | Implemented and verified, including designated principal, five runtime pins and signed new-purpose activation |
+| Separate V2/V3 output publication, discovery, bounded guarded file reads, MCP/Console consumers | Implemented and verified at local generated/official SDK scope; external AI-host installation not inferred |
+| Actual Console declaration→inspection→V3 result→delta download; rejection/recovery/resume | Verified through actual common factory, not manually copied mounts or substituted success replies |
+| Production policy/runtime/envelope signing, installed host containment, portable release artifact | BLOCKED / unverified; temporary signatures and linked-worktree compilation cannot establish these gates |
+| Permitted retained customer inputs, EPSG:7850/vertical evidence, independent consumer hosts, field/quantitative/repeated-use customer acceptance | BLOCKED / unavailable; no imagery, accuracy, Terra or customer acceptance invented |
+| Main merge, push, production/TLS/cloud/billing/account mutation; Home/global IA/theme | Not performed or newly authorized; original main work remains protected |
+
+Local P2 development/integration is complete at the evidence scope above. Whole product/customer/
+deployment acceptance is **not** complete: the next goal-serving acceptance requires the actual signed
+deployment/runtime/host and permitted customer/consumer inputs, not another synthetic fixture pass or
+another request for the Human to repeat “다음 진행”. Historical F-03/Task5a/5c closure stays within its
+recorded synthetic/authorized-host scope and is not reopened or promoted by this work.
 
 Only unavailable signing/provisioning, deployment-host proof, retained permitted customer data and
 field/consumer/customer acceptance remain external. Continue independently actionable local code;

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-mask-input.v1.json",
+  "title": "KSI external mask child ingress V1",
+  "description": "Additive independent binary-mask child-resource ingress: declaration, narrow inspection profile, Core-sealed observed manifest. Sealed evidence only; grants no admission or read rights. Synthetic test fixtures only.",
+  "oneOf": [
+    { "$ref": "#/$defs/declaration" },
+    { "$ref": "#/$defs/inspectionProfile" },
+    { "$ref": "#/$defs/manifest" }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 255 },
+    "transform": { "type": "array", "minItems": 6, "maxItems": 6, "items": { "type": "number" } },
+    "bounds": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+    "sealedSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organizationId", "siteId", "workOrderId", "submissionId", "revision", "submissionDigest", "manifestDigest"],
+      "properties": {
+        "organizationId": { "$ref": "#/$defs/text" },
+        "siteId": { "$ref": "#/$defs/text" },
+        "workOrderId": { "$ref": "#/$defs/text" },
+        "submissionId": { "$ref": "#/$defs/text" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "submissionDigest": { "$ref": "#/$defs/digest" },
+        "manifestDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "declaration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "declarationId", "organizationId", "siteId", "workAreaId", "childKind", "maskChildId", "maskArtifactId", "parentSubject", "targetBaselineSubject", "targetBaselineDsmArtifactId", "declaredSha256", "declaredSizeBytes", "declarationDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-mask-child-declaration.v1" },
+        "declarationId": { "$ref": "#/$defs/text" },
+        "organizationId": { "$ref": "#/$defs/text" },
+        "siteId": { "$ref": "#/$defs/text" },
+        "workAreaId": { "$ref": "#/$defs/text" },
+        "childKind": { "const": "MASK_CHILD" },
+        "maskChildId": { "$ref": "#/$defs/text" },
+        "maskArtifactId": { "type": "string", "minLength": 1, "maxLength": 255, "not": { "pattern": "://|\\.\\." } },
+        "parentSubject": { "$ref": "#/$defs/sealedSubject" },
+        "targetBaselineSubject": { "$ref": "#/$defs/sealedSubject" },
+        "targetBaselineDsmArtifactId": { "type": "string", "minLength": 1, "maxLength": 255, "not": { "pattern": "://|\\.\\." } },
+        "declaredSha256": { "$ref": "#/$defs/digest" },
+        "declaredSizeBytes": { "type": "integer", "exclusiveMinimum": 0 },
+        "declarationDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "inspectionProfile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "profileId", "version", "containedProtocol", "runtimeImageVersion", "runtimeImageOciDigest", "workerExecutableDigest", "workerBuildDigest", "dependencyLockDigest", "maskGrammarDigest", "maskConvention", "maskNodataRule", "resourceEnvelopeDigest", "inspectionProfileDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-mask-inspection-profile.v1" },
+        "profileId": { "const": "KSI-MASK-INSPECTION-V1" },
+        "version": { "type": "integer", "minimum": 1 },
+        "containedProtocol": { "const": "CONTAINED_MASK_INSPECTION_V1" },
+        "runtimeImageVersion": { "$ref": "#/$defs/text" },
+        "runtimeImageOciDigest": { "$ref": "#/$defs/digest" },
+        "workerExecutableDigest": { "$ref": "#/$defs/digest" },
+        "workerBuildDigest": { "$ref": "#/$defs/digest" },
+        "dependencyLockDigest": { "$ref": "#/$defs/digest" },
+        "maskGrammarDigest": { "$ref": "#/$defs/digest" },
+        "maskConvention": { "const": "UINT8_SINGLE_BAND_BINARY_0_KEEP_1_EXCLUDE_V1" },
+        "maskNodataRule": { "const": "NO_NODATA" },
+        "resourceEnvelopeDigest": { "$ref": "#/$defs/digest" },
+        "inspectionProfileDigest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["contractVersion", "organizationId", "siteId", "workAreaId", "childKind", "maskChildId", "maskArtifactId", "subject", "parentSubjectDigest", "targetBaselineDsmArtifactId", "targetBaselineSubjectDigest", "observedSha256", "observedSizeBytes", "observedInspectionReportDigest", "inspectionProfileDigest", "rows", "columns", "transform", "transformDigest", "observedCrsIdentifier", "observedCrsDigest", "dtype", "bandCount", "retainValue", "excludeValue", "nodataRepresentation", "bounds", "manifestDigest"],
+      "properties": {
+        "contractVersion": { "const": "external-mask-observed-manifest.v1" },
+        "organizationId": { "$ref": "#/$defs/text" },
+        "siteId": { "$ref": "#/$defs/text" },
+        "workAreaId": { "$ref": "#/$defs/text" },
+        "childKind": { "const": "MASK_CHILD" },
+        "maskChildId": { "$ref": "#/$defs/text" },
+        "maskArtifactId": { "type": "string", "minLength": 1, "maxLength": 255, "not": { "pattern": "://|\\.\\." } },
+        "subject": { "$ref": "#/$defs/sealedSubject" },
+        "parentSubjectDigest": { "$ref": "#/$defs/digest" },
+        "targetBaselineDsmArtifactId": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "targetBaselineSubjectDigest": { "$ref": "#/$defs/digest" },
+        "observedSha256": { "$ref": "#/$defs/digest" },
+        "observedSizeBytes": { "type": "integer", "exclusiveMinimum": 0 },
+        "observedInspectionReportDigest": { "$ref": "#/$defs/digest" },
+        "inspectionProfileDigest": { "$ref": "#/$defs/digest" },
+        "rows": { "type": "integer", "exclusiveMinimum": 0 },
+        "columns": { "type": "integer", "exclusiveMinimum": 0 },
+        "transform": { "$ref": "#/$defs/transform" },
+        "transformDigest": { "$ref": "#/$defs/digest" },
+        "observedCrsIdentifier": { "$ref": "#/$defs/text" },
+        "observedCrsDigest": { "$ref": "#/$defs/digest" },
+        "dtype": { "const": "UINT8" },
+        "bandCount": { "const": 1 },
+        "retainValue": { "const": 0 },
+        "excludeValue": { "const": 1 },
+        "nodataRepresentation": { "const": "NONE" },
+        "bounds": { "$ref": "#/$defs/bounds" },
+        "manifestDigest": { "$ref": "#/$defs/digest" }
+      }
+    }
+  }
+}

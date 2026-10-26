@@ -17,8 +17,10 @@ from fastapi import FastAPI
 
 from ksi_core.auth import HumanAuthMode
 from ksi_core.composition.external_graph import ExternalAnalysisLocalGraphConfig
+from ksi_core.composition.masked_quantitative_graph import MaskedQuantitativeLocalConfig
 from ksi_core.composition.platform_app import create_platform_app
 from ksi_core.composition.platform_graph import build_platform_graph
+from ksi_core.composition.quantitative_extension_graph import DeltaPublicationLocalConfig
 from ksi_core.composition.runtime_surfaces import mount_runtime_surfaces
 from ksi_core.composition.spatial_data_graph import SpatialDataLocalAssemblyConfig
 from ksi_core.domains.sites.sites import _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG
@@ -47,6 +49,9 @@ def assemble_platform_app(
     external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
     analysis_activation: AnalysisActivationV1 | None = None,
     spatial_data: SpatialDataLocalAssemblyConfig | None = None,
+    delta_publications: DeltaPublicationLocalConfig | None = None,
+    masked_quantitative: MaskedQuantitativeLocalConfig | None = None,
+    masked_dsm_byte_reader: Any | None = None,
     site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
     expose_docs: bool = False,
 ) -> FastAPI:
@@ -64,15 +69,28 @@ def assemble_platform_app(
         external_analysis_local_graph=external_analysis_local_graph,
         analysis_activation=analysis_activation,
         spatial_data=spatial_data,
+        delta_publications=delta_publications,
+        masked_quantitative=masked_quantitative,
+        masked_dsm_byte_reader=masked_dsm_byte_reader,
         site_bootstrap_max_sites_per_org=site_bootstrap_max_sites_per_org,
     )
-    app = create_platform_app(
-        graph=graph,
-        auth_registry=auth_registry,
-        human_auth_mode=human_auth_mode,
-        oidc_verifier=oidc_verifier,
-        expose_docs=expose_docs,
-    )
+    try:
+        app = create_platform_app(
+            graph=graph,
+            auth_registry=auth_registry,
+            human_auth_mode=human_auth_mode,
+            oidc_verifier=oidc_verifier,
+            expose_docs=expose_docs,
+        )
+    except BaseException:
+        # Newly opened extension descriptors have no ASGI lifespan to close
+        # them when mounting fails. Common journal ownership stays with the
+        # caller's existing `opened` lifecycle.
+        if graph.delta is not None:
+            graph.delta.close()
+        if graph.masked is not None:
+            graph.masked.close()
+        raise
     # Legacy-only state this profile legitimately does not own is declared
     # absent (None) rather than fabricated — capability/device/runtime,
     # managed-processing and flight routes stay unmounted.

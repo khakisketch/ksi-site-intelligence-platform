@@ -13,7 +13,7 @@ import json
 import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from ksi_event_contracts.external_delta_publication_api import (
@@ -307,11 +307,20 @@ def build_external_delta_publication_router(
     )
     def pending_jobs(
         limit: int = Query(default=50, ge=1, le=50),
+        source_contract_version: Literal[
+            "external-relative-volume-calculation-report.v2",
+            "external-masked-volume-calculation-identity.v3",
+        ]
+        | None = Query(default=None),
         principal: Principal = Depends(worker),  # noqa: B008
     ) -> DeltaPublicationPendingJobsV1:
         worker_only(principal)
         return DeltaPublicationPendingJobsV1(
-            publication_ids=store.list_pending_for_worker(worker_principal=principal, limit=limit),
+            publication_ids=store.list_pending_for_worker(
+                worker_principal=principal,
+                limit=limit,
+                source_contract_version=source_contract_version,
+            ),
         )
 
     @router.post(

@@ -1,0 +1,2810 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-masked-api.v1.json",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/MaskUploadGrantRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskUploadGrantViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskUploadSealViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskChildViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskSealViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskSourceContextViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionStatusViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionLeaseRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionLeaseViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionPendingItemV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionPendingListV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionReportRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionFailureRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskInspectionFailureViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationCreateRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationCreatedViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationDetailViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationMutationViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationPendingItemV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedCalculationPendingListV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedLeaseRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedReportRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedFailureRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedRenewRequestV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedBytesSliceViewV1"
+    },
+    {
+      "$ref": "#/$defs/MaskedDeltaSourceRefV1"
+    }
+  ],
+  "$defs": {
+    "MaskChildDeclarationV1": {
+      "additionalProperties": false,
+      "description": "Client-declared mask upload intent; asserts no grid or inspection truth.\n\nAnchored to a real sealed reconstruction subject plus one target baseline\nDSM artifact.  The ``childKind`` literal keeps this resource distinct from\nDSM epochs, reports, and checkpoints.  Declared SHA/size are intent only;\nCore re-proves observed bytes after the protected upload seals.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-mask-child-declaration.v1",
+          "default": "external-mask-child-declaration.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "declarationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Declarationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "childKind": {
+          "const": "MASK_CHILD",
+          "title": "Childkind",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "parentSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "targetBaselineSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "targetBaselineDsmArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Targetbaselinedsmartifactid",
+          "type": "string"
+        },
+        "declaredSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Declaredsha256",
+          "type": "string"
+        },
+        "declaredSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Declaredsizebytes",
+          "type": "integer"
+        },
+        "declarationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Declarationdigest"
+        }
+      },
+      "required": [
+        "declarationId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "childKind",
+        "maskChildId",
+        "maskArtifactId",
+        "parentSubject",
+        "targetBaselineSubject",
+        "targetBaselineDsmArtifactId",
+        "declaredSha256",
+        "declaredSizeBytes"
+      ],
+      "title": "MaskChildDeclarationV1",
+      "type": "object"
+    },
+    "MaskChildViewV1": {
+      "additionalProperties": false,
+      "description": "Declared intent plus the Core-sealed observed manifest (when sealed).",
+      "properties": {
+        "declaration": {
+          "$ref": "#/$defs/MaskChildDeclarationV1"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaskObservedManifestV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "declaration"
+      ],
+      "title": "MaskChildViewV1",
+      "type": "object"
+    },
+    "MaskInspectionFailureRequestV1": {
+      "additionalProperties": false,
+      "description": "Fenced worker failure: live lease binding plus one closed reason.",
+      "properties": {
+        "leaseId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "inspectionProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionprofiledigest",
+          "type": "string"
+        },
+        "reasonCode": {
+          "enum": [
+            "MASK_NODATA_REJECTED",
+            "MASK_BYTES_MISMATCH",
+            "MASK_RESOURCE_EXCEEDED",
+            "MASK_INSPECTION_FAILED"
+          ],
+          "title": "Reasoncode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "leaseId",
+        "workerInstanceId",
+        "inspectionProfileDigest",
+        "reasonCode"
+      ],
+      "title": "MaskInspectionFailureRequestV1",
+      "type": "object"
+    },
+    "MaskInspectionFailureViewV1": {
+      "additionalProperties": false,
+      "description": "Terminal inspection outcome (never revived, never numeric).",
+      "properties": {
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "REJECTED",
+            "FAILED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reasonCode": {
+          "enum": [
+            "MASK_NODATA_REJECTED",
+            "MASK_BYTES_MISMATCH",
+            "MASK_RESOURCE_EXCEEDED",
+            "MASK_INSPECTION_FAILED"
+          ],
+          "title": "Reasoncode",
+          "type": "string"
+        },
+        "failedAt": {
+          "format": "date-time",
+          "title": "Failedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "maskChildId",
+        "status",
+        "reasonCode",
+        "failedAt"
+      ],
+      "title": "MaskInspectionFailureViewV1",
+      "type": "object"
+    },
+    "MaskInspectionLeaseRequestV1": {
+      "additionalProperties": false,
+      "description": "Server-issued inspection job request: exact byte/subject/anchor identity.\n\nThe worker supplies the sealed subject copies Core must bind; Core\nresolves the baseline anchor grid itself and returns the expected grid\nfacts the contained inspector must prove.  No caller grid is accepted.",
+      "properties": {
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "subjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Subjectdigest",
+          "type": "string"
+        },
+        "baselineSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "baselineDsmArtifactId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Baselinedsmartifactid",
+          "type": "string"
+        },
+        "inspectionProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionprofiledigest",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "siteId",
+        "workAreaId",
+        "maskArtifactId",
+        "subjectDigest",
+        "baselineSubject",
+        "baselineDsmArtifactId",
+        "inspectionProfileDigest",
+        "workerInstanceId",
+        "leaseAcquisitionId"
+      ],
+      "title": "MaskInspectionLeaseRequestV1",
+      "type": "object"
+    },
+    "MaskInspectionLeaseViewV1": {
+      "additionalProperties": false,
+      "description": "Fenced inspection job plus the exact expected grid from the anchor.",
+      "properties": {
+        "leaseId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseid",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        },
+        "expectedRows": {
+          "exclusiveMinimum": 0,
+          "title": "Expectedrows",
+          "type": "integer"
+        },
+        "expectedColumns": {
+          "exclusiveMinimum": 0,
+          "title": "Expectedcolumns",
+          "type": "integer"
+        },
+        "expectedTransform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Expectedtransform",
+          "type": "array"
+        },
+        "expectedTransformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Expectedtransformdigest",
+          "type": "string"
+        },
+        "expectedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Expectedcrsidentifier",
+          "type": "string"
+        },
+        "expectedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Expectedcrsdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "leaseId",
+        "maskChildId",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "issuedAt",
+        "expiresAt",
+        "expectedRows",
+        "expectedColumns",
+        "expectedTransform",
+        "expectedTransformDigest",
+        "expectedCrsIdentifier",
+        "expectedCrsDigest"
+      ],
+      "title": "MaskInspectionLeaseViewV1",
+      "type": "object"
+    },
+    "MaskInspectionPendingItemV1": {
+      "additionalProperties": false,
+      "description": "One announced child with sealed bytes but no sealed manifest yet.",
+      "properties": {
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "declaration": {
+          "$ref": "#/$defs/MaskChildDeclarationV1"
+        }
+      },
+      "required": [
+        "maskChildId",
+        "siteId",
+        "workAreaId",
+        "declaration"
+      ],
+      "title": "MaskInspectionPendingItemV1",
+      "type": "object"
+    },
+    "MaskInspectionPendingListV1": {
+      "additionalProperties": false,
+      "description": "Bounded worker-only inspection discovery (up to 50).",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/MaskInspectionPendingItemV1"
+          },
+          "maxItems": 50,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "MaskInspectionPendingListV1",
+      "type": "object"
+    },
+    "MaskInspectionProfileV1": {
+      "additionalProperties": false,
+      "description": "Narrow uint8 binary-mask inspection profile with explicit contained binding.\n\nThe contained protocol and runtime binding are explicit inputs: a profile\nwithout them is rejected, and no default is inferred.  The grammar digest\nnames the separately approved mask grammar; Core must never accept the old\nfloat-DSM grammar digest here.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-mask-inspection-profile.v1",
+          "default": "external-mask-inspection-profile.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "profileId": {
+          "const": "KSI-MASK-INSPECTION-V1",
+          "title": "Profileid",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "containedProtocol": {
+          "const": "CONTAINED_MASK_INSPECTION_V1",
+          "title": "Containedprotocol",
+          "type": "string"
+        },
+        "runtimeImageVersion": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Runtimeimageversion",
+          "type": "string"
+        },
+        "runtimeImageOciDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimeimageocidigest",
+          "type": "string"
+        },
+        "workerExecutableDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerexecutabledigest",
+          "type": "string"
+        },
+        "workerBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Workerbuilddigest",
+          "type": "string"
+        },
+        "dependencyLockDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Dependencylockdigest",
+          "type": "string"
+        },
+        "maskGrammarDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskgrammardigest",
+          "type": "string"
+        },
+        "maskConvention": {
+          "const": "UINT8_SINGLE_BAND_BINARY_0_KEEP_1_EXCLUDE_V1",
+          "title": "Maskconvention",
+          "type": "string"
+        },
+        "maskNodataRule": {
+          "const": "NO_NODATA",
+          "title": "Masknodatarule",
+          "type": "string"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "inspectionProfileDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inspectionprofiledigest"
+        }
+      },
+      "required": [
+        "profileId",
+        "version",
+        "containedProtocol",
+        "runtimeImageVersion",
+        "runtimeImageOciDigest",
+        "workerExecutableDigest",
+        "workerBuildDigest",
+        "dependencyLockDigest",
+        "maskGrammarDigest",
+        "maskConvention",
+        "maskNodataRule",
+        "resourceEnvelopeDigest"
+      ],
+      "title": "MaskInspectionProfileV1",
+      "type": "object"
+    },
+    "MaskInspectionReportRequestV1": {
+      "additionalProperties": false,
+      "description": "Fenced narrow report: live lease binding plus sealed worker evidence.",
+      "properties": {
+        "leaseId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseid",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "report": {
+          "$ref": "#/$defs/MaskObservationReportV1"
+        },
+        "inspectionProfile": {
+          "$ref": "#/$defs/MaskInspectionProfileV1"
+        }
+      },
+      "required": [
+        "leaseId",
+        "workerInstanceId",
+        "report",
+        "inspectionProfile"
+      ],
+      "title": "MaskInspectionReportRequestV1",
+      "type": "object"
+    },
+    "MaskInspectionStatusViewV1": {
+      "additionalProperties": false,
+      "description": "Human-readable inspection state: manifest or terminal failure wins.\n\n``PENDING`` means announced without an outcome yet (bytes may still be\nunsealed); ``RUNNING`` a live lease; ``COMPLETED`` a sealed manifest;\n``REJECTED``/``FAILED`` the terminal worker failure with its reason.",
+      "properties": {
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "PENDING",
+            "RUNNING",
+            "COMPLETED",
+            "REJECTED",
+            "FAILED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "reasonCode": {
+          "anyOf": [
+            {
+              "enum": [
+                "MASK_NODATA_REJECTED",
+                "MASK_BYTES_MISMATCH",
+                "MASK_RESOURCE_EXCEEDED",
+                "MASK_INSPECTION_FAILED"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoncode"
+        },
+        "checkedAt": {
+          "format": "date-time",
+          "title": "Checkedat",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifestdigest"
+        }
+      },
+      "required": [
+        "maskChildId",
+        "siteId",
+        "workAreaId",
+        "status",
+        "checkedAt"
+      ],
+      "title": "MaskInspectionStatusViewV1",
+      "type": "object"
+    },
+    "MaskObservationMeasurementsV1": {
+      "additionalProperties": false,
+      "description": "Contained-runtime observed facts for one binary-mask TIFF, evidence only.",
+      "properties": {
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "transformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Transformdigest",
+          "type": "string"
+        },
+        "width": {
+          "exclusiveMinimum": 0,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "exclusiveMinimum": 0,
+          "title": "Height",
+          "type": "integer"
+        },
+        "bandCount": {
+          "const": 1,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "dtype": {
+          "const": "UINT8",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "nodataRepresentation": {
+          "const": "NONE",
+          "title": "Nodatarepresentation",
+          "type": "string"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        }
+      },
+      "required": [
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "transform",
+        "transformDigest",
+        "width",
+        "height",
+        "bandCount",
+        "dtype",
+        "nodataRepresentation",
+        "bounds"
+      ],
+      "title": "MaskObservationMeasurementsV1",
+      "type": "object"
+    },
+    "MaskObservationReportV1": {
+      "additionalProperties": false,
+      "description": "Sealed contained-runtime observation of one mask child artifact.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-mask-observation-report.v1",
+          "default": "external-mask-observation-report.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "reportId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Reportid",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "subjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Subjectdigest",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "inspectionProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionprofiledigest",
+          "type": "string"
+        },
+        "containedRuntimeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Containedruntimedigest",
+          "type": "string"
+        },
+        "inspectorBuildDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectorbuilddigest",
+          "type": "string"
+        },
+        "measurements": {
+          "$ref": "#/$defs/MaskObservationMeasurementsV1"
+        },
+        "reportedAt": {
+          "format": "date-time",
+          "title": "Reportedat",
+          "type": "string"
+        },
+        "reportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reportdigest"
+        }
+      },
+      "required": [
+        "reportId",
+        "maskChildId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "subject",
+        "subjectDigest",
+        "maskArtifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "inspectionProfileDigest",
+        "containedRuntimeDigest",
+        "inspectorBuildDigest",
+        "measurements",
+        "reportedAt"
+      ],
+      "title": "MaskObservationReportV1",
+      "type": "object"
+    },
+    "MaskObservedManifestV1": {
+      "additionalProperties": false,
+      "description": "Core-sealed observed-byte manifest for one mask child resource.\n\nCreated by Core only, from the sealed inspection report's observed raster\nfacts plus the sealed stored bytes.  A caller ``userDeclaredInspection``\nclaim is never accepted as authority.  The binary convention is fixed:\nunsigned 8-bit, single band, ``0`` retains and ``1`` excludes; any NoData\nrepresentation is a blocker recorded as ``NONE`` only when the worker\nproved no NoData tag and no masked pixels exist.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-mask-observed-manifest.v1",
+          "default": "external-mask-observed-manifest.v1",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "childKind": {
+          "const": "MASK_CHILD",
+          "title": "Childkind",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "subject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "parentSubjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Parentsubjectdigest",
+          "type": "string"
+        },
+        "targetBaselineDsmArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Targetbaselinedsmartifactid",
+          "type": "string"
+        },
+        "targetBaselineSubjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Targetbaselinesubjectdigest",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "observedInspectionReportDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedinspectionreportdigest",
+          "type": "string"
+        },
+        "inspectionProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionprofiledigest",
+          "type": "string"
+        },
+        "rows": {
+          "exclusiveMinimum": 0,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "columns": {
+          "exclusiveMinimum": 0,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "transform": {
+          "maxItems": 6,
+          "minItems": 6,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Transform",
+          "type": "array"
+        },
+        "transformDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Transformdigest",
+          "type": "string"
+        },
+        "observedCrsIdentifier": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Observedcrsidentifier",
+          "type": "string"
+        },
+        "observedCrsDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedcrsdigest",
+          "type": "string"
+        },
+        "dtype": {
+          "const": "UINT8",
+          "title": "Dtype",
+          "type": "string"
+        },
+        "bandCount": {
+          "const": 1,
+          "title": "Bandcount",
+          "type": "integer"
+        },
+        "retainValue": {
+          "const": 0,
+          "title": "Retainvalue",
+          "type": "integer"
+        },
+        "excludeValue": {
+          "const": 1,
+          "title": "Excludevalue",
+          "type": "integer"
+        },
+        "nodataRepresentation": {
+          "const": "NONE",
+          "title": "Nodatarepresentation",
+          "type": "string"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        },
+        "manifestDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifestdigest"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "childKind",
+        "maskChildId",
+        "maskArtifactId",
+        "subject",
+        "parentSubjectDigest",
+        "targetBaselineDsmArtifactId",
+        "targetBaselineSubjectDigest",
+        "observedSha256",
+        "observedSizeBytes",
+        "observedInspectionReportDigest",
+        "inspectionProfileDigest",
+        "rows",
+        "columns",
+        "transform",
+        "transformDigest",
+        "observedCrsIdentifier",
+        "observedCrsDigest",
+        "dtype",
+        "bandCount",
+        "retainValue",
+        "excludeValue",
+        "nodataRepresentation",
+        "bounds"
+      ],
+      "title": "MaskObservedManifestV1",
+      "type": "object"
+    },
+    "MaskSealViewV1": {
+      "additionalProperties": false,
+      "description": "Worker-sealed manifest receipt (no declaration re-read is required).",
+      "properties": {
+        "manifest": {
+          "$ref": "#/$defs/MaskObservedManifestV1"
+        }
+      },
+      "required": [
+        "manifest"
+      ],
+      "title": "MaskSealViewV1",
+      "type": "object"
+    },
+    "MaskSourceContextViewV1": {
+      "additionalProperties": false,
+      "description": "Core-resolved declaration anchor for one sealed AP source identity.\n\nSealed source copies Core rechecks at declare/seal/bind time; this view\ncreates no admission and asserts no numeric result.  The Console builds\nonly opaque ids plus hash/size from it \u2014 the grid always comes from the\nCore anchor, never from user input.  ``maxMaskBytes`` is the explicit\nnative envelope cap (``min(maxInputBytes, maxStreamedBytes)``); no\nretention is guessed.  Provisional sources stay provisional here.",
+      "properties": {
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "baselineSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "currentSubject": {
+          "$ref": "#/$defs/SealedExternalSubjectV1"
+        },
+        "baselineDsmArtifactId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Baselinedsmartifactid",
+          "type": "string"
+        },
+        "maskedProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedprofiledigest",
+          "type": "string"
+        },
+        "inspectionProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Inspectionprofiledigest",
+          "type": "string"
+        },
+        "maxMaskBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmaskbytes",
+          "type": "integer"
+        },
+        "maxMaskPixels": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmaskpixels",
+          "type": "integer"
+        },
+        "sourceDisposition": {
+          "enum": [
+            "ADMIT_PROVISIONAL",
+            "ADMIT_EVALUATED"
+          ],
+          "title": "Sourcedisposition",
+          "type": "string"
+        },
+        "assessedAt": {
+          "format": "date-time",
+          "title": "Assessedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceCalculationIdentityDigest",
+        "baselineSubject",
+        "currentSubject",
+        "baselineDsmArtifactId",
+        "maskedProfileDigest",
+        "inspectionProfileDigest",
+        "maxMaskBytes",
+        "maxMaskPixels",
+        "sourceDisposition",
+        "assessedAt"
+      ],
+      "title": "MaskSourceContextViewV1",
+      "type": "object"
+    },
+    "MaskUploadGrantRequestV1": {
+      "additionalProperties": false,
+      "description": "Bounded raw-upload grant intent; Core mints the server object key.",
+      "properties": {
+        "maskArtifactId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "subjectDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Subjectdigest",
+          "type": "string"
+        },
+        "declaredSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Declaredsha256",
+          "type": "string"
+        },
+        "declaredSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Declaredsizebytes",
+          "type": "integer"
+        },
+        "ttlSeconds": {
+          "default": 3600,
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Ttlseconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maskArtifactId",
+        "subjectDigest",
+        "declaredSha256",
+        "declaredSizeBytes"
+      ],
+      "title": "MaskUploadGrantRequestV1",
+      "type": "object"
+    },
+    "MaskUploadGrantViewV1": {
+      "additionalProperties": false,
+      "description": "Issued grant: id plus expiry only.  No object key, path, or URL leaves Core.",
+      "properties": {
+        "grantId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Grantid",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "grantId",
+        "maskChildId",
+        "maskArtifactId",
+        "expiresAt"
+      ],
+      "title": "MaskUploadGrantViewV1",
+      "type": "object"
+    },
+    "MaskUploadSealViewV1": {
+      "additionalProperties": false,
+      "description": "Sealed upload receipt: observed byte identity only, no path.",
+      "properties": {
+        "maskChildId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "maskArtifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Maskartifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "maskChildId",
+        "maskArtifactId",
+        "observedSha256",
+        "observedSizeBytes"
+      ],
+      "title": "MaskUploadSealViewV1",
+      "type": "object"
+    },
+    "MaskedAdmissionDispositionV3": {
+      "enum": [
+        "ADMIT_PROVISIONAL",
+        "ADMIT_EVALUATED",
+        "REMEDIATION_REQUIRED",
+        "BLOCKED"
+      ],
+      "title": "MaskedAdmissionDispositionV3",
+      "type": "string"
+    },
+    "MaskedAdmissionV3": {
+      "additionalProperties": false,
+      "description": "Numeric-free suitability decision for one exact masked calculation.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-admission.v3",
+          "default": "external-masked-execution-admission.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "admissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Admissionid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "maskBindingDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskbindingdigest",
+          "type": "string"
+        },
+        "maskedProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedprofiledigest",
+          "type": "string"
+        },
+        "areaDefinitionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Areadefinitiondigest",
+          "type": "string"
+        },
+        "policyDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Policydigest",
+          "type": "string"
+        },
+        "runtimeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Runtimedigest",
+          "type": "string"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "activationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Activationdigest",
+          "type": "string"
+        },
+        "scopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Scopedigest",
+          "type": "string"
+        },
+        "aiEgressDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Aiegressdigest",
+          "type": "string"
+        },
+        "disposition": {
+          "$ref": "#/$defs/MaskedAdmissionDispositionV3"
+        },
+        "reasonCodes": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Reasoncodes",
+          "type": "array"
+        },
+        "assessedAt": {
+          "format": "date-time",
+          "title": "Assessedat",
+          "type": "string"
+        },
+        "admissionDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Admissiondigest"
+        }
+      },
+      "required": [
+        "admissionId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "maskedCalculationIdentityDigest",
+        "sourceCalculationIdentityDigest",
+        "maskBindingDigest",
+        "maskedProfileDigest",
+        "areaDefinitionDigest",
+        "policyDigest",
+        "runtimeDigest",
+        "resourceEnvelopeDigest",
+        "activationDigest",
+        "scopeDigest",
+        "aiEgressDigest",
+        "disposition",
+        "reasonCodes",
+        "assessedAt"
+      ],
+      "title": "MaskedAdmissionV3",
+      "type": "object"
+    },
+    "MaskedBytesSliceViewV1": {
+      "additionalProperties": false,
+      "description": "Bounded protected-bytes slice: canonical base64, never a path or URL.",
+      "properties": {
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "offset": {
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "contentBase64": {
+          "maxLength": 1398104,
+          "title": "Contentbase64",
+          "type": "string"
+        }
+      },
+      "required": [
+        "artifactId",
+        "offset",
+        "contentBase64"
+      ],
+      "title": "MaskedBytesSliceViewV1",
+      "type": "object"
+    },
+    "MaskedCalculationCreateRequestV1": {
+      "additionalProperties": false,
+      "description": "Create a V3 calculation from Core-resolved source evidence plus mask child.\n\nOnly digests and opaque ids travel here.  Core constructs the masked\nidentity itself from the current AP assessment plus the current sealed\nmask manifest via ``bind_identity``; no V2 numeric result is required\nand none is accepted as the masked result key.",
+      "properties": {
+        "maskedCalculationId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Maskedcalculationid",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        },
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "idempotencyKey": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Idempotencykey",
+          "type": "string"
+        }
+      },
+      "required": [
+        "maskedCalculationId",
+        "sourceCalculationIdentityDigest",
+        "maskChildId",
+        "requestId",
+        "idempotencyKey"
+      ],
+      "title": "MaskedCalculationCreateRequestV1",
+      "type": "object"
+    },
+    "MaskedCalculationCreatedViewV1": {
+      "additionalProperties": false,
+      "description": "Issued V3 calculation: fenced identity plus its admission.",
+      "properties": {
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "admission": {
+          "$ref": "#/$defs/MaskedAdmissionV3"
+        }
+      },
+      "required": [
+        "requestId",
+        "maskedCalculationIdentityDigest",
+        "status",
+        "admission"
+      ],
+      "title": "MaskedCalculationCreatedViewV1",
+      "type": "object"
+    },
+    "MaskedCalculationDetailViewV1": {
+      "additionalProperties": false,
+      "description": "Current V3 view: fresh disposition, admission, and numeric report when available.",
+      "properties": {
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workAreaId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workareaid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "AVAILABLE",
+            "REASSESSMENT_REQUIRED",
+            "PENDING",
+            "FAILED",
+            "CANCELED",
+            "EXECUTION_DEADLINE_EXPIRED",
+            "EXECUTION_RETRY_EXHAUSTED"
+          ],
+          "title": "Disposition",
+          "type": "string"
+        },
+        "admission": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaskedAdmissionV3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "report": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaskedVolumeCalculationReportV3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "requestId",
+        "organizationId",
+        "siteId",
+        "workAreaId",
+        "maskedCalculationIdentityDigest",
+        "status",
+        "disposition"
+      ],
+      "title": "MaskedCalculationDetailViewV1",
+      "type": "object"
+    },
+    "MaskedCalculationMutationViewV1": {
+      "additionalProperties": false,
+      "description": "Fenced worker mutation receipt: request plus its live attempt.",
+      "properties": {
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "QUEUED",
+            "RUNNING",
+            "COMPLETED",
+            "FAILED",
+            "CANCELED"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "attempt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MaskedExecutionAttemptV3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "requestId",
+        "status"
+      ],
+      "title": "MaskedCalculationMutationViewV1",
+      "type": "object"
+    },
+    "MaskedCalculationPendingItemV1": {
+      "additionalProperties": false,
+      "description": "One Core-bound V3 calculation awaiting or reclaimable by a worker.",
+      "properties": {
+        "requestId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "executionState": {
+          "enum": [
+            "QUEUED",
+            "RUNNING"
+          ],
+          "title": "Executionstate",
+          "type": "string"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requestId",
+        "maskedCalculationIdentityDigest",
+        "executionState",
+        "issuedAt"
+      ],
+      "title": "MaskedCalculationPendingItemV1",
+      "type": "object"
+    },
+    "MaskedCalculationPendingListV1": {
+      "additionalProperties": false,
+      "description": "Bounded worker-only calculation discovery (up to 50).",
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/MaskedCalculationPendingItemV1"
+          },
+          "maxItems": 50,
+          "title": "Items",
+          "type": "array"
+        }
+      },
+      "required": [
+        "items"
+      ],
+      "title": "MaskedCalculationPendingListV1",
+      "type": "object"
+    },
+    "MaskedCoverageWitnessV3": {
+      "additionalProperties": false,
+      "description": "Lossless bounded masks: original, mask-excluded, effective, common, unavailable.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-volume-coverage-witness.v3",
+          "default": "external-masked-volume-coverage-witness.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "rows": {
+          "exclusiveMinimum": 0,
+          "title": "Rows",
+          "type": "integer"
+        },
+        "columns": {
+          "exclusiveMinimum": 0,
+          "title": "Columns",
+          "type": "integer"
+        },
+        "rowOffset": {
+          "title": "Rowoffset",
+          "type": "integer"
+        },
+        "columnOffset": {
+          "title": "Columnoffset",
+          "type": "integer"
+        },
+        "originalSelectedMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Originalselectedmaskb64",
+          "type": "string"
+        },
+        "maskExcludedMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Maskexcludedmaskb64",
+          "type": "string"
+        },
+        "effectiveSelectedMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Effectiveselectedmaskb64",
+          "type": "string"
+        },
+        "commonValidMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Commonvalidmaskb64",
+          "type": "string"
+        },
+        "unavailableMaskB64": {
+          "maxLength": 2000000,
+          "minLength": 4,
+          "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+          "title": "Unavailablemaskb64",
+          "type": "string"
+        },
+        "originalSelectedCellCount": {
+          "minimum": 0,
+          "title": "Originalselectedcellcount",
+          "type": "integer"
+        },
+        "maskExcludedCellCount": {
+          "minimum": 0,
+          "title": "Maskexcludedcellcount",
+          "type": "integer"
+        },
+        "effectiveSelectedCellCount": {
+          "minimum": 0,
+          "title": "Effectiveselectedcellcount",
+          "type": "integer"
+        },
+        "commonValidCellCount": {
+          "minimum": 0,
+          "title": "Commonvalidcellcount",
+          "type": "integer"
+        },
+        "unavailableCellCount": {
+          "minimum": 0,
+          "title": "Unavailablecellcount",
+          "type": "integer"
+        },
+        "cellAreaM2": {
+          "exclusiveMinimum": 0.0,
+          "title": "Cellaream2",
+          "type": "number"
+        },
+        "originalSelectedAreaM2": {
+          "minimum": 0.0,
+          "title": "Originalselectedaream2",
+          "type": "number"
+        },
+        "effectiveSelectedAreaM2": {
+          "minimum": 0.0,
+          "title": "Effectiveselectedaream2",
+          "type": "number"
+        },
+        "commonValidAreaM2": {
+          "minimum": 0.0,
+          "title": "Commonvalidaream2",
+          "type": "number"
+        },
+        "bounds": {
+          "maxItems": 4,
+          "minItems": 4,
+          "prefixItems": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "number"
+            }
+          ],
+          "title": "Bounds",
+          "type": "array"
+        },
+        "coverageWitnessDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coveragewitnessdigest"
+        }
+      },
+      "required": [
+        "rows",
+        "columns",
+        "rowOffset",
+        "columnOffset",
+        "originalSelectedMaskB64",
+        "maskExcludedMaskB64",
+        "effectiveSelectedMaskB64",
+        "commonValidMaskB64",
+        "unavailableMaskB64",
+        "originalSelectedCellCount",
+        "maskExcludedCellCount",
+        "effectiveSelectedCellCount",
+        "commonValidCellCount",
+        "unavailableCellCount",
+        "cellAreaM2",
+        "originalSelectedAreaM2",
+        "effectiveSelectedAreaM2",
+        "commonValidAreaM2",
+        "bounds"
+      ],
+      "title": "MaskedCoverageWitnessV3",
+      "type": "object"
+    },
+    "MaskedDeltaSourceRefV1": {
+      "additionalProperties": false,
+      "description": "Late-publication handoff: source identity plus mask child only.\n\nThe parent delta route resolves every grid/profile/registry fact itself\nthrough the Core-bound masked identity and the sealed mask manifest\nbehind its own new publication lease.  Caller grid/profile truth is\nnever accepted here.",
+      "properties": {
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceNumericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcenumericresultidentitydigest",
+          "type": "string"
+        },
+        "sourceCoverageWitnessDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecoveragewitnessdigest",
+          "type": "string"
+        },
+        "maskChildId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Maskchildid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceCalculationIdentityDigest",
+        "sourceNumericResultIdentityDigest",
+        "sourceCoverageWitnessDigest",
+        "maskChildId"
+      ],
+      "title": "MaskedDeltaSourceRefV1",
+      "type": "object"
+    },
+    "MaskedExecutionAttemptV3": {
+      "additionalProperties": false,
+      "description": "A fenced masked-worker ownership interval for exactly one V3 authorization.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-attempt.v3",
+          "default": "external-masked-execution-attempt.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "attemptId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Attemptid",
+          "type": "string"
+        },
+        "authorization": {
+          "$ref": "#/$defs/MaskedExecutionAuthorizationV3"
+        },
+        "authorizationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Authorizationdigest",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 1,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "issuedAt": {
+          "format": "date-time",
+          "title": "Issuedat",
+          "type": "string"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "title": "Leaseexpiresat",
+          "type": "string"
+        },
+        "executionAttemptDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executionattemptdigest"
+        }
+      },
+      "required": [
+        "attemptId",
+        "authorization",
+        "authorizationDigest",
+        "workerInstanceId",
+        "leaseAcquisitionId",
+        "leaseGeneration",
+        "issuedAt",
+        "leaseExpiresAt"
+      ],
+      "title": "MaskedExecutionAttemptV3",
+      "type": "object"
+    },
+    "MaskedExecutionAuthorizationV3": {
+      "additionalProperties": false,
+      "description": "Core-selected V3 limits bound to a current admission plus signed activation.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-execution-authorization.v3",
+          "default": "external-masked-execution-authorization.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "authorizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Authorizationid",
+          "type": "string"
+        },
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "maskedProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedprofiledigest",
+          "type": "string"
+        },
+        "maskBindingDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskbindingdigest",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "admissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Admissiondigest",
+          "type": "string"
+        },
+        "activationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Activationdigest",
+          "type": "string"
+        },
+        "workerPrincipalId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerprincipalid",
+          "type": "string"
+        },
+        "resourceEnvelope": {
+          "$ref": "#/$defs/ResourceEnvelopeV1"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "authorizedAt": {
+          "format": "date-time",
+          "title": "Authorizedat",
+          "type": "string"
+        },
+        "executionAuthorizationDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executionauthorizationdigest"
+        }
+      },
+      "required": [
+        "authorizationId",
+        "organizationId",
+        "maskedCalculationIdentityDigest",
+        "maskedProfileDigest",
+        "maskBindingDigest",
+        "sourceCalculationIdentityDigest",
+        "admissionDigest",
+        "activationDigest",
+        "workerPrincipalId",
+        "resourceEnvelope",
+        "resourceEnvelopeDigest",
+        "authorizedAt"
+      ],
+      "title": "MaskedExecutionAuthorizationV3",
+      "type": "object"
+    },
+    "MaskedFailureRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/MaskedExecutionAttemptV3"
+        },
+        "failure": {
+          "$ref": "#/$defs/MaskedVolumeCalculationFailureV3"
+        }
+      },
+      "required": [
+        "attempt",
+        "failure"
+      ],
+      "title": "MaskedFailureRequestV1",
+      "type": "object"
+    },
+    "MaskedLeaseRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseAcquisitionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Leaseacquisitionid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "workerInstanceId",
+        "leaseAcquisitionId"
+      ],
+      "title": "MaskedLeaseRequestV1",
+      "type": "object"
+    },
+    "MaskedRenewRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/MaskedExecutionAttemptV3"
+        }
+      },
+      "required": [
+        "attempt"
+      ],
+      "title": "MaskedRenewRequestV1",
+      "type": "object"
+    },
+    "MaskedReportRequestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt": {
+          "$ref": "#/$defs/MaskedExecutionAttemptV3"
+        },
+        "report": {
+          "$ref": "#/$defs/MaskedVolumeCalculationReportV3"
+        }
+      },
+      "required": [
+        "attempt",
+        "report"
+      ],
+      "title": "MaskedReportRequestV1",
+      "type": "object"
+    },
+    "MaskedVolumeCalculationFailureV3": {
+      "additionalProperties": false,
+      "description": "A typed immutable attempt outcome that contains no partial numeric result.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-volume-calculation-failure.v3",
+          "default": "external-masked-volume-calculation-failure.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "failureId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Failureid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "reasonCode": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Z][A-Z0-9_]{0,127}$",
+          "title": "Reasoncode",
+          "type": "string"
+        },
+        "failedAt": {
+          "format": "date-time",
+          "title": "Failedat",
+          "type": "string"
+        },
+        "failureDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failuredigest"
+        }
+      },
+      "required": [
+        "failureId",
+        "maskedCalculationIdentityDigest",
+        "reasonCode",
+        "failedAt"
+      ],
+      "title": "MaskedVolumeCalculationFailureV3",
+      "type": "object"
+    },
+    "MaskedVolumeCalculationReportV3": {
+      "additionalProperties": false,
+      "description": "Fenced worker report that wraps, but cannot alter, masked numeric content.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-volume-calculation-report.v3",
+          "default": "external-masked-volume-calculation-report.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "reportId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Reportid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "numericResult": {
+          "$ref": "#/$defs/MaskedVolumeNumericResultV3"
+        },
+        "numericResultIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Numericresultidentitydigest",
+          "type": "string"
+        },
+        "computedAt": {
+          "format": "date-time",
+          "title": "Computedat",
+          "type": "string"
+        },
+        "reportedAt": {
+          "format": "date-time",
+          "title": "Reportedat",
+          "type": "string"
+        },
+        "reportDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reportdigest"
+        }
+      },
+      "required": [
+        "reportId",
+        "maskedCalculationIdentityDigest",
+        "numericResult",
+        "numericResultIdentityDigest",
+        "computedAt",
+        "reportedAt"
+      ],
+      "title": "MaskedVolumeCalculationReportV3",
+      "type": "object"
+    },
+    "MaskedVolumeImpactV3": {
+      "additionalProperties": false,
+      "description": "Unmasked-vs-masked consequence; unknown stays null, never zero-invented.",
+      "properties": {
+        "unmaskedImpactKnown": {
+          "title": "Unmaskedimpactknown",
+          "type": "boolean"
+        },
+        "excludedCellCount": {
+          "minimum": 0,
+          "title": "Excludedcellcount",
+          "type": "integer"
+        },
+        "unmaskedCutM3": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unmaskedcutm3"
+        },
+        "unmaskedFillM3": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unmaskedfillm3"
+        },
+        "unmaskedNetM3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unmaskednetm3"
+        },
+        "excludedCutM3": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excludedcutm3"
+        },
+        "excludedFillM3": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excludedfillm3"
+        },
+        "excludedNetM3": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Excludednetm3"
+        }
+      },
+      "required": [
+        "unmaskedImpactKnown",
+        "excludedCellCount"
+      ],
+      "title": "MaskedVolumeImpactV3",
+      "type": "object"
+    },
+    "MaskedVolumeNumericResultV3": {
+      "additionalProperties": false,
+      "description": "Identity-bound masked numeric content; the V2 leaf is reused, never extended.",
+      "properties": {
+        "contractVersion": {
+          "const": "external-masked-volume-numeric-result.v3",
+          "default": "external-masked-volume-numeric-result.v3",
+          "title": "Contractversion",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "maskedProfileDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedprofiledigest",
+          "type": "string"
+        },
+        "maskBindingDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskbindingdigest",
+          "type": "string"
+        },
+        "metrics": {
+          "$ref": "#/$defs/RelativeVolumeMetricsV2"
+        },
+        "coverage": {
+          "$ref": "#/$defs/MaskedCoverageWitnessV3"
+        },
+        "impact": {
+          "$ref": "#/$defs/MaskedVolumeImpactV3"
+        },
+        "numericResultIdentityDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Numericresultidentitydigest"
+        }
+      },
+      "required": [
+        "maskedCalculationIdentityDigest",
+        "maskedProfileDigest",
+        "maskBindingDigest",
+        "metrics",
+        "coverage",
+        "impact"
+      ],
+      "title": "MaskedVolumeNumericResultV3",
+      "type": "object"
+    },
+    "RelativeVolumeMetricsV2": {
+      "additionalProperties": false,
+      "description": "Finite cut/fill arithmetic for the one fixed profile.",
+      "properties": {
+        "cutM3": {
+          "minimum": 0.0,
+          "title": "Cutm3",
+          "type": "number"
+        },
+        "fillM3": {
+          "minimum": 0.0,
+          "title": "Fillm3",
+          "type": "number"
+        },
+        "netM3": {
+          "title": "Netm3",
+          "type": "number"
+        },
+        "thresholdM": {
+          "title": "Thresholdm",
+          "type": "number"
+        },
+        "uncertaintyM3": {
+          "default": null,
+          "title": "Uncertaintym3",
+          "type": "null"
+        }
+      },
+      "required": [
+        "cutM3",
+        "fillM3",
+        "netM3",
+        "thresholdM"
+      ],
+      "title": "RelativeVolumeMetricsV2",
+      "type": "object"
+    },
+    "ResourceEnvelopeV1": {
+      "additionalProperties": false,
+      "description": "Configured finite worker limits; values are policy data, never client input.",
+      "properties": {
+        "maxInputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxinputbytes",
+          "type": "integer"
+        },
+        "maxStreamedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxstreamedbytes",
+          "type": "integer"
+        },
+        "maxTiffDirectories": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffdirectories",
+          "type": "integer"
+        },
+        "maxTiffEntries": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtiffentries",
+          "type": "integer"
+        },
+        "maxPixels": {
+          "exclusiveMinimum": 0,
+          "title": "Maxpixels",
+          "type": "integer"
+        },
+        "maxBands": {
+          "exclusiveMinimum": 0,
+          "title": "Maxbands",
+          "type": "integer"
+        },
+        "maxBlocks": {
+          "exclusiveMinimum": 0,
+          "title": "Maxblocks",
+          "type": "integer"
+        },
+        "maxDecompressedBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdecompressedbytes",
+          "type": "integer"
+        },
+        "maxSampleBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxsamplebytes",
+          "type": "integer"
+        },
+        "maxGeometryVertices": {
+          "exclusiveMinimum": 0,
+          "title": "Maxgeometryvertices",
+          "type": "integer"
+        },
+        "maxCpuSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxcpuseconds",
+          "type": "number"
+        },
+        "maxMemoryBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxmemorybytes",
+          "type": "integer"
+        },
+        "maxWorkspaceBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxworkspacebytes",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "maxTenantConcurrency": {
+          "exclusiveMinimum": 0,
+          "title": "Maxtenantconcurrency",
+          "type": "integer"
+        },
+        "maxQueueDepth": {
+          "exclusiveMinimum": 0,
+          "title": "Maxqueuedepth",
+          "type": "integer"
+        },
+        "maxDeadlineSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Maxdeadlineseconds",
+          "type": "number"
+        },
+        "leaseDurationSeconds": {
+          "exclusiveMinimum": 0,
+          "title": "Leasedurationseconds",
+          "type": "number"
+        },
+        "maxRetryAttempts": {
+          "exclusiveMinimum": 0,
+          "title": "Maxretryattempts",
+          "type": "integer"
+        },
+        "resourceEnvelopeDigest": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resourceenvelopedigest"
+        }
+      },
+      "required": [
+        "maxInputBytes",
+        "maxStreamedBytes",
+        "maxTiffDirectories",
+        "maxTiffEntries",
+        "maxPixels",
+        "maxBands",
+        "maxBlocks",
+        "maxDecompressedBytes",
+        "maxSampleBytes",
+        "maxGeometryVertices",
+        "maxCpuSeconds",
+        "maxMemoryBytes",
+        "maxWorkspaceBytes",
+        "maxOutputBytes",
+        "maxTenantConcurrency",
+        "maxQueueDepth",
+        "maxDeadlineSeconds",
+        "leaseDurationSeconds",
+        "maxRetryAttempts"
+      ],
+      "title": "ResourceEnvelopeV1",
+      "type": "object"
+    },
+    "SealedExternalSubjectV1": {
+      "additionalProperties": false,
+      "description": "Exact external revision identity; Core later proves it is in caller scope.",
+      "properties": {
+        "organizationId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Organizationid",
+          "type": "string"
+        },
+        "siteId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Siteid",
+          "type": "string"
+        },
+        "workOrderId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workorderid",
+          "type": "string"
+        },
+        "submissionId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Submissionid",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "submissionDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Submissiondigest",
+          "type": "string"
+        },
+        "manifestDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Manifestdigest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "organizationId",
+        "siteId",
+        "workOrderId",
+        "submissionId",
+        "revision",
+        "submissionDigest",
+        "manifestDigest"
+      ],
+      "title": "SealedExternalSubjectV1",
+      "type": "object"
+    }
+  }
+}

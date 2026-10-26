@@ -11,6 +11,7 @@ import { getSpatialAsset, type SpatialAssetCatalogItem } from "@/lib/core-api/sp
 import { listObservationWorkOrders } from "@/lib/core-api/observation-work-orders";
 import { getSite } from "@/lib/core-api/sites";
 import { resolveDeltaExportDeliveryConfig } from "@/lib/delta-export-config";
+import { resolveMaskUploadConfig } from "@/lib/mask-upload-config";
 import { listWorkAreas } from "@/lib/core-api/workAreas";
 
 import { AnalysisStartGuide } from "./AnalysisStartGuide";
@@ -282,6 +283,7 @@ export default async function SiteAnalysisPage({ params, searchParams }: {
             선택 폼이 먼저 오고, 시작 안내는 접힌 도움말로 뒤에 둔다. */}
         <AnalysisRequestPanel
           deltaExportConfig={resolveDeltaExportDeliveryConfig()}
+          maskUploadBudgetBytes={resolveMaskUploadConfig()?.uploadBudgetBytes ?? null}
           siteId={siteId}
           organizationId={session.principal.organizationId}
           principalId={session.principal.principalId}

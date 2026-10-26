@@ -27,6 +27,16 @@ from ksi_core.composition.external_graph import (
     build_external_pre_work_order_graph,
     complete_external_graph,
 )
+from ksi_core.composition.masked_quantitative_graph import (
+    MaskedQuantitativeLocalConfig,
+    MaskedQuantitativeWiring,
+    build_masked_quantitative_wiring,
+)
+from ksi_core.composition.quantitative_extension_graph import (
+    DeltaPublicationLocalConfig,
+    DeltaPublicationWiring,
+    build_delta_publication_wiring,
+)
 from ksi_core.composition.spatial_data_graph import (
     SpatialDataLocalAssemblyConfig,
     SpatialDataWiring,
@@ -66,6 +76,8 @@ class PlatformGraph:
     data: SpatialDataWiring | None
     coordinator: ExternalAuthorityCurrentnessCoordinator
     storage: Any
+    delta: DeltaPublicationWiring | None = None
+    masked: MaskedQuantitativeWiring | None = None
 
 
 def build_platform_graph(
@@ -78,6 +90,9 @@ def build_platform_graph(
     external_analysis_local_graph: ExternalAnalysisLocalGraphConfig | None = None,
     analysis_activation: AnalysisActivationV1 | None = None,
     spatial_data: SpatialDataLocalAssemblyConfig | None = None,
+    delta_publications: DeltaPublicationLocalConfig | None = None,
+    masked_quantitative: MaskedQuantitativeLocalConfig | None = None,
+    masked_dsm_byte_reader: Any | None = None,
     site_bootstrap_max_sites_per_org: int = _DEFAULT_MAX_BOOTSTRAP_SITES_PER_ORG,
 ) -> PlatformGraph:
     """Build the external-only graph; never synthesize a missing participant.
@@ -234,6 +249,38 @@ def build_platform_graph(
             # Operator-provisioned grants/revocations are applied after the exact
             # participant wiring exists; idempotent, conflicts fail the boot.
             spatial_data.import_rights(data_lane.grants)
+    masked_lane = None
+    if masked_quantitative is not None:
+        if external_analysis_wiring is None:
+            raise ValueError("masked quantitative assembly requires the actual common AP graph")
+        masked_lane = build_masked_quantitative_wiring(
+            journal=journal,
+            config=masked_quantitative,
+            assessments=external_analysis_wiring.assessments,
+            sites=site_store,
+            reconstruction=external_pre_work_order.reconstruction_store,
+            inspections=external_pre_work_order.artifact_inspection_store,
+            work_areas=work_area_store,
+            coordinator=coordinator,
+            dsm_byte_reader=masked_dsm_byte_reader,
+        )
+    try:
+        delta_lane = (
+            build_delta_publication_wiring(
+                journal=journal,
+                config=delta_publications,
+                analysis=external_analysis_wiring,
+                sites=site_store,
+                coordinator=coordinator,
+                masked=masked_lane,
+            )
+            if delta_publications is not None
+            else None
+        )
+    except BaseException:
+        if masked_lane is not None:
+            masked_lane.close()
+        raise
     return PlatformGraph(
         sites=site_store,
         work_areas=work_area_store,
@@ -246,6 +293,8 @@ def build_platform_graph(
         data=data_lane,
         coordinator=coordinator,
         storage=evidence_storage,
+        delta=delta_lane,
+        masked=masked_lane,
     )
 
 

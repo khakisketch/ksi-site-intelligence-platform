@@ -2,6 +2,7 @@
 
 import type { DeltaExportDeliveryConfig } from "@/lib/delta-export-config";
 import { AnalysisDeltaPublication } from "./AnalysisDeltaPublication";
+import { AnalysisMaskedCalculation } from "./AnalysisMaskedCalculation";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Link from "next/link";
@@ -523,7 +524,7 @@ function NewerObservationNotice({ siteId, detail, summaryNewerSiblingIds, observ
   </p>;
 }
 
-function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, primary = false, deltaExportConfig = null }: {
+function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, siteId, workAreaId, workAreaName, scopeLine, canCreate, reviewState, reviewLoading, reviewError, onRefreshReview, onRefreshAfterReviewConflict, observations, siteObservations, newerAnalyses, primary = false, deltaExportConfig = null, maskUploadBudgetBytes = null, maskedSessionScope = null, onLoadMaskedSource, maskedSourceLoading = false }: {
   summary: AnalysisListRow;
   detail: AnalysisView | null;
   selected: boolean;
@@ -545,6 +546,10 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
   /** 최신 기록 카드의 보기 단추를 1차 동작으로 둔다. 나머지는 조용한 링크 행에 둔다. */
   primary?: boolean;
   deltaExportConfig?: DeltaExportDeliveryConfig | null;
+  maskUploadBudgetBytes?: number | null;
+  maskedSessionScope?: { organizationId: string; principalId: string } | null;
+  onLoadMaskedSource?: () => void;
+  maskedSourceLoading?: boolean;
 }) {
   const execution = executionLabel(summary.executionState);
   const suitability = suitabilityLabel(summary.suitabilityState);
@@ -581,6 +586,10 @@ function AnalysisCard({ summary, detail, selected, onSelect, evidencePages, site
       onRefreshAfterConflict={onRefreshAfterReviewConflict}
     />}
     {selected && evidencePages.length > 0 && <EvidenceSummary pages={evidencePages} />}
+    {selected && detail && <AnalysisMaskedCalculation detail={detail} pages={evidencePages}
+      workAreaName={workAreaName} canRequest={canCreate} maskBudgetBytes={maskUploadBudgetBytes}
+      delivery={deltaExportConfig} sessionScope={maskedSessionScope}
+      onLoadSource={onLoadMaskedSource} sourceLoading={maskedSourceLoading} />}
   </article>;
 }
 
@@ -1185,6 +1194,7 @@ export function AnalysisRequestPanel({
   visualContextNotice = null,
   catalogPair = null,
   deltaExportConfig = null,
+  maskUploadBudgetBytes = null,
 }: {
   siteId: string;
   workAreas: readonly { workAreaId: string; name: string }[];
@@ -1227,6 +1237,7 @@ export function AnalysisRequestPanel({
   visualReturnHref?: string | null;
   visualContextNotice?: string | null;
   deltaExportConfig?: DeltaExportDeliveryConfig | null;
+  maskUploadBudgetBytes?: number | null;
 }) {
   const router = useRouter();
   const firstPage = fromListPage(initialPage);
@@ -2249,6 +2260,10 @@ export function AnalysisRequestPanel({
           scopeLine={scopeLineByAnalysisId.get(summary.analysisId) ?? null}
           canCreate={canCreate}
           deltaExportConfig={deltaExportConfig}
+          maskUploadBudgetBytes={maskUploadBudgetBytes}
+          maskedSessionScope={attemptScope}
+          onLoadMaskedSource={loadEvidence}
+          maskedSourceLoading={evidenceLoading}
           reviewState={reviewData?.analysisId === summary.analysisId ? reviewData : null}
           reviewLoading={reviewLoadingId === summary.analysisId}
           reviewError={reviewLoadError?.analysisId === summary.analysisId ? reviewLoadError.message : null}

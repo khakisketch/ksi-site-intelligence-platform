@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ksi.example/contracts/external-masked-worker.v1.json",
+  "title": "External Masked Worker API V1",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "MaskedWorkflowDsmCapabilityV1": {
+      "additionalProperties": false,
+      "description": "One short-lived server-issued DSM GET bound to the live masked attempt.\n\nThe URL comes only from Core's presigned object storage (never a client\nURL, path, or Core-bearer fetch); the Core bearer is never sent to this\norigin. The worker must verify hash/size against the sealed source\nidentity before any decode.",
+      "properties": {
+        "role": {
+          "enum": [
+            "BASELINE_DSM",
+            "CURRENT_DSM"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "artifactId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Artifactid",
+          "type": "string"
+        },
+        "observedSha256": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Observedsha256",
+          "type": "string"
+        },
+        "observedSizeBytes": {
+          "exclusiveMinimum": 0,
+          "title": "Observedsizebytes",
+          "type": "integer"
+        },
+        "downloadUrl": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Downloadurl",
+          "type": "string"
+        },
+        "requiredHeaders": {
+          "maxProperties": 32,
+          "patternProperties": {
+            "^[A-Za-z0-9!#$%&'*+.^_`|~-]+$": {
+              "maxLength": 8192,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "propertyNames": {
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "title": "Requiredheaders",
+          "type": "object"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "title": "Expiresat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "role",
+        "artifactId",
+        "observedSha256",
+        "observedSizeBytes",
+        "downloadUrl",
+        "requiredHeaders",
+        "expiresAt"
+      ],
+      "title": "MaskedWorkflowDsmCapabilityV1",
+      "type": "object"
+    },
+    "MaskedWorkflowDsmInputViewV1": {
+      "additionalProperties": false,
+      "description": "Exact server-issued DSM leg for one live masked attempt.\n\nThe worker must cross-check this against its ``/input`` fetch (opaque\nbaseline/current artifact/sha/size plus masked/source digests) and against\nits pinned lane seals (five-pin execution runtime, resource envelope,\nsigned activation) before any object download; any mismatch fails closed.\nCapabilities never outlive the live masked lease. The digests are bound by\nCore from the fresh witness/admission and the live attempt authorization,\nnever from caller hashes.",
+      "properties": {
+        "requestId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Requestid",
+          "type": "string"
+        },
+        "maskedCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Maskedcalculationidentitydigest",
+          "type": "string"
+        },
+        "sourceCalculationIdentityDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Sourcecalculationidentitydigest",
+          "type": "string"
+        },
+        "attemptDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Attemptdigest",
+          "type": "string"
+        },
+        "workerInstanceId": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Workerinstanceid",
+          "type": "string"
+        },
+        "leaseGeneration": {
+          "minimum": 1,
+          "title": "Leasegeneration",
+          "type": "integer"
+        },
+        "leaseExpiresAt": {
+          "format": "date-time",
+          "title": "Leaseexpiresat",
+          "type": "string"
+        },
+        "executionRuntimeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Executionruntimedigest",
+          "type": "string"
+        },
+        "resourceEnvelopeDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Resourceenvelopedigest",
+          "type": "string"
+        },
+        "activationDigest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Activationdigest",
+          "type": "string"
+        },
+        "capabilities": {
+          "maxItems": 2,
+          "minItems": 2,
+          "prefixItems": [
+            {
+              "$ref": "#/$defs/MaskedWorkflowDsmCapabilityV1"
+            },
+            {
+              "$ref": "#/$defs/MaskedWorkflowDsmCapabilityV1"
+            }
+          ],
+          "title": "Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "requestId",
+        "maskedCalculationIdentityDigest",
+        "sourceCalculationIdentityDigest",
+        "attemptDigest",
+        "workerInstanceId",
+        "leaseGeneration",
+        "leaseExpiresAt",
+        "executionRuntimeDigest",
+        "resourceEnvelopeDigest",
+        "activationDigest",
+        "capabilities"
+      ],
+      "title": "MaskedWorkflowDsmInputViewV1",
+      "type": "object"
+    }
+  }
+}
