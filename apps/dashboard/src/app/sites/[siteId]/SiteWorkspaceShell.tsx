@@ -846,7 +846,6 @@ export function SiteWorkspaceShell({
     <p role="status" data-workbench-stage-inset="true" className="shrink-0 rounded-md border border-line bg-sunk/40 px-3 py-1.5 text-[12px] leading-5 text-ink-2 max-sm:hidden">
       {scopeNotice ? "요청한 구역·자료가 조회 범위에 없어 아래 선택을 보여줍니다. " : ""}
       {selected ? `작업구역 · ${areaLabel}. ` : ""}
-      {mode === "explore" && selectedCaption ? `선택 중 · ${selectedCaption}. ` : ""}
       {mode === "explore" && transitionalSelection
         ? "서버 기본이 없어 확인된 측정 범위를 보여줍니다. 서버가 정한 기본 관측이 아닙니다."
         : scopeNotice
