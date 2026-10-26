@@ -323,8 +323,10 @@ describe("spatial asset catalog page", () => {
 
     mocked.session.mockResolvedValueOnce({ kind: "ready", principal: { organizationId: "org-1", principalId: "operator-1", permissions: ["SITES_READ", "SPATIAL_DATA_REQUEST"] } });
     const writerHtml = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef, info: "1" }));
-    expect(writerHtml).toContain("받기 요청 만들기");
-    expect(writerHtml).toContain("준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다");
+    // 준비 요청 폼은 정보 패널에 상시로 펼치지 않고, 이 버튼이 여는 모달 안에서만 렌더한다.
+    expect(writerHtml).toContain("이 자료 새로 준비 요청");
+    expect(writerHtml).toContain("<dialog");
+    expect(writerHtml).not.toContain("받기 요청 만들기");
     expect(writerHtml).toContain("/sites/site-1/spatial-data-requests?workAreaId=area-1");
   });
 

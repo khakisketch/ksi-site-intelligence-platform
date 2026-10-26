@@ -86,6 +86,24 @@ describe("workbench drawer keyboard ownership", () => {
     expect(screen.getByText("시각 자료")).toBeTruthy();
   });
 
+  it("keeps the catalog as a persistent left column at xl and removes the drawer toggle", async () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("1280"),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+    render(<SpatialWorkbenchFrame
+      contextBar={<span>현재 관측</span>}
+      catalog={<a href="#selection">자료 선택</a>}
+      catalogLabel="자료 목록"
+      stage={<div>시각 자료</div>}
+      inspectorId="test-info"
+      inspectorLabel="선택 정보"
+    />);
+    await waitFor(() => expect(screen.getByText("자료 선택").closest("[data-desktop-catalog]")).toBeTruthy());
+    expect(screen.queryByRole("button", { name: "목록" })).toBeNull();
+  });
+
   it("focuses the opened catalog and restores its trigger on Escape", async () => {
     render(<FrameCase />);
     const toggle = screen.getByRole("button", { name: "목록" });

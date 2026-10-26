@@ -162,6 +162,8 @@ export function SpatialWorkbenchFrame({
   };
 
   const onCatalogKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    // 넓은 화면에서는 목록이 상시 열린 열이라 닫을 드로어가 없다.
+    if (wideInspector) return;
     // 드로어 안에 포커스가 있을 때만 닫는다 — 팔레트 등 바깥의 Escape에는
     // 손대지 않는다. 합성 중 키는 브라우저에 맡긴다.
     if (event.nativeEvent.isComposing) return;
@@ -184,74 +186,89 @@ export function SpatialWorkbenchFrame({
     <div ref={rootRef} className="flex min-w-0 min-h-0 flex-1 flex-col gap-2">
       {banner}
       <div ref={contextRef} data-workbench-context-bar className="sticky top-0 z-40 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 bg-surface max-sm:gap-y-1 lg:static lg:z-auto">
-        <button
-          ref={catalogToggleRef}
-          type="button"
-          aria-expanded={catalogOpen}
-          aria-controls="workbench-catalog"
-          onClick={() => (catalogOpen ? closeCatalog() : setCatalogOpen(true))}
-          className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
-        >
-          <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
-            <path d="M3 4h10M3 8h10M3 12h10" />
-          </svg>
-          <span className="max-sm:sr-only">목록</span>
-        </button>
+        {!wideInspector && (
+          <button
+            ref={catalogToggleRef}
+            type="button"
+            aria-expanded={catalogOpen}
+            aria-controls="workbench-catalog"
+            onClick={() => (catalogOpen ? closeCatalog() : setCatalogOpen(true))}
+            className="tap-target inline-flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px] font-semibold text-ink-2"
+          >
+            <svg aria-hidden="true" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7" className="flex-none">
+              <path d="M3 4h10M3 8h10M3 12h10" />
+            </svg>
+            <span className="max-sm:sr-only">목록</span>
+          </button>
+        )}
         {contextBar}
       </div>
       <div className="relative flex min-w-0 min-h-0 flex-1 gap-3">
+        {wideInspector && (
+          <aside
+            ref={catalogRef}
+            id="workbench-catalog"
+            aria-label={catalogLabel}
+            tabIndex={-1}
+            onKeyDown={onCatalogKeyDown}
+            data-desktop-catalog="true"
+            className="flex min-h-0 w-[300px] flex-none flex-col gap-2 overflow-y-auto overscroll-contain rounded-lg border border-line bg-surface p-2"
+          >
+            {catalog}
+          </aside>
+        )}
+        {!wideInspector && catalogOpen && (
+          <>
+            <div
+              aria-hidden="true"
+              onClick={closeCatalog}
+              style={{ top: drawerTop }}
+              className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-[45] bg-black/30 lg:absolute lg:inset-0 lg:z-20"
+            />
+            <section
+              ref={catalogRef}
+              id="workbench-catalog"
+              aria-label={catalogLabel}
+              tabIndex={-1}
+              onKeyDown={onCatalogKeyDown}
+              style={{ top: drawerTop }}
+              data-mobile-sheet="catalog"
+              className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
+            >
+              <div className="sticky -top-3 z-10 -mx-3 -mt-3 flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3 sm:-top-3 sm:-mx-3 sm:-mt-3 lg:-top-2 lg:-mx-2 lg:-mt-2 lg:px-2 lg:py-2">
+                <div className="min-w-0">
+                  <span aria-hidden="true" className="mx-auto mb-2 block h-1 w-10 rounded-full bg-line-strong sm:hidden" />
+                  <h3 className="min-w-0 break-words text-[15px] font-bold lg:text-[13px]">{catalogLabel}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCatalog}
+                  aria-label="자료 목록 닫기"
+                  className="tap-target inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[12px] font-semibold text-ink-2 lg:border-0 lg:px-1.5 lg:underline"
+                >
+                  닫기
+                </button>
+              </div>
+              {catalog}
+              {catalogFooter && (
+                <div className="sticky -bottom-3 z-10 -mx-3 -mb-3 mt-auto shrink-0 border-t border-line bg-surface px-3 pb-3 pt-2 sm:-bottom-3 sm:-mx-3 sm:-mb-3 lg:-bottom-2 lg:-mx-2 lg:-mb-2 lg:px-2 lg:pb-2">
+                  {catalogFooter}
+                  {catalogDismissLabel && (
+                    <button
+                      type="button"
+                      onClick={closeCatalog}
+                      className="btn btn-primary mt-2 min-h-11 w-full"
+                    >
+                      {catalogDismissLabel}
+                    </button>
+                  )}
+                </div>
+              )}
+            </section>
+          </>
+        )}
         <div ref={stageRef} className="relative min-w-0 min-h-0 flex-1">
           {stage}
-          {catalogOpen && (
-            <>
-              <div
-                aria-hidden="true"
-                onClick={closeCatalog}
-                style={{ top: drawerTop }}
-                className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-[45] bg-black/30 lg:absolute lg:inset-0 lg:z-20"
-              />
-              <section
-                ref={catalogRef}
-                id="workbench-catalog"
-                aria-label={catalogLabel}
-                tabIndex={-1}
-                onKeyDown={onCatalogKeyDown}
-                style={{ top: drawerTop }}
-                data-mobile-sheet="catalog"
-                className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
-              >
-                <div className="sticky -top-3 z-10 -mx-3 -mt-3 flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3 sm:-top-3 sm:-mx-3 sm:-mt-3 lg:-top-2 lg:-mx-2 lg:-mt-2 lg:px-2 lg:py-2">
-                  <div className="min-w-0">
-                    <span aria-hidden="true" className="mx-auto mb-2 block h-1 w-10 rounded-full bg-line-strong sm:hidden" />
-                    <h3 className="min-w-0 break-words text-[15px] font-bold lg:text-[13px]">{catalogLabel}</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeCatalog}
-                    aria-label="자료 목록 닫기"
-                    className="tap-target inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[12px] font-semibold text-ink-2 lg:border-0 lg:px-1.5 lg:underline"
-                  >
-                    닫기
-                  </button>
-                </div>
-                {catalog}
-                {catalogFooter && (
-                  <div className="sticky -bottom-3 z-10 -mx-3 -mb-3 mt-auto shrink-0 border-t border-line bg-surface px-3 pb-3 pt-2 sm:-bottom-3 sm:-mx-3 sm:-mb-3 lg:-bottom-2 lg:-mx-2 lg:-mb-2 lg:px-2 lg:pb-2">
-                    {catalogFooter}
-                    {catalogDismissLabel && (
-                      <button
-                        type="button"
-                        onClick={closeCatalog}
-                        className="btn btn-primary mt-2 min-h-11 w-full"
-                      >
-                        {catalogDismissLabel}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </section>
-            </>
-          )}
         </div>
         <section
           ref={inspectorRef}

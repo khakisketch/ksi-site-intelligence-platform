@@ -9,8 +9,10 @@ import { OperationsSessionFailure } from "@/app/field/OperationsSessionFailure";
 import { resolveFieldSession } from "@/app/field/resolve-session";
 import { SiteHeader } from "@/app/sites/[siteId]/SiteHeader";
 
+import { AssetRequestDialog } from "./AssetRequestDialog";
 import { SpatialDataRequestAction } from "./SpatialDataRequestAction";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { StateBadge } from "@/components/ui/StatusBadge";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { CoreApiError } from "@/lib/core-api/client";
 import {
@@ -204,6 +206,13 @@ function availabilityStatus(item: SpatialAssetCatalogItem): AvailabilityStatus {
   };
 }
 
+/** 묶음 머리의 긴 날짜+정밀도 문구를 두 줄로 가른다 — 좁은 목록에서 잘리지 않게. */
+function groupDateParts(line: string): { date: string; qualifier: string | null } {
+  const match = /^(.*?)(?:\s*\(([^()]+)\))$/.exec(line);
+  if (!match) return { date: line, qualifier: null };
+  return { date: match[1]!.trim(), qualifier: match[2]!.trim() };
+}
+
 /** 확인 필요 점 — 문제 있는 항목에만 둔다. 정상 검사는 정보 펼침이 맡는다. */
 function RailStatusDot({ item }: { item: SpatialAssetCatalogItem }) {
   if (!needsCatalogAttention(item)) return null;
@@ -260,7 +269,7 @@ function RailItem({ item, headline, viewHref, putBHref, isA, isB, showThumb, thu
         <Link href={viewHref} aria-current={isA ? "true" : undefined} title={fullTitle} className="min-w-0 tap-target underline-offset-2 hover:underline">{headline}</Link>
         <RailStatusDot item={item} />
       </p>
-      <p className="mt-0.5 line-clamp-2 break-all text-[11.5px] leading-5 text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
+      <p className="mt-0.5 truncate font-mono text-[10px] leading-4 text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
       <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:flex-wrap sm:gap-x-3 sm:gap-y-0.5 sm:text-[11.5px]">
         <Link href={viewHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} A로 보기`}>A로 보기</Link>
         <Link href={putBHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} B에 두기`}>B에 두기</Link>
@@ -404,37 +413,82 @@ function AssetDetail({ item, workName, areaName, headline, compareHref, retryHre
 }
 
 /** 펼친 본문 — 상세·등록 이력·받기 요청을 한 덩어리로 둔다. */
-function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, historyResult, requestProps }: {
+function CompactFact({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0">
+    <dt className="text-[10px] text-ink-muted">{label}</dt>
+    <dd className="mt-0.5 break-words text-[11.5px] leading-4 font-semibold text-ink-2">{value}</dd>
+  </div>;
+}
+
+/**
+ * 선택 자료의 패널 본문 — 먼저 "무엇을 고른지, 지금 무엇을 할 수 있는지"만 둔다.
+ * 등록 이력·제출자 입력·검사 원문은 `상세 정보` 안으로 접고, 준비 요청 폼은
+ * 필요할 때만 모달로 연다. 정보 밀도가 선택 자체를 가리지 않게 하는 것이 목적이다.
+ */
+function DetailBlock({ detail, workName, areaName, headline, compareHref, retryHref, requestsHref, historyResult, requestProps }: {
   detail: SpatialAssetCatalogItem;
   workName: string | null;
   areaName: string;
   headline: string;
   compareHref: string | null;
   retryHref: string | null;
+  requestsHref: string;
   historyResult: ReturnType<typeof validateRegistrationHistory> | null;
   requestProps: { siteId: string; workAreaId: string; inspectedRaster: SpatialAssetCatalogItem["inspection"]["raster"]; canRequest: boolean };
 }) {
-  return <>
-    <AssetDetail
-      item={detail}
-      workName={workName}
-      areaName={areaName}
-      headline={headline}
-      compareHref={compareHref}
-      retryHref={retryHref}
-    />
-    {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
-    {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
-    <SpatialDataRequestAction
-      siteId={requestProps.siteId}
-      workAreaId={requestProps.workAreaId}
-      assetRef={detail.assetRef}
-      inspectedRaster={requestProps.inspectedRaster}
-      observedCrsIdentifier={requestProps.inspectedRaster?.observedCrsIdentifier ?? null}
-      observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
-      canRequest={requestProps.canRequest}
-    />
-  </>;
+  const availability = availabilityStatus(detail);
+  const captureLine = capturePeriodTitle(detail.declared.captureStartedAt, detail.declared.captureEndedAt, {
+    captureDate: detail.declared.captureDate ?? null,
+  });
+  const tone: "neutral" | "positive" | "warning" =
+    availability.retry ? "warning" : detail.inspection.outcome === "MEASURED" ? "positive" : "neutral";
+  const requestAction = <SpatialDataRequestAction
+    siteId={requestProps.siteId}
+    workAreaId={requestProps.workAreaId}
+    assetRef={detail.assetRef}
+    inspectedRaster={requestProps.inspectedRaster}
+    observedCrsIdentifier={requestProps.inspectedRaster?.observedCrsIdentifier ?? null}
+    observedCrsDigest={requestProps.inspectedRaster?.observedCrsDigest ?? null}
+    canRequest={requestProps.canRequest}
+  />;
+  return <div className="flex min-w-0 flex-col gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <StateBadge label={availability.label} tone={tone} />
+      <span className="font-mono text-[9px] text-ink-muted">{areaName} · v{detail.revision}</span>
+    </div>
+    <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
+      <CompactFact label="자료 구성" value={`${dataKindLabel(detail.kind)} · ${detail.declared.format}`} />
+      <CompactFact label="관측 시점" value={captureLine} />
+      <CompactFact label="파일 검사" value={inspectionOutcomeLabel(detail.inspection.outcome)} />
+      <CompactFact label="좌표 기준" value={detail.inspection.raster?.observedCrsIdentifier ?? "확인 불가"} />
+    </dl>
+    {availability.action && <p className="text-[11px] leading-5 text-ink-muted">{availability.action}</p>}
+    {availability.retry && retryHref && <p className="text-[11px] leading-5 text-high-ink">재처리는 <Link className="tap-target underline" href={retryHref}>구역 자료 준비에서 재처리 요청</Link>하세요.</p>}
+    <div className="flex flex-col gap-2">
+      {requestProps.canRequest
+        ? <AssetRequestDialog triggerLabel="이 자료 새로 준비 요청">{requestAction}</AssetRequestDialog>
+        : null}
+      {compareHref && <Link href={compareHref} className="btn min-h-11 w-full">이 자료를 현재 관측으로 선택</Link>}
+      <Link href={requestsHref} className="tap-target text-center text-[11px] text-ink-2 underline underline-offset-2">준비 기록 보기</Link>
+    </div>
+    {!requestProps.canRequest && <p className="text-[11px] leading-5 text-ink-muted">자료 준비 요청은 권한 있는 담당자가 만들 수 있습니다.</p>}
+    <details className="rounded-lg border border-line bg-surface p-3 text-[12px]">
+      <summary className="tap-target cursor-pointer font-semibold">상세 정보</summary>
+      <div className="mt-2 flex flex-col gap-2">
+        <AssetDetail
+          item={detail}
+          workName={workName}
+          areaName={areaName}
+          headline={headline}
+          compareHref={compareHref}
+          retryHref={retryHref}
+        />
+        {historyResult?.kind === "v3" && <RegistrationHistoryFacts history={historyResult.history} />}
+        {historyResult?.kind === "unavailable" && <RegistrationHistoryUnavailable />}
+        {!requestProps.canRequest && requestAction}
+      </div>
+    </details>
+  </div>;
 }
 
 /**
@@ -796,6 +850,7 @@ export default async function SpatialAssetsPage({
       compareHref={compareHrefFor(item)}
       retryHref={retryBase}
       historyResult={historyByRef.get(item.assetRef) ?? null}
+      requestsHref={requestsHref}
       requestProps={{ siteId, workAreaId: effectiveWorkAreaId!, inspectedRaster: item.inspection.raster, canRequest: canRequestData }}
     />;
   };
@@ -900,8 +955,13 @@ export default async function SpatialAssetsPage({
         const dividerLabel = dateLine ?? (group.epochId === ""
           ? "관측 묶음 확인 불가"
           : "촬영 구간이 항목마다 다름");
+        const dateParts = dateLine ? groupDateParts(dateLine) : null;
         return <section key={group.epochId === "" ? "divider-unidentified" : `divider-${group.epochId}`} aria-label={dividerLabel} className="min-w-0">
-          <h4 className="px-1.5 pb-1 text-[12px] font-bold text-ink-muted">{dividerLabel} · {formatCountKo(group.items.length)}</h4>
+          <h4 className="flex items-baseline justify-between gap-2 px-1.5 pb-1">
+            <span className="min-w-0 truncate text-[11.5px] font-bold text-ink-muted" title={dateLine ?? dividerLabel}>{dateParts?.date ?? dividerLabel}</span>
+            <span className="shrink-0 font-mono text-[9px] text-ink-muted">{formatCountKo(group.items.length)}</span>
+          </h4>
+          {dateParts?.qualifier && <p className="px-1.5 pb-1.5 text-[10px] text-ink-muted">{dateParts.qualifier}</p>}
           <ul className="flex min-w-0 flex-col divide-y divide-line">
             {group.items.map((item) => {
               const isA = sideA?.assetRef === item.assetRef;
@@ -1214,11 +1274,11 @@ export default async function SpatialAssetsPage({
     </div>
     {!sideA && !sideB && <p>표시할 자료를 목록에서 고르세요.</p>}
     {sideA && <>
-      <h4 className="break-words text-[13px] font-bold">A · {businessTitleFor(sideA)}</h4>
+      <h4 className="break-words text-[15px] leading-snug font-bold">A · {businessTitleFor(sideA)}</h4>
       {detailBlockFor(sideA)}
     </>}
     {sideB && <>
-      <h4 className="break-words text-[13px] font-bold">B · {businessTitleFor(sideB)}</h4>
+      <h4 className="break-words text-[15px] leading-snug font-bold">B · {businessTitleFor(sideB)}</h4>
       {detailBlockFor(sideB)}
     </>}
   </>);

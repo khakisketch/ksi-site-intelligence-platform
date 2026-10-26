@@ -40,9 +40,9 @@ describe("spatial workbench frame", () => {
     expect(html).toContain("자료 목록");
     expect(html).toContain("목록 내용");
     expect(html).toContain("닫기");
-    // 무대는 그대로 있다 — 드로어가 덮을 뿐 너비를 바꾸지 않는다.
+    // 목록은 넓은 화면에서 무대 왼쪽 열, 좁은 화면에서는 무대를 덮는 드로어다.
     expect(html).toContain("선택한 자료 미리보기");
-    expect(html.indexOf("선택한 자료 미리보기")).toBeLessThan(html.indexOf('id="workbench-catalog"'));
+    expect(html.indexOf('id="workbench-catalog"')).toBeLessThan(html.indexOf("선택한 자료 미리보기"));
   });
 
   it("opens the inspector drawer only when asked and keeps the stage", () => {
