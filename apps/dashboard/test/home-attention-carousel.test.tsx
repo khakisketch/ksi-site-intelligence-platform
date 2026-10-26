@@ -54,7 +54,10 @@ describe("HomeAttentionCarousel", () => {
     render(<HomeAttentionCarousel items={[card()]} />);
     const article = document.querySelector("article")!;
     // 조회하지 않은 미리보기의 부재를 등록 자료의 부재로 말하지 않는다.
-    expect(article.textContent).not.toMatch(/관측 이미지 없음|관측자료 없음|자료 없음|기본 표지|기본 이미지/);
+    // 기본 표지는 시각적 자리만 채우며, 실제 영상이 아님을 명시한다.
+    expect(article.textContent).not.toMatch(/관측 이미지 없음|관측자료 없음|자료 없음/);
+    expect(article.textContent).toContain("기본 표지");
+    expect(article.textContent).toContain("실제 영상 아님");
   });
 
   it("renders a bounded figure only for an authorized evidence image", () => {
