@@ -18,9 +18,10 @@ site/queue authority.
 - The site header owns site name, status and settings on dense screens; viewer screens move the
   site name/switcher and settings link into the floating layer panel. Header tabs remain only
   below `lg` where neither rail nor floating panel is present.
-- 자료: floating catalog (300px) · spatial stage · selected-material inspector (332px). At
-  `xl+` both panels default open; at 1024–1279 the catalog defaults closed and the toolbar hides
-  the explanatory line/redundant label to stay one row.
+- 자료: floating catalog (300px) · spatial stage · on-demand selected-material inspector (332px).
+  At `xl+` the catalog defaults open and the inspector opens from the toolbar; at 1024–1279 the
+  catalog defaults closed and the toolbar hides the explanatory line/redundant label to stay
+  one row.
 - Inspector: title, status, four key facts and the next action first. Provenance, history and
   inspection detail collapse under `상세 정보`. Preparation requests open in a native dialog.
 - Expired/unprepared stage: show the registered extent, work area/file bounds, actual prepared
@@ -34,10 +35,9 @@ site/queue authority.
 - Site context rail and switcher: `1b8ed545`.
 - Desktop materials 3-pane, compact inspector, request dialog: `589490ca`.
 - Expired extent canvas (`SiteMosaicAbsentCanvas`): `49d19a3d`.
-- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `153b0f7e`
-  (branch HEAD `10bacff0` adds the final regression test); production image
-  `ksi-product-dashboard:viewer-first-20261026`
-  `sha256:9c21ecfcedd627fb5954a46a222e53aac813dfbfeb5aa59aa5d4107b8b806d11`.
+- Viewer-first site 공간/자료: branch `viewer-first-20261026`, product commit `946409c7`;
+  production image `ksi-product-dashboard:viewer-first-20261026`
+  `sha256:bc8c2d938a0c63ff1d25a65ce8d6ee7a35319ed75f63eb33acdc9d9f41d5a779`.
 - Visual reference: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
   and [`CONSOLE_VIEWER_FIRST_2026-10-26.html`](CONSOLE_VIEWER_FIRST_2026-10-26.html); prior
   desktop board [`CONSOLE_DESKTOP_FIRST_2026-10-26.html`](CONSOLE_DESKTOP_FIRST_2026-10-26.html).
