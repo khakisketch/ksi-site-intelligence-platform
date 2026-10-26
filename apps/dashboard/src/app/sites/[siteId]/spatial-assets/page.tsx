@@ -211,10 +211,20 @@ function RailStatusDot({ item }: { item: SpatialAssetCatalogItem }) {
   return <span title={label} className="mt-1 inline-block size-2 shrink-0 rounded-full bg-high-ink"><span className="sr-only">{label}</span></span>;
 }
 
-/** 파일 타일 — 제출된 파일의 형식만 말한다. 픽셀이 없으므로 썸네일인 척하지 않는다. */
-function FileKindTile({ fileName }: { fileName: string }) {
+/** 파일 타일 — 형식과 자료 종류만 말한다. 픽셀이 없으므로 썸네일인 척하지 않는다. */
+function KindGlyph({ kind }: { kind: SpatialAssetCatalogItem["kind"] }) {
+  if (kind === "dsm") {
+    return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0" /></svg>;
+  }
+  return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 3v18M15 3v18M3 9h18M3 15h18" /></svg>;
+}
+
+function FileKindTile({ fileName, kind }: { fileName: string; kind: SpatialAssetCatalogItem["kind"] }) {
   const ext = fileName.includes(".") ? fileName.split(".").pop()!.toUpperCase().slice(0, 4) : "FILE";
-  return <span aria-hidden="true" className="flex h-[54px] w-[72px] shrink-0 items-center justify-center rounded-md border border-line bg-sunk font-mono text-[10px] font-bold text-ink-2">{ext}</span>;
+  return <span aria-hidden="true" className="flex size-14 shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-line bg-sunk text-ink-muted sm:h-[54px] sm:w-[72px]">
+    <KindGlyph kind={kind} />
+    <span className="font-mono text-[9px] font-bold">{ext}</span>
+  </span>;
 }
 
 /**
@@ -240,21 +250,21 @@ function RailItem({ item, headline, viewHref, putBHref, isA, isB, showThumb, thu
   const role = isA && isB ? "A·B" : isA ? "A" : isB ? "B" : null;
   const fullTitle = `${shortKindLabel(item.kind)} · 등록 버전 ${item.revision} · ${item.declared.fileName}`;
   const readable = showThumb ? firstReadableWindowJob(thumbJobs, item.assetRef) : null;
-  return <div className={`flex min-w-0 items-start gap-2 rounded-md px-1.5 py-1.5 ${isA || isB ? "bg-sunk" : ""}`}>
+  return <div data-rail-item className={`flex min-w-0 items-start gap-3 rounded-xl border p-3 sm:gap-2 sm:rounded-md sm:border-0 sm:p-1.5 ${isA || isB ? "border-line-strong bg-sunk" : "border-line bg-surface"}`}>
     {readable && readable.receipt
       ? <MaterialThumb siteId={siteId} workAreaId={item.workAreaId} jobId={readable.jobId} receipt={readable.receipt} fileName={item.declared.fileName} />
-      : <FileKindTile fileName={item.declared.fileName} />}
+      : <FileKindTile fileName={item.declared.fileName} kind={item.kind} />}
     <div className="min-w-0 flex-1">
-      <p className="flex min-w-0 items-start gap-1 break-words text-[12.5px] font-semibold leading-snug">
+      <p className="flex min-w-0 items-start gap-1 break-words text-[14px] font-semibold leading-snug sm:text-[12.5px]">
         {role && <span className="mt-0.5 shrink-0 rounded bg-surface px-1 text-[10.5px] font-bold" aria-label={`현재 ${role}로 선택됨`}>{role}</span>}
         <Link href={viewHref} aria-current={isA ? "true" : undefined} title={fullTitle} className="min-w-0 tap-target underline-offset-2 hover:underline">{headline}</Link>
         <RailStatusDot item={item} />
       </p>
-      <p className="mt-0.5 truncate text-[11.5px] text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
-      <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11.5px]">
-        <Link href={viewHref} className="tap-target underline decoration-dotted text-ink-2" aria-label={`${fullTitle} A로 보기`}>A로 보기</Link>
-        <Link href={putBHref} className="tap-target underline decoration-dotted text-ink-2" aria-label={`${fullTitle} B에 두기`}>B에 두기</Link>
-      </p>
+      <p className="mt-0.5 line-clamp-2 break-all text-[11.5px] leading-5 text-ink-2" title={item.declared.fileName}>{item.declared.fileName}</p>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:mt-0.5 sm:flex sm:flex-wrap sm:gap-x-3 sm:gap-y-0.5 sm:text-[11.5px]">
+        <Link href={viewHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} A로 보기`}>A로 보기</Link>
+        <Link href={putBHref} className="tap-target inline-flex min-h-11 items-center justify-center rounded-md border border-line-strong bg-surface px-2 text-[12px] font-semibold text-ink-1 sm:min-h-0 sm:border-0 sm:bg-transparent sm:px-0 sm:font-normal sm:text-ink-2 sm:underline sm:decoration-dotted" aria-label={`${fullTitle} B에 두기`}>B에 두기</Link>
+      </div>
     </div>
   </div>;
 }
@@ -460,7 +470,7 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
   }
   if (!isViewableRasterKind(item.kind)) {
     return <div className="flex min-w-0 flex-col items-start gap-2 rounded-lg border border-line bg-surface px-4 py-6">
-      <FileKindTile fileName={item.declared.fileName} />
+      <FileKindTile fileName={item.declared.fileName} kind={item.kind} />
       <p className="break-words text-[13px] font-bold">{dataKindLabel(item.kind)}</p>
       <p className="break-all text-[12px] text-ink-2">파일명 · {item.declared.fileName}</p>
       <p className="text-[12px] text-ink-2">파일 검사 · {inspectionOutcomeLabel(item.inspection.outcome)}</p>
@@ -994,9 +1004,6 @@ export default async function SpatialAssetsPage({
             구역 자료 준비에서 확인
           </Link>
         }
-        hint={
-          <>무대 구성을 먼저 보려면 <Link className="font-semibold text-ink-1 underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>예시 화면으로 미리 보기</Link></>
-        }
       />
     )
   ) : null;
@@ -1043,12 +1050,12 @@ export default async function SpatialAssetsPage({
     ) : null}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
       <span id="materials-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
-      <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
+      <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
         {effectiveWorkAreaId ? (
           <Link
             href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ visualB: null }))}
             aria-current={!compareMode ? "page" : undefined}
-            className={`tap-target inline-flex items-center rounded-full px-2.5 py-1 text-[12px] break-keep ${!compareMode ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"}`}
+            className={`tap-target inline-flex items-center rounded-md px-2.5 py-1 text-[11.5px] break-keep sm:text-[12px] ${!compareMode ? "bg-sidebar-active font-semibold text-sidebar-active-ink shadow-sm" : "text-ink-2"}`}
           >
             한 장
           </Link>
@@ -1059,18 +1066,18 @@ export default async function SpatialAssetsPage({
           <Link
             href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks())}
             aria-current="page"
-            className="tap-target inline-flex items-center rounded-full bg-sidebar-active px-2.5 py-1 text-[12px] font-semibold break-keep text-sidebar-active-ink shadow-sm"
+            className="tap-target inline-flex items-center rounded-md bg-sidebar-active px-2.5 py-1 text-[11.5px] font-semibold break-keep text-sidebar-active-ink shadow-sm sm:text-[12px]"
           >
             나란히
           </Link>
         ) : (
-          <span aria-disabled="true" title="목록에서 다른 자료를 B에 두면 나란히 볼 수 있습니다" className="inline-flex cursor-default items-center rounded-full px-2.5 py-1 text-[12px] break-keep text-ink-muted">
+          <span aria-disabled="true" title="목록에서 다른 자료를 B에 두면 나란히 볼 수 있습니다" className="inline-flex cursor-default items-center rounded-md px-2.5 py-1 text-[11.5px] break-keep text-ink-muted sm:text-[12px]">
             나란히
           </span>
         )}
       </div>
     </div>
-    <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
+    <p className="hidden min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted sm:block lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
     {effectiveWorkAreaId && (infoOpen
       ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
       : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}
@@ -1092,7 +1099,6 @@ export default async function SpatialAssetsPage({
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}/observations`}>외부 비교 기록</Link>
           <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/sites/${encodeURIComponent(siteId)}?section=work-orders${effectiveWorkAreaId ? `&workAreaId=${encodeURIComponent(effectiveWorkAreaId)}` : ""}`}>관측 작업 기록</Link>
           {workspaceReturnHref && <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={workspaceReturnHref}>작업공간에서 나란히 보기</Link>}
-          <Link className="tap-target rounded px-2 py-1.5 hover:bg-sunk" href={`/design-preview/materials?mode=swipe&returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>밀어서 비교 예시</Link>
         </div>
       </details>
     </span>
@@ -1124,10 +1130,6 @@ export default async function SpatialAssetsPage({
         </div>
       </details>
     </div>
-    <p className="mt-2 text-[11.5px] leading-5 text-ink-muted">
-      등록 전에 무대 구성을 보려면{" "}
-      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
-    </p>
     </>
   );
 
@@ -1204,10 +1206,6 @@ export default async function SpatialAssetsPage({
       <h4 className="break-words text-[13px] font-bold">B · {businessTitleFor(sideB)}</h4>
       {detailBlockFor(sideB)}
     </>}
-    <p className="text-[11.5px] leading-5 text-ink-muted">
-      무대 구성을 먼저 보려면{" "}
-      <Link className="tap-target underline" href={`/design-preview/materials?returnTo=${encodeURIComponent(effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId, scopeForLinks()) : basePath)}`}>디자인 예시로 미리 보기</Link>
-    </p>
   </>);
 
   return <div className="flex min-w-0 min-h-0 flex-1 flex-col">

@@ -25,7 +25,7 @@ function FrameCase({ delegated = true }: { delegated?: boolean }) {
 }
 
 describe("workbench drawer keyboard ownership", () => {
-  it("anchors narrow-screen drawers below the viewport toolbar, not the scrolled page", async () => {
+  it("uses a full-height mobile sheet instead of anchoring below the toolbar", async () => {
     vi.stubGlobal("matchMedia", () => ({ matches: false }));
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       return this.hasAttribute("data-workbench-context-bar")
@@ -34,8 +34,22 @@ describe("workbench drawer keyboard ownership", () => {
     });
     render(<FrameCase />);
     fireEvent.click(screen.getByRole("button", { name: "정보" }));
-    await waitFor(() => expect(screen.getByRole("region", { name: "선택 정보" }).style.top).toBe("84px"));
+    const sheet = screen.getByRole("region", { name: "선택 정보" });
+    await waitFor(() => expect(sheet.style.top).toBe("8px"));
+    expect(sheet.getAttribute("data-mobile-sheet")).toBe("inspector");
+    expect(sheet.className).toContain("inset-x-2");
   });
+  it("opens the catalog as a full-height mobile sheet above the context bar", async () => {
+    vi.stubGlobal("matchMedia", () => ({ matches: false }));
+    render(<FrameCase />);
+    fireEvent.click(screen.getByRole("button", { name: "목록" }));
+    const sheet = screen.getByRole("region", { name: "자료 목록" });
+    await waitFor(() => expect(sheet.style.top).toBe("8px"));
+    expect(sheet.getAttribute("data-mobile-sheet")).toBe("catalog");
+    expect(sheet.className).toContain("inset-x-2");
+    expect(sheet.className).toContain("z-50");
+  });
+
   it("starts overlays below the measured pane controls without resizing the stage", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
       return this.hasAttribute("data-workbench-pane-controls")

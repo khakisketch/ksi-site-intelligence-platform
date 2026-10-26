@@ -97,10 +97,10 @@ export function SpatialWorkbenchFrame({
     const measure = () => {
       const desktop = typeof matchMedia !== "function" || matchMedia("(min-width: 1024px)").matches;
       if (!desktop) {
-        // A narrow-screen drawer is viewport-fixed: focusing it must not scroll
-        // the document away from the observation the person was viewing.
-        const header = contextRef.current?.getBoundingClientRect();
-        setDrawerTop(Math.max(8, Math.ceil((header?.bottom ?? 0) + 8)));
+        // A narrow-screen catalog is a full-height sheet, not a desktop card
+        // floating halfway down the viewport. It starts at the safe top edge;
+        // the bottom-nav clearance keeps the sheet's actions reachable.
+        setDrawerTop(8);
         return;
       }
       const base = stageElement.getBoundingClientRect();
@@ -196,7 +196,7 @@ export function SpatialWorkbenchFrame({
                 aria-hidden="true"
                 onClick={closeCatalog}
                 style={{ top: drawerTop }}
-                className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-20 bg-black/20 lg:absolute lg:inset-0"
+                className="fixed inset-x-0 bottom-[var(--mobile-bottom-nav-clearance)] z-[45] bg-black/30 lg:absolute lg:inset-0 lg:z-20"
               />
               <section
                 ref={catalogRef}
@@ -205,14 +205,19 @@ export function SpatialWorkbenchFrame({
                 tabIndex={-1}
                 onKeyDown={onCatalogKeyDown}
                 style={{ top: drawerTop }}
-                className="fixed bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] left-2 z-30 flex w-[min(320px,88%)] flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-surface p-2 shadow-xl lg:absolute lg:bottom-2"
+                data-mobile-sheet="catalog"
+                className="fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 flex w-auto flex-col gap-2 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-3 shadow-xl sm:left-2 sm:right-auto sm:w-[min(380px,calc(100%-16px))] lg:absolute lg:bottom-2 lg:z-30 lg:w-[min(320px,88%)] lg:rounded-lg lg:p-2"
               >
-                <div className="flex min-w-0 shrink-0 items-center justify-between gap-2 px-1.5 pt-1">
-                  <h3 className="min-w-0 break-words text-[13px] font-bold">{catalogLabel}</h3>
+                <div className="sticky -top-3 z-10 -mx-3 -mt-3 flex min-w-0 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-3 py-3 sm:-top-3 sm:-mx-3 sm:-mt-3 lg:-top-2 lg:-mx-2 lg:-mt-2 lg:px-2 lg:py-2">
+                  <div className="min-w-0">
+                    <span aria-hidden="true" className="mx-auto mb-2 block h-1 w-10 rounded-full bg-line-strong sm:hidden" />
+                    <h3 className="min-w-0 break-words text-[15px] font-bold lg:text-[13px]">{catalogLabel}</h3>
+                  </div>
                   <button
                     type="button"
                     onClick={closeCatalog}
-                    className="tap-target shrink-0 text-[12px] underline text-ink-2"
+                    aria-label="자료 목록 닫기"
+                    className="tap-target inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-md border border-line bg-surface px-3 text-[12px] font-semibold text-ink-2 lg:border-0 lg:px-1.5 lg:underline"
                   >
                     닫기
                   </button>
@@ -229,7 +234,8 @@ export function SpatialWorkbenchFrame({
           tabIndex={-1}
           onKeyDown={onInspectorKeyDown}
           style={{ top: drawerTop, display: showInspectorPanel ? undefined : "none" }}
-          className={`fixed right-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-30 w-[min(340px,92%)] flex-col gap-3 overflow-y-auto rounded-lg border border-line bg-surface p-3 text-[12px] leading-5 text-ink-2 shadow-xl lg:absolute lg:bottom-2 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
+          data-mobile-sheet="inspector"
+          className={`fixed inset-x-2 bottom-[calc(var(--mobile-bottom-nav-clearance)+8px)] z-50 w-auto flex-col gap-3 overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface p-4 text-[12px] leading-5 text-ink-2 shadow-xl sm:left-auto sm:right-2 sm:w-[min(380px,92%)] lg:absolute lg:bottom-2 lg:z-30 xl:static xl:right-auto xl:bottom-auto xl:z-auto xl:max-h-none xl:w-[320px] xl:flex-none xl:self-stretch xl:rounded-xl xl:p-3 xl:shadow-none ${showInspector ? "flex" : "hidden xl:flex"}`}
         >
           {showInspectorPanel ? inspector : null}
           {detailsHostId ? <div id={detailsHostId} className="flex min-w-0 flex-col gap-3" /> : null}
