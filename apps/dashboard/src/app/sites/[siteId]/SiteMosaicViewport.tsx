@@ -775,7 +775,12 @@ export function SiteMosaicViewport({
         ? "btn btn-primary min-h-11"
         : "btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"}
     >
-      {expiredInInspector && absentKind === "expired" ? "선택 자료 정보에서 준비 요청" : "구역 자료 준비에서 확인"}
+      {expiredInInspector && absentKind === "expired"
+        ? <>
+            <span className="lg:hidden">준비 요청 방법 보기</span>
+            <span className="hidden lg:inline">선택 자료 정보에서 준비 요청</span>
+          </>
+        : "구역 자료 준비에서 확인"}
     </a>
   );
   const canvasMediaAction = compactKind === "loading" || hasActiveWait ? (
