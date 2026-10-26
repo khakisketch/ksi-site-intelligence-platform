@@ -311,7 +311,7 @@ export function SpatialWorkbenchFrame({
           )}
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 top-[62px] min-h-0">
+        <div className="absolute inset-x-0 bottom-0 top-[72px] min-h-0">
           <div ref={stageRef} className="relative h-full min-h-0 overflow-hidden">
             {stage}
           </div>

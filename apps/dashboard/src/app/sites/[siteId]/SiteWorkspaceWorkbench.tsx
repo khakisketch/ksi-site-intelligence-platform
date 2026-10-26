@@ -90,6 +90,7 @@ export function SiteWorkspaceWorkbench({
       inspectorLabel={inspectorLabel}
       detailsHostId={detailsHostId}
       viewerMode={viewerMode}
+      viewerInspectorDefaultOpen={false}
     />
   );
 }

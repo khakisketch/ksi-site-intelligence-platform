@@ -627,8 +627,6 @@ export function SiteWorkspaceShell({
         workAreaId={selected!.workAreaId}
         layers={layers}
         jobs={[...jobs]}
-        // 이 칸은 선택 구역이 있을 때만 둔다. 호출 경로의 preparedJobsState는
-        // 그때 "not-requested"가 될 수 없으므로, 도달 불가 분기는 unavailable이다.
         jobsState={viewerJobsState === "not-requested" ? "unavailable" : viewerJobsState}
         canRead={viewerCanRead}
         canRequest={viewerCanRequest}
@@ -641,6 +639,7 @@ export function SiteWorkspaceShell({
         hideLayerControls
         selectedAssetRef={fact.assetRef}
         presentation="canvas"
+        showAbsentExtentCanvas
         detailsTargetId="workspace-inspector-details"
       />
       )}
@@ -1094,6 +1093,7 @@ export function SiteWorkspaceShell({
               selectedAssetRef={selectedAssetRef}
               layerSelectionHref={`${sitePath}?workAreaId=${encodeURIComponent(selected.workAreaId)}`}
               presentation="canvas"
+              showAbsentExtentCanvas
               detailsTargetId="workspace-inspector-details"
             />
           </div>

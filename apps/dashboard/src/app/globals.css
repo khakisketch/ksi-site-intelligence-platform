@@ -610,6 +610,9 @@ body {
   body.viewer-shell [data-site-header] {
     display: none;
   }
+  body.viewer-shell [data-viewer-page-notice] {
+    display: none;
+  }
 }
 
 /* Viewer panels own catalog/info toggles; the page-level URL/link triggers are

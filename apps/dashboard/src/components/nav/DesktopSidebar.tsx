@@ -76,9 +76,6 @@ function CompactSidebar({
           >
             {siteMark(currentSite.name)}
           </Link>
-          <span className="max-w-[52px] truncate text-[8.5px] leading-tight text-sidebar-muted" aria-hidden="true">
-            {siteShortName(currentSite.name)}
-          </span>
         </div>
       )}
       <div className="mt-auto flex flex-col items-center gap-1 pt-3">

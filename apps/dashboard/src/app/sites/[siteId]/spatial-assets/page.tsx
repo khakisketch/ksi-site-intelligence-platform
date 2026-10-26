@@ -1296,9 +1296,11 @@ export default async function SpatialAssetsPage({
     />
     <div className="flex w-full min-w-0 min-h-0 flex-1 flex-col gap-2 overflow-x-clip px-2 py-2 sm:px-3 lg:gap-0 lg:p-0">
       <h2 className="sr-only">자료</h2>
-      {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
-      {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
-      {effectiveAreaNotice && <p className="text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
+      <div data-viewer-page-notice className="flex flex-col gap-1">
+        {areas.workAreas.length === 0 && <p className="text-[12.5px] leading-5 text-ink-2">현장에 등록된 작업구역이 없습니다. 자료를 확인하려면 작업구역을 먼저 등록하세요.</p>}
+        {!effectiveWorkAreaId && areas.workAreas.length > 0 && <p className="text-[12px] text-ink-2">작업구역을 선택하면 해당 구역의 자료가 표시됩니다.</p>}
+        {effectiveAreaNotice && <p className="text-[12px] text-ink-muted" role="status">{effectiveAreaNotice}</p>}
+      </div>
 
       {pageError !== null && <div>{errorView(pageError, "catalog", siteId, effectiveWorkAreaId ? materialsHref(siteId, effectiveWorkAreaId) : undefined)}</div>}
       {page && <>
