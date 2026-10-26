@@ -290,7 +290,7 @@ export function SpatialWorkbenchFrame({
         <div
           ref={contextRef}
           data-workbench-context-bar
-          className="absolute inset-x-3 top-3 z-40 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 shadow-lg backdrop-blur"
+          className="relative z-40 mx-3 mt-3 flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 shadow-lg backdrop-blur"
         >
           {!catalogOpen && (
             <button
@@ -328,7 +328,7 @@ export function SpatialWorkbenchFrame({
           )}
         </div>
 
-        <div className="absolute inset-x-0 bottom-0 top-[72px] min-h-0">
+        <div className="relative mt-2 min-h-0 flex-1">
           <div ref={stageRef} className="relative h-full min-h-0 overflow-hidden">
             {stage}
           </div>
