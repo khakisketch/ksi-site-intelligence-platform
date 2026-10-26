@@ -35,6 +35,8 @@ describe("console shell boundary", () => {
     const css = readSource("src/app/globals.css");
     expect(css).toContain("body.viewer-shell");
     expect(css).toContain("grid-template-columns: 56px minmax(0, 1fr)");
+    expect(css).toContain("body.viewer-shell #main-content");
+    expect(css).toContain("display: flex");
     expect(css).toContain('body.viewer-shell [data-shell-topbar][data-session-state="ok"]');
     expect(css).toContain("body.viewer-shell [data-site-header]");
     expect(css).not.toContain("body.viewer-shell [data-shell-topbar][data-session-state=\"expired\"]");

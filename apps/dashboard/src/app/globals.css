@@ -599,6 +599,9 @@ body {
     grid-template-columns: 56px minmax(0, 1fr);
   }
   body.viewer-shell #main-content {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
   }
   body.viewer-shell [data-shell-topbar][data-session-state="ok"] {
