@@ -1333,6 +1333,7 @@ export default async function SpatialAssetsPage({
                 catalogFooter={catalogFooter}
                 catalogDismissLabel={catalogFooter ? "이 선택으로 보기" : undefined}
                 viewerMode
+                viewerInspectorDefaultOpen={false}
               />}
           <nav aria-label="등록 자료 페이지" className="flex min-w-0 flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ cursor: null }))}>처음부터 보기</Link>}
