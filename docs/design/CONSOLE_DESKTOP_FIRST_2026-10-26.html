@@ -27,7 +27,7 @@
   .caption{width:1440px;margin:0 auto;padding:10px 2px 18px;color:#9aa5a0;font-family:var(--mono);font-size:10px;letter-spacing:.08em;display:flex;justify-content:space-between}
   .caption b{color:#aeb8b3;font-weight:500}
 
-  .app{display:grid;grid-template-columns:200px minmax(0,1fr);height:900px}
+  .app{display:grid;grid-template-columns:220px minmax(0,1fr);height:900px}
   .rail{background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;padding:14px 10px 12px;min-height:0}
   .brand{display:flex;align-items:center;gap:9px;padding:0 7px 20px}
   .brand .mark{width:28px;height:28px;border-radius:7px;background:#eef1ee;color:#15191a;display:grid;place-items:center;font-size:9px;font-weight:800;letter-spacing:.02em;flex:none}
@@ -46,6 +46,33 @@
   .who .avatar{width:24px;height:24px;border-radius:50%;background:#3a4240;color:#fff;display:grid;place-items:center;font-size:9px;font-weight:600;flex:none}
   .who span{display:block;line-height:1.3}
 
+  .site-context{display:none;position:relative;margin:3px 0 6px;padding:7px 7px 6px;border:1px solid #2b3432;border-radius:8px;background:#1d2224}
+  .site-context.on{display:block}
+  .site-switch{display:flex;align-items:center;gap:7px;width:100%;border:0;background:none;color:#e9edee;text-align:left;padding:2px 2px 7px;cursor:pointer}
+  .site-switch:hover{color:#fff}
+  .site-switch .site-mark{width:22px;height:22px;border-radius:5px;background:#30393a;display:grid;place-items:center;font-family:var(--mono);font-size:7.5px;color:#dfe7e3;flex:none}
+  .site-switch b{display:block;font-size:11px;line-height:1.25;letter-spacing:-.02em;font-weight:600;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .site-switch small{display:block;font-size:8px;color:#8b9691;margin-top:1px;white-space:nowrap}
+  .site-switch svg{margin-left:auto;width:12px;height:12px;fill:none;stroke:#8b9691;stroke-width:1.8;flex:none}
+  .site-sub{display:flex;flex-direction:column;gap:1px;border-top:1px solid #2b3432;padding-top:5px}
+  .site-sub button{display:flex;align-items:center;gap:8px;min-height:29px;padding:0 7px 0 9px;border-radius:5px;background:none;border:0;color:#aeb8b4;font-size:10.5px;text-align:left;cursor:pointer;width:100%}
+  .site-sub button:hover{background:rgba(255,255,255,.055);color:#fff}
+  .site-sub button.on{background:#2c3035;color:#fff;font-weight:600}
+  .site-sub .count{margin-left:auto;font-family:var(--mono);font-size:8px;color:#8b9691}
+  .site-sub svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.6;flex:none;opacity:.8}
+  .site-pop{position:absolute;left:calc(100% + 7px);top:0;z-index:80;width:286px;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:9px;box-shadow:0 14px 34px rgba(0,0,0,.22);padding:6px}
+  .site-pop[hidden]{display:none}
+  .site-pop-head{display:flex;align-items:center;justify-content:space-between;padding:5px 7px 7px;font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .site-pop-row{display:flex;align-items:center;gap:9px;width:100%;border:0;background:none;border-radius:6px;padding:8px 8px;text-align:left;cursor:pointer}
+  .site-pop-row:hover{background:var(--sunk)}
+  .site-pop-row.on{background:#f4f6f7}
+  .site-pop-row .sp-mark{width:25px;height:25px;border-radius:5px;background:var(--sunk);color:var(--ink-2);display:grid;place-items:center;font-family:var(--mono);font-size:7.5px;flex:none}
+  .site-pop-row .sp-main{min-width:0;flex:1}
+  .site-pop-row b{display:block;font-size:11px;line-height:1.3;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .site-pop-row small{display:block;font-size:8.5px;color:var(--muted);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .site-pop-row .check{font-family:var(--mono);font-size:9px;color:var(--green)}
+  .site-pop-all{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;border-top:1px solid var(--line);background:none;margin-top:4px;padding:8px 8px 4px;font-size:9.5px;color:var(--ink-2);cursor:pointer}
+  .site-pop-all:hover{color:var(--ink)}
   .main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--page)}
   .top{height:52px;flex:none;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:11px;padding:0 20px}
   .top-title{font-size:14px;font-weight:700;letter-spacing:-.03em}
@@ -101,17 +128,12 @@
   .home-foot .sep{color:#c3c8cd}
 
   /* ── 현장 헤더 ───────────────────────────────────────────────── */
-  .site-head{flex:none;background:var(--surface);border-bottom:1px solid var(--line);padding:14px 22px 0}
+  .site-head{flex:none;background:var(--surface);border-bottom:1px solid var(--line);padding:14px 22px 15px}
   .site-kicker{font-size:9.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
   .site-kicker .sep{color:#c3c8cd}
   .site-title-row{display:flex;align-items:center;gap:10px;margin-top:4px}
   .site-title-row h1{margin:0;font-size:27px;line-height:1.08;letter-spacing:-.05em;font-weight:750}
   .site-title-row .site-actions{margin-left:auto;display:flex;gap:6px}
-  .site-tabs{display:flex;gap:24px;margin-top:11px}
-  .site-tabs button{position:relative;border:0;background:none;padding:0 0 9px;color:#5e6872;font-size:11.5px;cursor:pointer;border-bottom:2px solid transparent}
-  .site-tabs button:hover{color:var(--ink)}
-  .site-tabs button.on{color:var(--ink);font-weight:700;border-color:var(--ink)}
-  .site-tabs button span{font-family:var(--mono);font-size:8.5px;color:#9a9e97;margin-left:4px}
 
   /* ── 현장 공간 ───────────────────────────────────────────────── */
   .workbench{display:grid;grid-template-columns:236px minmax(0,1fr) 318px;flex:1;min-height:0;background:var(--surface)}
@@ -235,6 +257,15 @@
   .step.done .l{color:var(--ink-2)}
   .work-side p{margin:0;font-size:9.5px;line-height:1.6;color:var(--muted)}
 
+  /* ── 내 업무 ─────────────────────────────────────────────────── */
+  .mywork-page{flex:1;min-height:0;padding:24px 28px;display:flex;flex-direction:column;gap:16px;background:var(--page);overflow-y:auto}
+  .mywork-list{background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;max-width:1100px}
+  .mywork-list .work-row{grid-template-columns:180px minmax(0,1fr) 116px 110px}
+  .mywork-list .work-row .site{font-size:11px;font-weight:650;line-height:1.35}
+  .mywork-list .work-row .site span{display:block;font-family:var(--mono);font-size:8.5px;color:var(--muted);font-weight:400;margin-top:2px}
+  .mywork-list .work-row .next{font-size:10px;color:var(--ink-2);text-align:right}
+  .mywork-list .work-row .next b{color:var(--ink);font-weight:650}
+  .mywork-list .work-row .state{justify-self:start}
   /* ── 검토 ────────────────────────────────────────────────────── */
   .review-page{flex:1;min-height:0;padding:24px 28px;display:flex;flex-direction:column;gap:18px;background:var(--page)}
   .review-head{display:flex;align-items:end;justify-content:space-between;gap:16px}
@@ -304,7 +335,37 @@
       <nav class="nav" aria-label="전역 메뉴">
         <button class="nav-item on" data-show="home"><svg><use href="#i-home"/></svg>홈</button>
         <button class="nav-item" data-show="space"><svg><use href="#i-site"/></svg>현장<span class="count">2</span></button>
-        <button class="nav-item" data-show="work"><svg><use href="#i-work"/></svg>내 업무<span class="count">2</span></button>
+        <div class="site-context" id="siteContext">
+          <button class="site-switch" id="siteSwitch" aria-expanded="false" aria-controls="sitePopover">
+            <span class="site-mark">FL</span>
+            <span>
+              <b>Floreat public sample</b>
+              <small>현장 등록됨 · 관측 2</small>
+            </span>
+            <svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"/></svg>
+          </button>
+          <div class="site-sub" aria-label="현재 현장 메뉴">
+            <button class="on" data-site="space"><svg><use href="#i-site"/></svg>공간</button>
+            <button data-site="materials"><svg><use href="#i-ortho"/></svg>자료<span class="count">4</span></button>
+            <button data-site="work"><svg><use href="#i-work"/></svg>업무<span class="count">2</span></button>
+            <button data-site="results"><svg><use href="#i-review"/></svg>결과<span class="count">1</span></button>
+          </div>
+          <div class="site-pop" id="sitePopover" hidden>
+            <div class="site-pop-head"><span>현장 변경</span><span>2</span></div>
+            <button class="site-pop-row on" data-show="space">
+              <span class="sp-mark">FL</span>
+              <span class="sp-main"><b>Floreat public sample</b><small>현장 등록됨 · 관측 2</small></span>
+              <span class="check">✓</span>
+            </button>
+            <button class="site-pop-row" data-show="review">
+              <span class="sp-mark">PS</span>
+              <span class="sp-main"><b>Product Sample Field</b><small>분석 결과 검토 대기</small></span>
+              <span class="pill amber" style="font-size:8px;padding:2px 6px">검토</span>
+            </button>
+            <button class="site-pop-all" data-show="home"><span>전체 현장</span><span>→</span></button>
+          </div>
+        </div>
+        <button class="nav-item" data-show="my-work"><svg><use href="#i-work"/></svg>내 업무<span class="count">2</span></button>
         <button class="nav-item review" data-show="review"><svg><use href="#i-review"/></svg>검토<span class="count">1</span></button>
       </nav>
       <div class="rail-lower">
@@ -438,6 +499,29 @@
         </div>
       </section>
 
+      <!-- 내 업무 -->
+      <section class="view" data-view="my-work">
+        <div class="mywork-page">
+          <div class="review-head"><div><h1>내 업무</h1><p>나에게 배정·공유된 항목만 모읍니다.</p></div><span class="count">2건</span></div>
+          <div class="mywork-list">
+            <div class="work-row head"><span>현장</span><span>업무</span><span>상태</span><span style="text-align:right">다음 행동</span></div>
+            <div class="work-row">
+              <span class="site">Floreat public sample<span>FLOREAT · EPSG:7850</span></span>
+              <span><span class="name">Floreat capture 2022-08-24</span><span class="sub">관측 작업 · 자료 2 · Floreat common-extent</span></span>
+              <span class="state wait">진행 중</span>
+              <span class="next"><b>작업 상세</b> →</span>
+            </div>
+            <div class="work-row">
+              <span class="site">Product Sample Field<span>PS · EPSG:5186</span></span>
+              <span><span class="name">분석 결과 검토</span><span class="sub">Sample Work Area · 검토 기록 없음</span></span>
+              <span class="state ready">검토 대기</span>
+              <span class="next"><b>검토 열기</b> →</span>
+            </div>
+          </div>
+          <div class="queue-foot">전역 내 업무는 현장 업무의 투영입니다. 별도 저장소나 새 권한을 만들지 않습니다.</div>
+        </div>
+      </section>
+
       <!-- 현장 공간 -->
       <section class="view" data-view="space">
         <div class="site-head">
@@ -446,12 +530,6 @@
             <h1>Floreat public sample</h1>
             <span class="pill">CC BY 4.0</span>
             <div class="site-actions"><button class="btn">설정·정보</button></div>
-          </div>
-          <div class="site-tabs">
-            <button class="on" data-site="space">공간</button>
-            <button data-site="materials">자료 <span>4</span></button>
-            <button data-site="work">업무 <span>2</span></button>
-            <button data-site="results">결과 <span>1</span></button>
           </div>
         </div>
         <div class="workbench">
@@ -568,12 +646,6 @@
             <h1>Floreat public sample</h1>
             <span class="pill">CC BY 4.0</span>
             <div class="site-actions"><button class="btn">설정·정보</button></div>
-          </div>
-          <div class="site-tabs">
-            <button data-site="space">공간</button>
-            <button class="on" data-site="materials">자료 <span>4</span></button>
-            <button data-site="work">업무 <span>2</span></button>
-            <button data-site="results">결과 <span>1</span></button>
           </div>
         </div>
         <div class="materials">
@@ -702,12 +774,6 @@
             <span class="pill">CC BY 4.0</span>
             <div class="site-actions"><button class="btn">설정·정보</button></div>
           </div>
-          <div class="site-tabs">
-            <button data-site="space">공간</button>
-            <button data-site="materials">자료 <span>4</span></button>
-            <button class="on" data-site="work">업무 <span>2</span></button>
-            <button data-site="results">결과 <span>1</span></button>
-          </div>
         </div>
         <div class="work-view">
           <div class="work-main">
@@ -756,12 +822,6 @@
             <h1>Floreat public sample</h1>
             <span class="pill">CC BY 4.0</span>
             <div class="site-actions"><button class="btn">설정·정보</button></div>
-          </div>
-          <div class="site-tabs">
-            <button data-site="space">공간</button>
-            <button data-site="materials">자료 <span>4</span></button>
-            <button data-site="work">업무 <span>2</span></button>
-            <button class="on" data-site="results">결과 <span>1</span></button>
           </div>
         </div>
         <div class="review-page">
@@ -842,20 +902,49 @@
 <div class="caption"><span><b>KSI Operations Console</b> · Desktop-first design · 1440 × 900</span><span>DESIGN PROTOTYPE · NOT PRODUCTION UI</span></div>
 
 <script>
-  const topTitles = { home:"홈", space:"Floreat public sample", materials:"Floreat public sample", work:"Floreat public sample", results:"Floreat public sample", review:"검토" };
-  const topActions = { space:true, materials:true, work:true, results:false, review:false, home:false };
-  const navFor = { home:"home", space:"space", materials:"space", work:"work", results:"space", review:"review" };
+  const topTitles = { home:"홈", "my-work":"내 업무", space:"공간", materials:"자료", work:"업무", results:"결과", review:"검토" };
+  const topActions = { space:true, materials:true, work:true, results:false, review:false, home:false, "my-work":false };
+  const navFor = { home:"home", "my-work":"work", space:"space", materials:"space", work:"space", results:"space", review:"review" };
+  const siteViews = new Set(["space","materials","work","results"]);
 
   function show(view){
     document.querySelectorAll(".view").forEach(v=>v.classList.toggle("on", v.dataset.view===view));
-    document.querySelectorAll("[data-show]").forEach(b=>b.classList.toggle("on", b.dataset.show===navFor[view]));
+    document.querySelectorAll(".nav > [data-show]").forEach(b=>b.classList.toggle("on", b.dataset.show===navFor[view]));
     const title = document.getElementById("topTitle");
     if(title) title.textContent = topTitles[view] || "홈";
     const crumb = document.getElementById("topCrumb");
-    if(crumb) crumb.style.display = (view==="space"||view==="materials"||view==="work"||view==="results") ? "inline-block" : "none";
+    if(crumb) crumb.style.display = "none";
     const action = document.getElementById("topAction");
-    if(action) action.style.display = topActions[view] ? "inline-flex" : "none";
+    if(action){
+      const actionLabels = { space:"자료 등록", materials:"자료 등록", work:"새 관측 작업" };
+      action.textContent = actionLabels[view] || "자료 등록";
+      action.style.display = topActions[view] ? "inline-flex" : "none";
+    }
+    const context = document.getElementById("siteContext");
+    if(context) context.classList.toggle("on", siteViews.has(view));
+    document.querySelectorAll(".site-sub button").forEach(b=>b.classList.toggle("on", b.dataset.site===view));
+    const pop = document.getElementById("sitePopover");
+    const sw = document.getElementById("siteSwitch");
+    if(pop) pop.hidden = true;
+    if(sw) sw.setAttribute("aria-expanded","false");
     window.scrollTo(0,0);
+  }
+
+  const siteSwitch = document.getElementById("siteSwitch");
+  const sitePopover = document.getElementById("sitePopover");
+  if(siteSwitch && sitePopover){
+    siteSwitch.addEventListener("click", (event)=>{
+      event.stopPropagation();
+      const open = sitePopover.hidden;
+      sitePopover.hidden = !open;
+      siteSwitch.setAttribute("aria-expanded", String(open));
+    });
+    document.addEventListener("click", (event)=>{
+      if(!sitePopover.hidden && !sitePopover.contains(event.target) && !siteSwitch.contains(event.target)){
+        sitePopover.hidden = true;
+        siteSwitch.setAttribute("aria-expanded","false");
+      }
+    });
   }
 
   document.addEventListener("click", (event)=>{
