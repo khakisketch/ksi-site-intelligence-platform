@@ -296,7 +296,7 @@ export function SpatialWorkbenchFrame({
               onClick={openCatalog}
               aria-label="레이어 패널 열기"
               title="레이어 패널 열기"
-              className="tap-target grid size-9 shrink-0 place-items-center rounded-md border border-line bg-surface text-ink-2 hover:bg-sunk"
+              className="tap-target inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-line bg-surface px-2 text-ink-2 hover:bg-sunk"
             >
               <svg aria-hidden="true" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
                 <path d="m12 3 9 5-9 5-9-5Z" />
