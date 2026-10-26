@@ -40,6 +40,7 @@ site/queue authority.
 
 ## Open / next
 
+- Viewer-first adoption decision: [`CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html) (A/B/C/D; pending).
 - Apply the same extent canvas to the site workspace stage.
 - Mobile site switcher (desktop rail pattern is not available below `lg`).
 - Home structure and global `내 업무/검토` split remain gated by ADR-025 D6/D7 and explicit

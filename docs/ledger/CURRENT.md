@@ -30,6 +30,8 @@ Desktop-first, site-centric, real extents, no fake imagery, no duplicate work au
 
 ## Open decisions / limits
 
+- Viewer-first adoption: comparison prepared; decision pending (A: space+materials, B: space only,
+  C: everywhere, D: keep 3-pane). See [`DESIGN.md`](DESIGN.md).
 - Home structure and global `내 업무/검토` split: ADR-025 D6/D7 / ADR-026 approval and evidence
   required; not implemented.
 - Site workspace extent canvas: next visual slice; not yet enabled there.

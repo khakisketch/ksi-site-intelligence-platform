@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>KSI Console — Viewer-first / Minimal GIS</title>
+<style>
+  :root{
+    --page:#f6f7f8; --surface:#ffffff; --sunk:#edeef0; --line:#e0e2e5; --line-strong:#bfc3c8;
+    --ink:#121417; --ink-2:#4e5359; --muted:#5e6872;
+    --rail:#141819; --rail-2:#222829; --rail-3:#2b3232; --rail-ink:#e9eeeb; --rail-muted:#8b9792;
+    --canvas:#0f1516; --canvas-2:#151d1e; --canvas-line:#243132; --canvas-grid:#1c2728;
+    --canvas-ink:#e7efea; --canvas-muted:#9cafa7;
+    --accent:#1f2124; --spatial:#4f7182; --prepared:#c8dde4;
+    --amber:#8a5a1b; --amber-bg:#f6ead6; --amber-line:#e2c69a;
+    --green:#2d625d; --green-bg:#e3efec; --green-line:#b6d3cc;
+    --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#0b0e0f;color:var(--ink);font-family:var(--sans);letter-spacing:-.018em;line-height:1.42}
+  button{font:inherit;color:inherit}
+  a{color:inherit;text-decoration:none}
+  .stage{width:1440px;height:900px;margin:0 auto;display:grid;grid-template-columns:56px minmax(0,1fr);overflow:hidden;background:var(--canvas)}
+  .rail{background:var(--rail);color:var(--rail-ink);display:flex;flex-direction:column;align-items:center;padding:14px 0 12px;gap:4px}
+  .brand{width:28px;height:28px;border-radius:7px;background:#eff3ef;color:#151a18;display:grid;place-items:center;font-size:9px;font-weight:800;margin-bottom:16px;flex:none}
+  .rail button{width:38px;height:38px;border:0;border-radius:7px;background:none;color:#aeb9b4;display:grid;place-items:center;cursor:pointer}
+  .rail button:hover{background:rgba(255,255,255,.06);color:#fff}
+  .rail button.on{background:var(--rail-3);color:#fff}
+  .rail svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65}
+  .rail .lower{margin-top:auto;display:flex;flex-direction:column;gap:3px}
+  .rail .avatar{width:26px;height:26px;border-radius:50%;background:#303a36;color:#fff;display:grid;place-items:center;font-size:9px;font-weight:600;margin-top:7px}
+  .viewer{position:relative;min-width:0;min-height:0;background:var(--canvas);overflow:hidden}
+  .map{position:absolute;inset:0;width:100%;height:100%;display:block}
+
+  .crumbs{position:absolute;z-index:5;left:18px;top:16px;display:flex;align-items:center;gap:5px;background:rgba(13,19,19,.75);border:1px solid rgba(222,236,228,.15);border-radius:6px;padding:4px;backdrop-filter:blur(10px)}
+  .crumbs span{font-size:10.5px;color:#c5d3cc;padding:4px 6px;border-radius:3px}
+  .crumbs span.here{background:#e6eee8;color:#15201b;font-weight:650}
+  .crumbs i{font-style:normal;color:#60716a;font-size:9px}
+  .tools{position:absolute;z-index:5;right:16px;top:16px;display:flex;align-items:center;gap:6px}
+  .seg{display:flex;gap:2px;background:rgba(13,19,19,.78);border:1px solid rgba(222,236,228,.16);border-radius:6px;padding:2px;backdrop-filter:blur(10px)}
+  .seg button{border:0;background:none;color:#a8b8b0;font-family:var(--mono);font-size:9px;padding:5px 8px;border-radius:4px;cursor:pointer}
+  .seg button.on{background:#e5ede8;color:#15201b;font-weight:700}
+  .seg button.wide{font-family:var(--sans);font-size:9.5px}
+  .icon-btn{width:32px;height:32px;border:1px solid rgba(222,236,228,.16);border-radius:6px;background:rgba(13,19,19,.78);color:#c6d4cd;display:grid;place-items:center;cursor:pointer;backdrop-filter:blur(10px)}
+  .icon-btn svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.65}
+  .icon-btn:hover{background:rgba(28,38,37,.9);color:#fff}
+
+  .layers{position:absolute;z-index:6;left:14px;top:60px;width:282px;max-height:calc(100% - 152px);display:flex;flex-direction:column;background:rgba(250,252,251,.97);border:1px solid rgba(255,255,255,.55);border-radius:10px;box-shadow:0 18px 46px rgba(0,0,0,.32);overflow:hidden;backdrop-filter:blur(12px)}
+  .layers-head{padding:12px 12px 10px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:9px}
+  .layers-head .mark{width:27px;height:27px;border-radius:6px;background:var(--sunk);color:var(--ink-2);display:grid;place-items:center;font-family:var(--mono);font-size:8px;flex:none}
+  .layers-head b{display:block;font-size:12px;line-height:1.25;font-weight:700}
+  .layers-head small{display:block;font-size:9px;color:var(--muted);margin-top:1px}
+  .layers-head .chev{margin-left:auto;border:0;background:none;color:var(--muted);font-size:14px;padding:2px 4px;cursor:pointer}
+  .layers-sub{display:flex;align-items:center;gap:3px;padding:7px 10px;border-bottom:1px solid var(--line);background:#fbfcfc}
+  .layers-sub button{border:0;background:none;color:var(--muted);font-size:10px;padding:4px 7px;border-radius:4px;cursor:pointer}
+  .layers-sub button.on{background:var(--accent);color:#fff;font-weight:600}
+  .layers-sub .count{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--muted)}
+  .layer-search{display:flex;align-items:center;gap:6px;margin:8px 10px 4px;border:1px solid var(--line);background:#fff;border-radius:5px;padding:5px 7px;color:var(--muted);font-size:10px}
+  .layer-search svg{width:12px;height:12px;fill:none;stroke:currentColor;stroke-width:1.7}
+  .layer-list{overflow-y:auto;min-height:0;padding:2px 7px 7px}
+  .group{display:flex;align-items:baseline;justify-content:space-between;padding:8px 5px 4px;font-family:var(--mono);font-size:8.5px;color:var(--muted)}
+  .group span:last-child{color:#8b9690}
+  .layer{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:7px;align-items:start;width:100%;text-align:left;border:1px solid transparent;border-radius:6px;background:none;padding:6px;cursor:pointer}
+  .layer:hover{background:#f3f6f5}
+  .layer.on{background:#fff;border-color:var(--line-strong)}
+  .kind{width:24px;height:26px;border:1px solid var(--line);border-radius:4px;background:#fff;display:grid;place-items:center;color:var(--ink-2);font-family:var(--mono);font-size:7px}
+  .kind svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:1.2}
+  .layer b{display:block;font-size:10.5px;line-height:1.3;font-weight:600}
+  .layer small{display:block;font-size:8px;color:var(--muted);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .layer .role{font-family:var(--mono);font-size:7.5px;border:1px solid var(--line-strong);border-radius:3px;padding:1px 4px;color:var(--ink-2)}
+  .layer .role.a{background:var(--accent);border-color:var(--accent);color:#fff}
+  .layer-add{margin:7px 10px 10px;border-top:1px solid var(--line);padding-top:8px;display:flex;gap:5px}
+  .layer-add button{border:1px solid var(--line-strong);background:#fff;border-radius:5px;font-size:9.5px;font-weight:600;padding:5px 8px;cursor:pointer}
+  .layer-add button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .info{position:absolute;z-index:6;right:16px;bottom:58px;width:318px;background:rgba(250,252,251,.98);border:1px solid rgba(255,255,255,.55);border-radius:9px;box-shadow:0 18px 46px rgba(0,0,0,.3);padding:12px 13px;backdrop-filter:blur(12px)}
+  .info-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .info-kicker{font-family:var(--mono);font-size:8px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .info h3{margin:3px 0 0;font-size:16px;line-height:1.2;letter-spacing:-.035em;font-weight:750}
+  .info .close{border:0;background:none;color:var(--muted);font-size:12px;padding:2px 4px;cursor:pointer}
+  .status{display:inline-flex;align-items:center;gap:5px;margin-top:7px;border:1px solid var(--green-line);background:var(--green-bg);color:var(--green);border-radius:99px;padding:2px 7px;font-size:9px}
+  .status:before{content:"";width:4px;height:4px;border-radius:50%;background:currentColor}
+  .info dl{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;margin:10px 0 0;border-top:1px solid var(--line);padding-top:8px}
+  .info dt{font-size:8.5px;color:var(--muted)}
+  .info dd{margin:1px 0 0;font-size:10px;line-height:1.35;color:var(--ink-2);font-weight:600}
+  .info-actions{display:flex;gap:5px;margin-top:10px}
+  .info-actions button{flex:1;border:1px solid var(--line-strong);background:#fff;border-radius:5px;font-size:10px;font-weight:650;padding:7px 6px;cursor:pointer}
+  .info-actions button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .info-actions button.quiet{flex:none;border:0;background:none;color:var(--muted);font-size:9px;text-decoration:underline;padding:7px 2px}
+  .timeline{position:absolute;z-index:4;left:18px;right:18px;bottom:17px;display:flex;align-items:center;gap:9px;color:#aebfb7;font-family:var(--mono);font-size:8px}
+  .timeline .track{position:relative;flex:1;height:1px;background:#3f514e}
+  .timeline .track i{position:absolute;top:-3px;width:7px;height:7px;border-radius:50%;background:#d6a15c;border:1px solid #18211d}
+  .timeline .track i.a{left:5%}
+  .timeline .track i.b{left:72%}
+  .timeline .legend{margin-left:6px;color:#6f8279;font-size:7.5px}
+  .timeline .state{display:flex;align-items:center;gap:5px;color:#c7d5cd;background:rgba(13,19,19,.65);border:1px solid rgba(222,236,228,.14);border-radius:4px;padding:3px 6px}
+  .timeline .state:before{content:"";width:4px;height:4px;border-radius:50%;background:#c08a42}
+  .corner{position:absolute;z-index:4;left:18px;bottom:44px;font-family:var(--mono);font-size:8px;color:#84978e}
+  .corner b{color:#c7d5cd;font-weight:500}
+  .caption{width:1440px;margin:0 auto;padding:9px 2px 16px;color:#9aa5a0;font-family:var(--mono);font-size:9.5px;letter-spacing:.06em;display:flex;justify-content:space-between}
+  .caption b{color:#c6d0cb;font-weight:500}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></symbol>
+  <symbol id="i-site" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></symbol>
+  <symbol id="i-work" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></symbol>
+  <symbol id="i-review" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5Z"/><path d="m3 12 9 5 9-5M3 16l9 5 9-5"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-ortho" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 9h16M4 14h16M9 4v16M14 4v16"/></symbol>
+  <symbol id="i-dsm" viewBox="0 0 24 24"><path d="M3 17c3-5 5-7 8-4s5 1 10-3M3 20c3-5 5-7 8-4s5 1 10-3M3 14c3-5 5-7 8-4s5 1 10-3"/></symbol>
+</defs></svg>
+
+<div class="stage">
+  <aside class="rail">
+    <div class="brand">KSI</div>
+    <button aria-label="홈"><svg><use href="#i-home"/></svg></button>
+    <button class="on" aria-label="현장 자료"><svg><use href="#i-site"/></svg></button>
+    <button aria-label="내 업무"><svg><use href="#i-work"/></svg></button>
+    <button aria-label="검토"><svg><use href="#i-review"/></svg></button>
+    <div class="lower">
+      <button aria-label="도움말"><svg><use href="#i-info"/></svg></button>
+      <button aria-label="계정"><svg><use href="#i-more"/></svg></button>
+      <span class="avatar">L</span>
+    </div>
+  </aside>
+
+  <main class="viewer">
+    <svg class="map" viewBox="0 0 1384 900" preserveAspectRatio="xMidYMid slice" aria-hidden="true">
+      <defs>
+        <pattern id="bg" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#1a2425" stroke-width=".7"/></pattern>
+        <pattern id="major" width="118" height="118" patternUnits="userSpaceOnUse" patternTransform="translate(420 150)"><path d="M118 0H0V118" fill="none" stroke="#283636" stroke-width="1"/></pattern>
+      </defs>
+      <rect width="1384" height="900" fill="#0f1516"/>
+      <rect width="1384" height="900" fill="url(#bg)"/>
+      <rect x="420" y="150" width="600" height="537" fill="rgba(120,160,148,.045)"/>
+      <rect x="420" y="150" width="600" height="537" fill="url(#major)"/>
+      <rect x="420" y="150" width="600" height="537" fill="none" stroke="#e8f0eb" stroke-width="2.6"/>
+      <rect x="570" y="270" width="300" height="300" fill="rgba(125,154,169,.1)" stroke="#d5e7ed" stroke-width="1.8" stroke-dasharray="6 4"/>
+      <g stroke="#e8f0eb" stroke-width="1.5">
+        <path d="M420 150v18M420 150h18M1020 687v-18M1020 687h-18M420 687v-18M420 687h18M1020 150v18M1020 150h-18"/>
+      </g>
+      <g font-family="ui-monospace,monospace" fill="#b9cbc3" font-size="13">
+        <text x="432" y="138">A · 2021.08.17</text>
+        <text x="1008" y="706" text-anchor="end">B · 2022.08.24</text>
+        <text x="584" y="262">510 × 512 px 준비 창</text>
+      </g>
+      <g stroke="#c6d8d0" stroke-width="1.2">
+        <path d="M420 731h600M420 726v10M1020 726v10"/>
+        <path d="M388 150v537M383 150h10M383 687h10"/>
+      </g>
+      <text x="720" y="752" text-anchor="middle" font-family="ui-monospace,monospace" font-size="15" fill="#dbe7e1">255.5 m</text>
+      <text x="376" y="418" text-anchor="middle" transform="rotate(-90 376 418)" font-family="ui-monospace,monospace" font-size="15" fill="#dbe7e1">228.75 m</text>
+      <g stroke="#c6d8d0" stroke-width="1.4">
+        <path d="M80 842v-18m-5 5 5-5 5 5"/><path d="M80 824h235"/><path d="M315 824v-6M80 824v-6"/>
+      </g>
+      <text x="326" y="830" font-family="ui-monospace,monospace" font-size="12" fill="#c6d8d0">100 m</text>
+      <g font-family="ui-monospace,monospace" fill="#8fa49b" font-size="12">
+        <text x="1324" y="138" text-anchor="end">EPSG:7850</text>
+        <text x="1008" y="858" text-anchor="end">1022 × 915 px</text>
+      </g>
+      <text x="432" y="858" font-family="ui-monospace,monospace" font-size="11" fill="#84978e">등록 범위 · 실제 픽셀 아님</text>
+    </svg>
+
+    <div class="crumbs">
+      <span>Floreat public sample</span><i>/</i><span>자료</span><i>/</i><span class="here">A · 정사영상</span>
+    </div>
+    <div class="tools">
+      <div class="seg"><button class="on">A</button><button>B</button><button class="wide">비교</button></div>
+      <button class="icon-btn" aria-label="정보"><svg><use href="#i-info"/></svg></button>
+      <button class="icon-btn" aria-label="더 보기"><svg><use href="#i-more"/></svg></button>
+    </div>
+
+    <section class="layers" aria-label="자료 레이어">
+      <div class="layers-head">
+        <span class="mark">FL</span>
+        <span><b>Floreat public sample</b><small>현장 등록됨 · 관측 2</small></span>
+        <button class="chev" aria-label="레이어 접기">‹</button>
+      </div>
+      <div class="layers-sub">
+        <button>공간</button><button class="on">자료</button><button>관측 작업</button><button>결과</button>
+        <span class="count">4</span>
+      </div>
+      <div class="layer-search"><svg><use href="#i-search"/></svg>파일명 검색</div>
+      <div class="layer-list">
+        <div class="group"><span>2021. 8. 17.</span><span>2</span></div>
+        <button class="layer on"><span class="kind"><svg><use href="#i-ortho"/></svg></span><span><b>정사영상 · v1</b><small>floreat-f3-2021-08-17-ortho-derived.tif</small></span><span class="role a">A</span></button>
+        <button class="layer"><span class="kind"><svg><use href="#i-dsm"/></svg></span><span><b>DSM · v1</b><small>floreat-f3-2021-08-17-dsm-derived.tif</small></span></button>
+        <div class="group"><span>2022. 8. 24.</span><span>2</span></div>
+        <button class="layer"><span class="kind"><svg><use href="#i-ortho"/></svg></span><span><b>정사영상 · v1</b><small>floreat-f3-2022-08-24-ortho-derived.tif</small></span></button>
+        <button class="layer"><span class="kind"><svg><use href="#i-dsm"/></svg></span><span><b>DSM · v1</b><small>floreat-f3-2022-08-24-dsm-derived.tif</small></span></button>
+      </div>
+      <div class="layer-add"><button class="primary">자료 등록</button><button>전체 보기</button></div>
+    </section>
+
+    <section class="info" aria-label="선택 자료 정보">
+      <div class="info-top">
+        <div><div class="info-kicker">Selected material</div><h3>A · 정사영상</h3><div class="status">파일 정보 확인됨</div></div>
+        <button class="close" aria-label="정보 닫기">×</button>
+      </div>
+      <dl>
+        <div><dt>관측 시점</dt><dd>2021. 8. 17.</dd></div>
+        <div><dt>좌표 기준</dt><dd>EPSG:7850</dd></div>
+        <div><dt>파일 검사</dt><dd>파일 정보 확인됨</dd></div>
+        <div><dt>보관 상태</dt><dd>기간 만료</dd></div>
+      </dl>
+      <div class="info-actions"><button class="primary">준비 요청</button><button>현재 관측으로</button><button class="quiet">상세</button></div>
+    </section>
+
+    <div class="timeline">
+      <span class="state">A · 보관 만료</span>
+      <span>2021.08.17</span><span class="track"><i class="a"></i><i class="b"></i></span><span>2022.08.24</span>
+      <span class="legend">드래그·휠로 이동 / 실제 픽셀 아님</span>
+    </div>
+    <div class="corner"><b>등록 범위</b> · 255.5 × 228.75</div>
+  </main>
+</div>
+<div class="caption"><span><b>KSI Operations Console</b> · Viewer-first / Minimal GIS · 1440 × 900</span><span>DESIGN PROTOTYPE · NOT PRODUCTION UI</span></div>
+</body>
+</html>

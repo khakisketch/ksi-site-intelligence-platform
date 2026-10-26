@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1440">
+<title>KSI Console — Before / After: Viewer-first</title>
+<style>
+  :root{
+    --board:#0b0e0f; --panel:#121719; --line:#2a3234; --paper:#f6f7f8; --surface:#fff;
+    --ink:#121417; --ink-2:#4e5359; --muted:#5e6872; --line-2:#e0e2e5;
+    --accent:#1f2124; --spatial:#4f7182; --amber:#8a5a1b; --amber-bg:#f6ead6; --amber-line:#e2c69a;
+    --green:#2d625d; --green-bg:#e3efec; --green-line:#b6d3cc;
+    --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--board);color:#e9eeeb;font-family:var(--sans);letter-spacing:-.018em;line-height:1.45}
+  .board{max-width:1440px;margin:0 auto;padding:34px 32px 70px}
+  .eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#8c9893;margin:0 0 12px}
+  h1{margin:0;font-size:36px;line-height:1.08;letter-spacing:-.05em}
+  .lede{margin:10px 0 0;max-width:760px;color:#aab6b0;font-size:13.5px;line-height:1.65}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:16px 0 28px}
+  .chips span{border:1px solid #303a3b;background:#111617;color:#c7d2cd;border-radius:99px;padding:5px 9px;font-size:10.5px}
+  .chips b{color:#fff;font-weight:600}
+  .pair{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  .shot{background:#101516;border:1px solid #293233;border-radius:10px;overflow:hidden;box-shadow:0 20px 50px rgba(0,0,0,.28)}
+  .shot-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-bottom:1px solid #273031;background:#101516}
+  .shot-head b{font-size:11px;letter-spacing:.02em}
+  .shot-head span{font-family:var(--mono);font-size:8.5px;color:#8d9993}
+  .shot img{display:block;width:100%;height:auto;background:#0f1516}
+  .shot-foot{padding:9px 12px 11px;border-top:1px solid #273031;display:flex;justify-content:space-between;gap:10px;color:#95a29b;font-size:10px}
+  .shot-foot b{color:#dce5df;font-weight:600}
+  .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:22px 0 30px}
+  .metric{border:1px solid #293233;border-radius:8px;padding:12px 13px;background:#101516}
+  .metric .k{font-family:var(--mono);font-size:8px;letter-spacing:.1em;text-transform:uppercase;color:#8d9993}
+  .metric .v{font-size:17px;font-weight:700;margin-top:4px;letter-spacing:-.03em}
+  .metric .d{font-size:10.5px;color:#9aa7a0;margin-top:3px;line-height:1.5}
+  .metric .v em{font-style:normal;color:#7f8c86;font-size:11px;font-weight:400;margin-left:5px}
+  h2{margin:0 0 10px;font-size:20px;letter-spacing:-.04em}
+  .section{margin-top:30px}
+  table{width:100%;border-collapse:collapse;background:#101516;border:1px solid #293233;border-radius:8px;overflow:hidden}
+  th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid #252e30;font-size:11px;line-height:1.55}
+  th{font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;text-transform:uppercase;color:#8d9993;font-weight:500;background:#0e1314}
+  td:first-child{width:150px;color:#aab6b0;font-weight:600}
+  td.before{color:#c6d0cb}
+  td.after{color:#dce6e0}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-flex;align-items:center;gap:5px;font-size:8.5px;border-radius:99px;padding:2px 6px;border:1px solid #35403f;color:#aebbb5}
+  .tag.amber{border-color:#5b4423;background:#2a2114;color:#d5a45e}
+  .tag.green{border-color:#2c4a45;background:#13221f;color:#8fc0b7}
+  .recommend{display:grid;grid-template-columns:1.35fr 1fr;gap:20px;margin-top:14px}
+  .rec-card{background:#f6f7f8;color:var(--ink);border-radius:9px;padding:18px 20px}
+  .rec-card .eyebrow{color:#6b7671;margin-bottom:8px}
+  .rec-card h3{margin:0;font-size:21px;letter-spacing:-.045em}
+  .rec-card p{margin:8px 0 0;font-size:11.5px;line-height:1.7;color:#4e5953}
+  .rec-card ul{margin:9px 0 0;padding-left:17px;color:#4e5953;font-size:11px;line-height:1.75}
+  .rec-card li::marker{color:#8b9690}
+  .options{display:flex;flex-direction:column;gap:7px}
+  .opt{display:grid;grid-template-columns:28px 1fr;gap:8px;border:1px solid #293233;border-radius:7px;padding:10px 11px;background:#101516}
+  .opt .n{font-family:var(--mono);font-size:10px;color:#8d9993;padding-top:1px}
+  .opt b{display:block;font-size:11.5px;color:#e4ece7;font-weight:600}
+  .opt span{display:block;font-size:10px;color:#96a39c;line-height:1.5;margin-top:1px}
+  .opt.pick{border-color:#5e7f76;background:#172522}
+  .opt.pick .n{color:#a7d1c6}
+  .opt.pick b{color:#fff}
+  .foot{margin-top:26px;border-top:1px solid #293233;padding-top:11px;display:flex;justify-content:space-between;gap:12px;color:#83908a;font-family:var(--mono);font-size:8.5px}
+  .foot b{color:#b9c5bf;font-weight:500}
+  @media(max-width:1100px){.pair{grid-template-columns:1fr}.metrics{grid-template-columns:1fr}.recommend{grid-template-columns:1fr}.board{padding:22px 16px 50px}h1{font-size:29px}}
+</style>
+</head>
+<body>
+<div class="board">
+  <p class="eyebrow">KSI Site Intelligence · Operations Console · Design decision</p>
+  <h1>Viewer-first, Canvas-centric,<br>Minimal GIS Interface.</h1>
+  <p class="lede">같은 Floreat 자료, 같은 실제 범위. 왼쪽은 현재의 3분할 패널, 오른쪽은 캔버스를 먼저 두고 레이어·정보를 떠 있는 패널로 낮춘 화면입니다. 무엇을 유지하고 어디까지 바꿀지 비교합니다.</p>
+  <div class="chips"><span><b>Canvas-first</b></span><span><b>Minimal chrome</b></span><span><b>Compact layer panel</b></span><span><b>Progressive disclosure</b></span><span><b>Contextual controls</b></span><span><b>Low visual density</b></span></div>
+
+  <div class="pair">
+    <figure class="shot" style="margin:0">
+      <div class="shot-head"><b>BEFORE · 현재 3분할</b><span>1440 × 900</span></div>
+      <img src="assets/console-viewer-first/before-current-1440.png" alt="현재 콘솔 자료 화면: 사이트 레일, 목록 열, 무대, 선택 정보 열">
+      <figcaption class="shot-foot"><span><b>사이트 헤더 + 목록 열 + 무대 + 정보 열</b></span><span>캔버스보다 패널이 먼저 보임</span></figcaption>
+    </figure>
+    <figure class="shot" style="margin:0">
+      <div class="shot-head"><b>AFTER · Viewer-first</b><span>1440 × 900</span></div>
+      <img src="assets/console-viewer-first/after-viewer-first-1440.png" alt="뷰어 중심 콘솔 자료 화면: 전체 캔버스, 떠 있는 레이어 패널, 선택 정보 카드">
+      <figcaption class="shot-foot"><span><b>전체 캔버스 + 떠 있는 레이어/정보</b></span><span>공간이 먼저 보임</span></figcaption>
+    </figure>
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="k">캔버스가 보이는 비율</div><div class="v">약 18% <em>→ 약 77%</em></div><div class="d">상시 패널이 차지하던 면적을 캔버스로 돌려줌 (대략, 1440 기준)</div></div>
+    <div class="metric"><div class="k">상시 텍스트 패널</div><div class="v">3개 <em>→ 1개 + 카드</em></div><div class="d">사이트 헤더·목록 열·정보 열 → 접히는 레이어 패널 + 선택 정보 카드</div></div>
+    <div class="metric"><div class="k">선택 자료 정보</div><div class="v">항상 320px <em>→ 필요할 때</em></div><div class="d">카드에서 4개 사실·행동, `상세`에서 전체 기록</div></div>
+  </div>
+
+  <section class="section">
+    <h2>무엇이 달라지나</h2>
+    <table>
+      <thead><tr><th>관점</th><th>Before · 3분할</th><th>After · Viewer-first</th></tr></thead>
+      <tbody>
+        <tr><td>첫인상</td><td class="before">목록과 정보가 먼저 읽힌다. “관리 화면”에 가깝다.</td><td class="after">공간과 범위가 먼저 읽힌다. “현장을 보고 있다”에 가깝다.</td></tr>
+        <tr><td>현장 파악</td><td class="before">캔버스가 좁아 범위·치수·준비 창을 동시에 보기 어렵다.</td><td class="after">캔버스가 화면 대부분을 차지해 범위·치수·준비 창이 한눈에 들어온다.</td></tr>
+        <tr><td>자료 선택</td><td class="before">목록 열이 항상 보여 선택은 쉽지만, 캔버스와 정보 공간을 줄인다.</td><td class="after">레이어 패널을 접고 펼칠 수 있어 선택과 공간 확보를 사용자가 고른다.</td></tr>
+        <tr><td>선택 정보</td><td class="before">항상 보이는 320px 정보 열. 상세 기록이 아래로 길다.</td><td class="after">떠 있는 카드에 핵심 4개 사실·행동. `상세`에서 기록을 연다.</td></tr>
+        <tr><td>목록/관리</td><td class="before">목록·필터·A/B가 한 열에 고정되어 관리 작업에 유리하다.</td><td class="after">레이어 패널은 탐색에 적합하지만, 대량 목록·필터·비교 관리에는 좁다.</td></tr>
+        <tr><td>발견성</td><td class="before">모든 것이 보여 처음 사용자가 이해하기 쉽다.</td><td class="after">아이콘·접힘·카드에 익숙해져야 한다. 키보드 토글과 첫 사용 안내가 필요하다.</td></tr>
+        <tr><td>적합한 화면</td><td class="before">자료 관리, 분석 결과 비교, 검토 큐처럼 표·폼이 중심인 화면.</td><td class="after">현장 공간, 자료 탐색, 3D/지도/정사영상 중심 화면.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section class="section">
+    <h2>권고</h2>
+    <div class="recommend">
+      <div class="rec-card">
+        <p class="eyebrow">Recommendation · A</p>
+        <h3>공간 탐색은 Viewer-first,<br>관리·검토는 Dense-first.</h3>
+        <p>모든 화면을 같은 캔버스로 만들면 자료 관리·분석 비교·검토 큐에서 오히려 작업이 느려집니다. Viewer-first는 <b>현장 &gt; 공간</b>과 <b>현장 &gt; 자료</b>의 탐색 화면에 적용하고, 업무·결과·검토는 지금의 표/폼 중심 밀도를 유지하되 헤더·카드·장식을 줄입니다.</p>
+        <ul>
+          <li>레이어 패널은 접기/펼치기, 정보 카드는 닫기/`상세` 열기.</li>
+          <li>키보드: `L` 레이어, `I` 정보, `Esc` 닫기. 포커스 복귀 보장.</li>
+          <li>첫 방문에는 레이어 패널과 정보 카드를 한 번 보여 주고, 이후 선택을 기억.</li>
+          <li>모바일은 레이어 시트 + 정보 시트로 같은 위계를 유지.</li>
+          <li>사이트 전환·섹션 이동은 레이어 패널 헤더의 현장 switcher가 맡는다.</li>
+        </ul>
+      </div>
+      <div class="options">
+        <div class="opt pick"><span class="n">A</span><span><b>공간·자료만 Viewer-first</b><span>권고. 탐색은 캔버스, 관리·검토는 표/폼. 현재 3분할 자료 화면은 관리 모드로 남긴다.</span></span></div>
+        <div class="opt"><span class="n">B</span><span><b>공간에만 Viewer-first</b><span>가장 보수적. 자료 화면은 지금의 3분할을 유지한다.</span></span></div>
+        <div class="opt"><span class="n">C</span><span><b>전부 Viewer-first</b><span>일관성은 높지만 자료 관리·분석 비교·검토에서 밀도가 부족할 수 있다.</span></span></div>
+        <div class="opt"><span class="n">D</span><span><b>현재 3분할 유지</b><span>명시성은 좋지만 캔버스가 계속 작고 텍스트 비중이 높다.</span></span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="foot"><span><b>KSI Operations Console</b> · Before/After design study · 2026-10-26</span><span>DESIGN PROTOTYPE · NOT PRODUCTION UI</span></div>
+</div>
+</body>
+</html>

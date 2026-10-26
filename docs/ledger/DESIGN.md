@@ -14,8 +14,18 @@ Visual reference: [`../design/CONSOLE_DESKTOP_FIRST_2026-10-26.html`](../design/
 - Unknown units/rights/retention/accuracy remain explicit.
 - No legacy tabs, duplicate ledgers or design-board-as-product.
 
+## Proposed — decision pending
+
+- **Viewer-first / Canvas-centric / Minimal GIS** comparison:
+  [`../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_COMPARISON_2026-10-26.html)
+  and full screen [`../design/CONSOLE_VIEWER_FIRST_2026-10-26.html`](../design/CONSOLE_VIEWER_FIRST_2026-10-26.html).
+- Recommendation A: viewer-first for site 공간/자료 exploration; keep 업무/결과/검토 list/form-first
+  with reduced chrome. B: space only; C: all viewer-first; D: keep current 3-pane.
+- Not decided; no product code changed.
+
 ## Open design decisions
 
+- Viewer-first adoption scope (A/B/C/D).
 - Site workspace extent canvas/compact chrome.
 - Mobile site switcher.
 - Home/global `내 업무/검토` split (ADR-025/026 approval).
