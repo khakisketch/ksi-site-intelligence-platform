@@ -9,6 +9,7 @@
     "build": "next build",
     "package:standalone": "node scripts/package-standalone.mjs",
     "verify:standalone": "node scripts/verify-standalone.mjs",
+    "verify:docker": "node scripts/verify-docker.mjs",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",

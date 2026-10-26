@@ -234,9 +234,30 @@ uses loopback plus an unreachable Core, and checks login, JS/CSS, retained publi
 asset gating, unauthenticated page/API rejection and incomplete EXTERNAL_VM
 configuration rejection. It stops its own server and removes its temporary copy.
 Its CommonJS-resolution guard is diagnostic, **not OS containment**. The recorded
-local proof is Linux ARM64 / Node24.19.0 / installed Next16.4.2; it does not verify
-the Dockerfile's Node22 Alpine/locked-dependency image, cross-platform native
-libraries, real OIDC/customer use, production TLS, signing or deployment approval.
+local proof is Linux ARM64 / Node24.19.0 / installed Next16.4.2; cross-platform
+native libraries, real OIDC/customer use, production TLS, signing and deployment
+approval remain separate gates. The Docker target image proof is recorded below.
+
+### Docker target-image proof (local only)
+
+Build and verify the pinned `Dockerfile` (Node 22.18 Alpine, `npm ci`,
+non-root `ksi-dashboard`) without pushing or deploying:
+
+```bash
+docker build -t ksi-dashboard-docker-proof:local -f apps/dashboard/Dockerfile apps/dashboard
+npm run verify:docker -- ksi-dashboard-docker-proof:local
+```
+
+`test/docker-image.test.ts` pins the fast gate: digest-pinned stages,
+locked `npm ci`, standalone-only runtime copies, `USER ksi-dashboard`,
+guarded launcher and context exclusions. `scripts/verify-docker.mjs`
+runs only the already built image with loopback-mapped ports, stripped
+credentials and an unreachable Core, then checks login 200, all referenced
+JS/CSS 200, protected-page redirect, unauthenticated BFF 401, incomplete
+EXTERNAL_VM rejection, `whoami`, Node version and the runtime file layout.
+It removes its containers afterwards. Recorded proof is same-platform
+Linux ARM64; signing, production TLS, external consumer hosts and
+customer/field acceptance are not established by this step.
 
 The browser suite starts an isolated local Identity/Core/Dashboard stack and
 checks the `390`, `768`, `1024`, and `1440` px layouts, OIDC sign-in, primary

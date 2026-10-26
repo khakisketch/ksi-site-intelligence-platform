@@ -602,8 +602,46 @@ receipts and captures: `~/.local/state/ksi-console-ia-20261025/integration-20261
 against their prior hashes: unchanged. No main merge, push or deployment occurred.
 Scratch preserves failed attempts at `/tmp/opencode/ksi-standalone-20261027/`. Actual environment:
 **Linux ARM64, Node24.19.0, installed Next16.4.2**. This closes the linked-worktree default-build and
-local relocation defect, **not** Docker's Node22 Alpine/locked-version proof, a signed platform
+local relocation defect, **not** a signed platform
 release, production activation, independent native containment, permitted retained customer data,
 CRS/vertical/field accuracy, external consumer-host or customer acceptance. V2/V3 semantics and the
 viewer-first UI are unchanged. Those genuine external/target-environment gates still prevent
 whole-product/deployment acceptance; historical F-03/Task5a/5c scope is unchanged.
+
+### Docker target-image proof — 2026-10-27 (local only)
+
+Human selected the Docker proof as the next step; no push, merge, signing,
+production/TLS, account or existing preview-server changes were authorized or
+performed. Base: `6d9a86c3` on the same integration worktree.
+
+`docker build -f apps/dashboard/Dockerfile apps/dashboard` finished clean
+(no warnings promoted, builder `npm ci` + `next build` 13s, runtime copies
+fresh) as `ksi-dashboard-docker-proof:20261027-local`
+(`linux/arm64`, 213MB, Node `v22.18.0`). Image config carries
+`USER ksi-dashboard`, `NODE_ENV=production`, loopback-safe `HOSTNAME/PORT`
+defaults and `CMD ["node", "scripts/start-production.mjs"]`; the digest-pinned
+`node:22.18-alpine` stages, locked `npm ci`, standalone-only runtime copies
+and context exclusions are additionally pinned by `test/docker-image.test.ts`
+(negative cases included: unpinned base, `npm install`, dropped `USER` fail).
+
+`scripts/verify-docker.mjs` ran the built image with loopback-mapped ports,
+stripped credentials and an unreachable Core: login200, all12 referenced
+JS/CSS200, protected `/sites`307→`/login?`, unauthenticated BFF POST401,
+incomplete EXTERNAL_VM rejection (OIDC, pre-listen), `whoami=ksi-dashboard`,
+`node=v22.18.0` and runtime layout
+(server.js + `.next/static` + `public/globe.svg` + guard) all present.
+A second container on loopback3242 rendered the no-OIDC LOCAL login branch at
+1440×900 and390×844: neutral card, no horizontal overflow, zero failed
+resources, zero console errors/warnings. No login/issuer registration was
+mutated; this is not an authenticated packaged workflow, OIDC, TLS, signing,
+cross-platform native-library or customer/field acceptance claim. Only the
+proof containers and verification browser were stopped; existing P2/Core/issuer
+previews were not restarted.
+
+Final Dashboard suite: **2,429 tests /233 files** (4 new Docker-image tests),
+`tsc --noEmit`0, ESLint0 errors (7 pre-existing warnings in unchanged
+evidence/delta-test files), `git diff --check` pass. Backend contracts are
+unchanged, not relabeled as newly rerun tests. Protected main patch and16
+original untracked inputs rechecked unchanged. Durable non-secret evidence:
+`~/.local/state/ksi-console-ia-20261025/integration-20261026/docker-20261027/`;
+scratch at `/tmp/opencode/ksi-docker-20261027/`.
