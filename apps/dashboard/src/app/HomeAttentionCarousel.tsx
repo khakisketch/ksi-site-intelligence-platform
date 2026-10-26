@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import { useEffect, useRef, useState } from "react";
 
+import { SiteVisualPlaceholder } from "@/components/site/SiteVisualPlaceholder";
+
 export interface HomeAttentionCardView {
   key: string;
   siteName: string;
@@ -133,7 +135,7 @@ export function HomeAttentionCarousel({
             key={item.key}
             className="min-w-full snap-start overflow-hidden rounded-lg border border-line bg-surface lg:min-w-0"
           >
-            {item.image && (
+            {item.image ? (
               <figure className="border-b border-line bg-sunk">
                 {/* Presigned evidence URLs are short-lived and cannot use the static next/image host allowlist. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -149,6 +151,15 @@ export function HomeAttentionCarousel({
                   <span className="num text-[10.5px] text-ink-2">{item.timeLabel} {item.observedAt}</span>
                 </figcaption>
               </figure>
+            ) : (
+              <SiteVisualPlaceholder
+                siteName={item.siteName}
+                label={item.label}
+                note={`${item.timeLabel} ${item.observedAt}`}
+                size="banner"
+                showLabel={false}
+                className="border-b border-line"
+              />
             )}
 
             <div className="flex min-w-0 flex-col gap-3 p-4 sm:p-6">

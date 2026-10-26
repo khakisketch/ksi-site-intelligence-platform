@@ -341,13 +341,13 @@ describe("SitePreviewThumb", () => {
     render(<SitePreviewThumb siteId={siteId} size="card" />);
     fireVisible();
     const badge = await screen.findByText("미리보기 없음");
-    expect(badge.className).toMatch(/bg-surface/);
+    expect(badge.closest("[data-site-visual-placeholder]")?.getAttribute("data-site-visual-placeholder")).toBe("empty");
     expect(fetchMock.mock.calls.filter(([url]) => (url as string).endsWith("/preview"))).toHaveLength(1);
-    // 실제 픽셀을 꾸며내지 않고 작은 상태와 복구 안내만 둔다.
+    // 실제 픽셀을 꾸며내지 않고, 카드 크기를 유지하는 중립 표지와 복구 안내를 둔다.
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).not.toBeNull();
-    expect(document.querySelector("linearGradient")).toBeNull();
+    expect(document.querySelector('[data-site-preview="card-empty"] [data-site-visual-placeholder]')).not.toBeNull();
     expect(document.querySelector('[data-site-preview="card-empty"]')?.className).not.toContain("aspect-");
+    expect(document.querySelector('[data-site-preview="card-empty"] [role="img"]')?.getAttribute("aria-label")).toContain("실제 영상 미리보기가 아닙니다");
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
     expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
     expect(screen.queryByRole("link")).toBeNull();
@@ -475,7 +475,7 @@ describe("SitePreviewThumb", () => {
     expect(screen.queryByText("미리보기 없음")).toBeNull();
     expect(screen.queryByText("미리보기 확인 불가")).toBeNull();
     expect(document.querySelector("canvas")).toBeNull();
-    expect(document.querySelector("svg")).not.toBeNull();
+    expect(document.querySelector('[data-site-visual-placeholder="refused"]')).not.toBeNull();
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
   });

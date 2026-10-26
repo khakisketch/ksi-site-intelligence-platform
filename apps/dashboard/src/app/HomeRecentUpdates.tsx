@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { SiteVisualPlaceholder } from "@/components/site/SiteVisualPlaceholder";
+
 export interface HomeRecentUpdateView {
   key: string;
   siteName: string;
@@ -45,7 +47,7 @@ export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) 
               aria-label={`${item.siteName}, ${item.label}, ${item.title}`}
               className="group grid min-w-0 overflow-hidden rounded-lg border border-line bg-surface transition-colors hover:border-line-strong focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              {item.image && (
+              {item.image ? (
                 <div className="relative min-h-[132px] overflow-hidden bg-sunk sm:min-h-[158px]">
                   {/* Presigned evidence URLs are short-lived and bypass static image optimization. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -60,15 +62,19 @@ export function HomeRecentUpdates({ items }: { items: HomeRecentUpdateView[] }) 
                     {item.observedAt}
                   </span>
                 </div>
+              ) : (
+                <SiteVisualPlaceholder
+                  siteName={item.siteName}
+                  label={item.imageFallbackLabel}
+                  note={item.observedAt}
+                  size="banner"
+                  showLabel={false}
+                  className="border-b border-line"
+                />
               )}
               <div className="flex min-w-0 flex-col p-4">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <p className="text-[11px] font-bold tracking-[0.02em] text-accent">{item.label} · {item.siteName}</p>
-                  {!item.image && (
-                    <span className="rounded-full border border-line px-2 py-0.5 text-[10.5px] font-medium text-ink-muted">
-                      {item.imageFallbackLabel}
-                    </span>
-                  )}
                   {!item.image && <span className="num ml-auto text-[10.5px] text-ink-muted">{item.observedAt}</span>}
                 </div>
                 <h3 className="mt-2 text-[15px] leading-snug font-bold tracking-[-0.015em] break-keep">{item.title}</h3>

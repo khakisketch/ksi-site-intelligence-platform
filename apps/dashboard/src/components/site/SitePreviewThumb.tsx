@@ -10,6 +10,7 @@ import {
   fetchVerifiedReceiptBytes,
   type DecodedReceiptPreview,
 } from "@/lib/spatial-data-preview";
+import { SiteVisualPlaceholder } from "./SiteVisualPlaceholder";
 
 /**
  * 현장 목록 미리보기 — 실제 준비된 출력의 작은 인식용 표시.
@@ -86,7 +87,7 @@ function precisionLine(link: SitePreviewDescriptor): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card" | "row" }) {
+export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId: string; siteName?: string; size: "card" | "row" }) {
   const [phase, setPhase] = useState<Phase>({ name: "pending" });
   const [preview, setPreview] = useState<{ image: DecodedReceiptPreview; link: SitePreviewDescriptor } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
@@ -281,12 +282,13 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
     );
   }
 
-  // 픽셀이 없을 때도 로딩·미확인·거부·부재를 구분한다. 큰 표지는 만들지 않는다.
+  // 픽셀이 없을 때도 로딩·미확인·거부·부재를 구분하되, 카드 크기는 실제
+  // 미리보기와 같은 16:9로 유지한다 — '미리보기 없음'이 카드를 좁은 텍스트
+  // 띠로 접지 않는다. 표지는 사진이 아님을 명시한 중립 면이다.
   if (phase.name === "loading" || phase.name === "pending") {
     return (
-      <div ref={boxRef} data-site-preview="card-loading" className="border-b border-line px-4 py-2">
-        <span aria-hidden="true" className="block h-2 animate-pulse rounded bg-line/40" />
-        <span className="sr-only" role="status">미리보기 불러오는 중</span>
+      <div ref={boxRef} data-site-preview="card-loading">
+        <SiteVisualPlaceholder siteName={siteName} label="미리보기 불러오는 중" tone="loading" />
       </div>
     );
   }
@@ -297,25 +299,16 @@ export function SitePreviewThumb({ siteId, size }: { siteId: string; size: "card
       ? "미리보기만 볼 수 없는 상태이며, 등록 자료가 없다는 뜻이 아닙니다. 영역·자료는 현장 열기에서 확인하세요."
       : phase.name === "unknown"
         ? "미리보기를 불러오지 못했습니다. 등록 자료가 없다는 뜻이 아닙니다. 현장을 열어 자료와 준비 상태를 다시 확인하세요."
-      : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
-  // 뱃지가 상태를 먼저 말한다 — 없음(중립)·확인 불가(주의)·권한 없음(경고)을
-  // 색으로도 구분한다. 색만으로 구분하지 않고 라벨 텍스트를 항상 둔다.
-  const emptyToneClass =
-    phase.name === "refused"
-      ? "border-crit bg-crit-bg text-crit-ink"
-      : phase.name === "unknown"
-        ? "border-high bg-high-bg text-high-ink"
-        : "border-line-strong bg-surface text-ink-2";
-  // No pixels means a small, explicit status, not an invented landscape cover.
+        : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
+  const emptyTone = phase.name === "refused" ? "refused" : phase.name === "unknown" ? "unknown" : "empty";
   return (
-    <div ref={boxRef} data-site-preview="card-empty" className="flex items-center gap-3 border-b border-line bg-page px-4 py-3">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="size-5 shrink-0 text-ink-muted"><rect x="3" y="3" width="18" height="18" rx="3" /><path d="m3 16 5-5 5 5 3-3 5 5M16 7h.01" /></svg>
-      <details className="min-w-0 text-[12px] text-ink-2">
-        <summary className="tap-target flex cursor-pointer items-center gap-2 font-medium">
-          <span className={`rounded border px-2 py-0.5 ${emptyToneClass}`}>{emptyLabel}</span>
-          <span className="text-[11px] text-ink-muted">상태 안내</span>
+    <div ref={boxRef} data-site-preview="card-empty">
+      <SiteVisualPlaceholder siteName={siteName} label={emptyLabel} note={emptyNote} tone={emptyTone} />
+      <details className="border-t border-line px-4 py-1">
+        <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
+          상태 안내
         </summary>
-        <p className="max-w-[52ch] pt-1 text-[12px] leading-5">{emptyNote}</p>
+        <p className="max-w-[52ch] pb-2 text-[11.5px] leading-5 break-keep text-ink-2">{emptyNote}</p>
       </details>
     </div>
   );

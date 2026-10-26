@@ -2,6 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
+import { ViewerSiteLabel } from "@/components/nav/ViewerSiteLabel";
 import { ViewerSiteNav } from "@/components/nav/ViewerSiteNav";
 
 /**
@@ -40,7 +41,7 @@ export function SpatialWorkbenchFrame({
   catalogFooter = null,
   catalogDismissLabel,
   viewerMode = false,
-  viewerInspectorDefaultOpen = true,
+  viewerInspectorDefaultOpen = false,
 }: {
   /** 예시 경로의 고정 안내 등, 맥락막대 위에 두는 띠. 실제 경로는 두지 않는다. */
   banner?: ReactNode;
@@ -135,18 +136,12 @@ export function SpatialWorkbenchFrame({
   }, [viewerMode]);
   const viewerDesktopMode = viewerMode && viewerDesktop;
   const [viewerInspectorOpen, setViewerInspectorOpen] = useState(false);
-  const viewerCatalogInitialized = useRef(false);
   const viewerInspectorInitialized = useRef(false);
   const catalogFocusRequested = useRef(false);
   const catalogFocusReturn = useRef(false);
   const viewerCatalogToggleRef = useRef<HTMLButtonElement>(null);
   const viewerInfoToggleRef = useRef<HTMLButtonElement>(null);
   const infoFocusRequested = useRef(false);
-  useEffect(() => {
-    if (!viewerDesktopMode || !viewerWide || viewerCatalogInitialized.current) return;
-    viewerCatalogInitialized.current = true;
-    setCatalogOpen(true);
-  }, [viewerDesktopMode, viewerWide]);
   useEffect(() => {
     if (!viewerDesktopMode || !viewerWide || viewerInspectorInitialized.current) return;
     viewerInspectorInitialized.current = true;
@@ -307,6 +302,7 @@ export function SpatialWorkbenchFrame({
                 <path d="m12 3 9 5-9 5-9-5Z" />
                 <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
               </svg>
+              <ViewerSiteLabel />
             </button>
           )}
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1.5">{contextBar}</div>

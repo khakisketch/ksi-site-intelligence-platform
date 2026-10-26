@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SiteListProvider } from "@/components/nav/SiteListContext";
 import { SpatialWorkbenchFrame } from "@/components/site/SpatialWorkbenchFrame";
@@ -10,10 +10,15 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+beforeEach(() => {
+  window.localStorage.clear();
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  window.localStorage.clear();
 });
 
 function viewerFrame() {
@@ -48,21 +53,33 @@ function wideMatchMedia(query: string) {
 }
 
 describe("viewer-first workbench frame", () => {
-  it("opens the floating layer and inspector panels at xl without resizing the stage", async () => {
+  it("starts with the full canvas and opens the layer/inspector panels on demand", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
+    expect(screen.getByText("실제 범위 캔버스")).toBeTruthy();
+    expect(screen.queryByLabelText("자료 목록")).toBeNull();
+    const layer = screen.getByRole("button", { name: "레이어 패널 열기" });
+    expect(layer.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(layer);
     const catalog = await screen.findByLabelText("자료 목록");
     expect(catalog.getAttribute("data-viewer-panel")).toBe("catalog");
     expect(screen.getByText("Floreat public sample")).toBeTruthy();
     expect(screen.getByText("실제 범위 캔버스")).toBeTruthy();
-    const inspector = screen.getByRole("region", { name: "선택 자료 정보" });
+
+    const info = screen.getByRole("button", { name: "정보" });
+    expect(info.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(info);
+    const inspector = document.getElementById("viewer-inspector")!;
     await waitFor(() => expect(inspector.style.display).toBe(""));
-    expect(screen.getByRole("button", { name: "정보" }).getAttribute("aria-expanded")).toBe("true");
+    expect(info.getAttribute("aria-expanded")).toBe("true");
   });
 
   it("closes and reopens the floating layer panel with focus restoration", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
+    const layer = screen.getByRole("button", { name: "레이어 패널 열기" });
+    fireEvent.click(layer);
     await screen.findByLabelText("자료 목록");
     fireEvent.click(screen.getByRole("button", { name: "자료 목록 닫기" }));
     expect(screen.queryByLabelText("자료 목록")).toBeNull();
@@ -73,15 +90,17 @@ describe("viewer-first workbench frame", () => {
     expect(screen.getByLabelText("자료 목록")).toBeTruthy();
   });
 
-  it("closes the inspector card, keeps its details host mounted, and reopens it", async () => {
+  it("keeps the inspector closed until requested, then closes and reopens it", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
-    const inspector = screen.getByRole("region", { name: "선택 자료 정보" });
+    const inspector = document.getElementById("viewer-inspector")!;
+    expect(inspector.style.display).toBe("none");
+    const info = screen.getByRole("button", { name: "정보" });
+    fireEvent.click(info);
     await waitFor(() => expect(inspector.style.display).toBe(""));
     fireEvent.click(screen.getByRole("button", { name: "선택 자료 정보 닫기" }));
     expect(inspector.style.display).toBe("none");
     expect(document.getElementById("viewer-details")).toBeTruthy();
-    const info = screen.getByRole("button", { name: "정보" });
     expect(info.getAttribute("aria-expanded")).toBe("false");
     expect(document.activeElement).toBe(info);
     fireEvent.click(info);
@@ -91,6 +110,7 @@ describe("viewer-first workbench frame", () => {
   it("closes the focused layer panel with Escape", async () => {
     vi.stubGlobal("matchMedia", wideMatchMedia);
     render(viewerFrame());
+    fireEvent.click(screen.getByRole("button", { name: "레이어 패널 열기" }));
     const catalog = await screen.findByLabelText("자료 목록");
     catalog.focus();
     fireEvent.keyDown(catalog, { key: "Escape" });

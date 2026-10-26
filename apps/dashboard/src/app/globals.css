@@ -569,6 +569,15 @@ body {
     );
 }
 
+/* Neutral site cover for cards without a prepared preview. Not a map, not a
+   synthetic image — just a consistent visual surface with a labelled state. */
+.site-visual-placeholder {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    인쇄 — 현장 보고서(M4-D)
 
