@@ -91,6 +91,79 @@
   .empty-side h4{margin:0 0 7px;font-size:12px}
   .empty-side p{margin:0;font-size:11px;color:var(--ink-2);line-height:1.6}
 
+  /* home + menu model */
+  .home-frame .app{height:auto;min-height:700px}
+  .home-content{padding:18px 22px 22px;display:flex;flex-direction:column;gap:14px}
+  .home-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .home-head h3{margin:0;font-size:23px;letter-spacing:-.035em}
+  .home-head p{margin:4px 0 0;font-size:11px;color:var(--ink-2);line-height:1.6}
+  .home-metrics{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:10px;font-size:10.5px;color:var(--muted)}
+  .home-metrics b{color:var(--ink);font-size:12px}
+  .home-metrics .sep{color:var(--line-strong)}
+  .home-grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(248px,1fr);gap:14px;align-items:start}
+  .home-panel{background:#fff;border:1px solid var(--line);border-radius:9px;padding:12px}
+  .home-panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:8px}
+  .home-panel-head h4{margin:0;font-size:12px}
+  .home-panel-head span{font-size:9.5px;color:var(--muted)}
+  .home-panel .review-row{grid-template-columns:42px minmax(0,1fr) 82px;padding:9px 10px;margin-bottom:5px}
+  .home-panel .review-row h4{font-size:11.5px}
+  .home-panel .review-row p{font-size:9.5px}
+  .home-panel .review-row .site{font-size:9.5px}
+  .home-more{display:inline-flex;margin-top:5px;font-size:9.5px;color:var(--ink-2);text-decoration:underline}
+  .work-item{display:flex;gap:8px;align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 0}
+  .work-item:last-of-type{border-bottom:0}
+  .work-item .dot{width:7px;height:7px;border-radius:50%;background:var(--amber);margin-top:5px;flex:none}
+  .work-item .wt{font-size:10.5px;font-weight:600;line-height:1.45}
+  .work-item .wm{font-size:9px;color:var(--muted);margin-top:2px;line-height:1.5}
+  .work-item .due{margin-left:auto;font-size:9px;color:var(--ink-2);white-space:nowrap;padding-top:1px}
+  .site-strip{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+  .site-card{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;gap:9px;align-items:center;background:#fff}
+  .site-card .fp{width:88px;height:48px;border:1px solid var(--line);border-radius:5px;background:#f6f7f8;flex:none;overflow:hidden}
+  .site-card .fp svg{display:block;width:100%;height:100%}
+  .site-card h5{margin:0;font-size:11px;line-height:1.35}
+  .site-card p{margin:2px 0 0;font-size:9px;color:var(--muted);line-height:1.45}
+  .site-card .go{margin-left:auto;font-size:9.5px;font-weight:600;white-space:nowrap;text-decoration:underline}
+  .home-empty{display:flex;align-items:center;gap:10px;background:#fbfbfc;border:1px dashed var(--line-strong);border-radius:8px;padding:10px;font-size:10px;color:var(--ink-2)}
+  .home-empty b{color:var(--ink)}
+  .menu-map{display:grid;grid-template-columns:1.2fr 26px 1.2fr 26px 1fr;gap:8px;align-items:stretch;margin:0 0 14px}
+  .menu-col{border:1px solid #2b3338;background:#121619;border-radius:9px;padding:12px}
+  .menu-kicker{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:#8e9a9f;margin-bottom:7px}
+  .menu-node{border:1px solid #30393e;border-radius:6px;padding:6px 8px;margin:0 0 4px;font-size:11px;color:#d6dee2;background:#171d20}
+  .menu-node b{font-weight:600;color:#fff}
+  .menu-node small{display:block;font-size:8.5px;color:#8f9ba1;margin-top:2px;line-height:1.45}
+  .menu-node.on{border-color:#5b666c;background:#242b2f}
+  .menu-arrow{display:grid;place-items:center;color:#657178;font-size:20px}
+  .scope-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .scope-card{border:1px solid #2b3338;border-radius:9px;background:#121619;padding:12px;color:#b7c1c6;font-size:11px;line-height:1.65}
+  .scope-card b{display:block;color:#fff;font-size:12px;margin-bottom:3px}
+  .scope-card em{font-style:normal;color:#f0b39e}
+  .flowline2{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:10px 0 0;font-size:10px;color:#aab5ba}
+  .flowline2 span{border:1px solid #354046;background:#171d20;border-radius:5px;padding:4px 7px}
+  .flowline2 em{font-style:normal;color:#6e7a80}
+
+  /* mobile home */
+  .mhome{padding:10px 11px 0;display:flex;flex-direction:column;gap:7px;overflow:hidden;flex:1}
+  .mhome-head{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .mhome-head h4{margin:0;font-size:14px}
+  .mhome-head .chip{font-size:8px;padding:2px 6px}
+  .msection{font-size:9px;font-weight:700;color:var(--muted);margin-top:2px}
+  .mcard{border:1px solid var(--line);border-radius:8px;padding:7px 8px;background:#fff}
+  .mcard .row{display:flex;align-items:flex-start;justify-content:space-between;gap:6px}
+  .mcard .tag{font-size:8px;color:var(--muted)}
+  .mcard b{font-size:10px;line-height:1.4;display:block;margin-top:2px}
+  .mcard p{font-size:8px;color:var(--ink-2);line-height:1.5;margin:2px 0 0}
+  .mcard .cta{font-size:8.5px;font-weight:600;text-decoration:underline;margin-top:4px;display:inline-block}
+  .mwork{display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--line);padding:5px 0;font-size:9px}
+  .mwork .dot{width:5px;height:5px;border-radius:50%;background:var(--amber);flex:none}
+  .mwork span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mwork em{font-style:normal;color:var(--muted);font-size:8px}
+  .msite{display:flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff}
+  .msite .fp{width:50px;height:32px;border:1px solid var(--line);border-radius:4px;background:#f6f7f8;flex:none;overflow:hidden}
+  .msite .fp svg{width:100%;height:100%;display:block}
+  .msite b{font-size:9px;display:block;line-height:1.35}
+  .msite span{font-size:7.5px;color:var(--muted);display:block;margin-top:1px}
+  .msite .go{margin-left:auto;font-size:8px;text-decoration:underline;white-space:nowrap}
+
   /* desktop materials */
   .site-head{padding:10px 20px 0;background:#fff;border-bottom:1px solid var(--line)}
   .crumb{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--muted)}
@@ -166,7 +239,7 @@
   .phone .foot{margin-top:auto;border-top:1px solid var(--line);padding:8px 10px 10px;background:#fff;flex:none}
   .phone .foot .btn{width:100%;justify-content:center;min-height:38px;font-size:11px}
   .phone .foot .hint{font-size:8px;color:var(--muted);text-align:center;margin:5px 0 0}
-  .bottomnav{height:37px;background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);align-items:center;font-size:7.5px;color:#5d686f;text-align:center;flex:none}
+  .bottomnav{height:37px;background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(5,1fr);align-items:center;font-size:7.5px;color:#5d686f;text-align:center;flex:none}
   .bottomnav b{display:block;font-size:10px;font-weight:400;line-height:1.1}
   .bottomnav .on{color:var(--ink);font-weight:700}
   .sheet-phone .phone{background:#0d1012}
@@ -258,6 +331,121 @@
     <span><b>05</b> 이름이 동작과 같다</span>
   </div>
 
+  <section class="section" id="menu">
+    <div class="section-head">
+      <div class="num">00</div>
+      <div>
+        <h2>메뉴 구조: 업무는 현장 안에, 전역에는 나의 큐만</h2>
+        <p>현장의 업무는 그 현장의 전체 작업 원장입니다. 전역 `내 업무`와 `검토`는 같은 Core 기록을 역할·사용자 기준으로 좁힌 큐입니다. 별도 저장소나 다른 권위를 만들지 않습니다.</p>
+      </div>
+    </div>
+    <div class="plate"><b>제안</b> · 두 층의 내비게이션</div>
+    <div class="menu-map">
+      <div class="menu-col">
+        <div class="menu-kicker">전역 · 나의 일</div>
+        <div class="menu-node on"><b>홈</b><small>지금 판단할 일</small></div>
+        <div class="menu-node"><b>현장</b><small>장소로 찾기</small></div>
+        <div class="menu-node"><b>내 업무</b><small>배정·공유된 항목만</small></div>
+        <div class="menu-node"><b>검토</b><small>내가 결정할 결과만</small></div>
+      </div>
+      <div class="menu-arrow">→</div>
+      <div class="menu-col">
+        <div class="menu-kicker">현장 · 장소</div>
+        <div class="menu-node"><b>공간</b><small>지도·관측·최근 분석</small></div>
+        <div class="menu-node on"><b>업무</b><small>현장의 전체 작업 원장</small></div>
+        <div class="menu-node"><b>자료</b><small>등록 자료·준비 상태</small></div>
+        <div class="menu-node"><b>결과</b><small>분석 기록·근거</small></div>
+      </div>
+      <div class="menu-arrow">→</div>
+      <div class="menu-col">
+        <div class="menu-kicker">작업 · 실행</div>
+        <div class="menu-node"><b>작업 상세</b><small>담당·기한·단계</small></div>
+        <div class="menu-node"><b>파일 제출</b><small>자료 업로드</small></div>
+        <div class="menu-node"><b>검사 확인</b><small>형식·격자·좌표</small></div>
+      </div>
+    </div>
+    <div class="scope-grid">
+      <div class="scope-card"><b>현장 &gt; 업무 = 전체 원장</b>그 현장의 모든 관측 작업·회차·담당·기한·상태·재관측 제안을 봅니다. 특정 사용자에게 좁히지 않습니다.</div>
+      <div class="scope-card"><b>전역 &gt; 내 업무 = 나에게 온 일</b>배정된 작업과 공유된 결과만 모읍니다. 행을 열면 <em>현장 &gt; 업무 &gt; 작업 상세</em>로 이동합니다.</div>
+      <div class="scope-card"><b>전역 &gt; 검토 = 내가 결정할 결과</b>분석 결과·외부 결과·재관측 승인만 모읍니다. 처리 중·동기화 상태는 업무가 소유합니다.</div>
+      <div class="scope-card"><b>중복 저장 없음</b>네 화면은 같은 Site/WorkOrder/Analysis 기록을 다르게 투영합니다. 새 상태·새 ID·별도 권한을 만들지 않습니다.</div>
+    </div>
+    <div class="flowline2"><span>검토</span><em>→</em><span>결과 상세</span><em>→</em><span>현장 &gt; 결과</span><em>·</em><span>내 업무</span><em>→</em><span>현장 &gt; 업무</span><em>→</em><span>작업 상세</span></div>
+
+    <div class="plate" style="margin-top:24px"><b>제안</b> · 홈 · 1440</div>
+    <div class="frame">
+      <div class="app home-frame">
+        <aside class="side">
+          <div class="brand"><span class="mark">KSI</span><span>현장 지능</span></div>
+          <a class="item active"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg>홈</a>
+          <a class="item"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg>현장<span class="badge">2</span></a>
+          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>내 업무<span class="badge">2</span></a>
+          <a class="item review"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>검토<span class="badge">3</span></a>
+          <div class="lower">
+            <a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5"/></svg>도움말</a>
+            <a class="item"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>계정</a>
+            <div class="who"><span class="avatar">L</span> local-admin · 관리자</div>
+          </div>
+        </aside>
+        <div class="main">
+          <div class="top">홈 <span class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>검색 · 이동⌘K</span></div>
+          <div class="home-content">
+            <div class="home-head"><div><h3>홈</h3><p>지금 확인할 일과 이어서 볼 현장을 먼저 보여 줍니다. 전체 현장 목록은 현장이 소유합니다.</p></div><button class="btn sm">검토 전체 3</button></div>
+            <div class="home-metrics"><span>확인할 일 <b>3</b></span><span class="sep">·</span><span>내 업무 <b>2</b></span><span class="sep">·</span><span>현장 <b>2</b></span><span style="margin-left:auto;font-size:9.5px">최근 7일 · 조회된 범위</span></div>
+            <div class="home-grid">
+              <section class="home-panel">
+                <div class="home-panel-head"><h4>확인할 일</h4><span>내가 결정할 결과</span></div>
+                <div class="review-row"><div class="when">10. 21.<br>01:17</div><div><h4>Floreat · 2021 → 2022 상대 물량</h4><p>검토 대기 · Floreat common-extent · 입력 2건</p></div><div class="act"><button class="btn sm">결과와 근거</button></div></div>
+                <div class="review-row"><div class="when">10. 20.<br>23:34</div><div><h4>Sample Field · 기준/비교 분석</h4><p>검토 기록 없음 · 결과 준비</p></div><div class="act"><button class="btn sm">검토</button></div></div>
+                <div class="review-row"><div class="when">10. 20.<br>18:02</div><div><h4>외부 결과 · Floreat 공유 보고서</h4><p>승인 전 · 공유된 결과</p></div><div class="act"><button class="btn sm">확인</button></div></div>
+                <a class="home-more" href="#">검토 전체 보기</a>
+              </section>
+              <aside class="home-panel">
+                <div class="home-panel-head"><h4>내 업무</h4><span>2건</span></div>
+                <div class="work-item"><span class="dot"></span><div><div class="wt">자료 등록·검사 확인</div><div class="wm">Floreat · Floreat capture 2022-08-24</div></div><span class="due">오늘</span></div>
+                <div class="work-item"><span class="dot"></span><div><div class="wt">재관측 제안 검토</div><div class="wm">Floreat · 제안 승인 대기</div></div><span class="due">10. 28.</span></div>
+                <a class="home-more" href="#">내 업무 전체 보기</a>
+                <div class="home-empty" style="margin-top:10px"><span style="font-size:16px">＋</span><span><b>현장이 더 필요하신가요?</b><br>현장을 등록하고 작업구역을 설정하세요.</span></div>
+              </aside>
+            </div>
+            <section class="home-panel">
+              <div class="home-panel-head"><h4>현장</h4><span>최근 갱신 · 확인이 필요한 순</span><a class="home-more" href="#">전체 현장</a></div>
+              <div class="site-strip">
+                <div class="site-card"><div class="fp"><svg viewBox="0 0 120 54"><rect width="120" height="54" fill="#f6f7f8"/><path d="M0 42 32 30 56 36 80 22 120 34" fill="none" stroke="#c6cdd2" stroke-width="1"/><polygon points="24,13 83,10 98,38 43,44" fill="none" stroke="#30383d" stroke-width="1.4"/><path d="M31 20 74 17 87 33 40 37Z" fill="none" stroke="#9ca7ad" stroke-width="1"/><text x="7" y="49" font-size="6" fill="#7e8a90" font-family="monospace">범위 도식</text></svg></div><div><h5>Floreat public sample</h5><p>현장 등록됨 · 최근 관측 2026.10.21</p></div><a class="go">열기</a></div>
+                <div class="site-card"><div class="fp"><svg viewBox="0 0 120 54"><rect width="120" height="54" fill="#f6f7f8"/><path d="M0 35 25 28 48 33 73 23 120 31" fill="none" stroke="#c6cdd2" stroke-width="1"/><polygon points="36,12 87,15 93,35 29,40" fill="none" stroke="#30383d" stroke-width="1.4"/><path d="M44 19 78 21 83 32 38 36Z" fill="none" stroke="#9ca7ad" stroke-width="1"/><text x="7" y="49" font-size="6" fill="#7e8a90" font-family="monospace">범위 도식</text></svg></div><div><h5>Product Sample Field</h5><p>초기 매핑 중 · 최근 관측 2026.10.20</p></div><a class="go">열기</a></div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-note"><span><i>1</i><span><b>홈은 현장 목록이 아닙니다.</b> 확인할 일·내 업무·최근 현장만 보여 주고, 전체 목록은 `현장`이 맡습니다.</span></span><span><i>2</i><span><b>현장 카드는 실제 범위 도식.</b> 사진이 없어도 현장마다 다른 실루엣을 가지며, 사진으로 오해되지 않게 표시합니다.</span></span><span><i>3</i><span><b>업무는 현장 안에.</b> 전역 `내 업무`는 나에게 온 항목만 보여 주고, 현장 `업무`는 그 현장의 전체 원장입니다.</span></span></div>
+
+    <div class="plate" style="margin-top:22px"><b>제안</b> · 홈 · 390</div>
+    <div class="phones" style="grid-template-columns:300px">
+      <div class="phone-wrap">
+        <div class="phone" style="height:640px">
+          <div class="status"><span>9:41</span><span>● ● ●</span></div>
+          <div class="mtop"><span>홈</span><span class="icon-btn">⌕</span></div>
+          <div class="mhome">
+            <div class="mhome-head"><h4>홈</h4><span class="chip blue">확인 3</span></div>
+            <div class="msection">확인할 일</div>
+            <div class="mcard"><div class="row"><span class="tag">Floreat · 검토 대기</span><span class="tag">10.21</span></div><b>2021 → 2022 상대 물량</b><p>대상 구역 · common-extent · 입력 2건</p><a class="cta">결과와 근거</a></div>
+            <div class="mcard"><div class="row"><span class="tag">Sample Field · 결과 준비</span><span class="tag">10.20</span></div><b>기준/비교 분석</b><p>검토 기록 없음</p><a class="cta">검토하기</a></div>
+            <div class="msection">내 업무</div>
+            <div class="mwork"><span class="dot"></span><span>자료 등록·검사 확인 · Floreat</span><em>오늘</em></div>
+            <div class="mwork"><span class="dot"></span><span>재관측 제안 검토 · Floreat</span><em>10.28</em></div>
+            <div class="msection">현장</div>
+            <div class="msite"><div class="fp"><svg viewBox="0 0 60 32"><rect width="60" height="32" fill="#f6f7f8"/><polygon points="9,7 44,6 52,24 17,27" fill="none" stroke="#30383d" stroke-width="1.2"/><path d="M15 12 38 11 45 21 21 23Z" fill="none" stroke="#9ca7ad" stroke-width="1"/></svg></div><div><b>Floreat public sample</b><span>현장 등록됨 · 2026.10.21</span></div><a class="go">열기</a></div>
+          </div>
+          <div class="bottomnav"><span class="on"><b>⌂</b>홈</span><span><b>▤</b>현장</span><span><b>▣</b>내 업무</span><span><b>◉</b>검토</span><span><b>•••</b>계정</span></div>
+        </div>
+        <p class="phone-caption">모바일 홈<span>확인할 일 → 내 업무 → 현장 순서. 큰 캐러셀 없이 한 열로 읽고, 검토는 하단에서 바로 접근합니다.</span></p>
+      </div>
+    </div>
+    <div class="callout"><span class="tag">SCOPE</span><span><b>업무를 현장 밖으로 빼는 것이 아닙니다.</b> 현장의 전체 원장은 `현장 &gt; 업무`에 두고, 전역에는 <b>나에게 배정·공유된 항목</b>과 <b>내가 결정할 결과</b>만 투영합니다. 같은 기록을 두 곳에서 저장하지 않습니다.</span></div>
+  </section>
+
   <section class="section" id="ia">
     <div class="section-head">
       <div class="num">01</div>
@@ -273,7 +461,7 @@
           <div class="brand"><span class="mark">KSI</span><span>현장 지능</span></div>
           <a class="item"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg>홈</a>
           <a class="item"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg>현장<span class="badge">2</span></a>
-          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>업무</a>
+          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>내 업무</a>
           <a class="item active review"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>검토<span class="badge">3</span></a>
           <div class="lower">
             <a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5"/></svg>도움말</a>
@@ -312,7 +500,7 @@
           <div class="brand"><span class="mark">KSI</span><span>현장 지능</span></div>
           <a class="item"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg>홈</a>
           <a class="item active"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg>현장<span class="badge">2</span></a>
-          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>업무</a>
+          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>내 업무</a>
           <a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>검토</a>
           <div class="lower"><a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5"/></svg>도움말</a><a class="item"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>계정</a><div class="who"><span class="avatar">L</span> local-admin · 관리자</div></div>
         </aside>
@@ -321,7 +509,7 @@
           <div class="site-head">
             <div class="crumb">‹ 현장 <span class="chip solid">현장 등록됨</span></div>
             <div class="site-line"><h3>Floreat public sample <span style="font-size:10px;color:var(--muted);font-weight:400">(CC BY 4.0)</span></h3><span style="margin-left:auto" class="btn sm">설정·정보</span></div>
-            <div class="site-tabs"><span>작업공간</span><span class="on">자료</span><span>결과</span></div>
+            <div class="site-tabs"><span>공간</span><span>업무</span><span class="on">자료</span><span>결과</span></div>
           </div>
           <div class="mat-toolbar">
             <span class="btn sm">☰ 자료 <b style="font-family:var(--mono)">4</b></span>
@@ -386,7 +574,7 @@
         <div class="phone">
           <div class="status"><span>9:41</span><span>● ● ●</span></div>
           <div class="mtop"><span>등록 자료</span><span class="icon-btn">⌕</span></div>
-          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip solid">현장 등록됨</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>작업공간</span><span class="on">자료</span><span>결과</span></div></div>
+          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip solid">현장 등록됨</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>공간</span><span>업무</span><span class="on">자료</span><span>결과</span></div></div>
           <div class="list-head">자료 <span>4건 · 파일 검사 4</span></div>
           <div class="subhead">2021. 8. 17. · 2</div>
           <div class="rows">
@@ -396,7 +584,7 @@
             <div class="prow"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div style="min-width:0;flex:1"><div class="pn">정사영상 · v1</div><div class="pm">floreat-f3-2022-08-24-ortho-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
           </div>
           <div class="foot"><button class="btn primary">선택한 자료 보기</button><p class="hint">목록에서 A/B를 고른 뒤 결과를 확인합니다</p></div>
-          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>내 업무</span><span><b>◉</b>검토</span><span><b>•••</b>계정</span></div>
         </div>
         <p class="phone-caption">목록이 첫 화면<span>`자료` 탭을 누르면 자동 선택된 한 건이 아니라, 고를 수 있는 목록과 건수를 먼저 봅니다.</span></p>
       </div>
@@ -415,7 +603,7 @@
             </div>
             <div class="sfoot"><button class="btn primary">이 선택으로 보기</button></div>
           </div>
-          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>내 업무</span><span><b>◉</b>검토</span><span><b>•••</b>계정</span></div>
         </div>
         <p class="phone-caption">시트에 의미와 완료 행동<span>A/B 설명과 `이 선택으로 보기`를 함께 두어, 닫기가 유일한 적용처럼 보이지 않게 합니다.</span></p>
       </div>
@@ -424,7 +612,7 @@
         <div class="phone">
           <div class="status"><span>9:41</span><span>● ● ●</span></div>
           <div class="mtop"><span>등록 자료</span><span class="icon-btn">⌕</span></div>
-          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip amber">보관 만료</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>작업공간</span><span class="on">자료</span><span>결과</span></div></div>
+          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip amber">보관 만료</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>공간</span><span>업무</span><span class="on">자료</span><span>결과</span></div></div>
           <div style="padding:10px 12px 0"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div style="font-size:11px;font-weight:700">A · 정사영상 · 2021. 8. 17.</div><div style="font-size:8.5px;color:var(--muted);margin-top:2px">등록 버전 1 · 파일 검사 완료</div></div><button class="btn sm">목록</button></div></div>
           <div style="padding:8px 12px 0;flex:1">
             <div style="border:1px solid var(--line);border-radius:9px;background:var(--page);min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px;position:relative;overflow:hidden">
@@ -437,7 +625,7 @@
             </div>
           </div>
           <div class="foot"><button class="btn">목록으로 돌아가기</button><p class="hint">A/B를 바꾸려면 목록을 다시 엽니다</p></div>
-          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>내 업무</span><span><b>◉</b>검토</span><span><b>•••</b>계정</span></div>
         </div>
         <p class="phone-caption">선택 결과가 보인다<span>시트가 닫히고, 만료 복구가 같은 화면의 1차 행동으로 이어집니다.</span></p>
       </div>
