@@ -302,14 +302,16 @@ export function SitePreviewThumb({ siteId, siteName = "현장", size }: { siteId
         : "등록 자료 현황을 뜻하지 않습니다. 영역·자료는 현장 열기에서 확인하세요.";
   const emptyTone = phase.name === "refused" ? "refused" : phase.name === "unknown" ? "unknown" : "empty";
   return (
-    <div ref={boxRef} data-site-preview="card-empty">
-      <SiteVisualPlaceholder siteName={siteName} label={emptyLabel} note={emptyNote} tone={emptyTone} />
-      <details className="border-t border-line px-4 py-1">
-        <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
-          상태 안내
-        </summary>
-        <p className="max-w-[52ch] pb-2 text-[11.5px] leading-5 break-keep text-ink-2">{emptyNote}</p>
-      </details>
-    </div>
+        <div ref={boxRef} data-site-preview="card-empty">
+          <SiteVisualPlaceholder siteName={siteName} label={emptyLabel} note={emptyNote} tone={emptyTone} />
+          {emptyTone !== "empty" && (
+            <details className="border-t border-line px-4 py-1">
+              <summary className="tap-target inline-flex cursor-pointer items-center text-[11.5px] font-semibold text-ink-muted">
+                상태 안내
+              </summary>
+              <p className="max-w-[52ch] pb-2 text-[11.5px] leading-5 break-keep text-ink-2">{emptyNote}</p>
+            </details>
+          )}
+        </div>
   );
 }

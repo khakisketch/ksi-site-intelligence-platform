@@ -64,11 +64,13 @@ export function SiteVisualPlaceholder({
           </span>
         </div>
         <div className="min-w-0">
-          <p className="text-[13px] leading-snug font-semibold tracking-tight text-sidebar-text">
-            {showLabel ? "실제 영상 아님" : "등록 범위"}
-          </p>
-          <p className="mt-1 line-clamp-2 text-[10.5px] leading-4 text-sidebar-muted">
-            영역과 자료는 현장에서 확인
+          {!showLabel && (
+            <p className="text-[13px] leading-snug font-semibold tracking-tight text-sidebar-text">
+              등록 범위
+            </p>
+          )}
+          <p className={`${showLabel ? "" : "mt-1 "}line-clamp-2 text-[10.5px] leading-4 text-sidebar-muted`}>
+            실제 영상 아님 · 자료·영역은 현장에서 확인
           </p>
         </div>
       </div>

@@ -348,8 +348,8 @@ describe("SitePreviewThumb", () => {
     expect(document.querySelector('[data-site-preview="card-empty"] [data-site-visual-placeholder]')).not.toBeNull();
     expect(document.querySelector('[data-site-preview="card-empty"]')?.className).not.toContain("aspect-");
     expect(document.querySelector('[data-site-preview="card-empty"] [role="img"]')?.getAttribute("aria-label")).toContain("실제 영상 미리보기가 아닙니다");
+    expect(document.querySelector('[data-site-preview="card-empty"] [role="img"]')?.getAttribute("aria-label")).toContain("등록 자료 현황을 뜻하지 않습니다");
     expect(screen.queryByText("범위 도식 · 사진 아님")).toBeNull();
-    expect(document.body.textContent).toMatch(/등록 자료 현황을 뜻하지 않습니다/);
     expect(screen.queryByRole("link")).toBeNull();
   });
 

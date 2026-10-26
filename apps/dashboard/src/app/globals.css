@@ -647,12 +647,10 @@ body {
   }
 }
 
-@media (min-width: 1024px) and (max-width: 1279px) {
-  /* The compact toolbar has ~944px; drop the explanatory purpose line and the
-     redundant "보기 방식" label so the primary buttons stay on one row. */
-  [data-workbench-viewer] [data-viewer-compact-hide] {
-    display: none;
-  }
+/* The same viewer bar keeps only actionable controls. The "보기 방식" label and
+   the explanatory purpose line duplicate the visible controls at every width. */
+[data-workbench-viewer] [data-viewer-compact-hide] {
+  display: none;
 }
 
 @media print {

@@ -244,22 +244,22 @@ export default async function HomePage() {
   ];
 
   return <div className="console-page">
-    <header className="flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-        <p className="text-[14px] font-bold tracking-[-0.015em] break-keep">
+    <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line pb-3">
+      <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-1 text-[13px] leading-5">
+        <span className="font-semibold tracking-[-0.01em] break-keep">
           전체 {sitesResult.ok ? `${sites.length}곳` : "—"}
-          <span aria-hidden="true" className="mx-2 text-line-strong">·</span>
-          <span className={portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}>
-            확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}
-          </span>
-        </p>
+        </span>
+        <span aria-hidden="true" className="h-3 w-px bg-line-strong/70" />
+        <span className={`font-semibold break-keep ${portfolioComplete && attentionCount > 0 ? "text-accent" : "text-ink-2"}`}>
+          확인 필요 {portfolioComplete ? `${attentionCount}곳` : "—"}
+        </span>
       </div>
-      <div className="flex items-center gap-4">
-        <Link href="/field/inbox" className="tap-target text-[12px] font-semibold text-ink-2 hover:underline">
+      <div className="flex min-h-9 items-center gap-3 text-[12.5px] leading-5">
+        <Link href="/field/inbox" className="tap-target inline-flex min-h-9 items-center font-semibold whitespace-nowrap text-ink-2 hover:underline">
           <TopUnattendedHeadline pendingCount={inboxResult.ok ? inboxResult.value.items.length : null} />
         </Link>
-        <span aria-hidden="true" className="hidden h-4 w-px bg-line sm:block" />
-        <Link href="/sites" className="tap-target hidden items-center text-[12px] font-semibold text-accent hover:underline sm:inline-flex">
+        <span aria-hidden="true" className="hidden h-3 w-px bg-line sm:block" />
+        <Link href="/sites" className="tap-target hidden min-h-9 items-center font-semibold whitespace-nowrap text-accent hover:underline sm:inline-flex">
           현장 전체
         </Link>
       </div>
