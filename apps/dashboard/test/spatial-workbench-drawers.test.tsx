@@ -67,6 +67,25 @@ describe("workbench drawer keyboard ownership", () => {
     fireEvent.click(screen.getByRole("button", { name: "목록" }));
     await waitFor(() => expect(screen.getByRole("region", { name: "자료 목록" }).style.top).toBe("64px"));
   });
+  it("closes the catalog sheet from the selection footer and restores the trigger", async () => {
+    render(<SpatialWorkbenchFrame
+      contextBar={<span>현재 관측</span>}
+      catalog={<a href="#selection">자료 선택</a>}
+      catalogLabel="자료 목록"
+      stage={<div>시각 자료</div>}
+      inspectorId="test-info"
+      inspectorLabel="선택 정보"
+      defaultCatalogOpen
+      catalogFooter={<p>현재 선택 · A · 정사영상</p>}
+      catalogDismissLabel="이 선택으로 보기"
+    />);
+    const toggle = screen.getByRole("button", { name: "목록" });
+    fireEvent.click(screen.getByRole("button", { name: "이 선택으로 보기" }));
+    expect(screen.queryByRole("region", { name: "자료 목록" })).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    expect(screen.getByText("시각 자료")).toBeTruthy();
+  });
+
   it("focuses the opened catalog and restores its trigger on Escape", async () => {
     render(<FrameCase />);
     const toggle = screen.getByRole("button", { name: "목록" });

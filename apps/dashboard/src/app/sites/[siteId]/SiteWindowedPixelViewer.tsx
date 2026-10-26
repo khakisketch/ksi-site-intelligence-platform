@@ -91,6 +91,11 @@ export interface WindowedPixelViewerProps {
   canRequest: boolean;
   /** 기존 구역 자료 준비 화면으로 가는 링크 — 상태 확인·다운로드의 정로다. */
   requestsHref: string;
+  /**
+   * 자료 탐색처럼 준비 요청 폼이 정보 서랍에 있을 때 그 자리로 가는 링크.
+   * 주면 만료·숨김 상태의 회복 동작이 이력 페이지가 아니라 요청 폼을 연다.
+   */
+  prepareHref?: string;
   /** 같은 네이티브 평면의 작업구역 링 — 좌표 변환 없이 겹쳐 그린다. */
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
@@ -212,6 +217,7 @@ function WindowedLayerView({
   jobs,
   canRequest,
   requestsHref,
+  prepareHref,
   workAreaRing,
   workAreaCrs,
   idPrefix,
@@ -226,6 +232,7 @@ function WindowedLayerView({
   jobs: PreparedWindowJob[];
   canRequest: boolean;
   requestsHref: string;
+  prepareHref?: string;
   workAreaRing: Array<[number, number]> | null;
   workAreaCrs: string;
   idPrefix: string;
@@ -528,9 +535,13 @@ function WindowedLayerView({
         <button type="button" className="btn min-h-11" onClick={() => router.refresh()}>
           준비 상태 다시 확인
         </button>
-        <Link href={requestsHref} className="btn min-h-11">
-          구역 자료 준비에서 확인
-        </Link>
+        {hidePrepareActions && prepareHref
+          ? <Link href={prepareHref} className="btn btn-primary min-h-11">
+              선택 자료 정보에서 준비 요청
+            </Link>
+          : <Link href={requestsHref} className="btn min-h-11">
+              구역 자료 준비에서 확인
+            </Link>}
       </p>
       <p className="text-[11.5px] leading-5 text-ink-muted">
         같은 계정이 준비한 창만 볼 수 있습니다. 목록 새로고침·낱창 보기는 읽기만 하며 새 요청을 만들지 않습니다.
@@ -615,8 +626,11 @@ function WindowedLayerView({
 
       {hidePrepareActions ? (
         <p className="text-[12px] leading-5 text-ink-2">
-          새 창 준비 요청은 <Link href={requestsHref} className="tap-target underline">구역 자료 준비</Link>에서
-          합니다. 이 화면에서는 준비 요청을 만들지 않습니다.
+          새 창 준비 요청은{" "}
+          <Link href={prepareHref ?? requestsHref} className="tap-target underline">
+            {prepareHref ? "선택 자료 정보" : "구역 자료 준비"}
+          </Link>
+          에서 합니다. 이 화면에서는 준비 요청을 만들지 않습니다.
         </p>
       ) : (
       <div className="flex flex-col gap-2 rounded-lg border border-line bg-sunk/50 px-3 py-2">
@@ -741,6 +755,7 @@ function WindowedLayerView({
           jobs={jobs}
           canRequest={canRequest}
           requestsHref={requestsHref}
+          prepareHref={prepareHref}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
           hidePrepareActions={hidePrepareActions}
@@ -777,6 +792,7 @@ export function SiteWindowedPixelViewer({
   canRead,
   canRequest,
   requestsHref,
+  prepareHref,
   workAreaRing,
   workAreaCrs,
   observationHeading,
@@ -940,6 +956,7 @@ export function SiteWindowedPixelViewer({
           jobs={jobs}
           canRequest={canRequest}
           requestsHref={requestsHref}
+          prepareHref={prepareHref}
           workAreaRing={workAreaRing}
           workAreaCrs={workAreaCrs}
           idPrefix={`${idPrefix}-${layer.assetRef === layers[0]?.assetRef ? "first" : "second"}`}

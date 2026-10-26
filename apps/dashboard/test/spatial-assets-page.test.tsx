@@ -147,6 +147,27 @@ describe("spatial asset catalog page", () => {
     expect(html).toContain('name="visualBAssetRef"');
   });
 
+  it("sends an expired selected asset to its own request form in the inspector, not a history dead end", async () => {
+    const current = asset();
+    mocked.session.mockResolvedValueOnce({ kind: "ready", principal: {
+      organizationId: "org-1", principalId: "operator-1",
+      permissions: ["SITES_READ", "SPATIAL_DATA_READ", "SPATIAL_DATA_REQUEST"],
+    } });
+    mocked.prepared.mockResolvedValueOnce({
+      siteId: "site-1", workAreaId: "area-1", nextCursor: null, hasMore: false,
+      items: [{
+        jobId: "sdj-v1-00000000-0000-4000-8000-000000000009",
+        assetRef: current.assetRef, siteId: "site-1", workAreaId: "area-1",
+        createdAt: "2026-09-30T02:00:00Z", executionState: "EXPIRED", availability: "RETENTION_EXPIRED",
+        receipt: null,
+      }],
+    });
+    const html = renderToStaticMarkup(await callPage({ workAreaId: "area-1", assetRef: current.assetRef }));
+    expect(html).toContain("선택 자료 정보에서 준비 요청");
+    expect(html).toContain(`assetRef=${current.assetRef}`);
+    expect(html).toContain("info=1");
+  });
+
   it("does not coalesce when an old expired record coexists with a newer available one", async () => {
     const first = asset();
     const secondRef = `ksa-v1-${"c".repeat(64)}`;

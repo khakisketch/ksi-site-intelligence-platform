@@ -41,9 +41,10 @@ import { WorkAreaHistorySelect } from "./WorkAreaHistorySelect";
 export const metadata = { title: "구역 자료 준비 · KSI" };
 
 type SearchValue = string | string[] | undefined;
-type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; requestId?: SearchValue };
+type SearchParams = { workAreaId?: SearchValue; cursor?: SearchValue; requestId?: SearchValue; assetRef?: SearchValue };
 
 const REQUEST_ID_PATTERN = /^sdj-v1-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const ASSET_REF_PATTERN = /^ksa-v1-[0-9a-f]{64}$/;
 const ACTIVE_STATES: readonly SpatialDataExecutionState[] = ["QUEUED", "RUNNING"];
 const READ_PERMISSION_MESSAGE = "이 현장의 구역 자료 준비 기록을 볼 권한이 없습니다. 현장 담당자에게 접근 권한을 요청하세요.";
 
@@ -300,11 +301,35 @@ function RequestRow({
   </li>;
 }
 
-function RequestPageHeader({ siteId, siteName, workAreaId }: { siteId: string; siteName: string; workAreaId?: string }) {
+function requestCreationHref(siteId: string, workAreaId?: string, assetRef?: string): string {
   const sitePath = `/sites/${encodeURIComponent(siteId)}`;
-  const assetHref = workAreaId
-    ? `/sites/${encodeURIComponent(siteId)}/spatial-assets?workAreaId=${encodeURIComponent(workAreaId)}`
-    : `/sites/${encodeURIComponent(siteId)}/spatial-assets`;
+  if (!workAreaId) return `${sitePath}/spatial-assets`;
+  const query = new URLSearchParams({ workAreaId });
+  // 정확한 자료가 있을 때만 정보 서랍을 연다 — 없으면 기본 A를 열어
+  // 다른 자료의 요청 폼을 보여 주는 오해를 만들지 않는다.
+  if (assetRef) {
+    query.set("assetRef", assetRef);
+    query.set("info", "1");
+  }
+  return `${sitePath}/spatial-assets?${query.toString()}`;
+}
+
+function RequestPageHeader({
+  siteId,
+  siteName,
+  workAreaId,
+  assetRef,
+  canRequestData,
+}: {
+  siteId: string;
+  siteName: string;
+  workAreaId?: string;
+  /** 만료 미리보기에서 넘어온 정확한 자료 — 이력 페이지만 보고 끝나지 않게 한다. */
+  assetRef?: string;
+  canRequestData: boolean;
+}) {
+  const sitePath = `/sites/${encodeURIComponent(siteId)}`;
+  const assetHref = requestCreationHref(siteId, workAreaId, assetRef);
   return <header className="flex flex-col gap-3 border-b border-line pb-4 sm:flex-row sm:items-end sm:justify-between">
     <div>
       <p className="text-[12.5px] text-ink-2">{siteName} · 구역 자료</p>
@@ -312,7 +337,12 @@ function RequestPageHeader({ siteId, siteName, workAreaId }: { siteId: string; s
       <p className="mt-1 max-w-3xl text-[13px] leading-5 text-ink-2">작업구역별로 요청한 자료의 준비 상태와 파일을 확인하세요. 자료 준비 완료는 정확도나 분석 사용 가능 여부를 보증하지 않습니다.</p>
     </div>
     <nav aria-label="구역 자료 준비 화면" className="flex flex-wrap gap-2">
-      <Link href={assetHref} className="btn min-h-11">등록 자료</Link>
+      {canRequestData && (
+        <Link href={assetHref} className="btn btn-primary min-h-11">
+          {assetRef ? "이 자료 새로 준비 요청" : "자료에서 새 준비 요청"}
+        </Link>
+      )}
+      {!canRequestData && <Link href={assetHref} className="btn min-h-11">등록 자료</Link>}
       <Link href={sitePath} className="btn min-h-11">현장으로 돌아가기</Link>
     </nav>
   </header>;
@@ -345,7 +375,8 @@ export default async function SpatialDataRequestsPage({
   }
 
   const basePath = `/sites/${encodeURIComponent(siteId)}/spatial-data-requests`;
-  const header = (workAreaId?: string) => <RequestPageHeader siteId={siteId} siteName={site.name} workAreaId={workAreaId} />;
+  const header = (workAreaId?: string, assetRef?: string, canRequestData = false) =>
+    <RequestPageHeader siteId={siteId} siteName={site.name} workAreaId={workAreaId} assetRef={assetRef} canRequestData={canRequestData} />;
   if (!session.principal.permissions.includes("SPATIAL_DATA_READ")) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">
       {header()}
@@ -353,7 +384,7 @@ export default async function SpatialDataRequestsPage({
     </div>;
   }
 
-  const { workAreaId: areaParam, cursor: cursorParam, requestId: requestParam } = query;
+  const { workAreaId: areaParam, cursor: cursorParam, requestId: requestParam, assetRef: assetParam } = query;
   if (Array.isArray(areaParam)) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="작업구역을 하나만 선택하세요." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
   }
@@ -363,10 +394,14 @@ export default async function SpatialDataRequestsPage({
   if (Array.isArray(requestParam) || typeof requestParam === "string" && !REQUEST_ID_PATTERN.test(requestParam)) {
     return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="요청 ID 형식이 올바르지 않습니다." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
   }
+  if (Array.isArray(assetParam) || typeof assetParam === "string" && !ASSET_REF_PATTERN.test(assetParam)) {
+    return <div className="mx-auto flex max-w-5xl flex-col gap-4 p-4 sm:p-5">{header()}<ErrorState message="자료 참조 형식이 올바르지 않습니다." tone="high" action={{ label: "목록으로 돌아가기", href: basePath }} /></div>;
+  }
 
   const workAreaId = singleQueryValue(areaParam);
   const cursor = singleQueryValue(cursorParam);
   const requestId = singleQueryValue(requestParam);
+  const assetRef = singleQueryValue(assetParam);
 
   let areas: Awaited<ReturnType<typeof listWorkAreas>> | null = null;
   let areasError: unknown = null;
@@ -404,7 +439,8 @@ export default async function SpatialDataRequestsPage({
     }
   }
 
-  const canCancel = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
+  const canRequestData = session.principal.permissions.includes("SPATIAL_DATA_REQUEST");
+  const canCancel = canRequestData;
   // 원본 파일명·종류는 사람용 표시 전용으로, 선택된 구역에서 최대 1회만 읽는다.
   // 실패해도 목록·상세는 그대로 두며, 원본 삭제·부재로 해석하지 않는다.
   let catalogInfo: Record<string, CatalogAssetInfo> | null = null;
@@ -453,7 +489,7 @@ export default async function SpatialDataRequestsPage({
   return <div className="flex flex-col">
     {frame}
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-4 sm:p-5">
-    {header(workAreaId)}
+    {header(workAreaId, assetRef, canRequestData)}
 
     <section className="rounded-lg border border-line bg-surface px-4 py-3">
       <form action={basePath} method="get" className="flex flex-wrap items-end gap-2">
@@ -485,7 +521,19 @@ export default async function SpatialDataRequestsPage({
           <span className="text-[11px] text-ink-muted">최신 상태를 다시 조회하려면 페이지를 새로 고치세요.</span>
         </header>
         {scopedItems.length === 0
-          ? <div className="p-4"><EmptyState compact title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 자료 준비 요청이 없습니다"} description={cursor ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요." : "등록 자료에서 이 자료 받기 요청을 만들면 상태와 출력 근거가 이곳에 표시됩니다."} /></div>
+          ? <div className="p-4"><EmptyState
+            compact
+            title={cursor ? "이 페이지에 표시할 요청이 없습니다" : "이 작업구역의 자료 준비 요청이 없습니다"}
+            description={cursor
+              ? "Core가 반환한 현재 페이지가 비어 있습니다. 처음부터 다시 열어 첫 페이지를 확인하세요."
+              : "등록 자료에서 이 자료 받기 요청을 만들면 상태와 출력 근거가 이곳에 표시됩니다."}
+            action={canRequestData && !cursor
+              ? {
+                  label: assetRef ? "이 자료 새로 준비 요청" : "자료에서 새 준비 요청",
+                  href: requestCreationHref(siteId, workAreaId, assetRef),
+                }
+              : undefined}
+          /></div>
           : <>
             <div className="hidden border-b border-line bg-sunk/60 px-4 py-2 text-[10.5px] font-semibold text-ink-muted sm:grid sm:grid-cols-[minmax(0,1.35fr)_minmax(135px,0.8fr)_minmax(145px,0.8fr)_minmax(145px,0.9fr)]"><span>요청</span><span>생성 시각</span><span>상태 · 접근 가능 여부</span><span>처리 사유</span></div>
             <ul className="divide-y divide-line">

@@ -73,4 +73,16 @@ describe("spatial workbench frame", () => {
     expect(html).toContain("디자인 예시");
     expect(html.indexOf("디자인 예시")).toBeLessThan(html.indexOf("맥락막대"));
   });
+
+  it("puts the current selection and a sheet-only view action at the catalog foot", () => {
+    const html = frameHtml({
+      defaultCatalogOpen: true,
+      catalogFooter: <p>현재 선택 · A · 정사영상</p>,
+      catalogDismissLabel: "이 선택으로 보기",
+    });
+    expect(html).toContain("현재 선택 · A · 정사영상");
+    expect(html).toContain("이 선택으로 보기");
+    // 요약은 목록 시트 안, 무대 뒤가 아니라 목록 끝에 둔다.
+    expect(html.indexOf("현재 선택")).toBeGreaterThan(html.indexOf("목록 내용"));
+  });
 });

@@ -35,6 +35,8 @@ export function SpatialWorkbenchFrame({
   inspectorLabel,
   detailsHostId,
   defaultCatalogOpen = false,
+  catalogFooter = null,
+  catalogDismissLabel,
 }: {
   /** 예시 경로의 고정 안내 등, 맥락막대 위에 두는 띠. 실제 경로는 두지 않는다. */
   banner?: ReactNode;
@@ -52,6 +54,16 @@ export function SpatialWorkbenchFrame({
   inspectorOpen?: boolean;
   /** 초기 목록 열림 — 기본 닫힘. 명시적 사용자 토글 전 초기 상태용이다. */
   defaultCatalogOpen?: boolean;
+  /**
+   * 목록 시트 하단 요약 — 현재 선택이 무엇인지 시트 안에서 한 번 더 말한다.
+   * 선택이 없으면 호출자가 넘기지 않는다.
+   */
+  catalogFooter?: ReactNode;
+  /**
+   * 목록 시트 하단 닫기 동작 이름. 예: `이 선택으로 보기`. 넘기면 단추를 두고,
+   * 누르면 시트만 닫아 무대를 가리지 않는다. 선택 자체는 바꾸지 않는다.
+   */
+  catalogDismissLabel?: string;
   /** 예시 경로의 정보 닫기 위임. 없으면 Escape을 정보에 쓰지 않는다. */
   onCloseInspector?: () => void;
   /** 정보 영역 식별자·이름 — 열릴 때만 렌더된다. */
@@ -223,6 +235,20 @@ export function SpatialWorkbenchFrame({
                   </button>
                 </div>
                 {catalog}
+                {catalogFooter && (
+                  <div className="sticky -bottom-3 z-10 -mx-3 -mb-3 mt-auto shrink-0 border-t border-line bg-surface px-3 pb-3 pt-2 sm:-bottom-3 sm:-mx-3 sm:-mb-3 lg:-bottom-2 lg:-mx-2 lg:-mb-2 lg:px-2 lg:pb-2">
+                    {catalogFooter}
+                    {catalogDismissLabel && (
+                      <button
+                        type="button"
+                        onClick={closeCatalog}
+                        className="btn btn-primary mt-2 min-h-11 w-full"
+                      >
+                        {catalogDismissLabel}
+                      </button>
+                    )}
+                  </div>
+                )}
               </section>
             </>
           )}

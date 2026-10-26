@@ -489,6 +489,7 @@ function PreviewPane({ siteId, workAreaId, item, pool, jobs, jobsState, canRead,
     canRead={canRead}
     canRequest={canRequest}
     requestsHref={requestsHref}
+    prepareHref={materialsHref(siteId, workAreaId, { assetRef: item.assetRef, info: "1" })}
     workAreaRing={workAreaRing}
     workAreaCrs={workAreaCrs}
     observationHeading={heading}
@@ -1191,6 +1192,20 @@ export default async function SpatialAssetsPage({
     </section>
   );
 
+  // 목록 시트 하단 — 자료를 고른 뒤 시트가 무대를 덮은 채 남지 않도록,
+  // 현재 선택을 한 줄로 확인하고 시트만 닫는 동작을 둔다. 선택·URL은 바꾸지 않는다.
+  const selectedCatalogLines = [
+    sideA ? `A · ${businessTitleFor(sideA)}` : null,
+    sideB ? `B · ${businessTitleFor(sideB)}` : null,
+  ].filter((line): line is string => line !== null);
+  const catalogFooter = selectedCatalogLines.length > 0
+    ? <p className="min-w-0 break-words text-[11.5px] leading-5 text-ink-2">
+        <span className="font-semibold text-ink-1">현재 선택</span>
+        <span className="mx-1 text-ink-muted">·</span>
+        {selectedCatalogLines.join(" / ")}
+      </p>
+    : null;
+
   // 오른쪽: 선택 자료 정보 — frame이 열렸을 때만 자리를 차지한다.
   const renderInspector = (): ReactNode => (<>
     <div className="flex min-w-0 items-center justify-between gap-2">
@@ -1253,6 +1268,8 @@ export default async function SpatialAssetsPage({
                 inspectorId="material-inspector"
                 inspectorLabel="선택 자료 정보"
                 detailsHostId="material-inspector-details"
+                catalogFooter={catalogFooter}
+                catalogDismissLabel={catalogFooter ? "이 선택으로 보기" : undefined}
               />}
           <nav aria-label="등록 자료 페이지" className="flex min-w-0 flex-wrap gap-2 pt-1">
             {cursor && effectiveWorkAreaId && <Link className="btn" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ cursor: null }))}>처음부터 보기</Link>}

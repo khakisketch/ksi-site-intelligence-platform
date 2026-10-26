@@ -85,6 +85,8 @@ export interface MosaicViewportProps {
   jobs: PreparedWindowJob[];
   canRequest: boolean;
   requestsHref: string;
+  /** 준비 요청 폼이 정보 서랍에 있을 때 그 자리로 가는 링크 — 만료 회복을 이력 페이지로 보내지 않는다. */
+  prepareHref?: string;
   /** 같은 네이티브 평면의 작업구역 링 — 같은 평면일 때만 범위 도식에 겹친다. */
   workAreaRing?: Array<[number, number]> | null;
   /** 작업구역 링의 위치 기준 표기 — observedCrsIdentifier와 같을 때만 겹친다. */
@@ -169,6 +171,7 @@ export function SiteMosaicViewport({
   jobs,
   canRequest,
   requestsHref,
+  prepareHref,
   workAreaRing = null,
   workAreaCrs = null,
   hidePrepareActions = false,
@@ -640,7 +643,9 @@ export function SiteMosaicViewport({
     absentKind === "expired"
       ? {
           headline: "미리보기 보관 기간이 끝났습니다.",
-          recovery: "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
+          recovery: hidePrepareActions && prepareHref
+            ? "선택 자료 정보에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요."
+            : "구역 자료 준비에서 다시 요청하거나, 준비 상태 다시 확인을 누르세요.",
         }
       : absentKind === "rights"
         ? {
@@ -762,14 +767,15 @@ export function SiteMosaicViewport({
 
   // 무대용 간결 상태 — 사유 한 줄과 하나의 1차 회복만 둔다. 진입·읽기 흐름은
   // 그대로이며, 명시적 다시 준비(쓰기)는 아래 접힌 상세로만 둔다.
+  const expiredInInspector = hidePrepareActions && prepareHref !== undefined;
   const canvasRequestsLink = (
     <a
-      href={requestsHref}
+      href={expiredInInspector && absentKind === "expired" ? prepareHref : requestsHref}
       className={compactKind === "absent" && absentKind === "expired"
         ? "btn btn-primary min-h-11"
         : "btn min-h-11 border-white/25 bg-sidebar-active font-semibold text-sidebar-active-ink"}
     >
-      구역 자료 준비에서 확인
+      {expiredInInspector && absentKind === "expired" ? "선택 자료 정보에서 준비 요청" : "구역 자료 준비에서 확인"}
     </a>
   );
   const canvasMediaAction = compactKind === "loading" || hasActiveWait ? (
