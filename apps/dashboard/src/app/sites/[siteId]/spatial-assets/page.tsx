@@ -1111,7 +1111,7 @@ export default async function SpatialAssetsPage({
       <p className="min-w-0 truncate text-[12px] font-semibold">작업구역 · {areaDisplayName}{selectedArea.status === "ARCHIVED" ? " (보관됨)" : ""}</p>
     ) : null}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="materials-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
+      <span id="materials-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
       <div role="group" aria-labelledby="materials-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-lg border border-line bg-sunk p-0.5">
         {effectiveWorkAreaId ? (
           <Link
@@ -1139,7 +1139,7 @@ export default async function SpatialAssetsPage({
         )}
       </div>
     </div>
-    <p className="hidden min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted sm:block lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
+    <p data-viewer-compact-hide="true" className="hidden min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted sm:block lg:basis-auto">나란히 보기 · 등록 자료 확인·준비·열람</p>
     {effectiveWorkAreaId && (infoOpen
       ? <Link scroll={false} data-workbench-info-trigger aria-expanded={true} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] font-semibold underline max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: null }))}>정보</Link>
       : <Link scroll={false} data-workbench-info-trigger aria-expanded={false} aria-controls="material-inspector" className="tap-target ml-auto inline-flex shrink-0 items-center text-[12px] underline text-ink-2 max-sm:min-h-9 max-sm:rounded-md max-sm:border max-sm:border-line max-sm:bg-surface max-sm:px-2 max-sm:py-1 max-sm:no-underline xl:hidden" href={materialsHref(siteId, effectiveWorkAreaId, scopeForLinks({ info: "1" }))}>정보</Link>)}

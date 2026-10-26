@@ -866,7 +866,7 @@ export function SiteWorkspaceShell({
       <span className="text-[12px] text-ink-2">작업구역을 확인하지 못했습니다</span>
     )}
     <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span id="workspace-view-mode-label" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
+      <span id="workspace-view-mode-label" data-viewer-compact-hide="true" className="sr-only sm:not-sr-only sm:shrink-0 sm:text-[11.5px] sm:text-ink-muted">보기 방식</span>
       <nav aria-labelledby="workspace-view-mode-label" className="flex shrink-0 items-center gap-0.5 rounded-full border border-line bg-sunk p-0.5">
         {WORKSPACE_MODES.map((option) => {
           const active = option.key === mode;
@@ -886,7 +886,7 @@ export function SiteWorkspaceShell({
       </nav>
     </div>
     {mode === "compare" && (
-      <p className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
+      <p data-viewer-compact-hide="true" className="min-w-0 shrink-0 basis-full break-words text-[11.5px] leading-4 text-ink-muted lg:basis-auto">두 시점 비교 · 관측을 둘러보고 비교</p>
     )}
   </>);
 
