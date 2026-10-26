@@ -185,3 +185,14 @@
 - 여러 현장·여러 사용자 규모에서 검토 큐의 우선순위.
 
 이 문서는 사용성 문제의 **지적과 우선순위**이며, 아직 코드 변경을 뜻하지 않는다.
+
+
+## 7. 시각 제안 보드
+
+`docs/design/CONSOLE_USABILITY_REDESIGN_PROPOSAL_2026-10-26.html` (self-contained HTML)에
+전역 검토 메뉴, 자료 데스크톱의 상시 목록, 모바일 목록→시트→결과 3단계, 만료 복구 요청,
+등록 3단계, 작업 상세/1024px 안내를 한 보드로 정리했다. 운영 UI의 무채색·상태 언어를
+유지한 레이아웃 제안이며 구현 완료가 아니다. 증거 캡처는
+`~/.local/state/ksi-console-ia-20261025/usability-audit-20261026/redesign-proposal.html`,
+`proposal-1440.png`, `proposal-desktop.png`, `proposal-mobile.png`,
+`proposal-recovery.png`, `proposal-registration.png`에 있다.

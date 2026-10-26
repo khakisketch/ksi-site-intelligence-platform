@@ -1,0 +1,516 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KSI Operations Console — Usability Redesign Proposal</title>
+<style>
+  :root{
+    --board:#0d1012; --board-2:#121619; --panel:#171c1f; --panel-line:#2b3338;
+    --page:#f6f7f8; --surface:#fff; --sunk:#eef0f2; --line:#e1e4e7; --line-strong:#bfc5ca;
+    --ink:#121417; --ink-2:#505860; --muted:#6d777f;
+    --sidebar:#171a1c; --sidebar-2:#22272a; --sidebar-ink:#e8ecee; --sidebar-muted:#98a1a7;
+    --accent:#1f2124; --note:#e4572e; --blue:#2e6fd8; --green:#1d7a4a; --amber:#a96308; --red:#b83a2e;
+    --sans:"Pretendard Variable",Pretendard,-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--board);color:#e9edef;font-family:var(--sans);line-height:1.5;letter-spacing:-.015em}
+  a{color:inherit}
+  .board{max-width:1500px;margin:0 auto;padding:44px 40px 96px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#9ba5aa;margin:0 0 18px}
+  h1{font-size:46px;line-height:1.1;letter-spacing:-.045em;margin:0 0 16px;font-weight:700}
+  .lede{font-size:17px;line-height:1.65;color:#aab3b8;max-width:760px;margin:0 0 26px}
+  .principles{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 58px}
+  .principles span{border:1px solid #30383d;border-radius:999px;padding:7px 12px;font-size:12px;color:#c4ccd0;background:#121619}
+  .principles span b{color:#fff;font-weight:600}
+  .section{margin:0 0 72px;scroll-margin-top:24px}
+  .section-head{display:grid;grid-template-columns:64px minmax(0,1fr);gap:16px;align-items:start;margin:0 0 22px}
+  .section-head .num{font-family:var(--mono);font-size:12px;color:var(--note);padding-top:6px}
+  .section-head h2{font-size:28px;line-height:1.25;letter-spacing:-.035em;margin:0 0 7px}
+  .section-head p{margin:0;color:#9fa9ae;font-size:14px;max-width:860px;line-height:1.65}
+  .plate{display:flex;align-items:baseline;gap:10px;margin:0 0 9px;font-family:var(--mono);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:#8e9a9f}
+  .plate b{color:#d9e1e4;font-weight:600}
+  .frame{background:var(--surface);color:var(--ink);border-radius:12px;overflow:hidden;border:1px solid #273036;box-shadow:0 24px 70px rgba(0,0,0,.35)}
+  .frame-note{display:flex;flex-wrap:wrap;gap:18px 26px;margin:14px 0 0;color:#9fa9ae;font-size:12px}
+  .frame-note span{display:flex;gap:8px;align-items:flex-start;max-width:330px}
+  .frame-note i{font-style:normal;font-family:var(--mono);font-size:10px;min-width:20px;height:20px;border-radius:50%;background:var(--note);color:#fff;display:grid;place-items:center;margin-top:1px}
+  .callout{display:flex;gap:12px;margin:14px 0 0;padding:12px 14px;border:1px solid #2b3338;border-radius:9px;background:#121619;color:#b9c2c7;font-size:12.5px;line-height:1.6}
+  .callout b{color:#fff}
+  .callout .tag{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--note);text-transform:uppercase;white-space:nowrap;padding-top:1px}
+
+  /* app shell */
+  .app{display:grid;grid-template-columns:196px minmax(0,1fr);height:620px}
+  .app.tall{height:660px}
+  .side{background:var(--sidebar);color:var(--sidebar-ink);padding:16px 12px;display:flex;flex-direction:column;gap:4px}
+  .brand{display:flex;gap:9px;align-items:center;padding:0 6px 16px;font-weight:700;font-size:13px}
+  .brand .mark{width:25px;height:25px;border-radius:6px;background:#f1f3f4;color:#15181a;display:grid;place-items:center;font-size:10px;font-weight:800}
+  .side .item{display:flex;align-items:center;gap:10px;border-radius:7px;padding:9px 10px;font-size:12.5px;color:#cfd6da;text-decoration:none}
+  .side .item svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7}
+  .side .item.active{background:#2b3236;color:#fff;font-weight:600}
+  .side .item .badge{margin-left:auto;background:#3a4247;border-radius:99px;padding:1px 7px;font-size:10.5px;color:#fff}
+  .side .item.review .badge{background:var(--note);color:#fff}
+  .side .lower{margin-top:auto;border-top:1px solid #2c3438;padding-top:8px;display:flex;flex-direction:column;gap:2px}
+  .side .who{display:flex;align-items:center;gap:8px;padding:10px 8px 0;font-size:11px;color:#a9b2b7}
+  .side .who .avatar{width:24px;height:24px;border-radius:50%;background:#384146;display:grid;place-items:center;color:#fff;font-size:10px}
+  .main{background:var(--page);display:flex;flex-direction:column;min-width:0}
+  .top{height:48px;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:14px;padding:0 20px;font-size:13px;font-weight:600}
+  .top .search{margin-left:auto;display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--muted);font-size:11.5px;background:#fff}
+  .top .search svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.8}
+  .content{padding:20px 22px;overflow:hidden}
+  .page-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:14px}
+  .page-head h3{font-size:22px;margin:0;letter-spacing:-.03em}
+  .page-head p{margin:4px 0 0;font-size:11.5px;color:var(--ink-2)}
+  .btn{border:1px solid var(--line-strong);background:#fff;border-radius:6px;padding:7px 11px;font-family:var(--sans);font-size:11.5px;font-weight:600;color:var(--ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .btn.ghost{border-color:transparent;background:transparent;padding-left:2px;padding-right:2px}
+  .btn.sm{padding:5px 8px;font-size:10.5px;border-radius:5px}
+  .chip{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--line-strong);border-radius:999px;padding:3px 8px;font-size:10.5px;color:var(--ink-2);background:#fff;white-space:nowrap}
+  .chip.solid{background:var(--sunk);border-color:var(--line);color:var(--ink-2)}
+  .chip.green{border-color:#b8d8c5;background:#edf7f0;color:#14603a}
+  .chip.amber{border-color:#e7cfa8;background:#fdf7ec;color:#734605}
+  .chip.red{border-color:#e3b7b1;background:#fdf0ee;color:#8c2b21}
+  .chip.blue{border-color:#b9cdee;background:#eef4fd;color:#1d4d9c}
+  .tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:0 0 15px}
+  .tabs span{padding:0 0 9px;border-bottom:2px solid transparent;color:var(--muted);font-size:12px}
+  .tabs span.on{border-color:var(--ink);color:var(--ink);font-weight:700}
+  .pill-toggle{display:inline-flex;background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:2px}
+  .pill-toggle span{padding:5px 9px;border-radius:5px;font-size:10.5px;color:var(--muted)}
+  .pill-toggle span.on{background:#202427;color:#fff;font-weight:600}
+
+  /* review */
+  .review-summary{display:flex;gap:8px;margin-bottom:14px}
+  .review-row{display:grid;grid-template-columns:52px minmax(0,1fr) 118px 86px;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:8px;padding:11px 13px;margin-bottom:7px}
+  .review-row .when{font-size:10.5px;color:var(--muted)}
+  .review-row h4{margin:0;font-size:12.5px;line-height:1.45}
+  .review-row p{margin:3px 0 0;font-size:10.5px;color:var(--ink-2)}
+  .review-row .site{font-size:10.5px;color:var(--ink-2);white-space:nowrap}
+  .review-row .act{justify-self:end}
+  .empty-side{border-left:1px solid var(--line);padding-left:16px}
+  .empty-side h4{margin:0 0 7px;font-size:12px}
+  .empty-side p{margin:0;font-size:11px;color:var(--ink-2);line-height:1.6}
+
+  /* desktop materials */
+  .site-head{padding:10px 20px 0;background:#fff;border-bottom:1px solid var(--line)}
+  .crumb{display:flex;align-items:center;gap:8px;font-size:10.5px;color:var(--muted)}
+  .site-line{display:flex;align-items:center;gap:10px;margin-top:4px}
+  .site-line h3{margin:0;font-size:17px;letter-spacing:-.02em}
+  .site-tabs{display:flex;gap:16px;margin-top:10px}
+  .site-tabs span{font-size:11.5px;padding-bottom:8px;border-bottom:2px solid transparent;color:var(--muted)}
+  .site-tabs .on{color:var(--ink);font-weight:700;border-color:var(--ink)}
+  .mat-toolbar{display:flex;align-items:center;gap:10px;padding:10px 20px;background:#fff;border-bottom:1px solid var(--line);font-size:11px;color:var(--ink-2)}
+  .mat-toolbar .grow{flex:1}
+  .mat-grid{display:grid;grid-template-columns:242px minmax(0,1fr) 276px;min-height:390px}
+  .mat-list{border-right:1px solid var(--line);background:#fbfbfc;padding:12px 10px;overflow:hidden}
+  .mat-list .list-title{display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px;font-size:11px;font-weight:700}
+  .mat-list .list-title span{font-weight:400;color:var(--muted);font-size:10.5px}
+  .date-label{font-size:10px;color:var(--muted);padding:9px 4px 5px;font-weight:600}
+  .asset{display:flex;gap:8px;padding:8px 6px;border-radius:7px;border:1px solid transparent;margin-bottom:3px}
+  .asset.on{background:#eef0f1;border-color:#d9dde0}
+  .file{width:34px;height:34px;border-radius:6px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;flex:none;color:#5d6a72}
+  .file svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5}
+  .asset .body{min-width:0;flex:1}
+  .asset .name{display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;line-height:1.35}
+  .asset .meta{font-size:9.5px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .asset .actions{display:flex;gap:4px;margin-top:5px}
+  .ab{font-family:var(--mono);font-size:9px;border:1px solid #bdc5ca;border-radius:4px;padding:1px 4px;color:#4f5a61;background:#fff}
+  .ab.a{background:#202427;border-color:#202427;color:#fff}
+  .ab.b{background:#fff;border-color:#202427;color:#202427;font-weight:700}
+  .viewer{padding:16px 18px;background:#fff;min-width:0;display:flex;flex-direction:column;gap:10px}
+  .viewer-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .viewer-head h4{margin:0;font-size:13px;line-height:1.45}
+  .viewer-head p{margin:3px 0 0;font-size:10px;color:var(--muted)}
+  .absence{border:1px solid var(--line);background:var(--page);border-radius:9px;min-height:202px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px;position:relative;overflow:hidden;flex:1}
+  .absence:before{content:"";position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px,#d6dade 1px,transparent 0);background-size:22px 22px;opacity:.55}
+  .absence>*{position:relative}
+  .absence .icon{width:38px;height:38px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;background:#fff;margin-bottom:8px;color:#59666e}
+  .absence h5{margin:0;font-size:14px}
+  .absence p{margin:5px 0 0;font-size:10.5px;color:var(--ink-2);max-width:360px;line-height:1.6}
+  .absence .actions{display:flex;gap:7px;margin-top:11px}
+  .inspector{border-left:1px solid var(--line);background:#fff;padding:14px;font-size:10.5px;color:var(--ink-2);overflow:hidden}
+  .inspector h4{margin:0 0 9px;font-size:12px;color:var(--ink)}
+  .fact{display:grid;grid-template-columns:76px minmax(0,1fr);gap:6px;margin:4px 0;line-height:1.45}
+  .fact dt{color:var(--muted);font-size:9.5px}
+  .fact dd{margin:0;color:var(--ink-2);font-size:10px;overflow-wrap:anywhere}
+  .request-box{margin-top:12px;border:1px solid #d8dcdf;border-radius:8px;padding:10px;background:#fbfbfc}
+  .request-box h5{margin:0 0 5px;font-size:11px;color:var(--ink)}
+  .request-box p{margin:0 0 8px;font-size:10px;line-height:1.55;color:var(--ink-2)}
+  .request-box .row{display:flex;gap:6px;flex-wrap:wrap}
+  .legend{font-size:9.5px;color:var(--muted);margin-top:7px;line-height:1.55}
+
+  /* phones */
+  .phones{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;align-items:start}
+  .phone-wrap{min-width:0}
+  .phone{background:#fff;color:var(--ink);border-radius:26px;border:5px solid #23292d;overflow:hidden;box-shadow:0 18px 45px rgba(0,0,0,.32);height:650px;display:flex;flex-direction:column;position:relative}
+  .phone .status{height:24px;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:8px;color:#3c454b;font-weight:600}
+  .phone .mtop{height:44px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 12px;font-size:12px;font-weight:700;flex:none}
+  .phone .mtop .icon-btn{width:30px;height:30px;border:1px solid var(--line);border-radius:6px;display:grid;place-items:center;color:#59666e}
+  .phone .site{padding:9px 12px 0;border-bottom:1px solid var(--line);flex:none}
+  .phone .site .row1{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:9px;color:var(--muted)}
+  .phone .site h4{margin:4px 0 6px;font-size:14px;line-height:1.25}
+  .phone .site .tabs2{display:flex;gap:14px;font-size:10px;color:var(--muted)}
+  .phone .site .tabs2 span{padding-bottom:7px;border-bottom:2px solid transparent}
+  .phone .site .tabs2 .on{color:var(--ink);font-weight:700;border-color:var(--ink)}
+  .phone .list-head{display:flex;align-items:baseline;justify-content:space-between;padding:11px 12px 4px;font-size:12px;font-weight:700;flex:none}
+  .phone .list-head span{font-size:9.5px;color:var(--muted);font-weight:400}
+  .phone .subhead{font-size:9px;color:var(--muted);padding:3px 12px 5px;flex:none}
+  .phone .rows{overflow:hidden;padding:0 8px;flex:1}
+  .prow{border:1px solid var(--line);border-radius:9px;padding:8px;display:flex;gap:8px;margin:0 0 6px;background:#fff}
+  .prow.on{border-color:#9ea7ad;background:#f2f4f5}
+  .prow .file{width:34px;height:34px;border-radius:6px}
+  .prow .pn{font-size:10.5px;font-weight:700;display:flex;align-items:center;gap:4px;line-height:1.3}
+  .prow .pm{font-size:8.5px;color:var(--muted);margin-top:2px;line-height:1.4;word-break:break-all}
+  .prow .pa{display:flex;gap:4px;margin-top:6px}
+  .prow .pa .btn{font-size:8.5px;padding:4px 9px;border-radius:4px;min-height:22px}
+  .phone .foot{margin-top:auto;border-top:1px solid var(--line);padding:8px 10px 10px;background:#fff;flex:none}
+  .phone .foot .btn{width:100%;justify-content:center;min-height:38px;font-size:11px}
+  .phone .foot .hint{font-size:8px;color:var(--muted);text-align:center;margin:5px 0 0}
+  .bottomnav{height:37px;background:#fff;border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,1fr);align-items:center;font-size:7.5px;color:#5d686f;text-align:center;flex:none}
+  .bottomnav b{display:block;font-size:10px;font-weight:400;line-height:1.1}
+  .bottomnav .on{color:var(--ink);font-weight:700}
+  .sheet-phone .phone{background:#0d1012}
+  .sheet-phone .phone .status{color:transparent}
+  .sheet{position:absolute;inset:24px 0 37px;background:#fff;border-radius:16px 16px 0 0;display:flex;flex-direction:column;overflow:hidden}
+  .sheet .sh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex:none}
+  .sheet .sh b{font-size:12px}
+  .sheet .hintx{font-size:8.5px;line-height:1.55;color:var(--ink-2);background:#f4f5f6;padding:7px 10px;border-bottom:1px solid var(--line);flex:none}
+  .sheet .rows{flex:1;overflow:hidden;padding:8px}
+  .sheet .sfoot{flex:none;border-top:1px solid var(--line);padding:8px 10px}
+  .sheet .sfoot .btn{width:100%;justify-content:center;min-height:36px;font-size:10.5px}
+  .phone-caption{color:#c5cdd1;font-size:12px;font-weight:600;margin:12px 0 2px}
+  .phone-caption span{display:block;color:#8e9a9f;font-size:11px;font-weight:400;margin-top:2px;line-height:1.55}
+  .phone-note{color:var(--note);font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;margin:0 0 6px}
+
+  /* recovery */
+  .compare2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .mini{background:#fff;color:var(--ink);border-radius:10px;border:1px solid #2b3338;padding:16px;min-height:310px}
+  .mini h4{margin:0 0 3px;font-size:13px}
+  .mini .sub{font-size:10px;color:var(--muted);margin:0 0 12px}
+  .mini .flowline{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:10px;margin-bottom:12px}
+  .mini .flowline span{border:1px solid var(--line);background:#f7f8f9;border-radius:5px;padding:4px 7px}
+  .mini .flowline span.bad{border-color:#e3b7b1;background:#fdf0ee;color:#8c2b21}
+  .mini .flowline span.ok{border-color:#b8d8c5;background:#edf7f0;color:#14603a}
+  .mini .flowline em{color:var(--muted);font-style:normal}
+  .mini .box{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fbfbfc;margin-top:8px}
+  .mini label{display:block;font-size:9.5px;font-weight:700;margin-bottom:3px}
+  .mini select,.mini input{width:100%;border:1px solid var(--line-strong);border-radius:5px;padding:6px 7px;font-family:var(--sans);font-size:10.5px;background:#fff;color:var(--ink)}
+  .mini .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .mini .warning{border:1px solid #e7cfa8;background:#fdf7ec;color:#734605;border-radius:6px;padding:7px 8px;font-size:9.5px;line-height:1.55;margin-top:8px}
+  .mini .actions{display:flex;gap:7px;margin-top:10px;flex-wrap:wrap}
+
+  /* registration flow */
+  .flow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .step{background:#fff;color:var(--ink);border-radius:9px;border:1px solid #2b3338;padding:15px;min-height:210px;position:relative}
+  .step:after{content:"→";position:absolute;right:-15px;top:50%;transform:translateY(-50%);color:#7d888e;font-size:18px}
+  .step:last-child:after{display:none}
+  .step .k{font-family:var(--mono);font-size:9.5px;color:var(--note);letter-spacing:.1em;text-transform:uppercase}
+  .step h4{margin:6px 0 4px;font-size:15px}
+  .step p{margin:0 0 10px;font-size:10px;color:var(--ink-2);line-height:1.55}
+  .step .field{border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:10px;color:var(--muted);margin-bottom:6px;background:#fbfbfc}
+  .drop{border:1px dashed #aeb7bd;border-radius:7px;background:#fbfbfc;min-height:74px;display:flex;align-items:center;justify-content:center;gap:7px;color:#5e6b73;font-size:10px;margin:9px 0}
+  .drop svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.5}
+  .step .small{font-size:9px;color:var(--muted);line-height:1.55}
+
+  /* detail + width */
+  .detail-mini{background:#fff;color:var(--ink);border-radius:10px;border:1px solid #2b3338;padding:16px}
+  .detail-mini .crumb2{font-size:9.5px;color:var(--muted);margin-bottom:7px}
+  .detail-mini .dh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+  .detail-mini h4{margin:0 0 3px;font-size:17px;letter-spacing:-.02em}
+  .detail-mini .meta{font-size:10px;color:var(--ink-2)}
+  .stepper{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:14px 0 12px}
+  .stepper div{border-top:2px solid #d7dbde;padding-top:5px;font-size:8.5px;color:var(--muted)}
+  .stepper div.done{border-color:#1f2124;color:var(--ink);font-weight:700}
+  .stepper div.now{border-color:var(--note);color:var(--ink);font-weight:700}
+  .detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:12px}
+  .detail-box{border:1px solid var(--line);border-radius:7px;padding:10px;background:#fbfbfc;font-size:10px;color:var(--ink-2);line-height:1.55}
+  .detail-box b{color:var(--ink);display:block;margin-bottom:3px}
+  .size-msg{border:1px solid #e3b7b1;background:#fdf0ee;border-radius:9px;padding:13px;font-size:11px;color:#7c2a21;display:flex;gap:10px;align-items:flex-start}
+  .size-msg b{display:block;font-size:13px;margin-bottom:3px}
+  .size-msg .ico{width:22px;height:22px;border-radius:50%;border:1px solid #d09b94;display:grid;place-items:center;flex:none;font-size:11px}
+
+  .footer{margin-top:70px;padding-top:18px;border-top:1px solid #2b3338;display:flex;justify-content:space-between;gap:20px;color:#7f8b91;font-size:11px}
+  .footer b{color:#c5cdd1}
+
+  @media (max-width:1100px){
+    .board{padding:28px 18px 70px}
+    h1{font-size:34px}
+    .section-head{grid-template-columns:40px minmax(0,1fr)}
+    .phones{grid-template-columns:1fr;max-width:340px;margin:0 auto}
+    .app{grid-template-columns:160px minmax(0,1fr);height:auto;min-height:620px}
+    .mat-grid{grid-template-columns:220px minmax(0,1fr)}
+    .inspector{grid-column:1/-1;border-left:0;border-top:1px solid var(--line)}
+    .compare2,.flow,.detail-grid{grid-template-columns:1fr}
+    .step:after{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="board">
+  <p class="eyebrow">KSI Site Intelligence · Operations Console</p>
+  <h1>업무가 끊기지 않는 콘솔</h1>
+  <p class="lede">검토를 메뉴로, 자료 선택을 목록으로, 만료 복구를 한 자리에서. 현재 화면의 무채색·안전 상태 언어는 유지하고, 사용자가 다음 행동을 추론하지 않아도 되게 재배치한 제안입니다.</p>
+  <div class="principles">
+    <span><b>01</b> 검토가 전역 메뉴에 있다</span>
+    <span><b>02</b> 목록이 먼저 보인다</span>
+    <span><b>03</b> 선택하면 결과가 보인다</span>
+    <span><b>04</b> 만료 복구가 한 자리에서 끝난다</span>
+    <span><b>05</b> 이름이 동작과 같다</span>
+  </div>
+
+  <section class="section" id="ia">
+    <div class="section-head">
+      <div class="num">01</div>
+      <div>
+        <h2>전역 메뉴: 업무의 끝을 ‘검토’로</h2>
+        <p>업무는 관측 작업에서 끝나지 않고, 결과 검토·외부 결과 검토·재관측 승인으로 이어집니다. 이 세 가지를 한 목적지로 모아 메뉴에서 보이게 합니다.</p>
+      </div>
+    </div>
+    <div class="plate"><b>제안</b> · 검토 큐</div>
+    <div class="frame">
+      <div class="app" style="height:520px">
+        <aside class="side">
+          <div class="brand"><span class="mark">KSI</span><span>현장 지능</span></div>
+          <a class="item"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg>홈</a>
+          <a class="item"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg>현장<span class="badge">2</span></a>
+          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>업무</a>
+          <a class="item active review"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>검토<span class="badge">3</span></a>
+          <div class="lower">
+            <a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5"/></svg>도움말</a>
+            <a class="item"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>계정</a>
+            <div class="who"><span class="avatar">L</span> local-admin · 관리자</div>
+          </div>
+        </aside>
+        <div class="main">
+          <div class="top">검토 <span class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>검색 · 이동⌘K</span></div>
+          <div class="content">
+            <div class="page-head"><div><h3>검토</h3><p>사람이 판단해야 할 결과와 승인만 모읍니다. 처리 중·동기화 상태는 업무가 소유합니다.</p></div><button class="btn primary">검토 시작</button></div>
+            <div class="tabs"><span class="on">분석 결과 2</span><span>외부 결과 1</span><span>재관측 승인 0</span></div>
+            <div class="review-summary"><span class="chip blue">검토 대기 3</span><span class="chip">최근 7일</span><span class="chip">전체 현장</span></div>
+            <div class="review-row"><div class="when">10. 21.<br>01:17</div><div><h4>Floreat · 2021 → 2022 상대 물량 변화</h4><p>대상 구역 · Floreat common-extent · 입력 2건 · 차단 사유 없음</p></div><div class="site">Floreat sample</div><div class="act"><button class="btn sm">결과와 근거</button></div></div>
+            <div class="review-row"><div class="when">10. 20.<br>23:34</div><div><h4>Sample Field · 기준/비교 분석</h4><p>결과 준비 · 검토 기록 없음</p></div><div class="site">Product Sample</div><div class="act"><button class="btn sm">검토</button></div></div>
+            <div class="review-row"><div class="when">10. 20.<br>18:02</div><div><h4>외부 결과 · Floreat 공유 보고서</h4><p>공유된 결과 · 승인 전</p></div><div class="site">Floreat sample</div><div class="act"><button class="btn sm">확인</button></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-note"><span><i>1</i><span><b>검토를 전역 4번째로.</b> 계정·도움말은 하단 유틸리티로 내리고, 분석·외부 결과·재관측 승인을 한 큐에 모읍니다.</span></span><span><i>2</i><span><b>행동은 기록에서.</b> 각 행은 실제 분석·외부 결과 기록으로 바로 연결되고, 처리 중 상태는 여기에 넣지 않습니다.</span></span></div>
+  </section>
+
+  <section class="section" id="desktop">
+    <div class="section-head">
+      <div class="num">02</div>
+      <div>
+        <h2>자료 데스크톱: 목록은 옆에 계속, 복구는 그 자리에서</h2>
+        <p>자료 목록을 오버레이 서랍에서 꺼내 항상 보이는 왼쪽 열로 옮깁니다. 만료 안내는 200px 상태 행으로 줄이고, 준비 요청을 선택 자료 정보 안에서 바로 시작합니다.</p>
+      </div>
+    </div>
+    <div class="plate"><b>제안</b> · 등록 자료 · 1440</div>
+    <div class="frame">
+      <div class="app tall">
+        <aside class="side">
+          <div class="brand"><span class="mark">KSI</span><span>현장 지능</span></div>
+          <a class="item"><svg viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5M5.5 9.5V21h13V9.5"/></svg>홈</a>
+          <a class="item active"><svg viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></svg>현장<span class="badge">2</span></a>
+          <a class="item"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M9 5V3h6v2M8 11h8M8 15h6"/></svg>업무</a>
+          <a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16 9"/></svg>검토</a>
+          <div class="lower"><a class="item"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 .5c0 1.5-2.5 1.5-2.5 3.5M12 16.5v.5"/></svg>도움말</a><a class="item"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>계정</a><div class="who"><span class="avatar">L</span> local-admin · 관리자</div></div>
+        </aside>
+        <div class="main">
+          <div class="top">등록 자료 <span class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="m16 16 4 4"/></svg>검색 · 이동⌘K</span></div>
+          <div class="site-head">
+            <div class="crumb">‹ 현장 <span class="chip solid">현장 등록됨</span></div>
+            <div class="site-line"><h3>Floreat public sample <span style="font-size:10px;color:var(--muted);font-weight:400">(CC BY 4.0)</span></h3><span style="margin-left:auto" class="btn sm">설정·정보</span></div>
+            <div class="site-tabs"><span>작업공간</span><span class="on">자료</span><span>결과</span></div>
+          </div>
+          <div class="mat-toolbar">
+            <span class="btn sm">☰ 자료 <b style="font-family:var(--mono)">4</b></span>
+            <span class="grow"></span>
+            <span class="pill-toggle"><span class="on">한 장</span><span>나란히</span></span>
+            <span class="btn sm">자료 등록</span>
+          </div>
+          <div class="mat-grid">
+            <div class="mat-list">
+              <div class="list-title">등록 자료 <span>4건 · 파일 검사 4</span></div>
+              <div class="date-label">2021. 8. 17. (날짜만 확인 · 시각 미상) · 2</div>
+              <div class="asset on"><span class="file"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div class="body"><div class="name"><span class="ab a">A</span> 정사영상 · v1</div><div class="meta">floreat-f3-2021-08-17-ortho…tif</div><div class="actions"><span class="btn sm" style="padding:2px 5px;font-size:8.5px">A로 보기</span><span class="btn sm" style="padding:2px 5px;font-size:8.5px">B에 두기</span></div></div></div>
+              <div class="asset"><span class="file"><svg viewBox="0 0 24 24"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0"/></svg></span><div class="body"><div class="name">DSM · v1</div><div class="meta">floreat-f3-2021-08-17-dsm…tif</div><div class="actions"><span class="btn sm" style="padding:2px 5px;font-size:8.5px">A로 보기</span><span class="btn sm" style="padding:2px 5px;font-size:8.5px">B에 두기</span></div></div></div>
+              <div class="date-label">2022. 8. 24. (날짜만 확인 · 시각 미상) · 2</div>
+              <div class="asset"><span class="file"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div class="body"><div class="name">정사영상 · v1</div><div class="meta">floreat-f3-2022-08-24-ortho…tif</div><div class="actions"><span class="btn sm" style="padding:2px 5px;font-size:8.5px">A로 보기</span><span class="btn sm" style="padding:2px 5px;font-size:8.5px">B에 두기</span></div></div></div>
+              <div class="asset"><span class="file"><svg viewBox="0 0 24 24"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0"/></svg></span><div class="body"><div class="name">DSM · v1</div><div class="meta">floreat-f3-2022-08-24-dsm…tif</div><div class="actions"><span class="btn sm" style="padding:2px 5px;font-size:8.5px">A로 보기</span><span class="btn sm" style="padding:2px 5px;font-size:8.5px">B에 두기</span></div></div></div>
+            </div>
+            <div class="viewer">
+              <div class="viewer-head"><div><h4>A · 정사영상 · 2021. 8. 17.</h4><p>등록 버전 1 · Floreat common-extent sample</p></div><span class="chip amber">보관 기간 만료</span></div>
+              <div class="absence">
+                <div class="icon"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="m3.5 16 5-5 4 4 3.2-3.2 5.3 5.2"/></svg></div>
+                <h5>미리보기 보관 기간이 끝났습니다.</h5>
+                <p>등록 자료와 파일 검사 기록은 그대로 유지됩니다. 준비 요청으로 현재 사용할 수 있는 출력을 다시 만들 수 있습니다.</p>
+                <div class="actions"><button class="btn primary">이 자료 준비 요청</button><button class="btn ghost">준비 이력</button></div>
+              </div>
+              <div class="legend">표시는 실제 픽셀이 준비된 경우에만 그립니다. 만료된 화면을 사진으로 대체하지 않습니다.</div>
+            </div>
+            <div class="inspector">
+              <h4>선택 자료 정보</h4>
+              <dl style="margin:0">
+                <div class="fact"><dt>자료 구성</dt><dd>정사영상 · GeoTIFF</dd></div>
+                <div class="fact"><dt>관측 시점</dt><dd>2021. 8. 17. (날짜만 확인)</dd></div>
+                <div class="fact"><dt>파일 검사</dt><dd>파일 정보 확인됨</dd></div>
+                <div class="fact"><dt>정량 적합성</dt><dd>이 화면에서 판정하지 않음</dd></div>
+              </dl>
+              <div class="request-box">
+                <h5>이 자료 준비 요청</h5>
+                <p>선택한 자료의 검사 격자 안에서 현재 사용할 출력을 요청합니다.</p>
+                <div class="row"><span class="chip">A · 정사영상</span><span class="chip solid">EPSG:7850</span></div>
+                <button class="btn primary sm" style="width:100%;justify-content:center;margin-top:8px">준비 요청</button>
+              </div>
+              <div class="legend">요청 생성과 이력 조회를 같은 자리에서. 이력은 별도 화면으로 이동하지 않습니다.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame-note"><span><i>1</i><span><b>목록이 사라지지 않습니다.</b> 왼쪽 242px 목록에서 A/B를 연속 선택하고, 가운데 결과를 바로 확인합니다.</span></span><span><i>2</i><span><b>만료는 200px 상태로.</b> 큰 점격자/검은 void 대신 사유·보존 기록·두 행동만 둡니다.</span></span><span><i>3</i><span><b>준비 요청이 문맥 안에.</b> 선택 자료의 검사 근거와 함께 요청하고, 이력은 링크로 분리합니다.</span></span></div>
+  </section>
+
+  <section class="section" id="mobile">
+    <div class="section-head">
+      <div class="num">03</div>
+      <div>
+        <h2>자료 모바일: 목록 → 선택 → 결과가 한 방향으로</h2>
+        <p>모바일도 목록을 1차 화면으로 시작합니다. 시트에서 A/B를 고르고 `이 선택으로 보기`로 닫으면, 가려져 있던 결과가 바로 나타납니다.</p>
+      </div>
+    </div>
+    <div class="phones">
+      <div class="phone-wrap">
+        <p class="phone-note">Step 1 · 목록 먼저</p>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>● ● ●</span></div>
+          <div class="mtop"><span>등록 자료</span><span class="icon-btn">⌕</span></div>
+          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip solid">현장 등록됨</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>작업공간</span><span class="on">자료</span><span>결과</span></div></div>
+          <div class="list-head">자료 <span>4건 · 파일 검사 4</span></div>
+          <div class="subhead">2021. 8. 17. · 2</div>
+          <div class="rows">
+            <div class="prow on"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div style="min-width:0;flex:1"><div class="pn"><span class="ab a">A</span>정사영상 · v1</div><div class="pm">floreat-f3-2021-08-17-ortho-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+            <div class="prow"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0"/></svg></span><div style="min-width:0;flex:1"><div class="pn">DSM · v1</div><div class="pm">floreat-f3-2021-08-17-dsm-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+            <div class="subhead" style="padding-left:0">2022. 8. 24. · 2</div>
+            <div class="prow"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div style="min-width:0;flex:1"><div class="pn">정사영상 · v1</div><div class="pm">floreat-f3-2022-08-24-ortho-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+          </div>
+          <div class="foot"><button class="btn primary">선택한 자료 보기</button><p class="hint">목록에서 A/B를 고른 뒤 결과를 확인합니다</p></div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+        </div>
+        <p class="phone-caption">목록이 첫 화면<span>`자료` 탭을 누르면 자동 선택된 한 건이 아니라, 고를 수 있는 목록과 건수를 먼저 봅니다.</span></p>
+      </div>
+      <div class="phone-wrap sheet-phone">
+        <p class="phone-note">Step 2 · A/B 선택</p>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>● ● ●</span></div>
+          <div class="sheet">
+            <div class="sh"><b>자료 목록</b><button class="btn sm">닫기</button></div>
+            <div class="hintx"><b>A</b>는 왼쪽, <b>B</b>는 오른쪽에 놓을 자료입니다. 첫 자료는 A로 자동 선택되어 있습니다.</div>
+            <div class="rows">
+              <div class="prow on"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div style="min-width:0;flex:1"><div class="pn"><span class="ab a">A</span>정사영상 · v1</div><div class="pm">floreat-f3-2021-08-17-ortho-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+              <div class="prow"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17c3-6 6-6 9 0s6 6 9 0M3 11c3-6 6-6 9 0s6 6 9 0"/></svg></span><div style="min-width:0;flex:1"><div class="pn">DSM · v1</div><div class="pm">floreat-f3-2021-08-17-dsm-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+              <div class="subhead" style="padding-left:0">2022. 8. 24. · 2</div>
+              <div class="prow"><span class="file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg></span><div style="min-width:0;flex:1"><div class="pn">정사영상 · v1</div><div class="pm">floreat-f3-2022-08-24-ortho-derived.tif</div><div class="pa"><button class="btn sm">A로 보기</button><button class="btn sm">B에 두기</button></div></div></div>
+            </div>
+            <div class="sfoot"><button class="btn primary">이 선택으로 보기</button></div>
+          </div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+        </div>
+        <p class="phone-caption">시트에 의미와 완료 행동<span>A/B 설명과 `이 선택으로 보기`를 함께 두어, 닫기가 유일한 적용처럼 보이지 않게 합니다.</span></p>
+      </div>
+      <div class="phone-wrap">
+        <p class="phone-note">Step 3 · 선택 결과</p>
+        <div class="phone">
+          <div class="status"><span>9:41</span><span>● ● ●</span></div>
+          <div class="mtop"><span>등록 자료</span><span class="icon-btn">⌕</span></div>
+          <div class="site"><div class="row1"><span>‹ 현장</span><span class="chip amber">보관 만료</span></div><h4>Floreat public sample</h4><div class="tabs2"><span>작업공간</span><span class="on">자료</span><span>결과</span></div></div>
+          <div style="padding:10px 12px 0"><div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px"><div><div style="font-size:11px;font-weight:700">A · 정사영상 · 2021. 8. 17.</div><div style="font-size:8.5px;color:var(--muted);margin-top:2px">등록 버전 1 · 파일 검사 완료</div></div><button class="btn sm">목록</button></div></div>
+          <div style="padding:8px 12px 0;flex:1">
+            <div style="border:1px solid var(--line);border-radius:9px;background:var(--page);min-height:190px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:14px;position:relative;overflow:hidden">
+              <div style="position:absolute;inset:0;background-image:radial-gradient(circle at 1px 1px,#d6dade 1px,transparent 0);background-size:20px 20px;opacity:.5"></div>
+              <div style="position:relative;width:32px;height:32px;border:1px solid var(--line);border-radius:50%;display:grid;place-items:center;background:#fff;margin-bottom:7px">▧</div>
+              <div style="position:relative;font-size:12px;font-weight:700">미리보기 보관 기간이 끝났습니다</div>
+              <div style="position:relative;font-size:9px;line-height:1.5;color:var(--ink-2);margin-top:4px">자료와 검사 기록은 유지됩니다.<br>준비 요청으로 현재 사용할 출력을 만드세요.</div>
+              <button class="btn primary" style="position:relative;margin-top:9px;min-height:34px;font-size:10px">이 자료 준비 요청</button>
+              <button class="btn ghost" style="position:relative;margin-top:3px;font-size:9px">준비 이력 보기</button>
+            </div>
+          </div>
+          <div class="foot"><button class="btn">목록으로 돌아가기</button><p class="hint">A/B를 바꾸려면 목록을 다시 엽니다</p></div>
+          <div class="bottomnav"><span><b>⌂</b>홈</span><span class="on"><b>▤</b>현장</span><span><b>▣</b>업무</span><span><b>•••</b>계정</span></div>
+        </div>
+        <p class="phone-caption">선택 결과가 보인다<span>시트가 닫히고, 만료 복구가 같은 화면의 1차 행동으로 이어집니다.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="recovery">
+    <div class="section-head">
+      <div class="num">04</div>
+      <div>
+        <h2>만료 복구: 이력 페이지가 아니라 요청에서 끝내기</h2>
+        <p>현재는 `구역 자료 준비에서 확인`이 이력만 있는 화면으로 보냅니다. 제안은 선택한 자료의 준비 요청을 그 자리에서 만들고, 이력은 보조 링크로 분리합니다.</p>
+      </div>
+    </div>
+    <div class="compare2">
+      <div class="mini">
+        <h4>현재 · 막다른 길</h4>
+        <p class="sub">만료 → 이력 페이지 → 생성 버튼 없음</p>
+        <div class="flowline"><span class="bad">만료 안내</span><em>→</em><span class="bad">구역 자료 준비</span><em>→</em><span class="bad">이력만</span></div>
+        <div class="box"><label>작업구역 선택</label><select><option>Floreat common-extent</option></select><button class="btn" style="margin-top:6px">요청 이력 불러오기</button><div style="border-top:1px solid var(--line);margin-top:9px;padding-top:8px;font-size:9px;color:var(--muted)">요청 12건 · 완료 · 보관 기한 만료 · 완료 · 보관 기한 만료 …</div></div>
+        <div class="warning">새 준비 요청을 만들려면 자료 화면으로 돌아가 선택 자료 정보를 열어야 합니다. 사용자는 여기서 막힙니다.</div>
+      </div>
+      <div class="mini">
+        <h4>제안 · 한 자리에서</h4>
+        <p class="sub">만료 → 선택 자료 → 준비 요청 → 완료</p>
+        <div class="flowline"><span class="ok">만료 안내</span><em>→</em><span class="ok">이 자료 준비 요청</span><em>→</em><span class="ok">요청 접수</span></div>
+        <div class="box"><div style="font-size:10px;font-weight:700;margin-bottom:3px">A · 정사영상 · 2021. 8. 17.</div><div style="font-size:9px;color:var(--muted);margin-bottom:7px">Floreat common-extent · 검사 완료 · 보관 만료</div><div class="two"><div><label>준비 범위</label><select><option>검사 격자 전체</option></select></div><div><label>용도</label><select><option>일반 자료 사용</option></select></div></div><div class="actions"><button class="btn primary sm">준비 요청</button><button class="btn sm">준비 이력 보기</button></div></div>
+        <div style="font-size:9px;color:var(--muted);margin-top:8px;line-height:1.55">요청은 Core가 검사 격자·좌표 기준·권한을 확인한 뒤 접수합니다. 만료된 픽셀을 예시로 대체하지 않습니다.</div>
+      </div>
+    </div>
+    <div class="callout"><span class="tag">CORE</span><span><b>요청 생성 위치만 바꾸는 것이 아닙니다.</b> 기존 POST·검사 격자·권한 계약은 그대로 쓰고, 화면이 그 계약에 맞는 자리로 안내합니다.</span></div>
+  </section>
+
+  <section class="section" id="registration">
+    <div class="section-head">
+      <div class="num">05</div>
+      <div>
+        <h2>등록: 이름과 단계를 실제 동작에 맞춘다</h2>
+        <p>`자료 등록`을 누르면 파일 업로드가 아니라 관측 작업 생성이 나옵니다. 작업 만들기와 파일 제출을 이름·단계로 분리합니다.</p>
+      </div>
+    </div>
+    <div class="flow">
+      <div class="step"><div class="k">Step 1 · 작업</div><h4>관측 작업 만들기</h4><p>현장과 작업구역, 작업 이름을 정합니다. 이 단계에서는 파일을 올리지 않습니다.</p><div class="field">작업 이름 · 9월 6일 현황 비교</div><div class="field">작업구역 · Floreat common-extent</div><button class="btn primary sm">작업 만들기</button><div class="small" style="margin-top:7px">작업이 만들어지면 파일 제출 단계로 이동합니다.</div></div>
+      <div class="step"><div class="k">Step 2 · 파일</div><h4>파일 제출</h4><p>작업에 사용할 정사영상·DSM을 올립니다. 파일 검사는 제출 뒤 별도로 진행됩니다.</p><div class="drop"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5M4 16v3h16v-3"/></svg>파일을 끌어 놓거나 선택</div><button class="btn primary sm">파일 제출</button><div class="small" style="margin-top:7px">제출 ≠ 검사 완료 ≠ 분석 가능. 각각 다른 상태로 표시합니다.</div></div>
+      <div class="step"><div class="k">Step 3 · 검사</div><h4>검사 확인</h4><p>제출 파일의 형식·격자·좌표 기준을 확인합니다. 실패·보완 사유는 여기서만 읽습니다.</p><div class="field">검사 상태 · 파일 정보 확인됨</div><div class="field">분석 적합성 · 이 화면에서 판정하지 않음</div><button class="btn sm">결과 보기</button></div>
+    </div>
+    <div class="callout"><span class="tag">LABEL</span><span><b>`자료 등록`이라는 이름은 파일을 올리는 화면에만 씁니다.</b> 관측 작업을 만드는 화면은 `관측 작업 만들기`, 파일을 올리는 화면은 `파일 제출`로 부릅니다.</span></div>
+  </section>
+
+  <section class="section" id="detail">
+    <div class="section-head">
+      <div class="num">06</div>
+      <div>
+        <h2>상세와 폭: 맥락을 유지하고, 창 폭을 설명한다</h2>
+        <p>작업 상세에서 전역 업무 탭을 제거하고, 단계·담당·기한을 한눈에 둡니다. 1024px 게이트는 기기 이름이 아니라 창 폭과 해결 방법을 말합니다.</p>
+      </div>
+    </div>
+    <div class="compare2">
+      <div class="detail-mini">
+        <div class="crumb2">‹ 전체 관측 작업 / Floreat public capture 2022-08-24</div>
+        <div class="dh"><div><h4>관측 자료와 검사 확인</h4><div class="meta">Floreat public sample · Floreat common-extent · 1회차</div></div><span class="chip blue">진행 중</span></div>
+        <div class="stepper"><div class="done">등록</div><div class="done">검사</div><div class="now">준비</div><div>분석</div><div>검토</div></div>
+        <div class="detail-grid"><div class="detail-box"><b>다음 행동</b>파일 검사 결과를 확인한 뒤 분석 준비로 이동합니다. 검사·준비·분석은 서로 다른 상태입니다.<div style="margin-top:8px"><button class="btn primary sm">검사 결과 보기</button> <button class="btn sm">작업 목록</button></div></div><div class="detail-box"><b>담당·기한</b>미배정 · 기한 미정<br><span style="color:var(--muted)">배정과 기한은 작업 운영에서 기록합니다.</span></div></div>
+      </div>
+      <div class="detail-mini">
+        <h4 style="font-size:14px;margin-bottom:8px">1024px 게이트</h4>
+        <div class="size-msg"><span class="ico">!</span><div><b>화면 폭이 1024px보다 좁습니다</b>자료 등록은 노트북·데스크톱의 넓은 화면에서 계속할 수 있습니다. 브라우저 창을 넓히거나 같은 계정으로 노트북에서 열어 주세요. <div style="font-size:9px;margin-top:4px;color:#8c4a42">현재 934px · 기기 종류가 아니라 창 폭 기준입니다.</div></div></div>
+        <div class="detail-box" style="margin-top:10px"><b>왜 이 제한이 있나</b>현장 등록·작업 생성·파일 제출은 실수 비용이 큰 쓰기 동작이라 넓은 화면에서 확인합니다. 조회·검토는 모바일에서도 가능합니다.</div>
+      </div>
+    </div>
+  </section>
+
+  <div class="footer"><span><b>Design proposal</b> · 2026-10-26 · 현재 운영 UI의 무채색·상태 언어를 유지한 레이아웃 제안</span><span>Not implemented · Core/contracts unchanged</span></div>
+</div>
+</body>
+</html>
