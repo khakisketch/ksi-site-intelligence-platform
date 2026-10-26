@@ -194,7 +194,7 @@ export function SiteHeader({
           aria-current와 밑줄로 밝히고, 좁은 화면에서는 가로 스크롤로
           두 줄로 깨지지 않게 한다. */}
       <nav
-        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5"
+        className="mx-auto flex w-full max-w-[1440px] gap-1 overflow-x-auto px-3 sm:px-5 lg:hidden"
         aria-label="현장 업무 메뉴"
       >
         {headerTabs.map((option) => (

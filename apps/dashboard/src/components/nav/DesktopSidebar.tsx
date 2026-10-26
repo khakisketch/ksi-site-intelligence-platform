@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Fragment, Suspense } from "react";
 
 import { isChromelessPath } from "./chromeless-path";
 import { DESKTOP_NAV_GROUPS } from "./nav-items";
 import { NavIcon } from "./NavIcon";
 import { SidebarSearchTrigger } from "./SidebarSearchTrigger";
+import { SiteContextNav } from "./SiteContextNav";
+import type { SidebarSite } from "./site-context";
 
 /** 사이드바에 띄울 실측 건수. 값이 없으면(집계 실패 포함) 배지를 아예 그리지 않는다 —
  *  0 과 "모름"은 다른 상태이고, 안전 화면에서 그 둘을 같게 보이면 안 된다. */
@@ -21,9 +24,12 @@ export interface NavCounts {
 // 남기되 마스터·디테일이 유지되는 값이다.
 export function DesktopSidebar({
   counts,
+  sites = [],
   userBlock,
 }: {
   counts?: NavCounts;
+  /** 현재 현장 블록·전환기에 쓰는 최소 현장 요약. 서버(layout)가 넘긴다. */
+  sites?: readonly SidebarSite[];
   /** 레일 하단 사용자 블록. 세션을 읽는 **서버** 컴포넌트라 여기서 import 하지 않고
    *  layout.tsx 가 넘긴다 — 클라이언트 컴포넌트 안에 서버 컴포넌트를 중첩할 수 없다. */
   userBlock?: React.ReactNode;
@@ -79,37 +85,43 @@ export function DesktopSidebar({
                 item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
               const count = counts?.[item.key];
               return (
-                <Link
-                  key={item.key}
-                  href={item.href}
-                  aria-current={active ? "page" : undefined}
-                  className={`tap-target flex items-center justify-between gap-2 rounded-md p-2 text-[13px] break-keep transition-colors ${
-                    active
-                      ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
-                      : "hover:bg-sidebar-hover"
-                  } ${
-                    // 활성일 때는 muted 를 걸지 않는다 — Tailwind 는 클래스 문자열 순서가 아니라
-                    // 생성된 CSS 순서로 이기므로, 준비 중 항목에 들어가 있으면 활성 배경 위에
-                    // muted 텍스트가 얹혀 대비가 무너진다.
-                    item.implemented || active ? "" : "text-sidebar-muted"
-                  }`}
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <NavIcon name={item.icon} className="size-[17px] flex-none" />
-                    <span>{item.label}</span>
-                  </span>
-                  {count && (
-                    <span
-                      className={`tabular rounded-full px-1.5 py-px text-[11px] ${
-                        count.urgent
-                          ? "bg-crit font-bold text-white"
-                          : "bg-white/[0.13] text-sidebar-text"
-                      }`}
-                    >
-                      {count.value}
+                <Fragment key={item.key}>
+                  <Link
+                    href={item.href}
+                    aria-current={active ? "page" : undefined}
+                    className={`tap-target flex items-center justify-between gap-2 rounded-md p-2 text-[13px] break-keep transition-colors ${
+                      active
+                        ? "bg-sidebar-active font-semibold text-sidebar-active-ink"
+                        : "hover:bg-sidebar-hover"
+                    } ${
+                      // 활성일 때는 muted 를 걸지 않는다 — Tailwind 는 클래스 문자열 순서가 아니라
+                      // 생성된 CSS 순서로 이기므로, 준비 중 항목에 들어가 있으면 활성 배경 위에
+                      // muted 텍스트가 얹혀 대비가 무너진다.
+                      item.implemented || active ? "" : "text-sidebar-muted"
+                    }`}
+                  >
+                    <span className="flex min-w-0 items-center gap-2.5">
+                      <NavIcon name={item.icon} className="size-[17px] flex-none" />
+                      <span>{item.label}</span>
                     </span>
+                    {count && (
+                      <span
+                        className={`tabular rounded-full px-1.5 py-px text-[11px] ${
+                          count.urgent
+                            ? "bg-crit font-bold text-white"
+                            : "bg-white/[0.13] text-sidebar-text"
+                        }`}
+                      >
+                        {count.value}
+                      </span>
+                    )}
+                  </Link>
+                  {item.key === "sites" && (
+                    <Suspense fallback={null}>
+                      <SiteContextNav key={pathname} sites={sites} />
+                    </Suspense>
                   )}
-                </Link>
+                </Fragment>
               );
             })}
           </div>

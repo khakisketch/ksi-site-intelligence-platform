@@ -33,6 +33,15 @@ describe("uniform console shell", () => {
     expect(sidebar).toContain("{userBlock}");
   });
 
+  it("puts the current site context in the desktop rail and passes only minimal site summaries", () => {
+    const sidebar = readSource("src/components/nav/DesktopSidebar.tsx");
+    const layout = readSource("src/app/layout.tsx");
+    expect(sidebar).toContain("SiteContextNav");
+    expect(sidebar).toContain("sites");
+    expect(layout).toContain("listSitesCached");
+    expect(layout).toContain("sites={sidebarSites}");
+  });
+
   it("top bar is present on authenticated screens and keeps auth recovery", () => {
     const topbar = readSource("src/components/nav/TopBar.tsx");
     expect(topbar).not.toContain("NormalShellTopBar");

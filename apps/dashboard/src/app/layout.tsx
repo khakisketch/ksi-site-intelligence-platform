@@ -4,7 +4,9 @@ import { headers } from "next/headers";
 
 import { DesktopSidebar } from "@/components/nav/DesktopSidebar";
 import { isChromelessPath } from "@/components/nav/chromeless-path";
+import type { SidebarSite } from "@/components/nav/site-context";
 import { getNavCounts } from "@/components/nav/nav-counts";
+import { listSitesCached } from "@/lib/core-api/cached";
 import { MobileBottomNav } from "@/components/nav/MobileBottomNav";
 import { MainPageTitle } from "@/components/nav/PageTitle";
 import { RouteFocusManager } from "@/components/nav/RouteFocusManager";
@@ -49,9 +51,15 @@ export default async function RootLayout({
   const chromeless = isChromelessPath(headerStore.get(PATHNAME_HEADER));
   const currentPageTitle = resolvePageTitle(headerStore.get(PATHNAME_HEADER)) || "KSI Site Intelligence";
   // 셸을 벗는 로그인 화면에는 세션이 없어 현장 목록을 부르면 401 왕복만 는다.
-  const [navCounts, paletteItems] = chromeless
-    ? [undefined, []]
-    : await Promise.all([getNavCounts(), buildPaletteItems()]);
+  const [navCounts, paletteItems, sidebarSites] = chromeless
+    ? [undefined, [], [] as SidebarSite[]]
+    : await Promise.all([
+        getNavCounts(),
+        buildPaletteItems(),
+        listSitesCached()
+          .then((items): SidebarSite[] => items.map(({ siteId, name, status }) => ({ siteId, name, status })))
+          .catch((): SidebarSite[] => []),
+      ]);
 
   return (
     <html
@@ -101,7 +109,7 @@ export default async function RootLayout({
             <ToastProvider>{children}</ToastProvider>
           </ShellMain>
         </ShellViewport>
-        <DesktopSidebar counts={navCounts} userBlock={!chromeless && <SidebarUserBlock />} />
+        <DesktopSidebar counts={navCounts} sites={sidebarSites} userBlock={!chromeless && <SidebarUserBlock />} />
         <MobileBottomNav />
         {!chromeless && <RouteFocusManager />}
         {!chromeless && <CommandPalette items={paletteItems} />}
